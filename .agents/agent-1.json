@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 53,
-  "remaining_pct": 47,
+  "usage_pct": 54,
+  "remaining_pct": 46,
   "resets_at": "2026-10-18T21:00:00+00:00",
-  "last_check": "2026-10-18T20:24:00+00:00",
+  "last_check": "2026-10-18T20:32:00+00:00",
   "current_step": "P06 done (Demo 1, 2fcb1d8); P07 4 slices building",
   "last_commit": "caedeae"
 }
