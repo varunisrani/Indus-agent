@@ -59,6 +59,28 @@ class CrossRef:
     text: str
 
 
+@dataclass(frozen=True)
+class ToolTraits:
+    """What the turn loop may assume about a tool (P04-14 planner, P04-18 guardrails).
+
+    ``read_only``: no side effects, safe to run beside other admissible calls. ``path_arg``: the
+    argument naming the one path the call touches (path-scoped file tools); ``path_default`` is
+    used when the argument is absent. ``writer``: a path-scoped tool that changes that path.
+    ``interactive``: waits on a person (never run beside others). ``mutating``: a success counts
+    as progress for the loop guardrails.
+    """
+
+    read_only: bool = False
+    path_arg: str | None = None
+    path_default: str | None = None
+    writer: bool = False
+    interactive: bool = False
+    mutating: bool = False
+
+
+NO_TRAITS = ToolTraits()
+
+
 @dataclass(frozen=True, eq=False)
 class ToolEntry:
     name: str
@@ -75,6 +97,7 @@ class ToolEntry:
     cross_refs: tuple[CrossRef, ...] = ()
     rewrite: Rewrite | None = None
     profile: str | None = None
+    traits: ToolTraits = NO_TRAITS
 
     @property
     def parameters(self) -> Mapping[str, Any] | None:
@@ -241,6 +264,7 @@ class ToolRegistry:
         rewrite: Rewrite | None = None,
         override: bool = False,
         profile: str | None = None,
+        traits: ToolTraits = NO_TRAITS,
     ) -> ToolEntry:
         """Add or replace a tool. ``profile`` (a ``scope_key``) puts it in that profile's overlay.
 
@@ -266,6 +290,7 @@ class ToolRegistry:
             cross_refs=tuple(cross_refs),
             rewrite=rewrite,
             profile=profile,
+            traits=traits,
         )
         with self._lock:
             slot = self._global if profile is None else self._overlays.setdefault(profile, {})

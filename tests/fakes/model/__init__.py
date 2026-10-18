@@ -315,6 +315,45 @@ def load_script(path: str | Path) -> Script:
     return replace(parse_script(data, str(p)), name=p.stem)
 
 
+# -- script helpers (P04-13) ----------------------------------------------------------------------
+
+
+def text_turn(*chunks: str, finish: str = "stop") -> Turn:
+    """A turn that streams ``chunks`` as visible text."""
+    return Turn((Text(tuple(chunks) or ("",)), Finish(finish)))
+
+
+def tool_batch(*calls: ToolCall | tuple[str, Mapping[str, Any] | str]) -> Turn:
+    """A turn made of tool calls (``ToolCall`` values or ``(name, arguments)`` pairs)."""
+    steps: list[Step] = []
+    for index, call in enumerate(calls):
+        if isinstance(call, ToolCall):
+            steps.append(call)
+        else:
+            name, arguments = call
+            steps.append(ToolCall(name=name, arguments=arguments, id=f"call_{index}"))
+    return Turn((*steps, Finish("tool_calls")))
+
+
+def malformed_args(name: str, raw: str = '{"path": "a.txt"', call_id: str = "call_0") -> Turn:
+    """A turn whose one tool call carries arguments that are not valid JSON."""
+    return Turn((ToolCall(name=name, arguments=raw, id=call_id), Finish("tool_calls")))
+
+
+def mid_stream_cut(text: str) -> Turn:
+    """A turn that shows ``text`` and then loses the connection."""
+    return Turn((Text((text,)), Disconnect()))
+
+
+def thinking_only(reasoning: str) -> Turn:
+    """A turn with reasoning and no visible text."""
+    return Turn((Reasoning((reasoning,)), Finish("stop")))
+
+
+def script_of(*turns: Turn, name: str = "inline") -> Script:
+    return Script(tuple(turns), name=name)
+
+
 # The wire servers import the vocabulary above, so they come last.
 from tests.fakes.model.server import (  # noqa: E402
     FakeModelServer,
@@ -347,5 +386,11 @@ __all__ = [
     "Usage",
     "fake_route",
     "load_script",
+    "malformed_args",
+    "mid_stream_cut",
     "parse_script",
+    "script_of",
+    "text_turn",
+    "thinking_only",
+    "tool_batch",
 ]
