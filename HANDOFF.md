@@ -14,7 +14,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 
 ## Last stop
 - By: **Agent 1** | At: 2026-10-18 12:30 UTC | Branch: `main` (pushed to origin)
-- Why now: no handoff yet; Agent 1 holds the turn. Plan complete; next is the first build wave.
+- Why now: Agent 1 is at ~75% of its 5-hour window (resets 16:00 UTC); wave 4 starts clean, so Agent 2 takes it.
 - Last verified code commit: `ee74300` (1905 pytest passed, pyright 0, all 9 checks ok).
 
 ## Usage at last stop
@@ -24,7 +24,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
 |---|-----------|------------|------------|--------|
-| — | none yet | | | |
+| 1 | Agent 1 → Agent 2 | 2026-10-18 14:23 | P00, P01, P03, P02-01..07 | Agent 1 at ~75% usage; wave 4 is a clean start |
 
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
@@ -64,6 +64,7 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
+Builder rules for sub-agents: `docs/plan/phases/builder-rules.md` (replace `<scratch>` with your own scratch dir). Lead notes and cross-phase rulings: `docs/plan/phases/LEAD-NOTES.md`.
 1. Wave 4: P02-08..23 (sessions, listing, messages, rewind/clear/branch, compression records, titles,
    FTS5 + fail-open, search, usage, export/import, delete/tombstones, prune/VACUUM, read-only browse +
    integrity, D-04.6 stress test, M0 doctor report, per-session metadata API). Build on the landed

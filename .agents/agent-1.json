@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "ACTIVE",
+  "state": "READY",
   "usage_pct": 75,
   "remaining_pct": 25,
   "resets_at": "2026-10-18T16:00:00+00:00",
-  "last_check": "2026-10-18T13:50:00+00:00",
-  "current_step": "Wave 3 landed (ee74300); pausing until the 16:00 UTC reset, then wave 4 (P02-08..23)",
+  "last_check": "2026-10-18T14:23:30+00:00",
+  "current_step": "Handed the turn to Agent 2 at wave 4 start; READY to take back after 16:00 UTC reset",
   "last_commit": "775ce70"
 }
