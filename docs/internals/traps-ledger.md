@@ -57,6 +57,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_bundled.py::test_no_oauth_or_portal_routes`
   - `tests/unit/providers/transports/test_anthropic.py::test_no_header_names_another_product`
   - `tests/unit/providers/transports/test_chat_completions.py::test_no_identity_headers_besides_ours`
+  - `tests/unit/providers/auth/test_pkce.py::test_only_documented_flows_are_registered`
+  - `tests/unit/cli/commands/test_auth.py::test_oauth_add_for_a_provider_without_a_documented_flow`
 - **R01.13** Tool-definition list aliasing
   - Review: not yet planned (P00-guards)
 - **R01.14** Parallel tool safety
@@ -226,6 +228,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_browse.py::test_open_reads_without_setting_anything_up`
   - `tests/unit/state/test_browse.py::test_browse_never_checkpoints_a_live_wal`
   - `tests/e2e/test_doctor_minimal.py::test_fresh_home_reports_a_missing_store_and_creates_none`
+  - `tests/unit/cli/commands/test_sessions.py::test_list_opens_read_only_and_changes_nothing`
+  - `tests/unit/cli/commands/test_sessions.py::test_list_without_a_store_creates_nothing`
+  - `tests/unit/cli/commands/test_status.py::test_status_without_any_provider`
 - **R03.17** Descriptor exhaustion
   - `tests/unit/state/test_readpool.py::test_nine_concurrent_readers_use_eight_pooled_and_the_writer`
   - `tests/unit/state/test_readpool.py::test_process_cap_falls_back_to_the_writer`
@@ -259,11 +264,14 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_connection.py::test_guard_runs_before_anything_touches_disk`
   - `tests/unit/state/test_connection.py::test_the_computed_real_root_is_refused_here`
   - `tests/unit/state/test_connection.py::test_ancestry_finds_pytest_from_a_child`
+  - `tests/unit/providers/auth/test_store.py::test_guard_refuses_the_real_store_before_touching_disk`
 - **R03.25** Automatic maintenance must only skip, never refuse a turn
   - `tests/unit/state/test_maintenance.py::test_auto_maintain_never_raises`
   - `tests/unit/state/test_maintenance.py::test_vacuum_refuses_another_generation`
   - `tests/integration/state/test_vacuum_holders.py::test_second_process_blocks_vacuum`
   - `tests/integration/state/test_vacuum_holders.py::test_auto_maintenance_only_skips_with_a_holder`
+  - `tests/unit/cli/commands/test_sessions_maint.py::test_optimize_under_a_held_handle_skips_with_a_message`
+  - `tests/unit/cli/commands/test_sessions_maint.py::test_prune_refuses_while_the_store_is_held`
 - **R03.26** Repair loops
   - Review: not yet planned (P00-guards)
 - **R03.27** macOS durability
@@ -293,6 +301,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/config/test_writer.py::test_default_equal_value_kept_when_present_before`
   - `tests/unit/foundation/config/test_writer.py::test_create_writes_example`
   - `tests/unit/foundation/config/test_schema.py::test_example_parses_to_nothing_and_uncomments_to_defaults`
+  - `tests/unit/cli/commands/test_config_read.py::test_edit_seeds_example_only`
 - **R04.5** Comment-preserving round trip, single writer seam
   - `tests/unit/foundation/test_yamlio.py::test_yaml_import_ratchet_catches_planted_import`
   - `tests/unit/foundation/test_yamlio.py::test_roundtrip_is_byte_identical`
@@ -306,10 +315,14 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/config/test_keys.py::test_coerce_table`
   - `tests/unit/foundation/config/test_keys.py::test_coerce_refuses_malformed_structured`
   - `tests/unit/foundation/config/test_keys.py::test_check_write_container_guard`
+  - `tests/unit/cli/commands/test_config_write.py::test_coercion_table`
+  - `tests/unit/cli/commands/test_config_write.py::test_malformed_structured_value_refused`
+  - `tests/unit/cli/commands/test_config_write.py::test_section_and_container_guards`
 - **R04.8** Dotted key names
   - `tests/unit/foundation/config/test_keys.py::test_get_prefers_literal_dotted_key`
   - `tests/unit/foundation/config/test_keys.py::test_set_refuses_phantom_sibling`
   - `tests/unit/foundation/config/test_keys.py::test_split_join_roundtrip_seeded`
+  - `tests/unit/cli/commands/test_config_write.py::test_dotted_keys`
 - **R04.9** Provider switch leaves a stale route
   - `tests/unit/providers/test_route.py::test_stale_vendor_base_url_dropped_with_warning`
   - `tests/unit/providers/test_route.py::test_explicit_provider_ignores_other_providers_base_url`
@@ -317,6 +330,10 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/slash/test_control_cmds.py::test_model_global_persists_and_clears_a_stale_custom_url`
   - `tests/unit/cli/slash/test_control_cmds.py::test_failed_switch_rolls_back`
   - `tests/unit/providers/test_bundled.py::test_register_managed_env_names`
+  - `tests/unit/cli/test_model_picker.py::test_custom_to_named_clears_stale_route`
+  - `tests/unit/cli/test_model_picker.py::test_custom_endpoint_detects_its_only_model`
+  - `tests/unit/cli/commands/test_config_write.py::test_provider_switch_drops_stale_url`
+  - `tests/unit/cli/commands/test_config_write.py::test_provider_switch_keeps_matching_url`
 - **R04.10** .env` read/write symmetry
   - `tests/unit/foundation/test_envfile.py::test_set_replaces_every_line_shape`
   - `tests/unit/foundation/test_envfile.py::test_delete_removes_every_line_shape`
@@ -332,6 +349,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/test_envfile.py::test_denylist_refused`
   - `tests/unit/foundation/test_envfile.py::test_denylist_case_insensitive_on_windows`
   - `tests/unit/foundation/test_envfile.py::test_denylist_superset_of_reference_names`
+  - `tests/unit/cli/commands/test_config_write.py::test_denied_env_names_refused`
+  - `tests/unit/cli/commands/test_config_write.py::test_denied_credential_shaped_name_refused`
+  - `tests/unit/cli/commands/test_config_write.py::test_upper_snake_goes_to_env_file`
 - **R04.13** Redaction bridge timing
   - `tests/unit/foundation/test_redact.py::test_switch_read_per_call`
   - `tests/unit/foundation/test_redact.py::test_switch_off_in_config_leaves_text`
@@ -343,19 +363,40 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_entry.py::test_yolo_flag_reaches_env_and_scope`
   - `tests/unit/cli/test_entry.py::test_yolo_inside_a_value_is_not_the_flag`
 - **R04.15** Masking in `config get`
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/commands/test_config_read.py::test_get_masking_table`
+  - `tests/unit/cli/commands/test_config_read.py::test_show_masks_credentials`
+  - `tests/unit/cli/commands/test_config_read.py::test_get_raw_and_json`
 - **R04.16** Auth store read errors
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/auth/test_store.py::test_os_error_on_read_raises_any_platform`
+  - `tests/unit/providers/auth/test_store.py::test_os_error_on_read_raises_and_leaves_the_file`
+  - `tests/unit/providers/auth/test_store.py::test_corrupt_json_is_copied_aside_and_store_starts_empty`
+  - `tests/unit/providers/auth/test_store.py::test_guard_refuses_the_real_store_before_touching_disk`
 - **R04.17** Device-code polling edge cases
   - `tests/unit/providers/test_retry.py::test_parse_table`
-  - Review: the device-code flow itself (P07)
+  - `tests/unit/providers/auth/test_device_code.py::test_slow_down_adds_five_seconds_and_caps_at_thirty`
+  - `tests/unit/providers/auth/test_device_code.py::test_503_with_retry_after_is_honoured`
+  - `tests/unit/providers/auth/test_device_code.py::test_failures_without_retry_after_back_off_exponentially_to_sixty`
+  - `tests/unit/providers/auth/test_device_code.py::test_outage_at_the_deadline_is_reported_as_an_outage`
+  - `tests/unit/providers/auth/test_device_code.py::test_plain_expiry_is_not_called_an_outage`
 - **R04.18** Browser opening on headless/remote hosts
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/auth/test_pkce.py::test_browser_heuristics_table`
+  - `tests/unit/providers/auth/test_pkce.py::test_remote_session_prints_the_tunnel_hint_and_opens_nothing`
+  - `tests/unit/providers/auth/test_pkce.py::test_round_trip_mints_a_key`
 - **R04.19** Non-TTY behaviour
   - `tests/unit/cli/test_chat_select.py::test_non_tty_forces_classic`
   - `tests/unit/cli/test_chat_select.py::test_tui_flag_exits_2`
   - `tests/unit/cli/test_chat_select.py::test_finite_query_without_a_terminal`
-  - Review: first-run and expensive-model guards without a TTY (P07)
+  - `tests/unit/cli/test_prompts.py::test_no_terminal_raises_with_guidance`
+  - `tests/unit/cli/test_first_run.py::test_non_tty_exits_1_with_guidance`
+  - `tests/unit/cli/test_first_run.py::test_route_guard_table`
+  - `tests/unit/cli/test_first_run.py::test_data_policy_setting_for_unattended_runs`
+  - `tests/unit/cli/test_model_picker.py::test_non_tty_exits_1`
+  - `tests/unit/cli/setup/test_wizard.py::test_non_tty_prints_guidance`
+  - `tests/unit/cli/commands/test_fallback.py::test_non_tty_argument_forms`
+  - `tests/unit/cli/commands/test_auth.py::test_non_tty_add_without_key_exits_1_with_guidance`
+  - `tests/contract/cli/test_non_tty.py::test_table_names_every_command_and_nothing_else`
+  - `tests/contract/cli/test_non_tty.py::test_without_arguments`
+  - `tests/contract/cli/test_non_tty.py::test_guidance_with_arguments`
 - **R04.20** Two different exit-code tables
   - `tests/unit/cli/test_oneshot.py::test_oneshot_code_table`
   - `tests/integration/cli/test_oneshot_exit_codes.py::test_failed_run_exits_2_and_writes_the_usage_file`
@@ -367,9 +408,15 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_app.py::test_model_before_chat_is_kept`
   - `tests/unit/cli/test_app.py::test_flag_after_chat_wins_and_flags_before_survive`
 - **R04.22** Import target
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/commands/test_import.py::test_restores_into_the_current_profile`
+  - `tests/unit/cli/commands/test_import.py::test_corrupt_member_leaves_the_home_untouched`
+  - `tests/unit/cli/commands/test_import.py::test_db_written_page_by_page_while_a_reader_is_open`
+  - `tests/unit/cli/commands/test_import.py::test_runtime_files_of_the_source_machine_are_kept`
+  - `tests/unit/cli/commands/test_import.py::test_member_outside_the_home_refuses_everything`
 - **R04.23** Backup exclusions are security-relevant
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/commands/test_backup.py::test_every_excluded_kind_stays_out`
+  - `tests/unit/cli/commands/test_backup.py::test_browser_profile_found_by_content`
+  - `tests/unit/cli/commands/test_backup.py::test_database_copied_while_a_writer_holds_a_transaction`
 - **R04.24** Update self-modification
   - Review: not yet planned (P00-guards)
 - **R04.25** Profile deletion and marker-less dirs
@@ -381,8 +428,12 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/test_layout.py::test_missing_named_profile_refused_and_not_created`
   - `tests/unit/foundation/test_log.py::test_deleted_or_tombstoned_routed_home_is_never_recreated`
   - `tests/integration/foundation/test_log_routing.py::test_profile_deleted_while_logging_falls_back_without_recreating`
+  - `tests/unit/cli/commands/test_profile.py::test_marker_less_dir_untouched`
+  - `tests/unit/cli/commands/test_profile.py::test_delete_tombstones_and_profile_flag_refuses`
 - **R04.26** Clone must not share channels
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/commands/test_profile.py::test_clone_strips_channels`
+  - `tests/unit/cli/commands/test_profile.py::test_clone_through_symlinked_env`
+  - `tests/unit/cli/commands/test_profile.py::test_keychain_entries_copied_to_new_namespace`
 - **R04.27** Bang shell is not a bypass
   - `tests/unit/cli/test_bang.py::test_floor_blocks_rm_rf_root`
   - `tests/unit/cli/test_bang.py::test_dangerous_command_asks_and_deny_blocks`

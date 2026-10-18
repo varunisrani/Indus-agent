@@ -162,6 +162,19 @@ class SecuritySection(_Section):
         default_factory=list,
         description="more file globs whose every write asks first (AGENTS.md etc. always do)",
     )
+    allow_data_training_tiers_noninteractive: bool = Field(
+        default=False,
+        description="let unattended runs use a -m/--provider route whose tier trains on your data",
+    )
+    acked_advisories: list[str] = Field(
+        default_factory=list, description="advisory ids `indus doctor --ack` recorded as read"
+    )
+
+
+class DoctorSection(_Section):
+    live_probe_timeout_s: float = Field(
+        default=10.0, description="seconds `indus doctor` waits for each live provider check"
+    )
 
 
 class WebSection(_Section):
@@ -224,6 +237,9 @@ class OnboardingSection(_Section):
     seen: OnboardingSeen = Field(
         default_factory=OnboardingSeen, description="one-time tips already shown"
     )
+    setup_completed: bool = Field(
+        default=False, description="`indus setup` has been run to the end once"
+    )
 
 
 class SessionSection(_Section):
@@ -285,6 +301,10 @@ class ConfigModel(BaseModel):
     providers: dict[str, dict[str, Any]] = Field(
         default_factory=dict, description="named custom providers"
     )
+    fallback_providers: list[dict[str, Any]] = Field(
+        default_factory=list[dict[str, Any]],
+        description="routes tried in order when the main one fails: {provider, model} entries",
+    )
     agent: AgentSection = Field(default_factory=AgentSection, description="the turn loop")
     terminal: TerminalSection = Field(
         default_factory=TerminalSection, description="where and how commands run"
@@ -337,6 +357,17 @@ class ConfigModel(BaseModel):
     timezone: str = Field(
         default="", description="IANA zone name, e.g. Asia/Kolkata; empty = system zone"
     )
+    credential_pool_strategies: dict[str, str] = Field(
+        default_factory=dict,
+        description="per provider: how its credential pool picks a key — fill_first (default), "
+        "round_robin, least_used or random",
+    )
+    platform_toolsets: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="per platform (cli, ...): the toolsets it gets; unset = the platform's bundle "
+        "(`indus tools`)",
+    )
+    doctor: DoctorSection = Field(default_factory=DoctorSection, description="`indus doctor`")
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 

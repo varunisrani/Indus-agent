@@ -1,0 +1,14 @@
+  a stray line left over from before the last restart
+2026-01-01 08:00:00 INFO indus.cli.chat: chat started
+2026-01-01 08:10:00 DEBUG indus.providers.http [20260101_080000_abc123]: request sent
+2026-01-01 08:20:00 WARNING indus.tools.builtin.terminal [20260101_080000_abc123:t1]: command is slow
+2026-01-01 08:30:00 ERROR indus.core.loop [20260101_080000_abc123:t2]: turn failed
+Traceback (most recent call last):
+  File "loop.py", line 10, in run
+ValueError: the model went away
+2026-01-01 08:40:00 INFO indus.gateway.daemon: gateway idle
+2026-01-01 08:50:00 ERROR indus.cron.ticker: job failed
+Traceback (most recent call last):
+  File "ticker.py", line 3, in tick
+KeyError: 'missing'
+2026-01-01 08:55:00 INFO indus.cli.chat [20260101_090000_def456]: chat ended

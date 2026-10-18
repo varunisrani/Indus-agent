@@ -62,6 +62,8 @@ def test_decided_defaults() -> None:
         "fake_ip_ranges": [],
         "website_blocklist": {"enabled": False, "domains": [], "shared_files": []},
         "protected_instruction_files": [],
+        "allow_data_training_tiers_noninteractive": False,
+        "acked_advisories": [],
     }
     assert d["web"] == {
         "backend": "",
@@ -85,7 +87,11 @@ def test_decided_defaults() -> None:
         "show_reasoning": False,
         "bell_on_prompt": True,
     }
-    assert d["onboarding"] == {"seen": {"busy_input": False}}
+    assert d["onboarding"] == {"seen": {"busy_input": False}, "setup_completed": False}
+    assert d["fallback_providers"] == []
+    assert d["credential_pool_strategies"] == {}
+    assert d["platform_toolsets"] == {}
+    assert d["doctor"] == {"live_probe_timeout_s": 10.0}
     assert d["session"] == {"terminal_continue": True}
     assert d["quick_commands"] == {}
     assert d["network"] == {"force_ipv4": False}

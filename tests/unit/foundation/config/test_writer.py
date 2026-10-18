@@ -160,6 +160,15 @@ def test_create_writes_example(cfg_scope: Scope) -> None:
     assert _config(cfg_scope).read_text(encoding="utf-8").count("# Indus Agent settings.") == 1
 
 
+def test_list_append_lands_before_the_example_comments(cfg_scope: Scope) -> None:
+    writer.save(cfg_scope, {"platform_toolsets": {"cli": ["terminal"]}})
+    writer.save(cfg_scope, {"platform_toolsets": {"cli": ["terminal", "file"]}})
+    text = loader.config_path(cfg_scope).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    assert lines.index("    - file") == lines.index("    - terminal") + 1
+    assert loader.load(cfg_scope).get("platform_toolsets.cli") == ["terminal", "file"]
+
+
 def test_empty_existing_file_counts_as_create(cfg_scope: Scope) -> None:
     _config(cfg_scope).write_text("\n", encoding="utf-8")
     writer.save(cfg_scope, {"timezone": "Asia/Kolkata"})

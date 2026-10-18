@@ -80,6 +80,19 @@ ERROR_CODES: dict[str, str] = {
     "backend.error": "terminal backend problem",
     "backend.connection": "the terminal backend could not be reached; the command did not run",
     "backend.unavailable": "the terminal backend cannot be created here (missing dependency)",
+    "auth.error": "provider sign-in or credential pool problem",
+    "auth.unreadable": "auth.json could not be read; it was left as it is",
+    "auth.locked": "another process held the auth store lock past the time budget",
+    "auth.isolation_refused": "a test run tried to open the real auth store",
+    "auth.unsafe_path": "the auth store's folder is a filesystem root, top-level or install dir",
+    "auth.unknown_target": "no pool entry matches the given index, id or label",
+    "auth.flow_failed": "a sign-in flow failed (bad answer from the authorization server)",
+    "auth.denied": "the person declined the sign-in request",
+    "auth.expired": "the sign-in code expired before it was approved",
+    "auth.service_down": "the sign-in service kept failing until the code expired",
+    "auth.relogin_required": "the stored grant is no longer valid; sign in again",
+    "auth.callback_timeout": "no browser callback arrived before the deadline",
+    "auth.port_busy": "the provider's fixed callback port is in use",
 }
 
 
@@ -373,3 +386,45 @@ class StaleBreakerTripped(ProviderError):
     """Too many consecutive silent attempts; calls fail at once until the route changes."""
 
     default_code = "provider.stale_breaker"
+
+
+class AuthError(IndusError):
+    """Auth store, credential pool and sign-in flow errors (P07)."""
+
+    default_code = "auth.error"
+
+
+class AuthStoreUnreadable(AuthError):
+    """``auth.json`` exists but the OS refused the read; the file was not touched (R04.16)."""
+
+    default_code = "auth.unreadable"
+
+
+class AuthStoreLocked(AuthError):
+    """Another process held the auth store lock past the timeout."""
+
+    default_code = "auth.locked"
+
+    def __init__(
+        self,
+        code_or_message: str,
+        message: str | None = None,
+        *,
+        holder_pid: int | None = None,
+        detail: object = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(code_or_message, message, detail=detail, hint=hint)
+        self.holder_pid: int | None = holder_pid
+
+
+class AuthIsolationRefused(AuthError):
+    """A process that looks like a test run tried to open the real auth store (R03.24)."""
+
+    default_code = "auth.isolation_refused"
+
+
+class AuthUnsafePath(AuthError):
+    """The auth store would be written into ``/``, a top-level dir or the install tree."""
+
+    default_code = "auth.unsafe_path"

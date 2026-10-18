@@ -24,7 +24,10 @@ __all__ = [
 MAX_SUGGESTIONS = 3
 SUGGESTION_CUTOFF = 0.6
 
-MOVED: Mapping[str, str] = {}
+MOVED: Mapping[str, str] = {
+    "login": "Sign-in lives under `indus auth`: run `indus auth add PROVIDER`.",
+    "logout": "Sign-out lives under `indus auth`: run `indus auth logout PROVIDER`.",
+}
 """Commands that left this group: ``name -> where it lives now`` (one sentence)."""
 
 type PluginHint = Callable[[str, str], str | None]

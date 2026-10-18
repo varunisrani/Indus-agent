@@ -234,6 +234,14 @@ note (`docs/notes/Pnn/<slug>.md`).
 | D-16.83 | ACP | Adapter falls back to an in-process agent when no daemon is reachable | **`acp.allow_local_fallback` defaults to false**: without a daemon, `session/new` fails with a clear message unless `--local` or the flag is set | P19-03 |
 | D-16.84 | Desktop builds | Windows test builds packaged per the release flow | **Unsigned NSIS installer plus portable ZIP** during the build (P20-38); signing at 1.0 per D-16.70 | P20-38 |
 | D-16.89 | Desktop transport | Desktop mints a one-use grant per HTTP attempt against the daemon (R08.4) | Desktop speaks JSON-RPC over the daemon WebSocket (single-use tickets per dial) and sends REST to the loopback `indus serve` it starts or finds with `indus serve ensure` (P18), using a launch-scoped session token held in the main process; **no per-request HTTP grant** | Lead ruling; P18-01, P20-10 |
+| D-16.93 | Import | A backup member whose path leaves the home is skipped and the rest restored | **The whole archive is refused before anything is written**; restored files are 0600, dirs 0700 | P07-23 (`docs/notes/P07/import.md`) |
+| D-16.94 | Device-code sign-in | `slow_down` adds 1 s to the polling interval | **Adds 5 s, as RFC 8628 requires** (a flow may document another step); waits run on the injected clock | P07-09 (`docs/notes/P07/device-code.md`) |
+| D-16.95 | Config commands | `config get/show` skip masking when log redaction is switched off; `config check` always exits 0; `config migrate` writes at once | **Masking always applies unless `--raw`**; `check` exits 1 on errors (a file newer than the build is one); `migrate` is a dry run unless `--apply` | P07-11, P07-13 (`docs/notes/P07/config-read.md`, `config-check.md`) |
+| D-16.96 | Session export | Redaction only on request | **Exports mask secrets by default** (`--no-redact` keeps them) | P07-14 (`docs/notes/P07/sessions-read.md`) |
+| D-16.97 | Shell completion | Hand-kept per-shell scripts with static command lists | **Click's dynamic completion protocol**: commands, profiles, session titles and toolsets complete from live data | P07-25 (`docs/notes/P07/completion.md`) |
+| D-16.98 | Interactive prompts | Without a terminal, prompts fall back to `getpass` or return the default; EOF keeps the default; setup cancel exits 0 | **No terminal → guidance and exit 1, never a prompt** (R04.19); EOF counts as cancel; a cancelled `indus setup` exits 1; first-run guidance goes to stderr | P07-01, P07-02, P07-03 (`docs/notes/P07/prompts.md`, `setup-wizard.md`, `first-run.md`) |
+| D-16.99 | Profiles | A clone copies the credential file; `default` can be renamed (display name) | **Keychain entries are copied by name, credential-pool secrets and `auth.json` never** (sign-ins stay with their profile); `default` cannot be created, renamed or deleted | P07-16 (`docs/notes/P07/profile-cmds.md`), lead at P07 landing |
+| D-16.100 | Logs | `logs -f` keeps reading the old handle after rotation | **Follow reopens the file after rotation or truncation**; bad options are usage errors (exit 2) | P07-20 (`docs/notes/P07/logs.md`) |
 
 ### 2.8 Not in 1.0
 
@@ -281,6 +289,7 @@ change cheap).
 | D-16.41, D-16.49, D-16.50 | Not in 1.0 (§2.8); the other §2.8 rows wait on §3.2 | ✅ Lead, 2026-10-18 (owner may pull any into 1.0) |
 | D-16.70 – D-16.84, D-16.89 | Intended differences recorded when the phase files were reconciled (§2.7) | ✅ Lead, 2026-10-18 |
 | D-16.85 – D-16.88 | Not in 1.0 (§2.8), recorded at reconciliation | ✅ Lead, 2026-10-18 (owner may pull any into 1.0) |
+| D-16.93 – D-16.100 | P07 intended differences recorded when P07 landed (§2.7) | ✅ Lead, 2026-10-18 |
 
 ### 3.2 Open — owner (with our recommendation)
 

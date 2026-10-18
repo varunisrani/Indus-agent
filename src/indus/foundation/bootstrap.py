@@ -42,6 +42,7 @@ __all__ = [
     "harden_sys_path",
     "make_root_scope",
     "run",
+    "run_selected",
 ]
 
 log = logging.getLogger(__name__)
@@ -149,6 +150,30 @@ def run(
 ) -> tuple[Scope, list[str]]:
     """Prepare the process for ``argv``; returns the root scope and argv without the profile
     selector. ``nested_tail_flags`` None keeps ``select_profile``'s own default (``--args``)."""
+    scope, rest, _selection = run_selected(
+        argv,
+        env,
+        mode=mode,
+        verbose=verbose,
+        value_flags=value_flags,
+        nested_tail_flags=nested_tail_flags,
+        recovery_commands=recovery_commands,
+    )
+    return scope, rest
+
+
+def run_selected(
+    argv: Sequence[str],
+    env: MutableMapping[str, str] | None = None,
+    *,
+    mode: logsetup.Mode = "cli",
+    verbose: bool = False,
+    value_flags: Collection[str] = (),
+    nested_tail_flags: Collection[str] | None = None,
+    recovery_commands: Collection[str] = (),
+) -> tuple[Scope, list[str], Selection]:
+    """``run``, also returning the profile ``Selection`` (its ``source`` says how the profile was
+    picked: flag, env, sticky or default)."""
     target: MutableMapping[str, str] = os.environ if env is None else env
     harden_sys_path()
     ensure_utf8_stdio()
@@ -184,4 +209,4 @@ def run(
         layout.prune_scratch(scope, scope.clock)
     except OSError as exc:
         log.warning("scratch prune skipped: %s", exc)
-    return scope, list(selection.argv)
+    return scope, list(selection.argv), selection

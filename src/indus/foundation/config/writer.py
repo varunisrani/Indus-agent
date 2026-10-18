@@ -155,13 +155,40 @@ def _apply_map(node: Any, meaning: Any, target: Mapping[Any, Any]) -> None:
             del node[node_key]
 
 
+def _carry_trailing_comment(node: Any, old_last: int, new_last: int) -> None:
+    """Comment lines after a list belong to its last item in the round-trip document; when items
+    are appended, move them (not an end-of-line comment) to the new last item."""
+    items: dict[Any, Any] | None = getattr(getattr(node, "ca", None), "items", None)
+    if items is None or old_last < 0 or new_last <= old_last:
+        return
+    entry = items.get(old_last)
+    if not entry or entry[0] is None:
+        return
+    token = entry[0]
+    text = str(token.value)
+    inline, newline, rest = ("", "", text) if text.startswith("\n") else text.partition("\n")
+    if not rest:
+        return
+    moved = copy.copy(token)
+    moved.value = rest if text.startswith("\n") else "\n" + rest
+    if inline:
+        token.value = inline + newline
+    else:
+        entry[0] = None
+        if not any(entry):
+            del items[old_last]
+    items[new_last] = [moved, None, None, None]
+
+
 def _apply_seq(node: Any, meaning: Any, target: list[Any]) -> None:
     old: list[Any] = cast(list[Any], meaning) if isinstance(meaning, list) else list(node)
+    before = len(node)
     for i, value in enumerate(target):
         if i < len(node):
             _apply_item(node, i, old[i] if i < len(old) else node[i], value)
         else:
             node.append(yamlio.to_roundtrip(value))
+    _carry_trailing_comment(node, before - 1, len(node) - 1)
     del node[len(target) :]
 
 

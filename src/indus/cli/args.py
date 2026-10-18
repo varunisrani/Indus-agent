@@ -175,6 +175,8 @@ class CliState:
     exit_fn: Callable[[int], None] = _process_exit
     stdin_isatty: Callable[[], bool] = field(default_factory=lambda: _isatty("stdin"))
     stdout_isatty: Callable[[], bool] = field(default_factory=lambda: _isatty("stdout"))
+    selected_by: str | None = None
+    """How bootstrap picked the profile (flag, env, sticky, default); None outside a real run."""
 
 
 def _isatty(name: str) -> Callable[[], bool]:

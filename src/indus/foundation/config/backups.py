@@ -16,7 +16,7 @@ from indus.foundation import fsio
 
 log = logging.getLogger(__name__)
 
-REASONS = frozenset({"good", "pre-write", "corrupt", "pre-migrate"})
+REASONS = frozenset({"good", "pre-write", "corrupt", "pre-migrate", "pre-setup"})
 DEFAULT_KEEP = 5
 _SUBDIR = ("backups", "config")
 

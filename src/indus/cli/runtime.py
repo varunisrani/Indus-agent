@@ -56,7 +56,7 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 DEFAULT_TOOLSETS: tuple[str, ...] = ("indus-cli",)
-"""The classic CLI's platform bundle, used when no ``-t`` was given."""
+"""The classic CLI's platform bundle, used when no ``-t`` was given and nothing is saved."""
 SOURCE_CLI = "cli"
 SOURCE_ONESHOT = "oneshot"
 _YOLO_ENV = "INDUS_YOLO_MODE"
@@ -97,8 +97,18 @@ def resolve_route(
     return resolve(scope, model=policy.model, provider=policy.provider)
 
 
-def toolset_selection(policy: LaunchPolicy) -> list[str]:
-    return list(policy.toolsets) if policy.toolsets else list(DEFAULT_TOOLSETS)
+def toolset_selection(policy: LaunchPolicy, scope: Scope | None = None) -> list[str]:
+    """``-t`` wins; else the list ``indus tools`` saved for the ``cli`` platform (not when the run
+    ignores the user's settings); else the platform bundle."""
+    if policy.toolsets:
+        return list(policy.toolsets)
+    if scope is not None and not (policy.ignore_user_config or policy.safe_mode):
+        from indus.cli.commands.tools import saved_selection
+
+        saved = saved_selection(scope, "cli")
+        if saved is not None:
+            return saved
+    return list(DEFAULT_TOOLSETS)
 
 
 def agent_factory(scope: Scope, route: RuntimeRoute, *, run_context: str) -> AgentFactory:
@@ -176,7 +186,7 @@ def build_service(spec: ServiceSpec) -> SessionService:
     return SessionService(
         spec.scope,
         spec.route,
-        toolsets=toolset_selection(spec.policy),
+        toolsets=toolset_selection(spec.policy, spec.scope),
         options=replace(options, store=store),
         store=store,
         answerable_kinds=spec.answerable_kinds,

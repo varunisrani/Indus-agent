@@ -133,6 +133,7 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-A56-1** Named custom OpenAI-compatible providers, with `ollama`/`vllm`/`llamacpp` as aliases for local …
   - `tests/unit/providers/test_registry.py::test_config_custom_provider_details`
   - `tests/unit/providers/test_registry.py::test_local_server_aliases`
+  - `tests/unit/cli/test_model_picker.py::test_active_provider_table`
 - **ACC-A63-1** Cross-process turn lease per session and a liveness watchdog that ends idle turns
   - Review: not yet planned (phase TBD)
 - **ACC-A64-1** Closed set of turn exit reasons logged for every turn
@@ -161,7 +162,9 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-B5-1** Titles: unique, sanitised, user > model > derived precedence, lineage numbering `name #2` …
   - Review: not yet planned (phase TBD)
 - **ACC-B6-1** Rich session listing with preview, last activity and filters (source, workspace, size)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_sessions.py::test_list_limit_and_workspace`
+  - `tests/unit/cli/commands/test_sessions.py::test_internal_sources_hidden_unless_named`
+  - `tests/unit/cli/commands/test_sessions.py::test_list_opens_read_only_and_changes_nothing`
 - **ACC-B7-1** Full-text search over all past messages with snippets → trigram and CJK bigram indexes, LIKE …
   - Review: not yet planned (phase TBD)
 - **ACC-B8-1** New session (`/new`, `/clear`), retry last turn (`/retry`), undo the last N turns (`/undo N`)
@@ -177,11 +180,16 @@ Checked by `python -m tooling.checks acceptance`.
   - Review: not yet planned (phase TBD)
 - **ACC-B12-1** Export: JSONL, Markdown, HTML, trace, prompts-only, with optional redaction; `/save json
   - `tests/unit/cli/slash/test_dispatch.py::test_save_writes_three_formats`
-  - Review: trace and prompts-only formats, redaction option (P07)
+  - `tests/unit/cli/commands/test_sessions.py::test_export_redacts_by_default`
+  - `tests/unit/cli/commands/test_sessions.py::test_export_markdown_and_html_per_session`
+  - Review: trace and prompts-only formats are not part of P07-14 (phase TBD)
 - **ACC-B15-1** Delete sessions (cascading to subagent children) with tombstones so a deleted id can never come back
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_sessions.py::test_delete_with_yes_tombstones_and_cascades`
+  - `tests/unit/cli/commands/test_sessions.py::test_delete_without_yes_on_non_tty_exits_1`
 - **ACC-B16-1** Manual prune by age/source/title with dry run → opt-in automatic prune and a one-time low-disk …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_sessions_maint.py::test_prune_dry_run_lists_then_yes_deletes`
+  - `tests/unit/cli/commands/test_sessions_maint.py::test_filtered_prune_and_include_pinned`
+  - Review: opt-in automatic prune and the low-disk prompt are P02 `auto_maintain` plus a surface prompt (phase TBD)
 - **ACC-B19-1** Resume size guard (20,000 messages) with stable refusal codes
   - Review: not yet planned (phase TBD)
 - **ACC-B20-1** Store safety: replaced-file detection, corruption quarantine, plain-language error buckets with a …
@@ -351,6 +359,10 @@ Checked by `python -m tooling.checks acceptance`.
   - Review: not yet planned (phase TBD)
 - **ACC-E9-1** Whole-script approval for `execute_code`
   - Review: not yet planned (phase TBD)
+- **ACC-E10-1** `indus approvals test`: dry verdict (allow / ask / deny) with the deciding rule and trace
+  - `tests/unit/cli/commands/test_approvals.py::test_verdict_table`
+  - `tests/unit/cli/commands/test_approvals.py::test_json_shape`
+  - `tests/unit/cli/commands/test_approvals.py::test_nothing_written`
 - **ACC-E11-1** Protected instruction files always ask before a write; credential and system paths refused
   - `tests/unit/tools/builtin/test_write_file.py::test_instruction_files_ask_and_write_once_approved`
   - `tests/unit/tools/builtin/test_write_file.py::test_instruction_file_without_a_surface_is_blocked`
@@ -467,7 +479,11 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/e2e/test_demo1.py::test_oneshot_exit_codes_from_the_real_entry`
   - Review: exit 75 (board worker, P24) and 3 (gateway lost owner, P17)
 - **ACC-I8-1** First-run guard that offers setup when no provider is usable
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_first_run.py::test_usable_signals`
+  - `tests/unit/cli/test_first_run.py::test_placeholder_key_ignored`
+  - `tests/unit/cli/test_first_run.py::test_non_tty_exits_1_with_guidance`
+  - `tests/unit/cli/test_first_run.py::test_tty_answers`
+  - `tests/unit/cli/test_first_run.py::test_chat_runs_the_first_run_guard`
 - **ACC-I9-1** One slash-command registry for every surface; dispatch order built-in → quick command → plugin → …
   - `tests/unit/cli/slash/test_dispatch.py::test_precedence_order`
   - `tests/unit/cli/slash/test_dispatch.py::test_observer_fires_first_and_cannot_block`
@@ -505,7 +521,11 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/foundation/test_profiles.py::test_markers`
   - `tests/unit/foundation/test_profiles.py::test_tombstoned_profile`
   - `tests/unit/foundation/test_profiles.py::test_write_active_default_removes_file`
-  - Review: profile create/list/use/show/delete/rename commands (P07)
+  - `tests/unit/cli/commands/test_profile.py::test_clone_strips_channels`
+  - `tests/unit/cli/commands/test_profile.py::test_clone_leaves_pool_secrets_behind`
+  - `tests/unit/cli/commands/test_profile.py::test_list_use_show_describe`
+  - `tests/unit/cli/commands/test_profile.py::test_delete_tombstones_and_profile_flag_refuses`
+  - `tests/unit/cli/commands/test_profile.py::test_rename_moves_everything`
 - **ACC-I13-2** `-p NAME` anywhere on the command line selects the profile before any app module is imported
   - `tests/unit/foundation/test_preparse.py::test_short_flag`
   - `tests/unit/foundation/test_preparse.py::test_long_flag_with_equals_anywhere`
@@ -519,22 +539,46 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/foundation/config/test_writer.py::test_default_equal_value_not_written`
 - **ACC-I16-3** A config file broken mid-edit keeps serving the last good settings
   - `tests/unit/foundation/config/test_loader.py::test_broken_after_good_serves_last_known_good`
+  - `tests/unit/cli/commands/test_config_read.py::test_broken_file_is_reported_by_show`
 - **ACC-I16-4** Config version stamp, migration runner and bounded backups
   - `tests/unit/foundation/config/test_backups_migrations.py::test_migrate_unstamped_stamps_and_lists_defaults`
   - `tests/unit/foundation/config/test_backups_migrations.py::test_keep_newest_five`
+  - `tests/unit/cli/commands/test_config_check.py::test_test_only_step_migrates_and_stamps`
+  - `tests/unit/cli/commands/test_config_check.py::test_migrate_malformed_refused_without_backup`
 - **ACC-I17-1** `indus config show
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_config_read.py::test_get_masking_table`
+  - `tests/unit/cli/commands/test_config_read.py::test_bare_config_is_show`
+  - `tests/unit/cli/commands/test_config_check.py::test_seeded_problems_each_reported`
+- **ACC-I17-2** `indus config set/unset`: credentials to the keychain, UPPER_SNAKE names to `.env`, values coerced by the default's type
+  - `tests/unit/cli/commands/test_config_write.py::test_coercion_table`
+  - `tests/unit/cli/commands/test_config_write.py::test_credential_goes_to_keychain`
+  - `tests/unit/cli/commands/test_config_write.py::test_upper_snake_goes_to_env_file`
 - **ACC-I18-1** `.env` secrets: home file beats shell exports; locked atomic writer with a denylist of dangerous …
   - `tests/unit/foundation/test_envload.py::test_file_beats_shell`
   - `tests/unit/foundation/test_envload.py::test_removed_recorded_key_is_cleared`
   - `tests/unit/foundation/test_envfile.py::test_set_replaces_every_line_shape`
   - `tests/unit/foundation/test_envfile.py::test_denylist_refused`
+- **ACC-I18-2** `.env` written from the CLI only through the locked writer and its denylist
+  - `tests/unit/cli/commands/test_config_write.py::test_upper_snake_goes_to_env_file`
+  - `tests/unit/cli/commands/test_config_write.py::test_denied_env_names_refused`
 - **ACC-I22-1** Auth store (`auth.json`) with cross-process lock and safe handling of unreadable or corrupt files
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/auth/test_store.py::test_two_processes_writing_at_once_both_land`
+  - `tests/unit/providers/auth/test_store.py::test_lock_timeout_names_the_holder_pid`
+  - `tests/unit/providers/auth/test_store.py::test_os_error_on_read_raises_any_platform`
+  - `tests/unit/providers/auth/test_store.py::test_corrupt_json_is_copied_aside_and_store_starts_empty`
+  - `tests/unit/providers/auth/test_store.py::test_secret_never_lands_in_the_json`
 - **ACC-I23-1** `indus auth add
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_auth.py::test_add_api_key_stores_the_secret_in_the_store_only`
+  - `tests/unit/cli/commands/test_auth.py::test_non_tty_add_without_key_exits_1_with_guidance`
+  - `tests/unit/cli/commands/test_auth.py::test_list_shows_index_label_type_source_and_status`
+  - `tests/unit/cli/commands/test_auth.py::test_logout_clears_state_and_resets_model_provider`
 - **ACC-I25-1** `indus model` picker: provider → key → live or curated model list → reasoning effort; custom …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_model_picker.py::test_live_list_pick_saves_everything`
+  - `tests/unit/cli/test_model_picker.py::test_custom_endpoint_detects_its_only_model`
+  - `tests/unit/cli/test_model_picker.py::test_cancel_writes_nothing`
+  - `tests/unit/cli/test_model_picker.py::test_custom_to_named_clears_stale_route`
+  - `tests/unit/cli/test_model_picker.py::test_cache_ttls`
+  - `tests/unit/cli/test_model_picker.py::test_sign_in_stores_the_minted_key`
 - **ACC-I26-1** `/model` switches among configured providers for the session or globally
   - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_and_provider_forms`
   - `tests/unit/cli/slash/test_control_cmds.py::test_model_while_busy_rejected`
@@ -542,27 +586,60 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/slash/test_control_cmds.py::test_model_global_persists_and_clears_a_stale_custom_url`
   - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_survives_resume`
 - **ACC-I27-1** `indus fallback list
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_fallback.py::test_add_remove_clear_round_trip`
+  - `tests/unit/cli/commands/test_fallback.py::test_malformed_entries_are_reported`
+  - `tests/unit/cli/commands/test_fallback.py::test_non_tty_argument_forms`
+  - `tests/unit/cli/commands/test_fallback.py::test_add_with_picker_keeps_primary`
 - **ACC-I29-1** Setup wizard: sections (model, terminal, gateway, tools, agent), non-interactive guidance, full and …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/setup/test_wizard.py::test_full_first_install`
+  - `tests/unit/cli/setup/test_wizard.py::test_blank_slate`
+  - `tests/unit/cli/setup/test_wizard.py::test_non_tty_prints_guidance`
+  - `tests/unit/cli/setup/test_wizard.py::test_back_from_terminal_returns_to_model`
+  - `tests/unit/cli/setup/test_wizard.py::test_backup_before_reset`
+  - `tests/integration/cli/test_setup_first_run.py::test_clean_home_to_first_answer`
 - **ACC-I30-1** `indus tools list
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_tools.py::test_enable_disable_persist`
+  - `tests/unit/cli/commands/test_tools.py::test_disable_web_from_default_bundle`
+  - `tests/unit/cli/commands/test_tools.py::test_failing_probe_reason_shown`
+  - `tests/unit/cli/commands/test_tools.py::test_chat_uses_the_saved_cli_selection`
 - **ACC-I31-1** `indus sessions` list / browse / rename / delete / export / prune / archive / pin / stats with …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_sessions.py::test_export_redacts_by_default`
+  - `tests/unit/cli/commands/test_sessions.py::test_pin_unpin_and_pinned`
+  - `tests/unit/cli/commands/test_sessions.py::test_browse_resumes_the_pick`
+  - `tests/unit/cli/commands/test_sessions_maint.py::test_archive_ended_matches`
+  - `tests/unit/cli/commands/test_sessions_maint.py::test_optimize_under_a_held_handle_skips_with_a_message`
 - **ACC-I32-1** `indus checkpoints status
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_checkpoints.py::test_status_rows`
+  - `tests/unit/cli/commands/test_checkpoints.py::test_plan_order_orphans_stale_then_oldest_to_the_cap`
+  - `tests/unit/cli/commands/test_checkpoints.py::test_clear_without_force_on_non_tty_exits_1`
+  - Review: against the real shadow-git store once it lands (P11)
 - **ACC-I33-1** `indus backup` (whole home as a zip, databases copied safely while running) and `indus import` with …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_backup.py::test_every_excluded_kind_stays_out`
+  - `tests/unit/cli/commands/test_backup.py::test_database_copied_while_a_writer_holds_a_transaction`
+  - `tests/unit/cli/commands/test_import.py::test_corrupt_member_leaves_the_home_untouched`
+  - `tests/unit/cli/commands/test_import.py::test_backup_taken_while_running_restores_with_the_same_counts`
 - **ACC-I34-1** `indus doctor` with `--fix`, `--live` probes and advisory acknowledgements
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_doctor.py::test_fix_repairs_dirs_modes_and_env`
+  - `tests/unit/cli/commands/test_doctor.py::test_live_probe_reachable`
+  - `tests/unit/cli/commands/test_doctor.py::test_ack_records_the_advisory`
+  - `tests/unit/cli/commands/test_doctor.py::test_minimal_matches_the_milestone_report`
+  - `tests/unit/cli/commands/test_doctor.py::test_minimal_reports_how_bootstrap_picked_the_profile`
 - **ACC-I37-1** `indus status` (one screen) with `--full` and `--deep`
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_status.py::test_status_golden`
+  - `tests/unit/cli/commands/test_status.py::test_status_full_and_deep_show_names_only`
+  - `tests/unit/cli/commands/test_status.py::test_status_and_dump_count_sign_ins`
 - **ACC-I38-1** `indus logs` viewer with file, level, session, time and component filters and follow mode
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_logs.py::test_filters_and_together`
+  - `tests/unit/cli/commands/test_logs.py::test_follow_survives_rotation_and_truncation`
+  - `tests/unit/cli/commands/test_logs.py::test_since_uses_the_scope_clock`
 - **ACC-I41-1** `indus update`: git channel (stable tags / main), syntax check and rollback, dependency sync …
   - Review: not yet planned (phase TBD)
 - **ACC-I42-1** `indus uninstall` (keep data / full / desktop only / data only, dry run)
   - Review: not yet planned (phase TBD)
+- **ACC-I43-1** Shell completion scripts (bash, zsh, fish) from the live command tree, with profile, session and toolset values
+  - `tests/unit/cli/commands/test_completion.py::test_script_heads`
+  - `tests/unit/cli/commands/test_completion.py::test_profile_completion_from_root`
+  - `tests/unit/cli/commands/test_completion.py::test_slow_store_gives_nothing_without_hanging`
 - **ACC-I45-1** Version output naming install method and update availability
   - `tests/unit/cli/test_entry.py::test_version_fast_path_prints_the_block`
   - `tests/unit/cli/test_entry.py::test_install_method_order`

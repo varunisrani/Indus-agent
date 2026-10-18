@@ -156,6 +156,18 @@ def _usage_problem(args: GlobalArgs, chat: ChatArgs) -> str | None:
     return reasoning_problem(args.reasoning)
 
 
+def _guards(state: CliState, args: GlobalArgs) -> int | None:
+    """P07-03: the first-run guard (skipped when a driver injects the route) and the explicit
+    route guard; an int is the exit code."""
+    from indus.cli import first_run
+
+    if state.overrides is None or state.overrides.route is None:
+        stop = first_run.first_run_guard(state)
+        if stop is not None:
+            return stop
+    return first_run.route_guard(state, args)
+
+
 def run_chat(state: CliState, args: GlobalArgs, chat: ChatArgs) -> int:
     """Run ``chat`` with the merged global flags; returns the exit code."""
     problem = _usage_problem(args, chat)
@@ -166,6 +178,9 @@ def run_chat(state: CliState, args: GlobalArgs, chat: ChatArgs) -> int:
     if interface == "tui":
         _err(TUI_PENDING)
         return 2
+    stop = _guards(state, args)
+    if stop is not None:
+        return stop
     try:
         query = read_query(chat)
     except OSError as exc:

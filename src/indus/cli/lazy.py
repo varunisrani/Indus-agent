@@ -75,12 +75,14 @@ class LazyGroup(click.Group):
         rows: list[tuple[str, str]] = []
         for name in self.list_commands(ctx):
             loaded = self.commands.get(name)
-            if loaded is not None:
-                if loaded.hidden:
-                    continue
-                rows.append((name, loaded.get_short_help_str(limit=formatter.width)))
-            else:
+            if loaded is not None and loaded.hidden:
+                continue
+            if name in self._short or loaded is None:
+                # The registry's one-liner wins, so the listing is the same whether or not the
+                # command was imported earlier in this process.
                 rows.append((name, self._short.get(name, "")))
+            else:
+                rows.append((name, loaded.get_short_help_str(limit=formatter.width)))
         if rows:
             with formatter.section("Commands"):
                 formatter.write_dl(rows)

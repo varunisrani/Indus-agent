@@ -1,0 +1,89 @@
+# P07-26: what every `indus` command does with stdin and stdout not terminals (R04.19).
+#
+# `commands`: each visible command and subcommand, run with no further arguments, in a fresh
+# profile (no settings, no keys, no sessions). The value is the exit code it must end with:
+#   0 informational (it printed what there is), 1 guidance (it said what to run instead),
+#   2 usage (a required argument is missing).
+# A new command without a row fails the contract, and so does a row whose command is gone.
+#
+# `with_arguments`: guidance cases that need an argument to reach (argv → exit code).
+
+commands:
+  chat: 1                 # first-run guard: not set up, prints what to run
+  model: 1
+  fallback: 0
+  fallback list: 0
+  fallback add: 1
+  fallback remove: 0
+  fallback clear: 0
+  setup: 0                # prints the non-interactive setup steps
+  auth: 0                 # lists the pools and the subcommands
+  auth add: 2
+  auth list: 0
+  auth remove: 2
+  auth reset: 2
+  auth priority: 2
+  auth refresh: 2
+  auth status: 2
+  auth logout: 2
+  status: 0
+  doctor: 1               # a fresh profile has no settings file and no provider yet
+  approvals: 0
+  approvals test: 1
+  dump: 0
+  backup: 0               # writes the zip into the profile owner's home folder
+  checkpoints: 0
+  checkpoints status: 0
+  checkpoints list: 0
+  checkpoints prune: 0
+  checkpoints clear: 0
+  import: 2
+  config: 0
+  config show: 0
+  config get: 2
+  config set: 2
+  config unset: 2
+  config edit: 1
+  config check: 0
+  config migrate: 0       # dry run
+  config path: 0
+  config env-path: 0
+  tools: 0                # lists instead of the checklist
+  tools list: 0
+  tools enable: 2
+  tools disable: 2
+  sessions: 2             # a group with no default action prints its help
+  sessions list: 0
+  sessions browse: 0      # lists without a picker
+  sessions pinned: 0
+  sessions rename: 2
+  sessions delete: 2
+  sessions pin: 2
+  sessions unpin: 2
+  sessions stats: 0
+  sessions export: 0
+  sessions prune: 0
+  sessions archive: 2     # refuses to archive everything without a filter
+  sessions optimize: 0
+  sessions repair: 0
+  sessions recover: 2
+  sessions import: 2
+  profile: 0
+  profile list: 0
+  profile use: 2
+  profile show: 2
+  profile create: 2
+  profile delete: 2
+  profile rename: 2
+  profile describe: 0
+  profile alias: 2
+  completion: 0           # bash by default
+  logs: 1                 # no log file yet
+
+with_arguments:
+  auth add openrouter: 1          # no key given and no terminal to ask for one
+  profile delete work: 1          # needs -y without a terminal
+  sessions delete no-such-id: 1
+  import missing.zip: 1
+  config set agent.max_turns: 2
+  logs -f: 1

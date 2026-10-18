@@ -183,7 +183,7 @@ def main(
     early = _EarlyRecords()
     try:
         with early:
-            scope, args = bootstrap.run(
+            scope, args, selection = bootstrap.run_selected(
                 args,
                 target,
                 mode=mode,
@@ -212,7 +212,13 @@ def main(
     from indus.cli.app import dispatch
     from indus.cli.args import CliState
 
-    state = CliState(scope=scope, env=target, process=process, overrides=overrides)
+    state = CliState(
+        scope=scope,
+        env=target,
+        process=process,
+        overrides=overrides,
+        selected_by=selection.source,
+    )
     code = dispatch(args, state)
     if state.hard_exit and process:
         _hard_exit(code)

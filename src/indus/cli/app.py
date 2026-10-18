@@ -38,6 +38,51 @@ __all__ = [
 
 REGISTRY: tuple[tuple[str, str, str], ...] = (
     ("chat", "indus.cli.chat:chat_command", "Chat with the agent (the default command)."),
+    ("model", "indus.cli.model_picker:model_command", "Choose the provider and model for chats."),
+    (
+        "fallback",
+        "indus.cli.commands.fallback:fallback_command",
+        "Routes tried in order when the main model fails.",
+    ),
+    ("setup", "indus.cli.setup:setup_command", "Set up Indus Agent step by step."),
+    ("auth", "indus.cli.commands.auth:auth_group", "Manage provider keys, sign-ins and pools."),
+    ("status", "indus.cli.commands.status:status_command", "Show model, provider and store."),
+    ("doctor", "indus.cli.commands.doctor:doctor_command", "Check the setup; --fix repairs."),
+    (
+        "approvals",
+        "indus.cli.commands.approvals:approvals_command",
+        "Check what the approval rules would do with a command.",
+    ),
+    ("dump", "indus.cli.commands.dump:dump_command", "Print a setup summary for support."),
+    ("backup", "indus.cli.commands.backup:backup_command", "Back up the home into a zip file."),
+    (
+        "checkpoints",
+        "indus.cli.commands.checkpoints:checkpoints_group",
+        "Inspect and trim file checkpoints.",
+    ),
+    ("import", "indus.cli.commands.import_cmd:import_command", "Restore a backup zip."),
+    ("config", "indus.cli.commands.config_read:config_command", "Show and change settings."),
+    (
+        "tools",
+        "indus.cli.commands.tools:tools_command",
+        "Choose which toolsets each platform gets.",
+    ),
+    (
+        "sessions",
+        "indus.cli.commands.sessions:sessions_group",
+        "List, export and tidy saved sessions.",
+    ),
+    (
+        "profile",
+        "indus.cli.commands.profile:profile_command",
+        "Create, switch and manage profiles.",
+    ),
+    (
+        "completion",
+        "indus.cli.commands.completion:completion_command",
+        "Print a shell completion script (bash, zsh or fish).",
+    ),
+    ("logs", "indus.cli.commands.logs:logs_command", "Show and follow the log files."),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""
@@ -46,6 +91,18 @@ _CONTINUE = ("-c", "--continue")
 _RESUME = ("-r", "--resume")
 
 type Decorator = Callable[[Callable[..., Any]], Callable[..., Any]]
+
+
+def _complete_with(name: str) -> Callable[[click.Context, click.Parameter, str], list[Any]]:
+    """A ``shell_complete`` hook that imports the completion module only when a shell asks."""
+
+    def complete(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[Any]:
+        from indus.cli.commands import completion
+
+        hook: Callable[[click.Context, click.Parameter, str], list[Any]] = getattr(completion, name)
+        return hook(ctx, param, incomplete)
+
+    return complete
 
 
 def _not_given(flag: bool) -> dict[str, Any]:
@@ -64,6 +121,7 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
                 "--profile",
                 metavar="NAME",
                 expose_value=False,
+                shell_complete=_complete_with("complete_profiles"),
                 help="Run against the named profile (works in any position).",
             )
         )
@@ -94,13 +152,22 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
             help="Reasoning effort: none, minimal, low, medium, high, xhigh, max or ultra.",
         )
     )
-    add(click.option("-t", "--toolsets", default=None, help="Comma-separated toolsets to enable."))
+    add(
+        click.option(
+            "-t",
+            "--toolsets",
+            default=None,
+            shell_complete=_complete_with("complete_toolsets"),
+            help="Comma-separated toolsets to enable.",
+        )
+    )
     add(
         click.option(
             "-r",
             "--resume",
             metavar="SESSION",
             default=None,
+            shell_complete=_complete_with("complete_session_titles"),
             help="Resume a session by id or title; 'latest' picks the newest one here.",
         )
     )
@@ -113,6 +180,7 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
             is_flag=False,
             flag_value=BARE_CONTINUE,
             default=None,
+            shell_complete=_complete_with("complete_session_titles"),
             help="Continue the session called NAME, or the newest one when no name is given.",
         )
     )
