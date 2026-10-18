@@ -58,6 +58,7 @@ ERROR_CODES: dict[str, str] = {
     "store.session_guarded": "the session is in use (live turn lease or compression lock)",
     "store.vacuum_refused": "another handle or process has the session store open; VACUUM refused",
     "store.meta_too_large": "a per-session metadata value is larger than the 64 KiB limit",
+    "session.busy": "another surface or process is running this session (per-session lock)",
     "provider.error": "model provider problem",
     "provider.invalid_profile": "a provider profile has a missing or invalid field",
     "provider.invalid_base_url": "a provider base URL is not a usable http(s) URL",
@@ -65,12 +66,17 @@ ERROR_CODES: dict[str, str] = {
     "provider.no_usable": "no provider could be resolved with a usable endpoint and key",
     "provider.key_host_mismatch": "a provider key would be sent to a host it does not belong to",
     "provider.context_too_small": "the model's context window is below the supported minimum",
+    "provider.route_refused": "a route switch was refused: the route has no model or base URL",
     "provider.http": "the model provider answered with an HTTP error status",
     "provider.stream": "the model provider reported an error inside a stream or ended it early",
     "provider.stale_breaker": "the provider stayed silent on too many attempts in a row",
     "tools.error": "tool registry or dispatch problem",
     "tools.bad_schema": "a tool schema or its parameters is not a JSON object",
     "tools.name_taken": "a tool name is already registered in another toolset",
+    "blocking.error": "blocking work could not be run off the event loop",
+    "blocking.pool_full": "every worker of a blocking pool is busy; the work was refused",
+    "blocking.pool_closed": "the blocking pool was shut down; the work was refused",
+    "blocking.deadline_missed": "blocking work missed its deadline and was abandoned",
 }
 
 
@@ -307,6 +313,12 @@ class ContextTooSmall(ProviderError):
         super().__init__(code_or_message, message, detail=detail, hint=hint)
         self.tokens: int = tokens
         self.source: str = source
+
+
+class RouteRefused(ProviderError):
+    """A route cannot be bound: it names no model or no base URL (P04-23)."""
+
+    default_code = "provider.route_refused"
 
 
 class ProviderHTTPError(ProviderError):

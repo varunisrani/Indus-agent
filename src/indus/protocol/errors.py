@@ -167,6 +167,7 @@ _INDUS_EXACT: MappingProxyType[str, ErrorCode] = MappingProxyType(
         "store.compression_closed": SESSION_REFUSED,
         "store.session_guarded": SESSION_BUSY,
         "store.turn_lease_lost": SESSION_BUSY,
+        "session.busy": SESSION_BUSY,
     }
 )
 # Fallbacks by code family (the part before the first dot).

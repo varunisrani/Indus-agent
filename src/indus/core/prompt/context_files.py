@@ -14,8 +14,8 @@ later categories are not even read:
 
 Files inside the Indus install tree are never project context (R01.15). Each file is screened
 with ``safety.threat_scan`` and replaced by a one-line marker on a hit, then capped. Every read
-runs on a worker thread with a deadline on the scope's clock; a read that misses it is abandoned,
-never joined, and counts as empty.
+runs on the shared ``io`` blocking pool with a deadline on the scope's clock; a read that misses it
+is abandoned, never joined, and counts as empty.
 
 Truncation warnings go to the list installed by ``collect_warnings()`` — a context variable, so
 concurrent prompt builds each see only their own.
@@ -23,11 +23,8 @@ concurrent prompt builds each see only their own.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import re
-import threading
 from collections.abc import Awaitable, Callable, Generator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -36,6 +33,7 @@ from pathlib import Path
 
 import indus
 from indus.core.prompt import texts
+from indus.foundation.blocking import DeadlineMissed, PoolFull, run_blocking
 from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope
 from indus.safety import threat_scan
@@ -146,57 +144,29 @@ class ReadSettings:
         return cls(clock=scope.clock, deadline=deadline, reader=reader or read_utf8)
 
 
-def _settle(future: asyncio.Future[str], value: str | None, error: BaseException | None) -> None:
-    if future.done():
-        return
-    if error is not None:
-        future.set_exception(error)
-    else:
-        future.set_result(value or "")
-
-
-def _drain(future: asyncio.Future[str]) -> None:
-    # An abandoned read may still fail later; fetch the error so asyncio does not report it.
-    if not future.cancelled():
-        future.exception()
-
-
-def _start_read(path: Path, reader: Reader) -> asyncio.Future[str]:
-    """Run ``reader(path)`` on a daemon thread. The thread is never joined: a read stuck on a
-    network file system must not hold up the turn, nor the process exit."""
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[str] = loop.create_future()
-
-    def run() -> None:
-        value: str | None = None
-        error: BaseException | None = None
-        try:
-            value = reader(path)
-        except BaseException as exc:  # handed to the awaiting task, not raised here
-            error = exc
-        with contextlib.suppress(RuntimeError):  # the loop is gone; nobody is waiting any more
-            loop.call_soon_threadsafe(_settle, future, value, error)
-
-    threading.Thread(target=run, name=f"indus-context-read:{path.name}", daemon=True).start()
-    return future
-
-
 async def read_bounded(path: Path, settings: ReadSettings) -> str | None:
-    """The file's text, or None when it is missing, unreadable or not read within the deadline."""
-    work = _start_read(path, settings.reader)
-    work.add_done_callback(_drain)  # also covers a read abandoned by an interrupt
-    timer = asyncio.ensure_future(settings.clock.sleep(settings.deadline))
+    """The file's text, or None when it is missing, unreadable or not read within the deadline.
+
+    The read runs on the shared ``io`` pool (D-04.1); one stuck on a network file system is
+    abandoned, never joined, so it holds up neither the turn nor process exit.
+    """
     try:
-        done, _ = await asyncio.wait({work, timer}, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        timer.cancel()
-    if work not in done:
+        return await run_blocking(
+            settings.reader,
+            path,
+            pool="io",
+            deadline=settings.deadline,
+            clock=settings.clock,
+            label=f"context file read {path}",
+        )
+    except DeadlineMissed:  # before OSError: it is a TimeoutError too
         log.warning(
             "context file %s was not read within %.1f s; skipping it", path, settings.deadline
         )
         return None
-    try:
-        return work.result()
+    except PoolFull:
+        log.warning("context file %s skipped: every file-read worker is busy", path)
+        return None
     except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
         return None
     except (OSError, UnicodeDecodeError, ValueError) as exc:

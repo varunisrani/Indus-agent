@@ -3,8 +3,8 @@
 Steps: refuse names the agent loop runs itself (the inline table) → look the tool up (unknown →
 ``Unknown tool: <name>``) → repair argument types (``coerce``) → the ``before`` hook → run the
 handler with only the context keywords its signature declares (R02.28): async handlers are
-awaited, sync handlers run on a worker thread with the entry's deadline → check the result
-contract → ``after`` and ``transform`` hooks.
+awaited, sync handlers run on the shared ``tools`` pool (D-04.1) with the entry's deadline →
+check the result contract → ``after`` and ``transform`` hooks.
 
 Nothing a handler does escapes as an exception: a raise becomes
 ``Tool failed: <Type>: <message>`` with chat framing removed and the text bounded; a result that is
@@ -14,7 +14,6 @@ neither text nor the multimodal envelope becomes a contract error.
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import functools
 import inspect
 import logging
@@ -23,6 +22,7 @@ import time
 from collections.abc import Callable, Container, Mapping
 from typing import Any, cast
 
+from indus.foundation.blocking import run_blocking
 from indus.tools.calls import (
     MAX_LOGGED_ERROR_CHARS,
     ToolCall,
@@ -128,17 +128,13 @@ def narrow_kwargs(handler: Callable[..., Any], offered: Mapping[str, Any]) -> di
     return {k: v for k, v in offered.items() if k in named}
 
 
-async def run_sync(fn: Callable[[], Any], deadline_s: float | None) -> Any:
-    """Run blocking ``fn`` on the loop's bounded worker pool, in a copy of this context.
+async def run_sync(fn: Callable[[], Any], deadline_s: float | None, *, label: str = "") -> Any:
+    """Run blocking ``fn`` on the shared ``tools`` pool, in a copy of this context (D-04.1).
 
-    Past ``deadline_s`` the caller gets ``TimeoutError``; the thread is abandoned, not killed.
+    Past ``deadline_s`` the caller gets ``DeadlineMissed`` (a ``TimeoutError``); the thread is
+    abandoned, not killed. Every worker busy → ``PoolFull``.
     """
-    loop = asyncio.get_running_loop()
-    ctx = contextvars.copy_context()
-    future = loop.run_in_executor(None, ctx.run, fn)
-    if deadline_s is None:
-        return await future
-    return await asyncio.wait_for(future, deadline_s)
+    return await run_blocking(fn, pool="tools", deadline=deadline_s, label=label)
 
 
 async def _invoke(entry: ToolEntry, args: dict[str, Any], kwargs: dict[str, Any]) -> Any:
@@ -150,7 +146,8 @@ async def _invoke(entry: ToolEntry, args: dict[str, Any], kwargs: dict[str, Any]
         if entry.timeout_s is None:
             return await awaitable
         return await asyncio.wait_for(awaitable, entry.timeout_s)
-    return await run_sync(functools.partial(entry.handler, args, **kwargs), entry.timeout_s)
+    handler = functools.partial(entry.handler, args, **kwargs)
+    return await run_sync(handler, entry.timeout_s, label=f"tool {entry.name}")
 
 
 def check_result(name: str, raw: object) -> ToolResult:
