@@ -15,11 +15,11 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 ## Last stop
 - By: **Agent 2** (holds the turn, ACTIVE) | At: 2026-10-18 15:50 UTC | Branch: `main` (pushed to origin)
 - Agent 2 took the turn at 14:26 UTC (`782a431`).
-- Last verified code commit: `87719b2` (wave 5, P04-01..12 + 17: 3292 pytest passed, 3 skipped; pyright 0; pnpm lint/fmt/typecheck/test ok; 10 checks ok). P02 complete at `928ce0b`.
+- Last verified code commit: `4d1588d` (P04 core loop: 3566 pytest passed, 3 skipped; pyright 0; 10 checks ok). Earlier: wave 5 `87719b2`, wave 6a lock/broker/golden/route/blocking `cc17d69`, P02 complete `928ce0b`.
 
 ## Usage at last stop
 📊 Agent 1 usage: 8% used (reading 11:07 UTC), resets 16:00 UTC — ACTIVE (plan done)
-📊 Agent 2 usage: 30% used, 70% left (reading 15:26 UTC) — resets 19:20 UTC — ACTIVE
+📊 Agent 2 usage: 46% used, 54% left (reading 16:20 UTC) — resets 19:20 UTC — ACTIVE
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
@@ -33,7 +33,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); P02 done (`98fa4e8`, `928ce0b`, Agent 2); P04-01..12 + 17 done (`87719b2`); wave 6a = P04-13..16, 18, 19, 22, 23 (route), 21 (lock + broker) building
+- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); P02 done (`98fa4e8`, `928ce0b`, Agent 2); P04-01..19, 21 (lock+broker), 22, 23 (route) done (`87719b2`, `cc17d69`, `4d1588d`); wave 6b = P04-20, 21 rest, 23 D-04.1 building
 
 ## Files changed (uncommitted or parked)
 Nothing parked in `.agents/wip/`.
@@ -64,11 +64,11 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-**Agent 2, in flight (15:50 UTC):** wave 6a builders: X = P04-13/14/15/16/18/19 (core loop),
-Y = P04-22 golden + P04-23 RouteBinding, Z = P04-21 session lock + server-request broker. Then wave
-6b = P04-20 Agent, rest of P04-21 (SessionService, InProcessHost), P04-23 D-04.1 criteria + decision;
-then P05, P06 (Demo 1). Landing notes per wave: `docs/plan/phases/LEAD-NOTES.md`. If you find this
-mid-wave with the turn PAUSED, look in `.agents/wip/` for saved slices.
+**Agent 2, in flight (16:30 UTC):** P04 is done except wave 6b: builder S = P04-20 Agent + rest of
+P04-21 (SessionService, InProcessHost) + D-04.1 criterion (e); builder T = P04-23 D-04.1 criteria
+(a)-(d) + `docs/notes/P04/d-04-1-decision.md`. Then P05 (core tools), P06 (Demo 1). Landing notes per
+wave: `docs/plan/phases/LEAD-NOTES.md`. If you find this mid-wave with the turn PAUSED, look in
+`.agents/wip/` for saved slices.
 
 Previous plan (wave 4 is done):
 Builder rules for sub-agents: `docs/plan/phases/builder-rules.md` (replace `<scratch>` with your own scratch dir). Lead notes and cross-phase rulings: `docs/plan/phases/LEAD-NOTES.md`.
