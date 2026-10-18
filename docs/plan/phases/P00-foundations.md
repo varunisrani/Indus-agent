@@ -1,6 +1,6 @@
 # P00 · Foundations
 
-**Weeks:** 1 (week 1; 7 of 14 tasks already landed) · **Tracks:** backend (repo, guards, Python tooling, fakes, async trial), frontend (pnpm workspace, `@indus/ui` tokens) · **Depends on:** — · **Status:** 🔨 in progress (P00-01 … P00-07 ✅ done, landed in `c790e93`)
+**Weeks:** 1 (week 1) · **Tracks:** backend (repo, guards, Python tooling, fakes, async trial), frontend (pnpm workspace, `@indus/ui` tokens) · **Depends on:** — · **Status:** ✅ done (P00-01..07 in `c790e93`, P00-08..14 in `ef25266`)
 
 ## Goal
 A repository where every later task can run one loop and trust it: Python and TypeScript both lint,
