@@ -150,11 +150,13 @@ def _pem_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _spans_for(text: str) -> list[tuple[int, int]]:
+def _spans_for(text: str, assignments: bool = True) -> list[tuple[int, int]]:
     spans = _pem_spans(text)
     for pattern in (_VENDOR_KEYS, _AUTH_HEADER, _BEARER, _JWT, _URL_USERINFO, _QUERY_PARAM):
         for match in pattern.finditer(text):
             spans.append(match.span("s"))
+    if not assignments:
+        return spans
     for match in _ASSIGN.finditer(text):
         for group in ("dq", "sq", "s"):
             if match.group(group) is not None:
@@ -184,14 +186,18 @@ def _exact_pattern(values: Iterable[str]) -> re.Pattern[str] | None:
     return re.compile("|".join(re.escape(v) for v in unique))
 
 
-def redact_text(text: str, secrets: Iterable[str] = ()) -> str:
-    """Mask credential shapes and the given exact values in ``text`` (no scope needed)."""
+def redact_text(text: str, secrets: Iterable[str] = (), *, assignments: bool = True) -> str:
+    """Mask credential shapes and the given exact values in ``text`` (no scope needed).
+
+    ``assignments=False`` skips the ``NAME=value`` / ``"name": "value"`` pass (source code)."""
     values = [v for v in secrets if len(v) >= MIN_EXACT_LENGTH]
-    return _redact(text, _exact_pattern(values), values)
+    return _redact(text, _exact_pattern(values), values, assignments)
 
 
-def _redact(text: str, exact: re.Pattern[str] | None, values: list[str]) -> str:
-    spans = _spans_for(text)
+def _redact(
+    text: str, exact: re.Pattern[str] | None, values: list[str], assignments: bool = True
+) -> str:
+    spans = _spans_for(text, assignments)
     if exact is not None:
         spans.extend(m.span() for m in exact.finditer(text))
     if not spans:
@@ -282,11 +288,11 @@ class Redactor:
             self._signature, self._values, self._exact = key, values, exact
         return exact, values
 
-    def redact(self, text: str, *, force: bool = False) -> str:
+    def redact(self, text: str, *, force: bool = False, assignments: bool = True) -> str:
         if not text or not (force or self.enabled):
             return text
         exact, values = self._current()
-        return _redact(text, exact, values)
+        return _redact(text, exact, values, assignments)
 
     def redact_obj(self, obj: Any, *, force: bool = False) -> Any:
         """Return a copy of ``obj`` with every string redacted; values under credential-shaped

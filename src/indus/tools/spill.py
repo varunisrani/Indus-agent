@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from indus.foundation.fsio import atomic_write_bytes
 from indus.foundation.home import secure_dir
+from indus.safety.redaction import spill_redactor
 from indus.tools.budget import DEFAULT_BUDGET, Budget
 
 if TYPE_CHECKING:
@@ -111,7 +112,8 @@ def host_spill_for(
     redact: Callable[[str], str] | None = None,
 ) -> HostSpill:
     """A host sink for ``scope`` whose first save sweeps the profile's old spill files once per
-    process, with the scope's retention window and clock."""
+    process, with the scope's retention window and clock. Text is force-redacted first
+    (``safety.redaction.spill_redactor``) unless the caller passes its own ``redact``."""
 
     def sweep_after_save(home: Path) -> None:
         sweep_once(
@@ -121,6 +123,8 @@ def host_spill_for(
             referenced=referenced,
         )
 
+    if redact is None:
+        redact = spill_redactor(scope)
     return HostSpill(scope.home, redact=redact, after_save=sweep_after_save)
 
 

@@ -1,0 +1,13 @@
+{
+  "note": "Files in src/ that may read the process environment directly. Each entry: \"<path>\": \"why this file owns process env access\". Everything else reads the scope's env view, and child processes get theirs from indus.safety.child_env.",
+  "allow": {
+    "src/indus/foundation/bootstrap.py": "process bootstrap: chooses the profile and writes INDUS_HOME/scratch vars before any scope exists",
+    "src/indus/foundation/envload.py": "publish_to_process: the single-profile CLI entry publishes its env view to the process once",
+    "src/indus/foundation/home.py": "home resolution runs before a scope exists; callers can pass an env mapping instead",
+    "src/indus/foundation/scope.py": "EnvView.from_process: the one snapshot of the process env every scope starts from",
+    "src/indus/platform/facts.py": "platform probes sit below foundation (no scope); the process env is only the default when no mapping is passed",
+    "src/indus/platform/locate.py": "executable lookup sits below foundation (no scope); the process env is only the default when no mapping is passed",
+    "src/indus/state/connection.py": "test-isolation guard (R03.24) must see the real process env markers; callers can pass a mapping",
+    "src/indus/state/doctor_report.py": "module entry point: reads the process env to report how the profile was selected, before bootstrap"
+  }
+}

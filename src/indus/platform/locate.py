@@ -12,6 +12,7 @@ The process environment is read (PATH, for the ambient search) but never modifie
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
@@ -72,6 +73,11 @@ def _first_executable(base: Path, suffixes: list[str]) -> Path | None:
         if _is_executable_file(candidate):
             return candidate
     return None
+
+
+def which(name: str, path: str | None = None) -> str | None:
+    """Plain PATH lookup for callers outside this package (the lookup ratchet keeps it here)."""
+    return shutil.which(name, path=path)
 
 
 def locate(

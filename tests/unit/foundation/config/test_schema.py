@@ -22,7 +22,18 @@ def test_decided_defaults() -> None:
         "clarify_timeout": 3600,
         "local_stream_stale_timeout": 900,
     }
-    assert d["terminal"] == {"backend": "local", "cwd": ".", "timeout": 180}
+    assert d["terminal"] == {
+        "backend": "local",
+        "cwd": ".",
+        "timeout": 180,
+        "env_passthrough": [],
+        "persistent_shell": True,
+        "temp_dir": "",
+        "lifetime_s": 300,
+        "degraded_mode": "warn",
+        "daemon_term_grace_s": 2.0,
+    }
+    assert d["tool_output"] == {"max_chars": 50000}
     assert d["approvals"] == {"mode": "manual", "timeout": 300, "deny": []}
     assert d["database"]["journal_mode"] == "wal"
     assert d["sessions"] == {

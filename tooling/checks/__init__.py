@@ -11,4 +11,5 @@ NAMES = (
     "pins",
     "locales",
     "protocol_stale",
+    "no_raw_environ",
 )

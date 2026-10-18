@@ -55,6 +55,31 @@ class TerminalSection(_Section):
     backend: str = Field(default="local", description="where commands run: local, docker, ssh, ...")
     cwd: str = Field(default=".", description="working directory for commands")
     timeout: int = Field(default=180, description="seconds before a command is stopped")
+    env_passthrough: list[str] = Field(
+        default_factory=list, description="extra variable names passed through to commands"
+    )
+    persistent_shell: bool = Field(
+        default=True, description="exported variables carry over between commands (cwd always does)"
+    )
+    temp_dir: str = Field(
+        default="", description="temp dir for shell snapshots; empty = TMPDIR or <home>/cache"
+    )
+    lifetime_s: int = Field(
+        default=300, description="seconds an unused environment is kept before it is cleaned up"
+    )
+    degraded_mode: Literal["warn", "fail"] = Field(
+        default="warn",
+        description="backend unreachable: warn returns a degraded result, fail returns an error",
+    )
+    daemon_term_grace_s: float = Field(
+        default=2.0, description="seconds a stopped command gets after SIGTERM before SIGKILL"
+    )
+
+
+class ToolOutputSection(_Section):
+    max_chars: int = Field(
+        default=50000, description="characters of command output shown to the model"
+    )
 
 
 class ApprovalsSection(_Section):
@@ -186,6 +211,9 @@ class ConfigModel(BaseModel):
     agent: AgentSection = Field(default_factory=AgentSection, description="the turn loop")
     terminal: TerminalSection = Field(
         default_factory=TerminalSection, description="where and how commands run"
+    )
+    tool_output: ToolOutputSection = Field(
+        default_factory=ToolOutputSection, description="how much tool output the model sees"
     )
     approvals: ApprovalsSection = Field(
         default_factory=ApprovalsSection, description="asking before risky commands"

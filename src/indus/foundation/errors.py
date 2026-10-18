@@ -77,6 +77,9 @@ ERROR_CODES: dict[str, str] = {
     "blocking.pool_full": "every worker of a blocking pool is busy; the work was refused",
     "blocking.pool_closed": "the blocking pool was shut down; the work was refused",
     "blocking.deadline_missed": "blocking work missed its deadline and was abandoned",
+    "backend.error": "terminal backend problem",
+    "backend.connection": "the terminal backend could not be reached; the command did not run",
+    "backend.unavailable": "the terminal backend cannot be created here (missing dependency)",
 }
 
 
