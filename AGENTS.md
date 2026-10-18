@@ -63,6 +63,12 @@ uv run python -m tooling.checks --require-ref   # all clean-room guards, referen
 Without `--require-ref`, a missing reference makes the guards warn and skip. Every gate that counts
 (CI, release, "done") uses `--require-ref`.
 
+## Test data
+
+Never commit a credential-shaped literal (for example `glpat-…`, `ghp_…`, `sk-…`, `xoxb-…`,
+`AKIA…`), not even a fake one in a test: build fake tokens at runtime by concatenation. GitHub push
+protection rejects such pushes, and bypassing it is not allowed.
+
 ## Commits and pull requests
 
 - Prefix every commit with `[Agent N]` (your agent number) and set `git config user.name "Agent N"`.
