@@ -1,0 +1,5 @@
+# The smallest script: one turn that says "hello" in three chunks.
+turns:
+  - steps:
+      - text: ["hel", "l", "o"]
+      - usage: {prompt: 10, completion: 3}

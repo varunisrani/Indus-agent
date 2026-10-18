@@ -12,7 +12,8 @@ Checked by `python -m tooling.checks traps`.
 - **R01.3** Persist order
   - Review: not yet planned (P00-guards)
 - **R01.4** Interrupt races
-  - Review: not yet planned (P00-guards)
+  - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_mid_text_stream`
+  - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_with_pending_delta_after_tool_calls`
 - **R01.5** Streaming stale detection vs slow reasoning
   - Review: not yet planned (P00-guards)
 - **R01.6** Partial delivery
@@ -488,9 +489,10 @@ Checked by `python -m tooling.checks traps`.
 - **R10.10** Remote code in the tokenizer
   - Review: not yet planned (P00-guards)
 - **R10.11** Contradictory pinning policy docs
-  - Review: not yet planned (P00-guards)
+  - `tooling/checks/tests/test_pins.py::test_exact_pin_passes`
+  - `tooling/checks/tests/test_pins.py::test_open_range_fails`
 - **R10.12** Interpreter bridge markers
-  - Review: not yet planned (P00-guards)
+  - `tooling/checks/tests/test_pins.py::test_interpreter_marker_fails`
 - **R10.13** Shadowed lint config
   - Review: not yet planned (P00-guards)
 - **R10.14** Installer repository stage is the riskiest code
@@ -502,7 +504,8 @@ Checked by `python -m tooling.checks traps`.
 - **R10.17** Fail-open change classification
   - Review: not yet planned (P00-guards)
 - **R10.18** Strict aggregate gate
-  - Review: not yet planned (P00-guards)
+  - `tooling/checks/tests/test_pins.py::test_ci_gate_needs_every_job`
+  - `tooling/checks/tests/test_pins.py::test_ci_gate_fails_on_anything_but_success`
 - **R10.19** Deterministic slicing
   - Review: not yet planned (P00-guards)
 - **R10.20** Flake retry rules
@@ -510,7 +513,7 @@ Checked by `python -m tooling.checks traps`.
 - **R10.21** Host gating via one marker
   - Review: not yet planned (P00-guards)
 - **R10.22** Ratchet config read from main
-  - Review: not yet planned (P00-guards)
+  - `tooling/checks/tests/test_policy.py::test_widened_allow_list_in_pr_still_fails`
 - **R10.23** Release = tested bytes only
   - Review: not yet planned (P00-guards)
 - **R10.24** Workflow SHA is not the commit under test
@@ -522,7 +525,7 @@ Checked by `python -m tooling.checks traps`.
 - **R10.27** Termux/stable naming drift
   - Review: not yet planned (P00-guards)
 - **R10.28** Translation parity
-  - Review: not yet planned (P00-guards)
+  - `tooling/checks/tests/test_locales.py::test_missing_key_fails`
 - **R10.29** Personal data in the repo
   - Review: not yet planned (P00-guards)
 - **R10.30** Supply-chain scans are heuristics

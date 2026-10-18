@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.metadata as md
 import json
 from email.message import Message
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -32,12 +34,13 @@ def test_spdx(expr: str, ok: bool | None):
     assert licenses.spdx_allowed(expr, ALLOW) is ok
 
 
-def meta(**fields: object) -> Message:
+def meta(**fields: str | list[str]) -> md.PackageMetadata:
+    """Distribution metadata built from header fields (an email Message has the same interface)."""
     m = Message()
     for key, value in fields.items():
         for v in value if isinstance(value, list) else [value]:
             m[key.replace("_", "-")] = v
-    return m
+    return cast(md.PackageMetadata, m)
 
 
 def test_license_sources_in_order():

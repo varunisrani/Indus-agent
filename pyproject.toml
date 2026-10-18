@@ -3,7 +3,7 @@ name = "indus-agent"
 version = "0.0.1"
 description = "Indus Agent: a self-improving AI agent (pre-alpha)."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.15"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = []
@@ -13,6 +13,8 @@ indus = "indus.cli:main"
 
 [dependency-groups]
 dev = [
+    "import-linter==2.15",
+    "pyright==1.1.414",
     "pytest==9.1.1",
     "ruff==0.16.10",
 ]
@@ -24,12 +26,26 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/indus"]
 
+[tool.uv]
+# 14-day age window (D-16.52): nothing uploaded after this instant is locked. Checked against
+# tooling/checks/pins_meta.json lock_date by the pins guard; bump both together.
+exclude-newer = "2026-10-04T00:00:00Z"
+
 [tool.ruff]
 line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "TID251"]
+
+# No real sleeps: code that waits takes a Clock; tests use tests/fakes/clock.FakeClock.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"time.sleep".msg = "inject a Clock (tests: tests.fakes.clock.FakeClock)"
+"asyncio.sleep".msg = "inject a Clock (tests: tests.fakes.clock.FakeClock / checkpoint())"
+
+[tool.ruff.lint.per-file-ignores]
+"src/indus/foundation/clock.py" = ["TID251"]
+"tests/fakes/clock.py" = ["TID251"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "tooling/checks/tests"]
@@ -39,3 +55,34 @@ markers = [
     "ref: needs the pinned reference checkout (INDUS_REF)",
     "network: needs network access",
 ]
+
+[tool.importlinter]
+root_package = "indus"
+
+[[tool.importlinter.contracts]]
+name = "Layer order (00-layout section 1)"
+type = "layers"
+layers = [
+    "indus.cli | indus.tui_bridge | indus.gateway | indus.web | indus.acp | indus.mcp_serve | indus.research",
+    "indus.service",
+    "indus.learning | indus.plugins | indus.mcp | indus.cron | indus.board",
+    "indus.core",
+    "indus.tools | indus.backends",
+    "indus.providers | indus.safety | indus.pm",
+    "indus.protocol | indus.state",
+    "indus.foundation",
+    "indus.platform",
+]
+
+[tool.pyright]
+pythonVersion = "3.13"
+include = ["src", "tests", "tooling"]
+typeCheckingMode = "basic"
+strict = [
+    "src/indus/foundation",
+    "src/indus/protocol",
+    "src/indus/state",
+    "src/indus/service",
+    "src/indus/core",
+]
+reportMissingTypeStubs = false

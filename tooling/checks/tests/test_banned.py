@@ -91,3 +91,10 @@ def test_repository_itself_is_clean():
     from tooling.checks.common import DEFAULT_ROOT
 
     assert banned.run(Context(root=DEFAULT_ROOT)).violations == []
+
+
+def test_packages_folder_is_scanned(tmp_path: Path):
+    write(tmp_path / "packages" / "ui" / "src" / "index.ts", "export const name = '" + H + "';\n")
+    result = banned.run(Context(root=tmp_path))
+    assert result.code == 1
+    assert result.violations[0].startswith("packages/ui/src/index.ts:1:")

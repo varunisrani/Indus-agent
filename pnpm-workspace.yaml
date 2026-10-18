@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Refuse any package version published less than 14 days ago (value in minutes).
+minimumReleaseAge: 20160
+
+# No dependency may run install scripts unless approved here on purpose.
+# `onlyBuiltDependencies` is the spelling the P00-08 spec names (pnpm 10); pnpm 11+ ignores it and
+# reads `allowBuilds` instead, so both stay empty until a dependency truly needs a build step.
+onlyBuiltDependencies: []
+allowBuilds: {}

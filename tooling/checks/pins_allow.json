@@ -1,0 +1,4 @@
+{
+  "note": "Bounded-range exceptions to the exact-pin rule. Each entry: \"<name>\": {\"spec\": \">=a,<b\", \"reason\": \"why the library needs a range\"}. On pull requests this file is read from the base branch.",
+  "allow": {}
+}

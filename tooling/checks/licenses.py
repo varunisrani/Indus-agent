@@ -4,8 +4,10 @@ Python: ``[project].dependencies`` of pyproject.toml, followed transitively thro
 metadata (``Requires-Dist``; entries behind ``extra ==`` markers only for extras we request).
 The licence comes from ``License-Expression``, then a ``License`` field that is an SPDX
 expression, then ``License ::`` classifiers, then a best-effort reading of the ``License`` text.
-Node (best effort): production ``dependencies`` of ``apps/*/package.json`` read from installed
-``node_modules``; skipped when nothing is installed.
+Node (best effort): production ``dependencies`` of the root ``package.json``,
+``apps/*/package.json`` and ``packages/*/package.json``, followed through installed
+``node_modules``; skipped when nothing is installed. ``devDependencies`` are counted in a note,
+never gated.
 """
 
 from __future__ import annotations
@@ -241,7 +243,7 @@ def _node_license(pkg: dict) -> str:
     if isinstance(lic, dict):
         lic = lic.get("type")
     if not lic and isinstance(pkg.get("licenses"), list):
-        types = [x.get("type") for x in pkg["licenses"] if isinstance(x, dict) and x.get("type")]
+        types = [str(x["type"]) for x in pkg["licenses"] if isinstance(x, dict) and x.get("type")]
         lic = " OR ".join(types)
     return str(lic or "UNKNOWN")
 
@@ -257,16 +259,32 @@ def _resolve(name: str, start: Path, root: Path) -> Path | None:
         here = here.parent
 
 
+def node_manifests(root: Path) -> list[Path]:
+    """The workspace's own package.json files: root, apps/*, packages/*."""
+    found = [root / "package.json"] if (root / "package.json").is_file() else []
+    for folder in ("apps", "packages"):
+        found.extend(sorted((root / folder).glob("*/package.json")))
+    return found
+
+
 def node_deps(root: Path, result: Result) -> list[tuple[str, str]]:
-    manifests = sorted((root / "apps").glob("*/package.json"))
+    manifests = node_manifests(root)
     if not manifests:
         return []
     out: list[tuple[str, str]] = []
     seen: set[Path] = set()
     any_installed = False
+    dev_only = 0
     for manifest in manifests:
         pkg = json.loads(manifest.read_text(encoding="utf-8"))
-        queue = deque((d, manifest.parent) for d in (pkg.get("dependencies") or {}))
+        dev_only += len(pkg.get("devDependencies") or {})
+        own = pkg.get("dependencies") or {}
+        # Workspace siblings are our own code, not third-party licences.
+        queue = deque(
+            (d, manifest.parent)
+            for d, spec in own.items()
+            if not str(spec).startswith("workspace:")
+        )
         while queue:
             dep, start = queue.popleft()
             found = _resolve(dep, start, root)
@@ -277,8 +295,10 @@ def node_deps(root: Path, result: Result) -> list[tuple[str, str]]:
             data = json.loads(found.read_text(encoding="utf-8"))
             out.append((dep, _node_license(data)))
             queue.extend((d, found.parent) for d in (data.get("dependencies") or {}))
+    if dev_only:
+        result.notes.append(f"{dev_only} Node devDependencies reported only (not gated)")
     if not any_installed:
-        result.notes.append("apps/*/package.json found but node_modules is not installed; skipped")
+        result.notes.append("package.json found but node_modules is not installed; skipped")
     return out
 
 

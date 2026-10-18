@@ -1,0 +1,31 @@
+# Indus Agent: English catalogue, the source every other locales/<lang>.yaml must mirror.
+# Keys are nested by section; placeholders are written {name}. Quote a value that starts with {,
+# contains ": " or would read as a number, boolean or null.
+
+common:
+  ok: OK
+  cancel: Cancel
+  confirm: "Continue? [y/N]"
+  done: Done.
+  unknown: unknown
+  path_label: "Path: {path}"
+
+cli:
+  version: indus {version}
+  help_hint: Run "indus --help" to list every command.
+  interrupted: Interrupted. Press Ctrl+C again to quit.
+  home_created: Created your Indus home at {path}.
+  unknown_command: There is no command called {name}. Run "indus --help" to see what exists.
+
+errors:
+  generic: Something went wrong. The log at {log_path} has the details.
+  config:
+    unreadable: "Could not read the config file at {path}: {reason}"
+    invalid_value: Setting {key} cannot be {value}. Allowed values are {allowed}.
+    unknown_key: The config file sets {key}, which Indus Agent does not know. Remove it or check the spelling.
+  store:
+    locked: The session store at {path} is in use by another process. Close it and try again.
+    corrupt: The session store at {path} is damaged. A backup was kept at {backup}.
+    too_new: The session store at {path} was written by a newer version of Indus Agent.
+  secrets:
+    missing: No value is stored for {name}. Set it with "indus secrets set {name}".

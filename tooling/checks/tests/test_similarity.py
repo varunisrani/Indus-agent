@@ -239,7 +239,9 @@ def _python_slice(ref: Path, want: int = 60) -> str:
             continue
         lines = src.splitlines(keepends=True)
         for node in tree.body:
-            if not isinstance(node, ast.FunctionDef) or node.end_lineno - node.lineno < 15:
+            if not isinstance(node, ast.FunctionDef) or node.end_lineno is None:
+                continue
+            if node.end_lineno - node.lineno < 15:
                 continue
             chunk = "".join(lines[node.lineno - 1 : node.end_lineno])
             count = 0
@@ -290,3 +292,11 @@ def test_real_reference_clean_file_passes(tmp_path: Path, real_ref: Path):
     write(tmp_path / "docs" / "notes" / "fresh.md", "Purple kettles hum beside quiet glaciers.\n")
     result = similarity.run(Context(root=tmp_path, ref=real_ref))
     assert result.code == 0, result.violations
+
+
+def test_packages_folder_is_product_code(tmp_path: Path):
+    write(tmp_path / "packages" / "ui" / "src" / "index.ts", "export const v = 1;\n")
+    write(tmp_path / "packages" / "ui" / "node_modules" / "x" / "i.js", "module.exports = 1;\n")
+    files = similarity.product_files(tmp_path)
+    assert "packages/ui/src/index.ts" in files
+    assert not any("node_modules" in f for f in files)

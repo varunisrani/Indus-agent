@@ -1,0 +1,197 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`theme indus-dark > emits stable CSS with only --indus- custom properties 1`] = `
+":root[data-theme="indus-dark"] {
+  --indus-color-bg: #1d1a17;
+  --indus-color-bg-raised: #312d29;
+  --indus-color-fg: #f8f6f5;
+  --indus-color-fg-muted: #c6c0b9;
+  --indus-color-border: #766f67;
+  --indus-color-accent: #3db6da;
+  --indus-color-accent-fg: #1d1a17;
+  --indus-color-success: #63bd7e;
+  --indus-color-warning: #d09d2e;
+  --indus-color-danger: #ff7470;
+  --indus-color-focus-ring: #76cfed;
+  --indus-color-code-bg: #312d29;
+  --indus-color-selection: #007c9a73;
+  --indus-font-sans: "Red Hat Text", system-ui, "Segoe UI Variable", "Segoe UI", "Noto Sans", Ubuntu, sans-serif;
+  --indus-font-mono: "Red Hat Mono", ui-monospace, "Cascadia Code", "Noto Sans Mono", "DejaVu Sans Mono", monospace;
+  --indus-font-weight-regular: 400;
+  --indus-font-weight-medium: 500;
+  --indus-font-weight-semibold: 600;
+  --indus-font-weight-bold: 700;
+  --indus-text-xs-size: 12px;
+  --indus-text-xs-line-height: 16px;
+  --indus-text-sm-size: 13px;
+  --indus-text-sm-line-height: 18px;
+  --indus-text-base-size: 14px;
+  --indus-text-base-line-height: 20px;
+  --indus-text-md-size: 16px;
+  --indus-text-md-line-height: 24px;
+  --indus-text-lg-size: 18px;
+  --indus-text-lg-line-height: 26px;
+  --indus-text-xl-size: 22px;
+  --indus-text-xl-line-height: 30px;
+  --indus-text-2xl-size: 28px;
+  --indus-text-2xl-line-height: 36px;
+  --indus-text-3xl-size: 36px;
+  --indus-text-3xl-line-height: 44px;
+  --indus-space-0: 0px;
+  --indus-space-1: 4px;
+  --indus-space-2: 8px;
+  --indus-space-3: 12px;
+  --indus-space-4: 16px;
+  --indus-space-5: 20px;
+  --indus-space-6: 24px;
+  --indus-space-7: 28px;
+  --indus-space-8: 32px;
+  --indus-space-9: 36px;
+  --indus-space-10: 40px;
+  --indus-space-11: 44px;
+  --indus-space-12: 48px;
+  --indus-space-13: 52px;
+  --indus-space-14: 56px;
+  --indus-space-15: 60px;
+  --indus-space-16: 64px;
+  --indus-radius-none: 0px;
+  --indus-radius-sm: 4px;
+  --indus-radius-md: 6px;
+  --indus-radius-lg: 10px;
+  --indus-radius-xl: 16px;
+  --indus-radius-full: 9999px;
+  --indus-shadow-low: 0 1px 2px rgb(0 0 0 / 0.40);
+  --indus-shadow-mid: 0 2px 8px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.30);
+  --indus-shadow-high: 0 12px 32px rgb(0 0 0 / 0.55), 0 4px 10px rgb(0 0 0 / 0.35);
+  --indus-duration-quick: 120ms;
+  --indus-duration-base: 200ms;
+  --indus-duration-slow: 320ms;
+  --indus-easing-standard: cubic-bezier(0.25, 0.1, 0.2, 1);
+  --indus-easing-exit: cubic-bezier(0.45, 0, 0.9, 0.6);
+}
+
+@supports (color: oklch(0% 0 0)) {
+  :root[data-theme="indus-dark"] {
+    --indus-color-bg: oklch(22% 0.0074 72);
+    --indus-color-bg-raised: oklch(30% 0.0093 72);
+    --indus-color-fg: oklch(97.5% 0.0026 72);
+    --indus-color-fg-muted: oklch(81% 0.0122 72);
+    --indus-color-border: oklch(54.5% 0.0154 72);
+    --indus-color-accent: oklch(72.5% 0.1163 222);
+    --indus-color-accent-fg: oklch(22% 0.0074 72);
+    --indus-color-success: oklch(72.5% 0.1256 152);
+    --indus-color-warning: oklch(72.5% 0.1349 82);
+    --indus-color-danger: oklch(72.5% 0.1702 24);
+    --indus-color-focus-ring: oklch(81% 0.095 222);
+    --indus-color-code-bg: oklch(30% 0.0093 72);
+    --indus-color-selection: oklch(54.5% 0.1007 222 / 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="indus-dark"] {
+    --indus-duration-quick: 0ms;
+    --indus-duration-base: 0ms;
+    --indus-duration-slow: 0ms;
+  }
+}
+"
+`;
+
+exports[`theme indus-light > emits stable CSS with only --indus- custom properties 1`] = `
+":root[data-theme="indus-light"] {
+  --indus-color-bg: #f8f6f5;
+  --indus-color-bg-raised: #ffffff;
+  --indus-color-fg: #312d29;
+  --indus-color-fg-muted: #5d5750;
+  --indus-color-border: #918980;
+  --indus-color-accent: #007c9a;
+  --indus-color-accent-fg: #ffffff;
+  --indus-color-success: #0c6a35;
+  --indus-color-warning: #725200;
+  --indus-color-danger: #c23539;
+  --indus-color-focus-ring: #009abd;
+  --indus-color-code-bg: #edebe8;
+  --indus-color-selection: #76cfed66;
+  --indus-font-sans: "Red Hat Text", system-ui, "Segoe UI Variable", "Segoe UI", "Noto Sans", Ubuntu, sans-serif;
+  --indus-font-mono: "Red Hat Mono", ui-monospace, "Cascadia Code", "Noto Sans Mono", "DejaVu Sans Mono", monospace;
+  --indus-font-weight-regular: 400;
+  --indus-font-weight-medium: 500;
+  --indus-font-weight-semibold: 600;
+  --indus-font-weight-bold: 700;
+  --indus-text-xs-size: 12px;
+  --indus-text-xs-line-height: 16px;
+  --indus-text-sm-size: 13px;
+  --indus-text-sm-line-height: 18px;
+  --indus-text-base-size: 14px;
+  --indus-text-base-line-height: 20px;
+  --indus-text-md-size: 16px;
+  --indus-text-md-line-height: 24px;
+  --indus-text-lg-size: 18px;
+  --indus-text-lg-line-height: 26px;
+  --indus-text-xl-size: 22px;
+  --indus-text-xl-line-height: 30px;
+  --indus-text-2xl-size: 28px;
+  --indus-text-2xl-line-height: 36px;
+  --indus-text-3xl-size: 36px;
+  --indus-text-3xl-line-height: 44px;
+  --indus-space-0: 0px;
+  --indus-space-1: 4px;
+  --indus-space-2: 8px;
+  --indus-space-3: 12px;
+  --indus-space-4: 16px;
+  --indus-space-5: 20px;
+  --indus-space-6: 24px;
+  --indus-space-7: 28px;
+  --indus-space-8: 32px;
+  --indus-space-9: 36px;
+  --indus-space-10: 40px;
+  --indus-space-11: 44px;
+  --indus-space-12: 48px;
+  --indus-space-13: 52px;
+  --indus-space-14: 56px;
+  --indus-space-15: 60px;
+  --indus-space-16: 64px;
+  --indus-radius-none: 0px;
+  --indus-radius-sm: 4px;
+  --indus-radius-md: 6px;
+  --indus-radius-lg: 10px;
+  --indus-radius-xl: 16px;
+  --indus-radius-full: 9999px;
+  --indus-shadow-low: 0 1px 2px rgb(38 32 24 / 0.08);
+  --indus-shadow-mid: 0 2px 6px rgb(38 32 24 / 0.10), 0 1px 2px rgb(38 32 24 / 0.06);
+  --indus-shadow-high: 0 10px 28px rgb(38 32 24 / 0.14), 0 3px 8px rgb(38 32 24 / 0.08);
+  --indus-duration-quick: 120ms;
+  --indus-duration-base: 200ms;
+  --indus-duration-slow: 320ms;
+  --indus-easing-standard: cubic-bezier(0.25, 0.1, 0.2, 1);
+  --indus-easing-exit: cubic-bezier(0.45, 0, 0.9, 0.6);
+}
+
+@supports (color: oklch(0% 0 0)) {
+  :root[data-theme="indus-light"] {
+    --indus-color-bg: oklch(97.5% 0.0026 72);
+    --indus-color-bg-raised: oklch(100% 0 0);
+    --indus-color-fg: oklch(30% 0.0093 72);
+    --indus-color-fg-muted: oklch(46% 0.0138 72);
+    --indus-color-border: oklch(63.5% 0.016 72);
+    --indus-color-accent: oklch(54.5% 0.1007 222);
+    --indus-color-accent-fg: oklch(100% 0 0);
+    --indus-color-success: oklch(46% 0.1161 152);
+    --indus-color-warning: oklch(46% 0.0948 82);
+    --indus-color-danger: oklch(54.5% 0.1776 24);
+    --indus-color-focus-ring: oklch(63.5% 0.1173 222);
+    --indus-color-code-bg: oklch(94% 0.0048 72);
+    --indus-color-selection: oklch(81% 0.095 222 / 0.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="indus-light"] {
+    --indus-duration-quick: 0ms;
+    --indus-duration-base: 0ms;
+    --indus-duration-slow: 0ms;
+  }
+}
+"
+`;
