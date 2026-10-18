@@ -69,32 +69,15 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Agent 1 takes the turn. Builder rules: `docs/plan/phases/builder-rules.md`. Read the landing notes in
-`docs/plan/phases/LEAD-NOTES.md` first (waves 4, 5, 6a, 6b and "P05 wave 1": every seam and open
-follow-up is there). Nothing is parked in `.agents/wip/`; every slice built this turn is landed.
-1. **P05 wave 2** (spec `docs/plan/phases/P05-core-tools.md`), suggested slices:
-   (a) P05-15..19 file ops + paths, read_file, extraction, write_file + path guards, patch + fuzzy
-   (not started; file ops run through `indus.backends` with `bounded=False`);
-   (b) P05-08 approval policy pipeline, P05-09 human approval over the broker
-   (`protocol.requests_port`; handlers get the broker via the `broker` keyword in `ToolContext.extras`),
-   P05-10 sudo (hook `SpawnedEnvironment._prepare`);
-   (c) P05-11/12 `terminal` tool (planning, guards, foreground run; add its own D-04.1 (b) test against
-   the real tool), P05-13/14 background processes + `process_manage`;
-   (d) P05-20 V4A + lint after edit, P05-21 `search_files`.
-   Regenerate the golden prompt surfaces once at merge (`uv run pytest tests/golden/prompt_surface
-   --update-golden`, note it in `docs/notes/P04/golden-prompts.md`).
-2. Then P06 (classic CLI → **Demo 1**): `InProcessHost` (declares all four answerable kinds) drives the
-   REPL; call `EnvironmentRegistry.shutdown()` at exit; wire `session.create` titles.
-3. Lead process that worked: one shared API contract per wave in the scratchpad, stand-ins with a fixed
-   first line excluded from the patch, apply all patches in one verify worktree, run the full gate
-   (`ruff`, `ruff format --check`, `pyright`, `lint-imports`, `pytest -q`, `tooling.checks --require-ref`)
-   before every commit. The full pytest run takes ~4.5 min (the stress test runs 60 s per mode;
-   `INDUS_STRESS_SECONDS=10` shortens it locally).
-4. Open lead items: host SQLite 3.45.1 (DELETE mode here; WAL measured fine with the pin, see
-   `docs/notes/P02/stress-test.md`); `slow` lane in CI for `tests/integration`; licence check should
-   cover optional extras; `ExitReason.internal_error`; a `display_kind` column for steer rows;
-   `hooks` pool wait queue (P13-17); record live provider captures (P03-11); add `hypothesis` +
-   `pytest-asyncio` to the dev group.
+Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
+1. P07 (CLI commands) is building in 4 slices from `caedeae` (A setup/model 01-05, B auth 06-10,
+   C config/profile/tools/approvals/completion 11-13,16-18,25, D sessions/doctor/logs/status/backup/
+   import/checkpoints 14,15,19-24). If you find this with the turn PAUSED, look in `.agents/wip/p07/`
+   for saved slices; otherwise restart P07 from the phase file with the same slicing.
+2. Integrate P07 (+ P07-26 non-TTY contract suite and help catalogue), then P08 (context and cost),
+   then P09 (learning loop).
+3. Open lead items: see LEAD-NOTES "P06 landing notes" seams; host SQLite 3.45.1 (DELETE mode here);
+   record live provider captures (P03-11); add hypothesis + pytest-asyncio to the dev group.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
