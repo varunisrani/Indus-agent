@@ -25,6 +25,10 @@ route, in this order:
 
 Every step is deterministic: the same history always becomes the same bytes. The input is never
 mutated (it is structurally cloned first).
+
+``finish_request`` is the very last step before a request leaves for one route: it applies that
+route's prompt-cache plan (``core.cache_plan``) or strips every marker for a route that takes none
+(P08-07).
 """
 
 from __future__ import annotations
@@ -33,10 +37,12 @@ import json
 import re
 from collections import OrderedDict, deque
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
+from indus.core import cache_plan
 from indus.core.transcript import TranscriptRow, call_id, content_has_payload
+from indus.providers.types import ChatRequest
 from indus.state.messages import scrub_surrogates
 
 __all__ = [
@@ -53,6 +59,7 @@ __all__ = [
     "build_wire_copy",
     "canonical_arguments",
     "coerce_tool_name",
+    "finish_request",
     "prepare_wire",
     "repair_arguments",
     "rules_for",
@@ -561,3 +568,27 @@ def prepare_wire(
 ) -> list[Message]:
     """``sanitize_wire(build_wire_copy(rows, route), route)``."""
     return sanitize_wire(build_wire_copy(rows, route), route, heals=heals, memo=memo)
+
+
+def finish_request(
+    request: ChatRequest,
+    *,
+    markers: bool,
+    ttl_setting: object = None,
+    source: str = "",
+    native: bool = False,
+    static_prefix: str | None = None,
+) -> ChatRequest:
+    """The request with this route's cache plan applied (``markers``), or with every cache marker
+    removed. ``native``: the route speaks the Anthropic Messages wire. Never mutates ``request``."""
+    tools = cache_plan.strip_tool_markers(request.tools)
+    if not markers:
+        messages = cache_plan.strip_markers(request.messages)
+    else:
+        messages = cache_plan.plan_messages(
+            request.messages,
+            ttl=cache_plan.resolve_ttl(ttl_setting, source),
+            native=native,
+            static_prefix=static_prefix,
+        )
+    return replace(request, messages=messages, tools=tools)

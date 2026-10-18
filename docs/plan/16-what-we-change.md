@@ -242,6 +242,14 @@ note (`docs/notes/Pnn/<slug>.md`).
 | D-16.98 | Interactive prompts | Without a terminal, prompts fall back to `getpass` or return the default; EOF keeps the default; setup cancel exits 0 | **No terminal → guidance and exit 1, never a prompt** (R04.19); EOF counts as cancel; a cancelled `indus setup` exits 1; first-run guidance goes to stderr | P07-01, P07-02, P07-03 (`docs/notes/P07/prompts.md`, `setup-wizard.md`, `first-run.md`) |
 | D-16.99 | Profiles | A clone copies the credential file; `default` can be renamed (display name) | **Keychain entries are copied by name, credential-pool secrets and `auth.json` never** (sign-ins stay with their profile); `default` cannot be created, renamed or deleted | P07-16 (`docs/notes/P07/profile-cmds.md`), lead at P07 landing |
 | D-16.100 | Logs | `logs -f` keeps reading the old handle after rotation | **Follow reopens the file after rotation or truncation**; bad options are usage errors (exit 2) | P07-20 (`docs/notes/P07/logs.md`) |
+| D-16.101 | Prompt caching | Cache markers on Claude routes the reference recognises, including some it reaches through other wires | **Markers only for Claude models on the Anthropic wire or OpenRouter, or a route that declares or configures an opt-in**; `prompt_caching.cache_ttl: auto` is 1 h when a person drives the session, 5 m for automated sources | P08-07 (`docs/notes/P08/cache-plan.md`), lead at P08 landing |
+| D-16.102 | Providers | Official OpenAI hosts use the Responses API | **The bundled `openai` profile stays on chat completions until live Responses captures exist** (D-04.5); custom providers on official OpenAI hosts and `api_mode: responses` use the Responses transport | P08-09 (`docs/notes/P08/responses-transport.md`) |
+| D-16.103 | Providers / keys | A generic OpenAI key can reach other vendors' native endpoints through shared resolution | **Gemini and Bedrock never send a key read from `OPENAI_API_KEY`**; the bundled `gemini` profile reads `GEMINI_API_KEY` / `GOOGLE_API_KEY` only; Bedrock uses its bearer token or the AWS credential chain | P08-10, P08-11 (`docs/notes/P08/gemini-transport.md`, `bedrock-transport.md`) |
+| D-16.104 | Cost | Billing route chosen from provider names plus host checks, live price catalogues | **Price by request host only**: a vendor's list price applies only on that vendor's host over HTTPS/443, an aggregator's reported charge is `actual`, a loopback server is `included`, everything else is `unknown` — never shown as `$0.00`; prices come from our own table (`pricing_table.yaml`), never fetched at run time | P08-08 (`docs/notes/P08/usage-cost.md`) |
+| D-16.105 | Auxiliary models | `auto` side-task routing walks every provider with a key | **`auto` is the session's own route and model**; only configured lists are walked (`auxiliary.<task>.fallback`, then `fallback_providers`); HTTP 402 falls through | P08-17 (`docs/notes/P08/aux-client.md`) |
+| D-16.106 | Context references | — (no `@file:`-style expansion) | **`@file:` / `@folder:` / `@diff` / `@git:` / `@url:` expand before the turn is stored**; credential files are refused with a visible note; the expansion fits in the room left under the compression trigger (an item that does not fit becomes a pointer) | P08-19 (`docs/notes/P08/context-references.md`), lead at P08 landing |
+| D-16.107 | Turn outcome | A response the provider reports as cancelled surfaces as a provider failure | **It ends the turn `interrupted_by_system`**, with no failure attached | P08-09, lead at P08 landing |
+| D-16.108 | `search_files` | Content results in ripgrep's parallel discovery order | **Content results in path order** (`--sort=path`), so `offset` paging never repeats or skips a hit; file-name search keeps the fast discovery order | Lead at P08 landing (flake root cause, `docs/notes/P05/search-files.md`) |
 
 ### 2.8 Not in 1.0
 
@@ -290,6 +298,7 @@ change cheap).
 | D-16.70 – D-16.84, D-16.89 | Intended differences recorded when the phase files were reconciled (§2.7) | ✅ Lead, 2026-10-18 |
 | D-16.85 – D-16.88 | Not in 1.0 (§2.8), recorded at reconciliation | ✅ Lead, 2026-10-18 (owner may pull any into 1.0) |
 | D-16.93 – D-16.100 | P07 intended differences recorded when P07 landed (§2.7) | ✅ Lead, 2026-10-18 |
+| D-16.101 – D-16.108 | P08 wave 1 intended differences recorded when it landed (§2.7) | ✅ Lead, 2026-10-18 |
 
 ### 3.2 Open — owner (with our recommendation)
 

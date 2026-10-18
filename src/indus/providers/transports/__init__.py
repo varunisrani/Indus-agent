@@ -5,8 +5,9 @@ turn decoded server-sent events into normalized stream events, parse a non-strea
 and recognise errors a provider hides inside a successful stream. Clients, timeouts, retries and
 stale detection live elsewhere (``providers.http``, ``providers.streaming``, ``providers.retry``).
 
-``get_transport(api_mode)`` returns the shared instance for a mode; P08 registers more modes with
-``register_transport``.
+``get_transport(api_mode)`` returns the shared instance for a mode; more modes can be registered
+with ``register_transport``. A transport whose replies are not server-sent events (Bedrock's binary
+event stream) also offers ``read_frames(response)``; ``frames_of`` picks the right reader.
 """
 
 from __future__ import annotations
@@ -69,6 +70,9 @@ class Transport(Protocol):
         ...
 
 
+type FrameReader = Callable[[httpx.Response], AsyncIterator[Any]]
+
+
 # -- registry --------------------------------------------------------------------------------
 
 _FACTORIES: dict[str, Callable[[], Transport]] = {}
@@ -76,9 +80,10 @@ _INSTANCES: dict[str, Transport] = {}
 _BUILTIN_MODULES: dict[str, str] = {
     "chat_completions": "indus.providers.transports.chat_completions",
     "anthropic_messages": "indus.providers.transports.anthropic",
+    "responses": "indus.providers.transports.responses",
+    "bedrock": "indus.providers.transports.bedrock",
+    "gemini": "indus.providers.transports.gemini",
 }
-# Modes the product knows about but that arrive in a later phase (P08).
-_LATER_MODES = frozenset({"responses", "bedrock", "gemini"})
 
 
 def register_transport(api_mode: str, factory: Callable[[], Transport]) -> None:
@@ -95,11 +100,6 @@ def get_transport(api_mode: str) -> Transport:
         importlib.import_module(_BUILTIN_MODULES[api_mode])
     factory = _FACTORIES.get(api_mode)
     if factory is None:
-        if api_mode in _LATER_MODES:
-            raise UnsupportedApiMode(
-                f"the {api_mode!r} API mode is not supported in this version yet",
-                hint="use chat_completions or anthropic_messages for this endpoint",
-            )
         raise UnsupportedApiMode(f"unknown API mode {api_mode!r}")
     instance = factory()
     _INSTANCES[api_mode] = instance
@@ -278,18 +278,27 @@ async def _aclose(iterator: object) -> None:
         await close()
 
 
+def frames_of(transport: object, response: httpx.Response) -> AsyncIterator[Any]:
+    """The decoded frames of an open streaming response: the transport's own reader when it has
+    one (``read_frames``), else server-sent events."""
+    reader: FrameReader | None = getattr(transport, "read_frames", None)
+    if callable(reader):
+        return reader(response)
+    return aiter_sse(response)
+
+
 async def stream_events(
     transport: Transport, response: httpx.Response
 ) -> AsyncGenerator[StreamEvent]:
     """Normalized events from an open streaming response."""
-    items = aiter_sse(response)
+    items = frames_of(transport, response)
     events = transport.parse_stream(items)
     try:
         async for event in events:
             yield event
     finally:
         await _aclose(events)
-        await items.aclose()
+        await _aclose(items)
 
 
 async def iter_call(

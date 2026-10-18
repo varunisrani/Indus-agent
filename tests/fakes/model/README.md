@@ -1,13 +1,16 @@
 # Fake model scripts
 
 `FakeModelServer` (`server.py`) is a model API inside the test process. It answers over
-`httpx.MockTransport`, so no socket is ever opened, and it speaks two wire formats from the same
+`httpx.MockTransport`, so no socket is ever opened, and it speaks five wire formats from the same
 script:
 
 | Request | Answer |
 |---|---|
 | `POST …/chat/completions` | Chat Completions: SSE chunks, or one JSON object when `"stream": false` |
 | `POST …/messages` | Anthropic Messages: SSE events, or one `message` object when `"stream": false` |
+| `POST …/responses` | OpenAI Responses: SSE events, or one response object when `"stream": false` |
+| `POST …/model/<id>/converse-stream` / `…/converse` | Bedrock Converse: binary event-stream frames / one JSON reply |
+| `POST …/models/<id>:streamGenerateContent` / `…:generateContent` | Gemini: SSE chunks / one JSON reply |
 | `GET …/models` | `{"object": "list", "data": [...]}` (the `models=` argument, or the server's model) |
 
 Each POST uses up the next turn of the script. A request after the last turn raises
@@ -23,7 +26,7 @@ async with server.client() as client:  # or httpx.AsyncClient(transport=server.t
 server.model_requests[0].body["messages"]  # what the code under test sent
 ```
 
-`fake_route(server, "chat_completions" | "anthropic_messages")` builds a route with a fake key
+`fake_route(server, "chat_completions" | "anthropic_messages" | "responses" | "bedrock" | "gemini")` builds a route with a fake key
 on the `fake.invalid` host. `one_off_router()` gives a respx router for single canned answers.
 
 ## File format

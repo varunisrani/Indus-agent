@@ -52,15 +52,11 @@ def route_for(capture: dict[str, Any]) -> RuntimeRoute:
     )
 
 
-def test_four_captures_exist_and_validate() -> None:
+def test_captures_exist_and_validate() -> None:
     paths = all_captures()
     names = {f"{p.parent.name}/{p.stem}" for p in paths}
-    assert names == {
-        "chat_completions/text",
-        "chat_completions/tool_call",
-        "anthropic_messages/text",
-        "anthropic_messages/tool_call",
-    }
+    modes = ("chat_completions", "anthropic_messages", "responses", "bedrock", "gemini")
+    assert names == {f"{mode}/{scenario}" for mode in modes for scenario in ("text", "tool_call")}
     for path in paths:
         text = path.read_text(encoding="utf-8")
         capture = json.loads(text)

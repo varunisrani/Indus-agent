@@ -12,7 +12,11 @@ commands are wired).
   ``--no-restore-cwd`` / ``--in``, auto-approve, breadcrumb), the model the session was last
   switched to (``model_override`` or its launch record) and the recap;
 - the banner, the recap of a resumed session, the status bar's first values and the seeded ``-q``
-  text, sent as typed once the prompt is up (no slash or ``!`` handling).
+  text, sent as typed once the prompt is up (no slash or ``!`` handling);
+- the status bar's source: the attached agent's route, its usage ledger (``Agent.usage``, P08-08:
+  last prompt size and cost, never a cost the ledger could not price) and its compaction count.
+  It reads plain counters from the REPL thread without a loop hop; a failed read only falls back
+  to the bar's defaults.
 """
 
 from __future__ import annotations
@@ -27,10 +31,11 @@ from indus.cli.handoff import ReplLaunch
 
 if TYPE_CHECKING:
     from indus.cli.repl.app import Repl
+    from indus.cli.repl.status import StatusSnapshot
     from indus.cli.slash.context import SessionPort, SlashContext
     from indus.foundation.scope import Scope
 
-__all__ = ["build_context", "make_on_resume", "run_launch"]
+__all__ = ["build_context", "make_on_resume", "run_launch", "status_from_agent"]
 
 log = logging.getLogger(__name__)
 
@@ -161,6 +166,31 @@ def _banner(launch: ReplLaunch, port: SessionPort) -> Any:
     return banner(info, user_home=Path.home())
 
 
+def status_from_agent(agent: Any) -> StatusSnapshot:
+    """The status bar's numbers for one agent (see the module notes)."""
+    from indus.cli.repl.status import StatusSnapshot
+
+    usage = agent.usage.snapshot()
+    state = agent.binding.state
+    engine = agent.context_engine
+    return StatusSnapshot(
+        model=state.model,
+        context_used=usage.last_prompt_tokens,
+        context_max=state.context_length,
+        cost=None if usage.cost_status == "unknown" else float(usage.cost_usd),
+        compressions=engine.compactions if engine is not None else 0,
+    )
+
+
+def _status_source(launch: ReplLaunch, link: dict[str, Repl]) -> Callable[[], StatusSnapshot]:
+    def source() -> StatusSnapshot:
+        repl = link.get("repl")
+        session_id = repl.session_id if repl is not None else launch.session_id
+        return status_from_agent(launch.host.service.agent(session_id))
+
+    return source
+
+
 def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> int:
     """Run the classic REPL for ``launch``; returns the exit code (see the module notes)."""
     from indus.cli.repl.app import ReplOptions, run_repl
@@ -200,4 +230,5 @@ def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> 
         slash_ctx=ctx,
         on_resume=make_on_resume(launch, ctx, link),
         on_ready=ready,
+        status_source=_status_source(launch, link),
     )

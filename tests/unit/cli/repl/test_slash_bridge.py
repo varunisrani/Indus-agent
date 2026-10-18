@@ -226,3 +226,19 @@ def test_wire_slash_sets_a_completer_from_the_registry(ctx: SlashContext, rig: R
     assert [c.text for c in found] == ["/history"]
     sub = list(repl.completer.get_completions(Document("/reasoning s"), CompleteEvent()))
     assert "show" in [c.text for c in sub]
+
+
+def test_a_continuation_moves_the_repl_and_the_slash_context(
+    slash_rig: Rig, ctx: SlashContext
+) -> None:
+    from indus.protocol.events import Notice, NoticeLevel
+
+    child = "20260101_100000_child1"
+    slash_rig.feed(
+        Notice(session_id=SESSION, seq=1, level=NoticeLevel.INFO, text="still here"),
+        Notice(session_id=child, seq=2, level=NoticeLevel.INFO, text="condensed", key="x"),
+    )
+    assert slash_rig.repl.session_id == child and ctx.session_id == child
+    slash_rig.keys("hello" + ENTER)
+    slash_rig.host.wait_for("submit", 1)
+    assert slash_rig.host.named("submit")[-1].args[0] == child

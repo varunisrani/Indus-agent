@@ -244,12 +244,6 @@ def _choose_mode(draft: _Draft, explicit: str, saved: str) -> str:
         mode = api_mode_from_url(draft.base_url)
     else:
         mode = profile.api_mode
-    if mode == "responses":
-        draft.warn(
-            f"{draft.base_url} is best served by the Responses API, which is not available yet; "
-            "using chat completions"
-        )
-        return "chat_completions"
     if mode not in API_MODES:
         raise ProviderError(f"api mode {mode!r} is not known (use one of {sorted(API_MODES)})")
     if mode not in ACTIVE_API_MODES:

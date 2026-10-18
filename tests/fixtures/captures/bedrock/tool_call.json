@@ -1,0 +1,111 @@
+{
+  "meta": {
+    "recorded_at": "2026-10-18T00:00:00+00:00",
+    "provider": "bedrock",
+    "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "api_mode": "bedrock",
+    "scenario": "tool_call",
+    "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "doc_url": "https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html",
+    "doc_date": "2026-10-18",
+    "indus_version": "0.0.1",
+    "synthetic": true,
+    "synthetic_note": "Written by hand from the vendor's documented examples; replace with a real recording.",
+    "chat_request": {
+      "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the get_weather tool to look up the weather in Oslo."
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Current weather for one city.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string",
+                  "description": "City name"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ],
+      "max_tokens": 256
+    }
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-haiku-4-5-20251001-v1%3A0/converse-stream",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Use the get_weather tool to look up the weather in Oslo."
+            }
+          ]
+        }
+      ],
+      "inferenceConfig": {
+        "maxTokens": 256
+      },
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_weather",
+              "description": "Current weather for one city.",
+              "inputSchema": {
+                "json": {
+                  "type": "object",
+                  "properties": {
+                    "city": {
+                      "type": "string",
+                      "description": "City name"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.amazon.eventstream"
+    },
+    "chunks": [
+      "AAAAiQA=",
+      "AABSXLE9Ugs6ZXZlbnQtdHlwZQcADG1lc3NhZ2VTdGFydA06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7InJvbGUiOiJhc3Npc3RhbnQiLCJwIjoiYWJjZGVmZ2hpamtsIn2xfg==",
+      "50YAAADDAAAAVz6YiTULOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tEZWx0YQ06Y29udGVudC10eXBlBw==",
+      "ABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiJJJ2xsIGxvb2sgdXAgdGhlIHdlYXRoZXIgaW4gT3Nsby4ifSwicCI6ImFiY2RlZmdoaSJ9OqIeEwAAAKIAAABW7c3nXgs6ZXZlbnQtdHlwZQcAEGNvbnRlbnRCbG9ja1N0b3ANOmNvbnRlbnQtdHlwZQcAEGFwcGw=",
+      "aWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVu",
+      "dHsiY29udGVudEJsb2NrSW5kZXgiOjAsInAiOiJhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ekFCQ0QifWQnKBAAAADtAAAAV0BpGFALOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tTdGFydA06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjoxLCJzdGFydCI6eyJ0b29sVXNlIjp7InRvb2xVc2VJZCI6InRvb2x1c2VfU3ludGgwV2VhdGhlcjBPc2xvMDEiLCJuYW1lIjoiZ2V0X3dlYXRoZXIi",
+      "fQ==",
+      "fSwicCI6ImFiY2RlZmdoaWprbG1ub3BxciJ9+bf4NwAAAKsAAABXl9q1uQs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjEsImRlbHRhIjp7InRvb2xVc2UiOnsiaW5wdXQi",
+      "OiIifX0sInAiOiJhYmNkZSJ9IwyPXAAAALUAAABXSAqcWgs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29u",
+      "DTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjEsImRlbHRhIjp7InRvb2xVc2UiOnsiaW5wdXQiOiJ7XCJjaXR5XCIifX0sInAiOiJhYmNkZWYifRS+5fwAAAC4AAAAV7CaWOsLOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tEZWx0YQ06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjoxLCJkZWx0YSI6eyJ0b29sVXNlIjp7ImlucHV0IjoiOiBcIk9zbG9cIn0ifX0sInAiOiJhYmNkZWZnIn2yx1yRAAAArAAAAFZS/Vk/CzpldmVudC10eXBlBwAQY29udGVudEJsb2NrU3RvcA06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjoxLCJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTiJ9vsjgTgAAAIQAAABRPSioWQs6ZXZlbnQtdHlwZQcAC21lc3NhZ2VTdG9wDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsic3RvcFJlYXNvbiI6InRvb2xfdXNlIiwicCI6ImFiYyJ976hHmAAAANwAAABOuEMhpgs6ZXZlbnQtdHlwZQcACG1ldGFkYXRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsidXNhZ2UiOnsiaW5wdXRUb2tlbnMiOjQwMiwib3V0cHV0VG9rZW5zIjo1NywidG90YWxUb2tlbnMiOjQ1OX0sIm1ldHJpY3MiOnsibGF0ZW5jeU1zIjo4MTJ9LCJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoifZvM5n4="
+    ]
+  }
+}

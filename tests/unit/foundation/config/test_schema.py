@@ -21,6 +21,8 @@ def test_decided_defaults() -> None:
         "gateway_timeout": 1800,
         "clarify_timeout": 3600,
         "local_stream_stale_timeout": 900,
+        "turn_liveness_s": 600.0,  # P08-16
+        "run_budget_s": 0.0,  # P08-16: off
     }
     assert d["terminal"] == {
         "backend": "local",
@@ -36,6 +38,26 @@ def test_decided_defaults() -> None:
         "process_wait_auto_notify": True,
     }
     assert d["tool_output"] == {"max_chars": 50000}
+    # P08 (context and cost): the union of the three wave-1 slices
+    aux_task = {"provider": "auto", "model": "", "base_url": "", "reasoning_effort": "",
+                "timeout_s": None, "fallback": []}  # fmt: skip
+    assert d["auxiliary"] == {"compression": aux_task, "title": aux_task, "approval": aux_task}
+    assert d["prompt_caching"] == {"cache_ttl": "5m"}
+    assert d["compression"] == {
+        "enabled": True,
+        "threshold": 0.5,
+        "threshold_tokens": None,
+        "model_thresholds": {},
+        "max_attempts": 3,
+        "timeout_s": 120.0,
+        "tail_mode": "lean",
+        "target_ratio": 0.2,
+        "min_tail_user_messages": 1,
+        "in_place": True,
+        "abort_on_summary_failure": False,
+        "idle_after_s": 0,
+    }
+    assert d["context"] == {"engine": "builtin"}
     assert d["approvals"] == {
         "mode": "manual",
         "timeout": 300,

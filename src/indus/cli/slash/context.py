@@ -29,6 +29,7 @@ from indus.providers.route import RuntimeRoute
 from indus.state.registry import StoreHandle
 
 __all__ = [
+    "CompressReport",
     "Extensions",
     "ExtensionHandler",
     "Handler",
@@ -85,6 +86,21 @@ class RouteInfo:
         return self.route.base_url
 
 
+@dataclass(frozen=True)
+class CompressReport:
+    """What a manual ``/compress`` came to (P08-05). ``status``: ``compressed``, ``nothing``,
+    ``blocked``, ``aborted`` or ``preview``; ``session_id`` is where the conversation goes on
+    (a new id after a rotating compaction)."""
+
+    status: str
+    session_id: str
+    reason: str = ""
+    before: int = 0
+    after: int = 0
+    condensed: int = 0
+    mode: str = ""
+
+
 class SessionPort(Protocol):
     """What commands may ask of the session service (blocking calls)."""
 
@@ -130,6 +146,12 @@ class SessionPort(Protocol):
     def stop_processes(self, session_id: str, *, all_jobs: bool) -> int:
         """Stop the session's background processes (``all_jobs`` False keeps the ones marked to
         outlive the session); how many were stopped."""
+        ...
+
+    def compress(
+        self, session_id: str, focus: str | None, *, keep_last: int | None, preview: bool
+    ) -> CompressReport:
+        """Condense the session's older turns now (between turns; raises when busy)."""
         ...
 
 

@@ -16,8 +16,7 @@ from indus.foundation.errors import InvalidBaseURL
 SCHEMES = frozenset({"http", "https"})
 DEFAULT_PORTS = {"http": 80, "https": 443}
 
-# Hosts whose chat endpoint is best served by the Responses API (P08); until then a route that
-# lands here falls back to chat completions with a note.
+# Hosts whose chat endpoint is best served by the Responses API (P08-09).
 OPENAI_OFFICIAL_HOSTS = frozenset({"api.openai.com", "us.api.openai.com", "eu.api.openai.com"})
 ANTHROPIC_OFFICIAL_HOSTS = frozenset({"api.anthropic.com"})
 
@@ -170,7 +169,7 @@ def is_private_network(url: str) -> bool:
 def api_mode_from_url(url: str) -> str:
     """The wire format a URL most likely speaks.
 
-    Official OpenAI hosts → ``responses`` (a hint: the route uses chat completions until P08);
+    Official OpenAI hosts → ``responses``;
     ``api.anthropic.com`` or a path ending ``/anthropic`` or ``/anthropic/v1`` →
     ``anthropic_messages``; everything else → ``chat_completions``. Raises ``InvalidBaseURL``.
     """

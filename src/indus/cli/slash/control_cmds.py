@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import Any
 
 from indus import __version__
@@ -27,11 +28,14 @@ from indus.cli import quick_commands
 from indus.cli.resume import MODEL_OVERRIDE_KEY
 from indus.cli.slash import session_cmds
 from indus.cli.slash.context import Handler, SlashContext, SlashResult
+from indus.core.cache_plan import cache_hit_percent
 from indus.foundation import yamlio
 from indus.foundation.config import loader, writer
 from indus.foundation.config.errors import ConfigError
 from indus.foundation.errors import IndusError
+from indus.protocol.methods import ProtocolError
 from indus.providers import route as routes
+from indus.providers.pricing import format_cost
 from indus.providers.registry import Registry
 from indus.providers.types import EFFORT_LADDER, normalize_effort
 from indus.safety.approvals import APPROVALS, session_key
@@ -390,9 +394,34 @@ def cmd_usage(ctx: SlashContext, args: str) -> SlashResult:
         f"Tokens in: {totals.input_tokens:,}, out: {totals.output_tokens:,}, "
         f"cache read: {totals.cache_read_tokens:,}, cache write: {totals.cache_write_tokens:,}, "
         f"reasoning: {totals.reasoning_tokens:,}",
-        "Cost: n/a (prices arrive with P08)",
     )
+    prompt = totals.input_tokens + totals.cache_read_tokens + totals.cache_write_tokens
+    hit = cache_hit_percent(prompt, totals.cache_read_tokens)
+    if hit is not None and totals.cache_read_tokens:
+        ctx.say(f"Prompt cache: {hit:g}% of prompt tokens read from the cache")
+    try:
+        status = str((sessions.get(ctx.store, ctx.session_id) or {}).get("cost_status") or "")
+    except Exception:
+        status = ""
+    ctx.say(_cost_line(totals, status))
     return SlashResult()
+
+
+def _cost_line(totals: usage.UsageTotals, status: str) -> str:
+    """Cost as the store knows it (P08-08): a session with requests but no price is
+    ``unknown``, never ``$0.00``; ``status`` is the newest call's cost status."""
+    if totals.api_calls == 0:
+        return "Cost: $0.00 (no requests yet)"
+    amount = format_cost(Decimal(str(totals.cost_usd)))
+    if status == "included":
+        return "Cost: included (local server)"
+    if totals.actual_cost_usd is not None and status == "actual":
+        return f"Cost: {amount} (provider-reported)"
+    if status == "estimated" and totals.cost_usd > 0:
+        return f"Cost: {amount} (estimated from list prices)"
+    if totals.cost_usd > 0:
+        return f"Cost: {amount}+ (some requests have no known price)"
+    return "Cost: unknown (no list price for this route)"
 
 
 def cmd_whoami(ctx: SlashContext, args: str) -> SlashResult:
@@ -509,8 +538,47 @@ def cmd_queue(ctx: SlashContext, args: str) -> SlashResult:
     return SlashResult()
 
 
+def compress_args(args: str) -> tuple[str | None, int | None, bool] | None:
+    """``[focus topic] [here N] [--preview]`` → ``(focus, keep_last, preview)``; None when
+    ``here`` is not followed by a positive whole number."""
+    words, flags = _flags(args, "--preview")
+    keep_last: int | None = None
+    rest: list[str] = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word.lower() == "here":
+            count = words[index + 1] if index + 1 < len(words) else ""
+            if not count.isdigit() or int(count) < 1:
+                return None
+            keep_last = int(count)
+            index += 2
+            continue
+        rest.append(word)
+        index += 1
+    return (" ".join(rest) or None, keep_last, "--preview" in flags)
+
+
 def cmd_compress(ctx: SlashContext, args: str) -> SlashResult:
-    ctx.say("Compressing the conversation arrives with P08.")
+    """``/compress [focus topic] [here N] [--preview]`` (P08-05). The engine's own notice tells
+    how a compaction went; this prints only what no notice covers."""
+    parsed = compress_args(args)
+    if parsed is None:
+        ctx.say("Usage: /compress [focus topic] [here N] [--preview]  (N: messages kept as is)")
+        return SlashResult()
+    focus, keep_last, preview = parsed  # the dispatcher already holds it while a reply runs
+    try:
+        report = ctx.port.compress(ctx.session_id, focus, keep_last=keep_last, preview=preview)
+    except ProtocolError as exc:
+        ctx.say(f"Could not compress: {exc.message}")
+        return SlashResult()
+    if report.status == "preview":
+        ctx.say(f"Preview: {report.reason} (about {report.before:,} tokens now); nothing changed.")
+    elif report.status in ("nothing", "blocked"):
+        ctx.say(report.reason or "Nothing to compress.")
+    elif report.status == "compressed" and report.session_id != ctx.session_id:
+        ctx.say(f"The conversation continues in session {report.session_id}.")
+        ctx.session_id = report.session_id
     return SlashResult()
 
 

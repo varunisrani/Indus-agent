@@ -1,18 +1,22 @@
 """Transport contract (P03-12): every transport × every capture and fake-model script.
 
-Adding a transport (P08) means adding it to ``TRANSPORTS`` and giving it captures.
+Adding a transport means adding it to ``TRANSPORTS``, giving it captures and teaching the fake
+model server its wire (P08 added ``responses``, ``bedrock`` and ``gemini``).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
 from indus.foundation.errors import ProviderHTTPError
+from indus.foundation.scope import make_scope, use_scope
+from indus.providers.eventstream import encode_message
 from indus.providers.route import RuntimeRoute
 from indus.providers.transports import get_transport, iter_call
 from indus.providers.types import (
@@ -31,9 +35,13 @@ from tests.fakes.model.replay import ReplayTransport, chat_request_from, load_ca
 from tests.fakes.model.server import FakeModelServer
 from tests.unit.providers._support import make_route
 
-TRANSPORTS = ["chat_completions", "anthropic_messages"]
+TRANSPORTS = ["chat_completions", "anthropic_messages", "responses", "bedrock", "gemini"]
 CAPTURES = ["text", "tool_call"]
 EXPECTED_CAPTURE_FINISH = {"text": "stop", "tool_call": "tool_calls"}
+# Wires whose server always reports usage, scripted or not.
+ALWAYS_USAGE = frozenset({"anthropic_messages", "responses", "bedrock", "gemini"})
+# Recordings that carry frames with no content (pings, comments, lifecycle events).
+KEEPALIVE_CAPTURES = frozenset({"chat_completions", "anthropic_messages", "responses", "bedrock"})
 
 SCRIPTS: dict[str, tuple[Turn, str]] = {
     "text": (Turn((Text(("Hel", "lo", "!")), Finish("stop"))), "stop"),
@@ -100,7 +108,7 @@ def check_contract(
 
 @pytest.mark.parametrize("scenario", CAPTURES)
 @pytest.mark.parametrize("mode", TRANSPORTS)
-def test_capture_contract(mode: str, scenario: str) -> None:
+def test_capture_contract(mode: str, scenario: str, tmp_path: Path) -> None:
     capture = load_capture(f"{mode}/{scenario}")
     meta = capture["meta"]
     route = RuntimeRoute(
@@ -115,11 +123,19 @@ def test_capture_contract(mode: str, scenario: str) -> None:
         async with httpx.AsyncClient(transport=ReplayTransport(capture)) as client:
             return await _collect(client, mode, route, chat_request_from(capture))
 
-    events = run(main())
+    # Bedrock signs with AWS credentials from the scope (fake ones; the replay ignores auth).
+    aws = {
+        "AWS_ACCESS_KEY_ID": "AKID" + "CONTRACT00",
+        "AWS_SECRET_ACCESS_KEY": "contract" + "-secret",
+        "AWS_SHARED_CREDENTIALS_FILE": str(tmp_path / "none"),
+    }
+    with use_scope(make_scope(tmp_path / "home", env=aws)):
+        events = run(main())
     response = check_contract(
         events, expect_usage=True, expect_finish=EXPECTED_CAPTURE_FINISH[scenario]
     )
-    assert any(isinstance(e, KeepAlive) for e in events)  # both recordings carry keep-alive frames
+    if mode in KEEPALIVE_CAPTURES:
+        assert any(isinstance(e, KeepAlive) for e in events)
     if scenario == "tool_call":
         assert [c.name for c in response.tool_calls] == ["get_weather"]
         assert json.loads(response.tool_calls[0].arguments) == {"city": "Oslo"}
@@ -141,7 +157,7 @@ def _script_response(mode: str, name: str) -> NormalizedResponse:
     has_usage = any(isinstance(s, Usage) for s in turn.steps)
     assert any(isinstance(e, UsageReport) for e in events) or not has_usage
     return check_contract(
-        events, expect_usage=has_usage or mode == "anthropic_messages", expect_finish=finish
+        events, expect_usage=has_usage or mode in ALWAYS_USAGE, expect_finish=finish
     )
 
 
@@ -152,15 +168,16 @@ def test_script_contract(mode: str, name: str) -> None:
 
 
 @pytest.mark.parametrize("name", sorted(SCRIPTS))
-def test_same_script_same_shape_on_both_wires(name: str) -> None:
+@pytest.mark.parametrize("mode", [m for m in TRANSPORTS if m != "chat_completions"])
+def test_same_script_same_shape_on_every_wire(mode: str, name: str) -> None:
     chat = _script_response("chat_completions", name)
-    anthropic = _script_response("anthropic_messages", name)
+    other = _script_response(mode, name)
 
     def shape(r: NormalizedResponse) -> tuple[Any, ...]:
         calls = [(c.name, json.loads(c.arguments)) for c in r.tool_calls]
         return (r.content, calls, r.finish_reason, r.reasoning)
 
-    assert shape(chat) == shape(anthropic)
+    assert shape(chat) == shape(other)
 
 
 class _NeverEnding(httpx.AsyncByteStream):
@@ -182,6 +199,17 @@ FIRST_FRAME = {
     "anthropic_messages": (
         b'event: content_block_start\ndata: {"type": "content_block_start", "index": 0, '
         b'"content_block": {"type": "text", "text": "x"}}\n\n'
+    ),
+    "responses": (
+        b"event: response.output_text.delta\ndata: "
+        b'{"type": "response.output_text.delta", "output_index": 0, "delta": "x"}\n\n'
+    ),
+    "bedrock": encode_message(
+        {":event-type": "contentBlockDelta", ":message-type": "event"},
+        b'{"contentBlockIndex": 0, "delta": {"text": "x"}}',
+    ),
+    "gemini": (
+        b'data: {"candidates": [{"content": {"role": "model", "parts": [{"text": "x"}]}}]}\n\n'
     ),
 }
 

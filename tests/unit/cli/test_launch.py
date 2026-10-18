@@ -167,3 +167,38 @@ def test_on_resume_restores_and_puts_the_switched_model_back(
     assert ("switch_route", ("fake", "m2", None, True)) in port.calls
     assert repl.options.model == "m2"
     assert any("m2" in note for note in repl.notes)
+
+
+def test_status_bar_reads_the_agents_ledger(scope: Scope, fake_clock: Any) -> None:
+    """P08-08: the bar's context and cost come from ``Agent.usage``; an unpriced route shows no
+    cost (``n/a``) rather than $0.00."""
+    import asyncio
+
+    from indus.core.agent import Agent
+    from tests.fakes.agent import fake_options, run_driven
+    from tests.fakes.model import FakeModelServer, Finish, Text, Turn, fake_route, script_of
+    from tests.fakes.model import Usage as UsageStep
+
+    turn = Turn((Text(("ok",)), UsageStep(4_000, 10), Finish("stop")))
+    server = FakeModelServer(script_of(turn), clock=fake_clock)
+
+    async def main() -> Agent:
+        agent = await Agent.start(scope, fake_route(server), [], fake_options(server))
+        await agent.run_turn("hi")
+        return agent
+
+    agent = asyncio.run(run_driven(main(), fake_clock))
+    snap = launch_mod.status_from_agent(agent)
+    assert snap.model == agent.binding.state.model and snap.context_used == 4_000
+    assert snap.context_max == agent.binding.state.context_length
+    assert snap.cost is None and snap.compressions == 0
+    asyncio.run(agent.close())
+
+
+def test_run_launch_wires_the_status_source(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    run = Captured()
+    launch = make_launch(scope, store, tmp_path)
+    launch_mod.run_launch(launch, run=run)
+    assert callable(run.kwargs["status_source"])

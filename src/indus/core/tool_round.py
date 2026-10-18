@@ -529,6 +529,8 @@ async def _commit(
         content = untrusted.fence(call.name, message["content"])
         state.turn_tool_chars += text_size(content)
         state.add(_result_row(call, content))
+        if runtime.run_budget is not None:
+            runtime.run_budget.wrap_up(state.rows)  # P08-16: once, on this unstored row
         try:
             await state.flush()
         except PersistFailed as exc:

@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "recorded_at": "2026-10-18T00:00:00+00:00",
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "api_mode": "gemini",
+    "scenario": "tool_call",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta",
+    "doc_url": "https://ai.google.dev/api/generate-content",
+    "doc_date": "2026-10-18",
+    "indus_version": "0.0.1",
+    "synthetic": true,
+    "synthetic_note": "Written by hand from the vendor's documented examples; replace with a real recording.",
+    "chat_request": {
+      "model": "gemini-2.5-flash",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the get_weather tool to look up the weather in Oslo."
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Current weather for one city.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string",
+                  "description": "City name"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ],
+      "max_tokens": 256
+    }
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Use the get_weather tool to look up the weather in Oslo."
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "name": "get_weather",
+              "description": "Current weather for one city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "City name"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 256,
+        "thinkingConfig": {
+          "includeThoughts": false,
+          "thinkingBudget": 0
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "chunks": [
+      "ZGF0YTogeyJjYW5kaWRhdGVzIjpbeyJjb250ZW50Ijp7InBhcnRzIjpbeyJmdW5jdGlvbkNhbGwiOnsibmFtZQ==",
+      "IjoiZ2V0X3dlYXRoZXIiLCJhcmdzIjp7ImNpdHkiOiJPc2xvIn19fV0sInJvbGUiOiJtb2RlbCJ9LCJmaW5pc2hSZWFzb24iOiJTVE9QIiwiaW5kZXgiOjB9XSwidXNhZ2VNZXRhZGF0YSI6eyJwcm9tcHRUb2tlbkNvdW50Ijo2MSwiY2FuZGlkYXQ=",
+      "ZXNUb2tlbkNvdW50IjoxNiwidG90YWxUb2tlbkNvdW50",
+      "Ijo3NywicHJvbXB0VG9rZW5zRGV0YWlscyI6W3sibW9kYWxpdHkiOiJURVhUIiwidG9rZW5Db3VudCI6NjF9XX0sIm1vZGVsVmVyc2lvbiI6ImdlbWluaS0yLjUtZmxhc2giLCJyZXNwb25zZUlkIjoiU3ludGhSZXNwMEFiQ2RFZkdoSWpLbE1uT3AifQ0KDQo="
+    ]
+  }
+}

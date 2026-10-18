@@ -4,9 +4,10 @@ Two layers:
 
 - ``SessionRuntime`` lives as long as the session does inside a process (the Agent of P04-20 owns
   it): the provider caller, the store, the tool registry and tool array, the prompt lifecycle, the
-  wire heal ledger and argument memo, inline tool executors and history hydrators, and the
-  ``LoopOptions``. ``environments`` is the process's terminal ``EnvironmentRegistry``; the host
-  sets it (P06 wiring) and the tool round offers it to handlers as ``environments``.
+  wire heal ledger and argument memo, inline tool executors and history hydrators, the
+  ``LoopOptions`` and the context engine (P08). ``environments`` is the process's terminal
+  ``EnvironmentRegistry``; the host sets it (P06 wiring) and the tool round offers it to handlers
+  as ``environments``.
 - ``TurnState`` is one turn: the live rows, counters, the control handle (interrupt / steer /
   redirect), the outcome. ``new_turn_state`` is the documented factory the Agent calls; then
   ``await indus.core.loop.run_turn(state)``.
@@ -44,6 +45,8 @@ from indus.tools.registry import ToolRegistry
 from indus.tools.spill import SpillSink
 
 if TYPE_CHECKING:
+    from indus.core.compression.engine import ContextEngine
+    from indus.core.liveness import RunBudget
     from indus.core.model_call import ModelCaller
     from indus.core.prompt.builder import BuildContext
     from indus.core.prompt.lifecycle import PromptLifecycle
@@ -137,6 +140,12 @@ class SessionRuntime:
     profile: object = None
     environments: EnvironmentRegistry | None = None
     run_context: str | None = None
+    run_budget: RunBudget | None = None
+    # The session's context engine (P08-05); None: no automatic compression.
+    context: ContextEngine | None = None
+    # Told ``(old id, new id)`` when a rotating compaction continued the conversation in a child
+    # session (P08-05); the Agent moves its sink, ledger and host onto the new id.
+    on_continued: Callable[[str, str], None] | None = None
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

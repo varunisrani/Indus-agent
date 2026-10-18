@@ -10,7 +10,17 @@ earlier ones made:
 4. ``tools`` — registry, toolset selection, the provider-neutral tool array;
 5. ``session`` — transcript store, prompt lifecycle, the ``SessionRuntime`` kept across turns;
 6. ``config`` — loop options from the config (``agent.max_turns``) and the bound route;
-7. ``context_engine`` — an empty slot P08 fills.
+7. ``context_engine`` — the session's context engine (P08-05; None when compression is off).
+
+Usage (P08-08): the loop's caller is wrapped so every answered call lands in ``Agent.usage`` (the
+session's ``UsageLedger``, also written to the store); the context engine listens to that ledger
+— the one path a response's usage reaches the usage anchor. Side tasks go through ``Agent.aux``,
+the host's auxiliary client (P08-17) bound to this session's route and ledger; without one, the
+compression summary asks the main route, recorded under the ``compression`` task tag.
+
+A rotating compaction (``compression.in_place: false``) continues the conversation in a child
+session: the agent's sink, ledger and engine move to the child id and ``on_session_moved``
+listeners (the host) are told ``(old id, new id)``.
 
 ``run_turn`` runs one turn and returns its ``TurnResult``; ``chat`` returns just the final text.
 While a turn runs, ``interrupt`` / ``steer`` / ``redirect`` reach it (loop thread only). Every task
@@ -29,7 +39,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from collections.abc import Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
@@ -37,6 +47,15 @@ from typing import Any, Literal
 import httpx
 
 from indus.core.cleanup import TASK_CLEANUPS, CleanupRegistry
+from indus.core.compression.engine import (
+    BuiltinEngine,
+    CompressRequest,
+    Outcome,
+    build_engine,
+    caller_summarizer,
+    compress_now,
+)
+from indus.core.compression.summarize import AuxSummarizer, Summarizer
 from indus.core.events import EventListener, EventSink, as_sink
 from indus.core.loop import run_turn
 from indus.core.model_call import OnEvent, OnWait, RouteCaller
@@ -54,17 +73,23 @@ from indus.core.turn_state import (
     TurnState,
     new_turn_state,
 )
+from indus.core.usage import RecordingCaller, UsageLedger
+from indus.core.wire import finish_request
+from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
 from indus.foundation.errors import IndusError
 from indus.foundation.ids import new_session_id
 from indus.foundation.scope import Scope, spawn_with_scope
 from indus.protocol.requests_port import ServerRequestPort
+from indus.providers.auxiliary import AuxClient
 from indus.providers.context_length import ListModels
 from indus.providers.retry import DEFAULT_MAX_RETRIES, clamp_max_retries
 from indus.providers.route import RuntimeRoute
 from indus.providers.streaming import CallOutcome, RouteChanged, StaleStreak, StreamFlags
 from indus.providers.timeouts import TimeoutPolicy
 from indus.providers.types import ChatRequest
+from indus.state import usage as usage_rows
+from indus.state.usage import UsageDelta
 from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
 from indus.tools.builtin.todo import TOOL_NAME as TODO_TOOL
@@ -132,6 +157,10 @@ class AgentOptions:
     inline: Mapping[str, InlineExecutor] = field(default_factory=dict[str, InlineExecutor])
     session_fields: Mapping[str, Any] = field(default_factory=dict[str, Any])
     cleanups: CleanupRegistry | None = None
+    # The compression summariser (P08-04); default: the auxiliary client, else the main route.
+    summarizer: Summarizer | None = None
+    # The host's auxiliary client (P08-17); each agent binds it to its own route and ledger.
+    aux: AuxClient | None = None
 
 
 @dataclass
@@ -160,6 +189,9 @@ class BoundCaller:
     clock: Clock
     max_retries: int = DEFAULT_MAX_RETRIES
     policy: TimeoutPolicy = field(default_factory=TimeoutPolicy)
+    # Who drives the session (``auto`` cache tier) and the prompt's static prefix, if known.
+    source: str = ""
+    static_prefix: Callable[[], str | None] = lambda: None
     _flags: dict[tuple[str, str, str], StreamFlags] = field(
         default_factory=dict[tuple[str, str, str], StreamFlags]
     )
@@ -200,8 +232,26 @@ class BoundCaller:
             return RouteChanged(None, 0, 0)
         if state.extra_body and not request.extra_body:
             request = replace(request, extra_body=dict(state.extra_body))
+        # The cache plan for the route this request really goes to, made last (P08-07).
+        request = finish_request(
+            request,
+            markers=state.cache.markers,
+            ttl_setting=state.cache.ttl,
+            source=self.source,
+            native=state.api_mode == "anthropic_messages",
+            static_prefix=self.static_prefix() if state.cache.markers else None,
+        )
         caller = self.caller_for(state, generation)
         return await caller.call(request, on_event=on_event, on_wait=on_wait)
+
+
+def _stable_tier(lifecycle: PromptLifecycle) -> str | None:
+    """The stable tier of a prompt built in this process (a restored prompt has no known split)."""
+    parts = lifecycle.last_parts
+    if parts is None or lifecycle.prompt is None:
+        return None
+    stable = parts.stable.strip()
+    return stable if stable and lifecycle.prompt.startswith(stable) else None
 
 
 # -- the agent ------------------------------------------------------------------------------------
@@ -222,7 +272,7 @@ class Agent:
         self.options = options or AgentOptions()
         self.toolset_selection = list(toolset_selection) if toolset_selection is not None else None
         self.phases: list[str] = []
-        self.context_engine: object | None = None
+        self.context_engine: BuiltinEngine | None = None
         self._route_in = route
         self._sink_in = sink
         self._binding: RouteBinding | None = route if isinstance(route, RouteBinding) else None
@@ -241,6 +291,10 @@ class Agent:
         self._closed = False
         self.close_errors: list[str] = []
         self.todo: TodoWiring | None = None
+        self.usage: UsageLedger = UsageLedger(clock=scope.clock)
+        self.aux: AuxClient | None = None
+        self._former_ids: list[str] = []
+        self._moved: list[Callable[[str, str], object]] = []
 
     @classmethod
     async def start(
@@ -332,7 +386,7 @@ class Agent:
             self.phases.append("session")
             self._read_config()
             self.phases.append("config")
-            self.context_engine = None  # P08 puts the compressor here
+            self._open_context_engine()
             self.phases.append("context_engine")
             self._opened = True
             log.debug("agent for session %s open (%s)", self.session_id, ", ".join(self.phases))
@@ -369,6 +423,7 @@ class Agent:
             self.scope.clock,
             max_retries=self._max_retries(),
             policy=self.options.policy,
+            source=self.options.source or self.options.platform,
         )
 
     def _max_retries(self) -> int:
@@ -410,6 +465,7 @@ class Agent:
         if prompt_store is None and isinstance(store, StateStore):
             prompt_store = SessionPrompts(store.handle)
         lifecycle = PromptLifecycle(options.builder or PromptBuilder(), store=prompt_store)
+        self.caller.static_prefix = lambda: _stable_tier(lifecycle)
         tools = self._tool_array(state)
         inline, hydrators = dict(options.inline), dict(options.hydrators)
         if TODO_TOOL in self._selected and TODO_TOOL not in inline:
@@ -428,9 +484,20 @@ class Agent:
             cwd=options.cwd,
             context_length=state.context_length,
         )
+        self.usage = UsageLedger(
+            clock=self.scope.clock, session_id=self.session_id, store=self._usage_sink(store)
+        )
+        binding = self.binding
+        if options.aux is not None:
+            ledger = self.usage
+
+            async def record(task: str, route: RuntimeRoute, usage: Any, latency: float) -> None:
+                await ledger.record(usage, route=route, latency_s=latency, task=task)
+
+            self.aux = options.aux.bound(lambda: binding.state.route, record=record)
         self._runtime = SessionRuntime(
             session_id=self.session_id,
-            caller=self.caller,
+            caller=RecordingCaller(self.caller, self.usage, lambda: binding.state.route),
             clock=self.scope.clock,
             prompts=lifecycle,
             prompt_context=context,
@@ -444,9 +511,26 @@ class Agent:
             hydrators=hydrators,
             source=options.source or options.platform,
             session_fields=options.session_fields,
+            on_continued=self._continued,
         )
         self.binding.add_dependent(prompt_identity(lifecycle))
         self.binding.add_dependent(self._follow_route)
+
+    def _usage_sink(self, store: TranscriptStore) -> Any:
+        """Where the usage ledger writes (P08-08): the session's store rows, when there is one."""
+        if not isinstance(store, StateStore):
+            return None
+        handle = store.handle
+
+        async def write(delta: UsageDelta, task: str) -> None:
+            session_id = self.usage.session_id  # follows a rotating compaction
+
+            def run() -> bool:
+                return usage_rows.record(handle, session_id, delta, task=task)
+
+            await run_blocking(run, label="usage")
+
+        return write
 
     def _read_config(self) -> None:
         options = self.options
@@ -457,6 +541,38 @@ class Agent:
             context_length=loop.context_length or state.context_length,
             reasoning_effort=loop.reasoning_effort or state.reasoning_effort,
         )
+
+    def _open_context_engine(self) -> None:
+        runtime = self.runtime
+        state = self.binding.state
+        todo = self.todo
+        # P08-17's AuxClient when the host wired one (``Agent.aux``); else the main route,
+        # recorded in the ledger under the ``compression`` task tag.
+        binding = self.binding
+        main_route = RecordingCaller(
+            self.caller, self.usage, lambda: binding.state.route, task="compression"
+        )
+        summarizer = self.options.summarizer or AuxSummarizer(
+            self.aux, fallback=caller_summarizer(main_route)
+        )
+        engine = build_engine(
+            self.scope,
+            session_id=self.session_id,
+            clock=self.scope.clock,
+            store=runtime.store,
+            summarizer=summarizer,
+            window=runtime.options.context_length or state.context_length,
+            window_source=state.window.source,
+            max_output=runtime.options.max_tokens,
+            model=state.model,
+            provider=state.provider,
+            base_url=state.base_url,
+            todo=(lambda: todo.todos.render()) if todo is not None else None,
+        )
+        self.context_engine = engine
+        runtime.context = engine
+        if engine is not None:
+            self.usage.add_listener(engine.on_usage)
 
     async def _follow_route(self, before: RouteState, after: RouteState) -> None:
         """Route dependent: keep the runtime in step with the bound route (either direction)."""
@@ -476,6 +592,35 @@ class Agent:
             context_length=after.context_length,
         )
         runtime.tools = self._tool_array(after)
+        if runtime.context is not None:
+            runtime.context.set_route(
+                window=after.context_length,
+                max_output=runtime.options.max_tokens,
+                model=after.model,
+                provider=after.provider,
+                source=after.window.source,
+            )
+
+    # -- continuation (rotating compaction) -------------------------------------------------------
+
+    def on_session_moved(self, listener: Callable[[str, str], object]) -> Callable[[], None]:
+        """Call ``listener(old id, new id)`` when a rotating compaction moves the session."""
+        self._moved.append(listener)
+        return lambda: self._moved.remove(listener) if listener in self._moved else None
+
+    def _continued(self, old: str, new: str) -> None:
+        """The runtime moved to the continuation ``new``: follow it (see the module notes)."""
+        if old == new:
+            return
+        if old not in self._former_ids:
+            self._former_ids.append(old)
+        self.sink.session_id = new
+        self.usage.session_id = new
+        for listener in list(self._moved):
+            try:
+                listener(old, new)
+            except Exception:
+                log.warning("a session-moved listener failed", exc_info=True)
 
     # -- background work --------------------------------------------------------------------------
 
@@ -549,6 +694,40 @@ class Agent:
         result = await self.run_turn(text)
         return result.final_text or ""
 
+    async def compress(
+        self, focus: str | None = None, *, keep_last: int | None = None, preview: bool = False
+    ) -> Outcome:
+        """Manual ``/compress [focus] [here N] [--preview]`` between turns (P08-05).
+
+        Clears the summary cooldown, ignores the attempt cap and the breaker, and condenses the
+        stored transcript now; ``preview`` only reports what would be condensed.
+        """
+        if self._closed:
+            raise AgentClosed(f"the agent of session {self.session_id} is closed")
+        await self.open()
+        if self.current is not None:
+            raise AgentBusy(f"session {self.session_id} is running a turn")
+        runtime = self.runtime
+        engine = runtime.context
+        if engine is None:
+            return Outcome("nothing", reason="compression is off")
+        state = new_turn_state(
+            runtime,
+            message="",
+            turn_id=f"compress_{secrets.token_hex(4)}",
+            generation=self._generation,
+            sink=self.sink.emit,
+            next_seq=self.sink.next_seq,
+        )
+        state.rows = await runtime.store.load(runtime.session_id) if runtime.store else []
+        ctx = replace(runtime.prompt_context, session_id=runtime.session_id)
+        state.system_prompt = await runtime.prompts.restore_or_build(
+            ctx, history=[r.to_message() for r in state.rows]
+        )
+        await engine.on_session_start(state.rows)
+        request = CompressRequest(gate="manual", focus=focus, keep_last=keep_last, preview=preview)
+        return await compress_now(state, request)
+
     # -- control of the running turn (loop thread) -------------------------------------------------
 
     def interrupt(
@@ -613,6 +792,8 @@ class Agent:
                 log.warning("closer %s of session %s failed", name, self.session_id, exc_info=True)
         if self._sink is not None:
             registry = self.options.cleanups or TASK_CLEANUPS
+            for former in self._former_ids:  # cleanups registered before a continuation
+                errors.extend(await registry.run(former))
             errors.extend(await registry.run(self.session_id))
         for task in list(self._tasks):
             task.cancel()

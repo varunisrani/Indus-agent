@@ -47,8 +47,7 @@ from indus.foundation.errors import (
 from indus.providers.classify import ClassifiedError, route_key
 from indus.providers.classify import classify as default_classify
 from indus.providers.retry import sleep_sliced
-from indus.providers.sse import aiter_sse
-from indus.providers.transports import http_error_from_response
+from indus.providers.transports import frames_of, http_error_from_response
 from indus.providers.types import (
     ChatRequest,
     Finish,
@@ -245,7 +244,7 @@ class _Call:
             if response.status_code >= 400:
                 await response.aread()
                 raise _http_error(response, self.clock, self.route)
-            async for event in self.transport.parse_stream(aiter_sse(response)):
+            async for event in self.transport.parse_stream(frames_of(self.transport, response)):
                 if not self.writer.owns(att.token):
                     self.writer.discarded += 1
                     continue

@@ -49,6 +49,13 @@ class AgentSection(_Section):
     local_stream_stale_timeout: int = Field(
         default=900, description="seconds a local model server may stay silent mid-stream"
     )
+    turn_liveness_s: float = Field(
+        default=600,
+        description="seconds a reply may show no activity before it is stopped (0 = off)",
+    )
+    run_budget_s: float = Field(
+        default=0, description="wall-clock seconds one run may take, like --run-budget (0 = off)"
+    )
 
 
 class TerminalSection(_Section):
@@ -253,6 +260,36 @@ class NetworkSection(_Section):
     force_ipv4: bool = Field(default=False, description="connect over IPv4 only")
 
 
+class AuxTaskSection(_Section):
+    """Which model one side task (titles, summaries, the approval judge, ...) uses."""
+
+    provider: str = Field(default="auto", description="provider name; auto = the chat model's")
+    model: str = Field(default="", description="model id; empty = the provider's chat model")
+    base_url: str = Field(default="", description="endpoint URL for a custom provider")
+    reasoning_effort: str = Field(default="", description="reasoning level; empty = none")
+    timeout_s: float | None = Field(
+        default=None, description="seconds one call may take; empty = the task's default"
+    )
+    fallback: list[dict[str, Any]] = Field(
+        default_factory=list[dict[str, Any]],
+        description="routes to try next: a list of {provider, model}",
+    )
+
+
+class AuxiliarySection(_Section):
+    """Side-task models; tasks not listed here use ``auto`` (the chat model)."""
+
+    compression: AuxTaskSection = Field(
+        default_factory=AuxTaskSection, description="context compression summaries"
+    )
+    title: AuxTaskSection = Field(
+        default_factory=AuxTaskSection, description="automatic session titles"
+    )
+    approval: AuxTaskSection = Field(
+        default_factory=AuxTaskSection, description="the smart approval judge"
+    )
+
+
 class ModelCatalogSection(_Section):
     ttl_minutes: int = Field(
         default=20, description="minutes a provider's live model list is reused before refetching"
@@ -287,6 +324,65 @@ class PromptSection(_Section):
     platform_hints: dict[str, Any] = Field(
         default_factory=dict,
         description="per-surface hint changes: <surface>: text to append, or {append, replace}",
+    )
+
+
+class PromptCachingSection(_Section):
+    """Prompt-cache markers on routes that use them (P08-07)."""
+
+    cache_ttl: str = Field(
+        default="5m",
+        description="how long marked prefixes stay cached: 5m, 1h, or auto (1h when a person "
+        "drives the session, 5m for automated runs)",
+    )
+
+
+class CompressionSection(_Section):
+    """When and how a long conversation is summarised (P08-02..05)."""
+
+    enabled: bool = Field(default=True, description="compress long conversations automatically")
+    threshold: float = Field(
+        default=0.50,
+        description="share of the usable window that triggers compression (windows under 512K "
+        "never trigger below 0.75)",
+    )
+    threshold_tokens: int | None = Field(
+        default=None, description="absolute trigger cap in tokens; empty = no cap"
+    )
+    model_thresholds: dict[str, float] = Field(
+        default_factory=dict,
+        description="per-model share overrides: <model substring> or <provider>:<substring>",
+    )
+    max_attempts: int = Field(
+        default=3, description="ineffective compression attempts allowed per turn (1-10)"
+    )
+    timeout_s: float = Field(
+        default=120.0, description="seconds the summary call may take; also the shortest cooldown"
+    )
+    tail_mode: Literal["lean", "legacy"] = Field(
+        default="lean",
+        description="lean: small recent tail + verbatim user messages in the summary",
+    )
+    target_ratio: float = Field(
+        default=0.20, description="legacy mode: tail size as a share of the trigger"
+    )
+    min_tail_user_messages: int = Field(
+        default=1, description="real user messages always kept verbatim after a compression"
+    )
+    in_place: bool = Field(
+        default=True, description="keep one session id (true) or continue in a child session"
+    )
+    abort_on_summary_failure: bool = Field(
+        default=False, description="never drop the middle when the summary call fails"
+    )
+    idle_after_s: int = Field(
+        default=0, description="compress after this many idle seconds; 0 = off"
+    )
+
+
+class ContextSection(_Section):
+    engine: str = Field(
+        default="builtin", description="context engine; plugins never activate by themselves"
     )
 
 
@@ -353,6 +449,18 @@ class ConfigModel(BaseModel):
     )
     prompt: PromptSection = Field(
         default_factory=PromptSection, description="how the system prompt is put together"
+    )
+    auxiliary: AuxiliarySection = Field(
+        default_factory=AuxiliarySection, description="models for side tasks"
+    )
+    prompt_caching: PromptCachingSection = Field(
+        default_factory=PromptCachingSection, description="provider prompt caching"
+    )
+    compression: CompressionSection = Field(
+        default_factory=CompressionSection, description="summarising long conversations"
+    )
+    context: ContextSection = Field(
+        default_factory=ContextSection, description="the context engine"
     )
     timezone: str = Field(
         default="", description="IANA zone name, e.g. Asia/Kolkata; empty = system zone"

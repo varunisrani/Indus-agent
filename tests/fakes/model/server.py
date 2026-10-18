@@ -5,6 +5,11 @@
 - ``POST …/chat/completions`` in the Chat Completions wire format (SSE, or JSON when the request
   says ``"stream": false``);
 - ``POST …/v1/messages`` in the Anthropic Messages wire format (same rule);
+- ``POST …/responses`` in the OpenAI Responses wire format (same rule);
+- ``POST …/model/<id>/converse-stream`` (binary event stream) and ``…/converse`` (JSON) in the
+  Bedrock Converse wire format;
+- ``POST …/models/<id>:streamGenerateContent`` (SSE) and ``…:generateContent`` (JSON) in the
+  Gemini wire format;
 - ``GET …/models`` with a model list.
 
 Every POST consumes the next ``Turn`` of the script; a request past the end raises
@@ -33,7 +38,10 @@ from tests.fakes.model import (
     Stall,
     Turn,
     wire_anthropic,
+    wire_bedrock,
     wire_chat,
+    wire_gemini,
+    wire_responses,
 )
 
 if TYPE_CHECKING:
@@ -44,6 +52,21 @@ if TYPE_CHECKING:
 FAKE_HOST = "fake.invalid"
 CHAT_BASE_URL = f"https://{FAKE_HOST}/v1"
 ANTHROPIC_BASE_URL = f"https://{FAKE_HOST}"
+BEDROCK_BASE_URL = f"https://{FAKE_HOST}"
+GEMINI_BASE_URL = f"https://{FAKE_HOST}/v1beta"
+BASE_URLS = {
+    "anthropic_messages": ANTHROPIC_BASE_URL,
+    "bedrock": BEDROCK_BASE_URL,
+    "gemini": GEMINI_BASE_URL,
+}
+WIRES: dict[str, Any] = {
+    "chat": wire_chat,
+    "anthropic": wire_anthropic,
+    "responses": wire_responses,
+    "bedrock": wire_bedrock,
+    "gemini": wire_gemini,
+}
+CONTENT_TYPES = {"bedrock": "application/vnd.amazon.eventstream"}
 DEFAULT_MODEL = "fake-model-1"
 
 
@@ -114,7 +137,7 @@ class FakeModelServer:
         return CHAT_BASE_URL
 
     def base_url_for(self, api_mode: str) -> str:
-        return ANTHROPIC_BASE_URL if api_mode == "anthropic_messages" else CHAT_BASE_URL
+        return BASE_URLS.get(api_mode, CHAT_BASE_URL)
 
     def client(self, **kwargs: Any) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=self.transport, **kwargs)
@@ -149,10 +172,17 @@ class FakeModelServer:
                 RecordedRequest(request.method, path, headers, body, None, **extra)
             )
             return httpx.Response(405, json={"error": {"message": "method not allowed"}})
+        stream_by_path: bool | None = None
         if path.endswith("/chat/completions"):
             wire = "chat"
         elif path.endswith("/messages"):
             wire = "anthropic"
+        elif path.endswith("/responses"):
+            wire = "responses"
+        elif path.endswith("/converse-stream") or path.endswith("/converse"):
+            wire, stream_by_path = "bedrock", path.endswith("/converse-stream")
+        elif ":streamGenerateContent" in path or ":generateContent" in path:
+            wire, stream_by_path = "gemini", ":streamGenerateContent" in path
         else:
             self.requests.append(RecordedRequest("POST", path, headers, body, None, **extra))
             return httpx.Response(404, json={"error": {"message": f"no route {path}"}})
@@ -169,17 +199,21 @@ class FakeModelServer:
         first = turn.steps[0]
         if isinstance(first, Fail):
             return _fail_response(first)
-        stream = isinstance(body, dict) and bool(body.get("stream"))
+        if stream_by_path is not None:
+            stream = stream_by_path
+        else:
+            stream = isinstance(body, dict) and bool(body.get("stream"))
         model = str(body.get("model") or self.model) if isinstance(body, dict) else self.model
-        module = wire_chat if wire == "chat" else wire_anthropic
+        module = WIRES[wire]
         if not stream:
             return await self._json_answer(turn, turn_no, model, module, request)
         actions = module.stream_actions(turn, turn_no=turn_no, model=model)
         record = StreamRecord(turn_no, wire, time.perf_counter())
         self.streams.append(record)
+        content_type = CONTENT_TYPES.get(wire, "text/event-stream")
         return httpx.Response(
             200,
-            headers={"content-type": "text/event-stream", "cache-control": "no-cache"},
+            headers={"content-type": content_type, "cache-control": "no-cache"},
             stream=_ScriptedStream(self._play(actions, record, request)),
         )
 
@@ -290,7 +324,9 @@ def one_off_router(base_url: str = CHAT_BASE_URL) -> respx.MockRouter:
 
 __all__ = [
     "ANTHROPIC_BASE_URL",
+    "BEDROCK_BASE_URL",
     "CHAT_BASE_URL",
+    "GEMINI_BASE_URL",
     "FAKE_HOST",
     "FAKE_KEY",
     "FakeModelServer",

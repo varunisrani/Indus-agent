@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "recorded_at": "2026-10-18T00:00:00+00:00",
+    "provider": "openai",
+    "model": "gpt-5-mini",
+    "api_mode": "responses",
+    "scenario": "tool_call",
+    "base_url": "https://api.openai.com/v1",
+    "doc_url": "https://platform.openai.com/docs/api-reference/responses-streaming",
+    "doc_date": "2026-10-18",
+    "indus_version": "0.0.1",
+    "synthetic": true,
+    "synthetic_note": "Written by hand from the vendor's documented examples; replace with a real recording.",
+    "chat_request": {
+      "model": "gpt-5-mini",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the get_weather tool to look up the weather in Oslo."
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Current weather for one city.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string",
+                  "description": "City name"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ],
+      "max_tokens": 256
+    }
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://api.openai.com/v1/responses",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": "Use the get_weather tool to look up the weather in Oslo."
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Current weather for one city.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          },
+          "strict": false
+        }
+      ],
+      "store": false,
+      "stream": true,
+      "max_output_tokens": 256
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "chunks": [
+      "ZXZlbnQ6IHJlc3BvbnNlLmNyZWF0ZWQKZGF0YTogeyJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlZCIsInNlcXVlbmNlX251bWJlciI6MCwicmVzcG9uc2UiOnsiaWQiOiJyZQ==",
+      "c3BfNjhmM2MwYTFiMmMzZDRlNWY2MDcxODI5M2E0YjVjNmQwMDAwc3ludGhldGljIiwib2JqZWN0IjoicmVzcG9uc2UiLCJjcmVhdGVkX2F0IjoxNzYwNzkwMDAwLCJtb2RlbCI6ImdwdC01LW1pbmktMjAyNS0wOC0wNyIsInN0b3JlIjpmYWxzZSwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJvdXRwdXQiOltdfX0KCmV2ZW50OiByZXNwb25zZS5pbl9wcm9ncmVzcwpkYXRhOg==",
+      "IHsidHlwZSI6InJlc3BvbnNlLmluX3Byb2dyZXNzIiwic2VxdWVuY2VfbnVtYmVyIjoxLCJyZXNwb25zZSI6ew==",
+      "ImlkIjoicmVzcF82OGYzYzBhMWIyYzNkNGU1ZjYwNzE4MjkzYTRiNWM2ZDAwMDBzeW50aGV0aWMiLCJvYmplY3QiOiJyZXNwb25zZSIsImNyZWF0ZWRfYXQiOjE3NjA3OTAwMDAsIm1vZGVsIjoiZ3B0LTUtbWluaS0yMDI1LTA4LTA3Iiwic3RvcmUiOmZhbHNlLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm91dHB1dCI6W119fQoKZXZlbnQ6IHJlc3BvbnNlLm91dHB1dF9pdGVtLmFkZGVkCmRhdGE6IHsidHlwZSI6InJlc3BvbnNlLm91dHB1dF9pdGVtLmFkZGVkIiwic2VxdWVuY2VfbnVtYmVyIjoyLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJyc182OGYzYzBhMXN5bnRoZXRpYzAwMDEiLCJ0eXBlIjoicmVhc29uaW5nIiwic3VtbWFyeSI6W119fQoKZXZlbnQ6IHJlc3BvbnM=",
+      "ZS5vdXRwdXRfaXRlbS5kb25lCmRhdGE6IHsidHlwZSI6InJlc3BvbnNlLm91dHB1dF9pdGVtLmRvbmUiLCJzZXF1ZW5jZV9udW1iZXIiOjMsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6InJzXzY4ZjNjMGExc3ludGhldGljMDAwMSIsInR5cGUiOiJyZWFz",
+      "b25pbmciLCJzdW1tYXJ5IjpbXX19CgpldmVudDogcmVzcG9uc2Uub3V0cHV0X2l0ZW0uYWRkZWQKZGF0YTogeyJ0eXBlIjoicmVzcG9uc2Uub3V0cHV0X2l0ZW0uYWRkZWQiLCJzZXF1ZW5jZV9udW1iZXIiOjQsIm91dHB1dF9pbmRleCI6MSwiaXRlbSI6eyJpZCI6ImZjXzY4ZjNjMGExc3ludGhldGljMDAwMyIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJhcmd1bWVudHMiOiIiLCJjYWxsX2lkIjoiY2FsbF9TeW50aDBXZWF0aGVyT3NsbzAwMDAxIiwibmFtZSI6ImdldF93ZWF0aGVyIn19CgpldmVudDogcmVzcG9uc2UuZnVuY3Rpb25fY2FsbF9hcmd1bWVudHMuZGVsdGEKZGF0YTogeyJ0eXBlIjoicmVzcG9uc2UuZnVuY3Rpb25fY2FsbF9hcmd1bWVudHMuZGVsdGEiLCJzZXF1ZW5jZV9udW1iZXIiOjUsIml0ZW1faWQiOiJmY182OGYzYzBhMXN5bnRoZXRpYzAwMDMiLCJvdXRwdXRfaW5kZXgiOjEsImRlbHRhIjoie1wiIn0KCmV2ZW50OiByZXNwb25zZS5mdW4=",
+      "Y3Rpb25fY2FsbF9hcmd1bWVudHMuZGVsdGEKZGF0YTogeyJ0eXBlIjoicmVzcG9uc2UuZnVuY3Rpb25fY2FsbF9hcmd1bWVudHMuZGU=",
+      "bHRhIiwic2VxdWVuY2VfbnVtYmVyIjo2LCJpdGVtX2lkIjoiZmNfNjhmM2MwYTFzeW50aGV0aWMwMDAzIiwib3V0cHV0X2luZGV4IjoxLCJkZWx0YSI6ImNpdHkifQoKZXZlbnQ6IHJlc3BvbnNlLmZ1bmN0aW9uX2NhbGxfYXJndW1lbnRzLmRlbHRhCmRhdGE6IHsidHlwZSI6InJlc3BvbnNlLmZ1bmN0aW9uX2NhbGxfYXJndW1lbnRzLmRlbHRhIiwic2VxdWVuY2VfbnVtYmVyIjo3LCJpdGVtX2lkIjoiZmNfNjhmM2MwYTFzeW50aGV0aWMwMDAzIiwib3V0cHV0X2luZGV4IjoxLCJkZWx0YSI6IlwiOlwiIn0KCmV2ZW50OiByZXNw",
+      "b25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kZWx0YQpkYXRhOiB7InR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kZWx0YSIsInNlcXVlbmNlX251bWJlciI6OCwiaXRlbV9pZCI6ImZjXzY4ZjNjMGExc3ludGhldGljMDAwMyIsIm91dHB1dF9pbmRleCI6MSwiZGVsdGEiOiJPc2xvIn0KCmV2ZW50OiByZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kZWx0YQpkYXRhOiB7InR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kZWx0YSIsInNlcXVlbmNlX251bWJlciI6OSwiaXRlbV9pZCI6ImZjXzY4ZjNjMGExc3ludGhldGljMDAwMyIsIm91dHB1dF9pbmRleCI6MSwiZGVsdGEiOiJcIn0ifQoKZXZlbnQ6IHJlc3BvbnNlLmZ1bmN0aW9uX2NhbGxfYXJndW1lbnRzLmRvbmUKZGF0YTogeyJ0eXBlIjoicmVzcG9uc2UuZnVuY3Rpb25fY2FsbF9hcmd1bWVudHMuZG9uZSIsInNlcXVlbmNlX251bWJlciI6MTAsIml0ZW1faWQiOiJmY182OGYzYzBhMXN5bnRoZXRpYzAwMDMiLCJvdXRwdXRfaW5kZXgiOjEsImFyZ3VtZW50cyI6IntcImNpdHlcIjpcIk9zbG9cIn0ifQoKZXZlbnQ6IHJlc3BvbnNlLm91dHB1dF9pdGVtLmRvbmUKZGF0YTogeyJ0eXBlIjoicmVzcG9uc2Uub3V0cHV0X2l0ZW0uZG9uZSIsInNlcXVlbmNlX251bWJlciI6MTEsIm91dHB1dF9pbmRleCI6MSwiaXRlbSI6eyJpZCI6ImZjXzY4ZjNjMGExc3ludGhldGljMDAwMyIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiYXJndW1lbnRzIjoie1wiY2l0eVwiOlwiT3Nsb1wifSIsImNhbGxfaWQiOiJjYWxsX1N5bnRoMFdlYXRoZXJPc2xvMDAwMDEiLCJuYW1lIjoiZ2V0X3dlYXRoZXIifX0KCmV2ZW50OiByZXNwb25zZS5jb21wbGV0ZWQKZGF0YTogeyJ0eXBlIjoicmVzcG9uc2UuY29tcGxldGVkIiwic2VxdWVuY2VfbnVtYmVyIjoxMiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwXzY4ZjNjMGExYjJjM2Q0ZTVmNjA3MTgyOTNhNGI1YzZkMDAwMHN5bnRoZQ==",
+      "dGljIiwib2JqZWN0IjoicmVzcG9uc2UiLCJjcmVhdGVkX2F0IjoxNzYwNzkwMDAwLCJtb2RlbCI6ImdwdC01LW1pbmktMjAyNS0wOC0wNyIsInN0b3JlIjpmYWxzZSwic3RhdHVzIjoiY29tcGxldGVkIiwib3V0cHV0IjpbeyJpZCI6InJzXzY4ZjNjMGExc3ludGhldGljMDAwMSIsInR5cGUiOiJyZWFzb25pbmciLCJzdW1tYXJ5IjpbXX0seyJpZCI6ImZjXzY4ZjNjMGExc3ludGhldGljMDAwMyIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiYXJndW1lbnRzIjoie1wiY2l0eVwiOlwiT3Nsb1wifSIsImNhbGxfaWQiOiJjYWxsX1N5bnRoMFdlYXRoZXJPc2xvMDAwMDEiLCJuYW1lIjoiZ2V0X3dlYXRoZXIifV0sInVzYWdlIjp7ImlucHV0X3Rva2VucyI6NzEsImlucHV0X3Rva2Vuc19kZXRhaWxzIjp7ImNhY2hlZF90b2tlbnMiOjB9LCJvdXRwdXRfdG9rZW5zIjo4Miwib3V0cHV0X3Rva2Vuc19kZXRhaWxzIjp7InJlYXNvbmluZ190b2tlbnMiOjY0fSwidG90YWxfdG9rZW5zIjoxNTN9fX0KCg=="
+    ]
+  }
+}

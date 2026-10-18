@@ -149,11 +149,19 @@ def test_registry_returns_p03_transports() -> None:
     assert {"chat_completions", "anthropic_messages"} <= registered_api_modes()
 
 
-@pytest.mark.parametrize("mode", ["responses", "bedrock", "gemini", "nonsense"])
-def test_registry_refuses_later_modes(mode: str) -> None:
+@pytest.mark.parametrize("mode", ["nonsense", "smoke_signals"])
+def test_registry_refuses_unknown_modes(mode: str) -> None:
     with pytest.raises(UnsupportedApiMode) as caught:
         get_transport(mode)
     assert mode in str(caught.value)
+
+
+def test_registry_serves_p08_modes() -> None:
+    modes = registered_api_modes()
+    for mode in ("responses", "bedrock", "gemini"):
+        assert mode in modes
+        transport = get_transport(mode)
+        assert isinstance(transport, Transport) and transport.api_mode == mode
 
 
 def test_http_error_from_response_reads_retry_after_and_message() -> None:

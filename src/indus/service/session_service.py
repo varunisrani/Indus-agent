@@ -10,13 +10,23 @@ service's event loop; ``InProcessHost`` marshals calls from other threads.
 - Admission: attaching takes the session's lock without waiting. Another surface holding it, in
   this process or another, gives ``SESSION_BUSY``; so does ``submit`` while a turn runs. A
   ``submit`` for a stored session that is not attached yet attaches it first.
-- ``submit`` starts a turn and returns its ticket (turn id + generation). When the turn ends its
+- ``submit`` expands ``@`` context references (P08-19) — the typed text is stored as the row's
+  content, the expansion as its wire text, refused references become a notice — then starts a
+  turn and returns its ticket (turn id + generation). When the turn ends its
   open server requests are withdrawn (``turn_ended``); steer text it never delivered starts the
   next turn, unless the turn was interrupted.
 - ``interrupt`` / ``steer`` / ``redirect`` reach the running turn; ``answer_server_request`` goes
   to the broker; ``events(session, since)`` replays the kept events after ``since``.
 - Every failure leaves as a ``ProtocolError`` from the protocol's table; product errors are mapped
   through ``error_for_indus_code``.
+
+After a session's first completed exchange, an ``aux`` client (P08-17), when given, makes its
+title on the side (``llm`` provenance); the turn never waits for it. The same client is handed to
+every agent (``AgentOptions.aux``) for its compression summaries.
+
+``compress`` runs a manual ``/compress`` between turns (P08-05). A rotating compaction continues a
+conversation in a child session: the attached session moves to the child id, the old id keeps
+working as an alias for every call, and the session lock moves with it.
 
 Generations are counted per attached session, in process, until P17's turn lease carries them.
 """
@@ -35,7 +45,9 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from indus.core import references
 from indus.core.agent import Agent, AgentBusy, AgentOptions, RunningTurn
+from indus.core.compression.engine import Outcome
 from indus.core.events import EventListener, EventSink, RequestListener
 from indus.core.persist import MemoryStore, StateStore, TranscriptStore
 from indus.core.turn_state import TurnResult
@@ -51,7 +63,7 @@ from indus.protocol.errors import (
     TEXT_EMPTY,
     error_for_indus_code,
 )
-from indus.protocol.events import CancelReason, EventBase, ExitReason
+from indus.protocol.events import CancelReason, EventBase, ExitReason, Notice, NoticeLevel
 from indus.protocol.methods import (
     PromptSubmitResult,
     ProtocolError,
@@ -65,7 +77,9 @@ from indus.protocol.methods import (
     SessionSteerResult,
 )
 from indus.protocol.requests_port import AnswerModel
+from indus.providers.auxiliary import AuxClient, auto_title, generate_title
 from indus.providers.route import RuntimeRoute
+from indus.providers.types import Usage
 from indus.service.broker import ServerRequestBroker
 from indus.state import sessions, titles
 from indus.state.session_lock import (
@@ -113,6 +127,19 @@ def protocol_error_for(exc: BaseException) -> ProtocolError:
     if isinstance(exc, IndusError):
         return ProtocolError(error_for_indus_code(exc.code), exc.message)
     return ProtocolError(INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
+
+
+def _reference_budget(agent: Agent) -> int | None:
+    """Characters ``@`` references may add (P08-19): the room under the compression trigger
+    (P08-02) after the last reported prompt; a quarter of the window when compression is off."""
+    try:
+        engine = agent.context_engine
+        if engine is not None and engine.trigger > 0:
+            return references.budget_for_trigger(engine.trigger, agent.usage.last_prompt_tokens)
+        return references.budget_for_window(agent.binding.state.window.tokens)
+    except Exception:
+        log.debug("no reference budget known", exc_info=True)
+        return None
 
 
 def _busy(detail: str) -> ProtocolError:
@@ -173,11 +200,14 @@ class SessionService:
         answerable_kinds: Iterable[str] = (),
         owner: str = "service",
         agent_factory: AgentFactory | None = None,
+        aux: AuxClient | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
         self.toolsets = list(toolsets) if toolsets is not None else None
         self.options = options or AgentOptions()
+        if aux is not None and self.options.aux is None:
+            self.options = replace(self.options, aux=aux)
         self.store: TranscriptStore = store if store is not None else MemoryStore()
         self.lock_dir = lock_dir if lock_dir is not None else self._default_lock_dir()
         self.owner = owner
@@ -187,6 +217,9 @@ class SessionService:
         self._created: set[str] = set()
         self._idempotency: dict[str, tuple[SessionCreateParams, str]] = {}
         self._closed = False
+        self.aux = aux
+        self._titling: set[str] = set()
+        self._aliases: dict[str, str] = {}
 
     def _default_lock_dir(self) -> Path:
         if isinstance(self.store, StateStore):
@@ -207,6 +240,14 @@ class SessionService:
 
     def attached(self) -> list[str]:
         return list(self._attached)
+
+    def current_id(self, session_id: str) -> str:
+        """The id ``session_id`` is attached under now (a rotating compaction moves it)."""
+        seen: set[str] = set()
+        while session_id in self._aliases and session_id not in seen:
+            seen.add(session_id)
+            session_id = self._aliases[session_id]
+        return session_id
 
     def agent(self, session_id: str) -> Agent:
         return self._get(session_id).agent
@@ -242,6 +283,7 @@ class SessionService:
         """Attach an existing session (or describe it again when it already is attached)."""
         async with _mapped():
             self._check_open()
+            session_id = self.current_id(session_id)
             attached = self._attached.get(session_id)
             if attached is None:
                 attached = await self._attach_existing(session_id)
@@ -326,7 +368,27 @@ class SessionService:
             raise
         attached = _Attached(session_id, agent, sink, broker, taken)
         self._attached[session_id] = attached
+        agent.on_session_moved(lambda old, new: self._follow(attached, old, new))
         return attached
+
+    def _follow(self, attached: _Attached, old: str, new: str) -> None:
+        """A rotating compaction moved ``attached`` from ``old`` to ``new`` (see the module notes).
+        The lock moves when the child's can be taken; else the parent's stays held."""
+        if self._attached.get(old) is attached:
+            del self._attached[old]
+        self._attached[new] = attached
+        self._aliases[old] = new
+        attached.session_id = new
+        attached.broker.session_id = new
+        if old in self._titling:
+            self._titling.add(new)
+        taken = try_lock_session(self.lock_dir, new, owner=self.owner)
+        if isinstance(taken, LockBusy):
+            log.warning("session %s continues in %s, whose lock is held: %s", old, new, taken)
+            return
+        attached.lock.release()
+        attached.lock = taken
+        log.info("session %s continues in %s", old, new)
 
     async def _make_agent(
         self,
@@ -350,17 +412,74 @@ class SessionService:
         async with _mapped():
             self._check_open()
             _check_text(text)
-            attached = self._attached.get(session_id)
+            attached = self._attached.get(self.current_id(session_id))
             if attached is None:
                 attached = await self._attach_existing(session_id)
-            running = await self._start(attached, text)
+            if attached.running is not None:
+                raise _busy(f"session {attached.session_id} is running a turn")
+            message = await self._expand(attached, text)
+            running = await self._start(attached, text, message=message)
             return PromptSubmitResult(turn_id=running.turn_id, generation=running.generation)
 
-    async def _start(self, attached: _Attached, text: str) -> RunningTurn:
+    async def _expand(self, attached: _Attached, text: str) -> str:
+        """``text`` with its ``@`` references expanded (P08-19); refusals become a notice. A
+        failure here never blocks the message: it is sent as typed."""
+        if "@" not in text:
+            return text
+        agent = attached.agent
+        cwd = agent.options.cwd or Path(str(agent.options.session_fields.get("cwd") or "."))
+        try:
+            expansion = await references.expand(
+                text, self.scope, cwd.resolve(), budget_chars=_reference_budget(agent)
+            )
+        except Exception:
+            log.warning(
+                "could not expand the references in a message; sent as typed", exc_info=True
+            )
+            return text
+        if expansion.refusals:
+            lines = "; ".join(f"{r.token}: {r.reason}" for r in expansion.refusals)
+            attached.sink.emit(
+                Notice(
+                    session_id=attached.session_id,
+                    seq=attached.sink.next_seq(),
+                    level=NoticeLevel.WARNING,
+                    text=f"Not included: {lines}",
+                    key="references_refused",
+                )
+            )
+        return expansion.text
+
+    async def compress(
+        self,
+        session_id: str,
+        focus: str | None = None,
+        *,
+        keep_last: int | None = None,
+        preview: bool = False,
+    ) -> Outcome:
+        """Manual ``/compress [focus] [here N] [--preview]`` between turns (P08-05). Busy while a
+        turn runs; a rotating compaction moves the session (see the module notes)."""
+        async with _mapped():
+            self._check_open()
+            attached = self._get(session_id)
+            if attached.running is not None:
+                raise _busy(f"session {attached.session_id} is running a turn")
+            try:
+                return await attached.agent.compress(focus, keep_last=keep_last, preview=preview)
+            except AgentBusy as exc:
+                raise _busy(str(exc)) from exc
+
+    async def _start(
+        self, attached: _Attached, text: str, *, message: str | None = None
+    ) -> RunningTurn:
         if attached.running is not None:
             raise _busy(f"session {attached.session_id} is running a turn")
         try:
-            running = await attached.agent.start_turn(text)
+            if message is not None and message != text:
+                running = await attached.agent.start_turn(message, persist_text=text)
+            else:
+                running = await attached.agent.start_turn(text)
         except AgentBusy as exc:
             raise _busy(str(exc)) from exc
         attached.turn = running
@@ -389,6 +508,7 @@ class SessionService:
         attached.results[running.turn_id] = result
         while len(attached.results) > KEPT_RESULTS:
             attached.results.popitem(last=False)
+        self._maybe_title(attached, result)
         control = running.state.control
         left = [text for ticket, text in attached.steers.items() if control.withdraw_steer(ticket)]
         if result.pending_steer:
@@ -404,6 +524,47 @@ class SessionService:
             )
             return
         attached.agent.spawn(self._follow_up(attached, "\n".join(left)), name="steer follow-up")
+
+    def _maybe_title(self, attached: _Attached, result: TurnResult) -> None:
+        """Start auto-titling after the session's first completed exchange (P08-17)."""
+        session_id = attached.session_id
+        aux = attached.agent.aux or self.aux
+        if aux is None or session_id in self._titling or attached.agent.closed:
+            return
+        if result.exit_reason is not ExitReason.COMPLETED or not (result.final_text or "").strip():
+            return
+        users = [r for r in result.rows if r.role == "user" and not r.is_steer]
+        if len(users) != 1 or not isinstance(users[0].content, str):
+            return
+        self._titling.add(session_id)
+        attached.agent.spawn(
+            self._title(attached, users[0].content, result.final_text or ""), name="auto title"
+        )
+
+    async def _title(self, attached: _Attached, first_user: str, first_reply: str) -> None:
+        aux, store = attached.agent.aux or self.aux, self.store
+        if aux is None:
+            return
+        ledger = attached.agent.usage
+
+        async def record(
+            task: str, route: RuntimeRoute, usage: Usage | None, latency: float
+        ) -> None:
+            await ledger.record(usage, route=route, latency_s=latency, task=task)
+
+        try:
+            if isinstance(store, StateStore):
+                title = await auto_title(
+                    aux, store.handle, attached.session_id, first_user, first_reply, record=record
+                )
+            else:
+                title = await generate_title(aux, first_user, first_reply, record=record)
+                if title and isinstance(store, MemoryStore):
+                    row = store.sessions.setdefault(attached.session_id, {})
+                    row.setdefault("title", title)
+            log.info("session %s titled %r", attached.session_id, title)
+        except Exception as exc:
+            log.info("no automatic title for session %s: %s", attached.session_id, exc)
 
     async def _follow_up(self, attached: _Attached, text: str) -> None:
         if attached.running is not None or attached.agent.closed:
@@ -482,6 +643,7 @@ class SessionService:
     async def close(self, session_id: str) -> None:
         """Detach a session: stop its turn, withdraw its requests, close its agent, release the
         lock. Unknown ids are ignored."""
+        session_id = self.current_id(session_id)
         attached = self._attached.pop(session_id, None)
         if attached is None:
             return
@@ -506,7 +668,7 @@ class SessionService:
             raise ProtocolError(INTERNAL_ERROR, "the session service is closed")
 
     def _get(self, session_id: str) -> _Attached:
-        attached = self._attached.get(session_id)
+        attached = self._attached.get(self.current_id(session_id))
         if attached is None:
             raise ProtocolError(
                 SESSION_NOT_FOUND, f"session {session_id} is not attached", path="session_id"

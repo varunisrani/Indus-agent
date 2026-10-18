@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "recorded_at": "2026-10-18T00:00:00+00:00",
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "api_mode": "gemini",
+    "scenario": "text",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta",
+    "doc_url": "https://ai.google.dev/api/generate-content",
+    "doc_date": "2026-10-18",
+    "indus_version": "0.0.1",
+    "synthetic": true,
+    "synthetic_note": "Written by hand from the vendor's documented examples; replace with a real recording.",
+    "chat_request": {
+      "model": "gemini-2.5-flash",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Answer with exactly one word: hello"
+        }
+      ],
+      "max_tokens": 256
+    }
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Answer with exactly one word: hello"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 256,
+        "thinkingConfig": {
+          "includeThoughts": false,
+          "thinkingBudget": 0
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "chunks": [
+      "ZGF0YTogeyJjYW5kaWRhdGVzIjpbeyJjb250ZW50Ijp7InBhcnRzIjpbeyJ0ZXh0IjoiaGVsbG8ifV0sInJvbA==",
+      "ZSI6Im1vZGVsIn0sImluZGV4IjowfV0sInVzYWdlTWV0YWRhdGEiOnsicHJvbXB0VG9rZW5Db3VudCI6NywidG90YWxUb2tlbkNvdW50Ijo3fSwibW9kZWxWZXJzaW9uIjoiZ2VtaW5pLTIuNS1mbGFzaCIsInJlc3BvbnNlSWQiOiJTeW50aFJlc3A=",
+      "MEFiQ2RFZkdoSWpLbE1uT3AifQ0KDQpkYXRhOiB7ImNh",
+      "bmRpZGF0ZXMiOlt7ImNvbnRlbnQiOnsicGFydHMiOlt7InRleHQiOiIifV0sInJvbGUiOiJtb2RlbCJ9LCJmaW5pc2hSZWFzb24iOiJTVE9QIiwiaW5kZXgiOjB9XSwidXNhZ2VNZXRhZGF0YSI6eyJwcm9tcHRUb2tlbkNvdW50Ijo3LCJjYW5kaWRhdGVzVG9rZW5Db3VudCI6MSwidG90YWxUb2tlbkNvdW50Ijo4LCJwcm9tcHRUb2tlbnNEZXRhaWxzIjpbeyJtb2RhbGl0eSI6IlRFWFQiLCJ0b2tlbkNvdW4=",
+      "dCI6N31dfSwibW9kZWxWZXJzaW9uIjoiZ2VtaW5pLTIuNS1mbGFzaCIsInJlc3BvbnNlSWQiOiJTeW50aFJlc3AwQWJDZEVmR2hJaktsTW5PcCJ9DQoNCg=="
+    ]
+  }
+}

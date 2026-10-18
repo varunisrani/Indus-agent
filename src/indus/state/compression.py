@@ -17,6 +17,10 @@ on. The summary call is slow, so:
   Readers see the live parent or the finished child, never half. Ordinary appends never look at
   the lock.
 
+In-place compaction (P08-05) keeps one session id instead: ``compact_in_place`` archives the rows
+the compressor held as compacted (still searchable), writes the condensed transcript as the new
+live rows and carries any row that arrived meanwhile behind them, in one transaction.
+
 Anti-thrash counters persist across restarts (cooldown deadline and error, fallback streak,
 ineffective count, overload streak); ``snapshot`` / ``restore`` put them back exactly when a
 compression attempt is cancelled.
@@ -53,6 +57,8 @@ __all__ = [
     "active_cooldown",
     "bump_overload_streak",
     "clear_cooldown",
+    "compact_in_place",
+    "compact_in_place_in",
     "counters",
     "holder_of",
     "is_locked_in",
@@ -337,6 +343,57 @@ def publish_continuation_in(
         )
     if title is not None:
         titles.set_title_in(conn, child_id, str(title), source=title_source)
+
+
+def compact_in_place_in(
+    conn: sqlite3.Connection,
+    session_id: str,
+    rows: Sequence[Mapping[str, Any]],
+    held_ids: Sequence[int],
+    *,
+    now: float,
+) -> list[int]:
+    """In-place compaction (P08-05) on the caller's write transaction; returns the new live ids.
+
+    ``held_ids`` are the live rows the compressor read, oldest first; they must still be the
+    leading live rows (else ``TranscriptMoved``). They are archived as compacted (``active = 0,
+    compacted = 1``: still searchable), ``rows`` become the live transcript, and any live row
+    newer than the held set (it arrived while the summary was made) is cloned behind them with
+    its original archived without the compacted flag, so it is neither lost nor found twice.
+    """
+    live = messages.live_ids_in(conn, session_id)
+    held = [int(i) for i in held_ids]
+    if live[: len(held)] != held:
+        raise messages.TranscriptMoved(
+            f"the live transcript of {session_id} changed while it was being compressed"
+        )
+    newer = live[len(held) :]
+    for part in sessions.chunks(held):
+        marks = ",".join("?" * len(part))
+        conn.execute(
+            f"UPDATE messages SET active = 0, compacted = 1 WHERE id IN ({marks})", tuple(part)
+        )
+    new_ids = messages.append_batch_in(conn, session_id, rows, now=now)
+    if newer:
+        new_ids += messages.clone_rows_in(conn, session_id, newer)
+        for part in sessions.chunks(newer):
+            marks = ",".join("?" * len(part))
+            conn.execute(f"UPDATE messages SET active = 0 WHERE id IN ({marks})", tuple(part))
+    recount_in(conn, session_id)
+    return new_ids
+
+
+def compact_in_place(
+    store: StoreHandle,
+    session_id: str,
+    rows: Sequence[Mapping[str, Any]],
+    held_ids: Sequence[int],
+) -> list[int]:
+    now = _now(store)
+    return store.write(
+        lambda conn: compact_in_place_in(conn, session_id, rows, held_ids, now=now),
+        budget=TRANSCRIPT,
+    )
 
 
 def publish_continuation(

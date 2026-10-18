@@ -197,7 +197,7 @@ def test_apply_swaps_every_field(scope: Scope) -> None:
             None,
             {},
             1_000_000,
-            CachePolicy(True, "wire"),
+            CachePolicy(False, "wire"),  # not a Claude model (P08-07 rule)
             ("model-c", "beta"),
         )
         await clients.close()
@@ -497,16 +497,21 @@ def test_reasoning_follows_config_then_session(scope: Scope) -> None:
 
 
 def test_cache_policy_follows_the_wire(scope: Scope) -> None:
-    config = {"providers": {"beta": {"prompt_caching": False}}}
+    config = {
+        "providers": {"beta": {"prompt_caching": False}},
+        "prompt_caching": {"cache_ttl": "auto"},
+    }
 
     async def go() -> None:
         clients = Clients()
-        binding = await bound(with_config(scope, config), clients, api_mode="anthropic_messages")
-        assert binding.state.cache == CachePolicy(True, "wire")
-        off = await binding.apply(make_route("model-b", "beta", api_mode="anthropic_messages"))
-        assert off.cache == CachePolicy(False, "config")
+        binding = await bound(
+            with_config(scope, config), clients, model="claude-a", api_mode="anthropic_messages"
+        )
+        assert binding.state.cache == CachePolicy(True, "wire", "auto")
+        off = await binding.apply(make_route("claude-b", "beta", api_mode="anthropic_messages"))
+        assert off.cache == CachePolicy(False, "config", "auto")
         plain = await binding.apply(make_route("model-b", "gamma"))
-        assert plain.cache == CachePolicy(False, "wire")
+        assert plain.cache == CachePolicy(False, "wire", "auto")
         await clients.close()
 
     asyncio.run(go())

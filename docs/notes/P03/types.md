@@ -58,7 +58,8 @@ Compare checklist (filled after the rewrite; reopened the three files):
 - [x] finish map unknown → stop (test: `tests/unit/providers/test_types.py::test_map_finish_reason_table`)
 - [x] tool call arguments are a JSON string (test: `test_assemble_keeps_arguments_bytes`)
 - [x] registry by api mode, unknown handled (test: `test_registry_returns_p03_transports`,
-  `test_registry_refuses_later_modes`)
+  `test_registry_refuses_unknown_modes`; `test_registry_refuses_later_modes` was retired when P08
+  registered the Responses, Bedrock and Gemini transports — `test_registry_serves_p08_modes`)
 - Deliberate differences: theirs returns `None` for an unknown mode and lets callers fall back to a
   legacy path; ours raises a typed error. Theirs has no stream-event types (streaming lives in the
   agent); ours puts stream parsing in the transport.
@@ -78,3 +79,5 @@ Done (2026-10-18). Shared change in `foundation/errors.py` (two classes, two cod
 - `http_error_from_response` is the one builder for HTTP error answers: `providers.streaming`'s
   public `http_error` was removed and its two call sites use this function (via a private
   `_http_error` that passes the route key and clock).
+- P08 wave 1 (lead): `responses`, `bedrock` and `gemini` are now active modes; the test that
+  refused them became `test_registry_refuses_unknown_modes` plus `test_registry_serves_p08_modes`.

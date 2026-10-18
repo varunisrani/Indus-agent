@@ -12,12 +12,14 @@ from indus.providers import bundled
 from indus.providers.hosts import is_loopback, parse_base_url
 from indus.providers.profile import ProviderProfile
 from indus.providers.registry import LOCAL_SERVERS
+from tests.unit.providers.conftest import ScopeFactory
 from tooling.checks.banned import load_patterns, scan_text
 
 EXPECTED_ORDER = [
     "openrouter",
     "openai",
     "anthropic",
+    "gemini",
     "deepseek",
     "xai",
     "mistral",
@@ -92,6 +94,8 @@ def test_wire_formats() -> None:
     by_name = bundled.by_name()
     assert by_name["anthropic"].api_mode == "anthropic_messages"
     assert by_name["minimax"].api_mode == "anthropic_messages"
+    assert by_name["gemini"].api_mode == "gemini"
+    assert by_name["gemini"].env_vars == ("GEMINI_API_KEY", "GOOGLE_API_KEY")
     assert by_name["openai"].api_mode == "chat_completions"
     assert by_name["openai"].max_tokens_param == "max_completion_tokens"
     assert by_name["openrouter"].base_url == "https://openrouter.ai/api/v1"
@@ -133,3 +137,13 @@ def test_register_managed_env_names(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(envload, "_managed_registry", set())
     bundled.register_managed_env_names()
     assert set(bundled.env_var_names()) <= envload.managed_key_names()
+
+
+def test_gemini_resolves_to_the_native_wire(make_scope: ScopeFactory) -> None:
+    """P08-11: the bundled profile reaches the native transport with its own key only."""
+    from indus.providers.route import resolve
+
+    key = "fake-" + "gemini-key"
+    route = resolve(make_scope(env={"GEMINI_API_KEY": key}), provider="google", model="gemini-x")
+    assert (route.provider, route.api_mode) == ("gemini", "gemini")
+    assert route.base_url == "https://generativelanguage.googleapis.com/v1beta"

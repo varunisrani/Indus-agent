@@ -20,7 +20,17 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-A6-1** Project context discovery: native `.indus.md`/`INDUS.md` nearest to cwd, else an `AGENTS.md` chain …
   - Review: not yet planned (phase TBD)
 - **ACC-A8-1** `@` references (`@file:`, `@folder:`, `@diff`, `@git:`, `@url:`, plugin prefixes) expand into the …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_references.py::test_file_line_range_inserts_exactly_those_lines`
+  - `tests/unit/core/test_references.py::test_folder_caps_depth_and_count`
+  - `tests/unit/core/test_references.py::test_diff_and_commit`
+  - `tests/unit/core/test_references.py::test_url_to_a_private_address_refused_by_policy`
+  - `tests/unit/core/test_references.py::test_over_budget_item_becomes_a_pointer`
+  - `tests/unit/core/test_references.py::test_plugin_prefix_expands_through_the_seam`
+  - `tests/unit/service/test_session_service_p08.py::test_submit_stores_typed_text_and_sends_the_expansion`
+- **ACC-A8-2** `@` references to credential files (env files, Indus secret and auth stores, SSH and cloud credentials, key files) are refused with a visible note
+  - `tests/unit/core/test_references.py::test_credential_files_refused_with_a_note`
+  - `tests/unit/core/test_references.py::test_indus_auth_store_refused`
+  - `tests/unit/core/test_references.py::test_symlink_to_a_credential_is_refused`
 - **ACC-A9-1** Per-surface platform hint in the prompt (CLI, TUI, desktop, cron, API, each messaging platform) …
   - Review: not yet planned (phase TBD)
 - **ACC-A10-1** Model-family guidance blocks (act-don't-describe, execution discipline, developer-role models) …
@@ -73,23 +83,63 @@ Checked by `python -m tooling.checks acceptance`.
   - Review: not yet planned (phase TBD)
 - **ACC-A34-1** Iteration cap (`max_turns`) and optional wall-clock run budget with a single wrap-up notice at 80 %
   - Review: not yet planned (phase TBD)
+- **ACC-A34-2** Wall-clock run budget: one wrap-up notice at 80 % on the newest unstored tool result, `budget_exhausted` when spent, implicit timeouts capped
+  - `tests/unit/core/test_liveness.py::test_run_budget_wraps_up_once_then_ends_the_run`
+  - `tests/unit/core/test_liveness.py::test_wrap_up_only_on_unstored_tool_row`
+  - `tests/unit/core/test_liveness.py::test_budget_spent_ends_budget_exhausted`
+  - `tests/unit/core/test_liveness.py::test_cap_timeout_table`
 - **ACC-A35-1** Context-window resolution: config override, endpoint metadata, `/models`, local probes, family …
   - `tests/unit/providers/test_context_length.py::test_config_beats_everything`
   - `tests/unit/providers/test_context_length.py::test_local_models_small_window_refused`
   - `tests/unit/providers/test_context_length.py::test_unknown_model_fallback_warns_once`
   - `tests/unit/providers/test_context_length.py::test_family_and_fallback_are_not_cached`
 - **ACC-A36-1** Automatic context compression: provider-measured threshold, old tool output pruned, one summary …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/compression/test_threshold.py::test_table`
+  - `tests/unit/core/compression/test_boundaries.py::test_long_outputs_before_the_tail_become_placeholders`
+  - `tests/unit/core/compression/test_engine.py::test_compress_produces_a_valid_shorter_transcript`
+  - `tests/unit/core/compression/test_engine.py::test_loop_preflight_compresses_and_rebuilds_once`
+- **ACC-A36-2** Deterministic fallback summary when the summary call keeps failing
+  - `tests/unit/core/compression/test_summarize.py::test_fallback_keeps_user_messages_and_anchors`
+  - `tests/unit/core/compression/test_engine.py::test_repeated_stall_commits_the_fallback`
+- **ACC-A36-3** Escalating summary-failure cooldowns, per-turn attempt cap and ineffective breaker
+  - `tests/unit/core/compression/test_cooldown.py::test_ladder_per_failure_class`
+  - `tests/unit/core/compression/test_engine.py::test_attempt_cap_and_rearm`
+  - `tests/unit/core/compression/test_engine.py::test_breaker_after_two_ineffective`
 - **ACC-A37-1** Manual `/compress` with focus topic, `here [N]` and preview
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/compression/test_engine.py::test_agent_manual_compress`
+  - `tests/unit/core/compression/test_engine.py::test_manual_compress_clears_the_cooldown`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_compress_goes_through_the_port`
+  - `tests/unit/service/test_session_service_p08.py::test_compress_with_rotation_moves_the_attached_session`
 - **ACC-A38-1** Overflow recovery for payload-too-large, output-cap-too-large and prompt-too-long errors
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_overflow.py::test_loop_recovers_from_prompt_too_long`
+  - `tests/unit/core/test_overflow.py::test_loop_output_cap_clamps_the_retry`
+  - `tests/unit/core/test_overflow.py::test_payload_too_large_without_progress_is_terminal`
 - **ACC-A40-1** Prompt-cache markers for providers that use them, with 5-minute / 1-hour / auto TTL policy
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_cache_plan.py::test_golden_native_static_prefix`
+  - `tests/unit/core/test_cache_plan.py::test_golden_native_system_and_three`
+  - `tests/unit/core/test_cache_plan.py::test_golden_aggregator_body`
+  - `tests/unit/core/test_cache_plan.py::test_never_more_than_four_markers`
+  - `tests/unit/core/test_cache_plan.py::test_unsupported_route_has_none`
+  - `tests/unit/core/test_cache_plan.py::test_auto_ttl_by_source`
+  - `tests/unit/core/test_cache_plan.py::test_plan_rebuilt_for_the_route_that_is_bound_now`
 - **ACC-A41-1** Usage and cost accounting: canonical token buckets, cost status (actual, estimated, included …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_usage.py::test_normalise_per_wire_format`
+  - `tests/unit/core/test_usage.py::test_missing_usage_still_counts_the_call`
+  - `tests/unit/core/test_usage.py::test_rate_limit_headers_parsed`
+  - `tests/unit/providers/test_pricing.py::test_cost_status_table`
+  - `tests/unit/providers/test_pricing.py::test_format_cost_table`
+  - `tests/unit/providers/test_pricing.py::test_shipped_table_loads_and_prices_vendor_hosts`
+  - `tests/unit/core/test_agent_p08.py::test_usage_reaches_the_engine_through_the_ledger`
+  - `tests/unit/cli/test_oneshot.py::test_usage_file_reads_the_session_ledger`
+  - `tests/unit/cli/test_launch.py::test_status_bar_reads_the_agents_ledger`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_usage_shows_cost_and_cache_from_the_store`
 - **ACC-A42-1** Auxiliary model client for side tasks (summaries, titles, vision, search, memory, curator) with …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_auxiliary.py::test_resolution_order_table`
+  - `tests/unit/providers/test_auxiliary.py::test_402_falls_through_to_next_candidate`
+  - `tests/unit/providers/test_auxiliary.py::test_small_window_warning_once`
+  - `tests/unit/service/test_session_service_p08.py::test_title_after_first_exchange_does_not_block_the_turn`
+  - `tests/unit/service/test_session_service_p08.py::test_aux_reaches_every_agent_bound_to_its_route`
+  - `tests/unit/core/compression/test_summarize.py::test_aux_summariser_drives_the_real_aux_client`
 - **ACC-A43-1** Provider registry of declarative profiles found from bundled, user and entry-point plugins; lookup …
   - `tests/unit/providers/test_registry.py::test_lookup_by_alias_and_case`
   - `tests/unit/providers/test_registry.py::test_config_custom_provider_appears`
@@ -106,15 +156,21 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/providers/test_transport_contract.py::test_capture_contract`
   - Review: the anthropic_messages captures are synthetic until the lead records live ones (P03-11)
 - **ACC-A46-1** OpenAI Responses transport with reasoning items and incomplete-status handling
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/transports/test_responses.py::test_reasoning_replayed_byte_identical`
+  - `tests/unit/providers/transports/test_responses.py::test_status_mapping`
+  - `tests/unit/core/test_agent_p08.py::test_provider_cancelled_response_ends_the_turn_interrupted`
+  - `tests/unit/providers/transports/test_responses.py::test_failed_event_carries_embedded_code`
+  - `tests/unit/providers/transports/test_responses.py::test_reasoning_only_three_times_in_a_row_fails`
+  - `tests/contract/providers/test_transport_contract.py::test_capture_contract`
+  - Review: the responses captures are synthetic until the lead records live ones (P08-09)
 - **ACC-A50-1** Each provider key is sent only to its own host, matched by exact hostname; saved config beats stale …
   - `tests/unit/providers/test_hosts.py::test_spoof_table_never_matches`
   - `tests/unit/providers/test_route.py::test_openrouter_key_never_sent_to_custom_host`
   - `tests/unit/providers/test_route.py::test_config_provider_beats_env`
 - **ACC-A51-1** API-mode auto-detection from the base URL (Responses for official OpenAI hosts, Messages for …
   - `tests/unit/providers/test_hosts.py::test_api_mode_from_url`
-  - `tests/unit/providers/test_route.py::test_responses_hint_falls_back`
-  - Review: Responses mode itself is active from P08 (P08)
+  - `tests/unit/providers/test_route.py::test_openai_host_routes_to_responses`
+  - `tests/unit/providers/test_registry.py::test_config_provider_on_openai_host_detects_responses`
 - **ACC-A52-1** In-place model switch mid-session that rolls back atomically on failure
   - Review: not yet planned (phase TBD)
 - **ACC-A53-1** Reasoning effort ladder `none … ultra` with per-model overrides, clamped to the strongest supported …
@@ -135,9 +191,15 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/providers/test_registry.py::test_local_server_aliases`
   - `tests/unit/cli/test_model_picker.py::test_active_provider_table`
 - **ACC-A63-1** Cross-process turn lease per session and a liveness watchdog that ends idle turns
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_liveness.py::test_idle_turn_aborted_at_600_and_activity_at_599_keeps_it`
+  - `tests/unit/core/test_liveness.py::test_touch_between_observe_and_commit_vetoes`
+  - `tests/unit/core/test_liveness.py::test_hung_tool_turn_is_stopped_by_the_watchdog`
+  - Review: cross-process turn lease (P17)
 - **ACC-A64-1** Closed set of turn exit reasons logged for every turn
   - Review: not yet planned (phase TBD)
+- **ACC-A68-1** Context-engine interface; the built-in engine is selected by `context.engine` and plugins never activate by themselves
+  - `tests/unit/core/compression/test_engine.py::test_build_engine_follows_config`
+  - Review: plugin engine path (P13)
 - **ACC-B1-1** One SQLite store per profile: single writer with time-budgeted retries, WAL that is never silently …
   - `tests/unit/state/test_writer.py::test_lock_held_for_three_seconds_is_waited_out`
   - `tests/unit/state/test_writer.py::test_lock_held_forever_raises_store_locked_at_the_deadline`
@@ -177,7 +239,10 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/slash/test_dispatch.py::test_branch_switches_to_a_copy`
   - Review: `--here` and thread branches on messaging platforms (P15)
 - **ACC-B10-1** Compression lineage: summary continuations or in-place compaction, with display history that still …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/compression/test_engine.py::test_loop_in_place_archives_compacted_rows`
+  - `tests/unit/core/compression/test_engine.py::test_loop_rotating_mode_continues_in_a_child`
+  - `tests/unit/core/test_agent_p08.py::test_rotating_compaction_moves_the_agent`
+  - Review: display history over compacted rows (P12/P18 surfaces)
 - **ACC-B12-1** Export: JSONL, Markdown, HTML, trace, prompts-only, with optional redaction; `/save json
   - `tests/unit/cli/slash/test_dispatch.py::test_save_writes_three_formats`
   - `tests/unit/cli/commands/test_sessions.py::test_export_redacts_by_default`
@@ -205,7 +270,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/e2e/test_demo1.py::test_demo1_create_run_quit_then_continue`
   - `tests/unit/cli/test_launch.py::test_resumed_launch_shows_the_recap`
 - **ACC-B24-1** Per-session and per-model usage including auxiliary calls, summed across a lineage
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_usage.py::test_side_call_tagged_and_kept_out_of_main_counters`
+  - `tests/unit/core/test_usage.py::test_deltas_land_in_the_store_with_task_tags`
+  - `tests/unit/providers/test_auxiliary.py::test_usage_recorded_with_task_tag`
 - **ACC-B26-1** Queue a prompt to run after the current turn (`/queue`, list/edit/move/clear)
   - `tests/unit/cli/slash/test_dispatch.py::test_queue_runs_after_the_turn`
   - `tests/unit/cli/slash/test_control_cmds.py::test_queue_management`

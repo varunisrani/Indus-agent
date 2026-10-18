@@ -115,3 +115,10 @@ Merged in the P05 wave 2 integration (2026-10-18, lead's verify tree).
   `SessionRuntime.environments` (P06 seam); until then it answers "no terminal environment is
   available". The host should give it the same registry as the terminal
   (`terminal.runtime().environments`) so both see one cwd.
+
+P08 wave 1 integration (lead, 2026-10-18): `::test_paging_with_next_offset` failed now and then
+(once in a wide run, then 3 of 21 runs alone): ripgrep's parallel walker reports files in a
+different order on each run, so page two (a second `rg` call with `offset`) could repeat a hit of
+page one and miss another — a real paging bug, not only a test flake. Content search now runs with
+`--sort=path` (one stable order; D-16.108); 25 of 25 runs alone pass after the change. File-name
+search keeps `order: discovery` (documented to the model as "fast, as found").

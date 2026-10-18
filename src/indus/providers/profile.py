@@ -20,9 +20,11 @@ from indus.providers.hosts import normalise_host, parse_base_url
 
 USER_AGENT = f"indus/{__version__}"
 
-# Wire formats. P03 implements the first two; the rest validate so P08 profiles can be declared.
-ACTIVE_API_MODES = frozenset({"chat_completions", "anthropic_messages"})
-API_MODES = ACTIVE_API_MODES | {"responses", "bedrock", "gemini"}
+# Wire formats: P03 implements the first two, P08 the Responses, Bedrock and Gemini ones.
+ACTIVE_API_MODES = frozenset(
+    {"chat_completions", "anthropic_messages", "responses", "bedrock", "gemini"}
+)
+API_MODES = ACTIVE_API_MODES
 AUTH_TYPES = frozenset({"api_key", "api_key_optional", "none"})
 MAX_TOKENS_PARAMS = frozenset({"max_tokens", "max_completion_tokens"})
 FAMILIES = frozenset({"vendor", "custom"})

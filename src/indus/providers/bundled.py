@@ -22,7 +22,7 @@ PROFILES: tuple[ProviderProfile, ...] = (
         supports_vision=True,
     ),
     # https://github.com/openai/openai-python README and client defaults (2026-10-18).
-    # Chat completions until P08 adds the Responses transport.
+    # Chat completions until live Responses captures exist (P08-09 lead decision).
     ProviderProfile(
         name="openai", aliases=("openai-api",), display_name="OpenAI",
         description="OpenAI API",
@@ -36,6 +36,15 @@ PROFILES: tuple[ProviderProfile, ...] = (
         description="Anthropic Messages API",
         base_url="https://api.anthropic.com", api_mode="anthropic_messages",
         env_vars=("ANTHROPIC_API_KEY",),
+        supports_vision=True, supports_model_listing=False,
+    ),
+    # https://ai.google.dev/gemini-api/docs/api-key and .../docs/text-generation (2026-10-18):
+    # key in the x-goog-api-key header; the native generateContent wire (P08-11).
+    ProviderProfile(
+        name="gemini", aliases=("google",), display_name="Google Gemini",
+        description="Gemini API (native generateContent)",
+        base_url="https://generativelanguage.googleapis.com/v1beta", api_mode="gemini",
+        env_vars=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
         supports_vision=True, supports_model_listing=False,
     ),
     # https://api-docs.deepseek.com/ (2026-10-18)

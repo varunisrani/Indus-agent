@@ -288,19 +288,16 @@ def test_named_custom_key_env(make_scope: ScopeFactory) -> None:
     assert route.provider == "gpu" and _key(route) == own and route.key_env == "GPU_KEY"
 
 
-def test_responses_hint_falls_back(
-    make_scope: ScopeFactory, caplog: pytest.LogCaptureFixture
-) -> None:
-    with caplog.at_level(logging.WARNING):
-        route = resolve(make_scope(), provider="custom", base_url="https://api.openai.com/v1")
-    assert route.api_mode == "chat_completions"
-    assert any("Responses" in w for w in route.warnings)
+def test_openai_host_routes_to_responses(make_scope: ScopeFactory) -> None:
+    route = resolve(make_scope(), provider="custom", base_url="https://api.openai.com/v1")
+    assert route.api_mode == "responses"  # P08-09: no more fallback to chat completions
+    assert not route.warnings
 
 
-def test_unavailable_or_unknown_api_mode(make_scope: ScopeFactory) -> None:
+def test_p08_modes_available_unknown_refused(make_scope: ScopeFactory) -> None:
     scope = make_scope(env={"OPENROUTER_API_KEY": OR_KEY})
-    with pytest.raises(ProviderError, match="not available"):
-        resolve(scope, provider="openrouter", api_mode="bedrock")
+    for mode in ("responses", "bedrock", "gemini"):
+        assert resolve(scope, provider="openrouter", api_mode=mode).api_mode == mode
     with pytest.raises(ProviderError, match="not known"):
         resolve(scope, provider="openrouter", api_mode="smoke_signals")
 

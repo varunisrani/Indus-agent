@@ -286,6 +286,8 @@ STREAM_UNSUPPORTED = (
     "does not support streaming",
     "stream mode is not supported",
     "'stream' is not supported",
+    # Bedrock: IAM allows Converse but denies its streaming action.
+    "bedrock:invokemodelwithresponsestream",
 )
 TIMEOUT_WORDS = ("timed out", "timeout", "deadline exceeded")
 CONNECTION_WORDS = (
@@ -534,6 +536,8 @@ def _status_402(ctx: ErrorContext) -> Verdict:
 
 
 def _status_403(ctx: ErrorContext) -> Verdict:
+    if ctx.has(STREAM_UNSUPPORTED):
+        return Verdict("stream_unsupported")
     if ctx.has(CONTENT_POLICY):
         return Verdict("content_policy")
     if ctx.has(BILLING):

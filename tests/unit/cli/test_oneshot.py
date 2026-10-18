@@ -20,7 +20,8 @@ from indus.foundation import log as logmod
 from indus.foundation.scope import Scope
 from indus.protocol.events import ExitReason
 from tests.fakes.agent import any_window
-from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn
+from tests.fakes.model import FakeModelServer, Finish, Text, Turn, fake_route, script_of, text_turn
+from tests.fakes.model import Usage as UsageStep
 
 
 @pytest.fixture(autouse=True)
@@ -133,6 +134,30 @@ def test_stdout_holds_only_the_reply(
     assert oneshot.run_from_cli(state_for(scope, server, oneshot="hi")) == 0
     out, err = capsys.readouterr()
     assert out == "just this\n" and err == ""
+
+
+def test_usage_file_reads_the_session_ledger(scope: Scope, tmp_path: Path) -> None:
+    """P08-08: ``-z --usage-file`` carries the ledger's tokens; a custom endpoint has no list
+    price, so the cost stays unknown (null) rather than $0."""
+    os.chdir(tmp_path)
+    turn = Turn((Text(("hello",)), UsageStep(120, 7, 20), Finish("stop")))
+    server = FakeModelServer(script_of(turn))
+    usage = tmp_path / "u.json"
+    assert oneshot.run_from_cli(state_for(scope, server, oneshot="hi", usage_file=str(usage))) == 0
+    report = json.loads(usage.read_text(encoding="utf-8"))
+    assert report["api_calls"] == 1 and report["tokens_status"] == "reported"
+    assert (report["input_tokens"], report["cache_read_tokens"]) == (100, 20)
+    assert report["output_tokens"] == 7 and report["total_tokens"] == 127
+    assert report["cost_status"] == "unknown" and report["estimated_cost_usd"] is None
+
+
+def test_usage_report_with_a_priced_ledger() -> None:
+    ledger = {"api_calls": 2, "input_tokens": 10, "output_tokens": 5, "cache_read_tokens": 0,
+              "cache_write_tokens": 0, "reasoning_tokens": 0, "total_tokens": 15,
+              "cost_usd": 0.0042, "cost_status": "estimated"}  # fmt: skip
+    report = oneshot.usage_report(outcome(ExitReason.COMPLETED, "x", usage=ledger))
+    assert report["estimated_cost_usd"] == 0.0042 and report["cost_status"] == "estimated"
+    assert report["cost_source"] == "price_table" and report["total_tokens"] == 15
 
 
 def test_lone_surrogates_are_replaced() -> None:

@@ -317,13 +317,13 @@ def test_status_whoami_version_usage_context(scope: Scope, store: StoreHandle) -
     ctx.lines.clear()
     dispatch("/usage", ctx)
     assert ctx.lines[0] == "Requests: 0"
-    assert ctx.lines[-1] == "Cost: n/a (prices arrive with P08)"
+    assert ctx.lines[-1] == "Cost: $0.00 (no requests yet)"
     ctx.lines.clear()
     dispatch("/ctx", ctx)
     assert ctx.lines == ["Context window: 128,000 tokens (m1).", "No requests yet in this session."]
     ctx.lines.clear()
     dispatch("/compact", ctx)
-    assert ctx.lines == ["Compressing the conversation arrives with P08."]
+    assert ctx.lines == ["Nothing to compress yet."]
 
 
 def test_help_groups_and_filters(scope: Scope) -> None:
@@ -429,3 +429,85 @@ def test_model_switch_survives_resume(scope: Scope, store: StoreHandle) -> None:
     stored = resume.apply_switches(stored_launch(row), row)
     assert check_frozen(stored, {"model": "m2"}) == []
     assert check_frozen(stored, {"model": "m1"}) != []
+
+
+# -- /compress (P08-05) and /usage cost (P08-08) ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ("", (None, None, False)),
+        ("the refactor", ("the refactor", None, False)),
+        ("auth flow here 6 --preview", ("auth flow", 6, True)),
+        ("--PREVIEW here 2", (None, 2, True)),
+        ("here", None),
+        ("here zero", None),
+        ("here 0", None),
+    ],
+)
+def test_compress_arguments(args: str, expected: Any) -> None:
+    from indus.cli.slash.control_cmds import compress_args
+
+    assert compress_args(args) == expected
+
+
+def test_compress_goes_through_the_port(scope: Scope) -> None:
+    from indus.cli.slash.context import CompressReport
+
+    port = FakePort()
+    ctx = make_ctx(scope, port=port)
+    dispatch("/compress the refactor here 4", ctx)
+    assert port.calls[-1] == ("compress", ("the refactor", 4, False))
+    assert ctx.lines == ["Nothing to compress yet."]
+    ctx.lines.clear()
+    port.compress_answer = CompressReport(
+        "preview", "s1", reason="12 message(s) would be condensed", before=90_000
+    )
+    dispatch("/compress --preview", ctx)
+    assert ctx.lines == [
+        "Preview: 12 message(s) would be condensed (about 90,000 tokens now); nothing changed."
+    ]
+    ctx.lines.clear()
+    port.compress_answer = CompressReport("compressed", "s1", before=90_000, after=20_000)
+    dispatch("/compress", ctx)
+    assert ctx.lines == []  # the engine's own notice reports it
+    port.compress_answer = CompressReport("compressed", "s1-child", mode="rotating")
+    dispatch("/compress", ctx)
+    assert ctx.lines == ["The conversation continues in session s1-child."]
+    assert ctx.session_id == "s1-child"
+    ctx.lines.clear()
+    dispatch("/compress here x", ctx)
+    assert ctx.lines[0].startswith("Usage: /compress")
+    ctx.lines.clear()
+    port.busy = True
+    dispatch("/compress", ctx)
+    assert ctx.lines[0].startswith("/compress has to wait until the reply finishes")
+    assert port.calls[-1] == ("compress", (None, None, False))  # not called again
+
+
+def test_usage_shows_cost_and_cache_from_the_store(scope: Scope, store: StoreHandle) -> None:
+    from indus.state import usage as usage_rows
+    from indus.state.usage import UsageDelta
+
+    seed(store, "s1", 1)
+    delta = UsageDelta(
+        input_tokens=200,
+        output_tokens=50,
+        cache_read_tokens=600,
+        cache_write_tokens=200,
+        api_calls=2,
+        estimated_cost_usd=0.0123,
+        cost_status="estimated",
+        model="claude-x",
+    )
+    usage_rows.record(store, "s1", delta)
+    ctx = make_ctx(scope, store=store)
+    dispatch("/usage", ctx)
+    assert ctx.lines[0] == "Requests: 2"
+    assert ctx.lines[2] == "Prompt cache: 60% of prompt tokens read from the cache"
+    assert ctx.lines[-1] == "Cost: $0.01 (estimated from list prices)"
+    usage_rows.record(store, "s1", UsageDelta(input_tokens=5, api_calls=1, cost_status="unknown"))
+    ctx.lines.clear()
+    dispatch("/usage", ctx)
+    assert ctx.lines[-1] == "Cost: $0.01+ (some requests have no known price)"

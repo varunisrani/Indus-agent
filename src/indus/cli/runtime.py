@@ -9,7 +9,9 @@ here (P05 wave 2 notes):
 - ``SessionRuntime.run_context`` tells the approval pipeline who is watching: ``interactive`` for
   the REPL, ``single_query`` for ``-z`` and finite ``chat -q`` runs;
 - at exit the terminal runtime is shut down (background jobs, then every environment, which is
-  the ``EnvironmentRegistry`` shutdown) on the loop that used it.
+  the ``EnvironmentRegistry`` shutdown) on the loop that used it;
+- one auxiliary client (P08-17) per run goes to the service: it titles sessions after their
+  first exchange and every agent binds it to its own route for compression summaries.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from indus.core.turn_state import LoopOptions
 from indus.foundation.config import schema
 from indus.foundation.config.loader import ConfigView, config_path
 from indus.foundation.scope import Scope
+from indus.providers.auxiliary import AuxClient
 from indus.providers.profile import REASONING_LEVELS
 from indus.providers.route import RuntimeRoute, resolve
 from indus.service.broker import ServerRequestBroker
@@ -183,6 +186,11 @@ def build_service(spec: ServiceSpec) -> SessionService:
         list_models=overrides.list_models if overrides is not None else None,
     )
     store = StateStore(spec.store)
+    aux = AuxClient(
+        spec.scope,
+        spec.route,
+        client_factory=overrides.client_factory if overrides is not None else None,
+    )
     return SessionService(
         spec.scope,
         spec.route,
@@ -192,6 +200,7 @@ def build_service(spec: ServiceSpec) -> SessionService:
         answerable_kinds=spec.answerable_kinds,
         owner=spec.source,
         agent_factory=agent_factory(spec.scope, spec.route, run_context=spec.run_context),
+        aux=aux,
     )
 
 

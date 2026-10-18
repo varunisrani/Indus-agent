@@ -7,6 +7,9 @@ Checked by `python -m tooling.checks traps`.
 
 - **R01.1** Prompt-cache byte stability
   - `tests/unit/providers/test_types.py::test_assemble_keeps_arguments_bytes`
+  - `tests/unit/core/test_cache_plan.py::test_transcript_rows_never_change`
+  - `tests/unit/core/test_cache_plan.py::test_never_more_than_four_markers`
+  - `tests/unit/providers/transports/test_responses.py::test_reasoning_replayed_byte_identical`
   - Review: golden prompt and tool-array byte tests (P04-22)
 - **R01.2** Role alternation under every failure path
   - Review: not yet planned (P00-guards)
@@ -34,11 +37,22 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_streaming.py::test_stub_names_at_most_three_dropped_tools`
   - `tests/unit/providers/test_streaming.py::test_overflow_mid_stream_returns_empty_terminal_stub`
 - **R01.7** Compression threshold arithmetic and docs drift
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/compression/test_threshold.py::test_table`
+  - `tests/unit/core/compression/test_threshold.py::test_docs_example_follows_code`
+  - `tests/unit/core/compression/test_threshold.py::test_property_trigger_below_window`
 - **R01.8** Estimates are not evidence
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/compression/test_anchor.py::test_no_anchor_and_a_huge_estimate_waits`
+  - `tests/unit/core/compression/test_anchor.py::test_editing_a_priced_row_drops_the_anchor`
+  - `tests/unit/core/compression/test_engine.py::test_estimates_wait_and_anchored_figures_compress`
+  - `tests/unit/core/compression/test_engine.py::test_overflow_bypasses_the_cooldown_once_without_clearing_it`
+  - `tests/unit/core/test_overflow.py::test_bypass_is_one_bounded_attempt`
 - **R01.9** Compression failure loops
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/compression/test_cooldown.py::test_ladder_per_failure_class`
+  - `tests/unit/core/compression/test_cooldown.py::test_truncation_climbs_its_own_rung`
+  - `tests/unit/core/compression/test_engine.py::test_attempt_cap_and_rearm`
+  - `tests/unit/core/compression/test_engine.py::test_breaker_after_two_ineffective`
+  - `tests/unit/core/compression/test_engine.py::test_repeated_stall_commits_the_fallback`
+  - `tests/unit/core/compression/test_engine.py::test_three_overloads_commit_the_fallback`
 - **R01.10** Fallback is turn-scoped and stateful
   - Review: not yet planned (P00-guards)
 - **R01.11** Key leakage across endpoints

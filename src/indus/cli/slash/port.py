@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from indus.cli.slash.context import RouteInfo
+from indus.cli.slash.context import CompressReport, RouteInfo
 from indus.core.route import KEEP, RouteState
 from indus.foundation.scope import Scope
 from indus.protocol.methods import ProtocolError, SessionCreateParams
@@ -105,3 +105,24 @@ class HostPort:
             return stopped
 
         return self.host.call(stop())
+
+    def compress(
+        self, session_id: str, focus: str | None, *, keep_last: int | None, preview: bool
+    ) -> CompressReport:
+        service = self.host.service
+
+        async def run() -> CompressReport:
+            outcome = await service.compress(
+                session_id, focus, keep_last=keep_last, preview=preview
+            )
+            return CompressReport(
+                status=outcome.status,
+                session_id=service.current_id(session_id),
+                reason=outcome.reason,
+                before=outcome.before,
+                after=outcome.after,
+                condensed=outcome.condensed,
+                mode=outcome.mode,
+            )
+
+        return self.host.call(run())

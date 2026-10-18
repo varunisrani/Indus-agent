@@ -70,6 +70,8 @@ class RunOutcome:
     provider: str | None = None
     failure: str | None = None
     interrupted: bool = False
+    usage: dict[str, Any] | None = None
+    """``UsageSnapshot.as_dict()`` of the session's ledger (P08-08), once the turn ran."""
 
     @property
     def completed(self) -> bool:
@@ -118,9 +120,13 @@ _TOKEN_KEYS = (
 )
 
 
+_COST_SOURCES = {"estimated": "price_table", "actual": "provider", "included": "local"}
+
+
 def usage_report(outcome: RunOutcome, failure: str | None = None) -> dict[str, Any]:
-    """The ``--usage-file`` JSON. Cost and token counters are unknown (null) until P08 pricing
-    and per-turn usage accounting exist."""
+    """The ``--usage-file`` JSON, from the session's usage ledger (P08-08). Counters stay null
+    (``unknown``) when no model call was answered; the cost is null when no call could be
+    priced, and ``cost_status`` never claims more than the ledger knows."""
     report: dict[str, Any] = {
         "estimated_cost_usd": None,
         "cost_status": "unknown",
@@ -129,6 +135,15 @@ def usage_report(outcome: RunOutcome, failure: str | None = None) -> dict[str, A
     for key in _TOKEN_KEYS:
         report[key] = None
     report["tokens_status"] = "unknown"
+    ledger = outcome.usage or {}
+    if ledger.get("api_calls"):
+        status = str(ledger.get("cost_status") or "unknown")
+        report["estimated_cost_usd"] = ledger.get("cost_usd")
+        report["cost_status"] = status
+        report["cost_source"] = _COST_SOURCES.get(status)
+        for key in _TOKEN_KEYS:
+            report[key] = ledger.get(key)
+        report["tokens_status"] = "reported" if ledger.get("total_tokens") else "unknown"
     report.update(
         {
             "api_calls": outcome.api_calls,
@@ -201,6 +216,8 @@ async def _one_turn(spec: Any, text: str, session_id: str | None, outcome: RunOu
         except (NotImplementedError, RuntimeError, ValueError):
             hooked = False
         result = await service.wait(session_id, ticket.turn_id)
+        outcome.usage = _ledger(service, session_id)
+        outcome.session_id = result.session_id or session_id  # a rotating compaction moves it
         outcome.exit_reason = result.exit_reason
         outcome.final_text = result.final_text
         outcome.api_calls = result.api_calls
@@ -216,6 +233,15 @@ async def _one_turn(spec: Any, text: str, session_id: str | None, outcome: RunOu
             await service.aclose()
         finally:
             await shutdown_terminal()
+
+
+def _ledger(service: Any, session_id: str) -> dict[str, Any] | None:
+    """The session's usage numbers (None when the agent is gone)."""
+    try:
+        return service.agent(session_id).usage.snapshot().as_dict()
+    except Exception:
+        log.debug("no usage snapshot for %s", session_id, exc_info=True)
+        return None
 
 
 def _run(spec: Any, text: str, session_id: str | None) -> tuple[RunOutcome, str | None]:

@@ -85,10 +85,10 @@ def test_config_custom_provider_details(make_scope: ScopeFactory) -> None:
     assert profile.context_length_hint == 131072
 
 
-def test_config_responses_hint_falls_back(make_scope: ScopeFactory) -> None:
+def test_config_provider_on_openai_host_detects_responses(make_scope: ScopeFactory) -> None:
     scope = make_scope(config={"providers": {"direct": {"base_url": "https://api.openai.com/v1"}}})
     profile = Registry(scope).lookup("direct")
-    assert profile is not None and profile.api_mode == "chat_completions"
+    assert profile is not None and profile.api_mode == "responses"  # P08-09
 
 
 def test_bad_entries_are_skipped_with_warning(

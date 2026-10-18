@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "recorded_at": "2026-10-18T00:00:00+00:00",
+    "provider": "bedrock",
+    "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "api_mode": "bedrock",
+    "scenario": "text",
+    "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "doc_url": "https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html",
+    "doc_date": "2026-10-18",
+    "indus_version": "0.0.1",
+    "synthetic": true,
+    "synthetic_note": "Written by hand from the vendor's documented examples; replace with a real recording.",
+    "chat_request": {
+      "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Answer with exactly one word: hello"
+        }
+      ],
+      "max_tokens": 256
+    }
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-haiku-4-5-20251001-v1%3A0/converse-stream",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Answer with exactly one word: hello"
+            }
+          ]
+        }
+      ],
+      "inferenceConfig": {
+        "maxTokens": 256
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.amazon.eventstream"
+    },
+    "chunks": [
+      "AAAAiQA=",
+      "AABSXLE9Ugs6ZXZlbnQtdHlwZQcADG1lc3NhZ2VTdGFydA06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7InJvbGUiOiJhc3Npc3RhbnQiLCJwIjoiYWJjZGVmZ2hpamtsIn2xfg==",
+      "50YAAACwAAAAV4DqEyoLOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tEZWx0YQ06Y29udGVudC10eXBlBw==",
+      "ABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiJoZWwifSwicCI6ImFiY2RlZmdoaWprbG1ub3BxcnN0In0SOEWSAAAAsAAAAFeA6hMqCzpldmVudC10eXBlBwARY29udGVudEJsb2NrRGVsdGENOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3M=",
+      "YWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5k",
+      "ZXgiOjAsImRlbHRhIjp7InRleHQiOiJsbyJ9LCJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1In3EjbIkAAAAowAAAFbQrc7uCzpldmVudC10eXBlBwAQY29udGVudEJsb2NrU3RvcA06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjowLCJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERSJ9Q+KgagAAAIgAAABR+NhFWAs6ZXZlbnQtdHlwZQcAC21lc3NhZ2VTdG9wDTpjb250ZW50",
+      "LQ==",
+      "dHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJzdG9wUmVhc29uIjoiZW5kX3R1cm4iLCJwIjoiYWJjZGVmZyJ9yV4U9wAAANkAAABOcKOu1gs6ZXZlbnQtdHlwZQcACG1ldGFkYXRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsi",
+      "dXNhZ2UiOnsiaW5wdXRUb2tlbnMiOjE0LCJvdXRwdXRUb2tlbnMiOjQsInRvdGFsVG9rZW5zIjoxOH0sIm1ldHJpY3MiOnsibGF0ZW5jeU1zIjo4MTJ9LCJwIjoiYWJjZGVm",
+      "Z2hpamtsbW5vcHFyc3R1dnd4eXoifdCZ3h4="
+    ]
+  }
+}

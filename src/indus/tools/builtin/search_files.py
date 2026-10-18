@@ -8,7 +8,10 @@ output (``bounded=False``, R02.2); the page bound is the only cut. ripgrep is re
 is missing the model is told so and pointed at ``indus doctor``.
 
 Content search (``target: content``) parses ``rg --json`` lines (``match`` and ``context``
-messages), so file names with colons or dashes never confuse the parser. ``output_mode``
+messages), so file names with colons or dashes never confuse the parser. It runs with
+``--sort=path``: ripgrep's parallel walker reports files in a different order on every run, and
+``offset`` paging across calls needs one stable order (unsorted, page two could repeat a hit of
+page one and skip another). ``output_mode``
 ``files_only`` uses ``--files-with-matches`` and ``count`` uses ``--count``. A regex that wants a
 newline (a real newline, or ``\\n`` after an odd number of backslashes) turns on ripgrep's
 multiline mode, with a note.
@@ -578,7 +581,7 @@ class SearchFilesTool:
         secret_home: str | None,
     ) -> dict[str, Any]:
         mode = request.output_mode
-        args = [RG, "--no-config"]
+        args = [RG, "--no-config", "--sort=path"]  # stable order for offset paging
         notes: list[str] = []
         if mode == "files_only":
             args.append("--files-with-matches")

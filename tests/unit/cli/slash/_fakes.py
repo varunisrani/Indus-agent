@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from indus.cli.slash.context import RouteInfo, SessionPort, SlashContext
+from indus.cli.slash.context import CompressReport, RouteInfo, SessionPort, SlashContext
 from indus.foundation.config import loader
 from indus.foundation.scope import Scope
 from indus.protocol.methods import SessionCreateParams
@@ -39,6 +39,7 @@ class FakePort:
     calls: list[tuple[str, Any]] = field(default_factory=list[tuple[str, Any]])
     created: list[SessionCreateParams] = field(default_factory=list[SessionCreateParams])
     steers: list[str] = field(default_factory=list[str])
+    compress_answer: CompressReport | None = None
     _count: int = 0
 
     def names(self) -> list[str]:
@@ -96,6 +97,14 @@ class FakePort:
         self.calls.append(("stop_processes", all_jobs))
         stopped, self.jobs = self.jobs, 0
         return stopped
+
+    def compress(
+        self, session_id: str, focus: str | None, *, keep_last: int | None, preview: bool
+    ) -> CompressReport:
+        self.calls.append(("compress", (focus, keep_last, preview)))
+        if self.compress_answer is not None:
+            return self.compress_answer
+        return CompressReport("nothing", session_id, reason="Nothing to compress yet.")
 
 
 class Ctx(SlashContext):

@@ -83,7 +83,8 @@ def test_phases_run_in_the_documented_order(scope: Scope, fake_clock: FakeClock)
 
     agent = asyncio.run(main())
     assert agent.phases == list(PHASES)
-    assert agent.context_engine is None
+    assert agent.context_engine is not None
+    assert agent.runtime.context is agent.context_engine
     assert agent.runtime.options.context_length == 200_000
     assert agent.session_id == "s1"
 

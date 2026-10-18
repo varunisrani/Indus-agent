@@ -5,6 +5,11 @@ with ``anthropic-version``, a top-level ``system``, content blocks (``text``, ``
 ``tool_use``, ``tool_result``, ``thinking``), and a stream of ``message_start``, per-block
 ``content_block_start`` / ``content_block_delta`` / ``content_block_stop``, ``message_delta``
 (cumulative usage) and ``message_stop``, with ``ping`` and ``error`` events possible anywhere.
+
+Prompt-cache markers (``cache_control``, placed by ``core.cache_plan``) ride along: a marked
+content part keeps its marker on the block it becomes, a marked system part turns ``system`` into
+a list of text blocks, and a marker on a message itself (a tool result, or a turn without text)
+lands on that message's last block.
 """
 
 from __future__ import annotations
@@ -113,6 +118,16 @@ def _image_block(url: str) -> dict[str, Any]:
     return {"type": "image", "source": {"type": "url", "url": url}}
 
 
+CACHE_KEY = "cache_control"
+
+
+def _with_marker(block: dict[str, Any], source: Mapping[str, Any]) -> dict[str, Any]:
+    marker = source.get(CACHE_KEY)
+    if isinstance(marker, dict):
+        block[CACHE_KEY] = dict(marker)
+    return block
+
+
 def _content_blocks(content: object) -> list[dict[str, Any]]:
     """OpenAI-style content (string or parts) → Anthropic blocks, blank text dropped."""
     if content is None:
@@ -132,21 +147,31 @@ def _content_blocks(content: object) -> list[dict[str, Any]]:
         kind = part.get("type")
         if kind == "text":
             if not _blank(part.get("text")):
-                blocks.append({"type": "text", "text": part["text"]})
+                blocks.append(_with_marker({"type": "text", "text": part["text"]}, part))
         elif kind == "image_url":
             image = part.get("image_url")
             url = image.get("url") if isinstance(image, dict) else image
             if isinstance(url, str) and url:
-                blocks.append(_image_block(url))
+                blocks.append(_with_marker(_image_block(url), part))
         elif kind in ("image", "document"):
             blocks.append(copy.deepcopy(part))
     return blocks
 
 
-def _system_text(content: object) -> str:
+def _mark_last(blocks: list[dict[str, Any]], message: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """A marker set on the message itself goes on its last block."""
+    if blocks and isinstance(message.get(CACHE_KEY), dict):
+        blocks[-1] = _with_marker(dict(blocks[-1]), message)
+    return blocks
+
+
+def _system_blocks(message: Mapping[str, Any]) -> list[dict[str, Any]]:
+    content = message.get("content")
     if isinstance(content, str):
-        return content
-    return "\n".join(b["text"] for b in _content_blocks(content) if b["type"] == "text")
+        blocks = [] if _blank(content) else [{"type": "text", "text": content}]
+    else:
+        blocks = [b for b in _content_blocks(content) if b["type"] == "text"]
+    return _mark_last(blocks, message)
 
 
 def tool_input(arguments: object, *, tool: str = "?") -> dict[str, Any]:
@@ -204,10 +229,9 @@ def _assistant_blocks(message: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _tool_result(message: Mapping[str, Any]) -> dict[str, Any]:
-    block: dict[str, Any] = {
-        "type": "tool_result",
-        "tool_use_id": wire_tool_id(message.get("tool_call_id")),
-    }
+    block: dict[str, Any] = _with_marker(
+        {"type": "tool_result", "tool_use_id": wire_tool_id(message.get("tool_call_id"))}, message
+    )
     content = message.get("content")
     if isinstance(content, str):
         if content.strip():
@@ -223,16 +247,22 @@ def _tool_result(message: Mapping[str, Any]) -> dict[str, Any]:
     return block
 
 
-def convert_messages(messages: Iterable[Message]) -> tuple[str | None, list[dict[str, Any]]]:
-    """OpenAI-shaped history → (``system`` text or None, Anthropic ``messages``)."""
-    system_parts: list[str] = []
+type System = str | list[dict[str, Any]] | None
+
+
+def convert_messages(messages: Iterable[Message]) -> tuple[System, list[dict[str, Any]]]:
+    """OpenAI-shaped history → (``system`` or None, Anthropic ``messages``).
+
+    ``system`` is the joined text, or a list of text blocks when a block carries a cache marker.
+    """
+    system_parts: list[list[dict[str, Any]]] = []
     turns: list[dict[str, Any]] = []
     for message in messages:
         role = message.get("role")
         if role in ("system", "developer"):
-            text = _system_text(message.get("content"))
-            if text.strip():
-                system_parts.append(text)
+            blocks = _system_blocks(message)
+            if blocks:
+                system_parts.append(blocks)
             continue
         if role == "tool":
             result = _tool_result(message)
@@ -249,16 +279,16 @@ def convert_messages(messages: Iterable[Message]) -> tuple[str | None, list[dict
                 turns.append({"role": "user", "content": [result]})
             continue
         if role == "assistant":
-            blocks = _assistant_blocks(message)
+            blocks = _mark_last(_assistant_blocks(message), message)
             if blocks:
                 turns.append({"role": "assistant", "content": blocks})
             continue
         content = message.get("content")
-        if isinstance(content, str):
+        if isinstance(content, str) and CACHE_KEY not in message:
             if content.strip():
                 turns.append({"role": "user", "content": content})
         else:
-            blocks = _content_blocks(content)
+            blocks = _mark_last(_content_blocks(content), message)
             if blocks:
                 turns.append({"role": "user", "content": blocks})
     merged: list[dict[str, Any]] = []
@@ -271,7 +301,12 @@ def convert_messages(messages: Iterable[Message]) -> tuple[str | None, list[dict
             merged[-1]["content"] = _as_blocks(merged[-1]["content"]) + later
         else:
             merged.append(turn)
-    return ("\n\n".join(system_parts) if system_parts else None), merged
+    if not system_parts:
+        return None, merged
+    if any(CACHE_KEY in b for blocks in system_parts for b in blocks):
+        return [b for blocks in system_parts for b in blocks], merged
+    texts = ("\n".join(b["text"] for b in blocks) for blocks in system_parts)
+    return "\n\n".join(texts), merged
 
 
 def _as_blocks(content: object) -> list[dict[str, Any]]:

@@ -1,9 +1,10 @@
 """How many tokens the model behind a route can hold.
 
 Order (first answer wins): a config override; the profile's own hook or hint; the persistent cache
-of provider-confirmed values; the live ``/models`` list of a custom or local endpoint; our family
-table; 256,000 with one warning per (model, base URL). Windows below 64,000 tokens are refused
-(``ContextTooSmall``): sessions and model switches need that much working room (A35).
+of provider-confirmed values; the live ``/models`` list of a custom or local endpoint; our Bedrock
+table (Bedrock routes only); our family table; 256,000 with one warning per (model, base URL).
+Windows below 64,000 tokens are refused (``ContextTooSmall``): sessions and model switches need that
+much working room (A35).
 """
 
 from __future__ import annotations
@@ -258,6 +259,12 @@ async def find_window(
     live = await _endpoint_length(route, scope, list_models)
     if live is not None:
         return ContextWindow(live, SOURCE_ENDPOINT)
+    if route.api_mode == "bedrock":
+        from indus.providers.transports.bedrock import context_length as bedrock_length
+
+        listed = bedrock_length(route.model)
+        if listed is not None:
+            return ContextWindow(listed, SOURCE_FAMILY)
     family = family_length(route.model)
     if family is not None:
         return ContextWindow(family, SOURCE_FAMILY)

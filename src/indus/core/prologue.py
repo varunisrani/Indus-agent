@@ -12,7 +12,11 @@ In order:
 6. the session row is made to exist **with** that prompt;
 7. the user row is staged: ``content`` is what the user typed (``persist_text`` when given),
    ``api_content`` is the exact text sent (the message, any API-only prefix, the one-shot notes);
-8. every pending row, the user row last, is stored **before the first provider call**.
+8. every pending row, the user row last, is stored **before the first provider call**;
+9. the context engine (P08-05) adopts its persisted anchor once, then the turn-start preflight
+   gate may compress the transcript (the user row stays in the protected tail).
+
+The liveness watchdog and the run budget (P08-16) are registered right after the turn starts.
 
 A store failure here raises ``PersistFailed``; the loop ends the turn ``persistence_failed`` without
 calling the model.
@@ -24,7 +28,9 @@ import logging
 from dataclasses import replace
 from typing import Any, cast
 
+from indus.core import liveness
 from indus.core import loop_texts as texts
+from indus.core.compression.engine import run_gate, start_session
 from indus.core.notes import attach_notes
 from indus.core.repair import repair_transcript
 from indus.core.transcript import TranscriptRow, call_id, call_name
@@ -158,6 +164,7 @@ async def run_prologue(state: TurnState) -> None:
     state.scrubber.reset()
     state.touch("turn started")
     state.emit(TurnStarted, turn_id=state.turn_id, generation=state.generation)
+    liveness.register(state)
 
     loaded = await _load_history(state)
     _close_crashed_batch(loaded)
@@ -186,3 +193,7 @@ async def run_prologue(state: TurnState) -> None:
     state.user_index = len(state.rows) - 1
     await state.flush()
     runtime.hydrated = True
+
+    if runtime.context is not None:
+        await start_session(state)
+        await run_gate(state, "preflight")

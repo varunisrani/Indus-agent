@@ -34,8 +34,9 @@ from typing import Any, Final
 
 import httpx
 
+from indus.core import cache_plan
 from indus.core.prompt.lifecycle import PromptLifecycle
-from indus.foundation.errors import RouteRefused
+from indus.foundation.errors import ProviderError, RouteRefused
 from indus.foundation.scope import Scope
 from indus.providers import context_length, http, model_list
 from indus.providers.context_length import ContextWindow, ListModels
@@ -62,7 +63,6 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 MIN_CONTEXT: Final = context_length.MIN_CONTEXT
-NATIVE_CACHE_WIRES: Final = frozenset({"anthropic_messages"})
 
 ClientFactory = Callable[[RuntimeRoute], httpx.AsyncClient]
 # A dependent brings its own state in line with ``after``; called with the pair reversed it walks
@@ -79,10 +79,12 @@ KEEP: Final = _Keep()
 
 @dataclass(frozen=True)
 class CachePolicy:
-    """Whether requests carry prompt-cache markers, and what decided it."""
+    """Whether requests carry prompt-cache markers, what decided it, and the configured tier
+    (``5m``, ``1h`` or ``auto``; resolved per request against the session's source)."""
 
     markers: bool
     reason: str
+    ttl: str = cache_plan.TTL_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -162,12 +164,21 @@ def extra_body_for(scope: Scope, route: RuntimeRoute) -> Mapping[str, Any]:
 
 
 def cache_policy_for(scope: Scope, route: RuntimeRoute) -> CachePolicy:
-    """Cache markers for wires with a native cache layout, unless the provider entry says
-    ``prompt_caching: false``. P08 refines this when prompt caching lands."""
+    """Prompt-cache markers per ``cache_plan.decide`` (provider entry ``prompt_caching`` first,
+    then a declaring profile, then Claude models on the native wire or an aggregator), with the
+    tier from ``prompt_caching.cache_ttl``."""
     _, entry = _settings(scope, route)
-    if entry.get("prompt_caching") is False:
-        return CachePolicy(False, "config")
-    return CachePolicy(route.api_mode in NATIVE_CACHE_WIRES, "wire")
+    try:
+        host = route.host
+    except ProviderError:
+        host = ""
+    markers, reason = cache_plan.decide(
+        api_mode=route.api_mode, model=route.model, host=host, profile=route.profile, entry=entry
+    )
+    section = as_mapping(config_of(scope).get("prompt_caching"))
+    ttl = section.get("cache_ttl")
+    chosen = ttl.strip() if isinstance(ttl, str) and ttl.strip() else cache_plan.TTL_DEFAULT
+    return CachePolicy(markers, reason, chosen)
 
 
 def pooled_client(route: RuntimeRoute) -> httpx.AsyncClient:

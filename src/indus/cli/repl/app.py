@@ -10,6 +10,10 @@ store or runs a tool itself.
 What the person types goes, in order: to an open card (approval, clarify, sudo, secret); to the
 command hook for lines starting with ``/`` or ``!``; else to the model — or, while a turn runs, to
 the busy-input route (``display.busy_input_mode``: interrupt, queue or steer).
+
+A rotating compaction (P08-05) continues the conversation in a child session on the same feed:
+the first event carrying the new id moves ``session_id`` there and tells ``on_session_moved``
+(the slash context follows it); the host keeps the old id working as an alias meanwhile.
 """
 
 from __future__ import annotations
@@ -260,6 +264,8 @@ class Repl:
         self._pump: threading.Thread | None = None
         self._attach_count = 0
         self._exit_requested = False
+        self.on_session_moved: Callable[[str], None] | None = None
+        """Told the new id when the attached conversation continues in a child session."""
 
     def _redact(self, text: str) -> str:
         return redact_output(text, scope=self.scope)
@@ -422,6 +428,8 @@ class Repl:
             self.renderer.handle(item)
             self._request_withdrawn(item)
         elif isinstance(item, EventBase):
+            if item.session_id and item.session_id != self.session_id:
+                self._moved(item.session_id)
             if isinstance(item, TurnStarted):
                 self.busy = True
                 self.turn_id = item.turn_id
@@ -432,6 +440,17 @@ class Repl:
             if isinstance(item, TurnDone) and self.turn_id in (item.turn_id, None):
                 self._turn_ended()
         self._invalidate()
+
+    def _moved(self, session_id: str) -> None:
+        """The conversation continues in ``session_id`` (a rotating compaction)."""
+        log.info("session %s continues in %s", self.session_id, session_id)
+        self.session_id = session_id
+        hook = self.on_session_moved
+        if hook is not None:
+            try:
+                hook(session_id)
+            except Exception:
+                log.warning("could not follow the session to %s", session_id, exc_info=True)
 
     def _turn_ended(self) -> None:
         if self._turn_started is not None:

@@ -10,10 +10,16 @@ One iteration: interrupt check → ``api_calls`` and one budget unit go up → p
 tool calls to the tool round, text to the empty ladder / intent-ack check / final answer (P04-17
 verdicts are applied here).
 
-Restarts that produced no answer (a redirect, a route change) give the iteration back and bump
-``restart_count``; more than ``max_restarts`` end the turn. When the budget runs out, one toolless
-grace request asks for a summary (retried once when empty, think blocks removed), else a fixed
-limit reply is given.
+Context (P08): before each request the pressure gate (post-tool right after a tool round) may
+compress the transcript; the request's rows are announced to the context engine, whose meter
+reads the answer's usage from the session's usage ledger (one path, ``core.usage``); a
+provider-proven overflow (413, prompt too long, output cap too large) gets one bounded recovery
+(``core.overflow``) instead of ending the turn.
+
+Restarts that produced no answer (a redirect, a route change, an overflow recovery) give the
+iteration back and bump ``restart_count``; more than ``max_restarts`` end the turn. When the
+budget runs out, one toolless grace request asks for a summary (retried once when empty, think
+blocks removed), else a fixed limit reply is given.
 
 An exception escaping an iteration counts against ``max_outer_errors``; one raised only inside
 local processing modules (repair, wire) is a deterministic bug and ends the turn at once. Open
@@ -28,9 +34,11 @@ from dataclasses import replace
 from typing import Any
 
 from indus.core import loop_texts as texts
+from indus.core.compression.engine import expect_usage, run_gate
 from indus.core.exit_reasons import ExitReason, Failure
 from indus.core.finalize import close_open_calls, finalize_turn
 from indus.core.interrupts import redirect_rows, steer_row
+from indus.core.overflow import is_overflow, recover_overflow
 from indus.core.prologue import run_prologue
 from indus.core.response_checks import (
     COPY,
@@ -57,6 +65,7 @@ from indus.protocol.events import (
     Status,
     StatusKind,
 )
+from indus.providers.classify import ClassifiedError
 from indus.providers.retry import RetryFailed, RetryWait
 from indus.providers.streaming import CallResult, RouteChanged
 from indus.providers.types import ChatRequest, NormalizedResponse, TextDelta
@@ -142,7 +151,21 @@ async def _iteration(state: TurnState) -> None:
         return
     state.touch(f"model call {state.api_calls}")
     await _drain_steer_before_request(state)
-    outcome = await _call_model(state, _request(state, with_tools=True))
+    if state.runtime.context is not None:
+        await run_gate(state, "post_tool" if state.tail_role() == "tool" else "pressure")
+        if state.ended:
+            return
+    expect_usage(state)  # the answer's usage reaches the engine through the ledger (P08-08)
+    try:
+        outcome = await _call_model(state, _request(state, with_tools=True))
+    finally:
+        expect_usage(state, done=True)
+    if isinstance(outcome, ClassifiedError):
+        if await recover_overflow(state, outcome):
+            _refund(state, "overflow recovery")
+        elif not state.ended:
+            _end_provider(state, outcome)
+        return
     if state.ended:
         return
     if outcome is None:
@@ -229,9 +252,11 @@ def _request(state: TurnState, *, with_tools: bool) -> ChatRequest:
 
 async def _call_model(
     state: TurnState, request: ChatRequest, *, soft: bool = False
-) -> CallResult | RouteChanged | None:
+) -> CallResult | RouteChanged | ClassifiedError | None:
     """One provider call. ``None`` when it was cancelled by the control (interrupt or redirect)
-    or, with ``soft``, when it failed; a hard failure ends the turn ``provider_failed``."""
+    or, with ``soft``, when it failed; a hard failure ends the turn ``provider_failed``, except a
+    provider-proven overflow while a context engine is present: its verdict is returned for the
+    overflow recovery to decide."""
     control = state.control
     control.phase = "model"
     state.streamed_text = ""
@@ -260,16 +285,18 @@ async def _call_model(
         return None
     except RetryFailed as exc:
         verdict = exc.classified
+        if _provider_cancelled(exc.error):
+            return _end_cancelled(state, soft)
         if soft:
             log.warning("model call failed (%s); no retry here", verdict.reason)
             return None
-        state.end(
-            ExitReason.PROVIDER_FAILED,
-            final_text=texts.PROVIDER_FAILED_REPLY.format(detail=verdict.message or verdict.reason),
-            failure=Failure(verdict.reason, verdict.retryable, verdict.reset_at, verdict.message),
-        )
+        if state.runtime.context is not None and is_overflow(verdict):
+            return verdict
+        _end_provider(state, verdict)
         return None
     except ProviderError as exc:
+        if _provider_cancelled(exc):
+            return _end_cancelled(state, soft)
         if soft:
             return None
         state.end(
@@ -282,6 +309,30 @@ async def _call_model(
         control.bind_model_call(None)
         visible, hidden = state.scrubber.flush()
         _shown(state, visible, hidden)
+
+
+def _provider_cancelled(error: BaseException | None) -> bool:
+    """The provider cancelled the response itself (Responses ``status: cancelled``, P08-09): the
+    turn was interrupted, it did not fail."""
+    return bool(getattr(error, "interrupted", False))
+
+
+def _end_cancelled(state: TurnState, soft: bool) -> None:
+    if soft:
+        return None
+    log.info("the provider cancelled the response; turn %s ends interrupted", state.turn_id)
+    state.control.interrupted = True
+    state.control.by_system = True
+    state.end(ExitReason.INTERRUPTED_BY_SYSTEM)
+    return None
+
+
+def _end_provider(state: TurnState, verdict: ClassifiedError) -> None:
+    state.end(
+        ExitReason.PROVIDER_FAILED,
+        final_text=texts.PROVIDER_FAILED_REPLY.format(detail=verdict.message or verdict.reason),
+        failure=Failure(verdict.reason, verdict.retryable, verdict.reset_at, verdict.message),
+    )
 
 
 def _shown(state: TurnState, visible: str, hidden: str) -> None:

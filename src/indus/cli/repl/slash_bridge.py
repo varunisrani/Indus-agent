@@ -326,4 +326,5 @@ def wire_slash(repl: Repl, ctx: SlashContext, *, on_resume: OnResume | None = No
     ctx.state.show_reasoning = repl.renderer.show_reasoning
     repl.commands = slash_hook(ctx, on_resume=on_resume)
     repl.after_turn = lambda: after_turn(ctx)
+    repl.on_session_moved = lambda session_id: setattr(ctx, "session_id", session_id)
     repl.completer = SlashCompleter(complete_for(ctx))
