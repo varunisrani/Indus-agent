@@ -15,7 +15,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 ## Last stop
 - By: **Agent 1** | At: 2026-10-18 12:30 UTC | Branch: `main` (local only; GitHub repo not created yet)
 - Why now: no handoff yet; Agent 1 holds the turn. Plan complete; next is the first build wave.
-- Last verified code commit: `c790e93` (P00 scaffold + guards; ruff clean, 87/87 tests, all 7 checks ok).
+- Last verified code commit: `ef25266` (P00 complete; 266 pytest, 50 vitest, all 9 checks ok).
 
 ## Usage at last stop
 📊 Agent 1 usage: 8% used (reading 11:07 UTC), resets 16:00 UTC — ACTIVE (plan done)
@@ -33,7 +33,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [ ] Stage 4 — build: P00 remainder (P00-08..14), then P01 → P25 in roadmap order
+- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); wave 2 = P01 in 4 slices (core, config, env, log) running from `d1c4371`
 
 ## Files changed (uncommitted or parked)
 Nothing parked in `.agents/wip/`.
@@ -64,11 +64,11 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-1. Wave 1: P00-08..14 (pnpm workspace, pins + aggregate gate, import layers + pyright, fakes + clock,
-   brand tokens, async trial D-04.1, locales check), sliced per `docs/plan/phases/P00-foundations.md`.
-2. Then P01 (platform basics) and P02/P03 in parallel per the roadmap's tracks.
-- Builder rules: copy the rules from the lead's scratch `builder-rules.md` pattern (AGENTS.md has the
-  same rules); one builder per core (4 on this machine).
+1. Wave 2 (P01) builders run in worktrees `wt-p01-{core,config,env,log}` (lead scratchpad). If they are
+   gone, restart P01 from `docs/plan/phases/P01-platform-basics.md`, slicing as in the lead brief:
+   core = P01-01..06,19,20; config = P01-07..13; env = P01-14..17; log = P01-18,21.
+2. Land order: core → config → env → log; remove test-only stand-ins; re-lock; full loop.
+3. Then P02 (state store) and P03 (providers + fake model) in parallel.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
