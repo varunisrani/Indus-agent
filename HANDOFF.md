@@ -13,12 +13,12 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 1** | At: 2026-10-18 10:47 UTC | Branch: `main` | Commit: P00 not yet landed
-- Why now: no handoff yet; Agent 1 holds the turn and is working.
-- Last verified code commit: none yet (P00 scaffold and guards are being landed).
+- By: **Agent 1** | At: 2026-10-18 12:30 UTC | Branch: `main` (local only; GitHub repo not created yet)
+- Why now: no handoff yet; Agent 1 holds the turn. Plan complete; next is the first build wave.
+- Last verified code commit: `c790e93` (P00 scaffold + guards; ruff clean, 87/87 tests, all 7 checks ok).
 
 ## Usage at last stop
-📊 Agent 1 usage: unknown — ACTIVE (P00 foundations)
+📊 Agent 1 usage: 8% used (reading 11:07 UTC), resets 16:00 UTC — ACTIVE (plan done)
 📊 Agent 2 usage: unknown — READY
 
 ## Handoff history
@@ -29,11 +29,11 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
 - [x] Stage 1 — research: 10 area specs in `docs/plan/research/` — by Agent 1
-- [~] Stage 2 — guards (`tooling/checks/`) and scaffold (P00: package, rules files, CI, mailbox);
-  built in parallel worktrees, not yet landed — by Agent 1
-- [~] Stage 3 — planning: product decisions P1–P8 recorded; inventory, what-we-change,
-  architecture, roadmap and phase files still to write — by Agent 1
-- [ ] Stage 4 — build phases
+- [x] Stage 2 — guards (`tooling/checks/`) and scaffold landed in `c790e93` (P00-01..07) — by Agent 1
+- [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
+  naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
+  (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
+- [ ] Stage 4 — build: P00 remainder (P00-08..14), then P01 → P25 in roadmap order
 
 ## Files changed (uncommitted or parked)
 Nothing parked in `.agents/wip/`.
@@ -49,8 +49,10 @@ Nothing parked in `.agents/wip/`.
 - Processes stopped: none running.
 
 ## Current state
-- Last fully verified commit: none yet.
-- Known bugs / follow-ups: the product licence is undecided (owner's call; no `LICENSE` file yet).
+- Last fully verified commit: `c790e93` (code); plan commits after it are docs only, gate green.
+- The GitHub repo `indus-agent` does not exist yet; all commits are local in `/home/user/indus-agent`.
+- Owner-open: REA registration (D-16.61), trademark search (D-16.40), app id domain / GHCR owner /
+  docs domain (P25-20).
 
 ## Decisions (and why)
 - All intake and product decisions (names, pin, scope, stack, P1–P8, lead defaults) are in
@@ -62,17 +64,17 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-1. Land P00: the scaffold (this file, package, rules, CI, mailbox) and the guards in
-   `tooling/checks/`; run the full loop including `--require-ref`; push to `main`; confirm CI green.
-2. Finish the plan: feature inventory, what-we-change, architecture, roadmap, then the phase files
-   in `docs/plan/phases/`.
-- Needs the owner: the product licence; REA registration approval.
+1. Wave 1: P00-08..14 (pnpm workspace, pins + aggregate gate, import layers + pyright, fakes + clock,
+   brand tokens, async trial D-04.1, locales check), sliced per `docs/plan/phases/P00-foundations.md`.
+2. Then P01 (platform basics) and P02/P03 in parallel per the roadmap's tracks.
+- Builder rules: copy the rules from the lead's scratch `builder-rules.md` pattern (AGENTS.md has the
+  same rules); one builder per core (4 on this machine).
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
   reference only for the Compare step. Evidence and captures stay in `~/rea-lab/`.
-- `THIRD_PARTY_NOTICES.md` reproduces the reference's licence verbatim on purpose; the similarity
-  guard needs an allow-list entry for it.
+- `THIRD_PARTY_NOTICES.md` and `LICENSE` are allow-listed in `tooling/checks/similarity_allow.json`
+  (licence texts). Never add an allow-list entry without a reason.
 
 ## Resume notes
 <!-- Newest first. One line per resume. -->

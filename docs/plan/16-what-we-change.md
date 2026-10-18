@@ -204,7 +204,7 @@ note (`docs/notes/Pnn/<slug>.md`).
 | D-16.23 | Copy | Reference prompt text, UI copy, playful strings, bundled skills | **All written fresh**; nothing carried over | Lead default |
 | D-16.24 | Docs vs code | The reference's docs and code disagree in many places | **We follow the code.** Known cases: project-context AGENTS chain walks git root → cwd; compression threshold arithmetic per code (R01.7); curator stale 14 d / archive 30 d / interval 168 h (R07.7); Docker PID limit 2048 and persistent containers left running for reuse (R02.23); delegation defaults 10 children / depth 1; process tool is one tool with actions; MCP tool names use the double-underscore prefix (R07.21); TUI transport per D-16.10 not per docs; approval quick-picks are digits (R05.11). Each builder records further cases here | Lead default |
 | D-16.25 | Web / ACP auth | Non-loopback dashboard fails closed; an "insecure" flag lingers as a no-op; ACP viewer trusts the local socket | **Fail closed everywhere**: the dashboard refuses to start on a non-loopback bind or public URL without a login provider; there is no insecure flag at all; loopback tokens are rejected in gated mode; every WebSocket upgrade goes through one auth helper; ACP and every other local client attach to the daemon only with a single-use ticket over an owner-only socket | Specs R09.2, R09.3, R08.4 |
-| D-16.26 | Gateway API server | Loopback API server may run without a key (open question 06 Q13) | **Proposed:** the OpenAI-compatible API server always requires a bearer key, loopback included; `indus gateway api-key` creates one | Open — lead (§3) |
+| D-16.26 | Gateway API server | Loopback API server may run without a key (open question 06 Q13) | The OpenAI-compatible API server **always requires a bearer key**, loopback included; `indus gateway api-key` creates one | Lead, accepted 2026-10-18 (§3.3) |
 | D-16.27 | Protocol | Error codes reused with different meanings per method (R05.15) | **One error-code table** with stable meanings, generated into TS | Spec R05.15 |
 | D-16.28 | TUI | Heavily forked Ink renderer and a TS port of Yoga | **Upstream Ink** as a dependency; missing capabilities (synchronized output gating, kitty keyboard, mouse, selection) added as our own small modules around it. Trial and fallback in D-04.2 | Task brief / spec 05 |
 | D-16.29 | ACP | One constructor silently returns either a gateway viewer or a legacy in-process agent; mode advertising inconsistent (R09.13) | **Two explicit modes**: `indus acp` attaches to the profile daemon (default once P17 lands) or runs `--local` in-process; both advertise the same session modes | Spec R09.13 |
@@ -218,6 +218,22 @@ note (`docs/notes/Pnn/<slug>.md`).
 | D-16.37 | Messaging tools | Delivery is a library, not a model tool (R02.26) | Same; recorded so no builder "adds" a send tool | Spec R02.26 |
 | D-16.38 | Dashboard chat | Chat tab embeds the real TUI over PTY; on native Windows tries ConPTY then falls back to a banner (R09.19) | Embed the TUI the same way (R09.1). **Windows: ConPTY via the PTY library; if it cannot start, show one clear "use WSL2" notice**; documented once | Spec R09.19 |
 | D-16.39 | Plugins | Hook names generic; entry-point group branded | Generic hook names kept (they describe behaviour); entry-point group `indus.plugins` | Spec 01 §2 |
+| D-16.70 | Desktop distribution (Windows) | Windows desktop app ships as MSIX/Store packages in the main release flow | **Signed NSIS installer** built by electron-builder at 1.0 (Authenticode); MSIX/Store deferred (D-16.15) | Lead (reconciliation, 2026-10-18); P23-16 |
+| D-16.71 | Voice / TTS | Default text-to-speech goes to a keyless third-party service | **Default local engine is a permissively licensed engine from the licence allow-list**, named in the task note; hosted engines are opt-in with the user's key | Lead; P10-17 |
+| D-16.72 | Prompt caching | Byte-stable prompt and tool array on every turn (R01.1) | Same, with **one documented exception**: mixture-of-agents turns get no byte-stable cache sidecar | Lead; P10-21 |
+| D-16.73 | Tools | Built-in tools found by scanning modules (AST discovery) | **Explicit list of built-in tool modules** in `tools/builtin/__init__.py`; an optional tool's import error is logged and skipped | P04-08 |
+| D-16.74 | Toolsets | Platform bundles are static lists | **Bundles also include registry-registered members** of a static set (R02.25) | P04-11 |
+| D-16.75 | Terminal config | `TERMINAL_*` environment variables bridge config into backends | **No env bridge**: backend selection and terminal settings are read from the call's `Scope` config (supersedes the earlier `INDUS_TERMINAL_*` proposal) | P05-04 |
+| D-16.76 | Approvals | Dangerous-command patterns as a hand-kept regex list | **Patterns authored from our own command corpus**, with verdict tests; nothing transcribed (R02.23) | P05-07 |
+| D-16.77 | Bang shell | `!cmd` runs even when the approval guard fails to load | **Refuses to run** when the guard cannot load (fail closed, R04.27) | P06-11 |
+| D-16.78 | Auth store | Auth file on disk holds tokens and keys | **`auth.json` holds metadata only**; tokens and keys live in the `SecretStore` (keychain first, D-16.13) | P07-06 |
+| D-16.79 | Backups | Backup zip includes the secrets the home holds | **Keychain secrets are not exported**; the command warns and lists the entries to re-enter; `.env` secrets stay in the zip at 0600 | P07-22 |
+| D-16.80 | CLI | A `login` command for the hosted portal | **No `indus login`**; the unknown-command hint points to `indus auth add` | P07-08 |
+| D-16.81 | Desktop | GPU child crash can lead to running without the renderer sandbox | **The sandbox is never disabled automatically**; one bounded relaunch with GPU off | P20 (resolver/lifecycle task notes) |
+| D-16.82 | Desktop backend resolver | Resolver can fall back to a payload bundled inside the app | **No bundled-payload rung** in 1.0: one variant, installer-driven | P20 (resolver task note) |
+| D-16.83 | ACP | Adapter falls back to an in-process agent when no daemon is reachable | **`acp.allow_local_fallback` defaults to false**: without a daemon, `session/new` fails with a clear message unless `--local` or the flag is set | P19-03 |
+| D-16.84 | Desktop builds | Windows test builds packaged per the release flow | **Unsigned NSIS installer plus portable ZIP** during the build (P20-38); signing at 1.0 per D-16.70 | P20-38 |
+| D-16.89 | Desktop transport | Desktop mints a one-use grant per HTTP attempt against the daemon (R08.4) | Desktop speaks JSON-RPC over the daemon WebSocket (single-use tickets per dial) and sends REST to the loopback `indus serve` it starts or finds with `indus serve ensure` (P18), using a launch-scoped session token held in the main process; **no per-request HTTP grant** | Lead ruling; P18-01, P20-10 |
 
 ### 2.8 Not in 1.0
 
@@ -233,10 +249,14 @@ Parts of P0/P1 inventory rows that 1.0 ships without. The acceptance map lists t
 | D-16.48 | Light (remote-only) desktop variant | One desktop variant that can connect local or remote | Packaging matrix cost (08 Q11) |
 | D-16.49 | Telemetry and install receipt upload | No telemetry; local install receipt only | Privacy default; nothing to upload to |
 | D-16.50 | Import from another agent product's home (OpenClaw migration) | Not built | Migration tool for a third-party product; low value for a new product |
-| D-16.51 | Non-English locales (16 catalogues), docs translation | English only, with the catalogue mechanism and the key-parity check live | Translation must be written fresh; owner decides languages and workflow (10 Q13) |
+| D-16.51 | Non-English locales (16 catalogues) for CLI, TUI, gateway, dashboard and desktop; docs translation | English only, with the catalogue mechanism and the key-parity check live on every surface | Translation must be written fresh; owner decides languages and workflow (10 Q13) |
 | D-16.15 | Termux APT channel, MSIX/Store | Not in the 1.0 release flow unless P24 has capacity | P5 ("later"); signing and store accounts needed |
 | D-16.12 | Vendor portal provider and its commands | Not built (P3) | Product decision |
 | D-16.11 | Impersonating subscription OAuth | Not built (P2) | Legal/product decision |
+| D-16.85 | Legacy single-query runner script with minimal flags (inventory O9) | Not built; `indus -z` and `indus chat -q` cover one-shot runs | A second entry point duplicates the CLI; no user need |
+| D-16.86 | Home Assistant messaging adapter | Not in the bundled adapter set; can come later as an external catalogue plugin through the P13 plugin API | Integration with a home-automation server is outside the gateway core; better owned as a plugin |
+| D-16.87 | Teams meeting pipeline (joining and transcribing meetings) | The Teams chat adapter ships (P16); the meeting pipeline does not | Separate media pipeline and vendor permissions; low priority for 1.0 |
+| D-16.88 | Desktop "cloud" connection kind (a hosted portal connection) | Local and remote (SSH/URL) connections only | Tied to the dropped portal provider (D-16.12) |
 
 ## 3. Decisions
 
@@ -259,6 +279,8 @@ change cheap).
 | D-16.18 – D-16.24 | Lead defaults (security hardening, tokenizer, env names, fresh copy, follow code) | ✅ Lead, 2026-10-18 (owner may override) |
 | D-16.25, D-16.27 – D-16.32, D-16.34, D-16.37 – D-16.39 | Spec-driven intended differences in §2.7 | ✅ Lead, 2026-10-18 |
 | D-16.41, D-16.49, D-16.50 | Not in 1.0 (§2.8); the other §2.8 rows wait on §3.2 | ✅ Lead, 2026-10-18 (owner may pull any into 1.0) |
+| D-16.70 – D-16.84, D-16.89 | Intended differences recorded when the phase files were reconciled (§2.7) | ✅ Lead, 2026-10-18 |
+| D-16.85 – D-16.88 | Not in 1.0 (§2.8), recorded at reconciliation | ✅ Lead, 2026-10-18 (owner may pull any into 1.0) |
 
 ### 3.2 Open — owner (with our recommendation)
 
@@ -289,14 +311,17 @@ change cheap).
 
 | ID | Question (source) | Proposal | Status |
 |---|---|---|---|
-| D-16.26 | API server key on loopback (06 Q13) | Always require a key | proposed — lead |
-| D-16.36 / D-16.54 | "every Nd at HH:MM" (07 Q1, R07.10) | Accept as daily/N-daily at that wall-clock time in the configured zone | proposed — lead |
-| D-16.52 | Pinning policy (10 Q7, R10.11) | Exact pins for direct deps, bounded ranges only where a library demands it; uv `exclude-newer` 14 days at lock time; full-SHA git sources; CI check enforces exactly this text | proposed — lead |
-| D-16.65 | Persona and project file names (01 Q5) | `PERSONA.md` in the profile home; `INDUS.md` or `.indus.md` in projects; also read `AGENTS.md`, `CLAUDE.md`, cursor rules | proposed — lead |
+| D-16.26 | API server key on loopback (06 Q13) | Always require a key | accepted — lead, 2026-10-18 |
+| D-16.36 / D-16.54 | "every Nd at HH:MM" (07 Q1, R07.10) | Accept as daily/N-daily at that wall-clock time in the configured zone | accepted — lead, 2026-10-18 |
+| D-16.52 | Pinning policy (10 Q7, R10.11) | Exact pins for direct deps, bounded ranges only where a library demands it; uv `exclude-newer` 14 days at lock time; full-SHA git sources; CI check enforces exactly this text | accepted — lead, 2026-10-18 (enforced by the `pins` check, P00-09) |
+| D-16.65 | Persona and project file names (01 Q5) | `PERSONA.md` in the profile home; `INDUS.md` or `.indus.md` in projects; also read `AGENTS.md`, `CLAUDE.md`, cursor rules | accepted — lead, 2026-10-18 |
 | D-16.66 | Prompt guidance blocks and model-family gating (01 Q3) | Keep the idea of per-family guidance, write our own text and our own family lists; golden prompt tests per surface | proposed — lead |
 | D-16.67 | MCP serve `events_wait`: push or long-poll (09 Q11) | Long-poll in 1.0 driven by a store change counter; MCP notifications when client support is common | proposed — lead |
 | D-16.68 | Dashboard pages in 1.0 (09 Q7) | All pages, since the gateway exists by P18; git/audio/local-model routes ship with the desktop in P20 | proposed — lead |
-| D-16.69 | Cross-process turn lease timing (01 Q11) | Built in P17 with the daemon; before that, a simple per-session file lock prevents two in-process surfaces from running one session | proposed — lead |
+| D-16.69 | Cross-process turn lease timing (01 Q11) | Built in P17 with the daemon; before that, a simple per-session file lock prevents two in-process surfaces from running one session | accepted — lead, 2026-10-18 |
+| D-16.90 | Session-key namespace for the default profile (P15-07, P24-03) | Keys of the default profile use the literal namespace `@default`; named profiles use their profile id | accepted — lead, 2026-10-18 |
+| D-16.91 | Per-platform policy variables (06, P15-08) | Product policy env vars follow `INDUS_<PLATFORM>_ALLOWED_USERS` (and siblings), while vendor credentials keep vendor names (D-16.22) | accepted — lead, 2026-10-18 |
+| D-16.92 | Loop completion token (P10-25) | Keep the generic `LOOP_COMPLETE` token the model emits to end a `/loop`; it is a plain word, not a brand | accepted — lead, 2026-10-18 |
 
 > Not legal advice. Before shipping under the brand, have counsel review the trademark and licence
 > points (D-16.40).

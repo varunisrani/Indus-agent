@@ -32,19 +32,19 @@ General rules we apply everywhere:
 |---|---|---|
 | Product name | Hermes Agent, Hermes | **Indus Agent** (decided); short form "Indus" |
 | Main CLI | `hermes` | **`indus`** (decided) |
-| Legacy single-query runner | `hermes-agent` console script | `indus-run` **lead?** |
+| Legacy single-query runner | `hermes-agent` console script | not built (D-16.85); `indus -z` / `indus chat -q` cover it |
 | ACP entry script | `hermes-acp` | `indus-acp` |
 | Canary / one-off build commands | `hermes-canary`, `hermes-<sha7>` | `indus-canary`, `indus-<sha7>` |
 | Repo-root launcher script | `hermes` | `indus` |
-| Python top package | `hermes_cli`, `hermes_constants`, `hermes_state*`, `hermes_logging`, `hermes_time`, `hermes_yaml`, `hermes_bootstrap`, `hermes_platform`, `hermes_dir_acl`, `hermes_startup_watchdog` | **`indus`** (decided) with sub-packages `indus.cli`, `indus.constants`, `indus.state`, `indus.logging`, `indus.clock`, `indus.yaml`, `indus.bootstrap`, `indus.platform`, `indus.dir_acl`, `indus.watchdog` |
-| Agent core modules | `run_agent.py`, `agent/`, `model_tools.py`, `toolsets.py` | `indus.agent`, `indus.tools.registry`, `indus.tools.toolsets` |
-| TUI backend package | `tui_gateway` | `indus.tui_backend` |
+| Python top package | `hermes_cli`, `hermes_constants`, `hermes_state*`, `hermes_logging`, `hermes_time`, `hermes_yaml`, `hermes_bootstrap`, `hermes_platform`, `hermes_dir_acl`, `hermes_startup_watchdog` | **`indus`** (decided) with the packages of `04-architecture.md` §3: `indus.cli`, `indus.state`, `indus.platform`, and `indus.foundation` holding the small shared modules — `foundation/home.py` (home and path constants), `foundation/log.py` (logging setup), `foundation/clock.py` (time), `foundation/yamlio.py` (YAML), `foundation/bootstrap.py` (entry bootstrap and startup watchdog), `foundation/fsio.py` (owner-only modes, ACLs) |
+| Agent core modules | `run_agent.py`, `agent/`, `model_tools.py`, `toolsets.py` | `indus.core` (agent, turn loop, prompt builder), `indus.tools.registry`, `indus.tools.toolsets` |
+| TUI backend package | `tui_gateway` | `indus.tui_bridge` |
 | ACP package | `acp_adapter` | `indus.acp` |
 | MCP server module | `hermes_tools_mcp_server.py`, logger `hermes.mcp_serve` | `indus.mcp_serve` |
 | Main agent class | `AIAgent`, `HermesCLI`, `HermesArgumentParser` | `Agent`, `ClassicRepl`, `IndusArgumentParser` |
 | Session store classes | `SessionDB`, `AsyncSessionDB`, `RuntimeSessionStore` | `SessionStore`, `AsyncSessionStore`, `RuntimeLedger` |
 | Package/environment manager | `hermes pm`, project `hermes-pm-runtime` | `indus pm`, project `indus-pm-runtime` |
-| TUI npm packages | `hermes-tui`, `@hermes/ink`, `@hermes/shared`, `@hermes/root-tests` | `indus-tui`, `@indus/ink`, `@indus/shared`, `@indus/root-tests` |
+| TUI npm packages | `hermes-tui`, `@hermes/ink`, `@hermes/shared`, `@hermes/root-tests` | `@indus/tui` (apps/tui; process title `indus-tui`), upstream Ink as a dependency (no fork, D-16.28), `@indus/client` (the JSON-RPC channel shared by TUI, web and desktop); no root-tests package |
 | Desktop UI kit and SDK | `@nous-research/ui`, `@hermes/plugin-sdk` | `@indus/ui`, `@indus/plugin-sdk` |
 | Desktop product names | Hermes, Hermes Light, Hermes Agent Installer, Hermes Setup | Indus, Indus Remote (remote-only variant) **lead?**, Indus Installer, Indus Setup |
 | Process title / tag | `hermes-tui`, `hermes` | `indus-tui`, `indus` |
@@ -197,7 +197,7 @@ internal `_HERMES_<X>` becomes `_INDUS_<X>`; double-underscore `__HERMES_<X>` be
 | Other stores | `kanban.db`, `cron/jobs.json`, `cron/executions.db`, `pending/{memory,skills}/` | unchanged (generic) |
 | Meta key prefixes | `gateway.*`, `db_file_generation`, `last_auto_prune`, … | unchanged (generic) |
 | Log record attribute | `_hermes_session_injector` | `_indus_session_injector` |
-| Logger names | `hermes_logging`, `hermes.mcp_serve` | `indus.logging`, `indus.mcp_serve` |
+| Logger names | `hermes_logging`, `hermes.mcp_serve` | module loggers (`logging.getLogger(__name__)`, configured by `indus.foundation.log`), e.g. `indus.mcp_serve` |
 | Message content codec prefix | reserved JSON prefix | ours chosen fresh; reference store import is a separate decision (03 §7 Q4–Q5) |
 
 ### a8. Tool names the model sees
@@ -423,23 +423,28 @@ That is **38** patterns.
 
 ## (e) Proposals that need the lead's confirmation
 
-1. Persona file `PERSONA.md` (reference: `SOUL.md`).
-2. Project context files `.indus.md` / `INDUS.md`.
-3. Legacy single-query runner named `indus-run`.
+1. Persona file `PERSONA.md` (reference: `SOUL.md`). — **accepted — lead, 2026-10-18** (D-16.65).
+2. Project context files `.indus.md` / `INDUS.md`. — **accepted — lead, 2026-10-18** (D-16.65).
+3. Legacy single-query runner named `indus-run`. — **superseded**: the runner is not built (D-16.85).
 4. Unbranded reference-chosen env vars move under `INDUS_`: `TERMINAL_*` → `INDUS_TERMINAL_*`,
    `GATEWAY_*` → `INDUS_GATEWAY_*`, `API_SERVER_*` / `WEBHOOK_*` → `INDUS_API_SERVER_*` /
    `INDUS_WEBHOOK_*`, per-platform policy vars (`<PLATFORM>_ALLOWED_USERS`, …) →
    `INDUS_<PLATFORM>_…`, `SUDO_PASSWORD` / `BROWSER_CDP_URL` / `BROWSER_INACTIVITY_TIMEOUT` →
-   `INDUS_…`. Vendor credentials stay unprefixed as already decided.
-5. Plugin entry-point group `indus.plugins`.
-6. Gateway session-key namespace literal `@default`.
+   `INDUS_…`. Vendor credentials stay unprefixed as already decided. — Per-platform policy vars
+   `INDUS_<PLATFORM>_…`: **accepted — lead, 2026-10-18** (D-16.91). `TERMINAL_*`: **superseded** — no
+   env bridge at all, terminal settings come from config (D-16.75). The other renames stay proposed.
+5. Plugin entry-point group `indus.plugins`. — **accepted — lead, 2026-10-18** (D-16.39).
+6. Gateway session-key namespace literal `@default`. — **accepted — lead, 2026-10-18** (D-16.90).
 7. Vendor-neutral tool names `video_edit` / `video_extend`; `yb_*` spelled out as `yuanbao_*`.
 8. `/theme` as the primary command with `/skin` as alias; OpenClaw migration command
    `import-openclaw`.
 9. Domain-dependent names: docs and asset hosts, Docker registry, launchd label
    (`ai.indus.gateway`), desktop app ids (`ai.indus.*`), MSIX publisher identity, official plugin
-   repos, telemetry endpoint and `telemetry.*` RPC family.
+   repos, telemetry endpoint and `telemetry.*` RPC family. — Still **owner-open**: desktop app ids
+   (`ai.indus.desktop`), GHCR owner and docs domain are tracked in the P25-20 release checklist;
+   the Windows installer is signed NSIS (D-16.70), so no MSIX publisher identity is needed for 1.0.
 10. Fresh theme preset names and wake phrase ("hey indus").
 11. Model-facing tokens `[JOB_FAILED]`, `INDUS_TASK_DONE`, `[skill elided: …]`, `wake`, and no
     scratchpad tag.
-12. Remote-only desktop variant called "Indus Remote".
+12. Remote-only desktop variant called "Indus Remote". — **moot for 1.0**: one desktop variant (D-16.48).
+13. Loop completion token `LOOP_COMPLETE` kept as a generic word. — **accepted — lead, 2026-10-18** (D-16.92).
