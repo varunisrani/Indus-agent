@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 49,
-  "remaining_pct": 51,
+  "usage_pct": 53,
+  "remaining_pct": 47,
   "resets_at": "2026-10-18T19:20:00+00:00",
-  "last_check": "2026-10-18T16:33:35+00:00",
-  "current_step": "P04 core loop landed (4d1588d); wave 6b running: P04-20 Agent + P04-21 SessionService/InProcessHost, P04-23 D-04.1 criteria + decision",
-  "last_commit": "4d1588d"
+  "last_check": "2026-10-18T16:54:49+00:00",
+  "current_step": "P04-20/21 landed (246d691); building: D-04.1 criteria+decision (P04-23), P05 wave 1 slices A (05-07), C (22-24), D (01-04); slice B (15-19) after D-04.1",
+  "last_commit": "246d691"
 }
