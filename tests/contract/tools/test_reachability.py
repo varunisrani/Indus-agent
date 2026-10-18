@@ -1,0 +1,72 @@
+"""P04-11 contract: every registered tool is reachable; no send-message tool; webhook floor."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+
+from indus.tools import toolsets
+from indus.tools.builtin import BUILTIN_MODULES, load_builtins
+from indus.tools.registry import ToolRegistry
+from indus.tools.toolsets import TOOLSETS, WEBHOOK_FLOOR, resolve, toolset_names
+
+SEND_TOOL = "send_message"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_memo() -> Iterator[None]:
+    toolsets.clear_memo()
+    yield
+    toolsets.clear_memo()
+
+
+@pytest.fixture
+def builtins() -> ToolRegistry:
+    registry = ToolRegistry()
+    load_builtins(registry, BUILTIN_MODULES)
+    return registry
+
+
+def unreachable(registry: ToolRegistry) -> list[str]:
+    reachable: set[str] = set()
+    for name in toolset_names(registry):
+        reachable |= set(resolve(name, registry))
+    return [name for name in registry.names() if name not in reachable]
+
+
+def test_every_registered_builtin_is_reachable(builtins: ToolRegistry) -> None:
+    assert unreachable(builtins) == []
+
+
+def test_every_registered_builtin_reachable_from_all(builtins: ToolRegistry) -> None:
+    everything = set(resolve("all", builtins))
+    assert [n for n in builtins.names() if n not in everything] == []
+
+
+def test_reachability_check_catches_an_orphan() -> None:
+    # A tool registered into a fixed-floor toolset is merged nowhere, so the check must flag it.
+    registry = ToolRegistry()
+    registry.register("visible", "web", {"description": "x"}, lambda args: "")
+    registry.register("smuggled", "indus-webhook", {"description": "x"}, lambda args: "")
+    assert unreachable(registry) == ["smuggled"]
+
+
+def test_no_toolset_holds_a_send_message_tool(builtins: ToolRegistry) -> None:
+    for name in toolset_names(builtins):
+        assert SEND_TOOL not in resolve(name, builtins), name
+    assert SEND_TOOL not in builtins.names()
+    for toolset in TOOLSETS.values():
+        assert SEND_TOOL not in toolset.tools
+
+
+def test_webhook_bundle_is_exactly_its_floor(builtins: ToolRegistry) -> None:
+    assert resolve("indus-webhook", builtins) == sorted(WEBHOOK_FLOOR)
+    for risky in ("terminal", "process_manage", "write_file", "patch", "read_file"):
+        assert risky not in WEBHOOK_FLOOR
+
+
+def test_every_bundle_starts_from_core(builtins: ToolRegistry) -> None:
+    core = set(resolve(toolsets.CORE, builtins))
+    for name in ("indus-cli", "indus-cron", "indus-gateway"):
+        assert core <= set(resolve(name, builtins)), name

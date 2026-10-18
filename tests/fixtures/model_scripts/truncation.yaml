@@ -1,0 +1,20 @@
+# Length recovery (P04-17). Turn 1: a text answer cut by the output limit; turn 2: the
+# continuation that finishes it. Turn 3: a tool call cut by the output limit (never run);
+# turn 4: the same call sent whole after the cap was raised.
+turns:
+  - steps:
+      - text: ["The first half of the answer ", "stops here"]
+      - usage: {prompt: 900, completion: 64}
+      - finish: length
+  - steps:
+      - text: " and the second half ends it."
+      - usage: {prompt: 980, completion: 12}
+      - finish: stop
+  - steps:
+      - tool_call: {name: write_file, arguments: {path: notes.txt}, id: call_cut_1}
+      - usage: {prompt: 1000, completion: 4096}
+      - finish: length
+  - steps:
+      - tool_call: {name: write_file, arguments: {path: notes.txt, text: done}, id: call_cut_1}
+      - usage: {prompt: 1000, completion: 900}
+      - finish: tool_calls

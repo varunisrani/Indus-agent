@@ -1,0 +1,19 @@
+# Empty-answer ladder (P04-17). Turn 1: nothing at all (usage proves zero output); turn 2:
+# reasoning only; turns 3 and 4: nothing again; turn 5: a real answer.
+turns:
+  - steps:
+      - usage: {prompt: 400, completion: 0}
+      - finish: stop
+  - steps:
+      - reasoning: ["weighing the ", "options"]
+      - usage: {prompt: 420, completion: 30}
+      - finish: stop
+  - steps:
+      - usage: {prompt: 400, completion: 0}
+      - finish: stop
+  - steps:
+      - usage: {prompt: 400, completion: 0}
+      - finish: stop
+  - steps:
+      - text: "Here is the answer."
+      - finish: stop

@@ -37,6 +37,9 @@ cli:
     failed: "doctor could not start: {reason}"
     usage: "usage: python -m indus.state.doctor_report [-p NAME] [--json]"
 
+prompt:
+  context_truncated: "Context file {name} was shortened: it has {total} characters and the limit is {cap}. Trim the file, raise prompt.context_file_max_chars, or use a model with a larger window."
+
 errors:
   generic: Something went wrong. The log at {log_path} has the details.
   config:
@@ -83,3 +86,14 @@ errors:
       todo: "Update Indus Agent to read it."
   secrets:
     missing: No value is stored for {name}. Set it with "indus secrets set {name}".
+
+turn:
+  overflow: "The conversation no longer fits this model's context window, so the partial reply was not continued. Compress the conversation or start a new session."
+  repetition: "The model got stuck repeating itself, so the reply was stopped. Send the message again, or switch to another model."
+  thinking_exhausted: "The model spent its whole output budget on reasoning and wrote no answer. Lower the reasoning effort or raise the output limit."
+  ceiling_no_text: "The reply hit the output limit on every attempt and no visible text came back. Lower the reasoning effort or raise the output limit."
+  window_full: "The prompt used {prompt} of the model's {window}-token context window, leaving no room for an answer. Compress the conversation or start a new session."
+  tool_call_cut: "The model's tool call was cut off several times in a row, so it was not run."
+  dropped_tools: "The stream broke while a tool call was being written ({names}); it was not run."
+  empty: "The model returned no answer after several attempts. Send the message again, or switch to another model."
+  heal_notice: "Some earlier turns in this session are empty and get patched on every request. Replies still work; start a new session to clear them."

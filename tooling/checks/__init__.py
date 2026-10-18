@@ -10,4 +10,5 @@ NAMES = (
     "prbody",
     "pins",
     "locales",
+    "protocol_stale",
 )

@@ -86,6 +86,8 @@ __all__ = [
     "set_hidden_in",
     "set_pinned",
     "set_pinned_in",
+    "set_system_prompt",
+    "set_system_prompt_in",
     "set_yolo",
     "status",
     "status_in",
@@ -334,6 +336,25 @@ def get_in(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] | None:
 def get(store: StoreHandle, session_id: str) -> dict[str, Any] | None:
     with store.read() as conn:
         return get_in(conn, session_id)
+
+
+def set_system_prompt_in(conn: sqlite3.Connection, session_id: str, text: str) -> bool:
+    """Point an existing row at ``text`` (stored by hash, like ``create``). True when updated.
+
+    ``create`` only fills gaps, so a prompt rebuilt after compaction or a runtime change needs
+    this write. A missing row is not created here; empty text is refused.
+    """
+    digest = _store_prompt_in(conn, text)
+    if digest is None:
+        raise ValueError("a stored system prompt cannot be empty")
+    cur = conn.execute(
+        "UPDATE sessions SET system_prompt_hash = ? WHERE id = ?", (digest, session_id)
+    )
+    return cur.rowcount > 0
+
+
+def set_system_prompt(store: StoreHandle, session_id: str, text: str) -> bool:
+    return store.write(lambda conn: set_system_prompt_in(conn, session_id, text))
 
 
 # -- end / reopen ---------------------------------------------------------------------------------

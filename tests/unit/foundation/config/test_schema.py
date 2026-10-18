@@ -38,6 +38,15 @@ def test_decided_defaults() -> None:
     assert d["timezone"] == ""
     assert d["model"]["default"] == "" and d["model"]["context_length"] is None
     assert d["providers"] == {}
+    assert d["prompt"] == {
+        "task_completion_guidance": True,
+        "parallel_tool_guidance": True,
+        "tool_use_enforcement": "auto",
+        "execution_guidance": "auto",
+        "context_file_max_chars": None,
+        "context_file_read_timeout": 5.0,
+        "platform_hints": {},
+    }
 
 
 def test_defaults_are_read_only_and_tree_is_a_copy() -> None:

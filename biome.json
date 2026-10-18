@@ -11,6 +11,7 @@
       "!**/dist",
       "!**/node_modules",
       "!packages/protocol/src/generated",
+      "!tests/fixtures/captures",
       "!tooling"
     ]
   },

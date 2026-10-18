@@ -1,2 +1,3 @@
-// Placeholder until the P04 generator writes the real contract into src/generated/.
-export const PROTOCOL_VERSION = 0;
+// The Indus Agent protocol: generated types and catalogue (see src/generated/, never edited by hand).
+export * from "./generated/catalog.ts";
+export type * from "./generated/types.ts";

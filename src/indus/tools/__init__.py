@@ -1,1 +1,1 @@
-"""Tool registry, toolsets, dispatch and built-in tools."""
+"""Tool registry, toolsets, dispatch, result budget and spill; built-in tools from P05."""

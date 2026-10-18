@@ -68,6 +68,9 @@ ERROR_CODES: dict[str, str] = {
     "provider.http": "the model provider answered with an HTTP error status",
     "provider.stream": "the model provider reported an error inside a stream or ended it early",
     "provider.stale_breaker": "the provider stayed silent on too many attempts in a row",
+    "tools.error": "tool registry or dispatch problem",
+    "tools.bad_schema": "a tool schema or its parameters is not a JSON object",
+    "tools.name_taken": "a tool name is already registered in another toolset",
 }
 
 

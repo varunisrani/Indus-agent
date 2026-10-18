@@ -110,6 +110,37 @@ class ModelCatalogSection(_Section):
     )
 
 
+class PromptSection(_Section):
+    """How the system prompt is put together (P04-05/06)."""
+
+    task_completion_guidance: bool = Field(
+        default=True, description="ask the model to finish work with real tool output"
+    )
+    parallel_tool_guidance: bool = Field(
+        default=True, description="suggest sending independent tool calls together"
+    )
+    tool_use_enforcement: str | bool | list[str] = Field(
+        default="auto",
+        description="act-with-tools guidance: auto (by model family), true, false or a list of "
+        "model-name substrings",
+    )
+    execution_guidance: str | bool | list[str] = Field(
+        default="auto",
+        description="check-facts-with-tools guidance: auto, true, false or model-name substrings",
+    )
+    context_file_max_chars: int | None = Field(
+        default=None,
+        description="character cap for one project context file; empty = scale with the window",
+    )
+    context_file_read_timeout: float = Field(
+        default=5.0, description="seconds to wait for a context file before skipping it"
+    )
+    platform_hints: dict[str, Any] = Field(
+        default_factory=dict,
+        description="per-surface hint changes: <surface>: text to append, or {append, replace}",
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -144,6 +175,9 @@ class ConfigModel(BaseModel):
     network: NetworkSection = Field(default_factory=NetworkSection, description="connections")
     model_catalog: ModelCatalogSection = Field(
         default_factory=ModelCatalogSection, description="provider model lists"
+    )
+    prompt: PromptSection = Field(
+        default_factory=PromptSection, description="how the system prompt is put together"
     )
     timezone: str = Field(
         default="", description="IANA zone name, e.g. Asia/Kolkata; empty = system zone"
