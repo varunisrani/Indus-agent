@@ -129,3 +129,129 @@ Compare checklist (filled after the rewrite; reopened `agent/chat_completion_hel
 Done for P00-13 (2026-10-18): harness, criteria (a) and (c) measured and passing, negative control
 in place. P03-19 appends (b), (d), (e) and the decision input. No product code touched; nothing
 under `src/` imports the trial (test: `test_harness_rules.py::test_product_code_does_not_import_the_trial`).
+
+---
+
+# P03-19: criteria (b), (d), (e), re-run of (a) and (c) on the real path, and the decision input
+
+Task: D-04.1 trial completion (P03-19) Phase: 03 Owner: P03-B2 builder
+
+Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `agent/chat_completion_helpers.py`
+lines 2703–2760 again (the worker-thread streaming call object, for the comparison below),
+`tools/terminal_tool.py` (the foreground timeout handling only: a timed-out command reports exit
+124; the kill path itself lives in the environment backends and was not opened). Closed before
+writing.
+Evidence: none.
+
+What it adds (own words): the three open criteria, measured with the P00-13 harness, the P03
+stream driver (`providers.streaming.stream_call`) and the fake model (`FakeModelServer` over
+`httpx.MockTransport`), plus (a) and (c) re-run through the whole real path — fake server frame →
+httpx → SSE decoder → transport → driver → session queue → consumer — instead of the bare
+async-generator source P00-13 used.
+
+Method (helpers in `tests/trials/async_core/driver_parts.py`, a throwaway prototype):
+- Background load for (b) and (d): `Streamers` — 10 sessions, each streaming turn after turn of
+  100 deltas through `stream_call` (half Chat Completions, half Anthropic Messages). The server
+  stamps each frame (`perf_counter_ns`) and then gives way to the loop before handing it over, so
+  a blocked loop shows up as latency; the driver's `on_event` records frame → event latency.
+- (b) `run_with_deadline`: `asyncio.create_subprocess_exec` of a Python child that blocks on
+  stdin; at the 2 s timeout it gets SIGTERM, 2 s later SIGKILL. Worst case: the child ignores
+  SIGTERM, so only the backstop can end it. Also a plain child (dies on SIGTERM).
+- (d) `BoundedHookPool(workers=2)`: a fixed `ThreadPoolExecutor` plus a non-blocking semaphore;
+  `run(hook, deadline=1.0)` waits with `asyncio.wait_for(asyncio.shield(...))` and on timeout
+  abandons the thread (it keeps its slot until the hook really returns). The hook blocks on a
+  `threading.Event` released at the end of the test. Two hanging hooks fill the pool; the third
+  call is refused with `PoolFull` instead of growing the pool.
+- (e) `LoopThread`: the loop runs `run_forever` on a background thread; the test's main thread
+  plays the REPL key handler: `run_coroutine_threadsafe(start_driven_turn())`, waits on a
+  `threading.Event` until 5 deltas arrived, then `run_coroutine_threadsafe(interrupt_turn())` and
+  measures until the fake server saw the HTTP body closed. 20 runs.
+- (a) re-run: `driver_source` wraps a real `stream_call` as the harness source (one JSON "store
+  write" per delta into a list); interrupt after 20 deltas; close time = the server's body close.
+  20 runs per wire format.
+- (c) re-run: 50 sessions × 200 deltas through `driver_source`, alternating wire formats.
+- Negative controls (each must be flagged): (b) no backstop → the SIGTERM-ignoring child is still
+  alive 2.5 s after SIGTERM; (d) no deadline → the turn is still waiting 1.5 s later; (e) a turn
+  that shields its call from cancellation → the stream is not closed within 200 ms. (a)'s control
+  from P00-13 stays.
+
+## Results (P03-19)
+
+Shared 4-core build container, Python 3.13, other agents running. The four new trial files were run
+6 times (1 + 5 in a row, `uv run pytest <files> -q -s`): 6/6 green, 10 passed each. Ranges over
+the 6 runs; (a) and (e) are 20 interrupts per run.
+
+| Criterion | Measure | Threshold | Result (6 runs) |
+|---|---|---|---|
+| (b) child ignoring SIGTERM, timeout 2 s | start → child gone | ≤ timeout + 2 s (+0.5 s slack) | 4.003–4.009 s (SIGKILL by the backstop), 6/6 |
+| (b) plain child | start → child gone | ≈ timeout | 2.002–2.006 s (SIGTERM) |
+| (b) 10 streaming sessions meanwhile | frame → event latency | p99 < 50 ms | p50 0.127–0.132 ms, p99 2.0–2.4 ms, max 7–60 ms; 2,050–2,430 turns, ~214–243K events |
+| (b) control: no backstop | child after timeout + 2.5 s | must be flagged | alive, flagged 6/6 |
+| (d) hanging sync hook, deadline 1 s | call → turn continues | ≈ 1 s, never blocked | 1.001–1.018 s; second hook abandoned 1.001–1.004 s |
+| (d) pool bound | third hook while 2 are stuck | refused, pool does not grow | `PoolFull` 6/6; executor threads = 2 |
+| (d) 10 streaming sessions meanwhile | frame → event latency | p99 < 50 ms | p99 2.3–2.5 ms, max 16–46 ms |
+| (d) control: no deadline | turn 1.5 s later | must be flagged | still waiting, flagged 6/6 |
+| (e) REPL thread → loop thread interrupt | interrupt call → HTTP body closed | ≤ 200 ms, 20/20 | p50 0.13–0.27 ms, max 0.24–4.7 ms; 120/120 within |
+| (e) control: interrupt not honoured | stream closed within 200 ms? | must be flagged | not closed, flagged 6/6 |
+| (a) real path, Chat Completions | interrupt → HTTP body closed / exit funnel | ≤ 200 ms, 20/20 | close p50 0.06–0.08 ms, max 0.13–3.4 ms; exit max 0.23–3.5 ms |
+| (a) real path, Anthropic Messages | same | ≤ 200 ms, 20/20 | close p50 0.06–0.08 ms, max 0.08–1.2 ms; exit max 0.17–1.3 ms |
+| (c) real path, 50 sessions × 200 deltas | server frame → consumer dequeue | p99 < 50 ms | p50 4.6–5.3 ms, p99 5.5–11.0 ms, max 48–73 ms; wall 400–474 ms |
+
+Reading:
+- All five criteria pass with wide margins on the real path. The real path costs about 20×
+  more per event than the bare P00-13 source in (c) (p50 ≈ 5 ms vs 0.2 ms), mostly because every
+  frame now waits one full round of the 50-session loop before it is read (the server gives way
+  between frames on purpose) and passes through httpx, the SSE decoder, the transport, the driver
+  and an extra queue. p99 stays 5–10× under budget.
+- The max values (up to ~73 ms in (c), 60 ms in (b)) are single outliers on a shared machine
+  (process spawn, GC, other agents); the budgets are on p99 and they hold in every run.
+- (b) shows the deadline helper needs both steps: SIGTERM at the timeout and SIGKILL 2 s later;
+  without the backstop a child that ignores SIGTERM lives on (control).
+- (d) shows the bounded pool is the right shape for sync plugin hooks: a stuck hook costs one
+  worker until it returns, never the loop; a full pool refuses instead of spawning threads.
+- (e) shows a classic synchronous front end can own the loop thread and interrupt through
+  `run_coroutine_threadsafe` with sub-millisecond latency; nothing in the driver needed a thread.
+
+Caveats: no real sockets (MockTransport), no SQLite store writes (a JSON line per delta in memory
+stands in; the P02 single-writer thread is the real cost to re-check in P04), and the turn loop
+is the P00-13 harness, not P04's.
+
+## Recommendation for P04-23
+
+**Adopt asyncio-first (keep D-04.1).** Reasons: all five criteria pass in every run with margins of
+one to three orders of magnitude on the real P03 path; interrupts close the HTTP stream through
+plain task cancellation (no foreign-thread socket shutdown, no abandoned workers, R01.4); stale
+detection, reconnects and the breaker run on an injected clock and are fully testable without real
+time; the two places where blocking code meets the loop — child processes and synchronous hooks —
+are handled by a deadline helper with a kill backstop and a bounded pool, and a synchronous front
+end can drive the loop from its own thread. The threaded fallback would bring back exactly the
+races the trial removes. Conditions to carry into P04: the blocking-work helper (P04) uses the
+bounded-pool + deadline shape from (d) and the SIGTERM → SIGKILL backstop from (b); the store
+writer thread (P02-03) is re-measured under the (c) load once P04 persists per event.
+
+## Decisions for the lead (P03-19)
+- "20 of 20 runs": (a) and (e) do 20 interrupts inside each test run; (b) and (d) are one long
+  measurement per test run (each takes 2–4 s of real time), and the files were run 6 times here.
+  Repeat the files in CI with `--count` style loops if the lead wants 20 file-level runs.
+- The trial helpers use `ThreadPoolExecutor._threads` (private) only to count pool threads.
+
+Compare checklist (P03-19; reopened `agent/chat_completion_helpers.py` 2703–2760):
+- [x] The reference's request worker + polling monitor + per-request cancel flag are replaced by
+  one task per call, a clock watchdog task and cancellation (tests:
+  `tests/trials/async_core/test_real_transports.py::test_interrupt_closes_the_http_stream_within_200ms`,
+  `tests/trials/async_core/test_sync_driver.py::test_sync_caller_interrupts_within_200ms`)
+- [x] Timeout + kill backstop for child processes (test:
+  `tests/trials/async_core/test_subprocess_timeout.py::test_child_killed_by_backstop_while_sessions_stream`)
+- [x] Hung synchronous work abandoned at a deadline without blocking the loop, bounded pool (test:
+  `tests/trials/async_core/test_sync_hook_abandon.py::test_hanging_hook_abandoned_and_pool_bounded`)
+- Deliberate differences: no worker threads for model calls; the monitor is a clock-driven task.
+
+## Status (P03-19)
+
+Done (2026-10-18). All five D-04.1 criteria measured and passing; decision input written above
+for P04-23.
+
+## Integration (lead)
+
+- Wave 3: `tests/trials/async_core/conftest.py` (it only installed the P03 stand-ins) was deleted;
+  the trial runs on the real P03 modules.

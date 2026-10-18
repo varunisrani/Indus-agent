@@ -34,15 +34,25 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-A15-1** Redirect: a correction during a model call cancels only that call, keeps finished work and retries …
   - Review: not yet planned (phase TBD)
 - **ACC-A16-1** Streaming by default with read/connect timeouts and stale-stream detection; a session flips to …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_streaming.py::test_stall_before_first_delta_reconnects`
+  - `tests/unit/providers/test_streaming.py::test_breaker_trips_after_five_stalls`
+  - `tests/unit/providers/test_streaming.py::test_keep_alive_only_server_flips_to_non_stream`
+  - `tests/unit/providers/test_streaming.py::test_stream_unsupported_flips_to_non_stream`
+- **ACC-A16-2** Stale timeouts scale with estimated prompt size (180/240/300 s), reasoning floor, finite local …
+  - `tests/unit/providers/test_timeouts.py::test_table`
 - **ACC-A17-1** Partial-stream continuation: text already shown is kept and continued after a mid-stream failure …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_streaming.py::test_stall_after_visible_text_returns_length_stub`
+  - `tests/unit/providers/test_streaming.py::test_overflow_mid_stream_returns_empty_terminal_stub`
+  - Review: continuation prompt after the stub (P04)
 - **ACC-A18-1** Think-tag scrubber across deltas and a repetition guard against runaway loops
   - Review: not yet planned (phase TBD)
 - **ACC-A19-1** Error classifier with a closed set of reasons (auth, billing, rate limit, overloaded, context …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_classify.py::test_cases`
+  - `tests/unit/providers/test_classify.py::test_profile_hook_wins`
 - **ACC-A20-1** Retry with `Retry-After` honoured and jittered exponential backoff, interruptible; retry chatter …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_retry.py::test_parse_table`
+  - `tests/unit/providers/test_retry.py::test_three_failures_then_success_makes_four_calls_with_computed_waits`
+  - `tests/unit/providers/test_retry.py::test_cancel_during_wait_exits_within_one_slice`
 - **ACC-A22-1** Plain-language terminal failure message naming what happened, what to do and when a limit resets …
   - Review: not yet planned (phase TBD)
 - **ACC-A24-1** Fallback chain of provider+model pairs used after retries fail; the primary is restored at the …
@@ -64,7 +74,10 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-A34-1** Iteration cap (`max_turns`) and optional wall-clock run budget with a single wrap-up notice at 80 %
   - Review: not yet planned (phase TBD)
 - **ACC-A35-1** Context-window resolution: config override, endpoint metadata, `/models`, local probes, family …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_context_length.py::test_config_beats_everything`
+  - `tests/unit/providers/test_context_length.py::test_local_models_small_window_refused`
+  - `tests/unit/providers/test_context_length.py::test_unknown_model_fallback_warns_once`
+  - `tests/unit/providers/test_context_length.py::test_family_and_fallback_are_not_cached`
 - **ACC-A36-1** Automatic context compression: provider-measured threshold, old tool output pruned, one summary …
   - Review: not yet planned (phase TBD)
 - **ACC-A37-1** Manual `/compress` with focus topic, `here [N]` and preview
@@ -78,31 +91,57 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-A42-1** Auxiliary model client for side tasks (summaries, titles, vision, search, memory, curator) with …
   - Review: not yet planned (phase TBD)
 - **ACC-A43-1** Provider registry of declarative profiles found from bundled, user and entry-point plugins; lookup …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_registry.py::test_lookup_by_alias_and_case`
+  - `tests/unit/providers/test_registry.py::test_config_custom_provider_appears`
+  - `tests/unit/providers/test_registry.py::test_plugin_register_conflict`
 - **ACC-A44-1** OpenAI-compatible Chat Completions transport (aggregators, custom endpoints, local servers, most …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/transports/test_chat_completions.py::test_interleaved_text_and_two_parallel_tool_calls`
+  - `tests/contract/providers/test_transport_contract.py::test_capture_contract`
+  - `tests/contract/providers/test_transport_contract.py::test_script_contract`
+  - Review: the chat_completions captures are synthetic until the lead records live ones (P03-11)
 - **ACC-A45-1** Anthropic Messages transport with budgeted and adaptive thinking
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/transports/test_anthropic.py::test_stream_event_sequence_golden`
+  - `tests/unit/providers/transports/test_anthropic.py::test_thinking_budgets`
+  - `tests/unit/providers/transports/test_anthropic.py::test_adaptive_models_use_effort_field`
+  - `tests/contract/providers/test_transport_contract.py::test_capture_contract`
+  - Review: the anthropic_messages captures are synthetic until the lead records live ones (P03-11)
 - **ACC-A46-1** OpenAI Responses transport with reasoning items and incomplete-status handling
   - Review: not yet planned (phase TBD)
 - **ACC-A50-1** Each provider key is sent only to its own host, matched by exact hostname; saved config beats stale …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_hosts.py::test_spoof_table_never_matches`
+  - `tests/unit/providers/test_route.py::test_openrouter_key_never_sent_to_custom_host`
+  - `tests/unit/providers/test_route.py::test_config_provider_beats_env`
 - **ACC-A51-1** API-mode auto-detection from the base URL (Responses for official OpenAI hosts, Messages for …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_hosts.py::test_api_mode_from_url`
+  - `tests/unit/providers/test_route.py::test_responses_hint_falls_back`
+  - Review: Responses mode itself is active from P08 (P08)
 - **ACC-A52-1** In-place model switch mid-session that rolls back atomically on failure
   - Review: not yet planned (phase TBD)
 - **ACC-A53-1** Reasoning effort ladder `none … ultra` with per-model overrides, clamped to the strongest supported …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_types.py::test_clamp_effort`
+  - `tests/unit/providers/transports/test_chat_completions.py::test_reasoning_effort_clamped_to_profile`
+  - `tests/unit/providers/transports/test_anthropic.py::test_thinking_budgets`
+  - Review: per-model effort overrides from config (P04/P08)
 - **ACC-A55-1** Bundled provider catalogue of about forty vendors and gateways (key-based ones first)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_bundled.py::test_catalogue_names_and_order`
+  - `tests/unit/providers/test_bundled.py::test_every_profile_revalidates`
+  - Review: Gemini, Bedrock, Vertex, Azure, Fireworks, DeepInfra rows arrive with P08 transports (P08)
 - **ACC-A56-1** Named custom OpenAI-compatible providers, with `ollama`/`vllm`/`llamacpp` as aliases for local …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/providers/test_registry.py::test_config_custom_provider_details`
+  - `tests/unit/providers/test_registry.py::test_local_server_aliases`
 - **ACC-A63-1** Cross-process turn lease per session and a liveness watchdog that ends idle turns
   - Review: not yet planned (phase TBD)
 - **ACC-A64-1** Closed set of turn exit reasons logged for every turn
   - Review: not yet planned (phase TBD)
 - **ACC-B1-1** One SQLite store per profile: single writer with time-budgeted retries, WAL that is never silently …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/state/test_writer.py::test_lock_held_for_three_seconds_is_waited_out`
+  - `tests/unit/state/test_writer.py::test_lock_held_forever_raises_store_locked_at_the_deadline`
+  - `tests/unit/state/test_writer.py::test_awrite_serialises_without_blocking_the_loop`
+  - `tests/unit/state/test_registry.py::test_acquires_share_one_handle_and_the_last_release_closes`
+- **ACC-B1-2** A store that is WAL on disk is never switched to DELETE; WAL is not enabled where it is unsafe
+  - `tests/unit/state/test_journal.py::test_existing_wal_with_delete_config_stays_wal_and_logs_once`
+  - `tests/unit/state/test_journal.py::test_unreadable_header_keeps_wal_and_switches_nothing`
+  - `tests/unit/state/test_journal.py::test_cross_vm_mount_gets_delete_for_a_fresh_store`
 - **ACC-B2-1** Sessions persist across restarts and resume by id, title or `latest` (`-r`, `-c`, `/resume`)
   - Review: not yet planned (phase TBD)
 - **ACC-B3-1** Per-terminal continue breadcrumb so parallel terminals resume their own conversations; otherwise …
@@ -130,7 +169,12 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-B19-1** Resume size guard (20,000 messages) with stable refusal codes
   - Review: not yet planned (phase TBD)
 - **ACC-B20-1** Store safety: replaced-file detection, corruption quarantine, plain-language error buckets with a …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/state/test_guards.py::test_replaced_file_fences_every_later_write`
+  - `tests/unit/state/test_guards.py::test_application_id_change_alone_is_detected`
+- **ACC-B20-2** Structural corruption quarantines the handle; every store error maps to a bucket with plain copy
+  - `tests/unit/state/test_guards.py::test_corruption_quarantines_the_handle`
+  - `tests/unit/state/test_errors.py::test_classifier_table`
+  - `tests/unit/state/test_errors.py::test_copy_matches_the_english_catalogue`
 - **ACC-B23-1** Resume recap ("previous conversation") printed by the classic CLI
   - Review: not yet planned (phase TBD)
 - **ACC-B24-1** Per-session and per-model usage including auxiliary calls, summed across a lineage

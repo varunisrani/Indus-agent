@@ -1,0 +1,9 @@
+# The first attempt goes silent for 200 s before any content (longer than the 180 s stale
+# timeout); the reconnect gets a normal answer.
+turns:
+  - steps:
+      - stall: 200
+  - steps:
+      - text: ["back ", "online"]
+      - usage: {prompt: 40, completion: 2}
+      - finish: stop

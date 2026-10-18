@@ -1,0 +1,10 @@
+# Turn 1 is refused with HTTP 429 and a two-second Retry-After; turn 2 answers.
+turns:
+  - steps:
+      - fail:
+          status: 429
+          body: '{"error": {"message": "Rate limit reached for requests", "type": "requests", "code": "rate_limit_exceeded"}}'
+          headers: {Retry-After: "2"}
+  - steps:
+      - text: "done"
+      - finish: stop

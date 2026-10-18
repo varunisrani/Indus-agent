@@ -20,6 +20,7 @@ def test_decided_defaults() -> None:
         "api_max_retries": 3,
         "gateway_timeout": 1800,
         "clarify_timeout": 3600,
+        "local_stream_stale_timeout": 900,
     }
     assert d["terminal"] == {"backend": "local", "cwd": ".", "timeout": 180}
     assert d["approvals"] == {"mode": "manual", "timeout": 300, "deny": []}

@@ -6,7 +6,8 @@ Coverage lines under a row are either a test reference such as
 Checked by `python -m tooling.checks traps`.
 
 - **R01.1** Prompt-cache byte stability
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/test_types.py::test_assemble_keeps_arguments_bytes`
+  - Review: golden prompt and tool-array byte tests (P04-22)
 - **R01.2** Role alternation under every failure path
   - Review: not yet planned (P00-guards)
 - **R01.3** Persist order
@@ -14,10 +15,22 @@ Checked by `python -m tooling.checks traps`.
 - **R01.4** Interrupt races
   - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_mid_text_stream`
   - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_with_pending_delta_after_tool_calls`
+  - `tests/unit/providers/test_http.py::test_cancel_closes_stream_within_200ms`
+  - `tests/contract/providers/test_transport_contract.py::test_cancellation_mid_stream_closes_the_response`
+  - `tests/unit/providers/test_streaming.py::test_cancellation_closes_stream_and_raises`
+  - `tests/unit/providers/test_streaming.py::test_cancellation_close_latency_under_200ms`
+  - `tests/trials/async_core/test_real_transports.py::test_interrupt_closes_the_http_stream_within_200ms`
+  - `tests/trials/async_core/test_sync_driver.py::test_sync_caller_interrupts_within_200ms`
 - **R01.5** Streaming stale detection vs slow reasoning
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/test_timeouts.py::test_table`
+  - `tests/unit/providers/test_timeouts.py::test_read_timeout_raised_never_lowered`
+  - `tests/unit/providers/test_streaming.py::test_stall_before_first_delta_reconnects`
+  - `tests/unit/providers/test_streaming.py::test_breaker_trips_after_five_stalls`
+  - `tests/unit/providers/test_streaming.py::test_route_epoch_change_returns_route_changed`
 - **R01.6** Partial delivery
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/test_streaming.py::test_stall_after_visible_text_returns_length_stub`
+  - `tests/unit/providers/test_streaming.py::test_stub_names_at_most_three_dropped_tools`
+  - `tests/unit/providers/test_streaming.py::test_overflow_mid_stream_returns_empty_terminal_stub`
 - **R01.7** Compression threshold arithmetic and docs drift
   - Review: not yet planned (P00-guards)
 - **R01.8** Estimates are not evidence
@@ -27,9 +40,21 @@ Checked by `python -m tooling.checks traps`.
 - **R01.10** Fallback is turn-scoped and stateful
   - Review: not yet planned (P00-guards)
 - **R01.11** Key leakage across endpoints
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/test_hosts.py::test_spoof_table_never_matches`
+  - `tests/unit/providers/test_hosts.py::test_property_match_implies_host_or_subdomain`
+  - `tests/unit/providers/test_route.py::test_openrouter_key_never_sent_to_custom_host`
+  - `tests/unit/providers/test_route.py::test_vendor_key_only_on_exact_host`
+  - `tests/unit/providers/test_route.py::test_generic_key_not_sent_to_another_vendor_host`
+  - `tests/unit/providers/test_route.py::test_config_anthropic_ignores_shell_openai_base_url`
+  - `tests/unit/providers/test_classify.py::test_host_hint_only_for_non_default_host`
+  - `tests/unit/providers/test_classify.py::test_no_message_contains_the_key`
 - **R01.12** Vendor impersonation and billing evasion
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/test_profile.py::test_foreign_user_agent_refused`
+  - `tests/unit/providers/test_profile.py::test_foreign_product_token_in_any_header_refused`
+  - `tests/unit/providers/test_http.py::test_identity_headers_only_ours`
+  - `tests/unit/providers/test_bundled.py::test_no_oauth_or_portal_routes`
+  - `tests/unit/providers/transports/test_anthropic.py::test_no_header_names_another_product`
+  - `tests/unit/providers/transports/test_chat_completions.py::test_no_identity_headers_besides_ours`
 - **R01.13** Tool-definition list aliasing
   - Review: not yet planned (P00-guards)
 - **R01.14** Parallel tool safety
@@ -109,23 +134,40 @@ Checked by `python -m tooling.checks traps`.
 - **R02.32** Kernel cap starvation
   - Review: not yet planned (P00-guards)
 - **R03.1** Never live-downgrade WAL
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_journal.py::test_existing_wal_with_delete_config_stays_wal_and_logs_once`
+  - `tests/unit/state/test_journal.py::test_unreadable_header_keeps_wal_and_switches_nothing`
+  - `tests/unit/state/test_journal.py::test_cross_vm_mount_keeps_an_existing_wal_store`
+  - `tests/unit/state/test_journal.py::test_vulnerable_sqlite_uses_delete_for_new_and_keeps_existing_wal`
 - **R03.2** Stray open/close cancels SQLite's POSIX locks
   - Review: not yet planned (P00-guards)
 - **R03.3** Checkpoint mode
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_writer.py::test_fifty_writes_make_one_passive_checkpoint`
+  - `tests/unit/state/test_registry.py::test_close_sequence_checkpoints_and_releases_the_header_descriptor`
+  - `tests/unit/state/test_guards.py::test_replaced_file_fences_every_later_write`
+  - `tests/unit/state/test_guards.py::test_corruption_quarantines_the_handle`
 - **R03.4** Replaced file / new generation
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_guards.py::test_replaced_file_fences_every_later_write`
+  - `tests/unit/state/test_guards.py::test_application_id_change_alone_is_detected`
+  - `tests/unit/state/test_guards.py::test_corruption_on_a_replaced_file_is_not_quarantined`
+  - `tests/unit/state/test_registry.py::test_inode_swap_opens_a_new_generation_and_fences_the_old_one`
 - **R03.5** Structural corruption must stop writes
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_guards.py::test_corruption_quarantines_the_handle`
+  - `tests/unit/state/test_guards.py::test_quarantined_handle_never_reopens`
+  - `tests/unit/state/test_guards.py::test_fts_scoped_corruption_is_not_quarantined`
 - **R03.6** FTS is derived; never rebuild inline
   - Review: not yet planned (P00-guards)
 - **R03.7** Stable FTS projection
   - Review: not yet planned (P00-guards)
 - **R03.8** Retry budgets are time-based
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_writer.py::test_lock_held_for_three_seconds_is_waited_out`
+  - `tests/unit/state/test_writer.py::test_lock_held_forever_raises_store_locked_at_the_deadline`
+  - `tests/unit/state/test_writer.py::test_callback_error_rolls_back`
+  - `tests/unit/state/test_writer.py::test_begin_io_error_once_is_retried`
+  - `tests/unit/state/test_writer.py::test_io_error_after_the_callback_ran_is_not_retried`
 - **R03.9** Opening must wait out locks too
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_schema.py::test_init_waits_out_a_three_second_lock`
+  - `tests/unit/state/test_schema.py::test_init_gives_up_after_the_patience`
+  - `tests/unit/state/test_schema.py::test_second_init_writes_nothing`
 - **R03.10** Ordinary appends must not be blocked by compression
   - Review: not yet planned (P00-guards)
 - **R03.11** Lineage-wide flags
@@ -137,11 +179,15 @@ Checked by `python -m tooling.checks traps`.
 - **R03.14** Order transcripts by id, never timestamp
   - Review: not yet planned (P00-guards)
 - **R03.15** Long migrations hold the write lock
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_schema.py::test_chunked_migration_is_time_boxed_and_resumes`
 - **R03.16** Read-only means read-only for browsing
   - Review: not yet planned (P00-guards)
 - **R03.17** Descriptor exhaustion
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_readpool.py::test_nine_concurrent_readers_use_eight_pooled_and_the_writer`
+  - `tests/unit/state/test_readpool.py::test_process_cap_falls_back_to_the_writer`
+  - `tests/unit/state/test_readpool.py::test_low_descriptor_headroom_refuses_new_connections`
+  - `tests/unit/state/test_readpool.py::test_failed_open_backs_off_for_sixty_seconds`
+  - `tests/unit/state/test_readpool.py::test_close_during_a_read_closes_that_connection`
 - **R03.18** SQL variable limit
   - Review: not yet planned (P00-guards)
 - **R03.19** Surrogates and reserved prefixes
@@ -158,14 +204,19 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/test_scope.py::test_concurrent_tasks_see_their_own`
   - `tests/unit/foundation/test_log.py::test_records_from_two_tasks_land_in_their_own_homes`
   - `tests/integration/foundation/test_log_routing.py::test_threads_with_different_scopes_write_to_their_own_profile`
+  - `tests/unit/state/test_connection.py::test_default_store_path_comes_from_the_scope`
 - **R03.24** Test runs touching the live store
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_connection.py::test_guard_refuses_real_root_and_named_profiles`
+  - `tests/unit/state/test_connection.py::test_guard_runs_before_anything_touches_disk`
+  - `tests/unit/state/test_connection.py::test_the_computed_real_root_is_refused_here`
+  - `tests/unit/state/test_connection.py::test_ancestry_finds_pytest_from_a_child`
 - **R03.25** Automatic maintenance must only skip, never refuse a turn
   - Review: not yet planned (P00-guards)
 - **R03.26** Repair loops
   - Review: not yet planned (P00-guards)
 - **R03.27** macOS durability
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_journal.py::test_macos_forces_full_and_fullfsync`
+  - `tests/unit/state/test_journal.py::test_macos_barriers_on_every_wal_activation`
 - **R03.28** Startup watchdog vs slow I/O
   - Review: not yet planned (P00-guards)
 - **R04.1** Classic chat is a gateway client
@@ -202,7 +253,10 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/config/test_keys.py::test_set_refuses_phantom_sibling`
   - `tests/unit/foundation/config/test_keys.py::test_split_join_roundtrip_seeded`
 - **R04.9** Provider switch leaves a stale route
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/test_route.py::test_stale_vendor_base_url_dropped_with_warning`
+  - `tests/unit/providers/test_route.py::test_explicit_provider_ignores_other_providers_base_url`
+  - `tests/unit/providers/test_route.py::test_saved_custom_url_beats_shell_openai_base_url`
+  - `tests/unit/providers/test_bundled.py::test_register_managed_env_names`
 - **R04.10** .env` read/write symmetry
   - `tests/unit/foundation/test_envfile.py::test_set_replaces_every_line_shape`
   - `tests/unit/foundation/test_envfile.py::test_delete_removes_every_line_shape`
@@ -230,7 +284,8 @@ Checked by `python -m tooling.checks traps`.
 - **R04.16** Auth store read errors
   - Review: not yet planned (P00-guards)
 - **R04.17** Device-code polling edge cases
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/providers/test_retry.py::test_parse_table`
+  - Review: the device-code flow itself (P07)
 - **R04.18** Browser opening on headless/remote hosts
   - Review: not yet planned (P00-guards)
 - **R04.19** Non-TTY behaviour

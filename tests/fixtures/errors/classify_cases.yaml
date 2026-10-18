@@ -1,0 +1,318 @@
+# Classifier table (P03-15). Bodies are written fresh in the shapes the vendors document:
+# OpenAI-style {"error": {"message", "type", "code"}} and Anthropic-style
+# {"type": "error", "error": {"type", "message"}}. Each case builds one error:
+#   status + body (+ headers)       -> ProviderHTTPError
+#   stream: <label> + body          -> ProviderStreamError (no status; the label is informative)
+#   exception: <name> + message     -> that exception (httpx or builtin)
+# `expect` lists the reason and any flags that must hold.
+cases:
+  # -- structured codes / types win over the status ------------------------------------------
+  - id: code-openai-context-length
+    status: 400
+    body: {error: {message: "This request uses more tokens than the model allows.", type: invalid_request_error, code: context_length_exceeded}}
+    expect: {reason: context_overflow, should_compress: true, retryable: false}
+  - id: code-openai-insufficient-quota-on-429
+    status: 429
+    body: {error: {message: "Your account has no remaining quota.", type: insufficient_quota, code: insufficient_quota}}
+    expect: {reason: billing, retryable: false, should_rotate_credential: true}
+  - id: code-openai-rate-limit-exceeded
+    status: 429
+    body: {error: {message: "Too many requests in a short window.", type: requests, code: rate_limit_exceeded}}
+    expect: {reason: rate_limit, retryable: true, should_rotate_credential: true}
+  - id: code-openai-model-not-found
+    status: 404
+    body: {error: {message: "The model 'gpt-nope' is unknown here.", type: invalid_request_error, code: model_not_found}}
+    expect: {reason: model_not_found, retryable: false, should_fallback: true}
+  - id: code-openai-invalid-api-key
+    status: 401
+    body: {error: {message: "The key you sent is not valid.", type: invalid_request_error, code: invalid_api_key}}
+    expect: {reason: auth, retryable: false, should_rotate_credential: true}
+  - id: code-openai-unsupported-parameter
+    status: 400
+    body: {error: {message: "Parameter 'max_tokens' cannot be used with this model.", type: invalid_request_error, code: unsupported_parameter}}
+    expect: {reason: format_error, retryable: false}
+  - id: code-anthropic-overloaded
+    status: 529
+    body: {type: error, error: {type: overloaded_error, message: "Overloaded"}}
+    expect: {reason: overloaded, retryable: true}
+  - id: code-anthropic-rate-limit
+    status: 429
+    headers: {retry-after: "12"}
+    body: {type: error, error: {type: rate_limit_error, message: "Number of request tokens has exceeded your per-minute rate limit"}}
+    expect: {reason: rate_limit, retry_after: 12.0}
+  - id: code-anthropic-auth
+    status: 401
+    body: {type: error, error: {type: authentication_error, message: "invalid x-api-key"}}
+    expect: {reason: auth, should_rotate_credential: true}
+  - id: code-anthropic-api-error
+    status: 500
+    body: {type: error, error: {type: api_error, message: "Internal server error"}}
+    expect: {reason: server_error, retryable: true}
+  - id: code-anthropic-request-too-large
+    status: 413
+    body: {type: error, error: {type: request_too_large, message: "Request exceeds the maximum allowed number of bytes."}}
+    expect: {reason: payload_too_large, should_compress: true}
+  - id: code-anthropic-billing
+    status: 400
+    body: {type: error, error: {type: billing_error, message: "Your credit balance is too low to access the API."}}
+    expect: {reason: billing, retryable: false}
+  - id: code-anthropic-timeout
+    status: 504
+    body: {type: error, error: {type: timeout_error, message: "Request timed out upstream"}}
+    expect: {reason: timeout, retryable: true}
+  - id: code-generic-invalid-request-decides-nothing
+    status: 400
+    body: {error: {message: "Input is too long for this model.", type: invalid_request_error}}
+    expect: {reason: context_overflow}
+  - id: code-incomplete-stream
+    stream: incomplete
+    body: {error: {message: "stream ended before the model finished", type: incomplete_stream, code: incomplete_stream}}
+    expect: {reason: incomplete_response, retryable: true}
+
+  # -- 401 / 402 / 403 -----------------------------------------------------------------------
+  - id: s401-plain-text
+    status: 401
+    body: "Unauthorized"
+    expect: {reason: auth, retryable: false, should_rotate_credential: true, should_fallback: true}
+  - id: s402-billing
+    status: 402
+    body: {error: {message: "Payment required: add credits to continue."}}
+    expect: {reason: billing, retryable: false}
+  - id: s402-usage-resets
+    status: 402
+    body: {error: {message: "Usage limit reached for this plan. Try again in 15 minutes."}}
+    expect: {reason: rate_limit, retryable: true, retry_after: 600.0}
+  - id: s402-usage-no-reset
+    status: 402
+    body: {error: {message: "Monthly usage limit reached."}}
+    expect: {reason: billing}
+  - id: s403-billing-key-limit
+    status: 403
+    body: {error: {message: "Key limit exceeded (monthly spend)."}}
+    expect: {reason: billing, should_rotate_credential: true}
+  - id: s403-waf-html
+    status: 403
+    body: "<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head><body>Sorry, you have been blocked</body></html>"
+    expect: {reason: upstream_blocked, should_rotate_credential: false, should_fallback: true, retryable: false}
+  - id: s403-waf-challenge
+    status: 403
+    body: "Just a moment... Enable JavaScript and cookies to continue"
+    expect: {reason: upstream_blocked}
+  - id: s403-permission
+    status: 403
+    body: {error: {message: "Project does not have access to this resource."}}
+    expect: {reason: auth, retryable: false, should_fallback: true}
+  - id: s403-content-policy
+    status: 403
+    body: {error: {message: "Your prompt was flagged by our moderation system (content policy)."}}
+    expect: {reason: content_policy, retryable: false}
+
+  # -- 404 / 408 / 413 -----------------------------------------------------------------------
+  - id: s404-model-missing
+    status: 404
+    body: {error: {message: "No endpoints found for some-vendor/some-model."}}
+    expect: {reason: model_not_found, retryable: false}
+  - id: s404-model-does-not-exist
+    status: 404
+    body: {error: {message: "The model `fancy-1` does not exist or you do not have access to it."}}
+    expect: {reason: model_not_found}
+  - id: s404-generic
+    status: 404
+    body: "404 page not found"
+    expect: {reason: unknown, retryable: true, message_contains: "404 page not found"}
+  - id: s408-timeout
+    status: 408
+    body: "Request Timeout"
+    expect: {reason: timeout, retryable: true}
+  - id: s413-payload
+    status: 413
+    body: "Request Entity Too Large"
+    expect: {reason: payload_too_large, should_compress: true, retryable: false}
+
+  # -- 429 -----------------------------------------------------------------------------------
+  - id: s429-plain
+    status: 429
+    body: {error: {message: "Rate limit reached for requests"}}
+    expect: {reason: rate_limit, retryable: true, should_rotate_credential: true}
+  - id: s429-retry-after-header
+    status: 429
+    headers: {Retry-After: "7"}
+    body: {error: {message: "Too Many Requests"}}
+    expect: {reason: rate_limit, retry_after: 7.0}
+  - id: s429-retry-after-ms
+    status: 429
+    headers: {retry-after-ms: "1500"}
+    body: {error: {message: "Too Many Requests"}}
+    expect: {reason: rate_limit, retry_after: 1.5}
+  - id: s429-overloaded-wording
+    status: 429
+    body: {error: {message: "The service is temporarily overloaded, please try later."}}
+    expect: {reason: overloaded, should_rotate_credential: false, retryable: true}
+  - id: s429-aggregator-upstream
+    status: 429
+    body: {error: {message: "Provider returned error", code: 429, metadata: {provider_name: SomeHost, raw: "upstream says slow down"}}}
+    expect: {reason: upstream_rate_limit, should_fallback: true, should_rotate_credential: false}
+  - id: s429-quota-wall
+    status: 429
+    body: {error: {message: "You have used your entire quota for this billing period."}}
+    expect: {reason: billing, retryable: false}
+  - id: s429-quota-with-reset
+    status: 429
+    body: {error: {message: "Daily quota hit. Resets in 2h 30m."}}
+    expect: {reason: rate_limit, retry_after: 600.0}
+  - id: s429-body-retry-delay
+    status: 429
+    body: {error: {message: "Resource has been exhausted", details: [{retryDelay: "20s"}]}}
+    expect: {reason: rate_limit, retry_after: 20.0}
+
+  # -- 5xx -----------------------------------------------------------------------------------
+  - id: s500-plain
+    status: 500
+    body: "Internal Server Error"
+    expect: {reason: server_error, retryable: true}
+  - id: s502-bad-gateway
+    status: 502
+    body: "<html><body>502 Bad Gateway</body></html>"
+    expect: {reason: server_error}
+  - id: s503-unavailable
+    status: 503
+    body: "Service Unavailable"
+    expect: {reason: overloaded, retryable: true}
+  - id: s529-overloaded
+    status: 529
+    body: "Overloaded"
+    expect: {reason: overloaded}
+  - id: s5xx-validation-wording
+    status: 500
+    body: {error: {message: "Unsupported parameter: 'reasoning_effort'"}}
+    expect: {reason: format_error, retryable: false}
+  - id: s5xx-overflow-wording
+    status: 500
+    body: {error: {message: "the request exceeds the available context size, try increasing it (max_model_len 8192)"}}
+    expect: {reason: context_overflow, should_compress: true}
+  - id: s5xx-unlisted
+    status: 520
+    body: "origin error"
+    expect: {reason: server_error}
+
+  # -- 400 and other 4xx ---------------------------------------------------------------------
+  - id: s400-anthropic-prompt-too-long
+    status: 400
+    body: {type: error, error: {type: invalid_request_error, message: "prompt is too long: 210000 tokens > 200000 maximum"}}
+    expect: {reason: context_overflow}
+  - id: s400-role-alternation
+    status: 400
+    body: {error: {message: "Conversation roles must alternate user/assistant/user/assistant"}}
+    expect: {reason: role_alternation, retryable: false}
+  - id: s400-unknown-parameter
+    status: 400
+    body: {error: {message: "Unrecognized request argument supplied: frobnicate"}}
+    expect: {reason: format_error}
+  - id: s400-stream-options-rejected
+    status: 400
+    body: {error: {message: "Unknown parameter: 'stream_options'."}}
+    expect: {reason: format_error}
+  - id: s400-stream-unsupported
+    status: 400
+    body: {error: {message: "Streaming is not supported for this model."}}
+    expect: {reason: stream_unsupported, retryable: true}
+  - id: s400-content-filter
+    status: 400
+    body: {error: {message: "The response was filtered due to the prompt triggering a content management policy.", code: content_filter}}
+    expect: {reason: content_policy, retryable: false}
+  - id: s400-bare
+    status: 400
+    body: "Bad Request"
+    expect: {reason: format_error, retryable: false}
+  - id: s422-validation
+    status: 422
+    body: {detail: "Extra inputs are not permitted"}
+    expect: {reason: format_error}
+  - id: s400-model-invalid
+    status: 400
+    body: {error: {message: "invalid model ID"}}
+    expect: {reason: model_not_found}
+
+  # -- errors inside a stream (no status) ----------------------------------------------------
+  - id: stream-anthropic-overloaded
+    stream: error_event
+    body: {error: {type: overloaded_error, message: "Overloaded"}}
+    expect: {reason: overloaded, retryable: true}
+  - id: stream-openai-overflow-message
+    stream: error_event
+    body: {error: {message: "This model's maximum context length is 8192 tokens."}}
+    expect: {reason: context_overflow, should_compress: true}
+  - id: stream-plain-text-rate-limit
+    stream: non_json
+    body: {error: {message: "rate limit exceeded, retry after 3 seconds"}}
+    expect: {reason: rate_limit, retry_after: 3.0}
+  - id: stream-usage-limit-no-reset
+    stream: error_event
+    body: {error: {message: "Weekly usage limit reached."}}
+    expect: {reason: billing}
+  - id: stream-auth
+    stream: error_event
+    body: {error: {message: "Invalid API key"}}
+    expect: {reason: auth}
+  - id: stream-content-policy
+    stream: error_event
+    body: {error: {message: "Output blocked by content_filter"}}
+    expect: {reason: content_policy}
+  - id: stream-unsupported
+    stream: error_event
+    body: {error: {message: "This endpoint does not support streaming"}}
+    expect: {reason: stream_unsupported}
+  - id: stream-unknown
+    stream: error_event
+    body: {error: {message: "something odd happened"}}
+    expect: {reason: unknown, retryable: true}
+
+  # -- transport exceptions ------------------------------------------------------------------
+  - id: exc-read-timeout
+    exception: ReadTimeout
+    message: "The read operation timed out"
+    expect: {reason: timeout, retryable: true}
+  - id: exc-connect-timeout
+    exception: ConnectTimeout
+    message: "timed out"
+    expect: {reason: timeout}
+  - id: exc-pool-timeout
+    exception: PoolTimeout
+    message: "no connection available"
+    expect: {reason: timeout}
+  - id: exc-connect-error
+    exception: ConnectError
+    message: "[Errno 111] Connection refused"
+    expect: {reason: connection, retryable: true}
+  - id: exc-remote-protocol
+    exception: RemoteProtocolError
+    message: "peer closed connection without sending complete message body"
+    expect: {reason: connection}
+  - id: exc-read-error
+    exception: ReadError
+    message: "[Errno 104] Connection reset by peer"
+    expect: {reason: connection}
+  - id: exc-ssl-cert
+    exception: ConnectError
+    message: "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate"
+    expect: {reason: ssl_cert, retryable: false, should_fallback: true}
+  - id: exc-builtin-timeout
+    exception: TimeoutError
+    message: ""
+    expect: {reason: timeout}
+  - id: exc-builtin-connection-reset
+    exception: ConnectionResetError
+    message: "reset"
+    expect: {reason: connection}
+  - id: code-stale-stream
+    stream: stale
+    body: {error: {message: "no content within the stale timeout", code: stale_stream}}
+    expect: {reason: timeout, retryable: true}
+  - id: exc-stale-breaker
+    exception: StaleBreakerTripped
+    message: "provider silent on 5 attempts in a row"
+    expect: {reason: timeout, retryable: false, should_fallback: true}
+  - id: exc-unknown
+    exception: RuntimeError
+    message: "something unexpected"
+    expect: {reason: unknown, retryable: true}

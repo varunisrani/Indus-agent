@@ -1,8 +1,8 @@
 """Vocabulary for scripting a fake model, and a loader for script files.
 
 A ``Script`` is a list of ``Turn``s, one per model request; each turn is an ordered list of steps
-the fake streams back. The servers that speak real wire formats from these scripts come in P03-18;
-this module is data only.
+the fake streams back. ``FakeModelServer`` (``server.py``, P03-18) speaks the Chat Completions and
+Anthropic Messages wire formats from these scripts; the format is documented in ``README.md``.
 
 File format (YAML or JSON)::
 
@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -40,12 +40,17 @@ class Reasoning:
 
 @dataclass(frozen=True)
 class ToolCall:
-    """One tool call; ``arguments`` may be a raw string to script malformed JSON."""
+    """One tool call; ``arguments`` may be a raw string to script malformed JSON.
+
+    ``late_id`` sends the call id with the second fragment instead of the first (Chat Completions
+    servers that do this exist; the Anthropic wire always names the id up front).
+    """
 
     name: str
     arguments: Mapping[str, Any] | str = field(default_factory=dict)
     id: str | None = None
     fragments: int = 3
+    late_id: bool = False
 
 
 @dataclass(frozen=True)
@@ -77,11 +82,46 @@ class Disconnect:
 
 
 @dataclass(frozen=True)
+class Eof:
+    """End the body cleanly here without a finish (a stream that stops early).
+
+    A turn that simply runs out of steps gets an implied finish instead.
+    """
+
+
+@dataclass(frozen=True)
+class KeepAlive:
+    """``count`` keep-alive frames with no content (an SSE comment / an Anthropic ping)."""
+
+    count: int = 1
+
+
+@dataclass(frozen=True)
+class MidStreamError:
+    """An error reported inside an open stream: a mapping becomes a JSON error frame, a string
+    is sent as plain-text data (some gateways do that)."""
+
+    body: Mapping[str, Any] | str
+
+
+@dataclass(frozen=True)
 class Finish:
     reason: str = "stop"
 
 
-Step = Text | Reasoning | ToolCall | Usage | Fail | Stall | Disconnect | Finish
+Step = (
+    Text
+    | Reasoning
+    | ToolCall
+    | Usage
+    | Fail
+    | Stall
+    | Disconnect
+    | Eof
+    | KeepAlive
+    | MidStreamError
+    | Finish
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +132,8 @@ class Turn:
 @dataclass(frozen=True)
 class Script:
     turns: tuple[Turn, ...]
+    # Where the script came from (file stem); failures name it. Not part of equality.
+    name: str = field(default="", compare=False)
 
 
 class ScriptError(ValueError):
@@ -119,7 +161,7 @@ def _fields(value: Any, allowed: set[str], required: set[str]) -> dict[str, Any]
 
 
 def _tool_call(value: Any) -> ToolCall:
-    data = _fields(value, {"name", "arguments", "id", "fragments"}, {"name"})
+    data = _fields(value, {"name", "arguments", "id", "fragments", "late_id"}, {"name"})
     arguments = data.get("arguments", {})
     if arguments is None:
         arguments = {}
@@ -130,6 +172,7 @@ def _tool_call(value: Any) -> ToolCall:
         arguments=dict(arguments) if isinstance(arguments, dict) else arguments,
         id=None if data.get("id") is None else str(data["id"]),
         fragments=int(data.get("fragments", 3)),
+        late_id=bool(data.get("late_id", False)),
     )
 
 
@@ -162,6 +205,28 @@ def _disconnect(value: Any) -> Disconnect:
     return Disconnect()
 
 
+def _eof(value: Any) -> Eof:
+    if value not in (None, {}, True):
+        raise TypeError("takes no value")
+    return Eof()
+
+
+def _keep_alive(value: Any) -> KeepAlive:
+    if value is None:
+        return KeepAlive()
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise TypeError("expected a frame count >= 1 (or nothing for one frame)")
+    return KeepAlive(value)
+
+
+def _mid_stream_error(value: Any) -> MidStreamError:
+    if isinstance(value, str):
+        return MidStreamError(value)
+    if isinstance(value, dict):
+        return MidStreamError(dict(value))
+    raise TypeError("expected an error body mapping or a plain-text string")
+
+
 def _finish(value: Any) -> Finish:
     if value is None:
         return Finish()
@@ -178,6 +243,9 @@ _STEP_KINDS: dict[str, Callable[[Any], Step]] = {
     "fail": _fail,
     "stall": _stall,
     "disconnect": _disconnect,
+    "eof": _eof,
+    "keep_alive": _keep_alive,
+    "mid_stream_error": _mid_stream_error,
     "finish": _finish,
 }
 
@@ -244,17 +312,31 @@ def load_script(path: str | Path) -> Script:
             raise ScriptError(f"{p}:{exc.line}: {exc.message}") from None
     else:
         raise ScriptError(f"{p}: unsupported script file type {p.suffix!r}")
-    return parse_script(data, str(p))
+    return replace(parse_script(data, str(p)), name=p.stem)
 
+
+# The wire servers import the vocabulary above, so they come last.
+from tests.fakes.model.server import (  # noqa: E402
+    FakeModelServer,
+    FakeScriptExhausted,
+    RecordedRequest,
+    fake_route,
+)
 
 __all__ = [
     "SCRIPTS_DIR",
     "Disconnect",
+    "Eof",
     "Fail",
+    "FakeModelServer",
+    "FakeScriptExhausted",
     "Finish",
+    "KeepAlive",
     "LineList",
     "LineMap",
+    "MidStreamError",
     "Reasoning",
+    "RecordedRequest",
     "Script",
     "ScriptError",
     "Stall",
@@ -263,6 +345,7 @@ __all__ = [
     "ToolCall",
     "Turn",
     "Usage",
+    "fake_route",
     "load_script",
     "parse_script",
 ]

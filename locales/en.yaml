@@ -24,8 +24,36 @@ errors:
     invalid_value: Setting {key} cannot be {value}. Allowed values are {allowed}.
     unknown_key: The config file sets {key}, which Indus Agent does not know. Remove it or check the spelling.
   store:
-    locked: The session store at {path} is in use by another process. Close it and try again.
-    corrupt: The session store at {path} is damaged. A backup was kept at {backup}.
+    locked:
+      what: "Another Indus process was busy writing to your session history."
+      todo: "Nothing is damaged. Wait a moment and try again."
+    disk:
+      what: "Your session history could not be saved because of a disk problem."
+      todo: "Free some disk space or fix the folder permissions, then try again."
+    compression:
+      what: "This conversation was being condensed when the message arrived."
+      todo: "Send it again in a few seconds."
+    compression_closed:
+      what: "This conversation continued in a newer segment."
+      todo: "Your client will switch to the newer segment; nothing was lost."
+    turn_lease:
+      what: "Another process took over this conversation."
+      todo: "Reload the conversation to see its latest state."
+    corrupt:
+      what: "The session history file is damaged, so saving was stopped to protect it."
+      todo: "Quit Indus Agent and run `indus doctor` for recovery steps."
+    fts_index:
+      what: "The search index is damaged; your conversations are safe."
+      todo: "Search uses a slower method until the index is rebuilt. Run `indus doctor`."
+    replaced:
+      what: "The session history file was swapped while Indus Agent was running."
+      todo: "Unsaved messages are in the sessions folder of your home. Restart Indus Agent."
+    session_row_missing:
+      what: "This conversation was deleted while it was still open."
+      todo: "Start a new conversation."
+    unknown:
+      what: "Your session history could not be saved."
+      todo: "Try again; if it keeps happening, run `indus doctor`."
     too_new: The session store at {path} was written by a newer version of Indus Agent.
   secrets:
     missing: No value is stored for {name}. Set it with "indus secrets set {name}".

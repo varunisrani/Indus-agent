@@ -63,3 +63,9 @@ PyPI for packages of other platforms).
 | typing-extensions | 4.16.0 | PSF-2.0 | via pydantic / pydantic-core / typing-inspection | P01-09 |
 | typing-inspection | 0.4.4 | MIT | via pydantic | P01-09 |
 | ruamel.yaml | 0.19.1 | MIT | YAML 1.1 load and round-trip dump (`yamlio`) | P01-08 |
+| httpx | 0.28.1 | BSD-3-Clause | async HTTP client for model providers | P03-08 |
+| httpcore | 1.0.9 | BSD-3-Clause | via httpx | P03-08 |
+| h11 | 0.16.0 | MIT | via httpcore | P03-08 |
+| anyio | 4.15.1 | MIT | via httpx (pinned directly) | P03-08 |
+| certifi | 2026.7.22 | MPL-2.0 (unmodified) | via httpx (CA bundle) | P03-08 |
+| idna | 3.20 | BSD-3-Clause | via httpx / anyio | P03-08 |

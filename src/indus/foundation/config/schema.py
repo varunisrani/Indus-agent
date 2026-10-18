@@ -46,6 +46,9 @@ class AgentSection(_Section):
     clarify_timeout: int = Field(
         default=3600, description="seconds to wait for an answer to a question"
     )
+    local_stream_stale_timeout: int = Field(
+        default=900, description="seconds a local model server may stay silent mid-stream"
+    )
 
 
 class TerminalSection(_Section):
@@ -98,6 +101,12 @@ class NetworkSection(_Section):
     force_ipv4: bool = Field(default=False, description="connect over IPv4 only")
 
 
+class ModelCatalogSection(_Section):
+    ttl_minutes: int = Field(
+        default=20, description="minutes a provider's live model list is reused before refetching"
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -130,6 +139,9 @@ class ConfigModel(BaseModel):
     )
     display: DisplaySection = Field(default_factory=DisplaySection, description="the interface")
     network: NetworkSection = Field(default_factory=NetworkSection, description="connections")
+    model_catalog: ModelCatalogSection = Field(
+        default_factory=ModelCatalogSection, description="provider model lists"
+    )
     timezone: str = Field(
         default="", description="IANA zone name, e.g. Asia/Kolkata; empty = system zone"
     )

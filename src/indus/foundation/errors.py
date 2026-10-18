@@ -34,7 +34,28 @@ ERROR_CODES: dict[str, str] = {
     "secrets.unreadable": "a secret store file cannot be read or parsed; it was left as it is",
     "secrets.bad_mode": "security.secret_store is not one of auto, keychain or file",
     "store.error": "session store problem",
+    "store.isolation_refused": "a test run tried to open the real session store",
+    "store.unopenable": "the session store file is not SQLite and could not be moved aside",
+    "store.not_writable": "the session store file or its folder cannot be written by this user",
+    "store.locked": "another process held the session store's write lock past the time budget",
+    "store.replaced": "the session store file was replaced while this process had it open",
+    "store.corrupt": "the session store reported structural damage; writes are stopped",
+    "store.unavailable": "the session store is missing, uninitialised or from a newer version",
+    "store.tombstoned": "the session id was deleted and cannot be used again",
+    "store.resume_too_large": "the session has more messages than the configured limit",
+    "store.compression_busy": "another compression of this session is already running",
+    "store.compression_closed": "the session was compressed into a child; continue in the child",
+    "store.turn_lease_lost": "another process took over this session's turn lease",
     "provider.error": "model provider problem",
+    "provider.invalid_profile": "a provider profile has a missing or invalid field",
+    "provider.invalid_base_url": "a provider base URL is not a usable http(s) URL",
+    "provider.conflict": "a provider name or alias is already taken",
+    "provider.no_usable": "no provider could be resolved with a usable endpoint and key",
+    "provider.key_host_mismatch": "a provider key would be sent to a host it does not belong to",
+    "provider.context_too_small": "the model's context window is below the supported minimum",
+    "provider.http": "the model provider answered with an HTTP error status",
+    "provider.stream": "the model provider reported an error inside a stream or ended it early",
+    "provider.stale_breaker": "the provider stayed silent on too many attempts in a row",
 }
 
 
@@ -132,7 +153,193 @@ class StoreError(IndusError):
     default_code = "store.error"
 
 
+class StoreIsolationRefused(StoreError):
+    """A process that looks like a test run tried to open the real store (P02-01)."""
+
+    default_code = "store.isolation_refused"
+
+
+class StoreUnopenable(StoreError):
+    """The store file is not SQLite and moving it aside failed (P02-01)."""
+
+    default_code = "store.unopenable"
+
+
+class StoreNotWritable(StoreError):
+    """The store file, a sidecar or its folder cannot be written (P02-01)."""
+
+    default_code = "store.not_writable"
+
+
+class StoreLocked(StoreError):
+    """Write-lock contention outlasted the write budget; the data is not damaged (P02-03)."""
+
+    default_code = "store.locked"
+
+
+class StoreReplaced(StoreError):
+    """The file at the store path is not the one this handle opened; writes are fenced (P02-07)."""
+
+    default_code = "store.replaced"
+
+
+class StoreCorrupt(StoreError):
+    """Structural corruption was seen; the handle is quarantined for the process (P02-07)."""
+
+    default_code = "store.corrupt"
+
+
+class StoreUnavailable(StoreError):
+    """The store cannot be used as asked: ``kind`` is ``missing``, ``uninitialised`` or
+    ``incompatible`` (P02-06, P02-20)."""
+
+    default_code = "store.unavailable"
+
+    def __init__(
+        self,
+        code_or_message: str,
+        message: str | None = None,
+        *,
+        kind: str = "unavailable",
+        detail: object = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(code_or_message, message, detail=detail, hint=hint)
+        self.kind: str = kind
+
+
+class SessionTombstoned(StoreError):
+    """The session id was deleted here and can never be created or imported again (P02-18)."""
+
+    default_code = "store.tombstoned"
+
+
+class ResumeTooLarge(StoreError):
+    """More live messages than the limit: ``numeric`` is 4130 (resume) or 4131 (export) (P02-10)."""
+
+    default_code = "store.resume_too_large"
+
+    def __init__(
+        self,
+        code_or_message: str,
+        message: str | None = None,
+        *,
+        count: int = 0,
+        numeric: int = 4130,
+        detail: object = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(code_or_message, message, detail=detail, hint=hint)
+        self.count: int = count
+        self.numeric: int = numeric
+
+
 class ProviderError(IndusError):
     """Model provider errors; P03 adds the subclasses."""
 
     default_code = "provider.error"
+
+
+class InvalidProviderProfile(ProviderError):
+    default_code = "provider.invalid_profile"
+
+
+class InvalidBaseURL(ProviderError):
+    default_code = "provider.invalid_base_url"
+
+
+class ProviderConflict(ProviderError):
+    default_code = "provider.conflict"
+
+
+class NoUsableProvider(ProviderError):
+    """No route could be built; ``env_names`` lists the variables that would fix it."""
+
+    default_code = "provider.no_usable"
+
+    def __init__(
+        self,
+        code_or_message: str,
+        message: str | None = None,
+        *,
+        env_names: tuple[str, ...] = (),
+        detail: object = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(code_or_message, message, detail=detail, hint=hint)
+        self.env_names: tuple[str, ...] = env_names
+
+
+class KeyHostMismatch(ProviderError):
+    default_code = "provider.key_host_mismatch"
+
+
+class ContextTooSmall(ProviderError):
+    """The resolved context window is below the minimum a session needs."""
+
+    default_code = "provider.context_too_small"
+
+    def __init__(
+        self,
+        code_or_message: str,
+        message: str | None = None,
+        *,
+        tokens: int = 0,
+        source: str = "",
+        detail: object = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(code_or_message, message, detail=detail, hint=hint)
+        self.tokens: int = tokens
+        self.source: str = source
+
+
+class ProviderHTTPError(ProviderError):
+    """A non-2xx answer from a model API. ``retry_after`` is in seconds when the server said."""
+
+    default_code = "provider.http"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int,
+        retry_after: float | None = None,
+        headers: dict[str, str] | None = None,
+        body: object = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(message, hint=hint)
+        self.status: int = status
+        self.retry_after: float | None = retry_after
+        self.headers: dict[str, str] = dict(headers or {})
+        self.body: object = body
+
+
+class ProviderStreamError(ProviderError):
+    """An error the provider put inside a 2xx stream (or a stream that ended early).
+
+    ``body`` is always OpenAI-shaped, ``{"error": {"message": ..., "type"?, "code"?}}``, so the
+    classifier reads one shape for every wire format.
+    """
+
+    default_code = "provider.stream"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        body: dict[str, object],
+        status: int | None = None,
+        raw_text: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.status: int | None = status
+        self.body: dict[str, object] = body
+        self.raw_text: str = raw_text
+
+
+class StaleBreakerTripped(ProviderError):
+    """Too many consecutive silent attempts; calls fail at once until the route changes."""
+
+    default_code = "provider.stale_breaker"

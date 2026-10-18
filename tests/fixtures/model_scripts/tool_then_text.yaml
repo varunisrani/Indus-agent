@@ -1,0 +1,23 @@
+# Two tool rounds then a final answer (three model requests). Turn 1 thinks, says a line and
+# calls one tool in three argument fragments; turn 2 calls two tools in parallel, the second
+# one sending its id late; turn 3 answers in text.
+turns:
+  - steps:
+      - reasoning: ["Need the file ", "first."]
+      - text: ["Let me look ", "at the notes."]
+      - tool_call:
+          name: read_file
+          arguments: {path: "notes.txt", limit: 20}
+          id: call_notes_1
+          fragments: 3
+      - usage: {prompt: 120, completion: 18, cached: 64}
+      - finish: tool_calls
+  - steps:
+      - tool_call: {name: search, arguments: {query: "release date"}, id: call_search_1}
+      - tool_call: {name: read_file, arguments: {path: "plan.md"}, id: call_plan_1, late_id: true}
+      - usage: {prompt: 180, completion: 25}
+      - finish: tool_calls
+  - steps:
+      - text: ["The notes say ", "ship on Friday."]
+      - usage: {prompt: 240, completion: 7}
+      - finish: stop
