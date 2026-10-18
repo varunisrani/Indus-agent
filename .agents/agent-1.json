@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "READY",
+  "state": "ACTIVE",
   "usage_pct": 1,
   "remaining_pct": 99,
   "resets_at": "2026-10-18T21:00:00+00:00",
-  "last_check": "2026-10-18T16:06:00+00:00",
-  "current_step": "READY \u2014 waiting while Agent 2 holds the turn (wave 6a, P04)",
+  "last_check": "2026-10-18T17:52:14+00:00",
+  "current_step": "took the turn; verifying gate, then P05 wave 2",
   "last_commit": "25269c8"
 }
