@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 1,
-  "remaining_pct": 99,
+  "usage_pct": 23,
+  "remaining_pct": 77,
   "resets_at": "2026-10-18T21:00:00+00:00",
-  "last_check": "2026-10-18T17:52:14+00:00",
-  "current_step": "took the turn; verifying gate, then P05 wave 2",
+  "last_check": "2026-10-18T18:33:00+00:00",
+  "current_step": "P05 wave 2: B and D saved; A (file tools) and C (terminal/process) building",
   "last_commit": "25269c8"
 }

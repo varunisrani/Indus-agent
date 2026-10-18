@@ -14,3 +14,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-18 13:50 UTC | ~75% (72% at 13:35) | ~25% | 16:00 UTC | wave 3 landed ee74300; pausing new builders until reset |
 | 2026-10-18 14:23 UTC | ~75% | ~25% | 16:00 UTC | handed turn to Agent 2 (wave 4 start) |
 | 2026-10-18 16:06 UTC | 1% | 99% | 21:00 UTC | window reset; Agent 2 holds the turn (P04 wave 6a); READY |
+| 2026-10-18 18:33 UTC | 23% | 77% | 21:00 UTC | P05 wave 2: 2/4 slices saved; flake hunt: 4 clean runs, first failure unidentified |
