@@ -31,7 +31,7 @@ acceptance, done when. Paths and conventions come from
 | P08 | [P08-context-and-cost.md](P08-context-and-cost.md) | 1.5 | 19 | 49 | 9 | 4 | 19 | — | planned |
 | P09 | [P09-learning-loop.md](P09-learning-loop.md) | 2 | 25 | 82 | 9 | 5 | 25 | M2 | planned |
 | P10 | [P10-delegation-rich-tools.md](P10-delegation-rich-tools.md) | 2 | 26 | 69 | 11 | 6 | 26 | — | planned |
-| P11 | [P11-docker-ssh-backends.md](P11-docker-ssh-backends.md) | 1.5 | 21 | 50 | 11 | 3 | 21 | — | planned |
+| P11 | [P11-docker-ssh-backends.md](P11-docker-ssh-backends.md) | 1.5 | 21 | 50 | 11 | 3 | 21 | — | integrating |
 | P12 | [P12-tui-demo2.md](P12-tui-demo2.md) | 3 | 33 | 149 | 10 | 5 | 33 | **Demo 2** (M3) | planned |
 | P13 | [P13-mcp-plugins-hooks-hub.md](P13-mcp-plugins-hooks-hub.md) | 2 | 28 | 61 | 13 | 5 | 28 | — | planned |
 | P14 | [P14-cron.md](P14-cron.md) | 1.5 | 19 | 47 | 9 | 4 | 19 | M4 | planned |

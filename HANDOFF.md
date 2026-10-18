@@ -70,14 +70,14 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
-1. P07 (CLI commands) is building in 4 slices from `caedeae` (A setup/model 01-05, B auth 06-10,
-   C config/profile/tools/approvals/completion 11-13,16-18,25, D sessions/doctor/logs/status/backup/
-   import/checkpoints 14,15,19-24). If you find this with the turn PAUSED, look in `.agents/wip/p07/`
-   for saved slices; otherwise restart P07 from the phase file with the same slicing.
-2. Integrate P07 (+ P07-26 non-TTY contract suite and help catalogue), then P08 (context and cost),
-   then P09 (learning loop).
-3. Open lead items: see LEAD-NOTES "P06 landing notes" seams; host SQLite 3.45.1 (DELETE mode here);
-   record live provider captures (P03-11); add hypothesis + pytest-asyncio to the dev group.
+Done: P00–P07, P08 wave 1 (`822b6cd`). In flight (Agent 1, from `822b6cd`):
+1. P11 integration (Docker 01-07, SSH/remote 08-14, checkpoints/worktrees 15-20 + P11-21 contract
+   suite). If you find this with the turn PAUSED, the three slice patches are in `.agents/wip/p11/`
+   with the integration list `w11-integration.md` (includes a SECURITY item: sudo must never send the
+   local password to remote/containers).
+2. P08 wave 2: A = P08-12 credential pool runtime + P08-13 fallback chain; B = P08-14 smart
+   approvals + P08-15 fast mode + P08-18 soak (M2). Saved slices, if any, in `.agents/wip/p08w2/`.
+3. Then P09 (learning loop), P10 (delegation and rich tools), P12 (TUI), P13 (MCP/plugins), P14 (cron).
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
