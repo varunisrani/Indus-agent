@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from indus.core import loop_texts as texts
 from indus.core.exit_reasons import ExitReason
 from indus.core.persist import MemoryStore
-from indus.core.tool_round import repair_name, unique_ids
+from indus.core.tool_round import handler_extras, repair_name, unique_ids
 from indus.core.turn_state import LoopOptions, TurnState
 from indus.core.untrusted import MIN_CHARS, fence, is_untrusted
 from indus.foundation.scope import Scope
@@ -280,3 +282,45 @@ def test_raw_arguments_reach_the_store_unchanged(scope: Scope, fake_clock: FakeC
     call_row = next(r for r in result.rows if r.tool_calls)
     args = (call_row.tool_calls or [])[0]["function"]["arguments"]
     assert json.loads(args) == {"text": "é"}
+
+
+def test_handlers_get_cancel_broker_and_environments(scope: Scope, fake_clock: FakeClock) -> None:
+    """The tool round offers the turn's stop event, the broker and the session's terminal
+    environments (P05 file and terminal tools) as handler keywords."""
+    from indus.backends.registry import EnvironmentRegistry
+
+    seen: list[dict[str, Any]] = []
+
+    async def probe(
+        args: Mapping[str, Any],
+        *,
+        cancel: Any = None,
+        broker: Any = None,
+        environments: Any = None,
+    ) -> str:
+        seen.append({"cancel": cancel, "broker": broker, "environments": environments})
+        return "ok"
+
+    k = kit(scope, fake_clock, tool_batch(("probe", {})), text_turn("done"))
+    schema = {"description": "probe", "parameters": {"type": "object", "properties": {}}}
+    k.registry.register("probe", "fake", schema, probe)
+    registry = EnvironmentRegistry()
+
+    def prepare(state: TurnState) -> None:
+        state.runtime.environments = registry
+
+    result = asyncio.run(k.turn("go", prepare=prepare))
+    assert result.exit_reason is ExitReason.COMPLETED
+    assert k.last_state is not None
+    (got,) = seen
+    assert got["cancel"] is k.last_state.control.stop
+    assert got["broker"] is k.broker
+    assert got["environments"] is registry
+
+
+def test_environments_left_out_when_the_host_set_none(scope: Scope, fake_clock: FakeClock) -> None:
+    k = kit(scope, fake_clock, text_turn("done"))
+    asyncio.run(k.turn("go"))
+    assert k.last_state is not None
+    extras = handler_extras(k.last_state)
+    assert "environments" not in extras and extras["cancel"] is k.last_state.control.stop

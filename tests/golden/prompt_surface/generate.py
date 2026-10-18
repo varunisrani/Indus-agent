@@ -10,8 +10,10 @@ disk can leak in). Each surface gets ``<surface>/prompt.txt`` (the prompt plus o
     uv run python -m tests.golden.prompt_surface.generate                  # compare; 1 on drift
     uv run python -m tests.golden.prompt_surface.generate --update-golden  # rewrite the files
 
-Until P05 registers its tools every tool array is ``[]`` and no prompt carries tool guidance;
-regenerate (with a note) when the tools land.
+Tool probes all answer yes here (``_ProbesPass``): whether an optional extra (``web``, ``docs``,
+``pty``) or a host binary is installed is a fact about the build machine, so a plain ``uv sync``
+tree and an ``--all-extras`` one render the same array. Regenerate (with a note in
+``docs/notes/P04/golden-prompts.md``) when a tool's schema changes.
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ from indus.providers.route import RuntimeRoute
 from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
 from indus.tools.definitions import definitions
-from indus.tools.registry import ToolRegistry
+from indus.tools.registry import Probe, ToolEntry, ToolRegistry
 from tests.fakes.clock import FakeClock
 from tests.fakes.model import Script
 from tests.fakes.model.server import FakeModelServer, fake_route
@@ -112,9 +114,21 @@ def golden_builder() -> PromptBuilder:
     return PromptBuilder(reader=no_files, install=None)
 
 
+class _ProbesPass(ToolRegistry):
+    """A registry whose availability probes always pass (see the module notes)."""
+
+    def available(
+        self,
+        entry: ToolEntry,
+        scope: Scope | None = None,
+        memo: dict[Probe, bool] | None = None,
+    ) -> bool:
+        return True
+
+
 def tool_array(surface: Surface, scope: Scope, route: RuntimeRoute) -> list[dict[str, Any]]:
     """The surface's tool array from a fresh registry holding the built-in tools."""
-    registry = ToolRegistry()
+    registry = _ProbesPass()
     load_builtins(registry)
     selection = toolsets.select(
         [surface.bundle], registry=registry, scope=scope, platform=surface.platform

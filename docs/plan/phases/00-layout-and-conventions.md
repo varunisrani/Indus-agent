@@ -212,8 +212,8 @@ indus-agent/
 Package rules:
 
 - **Layer order** (import-linter contract, P00-10): `indus.platform` → `indus.foundation` →
-  (`indus.protocol`, `indus.state`) → (`indus.providers`, `indus.safety`, `indus.pm`) → (`indus.tools`,
-  `indus.backends`) → `indus.core` → (`indus.learning`, `indus.plugins`, `indus.mcp`,
+  (`indus.protocol`, `indus.state`) → (`indus.providers`, `indus.safety`, `indus.pm`) → `indus.backends` →
+  `indus.tools` (D-04.7) → `indus.core` → (`indus.learning`, `indus.plugins`, `indus.mcp`,
   `indus.cron`, `indus.board`) → `indus.service` → (`indus.cli`, `indus.tui_bridge`, `indus.gateway`, `indus.web`,
   `indus.acp`, `indus.mcp_serve`, `indus.research`). A module imports only from layers to its left
   (and its own layer's siblings only where the contract lists them as independent).
@@ -305,6 +305,7 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | pypdf | 6.19.0 | 2026-09-16 | BSD-3-Clause | extra `docs` | P05-17 |
 | python-docx | 1.2.0 | 2025-06-16 | MIT | extra `docs` | P05-17 |
 | openpyxl | 3.1.5 | 2024-06-28 | MIT | extra `docs` | P05-17 |
+| ptyprocess | 0.7.0 | 2020-12-28 | ISC | extra `pty` | P05-13 |
 | agent-client-protocol | 0.12.1 | 2026-08-16 | **no licence metadata on PyPI** — the P19 builder checks the source repo's LICENSE; if not on the allow-list, add a written exception or stop | runtime / extra `acp` | P19 |
 | Node | 24.21.0 LTS | 2026-09-07 | MIT | `.nvmrc` | P00-08 |
 | pnpm | 12.9.1 | 2026-10-03 | MIT | `packageManager` | P00-08 |

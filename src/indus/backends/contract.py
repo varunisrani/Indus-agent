@@ -57,7 +57,8 @@ class ExecResult:
     ``returncode`` is the command's exit status (124 at our deadline, 130 when interrupted).
     ``cwd_observed`` is the directory the command ended in, only when this command reported it.
     ``full_output_path`` / ``output_total_chars`` are set when bounded capture cut the output and
-    the whole stream was kept in a file.
+    the whole stream was kept in a file. ``sudo_auth_failed`` / ``sudo_cache_cleared``: sudo
+    rejected the password Indus fed it, and the session's cached copy was dropped (P05-10).
     """
 
     output: str
@@ -70,6 +71,8 @@ class ExecResult:
     stdin_error: str | None = None
     environment_recreated: bool = False
     pid: int | None = None
+    sudo_auth_failed: bool = False
+    sudo_cache_cleared: bool = False
 
 
 @dataclass(frozen=True, slots=True)

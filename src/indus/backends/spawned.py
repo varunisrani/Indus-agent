@@ -36,6 +36,7 @@ from indus.backends.contract import (
     EnvironmentConnectionError,
     ExecResult,
 )
+from indus.backends.sudo import SudoRun, SudoSupport
 from indus.backends.wait import (
     EXITING_NOTE,
     FOREGROUND,
@@ -102,6 +103,7 @@ class SpawnedEnvironment(ABC):
         self.prefer_nonlogin = False
         self._recreated = False
         self._closed = False
+        self.sudo: SudoSupport | None = None  # set by the backend's opener (P05-10)
 
     # -- contract surface ------------------------------------------------------------------------
 
@@ -221,6 +223,9 @@ class SpawnedEnvironment(ABC):
         if self._closed:
             raise BackendError(f"the {self.backend_name} environment was cleaned up")
         text = self._prepare(command)
+        sudo_run: SudoRun | None = None
+        if self.sudo is not None:
+            text, stdin, sudo_run = await self.sudo.before(self, text, stdin)
         if stdin is not None and self._flags.stdin_mode == "heredoc":
             text = embed_stdin_heredoc(text, stdin)
             stdin = None
@@ -240,7 +245,20 @@ class SpawnedEnvironment(ABC):
         if self._recreated:
             self._recreated = False
             result = replace(result, environment_recreated=True)
+        if sudo_run is not None and self.sudo is not None:
+            result = self.sudo.after(sudo_run, result)
         return result
+
+    async def probe_sudo(self, timeout: float) -> ExecResult:
+        """Run ``sudo -n true`` here, outside the sudo hook (P05-10's passwordless probe)."""
+        result = await self._run_script(
+            self._wrap("sudo -n true", self._cwd),
+            login=not self.snapshot_ready and not self.prefer_nonlogin,
+            timeout=timeout,
+            stdin=None,
+            bounded=False,
+        )
+        return self._take_cwd(result, adopt=False)
 
     async def _run_script(
         self,

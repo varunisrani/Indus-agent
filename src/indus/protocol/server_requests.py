@@ -72,6 +72,8 @@ class ApprovalAnswer(ProtocolModel):
     """Answer kind."""
     choice: ApprovalChoice
     """The picked choice."""
+    reason: str | None = None
+    """Why the person denied, in their words; passed to the model unchanged."""
 
 
 class ClarifyQuestion(ProtocolModel):

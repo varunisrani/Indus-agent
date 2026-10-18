@@ -5,7 +5,8 @@ Two layers:
 - ``SessionRuntime`` lives as long as the session does inside a process (the Agent of P04-20 owns
   it): the provider caller, the store, the tool registry and tool array, the prompt lifecycle, the
   wire heal ledger and argument memo, inline tool executors and history hydrators, and the
-  ``LoopOptions``.
+  ``LoopOptions``. ``environments`` is the process's terminal ``EnvironmentRegistry``; the host
+  sets it (P06 wiring) and the tool round offers it to handlers as ``environments``.
 - ``TurnState`` is one turn: the live rows, counters, the control handle (interrupt / steer /
   redirect), the outcome. ``new_turn_state`` is the documented factory the Agent calls; then
   ``await indus.core.loop.run_turn(state)``.
@@ -24,6 +25,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from indus.backends.registry import EnvironmentRegistry
 from indus.core.budget import DEFAULT_MAX_ITERATIONS, IterationBudget, max_iterations_from
 from indus.core.exit_reasons import ExitReason, Failure
 from indus.core.guardrails import GuardDecision, GuardrailConfig, ToolGuard
@@ -133,6 +135,7 @@ class SessionRuntime:
     memo: ArgsMemo = field(default_factory=ArgsMemo)
     hydrated: bool = False
     profile: object = None
+    environments: EnvironmentRegistry | None = None
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

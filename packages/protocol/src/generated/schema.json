@@ -11,6 +11,11 @@
           "default": "approval",
           "description": "Answer kind.",
           "type": "string"
+        },
+        "reason": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Why the person denied, in their words; passed to the model unchanged."
         }
       },
       "required": ["choice"],

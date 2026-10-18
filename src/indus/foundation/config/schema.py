@@ -74,6 +74,14 @@ class TerminalSection(_Section):
     daemon_term_grace_s: float = Field(
         default=2.0, description="seconds a stopped command gets after SIGTERM before SIGKILL"
     )
+    max_foreground_timeout: int = Field(
+        default=600,
+        description="longest foreground timeout; above it a command runs as a background job",
+    )
+    process_wait_auto_notify: bool = Field(
+        default=True,
+        description="two checks of a silent background job switch on a message when it ends",
+    )
 
 
 class ToolOutputSection(_Section):
@@ -90,6 +98,16 @@ class ApprovalsSection(_Section):
     timeout: int = Field(default=300, description="seconds to wait for an approval answer")
     deny: list[str] = Field(
         default_factory=list, description="command patterns that are always refused"
+    )
+    cron_mode: Literal["deny", "approve"] = Field(
+        default="deny", description="risky commands in scheduled jobs: deny or approve"
+    )
+    single_query_mode: Literal["deny", "approve"] = Field(
+        default="deny", description="risky commands in one-shot runs (indus -q): deny or approve"
+    )
+    unattended_mode: Literal["deny", "approve"] = Field(
+        default="deny",
+        description="risky commands where nobody can answer (API, webhooks): deny or approve",
     )
 
 
@@ -139,6 +157,10 @@ class SecuritySection(_Section):
     )
     website_blocklist: WebsiteBlocklist = Field(
         default_factory=WebsiteBlocklist, description="hosts web tools must never fetch"
+    )
+    protected_instruction_files: list[str] = Field(
+        default_factory=list,
+        description="more file globs whose every write asks first (AGENTS.md etc. always do)",
     )
 
 
@@ -215,8 +237,15 @@ class ConfigModel(BaseModel):
     tool_output: ToolOutputSection = Field(
         default_factory=ToolOutputSection, description="how much tool output the model sees"
     )
+    file_read_max_chars: int = Field(
+        default=100000, description="characters one read_file call returns at most"
+    )
     approvals: ApprovalsSection = Field(
         default_factory=ApprovalsSection, description="asking before risky commands"
+    )
+    command_allowlist: list[str] = Field(
+        default_factory=list,
+        description="commands that never need approval: exact text, or a glob for one command",
     )
     database: DatabaseSection = Field(
         default_factory=DatabaseSection, description="the session store"

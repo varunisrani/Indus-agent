@@ -1,6 +1,195 @@
 [
   {
     "function": {
+      "description": "Edit a file by replacing old_string with new_string. Copy old_string from the file (without read_file's LINE| prefixes) with enough surrounding lines to be unique; small whitespace, indentation and quote differences are tolerated. It must match one place unless replace_all is true. The result shows a unified diff. Use this for edits; use write_file only for new files or complete rewrites.",
+      "name": "patch",
+      "parameters": {
+        "properties": {
+          "new_string": {
+            "description": "The replacement text (empty to delete old_string).",
+            "type": "string"
+          },
+          "old_string": {"description": "The text to replace.", "type": "string"},
+          "path": {
+            "description": "The file: absolute, ~/..., or relative to the working directory.",
+            "type": "string"
+          },
+          "replace_all": {
+            "description": "Replace every place old_string matches (default false).",
+            "type": "boolean"
+          }
+        },
+        "required": ["path", "old_string", "new_string"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Check on, wait for or stop background processes started with terminal(background=true). list: this conversation's processes. poll: status and recent output. log: the output in pages of lines. wait: block until it ends or the timeout passes (a timeout is not an error). kill: stop it. write sends text as it is; submit sends text plus Enter (use it to answer prompts); close ends its input. handoff is for subagents only.",
+      "name": "process_manage",
+      "parameters": {
+        "properties": {
+          "action": {
+            "enum": ["list", "poll", "log", "wait", "kill", "write", "submit", "close", "handoff"],
+            "type": "string"
+          },
+          "data": {"description": "Text for write or submit.", "type": "string"},
+          "limit": {"description": "How many log lines.", "minimum": 1, "type": "integer"},
+          "offset": {
+            "description": "First log line to show (0 = the start); leave out for the last lines.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "The process id from terminal's result (any unique start of it, e.g. '4dae' for proc_4dae56ca81f6). Needed by every action but list.",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Longest wait in seconds for wait.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": ["action"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Read a text file with line numbers (each line is shown as LINE|CONTENT), a page at a time: offset is the first line (from 1), limit the number of lines (up to 2000). When the result says truncated, continue with next_offset. Notebooks, PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB and SQLite files are shown as extracted text. Prefer this over cat/head/tail in the terminal. Images and other binary files are refused; secret files and device files cannot be read.",
+      "name": "read_file",
+      "parameters": {
+        "properties": {
+          "limit": {
+            "description": "How many lines to show (default and maximum 2000).",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "First line to show, counting from 1 (default 1).",
+            "type": "integer"
+          },
+          "path": {
+            "description": "The file: absolute, ~/..., or relative to the working directory.",
+            "type": "string"
+          }
+        },
+        "required": ["path"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Search the working tree. target 'content' (default) finds lines matching a regular expression (ripgrep syntax) and returns them with file and line number, or only the file names (output_mode 'files_only'), or a count per file ('count'). target 'files' finds files whose name matches a glob such as '*.py' (a plain word matches names containing it). Hidden and git-ignored files are skipped. Results come in pages: pass the returned next_offset as offset for more. Prefer this over running grep, rg or find in the terminal.",
+      "name": "search_files",
+      "parameters": {
+        "properties": {
+          "context": {
+            "description": "Content search: lines of context around each match (default 0).",
+            "maximum": 20,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "file_glob": {
+            "description": "Content search only: limit to files matching this glob.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Results per page (default 50).",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Results to skip, for the next page (default 0).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order": {
+            "description": "File-name search: 'discovery' (fast, as found) or 'modified' (newest first; reads the whole tree).",
+            "enum": ["discovery", "modified"],
+            "type": "string"
+          },
+          "output_mode": {
+            "description": "Content search: matching lines, file names only, or counts.",
+            "enum": ["content", "files_only", "count"],
+            "type": "string"
+          },
+          "path": {
+            "description": "File or directory to search (default: the working directory).",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Regex for content search; glob or word for file-name search.",
+            "type": "string"
+          },
+          "target": {
+            "description": "'content' searches inside files, 'files' searches file names.",
+            "enum": ["content", "files"],
+            "type": "string"
+          }
+        },
+        "required": ["pattern"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Run a shell command (bash) on the user's machine or the configured sandbox. The working directory and exported variables carry over between calls. Output is cut to its beginning and end when it is long (the full text is saved to a file named in the result) and secrets are masked. Use background=true for servers, watchers and long jobs, and manage them with process_manage. Risky commands may need the user's approval first. To read a file use read_file rather than cat, head or tail. To change part of a file use patch rather than sed or a heredoc. To search file contents or names use search_files, not grep/find.",
+      "name": "terminal",
+      "parameters": {
+        "properties": {
+          "background": {
+            "default": false,
+            "description": "Keep it running after this call returns; the result gives its session_id for process_manage.",
+            "type": "boolean"
+          },
+          "command": {"description": "The shell command to run.", "type": "string"},
+          "heartbeat": {
+            "default": 0,
+            "description": "With background=true: every N seconds (at least 60) a message with the new output; quiet periods send nothing. Turns notify on. 0 = off.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notify": {
+            "anyOf": [{"type": "boolean"}, {"items": {"type": "string"}, "type": "array"}],
+            "description": "With background=true. true: a message when it ends (use it for anything that finishes: builds, tests, deploys). A list of texts: a message when an output line contains one, for a one-time sign on a process that keeps running (rate-limited). Leave it out for servers."
+          },
+          "persist_on_release": {
+            "default": false,
+            "description": "With background=true: keep running after the session ends or /new (not after Indus exits). Only when the user wants it to outlive the conversation.",
+            "type": "boolean"
+          },
+          "pty": {
+            "default": false,
+            "description": "With background=true: run under a pseudo-terminal, for interactive programs driven with process_manage write/submit.",
+            "type": "boolean"
+          },
+          "timeout": {
+            "description": "Seconds before the command is stopped (default 180, foreground maximum 600). A command that finishes early returns at once, so be generous. Above 600 the command is started as a tracked background process (the result says so; do not run it again).",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workdir": {
+            "description": "Absolute directory to run this one command in.",
+            "type": "string"
+          }
+        },
+        "required": ["command"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
       "description": "Keep a task list for work with several steps, or when the user asks for several things. Call it with no arguments to see the list. When a request covers many instances, give each one its own item so none is forgotten. The order of the list is the priority. Keep exactly one item in_progress at a time; split big steps into subtasks with parent. Mark an item completed only once the work is checked and done; if a step fails, cancel it and add a new item for the next attempt. Every call returns the whole list.",
       "name": "todo_list",
       "parameters": {
@@ -56,6 +245,45 @@
           }
         },
         "required": ["urls"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Look something up on the web. Gives back a ranked list of pages: title, address and a short snippet for each (5 by default). It does not open the pages; pass the addresses you want to read to web_extract. The query goes to the search provider as written, so operators it understands (site:, quotes, a leading minus) can be used.",
+      "name": "web_search",
+      "parameters": {
+        "properties": {
+          "limit": {
+            "default": 5,
+            "description": "How many results to return, 1 to 100.",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {"description": "What to search for.", "type": "string"}
+        },
+        "required": ["query"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Create a file or replace its whole content (parent folders are created). To change an existing file you must have read all of it with read_file first, and it must not have changed since; otherwise the write is refused and nothing changes. For edits to part of a file use patch instead. Writes to system and credential locations are refused, and instruction files such as AGENTS.md ask the user first.",
+      "name": "write_file",
+      "parameters": {
+        "properties": {
+          "content": {"description": "The complete new content of the file.", "type": "string"},
+          "path": {
+            "description": "The file: absolute, ~/..., or relative to the working directory.",
+            "type": "string"
+          }
+        },
+        "required": ["path", "content"],
         "type": "object"
       }
     },

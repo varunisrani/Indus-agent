@@ -42,6 +42,7 @@ from typing import IO, Any, cast
 from indus.backends.capture import DEFAULT_MAX_CHARS
 from indus.backends.contract import BackendFlags, BackendUnavailable
 from indus.backends.spawned import SNAPSHOT_TIMEOUT_S, SpawnedEnvironment
+from indus.backends.sudo import SudoSupport
 from indus.backends.wait import TERMINAL_POOL, ProcessHandle
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
@@ -643,5 +644,6 @@ async def open_local(
         clock=clock,
         max_chars=int(_config(scope, "tool_output.max_chars")),
     )
+    env.sudo = SudoSupport(scope, session_id=session_id)
     await env.start()
     return env

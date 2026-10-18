@@ -100,3 +100,13 @@ Done (2026-10-18). Goldens hold `[]` tool arrays until P05 registers tools; rege
 - 2026-10-18 (Agent 2, P05 wave 1): P05-23/24 registered `web_extract`, `todo_list`, `clarify`
   (and `web_search`, hidden here because its probe needs the optional `web` extra). The prompt
   gained the matching tool-guidance lines. Regenerated with `--update-golden`; diff reviewed.
+- 2026-10-18 (lead integration, P05 wave 2): P05-11/14/16/18/19/21 registered `terminal`,
+  `process_manage`, `read_file`, `write_file`, `patch` and `search_files`, so every surface's
+  `tools.json` gained their schemas (`patch` shows the replace shape; V4A `mode: patch` is accepted
+  by the handler but not shown, see `docs/notes/P05/v4a-lint.md`). `web_search` now appears too:
+  the generator's registry lets every tool probe pass (`_ProbesPass`), because which optional
+  extras (`web`, `docs`, `pty`) or host binaries are installed is a fact about the machine — CI
+  runs a plain `uv sync --locked`, the P05 loop `uv sync --all-extras`, and both must render the
+  same bytes (checked with `ddgs` hidden). `prompt.txt` is unchanged (no guidance lines for these
+  tools yet). Regenerated once with `--update-golden`; diff reviewed (912 added lines over four
+  `tools.json`, nothing removed).

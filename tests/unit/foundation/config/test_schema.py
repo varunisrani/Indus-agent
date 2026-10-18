@@ -32,9 +32,21 @@ def test_decided_defaults() -> None:
         "lifetime_s": 300,
         "degraded_mode": "warn",
         "daemon_term_grace_s": 2.0,
+        "max_foreground_timeout": 600,
+        "process_wait_auto_notify": True,
     }
     assert d["tool_output"] == {"max_chars": 50000}
-    assert d["approvals"] == {"mode": "manual", "timeout": 300, "deny": []}
+    assert d["approvals"] == {
+        "mode": "manual",
+        "timeout": 300,
+        "deny": [],
+        "cron_mode": "deny",
+        "single_query_mode": "deny",
+        "unattended_mode": "deny",
+    }
+    assert d["command_allowlist"] == []
+    assert d["file_read_max_chars"] == 100000
+    assert d["terminal"]["env_passthrough"] == []
     assert d["database"]["journal_mode"] == "wal"
     assert d["sessions"] == {
         "retention_days": 90,
@@ -49,6 +61,7 @@ def test_decided_defaults() -> None:
         "allow_private_urls": False,
         "fake_ip_ranges": [],
         "website_blocklist": {"enabled": False, "domains": [], "shared_files": []},
+        "protected_instruction_files": [],
     }
     assert d["web"] == {
         "backend": "",

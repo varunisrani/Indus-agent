@@ -78,9 +78,10 @@ Stack decisions are `D-04.n`; product differences live in `16-what-we-change.md`
    on timeout, desktop IPC sender checks, no URL opening from untrusted content.
 
 Import direction (enforced by an import-linter contract in CI):
-`platform → foundation → protocol, state → providers, safety → tools, backends → core →
+`platform → foundation → protocol, state → providers, safety → backends → tools → core →
 learning, plugins, mcp, cron → service → cli, tui_bridge, gateway, web, acp, mcp_serve, research`.
-A module may import only from its left.
+A module may import only from its left. `tools` sits above `backends` (D-04.7): the terminal,
+process and file tools run through the backend contract, and no backend imports a tool.
 
 ## 3. Repo layout
 
@@ -282,3 +283,4 @@ interrupted}` (R01.2, R01.4, R01.18).
 | D-04.4 | click instead of argparse for the CLI | P06/P07 proves `-p` pre-parse, bare-command chat, `-c [NAME]`, multi-word names, exit codes, `--version` < 150 ms | argparse with our own routing helper | Lead, 2026-10-18 |
 | D-04.5 | Raw HTTP provider transports, no vendor LLM SDKs in core | P03 records two live captures per transport and replays them in tests | Vendor SDK per transport, retries off, wrapped in our stream handling | Lead, 2026-10-18 |
 | D-04.6 | stdlib `sqlite3` with our own repository layer | P02 stress test: 4 processes × 8 threads appending for 60 s with a VACUUM in the middle, no lost rows, no `database is locked` surfaced | apsw for finer lock and checkpoint control | Lead, 2026-10-18 |
+| D-04.7 | **`indus.tools` is a layer above `indus.backends`** (was one layer with the two independent). The terminal and `process_manage` tools drive `EnvironmentRegistry`, `ProcessRegistry` and the sudo hook directly; the file tools may import the backend contract instead of restating it. Backends never import tools | import-linter `Layer order` contract (`pyproject.toml`) and `tests/unit/test_layers.py` pin the order; P05 wave 2 builds the terminal (P05-11/12) and process tools (P05-13/14) against it | Keep one shared layer and pass every backend object to tools through structural protocols and `ToolContext.extras` only | Lead, 2026-10-18 — decided at the P05 wave 2 merge |

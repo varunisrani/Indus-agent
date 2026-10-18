@@ -195,21 +195,64 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-C3-1** Result size budget: per-result and per-turn caps scaled to the window, oversized output spilled to …
   - Review: not yet planned (phase TBD)
 - **ACC-C5-1** `terminal` foreground: timeout, exit-code meanings, failure hints, redaction, stable result shape
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_terminal_result.py::test_golden_finished_with_every_optional_field`
+  - `tests/unit/tools/builtin/test_terminal_result.py::test_exit_code_meaning_table`
+  - `tests/unit/tools/builtin/test_terminal_result.py::test_ansi_stripped_and_redacted`
+  - `tests/integration/tools/test_terminal_local.py::test_session_state_background_job_and_completion`
+- **ACC-C5-2** `terminal` foreground timeout backstop: stopped by timeout + 2 s, loop stays responsive
+  - `tests/integration/core/test_d04_1_terminal_tool_backstop.py::test_tool_stops_a_command_at_its_timeout`
+  - `tests/integration/core/test_d04_1_terminal_tool_backstop.py::test_tool_sigkills_a_command_that_ignores_sigterm`
+  - `tests/integration/core/test_d04_1_terminal_tool_backstop.py::test_tool_answers_through_the_backstop_when_the_wait_is_wedged`
 - **ACC-C6-1** `terminal` background processes with notify-on-exit, output watch patterns, heartbeats and …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/test_processes.py::test_completion_reaches_the_session_redacted`
+  - `tests/unit/backends/test_processes.py::test_heartbeat_ticks`
+  - `tests/integration/tools/test_terminal_local.py::test_session_state_background_job_and_completion`
+- **ACC-C6-2** Watch-pattern limits: per-process spacing, strikes, lifetime cap and a global breaker
+  - `tests/unit/backends/test_processes.py::test_watch_patterns_rate_limited_then_switched_off`
+  - `tests/unit/backends/test_processes.py::test_global_breaker_across_processes`
 - **ACC-C7-1** `process_manage`: list, poll, log, wait, kill, write, submit, close, hand off to parent
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_process_manage.py::test_log_offset_zero_is_head`
+  - `tests/unit/tools/builtin/test_process_manage.py::test_wait_timeout_is_not_an_error`
+  - `tests/unit/tools/builtin/test_process_manage.py::test_kill_and_already_exited`
+  - `tests/unit/tools/builtin/test_process_manage.py::test_auto_notify_after_two_empty_polls`
+  - Review: hand-off to a parent arrives with subagents (P10)
 - **ACC-C10-1** `read_file`: line-numbered paging, device and secret-file guards, repeat-read loop breaker → …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_read_file.py::test_numbered_lines_and_paging`
+  - `tests/unit/tools/builtin/test_read_file.py::test_device_files_and_symlinks_to_them_are_refused`
+  - `tests/unit/tools/builtin/test_read_file.py::test_secret_files_are_refused`
+  - `tests/unit/tools/builtin/test_read_file.py::test_repeat_read_gets_a_stub_then_a_refusal`
+  - `tests/unit/tools/builtin/test_extract.py::test_read_file_pages_extracted_text`
+  - `tests/unit/tools/builtin/test_extract.py::test_pdf_text_and_gap_map`
 - **ACC-C11-1** `write_file`: refuses to overwrite a file the agent has not fully read, protected paths, hash …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_write_file.py::test_existing_file_never_read_is_refused`
+  - `tests/unit/tools/builtin/test_write_file.py::test_system_and_credential_paths_are_refused`
+  - `tests/unit/tools/builtin/test_write_file.py::test_new_file_is_written_with_parents_and_verified`
 - **ACC-C12-1** `patch`: exact replace → nine fuzzy matching strategies and the multi-file V4A patch format
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_fuzzy_match.py::test_each_strategy_is_the_first_that_matches_its_fixture`
+  - `tests/unit/tools/builtin/test_patch.py::test_exact_edit_returns_diff_and_strategy`
+- **ACC-C12-2** `patch` mode `patch`: a multi-file V4A envelope applies all or nothing
+  - `tests/unit/tools/builtin/test_v4a.py::test_multi_file_patch_applies_with_diff`
+  - `tests/unit/tools/builtin/test_v4a.py::test_second_file_miss_writes_nothing`
+  - `tests/unit/tools/builtin/test_v4a.py::test_write_failure_midway_rolls_back_earlier_writes`
+  - `tests/unit/tools/builtin/test_v4a.py::test_move_and_update`
+  - `tests/unit/tools/builtin/test_v4a.py::test_malformed_envelope_names_the_line`
+  - `tests/unit/tools/builtin/test_patch.py::test_patch_mode_applies_a_multi_file_patch`
+  - `tests/unit/tools/builtin/test_patch.py::test_patch_mode_write_guards_stop_every_file`
+  - Review: a route-aware schema that shows `mode: patch` to the model families preferring V4A (P06)
 - **ACC-C13-1** `search_files`: ripgrep content and filename search with output modes
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_search_files.py::test_content_mode_lines_and_context`
+  - `tests/unit/tools/builtin/test_search_files.py::test_files_only_and_count_modes`
+  - `tests/unit/tools/builtin/test_search_files.py::test_paging_with_next_offset`
+  - `tests/unit/tools/builtin/test_search_files.py::test_env_file_hits_are_filtered`
+  - `tests/unit/tools/builtin/test_search_files.py::test_file_name_search_discovery_and_modified`
+  - `tests/unit/tools/builtin/test_search_files.py::test_rg_missing_is_a_clear_error`
 - **ACC-C14-1** Lint after edit reporting only newly introduced errors → language-server diagnostics
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_lint.py::test_new_python_error_reported_and_old_one_not`
+  - `tests/unit/tools/builtin/test_lint.py::test_gate_refuses_breaking_a_valid_data_file`
+  - `tests/unit/tools/builtin/test_lint.py::test_real_node_check_reports_only_new_errors`
+  - `tests/unit/tools/builtin/test_write_file.py::test_lint_after_reports_an_introduced_python_error`
+  - `tests/unit/tools/builtin/test_patch.py::test_lint_after_reports_only_errors_the_edit_introduced`
+  - Review: language-server diagnostics (P24)
 - **ACC-C16-1** Automatic filesystem checkpoints before the first change in a turn; `/rollback [N]`, rollback diff …
   - Review: not yet planned (phase TBD)
 - **ACC-C17-1** `web_search` through pluggable backends (Exa, Tavily, Brave, SearXNG, DuckDuckGo, …) with a keyless …
@@ -233,7 +276,10 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-C41-1** Child-process environment scrubbing so provider keys never reach model-written commands, plus …
   - Review: not yet planned (phase TBD)
 - **ACC-C42-1** Sudo support: cached password, masked prompt on interactive surfaces, clear advice on headless ones
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/test_sudo.py::test_rewrite_table`
+  - `tests/unit/backends/test_sudo.py::test_prompt_via_broker_caches_the_answer`
+  - `tests/unit/backends/test_sudo.py::test_headless_failure_gets_tip`
+  - `tests/unit/backends/test_sudo.py::test_wrong_cached_password_clears_cache`
 - **ACC-D1-1** Shared execution contract for every backend: fresh `bash -c` per call, shell snapshot, cwd marker …
   - Review: not yet planned (phase TBD)
 - **ACC-D2-1** Local backend: process groups, scratch temp dir, PATH repair, persistent-shell switch
@@ -253,21 +299,33 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-E1-1** Dangerous-command detection with normalisation (wrappers, interpreter `-c` payloads, quoting …
   - Review: not yet planned (phase TBD)
 - **ACC-E2-1** Hardline floor (disk wipes, fork bombs, deleting system roots) and user deny globs that nothing can …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
+  - `tests/unit/safety/approvals/test_policy.py::test_hardline_refused_on_isolated_backend`
+  - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
 - **ACC-E3-1** Approval modes manual / smart / off, changeable live with `/approvals`
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/approvals/test_policy.py::test_mode_change_applies_on_next_call`
+  - `tests/unit/safety/approvals/test_policy.py::test_mode_spellings`
+  - Review: the `/approvals` command (P06)
 - **ACC-E4-1** Human choices once / session / always / deny; "always" writes a per-profile allowlist
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/approvals/test_human.py::test_once_approves_this_run_only`
+  - `tests/unit/safety/approvals/test_human.py::test_session_choice_remembers_the_pattern`
+  - `tests/unit/safety/approvals/test_human.py::test_always_writes_the_allowlist`
+  - `tests/unit/safety/approvals/test_human.py::test_deny_passes_reason_verbatim`
 - **ACC-E6-1** Auto-approve switch (`--yolo`, `/yolo`, Shift+Tab, env) remembered per session; container backends …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/approvals/test_human.py::test_auto_approve_persist_and_restore`
+  - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
+  - Review: `--yolo`, `/yolo`, Shift+Tab wiring on the surfaces (P06, P12)
 - **ACC-E7-1** Unattended policies for cron, one-shot and API/webhook runs, deny by default
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/approvals/test_policy.py::test_unattended_contexts_deny_instantly`
+  - `tests/unit/safety/approvals/test_policy.py::test_unattended_approve_mode`
 - **ACC-E8-1** Approvals over chat: buttons where supported, `/approve`, `/approve all`, `/deny reason`, timeout …
   - Review: not yet planned (phase TBD)
 - **ACC-E9-1** Whole-script approval for `execute_code`
   - Review: not yet planned (phase TBD)
 - **ACC-E11-1** Protected instruction files always ask before a write; credential and system paths refused
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_write_file.py::test_instruction_files_ask_and_write_once_approved`
+  - `tests/unit/tools/builtin/test_write_file.py::test_instruction_file_without_a_surface_is_blocked`
+  - `tests/unit/tools/builtin/test_write_file.py::test_system_and_credential_paths_are_refused`
 - **ACC-E12-1** Secret redaction in logs, tool output, exports and deliveries (on by default)
   - Review: not yet planned (phase TBD)
 - **ACC-E13-1** Prompt-injection and exfiltration scanning of context files, memory writes, cron prompts and skills

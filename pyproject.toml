@@ -17,6 +17,10 @@ dependencies = [
 [project.optional-dependencies]
 # Keyless DuckDuckGo search for web_search (P05-23; MIT, 00-layout section 4).
 web = ["ddgs==9.16.0"]
+# Document readers for read_file (P05-17; BSD-3-Clause, MIT, MIT; 00-layout section 4).
+docs = ["openpyxl==3.1.5", "pypdf==6.19.0", "python-docx==1.2.0"]
+# Pseudo-terminals for interactive background processes (P05-13; ISC, 00-layout section 4).
+pty = ["ptyprocess==0.7.0"]
 
 [project.scripts]
 indus = "indus.cli:main"
@@ -45,6 +49,8 @@ exclude-newer = "2026-10-04T00:00:00Z"
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Fixture files are data: a notebook fixture must keep its cells byte for byte.
+extend-exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "TID251"]
@@ -79,7 +85,9 @@ layers = [
     "indus.service",
     "indus.learning | indus.plugins | indus.mcp | indus.cron | indus.board",
     "indus.core",
-    "indus.tools | indus.backends",
+    # Tools run commands and file operations through the backends (P05), never the reverse.
+    "indus.tools",
+    "indus.backends",
     "indus.providers | indus.safety | indus.pm",
     "indus.protocol | indus.state",
     "indus.foundation",

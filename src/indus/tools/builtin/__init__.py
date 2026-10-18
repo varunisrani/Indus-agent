@@ -28,9 +28,15 @@ class BuiltinModule:
 
 
 BUILTIN_MODULES: tuple[BuiltinModule, ...] = (
+    BuiltinModule("indus.tools.builtin.read_file"),
+    BuiltinModule("indus.tools.builtin.write_file"),
+    BuiltinModule("indus.tools.builtin.patch"),
     BuiltinModule("indus.tools.builtin.web"),
     BuiltinModule("indus.tools.builtin.todo"),
     BuiltinModule("indus.tools.builtin.clarify"),
+    BuiltinModule("indus.tools.builtin.terminal"),
+    BuiltinModule("indus.tools.builtin.process_manage"),
+    BuiltinModule("indus.tools.builtin.search_files"),
 )
 
 

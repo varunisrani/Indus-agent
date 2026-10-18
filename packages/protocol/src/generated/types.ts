@@ -6,6 +6,8 @@ export interface ApprovalAnswer {
   kind: "approval";
   /** The picked choice. */
   choice: ApprovalChoice;
+  /** Why the person denied, in their words; passed to the model unchanged. */
+  reason?: string | null;
 }
 
 /** How a person answered an approval prompt. */

@@ -17,6 +17,11 @@ Order (R01.2, R01.3, R01.14):
 7. the batch runs through the planner and executor; each result is built (guardrail stub and
    guidance, spill, turn budget over results not stored yet, untrusted fence) and stored in call
    order; then buffered steer text is delivered as its own row, and a guardrail stop ends the turn.
+
+Handlers may ask for these context keywords beyond the ``ToolContext`` fields (``extras``):
+``broker`` (the session's server-request port), ``cancel`` (the turn's stop event) and
+``environments`` (``SessionRuntime.environments``, the terminal backends), each offered only when
+the turn has one.
 """
 
 from __future__ import annotations
@@ -47,7 +52,7 @@ from indus.tools.spill import enforce_turn_budget, spill_if_needed, text_size
 
 log = logging.getLogger(__name__)
 
-__all__ = ["RoundAction", "repair_name", "run_tool_round", "unique_ids"]
+__all__ = ["RoundAction", "handler_extras", "repair_name", "run_tool_round", "unique_ids"]
 
 type RoundAction = Literal["continue", "retry", "end"]
 
@@ -375,13 +380,12 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
     limits = options.exec_limits
     segments = plan_segments(plan, cwd=cwd, batch_deadline_s=limits.batch_deadline_s)
     budget = options.budget()
-    broker = state.control.broker
     ctx = ToolContext(
         scope=runtime.scope,
         task_id=state.session_id,
         session_id=state.session_id,
         turn_id=state.turn_id,
-        extras={"broker": broker} if broker is not None else {},
+        extras=handler_extras(state),
     )
 
     async def run_one(index: int) -> ToolResult:
@@ -449,6 +453,16 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
                     return
     finally:
         state.control.phase = "model"
+
+
+def handler_extras(state: TurnState) -> dict[str, Any]:
+    """The extra keywords a handler may ask for (see the module notes)."""
+    extras: dict[str, Any] = {"cancel": state.control.stop}
+    if state.control.broker is not None:
+        extras["broker"] = state.control.broker
+    if state.runtime.environments is not None:
+        extras["environments"] = state.runtime.environments
+    return extras
 
 
 def _content_of(result: ToolResult) -> Any:

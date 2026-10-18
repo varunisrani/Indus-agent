@@ -98,3 +98,11 @@
 - Merge fixes: backends now use `platform.locate.which` and `known_dirs.homebrew_bins` (lookup ratchet R09.18); the backend's stand-in `build_child_env(variant="terminal")` became `child_env()`.
 - Web: optional extra `web = ["ddgs==9.16.0"]` (MIT); the licence check walks only `[project].dependencies`, so extras are checked by hand — extend the check (follow-up). Goldens regenerated with compact JSON (`protocol.codegen.dump_json`); `web_search` is hidden in goldens because its probe needs the extra.
 - P05 left for Agent 1: P05-08 approval pipeline, 09 human approval, 10 sudo, 11/12 terminal tool, 13/14 background processes, 15-19 file tools (not started), 20 V4A + lint, 21 search_files. Then P06 (Demo 1).
+## P05 wave 2 landing notes (Agent 1) — P05-08..21
+- Lead decision D-04.7: import layers put tools above backends (backends never import tools).
+- V4A runs through `patch` (any model may send it); the schema still shows only the replace shape — route-aware schema is a P06 seam. PatchFiles is async; `read_text` → None when missing; `refusal(path, action, content)`.
+- Lint: `write_file` and `patch` run `lint.gate` before and `lint.lint_edit` after; result `lint` field only when introduced/preexisting.
+- Approvals: `ApprovalDecision.clear_stale_interrupt(flag)` is a method (not a module function). Unattended runs never prompt for sudo. A call with no broker counts as unattended → `approvals.unattended_mode` (default deny).
+- Tool round extras: `cancel`, `broker`, and `environments` when `SessionRuntime.environments` is set (host sets it).
+- P06 host-wiring seams: (1) `SessionRuntime.environments = terminal.runtime().environments` so terminal/file tools/search share one registry and cwd; (2) offer `extras["run_context"]` (cron/one-shot/unattended); (3) `await terminal.runtime().shutdown()` at exit; (4) per-session completion sink in Deliveries checking `ProcessRegistry.consumed(...)`; (5) dispatcher calls `read_tracking.note_other_tool(scope, task_id)` after non-read tools; P08 calls `compaction_boundary`; (6) route-aware patch schema for V4A-preferring families.
+- Open: THIRD_PARTY_NOTICES row for `ddgs` (web extra); unidentified one-off test failure on 2026-10-18 17:55 (4 clean reruns; full runs now use `-rf`).

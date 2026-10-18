@@ -72,39 +72,66 @@ Checked by `python -m tooling.checks traps`.
 - **R02.1** Per-session variables leaking through the shared snapshot
   - Review: not yet planned (P00-guards)
 - **R02.2** Bounded vs full-fidelity capture
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/test_file_ops.py::test_shell_calls_are_never_bounded`
+  - `tests/unit/tools/builtin/test_file_ops.py::test_three_megabyte_round_trip_is_byte_exact`
+  - Review: bounded foreground capture side is pinned by P05-02 (wave 1)
 - **R02.3** Timeouts that never fire
   - Review: not yet planned (P00-guards)
 - **R02.4** Floors must precede every bypass
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
+  - `tests/unit/safety/approvals/test_policy.py::test_malformed_command_fails_closed`
+  - `tests/unit/safety/approvals/test_policy.py::test_runtime_delete_is_a_floor`
+  - `tests/unit/safety/approvals/test_policy.py::test_sudo_stdin_without_configured_password_is_a_floor`
+  - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_with_mode_off`
 - **R02.5** Silence is not consent; withdrawal is not refusal
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_human.py::test_timeout_blocks_with_timeout_outcome`
+  - `tests/unit/safety/approvals/test_human.py::test_withdrawn_is_not_answered`
+  - `tests/unit/safety/approvals/test_human.py::test_undeliverable_is_not_answered`
 - **R02.6** Isolation is about mounts, not backend names
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
+  - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
+  - Review: Docker sets `isolated=False` when a host path is mounted (P11)
 - **R02.7** Credentials on the command line
   - Review: not yet planned (P00-guards)
 - **R02.8** Multiprofile scoping everywhere
   - Review: not yet planned (P00-guards)
 - **R02.9** Approved command killed by a stale interrupt
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_human.py::test_stale_interrupt_cleared_once`
+  - Review: the terminal tool calls `clear_stale_interrupt` once before its retry loop (P05-12)
 - **R02.10** cwd hijack
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_not_recorded_with_workdir`
+  - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_not_recorded_without_marker`
+  - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_is_per_session_and_profile`
 - **R02.11** Foreground refusals that create retry loops
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/test_terminal_plan.py::test_foreground_heartbeat_is_dropped`
+  - `tests/unit/tools/builtin/test_terminal_plan.py::test_trailing_amp_becomes_background`
+  - `tests/unit/tools/builtin/test_terminal_plan.py::test_overcap_foreground_promoted_with_note`
+  - `tests/unit/tools/builtin/test_terminal_plan.py::test_promoted_note_poll_only_when_not_deliverable`
 - **R02.12** Kill order for process trees
   - Review: not yet planned (P00-guards)
 - **R02.13** Flapping availability probes strip tools mid-session
   - Review: not yet planned (P00-guards)
 - **R02.14** Stale whole-file overwrite
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/test_write_file.py::test_existing_file_never_read_is_refused`
+  - `tests/unit/tools/builtin/test_write_file.py::test_file_changed_on_disk_after_the_read_is_refused`
+  - `tests/unit/tools/builtin/test_write_file.py::test_terminal_writes_make_no_baseline_and_other_tasks_have_none`
+  - `tests/unit/tools/builtin/test_write_file.py::test_patch_from_a_baseline_keeps_it_and_blind_patch_does_not`
 - **R02.15** Read loops on weak models
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/test_read_file.py::test_repeat_read_gets_a_stub_then_a_refusal`
+  - `tests/unit/tools/builtin/test_read_file.py::test_identical_reads_warn_at_three_and_block_at_four`
+  - `tests/unit/tools/builtin/test_read_file.py::test_compaction_boundary_serves_full_content_once`
 - **R02.16** Spill files must outlive the cache mindset
   - Review: not yet planned (P00-guards)
 - **R02.17** Background completion only where it can be delivered
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/test_processes.py::test_notify_needs_a_registered_session`
+  - `tests/unit/tools/builtin/test_terminal_plan.py::test_notify_kept_only_where_deliverable`
+  - `tests/unit/tools/builtin/test_process_manage.py::test_auto_notify_not_where_undeliverable`
 - **R02.18** Watch-pattern floods
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/test_process_notify.py::test_watch_three_strike_windows_switch_it_off`
+  - `tests/unit/backends/test_process_notify.py::test_watch_lifetime_cap_after_eight_notices`
+  - `tests/unit/backends/test_process_notify.py::test_global_breaker_trips_at_sixteen`
+  - `tests/unit/backends/test_processes.py::test_watch_patterns_rate_limited_then_switched_off`
+  - `tests/unit/backends/test_processes.py::test_global_breaker_across_processes`
 - **R02.19** Container recreated silently
   - Review: not yet planned (P00-guards)
 - **R02.20** Docker self-inconsistencies
@@ -114,7 +141,9 @@ Checked by `python -m tooling.checks traps`.
 - **R02.22** Secrets in child processes
   - Review: not yet planned (P00-guards)
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
+  - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
+  - Review: `returncode` (P05-01)
 - **R02.24** Async smart-approver as an injection target
   - Review: not yet planned (P00-guards)
 - **R02.25** Toolset membership vs registration
@@ -122,7 +151,8 @@ Checked by `python -m tooling.checks traps`.
 - **R02.26** Send-message is not a tool
   - Review: not yet planned (P00-guards)
 - **R02.27** Untrusted-input sessions need a tool floor, not just approvals
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_policy.py::test_unattended_contexts_deny_instantly`
+  - Review: tool floor for webhook-triggered sessions (P15)
 - **R02.28** Handler signature drift breaks plugins
   - Review: not yet planned (P00-guards)
 - **R02.29** Unscoped probes at boot
@@ -378,7 +408,8 @@ Checked by `python -m tooling.checks traps`.
 - **R05.21** Session create must be idempotent
   - Review: not yet planned (P00-guards)
 - **R05.22** Approval command redaction and wrapping
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_human.py::test_request_shows_redacted_wrapped_command`
+  - Review: surfaces show up to 10 lines with a "more" count (P12, P20)
 - **R06.1** Control commands must bypass both busy guards
   - Review: not yet planned (P00-guards)
 - **R06.2** Claim the session slot before the first await

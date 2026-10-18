@@ -60,7 +60,7 @@ PyPI for packages of other platforms).
 | pydantic | 2.13.5 | MIT | config schema and defaults | P01-09 |
 | pydantic-core | 2.46.5 | MIT | via pydantic | P01-09 |
 | annotated-types | 0.8.0 | MIT | via pydantic | P01-09 |
-| typing-extensions | 4.16.0 | PSF-2.0 | via pydantic / pydantic-core / typing-inspection | P01-09 |
+| typing-extensions | 4.16.0 | PSF-2.0 | via pydantic / pydantic-core / typing-inspection (and python-docx in extra `docs`) | P01-09 |
 | typing-inspection | 0.4.4 | MIT | via pydantic | P01-09 |
 | ruamel.yaml | 0.19.1 | MIT | YAML 1.1 load and round-trip dump (`yamlio`) | P01-08 |
 | httpx | 0.28.1 | BSD-3-Clause | async HTTP client for model providers | P03-08 |
@@ -69,3 +69,9 @@ PyPI for packages of other platforms).
 | anyio | 4.15.1 | MIT | via httpx (pinned directly) | P03-08 |
 | certifi | 2026.7.22 | MPL-2.0 (unmodified) | via httpx (CA bundle) | P03-08 |
 | idna | 3.20 | BSD-3-Clause | via httpx / anyio | P03-08 |
+| openpyxl | 3.1.5 | MIT | extra `docs`: `.xlsx` text for `read_file` | P05-17 |
+| et-xmlfile | 2.0.0 | MIT | extra `docs`, via openpyxl | P05-17 |
+| pypdf | 6.19.0 | BSD-3-Clause | extra `docs`: PDF text layer for `read_file` | P05-17 |
+| python-docx | 1.2.0 | MIT | extra `docs`: `.docx` text for `read_file` | P05-17 |
+| lxml | 6.1.3 | BSD-3-Clause | extra `docs`, via python-docx | P05-17 |
+| ptyprocess | 0.7.0 | ISC | extra `pty`: pseudo-terminals for interactive background processes | P05-13 |

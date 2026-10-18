@@ -27,6 +27,7 @@ __all__ = [
     "CommentedMap",
     "CommentedSeq",
     "YamlError",
+    "check_syntax",
     "dump_plain",
     "dump_roundtrip",
     "is_ambiguous_string",
@@ -90,6 +91,21 @@ def load_safe(source: str | bytes | Path) -> Any:
     yaml.version = (1, 1)
     try:
         return yaml.load(text)
+    except YAMLError as exc:
+        raise _to_error(exc) from exc
+
+
+def check_syntax(source: str | bytes | Path) -> None:
+    """Raise ``YamlError`` when ``source`` is not well-formed YAML; build no values.
+
+    Only the event stream is parsed, so several documents in one stream and application tags
+    (``!Ref``, ``!vault``) pass: this answers "does it parse", not "does it load".
+    """
+    text = _as_text(source)
+    yaml: Any = YAML(typ="safe", pure=True)
+    try:
+        for _event in yaml.parse(text):
+            pass
     except YAMLError as exc:
         raise _to_error(exc) from exc
 
