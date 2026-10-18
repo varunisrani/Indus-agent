@@ -1,0 +1,20 @@
+# My Indus Agent settings (hand-edited).
+_config_version: 1
+
+# The model I use most days.
+model:
+  default: test-model-large   # switch to the small one when travelling
+  provider: openrouter
+
+approvals:
+  mode: "manual"   # I want to be asked
+  deny:
+    - rm -rf /     # never
+    - mkfs
+
+# Quiet logs, please.
+logging:
+  level: WARNING
+
+display:
+  language: hi   # हिन्दी interface

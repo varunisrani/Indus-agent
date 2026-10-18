@@ -21,7 +21,7 @@ acceptance, done when. Paths and conventions come from
 | Phase | File | Weeks | Tasks | Create | Update | Fixtures | Notes | Demo | Status |
 |---|---|---|---|---|---|---|---|---|---|
 | P00 | [P00-foundations.md](P00-foundations.md) | 1 | 14 | 71 | 6 | 3 | 10 | — | done (c790e93, ef25266) |
-| P01 | [P01-platform-basics.md](P01-platform-basics.md) | 1.5 | 21 | 55 | 5 | 4 | 21 | — | planned |
+| P01 | [P01-platform-basics.md](P01-platform-basics.md) | 1.5 | 21 | 55 | 5 | 4 | 21 | — | done (a4a898d) |
 | P02 | [P02-state-store.md](P02-state-store.md) | 1.5 | 23 | 52 | 6 | 3 | 23 | M0 (`indus doctor --minimal`) | planned |
 | P03 | [P03-providers-fake-model.md](P03-providers-fake-model.md) | 1.5 | 19 | 55 | 8 | 4 | 19 | — | planned |
 | P04 | [P04-turn-loop-tool-contract.md](P04-turn-loop-tool-contract.md) | 2 | 23 | 95 | 9 | 5 | 23 | — | planned |

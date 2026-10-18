@@ -1,0 +1,8 @@
+providers:
+  p:
+    base_url: http://localhost:8080/v1
+    models:
+      grok-4.6:
+        context_length: 131072
+      glm-5.3:
+        supports_vision: false

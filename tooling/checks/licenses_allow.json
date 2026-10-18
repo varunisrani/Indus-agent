@@ -15,5 +15,10 @@
   "notes": {
     "MPL-2.0": "File-level copyleft: fine as an unmodified dependency; if we ever patch an MPL file, the patched file stays MPL-2.0 and its source must be published."
   },
-  "exceptions": {}
+  "exceptions": {
+    "cffi": {
+      "licence": "MIT-0",
+      "reason": "MIT-0 is MIT without the attribution clause, so more permissive than MIT; cffi comes in through cryptography for keyring's Linux Secret Service backend (P01-16)."
+    }
+  }
 }

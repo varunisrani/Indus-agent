@@ -1,0 +1,3 @@
+512 480 0:61 / / rw,relatime master:200 - overlay overlay rw,lowerdir=/var/lib/x/l/A:/var/lib/x/l/B,upperdir=/var/lib/x/diff
+513 512 0:64 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+514 512 0:30 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw

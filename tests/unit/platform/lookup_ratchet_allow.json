@@ -1,0 +1,4 @@
+{
+  "about": "Exceptions to the lookup ratchet (tests/unit/platform/test_lookup_ratchet.py). Each entry names a file under src/ (relative to src/), the exact text it may contain, and why. Keep this list empty unless there is no way to go through indus.platform.",
+  "entries": []
+}

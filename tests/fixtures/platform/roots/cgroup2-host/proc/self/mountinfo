@@ -1,0 +1,4 @@
+22 1 259:2 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p2 rw
+25 22 0:22 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime shared:9 - cgroup2 cgroup2 rw
+410 22 0:55 / /var/lib/docker/overlay2/abc123/merged rw,relatime - overlay overlay rw,lowerdir=/var/lib/docker/overlay2/l/X
+420 22 0:56 / /run/containerd/io.containerd.runtime.v2.task/k8s.io/def456/rootfs rw - overlay overlay rw

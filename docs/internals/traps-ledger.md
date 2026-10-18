@@ -37,7 +37,9 @@ Checked by `python -m tooling.checks traps`.
 - **R01.15** Context-file trust
   - Review: not yet planned (P00-guards)
 - **R01.16** Thread/profile scope
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_scope.py::test_thread_with_scope_vs_bare_thread`
+  - `tests/unit/foundation/test_scope.py::test_bind_scope_in_executor`
+  - `tests/unit/foundation/test_scope.py::test_spawn_inherits_current`
 - **R01.17** Empty and degenerate outputs
   - Review: not yet planned (P00-guards)
 - **R01.18** Exit-path completeness
@@ -151,7 +153,11 @@ Checked by `python -m tooling.checks traps`.
 - **R03.22** Deleted ids must stay dead
   - Review: not yet planned (P00-guards)
 - **R03.23** Profile cross-talk
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_scope.py::test_unresolved_raises`
+  - `tests/unit/foundation/test_scope.py::test_child_env_pins_home`
+  - `tests/unit/foundation/test_scope.py::test_concurrent_tasks_see_their_own`
+  - `tests/unit/foundation/test_log.py::test_records_from_two_tasks_land_in_their_own_homes`
+  - `tests/integration/foundation/test_log_routing.py::test_threads_with_different_scopes_write_to_their_own_profile`
 - **R03.24** Test runs touching the live store
   - Review: not yet planned (P00-guards)
 - **R03.25** Automatic maintenance must only skip, never refuse a turn
@@ -165,29 +171,58 @@ Checked by `python -m tooling.checks traps`.
 - **R04.1** Classic chat is a gateway client
   - Review: not yet planned (P00-guards)
 - **R04.2** Profile must be resolved before any import
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_preparse.py::test_fresh_interpreter_imports_nothing_else`
+  - `tests/unit/foundation/test_preparse.py::test_short_flag`
+  - `tests/unit/foundation/test_preparse.py::test_value_flag_hides_profile`
+  - `tests/unit/foundation/test_preparse.py::test_nested_tail_untouched`
 - **R04.3** Fail-closed config writes
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/config/test_writer.py::test_unreadable_file_refused_untouched`
+  - `tests/unit/foundation/config/test_writer.py::test_invalid_yaml_refused_untouched`
+  - `tests/unit/foundation/config/test_writer.py::test_failed_read_refused`
 - **R04.4** Never write defaults
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/config/test_writer.py::test_default_equal_value_not_written`
+  - `tests/unit/foundation/config/test_writer.py::test_default_equal_value_kept_when_present_before`
+  - `tests/unit/foundation/config/test_writer.py::test_create_writes_example`
+  - `tests/unit/foundation/config/test_schema.py::test_example_parses_to_nothing_and_uncomments_to_defaults`
 - **R04.5** Comment-preserving round trip, single writer seam
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_yamlio.py::test_yaml_import_ratchet_catches_planted_import`
+  - `tests/unit/foundation/test_yamlio.py::test_roundtrip_is_byte_identical`
+  - `tests/unit/foundation/config/test_writer.py::test_config_writer_ratchet_catches_planted_writer`
+  - `tests/unit/foundation/config/test_writer.py::test_set_one_key_keeps_comments_and_order`
 - **R04.6** Last-known-good on broken YAML
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/config/test_loader.py::test_broken_after_good_serves_last_known_good`
+  - `tests/unit/foundation/config/test_loader.py::test_fresh_process_uses_newest_good_backup`
+  - `tests/unit/foundation/config/test_loader.py::test_broken_first_load_is_failed_read`
 - **R04.7** config set` type coercion
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/config/test_keys.py::test_coerce_table`
+  - `tests/unit/foundation/config/test_keys.py::test_coerce_refuses_malformed_structured`
+  - `tests/unit/foundation/config/test_keys.py::test_check_write_container_guard`
 - **R04.8** Dotted key names
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/config/test_keys.py::test_get_prefers_literal_dotted_key`
+  - `tests/unit/foundation/config/test_keys.py::test_set_refuses_phantom_sibling`
+  - `tests/unit/foundation/config/test_keys.py::test_split_join_roundtrip_seeded`
 - **R04.9** Provider switch leaves a stale route
   - Review: not yet planned (P00-guards)
 - **R04.10** .env` read/write symmetry
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_envfile.py::test_set_replaces_every_line_shape`
+  - `tests/unit/foundation/test_envfile.py::test_delete_removes_every_line_shape`
+  - `tests/unit/foundation/test_envfile.py::test_deleted_spaced_line_does_not_resurrect`
+  - `tests/unit/foundation/test_envfile.py::test_existing_mode_is_kept`
+  - `tests/unit/foundation/test_envfile.py::test_concurrent_writers_both_land`
 - **R04.11** .env` precedence
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_envload.py::test_file_beats_shell`
+  - `tests/unit/foundation/test_envload.py::test_removed_recorded_key_is_cleared`
+  - `tests/unit/foundation/test_envload.py::test_registry_key_absent_from_file_is_cleared`
+  - `tests/unit/foundation/test_envload.py::test_terminal_bridge_reapplied_on_rebuild`
 - **R04.12** Env writer denylist
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_envfile.py::test_denylist_refused`
+  - `tests/unit/foundation/test_envfile.py::test_denylist_case_insensitive_on_windows`
+  - `tests/unit/foundation/test_envfile.py::test_denylist_superset_of_reference_names`
 - **R04.13** Redaction bridge timing
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_redact.py::test_switch_read_per_call`
+  - `tests/unit/foundation/test_redact.py::test_switch_off_in_config_leaves_text`
+  - `tests/unit/foundation/test_envload.py::test_redaction_flag_bridged_when_unset`
+  - `tests/unit/foundation/test_envload.py::test_redaction_flag_left_when_set`
 - **R04.14** --yolo` timing
   - Review: not yet planned (P00-guards)
 - **R04.15** Masking in `config get`
@@ -211,7 +246,14 @@ Checked by `python -m tooling.checks traps`.
 - **R04.24** Update self-modification
   - Review: not yet planned (P00-guards)
 - **R04.25** Profile deletion and marker-less dirs
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_profiles.py::test_tombstoned_profile`
+  - `tests/unit/foundation/test_profiles.py::test_mkdir_in_missing_profile_refused`
+  - `tests/unit/foundation/test_profiles.py::test_list_profiles`
+  - `tests/unit/foundation/test_preparse.py::test_tombstoned_flag_profile`
+  - `tests/unit/foundation/test_layout.py::test_tombstoned_profile_refused_even_after_a_memo_hit`
+  - `tests/unit/foundation/test_layout.py::test_missing_named_profile_refused_and_not_created`
+  - `tests/unit/foundation/test_log.py::test_deleted_or_tombstoned_routed_home_is_never_recreated`
+  - `tests/integration/foundation/test_log_routing.py::test_profile_deleted_while_logging_falls_back_without_recreating`
 - **R04.26** Clone must not share channels
   - Review: not yet planned (P00-guards)
 - **R04.27** Bang shell is not a bypass
@@ -393,7 +435,10 @@ Checked by `python -m tooling.checks traps`.
 - **R08.9** Cookie partition naming on Windows
   - Review: not yet planned (P00-guards)
 - **R08.10** Keychain prompts
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_secret_probe.py::test_blocking_keychain_falls_back_at_the_deadline`
+  - `tests/unit/foundation/test_secret_probe.py::test_unusable_result_is_cached_and_warned_once`
+  - `tests/unit/foundation/test_secret_probe.py::test_keychain_mode_raises_when_unusable`
+  - `tests/unit/foundation/test_secret_probe.py::test_file_mode_never_touches_keyring`
 - **R08.11** Canonical bot chat identity
   - Review: not yet planned (P00-guards)
 - **R08.12** Slash curation hiding user extensions
@@ -449,15 +494,23 @@ Checked by `python -m tooling.checks traps`.
 - **R09.13** Two ACP implementations, one constructor
   - Review: not yet planned (P00-guards)
 - **R09.14** Stdout purity and probe noise
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/foundation/test_log.py::test_stdio_mode_keeps_stdout_empty`
+  - `tests/unit/foundation/test_bootstrap.py::test_stdio_mode_bootstrap_keeps_stdout_clean`
 - **R09.15** Windows import deadlock
   - Review: not yet planned (P00-guards)
 - **R09.16** Path normalisation for session lists
   - Review: not yet planned (P00-guards)
 - **R09.17** Platform facts must not trust env vars
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/platform/test_facts.py::test_processor_architecture_env_is_ignored`
+  - `tests/unit/platform/test_facts.py::test_cgroup2_host_is_not_container`
+  - `tests/unit/platform/test_facts.py::test_cgroup2_container_root_overlay`
+  - `tests/unit/platform/test_facts.py::test_gpu_unreadable_sysfs_is_unknown`
 - **R09.18** Lookup must be side-effect free
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/platform/test_locate.py::test_local_probe_never_connects_or_spawns`
+  - `tests/unit/platform/test_locate.py::test_network_probe_connects_but_never_spawns`
+  - `tests/unit/platform/test_locate.py::test_lookup_does_not_mutate_env`
+  - `tests/unit/platform/test_lookup_ratchet.py::test_src_is_clean`
+  - `tests/unit/platform/test_lookup_ratchet.py::test_planted_which_is_caught`
 - **R09.19** Docs disagree about Windows chat
   - Review: not yet planned (P00-guards)
 - **R09.20** Profile-scoped writes need an explicit profile

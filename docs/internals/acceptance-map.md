@@ -14,7 +14,9 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-A4-1** System prompt built in stable / context / volatile layers once per conversation, stored with the …
   - Review: not yet planned (phase TBD)
 - **ACC-A5-1** Persona: a persona file in the profile home (our name `PERSONA.md`, proposal in …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/foundation/test_layout.py::test_fresh_home_gets_every_dir_owner_only_and_a_persona`
+  - `tests/unit/foundation/test_layout.py::test_customised_persona_survives_later_runs`
+  - Review: persona loading into the system prompt (P04)
 - **ACC-A6-1** Project context discovery: native `.indus.md`/`INDUS.md` nearest to cwd, else an `AGENTS.md` chain …
   - Review: not yet planned (phase TBD)
 - **ACC-A8-1** `@` references (`@file:`, `@folder:`, `@diff`, `@git:`, `@url:`, plugin prefixes) expand into the …
@@ -138,7 +140,10 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-B30-1** Workspace metadata (cwd, git root, branch) recorded per session; cwd restored on resume unless …
   - Review: not yet planned (phase TBD)
 - **ACC-B34-1** Configured time zone for every clock the agent shows or schedules with
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/foundation/test_clock.py::test_env_zone_kolkata`
+  - `tests/unit/foundation/test_clock.py::test_config_zone_when_env_absent`
+  - `tests/unit/foundation/test_clock.py::test_invalid_zone_warns_once`
+  - `tests/unit/foundation/test_clock.py::test_routed_scope_ignores_env`
 - **ACC-C1-1** Self-registering tool registry with cached availability probes; every handler returns a string and …
   - Review: not yet planned (phase TBD)
 - **ACC-C2-1** Argument coercion and per-provider schema sanitising so one odd schema cannot break a request
@@ -310,15 +315,42 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-I11-1** Bang shell `!cmd` on the local host through the same safety guards; nothing enters history
   - Review: not yet planned (phase TBD)
 - **ACC-I12-1** Home resolution (`INDUS_HOME`, `~/.indus`, `%LOCALAPPDATA%\indus`, suffix for side-by-side …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/foundation/test_home.py::test_resolution_table`
+  - `tests/unit/foundation/test_home.py::test_resolution_order`
+  - `tests/unit/foundation/test_home.py::test_override_does_not_leak_between_contexts`
+- **ACC-I12-2** Home skeleton: working dirs created owner-only (0700), seeded files 0600
+  - `tests/unit/foundation/test_layout.py::test_fresh_home_gets_every_dir_owner_only_and_a_persona`
+  - `tests/unit/foundation/test_log.py::test_files_owner_only`
 - **ACC-I13-1** Profiles: create (optional clone without messaging credentials), list, use (sticky), show, delete …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/foundation/test_profiles.py::test_id_valid`
+  - `tests/unit/foundation/test_profiles.py::test_id_invalid`
+  - `tests/unit/foundation/test_profiles.py::test_markers`
+  - `tests/unit/foundation/test_profiles.py::test_tombstoned_profile`
+  - `tests/unit/foundation/test_profiles.py::test_write_active_default_removes_file`
+  - Review: profile create/list/use/show/delete/rename commands (P07)
+- **ACC-I13-2** `-p NAME` anywhere on the command line selects the profile before any app module is imported
+  - `tests/unit/foundation/test_preparse.py::test_short_flag`
+  - `tests/unit/foundation/test_preparse.py::test_long_flag_with_equals_anywhere`
+  - `tests/unit/foundation/test_preparse.py::test_fresh_interpreter_imports_nothing_else`
 - **ACC-I16-1** Config file: built-in defaults deep-merged, `${VAR}` expansion, comment-preserving atomic save that …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/foundation/config/test_loader.py::test_user_merges_with_default_siblings`
+  - `tests/unit/foundation/config/test_loader.py::test_env_expansion`
+- **ACC-I16-2** Config save keeps comments, order and `${VAR}` templates and never writes default values
+  - `tests/unit/foundation/config/test_writer.py::test_set_one_key_keeps_comments_and_order`
+  - `tests/unit/foundation/config/test_writer.py::test_env_template_preserved`
+  - `tests/unit/foundation/config/test_writer.py::test_default_equal_value_not_written`
+- **ACC-I16-3** A config file broken mid-edit keeps serving the last good settings
+  - `tests/unit/foundation/config/test_loader.py::test_broken_after_good_serves_last_known_good`
+- **ACC-I16-4** Config version stamp, migration runner and bounded backups
+  - `tests/unit/foundation/config/test_backups_migrations.py::test_migrate_unstamped_stamps_and_lists_defaults`
+  - `tests/unit/foundation/config/test_backups_migrations.py::test_keep_newest_five`
 - **ACC-I17-1** `indus config show
   - Review: not yet planned (phase TBD)
 - **ACC-I18-1** `.env` secrets: home file beats shell exports; locked atomic writer with a denylist of dangerous …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/foundation/test_envload.py::test_file_beats_shell`
+  - `tests/unit/foundation/test_envload.py::test_removed_recorded_key_is_cleared`
+  - `tests/unit/foundation/test_envfile.py::test_set_replaces_every_line_shape`
+  - `tests/unit/foundation/test_envfile.py::test_denylist_refused`
 - **ACC-I22-1** Auth store (`auth.json`) with cross-process lock and safe handling of unreadable or corrupt files
   - Review: not yet planned (phase TBD)
 - **ACC-I23-1** `indus auth add
@@ -354,9 +386,16 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-I51-1** In-session info commands: `/status`, `/context`, `/whoami`, `/usage`, `/insights`, `/help` …
   - Review: not yet planned (phase TBD)
 - **ACC-I53-1** Log files (agent, errors, gateway, gui) behind a non-blocking queue with rotation, session tags and …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/foundation/test_log_routing.py::test_threads_with_different_scopes_write_to_their_own_profile`
+  - `tests/unit/foundation/test_log.py::test_warning_reaches_errors_log_and_info_does_not`
+  - `tests/unit/foundation/test_log.py::test_rotation_keeps_backup_count`
+  - `tests/unit/foundation/test_log.py::test_secret_in_message_is_masked_in_the_file`
+  - `tests/unit/foundation/test_log.py::test_session_and_turn_tags_appear`
 - **ACC-I54-1** Process bootstrap: UTF-8 stdio, import hardening, dual-stack connects, scratch temp dir
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/foundation/test_bootstrap.py::test_cwd_shadowing_package_is_removed_from_sys_path`
+  - `tests/unit/foundation/test_bootstrap.py::test_non_utf8_stdio_is_reconfigured`
+  - `tests/unit/foundation/test_bootstrap.py::test_scratch_vars_exported_unless_user_set`
+  - Review: dual-stack (Happy Eyeballs) connects not built in P01 (P03)
 - **ACC-I55-1** Classic chat runs the agent in-process first. Changed (P1 decision); the reference's gateway-client …
   - Review: not yet planned (phase TBD)
 - **ACC-J1-1** `indus --tui` launcher: TTY gate, cwd pinning, resume and one-shot options, heap flag, exit summary …
@@ -480,7 +519,10 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-M9-1** Editor-provided MCP servers attached per session; curated editor toolset
   - Review: not yet planned (phase TBD)
 - **ACC-N31-1** Secrets at rest (desktop and CLI: provider keys, auth tokens, platform credentials) go to the OS …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/foundation/test_secret_store_contract.py::test_round_trip`
+  - `tests/contract/foundation/test_secret_store_contract.py::test_profile_isolation`
+  - `tests/unit/foundation/test_secret_probe.py::test_blocking_keychain_falls_back_at_the_deadline`
+  - `tests/contract/foundation/test_secret_store_contract.py::test_file_backend_is_owner_only`
 - **ACC-S1-1** POSIX installer: stage ladder with manifest and JSON frames, pinned `uv` bootstrap verified by …
   - Review: not yet planned (phase TBD)
 - **ACC-S3-1** Docker image with dispatcher, UID/GID remap and a data volume; Compose file with gateway and …
@@ -500,9 +542,16 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-S18-1** `THIRD_PARTY_NOTICES.md` crediting the reference and every dependency. Added by Indus (licence …
   - Review: not yet planned (phase TBD)
 - **ACC-Q1-1** Host facts without env input or subprocesses: OS, native and process architecture, CPU, RAM, GPU …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/platform/test_facts.py::test_gpu_nvidia_procfs`
+  - `tests/unit/platform/test_facts.py::test_gpu_sysfs_priority_amd_over_intel`
+  - `tests/unit/platform/test_facts.py::test_cpu_and_memory_from_fake_root`
+  - `tests/unit/platform/test_facts.py::test_summary_drops_keys_that_raised`
+  - `tests/unit/platform/test_facts.py::test_processor_architecture_env_is_ignored`
 - **ACC-Q2-1** Command lookup through one set of known-directory tables
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/platform/test_locate.py::test_executable_wins_over_non_executable`
+  - `tests/unit/platform/test_locate.py::test_known_dir_after_path_miss`
+  - `tests/unit/platform/test_lookup_ratchet.py::test_src_is_clean`
+  - `tests/unit/platform/test_lookup_ratchet.py::test_planted_dir_literal_is_caught`
 - **ACC-Q5-1** Linux and macOS as first-class hosts
   - Review: not yet planned (phase TBD)
 - **ACC-Q9-1** Localisation: catalogue indirection everywhere with English → seventeen language catalogues with …

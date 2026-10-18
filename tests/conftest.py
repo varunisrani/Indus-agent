@@ -7,12 +7,14 @@ variable, so nothing a test does can reach a real home.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from indus.foundation.scope import EnvView, Scope, make_scope
+from indus.foundation.secrets import open_secret_store
 from tests.fakes.clock import FakeClock
 from tests.fakes.model import Script, load_script
 
@@ -39,6 +41,36 @@ def fake_clock() -> FakeClock:
 
 
 @pytest.fixture
+def scope(isolated_home: Path, fake_clock: FakeClock) -> Scope:
+    """A ``work`` profile under the isolated root, with a fake clock (P01-06).
+
+    The env view is a snapshot of the isolated process env with ``INDUS_HOME`` pinned to the
+    profile. Secrets use the owner-only file backend (never the OS keychain); config starts unset
+    and is read with ``config.load(scope)``.
+    """
+    home = isolated_home / "profiles" / "work"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "profile.yaml").touch()
+    env = EnvView.from_process().with_overlay({"INDUS_HOME": str(home)})
+    scope = make_scope(home, env=env, clock=fake_clock)
+    return scope.with_secrets(open_secret_store(home, scope.profile_id, mode="file"))
+
+
+@pytest.fixture
 def fake_model_script() -> Callable[[str], Script]:
     """Load a script from ``tests/fixtures/model_scripts/`` by name (``"hello"``) or path."""
     return load_script
+
+
+@pytest.fixture(autouse=True)
+def no_os_keychain(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """No test reaches the real OS keychain: the system lookup yields keyring's "fail" backend,
+    so ``auto`` falls back to the owner-only file. Tests that need a keychain pass their own."""
+    from keyring.backends import fail
+
+    from indus.foundation import secrets
+
+    secrets.reset_probe_cache()
+    monkeypatch.setattr(secrets, "_system_keyring", fail.Keyring)
+    yield
+    secrets.reset_probe_cache()
