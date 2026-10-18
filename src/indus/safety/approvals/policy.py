@@ -13,11 +13,12 @@ Fixed order (floors before every bypass, R02.4):
 6. nobody can answer (cron, single query, unattended, or no broker): the context's policy,
    ``deny`` (default) blocks a dangerous command at once, ``approve`` lets it run (R02.27);
 7. detection: not dangerous, or the pattern was approved for this session → approved;
-8. a person decides (``human``).
+8. a person decides (``human``); in ``smart`` mode the auxiliary-model judge answers first and
+   the person is asked only when it does not approve (``smart``, P08-14).
 
-``approvals.mode`` defaults to ``manual`` (D-16.53, one defaults table D-16.35); ``smart`` is
-accepted and asks a person like ``manual`` until P08 adds the pre-judge. Every setting is read
-through the scope on each call, so a mode change applies to the next command.
+``approvals.mode`` defaults to ``manual`` (D-16.53, one defaults table D-16.35); ``smart`` is the
+opt-in pre-judge and needs ``ctx.judge`` (without one it asks the person like ``manual``). Every
+setting is read through the scope on each call, so a mode change applies to the next command.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from collections.abc import Iterable
 from typing import cast
 
 from indus.foundation.scope import Scope, scope_or_none
-from indus.safety.approvals import floors
+from indus.safety.approvals import floors, smart
 from indus.safety.approvals.decision import (
     ApprovalContext,
     ApprovalDecision,
@@ -327,5 +328,7 @@ async def decide(command: str, ctx: ApprovalContext) -> ApprovalDecision:
     if ctx.approvals.pattern_approved(key, detection.pattern_key):
         return _allowed("session", "session_approved", pattern_key=detection.pattern_key)
 
-    # 8. a person decides (smart pre-judge arrives in P08)
+    # 8. the smart pre-judge (opt-in), then a person
+    if mode == "smart" and ctx.judge is not None:
+        return await smart.decide_smart(command, detection, ctx, scope=scope, judge=ctx.judge)
     return await ask_human(command, detection, ctx, scope=scope, mode=mode)

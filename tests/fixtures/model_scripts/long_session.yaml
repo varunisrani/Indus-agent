@@ -1,0 +1,29 @@
+# P08-18 long-session soak (M2 demo). Not a turn-by-turn script: the soak test's fake model
+# follows this pattern and answers each request from what the request holds, so usage figures are
+# the real size of what was sent (4 characters per token) and summaries quote the goal they saw.
+#
+# Each user turn: the user asks for the next step; the model calls the tool once; the tool returns
+# a large log; the model answers in one line. Every compaction summary carries the goal forward.
+task: "TASK: build the inventory service with an /items endpoint and keep the ledger tests green"
+turns: 300
+seconds_between_turns: 24
+window: 64000
+tool: run_checks
+tool_output_chars: 6000
+completion_tokens: 24
+summary_goal_heading: "## Goal"
+storm:
+  turn: 150
+  status: 429
+  retry_after: "10"
+  body: '{"error": {"message": "Rate limit reached for requests", "type": "requests", "code": "rate_limit_exceeded"}}'
+keys: [primary-one, primary-two]
+fallback:
+  provider: custom
+  model: backup-model-1
+  base_url: "https://backup.invalid/v1"
+prices:
+  input: "1"
+  output: "2"
+live:
+  turns: 5

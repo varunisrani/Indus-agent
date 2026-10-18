@@ -29,6 +29,16 @@ PROFILES: tuple[ProviderProfile, ...] = (
         base_url="https://api.openai.com/v1", env_vars=("OPENAI_API_KEY",),
         max_tokens_param="max_completion_tokens", supports_vision=True,
         reasoning_models=("o1", "o3", "o4", "gpt-5"),
+        # Fast mode (formerly priority processing), checked 2026-10-18: `service_tier: "priority"`
+        # per https://developers.openai.com/api/reference/cli/resources/responses/methods/create;
+        # models = the Fast table of https://developers.openai.com/api/docs/pricing (exact ids).
+        fast_body={"service_tier": "priority"},
+        fast_models=(
+            "gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-6-sol", "gpt-5.6-sol",
+            "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2",
+            "gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o",
+            "gpt-4o-2024-05-13", "gpt-4o-mini", "o3", "o4-mini",
+        ),
     ),
     # https://docs.anthropic.com/en/api/overview (2026-10-18)
     ProviderProfile(
@@ -37,6 +47,11 @@ PROFILES: tuple[ProviderProfile, ...] = (
         base_url="https://api.anthropic.com", api_mode="anthropic_messages",
         env_vars=("ANTHROPIC_API_KEY",),
         supports_vision=True, supports_model_listing=False,
+        # https://platform.claude.com/docs/en/build-with-claude/fast-mode (2026-10-18): top-level
+        # `speed: "fast"`; the beta header is required for Opus 5 / 4.8 (research preview) and
+        # accepted, not needed, for Opus 5.5; Claude API only.
+        fast_body={"speed": "fast"}, fast_headers={"anthropic-beta": "fast-mode-2026-02-01"},
+        fast_models=("claude-opus-5-5", "claude-opus-5", "claude-opus-4-8"),
     ),
     # https://ai.google.dev/gemini-api/docs/api-key and .../docs/text-generation (2026-10-18):
     # key in the x-goog-api-key header; the native generateContent wire (P08-11).

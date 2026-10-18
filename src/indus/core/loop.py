@@ -16,9 +16,13 @@ reads the answer's usage from the session's usage ledger (one path, ``core.usage
 provider-proven overflow (413, prompt too long, output cap too large) gets one bounded recovery
 (``core.overflow``) instead of ending the turn.
 
-Restarts that produced no answer (a redirect, a route change, an overflow recovery) give the
-iteration back and bump ``restart_count``; more than ``max_restarts`` end the turn. When the
-budget runs out, one toolless grace request asks for a summary (retried once when empty, think
+Fallback (P08-13): a provider failure that outlived P03's retries and the credential pool, a
+content-filter refusal with nothing shown, or the empty-answer ladder giving up moves the session
+to the next fallback route (``core.fallback``) and the request is rebuilt for it.
+
+Restarts that produced no answer (a redirect, a route change, a fallback, an overflow recovery)
+give the iteration back and bump ``restart_count``; more than ``max_restarts`` end the turn. When
+the budget runs out, one toolless grace request asks for a summary (retried once when empty, think
 blocks removed), else a fixed limit reply is given.
 
 An exception escaping an iteration counts against ``max_outer_errors``; one raised only inside
@@ -36,6 +40,7 @@ from typing import Any
 from indus.core import loop_texts as texts
 from indus.core.compression.engine import expect_usage, run_gate
 from indus.core.exit_reasons import ExitReason, Failure
+from indus.core.fallback import fall_back
 from indus.core.finalize import close_open_calls, finalize_turn
 from indus.core.interrupts import redirect_rows, steer_row
 from indus.core.overflow import is_overflow, recover_overflow
@@ -292,6 +297,8 @@ async def _call_model(
             return None
         if state.runtime.context is not None and is_overflow(verdict):
             return verdict
+        if await _try_fallback(state, verdict):
+            return RouteChanged(None, 0, 0)
         _end_provider(state, verdict)
         return None
     except ProviderError as exc:
@@ -309,6 +316,18 @@ async def _call_model(
         control.bind_model_call(None)
         visible, hidden = state.scrubber.flush()
         _shown(state, visible, hidden)
+
+
+async def _try_fallback(
+    state: TurnState, verdict: ClassifiedError | None, reason: str | None = None
+) -> bool:
+    """True when the request should be rebuilt and sent again: the session moved to a fallback
+    route, or waited out a short rate limit on the main one."""
+    decision = await fall_back(state, verdict, reason)
+    if decision.action == "wait":
+        await _wait(state, decision.seconds)
+        return not state.control.interrupted
+    return decision.action == "switched"
 
 
 def _provider_cancelled(error: BaseException | None) -> bool:
@@ -365,6 +384,10 @@ async def _handle_answer(state: TurnState, raw: CallResult) -> None:
     result, visible = _cleaned(state, raw)
     response = result.response
     options = state.options
+    refused = response.finish_reason == "content_filter" and not response.tool_calls
+    if refused and not visible.strip() and await _try_fallback(state, None, "content_filter"):
+        _refund(state, "fallback")
+        return
     if result.stub_terminal or response.finish_reason == "length":
         limits = LengthLimits(
             context_window=options.context_length,
@@ -417,6 +440,11 @@ async def _handle_answer(state: TurnState, raw: CallResult) -> None:
 
 async def _apply(state: TurnState, verdict: Verdict, response: NormalizedResponse) -> None:
     """Carry out a P04-17 verdict."""
+    gave_up = verdict.action == "end" and verdict.failure_reason == "empty_response"
+    if gave_up and await _try_fallback(state, None, "empty_response"):
+        state.drop_scaffold()
+        _refund(state, "fallback")
+        return
     if verdict.notice:
         state.emit(Notice, level=NoticeLevel.WARNING, text=verdict.notice)
     if verdict.drop_scaffold:

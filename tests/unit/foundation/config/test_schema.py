@@ -23,6 +23,8 @@ def test_decided_defaults() -> None:
         "local_stream_stale_timeout": 900,
         "turn_liveness_s": 600.0,  # P08-16
         "run_budget_s": 0.0,  # P08-16: off
+        "fast_mode": "normal",  # P08-15
+        "fast_window_s": 60.0,  # P08-15
     }
     # Container backend rows (``docker_*``, ``container_*``) are pinned by the P11 docker tests.
     core_terminal = {
@@ -68,6 +70,7 @@ def test_decided_defaults() -> None:
         "idle_after_s": 0,
     }
     assert d["context"] == {"engine": "builtin"}
+    assert d["fallback"] == {"min_switch_reset_s": 0.0}  # P08-13: always switch
     assert d["approvals"] == {
         "mode": "manual",
         "timeout": 300,
@@ -75,6 +78,8 @@ def test_decided_defaults() -> None:
         "cron_mode": "deny",
         "single_query_mode": "deny",
         "unattended_mode": "deny",
+        "denial_breaker_threshold": 3,  # P08-14
+        "smart_policy": "",  # P08-14
     }
     assert d["command_allowlist"] == []
     assert d["file_read_max_chars"] == 100000

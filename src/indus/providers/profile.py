@@ -106,6 +106,12 @@ class ProviderProfile:
     adaptive_thinking_models: tuple[str, ...] = ()
     # Anthropic-wire hosts that document ``Authorization: Bearer`` instead of ``x-api-key``.
     bearer_auth: bool = False
+    # Fast mode (P08-15): request fields that ask for the provider's priority tier, headers that
+    # must go with them, and the exact model ids that accept them (empty: every model). Sent only
+    # to the profile's own host.
+    fast_body: Mapping[str, Any] = field(default_factory=dict, hash=False)
+    fast_headers: Mapping[str, str] = field(default_factory=dict, hash=False)
+    fast_models: tuple[str, ...] = ()
     prepare_body: BodyHook = keep_body
     classify_error: ErrorHook = no_verdict
     context_length: ContextHook = no_context_length
@@ -148,6 +154,9 @@ class ProviderProfile:
         object.__setattr__(self, "env_vars", tuple(self.env_vars))
         object.__setattr__(self, "default_headers", self._checked_headers())
         object.__setattr__(self, "model_aliases", _frozen_map(self.model_aliases))
+        object.__setattr__(self, "fast_body", MappingProxyType(dict(self.fast_body)))
+        object.__setattr__(self, "fast_headers", self._checked_fast_headers())
+        object.__setattr__(self, "fast_models", tuple(self.fast_models))
 
     def _checked_hosts(self) -> str:
         derived = ""
@@ -166,6 +175,16 @@ class ProviderProfile:
             except (UnicodeError, ValueError) as exc:
                 raise _bad(self.name, f"hostname {self.hostname!r} is not a host name") from exc
         return derived
+
+    def _checked_fast_headers(self) -> Mapping[str, str]:
+        headers: dict[str, str] = {}
+        for key, value in dict(self.fast_headers).items():
+            if not isinstance(key, str) or not isinstance(value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise _bad(self.name, "fast-mode header names and values must be strings")
+            if not _HEADER_NAME_RE.match(key) or "\r" in value or "\n" in value:
+                raise _bad(self.name, f"fast-mode header {key!r} is not valid")
+            headers[key] = value
+        return MappingProxyType(headers)
 
     def _checked_headers(self) -> Mapping[str, str]:
         headers: dict[str, str] = {}

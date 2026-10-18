@@ -6,6 +6,7 @@ terminal add the non-interactive guidance and exit 1 (R04.19); on a terminal off
 
 - the configured route (``model.provider`` / ``model.base_url``) resolves;
 - a provider key in the secret store, the profile's ``.env`` or the environment;
+- a usable credential in a provider's pool (``indus auth add``, P08-12);
 - a local base URL (``model.base_url`` on a loopback host, or a profile's base-URL variable such
   as ``OPENAI_BASE_URL``);
 - a provider recorded as signed in by the auth store (``providers.auth.store``; metadata only).
@@ -100,7 +101,7 @@ def _configured_route(scope: Scope) -> str | None:
 
 def _provider_key(scope: Scope, file_values: Mapping[str, str]) -> str | None:
     from indus.providers.registry import Registry
-    from indus.providers.route import find_key, is_placeholder
+    from indus.providers.route import find_key, is_placeholder, pool_key_for
 
     try:
         profiles = Registry(scope).list_providers()
@@ -116,6 +117,9 @@ def _provider_key(scope: Scope, file_values: Mapping[str, str]) -> str | None:
         for name in profile.env_vars:
             if not is_placeholder(file_values.get(name)):
                 return f"{name} in .env for {profile.name}"
+    for profile in profiles:
+        if profile.auth_type != "none" and pool_key_for(scope, profile) is not None:
+            return f"credential pool for {profile.name}"
     return None
 
 

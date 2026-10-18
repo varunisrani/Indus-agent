@@ -479,6 +479,7 @@ class GateRequest:
     background: bool = False
     cwd: str | None = None
     run_context: object | None = None
+    judge: object | None = None  # the smart pre-judge (``approval_judge`` extra, P08-14)
 
 
 @dataclass(frozen=True)
@@ -528,6 +529,7 @@ async def pipeline_gate(request: GateRequest) -> GateVerdict:
             broker=cast(ServerRequestPort | None, request.broker),
             isolated=request.flags.isolated,
             cwd=request.cwd,
+            judge=request.judge,
         )
         decided = await approvals.decide(request.command, context)
     except Exception as exc:
@@ -542,6 +544,9 @@ async def pipeline_gate(request: GateRequest) -> GateVerdict:
         if decided.user_approved:
             what = description or "flagged"
             note = f"This command needed approval ({what}) and the user approved it."
+        elif decided.outcome == "smart_approved":
+            what = description or "flagged"
+            note = f"This command was flagged ({what}); the safety reviewer approved this run."
         return GateVerdict("approved", note=note, description=description, decision=decided)
     if decided.status == "pending":
         return GateVerdict(
@@ -632,6 +637,7 @@ class _CallContext:
     cancel: CancelSignal | None
     environments: EnvironmentRegistry
     run_context: object | None
+    judge: object | None = None
 
 
 class TerminalTool:
@@ -680,9 +686,11 @@ class TerminalTool:
         cancel: CancelSignal | None = None,
         environments: EnvironmentRegistry | None = None,
         run_context: object | None = None,
+        approval_judge: object | None = None,
     ) -> str:
-        """The handler. ``broker``, ``cancel`` and ``environments`` come from
-        ``ToolContext.extras``; without ``environments`` the process runtime's registry is used."""
+        """The handler. ``broker``, ``cancel``, ``environments``, ``run_context`` and
+        ``approval_judge`` come from ``ToolContext.extras``; without ``environments`` the process
+        runtime's registry is used."""
         ctx = _CallContext(
             session_id,
             turn_id,
@@ -690,6 +698,7 @@ class TerminalTool:
             cancel,
             environments if environments is not None else self.shared.environments,
             run_context,
+            approval_judge,
         )
         try:
             return await self._handle(args, scope, ctx)
@@ -729,6 +738,7 @@ class TerminalTool:
                 steps.background,
                 cwd=start_cwd,
                 run_context=ctx.run_context,
+                judge=ctx.judge,
             )
         )
         if verdict.status == "pending":

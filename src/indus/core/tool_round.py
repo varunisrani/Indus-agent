@@ -20,9 +20,10 @@ Order (R01.2, R01.3, R01.14):
 
 Handlers may ask for these context keywords beyond the ``ToolContext`` fields (``extras``):
 ``broker`` (the session's server-request port), ``cancel`` (the turn's stop event) and
-``environments`` (``SessionRuntime.environments``, the terminal backends) and ``run_context``
+``environments`` (``SessionRuntime.environments``, the terminal backends), ``run_context``
 (``SessionRuntime.run_context``: ``interactive``, ``single_query``, ``cron`` or ``unattended``, set
-by the host), each offered only when the turn has one.
+by the host) and ``approval_judge`` (``SessionRuntime.approval_judge``, the smart approval judge,
+P08-14), each offered only when the turn has one.
 """
 
 from __future__ import annotations
@@ -467,6 +468,8 @@ def handler_extras(state: TurnState) -> dict[str, Any]:
         extras["environments"] = state.runtime.environments
     if state.runtime.run_context is not None:
         extras["run_context"] = state.runtime.run_context
+    if state.runtime.approval_judge is not None:
+        extras["approval_judge"] = state.runtime.approval_judge
     return extras
 
 

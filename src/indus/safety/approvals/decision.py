@@ -53,6 +53,7 @@ type Outcome = Literal[
     "allowlisted",  # command_allowlist
     "session_approved",  # pattern approved earlier in this session
     "user_approved",  # a person said once / session / always
+    "smart_approved",  # the smart judge approved it for this run (P08-14)
     "prepared",  # a decision prepared for this exact command
     "hardline",  # never runs
     "runtime_delete",  # would delete the interpreter Indus runs from
@@ -60,6 +61,7 @@ type Outcome = Literal[
     "user_deny_rule",  # approvals.deny
     "unattended_deny",  # nobody can answer and the context's policy is deny
     "denied",  # a person said deny
+    "smart_denied",  # the smart judge refused it and the person, asked, said deny too
     "timeout",  # nobody answered in time
     "not_answered",  # withdrawn or undeliverable
     "no_scope",  # no profile to decide for
@@ -135,9 +137,9 @@ class ApprovalDecision:
 
     @property
     def counts_as_denial(self) -> bool:
-        """Only a judgement that the command is bad counts towards a denial breaker (P08);
-        a timeout or a withdrawn question never does (R02.5)."""
-        return self.outcome == "denied"
+        """Only a judgement that the command is bad counts as a denial; a timeout or a withdrawn
+        question never does (R02.5). The smart breaker itself counts judge verdicts (P08-14)."""
+        return self.outcome in ("denied", "smart_denied")
 
 
 class ApprovalState:
@@ -238,7 +240,9 @@ class ApprovalContext:
     otherwise the unattended kind. ``broker``: the session's server-request port (the tool
     context offers it as ``broker``); without one nobody can be asked. ``isolated``: the
     environment's ``BackendFlags.isolated`` (false whenever a host path is mounted, R02.6).
-    ``cwd``: where relative paths in the command start (optional).
+    ``cwd``: where relative paths in the command start (optional). ``judge``: the smart
+    pre-judge (``smart.Judge``, bound to the session's auxiliary model by the host); without one
+    ``smart`` mode asks the person like ``manual``.
     """
 
     scope: Scope | None = None
@@ -249,6 +253,7 @@ class ApprovalContext:
     isolated: bool = False
     cwd: str | None = None
     state: ApprovalState | None = None
+    judge: Any = None
 
     @property
     def approvals(self) -> ApprovalState:

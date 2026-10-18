@@ -46,6 +46,7 @@ from indus.tools.spill import SpillSink
 
 if TYPE_CHECKING:
     from indus.core.compression.engine import ContextEngine
+    from indus.core.fallback import FallbackChain
     from indus.core.liveness import RunBudget
     from indus.core.model_call import ModelCaller
     from indus.core.prompt.builder import BuildContext
@@ -146,6 +147,11 @@ class SessionRuntime:
     # Told ``(old id, new id)`` when a rotating compaction continued the conversation in a child
     # session (P08-05); the Agent moves its sink, ledger and host onto the new id.
     on_continued: Callable[[str, str], None] | None = None
+    # The session's fallback chain (P08-13): tried by the loop after retries and the credential
+    # pool gave up; the prologue restores the main route at turn start. None: no fallback.
+    fallback: FallbackChain | None = None
+    # The smart approval judge (P08-14), offered to tools as ``approval_judge``; None: no judge.
+    approval_judge: object = None
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

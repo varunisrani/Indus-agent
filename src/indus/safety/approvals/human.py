@@ -164,7 +164,7 @@ async def ask_human(
         "choices": [choice.value for choice in offered],
     }
     if mode == "smart":
-        log.debug("approvals.mode smart: no pre-judge before P08; asking the person")
+        log.debug("approvals.mode smart: the judge did not approve; asking the person")
     started = scope.clock.monotonic()
 
     def waited() -> float:

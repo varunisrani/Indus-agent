@@ -18,6 +18,11 @@ session's ``UsageLedger``, also written to the store); the context engine listen
 the host's auxiliary client (P08-17) bound to this session's route and ledger; without one, the
 compression summary asks the main route, recorded under the ``compression`` task tag.
 
+Fast mode (P08-15): ``Agent.fast`` holds the session's ``/fast`` choice; the caller layers the
+route's priority tier onto a request next to ``finish_request`` while it is active, and each
+started turn opens the ``auto`` window. The smart approval judge (P08-14) is the session's
+auxiliary client, offered to tools as ``approval_judge``.
+
 A rotating compaction (``compression.in_place: false``) continues the conversation in a child
 session: the agent's sink, ledger and engine move to the child id and ``on_session_moved``
 listeners (the host) are told ``(old id, new id)``.
@@ -28,6 +33,11 @@ the agent starts goes through ``spawn``, which runs it with the agent's own ``Sc
 context, whatever scope the caller has (R01.16). ``close`` stops a running turn, runs the agent's
 closers and the task cleanups tool backends registered, and closes clients the agent owns; every
 step is guarded and the whole thing runs once.
+
+Credentials and fallback (P08-12, P08-13): each request asks the provider's live credential
+pool (``Agent.pools``; subagents get the parent's through ``AgentOptions.pools``) for its key and
+rotates on key failures; what the pool cannot fix goes to the session's ``FallbackChain``, which
+the loop tries and the prologue rolls back at the next turn.
 
 R01.5: the caller reads ``binding.state`` once per request. A request built for another model is
 not sent, and a retry is never sent once the binding's generation moved: the call ends
@@ -46,6 +56,7 @@ from typing import Any, Literal
 
 import httpx
 
+from indus.core import fast_mode
 from indus.core.cleanup import TASK_CLEANUPS, CleanupRegistry
 from indus.core.compression.engine import (
     BuiltinEngine,
@@ -57,6 +68,8 @@ from indus.core.compression.engine import (
 )
 from indus.core.compression.summarize import AuxSummarizer, Summarizer
 from indus.core.events import EventListener, EventSink, as_sink
+from indus.core.fallback import FallbackChain
+from indus.core.fast_mode import FastMode
 from indus.core.loop import run_turn
 from indus.core.model_call import OnEvent, OnWait, RouteCaller
 from indus.core.persist import MemoryStore, StateStore, TranscriptStore
@@ -82,12 +95,15 @@ from indus.foundation.ids import new_session_id
 from indus.foundation.scope import Scope, spawn_with_scope
 from indus.protocol.requests_port import ServerRequestPort
 from indus.providers.auxiliary import AuxClient
+from indus.providers.classify import ClassifiedError, classify
 from indus.providers.context_length import ListModels
+from indus.providers.pool import Adjust, PoolSet
 from indus.providers.retry import DEFAULT_MAX_RETRIES, clamp_max_retries
 from indus.providers.route import RuntimeRoute
 from indus.providers.streaming import CallOutcome, RouteChanged, StaleStreak, StreamFlags
 from indus.providers.timeouts import TimeoutPolicy
 from indus.providers.types import ChatRequest
+from indus.safety.approvals.smart import judge_from_aux
 from indus.state import usage as usage_rows
 from indus.state.usage import UsageDelta
 from indus.tools import toolsets
@@ -161,6 +177,8 @@ class AgentOptions:
     summarizer: Summarizer | None = None
     # The host's auxiliary client (P08-17); each agent binds it to its own route and ledger.
     aux: AuxClient | None = None
+    # Live credential pools (P08-12); a subagent gets its parent's. Default: the scope's.
+    pools: PoolSet | None = None
 
 
 @dataclass
@@ -192,6 +210,11 @@ class BoundCaller:
     # Who drives the session (``auto`` cache tier) and the prompt's static prefix, if known.
     source: str = ""
     static_prefix: Callable[[], str | None] = lambda: None
+    # Live credential pools (P08-12) and the fallback chain's eager rule (P08-13).
+    pools: PoolSet | None = None
+    eager: Callable[[ClassifiedError], bool] | None = None
+    # The session's fast mode (P08-15): the priority tier layered onto a request, if any.
+    fast: FastMode | None = None
     _flags: dict[tuple[str, str, str], StreamFlags] = field(
         default_factory=dict[tuple[str, str, str], StreamFlags]
     )
@@ -203,12 +226,21 @@ class BoundCaller:
     def model(self) -> str:
         return self.binding.state.model
 
-    def caller_for(self, state: RouteState, generation: int) -> RouteCaller:
+    def caller_for(
+        self,
+        state: RouteState,
+        generation: int,
+        *,
+        route: RuntimeRoute | None = None,
+        adjust: Adjust | None = None,
+    ) -> RouteCaller:
+        """``route``: the bound route carrying a pool credential (default: the bound route)."""
         key = (state.provider, state.base_url, state.model)
         binding = self.binding
+        target = route if route is not None else state.route
         return RouteCaller(
             client=state.client,
-            route=state.route,
+            route=target,
             clock=self.clock,
             policy=self.policy,
             max_retries=self.max_retries,
@@ -216,7 +248,29 @@ class BoundCaller:
             streak=self._streaks.setdefault(key, StaleStreak()),
             epoch=lambda: binding.generation,
             still_current=lambda: binding.generation == generation,
+            classify=self._classifier(target, adjust),
         )
+
+    def _classifier(
+        self, route: RuntimeRoute, adjust: Adjust | None
+    ) -> Callable[[BaseException], ClassifiedError]:
+        """P03's classifier with the route, its profile and the clock (so ``reset_at`` is known),
+        then the pool's per-attempt rule and the chain's eager rule."""
+        clock, eager = self.clock, self.eager
+
+        def run(error: BaseException) -> ClassifiedError:
+            verdict = classify(error, route=route, profile=route.profile, clock=clock)
+            if adjust is not None:
+                verdict = adjust(verdict)
+            if eager is not None and verdict.retryable and eager(verdict):
+                verdict = replace(verdict, retryable=False)
+            return verdict
+
+        return run
+
+    def reset_streak(self, state: RouteState) -> None:
+        """A route switch: the stale streak of the route now bound starts at zero."""
+        self._streaks.pop((state.provider, state.base_url, state.model), None)
 
     async def call(
         self, request: ChatRequest, *, on_event: OnEvent, on_wait: OnWait | None = None
@@ -241,8 +295,30 @@ class BoundCaller:
             native=state.api_mode == "anthropic_messages",
             static_prefix=self.static_prefix() if state.cache.markers else None,
         )
-        caller = self.caller_for(state, generation)
-        return await caller.call(request, on_event=on_event, on_wait=on_wait)
+        # The priority tier (P08-15) goes on next, so every pooled key below carries it.
+        tier = None
+        if self.fast is not None:
+            request, fast_route, tier = self.fast.layer(request, state.route)
+            if fast_route is not state.route:
+                state = replace(state, route=fast_route)
+        pool = self.pools.for_route(state.route) if self.pools is not None else None
+        if pool is None:
+            caller = self.caller_for(state, generation)
+            outcome = await caller.call(request, on_event=on_event, on_wait=on_wait)
+            return fast_mode.served(outcome, tier)
+
+        async def send(route: RuntimeRoute, adjust: Adjust) -> CallOutcome:
+            caller = self.caller_for(state, generation, route=route, adjust=adjust)
+            return await caller.call(request, on_event=on_event, on_wait=on_wait)
+
+        binding = self.binding
+        outcome = await pool.call(
+            state.route,
+            send,
+            still_current=lambda: binding.generation == generation,
+            answered=lambda outcome: not isinstance(outcome, RouteChanged),
+        )
+        return fast_mode.served(outcome, tier)
 
 
 def _stable_tier(lifecycle: PromptLifecycle) -> str | None:
@@ -293,6 +369,9 @@ class Agent:
         self.todo: TodoWiring | None = None
         self.usage: UsageLedger = UsageLedger(clock=scope.clock)
         self.aux: AuxClient | None = None
+        self.pools: PoolSet | None = self.options.pools
+        self.fallback: FallbackChain | None = None
+        self.fast: FastMode | None = None
         self._former_ids: list[str] = []
         self._moved: list[Callable[[str, str], object]] = []
 
@@ -418,12 +497,17 @@ class Agent:
         self._sink = as_sink(session_id, self._sink_in)
 
     def _open_client(self) -> None:
+        if self.pools is None:
+            self.pools = PoolSet.from_scope(self.scope)
+        self.fast = FastMode(self.scope, lambda: self.sink.session_id)
         self._caller = BoundCaller(
             self.binding,
             self.scope.clock,
             max_retries=self._max_retries(),
             policy=self.options.policy,
             source=self.options.source or self.options.platform,
+            pools=self.pools,
+            fast=self.fast,
         )
 
     def _max_retries(self) -> int:
@@ -512,7 +596,19 @@ class Agent:
             source=options.source or options.platform,
             session_fields=options.session_fields,
             on_continued=self._continued,
+            # The smart approval judge asks the session's auxiliary model (P08-14).
+            approval_judge=judge_from_aux(self.aux) if self.aux is not None else None,
         )
+        caller = self.caller
+        self.fallback = FallbackChain(
+            self.scope,
+            binding,
+            clock=self.scope.clock,
+            pools=self.pools,
+            on_switch=caller.reset_streak,
+        )
+        self._runtime.fallback = self.fallback
+        caller.eager = self.fallback.wants_eager
         self.binding.add_dependent(prompt_identity(lifecycle))
         self.binding.add_dependent(self._follow_route)
 
@@ -616,6 +712,10 @@ class Agent:
             self._former_ids.append(old)
         self.sink.session_id = new
         self.usage.session_id = new
+        if self.fast is not None:  # a /fast choice follows the conversation
+            self.fast.table.move(
+                fast_mode.session_key(self.scope, old), fast_mode.session_key(self.scope, new)
+            )
         for listener in list(self._moved):
             try:
                 listener(old, new)
@@ -666,6 +766,8 @@ class Agent:
             broker=self.broker,
             next_seq=self.sink.next_seq,
         )
+        if self.fast is not None:
+            self.fast.begin_turn()  # ``auto`` asks for the priority tier for a window per turn
         task = self.spawn(run_turn(state), name=f"turn {ident}")
         running = RunningTurn(ident, number, state, task)
         self._current = running

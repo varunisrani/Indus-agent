@@ -77,6 +77,7 @@ markers = [
     "ref: needs the pinned reference checkout (INDUS_REF)",
     "network: needs network access",
     "docker: needs a reachable Docker daemon (live backend lanes, P11-21)",
+    "live: talks to a real provider with a real key (INDUS_LIVE=1); skips cleanly without one",
 ]
 
 [tool.importlinter]

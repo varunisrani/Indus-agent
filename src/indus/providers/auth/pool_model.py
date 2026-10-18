@@ -279,6 +279,7 @@ class Pool:
             entry.status = "ok"
             entry.cooldown_until = None
             entry.last_error_class = None
+            entry.extra.pop("model_benches", None)  # per-model benches of the runtime (P08-12)
         return list(chosen)
 
     def set_priority(self, target: str | int, priority: int) -> PoolEntry:

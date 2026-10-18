@@ -32,6 +32,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_streaming.py::test_stall_before_first_delta_reconnects`
   - `tests/unit/providers/test_streaming.py::test_breaker_trips_after_five_stalls`
   - `tests/unit/providers/test_streaming.py::test_route_epoch_change_returns_route_changed`
+  - `tests/unit/core/test_fallback.py::test_second_request_after_fallback_goes_to_the_new_host_and_primary_returns`
+  - `tests/unit/providers/test_pool.py::test_call_stops_rotating_once_the_route_moved`
 - **R01.6** Partial delivery
   - `tests/unit/providers/test_streaming.py::test_stall_after_visible_text_returns_length_stub`
   - `tests/unit/providers/test_streaming.py::test_stub_names_at_most_three_dropped_tools`
@@ -54,12 +56,18 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/core/compression/test_engine.py::test_repeated_stall_commits_the_fallback`
   - `tests/unit/core/compression/test_engine.py::test_three_overloads_commit_the_fallback`
 - **R01.10** Fallback is turn-scoped and stateful
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/test_fallback.py::test_activation_rebinds_every_field_and_restore_undoes_all_of_it`
+  - `tests/unit/core/test_fallback.py::test_a_failed_activation_still_resets_the_index`
+  - `tests/unit/core/test_fallback.py::test_no_restored_notice_when_nothing_fell_back`
+  - `tests/unit/core/test_fallback.py::test_an_unentitled_primary_is_not_restored`
+  - `tests/unit/core/test_fallback.py::test_a_manual_switch_cancels_the_restore`
 - **R01.11** Key leakage across endpoints
   - `tests/unit/providers/test_hosts.py::test_spoof_table_never_matches`
   - `tests/unit/providers/test_hosts.py::test_property_match_implies_host_or_subdomain`
   - `tests/unit/providers/test_route.py::test_openrouter_key_never_sent_to_custom_host`
   - `tests/unit/providers/test_route.py::test_vendor_key_only_on_exact_host`
+  - `tests/unit/core/test_fallback.py::test_api_mode_is_detected_from_the_entry_url_by_exact_host`
+  - `tests/unit/providers/test_pool.py::test_key_is_never_leased_to_another_host`
   - `tests/unit/providers/test_route.py::test_generic_key_not_sent_to_another_vendor_host`
   - `tests/unit/providers/test_route.py::test_config_anthropic_ignores_shell_openai_base_url`
   - `tests/unit/providers/test_classify.py::test_host_hint_only_for_non_default_host`
@@ -110,6 +118,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/approvals/test_human.py::test_timeout_blocks_with_timeout_outcome`
   - `tests/unit/safety/approvals/test_human.py::test_withdrawn_is_not_answered`
   - `tests/unit/safety/approvals/test_human.py::test_undeliverable_is_not_answered`
+  - `tests/unit/safety/approvals/test_smart.py::test_timeouts_and_unanswered_prompts_never_count`
+  - `tests/unit/safety/approvals/test_smart.py::test_judge_failure_or_deadline_asks_the_person`
 - **R02.6** Isolation is about mounts, not backend names
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
   - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
@@ -193,7 +203,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/docker/test_args.py::test_pids_limit_is_2048`
   - `tests/unit/backends/docker/test_environment.py::test_persistent_cleanup_leaves_it_running`
 - **R02.24** Async smart-approver as an injection target
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/approvals/test_smart.py::test_judge_sees_a_fenced_command_without_comments`
+  - `tests/unit/safety/approvals/test_smart.py::test_injection_inside_the_command_does_not_change_the_path`
+  - `tests/unit/safety/approvals/test_smart.py::test_verdict_table`
+  - `tests/unit/safety/approvals/test_smart.py::test_operator_policy_goes_only_into_the_system_message`
+  - `tests/unit/safety/approvals/test_smart.py::test_hardline_never_reaches_the_judge`
 - **R02.25** Toolset membership vs registration
   - Review: not yet planned (P00-guards)
 - **R02.26** Send-message is not a tool

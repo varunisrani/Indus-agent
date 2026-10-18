@@ -8,7 +8,8 @@ base-URL variable), then the profile's defaults. Saved config beats stale shell 
 A key is attached only to its own host: a vendor's key goes to that vendor's exact hostname and
 nowhere else; the generic ``OPENAI_API_KEY`` of custom endpoints is never sent to another bundled
 vendor's host. Keys are looked up in the secret store first, then in the scope's env view, and
-placeholder-shaped values count as missing.
+placeholder-shaped values count as missing. When no key variable resolves, the provider's
+credential pool (P08-12; keys added with ``indus auth add``) may supply one.
 """
 
 from __future__ import annotations
@@ -154,6 +155,13 @@ def find_key(scope: Scope, names: tuple[str, ...]) -> tuple[str, str] | None:
     return None
 
 
+def pool_key_for(scope: Scope, profile: ProviderProfile) -> tuple[str, str] | None:
+    """``(env name or "", key)`` from ``profile``'s credential pool (a peek), or None."""
+    from indus.providers.pool import pool_key
+
+    return pool_key(scope, profile)
+
+
 def _vendor_owning(url: str) -> ProviderProfile | None:
     """The bundled vendor whose exact host ``url`` points at, if any."""
     host = parse_base_url(url).host
@@ -211,6 +219,9 @@ def _auto_profile(scope: Scope, registry: Registry, saved_url: str) -> tuple[Pro
     candidates = registry.auto_detect_candidates()
     for profile in candidates:
         if find_key(scope, profile.env_vars) is not None:
+            return profile, ""
+    for profile in candidates:
+        if profile.auth_type != "none" and pool_key_for(scope, profile) is not None:
             return profile, ""
     names = _all_key_names(candidates)
     raise NoUsableProvider(
@@ -326,14 +337,15 @@ def resolve(
     key: Secret | None = None
     key_env = ""
     if profile.auth_type != "none":
-        found_key = find_key(scope, profile.env_vars)
+        found_key = find_key(scope, profile.env_vars) or pool_key_for(scope, profile)
         if found_key is not None:
             name, value = found_key
             if key_allowed(profile, draft.base_url, name):
                 key, key_env = Secret(value), name
             elif profile.family == "vendor":
                 raise KeyHostMismatch(
-                    f"the {profile.label} key ({name}) is only sent to {profile.hostname}, "
+                    f"the {profile.label} key ({name or 'credential pool'}) is only sent to "
+                    f"{profile.hostname}, "
                     f"not to {parse_base_url(draft.base_url).host}",
                     hint="for a proxy or another endpoint use provider 'custom' or a named "
                     "provider under providers: with its own key_env",

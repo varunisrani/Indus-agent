@@ -7,6 +7,10 @@ starts where the session left off. With ``--global`` the
 choice is also saved through the config writer; leaving a custom endpoint clears the saved base
 URL and wire mode so the new key is never posted to the old host (R04.9).
 
+``/fast normal|fast|auto|status [--global]`` sets the session's fast mode (P08-15) in the
+process table the running agent reads on every request; ``--global`` also saves
+``agent.fast_mode``. A route without a priority tier gets a notice, never an error.
+
 ``/yolo`` flips the session's auto-approve switch and stores it on the session row (so a resume
 keeps it). ``/approvals`` saves ``approvals.mode`` for the profile and reads it back; the approval
 pipeline reads the setting on every check, so nothing has to be rebuilt. ``/tools enable|disable``
@@ -28,6 +32,7 @@ from indus.cli import quick_commands
 from indus.cli.resume import MODEL_OVERRIDE_KEY
 from indus.cli.slash import session_cmds
 from indus.cli.slash.context import Handler, SlashContext, SlashResult
+from indus.core import fast_mode
 from indus.core.cache_plan import cache_hit_percent
 from indus.foundation import yamlio
 from indus.foundation.config import loader, writer
@@ -264,6 +269,59 @@ def cmd_approvals(ctx: SlashContext, args: str) -> SlashResult:
         ctx.say(f"Approval mode is still {effective}; the saved value did not take effect.")
         return SlashResult()
     ctx.say(f"Approval mode: {effective} (saved for this profile).")
+    return SlashResult()
+
+
+# -- /fast ----------------------------------------------------------------------------------------
+
+FAST_USAGE = "Usage: /fast [normal|fast|auto|status] [--global]"
+
+
+def _fast_unsupported(ctx: SlashContext) -> str | None:
+    """Why the session's current route cannot take the priority tier (None: it can, or the
+    route is unknown here)."""
+    try:
+        route = ctx.port.route(ctx.session_id).route
+    except Exception:
+        log.debug("route unknown for /fast", exc_info=True)
+        return None
+    return fast_mode.unsupported_reason(route)
+
+
+def cmd_fast(ctx: SlashContext, args: str) -> SlashResult:
+    words, flags = _flags(args, "--global")
+    key = fast_mode.session_key(ctx.scope, ctx.session_id)
+    default = fast_mode.parse_mode(_fresh(ctx, "agent.fast_mode")) or "normal"
+    window = fast_mode.window_seconds(_fresh(ctx, "agent.fast_window_s"))
+    word = words[0].lower() if words else "status"
+    if word == "status" and len(words) <= 1 and not flags:
+        current = fast_mode.FAST_MODES.get(key) or default
+        lines = [f"Fast mode: {current} (default for this profile: {default})."]
+        if current == "auto":
+            lines.append(f"Each message asks for the priority tier for its first {window:g} s.")
+        reason = _fast_unsupported(ctx)
+        if reason:
+            lines.append(f"This route has no priority tier: {reason}.")
+        ctx.say(*lines)
+        return SlashResult()
+    mode = fast_mode.parse_mode(word)
+    if mode is None or len(words) > 1:
+        ctx.say(FAST_USAGE)
+        return SlashResult()
+    fast_mode.FAST_MODES.set(key, mode)
+    where = "this session"
+    if "--global" in flags and _save_config(ctx, {"agent": {"fast_mode": mode}}, "Fast mode"):
+        where = "this session and saved as the default"
+    lines = [f"Fast mode {mode} for {where}."]
+    if mode == "auto":
+        lines.append(f"Each message asks for the priority tier for its first {window:g} s.")
+    if mode != "normal":
+        reason = _fast_unsupported(ctx)
+        if reason:
+            lines.append(f"Note: {reason}, so requests go out unchanged on this route.")
+        else:
+            lines.append("The priority tier is billed at the provider's higher rates.")
+    ctx.say(*lines)
     return SlashResult()
 
 
@@ -591,6 +649,7 @@ HANDLERS: dict[str, Handler] = {
     "reasoning": cmd_reasoning,
     "yolo": cmd_yolo,
     "approvals": cmd_approvals,
+    "fast": cmd_fast,
     "tools": cmd_tools,
     "config": cmd_config,
     "status": cmd_status,

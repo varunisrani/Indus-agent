@@ -16,6 +16,8 @@ In order:
 9. the context engine (P08-05) adopts its persisted anchor once, then the turn-start preflight
    gate may compress the transcript (the user row stays in the protected tail).
 
+Before step 3 the main route is restored when a fallback ran last turn (P08-13, R01.10).
+
 The liveness watchdog and the run budget (P08-16) are registered right after the turn starts.
 
 A store failure here raises ``PersistFailed``; the loop ends the turn ``persistence_failed`` without
@@ -31,6 +33,7 @@ from typing import Any, cast
 from indus.core import liveness
 from indus.core import loop_texts as texts
 from indus.core.compression.engine import run_gate, start_session
+from indus.core.fallback import restore_primary
 from indus.core.notes import attach_notes
 from indus.core.repair import repair_transcript
 from indus.core.transcript import TranscriptRow, call_id, call_name
@@ -165,6 +168,9 @@ async def run_prologue(state: TurnState) -> None:
     state.touch("turn started")
     state.emit(TurnStarted, turn_id=state.turn_id, generation=state.generation)
     liveness.register(state)
+    # Fallback is turn-scoped (P08-13): the main route comes back before the prompt is restored
+    # or built, so its identity lines match the route this turn starts on.
+    await restore_primary(state)
 
     loaded = await _load_history(state)
     _close_crashed_batch(loaded)

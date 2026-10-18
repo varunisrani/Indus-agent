@@ -65,8 +65,25 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/providers/test_retry.py::test_cancel_during_wait_exits_within_one_slice`
 - **ACC-A22-1** Plain-language terminal failure message naming what happened, what to do and when a limit resets …
   - Review: not yet planned (phase TBD)
+- **ACC-A23-2** Credential pool rotation policy: 429 retried once then rotated, plan limit / 402 rotate at …
+  - `tests/unit/providers/test_pool.py::test_generic_429_retries_the_same_key_once_then_rotates_for_an_hour`
+  - `tests/unit/providers/test_pool.py::test_plan_limit_rotates_at_once_until_the_provider_reset`
+  - `tests/unit/providers/test_pool.py::test_billing_rotates_for_an_hour`
+  - `tests/unit/providers/test_pool.py::test_401_on_a_sign_in_refreshes_first_and_is_capped`
+  - `tests/unit/providers/test_pool.py::test_entitlement_400_benches_that_model_only_until_a_reset`
+  - `tests/unit/providers/test_pool.py::test_session_returns_to_its_original_key_after_the_cooldown`
+  - `tests/unit/core/test_fallback.py::test_pool_rotates_keys_before_the_chain_falls_back_and_gates_the_restore`
 - **ACC-A24-1** Fallback chain of provider+model pairs used after retries fail; the primary is restored at the …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_fallback.py::test_triggers`
+  - `tests/unit/core/test_fallback.py::test_skip_rules`
+  - `tests/unit/core/test_fallback.py::test_second_request_after_fallback_goes_to_the_new_host_and_primary_returns`
+  - `tests/unit/core/test_fallback.py::test_transient_errors_fall_back_after_retries`
+  - `tests/unit/core/test_fallback.py::test_content_filter_refusal_falls_back`
+- **ACC-A24-2** The primary is restored at the next turn's start unless it is cooling down, unentitled or …
+  - `tests/unit/core/test_fallback.py::test_activation_rebinds_every_field_and_restore_undoes_all_of_it`
+  - `tests/unit/core/test_fallback.py::test_rate_limited_primary_cools_down_on_a_doubling_ladder`
+  - `tests/unit/core/test_fallback.py::test_an_unentitled_primary_is_not_restored`
+  - `tests/unit/core/test_fallback.py::test_a_failed_activation_still_resets_the_index`
 - **ACC-A25-1** Output-length recovery: continuation nudges for cut-off text, larger output caps for cut-off tool …
   - Review: not yet planned (phase TBD)
 - **ACC-A26-1** Empty or thinking-only reply recovery ladder ending in a clear explanation instead of a blank …
@@ -190,6 +207,12 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/providers/test_registry.py::test_config_custom_provider_details`
   - `tests/unit/providers/test_registry.py::test_local_server_aliases`
   - `tests/unit/cli/test_model_picker.py::test_active_provider_table`
+- **ACC-A62-1** Fast mode: `/fast normal|fast|auto` layers the route's declared priority tier onto requests (always, or for a window per user turn) only on routes that declare it
+  - `tests/unit/core/test_fast_mode.py::test_tier_only_inside_the_window`
+  - `tests/unit/core/test_fast_mode.py::test_window_opens_per_turn_and_expires`
+  - `tests/unit/core/test_fast_mode.py::test_unsupported_route_is_left_alone_with_one_notice`
+  - `tests/unit/core/test_fast_mode.py::test_agent_ledger_sees_the_requested_tier`
+  - `tests/unit/core/test_fast_mode.py::test_fast_command_sets_the_session_mode`
 - **ACC-A63-1** Cross-process turn lease per session and a liveness watchdog that ends idle turns
   - `tests/unit/core/test_liveness.py::test_idle_turn_aborted_at_600_and_activity_at_599_keeps_it`
   - `tests/unit/core/test_liveness.py::test_touch_between_observe_and_commit_vetoes`
@@ -453,6 +476,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/safety/approvals/test_human.py::test_session_choice_remembers_the_pattern`
   - `tests/unit/safety/approvals/test_human.py::test_always_writes_the_allowlist`
   - `tests/unit/safety/approvals/test_human.py::test_deny_passes_reason_verbatim`
+- **ACC-E5-1** Smart pre-judge (opt-in): the auxiliary model approves once, denies into a once/deny human prompt with a breaker, and escalates every doubt to a person
+  - `tests/unit/safety/approvals/test_smart.py::test_approve_runs_once_and_remembers_nothing`
+  - `tests/unit/safety/approvals/test_smart.py::test_deny_asks_the_person_with_once_or_deny_only`
+  - `tests/unit/safety/approvals/test_smart.py::test_escalate_and_non_verdicts_ask_the_person`
+  - `tests/unit/safety/approvals/test_smart.py::test_breaker_trips_after_three_consecutive_denials`
+  - `tests/unit/safety/approvals/test_smart.py::test_any_human_approval_resets_the_breaker`
+  - `tests/unit/safety/approvals/test_smart.py::test_agent_binds_the_judge_to_its_aux_client`
 - **ACC-E6-1** Auto-approve switch (`--yolo`, `/yolo`, Shift+Tab, env) remembered per session; container backends …
   - `tests/unit/safety/approvals/test_human.py::test_auto_approve_persist_and_restore`
   - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`

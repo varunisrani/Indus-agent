@@ -56,6 +56,13 @@ class AgentSection(_Section):
     run_budget_s: float = Field(
         default=0, description="wall-clock seconds one run may take, like --run-budget (0 = off)"
     )
+    fast_mode: Literal["normal", "fast", "auto"] = Field(
+        default="normal",
+        description="the provider's priority tier: normal, fast (always) or auto (per turn)",
+    )
+    fast_window_s: float = Field(
+        default=60, description="seconds each user turn asks for the priority tier in auto mode"
+    )
 
 
 class TerminalSection(_Section):
@@ -181,6 +188,13 @@ class ApprovalsSection(_Section):
     unattended_mode: Literal["deny", "approve"] = Field(
         default="deny",
         description="risky commands where nobody can answer (API, webhooks): deny or approve",
+    )
+    denial_breaker_threshold: int = Field(
+        default=3,
+        description="smart mode: refusals in a row before the model is told to stop (0 = off)",
+    )
+    smart_policy: str = Field(
+        default="", description="smart mode: extra rules for the judge, in plain words"
     )
 
 
@@ -441,6 +455,16 @@ class PromptCachingSection(_Section):
     )
 
 
+class FallbackSection(_Section):
+    """How the main fallback chain (``fallback_providers``) switches (P08-13)."""
+
+    min_switch_reset_s: float = Field(
+        default=0.0,
+        description="stay on a rate-limited main model when its limit resets sooner than this "
+        "many seconds (wait instead of switching); 0 = always switch",
+    )
+
+
 class CompressionSection(_Section):
     """When and how a long conversation is summarised (P08-02..05)."""
 
@@ -504,6 +528,9 @@ class ConfigModel(BaseModel):
     fallback_providers: list[dict[str, Any]] = Field(
         default_factory=list[dict[str, Any]],
         description="routes tried in order when the main one fails: {provider, model} entries",
+    )
+    fallback: FallbackSection = Field(
+        default_factory=FallbackSection, description="switching to the fallback chain"
     )
     agent: AgentSection = Field(default_factory=AgentSection, description="the turn loop")
     terminal: TerminalSection = Field(

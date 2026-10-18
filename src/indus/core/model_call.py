@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     import httpx
 
     from indus.foundation.clock import Clock
+    from indus.providers.classify import ClassifiedError
 
 __all__ = ["ModelCaller", "OnEvent", "OnWait", "RouteCaller"]
 
@@ -63,6 +64,9 @@ class RouteCaller:
     # False once the route this caller was built for is no longer the bound one: the next attempt
     # (a retry included) is not sent and the call ends ``RouteChanged`` (R01.5).
     still_current: Callable[[], bool] = lambda: True
+    # The verdict for a failed attempt (P03 ``classify`` when None); the agent passes one that
+    # knows the route, its profile and the clock, plus the credential pool's per-attempt rule.
+    classify: Callable[[BaseException], ClassifiedError] | None = None
 
     @property
     def model(self) -> str:
@@ -90,5 +94,9 @@ class RouteCaller:
             )
 
         return await retry_call(
-            once, max_retries=self.max_retries, clock=self.clock, on_wait=on_wait
+            once,
+            max_retries=self.max_retries,
+            clock=self.clock,
+            on_wait=on_wait,
+            classify=self.classify,
         )
