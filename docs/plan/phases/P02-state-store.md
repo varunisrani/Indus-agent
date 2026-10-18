@@ -1,6 +1,6 @@
 # P02 · State store
 
-**Weeks:** 4–5 (1.5 weeks) · **Track:** B (Python) · **Depends on:** P01 (`Scope`, home/profiles, `fsio`, ids, errors, clock, logging, config `database.*`/`sessions.*`) · **Status:** planned
+**Weeks:** 4–5 (1.5 weeks) · **Track:** B (Python) · **Depends on:** P01 (`Scope`, home/profiles, `fsio`, ids, errors, clock, logging, config `database.*`/`sessions.*`) · **Status:** done (Agent 2, wave 4)
 
 ## Goal
 One SQLite store per profile at `<home>/state.db` that later phases can trust: a single writer with

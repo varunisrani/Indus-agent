@@ -19,6 +19,9 @@ from tests.fakes.clock import FakeClock
 from tests.fakes.model import Script, load_script
 
 FAKE_CLOCK_START = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
+# P02-21: the stress test's window in seconds. Read at import, before ``isolated_home`` drops
+# every ``INDUS_*`` variable; ``INDUS_STRESS_SECONDS=10`` shortens it for local runs.
+STRESS_SECONDS = float(os.environ.get("INDUS_STRESS_SECONDS") or 60)
 
 
 def isolate_indus_env(monkeypatch: pytest.MonkeyPatch, home: Path) -> Path:
