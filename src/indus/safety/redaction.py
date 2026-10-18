@@ -9,7 +9,8 @@ the output is a credential dump: an env dump (``env``, ``printenv``, ``export -p
 Indus's own config, auth and secret files), or output whose source is unknown. Source code and
 ordinary config keep their ``max_token = 4096`` lines, except diagnostic lines (pytest's
 ``E   …`` lines and a final ``…Error: …`` line), which print values. ``force=True`` masks even
-when ``security.redact_secrets`` is off.
+when ``security.redact_secrets`` is off. ``redact_arguments`` does the same for the arguments a
+tool call is shown with.
 
 Redaction never raises: when masking fails the text is withheld behind a marker.
 """
@@ -21,8 +22,9 @@ import re
 import shlex
 import threading
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
+from typing import Any, cast
 
 from indus.foundation.redact import Redactor, mask, redact_text
 from indus.foundation.scope import Scope, scope_or_none
@@ -30,6 +32,7 @@ from indus.foundation.scope import Scope, scope_or_none
 log = logging.getLogger(__name__)
 
 WITHHELD = "[output withheld: redaction failed]"
+_MAX_ARG_DEPTH = 64
 
 ENV_DUMP_PROGRAMS = frozenset({"env", "printenv", "set", "export", "declare", "typeset"})
 FILE_READERS = frozenset(
@@ -281,6 +284,38 @@ def redact_output(
     except Exception as exc:  # never hand back unmasked text because masking broke
         log.warning("output redaction failed: %s", type(exc).__name__)
         return WITHHELD
+
+
+def redact_arguments(arguments: Mapping[str, Any], *, scope: Scope | None = None) -> dict[str, Any]:
+    """A copy of a tool call's arguments that is safe to show on any surface (``tool.started``
+    events): every string is masked as ``redact_output`` would mask it, a string under a
+    credential-shaped key is masked whole, and each secret is masked once. The tool itself still
+    runs with the raw arguments. Never raises: when masking fails every value is withheld."""
+    current = scope if scope is not None else scope_or_none()
+    try:
+        if current is None:
+            return cast(dict[str, Any], _walk_strings(dict(arguments), redact_output, 0))
+        redactor = _redactor_for(current)
+        if not redactor.enabled:
+            return dict(arguments)
+        shaped = _walk_strings(dict(arguments), _mask_extra_shapes, 0)
+        return cast(dict[str, Any], redactor.redact_obj(shaped, force=True))
+    except Exception as exc:  # never hand back unmasked arguments because masking broke
+        log.warning("argument redaction failed: %s", type(exc).__name__)
+        return dict.fromkeys(arguments, WITHHELD)
+
+
+def _walk_strings(value: Any, fn: Callable[[str], str], depth: int) -> Any:
+    if isinstance(value, str):
+        return fn(value)
+    if depth > _MAX_ARG_DEPTH:
+        return value
+    if isinstance(value, Mapping):
+        items = cast(Mapping[Any, Any], value).items()
+        return {key: _walk_strings(item, fn, depth + 1) for key, item in items}
+    if isinstance(value, list | tuple):
+        return [_walk_strings(item, fn, depth + 1) for item in cast(Iterable[Any], value)]
+    return value
 
 
 def spill_redactor(scope: Scope) -> Callable[[str], str]:

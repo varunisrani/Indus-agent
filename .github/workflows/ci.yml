@@ -105,6 +105,30 @@ jobs:
       - name: Tests on Python 3.14
         run: uv run --locked --python 3.14 pytest -q
 
+  # Demo 1 (P06-14): the real `indus` in a pseudo-terminal against the fake model, on Linux and
+  # macOS (pty and signal behaviour differ between them).
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: End-to-end tests
+        run: uv run pytest tests/e2e -q
+
   # TypeScript workspace: Biome, tsc, vitest.
   ts:
     runs-on: ubuntu-latest
@@ -143,6 +167,7 @@ jobs:
     needs:
       - checks
       - py314
+      - e2e
       - ts
     if: always()
     runs-on: ubuntu-latest

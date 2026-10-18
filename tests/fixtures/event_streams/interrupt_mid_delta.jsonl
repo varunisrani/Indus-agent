@@ -1,0 +1,5 @@
+{"generation": 1, "seq": 0, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "turn.started"}
+{"seq": 1, "session_id": "20260101_090000_rec001", "text": "Here is the first line\n", "turn_id": "turn_1", "type": "message.delta"}
+{"seq": 2, "session_id": "20260101_090000_rec001", "text": "and a second line that ", "turn_id": "turn_1", "type": "message.delta"}
+{"local": "interrupt"}
+{"reason": "interrupted_by_user", "seq": 3, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "turn.done"}

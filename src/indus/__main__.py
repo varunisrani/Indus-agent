@@ -1,5 +1,5 @@
 """Allow `python -m indus`."""
 
-from indus.cli import main
+from indus.cli.entry import main
 
 raise SystemExit(main())

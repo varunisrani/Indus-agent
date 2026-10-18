@@ -1,0 +1,345 @@
+"""The ``indus`` click app: global flags, the command list, and argv clean-up before parsing.
+
+``REGISTRY`` is the one ordered list of top-level commands (``name -> "module:attr"``); its order
+is the ``--help`` order. Commands are imported only when used (``LazyGroup``).
+
+``rewrite_session_flags`` runs before click: ``-c/--continue`` takes an optional session name
+that may be several words long, so the words after it are joined into one value and the flag is
+always handed to click as ``--continue=<value>`` (a bare ``-c`` becomes ``--continue=__latest__``).
+The run of words after the flag ends at the next flag, or at a word naming a command when at least
+one name word came before it; a command word right after ``-c`` is the command (``indus -c chat``)
+unless another command word follows (``indus -c model chat`` resumes "model"). ``-r/--resume``
+joins its words the same way but always takes the first one.
+
+``chat`` repeats most global flags; their copies default to "not given" so a value placed before
+the subcommand is never overwritten by the subcommand's default (R04.21).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from typing import Any, cast
+
+import click
+
+from indus.cli.args import BARE_CONTINUE, CHAT_VALUE_FLAGS, ChatArgs, CliState, GlobalArgs
+from indus.cli.lazy import LazyGroup
+
+__all__ = [
+    "REGISTRY",
+    "cli",
+    "dispatch",
+    "global_options",
+    "globals_from",
+    "rewrite_session_flags",
+    "value_flag_sets",
+    "with_global_options",
+]
+
+REGISTRY: tuple[tuple[str, str, str], ...] = (
+    ("chat", "indus.cli.chat:chat_command", "Chat with the agent (the default command)."),
+)
+"""Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
+append in the order of research 04 §3.2.4."""
+
+_CONTINUE = ("-c", "--continue")
+_RESUME = ("-r", "--resume")
+
+type Decorator = Callable[[Callable[..., Any]], Callable[..., Any]]
+
+
+def _not_given(flag: bool) -> dict[str, Any]:
+    return {"default": None} if not flag else {"is_flag": True, "default": False}
+
+
+def global_options(*, repeated: bool = False) -> list[Decorator]:
+    """The global flags as click options. ``repeated`` gives ``chat``'s copies (no ``-z``,
+    ``--usage-file``, ``-V``, ``-p``)."""
+    opts: list[Decorator] = []
+    add = opts.append
+    if not repeated:
+        add(
+            click.option(
+                "-p",
+                "--profile",
+                metavar="NAME",
+                expose_value=False,
+                help="Run against the named profile (works in any position).",
+            )
+        )
+        add(
+            click.option(
+                "-z",
+                "--oneshot",
+                metavar="PROMPT",
+                default=None,
+                help="Answer one prompt and print only the final reply (for scripts).",
+            )
+        )
+        add(
+            click.option(
+                "--usage-file",
+                metavar="PATH",
+                default=None,
+                help="With -z: write a JSON usage report to PATH, even when the run fails.",
+            )
+        )
+    add(click.option("-m", "--model", default=None, help="Model for this run."))
+    add(click.option("--provider", default=None, help="Provider for this run."))
+    add(
+        click.option(
+            "--reasoning",
+            metavar="LEVEL",
+            default=None,
+            help="Reasoning effort: none, minimal, low, medium, high, xhigh, max or ultra.",
+        )
+    )
+    add(click.option("-t", "--toolsets", default=None, help="Comma-separated toolsets to enable."))
+    add(
+        click.option(
+            "-r",
+            "--resume",
+            metavar="SESSION",
+            default=None,
+            help="Resume a session by id or title; 'latest' picks the newest one here.",
+        )
+    )
+    add(
+        click.option(
+            "-c",
+            "--continue",
+            "continue_",
+            metavar="[NAME]",
+            is_flag=False,
+            flag_value=BARE_CONTINUE,
+            default=None,
+            help="Continue the session called NAME, or the newest one when no name is given.",
+        )
+    )
+    add(
+        click.option(
+            "--in",
+            "in_dir",
+            metavar="DIR",
+            default=None,
+            help="Work in DIR: change into it first and keep the session there.",
+        )
+    )
+    add(
+        click.option(
+            "--no-restore-cwd",
+            **_not_given(True),
+            help="Stay in the current directory when resuming.",
+        )
+    )
+    add(
+        click.option(
+            "-s",
+            "--skills",
+            multiple=True,
+            default=None,
+            help="Skills to preload (repeat the flag or separate with commas).",
+        )
+    )
+    add(click.option("--yolo", **_not_given(True), help="Run risky commands without asking."))
+    add(
+        click.option(
+            "--pass-session-id",
+            **_not_given(True),
+            help="Tell the model its session id.",
+        )
+    )
+    add(
+        click.option(
+            "--ignore-user-config",
+            **_not_given(True),
+            help="Use built-in settings instead of config.yaml (.env still loads).",
+        )
+    )
+    add(
+        click.option(
+            "--ignore-rules",
+            **_not_given(True),
+            help="Skip project rules files, memory and preloaded skills.",
+        )
+    )
+    add(
+        click.option(
+            "--safe-mode",
+            **_not_given(True),
+            help="Troubleshoot with every customisation off (implies both --ignore flags).",
+        )
+    )
+    add(
+        click.option(
+            "--tui/--cli",
+            "interface",
+            default=None,
+            help="Pick the full-screen interface or the classic prompt.",
+        )
+    )
+    return opts
+
+
+def with_global_options(*, repeated: bool = False) -> Decorator:
+    """One decorator adding every option of ``global_options(repeated=...)`` in order."""
+
+    def decorate(fn: Callable[..., Any]) -> Callable[..., Any]:
+        for option in reversed(global_options(repeated=repeated)):
+            fn = option(fn)
+        return fn
+
+    return decorate
+
+
+def _interface_word(value: object) -> str | None:
+    if value is True:
+        return "tui"
+    if value is False:
+        return "cli"
+    return None
+
+
+def globals_from(values: dict[str, Any]) -> GlobalArgs:
+    """``GlobalArgs`` from click's parameter values (``interface`` as a word)."""
+    values = dict(values)
+    values["interface"] = _interface_word(values.get("interface"))
+    for name in ("no_restore_cwd", "yolo", "pass_session_id"):
+        if values.get(name) is False:
+            values.pop(name)
+    if not values.get("skills"):
+        values.pop("skills", None)
+    return GlobalArgs.from_values(values)
+
+
+def _show_version(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    from indus.cli.version import version_lines
+
+    for line in version_lines():
+        click.echo(line)
+    ctx.exit(0)
+
+
+@click.group(
+    cls=LazyGroup,
+    name="indus",
+    registry=REGISTRY,
+    invoke_without_command=True,
+    context_settings={"help_option_names": ["-h", "--help"], "max_content_width": 100},
+    help="Indus Agent: a terminal agent that can run commands, edit files and search the web."
+    "\n\nRun `indus` with no command to start a chat.",
+)
+@click.option(
+    "-V",
+    "--version",
+    is_flag=True,
+    expose_value=False,
+    is_eager=True,
+    callback=_show_version,
+    help="Show the version and how Indus Agent was installed.",
+)
+@with_global_options()
+@click.pass_context
+def cli(ctx: click.Context, **values: Any) -> int:
+    """The group callback: record the global flags; with no subcommand run -z or chat."""
+    state = ctx.find_object(CliState)
+    if state is None:
+        raise click.UsageError("the indus app was started without its process state")
+    state.globals = globals_from(values)
+    if ctx.invoked_subcommand is not None:
+        return 0
+    if state.globals.oneshot is not None:
+        from indus.cli.oneshot import run_from_cli
+
+        return run_from_cli(state)
+    from indus.cli.chat import run_chat
+
+    return run_chat(state, state.globals, ChatArgs())
+
+
+def _option_flags(params: Sequence[click.Parameter]) -> tuple[set[str], set[str]]:
+    required: set[str] = set()
+    optional: set[str] = set()
+    for param in params:
+        if not isinstance(param, click.Option) or param.is_flag or param.count:
+            continue
+        names = {*param.opts, *param.secondary_opts}
+        if param.is_bool_flag:
+            continue
+        if getattr(param, "_flag_needs_value", False):
+            optional |= names
+        else:
+            required |= names
+    return required, optional
+
+
+def value_flag_sets() -> tuple[frozenset[str], frozenset[str]]:
+    """``(required-value, optional-value)`` top-level flags, read from the live app."""
+    required, optional = _option_flags(cast(LazyGroup, cli).params)
+    return frozenset(required), frozenset(optional)
+
+
+def _value_flags_all() -> frozenset[str]:
+    required, _optional = value_flag_sets()
+    return required | CHAT_VALUE_FLAGS
+
+
+def rewrite_session_flags(argv: Sequence[str], commands: Sequence[str] | None = None) -> list[str]:
+    """Join multi-word session names after ``-c``/``-r`` (see the module notes)."""
+    known = set(commands if commands is not None else cast(LazyGroup, cli).registered)
+    value_flags = _value_flags_all() - {*_RESUME}
+    out: list[str] = []
+    i = 0
+    n = len(argv)
+    while i < n:
+        token = argv[i]
+        if token == "--":
+            out.extend(argv[i:])
+            break
+        if token in _CONTINUE or token in _RESUME:
+            j = i + 1
+            words: list[str] = []
+            while j < n and not argv[j].startswith("-"):
+                word = argv[j]
+                if word in known:
+                    if words:
+                        break
+                    later = argv[j + 1 :]
+                    another = any(w in known for w in later if not w.startswith("-"))
+                    if token in _CONTINUE and not another:
+                        break
+                words.append(word)
+                j += 1
+            if token in _CONTINUE:
+                out.append(f"--continue={' '.join(words) if words else BARE_CONTINUE}")
+            elif words:
+                out.append(f"--resume={' '.join(words)}")
+            else:
+                out.append(token)
+            i = j
+            continue
+        out.append(token)
+        if token in value_flags and i + 1 < n:
+            out.append(argv[i + 1])
+            i += 2
+            continue
+        i += 1
+    return out
+
+
+def dispatch(argv: Sequence[str], state: CliState) -> int:
+    """Parse ``argv`` and run the command; returns the exit code (usage errors are 2)."""
+    args = rewrite_session_flags(argv)
+    try:
+        result = cli.main(args=args, prog_name="indus", obj=state, standalone_mode=False)
+    except click.exceptions.Abort:
+        click.echo("Stopped.", err=True)
+        return 130
+    except click.ClickException as exc:
+        exc.show()
+        return exc.exit_code
+    if isinstance(result, int) and not isinstance(result, bool):
+        return result
+    return 0

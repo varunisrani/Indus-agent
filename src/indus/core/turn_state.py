@@ -136,6 +136,7 @@ class SessionRuntime:
     hydrated: bool = False
     profile: object = None
     environments: EnvironmentRegistry | None = None
+    run_context: str | None = None
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

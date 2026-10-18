@@ -176,6 +176,61 @@ class WebSection(_Section):
 
 class DisplaySection(_Section):
     language: str = Field(default="en", description="interface language")
+    interface: Literal["cli", "tui"] = Field(
+        default="cli", description="interface on a terminal: cli (classic prompt) or tui"
+    )
+    busy_input_mode: str = Field(
+        default="interrupt",
+        description="Enter while a reply runs: interrupt, queue or steer (else: interrupt)",
+    )
+    final_response_markdown: Literal["render", "strip", "raw"] = Field(
+        default="strip",
+        description="final reply in the classic prompt: strip heavy markdown, render it, or raw",
+    )
+    resume_display: bool = Field(
+        default=True, description="show the earlier conversation when a session is resumed"
+    )
+    resume_exchanges: int = Field(default=10, description="exchanges shown in the resume recap")
+    resume_max_user_chars: int = Field(
+        default=300, description="characters of each user message in the recap"
+    )
+    resume_max_assistant_chars: int = Field(
+        default=200, description="characters of each reply in the recap"
+    )
+    resume_max_assistant_lines: int = Field(
+        default=3, description="lines of each reply in the recap"
+    )
+    cli_refresh_interval: float = Field(
+        default=1.0, description="seconds between status bar refreshes"
+    )
+    cli_multiline_shortcuts: bool = Field(
+        default=True, description="Ctrl+J adds a new line in the classic prompt (false: it sends)"
+    )
+    show_reasoning: bool = Field(
+        default=False, description="show the model's reasoning text in the classic prompt"
+    )
+    bell_on_prompt: bool = Field(
+        default=True, description="ring the terminal bell when a question needs an answer"
+    )
+
+
+class OnboardingSeen(_Section):
+    busy_input: bool = Field(
+        default=False, description="the tip about typing while a reply runs was shown"
+    )
+
+
+class OnboardingSection(_Section):
+    seen: OnboardingSeen = Field(
+        default_factory=OnboardingSeen, description="one-time tips already shown"
+    )
+
+
+class SessionSection(_Section):
+    terminal_continue: bool = Field(
+        default=True,
+        description="a bare `indus -c` continues the session last used in the same terminal",
+    )
 
 
 class NetworkSection(_Section):
@@ -261,6 +316,17 @@ class ConfigModel(BaseModel):
     )
     web: WebSection = Field(default_factory=WebSection, description="web search and page extract")
     display: DisplaySection = Field(default_factory=DisplaySection, description="the interface")
+    session: SessionSection = Field(
+        default_factory=SessionSection, description="how the CLI picks a session to continue"
+    )
+    onboarding: OnboardingSection = Field(
+        default_factory=OnboardingSection, description="one-time hints"
+    )
+    quick_commands: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="your own slash commands: <name>: {type: exec, command: ...} or "
+        "{type: alias, target: ...}",
+    )
     network: NetworkSection = Field(default_factory=NetworkSection, description="connections")
     model_catalog: ModelCatalogSection = Field(
         default_factory=ModelCatalogSection, description="provider model lists"

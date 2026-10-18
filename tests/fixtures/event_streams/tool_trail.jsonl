@@ -1,0 +1,8 @@
+{"generation": 1, "seq": 0, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "turn.started"}
+{"arguments": {"path": "notes.txt"}, "call_id": "call_0", "name": "read_file", "seq": 1, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "tool.started"}
+{"call_id": "call_0", "duration_ms": 0, "name": "read_file", "ok": true, "result": "1|contents of notes.txt", "seq": 2, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "tool.completed"}
+{"arguments": {"command": "python hello.py"}, "call_id": "call_0_d1", "name": "terminal", "seq": 3, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "tool.started"}
+{"call_id": "call_0_d1", "duration_ms": 0, "name": "terminal", "ok": true, "result": "hello from the recorder\n", "seq": 4, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "tool.completed"}
+{"seq": 5, "session_id": "20260101_090000_rec001", "text": "The script printed a greeting.\n", "turn_id": "turn_1", "type": "message.delta"}
+{"seq": 6, "session_id": "20260101_090000_rec001", "text": "All good.", "turn_id": "turn_1", "type": "message.delta"}
+{"reason": "completed", "seq": 7, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "turn.done"}

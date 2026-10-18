@@ -122,6 +122,10 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/providers/transports/test_chat_completions.py::test_reasoning_effort_clamped_to_profile`
   - `tests/unit/providers/transports/test_anthropic.py::test_thinking_budgets`
   - Review: per-model effort overrides from config (P04/P08)
+- **ACC-A53-2** `/reasoning` sets a ladder level for the session (or the profile with `--global`) and shows or hides reasoning text
+  - `tests/unit/cli/slash/test_control_cmds.py::test_reasoning_level_session_and_global`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_reasoning_display_and_errors`
+  - `tests/unit/cli/test_app.py::test_reasoning_value_is_not_a_command`
 - **ACC-A55-1** Bundled provider catalogue of about forty vendors and gateways (key-based ones first)
   - `tests/unit/providers/test_bundled.py::test_catalogue_names_and_order`
   - `tests/unit/providers/test_bundled.py::test_every_profile_revalidates`
@@ -143,9 +147,15 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/state/test_journal.py::test_unreadable_header_keeps_wal_and_switches_nothing`
   - `tests/unit/state/test_journal.py::test_cross_vm_mount_gets_delete_for_a_fresh_store`
 - **ACC-B2-1** Sessions persist across restarts and resume by id, title or `latest` (`-r`, `-c`, `/resume`)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_chat_select.py::test_by_title_id_and_prefix`
+  - `tests/unit/cli/test_chat_select.py::test_latest_keyword_beats_title`
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_resume_chain_with_z`
+  - `tests/unit/cli/repl/test_slash_bridge.py::test_resume_by_title_runs_the_resume_follow_up`
+  - `tests/unit/cli/test_launch.py::test_on_resume_restores_and_puts_the_switched_model_back`
 - **ACC-B3-1** Per-terminal continue breadcrumb so parallel terminals resume their own conversations; otherwise …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_resume.py::test_breadcrumb_per_terminal_id`
+  - `tests/unit/cli/test_chat_select.py::test_breadcrumb_wins`
+  - `tests/unit/cli/test_chat_select.py::test_workspace_fallback`
 - **ACC-B4-1** Session ids by surface and source tags; internal sources (subagent, tool, board) hidden from …
   - Review: not yet planned (phase TBD)
 - **ACC-B5-1** Titles: unique, sanitised, user > model > derived precedence, lineage numbering `name #2` …
@@ -155,13 +165,19 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-B7-1** Full-text search over all past messages with snippets → trigram and CJK bigram indexes, LIKE …
   - Review: not yet planned (phase TBD)
 - **ACC-B8-1** New session (`/new`, `/clear`), retry last turn (`/retry`), undo the last N turns (`/undo N`)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_dispatch.py::test_new_while_busy_interrupts_then_dispatches`
+  - `tests/unit/cli/slash/test_dispatch.py::test_new_asks_first_when_there_is_history`
+  - `tests/unit/cli/slash/test_dispatch.py::test_clear_starts_fresh_and_clears_the_screen`
+  - `tests/unit/cli/slash/test_dispatch.py::test_retry_resubmits`
+  - `tests/unit/cli/slash/test_dispatch.py::test_undo_two_hides_two_turns`
 - **ACC-B9-1** Branch a session into an independent copy (`/branch`, `--here`)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_dispatch.py::test_branch_switches_to_a_copy`
+  - Review: `--here` and thread branches on messaging platforms (P15)
 - **ACC-B10-1** Compression lineage: summary continuations or in-place compaction, with display history that still …
   - Review: not yet planned (phase TBD)
 - **ACC-B12-1** Export: JSONL, Markdown, HTML, trace, prompts-only, with optional redaction; `/save json
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_dispatch.py::test_save_writes_three_formats`
+  - Review: trace and prompts-only formats, redaction option (P07)
 - **ACC-B15-1** Delete sessions (cascading to subagent children) with tombstones so a deleted id can never come back
   - Review: not yet planned (phase TBD)
 - **ACC-B16-1** Manual prune by age/source/title with dry run → opt-in automatic prune and a one-time low-disk …
@@ -176,13 +192,20 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/state/test_errors.py::test_classifier_table`
   - `tests/unit/state/test_errors.py::test_copy_matches_the_english_catalogue`
 - **ACC-B23-1** Resume recap ("previous conversation") printed by the classic CLI
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/repl/test_status.py::test_recap_truncation_table`
+  - `tests/unit/cli/repl/test_status.py::test_recap_keeps_the_last_exchanges_and_counts_the_rest`
+  - `tests/e2e/test_demo1.py::test_demo1_create_run_quit_then_continue`
+  - `tests/unit/cli/test_launch.py::test_resumed_launch_shows_the_recap`
 - **ACC-B24-1** Per-session and per-model usage including auxiliary calls, summed across a lineage
   - Review: not yet planned (phase TBD)
 - **ACC-B26-1** Queue a prompt to run after the current turn (`/queue`, list/edit/move/clear)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_dispatch.py::test_queue_runs_after_the_turn`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_queue_management`
+  - Review: queue edit and move (P12)
 - **ACC-B30-1** Workspace metadata (cwd, git root, branch) recorded per session; cwd restored on resume unless …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_resume.py::test_cwd_restored`
+  - `tests/unit/cli/test_resume.py::test_cwd_missing_dir_warns_and_stays`
+  - `tests/unit/cli/test_chat_select.py::test_resume_restores_cwd_history_and_refuses_changed_flags`
 - **ACC-B34-1** Configured time zone for every clock the agent shows or schedules with
   - `tests/unit/foundation/test_clock.py::test_env_zone_kolkata`
   - `tests/unit/foundation/test_clock.py::test_config_zone_when_env_absent`
@@ -305,7 +328,10 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-E3-1** Approval modes manual / smart / off, changeable live with `/approvals`
   - `tests/unit/safety/approvals/test_policy.py::test_mode_change_applies_on_next_call`
   - `tests/unit/safety/approvals/test_policy.py::test_mode_spellings`
-  - Review: the `/approvals` command (P06)
+- **ACC-E3-2** `/approvals [manual|smart|off]` shows or saves the profile's mode, reads it back and reports write failures
+  - `tests/unit/cli/slash/test_control_cmds.py::test_approvals_off_persists_and_is_read_back`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_approvals_managed_and_unreadable_are_reported`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_approvals_that_do_not_take_effect_are_reported`
 - **ACC-E4-1** Human choices once / session / always / deny; "always" writes a per-profile allowlist
   - `tests/unit/safety/approvals/test_human.py::test_once_approves_this_run_only`
   - `tests/unit/safety/approvals/test_human.py::test_session_choice_remembers_the_pattern`
@@ -315,6 +341,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/safety/approvals/test_human.py::test_auto_approve_persist_and_restore`
   - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
   - Review: `--yolo`, `/yolo`, Shift+Tab wiring on the surfaces (P06, P12)
+- **ACC-E6-2** `/yolo` toggles auto-approve for the session and stores it on the session row so a resume keeps it
+  - `tests/unit/cli/slash/test_control_cmds.py::test_yolo_survives_resume`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_yolo_before_the_row_exists_is_written_later`
 - **ACC-E7-1** Unattended policies for cron, one-shot and API/webhook runs, deny by default
   - `tests/unit/safety/approvals/test_policy.py::test_unattended_contexts_deny_instantly`
   - `tests/unit/safety/approvals/test_policy.py::test_unattended_approve_mode`
@@ -331,7 +360,8 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-E13-1** Prompt-injection and exfiltration scanning of context files, memory writes, cron prompts and skills
   - Review: not yet planned (phase TBD)
 - **ACC-E18-1** Isolation launches: `--safe-mode`, `--ignore-rules`, `--ignore-user-config`
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_chat_select.py::test_launch_record_round_trip`
+  - Review: --ignore-rules / --pass-session-id consumers in the prompt builder, plugins/MCP off for --safe-mode (P09, P13)
 - **ACC-F1-1** Two bounded memory stores (agent notes, user profile) shown in the prompt as a frozen snapshot each …
   - Review: not yet planned (phase TBD)
 - **ACC-F2-1** `memory` tool: add / patch / remove / batch with over-limit guidance and a per-turn retry cap; no …
@@ -397,25 +427,71 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-H16-1** `/cron` and `indus cron` create/edit/list/pause/resume/run/remove/status/tick → runs history …
   - Review: not yet planned (phase TBD)
 - **ACC-I1-1** `indus` command; bare `indus` opens a chat; about seventy subcommands in a stable help order
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_app.py::test_bare_indus_runs_chat`
+  - `tests/unit/cli/test_app.py::test_help_order_follows_registration`
+  - `tests/unit/cli/test_app.py::test_help_imports_no_subcommand_module`
 - **ACC-I2-1** Unknown command answered in three lines with "did you mean" or an install hint
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_app.py::test_unknown_command_three_lines_exit_2`
+  - `tests/unit/cli/test_app.py::test_unknown_inside_nested_group`
 - **ACC-I3-1** Global flags: `-p`, `-m`, `--provider`, `-t`, `-r`, `-c`, `--yolo`, `-z`, `-V` → `--reasoning` …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_entry.py::test_profile_flag_anywhere_is_resolved_and_stripped`
+  - `tests/unit/cli/test_app.py::test_global_flags_present`
+  - `tests/unit/cli/test_app.py::test_continue_model_chat_names_a_session`
+  - `tests/unit/cli/test_app.py::test_continue_multi_word_name`
 - **ACC-I4-1** Classic interactive REPL: banner, status bar with context meter and cost, multiline keys, external …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/repl/test_keys.py::test_alt_enter_and_ctrl_j_insert_newlines`
+  - `tests/unit/cli/repl/test_keys.py::test_trailing_backslash_continues_the_draft`
+  - `tests/unit/cli/repl/test_keys.py::test_ctrl_c_clears_draft_then_interrupts_then_exits_within_two_seconds`
+  - `tests/unit/cli/repl/test_keys.py::test_busy_queue_mode_sends_after_the_turn_ends`
+  - `tests/unit/cli/repl/test_status.py::test_banner_names_model_backend_folder_and_counts`
+  - `tests/e2e/test_demo1.py::test_demo1_create_run_quit_then_continue`
+  - `tests/unit/cli/repl/test_slash_bridge.py::test_bang_lines_run_in_the_shell_and_never_reach_the_model`
+  - Review: external editor key and Ctrl+Z suspend are exercised only by hand (P06-14)
+- **ACC-I4-2** Status bar width tiers (full ≥76, compact 52–75, minimal <52) and context colours
+  - `tests/unit/cli/repl/test_status.py::test_width_tier_goldens`
+  - `tests/unit/cli/repl/test_status.py::test_context_colour_thresholds`
 - **ACC-I5-1** One-shot `-z`: only the final text on stdout, defined exit codes, `--usage-file` JSON
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_completed_prints_only_text`
+  - `tests/unit/cli/test_oneshot.py::test_stdout_holds_only_the_reply`
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_failed_run_exits_2_and_writes_the_usage_file`
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_hardline_refused_and_dangerous_auto_approved_under_z`
+  - `tests/e2e/test_demo1.py::test_oneshot_exit_codes_from_the_real_entry`
 - **ACC-I6-1** `chat -q` seeds an interactive session on a TTY or answers and exits; `--query-file`; `--format …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_chat_select.py::test_finite_query_without_a_terminal`
+  - `tests/unit/cli/test_chat_select.py::test_new_session_hands_over_to_the_repl`
+  - `tests/unit/cli/test_chat_select.py::test_query_file_is_read_verbatim`
+  - Review: `--format stream-json` (P17)
 - **ACC-I7-1** Documented exit codes for finite runs (0, 1, 2, 3, 75, 130)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_oneshot.py::test_oneshot_code_table`
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_finite_chat_codes`
+  - `tests/e2e/test_demo1.py::test_oneshot_exit_codes_from_the_real_entry`
+  - Review: exit 75 (board worker, P24) and 3 (gateway lost owner, P17)
 - **ACC-I8-1** First-run guard that offers setup when no provider is usable
   - Review: not yet planned (phase TBD)
 - **ACC-I9-1** One slash-command registry for every surface; dispatch order built-in → quick command → plugin → …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_dispatch.py::test_precedence_order`
+  - `tests/unit/cli/slash/test_dispatch.py::test_observer_fires_first_and_cannot_block`
+  - `tests/unit/cli/slash/test_dispatch.py::test_prefix_ambiguity_lists`
+  - `tests/unit/cli/slash/test_dispatch.py::test_new_while_busy_interrupts_then_dispatches`
+  - `tests/unit/cli/slash/test_dispatch.py::test_busy_reject_policy`
+  - `tests/unit/service/commands/test_registry.py::test_no_name_or_alias_is_used_twice`
+  - `tests/unit/service/commands/test_registry.py::test_completion_lists_aliases_once`
+  - `tests/unit/service/commands/test_registry.py::test_the_registry_imports_nothing_from_the_cli`
+  - `tests/unit/cli/repl/test_slash_bridge.py::test_wire_slash_sets_a_completer_from_the_registry`
+  - `tests/unit/cli/repl/test_slash_bridge.py::test_new_switches_the_feed_without_resume`
+- **ACC-I10-1** Quick commands in config (`exec` with a scrubbed env and timeout, or alias)
+  - `tests/unit/cli/test_quick_commands.py::test_exec_output_redacted`
+  - `tests/unit/cli/test_quick_commands.py::test_exec_env_has_no_provider_key`
+  - `tests/unit/cli/test_quick_commands.py::test_exec_timeout`
+  - `tests/unit/cli/test_quick_commands.py::test_alias_redispatches`
 - **ACC-I11-1** Bang shell `!cmd` on the local host through the same safety guards; nothing enters history
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_bang.py::test_runs_streams_and_keeps_out_of_history`
+  - `tests/unit/cli/test_bang.py::test_floor_blocks_rm_rf_root`
+  - `tests/unit/cli/test_bang.py::test_timeout_kills_with_124`
+  - `tests/unit/cli/test_bang.py::test_ctrl_c_kills_with_130`
+  - `tests/unit/cli/test_bang.py::test_launch_failure_127`
+  - `tests/unit/cli/test_bang.py::test_cwd_order`
+  - `tests/e2e/test_demo1.py::test_ctrl_c_during_a_bang_command_gives_130_and_the_session_goes_on`
 - **ACC-I12-1** Home resolution (`INDUS_HOME`, `~/.indus`, `%LOCALAPPDATA%\indus`, suffix for side-by-side …
   - `tests/unit/foundation/test_home.py::test_resolution_table`
   - `tests/unit/foundation/test_home.py::test_resolution_order`
@@ -460,7 +536,11 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-I25-1** `indus model` picker: provider → key → live or curated model list → reasoning effort; custom …
   - Review: not yet planned (phase TBD)
 - **ACC-I26-1** `/model` switches among configured providers for the session or globally
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_and_provider_forms`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_model_while_busy_rejected`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_failed_switch_rolls_back`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_model_global_persists_and_clears_a_stale_custom_url`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_survives_resume`
 - **ACC-I27-1** `indus fallback list
   - Review: not yet planned (phase TBD)
 - **ACC-I29-1** Setup wizard: sections (model, terminal, gateway, tools, agent), non-interactive guidance, full and …
@@ -484,9 +564,13 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-I42-1** `indus uninstall` (keep data / full / desktop only / data only, dry run)
   - Review: not yet planned (phase TBD)
 - **ACC-I45-1** Version output naming install method and update availability
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_entry.py::test_version_fast_path_prints_the_block`
+  - `tests/unit/cli/test_entry.py::test_install_method_order`
+  - Review: update availability line (P23)
 - **ACC-I51-1** In-session info commands: `/status`, `/context`, `/whoami`, `/usage`, `/insights`, `/help` …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_control_cmds.py::test_status_whoami_version_usage_context`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_help_groups_and_filters`
+  - Review: `/insights` (phase TBD)
 - **ACC-I53-1** Log files (agent, errors, gateway, gui) behind a non-blocking queue with rotation, session tags and …
   - `tests/integration/foundation/test_log_routing.py::test_threads_with_different_scopes_write_to_their_own_profile`
   - `tests/unit/foundation/test_log.py::test_warning_reaches_errors_log_and_info_does_not`
@@ -499,7 +583,10 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/foundation/test_bootstrap.py::test_scratch_vars_exported_unless_user_set`
   - Review: dual-stack (Happy Eyeballs) connects not built in P01 (P03)
 - **ACC-I55-1** Classic chat runs the agent in-process first. Changed (P1 decision); the reference's gateway-client …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_chat_select.py::test_new_session_hands_over_to_the_repl`
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_completed_prints_only_text`
+  - `tests/e2e/test_demo1.py::test_demo1_create_run_quit_then_continue`
+  - `tests/unit/cli/test_chat_select.py::test_the_repl_entry_is_the_launch_adapter`
 - **ACC-J1-1** `indus --tui` launcher: TTY gate, cwd pinning, resume and one-shot options, heap flag, exit summary …
   - Review: not yet planned (phase TBD)
 - **ACC-J2-1** Transport: renderer spawns a Python child over JSON-RPC on stdin/stdout first. Changed (P1 …

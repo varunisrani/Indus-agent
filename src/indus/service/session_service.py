@@ -4,7 +4,8 @@
 server-request broker and the per-session advisory lock (D-16.69). Every method runs on the
 service's event loop; ``InProcessHost`` marshals calls from other threads.
 
-- ``create`` mints a session and attaches it; ``resume`` attaches an existing one (a session this
+- ``create`` mints a session and attaches it (a ``title`` writes the row at once and stores the
+  title with user provenance); ``resume`` attaches an existing one (a session this
   service already has attached is simply described again — a reconnect).
 - Admission: attaching takes the session's lock without waiting. Another surface holding it, in
   this process or another, gives ``SESSION_BUSY``; so does ``submit`` while a turn runs. A
@@ -66,7 +67,7 @@ from indus.protocol.methods import (
 from indus.protocol.requests_port import AnswerModel
 from indus.providers.route import RuntimeRoute
 from indus.service.broker import ServerRequestBroker
-from indus.state import sessions
+from indus.state import sessions, titles
 from indus.state.session_lock import (
     LOCK_DIR_NAME,
     LockBusy,
@@ -226,6 +227,12 @@ class SessionService:
             session_id = new_session_id(self.scope.clock)
             options, selection = self._options_for(params)
             await self._attach(session_id, options=options, selection=selection)
+            if params.title:
+                try:
+                    await self._store_title(session_id, params.title, options)
+                except BaseException:
+                    await self.close(session_id)
+                    raise
             self._created.add(session_id)
             if key is not None:
                 self._idempotency[key] = (params, session_id)
@@ -245,6 +252,23 @@ class SessionService:
                 last_seq=max(attached.sink.last_seq, 0),
                 pending_requests=list(attached.broker.pending_requests()),
             )
+
+    async def _store_title(self, session_id: str, title: str, options: AgentOptions) -> None:
+        """A title given at create: the row is written now (otherwise the first turn writes it)
+        and titled with the user's authority, so automatic titling never replaces it."""
+        store = self.store
+        await store.ensure_session(
+            session_id,
+            source=options.source or options.platform,
+            system_prompt="",
+            fields=options.session_fields,
+        )
+        if isinstance(store, StateStore):
+            await run_blocking(
+                titles.set_title, store.handle, session_id, title, label="session title"
+            )
+        elif isinstance(store, MemoryStore):
+            store.sessions.setdefault(session_id, {})["title"] = title
 
     def _options_for(self, params: SessionCreateParams) -> tuple[AgentOptions, list[str] | None]:
         options = self.options

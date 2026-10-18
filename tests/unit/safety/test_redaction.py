@@ -336,3 +336,18 @@ def test_seeded_random_output_never_leaks_stored_values(tmp_path: Path) -> None:
         text = "".join(parts)
         out = rd.redact_output(text, command=rng.choice(["env", "cat a.py", None]), scope=scope)
         assert not any(v in out for v in stored), text
+
+
+def test_redact_arguments_masks_strings_and_secret_keys(scope: Scope) -> None:
+    token = "ghp_" + "Q" * 36
+    raw = {
+        "command": f"curl -H 'Authorization: Bearer {token}' https://example.invalid",
+        "api_key": "plain-value-123",
+        "nested": [{"text": f"key={token}"}],
+        "count": 3,
+    }
+    shown = rd.redact_arguments(raw, scope=scope)
+    assert token not in repr(shown)
+    assert shown["api_key"] != "plain-value-123"
+    assert shown["count"] == 3 and shown["command"].startswith("curl -H")
+    assert raw["api_key"] == "plain-value-123"  # the caller's mapping is untouched

@@ -4,7 +4,7 @@ import sys
 import pytest
 
 import indus
-from indus.cli import main
+from indus.cli.entry import main
 
 
 def test_version_string() -> None:
@@ -12,17 +12,8 @@ def test_version_string() -> None:
 
 
 def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc:
-        main(["--version"])
-    assert exc.value.code == 0
-    assert capsys.readouterr().out.strip() == "indus 0.0.1"
-
-
-def test_no_args_prints_placeholder(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main([]) == 0
-    out = capsys.readouterr().out
-    assert "not implemented yet" in out
-    assert out.count("\n") == 1
+    assert main(["--version"], env={}) == 0
+    assert capsys.readouterr().out.splitlines()[0] == "Indus Agent 0.0.1"
 
 
 def test_module_entry_point() -> None:
@@ -30,4 +21,4 @@ def test_module_entry_point() -> None:
         [sys.executable, "-m", "indus", "--version"], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0
-    assert result.stdout.strip() == "indus 0.0.1"
+    assert result.stdout.splitlines()[0] == "Indus Agent 0.0.1"

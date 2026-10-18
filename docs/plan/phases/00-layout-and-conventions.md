@@ -295,6 +295,10 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | keyring | 25.7.0 | 2025-11-16 | MIT | runtime | P01-16 |
 | httpx | 0.28.1 | (stable line; 1.0 is still dev) | BSD-3-Clause | runtime | P03-08 |
 | anyio | 4.15.1 | 2026-09-05 | MIT | runtime (via httpx) | P03-08 |
+| click | 8.5.0 | 2026-08-26 | BSD-3-Clause | runtime | P06-01 |
+| prompt_toolkit | 3.0.53 | 2026-07-26 | BSD-3-Clause | runtime | P06-01, P06-04 |
+| rich | 15.0.0 | 2026-04-12 | MIT | runtime | P06-01, P06-05 |
+| pexpect | 4.9.0 | 2023-11-25 | ISC | dev | P06-01 (for P06-14) |
 | croniter | 6.2.4 | 2026-07-10 | MIT | runtime | P14 |
 | mcp (MCP Python SDK) | 2.3.0 | 2026-10-02 | MIT | runtime | P13 (client), P19 (server) |
 | jsonschema | 4.26.0 | 2026-01-07 | MIT | runtime | P04/P13 (whichever lands first) |

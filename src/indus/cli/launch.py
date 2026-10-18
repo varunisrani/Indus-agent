@@ -1,0 +1,203 @@
+"""Starts the classic REPL for one ``ReplLaunch`` (``chat`` hands over, the REPL runs, slash
+commands are wired).
+
+``run_launch`` builds what the REPL and the slash commands share, then calls
+``indus.cli.repl.app.run_repl``:
+
+- a ``SlashContext`` over ``HostPort`` (the in-process host) with the chat's store handle, the
+  creation parameters of the chat's sessions (folder, toolsets) and the session row's folder for
+  bang commands; ``slash_bridge.wire_slash`` binds its output, busy check and questions to the
+  REPL;
+- ``on_resume``: what ``/resume`` and ``/branch`` put back (``resume.resume_session``: folder unless
+  ``--no-restore-cwd`` / ``--in``, auto-approve, breadcrumb), the model the session was last
+  switched to (``model_override`` or its launch record) and the recap;
+- the banner, the recap of a resumed session, the status bar's first values and the seeded ``-q``
+  text, sent as typed once the prompt is up (no slash or ``!`` handling).
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+import click
+
+from indus.cli.handoff import ReplLaunch
+
+if TYPE_CHECKING:
+    from indus.cli.repl.app import Repl
+    from indus.cli.slash.context import SessionPort, SlashContext
+    from indus.foundation.scope import Scope
+
+__all__ = ["build_context", "make_on_resume", "run_launch"]
+
+log = logging.getLogger(__name__)
+
+
+def _config_get(scope: Scope) -> Callable[[str, Any], Any]:
+    view = scope.config
+
+    def get(key: str, default: Any = None) -> Any:
+        if view is None:
+            return default
+        try:
+            value = view.get(key)
+        except Exception:
+            return default
+        return default if value is None else value
+
+    return get
+
+
+def _echo(line: str) -> None:
+    click.echo(line)
+
+
+def build_context(launch: ReplLaunch, port: SessionPort | None = None) -> SlashContext:
+    """The slash context of one chat (output goes to stdout until ``wire_slash`` binds it)."""
+    from indus.cli.slash.context import ReplState, SlashContext
+    from indus.cli.slash.port import HostPort
+    from indus.protocol.methods import SessionCreateParams
+    from indus.state import sessions
+
+    store = launch.store
+    toolsets = list(launch.policy.toolsets) if launch.policy.toolsets else None
+    ctx = SlashContext(
+        scope=launch.scope,
+        port=port if port is not None else HostPort(launch.host, launch.scope),
+        session_id=launch.session_id,
+        out=_echo,
+        store=store,
+        state=ReplState(toolsets=toolsets),
+        create_params=SessionCreateParams(cwd=str(launch.cwd), toolsets=toolsets),
+    )
+
+    def session_cwd() -> str | None:
+        if store is None:
+            return None
+        try:
+            row = sessions.get(store, ctx.session_id)
+        except Exception:
+            return None
+        found = (row or {}).get("cwd")
+        return found if isinstance(found, str) and found else None
+
+    ctx.session_cwd = session_cwd
+    return ctx
+
+
+def _same_route(port: SessionPort, session_id: str, policy: Any) -> bool:
+    if policy is None or not policy.model:
+        return True
+    try:
+        now = port.route(session_id)
+    except Exception:
+        return True
+    return now.model == policy.model and (not policy.provider or now.provider == policy.provider)
+
+
+def make_on_resume(
+    launch: ReplLaunch, ctx: SlashContext, link: dict[str, Repl]
+) -> Callable[[str], None]:
+    """What runs after ``/resume`` or ``/branch`` switched the REPL to ``session_id``."""
+    from indus.cli import resume
+    from indus.cli.repl.banner import RecapSettings, recap
+    from indus.foundation.errors import IndusError
+    from indus.providers import route as routes
+
+    get = _config_get(launch.scope)
+
+    def on_resume(session_id: str) -> None:
+        repl = link.get("repl")
+        restored = resume.resume_session(
+            launch.scope,
+            session_id,
+            store=launch.store,
+            host=launch.host,
+            restore=not launch.no_restore_cwd,
+        )
+        say: Callable[[str], None] = repl.note if repl is not None else _echo
+        for line in restored.notices:
+            say(line)
+        policy = restored.policy
+        if not _same_route(ctx.port, session_id, policy):
+            try:
+                target = routes.resolve(launch.scope, model=policy.model, provider=policy.provider)
+                after = ctx.port.switch_route(session_id, target, keep_effort=True)
+                say(f"Back on {after.model} ({after.provider}) for this session.")
+                if repl is not None:
+                    repl.options.model = after.model
+            except Exception as exc:
+                message = exc.message if isinstance(exc, IndusError) else str(exc)
+                say(f"This session used {policy.model}; staying on the current model ({message}).")
+        if repl is not None and restored.history and get("display.resume_display", True):
+            repl.print(recap(restored.history, RecapSettings.from_config(get)))
+
+    return on_resume
+
+
+def _banner(launch: ReplLaunch, port: SessionPort) -> Any:
+    from pathlib import Path
+
+    from indus import __version__
+    from indus.cli.repl.banner import BannerInfo, banner
+
+    try:
+        tools = len(port.tool_names(launch.session_id))
+    except Exception:
+        tools = 0
+    backend = str(_config_get(launch.scope)("terminal.backend", "local") or "local")
+    info = BannerInfo(
+        version=__version__,
+        model=launch.model,
+        provider=launch.provider,
+        backend=backend,
+        cwd=launch.cwd,
+        tool_count=tools,
+        session_title=launch.title or "",
+        resumed=launch.resumed,
+    )
+    return banner(info, user_home=Path.home())
+
+
+def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> int:
+    """Run the classic REPL for ``launch``; returns the exit code (see the module notes)."""
+    from indus.cli.repl.app import ReplOptions, run_repl
+    from indus.cli.repl.banner import RecapSettings, recap
+    from indus.safety.approvals import APPROVALS, session_key
+
+    scope = launch.scope
+    get = _config_get(scope)
+    ctx = build_context(launch)
+    link: dict[str, Repl] = {}
+    for line in launch.notices:
+        _echo(line)
+    options = ReplOptions.from_scope(
+        scope,
+        model=launch.model,
+        title=launch.title or "",
+        auto_approve=APPROVALS.auto_approve(session_key(scope, launch.session_id)),
+    )
+    shown_recap = None
+    if launch.resumed and launch.history and get("display.resume_display", True):
+        shown_recap = recap(launch.history, RecapSettings.from_config(get))
+
+    def ready(repl: Repl) -> None:
+        link["repl"] = repl
+        seed = launch.seed
+        if seed is not None and seed.strip():
+            repl.post(lambda: repl.send(seed))
+
+    runner = run if run is not None else run_repl
+    return runner(
+        launch.host,
+        launch.session_id,
+        scope=scope,
+        options=options,
+        banner=_banner(launch, ctx.port),
+        recap=shown_recap,
+        slash_ctx=ctx,
+        on_resume=make_on_resume(launch, ctx, link),
+        on_ready=ready,
+    )

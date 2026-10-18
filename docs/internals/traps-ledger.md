@@ -11,7 +11,8 @@ Checked by `python -m tooling.checks traps`.
 - **R01.2** Role alternation under every failure path
   - Review: not yet planned (P00-guards)
 - **R01.3** Persist order
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/core/test_persist_order.py::test_crash_at_each_write_point_then_restart`
+  - `tests/e2e/test_demo1.py::test_kill_after_the_approval_runs_the_command_at_most_once`
 - **R01.4** Interrupt races
   - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_mid_text_stream`
   - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_with_pending_delta_after_tool_calls`
@@ -21,6 +22,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_streaming.py::test_cancellation_close_latency_under_200ms`
   - `tests/trials/async_core/test_real_transports.py::test_interrupt_closes_the_http_stream_within_200ms`
   - `tests/trials/async_core/test_sync_driver.py::test_sync_caller_interrupts_within_200ms`
+  - `tests/e2e/test_demo1.py::test_ctrl_c_during_a_stream_seals_the_reply`
 - **R01.5** Streaming stale detection vs slow reasoning
   - `tests/unit/providers/test_timeouts.py::test_table`
   - `tests/unit/providers/test_timeouts.py::test_read_timeout_raised_never_lowered`
@@ -270,12 +272,18 @@ Checked by `python -m tooling.checks traps`.
 - **R03.28** Startup watchdog vs slow I/O
   - Review: not yet planned (P00-guards)
 - **R04.1** Classic chat is a gateway client
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/test_chat_select.py::test_frozen_flag_conflict_and_same_value`
+  - `tests/unit/cli/test_chat_select.py::test_resume_restores_cwd_history_and_refuses_changed_flags`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_survives_resume`
+  - Review: classic chat as gateway client (refused flags, reduced slash set, exit 3) arrives with P17 (P06-03)
 - **R04.2** Profile must be resolved before any import
   - `tests/unit/foundation/test_preparse.py::test_fresh_interpreter_imports_nothing_else`
   - `tests/unit/foundation/test_preparse.py::test_short_flag`
   - `tests/unit/foundation/test_preparse.py::test_value_flag_hides_profile`
   - `tests/unit/foundation/test_preparse.py::test_nested_tail_untouched`
+  - `tests/unit/cli/test_entry.py::test_profile_flag_anywhere_is_resolved_and_stripped`
+  - `tests/unit/cli/test_entry.py::test_profile_after_a_value_flag`
+  - `tests/unit/cli/test_entry.py::test_missing_named_profile_exits_1`
 - **R04.3** Fail-closed config writes
   - `tests/unit/foundation/config/test_writer.py::test_unreadable_file_refused_untouched`
   - `tests/unit/foundation/config/test_writer.py::test_invalid_yaml_refused_untouched`
@@ -306,6 +314,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_route.py::test_stale_vendor_base_url_dropped_with_warning`
   - `tests/unit/providers/test_route.py::test_explicit_provider_ignores_other_providers_base_url`
   - `tests/unit/providers/test_route.py::test_saved_custom_url_beats_shell_openai_base_url`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_model_global_persists_and_clears_a_stale_custom_url`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_failed_switch_rolls_back`
   - `tests/unit/providers/test_bundled.py::test_register_managed_env_names`
 - **R04.10** .env` read/write symmetry
   - `tests/unit/foundation/test_envfile.py::test_set_replaces_every_line_shape`
@@ -327,8 +337,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/test_redact.py::test_switch_off_in_config_leaves_text`
   - `tests/unit/foundation/test_envload.py::test_redaction_flag_bridged_when_unset`
   - `tests/unit/foundation/test_envload.py::test_redaction_flag_left_when_set`
+  - `tests/unit/cli/test_entry.py::test_env_view_published_into_the_given_env`
 - **R04.14** --yolo` timing
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/test_entry.py::test_yolo_env_set_before_approval_import`
+  - `tests/unit/cli/test_entry.py::test_yolo_flag_reaches_env_and_scope`
+  - `tests/unit/cli/test_entry.py::test_yolo_inside_a_value_is_not_the_flag`
 - **R04.15** Masking in `config get`
   - Review: not yet planned (P00-guards)
 - **R04.16** Auth store read errors
@@ -339,11 +352,20 @@ Checked by `python -m tooling.checks traps`.
 - **R04.18** Browser opening on headless/remote hosts
   - Review: not yet planned (P00-guards)
 - **R04.19** Non-TTY behaviour
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/test_chat_select.py::test_non_tty_forces_classic`
+  - `tests/unit/cli/test_chat_select.py::test_tui_flag_exits_2`
+  - `tests/unit/cli/test_chat_select.py::test_finite_query_without_a_terminal`
+  - Review: first-run and expensive-model guards without a TTY (P07)
 - **R04.20** Two different exit-code tables
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/test_oneshot.py::test_oneshot_code_table`
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_failed_run_exits_2_and_writes_the_usage_file`
+  - `tests/integration/cli/test_oneshot_exit_codes.py::test_interrupted_exits_130`
+  - `tests/unit/cli/test_oneshot.py::test_hard_exit_runs_after_cleanups`
 - **R04.21** Subcommand routing with optional-value flags
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/test_app.py::test_rewrite_session_flags`
+  - `tests/unit/cli/test_app.py::test_continue_model_chat_names_a_session`
+  - `tests/unit/cli/test_app.py::test_model_before_chat_is_kept`
+  - `tests/unit/cli/test_app.py::test_flag_after_chat_wins_and_flags_before_survive`
 - **R04.22** Import target
   - Review: not yet planned (P00-guards)
 - **R04.23** Backup exclusions are security-relevant
@@ -362,9 +384,16 @@ Checked by `python -m tooling.checks traps`.
 - **R04.26** Clone must not share channels
   - Review: not yet planned (P00-guards)
 - **R04.27** Bang shell is not a bypass
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/test_bang.py::test_floor_blocks_rm_rf_root`
+  - `tests/unit/cli/test_bang.py::test_dangerous_command_asks_and_deny_blocks`
+  - `tests/unit/cli/test_bang.py::test_guard_missing_refuses`
+  - `tests/unit/cli/test_bang.py::test_env_failure_refuses`
+  - `tests/unit/cli/test_bang.py::test_env_has_no_provider_key`
+  - `tests/unit/cli/test_bang.py::test_only_interactive_local_sessions`
+  - `tests/e2e/test_demo1.py::test_ctrl_c_during_a_bang_command_gives_130_and_the_session_goes_on`
 - **R04.28** Quick commands hold secrets
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/test_quick_commands.py::test_exec_output_redacted`
+  - `tests/unit/cli/test_quick_commands.py::test_exec_env_has_no_provider_key`
 - **R05.1** Docs describe a transport the code no longer uses
   - Review: not yet planned (P00-guards)
 - **R05.2** Events arrive before the UI subscribes
@@ -372,9 +401,17 @@ Checked by `python -m tooling.checks traps`.
 - **R05.3** Server requests must not stall the agent
   - Review: not yet planned (P00-guards)
 - **R05.4** Interrupt races
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/repl/test_render.py::test_deltas_after_an_interrupt_are_ignored`
+  - `tests/unit/cli/repl/test_render.py::test_interrupt_mid_delta_golden`
+  - `tests/unit/cli/repl/test_keys.py::test_ctrl_c_interrupt_seals_the_partial_reply`
+  - `tests/e2e/test_demo1.py::test_ctrl_c_during_a_stream_seals_the_reply`
+  - Review: TUI reconcile of the persisted partial (P12)
 - **R05.5** Ctrl+C priority
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/repl/test_keys.py::test_ctrl_c_clears_draft_then_interrupts_then_exits_within_two_seconds`
+  - `tests/unit/cli/repl/test_keys.py::test_ctrl_c_policy_order`
+  - `tests/unit/cli/repl/test_keys.py::test_ctrl_d_with_text_does_nothing`
+  - `tests/unit/cli/repl/test_cards.py::test_ctrl_c_on_the_card_denies_with_cancel_and_keeps_running`
+  - Review: TUI composer (P12)
 - **R05.6** Never replace the stream buffer with a rendered fragment
   - Review: not yet planned (P00-guards)
 - **R05.7** Terminal mode leakage
@@ -386,7 +423,9 @@ Checked by `python -m tooling.checks traps`.
 - **R05.10** Stale async results
   - Review: not yet planned (P00-guards)
 - **R05.11** README key tables drift from code
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cli/repl/test_cards.py::test_each_digit_maps_to_its_answer`
+  - `tests/unit/cli/repl/test_cards.py::test_typed_words_work_and_letters_do_not`
+  - Review: TUI key tables (P12)
 - **R05.12** Slash fallback hides real errors
   - Review: not yet planned (P00-guards)
 - **R05.13** Path completion on remote backends
@@ -409,6 +448,11 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
 - **R05.22** Approval command redaction and wrapping
   - `tests/unit/safety/approvals/test_human.py::test_request_shows_redacted_wrapped_command`
+  - `tests/unit/cli/repl/test_cards.py::test_long_command_wraps_without_clipping`
+  - `tests/unit/cli/repl/test_cards.py::test_very_long_commands_show_ten_lines_and_a_count_and_view_shows_all`
+  - `tests/unit/cli/repl/test_render.py::test_approval_request_golden_with_redacted_previews`
+  - `tests/unit/core/test_tool_round.py::test_tool_started_arguments_are_redacted_at_the_source`
+  - `tests/unit/safety/test_redaction.py::test_redact_arguments_masks_strings_and_secret_keys`
   - Review: surfaces show up to 10 lines with a "more" count (P12, P20)
 - **R06.1** Control commands must bypass both busy guards
   - Review: not yet planned (P00-guards)

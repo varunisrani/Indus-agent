@@ -20,8 +20,9 @@ Order (R01.2, R01.3, R01.14):
 
 Handlers may ask for these context keywords beyond the ``ToolContext`` fields (``extras``):
 ``broker`` (the session's server-request port), ``cancel`` (the turn's stop event) and
-``environments`` (``SessionRuntime.environments``, the terminal backends), each offered only when
-the turn has one.
+``environments`` (``SessionRuntime.environments``, the terminal backends) and ``run_context``
+(``SessionRuntime.run_context``: ``interactive``, ``single_query``, ``cron`` or ``unattended``, set
+by the host), each offered only when the turn has one.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from indus.core.transcript import TranscriptRow
 from indus.core.turn_state import PersistFailed, TurnState
 from indus.protocol.events import ToolCompleted, ToolStarted
 from indus.providers.types import NormalizedResponse
+from indus.safety.redaction import redact_arguments
 from indus.tools.calls import ToolCall, ToolContext, ToolResult
 from indus.tools.dispatch import dispatch
 from indus.tools.registry import NO_TRAITS
@@ -423,7 +425,8 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
             turn_id=state.turn_id,
             call_id=call.id,
             name=call.name,
-            arguments=dict(call.args or {}),
+            # Every surface shows these; the tool itself runs with the raw arguments.
+            arguments=redact_arguments(call.args or {}, scope=runtime.scope),
         )
 
     executor = Executor(
@@ -462,6 +465,8 @@ def handler_extras(state: TurnState) -> dict[str, Any]:
         extras["broker"] = state.control.broker
     if state.runtime.environments is not None:
         extras["environments"] = state.runtime.environments
+    if state.runtime.run_context is not None:
+        extras["run_context"] = state.runtime.run_context
     return extras
 
 

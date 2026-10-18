@@ -1,6 +1,7 @@
 {
   "note": "Files in src/ that may read the process environment directly. Each entry: \"<path>\": \"why this file owns process env access\". Everything else reads the scope's env view, and child processes get theirs from indus.safety.child_env.",
   "allow": {
+    "src/indus/cli/entry.py": "the indus process entry: sets INDUS_YOLO_MODE before bootstrap builds the first scope and publishes the scope's env view to the process (single-profile CLI)",
     "src/indus/foundation/bootstrap.py": "process bootstrap: chooses the profile and writes INDUS_HOME/scratch vars before any scope exists",
     "src/indus/foundation/envload.py": "publish_to_process: the single-profile CLI entry publishes its env view to the process once",
     "src/indus/foundation/home.py": "home resolution runs before a scope exists; callers can pass an env mapping instead",

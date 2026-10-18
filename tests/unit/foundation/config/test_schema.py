@@ -70,7 +70,24 @@ def test_decided_defaults() -> None:
         "keyless_rescue": True,
         "searxng_url": "",
     }
-    assert d["display"] == {"language": "en"}
+    assert d["display"] == {
+        "language": "en",
+        "interface": "cli",
+        "busy_input_mode": "interrupt",
+        "final_response_markdown": "strip",
+        "resume_display": True,
+        "resume_exchanges": 10,
+        "resume_max_user_chars": 300,
+        "resume_max_assistant_chars": 200,
+        "resume_max_assistant_lines": 3,
+        "cli_refresh_interval": 1.0,
+        "cli_multiline_shortcuts": True,
+        "show_reasoning": False,
+        "bell_on_prompt": True,
+    }
+    assert d["onboarding"] == {"seen": {"busy_input": False}}
+    assert d["session"] == {"terminal_continue": True}
+    assert d["quick_commands"] == {}
     assert d["network"] == {"force_ipv4": False}
     assert d["timezone"] == ""
     assert d["model"]["default"] == "" and d["model"]["context_length"] is None

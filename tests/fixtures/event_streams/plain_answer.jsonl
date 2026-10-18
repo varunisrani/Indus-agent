@@ -1,0 +1,6 @@
+{"generation": 1, "seq": 0, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "turn.started"}
+{"seq": 1, "session_id": "20260101_090000_rec001", "text": "Hello! ", "turn_id": "turn_1", "type": "message.delta"}
+{"seq": 2, "session_id": "20260101_090000_rec001", "text": "Here is a list:\n", "turn_id": "turn_1", "type": "message.delta"}
+{"seq": 3, "session_id": "20260101_090000_rec001", "text": "- one\n- **two**\n", "turn_id": "turn_1", "type": "message.delta"}
+{"seq": 4, "session_id": "20260101_090000_rec001", "text": "Done.", "turn_id": "turn_1", "type": "message.delta"}
+{"reason": "completed", "seq": 5, "session_id": "20260101_090000_rec001", "turn_id": "turn_1", "type": "turn.done"}

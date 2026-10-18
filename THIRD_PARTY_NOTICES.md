@@ -73,5 +73,15 @@ PyPI for packages of other platforms).
 | et-xmlfile | 2.0.0 | MIT | extra `docs`, via openpyxl | P05-17 |
 | pypdf | 6.19.0 | BSD-3-Clause | extra `docs`: PDF text layer for `read_file` | P05-17 |
 | python-docx | 1.2.0 | MIT | extra `docs`: `.docx` text for `read_file` | P05-17 |
-| lxml | 6.1.3 | BSD-3-Clause | extra `docs`, via python-docx | P05-17 |
-| ptyprocess | 0.7.0 | ISC | extra `pty`: pseudo-terminals for interactive background processes | P05-13 |
+| lxml | 6.1.3 | BSD-3-Clause | extra `docs`, via python-docx; extra `web`, via ddgs | P05-17 |
+| ptyprocess | 0.7.0 | ISC | extra `pty`: pseudo-terminals for interactive background processes (also via pexpect, dev only) | P05-13 |
+| ddgs | 9.16.0 | MIT | extra `web`: keyless web search | P05-23 |
+| primp | 2.0.1 | MIT | extra `web`, via ddgs | P05-23 |
+| prompt_toolkit | 3.0.53 | BSD-3-Clause | the classic REPL's prompt, keys and status bar | P06-04 |
+| wcwidth | 0.9.1 | MIT | via prompt_toolkit | P06-04 |
+| rich | 15.0.0 | MIT | the classic REPL's streamed output, banner and cards | P06-05 |
+| markdown-it-py | 4.2.0 | MIT | via rich | P06-05 |
+| mdurl | 0.1.2 | MIT | via markdown-it-py | P06-05 |
+| Pygments | 2.21.0 | BSD-2-Clause | via rich | P06-05 |
+| click | 8.5.0 | BSD-3-Clause | the `indus` command line: commands, global flags, help (also via ddgs in extra `web`) | P06-01 |
+| pexpect | 4.9.0 | ISC | dev only, never shipped: drives `indus` in a pseudo-terminal for the Demo 1 end-to-end tests | P06-14 |

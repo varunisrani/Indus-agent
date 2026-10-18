@@ -106,3 +106,10 @@
 - Tool round extras: `cancel`, `broker`, and `environments` when `SessionRuntime.environments` is set (host sets it).
 - P06 host-wiring seams: (1) `SessionRuntime.environments = terminal.runtime().environments` so terminal/file tools/search share one registry and cwd; (2) offer `extras["run_context"]` (cron/one-shot/unattended); (3) `await terminal.runtime().shutdown()` at exit; (4) per-session completion sink in Deliveries checking `ProcessRegistry.consumed(...)`; (5) dispatcher calls `read_tracking.note_other_tool(scope, task_id)` after non-read tools; P08 calls `compaction_boundary`; (6) route-aware patch schema for V4A-preferring families.
 - Open: THIRD_PARTY_NOTICES row for `ddgs` (web extra); unidentified one-off test failure on 2026-10-18 17:55 (4 clean reruns; full runs now use `-rf`).
+## P06 landing notes (Agent 1) — classic CLI, Demo 1
+- REPL entry: `indus.cli.launch:run_launch` builds the SlashContext and calls `indus.cli.repl.run_repl(..., slash_ctx=, on_resume=, on_ready=)`; slash and `!` lines run in a terminal section (prompt put away, real stdout, Ctrl+C reaches the child).
+- `/model` writes `model_config["model_override"]`; resume reads it before the launch record.
+- Security: `tool.started` arguments are redacted at the source (`safety.redaction.redact_arguments`); the renderer masks again.
+- `-z`: stdout carries only a model reply; when the turn failed, the loop's failure notice goes to stderr with the `indus -z:` prefix (lead fix at landing).
+- Ledger check now fails a cited test that is skipped for good (D-15.3).
+- Open seams for P07/P08: status bar has no context/cost/jobs data; `/new` after resume has no launch record; in-REPL `/resume` restores model but not reasoning level; bang uses the session row cwd, not the terminal's live cwd; banner skill count is 0 until P09; `-z` usage-file token counters null until P08; bare `-c` hint names `indus sessions list` (arrives in P07).

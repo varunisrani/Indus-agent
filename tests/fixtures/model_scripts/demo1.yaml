@@ -1,0 +1,24 @@
+# Demo 1 (P06-14): "create hello.py and run it". Turn 1 writes the file; turn 2 marks it
+# executable and runs it (chmod + run straight away needs an approval); turn 3 answers. hello.py
+# appends a line to ran.log each time it runs, so a test can count the runs.
+turns:
+  - steps:
+      - text: ["I'll create ", "hello.py first."]
+      - tool_call:
+          name: write_file
+          arguments: {path: "hello.py", content: "#!/usr/bin/env python3\nwith open('ran.log', 'a') as log:\n    log.write('ran\\n')\nprint('hello from indus')\n"}
+          id: call_write_1
+      - usage: {prompt: 200, completion: 40}
+      - finish: tool_calls
+  - steps:
+      - text: ["Now I'll ", "run it."]
+      - tool_call:
+          name: terminal
+          arguments: {command: "chmod +x hello.py && ./hello.py"}
+          id: call_run_1
+      - usage: {prompt: 260, completion: 20}
+      - finish: tool_calls
+  - steps:
+      - text: ["Done: hello.py ", "printed *hello from indus*."]
+      - usage: {prompt: 300, completion: 12}
+      - finish: stop

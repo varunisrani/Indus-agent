@@ -324,3 +324,19 @@ def test_environments_left_out_when_the_host_set_none(scope: Scope, fake_clock: 
     assert k.last_state is not None
     extras = handler_extras(k.last_state)
     assert "environments" not in extras and extras["cancel"] is k.last_state.control.stop
+
+
+def test_tool_started_arguments_are_redacted_at_the_source(
+    scope: Scope, fake_clock: FakeClock
+) -> None:
+    # Built at runtime: a credential-shaped literal must never sit in the repo.
+    token = "sk-" + "e2e" + "Z" * 32
+    header = "Authorization: Bearer " + "abc" + "9" * 30
+    k = kit(
+        scope, fake_clock, tool_batch(("effect", {"tag": f"{header} {token}"})), text_turn("ok")
+    )
+    asyncio.run(k.turn("go"))
+    assert k.tools.effects == [f"effect:{header} {token}"]  # the tool ran with the raw value
+    started = [e for e in k.events if isinstance(e, ToolStarted)]
+    shown = json.dumps([e.arguments for e in started])
+    assert started and token not in shown and "9" * 30 not in shown

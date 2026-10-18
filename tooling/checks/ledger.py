@@ -3,6 +3,10 @@
 A row is ``- **ID** summary``. The indented lines under it are its coverage, each either a test
 reference in backticks (``path/to/test_x.py::test_name`` or ``path::Class::test_name``) or
 ``Review: <why> (<task id>)``.
+
+A cited test must exist and must not be skipped for good: ``@pytest.mark.skip`` on the test or
+its class, ``pytestmark`` holding ``pytest.mark.skip`` in the module, or ``pytest.skip(...)`` as
+the test's first statement. Conditional skips (``skipif``, ``importorskip``) still count as tests.
 """
 
 from __future__ import annotations
@@ -132,8 +136,56 @@ class KnownTests:
             )
             if found is None:
                 return f"{relpath}: no {'::'.join(names[: i + 1])}"
+            if _skipped(found):
+                return f"{relpath}: {'::'.join(names[: i + 1])} is skipped"
             body = found.body if isinstance(found, ast.ClassDef) else []
+        if _module_skipped(tree):
+            return f"{relpath}: the whole module is skipped"
         return None
+
+
+def _is_skip_mark(node: ast.expr) -> bool:
+    """``pytest.mark.skip`` / ``mark.skip``, called or not (``skipif`` does not count)."""
+    target = node.func if isinstance(node, ast.Call) else node
+    return (
+        isinstance(target, ast.Attribute)
+        and target.attr == "skip"
+        and (
+            (isinstance(target.value, ast.Attribute) and target.value.attr == "mark")
+            or (isinstance(target.value, ast.Name) and target.value.id == "mark")
+        )
+    )
+
+
+def _skipped(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> bool:
+    if any(_is_skip_mark(d) for d in node.decorator_list):
+        return True
+    if isinstance(node, ast.ClassDef) or not node.body:
+        return False
+    first = node.body[0]
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+        first = node.body[1] if len(node.body) > 1 else first  # skip a docstring
+    call = first.value if isinstance(first, ast.Expr) else None
+    if not isinstance(call, ast.Call):
+        return False
+    func = call.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "skip"
+        and (isinstance(func.value, ast.Name) and func.value.id == "pytest")
+    )
+
+
+def _module_skipped(tree: ast.Module) -> bool:
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets):
+            continue
+        marks = node.value.elts if isinstance(node.value, ast.List | ast.Tuple) else [node.value]
+        if any(_is_skip_mark(mark) for mark in marks):
+            return True
+    return False
 
 
 def check_rows(
