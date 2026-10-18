@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 1,
-  "remaining_pct": 99,
+  "usage_pct": 7,
+  "remaining_pct": 93,
   "resets_at": "2026-10-19T02:00:00+00:00",
-  "last_check": "2026-10-18T21:03:00+00:00",
-  "current_step": "P07: A, B, C saved; D building",
+  "last_check": "2026-10-18T21:35:00+00:00",
+  "current_step": "P07 integrating; P08 starting in parallel",
   "last_commit": "caedeae"
 }

@@ -21,3 +21,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-18 20:24 UTC | 53% | 47% | 21:00 UTC | P06 landed (Demo 1); P07 4 builders |
 | 2026-10-18 20:32 UTC | 54% | 46% | 21:00 UTC | P07 4 builders running |
 | 2026-10-18 21:03 UTC | 1% | 99% | 02:00 UTC | window reset; P07 3/4 slices saved |
+| 2026-10-18 21:35 UTC | 7% | 93% | 02:00 UTC | P07 integrating; starting P08 |
