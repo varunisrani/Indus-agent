@@ -32,7 +32,20 @@ def test_decided_defaults() -> None:
         "search_slow_ms": 1000,
     }
     assert d["logging"] == {"level": "INFO", "max_size_mb": 5, "backup_count": 3}
-    assert d["security"] == {"redact_secrets": True, "secret_store": "auto"}
+    assert d["security"] == {
+        "redact_secrets": True,
+        "secret_store": "auto",
+        "allow_private_urls": False,
+        "fake_ip_ranges": [],
+        "website_blocklist": {"enabled": False, "domains": [], "shared_files": []},
+    }
+    assert d["web"] == {
+        "backend": "",
+        "search_backend": "",
+        "extract_backend": "",
+        "keyless_rescue": True,
+        "searxng_url": "",
+    }
     assert d["display"] == {"language": "en"}
     assert d["network"] == {"force_ipv4": False}
     assert d["timezone"] == ""

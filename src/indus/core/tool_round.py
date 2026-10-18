@@ -375,11 +375,13 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
     limits = options.exec_limits
     segments = plan_segments(plan, cwd=cwd, batch_deadline_s=limits.batch_deadline_s)
     budget = options.budget()
+    broker = state.control.broker
     ctx = ToolContext(
         scope=runtime.scope,
         task_id=state.session_id,
         session_id=state.session_id,
         turn_id=state.turn_id,
+        extras={"broker": broker} if broker is not None else {},
     )
 
     async def run_one(index: int) -> ToolResult:

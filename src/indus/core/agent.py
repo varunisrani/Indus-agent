@@ -67,6 +67,8 @@ from indus.providers.timeouts import TimeoutPolicy
 from indus.providers.types import ChatRequest
 from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
+from indus.tools.builtin.todo import TOOL_NAME as TODO_TOOL
+from indus.tools.builtin.todo import TodoWiring, todo_wiring
 from indus.tools.definitions import definitions
 from indus.tools.hooks import NO_HOOKS, ToolHooks
 from indus.tools.registry import ToolRegistry
@@ -238,6 +240,7 @@ class Agent:
         self._open_lock: asyncio.Lock | None = None
         self._closed = False
         self.close_errors: list[str] = []
+        self.todo: TodoWiring | None = None
 
     @classmethod
     async def start(
@@ -408,6 +411,12 @@ class Agent:
             prompt_store = SessionPrompts(store.handle)
         lifecycle = PromptLifecycle(options.builder or PromptBuilder(), store=prompt_store)
         tools = self._tool_array(state)
+        inline, hydrators = dict(options.inline), dict(options.hydrators)
+        if TODO_TOOL in self._selected and TODO_TOOL not in inline:
+            # The session's task list (P05-24): run by the loop, rebuilt from history on resume.
+            self.todo = todo_wiring()
+            inline[TODO_TOOL] = self.todo.execute
+            hydrators.setdefault("todo", self.todo.hydrate)
         context = BuildContext(
             scope=self.scope,
             model=state.model,
@@ -431,8 +440,8 @@ class Agent:
             scope=self.scope,
             route=state.route,
             hooks=options.hooks,
-            inline=options.inline,
-            hydrators=options.hydrators,
+            inline=inline,
+            hydrators=hydrators,
             source=options.source or options.platform,
             session_fields=options.session_fields,
         )

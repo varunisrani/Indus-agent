@@ -95,3 +95,8 @@ Compare checklist (filled after the rewrite; no reference file reopened — none
 ## Status
 
 Done (2026-10-18). Goldens hold `[]` tool arrays until P05 registers tools; regenerate then.
+
+## Regenerations
+- 2026-10-18 (Agent 2, P05 wave 1): P05-23/24 registered `web_extract`, `todo_list`, `clarify`
+  (and `web_search`, hidden here because its probe needs the optional `web` extra). The prompt
+  gained the matching tool-guidance lines. Regenerated with `--update-golden`; diff reviewed.

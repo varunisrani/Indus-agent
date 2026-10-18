@@ -1,1 +1,100 @@
-[]
+[
+  {
+    "function": {
+      "description": "Ask the user something when you need a decision, a missing detail or feedback before going on. Put every question in questions (1 to 5); questions that do not depend on each other belong in one call, while a question whose wording depends on another answer needs its own call. Each question can offer up to 4 choices (put the one you recommend first; it is marked for the user, who can also type their own answer), allow several picks with multi_select, or be open (no choices). Give choices only in choices, never listed inside the question text. The result has one response per question, in order, each answered, skipped or unanswered, and an outcome: submitted, cancelled, timed_out or undelivered. Decide small things yourself; risky commands are confirmed by the terminal tool, not here.",
+      "name": "clarify",
+      "parameters": {
+        "properties": {
+          "questions": {
+            "description": "The questions, in the order to show them.",
+            "items": {
+              "properties": {
+                "choices": {
+                  "description": "Choices to pick from, recommended one first; leave out for an open question.",
+                  "items": {"type": "string"},
+                  "maxItems": 4,
+                  "type": "array"
+                },
+                "multi_select": {
+                  "description": "Allow picking more than one choice.",
+                  "type": "boolean"
+                },
+                "question": {"description": "The question itself.", "type": "string"}
+              },
+              "required": ["question"],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": ["questions"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Keep a task list for work with several steps, or when the user asks for several things. Call it with no arguments to see the list. When a request covers many instances, give each one its own item so none is forgotten. The order of the list is the priority. Keep exactly one item in_progress at a time; split big steps into subtasks with parent. Mark an item completed only once the work is checked and done; if a step fails, cancel it and add a new item for the next attempt. Every call returns the whole list.",
+      "name": "todo_list",
+      "parameters": {
+        "properties": {
+          "merge": {
+            "default": false,
+            "description": "true: change the items named by id and add new ones. false (default): the items sent become the whole new list.",
+            "type": "boolean"
+          },
+          "todos": {
+            "description": "Items to write. Leave out to read the list.",
+            "items": {
+              "properties": {
+                "content": {"description": "What the task is.", "type": "string"},
+                "id": {"description": "Short unique id.", "type": "string"},
+                "parent": {
+                  "description": "Id of the item this one is a subtask of; leave out for a top-level item.",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": ["pending", "in_progress", "completed", "cancelled"],
+                  "type": "string"
+                }
+              },
+              "required": ["id", "content", "status"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Read the text of up to 5 web pages (or documents such as PDFs, when the provider supports them). Each page comes back whole when it fits the character budget (default 15,000); a longer page comes back as its beginning and end, with a note giving the saved file that holds all of it and the read_file call that shows the part left out. Embedded images show as [image: description]. Internal network addresses and links that carry credentials are refused per address.",
+      "name": "web_extract",
+      "parameters": {
+        "properties": {
+          "char_limit": {
+            "description": "Characters of each page to send back before it is cut (default 15,000). Raise it to see more of a long page.",
+            "minimum": 2000,
+            "type": "integer"
+          },
+          "urls": {
+            "description": "The page addresses to read, at most 5.",
+            "items": {"type": "string"},
+            "maxItems": 5,
+            "type": "array"
+          }
+        },
+        "required": ["urls"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  }
+]

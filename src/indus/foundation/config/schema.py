@@ -88,12 +88,43 @@ class LoggingSection(_Section):
     backup_count: int = Field(default=3, description="rotated files kept")
 
 
+class WebsiteBlocklist(_Section):
+    enabled: bool = Field(default=False, description="refuse URLs whose host matches a rule")
+    domains: list[str] = Field(
+        default_factory=list, description="hosts, URLs or *.globs to refuse (subdomains included)"
+    )
+    shared_files: list[str] = Field(
+        default_factory=list, description="files with one rule per line (relative to the home)"
+    )
+
+
 class SecuritySection(_Section):
     redact_secrets: bool = Field(default=True, description="mask secrets in logs and tool output")
     secret_store: Literal["auto", "keychain", "file"] = Field(
         default="auto",
         description="where API keys live: OS keychain first (auto), keychain or file",
     )
+    allow_private_urls: bool = Field(
+        default=False,
+        description="let web tools reach private/LAN addresses (cloud metadata stays refused)",
+    )
+    fake_ip_ranges: list[str] = Field(
+        default_factory=list,
+        description="CIDR blocks a local TUN proxy answers DNS with (dialable, not private)",
+    )
+    website_blocklist: WebsiteBlocklist = Field(
+        default_factory=WebsiteBlocklist, description="hosts web tools must never fetch"
+    )
+
+
+class WebSection(_Section):
+    backend: str = Field(default="", description="provider for search and extract; empty = auto")
+    search_backend: str = Field(default="", description="provider for web_search only")
+    extract_backend: str = Field(default="", description="provider for web_extract only")
+    keyless_rescue: bool = Field(
+        default=True, description="retry a failed keyed search once on a keyless provider"
+    )
+    searxng_url: str = Field(default="", description="your SearXNG instance, e.g. http://host:8080")
 
 
 class DisplaySection(_Section):
@@ -171,6 +202,7 @@ class ConfigModel(BaseModel):
     security: SecuritySection = Field(
         default_factory=SecuritySection, description="secrets and redaction"
     )
+    web: WebSection = Field(default_factory=WebSection, description="web search and page extract")
     display: DisplaySection = Field(default_factory=DisplaySection, description="the interface")
     network: NetworkSection = Field(default_factory=NetworkSection, description="connections")
     model_catalog: ModelCatalogSection = Field(

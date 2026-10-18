@@ -27,7 +27,11 @@ class BuiltinModule:
     optional: bool = True
 
 
-BUILTIN_MODULES: tuple[BuiltinModule, ...] = ()
+BUILTIN_MODULES: tuple[BuiltinModule, ...] = (
+    BuiltinModule("indus.tools.builtin.web"),
+    BuiltinModule("indus.tools.builtin.todo"),
+    BuiltinModule("indus.tools.builtin.clarify"),
+)
 
 
 def load_builtins(

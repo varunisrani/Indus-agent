@@ -14,6 +14,10 @@ dependencies = [
     "ruamel.yaml==0.19.1",
 ]
 
+[project.optional-dependencies]
+# Keyless DuckDuckGo search for web_search (P05-23; MIT, 00-layout section 4).
+web = ["ddgs==9.16.0"]
+
 [project.scripts]
 indus = "indus.cli:main"
 

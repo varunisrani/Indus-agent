@@ -4,7 +4,8 @@ Every input is pinned so the output depends on our code alone: a fake clock, a f
 working directory, explicit runtime facts (never the build machine's OS), the fake-model route,
 the stock config defaults, and a file reader that finds nothing (no persona or project file on
 disk can leak in). Each surface gets ``<surface>/prompt.txt`` (the prompt plus one newline) and
-``<surface>/tools.json`` (the tool array, sorted keys, two-space indent, trailing newline).
+``<surface>/tools.json`` (the tool array, sorted keys, the compact layout of
+``protocol.codegen.dump_json``, trailing newline).
 
     uv run python -m tests.golden.prompt_surface.generate                  # compare; 1 on drift
     uv run python -m tests.golden.prompt_surface.generate --update-golden  # rewrite the files
@@ -18,19 +19,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import difflib
-import json
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from indus.core.prompt.builder import BuildContext, PromptBuilder, RuntimeInfo
 from indus.foundation.clock import TIMEZONE_ENV
 from indus.foundation.config import defaults_tree
 from indus.foundation.config.loader import ConfigView
 from indus.foundation.scope import Scope, make_scope
+from indus.protocol.codegen import Json, dump_json
 from indus.providers.route import RuntimeRoute
 from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
@@ -156,7 +157,9 @@ def prompt_text(prompt: str) -> str:
 
 
 def tools_text(tools: Sequence[dict[str, Any]]) -> str:
-    return json.dumps(list(tools), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    # Same compact layout as the protocol schema: a container that fits in 100 columns stays on
+    # one line, so the file reads as our tool array rather than a run of schema keywords.
+    return dump_json(cast(Json, list(tools))) + "\n"
 
 
 @dataclass(frozen=True)
