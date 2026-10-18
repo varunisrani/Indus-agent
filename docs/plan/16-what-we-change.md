@@ -264,26 +264,26 @@ change cheap).
 
 | ID | Question (source) | Recommendation | Status |
 |---|---|---|---|
-| D-16.40 | Trademark and licence review of "Indus Agent"; wording of the MIT credit in `THIRD_PARTY_NOTICES.md` | Keep the name; run a trademark search before public launch; credit the reference's copyright line verbatim in notices only | open — owner |
-| D-16.42 | Which provider profiles ship bundled in 1.0 (01 Q2) | Everything reachable with an API key or a documented OAuth/device flow: aggregator (OpenRouter), Anthropic, OpenAI, Gemini, Bedrock, Vertex, Azure, DeepSeek, xAI, Mistral, Hugging Face, NVIDIA, Fireworks, DeepInfra, local servers (Ollama, LM Studio, vLLM via custom), plus named custom endpoints. Skip any whose only access path is undocumented or impersonating | open — owner |
-| D-16.43 | Size of our bundled starter skill set (07 Q13) | ~15 skills covering the most common jobs (git workflow, code review, debugging, writing, research, data wrangling, scheduling, self-help for the product itself); more via the hub | open — owner |
-| D-16.44 | Dashboard login for non-loopback use (09 Q8) | Username/password with argon2 hashes plus generic OIDC; no vendor portal login | open — owner |
-| D-16.45 | Run a curated plugin / optional-MCP catalog? (07 Q14) | Not in 1.0; reconsider once there is a review process and hosting | open — owner |
-| D-16.46 | Out-of-process plugin host in 1.0? (07 Q12) | No; post-1.0. In-process with allow-list, static scan, consent, and pre-tool hooks fail closed | open — owner |
-| D-16.47 | Keep a separate native setup installer? (08 Q10) | No; in-app installer only | open — owner |
-| D-16.48 | Ship a light remote-only desktop variant? (08 Q11) | No; one variant | open — owner |
-| D-16.51 | Locales at 1.0 and translation workflow (10 Q13) | English only at 1.0; mechanism and parity check live; add languages with human review after launch | open — owner |
-| D-16.53 | Default approval mode on a fresh install (02 Q13) | `manual` (ask) by default; smart pre-judge opt-in during setup | open — owner |
-| D-16.55 | Windows scope (04 Q10, R09.19) | Tier 1: WSL2 for CLI, TUI, gateway; native Windows for the desktop app and the PowerShell installer; native-Windows terminal backend (Git Bash) best-effort in P25 | open — owner |
-| D-16.56 | Versioning scheme (04 Q4) | SemVer starting at 0.x during the build, 1.0.0 at release; canary builds as `x.y.z-canary.<ts>` with channel order from the channel record (R10.26) | open — owner |
-| D-16.57 | `update` scope in 1.0 (04 Q7) | Stable and canary channels, transactional update with rollback, restart of this profile's gateway; no fleet-wide restarts or one-off channels | open — owner |
-| D-16.58 | Release artefact hosting (10 Q9) | GitHub Releases + GHCR for images in 1.0; object storage with channel records later | open — owner |
-| D-16.59 | Trajectory format consumers (10 Q10) | Our own documented JSONL format, with think blocks applied consistently; no promise of byte-equality with the reference | open — owner |
-| D-16.60 | Default tokenizer and summariser for trajectory compression (10 Q11) | A permissively licensed tokenizer pinned by revision, remote code off; summariser = the configured auxiliary model | open — owner |
+| D-16.40 | Trademark and licence review of "Indus Agent"; wording of the MIT credit in `THIRD_PARTY_NOTICES.md` | Keep the name; run a trademark search before public launch; credit the reference's copyright line verbatim in notices only | partly settled — owner chose **MIT** for Indus Agent (2026-10-18); trademark search still open |
+| D-16.42 | Which provider profiles ship bundled in 1.0 (01 Q2) | Everything reachable with an API key or a documented OAuth/device flow: aggregator (OpenRouter), Anthropic, OpenAI, Gemini, Bedrock, Vertex, Azure, DeepSeek, xAI, Mistral, Hugging Face, NVIDIA, Fireworks, DeepInfra, local servers (Ollama, LM Studio, vLLM via custom), plus named custom endpoints. Skip any whose only access path is undocumented or impersonating | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.43 | Size of our bundled starter skill set (07 Q13) | ~15 skills covering the most common jobs (git workflow, code review, debugging, writing, research, data wrangling, scheduling, self-help for the product itself); more via the hub | **settled — owner, 2026-10-18** (as recommended) |
+| D-16.44 | Dashboard login for non-loopback use (09 Q8) | Username/password with argon2 hashes plus generic OIDC; no vendor portal login | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.45 | Run a curated plugin / optional-MCP catalog? (07 Q14) | Not in 1.0; reconsider once there is a review process and hosting | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.46 | Out-of-process plugin host in 1.0? (07 Q12) | No; post-1.0. In-process with allow-list, static scan, consent, and pre-tool hooks fail closed | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.47 | Keep a separate native setup installer? (08 Q10) | No; in-app installer only | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.48 | Ship a light remote-only desktop variant? (08 Q11) | No; one variant | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.51 | Locales at 1.0 and translation workflow (10 Q13) | English only at 1.0; mechanism and parity check live; add languages with human review after launch | **settled — owner, 2026-10-18** (as recommended) |
+| D-16.53 | Default approval mode on a fresh install (02 Q13) | `manual` (ask) by default; smart pre-judge opt-in during setup | **settled — owner, 2026-10-18** (as recommended) |
+| D-16.55 | Windows scope (04 Q10, R09.19) | Tier 1: WSL2 for CLI, TUI, gateway; native Windows for the desktop app and the PowerShell installer; native-Windows terminal backend (Git Bash) best-effort in P25 | **settled — owner, 2026-10-18** (as recommended) |
+| D-16.56 | Versioning scheme (04 Q4) | SemVer starting at 0.x during the build, 1.0.0 at release; canary builds as `x.y.z-canary.<ts>` with channel order from the channel record (R10.26) | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.57 | `update` scope in 1.0 (04 Q7) | Stable and canary channels, transactional update with rollback, restart of this profile's gateway; no fleet-wide restarts or one-off channels | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.58 | Release artefact hosting (10 Q9) | GitHub Releases + GHCR for images in 1.0; object storage with channel records later | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.59 | Trajectory format consumers (10 Q10) | Our own documented JSONL format, with think blocks applied consistently; no promise of byte-equality with the reference | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.60 | Default tokenizer and summariser for trajectory compression (10 Q11) | A permissively licensed tokenizer pinned by revision, remote code off; summariser = the configured auxiliary model | accepted — lead, 2026-10-18 (recommendation; owner may override) |
 | D-16.61 | REA registration (README Stage 1) | Approve, so the parity pass and the "needs REA" questions can be answered | open — owner |
-| D-16.62 | Default turn (iteration) cap (01 Q1) | Finite default of 150 iterations with the grace summary call; `0` means unlimited | open — owner |
-| D-16.63 | Model-visible tool names (02 Q10) | Keep plain functional names (`terminal`, `read_file`, `patch`, …) since they describe behaviour and help models; rename every branded or vendor-prefixed tool | open — owner |
-| D-16.64 | Docker default image (02 Q1) | Publish our own slim sandbox image (and a browser/desktop variant for browser and computer-use tools); never default to the reference's image | open — owner |
+| D-16.62 | Default turn (iteration) cap (01 Q1) | Finite default of 150 iterations with the grace summary call; `0` means unlimited | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.63 | Model-visible tool names (02 Q10) | Keep plain functional names (`terminal`, `read_file`, `patch`, …) since they describe behaviour and help models; rename every branded or vendor-prefixed tool | accepted — lead, 2026-10-18 (recommendation; owner may override) |
+| D-16.64 | Docker default image (02 Q1) | Publish our own slim sandbox image (and a browser/desktop variant for browser and computer-use tools); never default to the reference's image | accepted — lead, 2026-10-18 (recommendation; owner may override) |
 
 ### 3.3 Open — lead (proposed, build proceeds on the proposal)
 

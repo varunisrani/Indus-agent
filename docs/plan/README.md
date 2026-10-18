@@ -69,3 +69,13 @@ Lead defaults (the owner may override):
 - Platform credential env vars keep their vendor-standard names (`TELEGRAM_BOT_TOKEN`); product env vars use `INDUS_`.
 - All prompt text, UI copy, playful strings and bundled skills are written fresh; none is carried over.
 - The specs follow the code when the reference's docs and code disagree.
+
+## Owner decisions, round 3 (2026-10-18)
+
+- Indus Agent ships under the **MIT** licence (LICENSE lands with P00).
+- Windows: WSL2 for CLI, TUI and gateway at 1.0; desktop app and PowerShell installer native (D-16.55).
+- English only at 1.0, with about 15 freshly written starter skills (D-16.43, D-16.51).
+- Default approval mode on a fresh install is manual; smart is opt-in (D-16.53).
+- Secrets: the OS keychain default (P4) covers CLI secrets too, not only desktop (inventory N31).
+- The other open rows in `16-what-we-change.md` §3.2 are accepted on the planners' recommendations
+  by the lead; the owner may override any of them. REA registration (D-16.61) is still open.
