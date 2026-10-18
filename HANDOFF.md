@@ -33,7 +33,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); wave 2 = P01 in 4 slices (core, config, env, log) running from `d1c4371`
+- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); wave 3 (P02-01..07, P03) built, integrating
 
 ## Files changed (uncommitted or parked)
 Nothing parked in `.agents/wip/`.
@@ -64,11 +64,16 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-1. Wave 2 (P01) builders run in worktrees `wt-p01-{core,config,env,log}` (lead scratchpad). If they are
-   gone, restart P01 from `docs/plan/phases/P01-platform-basics.md`, slicing as in the lead brief:
-   core = P01-01..06,19,20; config = P01-07..13; env = P01-14..17; log = P01-18,21.
-2. Land order: core → config → env → log; remove test-only stand-ins; re-lock; full loop.
-3. Then P02 (state store) and P03 (providers + fake model) in parallel.
+1. Wave 3 (P02-01..07 store infra; P03 providers in 3 slices) is built; the four slice patches are in
+   `.agents/wip/wave3/` (each with its `.base`). Agent 1 is integrating them in its verify worktree.
+   If that did not land, re-integrate: apply w3-p02a, w3-p03a, w3-p03b1, w3-p03b2 in that order with
+   `git apply --3way`, resolving shared files (pyproject, uv.lock → re-lock, foundation/errors.py
+   union with one copy of ProviderHTTPError/ProviderStreamError, ledgers union), delete the test-only
+   `_stubs_p03*.py` files, run the full loop, commit, delete `.agents/wip/wave3/`.
+2. Then wave 4: P02-08..23 (sessions, listing, messages, rewind, compression records, titles, FTS,
+   search, usage, export/import, delete, prune, browse, stress test, M0 doctor, session metadata).
+3. Open lead decision: host SQLite 3.45.1 is in the WAL-reset bug range, so stores open in DELETE mode
+   here; consider a uv-managed CPython with newer SQLite and/or an explicit override.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
