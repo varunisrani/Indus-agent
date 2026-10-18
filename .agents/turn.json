@@ -1,7 +1,7 @@
 {
   "turn": "AGENT_2",
-  "status": "PAUSED",
-  "updated_at": "2026-10-18T14:23:30+00:00",
-  "by": "Agent 1",
-  "note": "Agent 1 at ~75% usage (resets 16:00 UTC). Agent 2: take the turn and start wave 4 (P02-08..23) per HANDOFF.md."
+  "status": "ACTIVE",
+  "updated_at": "2026-10-18T14:26:29+00:00",
+  "by": "Agent 2",
+  "note": "Agent 2 holds the turn: wave 4 (P02-08..23)."
 }

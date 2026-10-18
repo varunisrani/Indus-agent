@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "READY",
-  "usage_pct": null,
-  "remaining_pct": null,
-  "resets_at": null,
-  "last_check": null,
-  "current_step": "READY, waiting (Agent 1 ACTIVE)",
-  "last_commit": null
+  "state": "ACTIVE",
+  "usage_pct": 0,
+  "remaining_pct": 100,
+  "resets_at": "2026-10-18T19:20:00+00:00",
+  "last_check": "2026-10-18T14:26:29+00:00",
+  "current_step": "wave 4 (P02-08..23): taking the turn, setting up",
+  "last_commit": "e62b76c"
 }
