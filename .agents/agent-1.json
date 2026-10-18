@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": null,
-  "remaining_pct": null,
-  "resets_at": null,
-  "last_check": "2026-10-18T10:47:27+00:00",
-  "current_step": "P00 foundations",
-  "last_commit": "f90168b"
+  "usage_pct": 45,
+  "remaining_pct": 55,
+  "resets_at": "2026-10-18T16:00:00+00:00",
+  "last_check": "2026-10-18T12:25:00+00:00",
+  "current_step": "Stage 4 wave 2: P01 (4 slices) building",
+  "last_commit": "745c77a"
 }

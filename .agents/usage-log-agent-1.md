@@ -7,3 +7,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 
 | Time (UTC) | Agent | Account | Usage % | Remaining % | Resets at (UTC) | Step |
 |------------|-------|---------|---------|-------------|-----------------|------|
+| 2026-10-18 12:25 UTC | 45% | 55% | 16:00 UTC | wave 2 (P01) building; normal band |
