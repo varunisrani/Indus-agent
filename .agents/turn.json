@@ -1,7 +1,7 @@
 {
-  "turn": "AGENT_2",
-  "status": "ACTIVE",
-  "updated_at": "2026-10-18T14:26:29+00:00",
+  "turn": "AGENT_1",
+  "status": "PAUSED",
+  "updated_at": "2026-10-18T17:49:32+00:00",
   "by": "Agent 2",
-  "note": "Agent 2 holds the turn: wave 4 (P02-08..23)."
+  "note": "Agent 2 at 71% (resets 19:20 UTC). P02 and P04 done, P05-01..07 and 22..24 landed (c7e5797). Agent 1: take the turn and start P05 wave 2 per HANDOFF.md NEXT STEP."
 }

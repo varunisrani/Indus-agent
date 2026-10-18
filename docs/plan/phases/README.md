@@ -25,7 +25,7 @@ acceptance, done when. Paths and conventions come from
 | P02 | [P02-state-store.md](P02-state-store.md) | 1.5 | 23 | 52 | 6 | 3 | 23 | M0 (`indus doctor --minimal`) | done (98fa4e8, P02-21 in this commit) |
 | P03 | [P03-providers-fake-model.md](P03-providers-fake-model.md) | 1.5 | 19 | 55 | 8 | 4 | 19 | — | done (ee74300) |
 | P04 | [P04-turn-loop-tool-contract.md](P04-turn-loop-tool-contract.md) | 2 | 23 | 95 | 9 | 5 | 23 | — | done (87719b2, cc17d69, 4d1588d, 246d691; D-04.1 in this commit) |
-| P05 | [P05-core-tools.md](P05-core-tools.md) | 2 | 24 | 73 | 8 | 6 | 24 | — | planned |
+| P05 | [P05-core-tools.md](P05-core-tools.md) | 2 | 24 | 73 | 8 | 6 | 24 | — | in progress (01..07, 22..24 at c7e5797) |
 | P06 | [P06-classic-cli-demo1.md](P06-classic-cli-demo1.md) | 1 | 15 | 46 | 7 | 3 | 15 | **Demo 1** (M1) | planned |
 | P07 | [P07-cli-commands.md](P07-cli-commands.md) | 2 | 26 | 68 | 5 | 4 | 26 | — | planned |
 | P08 | [P08-context-and-cost.md](P08-context-and-cost.md) | 1.5 | 19 | 49 | 9 | 4 | 19 | — | planned |

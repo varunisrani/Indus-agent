@@ -13,18 +13,23 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 2** (holds the turn, ACTIVE) | At: 2026-10-18 15:50 UTC | Branch: `main` (pushed to origin)
-- Agent 2 took the turn at 14:26 UTC (`782a431`).
-- Last verified code commit: `4d1588d` (P04 core loop: 3566 pytest passed, 3 skipped; pyright 0; 10 checks ok). Earlier: wave 5 `87719b2`, wave 6a lock/broker/golden/route/blocking `cc17d69`, P02 complete `928ce0b`.
+- By: **Agent 2** | At: 2026-10-18 17:45 UTC | Branch: `main` (pushed to origin)
+- Why now: Agent 2 at 71% of its window (resets 19:20 UTC); the next P05 wave would end near 90%
+  mid-wave, while Agent 1 is fresh (reset 16:00), so a clean hand-back between waves is cheaper.
+- Last verified code commit: `c7e5797` (P05-01..07: 4723 pytest passed, 3 skipped; pyright 0;
+  lint-imports kept; pnpm lint/fmt/typecheck/test ok at `87719b2`; tooling.checks --require-ref ok, 11 checks).
+- Agent 2's commits this turn: P02 `98fa4e8`, `928ce0b`; P04 `87719b2`, `cc17d69`, `4d1588d`,
+  `246d691`, `2587135`; P05 `79695d2`, `c7e5797`.
 
 ## Usage at last stop
-📊 Agent 1 usage: 8% used (reading 11:07 UTC), resets 16:00 UTC — ACTIVE (plan done)
-📊 Agent 2 usage: 46% used, 54% left (reading 16:20 UTC) — resets 19:20 UTC — ACTIVE
+📊 Agent 1 usage: 1% used (reading 16:06 UTC), resets 21:00 UTC — READY
+📊 Agent 2 usage: 71% used, 29% left (reading 17:41 UTC) — resets 19:20 UTC — PAUSED (handed back)
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
 |---|-----------|------------|------------|--------|
 | 1 | Agent 1 → Agent 2 | 2026-10-18 14:23 | P00, P01, P03, P02-01..07 | Agent 1 at ~75% usage; wave 4 is a clean start |
+| 2 | Agent 2 → Agent 1 | 2026-10-18 17:45 | P02-08..23 (P02 done), P04 (done, D-04.1: asyncio kept), P05-01..07, 22..24 | Agent 2 at 71%; next wave would end near 90%; Agent 1 fresh |
 
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
@@ -33,10 +38,10 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); P02 done (`98fa4e8`, `928ce0b`, Agent 2); P04-01..19, 21 (lock+broker), 22, 23 (route) done (`87719b2`, `cc17d69`, `4d1588d`); wave 6b = P04-20, 21 rest, 23 D-04.1 building
+- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); **P02 done** (`98fa4e8`, `928ce0b`); **P04 done** (`87719b2`…`2587135`, D-04.1 decided: asyncio core kept); P05-01..07, 22..24 done (`79695d2`, `c7e5797`); next P05-08..21, then P06 (Demo 1)
 
 ## Files changed (uncommitted or parked)
-Nothing parked in `.agents/wip/`.
+Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## Commands
 - Install: `uv sync` (uv 0.11, Python 3.13 from `.python-version`)
@@ -49,7 +54,7 @@ Nothing parked in `.agents/wip/`.
 - Processes stopped: none running.
 
 ## Current state
-- Last fully verified commit: `c790e93` (code); plan commits after it are docs only, gate green.
+- Last fully verified commit: `c7e5797` (P05-01..07; full gate green).
 - Repo: https://github.com/varunisrani/indus-agent (`main`). REA approved and registered (rea-agents 6.7.0).
 - Owner-open: trademark search (D-16.40), app id domain / GHCR owner /
   docs domain (P25-20).
@@ -64,24 +69,32 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-**Agent 2, in flight (16:30 UTC):** P04 is done except wave 6b: builder S = P04-20 Agent + rest of
-P04-21 (SessionService, InProcessHost) + D-04.1 criterion (e); builder T = P04-23 D-04.1 criteria
-(a)-(d) + `docs/notes/P04/d-04-1-decision.md`. Then P05 (core tools), P06 (Demo 1). Landing notes per
-wave: `docs/plan/phases/LEAD-NOTES.md`. If you find this mid-wave with the turn PAUSED, look in
-`.agents/wip/` for saved slices.
-
-Previous plan (wave 4 is done):
-Builder rules for sub-agents: `docs/plan/phases/builder-rules.md` (replace `<scratch>` with your own scratch dir). Lead notes and cross-phase rulings: `docs/plan/phases/LEAD-NOTES.md`.
-1. Wave 4: P02-08..23 (sessions, listing, messages, rewind/clear/branch, compression records, titles,
-   FTS5 + fail-open, search, usage, export/import, delete/tombstones, prune/VACUUM, read-only browse +
-   integrity, D-04.6 stress test, M0 doctor report, per-session metadata API). Build on the landed
-   schema (`src/indus/state/schema.py`, documented in `docs/notes/P02/schema.md`), writer and registry.
-   Suggested slices: (a) 08-13 + 23, (b) 14-16, (c) 17-20, (d) 21-22.
-2. Then P04 (turn loop + tool contract), P05 (core tools), P06 (classic CLI → Demo 1).
-3. Open lead decision: host SQLite 3.45.1 is in the WAL-reset bug range, so stores open in DELETE mode
-   here; consider a uv-managed CPython with newer SQLite and/or an explicit override.
-4. Open follow-ups: record live provider captures (P03-11; `scripts/dev/record_capture.py`, needs API
-   keys); add `hypothesis` + `pytest-asyncio` to the dev group (pins within exclude-newer).
+Agent 1 takes the turn. Builder rules: `docs/plan/phases/builder-rules.md`. Read the landing notes in
+`docs/plan/phases/LEAD-NOTES.md` first (waves 4, 5, 6a, 6b and "P05 wave 1": every seam and open
+follow-up is there). Nothing is parked in `.agents/wip/`; every slice built this turn is landed.
+1. **P05 wave 2** (spec `docs/plan/phases/P05-core-tools.md`), suggested slices:
+   (a) P05-15..19 file ops + paths, read_file, extraction, write_file + path guards, patch + fuzzy
+   (not started; file ops run through `indus.backends` with `bounded=False`);
+   (b) P05-08 approval policy pipeline, P05-09 human approval over the broker
+   (`protocol.requests_port`; handlers get the broker via the `broker` keyword in `ToolContext.extras`),
+   P05-10 sudo (hook `SpawnedEnvironment._prepare`);
+   (c) P05-11/12 `terminal` tool (planning, guards, foreground run; add its own D-04.1 (b) test against
+   the real tool), P05-13/14 background processes + `process_manage`;
+   (d) P05-20 V4A + lint after edit, P05-21 `search_files`.
+   Regenerate the golden prompt surfaces once at merge (`uv run pytest tests/golden/prompt_surface
+   --update-golden`, note it in `docs/notes/P04/golden-prompts.md`).
+2. Then P06 (classic CLI → **Demo 1**): `InProcessHost` (declares all four answerable kinds) drives the
+   REPL; call `EnvironmentRegistry.shutdown()` at exit; wire `session.create` titles.
+3. Lead process that worked: one shared API contract per wave in the scratchpad, stand-ins with a fixed
+   first line excluded from the patch, apply all patches in one verify worktree, run the full gate
+   (`ruff`, `ruff format --check`, `pyright`, `lint-imports`, `pytest -q`, `tooling.checks --require-ref`)
+   before every commit. The full pytest run takes ~4.5 min (the stress test runs 60 s per mode;
+   `INDUS_STRESS_SECONDS=10` shortens it locally).
+4. Open lead items: host SQLite 3.45.1 (DELETE mode here; WAL measured fine with the pin, see
+   `docs/notes/P02/stress-test.md`); `slow` lane in CI for `tests/integration`; licence check should
+   cover optional extras; `ExitReason.internal_error`; a `display_kind` column for steer rows;
+   `hooks` pool wait queue (P13-17); record live provider captures (P03-11); add `hypothesis` +
+   `pytest-asyncio` to the dev group.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
@@ -91,4 +104,4 @@ Builder rules for sub-agents: `docs/plan/phases/builder-rules.md` (replace `<scr
 
 ## Resume notes
 <!-- Newest first. One line per resume. -->
-- none yet
+- 2026-10-18 14:26 UTC — Agent 2 resumed from Agent 1's handoff 1; gate green at `e62b76c` (1905 passed).
