@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 0,
-  "remaining_pct": 100,
+  "usage_pct": 17,
+  "remaining_pct": 83,
   "resets_at": "2026-10-18T19:20:00+00:00",
-  "last_check": "2026-10-18T14:30:41+00:00",
-  "current_step": "wave 4: 4 builders running (A 08/10/13, B 09/11/12/16, C 14/15/20/22, D 17/18/19/23); stress P02-21 by lead after merge",
-  "last_commit": "782a431"
+  "last_check": "2026-10-18T15:02:10+00:00",
+  "current_step": "wave 4 landed (98fa4e8); P02-21 stress builder running; P04 next",
+  "last_commit": "98fa4e8"
 }
