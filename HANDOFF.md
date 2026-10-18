@@ -13,13 +13,13 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 1** | At: 2026-10-18 12:30 UTC | Branch: `main` (pushed to origin)
-- Why now: Agent 1 is at ~75% of its 5-hour window (resets 16:00 UTC); wave 4 starts clean, so Agent 2 takes it.
-- Last verified code commit: `ee74300` (1905 pytest passed, pyright 0, all 9 checks ok).
+- By: **Agent 2** (holds the turn, ACTIVE) | At: 2026-10-18 15:10 UTC | Branch: `main` (pushed to origin)
+- Agent 2 took the turn at 14:26 UTC (`782a431`).
+- Last verified code commit: `98fa4e8` (P02-08..20, 22, 23: 2523 pytest passed, 3 skipped; slow lane 3 passed; pyright 0; all 9 checks ok).
 
 ## Usage at last stop
 📊 Agent 1 usage: 8% used (reading 11:07 UTC), resets 16:00 UTC — ACTIVE (plan done)
-📊 Agent 2 usage: unknown — READY
+📊 Agent 2 usage: 17% used, 83% left (reading 14:59 UTC) — resets 19:20 UTC — ACTIVE
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
@@ -33,7 +33,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); next wave 4 = P02-08..23
+- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); P02-08..20, 22, 23 done (`98fa4e8`, Agent 2); P02-21 stress test building; wave 5 = P04-01..12 + 17 building
 
 ## Files changed (uncommitted or parked)
 Nothing parked in `.agents/wip/`.
@@ -64,6 +64,13 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
+**Agent 2, in flight (15:10 UTC):** builder E on P02-21 (stress test); wave 5 builders on P04-01/02
+(protocol + codegen), P04-03/04/17 (transcript, wire, response checks), P04-05/06/07 (prompt);
+P04-08..12 (tools) starts after the stress run. Wave 6 = P04-13..16, 18..23. Lead contracts and
+landing notes: `docs/plan/phases/LEAD-NOTES.md` (wave 4 section). If you find this mid-wave with
+the turn PAUSED, look in `.agents/wip/` for saved slices.
+
+Previous plan (wave 4 is done):
 Builder rules for sub-agents: `docs/plan/phases/builder-rules.md` (replace `<scratch>` with your own scratch dir). Lead notes and cross-phase rulings: `docs/plan/phases/LEAD-NOTES.md`.
 1. Wave 4: P02-08..23 (sessions, listing, messages, rewind/clear/branch, compression records, titles,
    FTS5 + fail-open, search, usage, export/import, delete/tombstones, prune/VACUUM, read-only browse +
