@@ -15,7 +15,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 ## Last stop
 - By: **Agent 1** | At: 2026-10-18 12:30 UTC | Branch: `main` (pushed to origin)
 - Why now: no handoff yet; Agent 1 holds the turn. Plan complete; next is the first build wave.
-- Last verified code commit: `ef25266` (P00 complete; 266 pytest, 50 vitest, all 9 checks ok).
+- Last verified code commit: `ee74300` (1905 pytest passed, pyright 0, all 9 checks ok).
 
 ## Usage at last stop
 📊 Agent 1 usage: 8% used (reading 11:07 UTC), resets 16:00 UTC — ACTIVE (plan done)
@@ -33,7 +33,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); wave 3 (P02-01..07, P03) built, integrating
+- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); next wave 4 = P02-08..23
 
 ## Files changed (uncommitted or parked)
 Nothing parked in `.agents/wip/`.
@@ -64,16 +64,16 @@ Nothing parked in `.agents/wip/`.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-1. Wave 3 (P02-01..07 store infra; P03 providers in 3 slices) is built; the four slice patches are in
-   `.agents/wip/wave3/` (each with its `.base`). Agent 1 is integrating them in its verify worktree.
-   If that did not land, re-integrate: apply w3-p02a, w3-p03a, w3-p03b1, w3-p03b2 in that order with
-   `git apply --3way`, resolving shared files (pyproject, uv.lock → re-lock, foundation/errors.py
-   union with one copy of ProviderHTTPError/ProviderStreamError, ledgers union), delete the test-only
-   `_stubs_p03*.py` files, run the full loop, commit, delete `.agents/wip/wave3/`.
-2. Then wave 4: P02-08..23 (sessions, listing, messages, rewind, compression records, titles, FTS,
-   search, usage, export/import, delete, prune, browse, stress test, M0 doctor, session metadata).
+1. Wave 4: P02-08..23 (sessions, listing, messages, rewind/clear/branch, compression records, titles,
+   FTS5 + fail-open, search, usage, export/import, delete/tombstones, prune/VACUUM, read-only browse +
+   integrity, D-04.6 stress test, M0 doctor report, per-session metadata API). Build on the landed
+   schema (`src/indus/state/schema.py`, documented in `docs/notes/P02/schema.md`), writer and registry.
+   Suggested slices: (a) 08-13 + 23, (b) 14-16, (c) 17-20, (d) 21-22.
+2. Then P04 (turn loop + tool contract), P05 (core tools), P06 (classic CLI → Demo 1).
 3. Open lead decision: host SQLite 3.45.1 is in the WAL-reset bug range, so stores open in DELETE mode
    here; consider a uv-managed CPython with newer SQLite and/or an explicit override.
+4. Open follow-ups: record live provider captures (P03-11; `scripts/dev/record_capture.py`, needs API
+   keys); add `hypothesis` + `pytest-asyncio` to the dev group (pins within exclude-newer).
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the

@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 70,
-  "remaining_pct": 30,
+  "usage_pct": 75,
+  "remaining_pct": 25,
   "resets_at": "2026-10-18T16:00:00+00:00",
-  "last_check": "2026-10-18T13:31:00+00:00",
-  "current_step": "Stage 4 wave 3: 3 of 4 slices saved; P03-B2 building",
-  "last_commit": "707e6fa"
+  "last_check": "2026-10-18T13:50:00+00:00",
+  "current_step": "Wave 3 landed (ee74300); pausing until the 16:00 UTC reset, then wave 4 (P02-08..23)",
+  "last_commit": "775ce70"
 }
