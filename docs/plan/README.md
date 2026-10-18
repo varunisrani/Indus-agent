@@ -44,7 +44,7 @@ One behavioural spec per area in `research/`:
 | 09 | Web UI, ACP adapter, MCP server, platform layer |
 | 10 | Research tooling, packaging, CI, docs, i18n |
 
-REA status: the dry-run plan ran (rea-agents 6.7.0); registration awaits the owner's approval.
+REA status: owner approved 2026-10-18; rea-agents 6.7.0 registered for Claude Code (doctor healthy). MCP tools load in the next session; the CLI fallback works now.
 The specs were first written from source reading only; claims that need a shipped-build or runtime
 check are listed as open questions marked "needs REA".
 
@@ -78,4 +78,4 @@ Lead defaults (the owner may override):
 - Default approval mode on a fresh install is manual; smart is opt-in (D-16.53).
 - Secrets: the OS keychain default (P4) covers CLI secrets too, not only desktop (inventory N31).
 - The other open rows in `16-what-we-change.md` §3.2 are accepted on the planners' recommendations
-  by the lead; the owner may override any of them. REA registration (D-16.61) is still open.
+  by the lead; the owner may override any of them. REA registration (D-16.61) was approved the same day.

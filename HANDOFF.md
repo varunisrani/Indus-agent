@@ -13,7 +13,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 1** | At: 2026-10-18 12:30 UTC | Branch: `main` (local only; GitHub repo not created yet)
+- By: **Agent 1** | At: 2026-10-18 12:30 UTC | Branch: `main` (pushed to origin)
 - Why now: no handoff yet; Agent 1 holds the turn. Plan complete; next is the first build wave.
 - Last verified code commit: `ef25266` (P00 complete; 266 pytest, 50 vitest, all 9 checks ok).
 
@@ -50,8 +50,8 @@ Nothing parked in `.agents/wip/`.
 
 ## Current state
 - Last fully verified commit: `c790e93` (code); plan commits after it are docs only, gate green.
-- The GitHub repo `indus-agent` does not exist yet; all commits are local in `/home/user/indus-agent`.
-- Owner-open: REA registration (D-16.61), trademark search (D-16.40), app id domain / GHCR owner /
+- Repo: https://github.com/varunisrani/indus-agent (`main`). REA approved and registered (rea-agents 6.7.0).
+- Owner-open: trademark search (D-16.40), app id domain / GHCR owner /
   docs domain (P25-20).
 
 ## Decisions (and why)
