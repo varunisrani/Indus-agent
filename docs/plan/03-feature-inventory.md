@@ -32,7 +32,7 @@ A agent core and model providers · B conversation and sessions · C tools · D 
 sandboxing · E approvals and safety · F learning loop · G extensibility (plugins, hooks, MCP
 client) · H automation (cron, task board) · I CLI, configuration and auth · J terminal UI ·
 K messaging gateway and platforms · L web dashboard · M editor adapter (ACP) and MCP server ·
-N desktop app · O research tooling · P install, distribution, update and CI · Q platform/OS
+N desktop app · O research tooling · S install, distribution, update and CI · Q platform/OS
 support and localisation.
 
 Decision tags used below: **P1**–**P8** are the product decisions in `README.md`; "lead default"
@@ -579,28 +579,28 @@ refers to the defaults listed under them.
 | O8 | Eval harness conventions: one-variable A/B arms, oracle-scored tasks, resume-safe results, never on live data | P3 | ops | 10 §3.7 |
 | O9 | Legacy single-query runner script with minimal flags | P3 | CLI | 04 §3.1 |
 
-## P. Install, distribution, update and CI
+## S. Install, distribution, update and CI
 
 | # | Feature | Tier | Surfaces | Spec |
 |---|---|---|---|---|
-| P1 | POSIX installer: stage ladder with manifest and JSON frames, pinned `uv` bootstrap verified by sha256 with mirror fallback, clone in staging then rename, config seeding, PATH wiring, install receipt | P1 | ops | 10 §3.10, 04 §3.27 |
-| P2 | PowerShell installer and cmd shim with the same ladder | P2 | ops | 10 §3.11 |
-| P3 | Docker image with dispatcher, UID/GID remap and a data volume; Compose file with gateway and dashboard | P1 | ops | 10 §3.13 |
-| P4 | Nix flake packages with NixOS and home-manager modules | P2 | ops | 10 §3.14 |
-| P5 | Termux APT channel (P5 decision: later) | P3 | ops | 10 §3.12 |
-| P6 | Desktop release artefacts (MSIX bundle, Store bundle, macOS DMG) (P5 decision: later) | P3 | ops | 10 §3.15 |
-| P7 | No PyPI: wheel/sdist builds blocked outside Nix; editable installs work. Kept (P5 decision) | P1 | ops | 10 §3.8 |
-| P8 | Dependency policy: exact or bounded pins, lock file, extras for optional backends installed lazily | P1 | ops | 10 §3.8 |
-| P9 | `indus pm` package/environment manager with locked helper binaries (lock, install, env, doctor, repair, gc, bundle, status, update) | P2 | CLI ops | 10 §3.9 |
-| P10 | Release pipeline: attempt refs, gated lanes, receipt tags, ordered publication, stable/canary/one-off channels | P2 | ops | 10 §3.17 |
-| P11 | CI with fail-open change classifier, one aggregate gate, lint diff, lock freshness, supply-chain and blob-size checks | P1 | ops | 10 §3.16 |
-| P12 | Code-health ratchet with caps that only go down | P2 | ops | 10 §3.16 |
-| P13 | Canonical test runner: one process per file, retry-once flaky report, deterministic slices, hermetic fixtures, one OS marker per test | P1 | ops | 10 §3.20 |
-| P14 | Golden prompt-surface fixtures (rendered prompt plus tool array per surface) that fail CI when stale | P1 | ops | 01 §3.4 |
-| P15 | Docs website with search and `llms.txt` | P2 | ops | 10 §3.19 |
-| P16 | Contributor attribution mapping, started empty | P3 | ops | 10 §3.21 |
-| P17 | Clean-room guards in CI (banned identifiers, code and text similarity, asset hashes, licences). Added by Indus | P0 | ops | README, 17 §d |
-| P18 | `THIRD_PARTY_NOTICES.md` crediting the reference and every dependency. Added by Indus (licence obligation) | P1 | ops | README, 10 §8.1 |
+| S1 | POSIX installer: stage ladder with manifest and JSON frames, pinned `uv` bootstrap verified by sha256 with mirror fallback, clone in staging then rename, config seeding, PATH wiring, install receipt | P1 | ops | 10 §3.10, 04 §3.27 |
+| S2 | PowerShell installer and cmd shim with the same ladder | P2 | ops | 10 §3.11 |
+| S3 | Docker image with dispatcher, UID/GID remap and a data volume; Compose file with gateway and dashboard | P1 | ops | 10 §3.13 |
+| S4 | Nix flake packages with NixOS and home-manager modules | P2 | ops | 10 §3.14 |
+| S5 | Termux APT channel (P5 decision: later) | P3 | ops | 10 §3.12 |
+| S6 | Desktop release artefacts (MSIX bundle, Store bundle, macOS DMG) (P5 decision: later) | P3 | ops | 10 §3.15 |
+| S7 | No PyPI: wheel/sdist builds blocked outside Nix; editable installs work. Kept (P5 decision) | P1 | ops | 10 §3.8 |
+| S8 | Dependency policy: exact or bounded pins, lock file, extras for optional backends installed lazily | P1 | ops | 10 §3.8 |
+| S9 | `indus pm` package/environment manager with locked helper binaries (lock, install, env, doctor, repair, gc, bundle, status, update) | P2 | CLI ops | 10 §3.9 |
+| S10 | Release pipeline: attempt refs, gated lanes, receipt tags, ordered publication, stable/canary/one-off channels | P2 | ops | 10 §3.17 |
+| S11 | CI with fail-open change classifier, one aggregate gate, lint diff, lock freshness, supply-chain and blob-size checks | P1 | ops | 10 §3.16 |
+| S12 | Code-health ratchet with caps that only go down | P2 | ops | 10 §3.16 |
+| S13 | Canonical test runner: one process per file, retry-once flaky report, deterministic slices, hermetic fixtures, one OS marker per test | P1 | ops | 10 §3.20 |
+| S14 | Golden prompt-surface fixtures (rendered prompt plus tool array per surface) that fail CI when stale | P1 | ops | 01 §3.4 |
+| S15 | Docs website with search and `llms.txt` | P2 | ops | 10 §3.19 |
+| S16 | Contributor attribution mapping, started empty | P3 | ops | 10 §3.21 |
+| S17 | Clean-room guards in CI (banned identifiers, code and text similarity, asset hashes, licences). Added by Indus | P0 | ops | README, 17 §d |
+| S18 | `THIRD_PARTY_NOTICES.md` crediting the reference and every dependency. Added by Indus (licence obligation) | P1 | ops | README, 10 §8.1 |
 
 ## Q. Platform/OS support and localisation
 
@@ -652,7 +652,7 @@ Counted by the first tier in each row (`P0 → P1` counts as P0). Dropped rows h
 | M editor adapter and MCP server | 11 | 0 | 6 | 4 | 1 | 0 |
 | N desktop app | 36 | 0 | 0 | 16 | 19 | 1 |
 | O research tooling | 9 | 0 | 0 | 5 | 4 | 0 |
-| P install, distribution, CI | 18 | 1 | 8 | 6 | 3 | 0 |
+| S install, distribution, CI | 18 | 1 | 8 | 6 | 3 | 0 |
 | Q platform and localisation | 13 | 1 | 3 | 4 | 5 | 0 |
 
 The total is above the planning guide's rough estimate because the reference is unusually wide
