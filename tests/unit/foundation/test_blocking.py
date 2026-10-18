@@ -249,6 +249,24 @@ def test_cancelled_caller_abandons_and_late_error_is_drained(pool: BlockingPool)
 # -- pool bounds ----------------------------------------------------------------------------------
 
 
+def test_worker_is_free_again_by_the_time_its_caller_resumes() -> None:
+    """Found by D-04.1 criterion (d): a refusing pool must not count a worker as busy after its
+    result reached the caller, or the caller's next call is refused with ``PoolFull``."""
+    single = BlockingPool("one", 1)
+
+    async def go() -> int:
+        done = 0
+        for n in range(2000):
+            assert await single.run(int, str(n)) == n
+            done += 1
+        return done
+
+    try:
+        assert asyncio.run(go()) == 2000
+    finally:
+        single.shutdown()
+
+
 def test_full_pool_refuses_and_never_grows(pool: BlockingPool) -> None:
     hangs = [Hang(), Hang()]
 
@@ -272,6 +290,76 @@ def test_full_pool_refuses_and_never_grows(pool: BlockingPool) -> None:
     assert until(lambda: pool.busy == 0)
     assert asyncio.run(pool.run(lambda: "again")) == "again"
     assert pool.threads == 2  # idle workers were reused, none added
+
+
+def test_waiting_pool_queues_in_order_then_refuses_past_its_limit() -> None:
+    """D-04.1 criterion (c): many sessions reading at once wait for a worker instead of failing;
+    the pool still never grows, and past the waiting limit it refuses."""
+    pool = BlockingPool("waits", 2, queue_limit=2)
+    hangs = [Hang(), Hang()]
+    order: list[str] = []
+
+    async def go() -> list[str]:
+        stuck = [asyncio.create_task(pool.run(h)) for h in hangs]
+        await until_async(lambda: all(h.started.is_set() for h in hangs))
+        queued = [asyncio.create_task(pool.run(order.append, tag)) for tag in ("first", "second")]
+        await until_async(lambda: pool.waiting == 2)
+        assert pool.busy == 2 and pool.threads == 2
+        with pytest.raises(PoolFull, match="2 calls are waiting"):
+            await pool.run(lambda: "never runs")
+        assert order == []
+        hangs[0].release.set()
+        await asyncio.gather(*queued)
+        hangs[1].release.set()
+        return list(await asyncio.gather(*stuck))
+
+    try:
+        assert asyncio.run(go()) == ["late", "late"]
+    finally:
+        for h in hangs:
+            h.release.set()
+        pool.shutdown()
+    assert order == ["first", "second"]
+    assert pool.threads <= 2
+
+
+def test_waiting_call_past_its_deadline_or_cancelled_never_runs(fake_clock: FakeClock) -> None:
+    pool = BlockingPool("waits", 1, queue_limit=4)
+    hang = Hang()
+    ran: list[str] = []
+
+    async def go() -> None:
+        stuck = asyncio.create_task(pool.run(hang))
+        await until_async(hang.started.is_set)
+        late = asyncio.create_task(
+            pool.run(ran.append, "late", deadline=1.0, clock=fake_clock, label="queued read")
+        )
+        gone = asyncio.create_task(pool.run(ran.append, "cancelled"))
+        await until_async(lambda: pool.waiting == 2 and fake_clock.pending == 1)
+        fake_clock.advance(1.0)
+        with pytest.raises(DeadlineMissed, match="did not start within 1 s"):
+            await late
+        gone.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await gone
+        hang.release.set()
+        assert await stuck == "late"
+        await until_async(lambda: pool.busy == 0 and pool.waiting == 0)
+        assert await pool.run(ran.append, "after") is None
+
+    try:
+        asyncio.run(go())
+    finally:
+        hang.release.set()
+        pool.shutdown()
+    assert ran == ["after"]  # the two calls whose callers gave up never ran
+
+
+def test_named_pools_wait_except_hooks() -> None:
+    limits = {name: p.queue_limit for name, p in POOLS.items()}
+    assert limits == {"io": 256, "tools": 256, "hooks": 0}
+    with pytest.raises(ValueError, match="queue_limit"):
+        BlockingPool("bad", 1, queue_limit=-1)
 
 
 def test_hung_hook_abandoned_without_blocking_a_second_call(fake_clock: FakeClock) -> None:

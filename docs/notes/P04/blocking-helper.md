@@ -111,3 +111,8 @@ Compare checklist (own design: compared against the two helpers it replaces and 
 
 Done (2026-10-18). Helper built, both private helpers moved onto it; `ERROR_CODES` rows added in
 the shared `foundation/errors.py`.
+
+Changed in wave 6b (D-04.1 criteria, see `docs/notes/P04/d-04-1-decision.md`): `io` and `tools`
+now let up to 256 calls wait for a worker within their deadline (`POOL_QUEUE_LIMITS`; `hooks`
+still refuses at once), a worker releases its slot before handing the result back, and the
+start/abandon hand-off is atomic.

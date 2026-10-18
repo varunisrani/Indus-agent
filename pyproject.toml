@@ -59,6 +59,7 @@ testpaths = ["tests", "tooling/checks/tests"]
 addopts = "--strict-markers"
 markers = [
     "slow: takes more than a few seconds",
+    "perf: asserts wall-clock bounds (D-04.1 criteria); numbers are only meaningful run alone",
     "ref: needs the pinned reference checkout (INDUS_REF)",
     "network: needs network access",
 ]

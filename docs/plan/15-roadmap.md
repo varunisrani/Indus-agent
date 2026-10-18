@@ -89,7 +89,7 @@ than plan pace; we re-estimate after Demo 1 (D-15.2).
 
 | # | Risk | Likelihood / impact | Mitigation | Owner |
 |---|---|---|---|---|
-| 1 | **asyncio core does not hold up** (blocking libraries, cancellation leaks, plugin hooks) | Medium / high | D-04.1 trial with five pass criteria before P04 ends; fallback to a threaded core behind the same interfaces costs ~1.5 weeks if taken by P04 | Lead |
+| 1 | **asyncio core does not hold up** (blocking libraries, cancellation leaks, plugin hooks) | Medium / high | D-04.1 trial with five pass criteria before P04 ends; fallback to a threaded core behind the same interfaces costs ~1.5 weeks if taken by P04. **Decided 2026-10-18: asyncio core kept** (`docs/notes/P04/d-04-1-decision.md`) | Lead |
 | 2 | Upstream Ink lacks capabilities the fork added (sync output, selection, kitty keys) | Medium / medium | D-04.2 spike on the frontend track during P04–P06; fallback writer wrapper | Frontend lead |
 | 3 | Scope size: full parity of a ~2.2M-line reference | High / high | Tiers in `03-feature-inventory.md` stay binding; P24 is the pressure valve; re-estimate after Demo 1 and Demo 2; anything that slips goes to §2.8 with a D-id instead of silently missing | Lead + owner |
 | 4 | Retrofitting the daemon (P17) onto in-process surfaces breaks behaviour | Medium / high | `SessionService` interface from P04; every surface test runs against both in-process and attached hosts from P17; turn lease and generation fences designed in P04 notes even though built in P17 | Lead |

@@ -1,6 +1,6 @@
 # P04 · Turn loop and tool contract
 
-**Weeks:** 7–8 (2 weeks) · **Track:** B (Python; one TS codegen slice) · **Depends on:** P02 (state store), P03 (providers + fake model); uses P00 guards and the D-04.1 trial harness, P01 `Scope`/config/clock/logging · **Status:** planned
+**Weeks:** 7–8 (2 weeks) · **Track:** B (Python; one TS codegen slice) · **Depends on:** P02 (state store), P03 (providers + fake model); uses P00 guards and the D-04.1 trial harness, P01 `Scope`/config/clock/logging · **Status:** done (Agent 2, waves 5–6b)
 
 ## Goal
 A Python caller can create a session through `SessionService`, submit a message, and watch the

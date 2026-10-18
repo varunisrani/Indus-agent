@@ -181,3 +181,7 @@ Compare checklist (filled after the rewrite; reopened the switch steps, the snap
 
 Partial (2026-10-18): the RouteBinding half is done; the D-04.1 criteria suite and decision note
 are wave 6b (see "For wave 6b").
+
+Wave 6b (2026-10-18): criteria (a)–(d) run against the real loop in
+`tests/integration/core/test_d04_1_criteria.py`; numbers and verdict (asyncio core kept) in
+`docs/notes/P04/d-04-1-decision.md`; (e) in `tests/integration/core/test_d04_1_sync_caller.py`.
