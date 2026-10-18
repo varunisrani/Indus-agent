@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REF_REPOSITORY_URL: https://github.com/NousResearch/hermes-agent.git
+  REF_COMMIT: ab3fe9dffb0a89d534cb795e2a2940e5f6542056
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # The reference is fetched outside the workspace so it can never be committed by accident.
+      - name: Fetch the pinned reference
+        working-directory: ${{ runner.temp }}
+        run: |
+          git init --quiet ref
+          git -C ref fetch --quiet --depth 1 "$REF_REPOSITORY_URL" "$REF_COMMIT"
+          git -C ref checkout --quiet --detach FETCH_HEAD
+          actual="$(git -C ref rev-parse HEAD)"
+          if [ "$actual" != "$REF_COMMIT" ]; then
+            echo "reference is at $actual, expected $REF_COMMIT" >&2
+            exit 1
+          fi
+          echo "INDUS_REF=${RUNNER_TEMP}/ref" >> "$GITHUB_ENV"
+
+      - name: Cache the reference index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/indus-checks
+          key: indus-checks-${{ env.REF_COMMIT }}-${{ hashFiles('tooling/checks/**/*.py') }}
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Clean-room guards
+        run: uv run python -m tooling.checks --require-ref
+
+      - name: PR body has Reference and Task note lines
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          body_file="${RUNNER_TEMP}/pr-body.md"
+          printf '%s\n' "$PR_BODY" > "$body_file"
+          uv run python -m tooling.checks.prbody --body-file "$body_file"

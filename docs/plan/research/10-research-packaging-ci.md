@@ -816,8 +816,9 @@ conditional writes); OSV-Scanner; hadolint rule ids (DL3002, DL3003, DL3008, DL3
 
 ### 3.18 Localisation catalogues (packaged resource)
 
-- **Files:** `locales/<lang>.yaml` for 17 languages (`en, zh, zh-hant, ja, de, es, fr, tr, uk, af,
-  ko, it, ga, pt, ru, hu, ar`) — nested YAML, 8 top-level sections, 3,454 leaf keys in English; every
+- **Files:** `locales/<lang>.yaml` for 17 languages — English (`en`) plus 16 others: East Asian
+  `zh`, `zh-hant`, `ja`, `ko`; European and nearby `de`, `es`, `fr`, `it`, `pt`, `ga`, `hu`, `ru`,
+  `uk`, `tr`; plus `af` and `ar` — nested YAML, 8 top-level sections, 3,454 leaf keys in English; every
   other language has exactly the same key set (0 missing, 0 extra). [obs]
 - **TUI catalogues:** `<lang>.tui.yaml` for the 16 non-English languages, **flat dotted keys**,
   1,351 keys each, matching a key-list file `_keys.tui.json`; English TUI strings live in the TUI

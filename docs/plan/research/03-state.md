@@ -210,8 +210,8 @@ locks, `/proc/<pid>/fd`, `/proc/locks`, `/proc/self/ns/pid`, `/proc/self/mountin
 - **Policy** [obs]: configured `database.journal_mode` is `wal` (default) or `delete` (for
   filesystems where WAL is unsafe: macOS virtiofs, NFS, SMB); invalid values fall back to
   `wal`.
-- **Never live-downgrade** (MUST) [obs]: if the on-disk header says WAL, or the mode cannot be
-  read (probe blocked by a concurrent opener), the open keeps whatever is there; a configured
+- **Never live-downgrade** (MUST) [obs]: when the header on disk reports WAL — or when a concurrent
+  opener blocks the probe so the mode is unknown — opening leaves the existing mode untouched; a configured
   `delete` on an existing WAL file logs one ERROR per process and is ignored. Switching mode is
   an explicit offline command that refuses while any holder exists (§3.23) and verifies the
   header afterwards; `--force` only waives a failed holder scan, never a found holder.
@@ -784,8 +784,9 @@ Tables in neutral notation (field lists are behavioural; types: `text`, `int`, `
   manifest (copied via pread of SQLite's own descriptor in 8 MiB chunks, fsynced, renamed), and
   refuses to settle without that capture. The check must run under the same mutex as `close()`
   or the process's own clean close looks like external deletion.
-- **Lock guard** [obs]: SQLite protects a live WAL generation with a SHARED lock on the main
-  file's lock range and a shared lock on the `-shm` DMS byte (offset 128). Any `open()`/`close()`
+- **Lock guard** [obs]: while a WAL generation is live, SQLite pins it with two SHARED locks:
+  one inside the main database file's locking byte range, the other on byte 128 (the DMS slot) of
+  the `-shm` file. Any `open()`/`close()`
   of those files inside the process cancels POSIX locks, letting a sibling unlink the WAL. The
   guard re-takes those ranges as OFD locks on every descriptor the process has open on the file,
   refcounted per inode, released before the handle's own close. All byte-level header probes use
@@ -862,8 +863,9 @@ Tables in neutral notation (field lists are behavioural; types: `text`, `int`, `
 ### 3.26 Test-isolation guard
 
 - [obs] Any process that looks like a test run (env markers or a test-runner ancestor process)
-  refuses to open `<real default root>/state.db` or `<root>/profiles/<name>/state.db`; deeper
-  scratch paths are allowed. The real root is computed without the patched home helpers. A
+  will not open the live store, meaning a `state.db` directly under the real default root or
+  directly under any `<root>/profiles/<name>/` directory; one nested further down (scratch dirs)
+  is permitted. The real root is computed without the patched home helpers. A
   bypass env var exists for a spawned child that must touch the live store, plus an in-process
   marker; neither should be exported in a user shell.
 

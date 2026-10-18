@@ -1,0 +1,244 @@
+[
+  {
+    "pattern": "HERMES_[A-Z0-9_]*",
+    "hint": "use the INDUS_ env prefix",
+    "flags": []
+  },
+  {
+    "pattern": "~?/?\\.hermes\\b/?",
+    "hint": "use the ~/.indus home directory",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "(?<![a-z])hermes[-_ ]agent",
+    "hint": "use the product name Indus Agent (package indus)",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "(?<![a-z])hermes_cli",
+    "hint": "use the indus CLI package name",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "(?<![a-z])hermes",
+    "hint": "use Indus Agent / indus",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "nous[-_ ]?research",
+    "hint": "do not name the reference's vendor in product code",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "\\bnous\\b",
+    "hint": "do not name the reference's vendor in product code",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "hermes",
+    "hint": "reference product name: use \"indus\" / \"Indus Agent\"",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "_{1,2}HERMES_",
+    "hint": "reference internal env prefix: use _INDUS_ / __INDUS_",
+    "flags": []
+  },
+  {
+    "pattern": "\\.hermes(\\.md|_history)?\\b",
+    "hint": "reference home or context file: use ~/.indus, .indus.md, input_history",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "hermes[-_](agent|cli|acp|tui|state|constants|platform|logging|gateway|tools|ink|canary|pm)",
+    "hint": "reference package/binary name: use the indus equivalent (17-naming §a1)",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "hermes(-dev|-media)?://",
+    "hint": "reference URL scheme: use indus:// / indus-dev:// / indus-media://",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "X-Hermes-",
+    "hint": "reference HTTP header prefix: use X-Indus-",
+    "flags": []
+  },
+  {
+    "pattern": "hermesDesktop",
+    "hint": "reference desktop bridge global: use window.indusDesktop",
+    "flags": []
+  },
+  {
+    "pattern": "'hermes:",
+    "hint": "reference desktop IPC channel prefix: use 'indus:",
+    "flags": []
+  },
+  {
+    "pattern": "\\bnous[-_](portal|api|girl|wire|rate|blue|alt|research)",
+    "hint": "reference vendor identifiers: remove",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "NOUS_(API_KEY|INFERENCE_BASE_URL)",
+    "hint": "reference portal credentials: dropped (P3)",
+    "flags": []
+  },
+  {
+    "pattern": "nousresearch\\.com",
+    "hint": "reference vendor hosts: use Indus hosts or drop",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "\\bSOUL\\.md\\b",
+    "hint": "reference persona file: use PERSONA.md",
+    "flags": []
+  },
+  {
+    "pattern": "\\bsoul[_-](md|file|path)\\b",
+    "hint": "reference persona naming: use persona_*",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "☤",
+    "hint": "reference banner glyph: use Indus's own mark",
+    "flags": []
+  },
+  {
+    "pattern": "caduceus",
+    "hint": "reference brand motif: use Indus's own mark",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "\\bAIAgent\\b",
+    "hint": "reference agent class name: use Agent",
+    "flags": []
+  },
+  {
+    "pattern": "\\b(Async)?SessionDB\\b",
+    "hint": "reference store class names: use SessionStore / AsyncSessionStore",
+    "flags": []
+  },
+  {
+    "pattern": "\\bRuntimeSessionStore\\b",
+    "hint": "reference runtime store class: use RuntimeLedger",
+    "flags": []
+  },
+  {
+    "pattern": "\\bJsonRpcGatewayError\\b",
+    "hint": "reference desktop error class: use GatewayRpcError",
+    "flags": []
+  },
+  {
+    "pattern": "_HERMES_CORE_TOOLS",
+    "hint": "reference constant: use CORE_TOOLS",
+    "flags": []
+  },
+  {
+    "pattern": "\\bxai_video_(edit|extend)\\b",
+    "hint": "reference vendor-branded tool names: use video_edit / video_extend",
+    "flags": []
+  },
+  {
+    "pattern": "\\byb_(query_group_info|query_group_members|send_dm|search_sticker|send_sticker)\\b",
+    "hint": "reference abbreviated tool names: use yuanbao_*",
+    "flags": []
+  },
+  {
+    "pattern": "\\bskills-guard-v\\d+\\b",
+    "hint": "reference scanner id: use indus-scan-v1",
+    "flags": []
+  },
+  {
+    "pattern": "\\bchronos\\b",
+    "hint": "reference hosted scheduler provider: dropped (P3); use scheduler_provider",
+    "flags": []
+  },
+  {
+    "pattern": "REASONING_SCRATCHPAD",
+    "hint": "reference in-content reasoning tag: use <think> only",
+    "flags": []
+  },
+  {
+    "pattern": "MINI_SWE_AGENT_FINAL_OUTPUT",
+    "hint": "reference completion sentinel: use INDUS_TASK_DONE",
+    "flags": []
+  },
+  {
+    "pattern": "\\[CRON_FAILURE\\]",
+    "hint": "reference cron failure token: use [JOB_FAILED]",
+    "flags": []
+  },
+  {
+    "pattern": "\\bwakeAgent\\b",
+    "hint": "reference wake-gate key: use wake",
+    "flags": []
+  },
+  {
+    "pattern": "SKILL_PRUNED",
+    "hint": "reference compaction marker: use [skill elided: …]",
+    "flags": []
+  },
+  {
+    "pattern": "\\bOOF-\\d+\\b",
+    "hint": "reference issue id: do not cite reference tickets",
+    "flags": []
+  },
+  {
+    "pattern": "\\bNS-\\d{3,}\\b",
+    "hint": "reference issue id: do not cite reference tickets",
+    "flags": []
+  },
+  {
+    "pattern": "\\bMondwest\\b",
+    "hint": "reference brand font: use our own open-licence font",
+    "flags": []
+  },
+  {
+    "pattern": "Rules (Compressed|Expanded)",
+    "hint": "reference brand font: use our own open-licence font",
+    "flags": []
+  },
+  {
+    "pattern": "hey[ _]hermes",
+    "hint": "reference wake phrase: use \"hey indus\"",
+    "flags": [
+      "IGNORECASE"
+    ]
+  },
+  {
+    "pattern": "tool[ -]gateway.*nous|nous.*tool[ -]gateway",
+    "hint": "reference hosted tool service: dropped (P3)",
+    "flags": [
+      "IGNORECASE"
+    ]
+  }
+]

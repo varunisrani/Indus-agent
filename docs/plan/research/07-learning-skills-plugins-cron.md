@@ -379,8 +379,8 @@ enable-linger`; Unicode TAG block U+E0000–U+E007F.
   description; computed once and frozen with the system prompt. "Coding posture" can demote some
   categories to a names-only line, but entries are never dropped (agent-created skills are the
   agent's project memory). Unloadable same-tier duplicates get a rename note instead of a row.
-- **Mid-session changes** [obs]: each turn compares the index the prompt carries with the index the
-  session would build now; added/removed skills are announced once in a short note attached to the
+- **Mid-session changes** [obs]: on every turn the session rebuilds its skills index and diffs it
+  against the copy already embedded in the prompt; added/removed skills are announced once in a short note attached to the
   next user message (names + descriptions of new, names of removed). The system prompt itself only
   picks up the change at the next compaction. A reload command still refreshes slash commands.
 - **Progressive disclosure** [obs]: level 0 = list tool returns `{name, description, category}` rows
@@ -812,7 +812,8 @@ config can pin isolation. Reference claims 299 of 348 catalog entries run unchan
   `CatalogEntry { name, repo, sha (40 hex), description, maintainer, tier: official|community,
   category: desktop|memory|platform|web|tools|voice|automation|models|general, docs_url?, platforms?,
   capabilities: { provides_tools[], provides_hooks[], provides_middleware[], requires_env[] } }`.
-  Removal list = kill list: installs of a removed name/repo are refused with the recorded reason.
+  Removal list = kill list: trying to install a name or repo on it fails, and the refusal quotes the
+  reason stored with that entry.
 - [obs] Live refresh: the documentation site build emits the whole catalog as a single JSON file; clients fetch it,
   fall back to the last valid cached copy regardless of age, then to the in-tree copy.
 - [obs] Admission policy (paraphrased, 17 rules): human-merged PRs only; exact SHA pins; no

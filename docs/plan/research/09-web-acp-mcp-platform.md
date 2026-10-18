@@ -258,9 +258,11 @@ Third-party protocol names used by this area (keep exact; verify against vendor 
   → 409 `unknown_execution` [obs]. Bulk delete/empty/prune/owner-backfill count as offline-only
   maintenance: each acquires an exclusive per-profile gateway lock, so it answers 409 whenever the gateway is running; dry-run
   prune and reads still work [obs].
-- **Logs page:** file agent|errors|gateway; level ALL/DEBUG/INFO/WARNING/ERROR; component all/
-  gateway/agent/tools/cli/cron; lines 50/100/200/500; auto-refresh every 5 s; colour by severity
-  [obs].
+- **Logs page** [obs]: the view refreshes itself every 5 s and colours rows by severity. Filters:
+  - which file: the `agent`, `errors` or `gateway` log;
+  - minimum level: `ALL`, else `DEBUG`, `INFO`, `WARNING` or `ERROR`;
+  - component: `all`, else one of `cron`, `cli`, `tools`, `agent`, `gateway`;
+  - how many trailing lines: 50, 100, 200 or 500.
 - **Cron page:** create with optional name, prompt, cron expression, delivery target (local or a
   messaging platform or email); list shows state badge, last/next run; pause/resume, edit modal,
   trigger now, delete; a schedule builder helper [obs]. A public `/api/cron/fire` webhook exists for a
@@ -565,8 +567,8 @@ Third-party protocol names used by this area (keep exact; verify against vendor 
      (a first native-extension import racing another thread deadlocked `session/new`) [obs].
   4. Construct the agent object — by default the **gateway viewer** — and run the SDK loop with
      unstable protocol enabled; on exit close the viewer while its event loop is alive [obs]. The
-     viewer does NOT stamp sessions ended: the gateway ends an ACP session when its last viewer
-     detaches with an idle queue, and at gateway stop [obs].
+     viewer does NOT stamp sessions ended: ending an ACP session is the gateway's job, done
+     once the final viewer has gone and nothing is queued, or when the gateway itself stops [obs].
 - **`initialize` response** [obs]: protocol version = SDK's; agent info name + version; capabilities
   `loadSession: true`, image prompts, session fork/list/resume; auth methods = (when credentials
   resolve) an agent-managed method whose id is the active provider name, plus always a `terminal`
@@ -693,8 +695,8 @@ Third-party protocol names used by this area (keep exact; verify against vendor 
   (`reject_once`), "Deny always" (`reject_always`, only if the SDK supports that kind and not
   once-only). Option ids map to internal decisions once/session/always/deny/deny. After the answer
   the card's tool call is closed `completed` (allowed) or `failed`. On the gateway path, a cancelled
-  card, transport loss or unknown option is NOT a denial: the canonical waiter stays answerable by
-  another viewer; the card key is released so a later snapshot re-shows a new card; an accepted
+  card, a lost transport or an unrecognised option does NOT count as denying; some other viewer
+  can still answer the canonical waiter; the card key is released so a later snapshot re-shows a new card; an accepted
   answer keeps the key until the matching "settled" event so replays do not re-prompt.
 - **Clarify questions** [obs]: if the client advertised form elicitation, send `elicitation/create`
   with a form schema `{answer: string | enum | array of enum (multi-select)}`; accept → answer
@@ -778,9 +780,10 @@ Third-party protocol names used by this area (keep exact; verify against vendor 
     under emulation; macOS reports arm64 when an amd64 process runs under Rosetta.
   - `cpu_model`, `cpu_vendor` (cpuinfo / registry / sysctl; ARM implementer codes mapped),
     `ram_total_bytes` (meminfo / Windows API / sysctl).
-  - `gpu_class` ∈ `nvidia|amd|intel|apple_silicon|none|unknown`: Apple silicon by architecture;
-    Intel Macs by IOKit PCI display controllers; Windows by the display-class registry (scan up to
-    16 adapters); Linux by the NVIDIA procfs or the WSL CUDA bridge library, else sysfs DRM vendor
+  - `gpu_class` ∈ `nvidia|amd|intel|apple_silicon|none|unknown`. Detection per platform: on an
+    arm64 Mac the CPU architecture alone implies `apple_silicon`; an x86 Mac enumerates PCI display
+    controllers via IOKit; Windows reads up to 16 adapters from the registry's display-class key;
+    Linux by the NVIDIA procfs or the WSL CUDA bridge library, else sysfs DRM vendor
     ids (10de nvidia, 1002 amd, 8086 intel; priority nvidia > amd > intel). Any read error →
     `unknown`.
   - `nvidia_gpus` (name, PCI id) and an NVIDIA platform classifier: arm64 Windows with an N1X CPU
@@ -801,8 +804,8 @@ Third-party protocol names used by this area (keep exact; verify against vendor 
 ### 3.14 Platform layer: resolution tiers and app declarations
 
 - **Tiers** [obs]: `locate` reads file metadata only (stat, access); `inspect` may open files and
-  call in-process OS APIs (version from plist, PE resource, uninstall registry); `probe` is fresh,
-  never cached, and the only tier that may open a socket or spawn, gated by an `Effort` of
+  call in-process OS APIs (version from plist, PE resource, uninstall registry); `probe` runs every
+  time without a cache; it alone is allowed to spawn a process or use a socket, limited by an `Effort` of
   `LOCAL` (no network), `NETWORK` (sockets but never subprocess) or `DIAGNOSTIC` (may spawn);
   default probe deadline 3.0 s.
 - **Shapes** [obs]: `Observation<T> { state: not_checked|present|absent|unavailable|error, value?,
@@ -842,8 +845,8 @@ Third-party protocol names used by this area (keep exact; verify against vendor 
   - A small thread-safe registry maps server name → declaration with a change callback.
 - **Availability** [obs]: `no_requirements` (offerable), `unsupported_os`, `unsupported_gpu` (an
   `unknown` GPU passes, to avoid locking out machines whose registry/sysfs read failed),
-  `missing_app`, `available` (offerable), `version_too_old`; every present copy's version is read
-  so an old copy found first does not hide a newer one; version comparison is numeric per
+  `missing_app`, `available` (offerable), `version_too_old`; versions are checked for all installed
+  copies, not just the first located, so a stale earlier hit cannot mask a newer install; version comparison is numeric per
   component, padding with zeros, failing closed on non-numeric input; no caching, no probing.
 - **Liveness probe for app-hosted MCP servers** [obs]: read the app's runtime JSON file; pid alive
   (Windows `OpenProcess` with limited-query right; POSIX signal 0, permission error = alive);

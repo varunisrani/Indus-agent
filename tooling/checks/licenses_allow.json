@@ -1,0 +1,19 @@
+{
+  "allow": [
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Apache-2.0",
+    "PSF-2.0",
+    "Python-2.0",
+    "MPL-2.0",
+    "Unlicense",
+    "0BSD",
+    "CC0-1.0"
+  ],
+  "notes": {
+    "MPL-2.0": "File-level copyleft: fine as an unmodified dependency; if we ever patch an MPL file, the patched file stays MPL-2.0 and its source must be published."
+  },
+  "exceptions": {}
+}

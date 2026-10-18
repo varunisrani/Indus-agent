@@ -1,0 +1,509 @@
+# Acceptance map
+
+Each P0/P1 feature of `docs/plan/03-feature-inventory.md` has at least one acceptance id
+`ACC-<feature>-<n>`. Coverage lines are a test reference in backticks or
+`Review: <why> (<task id>)`; `--strict` (release) accepts test references only.
+Checked by `python -m tooling.checks acceptance`.
+
+- **ACC-A1-1** One agent object turns a user message into a final answer by calling the model, running requested …
+  - Review: not yet planned (phase TBD)
+- **ACC-A2-1** Durable ordering: the user's message is saved before the first model call and each tool-call …
+  - Review: not yet planned (phase TBD)
+- **ACC-A3-1** Strict role alternation is kept on every path (interrupt, timeout, bad tool name, crash); every …
+  - Review: not yet planned (phase TBD)
+- **ACC-A4-1** System prompt built in stable / context / volatile layers once per conversation, stored with the …
+  - Review: not yet planned (phase TBD)
+- **ACC-A5-1** Persona: a persona file in the profile home (our name `PERSONA.md`, proposal in …
+  - Review: not yet planned (phase TBD)
+- **ACC-A6-1** Project context discovery: native `.indus.md`/`INDUS.md` nearest to cwd, else an `AGENTS.md` chain …
+  - Review: not yet planned (phase TBD)
+- **ACC-A8-1** `@` references (`@file:`, `@folder:`, `@diff`, `@git:`, `@url:`, plugin prefixes) expand into the …
+  - Review: not yet planned (phase TBD)
+- **ACC-A9-1** Per-surface platform hint in the prompt (CLI, TUI, desktop, cron, API, each messaging platform) …
+  - Review: not yet planned (phase TBD)
+- **ACC-A10-1** Model-family guidance blocks (act-don't-describe, execution discipline, developer-role models) …
+  - Review: not yet planned (phase TBD)
+- **ACC-A11-1** Date-only timestamp line with zone, plus a runtime block naming OS, home and working directory (or …
+  - Review: not yet planned (phase TBD)
+- **ACC-A13-1** Interrupt from any thread: the in-flight model call is abandoned without leaking partial text …
+  - Review: not yet planned (phase TBD)
+- **ACC-A14-1** Steer: extra guidance typed during a turn is delivered as its own user message after the current …
+  - Review: not yet planned (phase TBD)
+- **ACC-A15-1** Redirect: a correction during a model call cancels only that call, keeps finished work and retries …
+  - Review: not yet planned (phase TBD)
+- **ACC-A16-1** Streaming by default with read/connect timeouts and stale-stream detection; a session flips to …
+  - Review: not yet planned (phase TBD)
+- **ACC-A17-1** Partial-stream continuation: text already shown is kept and continued after a mid-stream failure …
+  - Review: not yet planned (phase TBD)
+- **ACC-A18-1** Think-tag scrubber across deltas and a repetition guard against runaway loops
+  - Review: not yet planned (phase TBD)
+- **ACC-A19-1** Error classifier with a closed set of reasons (auth, billing, rate limit, overloaded, context …
+  - Review: not yet planned (phase TBD)
+- **ACC-A20-1** Retry with `Retry-After` honoured and jittered exponential backoff, interruptible; retry chatter …
+  - Review: not yet planned (phase TBD)
+- **ACC-A22-1** Plain-language terminal failure message naming what happened, what to do and when a limit resets …
+  - Review: not yet planned (phase TBD)
+- **ACC-A24-1** Fallback chain of provider+model pairs used after retries fail; the primary is restored at the …
+  - Review: not yet planned (phase TBD)
+- **ACC-A25-1** Output-length recovery: continuation nudges for cut-off text, larger output caps for cut-off tool …
+  - Review: not yet planned (phase TBD)
+- **ACC-A26-1** Empty or thinking-only reply recovery ladder ending in a clear explanation instead of a blank …
+  - Review: not yet planned (phase TBD)
+- **ACC-A29-1** Tool round: unknown tool names auto-repaired or answered with valid names, duplicate calls dropped …
+  - Review: not yet planned (phase TBD)
+- **ACC-A30-1** Safe parallel tool execution: read-only tools and non-overlapping file paths run concurrently …
+  - Review: not yet planned (phase TBD)
+- **ACC-A31-1** Untrusted-content fencing for web, browser and MCP results so the model treats them as data
+  - Review: not yet planned (phase TBD)
+- **ACC-A32-1** Tool-loop guardrails: repeated identical failures warn then block, per-turn caps on web searches …
+  - Review: not yet planned (phase TBD)
+- **ACC-A33-1** Toolsets: named bundles with includes, a shared core list, per-platform bundles and posture sets …
+  - Review: not yet planned (phase TBD)
+- **ACC-A34-1** Iteration cap (`max_turns`) and optional wall-clock run budget with a single wrap-up notice at 80 %
+  - Review: not yet planned (phase TBD)
+- **ACC-A35-1** Context-window resolution: config override, endpoint metadata, `/models`, local probes, family …
+  - Review: not yet planned (phase TBD)
+- **ACC-A36-1** Automatic context compression: provider-measured threshold, old tool output pruned, one summary …
+  - Review: not yet planned (phase TBD)
+- **ACC-A37-1** Manual `/compress` with focus topic, `here [N]` and preview
+  - Review: not yet planned (phase TBD)
+- **ACC-A38-1** Overflow recovery for payload-too-large, output-cap-too-large and prompt-too-long errors
+  - Review: not yet planned (phase TBD)
+- **ACC-A40-1** Prompt-cache markers for providers that use them, with 5-minute / 1-hour / auto TTL policy
+  - Review: not yet planned (phase TBD)
+- **ACC-A41-1** Usage and cost accounting: canonical token buckets, cost status (actual, estimated, included …
+  - Review: not yet planned (phase TBD)
+- **ACC-A42-1** Auxiliary model client for side tasks (summaries, titles, vision, search, memory, curator) with …
+  - Review: not yet planned (phase TBD)
+- **ACC-A43-1** Provider registry of declarative profiles found from bundled, user and entry-point plugins; lookup …
+  - Review: not yet planned (phase TBD)
+- **ACC-A44-1** OpenAI-compatible Chat Completions transport (aggregators, custom endpoints, local servers, most …
+  - Review: not yet planned (phase TBD)
+- **ACC-A45-1** Anthropic Messages transport with budgeted and adaptive thinking
+  - Review: not yet planned (phase TBD)
+- **ACC-A46-1** OpenAI Responses transport with reasoning items and incomplete-status handling
+  - Review: not yet planned (phase TBD)
+- **ACC-A50-1** Each provider key is sent only to its own host, matched by exact hostname; saved config beats stale …
+  - Review: not yet planned (phase TBD)
+- **ACC-A51-1** API-mode auto-detection from the base URL (Responses for official OpenAI hosts, Messages for …
+  - Review: not yet planned (phase TBD)
+- **ACC-A52-1** In-place model switch mid-session that rolls back atomically on failure
+  - Review: not yet planned (phase TBD)
+- **ACC-A53-1** Reasoning effort ladder `none … ultra` with per-model overrides, clamped to the strongest supported …
+  - Review: not yet planned (phase TBD)
+- **ACC-A55-1** Bundled provider catalogue of about forty vendors and gateways (key-based ones first)
+  - Review: not yet planned (phase TBD)
+- **ACC-A56-1** Named custom OpenAI-compatible providers, with `ollama`/`vllm`/`llamacpp` as aliases for local …
+  - Review: not yet planned (phase TBD)
+- **ACC-A63-1** Cross-process turn lease per session and a liveness watchdog that ends idle turns
+  - Review: not yet planned (phase TBD)
+- **ACC-A64-1** Closed set of turn exit reasons logged for every turn
+  - Review: not yet planned (phase TBD)
+- **ACC-B1-1** One SQLite store per profile: single writer with time-budgeted retries, WAL that is never silently …
+  - Review: not yet planned (phase TBD)
+- **ACC-B2-1** Sessions persist across restarts and resume by id, title or `latest` (`-r`, `-c`, `/resume`)
+  - Review: not yet planned (phase TBD)
+- **ACC-B3-1** Per-terminal continue breadcrumb so parallel terminals resume their own conversations; otherwise …
+  - Review: not yet planned (phase TBD)
+- **ACC-B4-1** Session ids by surface and source tags; internal sources (subagent, tool, board) hidden from …
+  - Review: not yet planned (phase TBD)
+- **ACC-B5-1** Titles: unique, sanitised, user > model > derived precedence, lineage numbering `name #2` …
+  - Review: not yet planned (phase TBD)
+- **ACC-B6-1** Rich session listing with preview, last activity and filters (source, workspace, size)
+  - Review: not yet planned (phase TBD)
+- **ACC-B7-1** Full-text search over all past messages with snippets → trigram and CJK bigram indexes, LIKE …
+  - Review: not yet planned (phase TBD)
+- **ACC-B8-1** New session (`/new`, `/clear`), retry last turn (`/retry`), undo the last N turns (`/undo N`)
+  - Review: not yet planned (phase TBD)
+- **ACC-B9-1** Branch a session into an independent copy (`/branch`, `--here`)
+  - Review: not yet planned (phase TBD)
+- **ACC-B10-1** Compression lineage: summary continuations or in-place compaction, with display history that still …
+  - Review: not yet planned (phase TBD)
+- **ACC-B12-1** Export: JSONL, Markdown, HTML, trace, prompts-only, with optional redaction; `/save json
+  - Review: not yet planned (phase TBD)
+- **ACC-B15-1** Delete sessions (cascading to subagent children) with tombstones so a deleted id can never come back
+  - Review: not yet planned (phase TBD)
+- **ACC-B16-1** Manual prune by age/source/title with dry run → opt-in automatic prune and a one-time low-disk …
+  - Review: not yet planned (phase TBD)
+- **ACC-B19-1** Resume size guard (20,000 messages) with stable refusal codes
+  - Review: not yet planned (phase TBD)
+- **ACC-B20-1** Store safety: replaced-file detection, corruption quarantine, plain-language error buckets with a …
+  - Review: not yet planned (phase TBD)
+- **ACC-B23-1** Resume recap ("previous conversation") printed by the classic CLI
+  - Review: not yet planned (phase TBD)
+- **ACC-B24-1** Per-session and per-model usage including auxiliary calls, summed across a lineage
+  - Review: not yet planned (phase TBD)
+- **ACC-B26-1** Queue a prompt to run after the current turn (`/queue`, list/edit/move/clear)
+  - Review: not yet planned (phase TBD)
+- **ACC-B30-1** Workspace metadata (cwd, git root, branch) recorded per session; cwd restored on resume unless …
+  - Review: not yet planned (phase TBD)
+- **ACC-B34-1** Configured time zone for every clock the agent shows or schedules with
+  - Review: not yet planned (phase TBD)
+- **ACC-C1-1** Self-registering tool registry with cached availability probes; every handler returns a string and …
+  - Review: not yet planned (phase TBD)
+- **ACC-C2-1** Argument coercion and per-provider schema sanitising so one odd schema cannot break a request
+  - Review: not yet planned (phase TBD)
+- **ACC-C3-1** Result size budget: per-result and per-turn caps scaled to the window, oversized output spilled to …
+  - Review: not yet planned (phase TBD)
+- **ACC-C5-1** `terminal` foreground: timeout, exit-code meanings, failure hints, redaction, stable result shape
+  - Review: not yet planned (phase TBD)
+- **ACC-C6-1** `terminal` background processes with notify-on-exit, output watch patterns, heartbeats and …
+  - Review: not yet planned (phase TBD)
+- **ACC-C7-1** `process_manage`: list, poll, log, wait, kill, write, submit, close, hand off to parent
+  - Review: not yet planned (phase TBD)
+- **ACC-C10-1** `read_file`: line-numbered paging, device and secret-file guards, repeat-read loop breaker → …
+  - Review: not yet planned (phase TBD)
+- **ACC-C11-1** `write_file`: refuses to overwrite a file the agent has not fully read, protected paths, hash …
+  - Review: not yet planned (phase TBD)
+- **ACC-C12-1** `patch`: exact replace → nine fuzzy matching strategies and the multi-file V4A patch format
+  - Review: not yet planned (phase TBD)
+- **ACC-C13-1** `search_files`: ripgrep content and filename search with output modes
+  - Review: not yet planned (phase TBD)
+- **ACC-C14-1** Lint after edit reporting only newly introduced errors → language-server diagnostics
+  - Review: not yet planned (phase TBD)
+- **ACC-C16-1** Automatic filesystem checkpoints before the first change in a turn; `/rollback [N]`, rollback diff …
+  - Review: not yet planned (phase TBD)
+- **ACC-C17-1** `web_search` through pluggable backends (Exa, Tavily, Brave, SearXNG, DuckDuckGo, …) with a keyless …
+  - Review: not yet planned (phase TBD)
+- **ACC-C18-1** `web_extract` with URL normalisation, SSRF checks, per-page truncation and stored full text
+  - Review: not yet planned (phase TBD)
+- **ACC-C19-1** SSRF policy (private and metadata ranges blocked after DNS) and a website blocklist
+  - Review: not yet planned (phase TBD)
+- **ACC-C21-1** Browser tools on local headless Chromium: open a page, take an accessibility snapshot, click, type …
+  - Review: not yet planned (phase TBD)
+- **ACC-C27-1** `vision_analyze`: native image input on vision models, auxiliary vision model otherwise, region …
+  - Review: not yet planned (phase TBD)
+- **ACC-C33-1** `todo_list` with statuses, merge/replace, a live panel, and re-injection after compression
+  - Review: not yet planned (phase TBD)
+- **ACC-C34-1** `clarify`: 1–5 questions with choices and multi-select, answered on every surface
+  - Review: not yet planned (phase TBD)
+- **ACC-C35-1** `execute_code`: Python that calls allow-listed tools over RPC, per-call → persistent session …
+  - Review: not yet planned (phase TBD)
+- **ACC-C36-1** `delegate_task` subagents: synchronous batch → background children, list/steer/stop, output schema …
+  - Review: not yet planned (phase TBD)
+- **ACC-C41-1** Child-process environment scrubbing so provider keys never reach model-written commands, plus …
+  - Review: not yet planned (phase TBD)
+- **ACC-C42-1** Sudo support: cached password, masked prompt on interactive surfaces, clear advice on headless ones
+  - Review: not yet planned (phase TBD)
+- **ACC-D1-1** Shared execution contract for every backend: fresh `bash -c` per call, shell snapshot, cwd marker …
+  - Review: not yet planned (phase TBD)
+- **ACC-D2-1** Local backend: process groups, scratch temp dir, PATH repair, persistent-shell switch
+  - Review: not yet planned (phase TBD)
+- **ACC-D3-1** Docker backend: dropped capabilities, resource limits, persistent per-task dirs, reuse by label …
+  - Review: not yet planned (phase TBD)
+- **ACC-D4-1** SSH backend: multiplexed connection, remote home detection, file sync (P7: first tools phase)
+  - Review: not yet planned (phase TBD)
+- **ACC-D11-1** Environment cache per key with creation lock, idle reaper, per-profile isolation, clean teardown at …
+  - Review: not yet planned (phase TBD)
+- **ACC-D12-1** Remote file sync: credential files and skills pushed before commands, changed files synced back on …
+  - Review: not yet planned (phase TBD)
+- **ACC-D13-1** Degraded-backend result with a retry hint when SSH or Docker is unreachable; the environment is …
+  - Review: not yet planned (phase TBD)
+- **ACC-D14-1** Terminal settings: default and maximum timeouts, lifetime, env passthrough, credential files …
+  - Review: not yet planned (phase TBD)
+- **ACC-E1-1** Dangerous-command detection with normalisation (wrappers, interpreter `-c` payloads, quoting …
+  - Review: not yet planned (phase TBD)
+- **ACC-E2-1** Hardline floor (disk wipes, fork bombs, deleting system roots) and user deny globs that nothing can …
+  - Review: not yet planned (phase TBD)
+- **ACC-E3-1** Approval modes manual / smart / off, changeable live with `/approvals`
+  - Review: not yet planned (phase TBD)
+- **ACC-E4-1** Human choices once / session / always / deny; "always" writes a per-profile allowlist
+  - Review: not yet planned (phase TBD)
+- **ACC-E6-1** Auto-approve switch (`--yolo`, `/yolo`, Shift+Tab, env) remembered per session; container backends …
+  - Review: not yet planned (phase TBD)
+- **ACC-E7-1** Unattended policies for cron, one-shot and API/webhook runs, deny by default
+  - Review: not yet planned (phase TBD)
+- **ACC-E8-1** Approvals over chat: buttons where supported, `/approve`, `/approve all`, `/deny reason`, timeout …
+  - Review: not yet planned (phase TBD)
+- **ACC-E9-1** Whole-script approval for `execute_code`
+  - Review: not yet planned (phase TBD)
+- **ACC-E11-1** Protected instruction files always ask before a write; credential and system paths refused
+  - Review: not yet planned (phase TBD)
+- **ACC-E12-1** Secret redaction in logs, tool output, exports and deliveries (on by default)
+  - Review: not yet planned (phase TBD)
+- **ACC-E13-1** Prompt-injection and exfiltration scanning of context files, memory writes, cron prompts and skills
+  - Review: not yet planned (phase TBD)
+- **ACC-E18-1** Isolation launches: `--safe-mode`, `--ignore-rules`, `--ignore-user-config`
+  - Review: not yet planned (phase TBD)
+- **ACC-F1-1** Two bounded memory stores (agent notes, user profile) shown in the prompt as a frozen snapshot each …
+  - Review: not yet planned (phase TBD)
+- **ACC-F2-1** `memory` tool: add / patch / remove / batch with over-limit guidance and a per-turn retry cap; no …
+  - Review: not yet planned (phase TBD)
+- **ACC-F5-1** Background review every N turns or tool iterations that saves memory and improves skills, under a …
+  - Review: not yet planned (phase TBD)
+- **ACC-F6-1** `/refine [focus]` runs that review on demand
+  - Review: not yet planned (phase TBD)
+- **ACC-F7-1** `/learn` turns a folder, URL, conversation or notes into a skill
+  - Review: not yet planned (phase TBD)
+- **ACC-F10-1** Skill format: folder with `SKILL.md` frontmatter and support folders; visibility by OS, toolset …
+  - Review: not yet planned (phase TBD)
+- **ACC-F11-1** Skill discovery tiers (project, home, create dir, external dirs), duplicate rules and a disabled …
+  - Review: not yet planned (phase TBD)
+- **ACC-F13-1** Compact skills index in the prompt; added or removed skills announced once mid-session
+  - Review: not yet planned (phase TBD)
+- **ACC-F14-1** `skills_list` / `skill_view` progressive disclosure
+  - Review: not yet planned (phase TBD)
+- **ACC-F15-1** Every skill is a slash command (`/skill-name`, up to five stacked); `-s` preloads; auto-load list
+  - Review: not yet planned (phase TBD)
+- **ACC-F16-1** `skill_manage` tool (create, patch, delete, write/remove support files, batch) with limits, locks …
+  - Review: not yet planned (phase TBD)
+- **ACC-F21-1** Curator phase 1: idle-triggered aging of agent-made skills to stale then archive, pin, restore …
+  - Review: not yet planned (phase TBD)
+- **ACC-F24-1** Per-skill usage counters (used, viewed, patched)
+  - Review: not yet planned (phase TBD)
+- **ACC-F28-1** Bundled skills seeded into the home with an origin-hash manifest; user edits never overwritten …
+  - Review: not yet planned (phase TBD)
+- **ACC-F29-1** Starter skill set authored by Indus from scratch; no reference skill text reused (lead default)
+  - Review: not yet planned (phase TBD)
+- **ACC-F31-1** `session_search` tool for recalling past conversations
+  - Review: not yet planned (phase TBD)
+- **ACC-G1-1** Plugin manifest and discovery from bundled, user, project and entry-point sources; general plugins …
+  - Review: not yet planned (phase TBD)
+- **ACC-G2-1** Plugin context API: tools, hooks, slash and CLI commands, skills → providers, platforms, context …
+  - Review: not yet planned (phase TBD)
+- **ACC-G3-1** Hook catalogue: pre/post tool (pre blocks fail closed), pre/post LLM, session start/end → the full …
+  - Review: not yet planned (phase TBD)
+- **ACC-G14-1** MCP client: stdio, Streamable HTTP and SSE servers; filtered environment; prefixed tool names …
+  - Review: not yet planned (phase TBD)
+- **ACC-G19-1** `indus mcp` add / list / test / remove → picker, catalogue install, configure checklist, login …
+  - Review: not yet planned (phase TBD)
+- **ACC-H1-1** Cron jobs stored per profile with locking; each run writes an output document
+  - Review: not yet planned (phase TBD)
+- **ACC-H2-1** Schedule grammar: natural day/time phrases, `every <dur>`, cron expressions, ISO times, `in <dur>` …
+  - Review: not yet planned (phase TBD)
+- **ACC-H3-1** Gateway ticker every 60 s with on-time / late / catch-up rules and fire claims
+  - Review: not yet planned (phase TBD)
+- **ACC-H4-1** Agent jobs run in a fresh session with a scheduling hint, attached skills, output chaining …
+  - Review: not yet planned (phase TBD)
+- **ACC-H5-1** Script-only jobs whose stdout is the message (no model)
+  - Review: not yet planned (phase TBD)
+- **ACC-H8-1** Preflight checks; a misconfigured job alerts once and costs no tokens
+  - Review: not yet planned (phase TBD)
+- **ACC-H9-1** Silence token (nothing new → no message) and failure token
+  - Review: not yet planned (phase TBD)
+- **ACC-H10-1** Delivery to origin, local files, a platform's home channel, `platform:chat[:thread]`, all, or lists
+  - Review: not yet planned (phase TBD)
+- **ACC-H13-1** Execution ledger: an abandoned run becomes "unknown" and is never re-run
+  - Review: not yet planned (phase TBD)
+- **ACC-H15-1** `cronjob_manage` model tool (create, list, update, pause, resume, remove, async run); cron runs …
+  - Review: not yet planned (phase TBD)
+- **ACC-H16-1** `/cron` and `indus cron` create/edit/list/pause/resume/run/remove/status/tick → runs history …
+  - Review: not yet planned (phase TBD)
+- **ACC-I1-1** `indus` command; bare `indus` opens a chat; about seventy subcommands in a stable help order
+  - Review: not yet planned (phase TBD)
+- **ACC-I2-1** Unknown command answered in three lines with "did you mean" or an install hint
+  - Review: not yet planned (phase TBD)
+- **ACC-I3-1** Global flags: `-p`, `-m`, `--provider`, `-t`, `-r`, `-c`, `--yolo`, `-z`, `-V` → `--reasoning` …
+  - Review: not yet planned (phase TBD)
+- **ACC-I4-1** Classic interactive REPL: banner, status bar with context meter and cost, multiline keys, external …
+  - Review: not yet planned (phase TBD)
+- **ACC-I5-1** One-shot `-z`: only the final text on stdout, defined exit codes, `--usage-file` JSON
+  - Review: not yet planned (phase TBD)
+- **ACC-I6-1** `chat -q` seeds an interactive session on a TTY or answers and exits; `--query-file`; `--format …
+  - Review: not yet planned (phase TBD)
+- **ACC-I7-1** Documented exit codes for finite runs (0, 1, 2, 3, 75, 130)
+  - Review: not yet planned (phase TBD)
+- **ACC-I8-1** First-run guard that offers setup when no provider is usable
+  - Review: not yet planned (phase TBD)
+- **ACC-I9-1** One slash-command registry for every surface; dispatch order built-in → quick command → plugin → …
+  - Review: not yet planned (phase TBD)
+- **ACC-I11-1** Bang shell `!cmd` on the local host through the same safety guards; nothing enters history
+  - Review: not yet planned (phase TBD)
+- **ACC-I12-1** Home resolution (`INDUS_HOME`, `~/.indus`, `%LOCALAPPDATA%\indus`, suffix for side-by-side …
+  - Review: not yet planned (phase TBD)
+- **ACC-I13-1** Profiles: create (optional clone without messaging credentials), list, use (sticky), show, delete …
+  - Review: not yet planned (phase TBD)
+- **ACC-I16-1** Config file: built-in defaults deep-merged, `${VAR}` expansion, comment-preserving atomic save that …
+  - Review: not yet planned (phase TBD)
+- **ACC-I17-1** `indus config show
+  - Review: not yet planned (phase TBD)
+- **ACC-I18-1** `.env` secrets: home file beats shell exports; locked atomic writer with a denylist of dangerous …
+  - Review: not yet planned (phase TBD)
+- **ACC-I22-1** Auth store (`auth.json`) with cross-process lock and safe handling of unreadable or corrupt files
+  - Review: not yet planned (phase TBD)
+- **ACC-I23-1** `indus auth add
+  - Review: not yet planned (phase TBD)
+- **ACC-I25-1** `indus model` picker: provider → key → live or curated model list → reasoning effort; custom …
+  - Review: not yet planned (phase TBD)
+- **ACC-I26-1** `/model` switches among configured providers for the session or globally
+  - Review: not yet planned (phase TBD)
+- **ACC-I27-1** `indus fallback list
+  - Review: not yet planned (phase TBD)
+- **ACC-I29-1** Setup wizard: sections (model, terminal, gateway, tools, agent), non-interactive guidance, full and …
+  - Review: not yet planned (phase TBD)
+- **ACC-I30-1** `indus tools list
+  - Review: not yet planned (phase TBD)
+- **ACC-I31-1** `indus sessions` list / browse / rename / delete / export / prune / archive / pin / stats with …
+  - Review: not yet planned (phase TBD)
+- **ACC-I32-1** `indus checkpoints status
+  - Review: not yet planned (phase TBD)
+- **ACC-I33-1** `indus backup` (whole home as a zip, databases copied safely while running) and `indus import` with …
+  - Review: not yet planned (phase TBD)
+- **ACC-I34-1** `indus doctor` with `--fix`, `--live` probes and advisory acknowledgements
+  - Review: not yet planned (phase TBD)
+- **ACC-I37-1** `indus status` (one screen) with `--full` and `--deep`
+  - Review: not yet planned (phase TBD)
+- **ACC-I38-1** `indus logs` viewer with file, level, session, time and component filters and follow mode
+  - Review: not yet planned (phase TBD)
+- **ACC-I41-1** `indus update`: git channel (stable tags / main), syntax check and rollback, dependency sync …
+  - Review: not yet planned (phase TBD)
+- **ACC-I42-1** `indus uninstall` (keep data / full / desktop only / data only, dry run)
+  - Review: not yet planned (phase TBD)
+- **ACC-I45-1** Version output naming install method and update availability
+  - Review: not yet planned (phase TBD)
+- **ACC-I51-1** In-session info commands: `/status`, `/context`, `/whoami`, `/usage`, `/insights`, `/help` …
+  - Review: not yet planned (phase TBD)
+- **ACC-I53-1** Log files (agent, errors, gateway, gui) behind a non-blocking queue with rotation, session tags and …
+  - Review: not yet planned (phase TBD)
+- **ACC-I54-1** Process bootstrap: UTF-8 stdio, import hardening, dual-stack connects, scratch temp dir
+  - Review: not yet planned (phase TBD)
+- **ACC-I55-1** Classic chat runs the agent in-process first. Changed (P1 decision); the reference's gateway-client …
+  - Review: not yet planned (phase TBD)
+- **ACC-J1-1** `indus --tui` launcher: TTY gate, cwd pinning, resume and one-shot options, heap flag, exit summary …
+  - Review: not yet planned (phase TBD)
+- **ACC-J2-1** Transport: renderer spawns a Python child over JSON-RPC on stdin/stdout first. Changed (P1 …
+  - Review: not yet planned (phase TBD)
+- **ACC-J3-1** Declared wire contract with generated TypeScript types; error codes with one fixed meaning each. …
+  - Review: not yet planned (phase TBD)
+- **ACC-J4-1** Layout: transcript with banner and session panel, live streaming row, tool trail, status rule with …
+  - Review: not yet planned (phase TBD)
+- **ACC-J5-1** Multiline composer: word motions, kill keys, undo/redo, mouse selection, external editor, paste …
+  - Review: not yet planned (phase TBD)
+- **ACC-J6-1** Slash, skill and path completion with fuzzy ranking, completed through the session's backend
+  - Review: not yet planned (phase TBD)
+- **ACC-J7-1** Input history file shared with the classic CLI format
+  - Review: not yet planned (phase TBD)
+- **ACC-J8-1** Busy-input modes (queue by default in the TUI, steer, interrupt) and queue editing
+  - Review: not yet planned (phase TBD)
+- **ACC-J9-1** Streaming markdown with sealed segments, inline diffs, todo panel and detail modes per section
+  - Review: not yet planned (phase TBD)
+- **ACC-J10-1** Interrupt rules: Ctrl+C clears a draft before interrupting before exiting; Esc Esc; double Enter …
+  - Review: not yet planned (phase TBD)
+- **ACC-J11-1** Blocking cards for approval, clarify, sudo, secret and confirm; a pager for long output
+  - Review: not yet planned (phase TBD)
+- **ACC-J12-1** Model picker (provider → model → effort) with session or global scope
+  - Review: not yet planned (phase TBD)
+- **ACC-J13-1** Session switcher with live and stored sessions, new, close and delete
+  - Review: not yet planned (phase TBD)
+- **ACC-J14-1** Themes from the backend with light/dark detection and a cached boot theme
+  - Review: not yet planned (phase TBD)
+- **ACC-J15-1** Config sync: display settings applied on start and re-read when the config changes
+  - Review: not yet planned (phase TBD)
+- **ACC-J16-1** Terminal hygiene: modes reset on every exit path, resize coalescing, synchronized output only where …
+  - Review: not yet planned (phase TBD)
+- **ACC-J17-1** Reconnect and crash recovery that reopens the same stored session and never resubmits a prompt
+  - Review: not yet planned (phase TBD)
+- **ACC-K1-1** `indus gateway run
+  - Review: not yet planned (phase TBD)
+- **ACC-K2-1** Service install: systemd user unit → launchd agent, Windows scheduled task, system units
+  - Review: not yet planned (phase TBD)
+- **ACC-K3-1** One profile per gateway process. Changed (P8 decision); multiplexed profiles in one process come …
+  - Review: not yet planned (phase TBD)
+- **ACC-K4-1** Adapter contract and platform registry: enabled by credentials, explicit disable wins, token locks …
+  - Review: not yet planned (phase TBD)
+- **ACC-K5-1** Telegram (polling or webhook, MarkdownV2 with plain fallback, forum topics, buttons, reactions)
+  - Review: not yet planned (phase TBD)
+- **ACC-K6-1** Discord (slash commands, components, auto-threads, role allowlist, mention gating)
+  - Review: not yet planned (phase TBD)
+- **ACC-K7-1** Slack (Socket Mode, Block Kit, threads, ephemeral messages)
+  - Review: not yet planned (phase TBD)
+- **ACC-K8-1** Signal through signal-cli
+  - Review: not yet planned (phase TBD)
+- **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
+  - Review: not yet planned (phase TBD)
+- **ACC-K13-1** Inbound normalisation: command detection, burst text batching, per-platform dedupe, reply context …
+  - Review: not yet planned (phase TBD)
+- **ACC-K14-1** Authorization chain: per-platform and global allowlists, allow-all flags, group chat lists, role …
+  - Review: not yet planned (phase TBD)
+- **ACC-K15-1** Pairing codes for unknown DM users with expiry and lockouts; `indus pairing approve
+  - Review: not yet planned (phase TBD)
+- **ACC-K16-1** Unknown-sender behaviour pair / ignore / decline
+  - Review: not yet planned (phase TBD)
+- **ACC-K18-1** Mention gating in groups and free-response channels
+  - Review: not yet planned (phase TBD)
+- **ACC-K19-1** Bot-loop guard per conversation and optional concurrent-session cap
+  - Review: not yet planned (phase TBD)
+- **ACC-K20-1** Session keys for DM, group (per user by default) and thread; conversations never reset on idle
+  - Review: not yet planned (phase TBD)
+- **ACC-K21-1** Chat slash commands (`/new`, `/resume`, `/sessions`, `/title`, `/model`, `/status`, `/stop` …
+  - Review: not yet planned (phase TBD)
+- **ACC-K23-1** Busy handling with two guards; plain messages interrupt, queue or steer; acknowledgement replies
+  - Review: not yet planned (phase TBD)
+- **ACC-K24-1** Intake of voice notes (transcribed, with an explicit note when inaudible), images (native or …
+  - Review: not yet planned (phase TBD)
+- **ACC-K25-1** Outbound chunking with fence carry-over and `(i/n)` markers; per-platform formatting with …
+  - Review: not yet planned (phase TBD)
+- **ACC-K26-1** Files in replies via media tags with a path policy → generated files delivered as native attachments
+  - Review: not yet planned (phase TBD)
+- **ACC-K27-1** Silence tokens: a reply that is only the token sends nothing
+  - Review: not yet planned (phase TBD)
+- **ACC-K28-1** Typing indicator → in-place streamed edits, native drafts, tool-progress modes and status phrases
+  - Review: not yet planned (phase TBD)
+- **ACC-K29-1** Send retries with an error classifier and a dead-target registry
+  - Review: not yet planned (phase TBD)
+- **ACC-K30-1** Delivery ledger: final replies delivered at least once across crashes, with possible duplicates …
+  - Review: not yet planned (phase TBD)
+- **ACC-K31-1** Restart notice to home channels and one auto-resume of turns cut by a restart
+  - Review: not yet planned (phase TBD)
+- **ACC-K32-1** Local control socket (identify, status, then more verbs) for other local processes
+  - Review: not yet planned (phase TBD)
+- **ACC-K33-1** Reconnect watcher with capped backoff, "needs attention" flag, `/platform pause
+  - Review: not yet planned (phase TBD)
+- **ACC-K35-1** OpenAI-compatible API server: chat completions, responses, models, runs with …
+  - Review: not yet planned (phase TBD)
+- **ACC-K36-1** Webhook receiver: HMAC-verified routes, payload filters and templates, coalescing, direct delivery …
+  - Review: not yet planned (phase TBD)
+- **ACC-K52-1** `indus gateway setup` and per-platform setup helpers (WhatsApp pairing, Slack app)
+  - Review: not yet planned (phase TBD)
+- **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …
+  - Review: not yet planned (phase TBD)
+- **ACC-L3-1** Sessions page: list, search with snippets, view as markdown, rename, export, prune, delete, resume …
+  - Review: not yet planned (phase TBD)
+- **ACC-L4-1** Chat tab embedding the real TUI over a PTY and xterm → keep-alive attach across tabs, live tool …
+  - Review: not yet planned (phase TBD)
+- **ACC-L5-1** Config page from a schema; Keys page with redacted previews
+  - Review: not yet planned (phase TBD)
+- **ACC-L6-1** Logs page with file, level and component filters
+  - Review: not yet planned (phase TBD)
+- **ACC-L20-1** Dashboard fonts and imagery are our own; the reference's brand fonts are not shipped (lead default)
+  - Review: not yet planned (phase TBD)
+- **ACC-M1-1** `indus acp` stdio server with `initialize`, `authenticate` (including a terminal setup method) …
+  - Review: not yet planned (phase TBD)
+- **ACC-M2-1** ACP sessions: new, load, resume (full history streamed before the reply), list with cwd filter and …
+  - Review: not yet planned (phase TBD)
+- **ACC-M3-1** ACP prompts with text, image and resource blocks; streamed message, thought, tool, plan, usage and …
+  - Review: not yet planned (phase TBD)
+- **ACC-M4-1** ACP permission cards: allow once, for session, always, deny, deny always
+  - Review: not yet planned (phase TBD)
+- **ACC-M8-1** ACP runs the agent in-process first. Changed (P1 decision); gateway-viewer mode with reattach and …
+  - Review: not yet planned (phase TBD)
+- **ACC-M9-1** Editor-provided MCP servers attached per session; curated editor toolset
+  - Review: not yet planned (phase TBD)
+- **ACC-N31-1** Secrets at rest (desktop and CLI: provider keys, auth tokens, platform credentials) go to the OS …
+  - Review: not yet planned (phase TBD)
+- **ACC-S1-1** POSIX installer: stage ladder with manifest and JSON frames, pinned `uv` bootstrap verified by …
+  - Review: not yet planned (phase TBD)
+- **ACC-S3-1** Docker image with dispatcher, UID/GID remap and a data volume; Compose file with gateway and …
+  - Review: not yet planned (phase TBD)
+- **ACC-S7-1** No PyPI: wheel/sdist builds blocked outside Nix; editable installs work. Kept (P5 decision)
+  - Review: not yet planned (phase TBD)
+- **ACC-S8-1** Dependency policy: exact or bounded pins, lock file, extras for optional backends installed lazily
+  - Review: not yet planned (phase TBD)
+- **ACC-S11-1** CI with fail-open change classifier, one aggregate gate, lint diff, lock freshness, supply-chain …
+  - Review: not yet planned (phase TBD)
+- **ACC-S13-1** Canonical test runner: one process per file, retry-once flaky report, deterministic slices …
+  - Review: not yet planned (phase TBD)
+- **ACC-S14-1** Golden prompt-surface fixtures (rendered prompt plus tool array per surface) that fail CI when stale
+  - Review: not yet planned (phase TBD)
+- **ACC-S17-1** Clean-room guards in CI (banned identifiers, code and text similarity, asset hashes, licences). …
+  - Review: not yet planned (phase TBD)
+- **ACC-S18-1** `THIRD_PARTY_NOTICES.md` crediting the reference and every dependency. Added by Indus (licence …
+  - Review: not yet planned (phase TBD)
+- **ACC-Q1-1** Host facts without env input or subprocesses: OS, native and process architecture, CPU, RAM, GPU …
+  - Review: not yet planned (phase TBD)
+- **ACC-Q2-1** Command lookup through one set of known-directory tables
+  - Review: not yet planned (phase TBD)
+- **ACC-Q5-1** Linux and macOS as first-class hosts
+  - Review: not yet planned (phase TBD)
+- **ACC-Q9-1** Localisation: catalogue indirection everywhere with English → seventeen language catalogues with …
+  - Review: not yet planned (phase TBD)

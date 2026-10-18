@@ -1,0 +1,10 @@
+[
+  {
+    "path": "THIRD_PARTY_NOTICES.md",
+    "reason": "MIT licence text the reference's licence requires us to reproduce verbatim"
+  },
+  {
+    "path": "LICENSE",
+    "reason": "Standard MIT licence text (owner chose MIT for Indus Agent, 2026-10-18); the reference uses the same standard text"
+  }
+]

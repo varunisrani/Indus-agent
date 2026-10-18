@@ -1,0 +1,529 @@
+# Traps ledger
+
+Every trap from the plan (research specs `R<nn>.<n>`, phase docs `T<nn>.<n>`) has a row here.
+Coverage lines under a row are either a test reference such as
+`` `tests/unit/test_example.py::test_name` `` or `Review: <why> (<task id>)`.
+Checked by `python -m tooling.checks traps`.
+
+- **R01.1** Prompt-cache byte stability
+  - Review: not yet planned (P00-guards)
+- **R01.2** Role alternation under every failure path
+  - Review: not yet planned (P00-guards)
+- **R01.3** Persist order
+  - Review: not yet planned (P00-guards)
+- **R01.4** Interrupt races
+  - Review: not yet planned (P00-guards)
+- **R01.5** Streaming stale detection vs slow reasoning
+  - Review: not yet planned (P00-guards)
+- **R01.6** Partial delivery
+  - Review: not yet planned (P00-guards)
+- **R01.7** Compression threshold arithmetic and docs drift
+  - Review: not yet planned (P00-guards)
+- **R01.8** Estimates are not evidence
+  - Review: not yet planned (P00-guards)
+- **R01.9** Compression failure loops
+  - Review: not yet planned (P00-guards)
+- **R01.10** Fallback is turn-scoped and stateful
+  - Review: not yet planned (P00-guards)
+- **R01.11** Key leakage across endpoints
+  - Review: not yet planned (P00-guards)
+- **R01.12** Vendor impersonation and billing evasion
+  - Review: not yet planned (P00-guards)
+- **R01.13** Tool-definition list aliasing
+  - Review: not yet planned (P00-guards)
+- **R01.14** Parallel tool safety
+  - Review: not yet planned (P00-guards)
+- **R01.15** Context-file trust
+  - Review: not yet planned (P00-guards)
+- **R01.16** Thread/profile scope
+  - Review: not yet planned (P00-guards)
+- **R01.17** Empty and degenerate outputs
+  - Review: not yet planned (P00-guards)
+- **R01.18** Exit-path completeness
+  - Review: not yet planned (P00-guards)
+- **R02.1** Per-session variables leaking through the shared snapshot
+  - Review: not yet planned (P00-guards)
+- **R02.2** Bounded vs full-fidelity capture
+  - Review: not yet planned (P00-guards)
+- **R02.3** Timeouts that never fire
+  - Review: not yet planned (P00-guards)
+- **R02.4** Floors must precede every bypass
+  - Review: not yet planned (P00-guards)
+- **R02.5** Silence is not consent; withdrawal is not refusal
+  - Review: not yet planned (P00-guards)
+- **R02.6** Isolation is about mounts, not backend names
+  - Review: not yet planned (P00-guards)
+- **R02.7** Credentials on the command line
+  - Review: not yet planned (P00-guards)
+- **R02.8** Multiprofile scoping everywhere
+  - Review: not yet planned (P00-guards)
+- **R02.9** Approved command killed by a stale interrupt
+  - Review: not yet planned (P00-guards)
+- **R02.10** cwd hijack
+  - Review: not yet planned (P00-guards)
+- **R02.11** Foreground refusals that create retry loops
+  - Review: not yet planned (P00-guards)
+- **R02.12** Kill order for process trees
+  - Review: not yet planned (P00-guards)
+- **R02.13** Flapping availability probes strip tools mid-session
+  - Review: not yet planned (P00-guards)
+- **R02.14** Stale whole-file overwrite
+  - Review: not yet planned (P00-guards)
+- **R02.15** Read loops on weak models
+  - Review: not yet planned (P00-guards)
+- **R02.16** Spill files must outlive the cache mindset
+  - Review: not yet planned (P00-guards)
+- **R02.17** Background completion only where it can be delivered
+  - Review: not yet planned (P00-guards)
+- **R02.18** Watch-pattern floods
+  - Review: not yet planned (P00-guards)
+- **R02.19** Container recreated silently
+  - Review: not yet planned (P00-guards)
+- **R02.20** Docker self-inconsistencies
+  - Review: not yet planned (P00-guards)
+- **R02.21** Cross-reference hallucination in schemas
+  - Review: not yet planned (P00-guards)
+- **R02.22** Secrets in child processes
+  - Review: not yet planned (P00-guards)
+- **R02.23** Docs vs code drift (do not trust docs for numbers)
+  - Review: not yet planned (P00-guards)
+- **R02.24** Async smart-approver as an injection target
+  - Review: not yet planned (P00-guards)
+- **R02.25** Toolset membership vs registration
+  - Review: not yet planned (P00-guards)
+- **R02.26** Send-message is not a tool
+  - Review: not yet planned (P00-guards)
+- **R02.27** Untrusted-input sessions need a tool floor, not just approvals
+  - Review: not yet planned (P00-guards)
+- **R02.28** Handler signature drift breaks plugins
+  - Review: not yet planned (P00-guards)
+- **R02.29** Unscoped probes at boot
+  - Review: not yet planned (P00-guards)
+- **R02.30** SDK backends lie about timeouts
+  - Review: not yet planned (P00-guards)
+- **R02.31** Remote sync-back can overwrite host state
+  - Review: not yet planned (P00-guards)
+- **R02.32** Kernel cap starvation
+  - Review: not yet planned (P00-guards)
+- **R03.1** Never live-downgrade WAL
+  - Review: not yet planned (P00-guards)
+- **R03.2** Stray open/close cancels SQLite's POSIX locks
+  - Review: not yet planned (P00-guards)
+- **R03.3** Checkpoint mode
+  - Review: not yet planned (P00-guards)
+- **R03.4** Replaced file / new generation
+  - Review: not yet planned (P00-guards)
+- **R03.5** Structural corruption must stop writes
+  - Review: not yet planned (P00-guards)
+- **R03.6** FTS is derived; never rebuild inline
+  - Review: not yet planned (P00-guards)
+- **R03.7** Stable FTS projection
+  - Review: not yet planned (P00-guards)
+- **R03.8** Retry budgets are time-based
+  - Review: not yet planned (P00-guards)
+- **R03.9** Opening must wait out locks too
+  - Review: not yet planned (P00-guards)
+- **R03.10** Ordinary appends must not be blocked by compression
+  - Review: not yet planned (P00-guards)
+- **R03.11** Lineage-wide flags
+  - Review: not yet planned (P00-guards)
+- **R03.12** First end reason wins
+  - Review: not yet planned (P00-guards)
+- **R03.13** Fork markers must name the actual parent
+  - Review: not yet planned (P00-guards)
+- **R03.14** Order transcripts by id, never timestamp
+  - Review: not yet planned (P00-guards)
+- **R03.15** Long migrations hold the write lock
+  - Review: not yet planned (P00-guards)
+- **R03.16** Read-only means read-only for browsing
+  - Review: not yet planned (P00-guards)
+- **R03.17** Descriptor exhaustion
+  - Review: not yet planned (P00-guards)
+- **R03.18** SQL variable limit
+  - Review: not yet planned (P00-guards)
+- **R03.19** Surrogates and reserved prefixes
+  - Review: not yet planned (P00-guards)
+- **R03.20** PID-based liveness across namespaces
+  - Review: not yet planned (P00-guards)
+- **R03.21** Never replay started work
+  - Review: not yet planned (P00-guards)
+- **R03.22** Deleted ids must stay dead
+  - Review: not yet planned (P00-guards)
+- **R03.23** Profile cross-talk
+  - Review: not yet planned (P00-guards)
+- **R03.24** Test runs touching the live store
+  - Review: not yet planned (P00-guards)
+- **R03.25** Automatic maintenance must only skip, never refuse a turn
+  - Review: not yet planned (P00-guards)
+- **R03.26** Repair loops
+  - Review: not yet planned (P00-guards)
+- **R03.27** macOS durability
+  - Review: not yet planned (P00-guards)
+- **R03.28** Startup watchdog vs slow I/O
+  - Review: not yet planned (P00-guards)
+- **R04.1** Classic chat is a gateway client
+  - Review: not yet planned (P00-guards)
+- **R04.2** Profile must be resolved before any import
+  - Review: not yet planned (P00-guards)
+- **R04.3** Fail-closed config writes
+  - Review: not yet planned (P00-guards)
+- **R04.4** Never write defaults
+  - Review: not yet planned (P00-guards)
+- **R04.5** Comment-preserving round trip, single writer seam
+  - Review: not yet planned (P00-guards)
+- **R04.6** Last-known-good on broken YAML
+  - Review: not yet planned (P00-guards)
+- **R04.7** config set` type coercion
+  - Review: not yet planned (P00-guards)
+- **R04.8** Dotted key names
+  - Review: not yet planned (P00-guards)
+- **R04.9** Provider switch leaves a stale route
+  - Review: not yet planned (P00-guards)
+- **R04.10** .env` read/write symmetry
+  - Review: not yet planned (P00-guards)
+- **R04.11** .env` precedence
+  - Review: not yet planned (P00-guards)
+- **R04.12** Env writer denylist
+  - Review: not yet planned (P00-guards)
+- **R04.13** Redaction bridge timing
+  - Review: not yet planned (P00-guards)
+- **R04.14** --yolo` timing
+  - Review: not yet planned (P00-guards)
+- **R04.15** Masking in `config get`
+  - Review: not yet planned (P00-guards)
+- **R04.16** Auth store read errors
+  - Review: not yet planned (P00-guards)
+- **R04.17** Device-code polling edge cases
+  - Review: not yet planned (P00-guards)
+- **R04.18** Browser opening on headless/remote hosts
+  - Review: not yet planned (P00-guards)
+- **R04.19** Non-TTY behaviour
+  - Review: not yet planned (P00-guards)
+- **R04.20** Two different exit-code tables
+  - Review: not yet planned (P00-guards)
+- **R04.21** Subcommand routing with optional-value flags
+  - Review: not yet planned (P00-guards)
+- **R04.22** Import target
+  - Review: not yet planned (P00-guards)
+- **R04.23** Backup exclusions are security-relevant
+  - Review: not yet planned (P00-guards)
+- **R04.24** Update self-modification
+  - Review: not yet planned (P00-guards)
+- **R04.25** Profile deletion and marker-less dirs
+  - Review: not yet planned (P00-guards)
+- **R04.26** Clone must not share channels
+  - Review: not yet planned (P00-guards)
+- **R04.27** Bang shell is not a bypass
+  - Review: not yet planned (P00-guards)
+- **R04.28** Quick commands hold secrets
+  - Review: not yet planned (P00-guards)
+- **R05.1** Docs describe a transport the code no longer uses
+  - Review: not yet planned (P00-guards)
+- **R05.2** Events arrive before the UI subscribes
+  - Review: not yet planned (P00-guards)
+- **R05.3** Server requests must not stall the agent
+  - Review: not yet planned (P00-guards)
+- **R05.4** Interrupt races
+  - Review: not yet planned (P00-guards)
+- **R05.5** Ctrl+C priority
+  - Review: not yet planned (P00-guards)
+- **R05.6** Never replace the stream buffer with a rendered fragment
+  - Review: not yet planned (P00-guards)
+- **R05.7** Terminal mode leakage
+  - Review: not yet planned (P00-guards)
+- **R05.8** Dead PTY loop
+  - Review: not yet planned (P00-guards)
+- **R05.9** Heartbeat false positives
+  - Review: not yet planned (P00-guards)
+- **R05.10** Stale async results
+  - Review: not yet planned (P00-guards)
+- **R05.11** README key tables drift from code
+  - Review: not yet planned (P00-guards)
+- **R05.12** Slash fallback hides real errors
+  - Review: not yet planned (P00-guards)
+- **R05.13** Path completion on remote backends
+  - Review: not yet planned (P00-guards)
+- **R05.14** Profile scoping in the backend
+  - Review: not yet planned (P00-guards)
+- **R05.15** Error codes are not stable
+  - Review: not yet planned (P00-guards)
+- **R05.16** Resize storms
+  - Review: not yet planned (P00-guards)
+- **R05.17** Synchronized output inside tmux
+  - Review: not yet planned (P00-guards)
+- **R05.18** Busy-mode default differs by surface
+  - Review: not yet planned (P00-guards)
+- **R05.19** Paste-to-attachment heuristics
+  - Review: not yet planned (P00-guards)
+- **R05.20** Child stdin hijack (stdio mode)
+  - Review: not yet planned (P00-guards)
+- **R05.21** Session create must be idempotent
+  - Review: not yet planned (P00-guards)
+- **R05.22** Approval command redaction and wrapping
+  - Review: not yet planned (P00-guards)
+- **R06.1** Control commands must bypass both busy guards
+  - Review: not yet planned (P00-guards)
+- **R06.2** Claim the session slot before the first await
+  - Review: not yet planned (P00-guards)
+- **R06.3** Never sleep long flood penalties inline
+  - Review: not yet planned (P00-guards)
+- **R06.4** Retry ambiguity: timeouts are not retryable
+  - Review: not yet planned (P00-guards)
+- **R06.5** Ledger states must distinguish "never started" from "maybe sent"
+  - Review: not yet planned (P00-guards)
+- **R06.6** Bare "yes" must never approve
+  - Review: not yet planned (P00-guards)
+- **R06.7** Session keys are a compatibility surface
+  - Review: not yet planned (P00-guards)
+- **R06.8** Default-deny with surprising pairing defaults
+  - Review: not yet planned (P00-guards)
+- **R06.9** Pairing directory must resolve per call
+  - Review: not yet planned (P00-guards)
+- **R06.10** Bot-loop budgets per conversation, not per sender pair
+  - Review: not yet planned (P00-guards)
+- **R06.11** Chunking edge cases
+  - Review: not yet planned (P00-guards)
+- **R06.12** Streaming frames must be prefix-stable on native-stream platforms
+  - Review: not yet planned (P00-guards)
+- **R06.13** Telegram counts edits against the same per-chat allowance as sends
+  - Review: not yet planned (P00-guards)
+- **R06.14** Silence tokens are whole-message only and never hide failures
+  - Review: not yet planned (P00-guards)
+- **R06.15** Explicit `enabled: false` must beat credentials in env
+  - Review: not yet planned (P00-guards)
+- **R06.16** Token locks: startup conflict is fatal, mid-run conflict is retryable
+  - Review: not yet planned (P00-guards)
+- **R06.17** Exit code semantics with supervisors
+  - Review: not yet planned (P00-guards)
+- **R06.18** Liveness is PID + start time, or a socket answer
+  - Review: not yet planned (P00-guards)
+- **R06.19** Unknown turns after a crash must pause, not replay
+  - Review: not yet planned (P00-guards)
+- **R06.20** Drain marker staleness
+  - Review: not yet planned (P00-guards)
+- **R06.21** Cross-session context leaks
+  - Review: not yet planned (P00-guards)
+- **R06.22** Media path policy is a security boundary
+  - Review: not yet planned (P00-guards)
+- **R06.23** Empty or failed transcription must say so
+  - Review: not yet planned (P00-guards)
+- **R06.24** Broadcast surfaces that report "dm"
+  - Review: not yet planned (P00-guards)
+- **R06.25** Gateway config loader diverges from CLI defaults
+  - Review: not yet planned (P00-guards)
+- **R06.26** Multiplex secret reads must fail closed (if multiplexing is built)
+  - Review: not yet planned (P00-guards)
+- **R07.1** Frozen memory snapshot vs live writes
+  - Review: not yet planned (P00-guards)
+- **R07.2** No auto-compaction; budget is checked on the batch result
+  - Review: not yet planned (P00-guards)
+- **R07.3** Whole-entry replace destroyed multi-fact entries
+  - Review: not yet planned (P00-guards)
+- **R07.4** Background review must not silently delete or rewrite memory
+  - Review: not yet planned (P00-guards)
+- **R07.5** Review fork recursion and cost
+  - Review: not yet planned (P00-guards)
+- **R07.6** Curator jurisdiction is an explicit marker, never inferred
+  - Review: not yet planned (P00-guards)
+- **R07.7** Curator defaults are inconsistent in the reference docs
+  - Review: not yet planned (P00-guards)
+- **R07.8** Cron skills must not be archived from under a job
+  - Review: not yet planned (P00-guards)
+- **R07.9** Bare duration means recurring
+  - Review: not yet planned (P00-guards)
+- **R07.10** Natural phrases with interval + time fail
+  - Review: not yet planned (P00-guards)
+- **R07.11** Timezones and DST in cron
+  - Review: not yet planned (P00-guards)
+- **R07.12** Recurring jobs must never silently complete
+  - Review: not yet planned (P00-guards)
+- **R07.13** Exactly-once is not available; prefer at-most-once
+  - Review: not yet planned (P00-guards)
+- **R07.14** Silence and failure tokens are model-facing and fragile
+  - Review: not yet planned (P00-guards)
+- **R07.15** Cron recursion
+  - Review: not yet planned (P00-guards)
+- **R07.16** Preflight alerts once, spends nothing
+  - Review: not yet planned (P00-guards)
+- **R07.17** Delivery success ≠ run success
+  - Review: not yet planned (P00-guards)
+- **R07.18** Plugin hook timeouts and fail-closed policy
+  - Review: not yet planned (P00-guards)
+- **R07.19** Plugins are not a sandbox
+  - Review: not yet planned (P00-guards)
+- **R07.20** Plugin system-prompt sections must be frozen
+  - Review: not yet planned (P00-guards)
+- **R07.21** MCP tool name length
+  - Review: not yet planned (P00-guards)
+- **R07.22** MCP stdio env leakage and spawn storms
+  - Review: not yet planned (P00-guards)
+- **R07.23** MCP reload busts the prompt cache
+  - Review: not yet planned (P00-guards)
+- **R07.24** Background OAuth must never open a browser
+  - Review: not yet planned (P00-guards)
+- **R07.25** Untrusted MCP servers
+  - Review: not yet planned (P00-guards)
+- **R07.26** Project skills are an injection vector
+  - Review: not yet planned (P00-guards)
+- **R07.27** Same-name skills
+  - Review: not yet planned (P00-guards)
+- **R07.28** Bundled skill updates vs user edits
+  - Review: not yet planned (P00-guards)
+- **R07.29** Skill index changes mid-session
+  - Review: not yet planned (P00-guards)
+- **R07.30** Reference doc drift
+  - Review: not yet planned (P00-guards)
+- **R08.1** Attempt fencing on backend start
+  - Review: not yet planned (P00-guards)
+- **R08.2** Failure latching rules
+  - Review: not yet planned (P00-guards)
+- **R08.3** Single-instance lock before any process machinery
+  - Review: not yet planned (P00-guards)
+- **R08.4** One-use credentials
+  - Review: not yet planned (P00-guards)
+- **R08.5** Connection test must cover the used leg
+  - Review: not yet planned (P00-guards)
+- **R08.6** Soft vs hard re-home
+  - Review: not yet planned (P00-guards)
+- **R08.7** Profile-keyed storage on rename
+  - Review: not yet planned (P00-guards)
+- **R08.8** Guest content opening the OS browser
+  - Review: not yet planned (P00-guards)
+- **R08.9** Cookie partition naming on Windows
+  - Review: not yet planned (P00-guards)
+- **R08.10** Keychain prompts
+  - Review: not yet planned (P00-guards)
+- **R08.11** Canonical bot chat identity
+  - Review: not yet planned (P00-guards)
+- **R08.12** Slash curation hiding user extensions
+  - Review: not yet planned (P00-guards)
+- **R08.13** Update concurrency
+  - Review: not yet planned (P00-guards)
+- **R08.14** New runtime under an old renderer
+  - Review: not yet planned (P00-guards)
+- **R08.15** Electron zoom drift
+  - Review: not yet planned (P00-guards)
+- **R08.16** GUI PATH
+  - Review: not yet planned (P00-guards)
+- **R08.17** Sandbox/GPU crash loops
+  - Review: not yet planned (P00-guards)
+- **R08.18** Installer stage host deaths
+  - Review: not yet planned (P00-guards)
+- **R08.19** Stale async results in the renderer
+  - Review: not yet planned (P00-guards)
+- **R08.20** Background focus theft
+  - Review: not yet planned (P00-guards)
+- **R08.21** Deep links during boot
+  - Review: not yet planned (P00-guards)
+- **R08.22** Code signing order
+  - Review: not yet planned (P00-guards)
+- **R08.23** Remote execution boundary
+  - Review: not yet planned (P00-guards)
+- **R08.24** Quit semantics with attached gateways
+  - Review: not yet planned (P00-guards)
+- **R09.1** Do not rebuild the chat in React
+  - Review: not yet planned (P00-guards)
+- **R09.2** WebSocket auth differs from REST auth
+  - Review: not yet planned (P00-guards)
+- **R09.3** Non-loopback must fail closed
+  - Review: not yet planned (P00-guards)
+- **R09.4** Middleware ordering leaks
+  - Review: not yet planned (P00-guards)
+- **R09.5** Token rotation vs open tabs
+  - Review: not yet planned (P00-guards)
+- **R09.6** PTY lifetime and supersession
+  - Review: not yet planned (P00-guards)
+- **R09.7** Resize escape is in-band
+  - Review: not yet planned (P00-guards)
+- **R09.8** Resume replay garbage
+  - Review: not yet planned (P00-guards)
+- **R09.9** ACP history replay must finish before the load/resume response
+  - Review: not yet planned (P00-guards)
+- **R09.10** MCP approval tools are hollow
+  - Review: not yet planned (P00-guards)
+- **R09.11** Never resend a turn with unknown outcome (ACP viewer)
+  - Review: not yet planned (P00-guards)
+- **R09.12** "Allow for session" has no ACP kind
+  - Review: not yet planned (P00-guards)
+- **R09.13** Two ACP implementations, one constructor
+  - Review: not yet planned (P00-guards)
+- **R09.14** Stdout purity and probe noise
+  - Review: not yet planned (P00-guards)
+- **R09.15** Windows import deadlock
+  - Review: not yet planned (P00-guards)
+- **R09.16** Path normalisation for session lists
+  - Review: not yet planned (P00-guards)
+- **R09.17** Platform facts must not trust env vars
+  - Review: not yet planned (P00-guards)
+- **R09.18** Lookup must be side-effect free
+  - Review: not yet planned (P00-guards)
+- **R09.19** Docs disagree about Windows chat
+  - Review: not yet planned (P00-guards)
+- **R09.20** Profile-scoped writes need an explicit profile
+  - Review: not yet planned (P00-guards)
+- **R09.21** Gateway-owned data cannot be bulk-edited live
+  - Review: not yet planned (P00-guards)
+- **R09.22** Brand assets
+  - Review: not yet planned (P00-guards)
+- **R09.23** Reverse-proxy prefix
+  - Review: not yet planned (P00-guards)
+- **R10.1** Crash-durable batch results
+  - Review: not yet planned (P00-guards)
+- **R10.2** Discards need tombstones
+  - Review: not yet planned (P00-guards)
+- **R10.3** Index skip happens without `--resume`
+  - Review: not yet planned (P00-guards)
+- **R10.4** Advertised defaults that are not applied
+  - Review: not yet planned (P00-guards)
+- **R10.5** Columnar-stable stats
+  - Review: not yet planned (P00-guards)
+- **R10.6** Tool name by position
+  - Review: not yet planned (P00-guards)
+- **R10.7** Two subtly different trajectory writers
+  - Review: not yet planned (P00-guards)
+- **R10.8** Compressor drops timed-out samples
+  - Review: not yet planned (P00-guards)
+- **R10.9** Missing default config and undeclared deps
+  - Review: not yet planned (P00-guards)
+- **R10.10** Remote code in the tokenizer
+  - Review: not yet planned (P00-guards)
+- **R10.11** Contradictory pinning policy docs
+  - Review: not yet planned (P00-guards)
+- **R10.12** Interpreter bridge markers
+  - Review: not yet planned (P00-guards)
+- **R10.13** Shadowed lint config
+  - Review: not yet planned (P00-guards)
+- **R10.14** Installer repository stage is the riskiest code
+  - Review: not yet planned (P00-guards)
+- **R10.15** Receipts and signals
+  - Review: not yet planned (P00-guards)
+- **R10.16** Mirror fallback only on network errors
+  - Review: not yet planned (P00-guards)
+- **R10.17** Fail-open change classification
+  - Review: not yet planned (P00-guards)
+- **R10.18** Strict aggregate gate
+  - Review: not yet planned (P00-guards)
+- **R10.19** Deterministic slicing
+  - Review: not yet planned (P00-guards)
+- **R10.20** Flake retry rules
+  - Review: not yet planned (P00-guards)
+- **R10.21** Host gating via one marker
+  - Review: not yet planned (P00-guards)
+- **R10.22** Ratchet config read from main
+  - Review: not yet planned (P00-guards)
+- **R10.23** Release = tested bytes only
+  - Review: not yet planned (P00-guards)
+- **R10.24** Workflow SHA is not the commit under test
+  - Review: not yet planned (P00-guards)
+- **R10.25** Docker `--user` breaks bootstrap
+  - Review: not yet planned (P00-guards)
+- **R10.26** Canary versions must sort below stable
+  - Review: not yet planned (P00-guards)
+- **R10.27** Termux/stable naming drift
+  - Review: not yet planned (P00-guards)
+- **R10.28** Translation parity
+  - Review: not yet planned (P00-guards)
+- **R10.29** Personal data in the repo
+  - Review: not yet planned (P00-guards)
+- **R10.30** Supply-chain scans are heuristics
+  - Review: not yet planned (P00-guards)

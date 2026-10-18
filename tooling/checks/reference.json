@@ -1,0 +1,5 @@
+{
+  "default_path": "/root/reference/hermes-agent",
+  "commit": "ab3fe9dffb0a89d534cb795e2a2940e5f6542056",
+  "note": "Data only: the pinned reference checkout used when --ref and INDUS_REF are unset. Exempt from the banned check like banned_patterns.json."
+}

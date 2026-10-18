@@ -294,7 +294,7 @@ Notes: inside a delegated child, notify-on-complete is turned off in the result 
 ### 3.9 Shared execution contract (all backends)
 
 - **Model:** spawn-per-call `bash -c`; no long-lived interactive shell [obs].
-- **Snapshot:** at env init, a login shell (`bash -l`, with configured shell-init files and optional `.bashrc` sourcing on local) dumps `export -p`, functions and aliases to `<tmp>/<snap>-<session>.sh` within 30 s (Modal 60 s). Success → later commands source the snapshot under non-login bash. Failure → fall back to `bash -l` per command, unless a non-login probe (≤15 s) shows login bash itself is broken, then plain `bash -c` [obs].
+- **Snapshot:** at env init, a login shell (`bash -l`, with configured shell-init files and optional `.bashrc` sourcing on local) dumps `export -p`, functions and aliases to `<tmp>/<snap>-<session>.sh` within 30 s (Modal 60 s). Success → later commands source the snapshot under non-login bash. If it fails, each command runs as its own `bash -l`; but when a ≤15 s check using a non-login shell reveals that the login shell is what's broken, commands use plain `bash -c` instead [obs].
   - Per-session bridged variables (session id, chat ids, cron, browser control, delegated-child marker, RPC/kernel vars) MUST be unset in a subshell before dumping, never grep-filtered, because a multi-line value would smuggle code into the next `source` [obs].
   - After each command the exported environment is re-dumped (unless persistent shell is off; then only the init-time snapshot is sourced and only cwd carries over) [obs].
 - **Wrapper per command:** source snapshot → `cd` (tilde-preserving quoting) → command → re-dump env → print `\n<marker><pwd -P><marker>\n` [obs]. The marker line is stripped from output; `cwd_observed` set only when this command printed it [obs].
@@ -307,7 +307,7 @@ Notes: inside a delegated child, notify-on-complete is turned off in the result 
 - **Bounded capture:** only the foreground terminal path caps retention (head 40 % / tail 60 % of `max_bytes`) and tees the full stream to `<home>/cache/terminal-output/out-<ts>-<pid>-<id>.log` (opened exclusively, private perms, created only on overflow, ≤5,000,000 chars; files older than 7 days pruned). Internal callers (file-op reads, RPC, log reads) MUST use unbounded capture or data is corrupted [obs].
 - **Stdin writer:** runs on its own thread; an encode failure is reported as `stdin_error` [obs].
 - **Recreated flag:** if a backend had to replace its container mid-command, the result carries `environment_recreated` and the tool adds a warning that background processes and unpersisted files may be gone [obs].
-- **File fetch (backend → host):** base64 over the exec channel, bounded inside the sandbox (`head -c max+1`), 300 s timeout [obs].
+- **File fetch (backend → host):** the sandbox side truncates the file with `head -c max+1`, and the bytes travel base64-encoded through the command-execution channel; 300 s timeout [obs].
 - **Result shape:** `ExecResult { output, returncode, cwd_observed?, cwd?, timed_out?, interrupted?, full_output_path?, output_total_chars?, stdin_error?, environment_recreated?, yielded_session_id?, pid? }` [obs].
 
 ### 3.10 The seven backends

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node (apps/ later)
+node_modules/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+
+# Clean room: reference checkouts and REA material never enter the repo
+reference/
+rea-lab/

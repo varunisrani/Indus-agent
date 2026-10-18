@@ -1,0 +1,11 @@
+{
+  "agent": "AGENT_1",
+  "account": "Account 1",
+  "state": "ACTIVE",
+  "usage_pct": null,
+  "remaining_pct": null,
+  "resets_at": null,
+  "last_check": "2026-10-18T10:47:27+00:00",
+  "current_step": "P00 foundations",
+  "last_commit": "f90168b"
+}

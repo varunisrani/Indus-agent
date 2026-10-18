@@ -109,9 +109,10 @@ Provider endpoints (third-party, keep exact): see the registry table in §3.16.
 ### 3.1 Process entry and startup sequence
 
 - **Entry points** [obs]: three console scripts — the main CLI (`<pkg>.main:main`), a legacy
-  single-query runner (minimal flags: `--query`, `--model`, `--base-url`, `--max-turns`,
-  `--enabled-toolsets`, `--disabled-toolsets`, `--list-tools`, `--save-trajectories`, `--version`;
-  no query → prints help and exits), and an ACP server entry. A repo-root launcher script just
+  single-query runner with a minimal flag set (input `--query`; endpoint `--model` and
+  `--base-url`; limit `--max-turns`; tools `--enabled-toolsets`/`--disabled-toolsets` and
+  `--list-tools`; output `--save-trajectories`; plus `--version`; without a query it prints help
+  and exits), and an ACP server entry. A repo-root launcher script just
   imports and calls the main function.
 - **Bootstrap module** imported first by every entry point [obs]: on Windows force UTF-8 stdio and
   ANSI console (POSIX locale is respected, not overridden); harden `sys.path` so a project-local
@@ -328,16 +329,21 @@ profile's gateway, launching it if needed (`gateway ensure`), then opens or resu
 it through a loopback WebSocket connection. A local adapter replays gateway events into the same callbacks the
 REPL used for an in-process agent and returns a result dict of the same shape; the CLI never runs
 tools or writes the session DB.
-- **Frozen at creation**: cwd, model, provider, reasoning, toolsets, max-turns, skills,
-  checkpoints, yolo, accept-hooks, pass-session-id, ignore-rules, base-url/api-key, safe-mode,
-  ignore-user-config. A resume may repeat the same values; a different value is refused.
+- **Frozen at creation**: once a session exists, none of these can change —
+  - where and with what: working directory, model, provider, base URL and API key, reasoning;
+  - what the agent may use: toolsets, skills, the turn cap (`--max-turns`);
+  - safety switches: yolo, accept-hooks, checkpoints, ignore-rules, safe-mode, ignore-user-config,
+    pass-session-id.
+
+  A resume may repeat the same values; a different value is refused.
 - **Refused flags** (exit 2, message lists where each capability lives now; nothing falls back
   to a local agent): `--image`, `--worktree/-w`, `--no-restore-cwd`, `--run-budget`, `--verbose`,
   `--compact`, `--create-if-missing` without `-c NAME`.
 - Bypass launches read no profile default model: `--model` is mandatory (example printed).
-- Reduced slash set in this mode: `/stop`, `/approve <id> <choice>`, `/answer <id> <text>`,
-  `/discard <admission_id>`, `/branch [title]`, `/model <m> [--provider p]`, `/compress …`,
-  `/yolo [on|off]`, `/help`, `/quit`; others print "unsupported; use /help".
+- Only these slash commands work in this mode — session control: `/model <m> [--provider p]`,
+  `/branch [title]`, `/compress …`, `/yolo [on|off]`, `/stop`; pending prompts:
+  `/approve <id> <choice>`, `/answer <id> <text>`, `/discard <admission_id>`; plus `/help` and
+  `/quit`. Anything else prints "unsupported; use /help".
 - Closing the terminal detaches; the gateway finishes accepted work. If a finite query is queued
   behind a turn that lost its owner, exit code 3.
 - Interrupt settle wait: 10 s.
@@ -345,11 +351,18 @@ This is a large architectural dependency on spec 06; see trap R04.1.
 
 #### 3.4.7 stream-json output [obs]
 One JSON object per stdout line; diagnostics and the `session_id:` line go to stderr. Every event
-has `timestamp` (Unix ms). Types: `system` (`subtype:"init"`, model, session_id), `text` (delta),
-`tool_use` (name, input?), `tool_result` (name, output capped at 5000 chars, duration_ms,
-is_error), `result` (session_id, exit_code, text, tokens{input,output,total,cache_read,
-cache_write}, duration_ms, error?). The last record is always `result` (including exit_code 130
-on Ctrl-C); process exit equals its exit_code.
+carries a `timestamp` in Unix milliseconds. Event types and their fields:
+
+| type | fields |
+|---|---|
+| `system` | `subtype:"init"`, `model`, `session_id` |
+| `text` | `delta` |
+| `tool_use` | `name`, optional `input` |
+| `tool_result` | `name`, `output` (at most 5000 chars), `is_error`, `duration_ms` |
+| `result` | `exit_code`, `session_id`, `text`, `duration_ms`, optional `error`, and `tokens` with `input`/`output`/`total`/`cache_read`/`cache_write` |
+
+The final record is always a `result` (Ctrl-C included, with exit_code 130); the process exits
+with that record's exit_code.
 
 #### 3.4.8 Exit codes for finite chat runs [obs]
 0 completed; 1 failed / partial / iteration budget hit / never ran (credentials, init); 130
@@ -549,8 +562,8 @@ named `default`). No live inheritance between profiles. Per-profile dirs created
   binary name), `default`, `test`, `tmp`, `root`, `sudo`. Names colliding with CLI subcommands
   (`chat, model, gateway, setup, …, profile, plugins, acp`) are refused as aliases. Invalid input
   gets a suggested slug (spaces → `-`, else `my-work`).
-- **Live profile** = directory carrying an identity marker (`config.yaml`, `.env`, `SOUL.md`,
-  `profile.yaml`, `auth.json`, `state.db`; a dangling symlinked marker counts) and not tombstoned.
+- **Live profile** = directory holding any one of six identity markers (`state.db`, `auth.json`,
+  `profile.yaml`, `config.yaml`, `SOUL.md` or `.env`; a dangling symlinked marker counts) and not tombstoned.
   Marker-less dirs are never listed, served or resolvable via `-p`.
 
 #### 3.10.2 Selection (pre-argparse) [obs]
