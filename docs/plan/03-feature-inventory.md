@@ -629,8 +629,8 @@ Counted by the first tier in each row (`P0 → P1` counts as P0). Dropped rows h
 | Tier | Count |
 |---|---|
 | P0 | 51 |
-| P1 | 199 |
-| P2 | 137 |
+| P1 | 200 |
+| P2 | 136 |
 | P3 | 100 |
 | — (dropped) | 8 |
 | **Total** | **495** |
@@ -650,7 +650,7 @@ Counted by the first tier in each row (`P0 → P1` counts as P0). Dropped rows h
 | K messaging gateway | 52 | 0 | 31 | 11 | 10 | 0 |
 | L web dashboard | 20 | 0 | 6 | 10 | 3 | 1 |
 | M editor adapter and MCP server | 11 | 0 | 6 | 4 | 1 | 0 |
-| N desktop app | 36 | 0 | 0 | 16 | 19 | 1 |
+| N desktop app | 36 | 0 | 1 | 15 | 19 | 1 |
 | O research tooling | 9 | 0 | 0 | 5 | 4 | 0 |
 | S install, distribution, CI | 18 | 1 | 8 | 6 | 3 | 0 |
 | Q platform and localisation | 13 | 1 | 3 | 4 | 5 | 0 |
