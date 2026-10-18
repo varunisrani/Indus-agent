@@ -247,7 +247,10 @@ def test_blank_slate(clean: Scope) -> None:
     assert not any("Where should commands run" in q for q in driver.asked)
 
 
-def test_unavailable_backend_keeps_local(clean: Scope) -> None:
+def test_unavailable_backend_keeps_local(clean: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.cli.setup import sections
+
+    monkeypatch.setattr(sections, "_backends", lambda: ["local"])  # docker not built here
     lines: list[str] = []
     code, _driver = setup(clean, "docker", section="terminal", lines=lines)
     assert code == 0

@@ -4,9 +4,12 @@ Interface (R04.19): ``--cli`` → classic; ``--tui`` → not built yet (P12), ex
 not a terminal → classic, whatever the settings say; ``INDUS_TUI=1`` or ``display.interface: tui``
 → a one-line note and classic until P12.
 
-Then: ``--in DIR`` is entered, the session is selected (``session_select``), a resumed session's
-launch record is checked against the flags given now (a different value exits 2) and its folder
-and switches are restored (``resume``), the route is resolved, and one of three paths runs:
+Then: ``--in DIR`` is entered, ``-w [NAME]`` makes a new worktree of the repository here and enters
+it (P11-20; the launch record and ``worktrees.json`` name it, so a resume moves back into it),
+``--checkpoints`` turns file checkpoints on for this run, the session is selected
+(``session_select``), a resumed session's launch record is checked against the flags given now (a
+different value exits 2) and its folder and switches are restored (``resume``), the route is
+resolved, and one of three paths runs:
 
 - finite query (``-q``/``--query-file`` with ``--oneshot``, ``-Q`` or no terminal): one turn,
   the reply on stdout, exit codes of ``oneshot.finite_exit_code``;
@@ -22,13 +25,14 @@ from __future__ import annotations
 import importlib
 import logging
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import click
 
 from indus.cli.app import globals_from, with_global_options
-from indus.cli.args import ChatArgs, CliState, GlobalArgs
+from indus.cli.args import AUTO_WORKTREE, ChatArgs, CliState, GlobalArgs
 from indus.cli.handoff import REPL_ENTRY, ReplEntry, ReplLaunch
 
 __all__ = [
@@ -210,8 +214,10 @@ class _ChatRun:
         self.query = query
         self.finite = finite
         self.notices: list[str] = [note] if note else []
+        self.worktree: Any = None
 
     def run(self) -> int:
+        from indus.backends.checkpoints.trigger import TRIGGER
         from indus.cli.session_select import SelectionError, enter_in_dir
         from indus.state import registry
 
@@ -221,15 +227,49 @@ class _ChatRun:
             except SelectionError as exc:
                 _err(*exc.lines())
                 return exc.code
+        if self.args.worktree is not None:
+            stop = self._enter_worktree()
+            if stop is not None:
+                return stop
         try:
             store = registry.acquire(self.state.scope)
         except Exception as exc:
             _err(f"indus: the session store could not be opened: {exc}")
             return 1
+        if self.args.checkpoints:
+            TRIGGER.set_default(True)
         try:
             return self._with_store(store)
         finally:
+            if self.args.checkpoints:
+                TRIGGER.set_default(None)
             registry.release(store)
+
+    def _enter_worktree(self) -> int | None:
+        """``-w``: a new worktree of the repository here, entered (an exit code on failure)."""
+        from indus.backends import worktrees
+        from indus.cli.session_select import SelectionError, enter_in_dir
+
+        if self.args.resume is not None or self.args.continue_ is not None:
+            _err(
+                "indus: -w starts a new session in a new worktree; a resumed session keeps its "
+                "own folder. Drop -w, or drop -c/-r."
+            )
+            return 2
+        raw = self.args.worktree
+        name = None if raw in (None, AUTO_WORKTREE) else raw
+        try:
+            info = worktrees.create(self.state.scope, Path.cwd(), name)
+            enter_in_dir(info.path)
+        except worktrees.WorktreeError as exc:
+            _err(f"indus: {exc}", "Run `indus -w` from inside a git repository.")
+            return 1
+        except SelectionError as exc:
+            _err(*exc.lines())
+            return exc.code
+        self.worktree = info
+        self.notices.append(f"Worktree: {info.path} (branch {info.branch}, from {info.base})")
+        return None
 
     def _with_store(self, store: Any) -> int:
         from indus.cli import resume, session_select
@@ -256,6 +296,8 @@ class _ChatRun:
             return exc.code
 
         policy, given = session_select.launch_from_args(args, self.chat, cwd=cwd)
+        if self.worktree is not None:
+            policy = replace(policy, worktree=self.worktree.path)
         row = sessions.get(store, session_id) if session_id is not None else None
         if session_id is not None:
             stored = resume.apply_switches(session_select.stored_launch(row), row)
@@ -333,6 +375,10 @@ class _ChatRun:
                 _err(f"indus: {exc.message}")
                 return 1
             resume.write_breadcrumb(spec.scope, session_id, cwd)
+            if self.worktree is not None:
+                from indus.backends import worktrees
+
+                worktrees.bind_session(spec.scope, self.worktree.path, session_id)
             launch = ReplLaunch(
                 scope=spec.scope,
                 host=host,

@@ -92,6 +92,7 @@ class LaunchPolicy:
     ignore_rules: bool = False
     ignore_user_config: bool = False
     safe_mode: bool = False
+    worktree: str | None = None
 
     def record(self) -> dict[str, Any]:
         out = asdict(self)
@@ -121,6 +122,7 @@ class LaunchPolicy:
             ignore_rules=data.get("ignore_rules") is True,
             ignore_user_config=data.get("ignore_user_config") is True,
             safe_mode=data.get("safe_mode") is True,
+            worktree=text("worktree"),
         )
 
 

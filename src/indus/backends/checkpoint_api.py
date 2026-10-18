@@ -1,8 +1,10 @@
 """The checkpoint store as the CLI sees it: a protocol, its records, and the prune order (P07-24).
 
-The real store (a shared shadow repository under ``<home>/checkpoints/``) arrives in P11; it
-implements ``CheckpointStore`` and installs itself with ``set_store_factory``. Until then
-``store_for`` returns None and the commands report that no checkpoints exist.
+The real store (a shared shadow repository under ``<home>/checkpoints/``, P11) implements
+``CheckpointStore``. It is the default factory, loaded on first use so the CLI module never imports
+it; ``indus.backends.checkpoints.install()`` registers it explicitly with ``set_store_factory``.
+It answers None while a profile has no store yet, and the commands then report that no
+checkpoints exist; ``set_store_factory(None)`` means "no store" (tests).
 
 ``plan_prune`` is the one prune order, shared by the store and its fakes: projects whose working
 folder is gone (unless orphans are kept, and only those the person was shown), then projects not
@@ -135,12 +137,21 @@ def plan_prune(
 
 
 StoreFactory = Callable[[Scope], CheckpointStore | None]
-_factory: StoreFactory | None = None
+
+
+def _shadow_store(scope: Scope) -> CheckpointStore | None:
+    """The default factory: the P11 shadow store, imported on first use."""
+    from indus.backends.checkpoints.store import store_factory
+
+    return store_factory(scope)
+
+
+_factory: StoreFactory | None = _shadow_store
 _lock = threading.Lock()
 
 
 def set_store_factory(factory: StoreFactory | None) -> StoreFactory | None:
-    """Install the store maker (P11, or a test fake); returns the previous one."""
+    """Install the store maker (the P11 store, or a test fake); returns the previous one."""
     global _factory
     with _lock:
         previous, _factory = _factory, factory

@@ -37,6 +37,7 @@ GOLDEN_ORDER = [
     "dump",
     "backup",
     "checkpoints",
+    "worktree",
     "import",
     "config",
     "tools",

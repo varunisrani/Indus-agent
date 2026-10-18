@@ -28,10 +28,10 @@ acceptance, done when. Paths and conventions come from
 | P05 | [P05-core-tools.md](P05-core-tools.md) | 2 | 24 | 73 | 8 | 6 | 24 | — | done (a26acb4) |
 | P06 | [P06-classic-cli-demo1.md](P06-classic-cli-demo1.md) | 1 | 15 | 46 | 7 | 3 | 15 | **Demo 1** (M1) | done (2fcb1d8) |
 | P07 | [P07-cli-commands.md](P07-cli-commands.md) | 2 | 26 | 68 | 5 | 4 | 26 | — | done (9bb6c46) |
-| P08 | [P08-context-and-cost.md](P08-context-and-cost.md) | 1.5 | 19 | 49 | 9 | 4 | 19 | — | planned |
+| P08 | [P08-context-and-cost.md](P08-context-and-cost.md) | 1.5 | 19 | 49 | 9 | 4 | 19 | — | wave 1 done (822b6cd); wave 2 integrating |
 | P09 | [P09-learning-loop.md](P09-learning-loop.md) | 2 | 25 | 82 | 9 | 5 | 25 | M2 | planned |
 | P10 | [P10-delegation-rich-tools.md](P10-delegation-rich-tools.md) | 2 | 26 | 69 | 11 | 6 | 26 | — | planned |
-| P11 | [P11-docker-ssh-backends.md](P11-docker-ssh-backends.md) | 1.5 | 21 | 50 | 11 | 3 | 21 | — | integrating |
+| P11 | [P11-docker-ssh-backends.md](P11-docker-ssh-backends.md) | 1.5 | 21 | 50 | 11 | 3 | 21 | — | done (this commit) |
 | P12 | [P12-tui-demo2.md](P12-tui-demo2.md) | 3 | 33 | 149 | 10 | 5 | 33 | **Demo 2** (M3) | planned |
 | P13 | [P13-mcp-plugins-hooks-hub.md](P13-mcp-plugins-hooks-hub.md) | 2 | 28 | 61 | 13 | 5 | 28 | — | planned |
 | P14 | [P14-cron.md](P14-cron.md) | 1.5 | 19 | 47 | 9 | 4 | 19 | M4 | planned |

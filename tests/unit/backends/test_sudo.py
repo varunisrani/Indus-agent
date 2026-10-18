@@ -6,15 +6,19 @@ import asyncio
 import logging
 from collections.abc import Awaitable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from indus.backends.contract import BackendFlags, ExecResult
 from indus.backends.local import LocalEnvironment, open_local
 from indus.backends.sudo import (
+    HOST_LOCAL,
     MASK,
     SudoPasswordCache,
     SudoSupport,
+    backend_secret_names,
+    backend_sudo,
     rewrite_sudo,
     use_sudo_caller,
 )
@@ -83,8 +87,8 @@ def run[T](clock: FakeClock, work: Awaitable[T]) -> T:
     return asyncio.run(drive(clock, work))
 
 
-def key(scope: Scope) -> tuple[str, str]:
-    return (str(scope.home), "s1")
+def key(scope: Scope) -> tuple[str, str, str]:
+    return (str(scope.home), "s1", HOST_LOCAL)
 
 
 def test_cached_password_rewrites_and_feeds_stdin(
@@ -251,7 +255,9 @@ def test_account_without_sudo(
 def test_heredoc_backend_is_not_rewritten(
     scope: Scope, cache: SudoPasswordCache, fake_clock: FakeClock
 ) -> None:
-    environment = FakeEnvironment(clock=fake_clock, flags=BackendFlags(stdin_mode="heredoc"))
+    environment = FakeEnvironment(
+        clock=fake_clock, flags=BackendFlags(stdin_mode="heredoc", host_local=True)
+    )
     environment.sudo = SudoSupport(scope, session_id="s1", cache=cache)
     cache.put(key(scope), PASSWORD)
     environment.script(CMD, NEEDS)
@@ -294,4 +300,98 @@ def test_open_local_installs_the_hook(scope: Scope) -> None:
 
     environment = asyncio.run(go())
     assert isinstance(environment.sudo, SudoSupport)
-    assert environment.sudo.key == (str(scope.home), "s7")
+    assert environment.sudo.key == (str(scope.home), "s7", HOST_LOCAL)
+    assert environment.sudo.target == HOST_LOCAL
+
+
+# -- the local password never leaves this machine (P11 integration, security) -----------------
+
+
+def _put_secret(scope: Scope, name: str, value: str) -> None:
+    store: Any = scope.secrets
+    store.set(name, value)
+
+
+def _remote_env(fake_clock: FakeClock) -> FakeEnvironment:
+    environment = FakeEnvironment(clock=fake_clock, flags=BackendFlags(host_local=False))
+    environment.script("sudo -n true", NEEDS)
+    return environment
+
+
+def test_host_hook_never_rewrites_on_a_remote_environment(
+    scope: Scope, cache: SudoPasswordCache, fake_clock: FakeClock
+) -> None:
+    _put_secret(scope, "sudo_password", PASSWORD)
+    cache.put(key(scope), PASSWORD)
+    remote = _remote_env(fake_clock)
+    remote.sudo = SudoSupport(scope, session_id="s1", cache=cache)  # wrongly attached
+    broker = FakeBroker(fake_clock, default=Reply(password=PASSWORD))
+    remote.script(CMD, Rule(output="sudo: a password is required\n", returncode=1))
+
+    async def go() -> None:
+        with use_sudo_caller(broker=broker, turn_id="t1"):
+            await remote.execute(CMD)
+
+    run(fake_clock, go())
+    assert all(call.command != "sudo -n true" for call in remote.calls)  # not even probed
+    assert all(PASSWORD not in (call.stdin or "") for call in remote.calls)
+    assert all(call.command == CMD for call in remote.calls)
+    assert broker.requests == []
+
+
+def test_cache_is_keyed_by_backend_environment(scope: Scope, cache: SudoPasswordCache) -> None:
+    local = SudoSupport(scope, session_id="s1", cache=cache)
+    remote = SudoSupport(scope, session_id="s1", cache=cache, target="ssh:dev@box:22")
+    assert local.key != remote.key and local.key[2] == HOST_LOCAL
+    cache.put(local.key, PASSWORD)
+    assert cache.get(remote.key) is None
+
+
+def test_no_backend_hook_without_a_backend_password(scope: Scope) -> None:
+    _put_secret(scope, "sudo_password", PASSWORD)
+    for backend in ("ssh", "docker"):
+        assert backend_sudo(scope, backend=backend, target=f"{backend}:x") is None
+    assert backend_sudo(scope, backend="ssh", target=HOST_LOCAL) is None
+
+
+def test_backend_password_is_the_only_source_and_never_prompts(
+    scope: Scope, cache: SudoPasswordCache, fake_clock: FakeClock
+) -> None:
+    remote_pw = "test-remote-" + "pw11"
+    _put_secret(scope, "sudo_password", PASSWORD)
+    _put_secret(scope, backend_secret_names("ssh")[0], remote_pw)
+    cache.put(key(scope), PASSWORD)
+    hook = backend_sudo(scope, backend="ssh", target="ssh:dev@box:22", session_id="s1")
+    assert hook is not None and hook.target == "ssh:dev@box:22" and not hook.can_prompt
+    hook.cache = cache
+    remote = _remote_env(fake_clock)
+    remote.sudo = hook
+    remote.script(REWRITTEN, Rule(output="ok\n"))
+    broker = FakeBroker(fake_clock, default=Reply(password=PASSWORD))
+
+    async def go() -> None:
+        with use_sudo_caller(broker=broker, turn_id="t1"):
+            await remote.execute(CMD)
+
+    run(fake_clock, go())
+    assert remote.calls[-1].command == REWRITTEN
+    assert remote.calls[-1].stdin == remote_pw + "\n"
+    assert all(PASSWORD not in (call.stdin or "") for call in remote.calls)
+    assert broker.requests == []
+
+
+def test_backend_hook_without_answer_does_not_prompt(scope: Scope, fake_clock: FakeClock) -> None:
+    hook = SudoSupport(scope, session_id="s1", target="docker:k", secret_names=("x_pw",))
+    assert not hook.can_prompt
+    remote = _remote_env(fake_clock)
+    remote.sudo = hook
+    remote.script(CMD, Rule(output="sudo: a password is required\n", returncode=1))
+    broker = FakeBroker(fake_clock, default=Reply(password=PASSWORD))
+
+    async def go() -> None:
+        with use_sudo_caller(broker=broker, turn_id="t1"):
+            await remote.execute(CMD)
+
+    run(fake_clock, go())
+    assert broker.requests == []
+    assert all(PASSWORD not in (call.stdin or "") for call in remote.calls)

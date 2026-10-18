@@ -46,10 +46,11 @@ def test_bad_entries_are_refused() -> None:
 def test_every_entry_has_a_cli_handler_or_a_later_owner() -> None:
     from indus.cli.slash.dispatch import HANDLERS
 
+    landed = {"P06", "P11"}  # phases whose commands have classic CLI handlers
     for cmd in REGISTRY:
         assert PHASE.match(cmd.owner), cmd.name
-        if cmd.owner == "P06":
-            assert cmd.name in HANDLERS, f"/{cmd.name} is owned by P06 but has no handler"
+        if cmd.owner in landed:
+            assert cmd.name in HANDLERS, f"/{cmd.name} is owned by {cmd.owner} but has no handler"
         else:
             assert cmd.owner > "P06", f"/{cmd.name} owner {cmd.owner}"
             assert cmd.name not in HANDLERS
@@ -153,9 +154,10 @@ def test_command_word_and_shape() -> None:
 
 HELP_GROUPS = {
     "session": ["new", "clear", "history", "title", "resume", "sessions", "retry", "undo",
-                "save", "branch", "stop", "steer", "queue", "compress", "status", "context"],
+                "save", "branch", "stop", "steer", "queue", "compress", "status", "context",
+                "rollback", "worktree"],
     "config": ["model", "reasoning", "yolo", "approvals", "config"],
-    "tools": ["tools"],
+    "tools": ["tools", "checkpoints"],
     "info": ["help", "usage", "whoami", "version"],
     "exit": ["quit"],
 }  # fmt: skip

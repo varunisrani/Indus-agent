@@ -308,6 +308,15 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-C6-2** Watch-pattern limits: per-process spacing, strikes, lifetime cap and a global breaker
   - `tests/unit/backends/test_processes.py::test_watch_patterns_rate_limited_then_switched_off`
   - `tests/unit/backends/test_processes.py::test_global_breaker_across_processes`
+- **ACC-C6-3** Background processes on non-local backends: spawn through the backend, polled output, notify on exit
+  - `tests/unit/backends/test_remote_processes.py::test_poll_feeds_output_and_completion_fires_once`
+  - `tests/unit/backends/test_remote_processes.py::test_ssh_background_job_end_to_end`
+- **ACC-C6-4** Running background processes adopted after a restart (PID and start time), others lost
+  - `tests/unit/backends/test_process_checkpoint.py::test_new_registry_adopts_a_live_job_as_detached`
+  - `tests/unit/backends/test_process_checkpoint.py::test_recycled_pid_is_lost_and_never_signalled`
+- **ACC-C9-1** Retained, redacted receipts of finished background processes readable by the owning conversation
+  - `tests/unit/backends/test_process_receipts.py::test_receipt_exists_when_the_completion_handler_runs`
+  - `tests/unit/backends/test_process_receipts.py::test_owner_reads_the_receipt_others_do_not`
 - **ACC-C7-1** `process_manage`: list, poll, log, wait, kill, write, submit, close, hand off to parent
   - `tests/unit/tools/builtin/test_process_manage.py::test_log_offset_zero_is_head`
   - `tests/unit/tools/builtin/test_process_manage.py::test_wait_timeout_is_not_an_error`
@@ -352,7 +361,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/tools/builtin/test_patch.py::test_lint_after_reports_only_errors_the_edit_introduced`
   - Review: language-server diagnostics (P24)
 - **ACC-C16-1** Automatic filesystem checkpoints before the first change in a turn; `/rollback [N]`, rollback diff …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/checkpoints/test_trigger.py::test_once_per_turn`
+  - `tests/unit/backends/checkpoints/test_trigger.py::test_write_file_takes_one_snapshot_per_turn`
+  - `tests/unit/backends/checkpoints/test_trigger.py::test_snapshot_error_warns_once`
+- **ACC-C16-2** Rollback: restore a checkpoint (safety snapshot first, created files removed), one file, diff
+  - `tests/unit/backends/checkpoints/test_rollback.py::test_restore_round_trip`
+  - `tests/unit/backends/checkpoints/test_rollback.py::test_restore_file_touches_one_file`
+  - `tests/unit/cli/slash/test_checkpoint_cmds.py::test_list_diff_restore_and_file`
 - **ACC-C17-1** `web_search` through pluggable backends (Exa, Tavily, Brave, SearXNG, DuckDuckGo, …) with a keyless …
   - Review: not yet planned (phase TBD)
 - **ACC-C18-1** `web_extract` with URL normalisation, SSRF checks, per-page truncation and stored full text
@@ -379,19 +394,45 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/backends/test_sudo.py::test_headless_failure_gets_tip`
   - `tests/unit/backends/test_sudo.py::test_wrong_cached_password_clears_cache`
 - **ACC-D1-1** Shared execution contract for every backend: fresh `bash -c` per call, shell snapshot, cwd marker …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/backends/test_execution_contract.py::test_output_status_and_marker_stripped`
+  - `tests/contract/backends/test_execution_contract.py::test_interrupt_gives_130`
+  - `tests/contract/backends/test_docker_ssh_contract.py::test_background_job_starts_polls_and_is_killed_inside`
 - **ACC-D2-1** Local backend: process groups, scratch temp dir, PATH repair, persistent-shell switch
   - Review: not yet planned (phase TBD)
 - **ACC-D3-1** Docker backend: dropped capabilities, resource limits, persistent per-task dirs, reuse by label …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/docker/test_args.py::test_default_golden`
+  - `tests/unit/backends/docker/test_env.py::test_values_only_in_the_client_env`
+  - `tests/unit/backends/docker/test_mounts.py::test_persistent_binds_owner_only_dirs`
+- **ACC-D3-2** Docker reuse by label: a second process attaches to the labelled container
+  - `tests/unit/backends/docker/test_environment.py::test_second_process_attaches`
+  - `tests/unit/backends/docker/test_environment.py::test_stopped_container_is_started`
+- **ACC-D3-3** Docker recovery: a vanished container is replaced once and the result says so
+  - `tests/unit/backends/docker/test_recovery.py::test_removed_container_is_recreated_once`
+  - `tests/contract/backends/test_docker_ssh_contract.py::test_replaced_container_carries_the_warning_once`
+- **ACC-D3-4** Docker orphan reaper: old Indus containers of this profile are removed at start
+  - `tests/unit/backends/docker/test_reaper.py::test_only_stale_labelled_containers_of_this_profile`
 - **ACC-D4-1** SSH backend: multiplexed connection, remote home detection, file sync (P7: first tools phase)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/ssh/test_environment.py::test_runs_commands_and_keeps_cwd_and_exports`
+  - `tests/unit/backends/ssh/test_client.py::test_each_sendenv_set_gets_its_own_socket`
+  - Review: live lane against a throwaway sshd (`tests/integration/backends/test_ssh_live.py`, opt-in with `INDUS_LIVE_SSH=1`; P11-21)
+- **ACC-D4-2** SSH remote home detection (retried no sooner than 30 s) and the first file push on open
+  - `tests/unit/backends/ssh/test_environment.py::test_home_detection_retried_no_sooner_than_30s`
+  - `tests/unit/backends/ssh/test_environment.py::test_open_pushes_skills_and_credential_files`
 - **ACC-D11-1** Environment cache per key with creation lock, idle reaper, per-profile isolation, clean teardown at …
   - Review: not yet planned (phase TBD)
 - **ACC-D12-1** Remote file sync: credential files and skills pushed before commands, changed files synced back on …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/test_remote_sync.py::test_first_call_pushes_all_then_rate_limited`
+  - `tests/unit/backends/test_remote_sync.py::test_racy_mtime_is_hashed_and_pushed_when_bytes_differ`
+  - `tests/unit/backends/test_remote_sync.py::test_transport_failure_keeps_state_and_retries`
+  - Review: sync back on cleanup for SDK backends (P21-10)
 - **ACC-D13-1** Degraded-backend result with a retry hint when SSH or Docker is unreachable; the environment is …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/docker/test_environment.py::test_daemon_gone_mid_call_degrades_and_next_call_recreates`
+  - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`
+  - `tests/contract/backends/test_docker_ssh_contract.py::test_lost_connection_answers_degraded`
+- **ACC-D13-2** SSH unreachable, host key changed or login refused: degraded result with a retry hint, rebuilt next call
+  - `tests/unit/backends/ssh/test_environment.py::test_host_key_change_is_degraded_never_accepted`
+  - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`
+  - `tests/unit/backends/ssh/test_environment.py::test_probe_timeout_is_degraded`
 - **ACC-D14-1** Terminal settings: default and maximum timeouts, lifetime, env passthrough, credential files …
   - Review: not yet planned (phase TBD)
 - **ACC-E1-1** Dangerous-command detection with normalisation (wrappers, interpreter `-c` payloads, quoting …
@@ -679,7 +720,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/commands/test_checkpoints.py::test_status_rows`
   - `tests/unit/cli/commands/test_checkpoints.py::test_plan_order_orphans_stale_then_oldest_to_the_cap`
   - `tests/unit/cli/commands/test_checkpoints.py::test_clear_without_force_on_non_tty_exits_1`
-  - Review: against the real shadow-git store once it lands (P11)
+  - `tests/integration/backends/test_checkpoints_cli_real_store.py::test_status_and_list`
+  - `tests/integration/backends/test_checkpoints_cli_real_store.py::test_prune_with_force`
+  - `tests/integration/backends/test_checkpoints_cli_real_store.py::test_clear`
 - **ACC-I33-1** `indus backup` (whole home as a zip, databases copied safely while running) and `indus import` with …
   - `tests/unit/cli/commands/test_backup.py::test_every_excluded_kind_stays_out`
   - `tests/unit/cli/commands/test_backup.py::test_database_copied_while_a_writer_holds_a_transaction`

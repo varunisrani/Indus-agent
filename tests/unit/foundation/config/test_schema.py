@@ -24,7 +24,11 @@ def test_decided_defaults() -> None:
         "turn_liveness_s": 600.0,  # P08-16
         "run_budget_s": 0.0,  # P08-16: off
     }
-    assert d["terminal"] == {
+    # Container backend rows (``docker_*``, ``container_*``) are pinned by the P11 docker tests.
+    core_terminal = {
+        k: v for k, v in d["terminal"].items() if not k.startswith(("docker_", "container_"))
+    }
+    assert core_terminal == {
         "backend": "local",
         "cwd": ".",
         "timeout": 180,
@@ -36,6 +40,12 @@ def test_decided_defaults() -> None:
         "daemon_term_grace_s": 2.0,
         "max_foreground_timeout": 600,
         "process_wait_auto_notify": True,
+        "ssh_host": "",
+        "ssh_user": "",
+        "ssh_port": 22,
+        "ssh_key": "",
+        "ssh_persistent_shell": True,
+        "credential_files": [],
     }
     assert d["tool_output"] == {"max_chars": 50000}
     # P08 (context and cost): the union of the three wave-1 slices

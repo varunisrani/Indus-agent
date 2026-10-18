@@ -70,14 +70,12 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
-Done: P00–P07, P08 wave 1 (`822b6cd`). In flight (Agent 1, from `822b6cd`):
-1. P11 integration (Docker 01-07, SSH/remote 08-14, checkpoints/worktrees 15-20 + P11-21 contract
-   suite). If you find this with the turn PAUSED, the three slice patches are in `.agents/wip/p11/`
-   with the integration list `w11-integration.md` (includes a SECURITY item: sudo must never send the
-   local password to remote/containers).
-2. P08 wave 2: A = P08-12 credential pool runtime + P08-13 fallback chain; B = P08-14 smart
-   approvals + P08-15 fast mode + P08-18 soak (M2). Saved slices, if any, in `.agents/wip/p08w2/`.
-3. Then P09 (learning loop), P10 (delegation and rich tools), P12 (TUI), P13 (MCP/plugins), P14 (cron).
+Done: P00–P07, P08 wave 1 (`822b6cd`), P11 (Docker/SSH/checkpoints/worktrees, see the commit after
+this text was written; landing notes in LEAD-NOTES). In flight (Agent 1):
+1. P08 wave 2: A = P08-12 credential pool runtime + P08-13 fallback chain; B = P08-14 smart
+   approvals + P08-15 fast mode + P08-18 soak (M2). Saved slices in `.agents/wip/p08w2/` with the
+   integration list `w12-integration.md`; D-16.109–119 are reserved for it.
+2. Then P09 (learning loop), P10 (delegation and rich tools), P12 (TUI), P13 (MCP/plugins), P14 (cron).
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the

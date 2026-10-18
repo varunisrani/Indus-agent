@@ -330,7 +330,7 @@ def test_duplicate_backend_refused(fake_clock: FakeClock) -> None:
     with pytest.raises(ValueError, match="already registered"):
         registry.register(backend.entry("FAKE"))
     assert registry.names() == ["fake"]
-    assert EnvironmentRegistry(clock=fake_clock).names() == ["local"]
+    assert {"local", "docker", "ssh"} <= set(EnvironmentRegistry(clock=fake_clock).names())
 
 
 def test_release_and_shutdown_clean_with_a_bound(tmp_path: Path, fake_clock: FakeClock) -> None:

@@ -9,7 +9,9 @@ always handed to click as ``--continue=<value>`` (a bare ``-c`` becomes ``--cont
 The run of words after the flag ends at the next flag, or at a word naming a command when at least
 one name word came before it; a command word right after ``-c`` is the command (``indus -c chat``)
 unless another command word follows (``indus -c model chat`` resumes "model"). ``-r/--resume``
-joins its words the same way but always takes the first one.
+joins its words the same way but always takes the first one. ``-w/--worktree`` takes one optional
+name: the next word unless it is a flag or a command (``indus -w chat`` starts chat in an unnamed
+worktree); click always gets ``--worktree=<name>`` (``__auto__`` for none).
 
 ``chat`` repeats most global flags; their copies default to "not given" so a value placed before
 the subcommand is never overwritten by the subcommand's default (R04.21).
@@ -22,7 +24,14 @@ from typing import Any, cast
 
 import click
 
-from indus.cli.args import BARE_CONTINUE, CHAT_VALUE_FLAGS, ChatArgs, CliState, GlobalArgs
+from indus.cli.args import (
+    AUTO_WORKTREE,
+    BARE_CONTINUE,
+    CHAT_VALUE_FLAGS,
+    ChatArgs,
+    CliState,
+    GlobalArgs,
+)
 from indus.cli.lazy import LazyGroup
 
 __all__ = [
@@ -60,6 +69,11 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "indus.cli.commands.checkpoints:checkpoints_group",
         "Inspect and trim file checkpoints.",
     ),
+    (
+        "worktree",
+        "indus.cli.commands.worktree:worktree_group",
+        "Create, list and prune session worktrees.",
+    ),
     ("import", "indus.cli.commands.import_cmd:import_command", "Restore a backup zip."),
     ("config", "indus.cli.commands.config_read:config_command", "Show and change settings."),
     (
@@ -89,6 +103,7 @@ append in the order of research 04 §3.2.4."""
 
 _CONTINUE = ("-c", "--continue")
 _RESUME = ("-r", "--resume")
+_WORKTREE = ("-w", "--worktree")
 
 type Decorator = Callable[[Callable[..., Any]], Callable[..., Any]]
 
@@ -209,6 +224,22 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
             help="Skills to preload (repeat the flag or separate with commas).",
         )
     )
+    add(
+        click.option(
+            "-w",
+            "--worktree",
+            metavar="[NAME]",
+            default=None,
+            help="Start the session in a new git worktree of this repository (named NAME).",
+        )
+    )
+    add(
+        click.option(
+            "--checkpoints",
+            **_not_given(True),
+            help="Snapshot the working folder before file changes (/rollback restores).",
+        )
+    )
     add(click.option("--yolo", **_not_given(True), help="Run risky commands without asking."))
     add(
         click.option(
@@ -272,7 +303,7 @@ def globals_from(values: dict[str, Any]) -> GlobalArgs:
     """``GlobalArgs`` from click's parameter values (``interface`` as a word)."""
     values = dict(values)
     values["interface"] = _interface_word(values.get("interface"))
-    for name in ("no_restore_cwd", "yolo", "pass_session_id"):
+    for name in ("no_restore_cwd", "yolo", "pass_session_id", "checkpoints"):
         if values.get(name) is False:
             values.pop(name)
     if not values.get("skills"):
@@ -357,7 +388,7 @@ def _value_flags_all() -> frozenset[str]:
 def rewrite_session_flags(argv: Sequence[str], commands: Sequence[str] | None = None) -> list[str]:
     """Join multi-word session names after ``-c``/``-r`` (see the module notes)."""
     known = set(commands if commands is not None else cast(LazyGroup, cli).registered)
-    value_flags = _value_flags_all() - {*_RESUME}
+    value_flags = _value_flags_all() - {*_RESUME, *_WORKTREE}
     out: list[str] = []
     i = 0
     n = len(argv)
@@ -366,6 +397,15 @@ def rewrite_session_flags(argv: Sequence[str], commands: Sequence[str] | None = 
         if token == "--":
             out.extend(argv[i:])
             break
+        if token in _WORKTREE:
+            following = argv[i + 1] if i + 1 < n else None
+            if following is None or following.startswith("-") or following in known:
+                out.append(f"--worktree={AUTO_WORKTREE}")
+                i += 1
+            else:
+                out.append(f"--worktree={following}")
+                i += 2
+            continue
         if token in _CONTINUE or token in _RESUME:
             j = i + 1
             words: list[str] = []

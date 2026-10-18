@@ -88,14 +88,19 @@ Checked by `python -m tooling.checks traps`.
 - **R01.18** Exit-path completeness
   - Review: not yet planned (P00-guards)
 - **R02.1** Per-session variables leaking through the shared snapshot
-  - Review: not yet planned (P00-guards)
+  - `tests/contract/backends/test_docker_ssh_contract.py::test_session_values_are_never_frozen_into_the_snapshot`
+  - `tests/unit/backends/docker/test_env.py::test_forwarded_values_stay_out_of_the_snapshot`
 - **R02.2** Bounded vs full-fidelity capture
   - `tests/unit/tools/builtin/test_file_ops.py::test_shell_calls_are_never_bounded`
   - `tests/unit/tools/builtin/test_file_ops.py::test_three_megabyte_round_trip_is_byte_exact`
   - Review: bounded foreground capture side is pinned by P05-02 (wave 1)
+  - `tests/unit/backends/test_remote_processes.py::test_poll_feeds_output_and_completion_fires_once`
+  - `tests/unit/backends/test_remote_processes.py::test_large_log_read_intact_across_a_split_character`
 - **R02.3** Timeouts that never fire
-  - Review: not yet planned (P00-guards)
+  - `tests/contract/backends/test_execution_contract.py::test_deadline_gives_124_and_the_flag`
+  - `tests/unit/backends/docker/test_environment.py::test_deadline_kills_inside_the_container_too`
 - **R02.4** Floors must precede every bypass
+  - `tests/unit/backends/docker/test_recovery.py::test_unmounted_skips_prompt_but_deny_glob_blocks`
   - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
   - `tests/unit/safety/approvals/test_policy.py::test_malformed_command_fails_closed`
   - `tests/unit/safety/approvals/test_policy.py::test_runtime_delete_is_a_floor`
@@ -108,11 +113,23 @@ Checked by `python -m tooling.checks traps`.
 - **R02.6** Isolation is about mounts, not backend names
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
   - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
-  - Review: Docker sets `isolated=False` when a host path is mounted (P11)
+  - `tests/unit/backends/docker/test_mounts.py::test_host_paths_mounted_only_for_writable_host_binds`
+  - `tests/unit/backends/docker/test_recovery.py::test_mounted_cwd_goes_through_approval`
+  - `tests/unit/backends/docker/test_recovery.py::test_unmounted_skips_prompt_but_deny_glob_blocks`
 - **R02.7** Credentials on the command line
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/docker/test_env.py::test_values_only_in_the_client_env`
+  - `tests/unit/backends/docker/test_env.py::test_exec_reinjects_updated_value`
+  - `tests/unit/backends/docker/test_environment.py::test_failed_run_removes_the_container_and_hides_values`
+  - `tests/unit/backends/ssh/test_client.py::test_secret_value_never_in_argv`
+  - `tests/unit/backends/ssh/test_environment.py::test_passthrough_value_rides_the_client_env_only`
+  - `tests/contract/backends/test_docker_ssh_contract.py::test_values_never_ride_a_client_command_line`
+  - Review: the live `/proc/<pid>/cmdline` check runs in the docker lane (`tests/integration/backends/test_docker_live.py`, skipped without a daemon; P11-21)
 - **R02.8** Multiprofile scoping everywhere
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/docker/test_environment.py::test_runs_commands_in_a_labelled_container`
+  - `tests/unit/backends/docker/test_reaper.py::test_only_stale_labelled_containers_of_this_profile`
+  - `tests/unit/backends/test_process_receipts.py::test_receipts_are_per_profile`
+  - `tests/unit/backends/test_process_checkpoint.py::test_each_profile_has_its_own_checkpoint`
+  - Review: other areas still to pin (P00-guards)
 - **R02.9** Approved command killed by a stale interrupt
   - `tests/unit/safety/approvals/test_human.py::test_stale_interrupt_cleared_once`
   - Review: the terminal tool calls `clear_stale_interrupt` once before its retry loop (P05-12)
@@ -126,9 +143,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/test_terminal_plan.py::test_overcap_foreground_promoted_with_note`
   - `tests/unit/tools/builtin/test_terminal_plan.py::test_promoted_note_poll_only_when_not_deliverable`
 - **R02.12** Kill order for process trees
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/test_remote_processes.py::test_kill_terms_the_group_then_kills_after_the_grace`
+  - `tests/unit/backends/test_process_checkpoint.py::test_recycled_pid_is_lost_and_never_signalled`
 - **R02.13** Flapping availability probes strip tools mid-session
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/docker/test_probe.py::test_flake_grace_serves_last_good`
+  - Review: the ssh row has no availability probe; an unreachable host is a per-call degraded result, never a removed tool (P11-09)
 - **R02.14** Stale whole-file overwrite
   - `tests/unit/tools/builtin/test_write_file.py::test_existing_file_never_read_is_refused`
   - `tests/unit/tools/builtin/test_write_file.py::test_file_changed_on_disk_after_the_read_is_refused`
@@ -144,6 +163,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/test_processes.py::test_notify_needs_a_registered_session`
   - `tests/unit/tools/builtin/test_terminal_plan.py::test_notify_kept_only_where_deliverable`
   - `tests/unit/tools/builtin/test_process_manage.py::test_auto_notify_not_where_undeliverable`
+  - `tests/unit/backends/test_remote_processes.py::test_no_completion_where_nothing_can_receive_it`
 - **R02.18** Watch-pattern floods
   - `tests/unit/backends/test_process_notify.py::test_watch_three_strike_windows_switch_it_off`
   - `tests/unit/backends/test_process_notify.py::test_watch_lifetime_cap_after_eight_notices`
@@ -151,17 +171,27 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/test_processes.py::test_watch_patterns_rate_limited_then_switched_off`
   - `tests/unit/backends/test_processes.py::test_global_breaker_across_processes`
 - **R02.19** Container recreated silently
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/docker/test_recovery.py::test_removed_container_is_recreated_once`
+  - `tests/unit/backends/docker/test_recovery.py::test_still_gone_after_recovery_is_returned_as_is`
+  - `tests/unit/backends/test_remote_processes.py::test_backend_gone_marks_the_job_lost`
 - **R02.20** Docker self-inconsistencies
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/docker/test_args.py::test_contradicting_network_is_refused`
+  - `tests/unit/backends/docker/test_args.py::test_snap_compat`
+  - `tests/unit/backends/docker/test_args.py::test_s6_image_runs_exec_run_without_init`
+  - `tests/unit/backends/docker/test_args.py::test_storage_quota_only_when_probed`
+  - `tests/unit/backends/docker/test_mounts.py::test_task_key_with_colons_is_sanitised`
 - **R02.21** Cross-reference hallucination in schemas
   - Review: not yet planned (P00-guards)
 - **R02.22** Secrets in child processes
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/docker/test_env.py::test_blocked_name_never_forwarded`
+  - `tests/unit/backends/docker/test_env.py::test_client_env_is_minimal_plus_client_controls`
+  - Review: other child processes (P00-guards)
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
   - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
   - Review: `returncode` (P05-01)
+  - `tests/unit/backends/docker/test_args.py::test_pids_limit_is_2048`
+  - `tests/unit/backends/docker/test_environment.py::test_persistent_cleanup_leaves_it_running`
 - **R02.24** Async smart-approver as an injection target
   - Review: not yet planned (P00-guards)
 - **R02.25** Toolset membership vs registration
@@ -178,7 +208,9 @@ Checked by `python -m tooling.checks traps`.
 - **R02.30** SDK backends lie about timeouts
   - Review: not yet planned (P00-guards)
 - **R02.31** Remote sync-back can overwrite host state
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/test_credential_files.py::test_docker_mounts_read_only_and_sync_upload_only`
+  - `tests/unit/backends/ssh/test_environment.py::test_open_pushes_skills_and_credential_files`
+  - Review: the sync-back itself: hash diff, size cap, SIGINT, lock (P21-10)
 - **R02.32** Kernel cap starvation
   - Review: not yet planned (P00-guards)
 - **R03.1** Never live-downgrade WAL

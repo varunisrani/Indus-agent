@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import weakref
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
@@ -46,6 +47,7 @@ from indus.backends.contract import (
     EnvironmentConnectionError,
     ExecResult,
 )
+from indus.backends.docker import recovery
 from indus.backends.process_notify import HEARTBEAT_MIN_S, Deliveries
 from indus.backends.processes import ProcessLimit, ProcessRegistry, SpawnRequest
 from indus.backends.registry import BackendStatus, EnvironmentRegistry, EnvKey
@@ -57,6 +59,7 @@ from indus.protocol.requests_port import ServerRequestPort
 from indus.safety import approvals
 from indus.safety.approvals.decision import ApprovalDecision, InterruptFlag, RunContext
 from indus.safety.redaction import redact_output
+from indus.tools.builtin import mutation_hooks
 from indus.tools.builtin import terminal_result as results
 from indus.tools.registry import CrossRef, ToolRegistry, ToolTraits
 
@@ -107,6 +110,8 @@ class TerminalRuntime:
     processes: ProcessRegistry
     deliveries: Deliveries
 
+    lost_handler: Callable[[str], object] | None = None
+
     @classmethod
     def create(cls, *, clock: Clock | None = None) -> TerminalRuntime:
         deliveries = Deliveries()
@@ -114,12 +119,30 @@ class TerminalRuntime:
         environments = EnvironmentRegistry(
             clock=clock, background_alive=processes.alive_for_env_key
         )
-        return cls(environments, processes, deliveries)
+        made = cls(environments, processes, deliveries)
+        made.lost_handler = _lost_handler(processes)
+        recovery.register_lost_handler(made.lost_handler)
+        return made
 
     async def shutdown(self) -> None:
         """Process exit: stop background jobs, then clean every environment."""
+        if self.lost_handler is not None:
+            recovery.unregister_lost_handler(self.lost_handler)
+            self.lost_handler = None
         await self.processes.shutdown()
         await self.environments.shutdown()
+
+
+def _lost_handler(processes: ProcessRegistry) -> Callable[[str], object]:
+    """Docker recovery replaced a sandbox: end that environment's jobs as ``lost`` (P11-06).
+    Holds the registry weakly, so a runtime that was never shut down is not kept alive."""
+    ref = weakref.ref(processes)
+
+    def handler(env_key: str) -> object:
+        registry = ref()
+        return recovery.mark_lost(registry, env_key) if registry is not None else None
+
+    return handler
 
 
 _shared: dict[str, TerminalRuntime] = {}
@@ -719,11 +742,21 @@ class TerminalTool:
             return results.blocked(
                 verdict.error or "Command refused.", user_summary=verdict.user_summary
             )
+        notes = await mutation_hooks.before_command(
+            scope,
+            session_id=session_id,
+            turn_id=ctx.turn_id,
+            command=steps.command,
+            cwd=os.path.expanduser(start_cwd),
+            on_host=env.flags.host_local and not env.flags.container_paths,
+        )
         if steps.background:
-            return await self._background(
+            started = await self._background(
                 call, steps, scope, session_id, key, env, start_cwd, verdict
             )
-        return await self._foreground(steps, scope, ctx, env, start_cwd, verdict)
+            return mutation_hooks.with_notes(started, notes)
+        finished = await self._foreground(steps, scope, ctx, env, start_cwd, verdict)
+        return mutation_hooks.with_notes(finished, notes)
 
     async def _degraded(
         self,
@@ -849,13 +882,13 @@ class TerminalTool:
         verdict: GateVerdict,
     ) -> str:
         run_env: Any = getattr(env, "run_env", None)
-        if not env.flags.host_local or not callable(run_env):
-            # Jobs inside containers and remote sandboxes need their own spawn path (P11).
+        remote = not env.flags.host_local  # the job runs inside the backend (P11-12)
+        if not remote and not callable(run_env):
             return results.background_failed(
-                f"background processes are not available on the {env.name} backend yet"
+                f"background processes are not available on the {env.name} backend"
             )
         snapshot: str | None = None
-        if getattr(env, "snapshot_ready", False):
+        if not remote and getattr(env, "snapshot_ready", False):
             snapshot = str(getattr(env, "snapshot_path", "") or "") or None
         notes: dict[str, Any] = {}
         notify, watch, beat = call.notify_on_exit, call.watch_patterns, call.heartbeat
@@ -881,9 +914,10 @@ class TerminalTool:
             scope=scope,
             session_id=session_id,
             env_key=str(key),
-            cwd=os.path.expanduser(cwd),
-            env=cast(Mapping[str, str], run_env()),
+            cwd=cwd if remote else os.path.expanduser(cwd),
+            env={} if remote else cast(Mapping[str, str], run_env()),
             snapshot=snapshot,
+            environment=env if remote else None,
             use_pty=use_pty,
             notify_on_exit=notify,
             watch_patterns=watch,

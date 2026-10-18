@@ -123,6 +123,12 @@ indus-agent/
 │  ├─ backends/              execution contract and local backend (P05); docker/, ssh/ (P11);
 │  │                         checkpoints/, checkpoint_api.py, worktrees.py (P11); modal/,
 │  │                         vercel/ and the other remote backends (P21)
+│  │  ├─ docker/             settings, probe (client, daemon, host facts, doctor rows), args,
+│  │  │                      mounts, env (names only), environment, recovery, reaper (P11-01..07)
+│  │  ├─ ssh/                client (argv, control sockets), runner, environment (P11-08/09);
+│  │  │                      remote_sync, credential_files, remote_processes, process_receipts,
+│  │  │                      process_checkpoint sit beside it in backends/ (P11-10..14)
+│  │  ├─ checkpoints/        shadow git store, trigger, rollback, prune (P11-15..18)
 │  ├─ core/                  agent, turn loop, prompt builder, compression (P04, P08);
 │  │                         subagents/ package (P10)
 │  ├─ learning/              memory, skills, review fork, curator (P09); skills/hub/ (P13)
@@ -135,7 +141,8 @@ indus-agent/
 │  │                         providers and safety so tools and backends can ask it for paths
 │  ├─ service/               SessionService, broker, event fan-out, in-process host (P04, P17);
 │  │                         commands/ — the slash-command registry shared by cli, tui_bridge,
-│  │                         acp and gateway (P06); ws_auth.py single-use WS tickets (P17)
+│  │                         acp and gateway (P06); ws_auth.py single-use WS tickets (P17);
+│  │                         terminal_host.py — session lineage and liveness for the backends (P11)
 │  ├─ tui_bridge/            JSON-RPC server for the TUI (P12)
 │  ├─ gateway/               daemon, messaging core, adapters/<platform>/ (P15, P16, P17); sub-packages
 │  │                         core/, outbound/, delivery/, intake/, daemon/, service/, http/, ws/,

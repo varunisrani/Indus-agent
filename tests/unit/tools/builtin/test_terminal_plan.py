@@ -495,10 +495,14 @@ def test_pty_disabled_for_piped_stdin_commands(tmp_path: Path) -> None:
     assert rig.specs[0].use_pty is False
 
 
-def test_background_not_offered_on_sandbox_backends(tmp_path: Path) -> None:
-    rig = Rig(tmp_path, env=ScriptedEnv(flags=BackendFlags(isolated=True)))
+def test_background_on_sandbox_backends_starts_inside_them(tmp_path: Path) -> None:
+    # Sandbox backends start the job through the backend itself (P11-12); one that prints no
+    # process id is a failed start.
+    env = ScriptedEnv(flags=BackendFlags(isolated=True))
+    rig = Rig(tmp_path, env=env)
     body = rig.run(rig.call(command="make", background=True))
-    assert body["exit_code"] == -1 and "not available" in body["error"]
+    assert body["exit_code"] == -1 and "process id" in body["error"]
+    assert "nohup bash -lc make" in env.calls[0].command
 
 
 def test_unknown_backend_is_disabled(tmp_path: Path) -> None:

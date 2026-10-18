@@ -16,19 +16,27 @@ message, and while ``terminal.process_wait_auto_notify`` is on.
 Every result that carries output, and the command echo, is masked for secrets. A job id that
 does not name a job of this profile is "not found". The tool name follows the code-observed
 reference name (R02.23).
+
+An id that is no longer in memory is answered from the job's retained receipt (P11-13) — only for
+the conversation that owns it or a compression continuation of it; a receipt is read-only (no
+re-run, no replayed completion). A job adopted after a restart (P11-14) is ``detached``: poll and
+list say so, since its earlier output is not available.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Any
+from datetime import datetime
+from typing import Any, cast
 
+from indus.backends import process_receipts
 from indus.backends.contract import CancelSignal
 from indus.backends.process_notify import COMPLETION_TAIL_CHARS
-from indus.backends.processes import ProcessRecord, strip_ansi, uptime_s
+from indus.backends.processes import ProcessRecord, Reason, strip_ansi, uptime_s
 from indus.foundation.config.schema import default_for
 from indus.foundation.scope import Scope, scope_or_none
 from indus.safety.redaction import redact_output
@@ -55,6 +63,11 @@ STOP_POLLING_NOTE = (
     "by itself, even after this turn is over. Do not wait on or poll {pid} again and do not loop "
     "or sleep for it. Do other work now, or end the turn with a short status."
 )
+DETACHED_NOTE = (
+    "This process was recovered after Indus restarted; output from before the restart is not "
+    "available and its exit code will not be known."
+)
+RETAINED_NOTE = "The process has ended; this is its kept result (read-only)."
 HANDOFF_UNAVAILABLE = (
     "handoff is only for subagents passing a process to their parent, and subagents are not "
     "available in this version. Wait for the process, or kill it."
@@ -96,6 +109,7 @@ class ProcessManageTool:
         scope = scope if scope is not None else scope_or_none()
         if scope is None:
             return _error("No profile is active for this call, so its processes cannot be found.")
+        self.shared.processes.recover(scope)
         action = str(args.get("action") or "").strip().lower()
         if action == "list":
             return self._list(scope, session_id)
@@ -109,9 +123,12 @@ class ProcessManageTool:
             return _error(HANDOFF_UNAVAILABLE)
         record = self.shared.processes.get(ident, str(scope.home))
         if record is None:
-            return _dumps(
-                {"status": "not_found", "error": f"No background process with id {ident}."}
-            )
+            receipt = process_receipts.find(scope.home, ident, session_id)
+            if receipt is None:
+                return _dumps(
+                    {"status": "not_found", "error": f"No background process with id {ident}."}
+                )
+            return self._from_receipt(scope, receipt_record(receipt, scope), action, args)
         if action == "poll":
             return self._finish(scope, session_id, record, "poll", self._poll(record))
         if action == "log":
@@ -133,6 +150,25 @@ class ProcessManageTool:
         return _dumps(_status(problem, {"status": "ok", "bytes_written": len(text.encode())}))
 
     # -- actions --------------------------------------------------------------------------------
+
+    def _from_receipt(
+        self, scope: Scope, record: ProcessRecord, action: str, args: Mapping[str, Any]
+    ) -> str:
+        """Answer from a kept result: read actions work, the rest says it has ended."""
+        if action == "log":
+            return self._log(scope, record, args)
+        if action == "poll":
+            return _dumps({**self._poll(record), "note": RETAINED_NOTE})
+        if action in ("wait", "kill"):
+            body = {
+                **self._head(scope, record),
+                "status": "already_exited" if action == "kill" else "exited",
+                **self._exit_fields(record),
+                **self._completion_output(scope, record),
+                "note": RETAINED_NOTE,
+            }
+            return _dumps(body)
+        return _dumps(_status("the process has already ended", {}))
 
     def _redact(self, scope: Scope, record: ProcessRecord, text: str) -> str:
         return redact_output(text, command=record.command, scope=scope) if text else text
@@ -183,9 +219,28 @@ class ProcessManageTool:
                 entry["watch_patterns"] = list(record.watch.patterns)
             if record.persist_on_release:
                 entry["persist_on_release"] = True
+            if record.detached:
+                entry["detached"] = True
             if record.exited:
                 entry.update(self._exit_fields(record))
             entries.append(entry)
+        shown = {e["session_id"] for e in entries}
+        for receipt in process_receipts.owned_by(scope.home, session_id):
+            if receipt.id in shown:
+                continue
+            kept = receipt_record(receipt, scope)
+            entries.append(
+                {
+                    "session_id": kept.id,
+                    "command": kept.command[:LIST_COMMAND_CHARS],
+                    "cwd": kept.cwd,
+                    "started_at": receipt.started_at,
+                    "status": "exited",
+                    "output_preview": self._redact(scope, kept, kept.tail(LIST_PREVIEW_CHARS)),
+                    "retained": True,
+                    **self._exit_fields(kept),
+                }
+            )
         return _dumps({"processes": entries})
 
     def _poll(self, record: ProcessRecord) -> dict[str, Any]:
@@ -196,6 +251,12 @@ class ProcessManageTool:
             "uptime_seconds": uptime_s(record, self.shared.processes.clock),
             "output_preview": self._redact(scope, record, record.tail(PREVIEW_CHARS)),
         }
+        if record.detached:
+            body["detached"] = True
+            body["note"] = DETACHED_NOTE
+            from_log = _log_tail(record.log_path, PREVIEW_CHARS)
+            if from_log:
+                body["output_preview"] = self._redact(scope, record, strip_ansi(from_log))
         if record.exited:
             body.update(self._exit_fields(record))
         return body
@@ -348,6 +409,49 @@ class ProcessManageTool:
 
     def register(self, registry: ToolRegistry) -> None:
         registry.register(TOOL_NAME, TOOLSET, PROCESS_SCHEMA, self, is_async=True)
+
+
+def _log_tail(path: str, chars: int) -> str:
+    """The end of a job's log file on this machine (detached jobs that have one)."""
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - chars * 4))
+            return handle.read().decode("utf-8", "replace")[-chars:]
+    except OSError:
+        return ""
+
+
+def receipt_record(receipt: process_receipts.Receipt, scope: Scope) -> ProcessRecord:
+    """A read-only, finished record made from a kept result (never added to the registry)."""
+    try:
+        started = datetime.fromisoformat(receipt.started_at)
+        ended = datetime.fromisoformat(receipt.exited_at)
+        ran = max(0.0, (ended - started).total_seconds())
+    except ValueError:
+        started, ran = scope.clock.now(), 0.0
+    return ProcessRecord(
+        id=receipt.id,
+        command=receipt.command,
+        home=str(scope.home),
+        session_id=receipt.owner_session,
+        env_key="",
+        cwd=receipt.cwd,
+        scope=scope,
+        started_at=started,
+        started_mono=0.0,
+        exited=True,
+        exit_code=receipt.exit_code,
+        reason=cast(Reason, receipt.completion_reason),
+        source=receipt.termination_source,
+        ended_mono=ran,
+        buffer=receipt.tail,
+        total_chars=receipt.total_chars,
+        consumed=True,
+    )
 
 
 def _status(problem: str | None, ok: dict[str, Any]) -> dict[str, Any]:

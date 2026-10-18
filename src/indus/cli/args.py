@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from indus.foundation.scope import Scope
 
 __all__ = [
+    "AUTO_WORKTREE",
     "BARE_CONTINUE",
     "CHAT_VALUE_FLAGS",
     "FALLBACK_VALUE_FLAGS",
@@ -33,6 +34,9 @@ LATEST = "latest"
 
 BARE_CONTINUE = "__latest__"
 """The value click gets for a bare ``-c`` (``-c latest`` is a session called "latest")."""
+
+AUTO_WORKTREE = "__auto__"
+"""The value click gets for a bare ``-w`` (the worktree gets a generated name)."""
 
 FALLBACK_VALUE_FLAGS: frozenset[str] = frozenset(
     {
@@ -52,6 +56,8 @@ FALLBACK_VALUE_FLAGS: frozenset[str] = frozenset(
         "--in",
         "-s",
         "--skills",
+        "-w",
+        "--worktree",
     }
 )
 """Top-level flags that take a value, kept by hand for when the app cannot be introspected.
@@ -101,6 +107,8 @@ class GlobalArgs:
     interface: Interface | None = None
     oneshot: str | None = None
     usage_file: str | None = None
+    worktree: str | None = None
+    checkpoints: bool = False
 
     @classmethod
     def from_values(cls, values: Mapping[str, Any]) -> GlobalArgs:

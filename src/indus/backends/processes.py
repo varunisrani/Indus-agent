@@ -4,12 +4,13 @@
 ``ProcessRegistry`` starts commands that keep running after the tool call returns, keeps their
 output and state, and announces exits, watched lines and heartbeats through ``process_notify``.
 
-Starting (local backend; containers and remote sandboxes get their own spawn path in P11): bash in
-a new session and process group, stdout and stderr in one pipe — or a pseudo-terminal when asked
-(``ptyprocess``, extra ``pty``; without it the job runs on pipes and says so). The record, with its
-owner (profile home, session id, environment key), is in the table before any output is read. A
-start that fails, or yields no pid, leaves a record that is ``exited`` with reason
-``failed_start``; it is never reported as running.
+Starting on the host: bash in a new session and process group, stdout and stderr in one pipe — or
+a pseudo-terminal when asked (``ptyprocess``, extra ``pty``; without it the job runs on pipes and
+says so). A request that names a non-local environment (Docker, SSH, ...) starts the job inside
+it through ``remote_processes`` (P11-12): output arrives from a poller instead of a pipe. The
+record, with its owner (profile home, session id, environment key), is in the table before any
+output is read. A start that fails, or yields no pid, leaves a record that is ``exited`` with
+reason ``failed_start``; it is never reported as running.
 
 No thread per job: the output descriptor is non-blocking and the event loop reads it when it is
 readable; the exit is noticed through a Linux pidfd (elsewhere a 0.2 s poll on the clock). At the
@@ -25,6 +26,12 @@ finished ones go after ``FINISHED_TTL_S`` or, under pressure, least recently use
 Stopping uses the local backend's ordered kill (P05-03, R02.12). ``release`` (session end,
 ``/new``) stops a session's jobs except those started with ``persist_on_release``; ``shutdown``
 (process exit) stops every job.
+
+Every exit writes a retained receipt (``process_receipts``, P11-13) before any completion event
+goes out. The running jobs of each profile are listed in its crash checkpoint
+(``process_checkpoint``, P11-14), rewritten when a job starts or ends; the first time a registry
+serves a profile (``recover``) it adopts the jobs a crashed predecessor left running as
+``detached`` records and marks the rest ``lost``.
 """
 
 from __future__ import annotations
@@ -34,6 +41,7 @@ import codecs
 import contextlib
 import logging
 import os
+import posixpath
 import re
 import secrets
 import shlex
@@ -45,7 +53,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import IO, Any, Literal, Protocol, cast
 
-from indus.backends.contract import BackendError
+from indus.backends import process_checkpoint, process_receipts, remote_processes
+from indus.backends.contract import BackendError, Environment
 from indus.backends.local import LocalProcess, force_kill_tree, stop_tree
 from indus.backends.process_notify import (
     COMPLETION_TAIL_CHARS,
@@ -82,6 +91,7 @@ __all__ = [
     "ProcessLimit",
     "ProcessRecord",
     "ProcessRegistry",
+    "Reason",
     "SpawnRequest",
     "launch_local",
     "strip_ansi",
@@ -397,6 +407,7 @@ class SpawnRequest:
     watch_patterns: Sequence[str] = ()
     heartbeat_s: int = 0
     persist_on_release: bool = False
+    environment: Environment | None = None  # a non-local backend runs the job itself (P11-12)
 
 
 @dataclass(eq=False)
@@ -429,6 +440,10 @@ class ProcessRecord:
     consumed: bool = False
     last_used: float = 0.0
     handle: JobHandle | None = field(default=None, repr=False)
+    backend: str = "local"
+    detached: bool = False  # adopted after a restart: no output history (P11-14)
+    log_path: str = ""
+    pid_start: int | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     kill_source: str = field(default="", repr=False)
     decoder: codecs.IncrementalDecoder = field(
@@ -490,20 +505,29 @@ class ProcessRegistry:
         *,
         clock: Clock | None = None,
         launcher: Launcher = launch_local,
-        receipts: Callable[[ProcessRecord], None] | None = None,
+        receipts: Callable[[ProcessRecord], None] | None | Literal["default"] = "default",
         max_tracked: int = MAX_TRACKED,
         watch_exits: bool = True,
+        checkpoints: bool = True,
     ) -> None:
         self.deliveries = deliveries if deliveries is not None else Deliveries()
         self.clock: Clock = clock if clock is not None else SystemClock()
         self.launcher = launcher
-        self.receipts = receipts
+        self.receipts: Callable[[ProcessRecord], None] | None = (
+            self._write_receipt if receipts == "default" else receipts
+        )
         self.max_tracked = max_tracked
         # False for handles that report their own exit through ``notice_exit`` (tests, adapters).
         self.watch_exits = watch_exits
+        self.checkpoints = checkpoints
         self.breaker = GlobalBreaker()
         self._records: dict[str, ProcessRecord] = {}
         self._ticker: asyncio.Future[None] | None = None
+        self._recovered: set[str] = set()
+        self._pollers: dict[int, remote_processes.RemotePoller] = {}
+
+    def _write_receipt(self, record: ProcessRecord) -> None:
+        process_receipts.write_receipt(record, now=self.clock.now())
 
     # -- starting --------------------------------------------------------------------------------
 
@@ -516,6 +540,7 @@ class ProcessRegistry:
     async def spawn(self, request: SpawnRequest) -> ProcessRecord:
         """Start a job. Raises ``ProcessLimit`` when ``max_tracked`` jobs are running; a start
         that fails gives a ``failed_start`` record (check ``record.exited``)."""
+        self.recover(request.scope)
         self._prune(make_room=True)
         running = sum(1 for r in self._records.values() if not r.exited)
         if running >= self.max_tracked:
@@ -540,6 +565,10 @@ class ProcessRegistry:
             last_used=now,
         )
         self._records[record.id] = record  # owner known before any output is read
+        environment = request.environment
+        if environment is not None and not environment.flags.host_local:
+            await self._spawn_remote(record, request, environment)
+            return record
         env = dict(request.env)
         env["PYTHONUNBUFFERED"] = "1"  # so poll shows progress, not one burst at the end
         try:
@@ -555,14 +584,62 @@ class ProcessRegistry:
                 handle.release()
             return record
         record.handle, record.pid, record.pty = handle, handle.pid, handle.pty
+        local = getattr(handle, "local", None)
+        if isinstance(local, LocalProcess):
+            record.pid_start = local.leader_start
+        self._arm(record, request, now)
+        self._attach(record, handle)
+        self._save_checkpoint(record.scope)
+        return record
+
+    def _arm(self, record: ProcessRecord, request: SpawnRequest, now: float) -> None:
         if request.watch_patterns:
             record.watch = WatchState(tuple(p for p in request.watch_patterns if p))
         if request.heartbeat_s > 0:
             every = max(int(request.heartbeat_s), HEARTBEAT_MIN_S)
             record.heartbeat = HeartbeatState(every, now)
             self._ensure_ticker()
-        self._attach(record, handle)
-        return record
+
+    async def _spawn_remote(
+        self, record: ProcessRecord, request: SpawnRequest, environment: Environment
+    ) -> None:
+        """Start the job inside ``environment`` and hand it to that environment's poller."""
+        record.backend = environment.name
+        snapshot = str(getattr(environment, "snapshot_path", "") or "")
+        temp_dir = posixpath.dirname(snapshot) if snapshot else remote_processes.DEFAULT_TEMP_DIR
+        started = await remote_processes.start(
+            environment, record.id, request.command, cwd=request.cwd, temp_dir=temp_dir
+        )
+        if isinstance(started, str):
+            log.warning("background process failed to start on %s", environment.name)
+            self._fail_start(record, started)
+            return
+        job = remote_processes.RemoteJob(
+            environment,
+            started.pid,
+            started.files,
+            generation=remote_processes.generation(environment),
+        )
+        record.handle, record.pid, record.log_path = job, started.pid, started.files.log
+        if request.use_pty:
+            record.pty_note = remote_processes.pty_note(environment.name)
+        self._arm(record, request, self.clock.monotonic())
+        self._poller_for(environment).add(record, job)
+        self._save_checkpoint(record.scope)
+
+    def _poller_for(self, environment: Environment) -> remote_processes.RemotePoller:
+        key = id(environment)
+        poller = self._pollers.get(key)
+        if poller is None:
+            poller = remote_processes.RemotePoller(
+                environment, self, clock=self.clock, on_idle=self._poller_idle
+            )
+            self._pollers[key] = poller
+        return poller
+
+    def _poller_idle(self, poller: remote_processes.RemotePoller) -> None:
+        if poller.jobs == 0 and self._pollers.get(id(poller.env)) is poller:
+            del self._pollers[id(poller.env)]
 
     def _launch(self, record: ProcessRecord, spec: LaunchSpec) -> JobHandle:
         if spec.use_pty:
@@ -701,15 +778,25 @@ class ProcessRegistry:
             await self.clock.sleep(EXIT_POLL_S)
         self.notice_exit(record)
 
-    def notice_exit(self, record: ProcessRecord, code: int | None = None) -> None:
-        """The job's leader has exited: collect the rest of its output, settle its state, announce
-        it. Safe to call more than once."""
+    def notice_exit(
+        self,
+        record: ProcessRecord,
+        code: int | None = None,
+        *,
+        reason: str | None = None,
+        source: str = "",
+    ) -> None:
+        """The job's leader has exited: collect the rest of its output, settle its state, keep
+        its receipt, announce it. ``reason`` overrides the outcome (``lost``). Safe to call more
+        than once."""
         if record.exited:
             return
         handle = record.handle
         if handle is not None:
-            if code is None:
+            if code is None and reason is None:
                 code = handle.poll()
+            if getattr(handle, "unknown_exit", False):
+                code = None  # an adopted job is not our child: its status is not ours to read
             if not self._read_available(record, FINAL_DRAIN_MAX):
                 log.debug("%s: output still open after exit (a child kept it)", record.id)
             self._stop_reading(record)
@@ -725,8 +812,16 @@ class ProcessRegistry:
         record.ended_mono = self.clock.monotonic()
         if record.kill_source:
             record.reason, record.source = "killed", record.kill_source
+        if reason == "lost":
+            record.reason, record.source = "lost", source or "backend_lost"
         record.heartbeat = None
         record.done.set()
+        if self.receipts is not None:  # the retained receipt exists before any event (P11-13)
+            try:
+                self.receipts(record)
+            except Exception:
+                log.warning("writing the receipt of %s failed", record.id, exc_info=True)
+        self._save_checkpoint(record.scope)
         if record.notify_on_exit and not record.consumed:
             self._announce_exit(record)
 
@@ -743,11 +838,6 @@ class ProcessRegistry:
             poller.cancel()
 
     def _announce_exit(self, record: ProcessRecord) -> None:
-        if self.receipts is not None:  # the retained receipt is written before the event (P11)
-            try:
-                self.receipts(record)
-            except Exception:
-                log.warning("writing the receipt of %s failed", record.id, exc_info=True)
         output = self._redact(record, record.tail(COMPLETION_TAIL_CHARS))
         cut = max(0, record.total_chars - COMPLETION_TAIL_CHARS)
         self._send(
@@ -969,6 +1059,9 @@ class ProcessRegistry:
         if self._ticker is not None:
             self._ticker.cancel()
             self._ticker = None
+        for poller in list(self._pollers.values()):
+            poller.cancel()
+        self._pollers.clear()
         for record in self.running():
             record.consumed = True
             record.kill_source = "shutdown"
@@ -977,6 +1070,103 @@ class ProcessRegistry:
                 with contextlib.suppress(Exception):
                     handle.force_stop()
             self.notice_exit(record)
+
+    # -- crash checkpoint (P11-14) ----------------------------------------------------------------
+
+    def _entry(self, record: ProcessRecord) -> process_checkpoint.Entry | None:
+        handle = record.handle
+        if not isinstance(
+            handle,
+            PipeHandle | PtyHandle | remote_processes.RemoteJob | process_checkpoint.DetachedJob,
+        ):
+            return None  # test and adapter handles never reach the file
+        return process_checkpoint.Entry(
+            id=record.id,
+            pid=record.pid,
+            pid_start_time=record.pid_start,
+            backend=record.backend,
+            env_key=record.env_key,
+            log_path=record.log_path,
+            owner_session=record.session_id,
+            notify_on_exit=record.notify_on_exit,
+            persist_on_release=record.persist_on_release,
+            command=redact_output(record.command, force=True, scope=record.scope),
+            cwd=record.cwd,
+            started_at=record.started_at.isoformat(timespec="seconds"),
+        )
+
+    def _save_checkpoint(self, scope: Scope) -> None:
+        if not self.checkpoints:
+            return
+        home = str(scope.home)
+        if home not in self._recovered:
+            return  # never overwrite a profile's checkpoint before it was read
+        entries = [
+            entry
+            for record in self._records.values()
+            if record.home == home and not record.exited
+            if (entry := self._entry(record)) is not None
+        ]
+        process_checkpoint.save(scope.home, entries)
+
+    def recover(self, scope: Scope) -> process_checkpoint.Recovery | None:
+        """Read ``scope``'s crash checkpoint once per registry (module notes): adopt the jobs a
+        crashed predecessor left running as ``detached`` records, mark the rest ``lost``."""
+        home = str(scope.home)
+        if not self.checkpoints or home in self._recovered:
+            return None
+        self._recovered.add(home)
+        found = process_checkpoint.classify(process_checkpoint.read_entries(scope.home))
+        for entry in found.adopt:
+            if entry.id in self._records or entry.pid is None or entry.pid_start_time is None:
+                continue
+            record = self._recovered_record(scope, entry)
+            handle = process_checkpoint.DetachedJob(entry.pid, entry.pid_start_time)
+            record.handle, record.pid, record.pid_start = handle, entry.pid, entry.pid_start_time
+            record.detached = True
+            self._records[record.id] = record
+            with contextlib.suppress(RuntimeError):  # no loop: noticed on the next poll
+                self._attach(record, handle)
+            log.info("adopted background process %s (pid %s) after a restart", entry.id, entry.pid)
+        for entry in found.lost:
+            if entry.id in self._records:
+                continue
+            record = self._recovered_record(scope, entry)
+            record.append(
+                "[the process was not running when Indus restarted, or its pid was reused]"
+            )
+            record.exited, record.exit_code = True, None
+            record.reason, record.source = "lost", "restart"
+            record.consumed = True  # nothing to announce: its end was never observed
+            record.ended_mono = self.clock.monotonic()
+            record.done.set()
+            self._records[record.id] = record
+        if found.adopt or found.lost:
+            self._save_checkpoint(scope)
+        return found
+
+    def _recovered_record(self, scope: Scope, entry: process_checkpoint.Entry) -> ProcessRecord:
+        now = self.clock.monotonic()
+        try:
+            started = datetime.fromisoformat(entry.started_at)
+        except ValueError:
+            started = self.clock.now()
+        return ProcessRecord(
+            id=entry.id,
+            command=entry.command,
+            home=str(scope.home),
+            session_id=entry.owner_session,
+            env_key=entry.env_key,
+            cwd=entry.cwd,
+            scope=scope,
+            started_at=started,
+            started_mono=now - max(0.0, (self.clock.now() - started).total_seconds()),
+            persist_on_release=entry.persist_on_release,
+            notify_on_exit=entry.notify_on_exit,
+            last_used=now,
+            backend=entry.backend,
+            log_path=entry.log_path,
+        )
 
 
 def _current_task() -> asyncio.Task[Any] | None:

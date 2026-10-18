@@ -6,8 +6,10 @@ cloud backends (P11, P21) only add rows. The backend is chosen by ``terminal.bac
 call's ``Scope`` config, never by process environment variables (D-16.75).
 
 Keys (``EnvKey``) always start with the profile home, so two profiles never share an
-environment (R02.8): calls with per-task overrides get their task's own key, everything else the
-session's key (or ``default``), and host-local control calls a separate ``host`` key. Creation
+environment (R02.8): calls with per-task overrides get their task's own key; a backend whose row
+says it is ``profile_scoped`` for the scope (a persistent container, P11) gets one ``profile`` key
+that a session's release leaves alone; everything else the session's key (or ``default``), and
+host-local control calls a separate ``host`` key. Creation
 happens under one asyncio lock per key with a re-check; every use stamps the activity time.
 
 The idle reaper wakes every 60 s and cleans environments unused for ``terminal.lifetime_s``
@@ -59,7 +61,7 @@ log = logging.getLogger(__name__)
 REAP_EVERY_S = 60.0
 CLEANUP_BOUND_S = 15.0
 
-type KeyKind = Literal["task", "session", "host"]
+type KeyKind = Literal["task", "session", "profile", "host"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,12 +93,14 @@ type Factory = Callable[[CreateRequest], Awaitable[Environment]]
 
 @dataclass(frozen=True, slots=True)
 class BackendEntry:
-    """One backend row. ``probe`` returns why the backend cannot run here, or None."""
+    """One backend row. ``probe`` returns why the backend cannot run here, or None;
+    ``profile_scoped`` says whether one environment serves the whole profile."""
 
     name: str
     factory: Factory
     flags: BackendFlags
     probe: Callable[[Scope], str | None] | None = None
+    profile_scoped: Callable[[Scope], bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,8 +142,26 @@ async def _create_local(request: CreateRequest) -> Environment:
     )
 
 
+async def _create_ssh(request: CreateRequest) -> Environment:
+    from indus.backends.ssh.environment import open_ssh
+
+    return await open_ssh(request.scope, session_id=request.session_id, overrides=request.overrides)
+
+
+# Flags of rows whose module loads only when the backend is used (kept in sync by a test).
+SSH_ROW_FLAGS = BackendFlags(
+    isolated=False, container_paths=True, stdin_mode="pipe", host_local=False
+)
+
+
 def default_entries() -> list[BackendEntry]:
-    return [BackendEntry("local", _create_local, LOCAL_FLAGS)]
+    from indus.backends.docker import docker_entry
+
+    return [
+        BackendEntry("local", _create_local, LOCAL_FLAGS),
+        docker_entry(),
+        BackendEntry("ssh", _create_ssh, SSH_ROW_FLAGS),
+    ]
 
 
 def _config(scope: Scope, key: str) -> Any:
@@ -210,6 +232,9 @@ class EnvironmentRegistry:
         backend = self.backend_name(scope, overrides)
         if overrides and task_id:
             return EnvKey(home, "task", task_id, backend)
+        entry = self._entries.get(backend)
+        if entry is not None and entry.profile_scoped is not None and entry.profile_scoped(scope):
+            return EnvKey(home, "profile", "shared", backend)
         return EnvKey(home, "session", session_id or "default", backend)
 
     @staticmethod
@@ -360,8 +385,11 @@ class EnvironmentRegistry:
         session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> bool:
-        """End the environment a call with these ids would use (session end, ``/new``)."""
+        """End the environment a call with these ids would use (session end, ``/new``). A
+        profile-wide environment serves other sessions too and is left to the idle reaper."""
         key = self.key_for(scope, task_id=task_id, session_id=session_id, overrides=overrides)
+        if key.kind == "profile":
+            return False
         return await self.evict(key)
 
     async def reap_idle(self) -> list[EnvKey]:

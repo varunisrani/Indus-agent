@@ -37,6 +37,10 @@ commands:
   checkpoints list: 0
   checkpoints prune: 0
   checkpoints clear: 0
+  worktree: 1             # the fresh cwd is not inside a git repository
+  worktree list: 1
+  worktree new: 1
+  worktree prune: 1
   import: 2
   config: 0
   config show: 0

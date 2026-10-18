@@ -15,7 +15,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -482,6 +482,21 @@ def check_backend(ctx: DoctorContext) -> list[Finding]:
     backend = str(config_mod.load(ctx.scope).get("terminal.backend") or "local")
     if backend == "local":
         return [Finding("backend", "ok", "commands run on this machine (terminal.backend: local)")]
+    if backend == "docker":
+        from indus.backends.docker.probe import doctor_rows
+
+        return [
+            Finding(row.id, row.severity, row.message, fix=row.fix)
+            for row in doctor_rows(ctx.scope.with_config(config_mod.load(ctx.scope)))
+        ]
+    if backend == "ssh":
+        from indus.backends.ssh.environment import setup_findings
+
+        scoped = ctx.scope.with_config(config_mod.load(ctx.scope))
+        return [
+            Finding("backend", cast(Severity, severity), message, fix=fix)
+            for severity, message, fix in setup_findings(scoped)
+        ]
     return [
         Finding(
             "backend",

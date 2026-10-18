@@ -40,7 +40,7 @@ from indus.protocol.requests_port import RequestUnsupported, RequestWithdrawn, S
 from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice
 from indus.safety import path_guards
 from indus.safety.redaction import redact_output
-from indus.tools.builtin import lint, paths, read_tracking
+from indus.tools.builtin import lint, mutation_hooks, paths, read_tracking
 from indus.tools.builtin.exec_host import CancelLike, ExecHost
 from indus.tools.builtin.file_ops import (
     FileOpError,
@@ -390,8 +390,12 @@ async def write_file(
                 "notice) as file content. Remove the line-number prefixes and write the real text."
             )
         tracker = read_tracking.tracker_for(scope, task_id)
+        notes = await mutation_hooks.before_file_change(
+            ops, scope=scope, session_id=session_id, turn_id=turn_id, paths=[target.resolved]
+        )
         async with path_lock(target.resolved):
-            return await _write_locked(ops, target, content, tracker, cancel=cancel)
+            written = await _write_locked(ops, target, content, tracker, cancel=cancel)
+        return mutation_hooks.with_notes(written, notes)
     except IndusError as exc:
         if not is_backend_error(exc):
             raise

@@ -27,13 +27,21 @@ Afterwards (``SudoSupport.after``): the password is masked in the output; a head
 required" failure gets a tip to store the password locally (never in chat); a rejected password
 sets ``sudo_auth_failed`` and drops a cached or prompted copy (``sudo_cache_cleared``); an account
 that may not use sudo gets a plain note and no promise of a new prompt.
+
+Where (P11 integration, security): the password of this machine never leaves it. Every hook is
+keyed by the backend environment it serves (``target``; ``HOST_LOCAL`` for the local shell) and
+the cache key carries it, so a password typed for one place is never fed to another. A host-local
+hook refuses to rewrite on an environment that is not host-local (defence in depth). Remote and
+container backends get a hook only through ``backend_sudo``, and only when the profile stores a
+password for that backend (``<backend>_sudo_password``); such a hook reads only that secret and
+never prompts, so the person is never asked for "your sudo password" by a remote host.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Awaitable, Callable, Generator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -50,12 +58,15 @@ __all__ = [
     "PASSWORDS",
     "PROBE_TIMEOUT_S",
     "PROMPT_TIMEOUT_S",
+    "HOST_LOCAL",
     "SECRET_NAMES",
     "SudoCaller",
     "SudoPasswordCache",
     "SudoRun",
     "SudoSupport",
     "SudoTarget",
+    "backend_secret_names",
+    "backend_sudo",
     "broker_asker",
     "rewrite_sudo",
     "use_sudo_caller",
@@ -66,6 +77,7 @@ log = logging.getLogger(__name__)
 PROBE_TIMEOUT_S = 3.0
 PROMPT_TIMEOUT_S = 45.0
 SECRET_NAMES = ("sudo_password", "SUDO_PASSWORD")
+HOST_LOCAL = "local"
 MASK = "[redacted]"
 REWRITE_FLAGS = " -S -p ''"
 
@@ -326,11 +338,12 @@ def rewrite_sudo(command: str) -> tuple[str, int]:
 
 # -- password sources ------------------------------------------------------------------------------
 
-type CacheKey = tuple[str, str]
+type CacheKey = tuple[str, str, str]
 
 
 class SudoPasswordCache:
-    """Passwords a person typed, per profile home and session (never shared across either)."""
+    """Passwords a person typed, per profile home, session and backend environment (never shared
+    across any of them)."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -455,16 +468,23 @@ class SudoSupport:
         session_id: str | None = None,
         cache: SudoPasswordCache | None = None,
         probe_timeout: float = PROBE_TIMEOUT_S,
+        target: str = HOST_LOCAL,
+        secret_names: Sequence[str] = SECRET_NAMES,
+        can_prompt: bool | None = None,
     ) -> None:
         self.scope = scope
-        self.key: CacheKey = (str(scope.home), session_id or "default")
+        self.target = target
+        self.key: CacheKey = (str(scope.home), session_id or "default", target)
         self.cache = cache if cache is not None else PASSWORDS
         self.probe_timeout = probe_timeout
+        self.secret_names = tuple(secret_names)
+        # Only the host's own hook may ask the person; a remote one uses its stored secret only.
+        self.can_prompt = (target == HOST_LOCAL) if can_prompt is None else can_prompt
 
     def _configured(self) -> str | None:
         if self.scope.secrets is None:
             return None
-        for name in SECRET_NAMES:
+        for name in self.secret_names:
             try:
                 value = self.scope.secrets.get(name)
             except Exception:
@@ -495,8 +515,11 @@ class SudoSupport:
         rewritten, count = rewrite_sudo(command)
         if count == 0:
             return command, stdin, None
+        if self.target == HOST_LOCAL and not env.flags.host_local:
+            # This machine's password never goes to a remote host or into a container.
+            return command, stdin, None
         caller = _CALLER.get()
-        asker = caller.ask if caller is not None else None
+        asker = caller.ask if caller is not None and self.can_prompt else None
         if env.flags.stdin_mode == "heredoc":
             # The password would become part of the script text; let sudo fail on its own.
             return command, stdin, SudoRun(False, count, can_prompt=False)
@@ -551,8 +574,8 @@ class SudoSupport:
                 notes.append(f"sudo rejected the password; the remembered copy was cleared.{again}")
             else:
                 notes.append(
-                    "sudo rejected the stored sudo_password. The user needs to update it in this "
-                    "profile's secret store on the machine running Indus."
+                    f"sudo rejected the stored {self.secret_names[0]}. The user needs to update "
+                    "it in this profile's secret store on the machine running Indus."
                 )
         elif not run.rewritten and any(marker in lowered for marker in _NEEDS_PASSWORD):
             if run.can_prompt:
@@ -560,8 +583,8 @@ class SudoSupport:
             else:
                 notes.append(
                     "Tip: this session cannot ask for a sudo password. The user can store it in "
-                    "this profile's secret store as sudo_password on the machine running Indus "
-                    "(never paste it into chat), or run the command without sudo."
+                    f"this profile's secret store as {self.secret_names[0]} on the machine "
+                    "running Indus (never paste it into chat), or run the command without sudo."
                 )
         if output != result.output or notes or auth_failed:
             if notes:
@@ -573,3 +596,37 @@ class SudoSupport:
                 sudo_cache_cleared=cache_cleared,
             )
         return result
+
+
+def backend_secret_names(backend: str) -> tuple[str, str]:
+    """The secret names that hold the sudo password of a remote or container backend."""
+    return (f"{backend}_sudo_password", f"{backend.upper()}_SUDO_PASSWORD")
+
+
+def backend_sudo(
+    scope: Scope, *, backend: str, target: str, session_id: str | None = None
+) -> SudoSupport | None:
+    """The sudo hook of a backend that is not this machine (ssh, docker, ...), or None.
+
+    Only when the profile stores a password for that backend (``backend_secret_names``); the
+    hook reads that secret alone, is keyed by ``target`` (``ssh:user@host:port``,
+    ``docker:<key>``), and never prompts. Without such a secret the command runs as written and
+    sudo fails on its own: the local password is never sent anywhere (module notes)."""
+    if target == HOST_LOCAL or scope.secrets is None:
+        return None
+    names = backend_secret_names(backend)
+    for name in names:
+        try:
+            value = scope.secrets.get(name)
+        except Exception:
+            log.debug("secret store lookup failed", exc_info=True)
+            continue
+        if value:
+            return SudoSupport(
+                scope,
+                session_id=session_id,
+                target=target,
+                secret_names=names,
+                can_prompt=False,
+            )
+    return None

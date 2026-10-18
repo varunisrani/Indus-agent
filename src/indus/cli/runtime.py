@@ -11,7 +11,10 @@ here (P05 wave 2 notes):
 - at exit the terminal runtime is shut down (background jobs, then every environment, which is
   the ``EnvironmentRegistry`` shutdown) on the loop that used it;
 - one auxiliary client (P08-17) per run goes to the service: it titles sessions after their
-  first exchange and every agent binds it to its own route for compression summaries.
+  first exchange and every agent binds it to its own route for compression summaries;
+- the backends' questions about sessions (P11): process receipts follow the compression lineage
+  of this run's store, and the Docker orphan sweep asks it whether a session is over
+  (``service.terminal_host``).
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from indus.foundation.scope import Scope
 from indus.providers.auxiliary import AuxClient
 from indus.providers.profile import REASONING_LEVELS
 from indus.providers.route import RuntimeRoute, resolve
+from indus.service import terminal_host
 from indus.service.broker import ServerRequestBroker
 from indus.service.host_inprocess import InProcessHost
 from indus.service.session_service import AgentFactory, SessionService
@@ -186,6 +190,7 @@ def build_service(spec: ServiceSpec) -> SessionService:
         list_models=overrides.list_models if overrides is not None else None,
     )
     store = StateStore(spec.store)
+    terminal_host.install(spec.store, terminal.runtime().processes)
     aux = AuxClient(
         spec.scope,
         spec.route,

@@ -49,7 +49,7 @@ from indus.foundation.clock import Clock
 from indus.foundation.config.schema import default_for
 from indus.foundation.scope import Scope
 from indus.platform import known_dirs, locate
-from indus.safety.child_env import child_env
+from indus.safety.child_env import child_env, passthrough_names
 
 __all__ = [
     "LocalEnvironment",
@@ -549,6 +549,12 @@ class LocalEnvironment(SpawnedEnvironment):
 
     def describe(self) -> str:
         return f"local bash on this machine, cwd {self._cwd}"
+
+    def _excluded_names(self) -> tuple[str, ...]:
+        # Passthrough values are injected fresh for every command (``run_env``); frozen into the
+        # snapshot they would outlive a changed secret or reach another session (R02.1, P11-21).
+        accepted, _ = passthrough_names(self.scope)
+        return tuple(accepted)
 
     def run_env(self) -> dict[str, str]:
         """The environment one command starts with."""

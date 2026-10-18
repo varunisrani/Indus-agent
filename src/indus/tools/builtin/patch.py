@@ -34,7 +34,7 @@ from typing import Any
 from indus.foundation.errors import IndusError
 from indus.foundation.scope import Scope
 from indus.protocol.requests_port import ServerRequestPort
-from indus.tools.builtin import fuzzy_match, read_tracking, v4a
+from indus.tools.builtin import fuzzy_match, mutation_hooks, read_tracking, v4a
 from indus.tools.builtin.exec_host import CancelLike
 from indus.tools.builtin.file_ops import (
     FileOpError,
@@ -321,6 +321,9 @@ async def patch(
         if refused:
             return _error(refused)
         tracker = read_tracking.tracker_for(scope, task_id)
+        notes = await mutation_hooks.before_file_change(
+            ops, scope=scope, session_id=session_id, turn_id=turn_id, paths=[target.resolved]
+        )
         async with path_lock(target.resolved):
             body = await apply_text_edit(
                 ops,
@@ -339,8 +342,8 @@ async def patch(
         return _error(f"The file was not changed: {exc.detail or exc}")
     if "error" in body:
         message = str(body.pop("error"))
-        return _error(message, **body)
-    return json.dumps(body, ensure_ascii=False)
+        return mutation_hooks.with_notes(_error(message, **body), notes)
+    return mutation_hooks.with_notes(json.dumps(body, ensure_ascii=False), notes)
 
 
 async def _patch_mode(
@@ -370,7 +373,11 @@ async def _patch_mode(
             broker=broker,
             turn_id=turn_id,
         )
-        return await v4a.run_patch_mode(args, files, lint_host=environment_of(ops), cancel=cancel)
+        notes = await mutation_hooks.before_file_change(
+            ops, scope=scope, session_id=session_id, turn_id=turn_id
+        )
+        result = await v4a.run_patch_mode(args, files, lint_host=environment_of(ops), cancel=cancel)
+        return mutation_hooks.with_notes(result, notes)
     except IndusError as exc:
         if not is_backend_error(exc):
             raise

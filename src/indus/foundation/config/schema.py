@@ -89,6 +89,72 @@ class TerminalSection(_Section):
         default=True,
         description="two checks of a silent background job switch on a message when it ends",
     )
+    docker_binary: str = Field(
+        default="", description="docker or podman client path; empty = docker, then podman on PATH"
+    )
+    docker_image: str = Field(
+        default="ghcr.io/indus-agent/indus-sandbox:slim",
+        description="image the Docker sandbox runs (Indus's own sandbox image by default)",
+    )
+    docker_image_pinned: bool = Field(
+        default=False, description="docker_image must name a digest (@sha256:...)"
+    )
+    docker_forward_env: list[str] = Field(
+        default_factory=list,
+        description="variable names passed into the container (values never on a command line)",
+    )
+    docker_env: dict[str, str] = Field(
+        default_factory=dict, description="extra variables set inside the container"
+    )
+    docker_volumes: list[str] = Field(
+        default_factory=list, description="host:container[:options] binds (prompts come back on)"
+    )
+    docker_extra_args: list[str] = Field(
+        default_factory=list, description="extra docker run arguments, added last"
+    )
+    docker_shm_size: str = Field(
+        default="1g", description="size of /dev/shm; empty or 0 keeps Docker's own default"
+    )
+    docker_network: bool = Field(default=True, description="false runs the container offline")
+    docker_run_as_host_user: bool = Field(
+        default=False, description="run as your uid:gid so files you share stay yours"
+    )
+    docker_snap_compat: bool = Field(
+        default=False, description="snap-packaged Docker: run without no-new-privileges"
+    )
+    docker_mount_cwd_to_workspace: bool = Field(
+        default=False,
+        description="bind the host working directory at /workspace (approval prompts come back on)",
+    )
+    docker_persist_across_processes: bool = Field(
+        default=True, description="reuse the labelled container a previous run left"
+    )
+    docker_shared_key: str = Field(
+        default="", description="profiles with the same key share one container"
+    )
+    docker_orphan_reaper: bool = Field(
+        default=True, description="remove old Indus containers of this profile at start"
+    )
+    container_cpu: float = Field(default=1.0, description="CPUs for a sandbox container")
+    container_memory_mb: int = Field(default=5120, description="memory cap of a sandbox, in MB")
+    container_disk_mb: int = Field(
+        default=51200, description="disk cap of a sandbox in MB (where the host supports it)"
+    )
+    container_persistent: bool = Field(
+        default=True,
+        description="keep /root and /workspace between runs; false = a fresh sandbox per session",
+    )
+    ssh_host: str = Field(default="", description="ssh backend: host to run commands on")
+    ssh_user: str = Field(default="", description="ssh backend: login user; empty = ssh's default")
+    ssh_port: int = Field(default=22, description="ssh backend: port")
+    ssh_key: str = Field(default="", description="ssh backend: identity file; empty = agent/keys")
+    ssh_persistent_shell: bool = Field(
+        default=True, description="ssh backend: exported variables carry over between commands"
+    )
+    credential_files: list[str] = Field(
+        default_factory=list,
+        description="host files copied into sandboxes (mounted read-only, pushed upload-only)",
+    )
 
 
 class ToolOutputSection(_Section):
@@ -115,6 +181,44 @@ class ApprovalsSection(_Section):
     unattended_mode: Literal["deny", "approve"] = Field(
         default="deny",
         description="risky commands where nobody can answer (API, webhooks): deny or approve",
+    )
+
+
+class CheckpointsSection(_Section):
+    """File snapshots taken before the first file change of a turn (P11-15..18)."""
+
+    enabled: bool = Field(
+        default=False, description="snapshot the working folder before the agent changes files"
+    )
+    max_snapshots: int = Field(default=20, description="checkpoints kept per folder")
+    max_total_size_mb: int = Field(
+        default=500, description="the automatic prune drops the oldest checkpoints above this"
+    )
+    max_file_size_mb: int = Field(
+        default=10, description="files larger than this are left out of checkpoints"
+    )
+    retention_days: int = Field(
+        default=7, description="folders not checkpointed for this many days are pruned"
+    )
+    min_interval_hours: int = Field(
+        default=24, description="hours between two automatic prunes of the checkpoint store"
+    )
+    auto_prune: bool = Field(
+        default=True, description="prune the checkpoint store automatically (at most once a day)"
+    )
+
+
+class WorktreesSection(_Section):
+    """Session worktrees under <repo>/.worktrees (P11-19)."""
+
+    prune_after_hours: int = Field(
+        default=24, description="clean, merged worktrees older than this are pruned"
+    )
+    fetch_timeout_s: float = Field(
+        default=5.0, description="seconds to refresh the base branch before creating a worktree"
+    )
+    sync_base: bool = Field(
+        default=True, description="branch new worktrees from the fetched upstream, not local HEAD"
     )
 
 
@@ -476,6 +580,12 @@ class ConfigModel(BaseModel):
         "(`indus tools`)",
     )
     doctor: DoctorSection = Field(default_factory=DoctorSection, description="`indus doctor`")
+    checkpoints: CheckpointsSection = Field(
+        default_factory=CheckpointsSection, description="file snapshots and /rollback"
+    )
+    worktrees: WorktreesSection = Field(
+        default_factory=WorktreesSection, description="session worktrees (indus -w)"
+    )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 

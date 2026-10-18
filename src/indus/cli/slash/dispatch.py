@@ -25,7 +25,7 @@ import logging
 from collections.abc import Mapping
 
 from indus.cli import quick_commands
-from indus.cli.slash import control_cmds, session_cmds
+from indus.cli.slash import checkpoint_cmds, control_cmds, session_cmds
 from indus.cli.slash.context import ExtensionHandler, Handler, SlashContext, SlashResult
 from indus.foundation.errors import IndusError
 from indus.protocol.methods import ProtocolError
@@ -46,7 +46,11 @@ log = logging.getLogger(__name__)
 MAX_REDISPATCH = 4
 """How many times one line may be re-dispatched (prefix expansion, quick aliases)."""
 
-HANDLERS: dict[str, Handler] = {**session_cmds.HANDLERS, **control_cmds.HANDLERS}
+HANDLERS: dict[str, Handler] = {
+    **session_cmds.HANDLERS,
+    **control_cmds.HANDLERS,
+    **checkpoint_cmds.HANDLERS,
+}
 """Canonical command name → the classic CLI's handler."""
 
 _KEEPS_PICKER = frozenset({"resume", "sessions"})

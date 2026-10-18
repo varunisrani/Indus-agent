@@ -76,6 +76,7 @@ markers = [
     "perf: asserts wall-clock bounds (D-04.1 criteria); numbers are only meaningful run alone",
     "ref: needs the pinned reference checkout (INDUS_REF)",
     "network: needs network access",
+    "docker: needs a reachable Docker daemon (live backend lanes, P11-21)",
 ]
 
 [tool.importlinter]
