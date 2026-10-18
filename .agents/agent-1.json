@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 23,
-  "remaining_pct": 77,
+  "usage_pct": 28,
+  "remaining_pct": 72,
   "resets_at": "2026-10-18T21:00:00+00:00",
-  "last_check": "2026-10-18T18:33:00+00:00",
-  "current_step": "P05 wave 2: B and D saved; A (file tools) and C (terminal/process) building",
-  "last_commit": "25269c8"
+  "last_check": "2026-10-18T19:06:00+00:00",
+  "current_step": "P05 done (a26acb4); P06 3 slices building (A entry/host, B REPL UI, C commands)",
+  "last_commit": "bf966bb"
 }
