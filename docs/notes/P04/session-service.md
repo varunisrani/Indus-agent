@@ -118,16 +118,71 @@ cancel, asker cancelled) owns the outcome, so an answer racing a cancel either l
 NOT_FOUND and the event is sent exactly once. A raising sink is logged, never fatal. Loop-bound:
 every method runs on the session's event loop (the in-process host marshals calls onto it).
 
-## Part 3 — SessionService and InProcessHost (wave 6b, not built)
+## Part 3 — SessionService and InProcessHost (built, wave 6b builder S)
 
-Plan for 6b: `SessionService` holds per session a `SessionLock` for the life of an attachment
-(taken at `create`/`resume`, `SESSION_BUSY` when another surface has it; `submit` while a turn
-runs → `SESSION_BUSY` too), a broker wired to the session's event sink and seq counter, the
-turn task and its generation; `answer_server_request` routes to the broker; `interrupt` checks
-the generation, cancels the task and calls `broker.cancel_all(INTERRUPTED)`; turn end calls
-`cancel_all(TURN_ENDED)`. `IndusError` codes map through `error_for_indus_code`
-(`session.busy` → `SESSION_BUSY`). `InProcessHost` owns a loop thread and marshals every call
-with `run_coroutine_threadsafe`.
+Read for this part: nothing new from the reference beyond the skim above (sections 7, 8, 11
+again: what a host owns, busy-session queueing, agent cache). Ours: `docs/notes/P04/agent-object.md`,
+`interrupts.md`, `route-and-d04-1.md` (criterion e), `protocol-models.md` (method catalogue).
+
+What it does (own words): `SessionService` is the API every surface drives a session through.
+Per attached session it keeps the agent (P04-20), the session's `EventSink`, the broker (wired
+to that sink: `deliver` → `sink.request`, `emit` → `sink.emit`, the shared seq counter) and the
+session lock, held for the life of the attachment. `InProcessHost` runs the service on an
+asyncio loop in a daemon thread so a synchronous caller can call it.
+
+Inputs → outputs (every failure is a `ProtocolError` from the table):
+- `create(SessionCreateParams?) -> SessionCreateResult`: new id (`new_session_id`), attach;
+  `cwd`/`model` go into the agent options and the session row fields, `toolsets` into the
+  selection; a repeated `idempotency_key` returns the first session (`created=False`), with other
+  params `IDEMPOTENCY_CONFLICT`. The session row itself is written by the first turn's prologue
+  (it must carry the prompt), so a created session that never ran a turn is only known to this
+  service.
+- `resume(id) -> SessionResumeResult` (`message_count`, `last_seq`, `pending_requests`): an id
+  already attached here is a reconnect (described again, nothing taken); otherwise the session
+  must exist (P02 row, memory store entry, or created here) — else `SESSION_NOT_FOUND` — and the
+  lock is taken: held elsewhere → `SESSION_BUSY`.
+- `submit(id, text) -> PromptSubmitResult(turn_id, generation)`: blank → `TEXT_EMPTY`; a stored
+  session that is not attached is attached first (so a second surface's submit is `SESSION_BUSY`);
+  a running turn → `SESSION_BUSY`. Turn end (done callback, or `wait`, whichever first, once):
+  `broker.cancel_all(TURN_ENDED)`, the result kept (last 20) for `wait`, and steer text the turn
+  never delivered (ticketed steers withdrawn back, plus the loop's ticketless leftover) starts the
+  next turn — unless the turn was interrupted, then it is dropped (logged).
+- `interrupt(id, generation?, hard?)` → `interrupted`; a stale generation is a no-op (False).
+- `steer(id, text)` → `queued` + ticket (`st_…`), False with no live turn; `redirect(id, text)` →
+  `redirected` / `steered` (during tools) / `rejected`.
+- `answer_server_request(id, request_id, answer)` → the broker's answer result.
+- `events(id, since?)`, `subscribe(id, fn)`, `on_request(id, fn)`, `wait(id, turn_id?)`,
+  `close(id)` (agent closed, broker closed, lock released), `aclose()`.
+- Errors: `protocol_error_for(exc)`: `ProtocolError` as is, `IndusError` through
+  `error_for_indus_code`, anything else `INTERNAL_ERROR` (logged). The busy message is the
+  `errors.session.busy` copy (`BUSY_COPY`, mirrored in `locales/en.yaml`, a test keeps them
+  equal); the holder's description goes to the log only.
+- Host: `InProcessHost(make_service, scope=, call_timeout=60)`; `start()`/`stop()`/context
+  manager; blocking `create`, `resume`, `submit`, `wait`, `interrupt`, `steer`, `redirect`,
+  `answer_server_request`, `events`, `close_session`, `feed(id)` (a `queue.Queue` the loop fills
+  with events and server requests, plus its stop callable); `call(coro)` / `run(fn)` for anything
+  else. It declares all four answerable kinds. Calls run under the host's scope (the task would
+  otherwise copy the calling thread's context, R01.16); a blocking call from the loop thread
+  itself is refused (`RuntimeError`) instead of hanging.
+
+Edge cases: interrupt before the turn's first model call → the loop sees the flag at its first
+effect point (no request is sent); a turn task that died without a result is logged and leaves
+no result; closing the service while a turn runs interrupts it (by system) through the agent;
+`stop()` closes every session before the loop stops.
+
+Tests: `tests/unit/service/test_session_service.py` (16), `tests/unit/service/test_host_inprocess.py`
+(6), `tests/integration/service/test_inprocess_host.py` (end-to-end smoke on the real P02 store,
+resume in a second host), `tests/integration/core/test_d04_1_sync_caller.py` (criterion e).
+
+Decisions for the lead (Part 3):
+- The lock is held per attachment (create/resume/implicit attach), not per turn; a reconnect
+  through the same service is not busy.
+- Undelivered steer text after a completed turn starts the next turn automatically; after an
+  interrupt it is dropped. Change in `SessionService._turn_ended`.
+- `session.create`'s `title` is accepted but not stored yet: the P02 create fields have no title
+  (titles land with P02's title API / P06).
+- `tests/integration/service/test_inprocess_host.py` holds the end-to-end smoke (M1 shape); the
+  host's own unit tests are `tests/unit/service/test_host_inprocess.py`.
 
 ## Design for P17 — turn lease and generation fences (design only)
 
@@ -228,9 +283,31 @@ Compare checklist (filled after the rewrite; reopened
 
 ## Status
 
-Partial (2026-10-18). Slice Z done: per-session lock, broker and its port, tests. Shared one-line
-changes: `src/indus/foundation/errors.py` (`session.busy`), `src/indus/protocol/errors.py`
-(`session.busy` → `SESSION_BUSY`). Handed on to wave 6b: `SessionService`, `InProcessHost`,
-`tests/unit/service/test_session_service.py`, `tests/integration/service/test_inprocess_host.py`
-(the row's "sync caller drives and interrupts a turn" and "two services on one session" verify
-items, using the lock and the broker built here).
+Done (2026-10-18). Slice Z (wave 6a): per-session lock, broker and its port, tests; shared one-line
+changes `src/indus/foundation/errors.py` (`session.busy`), `src/indus/protocol/errors.py`
+(`session.busy` → `SESSION_BUSY`). Wave 6b (builder S): `src/indus/service/session_service.py`,
+`src/indus/service/host_inprocess.py`, their tests, the end-to-end smoke and D-04.1 criterion (e)
+(`tests/integration/core/test_d04_1_sync_caller.py`); `errors.session.busy` copy added to
+`locales/en.yaml`.
+
+Compare checklist, Part 3 (reopened `website/docs/developer-guide/gateway-session-lifecycle.md`
+§7, §8, §11):
+- [x] one running turn per session; a second submit is busy, in this service and from another
+  (tests: `test_session_service.py::test_a_second_submit_while_busy_is_refused`,
+  `::test_two_services_on_one_session`)
+- [x] interrupt reaches the running turn by generation and withdraws its open requests (tests:
+  `::test_interrupt_checks_the_generation`, `::test_interrupt_withdraws_a_pending_approval`)
+- [x] a sync caller drives and interrupts a turn from another thread (tests:
+  `test_host_inprocess.py::test_a_sync_caller_interrupts_mid_stream_from_another_thread`,
+  `tests/integration/core/test_d04_1_sync_caller.py::test_sync_caller_drives_and_interrupts_a_streaming_turn`)
+- [x] R05.3 through the whole stack: an undeclared kind fails at once, nothing is sent (test:
+  `::test_a_kind_the_client_cannot_answer_fails_at_once`); the in-process host declares all four
+  (test: `test_host_inprocess.py::test_the_host_runs_the_service_on_its_own_thread`)
+- [x] resume in a new process finds the history and reuses the stored prompt bytes (test:
+  `tests/integration/service/test_inprocess_host.py::test_create_submit_tool_events_and_resume_in_a_new_service`)
+- Deliberate differences: the reference queues messages that arrive while a turn runs (FIFO per
+  session) and promotes them afterwards; we answer `SESSION_BUSY` to a second submit and carry
+  only steer text over into a follow-up turn. No agent cache or idle eviction: one agent per
+  attachment, closed with it.
+- Not taken: restart recovery markers and stuck-loop suspension (P17), queue depth reporting,
+  session-key rules (gateway, P15).

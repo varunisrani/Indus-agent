@@ -86,6 +86,10 @@ errors:
       todo: "Update Indus Agent to read it."
   secrets:
     missing: No value is stored for {name}. Set it with "indus secrets set {name}".
+  session:
+    busy:
+      what: "This conversation is busy: a reply is still running, or another Indus Agent window has it open."
+      todo: "Wait for the reply to finish, or close the other window, then try again."
 
 turn:
   overflow: "The conversation no longer fits this model's context window, so the partial reply was not continued. Compress the conversation or start a new session."

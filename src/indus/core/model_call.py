@@ -17,7 +17,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from indus.providers.retry import DEFAULT_MAX_RETRIES, RetryWait, retry_call
-from indus.providers.streaming import CallOutcome, StaleStreak, StreamFlags, stream_call
+from indus.providers.streaming import (
+    CallOutcome,
+    RouteChanged,
+    StaleStreak,
+    StreamFlags,
+    stream_call,
+)
 from indus.providers.timeouts import TimeoutPolicy
 from indus.providers.transports import get_transport
 from indus.providers.types import ChatRequest
@@ -54,6 +60,9 @@ class RouteCaller:
     flags: StreamFlags = field(default_factory=StreamFlags)
     streak: StaleStreak = field(default_factory=StaleStreak)
     epoch: Callable[[], object] = lambda: 0
+    # False once the route this caller was built for is no longer the bound one: the next attempt
+    # (a retry included) is not sent and the call ends ``RouteChanged`` (R01.5).
+    still_current: Callable[[], bool] = lambda: True
 
     @property
     def model(self) -> str:
@@ -65,6 +74,8 @@ class RouteCaller:
         transport = get_transport(str(getattr(self.route, "api_mode", "chat_completions")))
 
         async def once() -> CallOutcome:
+            if not self.still_current():
+                return RouteChanged(None, 0, 0)
             return await stream_call(
                 self.client,
                 transport,
