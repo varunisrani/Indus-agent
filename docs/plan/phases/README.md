@@ -23,7 +23,7 @@ acceptance, done when. Paths and conventions come from
 | P00 | [P00-foundations.md](P00-foundations.md) | 1 | 14 | 71 | 6 | 3 | 10 | — | done (c790e93, ef25266) |
 | P01 | [P01-platform-basics.md](P01-platform-basics.md) | 1.5 | 21 | 55 | 5 | 4 | 21 | — | done (cee5f44) |
 | P02 | [P02-state-store.md](P02-state-store.md) | 1.5 | 23 | 52 | 6 | 3 | 23 | M0 (`indus doctor --minimal`) | planned |
-| P03 | [P03-providers-fake-model.md](P03-providers-fake-model.md) | 1.5 | 19 | 55 | 8 | 4 | 19 | — | planned |
+| P03 | [P03-providers-fake-model.md](P03-providers-fake-model.md) | 1.5 | 19 | 55 | 8 | 4 | 19 | — | done (ee74300) |
 | P04 | [P04-turn-loop-tool-contract.md](P04-turn-loop-tool-contract.md) | 2 | 23 | 95 | 9 | 5 | 23 | — | planned |
 | P05 | [P05-core-tools.md](P05-core-tools.md) | 2 | 24 | 73 | 8 | 6 | 24 | — | planned |
 | P06 | [P06-classic-cli-demo1.md](P06-classic-cli-demo1.md) | 1 | 15 | 46 | 7 | 3 | 15 | **Demo 1** (M1) | planned |
