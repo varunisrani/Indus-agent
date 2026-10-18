@@ -27,7 +27,7 @@ acceptance, done when. Paths and conventions come from
 | P04 | [P04-turn-loop-tool-contract.md](P04-turn-loop-tool-contract.md) | 2 | 23 | 95 | 9 | 5 | 23 | — | done (87719b2, cc17d69, 4d1588d, 246d691; D-04.1 in this commit) |
 | P05 | [P05-core-tools.md](P05-core-tools.md) | 2 | 24 | 73 | 8 | 6 | 24 | — | done (a26acb4) |
 | P06 | [P06-classic-cli-demo1.md](P06-classic-cli-demo1.md) | 1 | 15 | 46 | 7 | 3 | 15 | **Demo 1** (M1) | done (2fcb1d8) |
-| P07 | [P07-cli-commands.md](P07-cli-commands.md) | 2 | 26 | 68 | 5 | 4 | 26 | — | planned |
+| P07 | [P07-cli-commands.md](P07-cli-commands.md) | 2 | 26 | 68 | 5 | 4 | 26 | — | done (9bb6c46) |
 | P08 | [P08-context-and-cost.md](P08-context-and-cost.md) | 1.5 | 19 | 49 | 9 | 4 | 19 | — | planned |
 | P09 | [P09-learning-loop.md](P09-learning-loop.md) | 2 | 25 | 82 | 9 | 5 | 25 | M2 | planned |
 | P10 | [P10-delegation-rich-tools.md](P10-delegation-rich-tools.md) | 2 | 26 | 69 | 11 | 6 | 26 | — | planned |
