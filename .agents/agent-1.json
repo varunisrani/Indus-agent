@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 28,
-  "remaining_pct": 72,
+  "usage_pct": 46,
+  "remaining_pct": 54,
   "resets_at": "2026-10-19T02:00:00+00:00",
-  "last_check": "2026-10-18T22:07:00+00:00",
-  "current_step": "P07 done (9bb6c46); P08 wave 1 building (3 slices)",
+  "last_check": "2026-10-18T22:40:00+00:00",
+  "current_step": "P08 wave 1 integrating; P11 3 slices building",
   "last_commit": "e4285ce"
 }
