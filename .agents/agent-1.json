@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "READY",
-  "usage_pct": 75,
-  "remaining_pct": 25,
-  "resets_at": "2026-10-18T16:00:00+00:00",
-  "last_check": "2026-10-18T14:23:30+00:00",
-  "current_step": "Handed the turn to Agent 2 at wave 4 start; READY to take back after 16:00 UTC reset",
-  "last_commit": "775ce70"
+  "usage_pct": 1,
+  "remaining_pct": 99,
+  "resets_at": "2026-10-18T21:00:00+00:00",
+  "last_check": "2026-10-18T16:06:00+00:00",
+  "current_step": "READY \u2014 waiting while Agent 2 holds the turn (wave 6a, P04)",
+  "last_commit": "25269c8"
 }
