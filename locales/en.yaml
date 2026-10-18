@@ -16,6 +16,26 @@ cli:
   interrupted: Interrupted. Press Ctrl+C again to quit.
   home_created: Created your Indus home at {path}.
   unknown_command: There is no command called {name}. Run "indus --help" to see what exists.
+  doctor:
+    title: "Indus Agent doctor (minimal report)"
+    home: "home: {path} (profile {profile}, selected by {how})"
+    config: "config: {path} (version {version}; {user} set by you, {defaults} at defaults)"
+    config_absent: "config: {path} (no file yet; all {defaults} settings at defaults)"
+    config_key: "  {key}: {source}"
+    config_broken: "  the file could not be read, the last good settings are used: {reason}"
+    secrets: "secrets: {backend} backend (setting {mode}; keychain {keychain})"
+    keychain_yes: "available"
+    keychain_no: "not available"
+    store: "store: {state}"
+    store_details: "store: {state} ({mode}, schema {schema}, fts5 {fts5}, trigram {trigram})"
+    store_file: "  file: {path}"
+    store_sqlite: "  SQLite {version} (fts5 {fts5}, trigram {trigram})"
+    store_line: "  {line}"
+    logs: "logs: {path}"
+    word_yes: "yes"
+    word_no: "no"
+    failed: "doctor could not start: {reason}"
+    usage: "usage: python -m indus.state.doctor_report [-p NAME] [--json]"
 
 errors:
   generic: Something went wrong. The log at {log_path} has the details.
@@ -55,5 +75,11 @@ errors:
       what: "Your session history could not be saved."
       todo: "Try again; if it keeps happening, run `indus doctor`."
     too_new: The session store at {path} was written by a newer version of Indus Agent.
+    uninitialised:
+      what: "The session history file exists but was never set up."
+      todo: "Start Indus Agent once to set it up, or move the file away if it is not yours."
+    incompatible:
+      what: "The session history was written by a newer version of Indus Agent."
+      todo: "Update Indus Agent to read it."
   secrets:
     missing: No value is stored for {name}. Set it with "indus secrets set {name}".

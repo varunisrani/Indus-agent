@@ -77,6 +77,9 @@ class SessionsSection(_Section):
     retention_days: int = Field(default=90, description="days ended sessions are kept")
     auto_prune: bool = Field(default=False, description="delete old sessions automatically")
     resume_message_limit: int = Field(default=20000, description="messages loaded when resuming")
+    search_slow_ms: int = Field(
+        default=1000, description="log searches slower than this many ms (0 logs every search)"
+    )
 
 
 class LoggingSection(_Section):

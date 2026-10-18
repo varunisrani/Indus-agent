@@ -155,9 +155,14 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_guards.py::test_quarantined_handle_never_reopens`
   - `tests/unit/state/test_guards.py::test_fts_scoped_corruption_is_not_quarantined`
 - **R03.6** FTS is derived; never rebuild inline
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_fts.py::test_index_damage_during_append_fails_open`
+  - `tests/unit/state/test_fts.py::test_quarantine_while_detaching_commits_nothing`
+  - `tests/unit/state/test_fts.py::test_detach_waits_out_a_sibling_holding_the_write_lock`
+  - `tests/unit/state/test_fts.py::test_rebuild_waits_for_other_generations_then_runs`
+  - `tests/unit/state/test_search.py::test_damaged_index_during_search_fails_open`
 - **R03.7** Stable FTS projection
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_fts.py::test_long_tool_row_is_indexed_as_its_prefix_only`
+  - `tests/unit/state/test_fts.py::test_strict_integrity_survives_updates_deletes_and_cascades`
 - **R03.8** Retry budgets are time-based
   - `tests/unit/state/test_writer.py::test_lock_held_for_three_seconds_is_waited_out`
   - `tests/unit/state/test_writer.py::test_lock_held_forever_raises_store_locked_at_the_deadline`
@@ -169,19 +174,26 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_schema.py::test_init_gives_up_after_the_patience`
   - `tests/unit/state/test_schema.py::test_second_init_writes_nothing`
 - **R03.10** Ordinary appends must not be blocked by compression
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_messages.py::test_appends_ignore_the_compression_lock`
 - **R03.11** Lineage-wide flags
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_sessions.py::test_archive_on_the_tip_archives_the_root_and_back`
+  - `tests/unit/state/test_sessions.py::test_pin_hide_and_unknown_ids`
+  - `tests/unit/state/test_sessions.py::test_read_watermark`
 - **R03.12** First end reason wins
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_sessions.py::test_first_end_reason_wins`
+  - `tests/unit/state/test_sessions.py::test_reopen_then_end_again`
 - **R03.13** Fork markers must name the actual parent
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_sessions.py::test_child_kind`
+  - `tests/unit/state/test_lineage.py::test_inherited_marker_naming_another_id_still_continues`
 - **R03.14** Order transcripts by id, never timestamp
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_messages.py::test_decreasing_timestamps_still_read_in_id_order`
 - **R03.15** Long migrations hold the write lock
   - `tests/unit/state/test_schema.py::test_chunked_migration_is_time_boxed_and_resumes`
 - **R03.16** Read-only means read-only for browsing
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_browse.py::test_missing_store_is_reported_and_never_created`
+  - `tests/unit/state/test_browse.py::test_open_reads_without_setting_anything_up`
+  - `tests/unit/state/test_browse.py::test_browse_never_checkpoints_a_live_wal`
+  - `tests/e2e/test_doctor_minimal.py::test_fresh_home_reports_a_missing_store_and_creates_none`
 - **R03.17** Descriptor exhaustion
   - `tests/unit/state/test_readpool.py::test_nine_concurrent_readers_use_eight_pooled_and_the_writer`
   - `tests/unit/state/test_readpool.py::test_process_cap_falls_back_to_the_writer`
@@ -189,20 +201,25 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_readpool.py::test_failed_open_backs_off_for_sixty_seconds`
   - `tests/unit/state/test_readpool.py::test_close_during_a_read_closes_that_connection`
 - **R03.18** SQL variable limit
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_deletion.py::test_delete_many_five_thousand_ids`
 - **R03.19** Surrogates and reserved prefixes
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_messages.py::test_surrogates_written_and_read_back_as_replacement`
+  - `tests/unit/state/test_messages.py::test_prefixed_literal_stays_a_string_in_the_store`
+  - `tests/unit/state/test_messages.py::test_generated_text_round_trips_except_surrogates`
 - **R03.20** PID-based liveness across namespaces
   - Review: not yet planned (P00-guards)
 - **R03.21** Never replay started work
   - Review: not yet planned (P00-guards)
 - **R03.22** Deleted ids must stay dead
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_deletion.py::test_deleted_id_cannot_be_recreated`
+  - `tests/unit/state/test_deletion.py::test_sweep_never_weakens_a_user_tombstone`
+  - `tests/unit/state/test_portability.py::test_tombstoned_id_is_refused`
 - **R03.23** Profile cross-talk
   - `tests/unit/foundation/test_scope.py::test_unresolved_raises`
   - `tests/unit/foundation/test_scope.py::test_child_env_pins_home`
   - `tests/unit/foundation/test_scope.py::test_concurrent_tasks_see_their_own`
   - `tests/unit/foundation/test_log.py::test_records_from_two_tasks_land_in_their_own_homes`
+  - `tests/e2e/test_doctor_minimal.py::test_profile_flag_targets_the_work_profile`
   - `tests/integration/foundation/test_log_routing.py::test_threads_with_different_scopes_write_to_their_own_profile`
   - `tests/unit/state/test_connection.py::test_default_store_path_comes_from_the_scope`
 - **R03.24** Test runs touching the live store
@@ -211,7 +228,10 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_connection.py::test_the_computed_real_root_is_refused_here`
   - `tests/unit/state/test_connection.py::test_ancestry_finds_pytest_from_a_child`
 - **R03.25** Automatic maintenance must only skip, never refuse a turn
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_maintenance.py::test_auto_maintain_never_raises`
+  - `tests/unit/state/test_maintenance.py::test_vacuum_refuses_another_generation`
+  - `tests/integration/state/test_vacuum_holders.py::test_second_process_blocks_vacuum`
+  - `tests/integration/state/test_vacuum_holders.py::test_auto_maintenance_only_skips_with_a_holder`
 - **R03.26** Repair loops
   - Review: not yet planned (P00-guards)
 - **R03.27** macOS durability

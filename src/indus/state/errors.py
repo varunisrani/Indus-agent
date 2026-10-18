@@ -68,6 +68,10 @@ TYPED_BUCKETS: dict[str, Bucket] = {
     "store.compression_busy": Bucket.COMPRESSION,
     "store.compression_closed": Bucket.COMPRESSION_CLOSED,
     "store.turn_lease_lost": Bucket.TURN_LEASE,
+    "store.compression_parent_ended": Bucket.COMPRESSION_CLOSED,
+    "store.session_guarded": Bucket.COMPRESSION,
+    "store.session_not_found": Bucket.SESSION_ROW_MISSING,
+    "store.vacuum_refused": Bucket.LOCKED,
 }
 
 # SQLite primary result codes (extended codes keep the primary one in the low byte).

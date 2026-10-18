@@ -29,6 +29,7 @@ def test_decided_defaults() -> None:
         "retention_days": 90,
         "auto_prune": False,
         "resume_message_limit": 20000,
+        "search_slow_ms": 1000,
     }
     assert d["logging"] == {"level": "INFO", "max_size_mb": 5, "backup_count": 3}
     assert d["security"] == {"redact_secrets": True, "secret_store": "auto"}

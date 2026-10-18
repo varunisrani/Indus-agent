@@ -63,3 +63,9 @@
 - P02-A: host SQLite 3.45.1 is in the WAL-reset bug range -> stores open in DELETE mode here. Decision pending: uv-managed CPython with SQLite >=3.51.3 for dev/CI, and/or an explicit override setting. Wave 4 should know reads go through the writer in DELETE mode.
 - ERROR_CODES missing: store.compression_busy, store.compression_closed, store.turn_lease_lost (TYPED_BUCKETS in state/errors.py).
 - state/__init__.py stays docstring-only (layers test); public names in state.registry / state.writer.
+## Wave 4 landing notes (Agent 2)
+- Repository shape: module functions taking the handle first, plus `*_in(conn, …, now=…)` forms for use inside a bigger transaction (lead decision for wave 4, replaces "methods on the handle").
+- Merge fixes: `sessions.create_in` also accepts `created_source` and the lineage flags (`archived`, `auto_archived`, `hidden`, `pinned`) that continuations and branches carry; an untitled parent's first branch is titled `branch` (a free base is returned as is), `#2` from the second on.
+- `TYPED_BUCKETS` rows added: compression_parent_ended → compression_closed, session_guarded → compression, session_not_found → session_row_missing, vacuum_refused → locked.
+- Accepted builder decisions: handoff rows marked `finish_reason = 'indus.handoff'`; appends refuse a compression-ended session (`store.compression_closed`), the lock is never checked; branch `model_config` = only `_branched_from`; tombstoned id in an import refuses the whole import; store without FTS5 searches with LIKE; doctor label keys `word_yes`/`word_no`.
+- Open: `sessions.export_message_limit` is read but not in the config schema; FTS stale rebuild at open can wait up to 120 s on the cross-process lock; CI needs a `slow` lane for `tests/integration/state`; P02-21 stress test pending.

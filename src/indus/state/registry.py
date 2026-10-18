@@ -33,7 +33,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 
 from indus.foundation.scope import Scope
-from indus.state import connection, journal, schema
+from indus.state import connection, fts, journal, schema
 from indus.state.guards import FileGuard
 from indus.state.readpool import ReadPool
 from indus.state.writer import ROUTINE, Budget, Writer, blocking_sleep
@@ -57,8 +57,8 @@ log = logging.getLogger(__name__)
 
 HANDLES_PER_PATH_WARN = 4
 
-# Wired by later tasks: extra DDL inside schema init (P02-14 FTS) and data migrations.
-EXTENSIONS: list[schema.SchemaExtension] = []
+# Extra DDL inside schema init (P02-14 FTS) and data migrations for later versions.
+EXTENSIONS: list[schema.SchemaExtension] = [fts.EXTENSION]
 MIGRATIONS: list[schema.MigrationStep] = []
 
 
@@ -132,6 +132,7 @@ class StoreHandle:
             still_ours=lambda: not (self.guard.replaced or self.guard.file_was_replaced()),
         )
         try:
+            fts.attach(self)  # fail-open hook, periodic merge, stale-index recovery
             if MIGRATIONS:
                 schema.run_migrations(self.writer.write, tuple(MIGRATIONS), clock=scope.clock)
         except BaseException:
