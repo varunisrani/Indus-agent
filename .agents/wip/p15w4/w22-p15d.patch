@@ -1,0 +1,3355 @@
+diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
+index 734daa0..f04b340 100644
+--- a/THIRD_PARTY_NOTICES.md
++++ b/THIRD_PARTY_NOTICES.md
+@@ -126,6 +126,8 @@ PyPI for packages of other platforms).
+ | six | 1.17.0 | MIT | via python-dateutil | P14-01 |
+ | fastapi | 0.142.2 | MIT | the gateway's HTTP apps: the OpenAI-compatible API server and the webhook receiver (on starlette) | P15-30 |
+ | annotated-doc | 0.0.5 | MIT | via fastapi; extra `research`, via typer | P15-30, P22-11 |
++| discord.py | 2.7.1 | MIT | extra `discord`: the Discord gateway adapter (client, components, command routes) | P15-34 |
++| audioop-lts | 0.2.2 | PSF-2.0 | extra `discord`, via discord.py (Python 3.13+; voice is not used) | P15-34 |
+ | modal | 1.6.1 | Apache-2.0 | extra `modal`: the Modal sandbox SDK (terminal backend `modal`) | P21-05 |
+ | synchronicity | 0.12.6 | Apache-2.0 | extra `modal`, via modal (sync wrappers of its async API) | P21-05 |
+ | grpclib | 0.4.9 | BSD-3-Clause | extra `modal`, via modal (gRPC client) | P21-05 |
+@@ -137,7 +139,7 @@ PyPI for packages of other platforms).
+ | toml | 0.10.2 | MIT | extras `modal`, `daytona`, via modal / daytona | P21-05 |
+ | types-certifi | 2021.10.8.3 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
+ | types-toml | 0.10.8.20260518 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
+-| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, via modal / daytona (HTTP client) | P21-05 |
++| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, `discord`, via modal / daytona / discord.py (HTTP client) | P21-05, P15-34 |
+ | aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+ | aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+ | frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index e6cbd47..455e2aa 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1070,7 +1070,15 @@ Checked by `python -m tooling.checks acceptance`.
+ - **ACC-K5-1** Telegram (polling or webhook, MarkdownV2 with plain fallback, forum topics, buttons, reactions)
+   - Review: not yet planned (phase TBD)
+ - **ACC-K6-1** Discord (slash commands, components, auto-threads, role allowlist, mention gating)
+-  - Review: not yet planned (phase TBD)
++  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_command_sync_caps_at_100_with_one_warning`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_command_sync_paces_mutations_and_deletes_first`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_an_application_command_becomes_command_text`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_component_press_by_a_member_without_an_allowed_role_is_refused`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_thread_spawned_by_a_mention_shares_the_session_with_follow_ups`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_role_grant_on_guild_messages_only`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_history_backfill_on_a_mention_in_a_busy_channel`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_indus_send_opens_discord_send_only`
+ - **ACC-K7-1** Slack (Socket Mode, Block Kit, threads, ephemeral messages)
+   - Review: not yet planned (phase TBD)
+ - **ACC-K8-1** Signal through signal-cli
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index d91e739..859148a 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -664,6 +664,7 @@ Checked by `python -m tooling.checks traps`.
+ - **R06.7** Session keys are a compatibility surface
+   - `tests/unit/gateway/core/test_session_keys.py::test_keys_match_the_golden_file`
+   - `tests/unit/gateway/core/test_session_keys.py::test_discord_follow_up_in_thread_matches_the_spawning_message`
++  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_thread_spawned_by_a_mention_shares_the_session_with_follow_ups`
+   - `tests/unit/gateway/core/test_session_keys.py::test_namespace`
+   - `tests/unit/state/test_gateway_routes.py::test_deleting_a_session_drops_its_routes`
+ - **R06.8** Default-deny with surprising pairing defaults
+diff --git a/docs/notes/P15/discord.md b/docs/notes/P15/discord.md
+new file mode 100644
+index 0000000..7a3265c
+--- /dev/null
++++ b/docs/notes/P15/discord.md
+@@ -0,0 +1,175 @@
++# Task: Discord adapter (P15-34) Phase: 15 Owner: wave-22 builder D
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `plugins/platforms/discord/adapter.py`
++(intents and `connect`, startup error classification, message admission, `_handle_message` with
++auto-threads and history backfill, `_auto_create_thread`, `_build_allowed_mentions`,
++`_is_allowed_user` / role lookup, `send` and its reply references, slash registration
++`_register_slash_commands`, post-connect sync and the diffing safe sync, the component view base),
++`plugins/platforms/discord/adapter_component_auth.py` (all),
++`plugins/platforms/discord/adapter_slash_auth.py` (all). Research 06 (Discord rows), R06.7.
++Evidence: none. Vendor: discord.py 2.7.1 source (MIT) for the `Client`, `Typing`, `View.stop`,
++`HTTPClient` command routes and `RateLimited` shapes.
++
++Pinned library: **discord.py 2.7.1** (uploaded 2026-03-03, MIT; Discord HTTP API v10 + gateway v10).
++New transitive package: `audioop-lts` 0.2.2 (PSF-2.0, Python ≥ 3.13 only). `aiohttp` and its
++dependencies are already locked (P21) at the versions discord.py accepts (`aiohttp<4,>=3.7.4`).
++
++What it does (own words): the Discord platform for the gateway. One discord.py `Client` per profile
++with the `message_content`, `dm_messages` and `guild_messages` intents (plus `members` only when a
++role allowlist is set, since role checks need member data). Messages become `InboundEvent`s: DMs,
++guild channel messages (chat type `group`), thread messages keyed on the parent channel plus the
++thread id, bot authors marked, edits marked, attachments listed by their CDN URL with a kind
++(voice note, audio, photo, video, document). The admission pipeline does authorization and mention
++gating; the adapter tells it whether we were mentioned (an explicit mention, or any message inside a
++thread we opened or posted in) and whether the sender holds an allowed role (`role_authorized`).
++
++A mention in a mention-gated guild channel opens a conversation thread: the message is keyed on the
++thread it will open (`prospective_thread_id` = the message id, since a thread started from a message
++takes that message's id), so the first message and every in-thread follow-up produce the same
++session key. The thread itself is created lazily, on the first outbound operation for it (typing,
++reply, card), with `auto_archive_duration` 1440 and a name taken from the message — so a message the
++admission pipeline refuses never creates a thread. The same mention also pulls the last 20 channel
++messages (oldest first, stopping at our own last message) into the event text as context.
++
++Outbound: text is sent as is (the sender has already formatted Markdown and cut it to 2,000 code
++points); anything still longer is split natively with the shared chunker and only the undelivered
++remainder is reported on a mid-split failure. Every send carries `allowed_mentions` "none" unless
++config opts in. Edits, deletes, typing (one trigger per refresh), files, approval cards as buttons
++(≤ 80-character labels, ≤ 5 per row, ≤ 5 rows) and clarify questions as buttons, or a select menu
++(≤ 25 options) when there are too many choices. Component views are sent "stopped" so discord.py
++never dispatches them; every press arrives through `on_interaction`, is acknowledged, and is emitted
++as a button event. With a role allowlist configured, a press from someone with neither an allowed
++role, nor a place on a user allowlist, nor a pairing approval, is refused at the adapter with a
++private notice and never emitted.
++
++Application commands: the chat commands from the slash registry (gateway surface) plus any extra
++names the host supplies, capped at 100 (names ≤ 32, lower case; descriptions ≤ 100; optional
++`args` string option ≤ 100); over the cap the extra ones are dropped with one warning. Sync is a
++diff against the commands Discord already has: deletes first (to stay under the cap), then creates
++and edits, with 4.5 s between mutations; unchanged commands cost nothing. It runs in the background
++after connect and is cancelled by disconnect. An invocation is acknowledged privately and emitted as
++the text `/name args`.
++
++`indus send` opens the adapter send-only: `login` (REST) without the gateway websocket, no handlers,
++no command sync — nothing inbound is consumed.
++
++Media download: `fetch_attachment(attachment)` streams a Discord CDN URL (https on Discord's CDN
++hosts only, no redirects) and `register_fetchers(intake)` hands it to the media intake.
++
++Inputs → outputs: `AdapterConfig` (credential `DISCORD_BOT_TOKEN`, `platforms.discord.*` extra:
++`require_mention`, `free_response_channels`, `auto_thread`, `no_thread_channels`, `allowed_roles`,
++`allowed_mentions`, `history_backfill`, `command_sync`; env `INDUS_DISCORD_ALLOWED_ROLES`) →
++`DiscordAdapter`; discord.py events → `InboundEvent`s; `send/edit/delete/...` → `SendResult`s.
++
++Files: `src/indus/gateway/adapters/discord/__init__.py`, `adapter.py`, `inbound.py` (normalisation,
++kept apart to keep the adapter small), `commands.py`; `tests/unit/gateway/adapters/discord/test_adapter.py`,
++`tests/contract/gateway/discord_case.py`. Shared: `tests/fakes/platform/discord_wire.py` (extended
++with its SURFACE), `tests/contract/gateway/conftest.py` (one import line), `pyproject.toml` (extra
++`discord`), `THIRD_PARTY_NOTICES.md` (two rows), `src/indus/gateway/config.py`
++(`AdapterConfig.send_only`), `src/indus/gateway/delivery/send_command.py` (passes `send_only=True`).
++
++Edge cases / failure modes:
++- our own messages and system messages (pins, thread-created) are ignored; edits whose text did not
++  change are ignored; a redelivered message id is ignored (bounded memory).
++- a command typed with a mention is answered where it was typed (no thread per `/status`).
++- replies (`message.reference`) do not open a thread; neither do free-response channels,
++  `no_thread_channels`, DMs or messages already in a thread.
++- thread creation fails → the reply goes to the parent channel as a reply to the message; the
++  thread id is remembered as "parent" so later operations of that turn follow it.
++- the starter message is never used as the reply reference inside its own thread.
++- a 429 longer than discord.py's 30 s internal wait surfaces as `RateLimited`: a typed rate-limit
++  failure carrying `retry_after` (never slept here).
++- startup: a rejected token (`LoginFailure`) or missing privileged intents
++  (`PrivilegedIntentsRequired`) is fatal (not retried); anything else is retryable.
++- the token never appears in errors (the base scrubs every error text with the credentials).
++- edit text over the cap: the first piece edits the message, the rest are new messages.
++- DMs never get a role grant (roles are guild-scoped).
++
++Our design differences / decisions:
++- `allowed_mentions` none by default (the reference allows user and reply pings); config opt-in.
++- the auto-thread is created lazily from the outbound side (the reference creates it before
++  dispatch, before authorization has run).
++- history backfill also runs for a mention that opens a thread (the reference skips it there; a new
++  thread has no history of its own, so the channel's recent messages are the only context).
++- the backfill is put in front of the event text (the event model has no context field).
++- no forum-channel posts, voice, reactions for processing state, missed-message recovery scan,
++  thread renaming, skill command group, owner-only visibility, channel allow/ignore lists — not in
++  the P15 row (voice is P3, K45).
++- no `CommandTree`: commands are registered and invocations read straight from the interaction, so
++  discord.py never answers "unknown command" on its own.
++
++Tests we will write:
++- contract suite case `discord` over the wire fake (no discord.py needed).
++- command sync: 101 commands → 100 synced and one warning; pacing 4.5 s on the fake clock; deletes
++  before creates; unchanged commands not touched; disconnect cancels a running sync.
++- a mention that spawns a thread and its in-thread follow-up share one session key; the thread is
++  created on first reply with archive 1440; a refused (never answered) mention creates no thread.
++- component press by a member without an allowed role refused (private notice, nothing emitted);
++  with the role it is emitted with the button data; role grant on messages.
++- history backfill of 20 messages on a mention; none in a free-response channel.
++- send-only open through `indus send discord:<id>`: no gateway session, no handlers, inbound left
++  alone.
++- media fetcher: streams a CDN URL, refuses other hosts; registered with the intake.
++- intents (members only with roles), allowed mentions none, fatal vs retryable connect errors,
++  token scrubbed from errors.
++
++## Decisions for the lead
++- **send-only seam**: `AdapterConfig.send_only: bool = False` (new field) and
++  `send_command.build_adapter` passes `send_only=True`; adapters open REST-only when set. The
++  Telegram and Slack builders need the same flag: keep one copy at merge.
++- **fetcher wiring**: adapters expose `register_fetchers(intake) -> undo`; the daemon has no
++  adapter → intake hook yet. Suggested: `ExtrasPart` subscribes to `daemon.on_platform_up` and calls
++  `adapter.register_fetchers(extras.intake)` when present (undo on down).
++- **extra commands**: `DiscordAdapter.extra_commands` (plugin/skill command names for the picker)
++  is empty until the daemon passes the plugin host's commands; the cap logic already reserves no
++  slot for them beyond the 100 limit.
++- discord.py is loaded with `importlib.import_module("discord")` on first connect (no import
++  statement, so no pyright ignore is needed); a missing library is a fatal `missing_dependency`.
++- with a role allowlist set, the adapter itself refuses button presses and application commands
++  from people with no grant (allow-all, user lists, role, pairing); without one the authorization
++  chain is the only gate. Refusal copy is ours (`REFUSED_PRESS`, `REFUSED_COMMAND`).
++- a failed auto-thread creation answers in the parent channel (reply to the message) rather than
++  dropping the request; change `_create_thread` to raise instead if the lead prefers refusing.
++- the fake's `CommandTree` row was replaced by `discord.http:HTTPClient` command routes (the adapter
++  does not use a tree); other fake rows added: `ButtonStyle`, `SelectOption`, `File`,
++  `MessageReference`, `ui.Select`, `View.stop`, `Client.login`/`guilds`/`http`/`application_id`.
++
++Compare checklist (filled after the rewrite; reopened `plugins/platforms/discord/adapter.py`
++connect / admission / `_handle_message` / sync / send, `adapter_component_auth.py`,
++`adapter_slash_auth.py`):
++- [x] intents, members only with roles (test: `tests/unit/gateway/adapters/discord/test_adapter.py::test_intents_ask_for_members_only_with_a_role_allowlist`)
++- [x] fatal vs retryable startup errors by exception type name (test: `::test_connect_errors_are_classified`); token never in the error (`::test_the_token_never_shows_in_a_connect_error`)
++- [x] a second live client is never left behind: `_open` shuts any previous client first, a failed start shuts the new one (gap found: added the "shut previous" step)
++- [x] own, system, duplicate and unchanged-edit messages ignored (`::test_own_system_duplicate_and_unchanged_edit_messages_are_ignored`)
++- [x] bare mention without text, media or context dropped; with context kept as "mentioned without writing anything" (gap found; `::test_a_bare_mention_counts_only_with_context_around_it`)
++- [x] threads we opened stay addressed (no mention needed) — also after a restart, through the thread's `owner_id` (gap found; `::test_threads_the_bot_opened_stay_addressed_after_a_restart`)
++- [x] auto-thread key = thread key, thread archive 1440, name from the text without mention tokens (`::test_thread_spawned_by_a_mention_shares_the_session_with_follow_ups`, `::test_when_a_mention_opens_a_thread`)
++- [x] component press gate: allow-all, user lists, role, pairing; DMs never get a role grant (`::test_component_press_by_a_member_without_an_allowed_role_is_refused`, `::test_a_paired_or_listed_user_may_press_without_the_role`, `::test_role_grant_on_guild_messages_only`)
++- [x] application commands under a role allowlist go through the same gate, refused privately (gap found; `::test_an_application_command_by_a_member_without_the_role_is_refused`)
++- [x] 100-command cap with one warning, deletes before creates, unchanged untouched, 4.5 s pacing (`::test_command_sync_caps_at_100_with_one_warning`, `::test_command_sync_paces_mutations_and_deletes_first`)
++- [x] edit overflow continues in new messages (`::test_an_edit_past_the_cap_continues_in_new_messages`)
++- [x] history backfill: last 20, oldest first, stops at our own message, skips system messages (`::test_history_backfill_on_a_mention_in_a_busy_channel`)
++- Deliberate differences: `allowed_mentions` none by default (row); lazy thread creation after
++  admission; backfill also for a thread-opening mention; failed thread creation answers in the
++  channel instead of refusing the message; no slash-command gate of our own when no role allowlist
++  is set (the authorization chain is the one gate, and it also covers pairing and allowlists);
++  commands synced by difference on every connect (no fingerprint state file); bots are admitted or
++  not by the chain's allow-bots setting, not by the adapter.
++- Not taken (outside the P15 row): forum-channel posts, forwarded-message snapshots and attachments
++  of the replied-to message, the per-reply chunk cap, voice (P3, K45), reactions for processing
++  state, the missed-message recovery scan, thread renaming after the first turn, the `/skill`
++  command group and owner-only visibility, channel allow/ignore lists, username → id resolution of
++  allowlist entries (`resolved_allowlist_ids` stays empty), liveness probe of the websocket.
++
++## Status
++
++Done (2026-10-19). All four row files plus `inbound.py`; contract case `discord` passes the shared
++suite over the wire fake without discord.py; the drift check passes against discord.py 2.7.1 when
++installed (31 rows). Shared edits: `tests/fakes/platform/discord_wire.py` (+ SURFACE),
++`tests/contract/gateway/conftest.py` (one import), `pyproject.toml` (extra `discord`),
++`THIRD_PARTY_NOTICES.md` (discord.py, audioop-lts rows; aiohttp row names the extra),
++`docs/plan/phases/00-layout-and-conventions.md` (pin row), `src/indus/gateway/config.py`
++(`AdapterConfig.send_only`), `src/indus/gateway/delivery/send_command.py` (passes it),
++`docs/internals/acceptance-map.md` (ACC-K6-1 tests), `docs/internals/traps-ledger.md` (R06.7 row).
++`uv.lock` left to the lead: a trial `uv lock` in the worktree added only `discord-py 2.7.1` and
++`audioop-lts 0.2.2` (no version moved); the worktree's lock is restored.
+diff --git a/docs/plan/phases/00-layout-and-conventions.md b/docs/plan/phases/00-layout-and-conventions.md
+index 2f470d4..59cbb46 100644
+--- a/docs/plan/phases/00-layout-and-conventions.md
++++ b/docs/plan/phases/00-layout-and-conventions.md
+@@ -320,6 +320,7 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
+ | python-docx | 1.2.0 | 2025-06-16 | MIT | extra `docs` | P05-17 |
+ | openpyxl | 3.1.5 | 2024-06-28 | MIT | extra `docs` | P05-17 |
+ | ptyprocess | 0.7.0 | 2020-12-28 | ISC | extra `pty` | P05-13 |
++| discord.py | 2.7.1 | 2026-03-03 | MIT | extra `discord` | P15-34 |
+ | agent-client-protocol | 0.12.1 | 2026-08-16 | **no licence metadata on PyPI** — the P19 builder checks the source repo's LICENSE; if not on the allow-list, add a written exception or stop | runtime / extra `acp` | P19 |
+ | Node | 24.21.0 LTS | 2026-09-07 | MIT | `.nvmrc` | P00-08 |
+ | pnpm | 12.9.1 | 2026-10-03 | MIT | `packageManager` | P00-08 |
+diff --git a/pyproject.toml b/pyproject.toml
+index c197fd6..5d0f905 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -43,6 +43,9 @@ vercel = ["vercel-sandbox==0.7.0"]
+ # Tokenizer and dataset loading for `indus research compress` / `sample` (P22-11, P22-15;
+ # Apache-2.0, Apache-2.0; docs/notes/P22/compress-config.md). Imported lazily only.
+ research = ["datasets==5.0.1", "transformers==5.17.0"]
++# Discord gateway adapter (P15-34; MIT, brings audioop-lts PSF-2.0 on Python 3.13+;
++# docs/notes/P15/discord.md). Imported lazily by the adapter only.
++discord = ["discord.py==2.7.1"]
+ 
+ [project.scripts]
+ indus = "indus.cli.entry:main"
+diff --git a/src/indus/gateway/adapters/discord/__init__.py b/src/indus/gateway/adapters/discord/__init__.py
+new file mode 100644
+index 0000000..cbdd1c6
+--- /dev/null
++++ b/src/indus/gateway/adapters/discord/__init__.py
+@@ -0,0 +1,41 @@
++"""The Discord platform (P15-34): ``create_adapter`` is the registry's factory for ``discord``.
++
++discord.py (the ``discord`` extra) is imported only when the adapter connects; the policy
++variables come from the profile's environment and the bot token from its secret store or
++environment (``AdapterConfig.settings.credentials``).
++"""
++
++from __future__ import annotations
++
++from typing import TYPE_CHECKING, Any
++
++from indus.gateway.adapters.discord.adapter import DiscordAdapter
++
++if TYPE_CHECKING:
++    from indus.gateway.config import AdapterConfig
++
++__all__ = ["DiscordAdapter", "create_adapter"]
++
++
++def create_adapter(config: AdapterConfig, *, sdk: Any = None) -> DiscordAdapter:
++    """The Discord adapter for one profile. ``sdk`` stands in for the ``discord`` module."""
++    scope = config.scope
++
++    async def is_paired(user_id: str) -> bool:
++        from indus.foundation.blocking import run_blocking
++        from indus.state.pairing import PairingStore
++
++        store = PairingStore(scope)
++        return await run_blocking(
++            store.is_approved, "discord", user_id, label="discord pairing check"
++        )
++
++    return DiscordAdapter(
++        clock=config.clock,
++        settings=config.settings,
++        env=scope.env,
++        sdk=sdk,
++        send_only=config.send_only,
++        proxy=config.proxy,
++        is_paired=is_paired,
++    )
+diff --git a/src/indus/gateway/adapters/discord/adapter.py b/src/indus/gateway/adapters/discord/adapter.py
+new file mode 100644
+index 0000000..6098def
+--- /dev/null
++++ b/src/indus/gateway/adapters/discord/adapter.py
+@@ -0,0 +1,1006 @@
++"""The Discord adapter (P15-34) over discord.py 2.7.1, imported lazily.
++
++``DiscordAdapter`` speaks to Discord through a ``discord``-shaped namespace (``sdk``): the real
++module, imported on first connect, or the test wire fake. Nothing here imports discord.py at
++module load, so the gateway runs (and the contract suite runs this adapter) without it.
++
++Connect: one ``Client`` with the ``message_content``, ``dm_messages`` and ``guild_messages``
++intents, plus ``members`` only when a role allowlist is configured (role checks read member data).
++A rejected token or missing privileged intents is fatal; anything else is retryable. After the
++client is ready the application commands are synced in the background (``commands.py``).
++Send-only (``indus send``): ``login`` over REST only, no gateway connection, no handlers.
++
++Inbound: messages, edits and interactions become ``InboundEvent``s (see the note in
++``docs/notes/P15/discord.md``). A mention in a mention-gated guild channel opens a conversation
++thread: the event is keyed on the thread the message will start (its own id) and the thread is
++created on the first outbound operation for it, with a 1,440-minute archive; the channel's last 20
++messages come along as context. Component views are sent stopped, so every press reaches
++``on_interaction``; with a role allowlist configured, presses by people without a grant are
++refused here, privately.
++
++Outbound: text as given (already formatted and chunked by the sender), split again only past
++2,000 code points, ``allowed_mentions`` none unless configured, replies as message references.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import importlib
++import logging
++from collections import OrderedDict
++from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
++from typing import Any, ClassVar
++from urllib.parse import urlparse
++
++import httpx
++
++from indus.gateway.adapters.base import (
++    Adapter,
++    AdapterConnectError,
++    ApprovalPrompt,
++    Capabilities,
++    ChannelEntry,
++    ChatInfo,
++    ClarifyPrompt,
++    InboundSink,
++    MediaKind,
++    approval_callback,
++    clarify_callback,
++)
++from indus.gateway.adapters.discord import commands as cmds
++from indus.gateway.adapters.discord import inbound
++from indus.gateway.config import GLOBAL_ALLOW_ALL_ENV, GLOBAL_ALLOWED_USERS_ENV, policy_env
++from indus.gateway.core.authz import MentionPolicy, allow_set
++from indus.gateway.core.events import Attachment, InboundEvent, MessageKind, Source, parse_command
++from indus.gateway.core.send import SendResult, is_ambiguous_timeout
++from indus.gateway.outbound.chunker import Chunked, code_points, split_message
++from indus.gateway.registry import policy_env_name
++
++__all__ = [
++    "CDN_HOSTS",
++    "HISTORY_LIMIT",
++    "ROLES_ENV",
++    "THREAD_ARCHIVE_MINUTES",
++    "TOKEN_ENV",
++    "DiscordAdapter",
++    "load_sdk",
++]
++
++log = logging.getLogger(__name__)
++
++TOKEN_ENV = "DISCORD_BOT_TOKEN"
++ROLES_ENV = policy_env_name("discord", "ALLOWED_ROLES")
++MAX_LEN = 2000
++BUTTON_LABEL_MAX = 80
++BUTTONS_PER_ROW = 5
++MAX_ROWS = 5
++SELECT_MAX_OPTIONS = 25
++THREAD_ARCHIVE_MINUTES = 1440
++HISTORY_LIMIT = 20
++HISTORY_LINE_MAX = 500
++# discord.py sleeps through 429s up to this many seconds itself (its floor), then raises.
++LIBRARY_RATELIMIT_WAIT = 30.0
++CDN_HOSTS = frozenset({"cdn.discordapp.com", "media.discordapp.net"})
++FETCH_TIMEOUT = 60.0
++
++_SEEN_MAX = 4096
++_THREADS_MAX = 2048
++_PENDING_MAX = 512
++_TRUTHY = frozenset({"1", "true", "yes", "on"})
++_FATAL_STARTUP = {
++    "LoginFailure": (
++        "auth_failed",
++        "Discord rejected the bot token: create a new one in the Discord developer portal and "
++        f"update {TOKEN_ENV}",
++    ),
++    "PrivilegedIntentsRequired": (
++        "intents_required",
++        "Discord refused the privileged intents: turn on Message Content (and Server Members "
++        "when a role allowlist is set) for the bot in the Discord developer portal",
++    ),
++}
++THREAD_FALLBACK_NAME = "Conversation"
++REFUSED_PRESS = "You are not allowed to use these buttons."
++REFUSED_COMMAND = "You are not allowed to use this bot's commands."
++
++
++def load_sdk() -> Any:
++    """The discord.py module (the ``discord`` extra); a fatal connect error when missing."""
++    try:
++        return importlib.import_module("discord")
++    except ImportError as exc:
++        raise AdapterConnectError(
++            "discord.py is not installed: pip install 'indus-agent[discord]'",
++            retryable=False,
++            code="missing_dependency",
++        ) from exc
++
++
++def _truthy(value: object) -> bool:
++    if isinstance(value, bool):
++        return value
++    return str(value or "").strip().lower() in _TRUTHY
++
++
++def _setting(extra: Mapping[str, Any], key: str, default: bool) -> bool:
++    raw = extra.get(key)
++    return default if raw is None else _truthy(raw)
++
++
++def _retry_after(exc: BaseException) -> float | None:
++    value = getattr(exc, "retry_after", None)
++    if value is None:
++        headers = getattr(getattr(exc, "response", None), "headers", None)
++        if headers is not None:
++            with contextlib.suppress(Exception):
++                value = headers.get("Retry-After")
++    try:
++        return float(value) if value is not None else None
++    except (TypeError, ValueError):
++        return None
++
++
++def _remember(store: OrderedDict[str, Any], key: str, value: Any, cap: int) -> None:
++    store[key] = value
++    store.move_to_end(key)
++    while len(store) > cap:
++        store.popitem(last=False)
++
++
++class DiscordAdapter(Adapter):
++    platform: ClassVar[str] = "discord"
++    capabilities: ClassVar[Capabilities] = Capabilities(
++        max_len=MAX_LEN,
++        len_fn=code_points,
++        markup="markdown",
++        splits_natively=True,
++        supports_edit=True,
++        supports_delete=True,
++        supports_buttons=True,
++    )
++    vendor_names: ClassVar[Mapping[str, tuple[str, ...]]] = {
++        "discord:Client": (
++            "start",
++            "login",
++            "close",
++            "wait_until_ready",
++            "get_channel",
++            "fetch_channel",
++            "event",
++            "user",
++            "guilds",
++            "application_id",
++        ),
++        "discord:Intents": (
++            "default",
++            "message_content",
++            "dm_messages",
++            "guild_messages",
++            "members",
++        ),
++        "discord.abc:Messageable": ("send", "typing", "fetch_message", "history"),
++        "discord:Message": ("edit", "delete", "create_thread"),
++        "discord:AllowedMentions": ("none",),
++        "discord:MessageReference": (),
++        "discord:File": (),
++        "discord:ButtonStyle": ("primary", "secondary", "danger"),
++        "discord:SelectOption": (),
++        "discord:RateLimited": (),
++        "discord.ui:View": ("add_item", "stop"),
++        "discord.ui:Button": (),
++        "discord.ui:Select": (),
++        "discord.http:HTTPClient": (
++            "get_global_commands",
++            "upsert_global_command",
++            "edit_global_command",
++            "delete_global_command",
++        ),
++    }
++
++    def __init__(
++        self,
++        *,
++        clock: Any,
++        settings: Any = None,
++        secrets: Sequence[str] = (),
++        sink: InboundSink | None = None,
++        token: str | None = None,
++        env: Mapping[str, str] | None = None,
++        sdk: Any = None,
++        send_only: bool = False,
++        proxy: str | None = None,
++        is_paired: Callable[[str], Awaitable[bool]] | None = None,
++        extra_commands: Sequence[tuple[str, str, str]] = (),
++        fetch_transport: httpx.AsyncBaseTransport | None = None,
++        cdn_hosts: frozenset[str] = CDN_HOSTS,
++    ) -> None:
++        credentials: Mapping[str, str] = getattr(settings, "credentials", None) or {}
++        self._token = token or credentials.get(TOKEN_ENV) or ""
++        super().__init__(clock=clock, settings=settings, secrets=(*secrets, self._token), sink=sink)
++        self._env: Mapping[str, str] = env or {}
++        self._sdk = sdk
++        self.send_only = send_only
++        self._proxy = proxy
++        self._is_paired = is_paired
++        self.extra_commands = tuple(extra_commands)
++        self._fetch_transport = fetch_transport
++        self._cdn_hosts = cdn_hosts
++        extra: Mapping[str, Any] = getattr(settings, "extra", None) or {}
++        self._extra = extra
++        self._roles = frozenset(allow_set(self._env.get(ROLES_ENV))) | frozenset(
++            allow_set(extra.get("allowed_roles"))
++        )
++        self._mention_policy = MentionPolicy.from_extra(extra)
++        self._auto_thread = _setting(extra, "auto_thread", True)
++        self._no_thread = frozenset(allow_set(extra.get("no_thread_channels")))
++        self._backfill = _setting(extra, "history_backfill", True)
++        self._sync_policy = str(extra.get("command_sync") or "diff").strip().lower()
++        self._client: Any = None
++        self._runner: asyncio.Future[Any] | None = None
++        self._sync_task: asyncio.Task[None] | None = None
++        self._me = ""
++        self._seen: OrderedDict[str, None] = OrderedDict()
++        # Threads we opened or posted in: messages there are addressed to us.
++        self._ours: OrderedDict[str, None] = OrderedDict()
++        # Thread id (= starter message id) → (starter message, name), created on first use.
++        self._pending: OrderedDict[str, tuple[Any, str]] = OrderedDict()
++        self._opening: dict[str, asyncio.Task[Any]] = {}
++        # Threads we failed to open: their traffic goes to the parent channel.
++        self._fallback: OrderedDict[str, Any] = OrderedDict()
++        # Message id → the channel or thread holding it (edits and deletes inside threads).
++        self._where: OrderedDict[str, Any] = OrderedDict()
++
++    # -- the library -------------------------------------------------------------------------------
++
++    @property
++    def sdk(self) -> Any:
++        if self._sdk is None:
++            self._sdk = load_sdk()
++        return self._sdk
++
++    @property
++    def client(self) -> Any:
++        return self._client
++
++    @property
++    def roles(self) -> frozenset[str]:
++        return self._roles
++
++    def _mentions(self) -> Any:
++        allowed = self.sdk.AllowedMentions
++        wanted = self._extra.get("allowed_mentions")
++        if not isinstance(wanted, Mapping) or not wanted:
++            return allowed.none()
++        return allowed(
++            everyone=_truthy(wanted.get("everyone")),
++            users=_truthy(wanted.get("users")),
++            roles=_truthy(wanted.get("roles")),
++        )
++
++    def _intents(self) -> Any:
++        intents = self.sdk.Intents.default()
++        intents.message_content = True
++        intents.dm_messages = True
++        intents.guild_messages = True
++        intents.members = bool(self._roles)
++        return intents
++
++    # -- lifecycle ---------------------------------------------------------------------------------
++
++    def _connect_error(self, exc: BaseException) -> AdapterConnectError:
++        if isinstance(exc, AdapterConnectError):
++            return exc
++        fatal = _FATAL_STARTUP.get(type(exc).__name__)
++        if fatal is not None:
++            return AdapterConnectError(fatal[1], retryable=False, code=fatal[0])
++        return AdapterConnectError(f"Discord connection failed: {type(exc).__name__}: {exc}")
++
++    async def _open(self, is_reconnect: bool) -> None:
++        if not self._token:
++            raise AdapterConnectError(
++                f"no Discord bot token ({TOKEN_ENV})", retryable=False, code="missing_credentials"
++            )
++        sdk = self.sdk
++        if self._client is not None:  # never two live clients answering the same messages
++            await self._shut(self._client)
++        options: dict[str, Any] = {
++            "intents": self._intents(),
++            "allowed_mentions": self._mentions(),
++            "max_ratelimit_timeout": LIBRARY_RATELIMIT_WAIT,
++        }
++        if self._proxy:
++            options["proxy"] = self._proxy
++        client = sdk.Client(**options)
++        self._client = client
++        if self.send_only:
++            try:
++                await client.login(self._token)
++            except Exception as exc:
++                await self._shut(client)
++                raise self._connect_error(exc) from None
++            return
++        self._listen(client)
++        runner = asyncio.ensure_future(client.start(self._token))
++        self._runner = runner
++        ready = asyncio.ensure_future(client.wait_until_ready())
++        try:
++            await asyncio.wait({runner, ready}, return_when=asyncio.FIRST_COMPLETED)
++            if runner.done() and not runner.cancelled() and runner.exception() is not None:
++                ready.cancel()
++                error = runner.exception()
++                assert error is not None
++                raise self._connect_error(error)
++            await ready
++        except BaseException:
++            ready.cancel()
++            await self._shut(client)
++            raise
++        runner.add_done_callback(self._runner_ended)
++        user = getattr(client, "user", None)
++        self._me = str(getattr(user, "id", "") or "")
++        if self._sync_policy != "off":
++            self._sync_task = asyncio.ensure_future(self._sync_commands())
++
++    def _runner_ended(self, runner: asyncio.Future[Any]) -> None:
++        if runner.cancelled() or not self.connected:
++            return
++        error = runner.exception()
++        if error is not None:
++            log.warning("discord: the gateway connection ended: %s", self.scrub(repr(error)))
++
++    async def _shut(self, client: Any) -> None:
++        with contextlib.suppress(Exception):
++            await client.close()
++        runner, self._runner = self._runner, None
++        if runner is not None:
++            if not runner.done():
++                runner.cancel()
++            with contextlib.suppress(BaseException):
++                await runner
++        if self._client is client:
++            self._client = None
++
++    async def _close(self) -> None:
++        task, self._sync_task = self._sync_task, None
++        if task is not None:
++            task.cancel()
++            with contextlib.suppress(BaseException):
++                await task
++        for opening in list(self._opening.values()):
++            opening.cancel()
++        self._opening.clear()
++        client = self._client
++        if client is not None:
++            await self._shut(client)
++
++    def _listen(self, client: Any) -> None:
++        async def on_message(message: Any) -> None:
++            await self._on_message(message)
++
++        async def on_message_edit(before: Any, after: Any) -> None:
++            await self._on_edit(before, after)
++
++        async def on_interaction(interaction: Any) -> None:
++            await self._on_interaction(interaction)
++
++        for handler in (on_message, on_message_edit, on_interaction):
++            client.event(handler)
++
++    async def _sync_commands(self) -> None:
++        client = self._client
++        if client is None:
++            return
++        try:
++            app_id = getattr(client, "application_id", None) or self._me
++            if not app_id:
++                log.warning("discord: no application id; commands not synced")
++                return
++            specs = cmds.desired_commands(self.extra_commands)
++            summary = await cmds.sync_commands(client.http, app_id, specs, clock=self.clock)
++            log.info(
++                "discord: commands synced (%d created, %d edited, %d deleted, %d unchanged)",
++                len(summary.created),
++                len(summary.edited),
++                len(summary.deleted),
++                summary.unchanged,
++            )
++        except asyncio.CancelledError:
++            raise
++        except Exception as exc:
++            wait = _retry_after(exc)
++            later = (
++                f" (Discord asks to wait {wait:g} s; retried on the next connect)" if wait else ""
++            )
++            log.warning(
++                "discord: command sync failed%s: %s", later, self.scrub(f"{type(exc).__name__}")
++            )
++
++    # -- inbound: messages -------------------------------------------------------------------------
++
++    def _first_time(self, message_id: str) -> bool:
++        if message_id in self._seen:
++            return False
++        _remember(self._seen, message_id, None, _SEEN_MAX)
++        return True
++
++    async def _on_message(self, message: Any) -> None:
++        if not self._first_time(str(getattr(message, "id", ""))):
++            return
++        event = await self._event_for(message, edited=False)
++        if event is not None:
++            await self.emit(event)
++
++    async def _on_edit(self, before: Any, after: Any) -> None:
++        if str(getattr(before, "content", "")) == str(getattr(after, "content", "")):
++            return  # an embed or pin update, not a new text
++        event = await self._event_for(after, edited=True)
++        if event is not None:
++            await self.emit(event)
++
++    def _role_grant(self, user: Any, guild: Any) -> bool:
++        """A member of this guild holding one of the allowed roles (never in DMs)."""
++        if not self._roles or guild is None:
++            return False
++        roles = getattr(user, "roles", None)
++        if roles is None:
++            return False
++        return any(str(getattr(role, "id", "")) in self._roles for role in roles)
++
++    def _gated(self, channel_id: str) -> bool:
++        policy = self._mention_policy
++        return policy.require_mention and channel_id not in policy.free_response
++
++    async def _event_for(self, message: Any, *, edited: bool) -> InboundEvent | None:
++        author = getattr(message, "author", None)
++        if author is None or not inbound.is_conversation(message):
++            return None
++        if self._me and str(getattr(author, "id", "")) == self._me:
++            return None
++        channel = getattr(message, "channel", None)
++        kind = inbound.channel_kind(channel)
++        channel_id = str(getattr(channel, "id", ""))
++        guild = getattr(message, "guild", None) or getattr(channel, "guild", None)
++        text = inbound.strip_mentions(str(getattr(message, "content", "") or ""), self._me)
++        mentioned = inbound.mentions(message, self._me)
++        is_bot = bool(getattr(author, "bot", False))
++        reference = getattr(message, "reference", None)
++        media, media_kind, duration = inbound.attachments_of(message)
++        is_command = parse_command(text) is not None
++
++        chat_id, chat_type, thread_id, parent = channel_id, kind, None, None
++        prospective: str | None = None
++        if kind == "thread":
++            parent = inbound.parent_id(channel)
++            chat_id = parent or channel_id
++            thread_id = channel_id
++            owner = str(getattr(channel, "owner_id", "") or "")
++            mentioned = mentioned or channel_id in self._ours or (bool(owner) and owner == self._me)
++        if not text and not media and not (kind == "group" and mentioned and not edited):
++            return None  # nothing to answer (an embed, a sticker, a bare edit)
++        context = ""
++        if kind == "group" and not edited and mentioned and not is_command and not is_bot:
++            gated = self._gated(channel_id)
++            if gated and self._backfill:
++                context = await self._channel_context(channel, message)
++            if not text and not media and not context:
++                return None  # a bare mention with nothing around it
++            if (
++                gated
++                and self._auto_thread
++                and channel_id not in self._no_thread
++                and reference is None
++            ):
++                prospective = str(getattr(message, "id", ""))
++                name = inbound.thread_name(text, THREAD_FALLBACK_NAME)
++                _remember(self._pending, prospective, (message, name), _PENDING_MAX)
++                chat_type, thread_id, parent = "thread", prospective, channel_id
++
++        metadata: dict[str, Any] = {}
++        if mentioned:
++            metadata["mentioned"] = True
++        if edited:
++            metadata["edited"] = True
++        if duration is not None:
++            metadata["duration"] = duration
++        if context:
++            metadata["channel_context"] = True
++            said = text or "[They mentioned you without writing anything]"
++            text = f"{context}\n\n[The message addressed to you]\n{said}"
++        source = Source(
++            platform=self.platform,
++            chat_id=chat_id,
++            chat_type=chat_type,
++            chat_name=self._chat_name(channel, author, kind),
++            user_id=str(getattr(author, "id", "")),
++            user_name=inbound.display_name(author),
++            thread_id=thread_id,
++            is_bot=is_bot,
++            guild_id=str(guild.id) if guild is not None else None,
++            parent_chat_id=parent,
++            prospective_thread_id=prospective,
++            role_authorized=self._role_grant(author, guild),
++        )
++        reply_id = getattr(reference, "message_id", None) if reference is not None else None
++        resolved = getattr(reference, "resolved", None) if reference is not None else None
++        reply_text = str(getattr(resolved, "content", "") or "") or None if resolved else None
++        reply_author = getattr(resolved, "author", None) if resolved is not None else None
++        return InboundEvent(
++            source=source,
++            text=text,
++            kind=media_kind or MessageKind.TEXT,
++            message_id=str(getattr(message, "id", "")) or None,
++            media=media,
++            reply_to_id=str(reply_id) if reply_id is not None else None,
++            reply_to_text=reply_text,
++            reply_to_author_id=str(reply_author.id) if reply_author is not None else None,
++            reply_to_author_name=(
++                inbound.display_name(reply_author) if reply_author is not None else None
++            ),
++            reply_to_is_own=(
++                reply_author is not None and str(getattr(reply_author, "id", "")) == self._me
++            ),
++            reply_expected=True if kind == "dm" or mentioned else None,
++            metadata=metadata,
++            timestamp=getattr(message, "created_at", None),
++        )
++
++    @staticmethod
++    def _chat_name(channel: Any, author: Any, kind: str) -> str | None:
++        if kind == "dm":
++            return inbound.display_name(author)
++        name = getattr(channel, "name", None)
++        guild = getattr(channel, "guild", None)
++        if name and guild is not None and getattr(guild, "name", None):
++            return f"{guild.name} / #{name}"
++        return str(name) if name else None
++
++    async def _channel_context(self, channel: Any, before: Any) -> str:
++        """The channel's last messages before ``before`` (back to our own last message)."""
++        history: Any = getattr(channel, "history", None)
++        if not callable(history):
++            return ""
++        lines: list[str] = []
++        try:
++            pages: Any = history(limit=HISTORY_LIMIT, before=before)
++            async for item in pages:
++                author = getattr(item, "author", None)
++                if self._me and str(getattr(author, "id", "")) == self._me:
++                    break
++                if not inbound.is_conversation(item):
++                    continue
++                content = str(getattr(item, "clean_content", None) or item.content or "").strip()
++                if not content and getattr(item, "attachments", None):
++                    content = "(an attachment)"
++                if not content:
++                    continue
++                if len(content) > HISTORY_LINE_MAX:
++                    content = content[: HISTORY_LINE_MAX - 1] + "…"
++                lines.append(f"[{inbound.display_name(author)}] {content}")
++        except Exception as exc:
++            log.debug("discord: channel history unavailable: %s", type(exc).__name__)
++            return ""
++        if not lines:
++            return ""
++        lines.reverse()
++        return "[Recent messages in this channel, oldest first]\n" + "\n".join(lines)
++
++    # -- inbound: interactions ---------------------------------------------------------------------
++
++    async def _on_interaction(self, interaction: Any) -> None:
++        kind = str(getattr(getattr(interaction, "type", None), "name", "") or "")
++        if kind == "component":
++            await self._on_press(interaction)
++        elif kind == "application_command":
++            await self._on_command(interaction)
++
++    async def _respond(self, interaction: Any, text: str | None) -> None:
++        response = getattr(interaction, "response", None)
++        if response is None:
++            return
++        try:
++            if text is None:
++                await response.defer()
++            else:
++                await response.send_message(text, ephemeral=True)
++        except Exception as exc:  # expired or already answered: nothing to do
++            log.debug("discord: interaction answer failed: %s", type(exc).__name__)
++
++    async def press_allowed(self, user: Any, guild: Any) -> bool:
++        """With a role allowlist set: allow-all, a user allowlist, an allowed role or a pairing
++        approval admits a button press or an application command; anything else is refused
++        here. Without a role allowlist the authorization chain decides alone."""
++        if not self._roles:
++            return True
++        names = policy_env(self.platform)
++        if _truthy(self._env.get(names.allow_all_users)) or _truthy(
++            self._env.get(GLOBAL_ALLOW_ALL_ENV)
++        ):
++            return True
++        uid = str(getattr(user, "id", "") or "")
++        if not uid:
++            return False
++        users = (
++            allow_set(self._env.get(names.allowed_users))
++            | allow_set(self._env.get(GLOBAL_ALLOWED_USERS_ENV))
++            | allow_set(self._extra.get("allow_from"))
++        )
++        if "*" in users or uid in users:
++            return True
++        if self._role_grant(user, guild):
++            return True
++        if self._is_paired is not None:
++            try:
++                return await self._is_paired(uid)
++            except Exception:
++                log.warning("discord: the pairing store could not be read", exc_info=True)
++        return False
++
++    def _interaction_source(self, interaction: Any) -> Source:
++        channel = getattr(interaction, "channel", None)
++        user = getattr(interaction, "user", None)
++        guild = getattr(interaction, "guild", None)
++        kind = inbound.channel_kind(channel)
++        channel_id = str(getattr(interaction, "channel_id", None) or getattr(channel, "id", ""))
++        chat_id, thread_id, parent = channel_id, None, None
++        if kind == "thread":
++            parent = inbound.parent_id(channel)
++            chat_id, thread_id = parent or channel_id, channel_id
++        return Source(
++            platform=self.platform,
++            chat_id=chat_id,
++            chat_type=kind,
++            chat_name=self._chat_name(channel, user, kind),
++            user_id=str(getattr(user, "id", "")) or None,
++            user_name=inbound.display_name(user) if user is not None else None,
++            thread_id=thread_id,
++            is_bot=bool(getattr(user, "bot", False)),
++            guild_id=str(guild.id) if guild is not None else None,
++            parent_chat_id=parent,
++            role_authorized=self._role_grant(user, guild),
++        )
++
++    async def _on_press(self, interaction: Any) -> None:
++        data: Mapping[str, Any] = getattr(interaction, "data", None) or {}
++        values = data.get("values") or ()
++        payload = values[0] if values else data.get("custom_id")
++        if not isinstance(payload, str) or not payload:
++            return
++        user = getattr(interaction, "user", None)
++        if not await self.press_allowed(user, getattr(interaction, "guild", None)):
++            log.info("discord: refused a button press from %s", getattr(user, "id", "?"))
++            await self._respond(interaction, REFUSED_PRESS)
++            return
++        await self._respond(interaction, None)
++        carrying = getattr(interaction, "message", None)
++        await self.emit(
++            InboundEvent(
++                source=self._interaction_source(interaction),
++                message_id=str(carrying.id) if carrying is not None else None,
++                metadata={"button": payload},
++                reply_expected=True,
++            )
++        )
++
++    async def _on_command(self, interaction: Any) -> None:
++        data: Mapping[str, Any] = getattr(interaction, "data", None) or {}
++        name = str(data.get("name") or "").strip()
++        if not name:
++            return
++        args = ""
++        for option in data.get("options") or ():
++            if isinstance(option, Mapping) and option.get("name") == cmds.ARGS_OPTION:
++                args = str(option.get("value") or "").strip()
++        text = f"/{name} {args}".strip()
++        user = getattr(interaction, "user", None)
++        if not await self.press_allowed(user, getattr(interaction, "guild", None)):
++            log.info("discord: refused /%s from %s", name, getattr(user, "id", "?"))
++            await self._respond(interaction, REFUSED_COMMAND)
++            return
++        await self._respond(interaction, f"Running /{name}…")
++        await self.emit(
++            InboundEvent(
++                source=self._interaction_source(interaction),
++                text=text,
++                reply_expected=True,
++                metadata={"mentioned": True, "app_command": name},
++            )
++        )
++
++    # -- outbound: where to ------------------------------------------------------------------------
++
++    def _need_client(self) -> Any:
++        if self._client is None:
++            raise ConnectionError("Discord client is not connected")
++        return self._client
++
++    async def _channel(self, channel_id: str) -> Any:
++        client = self._need_client()
++        ident = int(channel_id)
++        found = client.get_channel(ident)
++        if found is None:
++            found = await client.fetch_channel(ident)
++        return found
++
++    async def _open_thread(self, thread_id: str) -> Any:
++        """Create the pending thread ``thread_id`` from its starter message (once)."""
++        running = self._opening.get(thread_id)
++        if running is None:
++            running = asyncio.ensure_future(self._create_thread(thread_id))
++            self._opening[thread_id] = running
++        try:
++            return await asyncio.shield(running)
++        finally:
++            if running.done():
++                self._opening.pop(thread_id, None)
++
++    async def _create_thread(self, thread_id: str) -> Any:
++        starter, name = self._pending[thread_id]
++        try:
++            thread = await starter.create_thread(
++                name=name, auto_archive_duration=THREAD_ARCHIVE_MINUTES
++            )
++        except Exception as exc:
++            log.warning(
++                "discord: could not open a thread; answering in the channel: %s",
++                self.scrub(f"{type(exc).__name__}: {exc}"),
++            )
++            parent = getattr(starter, "channel", None)
++            _remember(self._fallback, thread_id, parent, _PENDING_MAX)
++            self._pending.pop(thread_id, None)
++            return parent
++        self._pending.pop(thread_id, None)
++        _remember(self._ours, str(getattr(thread, "id", thread_id)), None, _THREADS_MAX)
++        return thread
++
++    async def _target(self, chat_id: str, meta: Mapping[str, Any]) -> Any:
++        """The channel or thread an outbound operation goes to (opening a pending thread)."""
++        thread = meta.get("thread_id")
++        wanted = str(thread) if thread else str(chat_id)
++        if wanted in self._fallback:
++            return self._fallback[wanted] or await self._channel(str(chat_id))
++        if wanted in self._pending or wanted in self._opening:
++            return await self._open_thread(wanted)
++        return await self._channel(wanted)
++
++    def _reference(self, reply_to: str | None, channel: Any) -> Any:
++        if not reply_to or not str(reply_to).isdigit():
++            return None
++        channel_id = getattr(channel, "id", None)
++        if str(channel_id) == str(reply_to):
++            return None  # the starter message of this very thread
++        return self.sdk.MessageReference(
++            message_id=int(reply_to), channel_id=channel_id, fail_if_not_exists=False
++        )
++
++    def _sent_in(self, channel: Any, *message_ids: str) -> None:
++        for message_id in message_ids:
++            _remember(self._where, message_id, channel, _SEEN_MAX)
++        if inbound.channel_kind(channel) == "thread":
++            _remember(self._ours, str(getattr(channel, "id", "")), None, _THREADS_MAX)
++
++    async def _holder(self, chat_id: str, message_id: str, meta: Mapping[str, Any]) -> Any:
++        known = self._where.get(str(message_id))
++        return known if known is not None else await self._target(chat_id, meta)
++
++    # -- outbound: text ----------------------------------------------------------------------------
++
++    def _failure(self, exc: BaseException, ids: list[str], chunked: Chunked) -> SendResult:
++        remainder = None
++        if ids and not is_ambiguous_timeout(exc):
++            remainder = chunked.remainder(len(ids))
++        return self._scrubbed(
++            SendResult.failure(
++                exc=exc,
++                retry_after=_retry_after(exc),
++                delivered_ids=tuple(ids),
++                remainder=remainder,
++            )
++        )
++
++    async def _post(
++        self,
++        chat_id: str,
++        channel: Any,
++        chunked: Chunked,
++        reference: Any,
++        ids: list[str],
++    ) -> SendResult:
++        for n, chunk in enumerate(chunked.chunks):
++            if n:
++                await self.slots.pace(chat_id)
++            try:
++                sent = await channel.send(
++                    chunk.text,
++                    reference=reference if n == 0 else None,
++                    allowed_mentions=self._mentions(),
++                )
++            except Exception as exc:
++                return self._failure(exc, ids, chunked)
++            ids.append(str(sent.id))
++        self._sent_in(channel, *ids)
++        return SendResult.sent(ids[-1], tuple(ids[:-1]))
++
++    async def _send(
++        self, chat_id: str, text: str, reply_to: str | None, meta: dict[str, Any]
++    ) -> SendResult:
++        chunked = split_message(text, MAX_LEN, len_fn=code_points)
++        try:
++            channel = await self._target(chat_id, meta)
++        except Exception as exc:
++            return self._failure(exc, [], chunked)
++        return await self._post(chat_id, channel, chunked, self._reference(reply_to, channel), [])
++
++    async def _edit(
++        self, chat_id: str, message_id: str, text: str, final: bool, meta: dict[str, Any]
++    ) -> SendResult:
++        chunked = split_message(text, MAX_LEN, len_fn=code_points)
++        try:
++            channel = await self._holder(chat_id, message_id, meta)
++            message = await channel.fetch_message(int(message_id))
++            await message.edit(content=chunked.chunks[0].text, view=None)
++        except Exception as exc:
++            return self._failure(exc, [], chunked)
++        if len(chunked.chunks) == 1:
++            return SendResult.sent(message_id)
++        rest = Chunked(chunked.source, chunked.chunks[1:])
++        return await self._post(chat_id, channel, rest, None, [message_id])
++
++    async def _delete(self, chat_id: str, message_id: str) -> bool:
++        channel = await self._holder(chat_id, message_id, {})
++        message = await channel.fetch_message(int(message_id))
++        await message.delete()
++        self._where.pop(str(message_id), None)
++        return True
++
++    async def _typing(self, chat_id: str, meta: dict[str, Any]) -> None:
++        channel = await self._target(chat_id, meta)
++        async with channel.typing():
++            pass
++
++    # -- outbound: media and components ------------------------------------------------------------
++
++    async def _send_media(
++        self, kind: MediaKind, chat_id: str, path: str, caption: str | None, meta: dict[str, Any]
++    ) -> SendResult:
++        try:
++            channel = await self._target(chat_id, meta)
++            sent = await channel.send(
++                caption or None,
++                file=self.sdk.File(path),
++                reference=self._reference(meta.get("reply_to"), channel),
++                allowed_mentions=self._mentions(),
++            )
++        except Exception as exc:
++            return self._failure(exc, [], split_message(caption or "", MAX_LEN))
++        self._sent_in(channel, str(sent.id))
++        return SendResult.sent(str(sent.id))
++
++    def _button(self, label: str, custom_id: str, style: str, index: int) -> Any:
++        styles = self.sdk.ButtonStyle
++        chosen = {"primary": styles.primary, "danger": styles.danger}.get(style, styles.secondary)
++        return self.sdk.ui.Button(
++            label=cmds.clip(label, BUTTON_LABEL_MAX) or "…",
++            custom_id=custom_id,
++            style=chosen,
++            row=index // BUTTONS_PER_ROW,
++        )
++
++    def _view(self, items: Sequence[Any]) -> Any:
++        view = self.sdk.ui.View(timeout=None)
++        for item in items:
++            view.add_item(item)
++        # A stopped view is never dispatched by the library: presses reach on_interaction.
++        view.stop()
++        return view
++
++    async def _send_view(
++        self, chat_id: str, text: str, view: Any, meta: dict[str, Any]
++    ) -> SendResult:
++        body = split_message(text, MAX_LEN, len_fn=code_points)
++        try:
++            channel = await self._target(chat_id, meta)
++        except Exception as exc:
++            return self._failure(exc, [], body)
++        ids: list[str] = []
++        *lead, last = body.chunks
++        if lead:
++            head = await self._post(chat_id, channel, Chunked(body.source, tuple(lead)), None, ids)
++            if not head.ok:
++                return head
++        try:
++            sent = await channel.send(last.text, view=view, allowed_mentions=self._mentions())
++        except Exception as exc:
++            return self._failure(exc, ids, body)
++        self._sent_in(channel, str(sent.id))
++        return SendResult.sent(str(sent.id), tuple(ids))
++
++    async def _send_approval(
++        self, chat_id: str, prompt: ApprovalPrompt, meta: dict[str, Any]
++    ) -> SendResult:
++        actions = prompt.actions[: BUTTONS_PER_ROW * MAX_ROWS]
++        buttons = [
++            self._button(a.label, approval_callback(prompt.request_id, a.choice), a.style, n)
++            for n, a in enumerate(actions)
++        ]
++        return await self._send_view(chat_id, prompt.text, self._view(buttons), meta)
++
++    async def _send_clarify(
++        self, chat_id: str, prompt: ClarifyPrompt, meta: dict[str, Any]
++    ) -> SendResult:
++        choices = prompt.choices
++        if len(choices) <= BUTTONS_PER_ROW * MAX_ROWS:
++            items = [
++                self._button(choice, clarify_callback(prompt.clarify_id, n), "", n)
++                for n, choice in enumerate(choices)
++            ]
++        else:
++            options = [
++                self.sdk.SelectOption(
++                    label=cmds.clip(choice, BUTTON_LABEL_MAX) or "…",
++                    value=clarify_callback(prompt.clarify_id, n),
++                )
++                for n, choice in enumerate(choices[:SELECT_MAX_OPTIONS])
++            ]
++            items = [
++                self.sdk.ui.Select(
++                    custom_id=f"clr:{prompt.clarify_id}:pick"[:100],
++                    options=options,
++                    placeholder=cmds.clip(prompt.question, 150) or None,
++                    min_values=1,
++                    max_values=1,
++                )
++            ]
++        return await self._send_view(chat_id, prompt.question, self._view(items), meta)
++
++    # -- descriptive -------------------------------------------------------------------------------
++
++    async def _chat_info(self, chat_id: str) -> ChatInfo:
++        channel = await self._channel(chat_id)
++        kind = inbound.channel_kind(channel)
++        name = getattr(channel, "name", None) or str(chat_id)
++        return ChatInfo(name=str(name), type=kind)
++
++    async def list_channels(self) -> Sequence[ChannelEntry] | None:
++        client = self._client
++        guilds = getattr(client, "guilds", None) if client is not None else None
++        if guilds is None:
++            return None
++        found: list[ChannelEntry] = []
++        for guild in guilds:
++            for channel in getattr(guild, "text_channels", None) or ():
++                found.append(
++                    ChannelEntry(
++                        id=str(channel.id),
++                        name=str(getattr(channel, "name", "") or channel.id),
++                        type="channel",
++                        guild=str(getattr(guild, "name", "") or ""),
++                    )
++                )
++        return found
++
++    # -- media download ----------------------------------------------------------------------------
++
++    async def fetch_attachment(self, attachment: Attachment) -> AsyncIterator[bytes]:
++        """Stream one attachment from Discord's CDN (https, CDN hosts only, no redirects)."""
++        url = attachment.ref
++        parsed = urlparse(url)
++        if parsed.scheme != "https" or (parsed.hostname or "").lower() not in self._cdn_hosts:
++            raise ValueError("not a Discord attachment address")
++        async with (
++            httpx.AsyncClient(
++                timeout=FETCH_TIMEOUT,
++                follow_redirects=False,
++                proxy=self._proxy,
++                transport=self._fetch_transport,
++                trust_env=False,
++            ) as http,
++            http.stream("GET", url) as response,
++        ):
++            response.raise_for_status()
++            async for chunk in response.aiter_bytes():
++                yield chunk
++
++    def register_fetchers(self, intake: Any) -> Callable[[], None]:
++        """Hand the download function to the media intake (``MediaIntake.register_fetcher``)."""
++        return intake.register_fetcher(self.platform, self.fetch_attachment)
+diff --git a/src/indus/gateway/adapters/discord/commands.py b/src/indus/gateway/adapters/discord/commands.py
+new file mode 100644
+index 0000000..e70e623
+--- /dev/null
++++ b/src/indus/gateway/adapters/discord/commands.py
+@@ -0,0 +1,214 @@
++"""Discord application commands built from the slash registry, and their paced sync (P15-34).
++
++Discord shows a bot's chat commands in its picker once they are registered with the application.
++We register the chat commands of the shared slash registry (gateway surface), in table order, then
++any extra names the host adds (plugin or skill commands), and stop at Discord's limit of 100:
++whatever does not fit is dropped with one warning, never sent (one command over the limit makes
++Discord refuse the whole set). Names are lower case and at most 32 characters; descriptions and
++the optional ``args`` text option are cut to 100 characters.
++
++``sync_commands`` brings the application's global commands in line with that list by difference:
++commands we no longer offer are deleted first (so a full application can make room), then missing
++ones are created and changed ones edited; unchanged commands are left alone. Command routes have a
++small rate-limit bucket, so mutations are spaced ``MUTATION_GAP_S`` apart on the adapter's clock.
++"""
++
++from __future__ import annotations
++
++import logging
++import re
++from collections.abc import Iterable, Mapping, Sequence
++from dataclasses import dataclass, field
++from typing import Any
++
++from indus.foundation.clock import Clock
++from indus.service.commands.registry import REGISTRY
++
++__all__ = [
++    "MAX_COMMANDS",
++    "MUTATION_GAP_S",
++    "NAME_MAX",
++    "TEXT_MAX",
++    "CommandSpec",
++    "SyncSummary",
++    "cap_commands",
++    "clip",
++    "desired_commands",
++    "registry_commands",
++    "sync_commands",
++]
++
++log = logging.getLogger(__name__)
++
++MAX_COMMANDS = 100
++NAME_MAX = 32
++TEXT_MAX = 100
++MUTATION_GAP_S = 4.5
++# Chat-input commands are type 1; user and message context-menu commands are left alone.
++CHAT_INPUT = 1
++STRING_OPTION = 3
++ARGS_OPTION = "args"
++
++_VALID_NAME = re.compile(r"^[-_a-z0-9]{1,32}$")
++_ELLIPSIS = "…"
++
++
++def clip(text: str, limit: int = TEXT_MAX) -> str:
++    """``text`` on one line, cut to ``limit`` characters with an ellipsis."""
++    flat = " ".join(text.split())
++    if len(flat) <= limit:
++        return flat
++    return flat[: max(0, limit - 1)].rstrip() + _ELLIPSIS
++
++
++@dataclass(frozen=True)
++class CommandSpec:
++    """One chat command as Discord stores it."""
++
++    name: str
++    description: str
++    args_hint: str = ""
++
++    def payload(self) -> dict[str, Any]:
++        body: dict[str, Any] = {
++            "type": CHAT_INPUT,
++            "name": self.name,
++            "description": self.description,
++        }
++        if self.args_hint:
++            body["options"] = [
++                {
++                    "type": STRING_OPTION,
++                    "name": ARGS_OPTION,
++                    "description": clip(self.args_hint),
++                    "required": False,
++                }
++            ]
++        return body
++
++
++def _spec(name: str, description: str, args_hint: str = "") -> CommandSpec | None:
++    clean = name.strip().lstrip("/").lower()
++    if not _VALID_NAME.match(clean):
++        log.debug("discord: /%s cannot be an application command name; skipped", name)
++        return None
++    text = clip(description) or f"Run /{clean}"
++    return CommandSpec(clean, text, args_hint.strip())
++
++
++def registry_commands() -> list[CommandSpec]:
++    """The chat commands of the shared slash registry, in table order."""
++    specs: list[CommandSpec] = []
++    for cmd in REGISTRY.commands("gateway"):
++        spec = _spec(cmd.name, cmd.description, cmd.args_hint)
++        if spec is not None:
++            specs.append(spec)
++    return specs
++
++
++def cap_commands(specs: Iterable[CommandSpec], limit: int = MAX_COMMANDS) -> list[CommandSpec]:
++    """``specs`` without repeated names, at most ``limit`` of them (one warning for the rest)."""
++    kept: list[CommandSpec] = []
++    seen: set[str] = set()
++    dropped = 0
++    for spec in specs:
++        if spec.name in seen:
++            continue
++        if len(kept) >= limit:
++            dropped += 1
++            continue
++        seen.add(spec.name)
++        kept.append(spec)
++    if dropped:
++        log.warning(
++            "discord: %d command(s) left out of the command picker: Discord allows at most %d",
++            dropped,
++            limit,
++        )
++    return kept
++
++
++def desired_commands(extra: Iterable[tuple[str, str, str]] = ()) -> list[CommandSpec]:
++    """Registry commands first, then ``extra`` ``(name, description, args_hint)``, capped."""
++    specs = registry_commands()
++    for name, description, args_hint in extra:
++        spec = _spec(name, description, args_hint)
++        if spec is not None:
++            specs.append(spec)
++    return cap_commands(specs)
++
++
++# -- sync ------------------------------------------------------------------------------------------
++
++
++def _comparable(payload: Mapping[str, Any]) -> tuple[Any, ...]:
++    options = tuple(
++        (
++            int(o.get("type", STRING_OPTION) or STRING_OPTION),
++            str(o.get("name", "")),
++            str(o.get("description", "")),
++            bool(o.get("required", False)),
++        )
++        for o in payload.get("options") or ()
++        if isinstance(o, Mapping)
++    )
++    return (str(payload.get("name", "")), str(payload.get("description", "")), options)
++
++
++@dataclass
++class SyncSummary:
++    created: list[str] = field(default_factory=list[str])
++    edited: list[str] = field(default_factory=list[str])
++    deleted: list[str] = field(default_factory=list[str])
++    unchanged: int = 0
++
++    @property
++    def mutations(self) -> int:
++        return len(self.created) + len(self.edited) + len(self.deleted)
++
++
++async def sync_commands(
++    http: Any,
++    application_id: int | str,
++    specs: Sequence[CommandSpec],
++    *,
++    clock: Clock,
++    gap: float = MUTATION_GAP_S,
++) -> SyncSummary:
++    """Bring the application's global chat commands in line with ``specs`` (see the module notes).
++
++    ``http`` is discord.py's ``HTTPClient`` (``client.http``). Errors propagate to the caller.
++    """
++    summary = SyncSummary()
++    existing: dict[str, Mapping[str, Any]] = {}
++    for item in await http.get_global_commands(application_id):
++        if isinstance(item, Mapping) and int(item.get("type", CHAT_INPUT) or CHAT_INPUT) == 1:
++            existing[str(item.get("name", "")).lower()] = item
++    wanted = {spec.name: spec for spec in specs}
++    done = 0
++
++    async def paced() -> None:
++        nonlocal done
++        if done:
++            await clock.sleep(gap)
++        done += 1
++
++    for name, item in existing.items():
++        if name not in wanted:
++            await paced()
++            await http.delete_global_command(application_id, item["id"])
++            summary.deleted.append(name)
++    for name, spec in wanted.items():
++        payload = spec.payload()
++        current = existing.get(name)
++        if current is None:
++            await paced()
++            await http.upsert_global_command(application_id, payload)
++            summary.created.append(name)
++        elif _comparable(current) != _comparable(payload):
++            await paced()
++            await http.edit_global_command(application_id, current["id"], payload)
++            summary.edited.append(name)
++        else:
++            summary.unchanged += 1
++    return summary
+diff --git a/src/indus/gateway/adapters/discord/inbound.py b/src/indus/gateway/adapters/discord/inbound.py
+new file mode 100644
+index 0000000..3699647
+--- /dev/null
++++ b/src/indus/gateway/adapters/discord/inbound.py
+@@ -0,0 +1,132 @@
++"""Reading discord.py objects without importing discord.py (P15-34).
++
++The adapter receives library objects (messages, channels, members, interactions) and reads them
++only through attributes, so the same code runs over the real library and over the test wire fake.
++These helpers answer the questions the adapter asks: what kind of chat a channel is, whether a
++message mentions us, which kind of media an attachment is, what to call a new thread.
++"""
++
++from __future__ import annotations
++
++import mimetypes
++import re
++from typing import Any, Literal
++
++from indus.gateway.core.events import Attachment, MessageKind
++
++__all__ = [
++    "THREAD_NAME_MAX",
++    "attachment_kind",
++    "attachments_of",
++    "channel_kind",
++    "display_name",
++    "is_conversation",
++    "mentions",
++    "parent_id",
++    "strip_mentions",
++    "thread_name",
++]
++
++ChannelKind = Literal["dm", "group", "thread"]
++
++THREAD_NAME_MAX = 80
++_THREAD_TYPES = frozenset({"public_thread", "private_thread", "news_thread"})
++# Message types that carry something a person wrote (pins, joins and thread notices do not).
++_CONVERSATION_TYPES = frozenset({"default", "reply"})
++_MENTION_TOKEN = re.compile(r"<(?:@[!&]?|#)\d+>")
++
++
++def _type_name(value: Any) -> str:
++    return str(getattr(value, "name", value) or "").lower()
++
++
++def channel_kind(channel: Any) -> ChannelKind:
++    """``dm`` for a direct message, ``thread`` for any thread, else ``group``."""
++    name = _type_name(getattr(channel, "type", ""))
++    if name == "private":
++        return "dm"
++    if name in _THREAD_TYPES:
++        return "thread"
++    return "group"
++
++
++def parent_id(channel: Any) -> str | None:
++    value = getattr(channel, "parent_id", None)
++    return str(value) if value is not None else None
++
++
++def is_conversation(message: Any) -> bool:
++    """True for messages a person (or bot) typed; system notices are not."""
++    kind = getattr(message, "type", None)
++    return kind is None or _type_name(kind) in _CONVERSATION_TYPES
++
++
++def mentions(message: Any, me: str) -> bool:
++    """Does ``message`` mention the user ``me`` (in its mention list or as a raw token)?"""
++    if not me:
++        return False
++    for user in getattr(message, "mentions", None) or ():
++        if str(getattr(user, "id", "")) == me:
++            return True
++    content = str(getattr(message, "content", "") or "")
++    return f"<@{me}>" in content or f"<@!{me}>" in content
++
++
++def strip_mentions(text: str, me: str) -> str:
++    """``text`` without our own mention tokens (others stay: they name people)."""
++    if not me:
++        return text.strip()
++    return text.replace(f"<@!{me}>", "").replace(f"<@{me}>", "").strip()
++
++
++def display_name(user: Any) -> str:
++    for attr in ("display_name", "global_name", "name"):
++        value = getattr(user, attr, None)
++        if value:
++            return str(value)
++    return str(getattr(user, "id", "") or "someone")
++
++
++def thread_name(text: str, fallback: str) -> str:
++    """A thread title from the message: mention tokens gone, one line, at most 80 characters."""
++    flat = " ".join(_MENTION_TOKEN.sub(" ", text).split())
++    if not flat:
++        return fallback[:THREAD_NAME_MAX]
++    if len(flat) <= THREAD_NAME_MAX:
++        return flat
++    return flat[: THREAD_NAME_MAX - 1].rstrip() + "…"
++
++
++def attachment_kind(attachment: Any) -> MessageKind:
++    voice = getattr(attachment, "is_voice_message", None)
++    if callable(voice) and voice() is True:
++        return MessageKind.VOICE
++    mime = str(getattr(attachment, "content_type", "") or "").lower()
++    if not mime:
++        mime = mimetypes.guess_type(str(getattr(attachment, "filename", "") or ""))[0] or ""
++    if mime.startswith("image/"):
++        return MessageKind.PHOTO
++    if mime.startswith("video/"):
++        return MessageKind.VIDEO
++    if mime.startswith("audio/"):
++        return MessageKind.AUDIO
++    return MessageKind.DOCUMENT
++
++
++def attachments_of(message: Any) -> tuple[tuple[Attachment, ...], MessageKind | None, float | None]:
++    """The message's attachments (CDN URLs), the kind of the first one, a voice note's length."""
++    items: list[Attachment] = []
++    first: MessageKind | None = None
++    duration: float | None = None
++    for att in getattr(message, "attachments", None) or ():
++        url = str(getattr(att, "url", "") or "")
++        if not url:
++            continue
++        kind = attachment_kind(att)
++        if first is None:
++            first = kind
++            seconds = getattr(att, "duration", None)
++            if kind is MessageKind.VOICE and isinstance(seconds, int | float):
++                duration = float(seconds)
++        items.append(Attachment(ref=url, mime=str(getattr(att, "content_type", "") or "")))
++    return tuple(items), first, duration
+diff --git a/src/indus/gateway/config.py b/src/indus/gateway/config.py
+index ab939f3..43f0f24 100644
+--- a/src/indus/gateway/config.py
++++ b/src/indus/gateway/config.py
+@@ -157,6 +157,8 @@ class AdapterConfig:
+     scope: Scope
+     clock: Clock
+     proxy: str | None = None
++    # ``indus send``: open for sending only (no polling, socket listener or update consumption).
++    send_only: bool = False
+ 
+     @property
+     def extra(self) -> Mapping[str, Any]:
+diff --git a/src/indus/gateway/delivery/send_command.py b/src/indus/gateway/delivery/send_command.py
+index fef8748..4dcc2f3 100644
+--- a/src/indus/gateway/delivery/send_command.py
++++ b/src/indus/gateway/delivery/send_command.py
+@@ -65,7 +65,7 @@ def build_adapter(
+         trust_env=bool(gateway_section(scope).trust_env),
+         platform_proxy=str(settings.extra.get("proxy") or "") or None,
+     )
+-    config = AdapterConfig(name, settings, scope, scope.clock, proxy)
++    config = AdapterConfig(name, settings, scope, scope.clock, proxy, send_only=True)
+     built = (registry or PlatformRegistry()).create_adapter(name, config)
+     return built if isinstance(built, _Adapter) else None
+ 
+diff --git a/tests/contract/gateway/conftest.py b/tests/contract/gateway/conftest.py
+index 6be5493..673a96a 100644
+--- a/tests/contract/gateway/conftest.py
++++ b/tests/contract/gateway/conftest.py
+@@ -125,3 +125,8 @@ def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[SocketGuard]:
+     monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+     monkeypatch.setattr(socket, "create_connection", create_connection)
+     yield guard
++
++
++# -- platform cases ------------------------------------------------------------------------------
++# Each module registers its case on import (``register_case`` is defined above).
++from tests.contract.gateway import discord_case as _discord_case  # noqa: E402, F401
+diff --git a/tests/contract/gateway/discord_case.py b/tests/contract/gateway/discord_case.py
+new file mode 100644
+index 0000000..f90bfa2
+--- /dev/null
++++ b/tests/contract/gateway/discord_case.py
+@@ -0,0 +1,57 @@
++"""The Discord adapter's contract case (P15-34): the real adapter over the Discord wire fake.
++
++discord.py is not needed: the wire fake's ``sdk`` namespace stands in for the ``discord`` module.
++"""
++
++from __future__ import annotations
++
++from indus.foundation.config.schema import PlatformSection
++from indus.gateway.adapters.base import Adapter
++from indus.gateway.adapters.discord import DiscordAdapter
++from indus.gateway.config import PlatformSettings
++from tests.contract.gateway.conftest import AdapterCase, CaseEnv, register_case
++from tests.fakes.clock import FakeClock
++from tests.fakes.platform.core import FakeChatPlatform
++from tests.fakes.platform.discord_wire import MAX_LEN, DiscordWire
++
++
++def fake_token() -> str:
++    """A token-shaped value built at run time (never a literal credential)."""
++    return ".".join(("MTAw" + "x" * 20, "abcdef", "z" * 27))
++
++
++def discord_settings(**extra: object) -> PlatformSettings:
++    return PlatformSettings(
++        name="discord",
++        enabled=True,
++        reason="credentials",
++        section=PlatformSection(extra=dict(extra)),
++        credentials={"DISCORD_BOT_TOKEN": fake_token()},
++    )
++
++
++def _make_env(clock: FakeClock) -> CaseEnv:
++    platform = FakeChatPlatform("discord", clock=clock, max_len=MAX_LEN, bot_user_id="900")
++    return CaseEnv(clock, platform, DiscordWire(platform))
++
++
++def _build(env: CaseEnv) -> Adapter:
++    return DiscordAdapter(clock=env.clock, settings=discord_settings(), sdk=env.wire.sdk)
++
++
++async def _pump(env: CaseEnv, adapter: Adapter) -> None:
++    await env.wire.dispatch_pending()
++
++
++DISCORD_CASE = register_case(
++    AdapterCase(
++        "discord",
++        _make_env,
++        _build,
++        user_id="200",
++        group_id="300",
++        thread_id="400",
++        bot_id="500",
++        pump=_pump,
++    )
++)
+diff --git a/tests/fakes/platform/discord_wire.py b/tests/fakes/platform/discord_wire.py
+index bead745..c52b3c7 100644
+--- a/tests/fakes/platform/discord_wire.py
++++ b/tests/fakes/platform/discord_wire.py
+@@ -1,18 +1,29 @@
+-"""A fake of the Discord library surface our adapter touches (P15-01).
++"""A fake of the Discord library surface our adapter touches (P15-01, grown by P15-34).
+ 
+ Shapes follow discord.py: a client whose ``get_channel`` returns messageable channels; channels
+-``send(content, reference=, view=, allowed_mentions=)`` and yield ``typing()``; messages
+-``edit``, ``delete``, ``add_reaction``, ``create_thread``. Errors are raised as stand-ins named
+-like the library's (``HTTPException`` with ``status``/``code``/``text``, ``Forbidden``,
+-``NotFound``). Inbound traffic arrives through the ``on_message`` / ``on_interaction`` handlers
+-the adapter registers, delivered by ``dispatch_pending()``. Cap: 2,000 code points.
++``send(content, reference=, view=, allowed_mentions=, file=)``, yield ``typing()`` and page
++``history()``; messages ``edit``, ``delete``, ``add_reaction``, ``create_thread``. Errors are
++raised as stand-ins named like the library's (``HTTPException`` with ``status``/``code``/``text``,
++``Forbidden``, ``NotFound``; a rate limit carries ``retry_after``). Inbound traffic arrives through
++the ``on_message`` / ``on_message_edit`` / ``on_interaction`` handlers the adapter registers,
++delivered by ``dispatch_pending()``; ``invoke_command`` delivers an application command.
++Cap: 2,000 code points.
++
++``DiscordWire.sdk`` is the namespace an adapter uses in place of the ``discord`` module:
++``Client(**options)`` hands back the wire's one client and records the options (intents,
++allowed mentions, proxy). ``client.login`` is the REST-only open (``logins``); ``client.start``
++also opens the gateway (``gateway_sessions``). ``client.http`` keeps the application commands
++(``commands``) and logs every mutation with its fake-clock time (``mutations``). Members' roles
++come from ``member_roles``; a chat with a guild id makes its senders guild members.
+ """
+ 
+ from __future__ import annotations
+ 
++import itertools
+ from collections.abc import AsyncIterator, Awaitable, Callable
+ from contextlib import asynccontextmanager
+ from dataclasses import dataclass, field
++from types import SimpleNamespace
+ from typing import Any
+ 
+ from tests.fakes.platform.core import (
+@@ -27,17 +38,39 @@ from tests.fakes.platform.core import (
+ MAX_LEN = 2000
+ 
+ SURFACE: dict[str, tuple[str, ...]] = {
+-    "discord:Client": ("start", "close", "wait_until_ready", "get_channel", "fetch_channel"),
++    "discord:Client": (
++        "start",
++        "login",
++        "close",
++        "wait_until_ready",
++        "get_channel",
++        "fetch_channel",
++        "event",
++        "user",
++        "guilds",
++        "application_id",
++    ),
+     "discord:Intents": ("default", "message_content", "dm_messages", "guild_messages", "members"),
+-    "discord.abc:Messageable": ("send", "typing", "fetch_message"),
++    "discord.abc:Messageable": ("send", "typing", "fetch_message", "history"),
+     "discord:Message": ("edit", "delete", "add_reaction", "remove_reaction", "create_thread"),
+     "discord:AllowedMentions": ("none",),
++    "discord:MessageReference": (),
++    "discord:File": (),
++    "discord:ButtonStyle": ("primary", "secondary", "danger", "success"),
++    "discord:SelectOption": (),
+     "discord:HTTPException": (),
+     "discord:Forbidden": (),
+     "discord:NotFound": (),
+-    "discord.ui:View": ("add_item",),
++    "discord:RateLimited": (),
++    "discord.ui:View": ("add_item", "stop"),
+     "discord.ui:Button": (),
+-    "discord.app_commands:CommandTree": ("sync", "add_command", "clear_commands"),
++    "discord.ui:Select": (),
++    "discord.http:HTTPClient": (
++        "get_global_commands",
++        "upsert_global_command",
++        "edit_global_command",
++        "delete_global_command",
++    ),
+ }
+ 
+ 
+@@ -46,11 +79,15 @@ class DiscordException(Exception):
+ 
+ 
+ class HTTPException(DiscordException):
+-    def __init__(self, status: int, code: int, text: str) -> None:
++    def __init__(
++        self, status: int, code: int, text: str, *, retry_after: float | None = None
++    ) -> None:
+         super().__init__(f"{status} (error code: {code}): {text}")
+         self.status = status
+         self.code = code
+         self.text = text
++        # The fake's stand-in for the response's ``Retry-After`` on a 429.
++        self.retry_after = retry_after
+ 
+ 
+ class Forbidden(HTTPException):
+@@ -61,10 +98,26 @@ class NotFound(HTTPException):
+     pass
+ 
+ 
++class RateLimited(DiscordException):
++    """discord.py raises this (not an ``HTTPException``) for a wait over its own cap."""
++
++    def __init__(self, retry_after: float) -> None:
++        super().__init__(f"Too many requests. Retry in {retry_after:.2f} seconds.")
++        self.retry_after = retry_after
++
++
++class LoginFailure(DiscordException):
++    pass
++
++
++class PrivilegedIntentsRequired(DiscordException):
++    pass
++
++
+ def _translate(exc: FakePlatformError) -> Exception:
+     kind = exc.kind
+     if kind is FailureKind.RATE_LIMIT:
+-        return HTTPException(429, 0, "You are being rate limited.")
++        return HTTPException(429, 0, "You are being rate limited.", retry_after=exc.retry_after)
+     if kind is FailureKind.FORBIDDEN:
+         return Forbidden(403, 50007, "Cannot send messages to this user")
+     if kind is FailureKind.CHAT_NOT_FOUND:
+@@ -91,7 +144,7 @@ class AllowedMentions:
+         return cls()
+ 
+ 
+-@dataclass(frozen=True)
++@dataclass
+ class Intents:
+     message_content: bool = False
+     dm_messages: bool = True
+@@ -103,11 +156,36 @@ class Intents:
+         return cls()
+ 
+ 
++class ButtonStyle:
++    primary = "primary"
++    secondary = "secondary"
++    danger = "danger"
++    success = "success"
++
++
++@dataclass(frozen=True)
++class Role:
++    id: int
++
++
+ @dataclass(frozen=True)
+ class Author:
+     id: int
+     name: str
+     bot: bool = False
++    # Present only for guild members (``discord.Member``); a DM sender is a plain user.
++    roles: tuple[Role, ...] | None = None
++
++    @property
++    def display_name(self) -> str:
++        return self.name
++
++
++@dataclass
++class Guild:
++    id: int
++    name: str = "guild"
++    text_channels: list[Channel] = field(default_factory=list["Channel"])
+ 
+ 
+ @dataclass(frozen=True)
+@@ -115,21 +193,85 @@ class Attachment:
+     filename: str
+     url: str
+     content_type: str
++    duration: float | None = None
++    voice: bool = False
++
++    def is_voice_message(self) -> bool:
++        return self.voice
+ 
+ 
+ @dataclass(frozen=True)
+ class MessageReference:
+     message_id: int
++    channel_id: int | None = None
++    guild_id: int | None = None
++    fail_if_not_exists: bool = True
++
++
++@dataclass(frozen=True)
++class File:
++    fp: str
++    filename: str | None = None
++
++    def __str__(self) -> str:
++        return self.fp
++
++
++@dataclass(frozen=True)
++class SelectOption:
++    label: str
++    value: str
++
++
++@dataclass
++class UIButton:
++    """``discord.ui.Button`` stand-in; ``data`` is its ``custom_id`` (what the platform stores)."""
++
++    label: str | None = None
++    custom_id: str | None = None
++    style: str = ButtonStyle.secondary
++    row: int | None = None
++    disabled: bool = False
++
++    @property
++    def data(self) -> str:
++        return self.custom_id or ""
++
++
++@dataclass
++class UISelect:
++    """``discord.ui.Select`` stand-in: its options' values are what a press carries."""
++
++    custom_id: str = ""
++    options: list[SelectOption] = field(default_factory=list[SelectOption])
++    placeholder: str | None = None
++    min_values: int = 1
++    max_values: int = 1
++    row: int | None = None
++
++    @property
++    def label(self) -> str:
++        return self.placeholder or ""
++
++    @property
++    def data(self) -> str:
++        return self.custom_id
+ 
+ 
+ @dataclass
+ class View:
+-    """``discord.ui.View`` stand-in: buttons with ``custom_id``."""
++    """``discord.ui.View`` stand-in: components with a ``custom_id``."""
+ 
+-    items: list[Button] = field(default_factory=list[Button])
++    items: list[Any] = field(default_factory=list[Any])
++    timeout: float | None = 180.0
++    stopped: bool = False
+ 
+-    def add_item(self, item: Button) -> None:
++    def add_item(self, item: Any) -> View:
+         self.items.append(item)
++        return self
++
++    def stop(self) -> None:
++        self.stopped = True
+ 
+ 
+ def _wrap[T](coro: Awaitable[T]) -> Awaitable[T]:
+@@ -142,6 +284,18 @@ def _wrap[T](coro: Awaitable[T]) -> Awaitable[T]:
+     return run()
+ 
+ 
++def _flat_buttons(view: View | None) -> tuple[Any, ...]:
++    if view is None:
++        return ()
++    flat: list[Any] = []
++    for item in view.items:
++        if isinstance(item, UISelect):
++            flat.extend(Button(o.label, o.value) for o in item.options)
++        else:
++            flat.append(item)
++    return tuple(flat)
++
++
+ @dataclass
+ class DiscordMessage:
+     id: int
+@@ -152,9 +306,20 @@ class DiscordMessage:
+     attachments: tuple[Attachment, ...] = ()
+     mentions_bot: bool = False
+     created_at: Any = None
++    type: Any = field(default_factory=lambda: SimpleNamespace(name="default"))
++
++    @property
++    def guild(self) -> Guild | None:
++        return self.channel.guild
++
++    @property
++    def mentions(self) -> list[Author]:
++        return [self.channel.wire.client.user] if self.mentions_bot else []
+ 
+-    async def edit(self, content: str | None = None, view: View | None = None) -> DiscordMessage:
+-        buttons = tuple(view.items) if view is not None else None
++    async def edit(
++        self, content: str | None = None, view: View | None = None, **_: Any
++    ) -> DiscordMessage:
++        buttons = _flat_buttons(view) if view is not None else None
+         text = content if content is not None else self.content
+         await _wrap(
+             self.channel.wire.platform.edit(
+@@ -173,10 +338,22 @@ class DiscordMessage:
+     async def remove_reaction(self, emoji: str, member: Any = None) -> None:
+         self.channel.wire.removed_reactions.append((self.id, emoji))
+ 
+-    async def create_thread(self, name: str, auto_archive_duration: int = 1440) -> Channel:
++    async def create_thread(
++        self, name: str, auto_archive_duration: int = 1440, **_: Any
++    ) -> Channel:
++        wire = self.channel.wire
++        if wire.thread_failures > 0:
++            wire.thread_failures -= 1
++            raise Forbidden(403, 50001, "Missing Access")
+         thread_id = self.id  # Discord: a thread started from a message reuses its id
+-        self.channel.wire.threads.append((thread_id, name, auto_archive_duration))
+-        return self.channel.wire.channel(thread_id, kind="thread", parent=self.channel.id)
++        wire.threads.append((thread_id, name, auto_archive_duration))
++        thread = wire.channel(thread_id, kind="thread", parent=self.channel.id)
++        thread.guild_id = self.channel.guild_id
++        thread.owner_id = wire.client.user.id
++        return thread
++
++
++_CHANNEL_TYPES = {"dm": "private", "thread": "public_thread", "text": "text"}
+ 
+ 
+ @dataclass
+@@ -186,6 +363,17 @@ class Channel:
+     kind: str = "text"  # text, dm, thread
+     parent_id: int | None = None
+     guild_id: int | None = None
++    name: str = ""
++    # A thread's creator (``discord.Thread.owner_id``).
++    owner_id: int | None = None
++
++    @property
++    def type(self) -> SimpleNamespace:
++        return SimpleNamespace(name=_CHANNEL_TYPES.get(self.kind, "text"))
++
++    @property
++    def guild(self) -> Guild | None:
++        return self.wire.guild(self.guild_id) if self.guild_id is not None else None
+ 
+     async def send(
+         self,
+@@ -197,6 +385,7 @@ class Channel:
+         file: Any = None,
+     ) -> DiscordMessage:
+         self.wire.sent_allowed_mentions.append(allowed_mentions)
++        self.wire.sent_views.append(view)
+         reply_to = (
+             str(reference.message_id if isinstance(reference, MessageReference) else reference.id)
+             if reference
+@@ -206,14 +395,15 @@ class Channel:
+             media = FakeMedia("document", str(file), caption=content or "")
+             sent = await _wrap(self.wire.platform.upload(str(self.id), media, reply_to=reply_to))
+         else:
+-            buttons = tuple(view.items) if view is not None else ()
+             sent = await _wrap(
+                 self.wire.platform.post(
+-                    str(self.id), content or "", reply_to=reply_to, buttons=buttons
++                    str(self.id), content or "", reply_to=reply_to, buttons=_flat_buttons(view)
+                 )
+             )
+-        bot = Author(int(self.wire.platform.bot_user_id), self.wire.platform.bot_name, True)
+-        return DiscordMessage(int(sent.message_id), self, sent.text, bot)
++        bot = self.wire.client.user
++        message = DiscordMessage(int(sent.message_id), self, sent.text, bot)
++        self.wire.log(message)
++        return message
+ 
+     @asynccontextmanager
+     async def typing(self) -> AsyncIterator[None]:
+@@ -227,36 +417,107 @@ class Channel:
+         author = Author(int(self.wire.platform.bot_user_id), "bot", found.from_bot)
+         return DiscordMessage(message_id, self, found.text, author)
+ 
++    async def history(
++        self, *, limit: int | None = 100, before: Any = None, **_: Any
++    ) -> AsyncIterator[DiscordMessage]:
++        """Newest first, like discord.py without ``after``."""
++        logged = self.wire.logs.get(self.id, [])
++        if before is not None:
++            cut = next((n for n, m in enumerate(logged) if m.id == before.id), len(logged))
++            logged = logged[:cut]
++        for message in list(reversed(logged))[: limit or None]:
++            yield message
++
++
++@dataclass
++class InteractionResponse:
++    interaction: Interaction
++    done: bool = False
++    sent: list[tuple[str, bool]] = field(default_factory=list[tuple[str, bool]])
++
++    def is_done(self) -> bool:
++        return self.done
++
++    async def defer(self, *, ephemeral: bool = False, thinking: bool = False) -> None:
++        await self._answer(None, ephemeral)
++
++    async def send_message(self, content: str | None = None, *, ephemeral: bool = False) -> None:
++        await self._answer(content or "", ephemeral)
++
++    async def _answer(self, content: str | None, ephemeral: bool) -> None:
++        if self.done:
++            raise RuntimeError("This interaction has already been responded to before")
++        self.done = True
++        if content is not None:
++            self.sent.append((content, ephemeral))
++        await self.interaction.channel.wire.platform.answer(self.interaction.id, content)
++
+ 
+ @dataclass
+ class Interaction:
+-    """A component press: ``custom_id`` in ``data``."""
++    """A component press (``custom_id`` in ``data``) or an application command (``name``)."""
+ 
+     id: str
+     user: Author
+     channel: Channel
+     data: dict[str, Any]
+     message: DiscordMessage | None = None
++    type: Any = field(default_factory=lambda: SimpleNamespace(name="component"))
++    response: InteractionResponse = field(init=False)
+ 
++    def __post_init__(self) -> None:
++        self.response = InteractionResponse(self)
+ 
+-class CommandTree:
+-    """``discord.app_commands.CommandTree`` stand-in: records registrations and syncs."""
++    @property
++    def channel_id(self) -> int:
++        return self.channel.id
+ 
+-    def __init__(self, client: FakeClient) -> None:
+-        self.client = client
+-        self.commands: list[Any] = []
+-        self.synced: list[list[str]] = []
++    @property
++    def guild(self) -> Guild | None:
++        return self.channel.guild
+ 
+-    def add_command(self, command: Any) -> None:
+-        self.commands.append(command)
+ 
+-    def clear_commands(self, *, guild: Any = None) -> None:
+-        self.commands.clear()
++class FakeHttp:
++    """``discord.http.HTTPClient`` stand-in: the bot's global application commands."""
+ 
+-    async def sync(self, *, guild: Any = None) -> list[Any]:
+-        names = [str(getattr(c, "name", c)) for c in self.commands]
+-        self.synced.append(names)
+-        return list(self.commands)
++    def __init__(self, wire: DiscordWire) -> None:
++        self.wire = wire
++        self.commands: dict[str, dict[str, Any]] = {}
++        self.mutations: list[tuple[str, str, float]] = []
++        self._ids = itertools.count(1000)
++        self.fail_next: Exception | None = None
++
++    def _log(self, op: str, name: str) -> None:
++        if self.fail_next is not None:
++            exc, self.fail_next = self.fail_next, None
++            raise exc
++        self.mutations.append((op, name, self.wire.platform.clock.monotonic()))
++
++    async def get_global_commands(self, application_id: int) -> list[dict[str, Any]]:
++        return [dict(c) for c in self.commands.values()]
++
++    async def upsert_global_command(
++        self, application_id: int, payload: dict[str, Any]
++    ) -> dict[str, Any]:
++        self._log("upsert", payload["name"])
++        current = next((c for c in self.commands.values() if c["name"] == payload["name"]), None)
++        ident = current["id"] if current else str(next(self._ids))
++        stored = {**payload, "id": ident}
++        self.commands[ident] = stored
++        return stored
++
++    async def edit_global_command(
++        self, application_id: int, command_id: str, payload: dict[str, Any]
++    ) -> dict[str, Any]:
++        self._log("edit", payload.get("name", ""))
++        stored = {**self.commands[str(command_id)], **payload}
++        self.commands[str(command_id)] = stored
++        return stored
++
++    async def delete_global_command(self, application_id: int, command_id: str) -> None:
++        gone = self.commands.get(str(command_id))
++        self._log("delete", gone["name"] if gone else "")
++        self.commands.pop(str(command_id), None)
+ 
+ 
+ class FakeClient:
+@@ -265,21 +526,45 @@ class FakeClient:
+     def __init__(self, wire: DiscordWire, intents: Intents | None = None) -> None:
+         self.wire = wire
+         self.intents = intents or Intents.default()
++        self.options: dict[str, Any] = {}
+         self.handlers: dict[str, Callable[..., Awaitable[None]]] = {}
+-        self.user = Author(int(wire.platform.bot_user_id), wire.platform.bot_name, True)
+-        self.tree = CommandTree(self)
++        self._user = Author(int(wire.platform.bot_user_id), wire.platform.bot_name, True)
++        self.http = FakeHttp(wire)
++        self.closed = False
++
++    @property
++    def user(self) -> Author:
++        return self._user
++
++    @property
++    def application_id(self) -> int:
++        return int(self.wire.platform.bot_user_id)
++
++    @property
++    def guilds(self) -> list[Guild]:
++        return list(self.wire.guilds.values())
+ 
+     def event(self, fn: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[None]]:
+         self.handlers[fn.__name__] = fn
+         return fn
+ 
++    async def login(self, token: str) -> None:
++        if self.wire.login_error is not None:
++            raise self.wire.login_error
++        self.wire.logins += 1
++        self.wire.tokens.append(token)
++
+     async def start(self, token: str) -> None:
++        await self.login(token)
+         await _wrap(self.wire.platform.connect())
++        self.wire.gateway_sessions += 1
++        self.closed = False
+ 
+     async def wait_until_ready(self) -> None:
+         return None
+ 
+     async def close(self) -> None:
++        self.closed = True
+         await self.wire.platform.disconnect()
+ 
+     def get_channel(self, channel_id: int) -> Channel | None:
+@@ -297,10 +582,49 @@ class DiscordWire:
+     def __init__(self, platform: FakeChatPlatform | None = None) -> None:
+         self.platform = platform or FakeChatPlatform("discord", max_len=MAX_LEN, bot_user_id="900")
+         self._channels: dict[int, Channel] = {}
++        self.guilds: dict[int, Guild] = {}
+         self.threads: list[tuple[int, str, int]] = []
+         self.removed_reactions: list[tuple[int, str]] = []
+         self.sent_allowed_mentions: list[AllowedMentions | None] = []
++        self.sent_views: list[View | None] = []
++        self.logs: dict[int, list[DiscordMessage]] = {}
++        self.member_roles: dict[str, tuple[int, ...]] = {}
++        self.thread_failures = 0
++        self.logins = 0
++        self.gateway_sessions = 0
++        self.tokens: list[str] = []
++        self.login_error: Exception | None = None
+         self.client = FakeClient(self)
++        self._interactions = itertools.count(1)
++
++    # -- the ``discord`` module an adapter imports --------------------------------------------
++
++    def make_client(self, *, intents: Intents | None = None, **options: Any) -> FakeClient:
++        self.client.intents = intents or Intents.default()
++        self.client.options = dict(options)
++        return self.client
++
++    @property
++    def sdk(self) -> SimpleNamespace:
++        return SimpleNamespace(
++            Client=self.make_client,
++            Intents=Intents,
++            AllowedMentions=AllowedMentions,
++            MessageReference=MessageReference,
++            File=File,
++            ButtonStyle=ButtonStyle,
++            SelectOption=SelectOption,
++            ui=SimpleNamespace(View=View, Button=UIButton, Select=UISelect),
++        )
++
++    # -- state ---------------------------------------------------------------------------------
++
++    def guild(self, guild_id: int) -> Guild:
++        found = self.guilds.get(int(guild_id))
++        if found is None:
++            found = Guild(int(guild_id))
++            self.guilds[found.id] = found
++        return found
+ 
+     def channel(self, channel_id: int, *, kind: str = "text", parent: int | None = None) -> Channel:
+         found = self._channels.get(int(channel_id))
+@@ -309,6 +633,15 @@ class DiscordWire:
+             self._channels[found.id] = found
+         return found
+ 
++    def log(self, message: DiscordMessage) -> None:
++        self.logs.setdefault(message.channel.id, []).append(message)
++
++    def _author(self, user_id: str, name: str, is_bot: bool, guild_id: int | None) -> Author:
++        roles = None
++        if guild_id is not None:
++            roles = tuple(Role(r) for r in self.member_roles.get(str(user_id), ()))
++        return Author(int(user_id), name or str(user_id), is_bot, roles)
++
+     def _message(self, item: FakeInbound) -> DiscordMessage:
+         kind = {"dm": "dm", "thread": "thread"}.get(item.chat_kind, "text")
+         channel = self.channel(int(item.thread_id or item.chat_id), kind=kind)
+@@ -316,9 +649,18 @@ class DiscordWire:
+             channel.parent_id = int(item.chat_id)
+         if item.guild_id is not None:
+             channel.guild_id = int(item.guild_id)
+-        author = Author(int(item.user_id), item.user_name or item.user_id, item.is_bot)
++        if item.chat_name:
++            channel.name = item.chat_name
++        author = self._author(item.user_id, item.user_name, item.is_bot, channel.guild_id)
+         attachments = tuple(
+-            Attachment(m.ref, f"https://cdn.example/{m.ref}", m.mime) for m in item.media
++            Attachment(
++                m.ref,
++                f"https://cdn.discordapp.com/attachments/{channel.id}/{m.ref}",
++                m.mime,
++                m.duration,
++                m.kind == "voice",
++            )
++            for m in item.media
+         )
+         reference = MessageReference(int(item.reply_to)) if item.reply_to else None
+         return DiscordMessage(
+@@ -339,26 +681,65 @@ class DiscordWire:
+             message = self._message(item)
+             if item.event == "button":
+                 handler = self.client.handlers.get("on_interaction")
++                sent = self.platform.message(item.message_id) if item.message_id else None
++                carrying = (
++                    DiscordMessage(int(item.message_id), message.channel, sent.text, message.author)
++                    if sent is not None
++                    else None
++                )
++                data: dict[str, Any] = {"custom_id": item.button_data, "component_type": 2}
+                 interaction = Interaction(
+-                    str(item.button_id),
+-                    message.author,
+-                    message.channel,
+-                    {"custom_id": item.button_data},
+-                    None,
++                    str(item.button_id), message.author, message.channel, data, carrying
+                 )
+                 if handler is not None:
+                     await handler(interaction)
+             else:
++                if item.event == "message":
++                    self.log(message)
+                 name = "on_message_edit" if item.event == "edited" else "on_message"
+                 handler = self.client.handlers.get(name)
+                 if handler is not None:
+                     if name == "on_message_edit":
+-                        await handler(message, message)
++                        before = DiscordMessage(
++                            message.id, message.channel, "", message.author, message.reference
++                        )
++                        await handler(before, message)
+                     else:
+                         await handler(message)
+             delivered += 1
+         return delivered
+ 
++    async def invoke_command(
++        self,
++        chat_id: str,
++        user_id: str,
++        name: str,
++        args: str = "",
++        *,
++        chat_kind: str = "group",
++        user_name: str = "",
++    ) -> Interaction:
++        """An application command typed in ``chat_id`` (handled at once)."""
++        kind = {"dm": "dm", "thread": "thread"}.get(chat_kind, "text")
++        channel = self.channel(int(chat_id), kind=kind)
++        chat = self.platform.chats.get(str(chat_id))
++        if chat is not None and chat.guild_id is not None:
++            channel.guild_id = int(chat.guild_id)
++        user = self._author(user_id, user_name, False, channel.guild_id)
++        options = [{"name": "args", "type": 3, "value": args}] if args else []
++        interaction = Interaction(
++            f"ia{next(self._interactions)}",
++            user,
++            channel,
++            {"name": name, "type": 1, "options": options},
++            None,
++            SimpleNamespace(name="application_command"),
++        )
++        handler = self.client.handlers.get("on_interaction")
++        if handler is not None:
++            await handler(interaction)
++        return interaction
++
+ 
+ DiscordWire.FAKES = {
+     "discord:Client": FakeClient,
+@@ -366,27 +747,45 @@ DiscordWire.FAKES = {
+     "discord.abc:Messageable": Channel,
+     "discord:Message": DiscordMessage,
+     "discord:AllowedMentions": AllowedMentions,
++    "discord:MessageReference": MessageReference,
++    "discord:File": File,
++    "discord:ButtonStyle": ButtonStyle,
++    "discord:SelectOption": SelectOption,
+     "discord:HTTPException": HTTPException,
+     "discord:Forbidden": Forbidden,
+     "discord:NotFound": NotFound,
++    "discord:RateLimited": RateLimited,
+     "discord.ui:View": View,
+-    "discord.ui:Button": Button,
+-    "discord.app_commands:CommandTree": CommandTree,
++    "discord.ui:Button": UIButton,
++    "discord.ui:Select": UISelect,
++    "discord.http:HTTPClient": FakeHttp,
+ }
+ 
+ __all__ = [
+     "SURFACE",
+-    "CommandTree",
+     "AllowedMentions",
++    "Attachment",
+     "Author",
++    "ButtonStyle",
+     "Channel",
+     "DiscordMessage",
+     "DiscordWire",
+     "FakeClient",
++    "FakeHttp",
++    "File",
+     "Forbidden",
++    "Guild",
+     "HTTPException",
+     "Intents",
+     "Interaction",
++    "LoginFailure",
++    "MessageReference",
+     "NotFound",
++    "PrivilegedIntentsRequired",
++    "RateLimited",
++    "Role",
++    "SelectOption",
++    "UIButton",
++    "UISelect",
+     "View",
+ ]
+diff --git a/tests/unit/gateway/adapters/discord/__init__.py b/tests/unit/gateway/adapters/discord/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/unit/gateway/adapters/discord/test_adapter.py b/tests/unit/gateway/adapters/discord/test_adapter.py
+new file mode 100644
+index 0000000..c1b9882
+--- /dev/null
++++ b/tests/unit/gateway/adapters/discord/test_adapter.py
+@@ -0,0 +1,808 @@
++"""P15-34: the Discord adapter over the Discord wire fake (discord.py itself is not needed)."""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++from collections.abc import Awaitable, Callable
++from dataclasses import dataclass, field
++from datetime import UTC, datetime
++from typing import Any
++
++import httpx
++import pytest
++
++from indus.foundation.config.schema import PlatformSection
++from indus.foundation.scope import Scope
++from indus.gateway.adapters.base import (
++    AdapterConnectError,
++    ApprovalAction,
++    ApprovalPrompt,
++    ClarifyPrompt,
++    approval_callback,
++    clarify_callback,
++)
++from indus.gateway.adapters.discord import DiscordAdapter, create_adapter
++from indus.gateway.adapters.discord import commands as cmds
++from indus.gateway.adapters.discord.adapter import REFUSED_COMMAND, REFUSED_PRESS, ROLES_ENV
++from indus.gateway.config import AdapterConfig, PlatformSettings
++from indus.gateway.core.events import Attachment, InboundEvent, MessageKind
++from indus.gateway.core.send import ErrorKind
++from indus.gateway.core.session_keys import build_session_key
++from indus.gateway.delivery import send_command
++from indus.gateway.intake.media import MediaIntake
++from indus.gateway.registry import PlatformEntry, PlatformRegistry
++from tests.fakes.clock import FakeClock
++from tests.fakes.platform.core import FailureKind, FakeChatPlatform
++from tests.fakes.platform.discord_wire import (
++    MAX_LEN,
++    DiscordWire,
++    LoginFailure,
++    PrivilegedIntentsRequired,
++    UISelect,
++)
++from tests.unit.cli.commands.cmdrun import run_cli, write_settings
++
++START = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
++GUILD = "77"
++ROLE_OK = 11
++ROLE_OTHER = 12
++
++
++def fake_token() -> str:
++    """A token-shaped value built at run time (never a literal credential)."""
++    return ".".join(("MTAw" + "q" * 20, "uvwxyz", "k" * 27))
++
++
++def settings(**extra: object) -> PlatformSettings:
++    return PlatformSettings(
++        name="discord",
++        enabled=True,
++        reason="credentials",
++        section=PlatformSection(extra=dict(extra)),
++        credentials={"DISCORD_BOT_TOKEN": fake_token()},
++    )
++
++
++@dataclass
++class World:
++    clock: FakeClock
++    platform: FakeChatPlatform
++    wire: DiscordWire
++    adapter: DiscordAdapter
++    events: list[InboundEvent] = field(default_factory=list[InboundEvent])
++
++    async def settle(self, awaitable: Awaitable[Any], step: float = 0.5) -> Any:
++        task = asyncio.ensure_future(awaitable)
++        for _ in range(4000):
++            await self.clock.run_until_idle()
++            if task.done():
++                return task.result()
++            self.clock.advance(step)
++        task.cancel()
++        raise AssertionError("never finished on the fake clock")
++
++    async def pump(self) -> list[InboundEvent]:
++        await self.wire.dispatch_pending()
++        await self.clock.run_until_idle()
++        return self.events
++
++
++def world(
++    *,
++    env: dict[str, str] | None = None,
++    extra: dict[str, object] | None = None,
++    send_only: bool = False,
++    is_paired: Callable[[str], Awaitable[bool]] | None = None,
++    extra_commands: tuple[tuple[str, str, str], ...] = (),
++    sync: bool = False,
++) -> World:
++    clock = FakeClock(START)
++    platform = FakeChatPlatform("discord", clock=clock, max_len=MAX_LEN, bot_user_id="900")
++    wire = DiscordWire(platform)
++    options = dict(extra or {})
++    if not sync:
++        options.setdefault("command_sync", "off")
++    adapter = DiscordAdapter(
++        clock=clock,
++        settings=settings(**options),
++        env=env or {},
++        sdk=wire.sdk,
++        send_only=send_only,
++        is_paired=is_paired,
++        extra_commands=extra_commands,
++    )
++    made = World(clock, platform, wire, adapter)
++
++    async def sink(event: InboundEvent) -> None:
++        made.events.append(event)
++
++    adapter.set_sink(sink)
++    return made
++
++
++def run(fn: Callable[[World], Awaitable[None]], made: World) -> None:
++    async def main() -> None:
++        try:
++            await fn(made)
++        finally:
++            await made.adapter.disconnect()
++
++    asyncio.run(main())
++
++
++def key(event: InboundEvent) -> str:
++    return build_session_key(event.source)
++
++
++# -- connect ------------------------------------------------------------------------------------
++
++
++def test_intents_ask_for_members_only_with_a_role_allowlist() -> None:
++    plain, roles = world(), world(env={ROLES_ENV: f"{ROLE_OK}"})
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++
++    run(body, plain)
++    run(body, roles)
++    for made, members in ((plain, False), (roles, True)):
++        intents = made.wire.client.intents
++        assert intents.message_content and intents.dm_messages and intents.guild_messages
++        assert intents.members is members
++        assert made.wire.gateway_sessions == 1
++        assert made.wire.client.options["max_ratelimit_timeout"] == 30.0
++
++
++@pytest.mark.parametrize(
++    ("error", "retryable", "code"),
++    [
++        (LoginFailure("Improper token has been passed."), False, "auth_failed"),
++        (PrivilegedIntentsRequired("shard requires intents"), False, "intents_required"),
++        (ConnectionResetError("reset by peer"), True, "connect_failed"),
++    ],
++)
++def test_connect_errors_are_classified(error: Exception, retryable: bool, code: str) -> None:
++    made = world()
++    made.wire.login_error = error
++
++    async def body(made: World) -> None:
++        with pytest.raises(AdapterConnectError) as raised:
++            await made.settle(made.adapter.connect())
++        assert raised.value.retryable is retryable and raised.value.code == code
++        assert not made.adapter.connected
++
++    run(body, made)
++
++
++def test_the_token_never_shows_in_a_connect_error() -> None:
++    made = world()
++    made.wire.login_error = RuntimeError(f"bad header Authorization: Bot {fake_token()}")
++
++    async def body(made: World) -> None:
++        with pytest.raises(AdapterConnectError) as raised:
++            await made.settle(made.adapter.connect())
++        assert fake_token() not in str(raised.value)
++        assert "Authorization" in str(raised.value)
++
++    run(body, made)
++
++
++def test_no_token_is_a_fatal_configuration_problem() -> None:
++    clock = FakeClock(START)
++    wire = DiscordWire(FakeChatPlatform("discord", clock=clock, bot_user_id="900"))
++    bare = PlatformSettings("discord", True, "credentials", PlatformSection())
++    adapter = DiscordAdapter(clock=clock, settings=bare, sdk=wire.sdk)
++
++    async def main() -> None:
++        with pytest.raises(AdapterConnectError) as raised:
++            await adapter.connect()
++        assert raised.value.code == "missing_credentials" and not raised.value.retryable
++
++    asyncio.run(main())
++    assert wire.logins == 0
++
++
++# -- inbound ------------------------------------------------------------------------------------
++
++
++def test_own_system_duplicate_and_unchanged_edit_messages_are_ignored() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        p = made.platform
++        p.bot_message("300", "900", "my own words")  # the bot itself
++        first = p.dm("200", "hello")
++        await made.pump()
++        message = made.wire.logs[200][-1]
++        await made.adapter._on_message(message)  # the same id again
++        message.type = type("T", (), {"name": "pins_add"})()
++        await made.adapter._on_edit(message, message)
++        p.edited(first, "hello again")
++        events = await made.pump()
++        assert [e.text for e in events] == ["hello", "hello again"]
++        assert events[1].metadata["edited"] is True
++        assert events[0].reply_expected is True and events[0].source.chat_type == "dm"
++
++    run(body, made)
++
++
++def test_attachments_are_listed_with_their_kind() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.voice("200", "200", duration=4.5)
++        made.platform.photo("200", "200", caption="look")
++        events = await made.pump()
++        voice, photo = events
++        assert voice.kind is MessageKind.VOICE and voice.metadata["duration"] == 4.5
++        assert voice.media[0].ref.startswith("https://cdn.discordapp.com/attachments/")
++        assert photo.kind is MessageKind.PHOTO and photo.text == "look"
++
++    run(body, made)
++
++
++def test_role_grant_on_guild_messages_only() -> None:
++    made = world(env={ROLES_ENV: f"{ROLE_OK}"})
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.add_chat("300", "group", guild_id=GUILD)
++        made.wire.member_roles["200"] = (ROLE_OK,)
++        made.wire.member_roles["201"] = (ROLE_OTHER,)
++        made.platform.group("300", "200", "hi", mention=True)
++        made.platform.group("300", "201", "hi too", mention=True)
++        made.platform.dm("200", "in private")
++        events = await made.pump()
++        grants = {
++            f"{e.source.user_id}:{e.source.chat_type}": e.source.role_authorized for e in events
++        }
++        assert grants == {"200:thread": True, "201:thread": False, "200:dm": False}
++        assert {e.source.guild_id for e in events if e.source.chat_type != "dm"} == {GUILD}
++
++    run(body, made)
++
++
++def test_thread_spawned_by_a_mention_shares_the_session_with_follow_ups() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        p = made.platform
++        asked = p.group("300", "200", "<@900> please summarise the logs", mention=True)
++        (first,) = await made.pump()
++        assert first.source.chat_type == "thread"
++        assert first.source.prospective_thread_id == asked.message_id
++        assert first.source.thread_id == asked.message_id
++        assert first.text == "please summarise the logs"
++        assert made.wire.threads == []  # nothing is opened before we answer
++
++        result = await made.adapter.send(
++            "300", "on it", reply_to=asked.message_id, meta={"thread_id": asked.message_id}
++        )
++        assert result.ok
++        assert made.wire.threads == [(int(asked.message_id), "please summarise the logs", 1440)]
++        sent = p.ops_of("send")[-1]
++        assert sent.chat_id == asked.message_id and sent.reply_to is None
++
++        p.thread("300", asked.message_id, "201", "and the errors?")  # no mention needed now
++        (_, follow) = await made.pump()
++        assert follow.metadata.get("mentioned") is True
++        assert key(follow) == key(first) == f"@default:discord:thread:300:{asked.message_id}"
++
++    run(body, made)
++
++
++def test_a_mention_that_is_never_answered_opens_no_thread() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.group("300", "200", "hello?", mention=True)
++        await made.pump()
++        assert made.wire.threads == [] and made.platform.ops_of("send") == []
++
++    run(body, made)
++
++
++@pytest.mark.parametrize(
++    ("extra", "text", "reply_to", "threaded"),
++    [
++        ({}, "/status", None, False),  # commands are answered where they were typed
++        ({"free_response_channels": "300"}, "hi", None, False),
++        ({"no_thread_channels": ["300"]}, "hi", None, False),
++        ({"auto_thread": False}, "hi", None, False),
++        ({}, "hi", "1", False),  # a reply stays a reply
++        ({}, "hi", None, True),
++    ],
++)
++def test_when_a_mention_opens_a_thread(
++    extra: dict[str, object], text: str, reply_to: str | None, threaded: bool
++) -> None:
++    made = world(extra=extra)
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.group("300", "200", text, mention=True, reply_to=reply_to)
++        (event,) = await made.pump()
++        assert (event.source.chat_type == "thread") is threaded
++        assert (event.source.prospective_thread_id is not None) is threaded
++
++    run(body, made)
++
++
++def test_failed_thread_creation_answers_in_the_channel() -> None:
++    made = world()
++    made.wire.thread_failures = 1
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        asked = made.platform.group("300", "200", "help", mention=True)
++        (event,) = await made.pump()
++        meta = {"thread_id": event.source.thread_id}
++        first = await made.adapter.send("300", "answer", reply_to=asked.message_id, meta=meta)
++        second = await made.adapter.send("300", "more", meta=meta)
++        assert first.ok and second.ok
++        sends = made.platform.ops_of("send")
++        assert [(s.chat_id, s.reply_to) for s in sends] == [
++            ("300", asked.message_id),
++            ("300", None),
++        ]
++        assert made.wire.threads == []
++
++    run(body, made)
++
++
++def test_history_backfill_on_a_mention_in_a_busy_channel() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        p = made.platform
++        p.group("300", "201", "old message before our reply")
++        await made.pump()
++        await made.adapter.send("300", "our last answer")
++        for n in range(25):
++            p.group("300", "201", f"chatter {n:02d}", user_name="Bo")
++        await made.pump()
++        made.events.clear()
++        p.group("300", "200", "what do you think?", mention=True)
++        (event,) = await made.pump()
++        lines = event.text.splitlines()
++        assert lines[0] == "[Recent messages in this channel, oldest first]"
++        assert lines[1:21] == [f"[Bo] chatter {n:02d}" for n in range(5, 25)]
++        assert "old message" not in event.text and "our last answer" not in event.text
++        assert event.text.endswith("[The message addressed to you]\nwhat do you think?")
++        assert event.metadata["channel_context"] is True
++
++    run(body, made)
++
++
++def test_no_backfill_in_a_free_response_channel() -> None:
++    made = world(extra={"free_response_channels": ["300"]})
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.group("300", "201", "chatter")
++        made.platform.group("300", "200", "and you?", mention=True)
++        events = await made.pump()
++        assert [e.text for e in events] == ["chatter", "and you?"]
++
++    run(body, made)
++
++
++def test_a_bare_mention_counts_only_with_context_around_it() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.group("300", "200", "<@900>", mention=True)
++        assert await made.pump() == []
++        made.platform.group("300", "201", "is the build green?")
++        made.platform.group("300", "200", "<@900>", mention=True)
++        events = await made.pump()
++        assert events[-1].text.endswith("[They mentioned you without writing anything]")
++        assert "[201] is the build green?" in events[-1].text
++
++    run(body, made)
++
++
++def test_threads_the_bot_opened_stay_addressed_after_a_restart() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        asked = made.platform.group("300", "200", "start", mention=True)
++        await made.pump()
++        await made.adapter.send("300", "ok", meta={"thread_id": asked.message_id})
++        await made.adapter.disconnect()
++        fresh = DiscordAdapter(
++            clock=made.clock,
++            settings=settings(command_sync="off"),
++            sdk=made.wire.sdk,
++        )
++        seen: list[InboundEvent] = []
++
++        async def sink(event: InboundEvent) -> None:
++            seen.append(event)
++
++        fresh.set_sink(sink)
++        await made.settle(fresh.connect())
++        made.platform.thread("300", asked.message_id, "201", "follow-up")
++        await made.wire.dispatch_pending()
++        assert seen[-1].metadata.get("mentioned") is True
++        await fresh.disconnect()
++
++    run(body, made)
++
++
++# -- interactions -------------------------------------------------------------------------------
++
++
++def _guild_world(**kw: Any) -> World:
++    made = world(env={ROLES_ENV: f"{ROLE_OK}"}, **kw)
++    made.platform.add_chat("300", "group", guild_id=GUILD)
++    made.wire.member_roles["200"] = (ROLE_OK,)
++    made.wire.member_roles["201"] = (ROLE_OTHER,)
++    return made
++
++
++def test_component_press_by_a_member_without_an_allowed_role_is_refused() -> None:
++    made = _guild_world()
++    data = approval_callback("req1", "once")
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.button_press("300", "201", data, chat_kind="group")
++        await made.pump()
++        assert made.events == []
++        assert made.platform.answered[-1][1] == REFUSED_PRESS
++
++        made.platform.button_press("300", "200", data, chat_kind="group")
++        (event,) = await made.pump()
++        assert event.metadata["button"] == data and event.source.role_authorized
++        assert made.platform.answered[-1][1] is None  # acknowledged silently
++
++    run(body, made)
++
++
++def test_an_application_command_by_a_member_without_the_role_is_refused() -> None:
++    made = _guild_world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        refused = await made.wire.invoke_command("300", "201", "status")
++        assert made.events == [] and refused.response.sent == [(REFUSED_COMMAND, True)]
++        await made.wire.invoke_command("300", "200", "status")
++        (event,) = made.events
++        assert event.command == "status" and event.source.role_authorized
++
++    run(body, made)
++
++
++def test_a_paired_or_listed_user_may_press_without_the_role() -> None:
++    async def paired(user_id: str) -> bool:
++        return user_id == "202"
++
++    made = _guild_world(is_paired=paired)
++    made.adapter._env = {**made.adapter._env, "INDUS_DISCORD_ALLOWED_USERS": "203"}
++    data = approval_callback("req1", "deny")
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        for user in ("202", "203", "204"):
++            made.platform.button_press("300", user, data, chat_kind="group")
++        events = await made.pump()
++        assert [e.source.user_id for e in events] == ["202", "203"]
++
++    run(body, made)
++
++
++def test_select_menu_values_become_the_button_data() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        choices = tuple(f"option {n}" for n in range(30))
++        prompt = ClarifyPrompt("q1", "key", "Which one?", choices, fallback_text="1. ...")
++        result = await made.adapter.send_clarify("300", prompt)
++        assert result.ok
++        view = made.wire.sent_views[-1]
++        assert view is not None and view.stopped
++        (select,) = view.items
++        assert isinstance(select, UISelect) and len(select.options) == 25
++        assert select.options[3].value == clarify_callback("q1", 3)
++        made.platform.button_press("300", "200", "ignored", chat_kind="group")
++        item = made.platform.next_inbound()
++        assert item is not None
++        message = made.wire._message(item)
++        from tests.fakes.platform.discord_wire import Interaction
++
++        press = Interaction(
++            "cb1",
++            message.author,
++            message.channel,
++            {"custom_id": "x", "values": [select.options[3].value]},
++        )
++        await made.adapter._on_interaction(press)
++        assert made.events[-1].metadata["button"] == clarify_callback("q1", 3)
++
++    run(body, made)
++
++
++def test_clarify_and_approval_buttons_fill_rows_of_five() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        prompt = ClarifyPrompt("q2", "key", "Pick", tuple(f"c{n}" for n in range(12)))
++        assert (await made.adapter.send_clarify("300", prompt)).ok
++        view = made.wire.sent_views[-1]
++        assert view is not None
++        assert [b.row for b in view.items] == [n // 5 for n in range(12)]
++        long = "x" * 120
++        card = ApprovalPrompt(
++            "r9", "key", "Run it?", "Run it? /approve", (ApprovalAction(long, "once", "primary"),)
++        )
++        assert (await made.adapter.send_approval("300", card)).ok
++        view = made.wire.sent_views[-1]
++        assert view is not None
++        (button,) = view.items
++        assert len(button.label) == 80 and button.style == "primary"
++
++    run(body, made)
++
++
++def test_an_application_command_becomes_command_text() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        interaction = await made.wire.invoke_command("300", "200", "model", "gpt --once")
++        (event,) = made.events
++        assert event.text == "/model gpt --once" and event.command == "model"
++        assert event.source.chat_id == "300" and event.source.chat_type == "group"
++        assert interaction.response.sent == [("Running /model…", True)]
++
++    run(body, made)
++
++
++# -- outbound -----------------------------------------------------------------------------------
++
++
++def test_sends_allow_no_mentions_by_default() -> None:
++    plain = world()
++    opted = world(extra={"allowed_mentions": {"users": True}})
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        assert (await made.adapter.send("300", "@everyone hello")).ok
++
++    run(body, plain)
++    run(body, opted)
++    assert plain.wire.sent_allowed_mentions[-1] == plain.wire.sdk.AllowedMentions.none()
++    sent = opted.wire.sent_allowed_mentions[-1]
++    assert sent is not None and sent.users and not sent.everyone and not sent.roles
++
++
++def test_a_long_rate_limit_is_a_typed_failure_without_sleeping() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.fail(FailureKind.RATE_LIMIT, op="send", retry_after=97 * 60)
++        before = made.clock.monotonic()
++        result = await made.adapter.send_with_retry("300", "hello", rng=lambda: 0.0)
++        assert not result.ok and result.kind is ErrorKind.RATE_LIMITED
++        assert result.retry_after == 97 * 60
++        assert made.clock.monotonic() == before
++
++    run(body, made)
++
++
++def test_an_edit_past_the_cap_continues_in_new_messages() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        sent = await made.adapter.send("300", "draft")
++        assert sent.ok and sent.message_id
++        words = " ".join(f"w{n:04d}" for n in range(500))  # about 2,500 characters
++        result = await made.adapter.edit("300", sent.message_id, words, final=True)
++        assert result.ok and len(result.ids) == 2
++        texts = made.platform.texts("300")
++        assert all(len(t) <= MAX_LEN for t in texts)
++        assert texts[0].startswith("w0000") and texts[-1].removesuffix(" (2/2)").endswith("w0499")
++
++    run(body, made)
++
++
++def test_edits_and_deletes_inside_a_thread_find_their_message() -> None:
++    made = world()
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        made.platform.thread("300", "400", "200", "hi")
++        await made.pump()
++        sent = await made.adapter.send("300", "draft", meta={"thread_id": "400"})
++        assert sent.ok and sent.message_id
++        assert (await made.adapter.edit("300", sent.message_id, "final", final=True)).ok
++        assert await made.adapter.delete("300", sent.message_id)
++        assert [op.kind for op in made.platform.ops_of("send", "edit", "delete")] == [
++            "send",
++            "edit",
++            "delete",
++        ]
++        assert {op.chat_id for op in made.platform.ops_of("send", "edit", "delete")} == {"400"}
++
++    run(body, made)
++
++
++# -- application commands -----------------------------------------------------------------------
++
++
++def _specs(count: int) -> list[cmds.CommandSpec]:
++    return [cmds.CommandSpec(f"cmd{n:03d}", f"command {n}") for n in range(count)]
++
++
++def test_command_specs_follow_discord_limits() -> None:
++    specs = cmds.registry_commands()
++    assert specs and len(specs) <= cmds.MAX_COMMANDS
++    for spec in specs:
++        assert len(spec.name) <= 32 and spec.name == spec.name.lower()
++        assert 1 <= len(spec.description) <= 100
++        for option in spec.payload().get("options", []):
++            assert option["name"] == "args" and len(option["description"]) <= 100
++    odd = cmds.desired_commands([("Bad Name!", "x", ""), ("ok-name", "d" * 300, "a" * 300)])
++    names = [s.name for s in odd]
++    assert "ok-name" in names and not any(" " in n for n in names)
++    ok = next(s for s in odd if s.name == "ok-name")
++    assert len(ok.description) == 100 and ok.description.endswith("…")
++
++
++def test_command_sync_caps_at_100_with_one_warning(caplog: pytest.LogCaptureFixture) -> None:
++    base = len(cmds.registry_commands())
++    extra = tuple((f"extra{n:03d}", f"extra command {n}", "") for n in range(101 - base))
++    made = world(extra_commands=extra, sync=True)
++    caplog.set_level(logging.WARNING, logger="indus.gateway.adapters.discord")
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        task = made.adapter._sync_task
++        assert task is not None
++        await made.settle(task, step=5.0)
++
++    run(body, made)
++    assert len(made.wire.client.http.commands) == 100
++    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
++    assert len(warnings) == 1 and "1 command(s) left out" in warnings[0].getMessage()
++    assert cmds.cap_commands(_specs(101))[-1].name == "cmd099"
++
++
++def test_command_sync_paces_mutations_and_deletes_first() -> None:
++    made = world(sync=True)
++    http = made.wire.client.http
++    wanted = {s.name: s for s in cmds.registry_commands()}
++    first, second = list(wanted)[:2]
++    http.commands = {
++        "1": {"id": "1", "type": 1, "name": "gone", "description": "obsolete"},
++        "2": {**wanted[first].payload(), "id": "2"},  # unchanged
++        "3": {**wanted[second].payload(), "id": "3", "description": "old words"},
++        "4": {"id": "4", "type": 2, "name": "Context menu", "description": ""},
++    }
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        task = made.adapter._sync_task
++        assert task is not None
++        await made.settle(task, step=0.5)
++
++    run(body, made)
++    ops = [(op, name) for op, name, _ in http.mutations]
++    assert ops[0] == ("delete", "gone")
++    assert ("edit", second) in ops and all(name != first for _, name in ops)
++    assert all(name != "Context menu" for _, name in ops)
++    assert len(ops) == 1 + 1 + (len(wanted) - 2)
++    times = [at for _, _, at in http.mutations]
++    gaps = {round(b - a, 3) for a, b in zip(times, times[1:], strict=False)}
++    assert gaps == {cmds.MUTATION_GAP_S}
++
++
++def test_disconnect_cancels_a_running_sync() -> None:
++    made = world(sync=True)
++
++    async def body(made: World) -> None:
++        await made.settle(made.adapter.connect())
++        await made.clock.advance_and_settle(10.0)
++        task = made.adapter._sync_task
++        assert task is not None and not task.done()
++        await made.adapter.disconnect()
++        assert task.cancelled()
++        count = len(made.wire.client.http.mutations)
++        await made.clock.advance_and_settle(100.0)
++        assert len(made.wire.client.http.mutations) == count < 10
++
++    run(body, made)
++
++
++# -- send-only and media ------------------------------------------------------------------------
++
++
++def test_indus_send_opens_discord_send_only(
++    capsys: pytest.CaptureFixture[str], scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    secrets: Any = scope.secrets
++    secrets.set("DISCORD_BOT_TOKEN", fake_token())
++    write_settings(scope, "platforms:\n  discord:\n    command_sync: diff\n")
++    wire = DiscordWire(FakeChatPlatform("discord", max_len=MAX_LEN, bot_user_id="900"))
++    waiting = wire.platform.dm("200", "an inbound message nobody should take")
++    built: list[DiscordAdapter] = []
++
++    def factory(config: AdapterConfig) -> DiscordAdapter:
++        adapter = create_adapter(config, sdk=wire.sdk)
++        built.append(adapter)
++        return adapter
++
++    entry = PlatformEntry("discord", "Discord", factory, lambda: True)
++    registry = PlatformRegistry([entry])
++    real = send_command.build_adapter
++
++    def build(scope: Scope, name: str, settings: PlatformSettings, *_: Any) -> Any:
++        return real(scope, name, settings, registry)
++
++    monkeypatch.setattr(send_command, "ADAPTER_BUILDER", build)
++    ran = run_cli(capsys, scope, "send", "discord:300", "deploy done")
++    assert ran.code == 0, ran.err
++    (adapter,) = built
++    assert adapter.send_only and not adapter.connected
++    assert wire.platform.texts("300") == ["deploy done"]
++    assert wire.logins == 1 and wire.gateway_sessions == 0
++    assert wire.client.handlers == {} and wire.client.http.mutations == []
++    assert wire.platform.next_inbound() == waiting  # still waiting: nothing was consumed
++    assert wire.tokens == [fake_token()]
++
++
++def _cdn(handler: Callable[[httpx.Request], httpx.Response]) -> DiscordAdapter:
++    clock = FakeClock(START)
++    return DiscordAdapter(
++        clock=clock, settings=settings(), fetch_transport=httpx.MockTransport(handler)
++    )
++
++
++def test_the_media_fetcher_streams_discord_cdn_files_only(scope: Scope) -> None:
++    seen: list[str] = []
++
++    def handler(request: httpx.Request) -> httpx.Response:
++        seen.append(str(request.url))
++        return httpx.Response(200, content=b"OggS" + b"\x00" * 64)
++
++    adapter = _cdn(handler)
++
++    async def collect(ref: str) -> bytes:
++        return b"".join([part async for part in adapter.fetch_attachment(Attachment(ref=ref))])
++
++    url = "https://cdn.discordapp.com/attachments/1/2/voice-message.ogg"
++    assert asyncio.run(collect(url)).startswith(b"OggS") and seen == [url]
++    for bad in ("http://cdn.discordapp.com/a.ogg", "https://example.com/a.ogg", "/etc/passwd"):
++        with pytest.raises(ValueError):
++            asyncio.run(collect(bad))
++    assert seen == [url]
++
++    intake = MediaIntake(scope)
++    undo = adapter.register_fetchers(intake)
++    assert intake._fetchers["discord"] == adapter.fetch_attachment
++    undo()
++    assert "discord" not in intake._fetchers
++
++
++def test_a_cdn_error_status_fails_the_download() -> None:
++    adapter = _cdn(lambda request: httpx.Response(403))
++
++    async def collect() -> None:
++        async for _ in adapter.fetch_attachment(Attachment(ref="https://cdn.discordapp.com/x")):
++            pass
++
++    with pytest.raises(httpx.HTTPStatusError):
++        asyncio.run(collect())

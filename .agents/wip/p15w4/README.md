@@ -11,3 +11,15 @@
   Fix in `replies.final_reply_for` and `prompts._meta` for Slack without changing Discord's meaning.
 - Decisions: one workspace per adapter; one session per DM channel; edit over cap refused; sender splits; mpim = group;
   settings ignored_channels, reply_in_thread (default on), typing_status_text. Fetcher sends the bot token only to https *.slack.com.
+
+## w22-p15d.patch: P15-34 Discord (done)
+- Builder checks: gateway/contract/fakes/send 1087 passed / 43 skipped without discord.py; 1118 passed with it (drift rows
+  pass against the real lib); ruff, pyright, lint-imports, tooling.checks ok.
+- Extra `discord = ["discord.py==2.7.1"]` (MIT) + audioop-lts 0.2.2 (PSF-2.0, py3.13+). Re-lock.
+- Same send-only seam as Slack (`AdapterConfig.send_only`, send_command passes True): keep one copy.
+- Wiring: `register_fetchers(intake) -> undo` uncalled (suggest ExtrasPart on daemon.on_platform_up/down);
+  `DiscordAdapter.extra_commands` empty until the daemon passes plugin/skill command names.
+- Decisions: thread-open failure falls back to parent channel; backfill also on thread-opening mention, prepended to event
+  text; command typed with a mention gets no thread; discord.py loaded via importlib; no CommandTree.
+- Follow-ups: ACC-K13-1 per-platform dedupe review line; forum posts, forwarded content, username→id allowlist resolution,
+  missed-message recovery scan, reactions, voice (P3).
