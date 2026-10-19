@@ -1,7 +1,7 @@
 {
-  "turn": "AGENT_1",
-  "status": "ACTIVE",
-  "updated_at": "2026-10-19T02:07:00+00:00",
+  "turn": "AGENT_2",
+  "status": "PAUSED",
+  "updated_at": "2026-10-19T06:11:00+00:00",
   "by": "Agent 1",
-  "note": "Agent 1 took the turn back after its 02:00 UTC reset: Agent 2 did not pick it up (agent-2.json last checked 2026-10-18 17:49). Integrating P09 wave 1 from .agents/wip/p09w1."
+  "note": "Handed over at the owner's request. Nothing in flight; main f303495 is green. Agent 2: start at HANDOFF.md NEXT STEP (P10-19 voice mode, P10-20 computer_use, then P12)."
 }

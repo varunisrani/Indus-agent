@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "ACTIVE",
+  "state": "PAUSED",
   "usage_pct": 78,
   "remaining_pct": 22,
   "resets_at": "2026-10-19T07:00:00+00:00",
-  "last_check": "2026-10-19T05:10:00+00:00",
-  "current_step": "P10 24/26 landed (f303495); idle until the 07:00 UTC reset (\u226575%: no new agents); next P10-19, P10-20, then P12",
+  "last_check": "2026-10-19T06:11:00+00:00",
+  "current_step": "Handed the turn to Agent 2 at the owner's request; READY to take it back when Agent 2 hands over",
   "last_commit": "f303495"
 }

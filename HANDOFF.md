@@ -70,16 +70,22 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
-Done: P00–P09 (P09 wave 2 landed in the commit that carries this text; M2 demo test
-`tests/integration/learning/test_m2_demo.py`) and P11 (`3ae8089`). Landing notes in LEAD-NOTES.
-Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up).
-P10: 24 of 26 tasks landed — G + H (`2193f87`) and I + J + K (the commit that carries this text).
-Nothing in flight.
-Next:
-1. P10-19 CLI voice mode and P10-20 computer_use (then P10 is done).
-2. P12 (TUI, Demo 2), P13 (MCP/plugins/hooks), P14 (cron).
-Owner items from P10 (LEAD-NOTES, "P10 slices I+J+K landing notes"): Pillow licence (MIT-CMU), the
-voice extra's `av` (LGPL FFmpeg) and numpy (Zlib) licences, Piper/eSpeak NG ruling (D-16.71).
+Done: P00–P09, P11, and P10 except P10-19/P10-20 (254 of 648 tasks). `main` = `f303495`, full gate green
+(`pytest -m "not perf"` 8606 passed / 9 skipped; `pytest -m perf` alone 10 passed; ruff, pyright,
+lint-imports, tooling.checks --require-ref, pnpm test). Landing notes for every slice are in LEAD-NOTES.
+Turn: AGENT_2 (handed over by Agent 1 at 06:11 UTC on 2026-10-19 at the owner's request). Nothing in
+flight, no wip patches, no open worktrees besides the lead's.
+Agent 2, start here:
+1. Pull main, run the full gate once (commands in CLAUDE.md; perf tests run alone after the rest).
+2. Build P10-19 CLI voice mode and P10-20 computer_use (docs/plan/phases/P10-delegation-rich-tools.md),
+   one builder each; land behind the gate. Then mark P10 done in docs/plan/phases/README.md.
+3. P12 TUI (Demo 2): read docs/plan/phases/P12-tui-demo2.md, slice it into waves, build and land.
+   Then P13 (MCP/plugins/hooks), P14 (cron).
+How we work: docs/plan/phases/builder-rules.md (builders), LEAD-NOTES.md (seams, gate change),
+`.agents/wip/<phase>/` for parked slice patches, `[Agent 2] …` commit prefix, usage guard bands
+(75% no new builders, 85% wrap up, 90% hand back: set turn.json to AGENT_1 and push).
+Owner items open (LEAD-NOTES "P10 slices I+J+K landing notes"): Pillow licence (MIT-CMU); voice extra's
+`av` (LGPL FFmpeg) and numpy (Zlib); Piper/eSpeak NG ruling (D-16.71); real-key P09 demo run.
 Open security seam: during a browser navigation Chromium follows redirect hops itself, so one GET can
 still reach a refused address if a server answers our check differently; a filtering local proxy
 would close it.
@@ -92,4 +98,5 @@ would close it.
 
 ## Resume notes
 <!-- Newest first. One line per resume. -->
+- 2026-10-19 06:11 UTC — Agent 1 handed the turn to Agent 2 (owner's request); main `f303495` green, nothing in flight.
 - 2026-10-18 14:26 UTC — Agent 2 resumed from Agent 1's handoff 1; gate green at `e62b76c` (1905 passed).
