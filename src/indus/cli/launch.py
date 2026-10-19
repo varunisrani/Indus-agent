@@ -11,6 +11,8 @@ commands are wired).
 - ``on_resume``: what ``/resume`` and ``/branch`` put back (``resume.resume_session``: folder unless
   ``--no-restore-cwd`` / ``--in``, auto-approve, breadcrumb), the model the session was last
   switched to (``model_override`` or its launch record) and the recap;
+- the skill and bundle slash commands (``slash.skill_cmds``, P09-09/10) in
+  ``ctx.extensions.skill_commands``, and the banner's skill count;
 - the banner, the recap of a resumed session, the status bar's first values and the seeded ``-q``
   text, sent as typed once the prompt is up (no slash or ``!`` handling);
 - the status bar's source: the attached agent's route, its usage ledger (``Agent.usage``, P08-08:
@@ -61,8 +63,9 @@ def _echo(line: str) -> None:
 
 def build_context(launch: ReplLaunch, port: SessionPort | None = None) -> SlashContext:
     """The slash context of one chat (output goes to stdout until ``wire_slash`` binds it)."""
-    from indus.cli.slash.context import ReplState, SlashContext
+    from indus.cli.slash.context import Extensions, ReplState, SlashContext
     from indus.cli.slash.port import HostPort
+    from indus.cli.slash.skill_cmds import skill_commands
     from indus.protocol.methods import SessionCreateParams
     from indus.state import sessions
 
@@ -76,6 +79,7 @@ def build_context(launch: ReplLaunch, port: SessionPort | None = None) -> SlashC
         store=store,
         state=ReplState(toolsets=toolsets),
         create_params=SessionCreateParams(cwd=str(launch.cwd), toolsets=toolsets),
+        extensions=Extensions(skill_commands=skill_commands(launch.scope)),
     )
 
     def session_cwd() -> str | None:
@@ -142,7 +146,7 @@ def make_on_resume(
     return on_resume
 
 
-def _banner(launch: ReplLaunch, port: SessionPort) -> Any:
+def _banner(launch: ReplLaunch, port: SessionPort, skills: int = 0) -> Any:
     from pathlib import Path
 
     from indus import __version__
@@ -160,10 +164,22 @@ def _banner(launch: ReplLaunch, port: SessionPort) -> Any:
         backend=backend,
         cwd=launch.cwd,
         tool_count=tools,
+        skill_count=skills,
         session_title=launch.title or "",
         resumed=launch.resumed,
     )
     return banner(info, user_home=Path.home())
+
+
+def _skill_count(ctx: SlashContext) -> int:
+    """Skills runnable as slash commands (bundles not counted)."""
+    from indus.learning.skills.bundles import scan_bundles
+
+    try:
+        bundles = set(scan_bundles(ctx.scope.home))
+    except Exception:
+        bundles = set()
+    return sum(1 for name in ctx.extensions.skill_commands if name not in bundles)
 
 
 def status_from_agent(agent: Any) -> StatusSnapshot:
@@ -225,7 +241,7 @@ def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> 
         launch.session_id,
         scope=scope,
         options=options,
-        banner=_banner(launch, ctx.port),
+        banner=_banner(launch, ctx.port, _skill_count(ctx)),
         recap=shown_recap,
         slash_ctx=ctx,
         on_resume=make_on_resume(launch, ctx, link),

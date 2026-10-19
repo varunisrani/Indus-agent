@@ -618,17 +618,27 @@ Checked by `python -m tooling.checks traps`.
 - **R06.26** Multiplex secret reads must fail closed (if multiplexing is built)
   - Review: not yet planned (P00-guards)
 - **R07.1** Frozen memory snapshot vs live writes
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/memory/test_prompt_block.py::test_write_during_turn_one_keeps_prompt_bytes`
+  - `tests/unit/learning/memory/test_prompt_block.py::test_resume_after_restart_restores_block_bytes`
+  - `tests/integration/learning/test_chat_wiring.py::test_memory_write_runs_inline_and_leaves_the_prompt_frozen`
 - **R07.2** No auto-compaction; budget is checked on the batch result
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/memory/test_store.py::test_limit_counts_delimiters`
+  - `tests/unit/learning/memory/test_store.py::test_batch_trim_and_add_at_capacity`
+  - `tests/unit/learning/memory/test_tool.py::test_batch_remove_and_add_at_capacity`
+  - `tests/unit/learning/memory/test_tool.py::test_fourth_failure_is_terminal`
 - **R07.3** Whole-entry replace destroyed multi-fact entries
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/memory/test_store.py::test_patch_replaces_only_the_span`
+  - `tests/unit/learning/memory/test_tool.py::test_patch_replaces_only_the_span_in_a_multi_fact_entry`
 - **R07.4** Background review must not silently delete or rewrite memory
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/memory/test_tool.py::test_unattended_review_remove_is_staged`
+  - `tests/unit/learning/memory/test_tool.py::test_unattended_batch_with_patch_is_staged`
+  - `tests/unit/learning/memory/test_tool.py::test_staging_failure_denies`
+  - `tests/unit/learning/test_pending.py::test_edited_target_refuses_and_keeps_record`
 - **R07.5** Review fork recursion and cost
   - Review: not yet planned (P00-guards)
 - **R07.6** Curator jurisdiction is an explicit marker, never inferred
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/skills/test_usage.py::test_origin_per_context`
+  - Review: curator side (jurisdiction filter on `origin=agent`) lands with P09-18 (P09-18)
 - **R07.7** Curator defaults are inconsistent in the reference docs
   - Review: not yet planned (P00-guards)
 - **R07.8** Cron skills must not be archived from under a job
@@ -670,11 +680,19 @@ Checked by `python -m tooling.checks traps`.
 - **R07.26** Project skills are an injection vector
   - Review: not yet planned (P00-guards)
 - **R07.27** Same-name skills
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/skills/test_resolver.py::test_cross_tier_shadowing_is_the_same_for_every_consumer`
+  - `tests/unit/learning/skills/test_resolver.py::test_same_tier_duplicate_is_ambiguous`
+  - `tests/unit/learning/skills/test_resolver.py::test_identical_copies_resolve_to_shallowest`
 - **R07.28** Bundled skill updates vs user edits
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_edited_skill_kept_and_pristine_refreshed`
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_deleted_skill_stays_deleted`
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_runtime_caches_do_not_mark_modified`
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_existing_local_skill_kept`
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_reset_restore_recopies`
 - **R07.29** Skill index changes mid-session
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/skills/test_prompt_index.py::test_mid_session_add_and_remove`
+  - `tests/unit/learning/skills/test_prompt_index.py::test_compaction_rebuild_lists_new_skill`
+  - `tests/unit/learning/test_host.py::test_skills_delta_note_rides_the_next_user_message_once`
 - **R07.30** Reference doc drift
   - Review: not yet planned (P00-guards)
 - **R08.1** Attempt fencing on backend start

@@ -70,25 +70,19 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
-Done: P00–P08 (P08 wave 2 landed in the commit that carries this text) and P11 (`3ae8089`).
-Landing notes for both are in LEAD-NOTES.
+Done: P00–P08, P11 (`3ae8089`), P09 wave 1 (memory, pending-write gate, session_search, skills core,
+starter skills — landed in the commit that carries this text). Landing notes in LEAD-NOTES.
 Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up).
-In flight (Agent 1): P09 wave 1 integration (from `fb1204d`), and P09 wave 2 building in parallel on a
-local base = main + the three wave 1 patches applied raw: D = P09-11 skill_manage, P09-13 ledger,
-P09-24 CLI/slash; E = P09-14..17 review loop, /refine, /learn; F = P09-18..20 curator, P09-23 timeline.
-If you find the turn PAUSED, wave 2 slice patches will be in `.agents/wip/p09w2/` (base = that raw
-base, also saved there as a patch) — land wave 1 first.
-Also building (Agent 1, from `85cd8a9`): P10 wave 1 — G = P10-01..07 delegation, H = P10-08..11
-execute_code and kernels. Saved slices, if paused, in `.agents/wip/p10w1/`.
-Start here — P09 wave 1 is saved, not landed: `.agents/wip/p09w1/` holds three slice patches on base
-`29ddd7b` and a README with each slice's status and the integration list:
-- A (P09-01..04, P09-25 memory, pending-write gate, frozen block, session_search): done; host wiring
-  in `cli/runtime.agent_factory` still missing (MUST before landing) and the Compare step is open.
-- B (skills core): P09-05..09 and 12 done; P09-10 code without tests; P09-11 and P09-13 not started.
-- C (P09-21 seeding, P09-22 fifteen starter skills): done.
-Integrate A → B → C on a fresh worktree off `main`, run the full gate, land, then build what is left of
-P09 (11, 13, 10 tests, 14..20, 23, 24). Then P10 (delegation and rich tools), P12 (TUI), P13
-(MCP/plugins), P14 (cron).
+In flight (Agent 1):
+1. P09 wave 2 — three slices built on a raw base (main `fb1204d` + the wave 1 patches unchanged),
+   waiting to be integrated on top of landed wave 1: D = P09-11 skill_manage, P09-13 ledger, P09-24
+   CLI/slash; E = P09-14..17 review loop, /refine, /learn; F = P09-18..20 curator, P09-23 timeline.
+   If paused, their patches are in `.agents/wip/p09w2/` (all three add `cli/slash/learning_cmds.py` —
+   merge into one module; E and F both add `tools=` to AuxClient.call — keep one).
+2. P10 wave 1 building from `85cd8a9`: G = P10-01..07 delegation, H = P10-08..11 execute_code and
+   kernels. If paused, in `.agents/wip/p10w1/`.
+Next: P10 waves 2+ (browser, media, voice, computer use, MoA, /btw, /goal, /loop, /heartbeat), P12
+(TUI), P13 (MCP/plugins), P14 (cron).
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the

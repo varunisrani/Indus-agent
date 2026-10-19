@@ -513,9 +513,14 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/test_chat_select.py::test_launch_record_round_trip`
   - Review: --ignore-rules / --pass-session-id consumers in the prompt builder, plugins/MCP off for --safe-mode (P09, P13)
 - **ACC-F1-1** Two bounded memory stores (agent notes, user profile) shown in the prompt as a frozen snapshot each …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/memory/test_prompt_block.py::test_write_during_turn_one_keeps_prompt_bytes`
+  - `tests/unit/learning/memory/test_prompt_block.py::test_resume_after_restart_restores_block_bytes`
+  - `tests/integration/learning/test_chat_wiring.py::test_chat_turn_carries_learning_tools_and_frozen_memory`
 - **ACC-F2-1** `memory` tool: add / patch / remove / batch with over-limit guidance and a per-turn retry cap; no …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/memory/test_tool.py::test_patch_replaces_only_the_span_in_a_multi_fact_entry`
+  - `tests/unit/learning/memory/test_tool.py::test_batch_remove_and_add_at_capacity`
+  - `tests/unit/learning/memory/test_tool.py::test_fourth_failure_is_terminal`
+  - `tests/integration/learning/test_chat_wiring.py::test_memory_write_runs_inline_and_leaves_the_prompt_frozen`
 - **ACC-F5-1** Background review every N turns or tool iterations that saves memory and improves skills, under a …
   - Review: not yet planned (phase TBD)
 - **ACC-F6-1** `/refine [focus]` runs that review on demand
@@ -523,27 +528,46 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-F7-1** `/learn` turns a folder, URL, conversation or notes into a skill
   - Review: not yet planned (phase TBD)
 - **ACC-F10-1** Skill format: folder with `SKILL.md` frontmatter and support folders; visibility by OS, toolset …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_format.py::test_content_limit`
+  - `tests/unit/learning/skills/test_format.py::test_support_file_size`
+  - `tests/unit/learning/skills/test_format.py::test_visibility_table`
 - **ACC-F11-1** Skill discovery tiers (project, home, create dir, external dirs), duplicate rules and a disabled …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_resolver.py::test_cross_tier_shadowing_is_the_same_for_every_consumer`
+  - `tests/unit/learning/skills/test_resolver.py::test_disabled_hidden_and_refused`
 - **ACC-F13-1** Compact skills index in the prompt; added or removed skills announced once mid-session
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_prompt_index.py::test_golden_index`
+  - `tests/unit/learning/skills/test_prompt_index.py::test_mid_session_add_and_remove`
+  - `tests/unit/learning/test_host.py::test_skills_delta_note_rides_the_next_user_message_once`
 - **ACC-F14-1** `skills_list` / `skill_view` progressive disclosure
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_view_tools.py::test_list_cache_ttl`
+  - `tests/unit/learning/skills/test_view_tools.py::test_view_nested_support_file`
+  - `tests/unit/learning/skills/test_view_tools.py::test_escape_refused`
 - **ACC-F15-1** Every skill is a slash command (`/skill-name`, up to five stacked); `-s` preloads; auto-load list
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_invoke.py::test_stack_of_five`
+  - `tests/unit/learning/skills/test_invoke.py::test_auto_load_block_and_missing_warns_once`
+  - `tests/unit/cli/slash/test_skill_cmds.py::test_skills_and_bundles_become_commands`
+  - `tests/integration/learning/test_chat_wiring.py::test_skill_preload_flag_loads_the_skill_into_the_prompt`
 - **ACC-F16-1** `skill_manage` tool (create, patch, delete, write/remove support files, batch) with limits, locks …
   - Review: not yet planned (phase TBD)
 - **ACC-F21-1** Curator phase 1: idle-triggered aging of agent-made skills to stale then archive, pin, restore …
   - Review: not yet planned (phase TBD)
 - **ACC-F24-1** Per-skill usage counters (used, viewed, patched)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_usage.py::test_counters_and_times`
+  - `tests/unit/learning/skills/test_usage.py::test_two_processes_lose_no_increment`
 - **ACC-F28-1** Bundled skills seeded into the home with an origin-hash manifest; user edits never overwritten …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_seed_copies_packages_and_records_origins`
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_edited_skill_kept_and_pristine_refreshed`
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_opt_out_marker_stops_seeding`
+  - `tests/unit/cli/commands/test_profile.py::test_create_no_skills_opts_out`
 - **ACC-F29-1** Starter skill set authored by Indus from scratch; no reference skill text reused (lead default)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_starter_skills.py::test_exactly_the_starter_set`
+  - `tests/unit/learning/skills/test_starter_skills.py::test_frontmatter_valid`
+  - `tests/unit/learning/skills/test_starter_skills.py::test_lint_clean`
+  - `tests/unit/learning/skills/test_starter_skills.py::test_seeding_installs_exactly_the_starter_set`
 - **ACC-F31-1** `session_search` tool for recalling past conversations
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/test_session_search.py::test_discover_excludes_current_lineage`
+  - `tests/unit/learning/test_session_search.py::test_read_window_bounded_and_tool_output_clipped`
+  - `tests/unit/learning/test_session_search.py::test_secret_is_redacted`
 - **ACC-G1-1** Plugin manifest and discovery from bundled, user, project and entry-point sources; general plugins …
   - Review: not yet planned (phase TBD)
 - **ACC-G2-1** Plugin context API: tools, hooks, slash and CLI commands, skills → providers, platforms, context …

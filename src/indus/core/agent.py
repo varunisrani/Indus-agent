@@ -81,6 +81,7 @@ from indus.core.turn_state import (
     Hydrator,
     InlineExecutor,
     LoopOptions,
+    NoteSource,
     SessionRuntime,
     TurnResult,
     TurnState,
@@ -179,6 +180,8 @@ class AgentOptions:
     aux: AuxClient | None = None
     # Live credential pools (P08-12); a subagent gets its parent's. Default: the scope's.
     pools: PoolSet | None = None
+    # Host note sources the prologue runs before the user message (P09-07 skills delta).
+    note_sources: Sequence[NoteSource] = ()
 
 
 @dataclass
@@ -598,6 +601,7 @@ class Agent:
             on_continued=self._continued,
             # The smart approval judge asks the session's auxiliary model (P08-14).
             approval_judge=judge_from_aux(self.aux) if self.aux is not None else None,
+            note_sources=tuple(options.note_sources),
         )
         caller = self.caller
         self.fallback = FallbackChain(

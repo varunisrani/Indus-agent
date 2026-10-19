@@ -45,6 +45,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/indus"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# P09-21: the starter skills ship inside the package (bundled_sync.bundled_source).
+"skills" = "indus/_bundled_skills"
+
 [tool.uv]
 # 14-day age window (D-16.52): nothing uploaded after this instant is locked. Checked against
 # tooling/checks/pins_meta.json lock_date by the pins guard; bump both together.

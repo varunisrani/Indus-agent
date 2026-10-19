@@ -46,6 +46,10 @@ CORE_TOOLS: tuple[str, ...] = (
     "web_extract",
     "todo_list",
     "clarify",
+    "memory",
+    "session_search",
+    "skills_list",
+    "skill_view",
 )
 # Left out of the coding posture once those tools exist.
 NOT_FOR_CODING = frozenset({"image_generate", "text_to_speech", "cronjob_manage", "computer_use"})
@@ -79,6 +83,9 @@ _NAMED: dict[str, Toolset] = {
     "vision": _set("Look at and describe images", "vision_analyze"),
     "todo": _set("Plan and track multi-step work in the session", "todo_list"),
     "clarify": _set("Ask the user a question and wait for the answer", "clarify"),
+    "memory": _set("Save short facts that every later session should know", "memory"),
+    "session_search": _set("Look up earlier conversations of this profile", "session_search"),
+    "skills": _set("Find and open saved skills (tested procedures)", "skills_list", "skill_view"),
 }
 
 

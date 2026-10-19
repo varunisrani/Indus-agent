@@ -69,6 +69,29 @@ def test_decided_defaults() -> None:
         "abort_on_summary_failure": False,
         "idle_after_s": 0,
     }
+    # P09 slice A: memory stores and session search
+    assert d["memory"] == {
+        "notes_enabled": True,
+        "profile_enabled": True,
+        "notes_char_limit": 2200,
+        "profile_char_limit": 1375,
+        "write_approval": False,
+    }
+    assert d["session_search"] == {"summarize": False}
+    # P09 slice B (+ the skill write gate of P09-03, added at integration)
+    assert d["skills"] == {
+        "create_dir": "",
+        "external_dirs": [],
+        "disabled": [],
+        "platform_disabled": {},
+        "auto_load": [],
+        "template_vars": True,
+        "inline_shell": False,
+        "config": {},
+        "scan_agent_created": False,
+        "ledger_max_bytes": 5 * 1024 * 1024,
+        "write_approval": False,
+    }
     assert d["context"] == {"engine": "builtin"}
     assert d["fallback"] == {"min_switch_reset_s": 0.0}  # P08-13: always switch
     assert d["approvals"] == {

@@ -21,7 +21,17 @@ from tests.fakes.prompts import BACK, CANCEL, ScriptedDriver, scripted
 FAKE_KEY = "test" + "-key-" + "0123456789abcdef"
 MODELS = "https://openrouter.ai/api/v1/models"
 # the cli bundle's rows (vision is offered but not in the bundle)
-BUNDLE_TOOLS = ["clarify —", "file —", "search —", "terminal —", "todo —", "web —"]
+BUNDLE_TOOLS = [
+    "clarify —",
+    "file —",
+    "memory —",
+    "search —",
+    "session_search —",
+    "skills —",
+    "terminal —",
+    "todo —",
+    "web —",
+]
 
 
 def secrets_of(scope: Scope) -> SecretStore:

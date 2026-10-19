@@ -45,6 +45,7 @@ GOLDEN_ORDER = [
     "profile",
     "completion",
     "logs",
+    "bundles",
 ]
 
 SHARED_IMPORTS: dict[str, set[str]] = {"dump": {"status"}}

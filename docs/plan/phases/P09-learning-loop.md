@@ -156,8 +156,8 @@ On any failure, fix the cause and rerun from `uv sync --locked`. Never skip a te
 test, or hand-edit a golden prompt file without a note entry explaining the intended change.
 
 ## Compare checklist (reopen the reference after writing)
-- [ ] Memory: delimiter, limits, batch-final budget, retry cap 3, patch-span semantics, duplicate note, staging of unattended deletes match (R07.1–R07.4).
-- [ ] Memory snapshot frozen per session and restored on resume; threat placeholder only in snapshot.
+- [x] Memory: delimiter, limits, batch-final budget, retry cap 3, patch-span semantics, duplicate note, staging of unattended deletes match (R07.1–R07.4). (wave 1, lead at landing)
+- [x] Memory snapshot frozen per session and restored on resume; threat placeholder only in snapshot. (wave 1, lead at landing)
 - [ ] Skill limits (64 / 1,024 / 100,000 / 1 MiB), allowed support dirs, linter thresholds (60 refs, ~24k body).
 - [ ] Resolution: higher tier wins on every consumer; same-tier ambiguity error (R07.27).
 - [ ] Index 60-char clip, delta note once per change, no prompt rebuild (R07.29).

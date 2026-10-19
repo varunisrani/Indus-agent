@@ -100,6 +100,14 @@ def test_tool_guidance_only_for_loaded_tools(scope: Scope, tmp_path: Path) -> No
     assert texts.STEER_NOTE in text and texts.STEER_OPEN in text
 
 
+def test_memory_guidance_override(scope: Scope, tmp_path: Path) -> None:
+    tools = frozenset({"memory", "terminal"})
+    text = build(ctx(scope, tmp_path, tool_names=tools, memory_guidance="# Memory\nnarrow")).text
+    assert "# Memory\nnarrow" in text and texts.MEMORY_GUIDANCE not in text
+    text = build(ctx(scope, tmp_path, tool_names=tools, memory_guidance="")).text
+    assert "# Memory" not in text
+
+
 def test_task_and_parallel_switches(scope: Scope, tmp_path: Path) -> None:
     text = build(ctx(scope, tmp_path, tool_names=TOOLS)).text
     assert texts.TASK_COMPLETION in text and texts.PARALLEL_TOOLS in text
@@ -229,11 +237,12 @@ def test_volatile_tier_order(scope: Scope, tmp_path: Path) -> None:
             profile_snapshot="PROFILE-SLOT",
         )
     )
-    marks = ["SKILLS-SLOT", "MEMORY-SLOT", "PROFILE-SLOT", "Active Indus profile:"]
+    # P09-04: memory block (notes, then profile) before the skills index.
+    marks = ["MEMORY-SLOT", "PROFILE-SLOT", "SKILLS-SLOT", "Active Indus profile:"]
     marks += ["Conversation date:", texts.RUNTIME_HEADING]
     positions = [parts.volatile.index(mark) for mark in marks]
     assert positions == sorted(positions)
-    assert parts.volatile.startswith("SKILLS-SLOT")
+    assert parts.volatile.startswith("MEMORY-SLOT")
 
 
 def test_active_profile_line(isolated_home: Path, fake_clock: FakeClock, tmp_path: Path) -> None:

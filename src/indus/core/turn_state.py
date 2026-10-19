@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from indus.core.fallback import FallbackChain
     from indus.core.liveness import RunBudget
     from indus.core.model_call import ModelCaller
+    from indus.core.notes import NoteChannel
     from indus.core.prompt.builder import BuildContext
     from indus.core.prompt.lifecycle import PromptLifecycle
     from indus.foundation.clock import Clock
@@ -71,6 +72,10 @@ __all__ = [
 type EventSink = Callable[[EventBase], object]
 type InlineExecutor = Callable[[ToolCall, TurnState], Awaitable[ToolResult]]
 type Hydrator = Callable[[Sequence[TranscriptRow]], object]
+type NoteSource = Callable[[str, "BuildContext", "NoteChannel"], object]
+"""Called by the prologue once the turn's system prompt is known (built or restored) and before
+the staged notes are popped: ``(prompt text, build context, note channel)``. A host stages
+one-shot notes here (P09-07: the skills-index change note)."""
 
 
 class PersistFailed(Exception):
@@ -152,6 +157,8 @@ class SessionRuntime:
     fallback: FallbackChain | None = None
     # The smart approval judge (P08-14), offered to tools as ``approval_judge``; None: no judge.
     approval_judge: object = None
+    # Host note sources run by the prologue before the notes ride the user message (P09-07).
+    note_sources: Sequence[NoteSource] = ()
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

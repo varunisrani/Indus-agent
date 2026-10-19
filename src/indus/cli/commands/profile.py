@@ -306,6 +306,7 @@ class CloneReport:
     stripped: list[str] = field(default_factory=list[str])
     secrets_copied: int = 0
     warnings: list[str] = field(default_factory=list[str])
+    skills_seeded: int = 0
 
 
 @dataclass(frozen=True)
@@ -450,6 +451,7 @@ def create_profile(
     clone_from: str | None = None,
     clone_channels: bool = False,
     description: str | None = None,
+    no_skills: bool = False,
 ) -> CloneReport:
     root = scope.root
     pid = _canon(name)
@@ -493,6 +495,8 @@ def create_profile(
             report.stripped += [f".env {n}" for n in _strip_env(staging)]
             report.stripped += [f"setting {k}" for k in _strip_settings(staging, scope)]
         write_meta(staging, {"description": description.strip()} if description else {})
+        if no_skills:
+            _opt_out_of_bundled_skills(staging)
         _tidy(staging, scope)
         clear_tombstone(root, pid)
         os.rename(staging, target)
@@ -504,7 +508,28 @@ def create_profile(
         report.secrets_copied = copied
         for note in notes:
             (report.stripped if note.startswith("stored key ") else report.warnings).append(note)
+    elif not no_skills:
+        _seed_bundled_skills(target, scope, report)
     return report
+
+
+def _opt_out_of_bundled_skills(home: Path) -> None:
+    from indus.learning.skills.bundled_sync import set_opt_out
+
+    set_opt_out(home, True)
+
+
+def _seed_bundled_skills(home: Path, scope: Scope, report: CloneReport) -> None:
+    """Copy the shipped skills into a new profile; a failure is a warning, never fatal."""
+    from indus.learning.skills.bundled_sync import sync_bundled
+
+    try:
+        seeded = sync_bundled(home, env=scope.env)
+    except (OSError, ValueError) as exc:
+        report.warnings.append(f"bundled skills were not copied: {exc}")
+        return
+    report.skills_seeded = len(seeded.added)
+    report.warnings += [f"bundled skill not copied: {line}" for line in seeded.failed]
 
 
 # -- delete / rename ------------------------------------------------------------------------------
@@ -713,6 +738,7 @@ def show_command(ctx: click.Context, name: str) -> int:
 )
 @click.option("--no-alias", is_flag=True, help="Do not write an alias script.")
 @click.option("--description", default=None, help="What this profile is for.")
+@click.option("--no-skills", is_flag=True, help="Do not copy the bundled skills into it.")
 @click.pass_context
 def create_command(
     ctx: click.Context,
@@ -723,6 +749,7 @@ def create_command(
     clone_channels: bool,
     no_alias: bool,
     description: str | None,
+    no_skills: bool,
 ) -> int:
     scope = _root_scope(ctx)
 
@@ -735,9 +762,14 @@ def create_command(
             clone_from=clone_from,
             clone_channels=clone_channels,
             description=description,
+            no_skills=no_skills,
         )
         pid = report.home.name
         click.echo(f"Created profile '{pid}' at {report.home}")
+        if report.skills_seeded:
+            click.echo(f"Copied {report.skills_seeded} bundled skill(s).")
+        elif no_skills:
+            click.echo("Bundled skills are switched off for this profile.")
         if report.secrets_copied:
             click.echo(f"Copied {report.secrets_copied} stored key(s).")
         if report.stripped:

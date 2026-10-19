@@ -1,13 +1,16 @@
 """Scan text that will reach the model for prompt-injection and exfiltration shapes.
 
 ``scan(text, scope=...)`` returns finding ids, empty when nothing matched. It is advisory and
-cheap: only the first ``SCAN_LIMIT`` characters are looked at. Two scopes:
+cheap: only the first ``SCAN_LIMIT`` characters are looked at. Two pattern sets:
 
 - ``context`` — for text the user did not write and the model will treat as instructions
   (project context files, the persona file). Patterns stay anchored on attack behaviour, never on
   merely bossy English: "you must run the tests" is normal in an AGENTS.md.
 - ``strict`` — ``context`` plus persistence shapes that only make sense to block where a person
   approves the write (memory, skill installs).
+
+``memory`` and ``skill`` name the strict set for the learning loop's own writes (P09): a saved
+memory entry or an agent-written skill reaches every later session, so it gets the strict set.
 
 Invisible and bidirectional control characters are reported one id per code point
 (``invisible:U+200B``) and are checked on the raw text, because NFKC folding (used for the
@@ -22,7 +25,7 @@ from typing import Literal
 
 __all__ = ["HIDDEN_CHARACTERS", "SCAN_LIMIT", "Scope", "is_hidden_character", "scan"]
 
-Scope = Literal["context", "strict"]
+Scope = Literal["context", "strict", "memory", "skill"]
 
 SCAN_LIMIT = 100_000
 
@@ -136,9 +139,12 @@ def _compile(pairs: tuple[tuple[str, str], ...]) -> tuple[tuple[str, re.Pattern[
     return tuple((name, re.compile(source, flags)) for name, source in pairs)
 
 
+_STRICT = _compile(_CONTEXT_PATTERNS + _STRICT_PATTERNS)
 _COMPILED: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     "context": _compile(_CONTEXT_PATTERNS),
-    "strict": _compile(_CONTEXT_PATTERNS + _STRICT_PATTERNS),
+    "strict": _STRICT,
+    "memory": _STRICT,
+    "skill": _STRICT,
 }
 
 

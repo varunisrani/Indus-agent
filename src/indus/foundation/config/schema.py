@@ -508,9 +508,77 @@ class CompressionSection(_Section):
     )
 
 
+class MemorySection(_Section):
+    """The two built-in memory stores (P09-01..03)."""
+
+    notes_enabled: bool = Field(
+        default=True, description="keep the agent's own notes (memories/MEMORY.md)"
+    )
+    profile_enabled: bool = Field(
+        default=True, description="keep what the agent learns about you (memories/USER.md)"
+    )
+    notes_char_limit: int = Field(
+        default=2200, description="characters the notes store may hold, separators included"
+    )
+    profile_char_limit: int = Field(
+        default=1375, description="characters the user profile store may hold"
+    )
+    write_approval: bool = Field(
+        default=False,
+        description="ask before memory writes (interactive CLI) or stage them for "
+        "`indus memory approve`",
+    )
+
+
+class SessionSearchSection(_Section):
+    summarize: bool = Field(
+        default=False,
+        description="let the side-task model condense long session_search reads",
+    )
+
+
 class ContextSection(_Section):
     engine: str = Field(
         default="builtin", description="context engine; plugins never activate by themselves"
+    )
+
+
+class SkillsSection(_Section):
+    """Where skills come from and how they load (P09-06..13)."""
+
+    create_dir: str = Field(
+        default="", description="folder for skills the agent creates; empty = <home>/skills"
+    )
+    external_dirs: list[str] = Field(
+        default_factory=list, description="more skill folders, searched after your own (~, ${VAR})"
+    )
+    disabled: list[str] = Field(
+        default_factory=list, description="skills hidden everywhere and refused when viewed"
+    )
+    platform_disabled: dict[str, list[str]] = Field(
+        default_factory=dict, description="per surface (cli, telegram, ...): more hidden skills"
+    )
+    auto_load: list[str] = Field(
+        default_factory=list, description="skills loaded in full into every new session"
+    )
+    template_vars: bool = Field(
+        default=True, description="replace ${INDUS_SKILL_DIR} / ${INDUS_SESSION_ID} in skills"
+    )
+    inline_shell: bool = Field(
+        default=False, description="run !`command` snippets in skills when they load (10 s each)"
+    )
+    config: dict[str, Any] = Field(
+        default_factory=dict, description="values for settings that skills declare"
+    )
+    scan_agent_created: bool = Field(
+        default=False, description="scan skills the agent writes with the content scanner"
+    )
+    ledger_max_bytes: int = Field(
+        default=5 * 1024 * 1024, description="size of the skill change ledger before it is trimmed"
+    )
+    write_approval: bool = Field(
+        default=False,
+        description="hold every skill write the agent makes as a pending change you approve",
     )
 
 
@@ -612,6 +680,15 @@ class ConfigModel(BaseModel):
     )
     worktrees: WorktreesSection = Field(
         default_factory=WorktreesSection, description="session worktrees (indus -w)"
+    )
+    memory: MemorySection = Field(
+        default_factory=MemorySection, description="what the agent remembers between sessions"
+    )
+    session_search: SessionSearchSection = Field(
+        default_factory=SessionSearchSection, description="recalling earlier conversations"
+    )
+    skills: SkillsSection = Field(
+        default_factory=SkillsSection, description="skill folders and loading"
     )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 

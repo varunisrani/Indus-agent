@@ -97,6 +97,7 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "Print a shell completion script (bash, zsh or fish).",
     ),
     ("logs", "indus.cli.commands.logs:logs_command", "Show and follow the log files."),
+    ("bundles", "indus.cli.commands.bundles:bundles_group", "Group skills into one slash command."),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""

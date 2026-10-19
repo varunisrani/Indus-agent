@@ -217,6 +217,26 @@ def test_failed_clone_leaves_nothing(
     assert sorted(p.name for p in (root.home / "profiles").iterdir()) == []
 
 
+def test_create_seeds_bundled_skills(capsys: pytest.CaptureFixture[str], root: Scope) -> None:
+    from indus.learning.skills.bundled_sync import read_manifest
+
+    ran = run_cli(capsys, root, "profile", "create", "work", "--no-alias")
+    assert ran.code == 0, ran.err
+    work = root.home / "profiles" / "work"
+    assert (work / "skills" / "indus" / "indus-guide" / "SKILL.md").is_file()
+    assert "indus-guide" in read_manifest(work)
+    assert "bundled skill(s)" in ran.out
+
+
+def test_create_no_skills_opts_out(capsys: pytest.CaptureFixture[str], root: Scope) -> None:
+    ran = run_cli(capsys, root, "profile", "create", "bare", "--no-skills", "--no-alias")
+    assert ran.code == 0, ran.err
+    bare = root.home / "profiles" / "bare"
+    assert (bare / ".no-bundled-skills").is_file()
+    assert not list(bare.rglob("SKILL.md"))
+    assert "switched off" in ran.out
+
+
 def test_create_refusals(capsys: pytest.CaptureFixture[str], root: Scope) -> None:
     assert run_cli(capsys, root, "profile", "create", "default", "--no-alias").code == 1
     assert run_cli(capsys, root, "profile", "create", "Bad Name!", "--no-alias").code == 1

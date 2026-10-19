@@ -195,6 +195,11 @@ async def run_prologue(state: TurnState) -> None:
         except Exception as exc:
             raise PersistFailed(f"could not create the session row: {exc}") from exc
 
+    for source in runtime.note_sources:
+        try:
+            source(state.system_prompt, ctx, runtime.prompts.notes)
+        except Exception:
+            log.warning("a host note source failed; its note is skipped", exc_info=True)
     state.add(_user_row(state, runtime.prompts.notes.pop()))
     state.user_index = len(state.rows) - 1
     await state.flush()

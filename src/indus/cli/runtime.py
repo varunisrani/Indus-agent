@@ -14,7 +14,12 @@ here (P05 wave 2 notes):
   first exchange and every agent binds it to its own route for compression summaries;
 - the backends' questions about sessions (P11): process receipts follow the compression lineage
   of this run's store, and the Docker orphan sweep asks it whether a session is over
-  (``service.terminal_host``).
+  (``service.terminal_host``);
+- the learning loop (P09, ``learning.host``): each agent gets a registry with the learning tools,
+  inline executors for the selected ``memory`` / ``session_search`` only, the prompt builder that
+  adds the frozen memory block, the skills index and the ``skills.auto_load`` / ``-s`` preload
+  block, and the skills-index change note; ``session_search`` gets the agent's bound auxiliary
+  client once the agent is open.
 """
 
 from __future__ import annotations
@@ -30,10 +35,12 @@ from indus.cli.session_select import LAUNCH_KEY, LaunchPolicy, workspace_key
 from indus.core.agent import Agent, AgentOptions
 from indus.core.events import EventSink
 from indus.core.persist import StateStore
+from indus.core.prompt.lifecycle import SessionPrompts
 from indus.core.turn_state import LoopOptions
 from indus.foundation.config import schema
 from indus.foundation.config.loader import ConfigView, config_path
 from indus.foundation.scope import Scope
+from indus.learning import host as learning_host
 from indus.providers.auxiliary import AuxClient
 from indus.providers.profile import REASONING_LEVELS
 from indus.providers.route import RuntimeRoute, resolve
@@ -42,6 +49,7 @@ from indus.service.broker import ServerRequestBroker
 from indus.service.host_inprocess import InProcessHost
 from indus.service.session_service import AgentFactory, SessionService
 from indus.state.registry import StoreHandle
+from indus.tools import toolsets
 from indus.tools.builtin import terminal
 
 __all__ = [
@@ -58,6 +66,7 @@ __all__ = [
     "scope_for",
     "shutdown_terminal",
     "toolset_selection",
+    "with_learning",
 ]
 
 log = logging.getLogger(__name__)
@@ -118,7 +127,49 @@ def toolset_selection(policy: LaunchPolicy, scope: Scope | None = None) -> list[
     return list(DEFAULT_TOOLSETS)
 
 
-def agent_factory(scope: Scope, route: RuntimeRoute, *, run_context: str) -> AgentFactory:
+def with_learning(
+    scope: Scope,
+    options: AgentOptions,
+    selection: Sequence[str] | None,
+    *,
+    session_id: str,
+    preload: Sequence[str] = (),
+) -> tuple[AgentOptions, learning_host.SessionLearning]:
+    """``options`` with the learning loop wired in (see the module notes)."""
+    registry = options.registry or learning_host.tool_registry(scope.clock)
+    chosen = toolsets.select(
+        selection,
+        options.disabled_toolsets,
+        registry=registry,
+        scope=scope,
+        platform=options.platform,
+    )
+    prompt_store = options.prompt_store
+    if prompt_store is None and isinstance(options.store, StateStore):
+        prompt_store = SessionPrompts(options.store.handle)
+    learning = learning_host.wire_session(
+        scope,
+        chosen.tools,
+        session_id=session_id,
+        prompt_store=prompt_store,
+        preload=preload,
+        registry=registry,
+        inner=options.builder,
+    )
+    wired = replace(
+        options,
+        registry=registry,
+        prompt_store=prompt_store,
+        builder=learning.builder,
+        inline={**learning.inline, **options.inline},
+        note_sources=(*options.note_sources, *learning.note_sources),
+    )
+    return wired, learning
+
+
+def agent_factory(
+    scope: Scope, route: RuntimeRoute, *, run_context: str, preload: Sequence[str] = ()
+) -> AgentFactory:
     """Builds each session's agent and wires the host seams (see the module notes)."""
 
     async def build(
@@ -133,9 +184,13 @@ def agent_factory(scope: Scope, route: RuntimeRoute, *, run_context: str) -> Age
         if isinstance(model, str) and model and model != route.model:
             chosen = replace(route, model=model)
         full = replace(options, session_id=session_id, broker=broker)
+        full, learning = with_learning(
+            scope, full, selection, session_id=session_id, preload=preload
+        )
         agent = await Agent.start(scope, chosen, selection, full, sink)
         agent.runtime.environments = terminal.runtime().environments
         agent.runtime.run_context = run_context
+        learning.bind_aux(agent.aux)
         return agent
 
     return build
@@ -204,7 +259,12 @@ def build_service(spec: ServiceSpec) -> SessionService:
         store=store,
         answerable_kinds=spec.answerable_kinds,
         owner=spec.source,
-        agent_factory=agent_factory(spec.scope, spec.route, run_context=spec.run_context),
+        agent_factory=agent_factory(
+            spec.scope,
+            spec.route,
+            run_context=spec.run_context,
+            preload=spec.policy.skills,
+        ),
         aux=aux,
     )
 

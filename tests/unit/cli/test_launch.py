@@ -129,6 +129,21 @@ def test_resumed_launch_shows_the_recap(scope: Scope, store: StoreHandle, tmp_pa
     assert run.kwargs["options"].title == "demo"
 
 
+def test_skill_commands_and_banner_count(scope: Scope, store: StoreHandle, tmp_path: Path) -> None:
+    """P09-09: every visible skill is a slash command; the banner counts them."""
+    for name in ("brew-tea", "fold-map"):
+        folder = scope.home / "skills" / name
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: about {name}\n---\n\nBody.\n", encoding="utf-8"
+        )
+    run = Captured()
+    launch_mod.run_launch(make_launch(scope, store, tmp_path), run=run)
+    ctx = run.kwargs["slash_ctx"]
+    assert set(ctx.extensions.skill_commands) == {"brew-tea", "fold-map"}
+    assert "2 skills" in plain(run.kwargs["banner"])
+
+
 def test_session_cwd_reads_the_row(scope: Scope, store: StoreHandle, tmp_path: Path) -> None:
     sessions.create(store, SESSION, "cli", cwd=str(tmp_path / "proj"))
     ctx = launch_mod.build_context(make_launch(scope, store, tmp_path), FakePort())

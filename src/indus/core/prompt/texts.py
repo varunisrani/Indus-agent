@@ -21,7 +21,8 @@ DEFAULT_IDENTITY = (
     "way, and go into depth when the user asks for it or the stakes call for it."
 )
 
-HELP_SKILL_NAME = "indus-agent"
+HELP_SKILL_NAME = "indus-guide"
+"""The bundled skill about Indus itself (``skills/indus/indus-guide``, P09-22)."""
 
 HELP_POINTER = (
     "You are running inside Indus Agent. When the user asks how to install, configure, extend or "

@@ -8,8 +8,9 @@ likely to change to the most likely, so a longest-prefix provider cache keeps as
   no workspace snapshot, the workspace guidance and the platform hint;
 - **context**: the caller's system text, project context files, then anything naming the current
   worktree (the snapshot and the trailing guidance after it);
-- **volatile**: skills index, memory snapshot, user-profile snapshot, the active-profile line, the
-  date block and finally the runtime block between ``RUNTIME_HEADING`` and ``RUNTIME_END``.
+- **volatile**: memory snapshot, user-profile snapshot, skills index (P09-04 order), the
+  active-profile line, the date block and finally the runtime block between ``RUNTIME_HEADING``
+  and ``RUNTIME_END``.
 
 The prompt is built once per conversation; ``lifecycle.PromptLifecycle`` decides when. The date
 block carries no time of day so a prompt built in the morning is still the same bytes at night.
@@ -123,6 +124,8 @@ class BuildContext:
     skills_index: str = ""
     memory_snapshot: str = ""
     profile_snapshot: str = ""
+    # The memory tool's guidance for this session (P09-04): None = the stock text, "" = none.
+    memory_guidance: str | None = None
     started_at: datetime | None = None
     runtime: RuntimeInfo | None = None
 
@@ -229,13 +232,13 @@ def _help_pointer(tool_names: frozenset[str], skills_index: str) -> str:
     return texts.HELP_POINTER
 
 
-def _tool_guidance(tool_names: frozenset[str]) -> list[str]:
+def _tool_guidance(tool_names: frozenset[str], memory: str | None = None) -> list[str]:
     guidance: list[tuple[str, str]] = [
-        ("memory", texts.MEMORY_GUIDANCE),
+        ("memory", texts.MEMORY_GUIDANCE if memory is None else memory),
         ("session_search", texts.SESSION_SEARCH_GUIDANCE),
         ("skill_manage", texts.SKILL_WRITING_GUIDANCE),
     ]
-    return [text for tool, text in guidance if tool in tool_names]
+    return [text for tool, text in guidance if tool in tool_names and text.strip()]
 
 
 # -- volatile pieces ------------------------------------------------------------------------------
@@ -368,7 +371,7 @@ class PromptBuilder:
                 stable.append(texts.TASK_COMPLETION)
             if _switch(scope, PARALLEL_TOOLS_KEY):
                 stable.append(texts.PARALLEL_TOOLS)
-            stable.extend(_tool_guidance(tools))
+            stable.extend(_tool_guidance(tools, ctx.memory_guidance))
             stable.append(texts.STEER_NOTE)
             if model_gate(_setting(scope, ACT_GATE_KEY), ctx.model, ACT_FAMILIES):
                 stable.append(texts.ACT_GUIDANCE)
@@ -396,10 +399,11 @@ class PromptBuilder:
             stable.extend(trailing)
 
         runtime = ctx.runtime or local_runtime(cwd, scope.env)
+        # P09-04: the frozen memory block (notes, then user profile) comes before the skills index.
         volatile = [
-            ctx.skills_index,
             ctx.memory_snapshot,
             ctx.profile_snapshot,
+            ctx.skills_index,
             _active_profile_line(scope),
             date_block(ctx),
             runtime_block(runtime),

@@ -83,6 +83,12 @@ commands:
   profile alias: 2
   completion: 0           # bash by default
   logs: 1                 # no log file yet
+  bundles: 2              # a group with no default action prints its help
+  bundles list: 0         # says there are no bundles yet
+  bundles show: 2
+  bundles create: 2
+  bundles delete: 2
+  bundles reload: 0
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one
@@ -91,3 +97,6 @@ with_arguments:
   import missing.zip: 1
   config set agent.max_turns: 2
   logs -f: 1
+  bundles create release: 2       # no --skill and no terminal to ask for the skills
+  bundles delete no-such-bundle: 1
+  bundles show no-such-bundle: 1
