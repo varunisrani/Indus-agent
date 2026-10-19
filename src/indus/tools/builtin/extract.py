@@ -286,8 +286,8 @@ def _gap_note(empty: list[int], total: int) -> str:
 
 def _pdf(data: bytes, clock: Clock) -> str:
     try:
-        from pypdf import PdfReader
-        from pypdf.errors import PdfReadError
+        from pypdf import PdfReader  # pyright: ignore[reportMissingImports] — optional extra
+        from pypdf.errors import PdfReadError  # pyright: ignore[reportMissingImports]
     except ImportError:
         raise _missing("PDF", "pypdf") from None
     try:
@@ -329,8 +329,8 @@ def _pdf(data: bytes, clock: Clock) -> str:
 
 def _docx(data: bytes) -> str:
     try:
-        import docx
-        from docx.table import Table
+        import docx  # pyright: ignore[reportMissingImports] — optional extra
+        from docx.table import Table  # pyright: ignore[reportMissingImports]
     except ImportError:
         raise _missing("Word (.docx)", "python-docx") from None
     try:
@@ -351,7 +351,7 @@ def _docx(data: bytes) -> str:
 
 def _xlsx(data: bytes) -> str:
     try:
-        import openpyxl
+        import openpyxl  # pyright: ignore[reportMissingModuleSource]
     except ImportError:
         raise _missing("Excel (.xlsx)", "openpyxl") from None
     try:

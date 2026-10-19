@@ -211,7 +211,12 @@ def test_hint_reaches_the_result(tmp_path: Path) -> None:
     assert "importable from indus_tools here: read_file." in result["hint"]
 
 
-def test_golden_description_for_the_cli_toolset(scope: Any) -> None:
+def test_golden_description_for_the_cli_toolset(
+    scope: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The golden lists web_search, which needs the keyless backend of the `web` extra; CI installs
+    # no extras, so the description is rendered as if it were present.
+    monkeypatch.setattr("indus.tools.builtin.web.providers._ddgs_installed", lambda: True)
     registry = ToolRegistry()
     load_builtins(registry)
     selection = toolsets.select(["indus-cli"], registry=registry, scope=scope).tools

@@ -150,13 +150,23 @@ def tool_names(rig: Rig, scope: Scope) -> set[str]:
 # -- availability ---------------------------------------------------------------------------------
 
 
-def test_no_cdp_endpoint_means_no_browser_cdp_in_the_tool_array(rig: Rig, scope: Scope) -> None:
+@pytest.fixture
+def browser_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Availability is judged as if the browser extra were installed (CI installs no extras)."""
+    monkeypatch.setattr("indus.tools.builtin.browser.playwright_available", lambda: True)
+
+
+def test_no_cdp_endpoint_means_no_browser_cdp_in_the_tool_array(
+    rig: Rig, scope: Scope, browser_extra: None
+) -> None:
     names = tool_names(rig, scope)
     assert "browser_cdp" not in names
     assert {"browser_navigate", "browser_dialog", "browser_vision"} <= names
 
 
-def test_a_live_endpoint_brings_browser_cdp(rig: Rig, tmp_path: Path, devtools: str) -> None:
+def test_a_live_endpoint_brings_browser_cdp(
+    rig: Rig, tmp_path: Path, devtools: str, browser_extra: None
+) -> None:
     scope = make_scope_for(tmp_path, rig.clock, {"browser": {"cdp_url": devtools}}, name="cdp")
     assert endpoint_live(devtools)
     assert "browser_cdp" in tool_names(rig, scope)

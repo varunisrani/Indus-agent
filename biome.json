@@ -12,6 +12,8 @@
       "!**/node_modules",
       "!packages/protocol/src/generated",
       "!tests/fixtures/captures",
+      "!tests/fixtures/web",
+      "!tests/golden",
       "!tooling"
     ]
   },

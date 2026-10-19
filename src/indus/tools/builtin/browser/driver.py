@@ -33,7 +33,7 @@ from indus.tools.builtin.browser.guard import RequestGate, RequestGuard
 from indus.tools.builtin.browser.snapshot import IMAGES_JS, LABELS_JS, OUTLINE_JS, UNLABEL_JS
 
 if TYPE_CHECKING:
-    from playwright.async_api import (
+    from playwright.async_api import (  # pyright: ignore[reportMissingImports] — optional extra
         Browser,
         BrowserContext,
         CDPSession,
@@ -306,6 +306,7 @@ class _PlaywrightPage:
             if self._page_cdp is None:
                 self._page_cdp = await self.context.new_cdp_session(self.page)
             session = self._page_cdp
+        assert session is not None
         answer = await session.send(method, dict(params))
         return dict(answer) if isinstance(answer, Mapping) else {"value": answer}
 
@@ -439,7 +440,9 @@ class PlaywrightDriver:
         async with self._lock:
             if self._playwright is None:
                 try:
-                    from playwright.async_api import async_playwright
+                    from playwright.async_api import (  # pyright: ignore[reportMissingImports]
+                        async_playwright,
+                    )
                 except ImportError as exc:
                     raise PlaywrightMissing() from exc
                 self._playwright = await async_playwright().start()
