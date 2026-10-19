@@ -73,3 +73,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 18:37 UTC | 6% | 94% | 22:00 UTC | P15 W1..W4 restarted (cancelled at 17:11 by an interrupt; no work had been written) |
 | 2026-10-19 19:02 UTC | 25% | 75% | 22:00 UTC | P15 W1..W4 building (files changing: 20/7/10/22) |
 | 2026-10-19 19:15 UTC | 30% | 70% | 22:00 UTC | P15 W1 saved; W2-W5 building |
+| 2026-10-19 19:25 UTC | 34% | 66% | 22:00 UTC | P15 W1/W3/W4 integrating; W2, W5 building |

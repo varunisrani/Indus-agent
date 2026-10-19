@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 30,
-  "remaining_pct": 70,
+  "usage_pct": 34,
+  "remaining_pct": 66,
   "resets_at": "2026-10-19T22:00:00+00:00",
-  "last_check": "2026-10-19T19:15:00+00:00",
-  "current_step": "P15: W1 saved; W2, W3, W4, W5 building",
+  "last_check": "2026-10-19T19:25:00+00:00",
+  "current_step": "P15 W1/W3/W4 integrating (verify2); W2, W5 building",
   "last_commit": "42a852e"
 }
