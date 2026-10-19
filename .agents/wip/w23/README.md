@@ -21,3 +21,18 @@ E1 (P16-01 HTTP listener kit) is being landed alone by the lead (D-16.350..354).
   request.settled{withdrawn}; undeliverable → RequestUnsupported; evicted-session counters kept for daemon life.
 - Follow-ups: redirect not fenced; batch clarify locks + per-actor respond auth (P17-13/14); hard-interrupt of subagents
   in P17-08 TurnControls; book.session_id must follow compaction child ids (P17-08).
+
+## w23-k1.patch: P17-01..04 (runtime ledger, admissions, durable turn lease, liveness watchdog) — done
+- Builder checks: state/service/integration-service/layers/errors/protocol/contract-gateway 1503 passed / 23 skipped;
+  ruff, pyright, lint-imports, tooling.checks ok. No new deps. No stand-ins.
+- Shared edits: state/schema.py (4 runtime_* tables + indexes; new turn_leases columns), state/deletion.py (retire
+  sessions), foundation/errors.py (runtime.* codes), session_lock.py docstring (superseded, D-16.69), traps/ACC rows
+  (ACC-A63-1..3, ACC-B25-1..2).
+- Wiring left for P17-08/18/22: SessionService takes the durable lease (acquire with claim generation or None for --local;
+  reload when HeldLease.waited; held.start(on_lost=...) → hard interrupt; release in finally); P17-08 binds the admission
+  runner (ticket.bind, touch/observe_event, waiting=, stop_reason → turn.done); P17-22 drain gate + resolve_unknown.
+- Decisions: operator discard settles `discarded`; session row need not exist before admit; lease timeout → failed
+  `lease_timeout`; `stalled` carried as failure reason of interrupted_by_system; retirement markers never pruned; lease
+  timings are constants.
+- Follow-ups: runtime.* codes onto protocol table (P17-25); backups still include ledger tables (R03.21 says exclude);
+  rehoming queued input on automatic reset; a worker meeting a refusing gate exits (drain-ender restarts it).
