@@ -80,3 +80,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-19 20:21 UTC | 66% | 34% | 22:00 UTC | P15 w2-3 integrating (W1-W5); P21+P22 integrating; builders done; adapters held until P15 daemon lands
 2026-10-19 20:41 UTC | 71% | 29% | 22:00 UTC | both integrators in gate runs (verify2 149 files, verify3 66); no new agents
 2026-10-19 20:59 UTC | 73% | 27% | 22:00 UTC | P15-19..32 landed (d8eb3c0); P21/P22 rest rebased, lead running combined gate in verify3; no agents
+2026-10-19 21:16 UTC | 74% | 26% | 22:00 UTC | P21+P22 landed (6f04798), all green; adapters T/D/S held until after the 22:00 reset
