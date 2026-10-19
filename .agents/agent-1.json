@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "ACTIVE",
-  "usage_pct": 81,
-  "remaining_pct": 19,
+  "state": "WRAPPING_UP",
+  "usage_pct": 84,
+  "remaining_pct": 16,
   "resets_at": "2026-10-19T02:00:00+00:00",
-  "last_check": "2026-10-19T00:22:00+00:00",
-  "current_step": "P08 w2 landed (29ddd7b); P09 wave 1 building (A memory, B skills, C starter skills)",
+  "last_check": "2026-10-19T00:29:00+00:00",
+  "current_step": "P09 w1: C saved; A and B told to wrap up; hand-off to Agent 2 at 90%",
   "last_commit": "29ddd7b"
 }
