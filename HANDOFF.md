@@ -78,11 +78,10 @@ In flight:
 - Wave 22: T/D/S builders DONE (P15-33..35); integrator in scratchpad verify4 merging them and building Demo 3
   (P15-36), brief `.agents/wip/p15w4/integrator-brief.md` (lead rulings: one send-only shape, one fetcher shape,
   Telegram webhook binds loopback by default; D-16.330 onward). Patches + README in `.agents/wip/p15w4/`.
-- Wave 23 building from `78be7b3` (started 22:33 UTC), brief `.agents/wip/w23/brief.md`: E1 = P16-01 HTTP
-  listener kit; E2 = P16-06 Matrix + P16-08 Mattermost; E3 = P16-05 Signal + P16-09 Email; K1 = P17-01..04
-  (runtime ledger, admission, turn lease, watchdog); K2 = P17-05..07 (generation fences, event log/replay,
-  server-request re-delivery). Worktrees scratchpad wt-w23{e1,e2,e3,k1,k2}. If paused, patches go in
-  `.agents/wip/w23/`.
+- Wave 23 (from `78be7b3`, brief `.agents/wip/w23/brief.md`): E1 (P16-01 kit) done, lead landing it (verify5,
+  D-16.350..354); K1 (P17-01..04) + K2 (P17-05..07) done, integrator in scratchpad verify6 (brief
+  `.agents/wip/w23/k-integrator-brief.md`, D-16.360..379); E2 (P16-06 Matrix + 08 Mattermost) and E3 (P16-05 Signal +
+  09 Email) building in scratchpad wt-w23e2 / wt-w23e3. Patches + README in `.agents/wip/w23/`.
 - Last landings: P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
   landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
