@@ -79,7 +79,7 @@ N3 = P13-18, 19, 21..23 and N4 = P13-25..28 being integrated in verify2 (patches
 Also building (Agent 1, from `adaceac`): P14 cron — C1 = P14-01..06 + 17 (grammar, next run, store,
 ledger, health, due detection, notepad), C2 = P14-07..12 (ticker, preflight, scripts, prompt, runner,
 classification), C3 = P14-13..16, 18, 19 (delivery, bookkeeping, incidents, monitor, tool, CLI). If
-paused, patches in `.agents/wip/p14/`. C1 and C3 DONE (patches there); C2 building.
+paused, patches in `.agents/wip/p14/`. C1, C2, C3 DONE (patches there); integrating in verify3.
 Builder rules: `docs/plan/phases/builder-rules.md`; read LEAD-NOTES landing
 notes for waves 7–10 first (every seam and follow-up is there). Nothing in flight, `.agents/wip/` empty.
 Gate (CLAUDE.md): note CI installs **no optional extras** — keep optional imports pyright-ignored and
