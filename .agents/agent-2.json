@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 56,
-  "remaining_pct": 44,
+  "usage_pct": 67,
+  "remaining_pct": 33,
   "resets_at": "2026-10-19T11:00:00+00:00",
-  "last_check": "2026-10-19T09:06:59+00:00",
-  "current_step": "P12-27/32 landed (c66c233); P12-33 Demo 2 building; then P13",
+  "last_check": "2026-10-19T09:24:35+00:00",
+  "current_step": "P12-33 Demo 2 merged, full gate running; P13 wave 1 (M1 MCP core, M2 plugins+hooks, M3 scanner+memory providers) building; no new builders",
   "last_commit": "c66c233"
 }
