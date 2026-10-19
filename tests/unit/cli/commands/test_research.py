@@ -1,4 +1,4 @@
-"""P22-09: ``indus research`` (batch flags, distributions, the later verbs)."""
+"""P22-09: ``indus research`` (batch flags, distributions; the P22-11..15 verbs answer)."""
 
 from __future__ import annotations
 
@@ -155,9 +155,9 @@ def test_one_distribution_and_an_unknown_one(
 
 
 @pytest.mark.parametrize("verb", ["compress", "swe", "sample"])
-def test_later_verbs_say_not_yet(
+def test_built_verbs_without_arguments_are_usage_errors(
     capsys: pytest.CaptureFixture[str], scope: Scope, verb: str
 ) -> None:
-    ran = run_cli(capsys, scope, "research", verb, "anything", "--flag")
-    assert ran.code == 1
-    assert "not available yet" in ran.err
+    ran = run_cli(capsys, scope, "research", verb)
+    assert ran.code == 2
+    assert "not available yet" not in ran.err

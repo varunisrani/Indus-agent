@@ -4,9 +4,11 @@ A pool process runs whole batches, one prompt after another. For each prompt not
 
 1. a row naming a container image, with ``terminal.backend: docker``, has its image checked
    locally (10 s) and pulled when absent (600 s) **before any model call**; a failed pull is a
-   failure result with the first 500 characters of the error. The per-task override (task id
-   ``task_<index>``) then goes through ``register_image``; per-task backend overrides (P21-14) do
-   not exist yet, so the default hook refuses and image rows fail without a model call;
+   failure result with the first 500 characters of the error. The row's image and cwd are then
+   registered as the per-task override of task ``task_<index>`` (P21-14,
+   ``backends.task_overrides``): the conversation's session is bound to that task, so its
+   terminal and file tools get their own sandbox; the task's environment is released and the
+   override cleared when the prompt ends;
 2. its toolsets are sampled from the distribution with the prompt's own RNG (P22-02);
 3. a fresh in-process agent runs one conversation (``SessionAgentRunner``): a ``SessionService``
    over a ``MemoryStore`` (nothing lands in the profile's session store), built-in tools only (no
@@ -41,6 +43,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from indus.backends.task_overrides import TASK_OVERRIDES, register_row
 from indus.core.agent import Agent, AgentOptions
 from indus.core.events import EventSink
 from indus.core.model_call import ModelCaller, OnEvent, OnWait
@@ -110,10 +113,7 @@ PARTIAL_EXITS = frozenset(
         ExitReason.GUARDRAIL_HALT,
     }
 )
-NO_IMAGE_OVERRIDES = (
-    "per-task container images need per-task backend overrides (P21-14), which this build does "
-    "not have yet"
-)
+NO_IMAGE_OVERRIDES = "per-task container images are turned off for this run"
 
 type Out = Callable[[str], None]
 
@@ -334,6 +334,7 @@ class SessionAgentRunner:
         session_id: str | None = None
         try:
             session_id = (await service.create()).session_id
+            TASK_OVERRIDES.bind(self.scope, session_id, task_id)  # its overrides, if any (P21-14)
             ticket = await service.submit(session_id, prompt)
             result = await service.wait(session_id, ticket.turn_id)
             current = service.current_id(session_id)
@@ -403,11 +404,12 @@ def _command_runner(scope: Scope) -> Command:
 
 @dataclass
 class ImagePrep:
-    """Gets a row's container image ready before any model call (see the module notes)."""
+    """Gets a row's container image ready before any model call (see the module notes).
+    ``register`` replaces the per-task override registrar (``refuse_images`` refuses image rows)."""
 
     scope: Scope
     command: Command | None = None
-    register: ImageRegistrar = refuse_images
+    register: ImageRegistrar | None = None
 
     def backend(self) -> str:
         config = self.scope.config
@@ -416,9 +418,9 @@ class ImagePrep:
 
     async def __call__(self, row: DatasetRow, task_id: str) -> str | None:
         image = row.image
-        if not image:
+        if not image and not row.cwd:
             return None
-        if self.backend() == DOCKER_BACKEND:
+        if image and self.backend() == DOCKER_BACKEND:
             command = self.command or _command_runner(self.scope)
             code, _ = await command(["docker", "image", "inspect", image], PROBE_TIMEOUT_S)
             if code != 0:
@@ -426,7 +428,9 @@ class ImagePrep:
                 if code != 0:
                     preview = error.strip()[:ERROR_PREVIEW]
                     return f"container image {image} is not available: {preview}"
-        return await self.register(task_id, row)
+        if self.register is not None:
+            return await self.register(task_id, row)
+        return register_row(self.scope, task_id, image, row.cwd)
 
 
 # -- one prompt, one batch -------------------------------------------------------------------------
@@ -477,6 +481,8 @@ async def run_prompt(
     except Exception as exc:
         log.debug("prompt %s failed", index, exc_info=True)
         return PromptResult(index, "failed", f"{type(exc).__name__}: {exc}")
+    finally:
+        TASK_OVERRIDES.clear(scope, task_id)  # the runner released the task's environment
     reason = conversation.exit_reason
     if reason not in COMPLETE_EXITS and reason not in PARTIAL_EXITS:
         detail = f" ({conversation.detail})" if conversation.detail else ""

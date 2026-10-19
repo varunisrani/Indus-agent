@@ -3,7 +3,8 @@
 Indus Agent writes training samples ("trajectories") as JSON Lines: one JSON object per line, each
 holding one conversation. Every writer uses the same converter
 (`indus.research.trajectory.convert`), so a sample looks the same whether it came from
-`indus research batch` or, later, from the interactive saver or the single-tool coding runner.
+`indus research batch`, from the interactive saver (`indus chat --save-trajectories`) or from the
+single-tool coding runner (`indus research swe`).
 
 The turn shape and the tags follow an open function-calling convention that several open-weight
 model families use. The wording of the system turn is our own; only the tags are part of the
@@ -35,6 +36,23 @@ Tombstones let a resumed run skip the prompt; they never reach `trajectories.jso
 A result is counted as a failure only when it is a JSON object with a non-null `error` (or a
 nested `content` object with one), or `success: false`, or plain text that is empty or starts
 with `error:`. A command that exits non-zero is not a failure.
+
+## A saved chat turn
+
+With `indus chat --save-trajectories` (or `research.save_trajectories: true` in the config) every
+finished turn appends the conversation so far to `trajectory_samples.jsonl` in the working
+directory, or to `failed_trajectories.jsonl` when the turn did not complete. A line is
+`{"conversations", "timestamp", "model", "completed"}` (`timestamp` in UTC). Every value is passed
+through the secret redactor before it is written, so keys and tokens are masked on disk. Writers
+lock the whole file while they append, so several chats, gateway sessions or batch workers can
+share one file.
+
+## A coding-runner line
+
+`indus research swe` appends one line per task, `{"conversations", "completed", "api_calls",
+"metadata": {"model", "env", "timestamp"}}`; a task that could not run leaves
+`{"conversations": [], "completed": false, "api_calls": 0, "error", "metadata"}`. The only tool
+is `terminal`, and each result's `content` is `{"content": {"output", "exit_code", "error"}}`.
 
 ## Turns
 

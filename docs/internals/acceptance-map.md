@@ -513,7 +513,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/backends/test_execution_contract.py::test_cd_moves_the_environment`
 - **ACC-D5-2** Singularity persistent overlay is recorded and reused after a restart
   - `tests/unit/backends/test_singularity.py::test_persistent_overlay_recorded_and_reused`
-  - Review: files surviving a real overlay restart need a real Apptainer (live lane, P21-16)
+  - Review: files surviving a real overlay restart need a real Apptainer: `tests/integration/backends/test_remote_backends_live.py` (opt-in `INDUS_LIVE_APPTAINER=1`; P21-16)
 - **ACC-D11-1** Environment cache per key with creation lock, idle reaper, per-profile isolation, clean teardown at …
   - Review: not yet planned (phase TBD)
 - **ACC-D12-1** Remote file sync: credential files and skills pushed before commands, changed files synced back on …
@@ -527,6 +527,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/backends/docker/test_environment.py::test_daemon_gone_mid_call_degrades_and_next_call_recreates`
   - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`
   - `tests/contract/backends/test_docker_ssh_contract.py::test_lost_connection_answers_degraded`
+  - `tests/contract/backends/test_sdk_backends_contract.py::test_lost_vendor_link_answers_degraded`
 - **ACC-D13-2** SSH unreachable, host key changed or login refused: degraded result with a retry hint, rebuilt next call
   - `tests/unit/backends/ssh/test_environment.py::test_host_key_change_is_degraded_never_accepted`
   - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`

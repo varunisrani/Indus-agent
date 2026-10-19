@@ -871,11 +871,21 @@ class LoopsSection(_Section):
 
 
 class ResearchSection(_Section):
-    """Research tooling: batch runs (P22)."""
+    """Research tooling: batch runs, saved chat samples, dataset sampling (P22)."""
 
     runs_root: str = Field(
         default="./research-runs",
         description="folder that holds one folder per batch run (relative to where it is started)",
+    )
+    save_trajectories: bool = Field(
+        default=False,
+        description="CLI chats append every finished turn as a training sample to "
+        "trajectory_samples.jsonl / failed_trajectories.jsonl in the working directory",
+    )
+    sample_datasets: list[str] = Field(
+        default_factory=list,
+        description="datasets `indus research sample` draws from (none by default: it refuses "
+        "to run without a list)",
     )
 
 

@@ -83,17 +83,17 @@ PyPI for packages of other platforms).
 | faster-whisper | 1.2.1 | MIT | extra `voice`: local speech to text for the STT library | P10-18 |
 | av | 19.0.1 | BSD-3-Clause (the wheels bundle FFmpeg libraries under LGPL-2.1-or-later; owner check open, see LEAD-NOTES) | extra `voice`, via faster-whisper (audio decoding) | P10-18 |
 | ctranslate2 | 4.8.2 | MIT | extra `voice`, via faster-whisper (inference engine) | P10-18 |
-| huggingface-hub | 1.33.0 | Apache-2.0 | extra `voice`, via faster-whisper / tokenizers (model download) | P10-18 |
-| hf-xet | 1.6.0 | Apache-2.0 | extra `voice`, via huggingface-hub | P10-18 |
-| filelock | 4.0.10 | MIT | extra `voice`, via huggingface-hub | P10-18 |
-| fsspec | 2026.9.0 | BSD-3-Clause | extra `voice`, via huggingface-hub | P10-18 |
-| tqdm | 4.70.1 | MPL-2.0 AND MIT (unmodified) | extra `voice`, via faster-whisper / huggingface-hub | P10-18 |
-| pyyaml | 6.0.3 | MIT | extra `voice`, via ctranslate2 / huggingface-hub | P10-18 |
+| huggingface-hub | 1.33.0 | Apache-2.0 | extras `voice`, `research`, via faster-whisper / tokenizers (model download) | P10-18 |
+| hf-xet | 1.6.0 | Apache-2.0 | extras `voice`, `research`, via huggingface-hub | P10-18 |
+| filelock | 4.0.10 | MIT | extras `voice`, `research`, via huggingface-hub | P10-18 |
+| fsspec | 2026.6.0 | BSD-3-Clause | extras `voice`, `research`, via huggingface-hub / datasets (datasets 5.0.1 caps it at 2026.6.0) | P10-18 |
+| tqdm | 4.70.1 | MPL-2.0 AND MIT (unmodified) | extras `voice`, `research`, via faster-whisper / huggingface-hub | P10-18 |
+| pyyaml | 6.0.3 | MIT | extras `voice`, `research`, via ctranslate2 / huggingface-hub | P10-18 |
 | onnxruntime | 1.30.0 | MIT | extra `voice`, via faster-whisper (voice activity filter) | P10-18 |
 | flatbuffers | 25.12.19 | Apache-2.0 | extra `voice`, via onnxruntime | P10-18 |
 | protobuf | 7.36.2 | BSD-3-Clause | extra `voice`, via onnxruntime | P10-18 |
-| numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 (Zlib is not on the allow-list; owner check open, see LEAD-NOTES) | extra `voice`, via ctranslate2 / onnxruntime | P10-18 |
-| tokenizers | 0.23.2 | Apache-2.0 | extra `voice`, via faster-whisper | P10-18 |
+| numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 (Zlib is not on the allow-list; owner check open, see LEAD-NOTES) | extras `voice`, `research`, via ctranslate2 / onnxruntime | P10-18 |
+| tokenizers | 0.23.2 | Apache-2.0 | extras `voice`, `research`, via faster-whisper | P10-18 |
 | sounddevice | 0.5.6 | MIT (the macOS and Windows wheels bundle PortAudio, MIT) | extra `voice`: microphone and speaker for CLI voice mode; needs cffi | P10-19 |
 | prompt_toolkit | 3.0.53 | BSD-3-Clause | the classic REPL's prompt, keys and status bar | P06-04 |
 | wcwidth | 0.9.1 | MIT | via prompt_toolkit | P06-04 |
@@ -125,7 +125,7 @@ PyPI for packages of other platforms).
 | python-dateutil | 2.9.0.post0 | Apache-2.0 OR BSD-3-Clause (dual licence) | via croniter | P14-01 |
 | six | 1.17.0 | MIT | via python-dateutil | P14-01 |
 | fastapi | 0.142.2 | MIT | the gateway's HTTP apps: the OpenAI-compatible API server and the webhook receiver (on starlette) | P15-30 |
-| annotated-doc | 0.0.5 | MIT | via fastapi | P15-30 |
+| annotated-doc | 0.0.5 | MIT | via fastapi; extra `research`, via typer | P15-30, P22-11 |
 | modal | 1.6.1 | Apache-2.0 | extra `modal`: the Modal sandbox SDK (terminal backend `modal`) | P21-05 |
 | synchronicity | 0.12.6 | Apache-2.0 | extra `modal`, via modal (sync wrappers of its async API) | P21-05 |
 | grpclib | 0.4.9 | BSD-3-Clause | extra `modal`, via modal (gRPC client) | P21-05 |
@@ -137,13 +137,13 @@ PyPI for packages of other platforms).
 | toml | 0.10.2 | MIT | extras `modal`, `daytona`, via modal / daytona | P21-05 |
 | types-certifi | 2021.10.8.3 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
 | types-toml | 0.10.8.20260518 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
-| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, via modal / daytona (HTTP client) | P21-05 |
-| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
-| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
-| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
-| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp / yarl | P21-05 |
-| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp / yarl | P21-05 |
-| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
+| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, via modal / daytona (HTTP client) | P21-05 |
+| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp / yarl | P21-05 |
+| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp / yarl | P21-05 |
+| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
 | daytona | 0.220.0 | Apache-2.0 | extra `daytona`: the Daytona sandbox SDK (terminal backend `daytona`) | P21-07 |
 | daytona-api-client | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona (generated API client) | P21-07 |
 | daytona-api-client-async | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
@@ -174,11 +174,25 @@ PyPI for packages of other platforms).
 | python-socketio | 5.17.0 | MIT | extra `daytona`, via daytona (with its `client` extra) | P21-07 |
 | python-engineio | 4.14.0 | MIT | extra `daytona`, via python-socketio | P21-07 |
 | simple-websocket | 1.1.0 | MIT | extra `daytona`, via python-engineio | P21-07 |
-| requests | 2.34.2 | Apache-2.0 | extra `daytona`, via python-socketio[client] | P21-07 |
-| charset-normalizer | 3.5.2 | MIT | extra `daytona`, via requests | P21-07 |
-| urllib3 | 2.8.0 | MIT | extra `daytona`, via requests / the generated API clients | P21-07 |
+| requests | 2.34.2 | Apache-2.0 | extras `daytona`, `research`, via python-socketio[client] | P21-07 |
+| charset-normalizer | 3.5.2 | MIT | extras `daytona`, `research`, via requests | P21-07 |
+| urllib3 | 2.8.0 | MIT | extras `daytona`, `research`, via requests / the generated API clients | P21-07 |
 | websocket-client | 1.9.2 | Apache-2.0 | extra `daytona`, via python-socketio[client] | P21-07 |
 | vercel-sandbox | 0.7.0 | MIT | extra `vercel`: the Vercel Sandbox SDK (terminal backend `vercel_sandbox`) | P21-08 |
 | vercel-internal-core | 0.2.0 | MIT | extra `vercel`, via vercel-sandbox | P21-08 |
 | vercel-oidc | 0.9.0 | MIT | extra `vercel`, via vercel-sandbox (OIDC token lookup) | P21-08 |
 | vercel-headers | 0.7.2 | MIT | extra `vercel`, via vercel-sandbox | P21-08 |
+| datasets | 5.0.1 | Apache-2.0 | extra `research`: Hugging Face dataset loading for `indus research sample` | P22-15 |
+| transformers | 5.17.0 | Apache-2.0 | extra `research`: the pinned tokenizer for `indus research compress` (remote code off by default) | P22-11 |
+| safetensors | 0.8.0 | Apache-2.0 | extra `research`, via transformers | P22-11 |
+| regex | 2026.9.29 | Apache-2.0 AND CNRI-Python (CNRI-Python is not on the allow-list; owner check open, see LEAD-NOTES) | extra `research`, via transformers | P22-11 |
+| typer | 0.27.2 | MIT | extra `research`, via transformers / huggingface-hub (their command lines; unused) | P22-11 |
+| shellingham | 1.5.4 | ISC | extra `research`, via typer | P22-11 |
+| pyarrow | 25.0.1 | Apache-2.0 (the wheels bundle Arrow's C++ dependencies, among them zlib (Zlib) and Boost (BSL-1.0), neither on the allow-list; owner check open, see LEAD-NOTES) | extra `research`, via datasets (columnar storage) | P22-15 |
+| pandas | 3.0.6 | BSD-3-Clause (bundled notices: MIT, BSD, PSF-2.0 / CNRI) | extra `research`, via datasets | P22-15 |
+| tzdata | 2026.5 | Apache-2.0 | extra `research`, via pandas | P22-15 |
+| dill | 0.4.1 | BSD-3-Clause | extra `research`, via datasets / multiprocess | P22-15 |
+| multiprocess | 0.70.19 | BSD-3-Clause | extra `research`, via datasets | P22-15 |
+| xxhash | 4.0.1 | BSD-2-Clause | extra `research`, via datasets | P22-15 |
+| packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | extras `voice`, `daytona`, `research`, via huggingface-hub / onnxruntime / opentelemetry-instrumentation / transformers / datasets (row added at the P22 R2 landing) | P22-11 |
+| colorama | 0.4.6 | BSD-3-Clause (PyPI metadata) | Windows only: extras `voice`, `research`, via tqdm / typer (row added at the P22 R2 landing) | P22-11 |

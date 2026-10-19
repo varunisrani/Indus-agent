@@ -115,15 +115,17 @@ Checked by `python -m tooling.checks traps`.
 - **R02.2** Bounded vs full-fidelity capture
   - `tests/unit/tools/builtin/test_file_ops.py::test_shell_calls_are_never_bounded`
   - `tests/unit/tools/builtin/test_file_ops.py::test_three_megabyte_round_trip_is_byte_exact`
-  - Review: bounded foreground capture side is pinned by P05-02 (wave 1)
   - `tests/unit/backends/test_remote_processes.py::test_poll_feeds_output_and_completion_fires_once`
   - `tests/unit/tools/builtin/code/test_remote.py::test_two_megabyte_tool_result_arrives_whole`
   - `tests/unit/backends/test_remote_processes.py::test_large_log_read_intact_across_a_split_character`
   - `tests/unit/backends/modal/test_exec.py::test_twenty_mib_download_is_not_truncated`
   - `tests/unit/backends/vercel/test_exec.py::test_download_is_unbounded`
+  - `tests/contract/backends/test_execution_contract.py::test_bounded_capture_cuts_and_keeps_the_full_text`
+  - `tests/contract/backends/test_execution_contract.py::test_unbounded_capture_keeps_everything`
 - **R02.3** Timeouts that never fire
   - `tests/contract/backends/test_execution_contract.py::test_deadline_gives_124_and_the_flag`
   - `tests/unit/backends/docker/test_environment.py::test_deadline_kills_inside_the_container_too`
+  - `tests/contract/backends/test_execution_contract.py::test_interrupt_gives_130`
 - **R02.4** Floors must precede every bypass
   - `tests/unit/backends/docker/test_recovery.py::test_unmounted_skips_prompt_but_deny_glob_blocks`
   - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
@@ -157,6 +159,7 @@ Checked by `python -m tooling.checks traps`.
   - Review: the live `/proc/<pid>/cmdline` check runs in the docker lane (`tests/integration/backends/test_docker_live.py`, skipped without a daemon; P11-21)
   - `tests/unit/backends/test_singularity.py::test_passthrough_values_travel_in_the_client_env`
   - `tests/unit/backends/test_vendor_env.py::test_sdk_exec_puts_values_in_env_not_text`
+  - `tests/contract/backends/test_sdk_backends_contract.py::test_values_ride_the_sdk_env_parameter_only`
 - **R02.8** Multiprofile scoping everywhere
   - `tests/unit/backends/docker/test_environment.py::test_runs_commands_in_a_labelled_container`
   - `tests/unit/backends/docker/test_reaper.py::test_only_stale_labelled_containers_of_this_profile`
@@ -164,6 +167,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/test_process_checkpoint.py::test_each_profile_has_its_own_checkpoint`
   - Review: other areas still to pin (P00-guards)
   - `tests/unit/backends/test_sandbox_records.py::test_profile_isolation`
+  - `tests/unit/backends/test_task_overrides.py::test_profile_scoping_and_clear`
 - **R02.9** Approved command killed by a stale interrupt
   - `tests/unit/safety/approvals/test_human.py::test_stale_interrupt_cleared_once`
   - Review: the terminal tool calls `clear_stale_interrupt` once before its retry loop (P05-12)
@@ -171,6 +175,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_not_recorded_with_workdir`
   - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_not_recorded_without_marker`
   - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_is_per_session_and_profile`
+  - `tests/contract/backends/test_execution_contract.py::test_exit_without_marker_keeps_the_cwd`
 - **R02.11** Foreground refusals that create retry loops
   - `tests/unit/tools/builtin/test_terminal_plan.py::test_foreground_heartbeat_is_dropped`
   - `tests/unit/tools/builtin/test_terminal_plan.py::test_trailing_amp_becomes_background`
@@ -182,6 +187,8 @@ Checked by `python -m tooling.checks traps`.
 - **R02.13** Flapping availability probes strip tools mid-session
   - `tests/unit/backends/docker/test_probe.py::test_flake_grace_serves_last_good`
   - Review: the ssh row has no availability probe; an unreachable host is a per-call degraded result, never a removed tool (P11-09)
+  - `tests/unit/backends/test_remote_probes.py::test_one_flake_after_a_success_serves_last_good_until_confirmed_30s_later`
+  - `tests/unit/backends/test_remote_probes.py::test_a_failure_long_after_the_last_success_is_honoured_at_once`
 - **R02.14** Stale whole-file overwrite
   - `tests/unit/tools/builtin/test_write_file.py::test_existing_file_never_read_is_refused`
   - `tests/unit/tools/builtin/test_write_file.py::test_file_changed_on_disk_after_the_read_is_refused`
@@ -213,6 +220,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/test_remote_processes.py::test_backend_gone_marks_the_job_lost`
   - `tests/unit/backends/modal/test_lifecycle.py::test_bad_snapshot_falls_back_to_the_base_image_and_flags_recreated`
   - `tests/unit/backends/vercel/test_exec.py::test_replaced_sandbox_loses_background_jobs`
+  - `tests/contract/backends/test_sdk_backends_contract.py::test_a_replaced_sandbox_says_so_once`
 - **R02.20** Docker self-inconsistencies
   - `tests/unit/backends/docker/test_args.py::test_contradicting_network_is_refused`
   - `tests/unit/backends/docker/test_args.py::test_snap_compat`
@@ -256,7 +264,8 @@ Checked by `python -m tooling.checks traps`.
 - **R02.28** Handler signature drift breaks plugins
   - Review: not yet planned (P00-guards)
 - **R02.29** Unscoped probes at boot
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/test_remote_probes.py::test_an_unscoped_probe_caches_nothing_and_the_first_scoped_call_checks`
+  - `tests/unit/backends/test_remote_probes.py::test_a_check_that_loses_its_scope_is_quiet_and_not_remembered`
 - **R02.30** SDK backends lie about timeouts
   - `tests/unit/backends/test_sdk_call.py::test_never_returning_call_hits_the_deadline_and_cancels_once`
   - `tests/unit/backends/test_sdk_call.py::test_exec_never_retried`
@@ -1041,13 +1050,21 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/research/test_trajectory.py::test_missing_ids_fall_back_to_position_and_extras_are_unknown`
 - **R10.7** Two subtly different trajectory writers
   - `tests/unit/research/test_trajectory.py::test_golden_conversion`
-  - Review: the SWE runner and the interactive saver must call the same converter (P22-10, P22-14)
+  - `tests/unit/research/test_saver.py::test_saved_sample_is_the_shared_converters_output`
+  - `tests/unit/research/test_swe_runner.py::test_output_is_the_shared_converters_format`
+  - `tests/unit/research/test_swe_runner.py::test_file_is_appended_and_a_failed_task_leaves_an_error_line`
 - **R10.8** Compressor drops timed-out samples
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/research/test_compress_run.py::test_file_mode_hanging_entry_goes_to_rejects_and_order_is_kept`
+  - `tests/integration/research/test_compress_run.py::test_over_limit_sample_lands_under_target_with_an_empty_rejects_file`
 - **R10.9** Missing default config and undeclared deps
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_compress_config.py::test_shipped_file_equals_the_defaults`
+  - `tests/unit/research/test_compress_config.py::test_unknown_keys_are_rejected`
+  - `tests/unit/research/test_compress_config.py::test_partial_file_keeps_other_defaults_and_timeout_is_loadable`
+  - `tests/unit/research/test_compress_config.py::test_missing_transformers_is_a_tokenizer_error`
 - **R10.10** Remote code in the tokenizer
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_compress_config.py::test_remote_code_is_never_passed_true_by_default`
+  - `tests/unit/research/test_compress_config.py::test_opting_in_warns_naming_repo_and_revision`
+  - `tests/integration/research/test_compress_run.py::test_cli_compress_trust_remote_code_warns`
 - **R10.11** Contradictory pinning policy docs
   - `tooling/checks/tests/test_pins.py::test_exact_pin_passes`
   - `tooling/checks/tests/test_pins.py::test_open_range_fails`

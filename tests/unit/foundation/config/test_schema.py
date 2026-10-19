@@ -139,7 +139,11 @@ def test_decided_defaults() -> None:
         "failure_repeat_alert_hours": 6.0,
     }
     # P22-08: research batch runs
-    assert d["research"] == {"runs_root": "./research-runs"}
+    assert d["research"] == {
+        "runs_root": "./research-runs",
+        "save_trajectories": False,  # P22-10
+        "sample_datasets": [],  # P22-15
+    }
     # P10-20: desktop control
     assert d["computer_use"] == {"driver": "stdio", "driver_cmd": "", "action_timeout_s": 30.0}
     assert d["prompt_caching"] == {"cache_ttl": "5m"}

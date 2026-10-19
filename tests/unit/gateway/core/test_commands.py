@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from indus.foundation.scope import Scope
+from indus.foundation.yamlio import dump_roundtrip, load_safe, to_roundtrip
 from indus.gateway.core.admission import ModelChoice
 from indus.gateway.core.commands import (
     ANYTIME,
@@ -40,7 +40,7 @@ def stalled(text: str, seconds: float = 1000.0) -> Turn:
 
 
 def write_config(scope: Scope, data: Mapping[str, Any]) -> None:
-    (scope.home / "config.yaml").write_text(yaml.safe_dump(dict(data)))
+    (scope.home / "config.yaml").write_text(dump_roundtrip(to_roundtrip(dict(data))))
 
 
 def group(text: str, user: str = ALLOWED, chat: str = "g1", **kw: Any) -> InboundEvent:
@@ -387,7 +387,7 @@ def test_sethome_writes_the_home_channel(
             answer = await kit.pipeline.commands.dispatch_idle(event, "k")
             assert isinstance(answer, str)
             assert answer.startswith("This chat is now the telegram home channel")
-            saved = yaml.safe_load((scope.home / "config.yaml").read_text())
+            saved = load_safe((scope.home / "config.yaml").read_text())
             assert saved["platforms"]["telegram"]["home_channel"]["chat_id"] == "g7"
         finally:
             await kit.close()

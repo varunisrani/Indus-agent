@@ -138,9 +138,11 @@ def terminal_section(ctx: SetupContext) -> None:
     names = [*ready, *(n for n in PLANNED_BACKENDS if n not in ready)]
 
     def label(name: str) -> str:
+        from indus.cli.setup.remote_backends import label as described
+
         if name not in ready:
             return f"{name} (not available yet; arrives in a later release)"
-        return f"{name} (on this machine)" if name == "local" else name
+        return described(name)
 
     labels = [label(name) for name in names]
     default = names.index(current) if current in names else 0
@@ -148,6 +150,10 @@ def terminal_section(ctx: SetupContext) -> None:
     if chosen not in ready:
         ctx.io.say(f"The {chosen} backend is not available in this version; commands stay local.")
         chosen = "local" if current not in ready else current
+    if chosen in ready:
+        from indus.cli.setup.remote_backends import configure
+
+        configure(ctx, chosen)  # asks only what this backend needs (P21-13)
     if chosen != current:
         _save(ctx.scope, {"terminal": {"backend": chosen}})
     ctx.io.say(f"Commands run on: {chosen}.")

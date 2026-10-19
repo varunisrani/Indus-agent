@@ -1,0 +1,29 @@
+{
+  "note": "P22-14: the turns of a two-round SWE task that ends on the sentinel (same converter as batch rows)",
+  "turns": [
+    {
+      "from": "system",
+      "value": "You are an assistant that can use tools. The tools you may call are described as JSON inside the <tools></tools> tags below. Call a tool only when it helps with the request; otherwise answer in plain language. Never guess argument values you were not given.\n<tools>\n[{\"name\":\"terminal\",\"description\":\"Run one bash command in this task's own sandbox and get its output and exit code. Files you create stay there for the rest of the task. Use non-interactive commands only (no editors or pagers), install what you need with pip or apt-get, and pipe long output through head or tail. When the task is done, run: echo INDUS_SWE_TASK_COMPLETE followed by a one-line summary.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The bash command to run.\"},\"timeout\":{\"type\":\"integer\",\"description\":\"Seconds the command may take (default 60).\"}},\"required\":[\"command\"]}}]\n</tools>\nTo call a tool, write one <tool_call></tool_call> block per call holding a JSON object with the keys \"name\" (the tool) and \"arguments\" (an object of its parameters), for example:\n<tool_call>\n{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}\n</tool_call>\nEach result comes back to you inside <tool_response></tool_response> tags. Before you act, think inside <think></think> tags."
+    },
+    {
+      "from": "human",
+      "value": "make it"
+    },
+    {
+      "from": "gpt",
+      "value": "<think>\nStart by listing.\n</think>\nLet me look.\n<tool_call>\n{\"name\":\"terminal\",\"arguments\":{\"command\":\"ls\"}}\n</tool_call>"
+    },
+    {
+      "from": "tool",
+      "value": "<tool_response>\n{\"tool_call_id\":\"a1\",\"name\":\"terminal\",\"content\":{\"content\":{\"output\":\"a.py\\n\",\"exit_code\":0,\"error\":null}}}\n</tool_response>"
+    },
+    {
+      "from": "gpt",
+      "value": "<think>\n</think>\n<tool_call>\n{\"name\":\"terminal\",\"arguments\":{\"timeout\":5,\"command\":\"echo INDUS_SWE_TASK_COMPLETE made it\"}}\n</tool_call>"
+    },
+    {
+      "from": "tool",
+      "value": "<tool_response>\n{\"tool_call_id\":\"a2\",\"name\":\"terminal\",\"content\":{\"content\":{\"output\":\"INDUS_SWE_TASK_COMPLETE made it\\n\",\"exit_code\":0,\"error\":null}}}\n</tool_response>"
+    }
+  ]
+}

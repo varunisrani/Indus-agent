@@ -6,7 +6,9 @@ cloud backends (P11, P21) only add rows. The backend is chosen by ``terminal.bac
 call's ``Scope`` config, never by process environment variables (D-16.75).
 
 Keys (``EnvKey``) always start with the profile home, so two profiles never share an
-environment (R02.8): calls with per-task overrides get their task's own key; a backend whose row
+environment (R02.8): calls with per-task overrides (passed in, or registered in
+``task_overrides.TASK_OVERRIDES`` for the task or the session's bound task, P21-14) get their
+task's own key and their factory the planned scope and overrides; a backend whose row
 says it is ``profile_scoped`` for the scope (a persistent container, P11) gets one ``profile`` key
 that a session's release leaves alone; everything else the session's key (or ``default``), and
 host-local control calls a separate ``host`` key. Creation
@@ -40,6 +42,7 @@ from indus.backends.contract import (
     ExecResult,
 )
 from indus.backends.local import LOCAL_FLAGS, open_local
+from indus.backends.task_overrides import TASK_OVERRIDES, plan
 from indus.backends.wait import FOREGROUND
 from indus.foundation.clock import Clock, SystemClock
 from indus.foundation.config.schema import default_for
@@ -159,6 +162,7 @@ SSH_ROW_FLAGS = BackendFlags(
 
 def default_entries() -> list[BackendEntry]:
     from indus.backends.docker import docker_entry
+    from indus.backends.remote_probes import guard_entry
     from indus.backends.sdk_entries import sdk_entries
     from indus.backends.singularity import singularity_entry
 
@@ -166,9 +170,27 @@ def default_entries() -> list[BackendEntry]:
         BackendEntry("local", _create_local, LOCAL_FLAGS),
         docker_entry(),
         BackendEntry("ssh", _create_ssh, SSH_ROW_FLAGS),
-        singularity_entry(),
-        *sdk_entries(),
+        # The cloud rows' probes sit behind the flapping guard (P21-12, R02.13 / R02.29).
+        *(guard_entry(entry) for entry in (singularity_entry(), *sdk_entries())),
     ]
+
+
+def _resolved(
+    scope: Scope,
+    task_id: str | None,
+    session_id: str | None,
+    overrides: Mapping[str, Any] | None,
+) -> tuple[str | None, Mapping[str, Any] | None, Scope]:
+    """(task id, call overrides, factory scope) for one call. Explicit overrides win; else an
+    override registered for the task, or for the task the session is bound to (P21-14)."""
+    if overrides:
+        return task_id, overrides, scope
+    found = TASK_OVERRIDES.resolve(scope, task_id) or TASK_OVERRIDES.resolve(scope, session_id)
+    if found is None:
+        return task_id, overrides, scope
+    task, override = found
+    planned = plan(scope, task, override)
+    return task, planned.overrides, planned.scope
 
 
 def _config(scope: Scope, key: str) -> Any:
@@ -236,6 +258,7 @@ class EnvironmentRegistry:
         home = str(scope.home)
         if host_local:
             return EnvKey(home, "host", session_id or task_id or "default", "local")
+        task_id, overrides, _ = _resolved(scope, task_id, session_id, overrides)
         backend = self.backend_name(scope, overrides)
         if overrides and task_id:
             return EnvKey(home, "task", task_id, backend)
@@ -275,6 +298,9 @@ class EnvironmentRegistry:
                 "this profile's config could not be read, so its terminal settings are unknown; "
                 "fix config.yaml and try again"
             )
+        create_scope = scope
+        if not host_local:
+            task_id, overrides, create_scope = _resolved(scope, task_id, session_id, overrides)
         key = self.key_for(
             scope,
             task_id=task_id,
@@ -299,10 +325,10 @@ class EnvironmentRegistry:
                     f"{', '.join(self.names()) or 'none'})"
                 )
             if entry.probe is not None:
-                problem = entry.probe(scope)
+                problem = entry.probe(create_scope)
                 if problem:
                     raise BackendUnavailable(problem)
-            request = CreateRequest(scope, key, task_id, session_id, dict(overrides or {}))
+            request = CreateRequest(create_scope, key, task_id, session_id, dict(overrides or {}))
             try:
                 env = await entry.factory(request)
             except ImportError as exc:

@@ -30,9 +30,22 @@ __all__ = ["setup_command"]
 @click.option(
     "--quick", is_flag=True, help="On a set-up install, ask only about what is still missing."
 )
+@click.option(
+    "--terminal-backend",
+    "terminal_backend",
+    metavar="NAME",
+    default=None,
+    help="Select this terminal backend without asking; its credentials are read from the "
+    "environment and kept in the secret store.",
+)
 @click.pass_context
 def setup_command(
-    ctx: click.Context, section: str | None, non_interactive: bool, reset: bool, quick: bool
+    ctx: click.Context,
+    section: str | None,
+    non_interactive: bool,
+    reset: bool,
+    quick: bool,
+    terminal_backend: str | None,
 ) -> int:
     from indus.cli.args import CliState
     from indus.cli.setup.wizard import SetupOptions, run_setup
@@ -41,6 +54,10 @@ def setup_command(
     if state is None:
         raise click.UsageError("setup was started without its process state")
     options = SetupOptions(
-        section=section, non_interactive=non_interactive, reset=reset, quick=quick
+        section=section,
+        non_interactive=non_interactive,
+        reset=reset,
+        quick=quick,
+        terminal_backend=terminal_backend,
     )
     return run_setup(state, options)

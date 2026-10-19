@@ -115,6 +115,13 @@ def read_query(chat: ChatArgs) -> str | None:
     default=False,
     help="Start with voice mode on: hold the record key (Ctrl+Space) to talk.",
 )
+@click.option(
+    "--save-trajectories",
+    is_flag=True,
+    default=False,
+    help="After each turn, append the conversation as a training sample to "
+    "trajectory_samples.jsonl (or failed_trajectories.jsonl) in the working directory.",
+)
 @with_global_options(repeated=True)
 @click.pass_context
 def chat_command(
@@ -126,6 +133,7 @@ def chat_command(
     max_turns: int | None,
     source: str | None,
     voice: bool,
+    save_trajectories: bool,
     **values: Any,
 ) -> int:
     state = ctx.find_object(CliState)
@@ -140,6 +148,7 @@ def chat_command(
         max_turns=max_turns,
         source=source,
         voice=voice,
+        save_trajectories=save_trajectories,
     )
     return run_chat(state, args, chat)
 
@@ -335,6 +344,7 @@ class _ChatRun:
             overrides=self.state.overrides,
             new_session=session_id is None,
             accept_hooks=args.accept_hooks,
+            save_trajectories=self.chat.save_trajectories,
         )
         if self.finite:
             from indus.cli.oneshot import run_finite

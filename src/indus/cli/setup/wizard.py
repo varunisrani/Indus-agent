@@ -68,6 +68,7 @@ class SetupOptions:
     non_interactive: bool = False
     reset: bool = False
     quick: bool = False
+    terminal_backend: str | None = None  # select it from env credentials, never asking (P21-13)
 
 
 @dataclass
@@ -189,6 +190,10 @@ def run_setup(state: CliState, options: SetupOptions, *, deps: SetupDeps | None 
     except IndusError as exc:
         _err(f"indus setup: {exc.message}")
         return 1
+    if options.terminal_backend is not None:
+        from indus.cli.setup.remote_backends import apply_non_interactive
+
+        return apply_non_interactive(scope, options.terminal_backend, scope.env)
     io = deps.io or Interactive.for_terminal(
         stdin_isatty=state.stdin_isatty,
         stdout_isatty=state.stdout_isatty,

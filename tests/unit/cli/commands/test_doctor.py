@@ -84,6 +84,7 @@ def test_check_order_is_stable() -> None:
         "providers",
         "store",
         "backend",
+        "remote_backends",  # P21-13
         "external",
         "tools",
         "computer_use",  # P10-20

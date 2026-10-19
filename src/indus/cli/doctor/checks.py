@@ -19,7 +19,13 @@ from typing import Any, cast
 
 import httpx
 
-from indus.cli.doctor import DoctorContext, Finding, Severity, register
+from indus.cli.doctor import (
+    DoctorContext,
+    Finding,
+    Severity,
+    register,
+    remote_backends,  # registers the cloud backends check (P21-13)
+)
 from indus.foundation import config as config_mod
 from indus.foundation import fsio
 from indus.foundation.config import loader as config_loader
@@ -497,6 +503,8 @@ def check_backend(ctx: DoctorContext) -> list[Finding]:
             Finding("backend", cast(Severity, severity), message, fix=fix)
             for severity, message, fix in setup_findings(scoped)
         ]
+    if backend in remote_backends.REMOTE_BACKENDS:
+        return remote_backends.detail_findings(ctx.scope, backend)
     return [
         Finding(
             "backend",

@@ -1,0 +1,46 @@
+# Defaults of `indus research compress` (P22-11). A file passed with --config only needs the keys
+# it changes; an unknown key is an error.
+
+tokenizer:
+  # Apache-2.0 tokenizer, pinned to one revision of its repository.
+  name: Qwen/Qwen3-8B
+  revision: b968826d9c46dd6066d109eabc6255188de91218
+  # Never on by default: a repository with remote code could run anything on this machine.
+  trust_remote_code: false
+
+compression:
+  target_max_tokens: 15250
+  summary_target_tokens: 750
+
+protected_turns:
+  first_system: true
+  first_human: true
+  first_gpt: true
+  first_tool: true
+  last_n: 4
+
+summarization:
+  # null: the profile's auxiliary model (auxiliary.compression, else the main model).
+  model: null
+  base_url: null
+  # Name of a secret (secret store, then .env) holding the key for base_url.
+  api_key_secret: null
+  temperature: 0.3
+  max_retries: 3
+  retry_delay: 2.0
+
+output:
+  add_summary_notice: true
+  notice_text: "\n\nNote: part of this conversation's earlier tool activity has been condensed into a summary to keep it within the context budget."
+  suffix: _compressed
+
+processing:
+  max_concurrent_requests: 50
+  # Seconds one trajectory may take; a trajectory over it goes to the rejects file.
+  per_trajectory_timeout: 300.0
+  skip_under_target: true
+
+metrics:
+  enabled: true
+  per_trajectory: true
+  file: compression_metrics.json

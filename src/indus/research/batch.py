@@ -362,8 +362,8 @@ class BatchRunner:
         images = sum(1 for _, row in left if row.image)
         if images:
             self.warn(
-                f"{images} prompt(s) name a container image; they fail until per-task backend "
-                "overrides exist (P21-14)"
+                f"{images} prompt(s) name a container image; each runs in its own sandbox "
+                "(backends without images ignore it with a warning)"
             )
         skipped = len(dataset.rows) - len(left)
         self.out(

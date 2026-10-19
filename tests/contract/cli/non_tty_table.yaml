@@ -201,9 +201,9 @@ commands:
   research: 2             # a group with no default action prints its help
   research batch: 2       # DATASET and --run-name are required
   research distributions: 0
-  research compress: 1    # not built yet: says so
-  research swe: 1
-  research sample: 1
+  research compress: 2    # INPUT is required
+  research swe: 2         # --task or --prompts is required
+  research sample: 2      # no dataset list: there is no default dataset
 
   pairing: 0              # no subcommand lists requests and paired users (P15-09)
   pairing list: 0

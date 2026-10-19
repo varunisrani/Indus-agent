@@ -301,6 +301,7 @@ class ServiceSpec:
     overrides: HostOverrides | None = None
     new_session: bool = True
     accept_hooks: bool = False
+    save_trajectories: bool = False
 
 
 def _session_fields(spec: ServiceSpec, cwd: Path) -> dict[str, Any]:
@@ -346,7 +347,7 @@ def build_service(spec: ServiceSpec) -> SessionService:
     # One registry for the run: every agent sees the MCP tools registered into it (P13-05).
     registry = learning_host.tool_registry(spec.scope.clock)
     options = replace(options, registry=registry)
-    return SessionService(
+    service = SessionService(
         spec.scope,
         spec.route,
         toolsets=toolset_selection(spec.policy, spec.scope),
@@ -367,6 +368,17 @@ def build_service(spec: ServiceSpec) -> SessionService:
         mcp=McpUpkeep(spec.scope, registry, aux=aux, watch=spec.run_context == "interactive"),
         plugins=_plugins(spec, registry, cwd),
     )
+    _trajectory_saver(spec, service, cwd)
+    return service
+
+
+def _trajectory_saver(spec: ServiceSpec, service: SessionService, cwd: Path) -> None:
+    """``--save-trajectories`` or ``research.save_trajectories``: every finished turn appends a
+    training sample in the working directory (P22-10)."""
+    from indus.research import saver
+
+    if saver.enabled(spec.scope, spec.save_trajectories):
+        saver.attach(service, spec.scope, cwd)
 
 
 def _plugins(spec: ServiceSpec, registry: ToolRegistry, cwd: Path) -> PluginUpkeep:

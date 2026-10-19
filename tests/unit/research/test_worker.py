@@ -226,18 +226,31 @@ def test_failed_pull_costs_zero_model_calls(real: Scope, run_dir: Path) -> None:
     assert "pull denied" in lines[0] and len(lines[0]) < 700
 
 
-def test_image_rows_are_refused_until_per_task_overrides_exist(real: Scope) -> None:
+def test_image_rows_register_a_per_task_override(real: Scope) -> None:
+    from indus.backends.task_overrides import TASK_OVERRIDES, TaskOverride
+
     docker = real.with_config(DictConfig({"terminal": {"backend": "docker"}}))
     present = FakeCommand((0, ""))
-    problem = asyncio.run(ImagePrep(docker, command=present)(DatasetRow(0, "p", image="a:1"), "t"))
-    assert problem == worker.NO_IMAGE_OVERRIDES
-    assert len(present.calls) == 1  # found locally: no pull
+    try:
+        prep = ImagePrep(docker, command=present)
+        assert asyncio.run(prep(DatasetRow(0, "p", image="a:1"), "task_0")) is None
+        assert len(present.calls) == 1  # found locally: no pull
+        assert TASK_OVERRIDES.get(docker, "task_0") == TaskOverride(image="a:1")
 
-    local = FakeCommand()
-    prep = ImagePrep(real, command=local)  # local backend: no docker check at all
-    assert asyncio.run(prep(DatasetRow(0, "p", image="a:1"), "t")) == worker.NO_IMAGE_OVERRIDES
-    assert asyncio.run(prep(DatasetRow(0, "p"), "t")) is None
-    assert local.calls == []
+        local = FakeCommand()
+        prep = ImagePrep(real, command=local)  # local backend: no docker check at all
+        row = DatasetRow(1, "p", image="a:1", cwd="/work/w1")
+        assert asyncio.run(prep(row, "task_1")) is None
+        assert TASK_OVERRIDES.get(real, "task_1") == TaskOverride(image="a:1", cwd="/work/w1")
+        assert asyncio.run(prep(DatasetRow(2, "p"), "task_2")) is None
+        assert TASK_OVERRIDES.get(real, "task_2") is None
+        assert local.calls == []
+
+        refused = ImagePrep(real, command=local, register=worker.refuse_images)
+        row = DatasetRow(3, "p", image="a:1")
+        assert asyncio.run(refused(row, "task_3")) == worker.NO_IMAGE_OVERRIDES
+    finally:
+        TASK_OVERRIDES.reset()
 
     seen: list[str] = []
 
@@ -263,6 +276,36 @@ class Scripted:
             {"role": "assistant", "content": "ok", "reasoning": "r"},
         ]
         return Conversation(messages, [], "completed", 1, "m")
+
+
+def test_an_image_row_runs_and_releases_its_own_task_environment(
+    real: Scope, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from indus.backends.registry import EnvKey
+    from indus.backends.task_overrides import TASK_OVERRIDES
+    from indus.tools.builtin import terminal
+
+    server = FakeModelServer(load_script("research_tool_loop"))
+    settings = settings_for(run_dir)
+    environments = terminal.runtime().environments
+    released: list[EnvKey] = []
+    original = environments.release
+
+    async def spy(scope: Scope, **ids: Any) -> bool:
+        released.append(environments.key_for(scope, **ids))
+        return await original(scope, **ids)
+
+    monkeypatch.setattr(environments, "release", spy)
+    items = ((0, DatasetRow(0, "Is the file there?", image="img:1", cwd=str(run_dir))),)
+    try:
+        outcome = asyncio.run(
+            run_batch(real, settings, BatchJob(0, items), runner=runner_for(real, settings, server))
+        )
+    finally:
+        TASK_OVERRIDES.reset()
+    assert outcome.completed == [0]
+    assert [(k.kind, k.ident) for k in released] == [("task", "task_0")]
+    assert environments.key_for(real, task_id="task_0").kind == "session"  # cleared afterwards
 
 
 def test_skips_known_indices_and_seeds_toolsets_per_prompt(run_dir: Path, real: Scope) -> None:

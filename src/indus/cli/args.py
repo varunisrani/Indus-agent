@@ -153,6 +153,7 @@ class ChatArgs:
     max_turns: int | None = None
     source: str | None = None
     voice: bool = False
+    save_trajectories: bool = False
 
 
 @dataclass(frozen=True)

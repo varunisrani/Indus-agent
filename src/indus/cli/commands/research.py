@@ -1,9 +1,14 @@
-"""``indus research``: turn the agent into a data engine (P22-09).
+"""``indus research``: turn the agent into a data engine (P22-09, P22-11..15).
 
 Verbs: ``batch DATASET --run-name NAME …`` runs a JSONL of prompts on a process pool and writes
 training samples (``indus.research.batch``); ``distributions [NAME]`` lists the toolset
-distributions, most likely entries first. ``compress``, ``swe`` and ``sample`` are listed so the
-family is visible, and say plainly that they come with a later build (exit 1).
+distributions, most likely entries first; ``compress INPUT`` squeezes trajectories under a token
+budget (``indus.research.compress_runner``; timed-out entries go to a rejects file);
+``swe --task TEXT | --prompts FILE`` runs coding tasks with only a terminal tool
+(``indus.research.swe_runner``); ``sample --dataset NAME …`` draws long trajectories from a
+required dataset list, compresses and merges them (``indus.research.sample``). ``compress``,
+``swe`` and ``sample`` exit 2 on usage errors (a missing input, no task, no dataset list, a
+tokenizer that cannot load) and 1 on runtime failures.
 
 ``batch`` exit codes: 0 done, 1 runtime failure (an unreadable prefill file included), 2 usage or
 dataset error (a checkpoint for another dataset included), 130 interrupted.
@@ -27,7 +32,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import click
 
-from indus.cli.cmdkit import cli_state, err, group
+from indus.cli.cmdkit import cli_state, config_of, err, group
 
 if TYPE_CHECKING:
     from indus.research.batch import BatchSettings
@@ -38,7 +43,6 @@ REASONING_CHOICES = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 SORT_CHOICES = ("price", "throughput", "latency")
 EXIT_FAILED = 1
 EXIT_USAGE = 2
-LATER = "comes with a later build of the research tooling (P22-{task}); it is not available yet"
 
 
 def split_csv(value: str | None) -> list[str] | None:
@@ -220,21 +224,308 @@ def distributions_command(name: str | None) -> None:
             click.echo(f"  {entry:<18}{percent:>4}%")
 
 
-def _later(name: str, task: str, help_text: str) -> click.Command:
-    @click.command(
-        name,
-        help=f"{help_text} (not available yet).",
-        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
-    )
-    def later() -> None:
-        err(f"research {name}: {LATER.format(task=task)}")
-        raise _exit(EXIT_FAILED)
-
-    return later
+# -- compress (P22-11..13) -------------------------------------------------------------------------
 
 
-research_group.add_command(
-    _later("compress", "11..13", "Squeeze trajectories under a token budget")
+def tokenizer_loader() -> Any:
+    """The tokenizer loader (``AutoTokenizer.from_pretrained``; a seam the tests replace)."""
+    from indus.research.compress_config import transformers_loader
+
+    return transformers_loader()
+
+
+def summariser_for(scope: Any, config: Any) -> Any:
+    """The summariser of a compress run (a seam the tests replace); made inside the run's loop."""
+    from indus.research.compressor import aux_summariser
+
+    return aux_summariser(scope, config.summarization)
+
+
+def _echo_err(line: str) -> None:
+    click.echo(line, err=True)
+
+
+@research_group.command("compress")
+@click.argument("input_path", metavar="INPUT", type=click.Path(path_type=Path))
+@click.option("--output", type=click.Path(path_type=Path), default=None, help="Output file/folder.")
+@click.option(
+    "--config",
+    "config_file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="YAML settings (default: the shipped defaults).",
 )
-research_group.add_command(_later("swe", "14", "Single-tool coding runner"))
-research_group.add_command(_later("sample", "15", "Sample datasets and compress them"))
+@click.option("--target-max-tokens", type=click.IntRange(min=1), default=None)
+@click.option("--tokenizer", "tokenizer_name", default=None, help="Tokenizer repository.")
+@click.option("--revision", default=None, help="Tokenizer revision (commit) to load.")
+@click.option(
+    "--trust-remote-code",
+    is_flag=True,
+    help="Let the tokenizer repository run its own code (off by default).",
+)
+@click.option("--sample-percent", type=float, default=None, help="Keep this share of entries.")
+@click.option("--seed", type=int, default=42, show_default=True, help="Seed for sampling.")
+@click.option("--dry-run", is_flag=True, help="Say what would happen; write nothing.")
+def compress_command(
+    input_path: Path,
+    output: Path | None,
+    config_file: Path | None,
+    target_max_tokens: int | None,
+    tokenizer_name: str | None,
+    revision: str | None,
+    trust_remote_code: bool,
+    sample_percent: float | None,
+    seed: int,
+    dry_run: bool,
+) -> None:
+    """Squeeze the trajectories of INPUT (a .jsonl file or a folder of them) under a token
+    budget. Timed-out entries go to a rejects file next to the output."""
+    from indus.research import compress_config, compress_runner
+
+    try:
+        config = compress_config.load_config(config_file)
+    except compress_config.ConfigError as exc:
+        err(f"research compress: {exc}")
+        raise _exit(EXIT_USAGE) from None
+    tokenizer: dict[str, Any] = {}
+    if tokenizer_name:
+        tokenizer["name"] = tokenizer_name
+    if revision:
+        tokenizer["revision"] = revision
+    if trust_remote_code:
+        tokenizer["trust_remote_code"] = True
+    if tokenizer:
+        config = config.model_copy(
+            update={"tokenizer": config.tokenizer.model_copy(update=tokenizer)}
+        )
+    if target_max_tokens is not None:
+        config = config.model_copy(
+            update={
+                "compression": config.compression.model_copy(
+                    update={"target_max_tokens": target_max_tokens}
+                )
+            }
+        )
+    scope = cli_state().scope
+    settings = compress_runner.RunSettings(
+        input_path, output, sample_percent=sample_percent, seed=seed, dry_run=dry_run
+    )
+
+    def counter() -> Any:
+        return compress_config.load_tokenizer(
+            config.tokenizer, loader=tokenizer_loader(), warn=_echo_err
+        )
+
+    code = compress_runner.run(
+        settings,
+        config,
+        counter=counter,
+        make_summariser=lambda: summariser_for(scope, config),
+        out=click.echo,
+        err=_echo_err,
+    )
+    if code:
+        raise _exit(code)
+
+
+# -- swe (P22-14) ----------------------------------------------------------------------------------
+
+
+def swe_chat(scope: Any, settings: Any) -> tuple[Any, str]:
+    """The model caller of a SWE run and its model (a seam the tests replace)."""
+    from indus.research.swe_runner import provider_chat
+
+    return provider_chat(scope, settings)
+
+
+def swe_environments(scope: Any, settings: Any) -> Any:
+    """One environment per task from the backend registry (a seam the tests replace)."""
+    from indus.research.swe_runner import RegistryEnvironments
+
+    return RegistryEnvironments(scope, settings)
+
+
+@research_group.command("swe")
+@click.option("--task", default=None, help="One task to run.")
+@click.option(
+    "--prompts",
+    "prompts_file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help='Tasks, one per line: {"prompt": ...}, {"task": ...} or plain text.',
+)
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="JSONL file the trajectories are appended to (default: swe-trajectories.jsonl).",
+)
+@click.option(
+    "--env",
+    "env_name",
+    type=click.Choice(["local", "docker", "modal"]),
+    default="local",
+    show_default=True,
+)
+@click.option("--image", default=None, help="Container image (default: the profile's).")
+@click.option("--cwd", default=None, help="Working folder (default: a temp folder, or /tmp).")
+@click.option("--model", default=None, help="Model to run (default: the profile's).")
+@click.option("--provider", default=None, help="Provider (default: the profile's).")
+@click.option("--base-url", default=None, help="Endpoint of the provider.")
+@click.option("--max-iterations", type=click.IntRange(min=1), default=15, show_default=True)
+@click.option(
+    "--command-timeout",
+    type=click.FloatRange(min=0, min_open=True),
+    default=60.0,
+    show_default=True,
+    help="Seconds a command may take unless the call names its own timeout.",
+)
+def swe_command(
+    task: str | None,
+    prompts_file: Path | None,
+    output: Path | None,
+    env_name: str,
+    image: str | None,
+    cwd: str | None,
+    model: str | None,
+    provider: str | None,
+    base_url: str | None,
+    max_iterations: int,
+    command_timeout: float,
+) -> None:
+    """Run coding tasks with only a terminal tool and write their trajectories."""
+    import asyncio
+
+    from indus.foundation.errors import IndusError
+    from indus.research import swe_runner
+
+    if (task is None) == (prompts_file is None):
+        err("research swe: give exactly one of --task TEXT or --prompts FILE")
+        raise _exit(EXIT_USAGE)
+    if task is not None:
+        tasks = [task]
+    else:
+        assert prompts_file is not None
+        try:
+            tasks = swe_runner.load_prompts(prompts_file)
+        except swe_runner.PromptError as exc:
+            err(f"research swe: {exc}")
+            raise _exit(EXIT_USAGE) from None
+        if not tasks:
+            err(f"research swe: no tasks in {prompts_file}")
+            raise _exit(EXIT_USAGE)
+    settings = swe_runner.SweSettings(
+        env=env_name,
+        image=image,
+        cwd=cwd,
+        model=model,
+        provider=provider,
+        base_url=base_url,
+        max_iterations=max_iterations,
+        command_timeout=command_timeout,
+    )
+    scope = cli_state().scope
+    try:
+        chat, model_name = swe_chat(scope, settings)
+    except IndusError as exc:
+        err(f"research swe: {exc.message}")
+        raise _exit(EXIT_FAILED) from None
+    runner = swe_runner.SweRunner(
+        scope,
+        settings,
+        chat=chat,
+        environments=swe_environments(scope, settings),
+        model=model_name,
+        out=click.echo,
+    )
+    target = output or Path(swe_runner.DEFAULT_OUTPUT)
+    results = asyncio.run(runner.run_all(tasks, target))
+    done = sum(1 for r in results if r["completed"])
+    click.echo(f"{done} of {len(results)} task(s) completed; trajectories appended to {target}")
+
+
+# -- sample (P22-15) -------------------------------------------------------------------------------
+
+
+def dataset_loader() -> Any:
+    """How datasets are loaded (Hugging Face ``datasets``; a seam the tests replace)."""
+    from indus.research.sample import hf_loader
+
+    return hf_loader
+
+
+@research_group.command("sample")
+@click.option("--dataset", "datasets", multiple=True, help="Dataset to draw from (repeatable).")
+@click.option("--samples", type=click.IntRange(min=1), default=2500, show_default=True)
+@click.option("--min-tokens", type=click.IntRange(min=0), default=16000, show_default=True)
+@click.option("--seed", type=int, default=42, show_default=True)
+@click.option(
+    "--out",
+    "out_dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=Path("."),
+    help="Folder for the merged file and the work folder (default: here).",
+)
+@click.option("--name", default="compressed_samples", show_default=True)
+@click.option(
+    "--config",
+    "config_file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Compression settings (default: the shipped defaults).",
+)
+def sample_command(
+    datasets: tuple[str, ...],
+    samples: int,
+    min_tokens: int,
+    seed: int,
+    out_dir: Path,
+    name: str,
+    config_file: Path | None,
+) -> None:
+    """Draw long trajectories from datasets, compress them and merge them into one file. The
+    dataset list is required (--dataset or research.sample_datasets)."""
+    from indus.research import compress_config, compress_runner, sample
+
+    scope = cli_state().scope
+    configured = config_of(scope).get(sample.CONFIG_KEY)
+    try:
+        names = sample.dataset_list(datasets, configured)
+        config = compress_config.load_config(config_file)
+    except (sample.SampleError, compress_config.ConfigError) as exc:
+        err(f"research sample: {exc}")
+        raise _exit(EXIT_USAGE) from None
+    loaded: list[Any] = []
+
+    def counter() -> Any:
+        if not loaded:
+            loaded.append(
+                compress_config.load_tokenizer(
+                    config.tokenizer, loader=tokenizer_loader(), warn=_echo_err
+                )
+            )
+        return loaded[0]
+
+    def compress(source: Path, target: Path) -> int:
+        return compress_runner.run(
+            compress_runner.RunSettings(source, target),
+            config,
+            counter=counter,
+            make_summariser=lambda: summariser_for(scope, config),
+            out=click.echo,
+            err=_echo_err,
+        )
+
+    settings = sample.SampleSettings(
+        names, out_dir, name=name, samples=samples, min_tokens=min_tokens, seed=seed
+    )
+    code = sample.run_sample(
+        settings,
+        loader=dataset_loader(),
+        counter=counter,
+        compress=compress,
+        out=click.echo,
+        err=_echo_err,
+    )
+    if code:
+        raise _exit(code)
