@@ -1,0 +1,10 @@
+# The model calls a tool that does not exist, then answers with reasoning (corrupt at merge).
+turns:
+  - steps:
+      - reasoning: ["Use the teleporter."]
+      - tool_call: {name: teleport_user, arguments: {to: "mars"}, id: call_tp_1}
+      - finish: tool_calls
+  - steps:
+      - reasoning: ["That tool is not there."]
+      - text: ["I cannot do that."]
+      - finish: stop

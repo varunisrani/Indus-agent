@@ -4,9 +4,11 @@
 over the fake ``docker`` client (``tests/fakes/backend/docker_cli.py``), SSH over the fake ``ssh``
 and ``scp`` clients (``tests/fakes/backend/ssh_cli.py``) and the scripted fake backend. Every test
 in ``test_execution_contract.py`` runs against each of them unchanged; the cases that only make
-sense for a backend that is not this machine are in ``test_docker_ssh_contract.py``. Cloud
-sandboxes (P21) add their rows here. The same cases against a real Docker daemon and a real sshd
-are the live lanes in ``tests/integration/backends/`` (markers ``docker`` and ``network``).
+sense for a backend that is not this machine are in ``test_docker_ssh_contract.py``. Singularity
+runs over the fake ``apptainer`` CLI (``tests/fakes/backend/fake_apptainer.py``) in the shared and
+shell rows (P21-04); the cloud sandboxes add their rows here (P21-16). The same cases against a
+real Docker daemon and a real sshd are the live lanes in ``tests/integration/backends/`` (markers
+``docker`` and ``network``).
 
 The fake clients run "container" and "remote" commands on this machine, so each test points the
 Docker sandbox temp dir and the SSH remote temp dir at its own directory: nothing lands in the
@@ -42,6 +44,7 @@ from indus.foundation.scope import Scope
 from tests.fakes.agent import DictConfig
 from tests.fakes.backend.docker_cli import FakeDocker
 from tests.fakes.backend.environment import FakeEnvironment, Rule
+from tests.fakes.backend.fake_apptainer import FakeApptainer
 from tests.fakes.backend.ssh_cli import FakeSsh, install, redirect_remote_tmp
 from tests.fakes.terminal import FakeSecrets
 
@@ -55,6 +58,7 @@ DOCKER_IMAGE = "registry.test/indus-sandbox:contract"
 SSH_HOST = "box.test"
 SSH_USER = "dev"
 REMOTE_ROWS = ("docker", "ssh")
+SHELL_ROWS = ("local", *REMOTE_ROWS, "singularity")
 
 
 async def _create_fake(request: CreateRequest) -> Environment:
@@ -77,6 +81,7 @@ class Rig:
     root: Path
     docker: FakeDocker | None = None
     ssh: FakeSsh | None = None
+    apptainer: FakeApptainer | None = None
     runtime_dir: str | None = None
     opened: list[Environment] = field(default_factory=lambda: [])
 
@@ -103,9 +108,11 @@ class Rig:
 
 def contract_entries() -> list[BackendEntry]:
     """Every backend the contract suite covers (the registry's rows plus the fake)."""
+    from indus.backends.singularity import singularity_entry
+
     fake = FakeEnvironment()
     rows = [e for e in default_entries() if e.name in ("local", *REMOTE_ROWS)]
-    return [*rows, BackendEntry("fake", _create_fake, fake.flags)]
+    return [*rows, singularity_entry(), BackendEntry("fake", _create_fake, fake.flags)]
 
 
 BACKENDS = [entry.name for entry in contract_entries()]
@@ -158,6 +165,12 @@ def _row_scope(
         settings.update(backend="ssh", ssh_host=SSH_HOST, ssh_user=SSH_USER)
         overlay["PATH"] = rig.ssh.path_env(path)
         overlay["XDG_RUNTIME_DIR"] = rig.runtime_dir or ""
+    elif name == "singularity" and rig.apptainer is not None:
+        image = rig.apptainer.root / "sandbox.sif"
+        settings.update(
+            backend="singularity", singularity_image=str(image), container_persistent=False
+        )
+        overlay["PATH"] = rig.apptainer.path_env(path)
     settings.update(terminal)
     scope = base.with_config(DictConfig({"terminal": settings}))
     if overlay:
@@ -186,14 +199,23 @@ def _install_row(name: str, root: Path, monkeypatch: pytest.MonkeyPatch) -> tupl
         # Control sockets need a short private dir (the macOS 104-byte limit).
         rig.runtime_dir = tempfile.mkdtemp(prefix="isc", dir="/tmp")  # noqa: S108
         cleanup.append(rig.runtime_dir)
+    elif name == "singularity":
+        from indus.backends import singularity
+
+        instance_tmp = root / "instance-tmp"
+        instance_tmp.mkdir(parents=True)
+        monkeypatch.setattr(singularity, "SANDBOX_TEMP", str(instance_tmp))
+        rig.apptainer = FakeApptainer(root / "fake-apptainer")
+        rig.apptainer.install()
+        (rig.apptainer.root / "sandbox.sif").write_text("SIF\n", encoding="utf-8")
     return rig, cleanup
 
 
 def _make_backend(
     name: str, scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[Backend]:
-    if name in REMOTE_ROWS and shutil.which("bash") is None:
-        pytest.skip("the fake docker and ssh clients run commands with bash")
+    if name in (*REMOTE_ROWS, "singularity") and shutil.which("bash") is None:
+        pytest.skip("the fake docker, ssh and apptainer clients run commands with bash")
     work = tmp_path / "work"
     (work / "sub").mkdir(parents=True)
     rig, cleanup = _install_row(name, tmp_path / "rig", monkeypatch)
@@ -223,7 +245,7 @@ def backend(
     yield from _make_backend(str(request.param), scope, tmp_path, monkeypatch)
 
 
-@pytest.fixture(params=["local", *REMOTE_ROWS])
+@pytest.fixture(params=list(SHELL_ROWS))
 def shell_backend(
     request: pytest.FixtureRequest,
     scope: Scope,

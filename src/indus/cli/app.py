@@ -126,6 +126,11 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "indus.cli.commands.pairing:pairing_group",
         "Approve or revoke people who asked to use the bot from a chat.",
     ),
+    (
+        "research",
+        "indus.cli.commands.research:research_group",
+        "Batch runs, toolset distributions and trajectory tools.",
+    ),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""

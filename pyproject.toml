@@ -32,6 +32,11 @@ browser = ["playwright==1.63.0"]
 # Local speech to text for the STT library (P10-18; MIT) and the microphone/speaker library for
 # CLI voice mode (P10-19; MIT, needs cffi); 00-layout section 4.
 voice = ["faster-whisper==1.2.1", "sounddevice==0.5.6"]
+# Cloud sandbox SDKs for the terminal backends (P21; Apache-2.0, Apache-2.0, MIT;
+# docs/notes/P21/sdk-versions.md). Imported lazily by their backend only.
+modal = ["modal==1.6.1"]
+daytona = ["daytona==0.220.0"]
+vercel = ["vercel-sandbox==0.7.0"]
 
 [project.scripts]
 indus = "indus.cli.entry:main"
@@ -100,7 +105,10 @@ root_package = "indus"
 name = "Layer order (00-layout section 1)"
 type = "layers"
 layers = [
-    "indus.cli | indus.tui_bridge | indus.gateway | indus.web | indus.acp | indus.mcp_serve | indus.research",
+    "indus.cli | indus.tui_bridge | indus.gateway | indus.web | indus.acp | indus.mcp_serve",
+    # Research tooling (P22) runs agents through the service and is used by the surfaces (CLI
+    # verbs, the interactive trajectory saver), so it sits just below them.
+    "indus.research",
     "indus.service",
     "indus.learning | indus.plugins | indus.mcp | indus.cron | indus.board",
     "indus.core",

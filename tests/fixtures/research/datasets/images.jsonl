@@ -1,0 +1,3 @@
+{"prompt": "build it", "image": "python:3.13-slim", "cwd": "/work"}
+{"prompt": "alt key", "container_image": "alpine:3.20"}
+{"prompt": "no image"}

@@ -508,13 +508,21 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-D4-2** SSH remote home detection (retried no sooner than 30 s) and the first file push on open
   - `tests/unit/backends/ssh/test_environment.py::test_home_detection_retried_no_sooner_than_30s`
   - `tests/unit/backends/ssh/test_environment.py::test_open_pushes_skills_and_credential_files`
+- **ACC-D5-1** Singularity/Apptainer backend: a command runs in an instance and the cwd persists
+  - `tests/unit/backends/test_singularity.py::test_start_flags_tmpfs_binds_and_a_command`
+  - `tests/contract/backends/test_execution_contract.py::test_cd_moves_the_environment`
+- **ACC-D5-2** Singularity persistent overlay is recorded and reused after a restart
+  - `tests/unit/backends/test_singularity.py::test_persistent_overlay_recorded_and_reused`
+  - Review: files surviving a real overlay restart need a real Apptainer (live lane, P21-16)
 - **ACC-D11-1** Environment cache per key with creation lock, idle reaper, per-profile isolation, clean teardown at …
   - Review: not yet planned (phase TBD)
 - **ACC-D12-1** Remote file sync: credential files and skills pushed before commands, changed files synced back on …
   - `tests/unit/backends/test_remote_sync.py::test_first_call_pushes_all_then_rate_limited`
   - `tests/unit/backends/test_remote_sync.py::test_racy_mtime_is_hashed_and_pushed_when_bytes_differ`
   - `tests/unit/backends/test_remote_sync.py::test_transport_failure_keeps_state_and_retries`
-  - Review: sync back on cleanup for SDK backends (P21-10)
+  - `tests/unit/backends/test_daytona.py::test_transport_round_trip_and_sync_back`
+  - `tests/unit/backends/vercel/test_lifecycle.py::test_persistent_cleanup_order_is_sync_back_snapshot_stop`
+  - `tests/unit/backends/test_sync_back.py::test_credential_is_never_written_even_inside_a_mirrored_dir`
 - **ACC-D13-1** Degraded-backend result with a retry hint when SSH or Docker is unreachable; the environment is …
   - `tests/unit/backends/docker/test_environment.py::test_daemon_gone_mid_call_degrades_and_next_call_recreates`
   - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`

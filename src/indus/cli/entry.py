@@ -210,6 +210,10 @@ def main(
 
     register_blocked_names("providers", bundled.env_var_names())
 
+    from indus.backends.vendor_env import register_vendor_names
+
+    register_vendor_names()  # sandbox vendor tokens never reach a child process (P21-11)
+
     from indus.cli.app import dispatch
     from indus.cli.args import CliState
 

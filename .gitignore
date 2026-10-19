@@ -27,4 +27,5 @@ node_modules/
 
 # Clean room: reference checkouts and REA material never enter the repo
 reference/
+!docs/user/reference/
 rea-lab/

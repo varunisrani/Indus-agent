@@ -13,7 +13,7 @@ import typing
 from collections.abc import Mapping
 from typing import Any, Literal, Union, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from indus.foundation import yamlio
 
@@ -151,6 +151,36 @@ class TerminalSection(_Section):
         default=True,
         description="keep /root and /workspace between runs; false = a fresh sandbox per session",
     )
+    singularity_image: str = Field(
+        default="",
+        description="singularity backend: image (.sif path or docker://…); empty = docker_image",
+    )
+    scratch_dir: str = Field(
+        default="",
+        description="singularity backend: SIF cache and overlays (empty: under the profile home)",
+    )
+    disk_warning_gb: float = Field(
+        default=500, description="singularity backend: warn once when scratch use passes this"
+    )
+    # P21 SDK sandboxes (Modal, Daytona, Vercel Sandbox) and sync-back.
+    modal_mode: str = Field(
+        default="auto",
+        description="modal backend: auto or direct (both use your own Modal token pair)",
+    )
+    modal_image: str = Field(
+        default="", description="modal backend: image (or im- id); empty = terminal.docker_image"
+    )
+    daytona_image: str = Field(
+        default="", description="daytona backend: image; empty = terminal.docker_image"
+    )
+    vercel_runtime: Literal["", "node24", "node22", "python3.13"] = Field(
+        default="", description="vercel_sandbox backend: runtime in place of the default image"
+    )
+    sync_back_max_bytes: int = Field(
+        default=2 * 1024 * 1024 * 1024,
+        ge=1,
+        description="largest sandbox archive brought back at cleanup (bytes)",
+    )
     ssh_host: str = Field(default="", description="ssh backend: host to run commands on")
     ssh_user: str = Field(default="", description="ssh backend: login user; empty = ssh's default")
     ssh_port: int = Field(default=22, description="ssh backend: port")
@@ -162,6 +192,27 @@ class TerminalSection(_Section):
         default_factory=list,
         description="host files copied into sandboxes (mounted read-only, pushed upload-only)",
     )
+
+    @field_validator("modal_mode")
+    @classmethod
+    def _direct_modal_only(cls, value: str) -> str:
+        return check_modal_mode(value)
+
+
+MODAL_MANAGED_REFUSED = (
+    "managed Modal is not offered: Indus runs Modal only in direct mode with your own Modal "
+    "token pair (D-16.16); set terminal.modal_mode to auto or direct"
+)
+
+
+def check_modal_mode(value: str) -> str:
+    """``terminal.modal_mode``: ``auto`` or ``direct`` (same meaning); ``managed`` is refused."""
+    mode = str(value).strip().lower()
+    if mode == "managed":
+        raise ValueError(MODAL_MANAGED_REFUSED)
+    if mode not in ("auto", "direct"):
+        raise ValueError(f"modal_mode must be auto or direct, not {value!r}")
+    return mode
 
 
 class ToolOutputSection(_Section):
@@ -796,6 +847,15 @@ class LoopsSection(_Section):
     )
 
 
+class ResearchSection(_Section):
+    """Research tooling: batch runs (P22)."""
+
+    runs_root: str = Field(
+        default="./research-runs",
+        description="folder that holds one folder per batch run (relative to where it is started)",
+    )
+
+
 class SkillsHubSection(_Section):
     """The skills hub (P13-25..27)."""
 
@@ -1380,6 +1440,9 @@ class ConfigModel(BaseModel):
     )
     cron: CronSection = Field(
         default_factory=CronSection, description="scheduled jobs (indus cron)"
+    )
+    research: ResearchSection = Field(
+        default_factory=ResearchSection, description="research tooling (indus research)"
     )
     plugins: PluginsSection = Field(
         default_factory=PluginsSection, description="Python plugins and their hooks"

@@ -110,6 +110,8 @@ Checked by `python -m tooling.checks traps`.
 - **R02.1** Per-session variables leaking through the shared snapshot
   - `tests/contract/backends/test_docker_ssh_contract.py::test_session_values_are_never_frozen_into_the_snapshot`
   - `tests/unit/backends/docker/test_env.py::test_forwarded_values_stay_out_of_the_snapshot`
+  - `tests/unit/backends/test_vendor_env.py::test_snapshot_script_unsets_session_and_passthrough_vars`
+  - `tests/unit/backends/test_vendor_env.py::test_snapshot_script_leaves_session_values_out`
 - **R02.2** Bounded vs full-fidelity capture
   - `tests/unit/tools/builtin/test_file_ops.py::test_shell_calls_are_never_bounded`
   - `tests/unit/tools/builtin/test_file_ops.py::test_three_megabyte_round_trip_is_byte_exact`
@@ -117,6 +119,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/test_remote_processes.py::test_poll_feeds_output_and_completion_fires_once`
   - `tests/unit/tools/builtin/code/test_remote.py::test_two_megabyte_tool_result_arrives_whole`
   - `tests/unit/backends/test_remote_processes.py::test_large_log_read_intact_across_a_split_character`
+  - `tests/unit/backends/modal/test_exec.py::test_twenty_mib_download_is_not_truncated`
+  - `tests/unit/backends/vercel/test_exec.py::test_download_is_unbounded`
 - **R02.3** Timeouts that never fire
   - `tests/contract/backends/test_execution_contract.py::test_deadline_gives_124_and_the_flag`
   - `tests/unit/backends/docker/test_environment.py::test_deadline_kills_inside_the_container_too`
@@ -140,6 +144,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/docker/test_mounts.py::test_media_cache_is_mounted_where_the_media_tools_say`
   - `tests/unit/backends/docker/test_recovery.py::test_mounted_cwd_goes_through_approval`
   - `tests/unit/backends/docker/test_recovery.py::test_unmounted_skips_prompt_but_deny_glob_blocks`
+  - `tests/unit/backends/test_singularity.py::test_start_flags_tmpfs_binds_and_a_command`
 - **R02.7** Credentials on the command line
   - `tests/unit/backends/docker/test_env.py::test_values_only_in_the_client_env`
   - `tests/unit/backends/docker/test_env.py::test_exec_reinjects_updated_value`
@@ -148,12 +153,15 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/ssh/test_environment.py::test_passthrough_value_rides_the_client_env_only`
   - `tests/contract/backends/test_docker_ssh_contract.py::test_values_never_ride_a_client_command_line`
   - Review: the live `/proc/<pid>/cmdline` check runs in the docker lane (`tests/integration/backends/test_docker_live.py`, skipped without a daemon; P11-21)
+  - `tests/unit/backends/test_singularity.py::test_passthrough_values_travel_in_the_client_env`
+  - `tests/unit/backends/test_vendor_env.py::test_sdk_exec_puts_values_in_env_not_text`
 - **R02.8** Multiprofile scoping everywhere
   - `tests/unit/backends/docker/test_environment.py::test_runs_commands_in_a_labelled_container`
   - `tests/unit/backends/docker/test_reaper.py::test_only_stale_labelled_containers_of_this_profile`
   - `tests/unit/backends/test_process_receipts.py::test_receipts_are_per_profile`
   - `tests/unit/backends/test_process_checkpoint.py::test_each_profile_has_its_own_checkpoint`
   - Review: other areas still to pin (P00-guards)
+  - `tests/unit/backends/test_sandbox_records.py::test_profile_isolation`
 - **R02.9** Approved command killed by a stale interrupt
   - `tests/unit/safety/approvals/test_human.py::test_stale_interrupt_cleared_once`
   - Review: the terminal tool calls `clear_stale_interrupt` once before its retry loop (P05-12)
@@ -183,6 +191,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/test_read_file.py::test_compaction_boundary_serves_full_content_once`
 - **R02.16** Spill files must outlive the cache mindset
   - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/test_stdin_payload.py::test_size_mismatch_is_a_stdin_error_and_the_file_is_removed`
 - **R02.17** Background completion only where it can be delivered
   - `tests/unit/backends/test_processes.py::test_notify_needs_a_registered_session`
   - `tests/unit/tools/builtin/test_terminal_plan.py::test_notify_kept_only_where_deliverable`
@@ -200,6 +209,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/docker/test_recovery.py::test_removed_container_is_recreated_once`
   - `tests/unit/backends/docker/test_recovery.py::test_still_gone_after_recovery_is_returned_as_is`
   - `tests/unit/backends/test_remote_processes.py::test_backend_gone_marks_the_job_lost`
+  - `tests/unit/backends/modal/test_lifecycle.py::test_bad_snapshot_falls_back_to_the_base_image_and_flags_recreated`
+  - `tests/unit/backends/vercel/test_exec.py::test_replaced_sandbox_loses_background_jobs`
 - **R02.20** Docker self-inconsistencies
   - `tests/unit/backends/docker/test_args.py::test_contradicting_network_is_refused`
   - `tests/unit/backends/docker/test_args.py::test_snap_compat`
@@ -217,6 +228,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/plugins/test_shell_hooks.py::test_env_is_scrubbed`
   - Review: other child processes (P00-guards)
   - `tests/unit/cron/test_script.py::test_env_lacks_provider_keys_and_keeps_passthrough`
+  - `tests/unit/backends/test_vendor_env.py::test_every_vendor_token_is_out_of_every_child_env`
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
   - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
@@ -241,11 +253,19 @@ Checked by `python -m tooling.checks traps`.
 - **R02.29** Unscoped probes at boot
   - Review: not yet planned (P00-guards)
 - **R02.30** SDK backends lie about timeouts
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/backends/test_sdk_call.py::test_never_returning_call_hits_the_deadline_and_cancels_once`
+  - `tests/unit/backends/test_sdk_call.py::test_exec_never_retried`
+  - `tests/unit/backends/test_sdk_call.py::test_guard_stops_a_runaway_command`
 - **R02.31** Remote sync-back can overwrite host state
   - `tests/unit/backends/test_credential_files.py::test_docker_mounts_read_only_and_sync_upload_only`
   - `tests/unit/backends/ssh/test_environment.py::test_open_pushes_skills_and_credential_files`
-  - Review: the sync-back itself: hash diff, size cap, SIGINT, lock (P21-10)
+  - `tests/unit/backends/test_sync_back.py::test_only_the_changed_and_new_files_are_written`
+  - `tests/unit/backends/test_sync_back.py::test_symlinked_host_dir_cannot_redirect_a_write`
+  - `tests/unit/backends/test_sync_back.py::test_archive_over_the_limit_is_refused_whole`
+  - `tests/unit/backends/test_sync_back.py::test_the_apply_waits_for_the_profile_lock`
+  - `tests/unit/backends/test_sync_back.py::test_ctrl_c_during_apply_finishes_the_apply_then_raises`
+  - `tests/unit/backends/test_sync_back.py::test_nothing_pushed_means_no_download`
+  - `tests/unit/backends/test_daytona.py::test_transport_round_trip_and_sync_back`
 - **R02.32** Kernel cap starvation
   - `tests/unit/tools/builtin/code/test_kernel.py::test_child_kernels_are_pinned_and_outside_the_cap`
   - `tests/unit/tools/builtin/code/test_kernel.py::test_pool_never_evicts_a_busy_or_pinned_kernel`
@@ -967,19 +987,33 @@ Checked by `python -m tooling.checks traps`.
 - **R09.23** Reverse-proxy prefix
   - Review: not yet planned (P00-guards)
 - **R10.1** Crash-durable batch results
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_batch_io.py::test_fsync_happens_before_the_completion_callback`
+  - `tests/unit/research/test_batch_io.py::test_a_crash_before_the_fsync_leaves_the_prompt_not_done`
+  - `tests/unit/research/test_batch_io.py::test_torn_last_line_is_skipped_with_a_warning_and_next_append_is_clean`
+  - `tests/integration/research/test_batch_run.py::test_killed_run_resumes_without_paying_twice`
 - **R10.2** Discards need tombstones
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_worker.py::test_no_reasoning_run_leaves_a_tombstone`
+  - `tests/unit/research/test_batch_io.py::test_tombstoned_prompt_is_not_run_again`
+  - `tests/unit/research/test_batch.py::test_merge_drops_tombstones_bad_lines_and_corrupt_rows`
 - **R10.3** Index skip happens without `--resume`
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_checkpoint.py::test_changed_dataset_is_refused_naming_both_hashes`
+  - `tests/unit/research/test_checkpoint.py::test_new_dataset_archives_the_old_run`
+  - `tests/unit/research/test_batch.py::test_changed_dataset_is_refused_and_new_dataset_archives`
 - **R10.4** Advertised defaults that are not applied
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_batch.py::test_a_run_writes_rows_checkpoint_merge_and_statistics`
+  - `tests/unit/research/test_batch.py::test_defaults_table_is_the_single_source`
+  - `tests/unit/cli/commands/test_research.py::test_defaults_are_left_to_the_runner`
+  - `tests/unit/cli/commands/test_research.py::test_no_reasoning_wins_and_sends_none`
 - **R10.5** Columnar-stable stats
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_stats.py::test_rows_with_disjoint_tools_get_identical_columns`
+  - `tests/unit/research/test_stats.py::test_normalise_adds_zero_rows_and_keeps_unexpected_names`
+  - `tests/unit/research/test_batch.py::test_merge_drops_tombstones_bad_lines_and_corrupt_rows`
 - **R10.6** Tool name by position
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_trajectory.py::test_reordered_responses_get_their_names_by_id`
+  - `tests/unit/research/test_trajectory.py::test_missing_ids_fall_back_to_position_and_extras_are_unknown`
 - **R10.7** Two subtly different trajectory writers
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/research/test_trajectory.py::test_golden_conversion`
+  - Review: the SWE runner and the interactive saver must call the same converter (P22-10, P22-14)
 - **R10.8** Compressor drops timed-out samples
   - Review: not yet planned (P00-guards)
 - **R10.9** Missing default config and undeclared deps

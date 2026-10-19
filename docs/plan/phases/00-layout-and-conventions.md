@@ -221,8 +221,9 @@ Package rules:
 - **Layer order** (import-linter contract, P00-10): `indus.platform` → `indus.foundation` →
   (`indus.protocol`, `indus.state`) → (`indus.providers`, `indus.safety`, `indus.pm`) → `indus.backends` →
   `indus.tools` (D-04.7) → `indus.core` → (`indus.learning`, `indus.plugins`, `indus.mcp`,
-  `indus.cron`, `indus.board`) → `indus.service` → (`indus.cli`, `indus.tui_bridge`, `indus.gateway`, `indus.web`,
-  `indus.acp`, `indus.mcp_serve`, `indus.research`). A module imports only from layers to its left
+  `indus.cron`, `indus.board`) → `indus.service` → `indus.research` (P22: it runs agents through
+  the service and the surfaces use it; lead, 2026-10-19) → (`indus.cli`, `indus.tui_bridge`,
+  `indus.gateway`, `indus.web`, `indus.acp`, `indus.mcp_serve`). A module imports only from layers to its left
   (and its own layer's siblings only where the contract lists them as independent).
 - **No import-time side effects.** No module reads the home, the environment or a config file at
   import time; everything takes a `Scope` (architecture rule 4). `foundation/preparse.py` and

@@ -198,6 +198,12 @@ commands:
   cron incidents: 0
   cron notepad: 2
   cron doctor: 0          # no jobs, no findings
+  research: 2             # a group with no default action prints its help
+  research batch: 2       # DATASET and --run-name are required
+  research distributions: 0
+  research compress: 1    # not built yet: says so
+  research swe: 1
+  research sample: 1
 
   pairing: 0              # no subcommand lists requests and paired users (P15-09)
   pairing list: 0
@@ -232,3 +238,4 @@ with_arguments:
   cron run no-such-job: 1
   cron remove no-such-job -y: 1
   cron notepad no-such-job list: 1
+  research batch missing.jsonl --run-name r1: 2   # no such dataset

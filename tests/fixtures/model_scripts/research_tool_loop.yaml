@@ -1,0 +1,13 @@
+# A batch sample with reasoning: one tool round (a file that is not there), then the answer.
+turns:
+  - steps:
+      - reasoning: ["Look for the file ", "first."]
+      - text: ["Checking the file."]
+      - tool_call: {name: read_file, arguments: {path: "no-such-research-file.txt"}, id: call_read_1}
+      - usage: {prompt: 120, completion: 20}
+      - finish: tool_calls
+  - steps:
+      - reasoning: ["It is missing, ", "so say so."]
+      - text: ["The file does not exist."]
+      - usage: {prompt: 180, completion: 9}
+      - finish: stop

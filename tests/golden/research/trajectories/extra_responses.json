@@ -1,0 +1,25 @@
+{
+  "turns": [
+    {
+      "from": "system",
+      "value": "You are an assistant that can use tools. The tools you may call are described as JSON inside the <tools></tools> tags below. Call a tool only when it helps with the request; otherwise answer in plain language. Never guess argument values you were not given.\n<tools>\n[{\"name\":\"read_file\",\"description\":\"Read a text file.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},{\"name\":\"terminal\",\"description\":\"Run a shell command.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}]\n</tools>\nTo call a tool, write one <tool_call></tool_call> block per call holding a JSON object with the keys \"name\" (the tool) and \"arguments\" (an object of its parameters), for example:\n<tool_call>\n{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}\n</tool_call>\nEach result comes back to you inside <tool_response></tool_response> tags. Before you act, think inside <think></think> tags."
+    },
+    {
+      "from": "human",
+      "value": "List the folder."
+    },
+    {
+      "from": "gpt",
+      "value": "<think>\nOne call.\n</think>\n<tool_call>\n{\"name\":\"terminal\",\"arguments\":{\"command\":\"ls\"}}\n</tool_call>"
+    },
+    {
+      "from": "tool",
+      "value": "<tool_response>\n{\"tool_call_id\":\"call_ls\",\"name\":\"terminal\",\"content\":\"a.txt\\nb.txt\"}\n</tool_response>\n<tool_response>\n{\"tool_call_id\":\"call_ghost\",\"name\":\"unknown\",\"content\":{\"error\":\"nobody asked\"}}\n</tool_response>"
+    },
+    {
+      "from": "gpt",
+      "value": "<think>\n</think>\nTwo files."
+    }
+  ],
+  "bad_arguments": 0
+}

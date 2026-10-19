@@ -94,13 +94,16 @@ type Factory = Callable[[CreateRequest], Awaitable[Environment]]
 @dataclass(frozen=True, slots=True)
 class BackendEntry:
     """One backend row. ``probe`` returns why the backend cannot run here, or None;
-    ``profile_scoped`` says whether one environment serves the whole profile."""
+    ``profile_scoped`` says whether one environment serves the whole profile;
+    ``cleanup_bound_s`` replaces the registry's cleanup bound for this backend's environments
+    (SDK sandboxes sync back and snapshot when they end, P21-12)."""
 
     name: str
     factory: Factory
     flags: BackendFlags
     probe: Callable[[Scope], str | None] | None = None
     profile_scoped: Callable[[Scope], bool] | None = None
+    cleanup_bound_s: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,11 +159,15 @@ SSH_ROW_FLAGS = BackendFlags(
 
 def default_entries() -> list[BackendEntry]:
     from indus.backends.docker import docker_entry
+    from indus.backends.sdk_entries import sdk_entries
+    from indus.backends.singularity import singularity_entry
 
     return [
         BackendEntry("local", _create_local, LOCAL_FLAGS),
         docker_entry(),
         BackendEntry("ssh", _create_ssh, SSH_ROW_FLAGS),
+        singularity_entry(),
+        *sdk_entries(),
     ]
 
 
@@ -427,16 +434,24 @@ class EnvironmentRegistry:
         if self._reaper is None or self._reaper.done():
             self._reaper = asyncio.ensure_future(self._reap_forever())
 
+    def cleanup_bound_for(self, key: EnvKey) -> float:
+        """How long the cleanup of ``key``'s environment may take (its row's own bound, if any)."""
+        entry = self._entries.get(key.backend)
+        if entry is not None and entry.cleanup_bound_s is not None:
+            return entry.cleanup_bound_s
+        return self.cleanup_bound_s
+
     async def _cleanup(self, env: Environment, key: EnvKey) -> None:
+        bound = self.cleanup_bound_for(key)
         task = asyncio.ensure_future(env.cleanup())
-        timer = asyncio.ensure_future(self.clock.sleep(self.cleanup_bound_s))
+        timer = asyncio.ensure_future(self.clock.sleep(bound))
         try:
             await asyncio.wait({task, timer}, return_when=asyncio.FIRST_COMPLETED)
         finally:
             timer.cancel()
         if not task.done():
             task.cancel()
-            log.warning("cleanup of %s did not finish in %gs; abandoned", key, self.cleanup_bound_s)
+            log.warning("cleanup of %s did not finish in %gs; abandoned", key, bound)
             return
         if not task.cancelled() and task.exception() is not None:
             log.warning("cleanup of %s failed", key, exc_info=task.exception())

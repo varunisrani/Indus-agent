@@ -27,7 +27,8 @@ LAYERS: list[list[str]] = [
     ["core"],
     ["learning", "plugins", "mcp", "cron", "board"],
     ["service"],
-    ["cli", "tui_bridge", "gateway", "web", "acp", "mcp_serve", "research"],
+    ["research"],
+    ["cli", "tui_bridge", "gateway", "web", "acp", "mcp_serve"],
 ]
 LAYER_PACKAGES = [name for layer in LAYERS for name in layer if name != "cli"]
 STRICT = ["foundation", "protocol", "state", "service", "core"]

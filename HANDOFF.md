@@ -76,11 +76,10 @@ Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`;
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
 - P15 wave 1 (P15-01..18) LANDED in the commit that carries this text. P15-19..36 remain.
-- P21 B1 + B2 (P21-01..11, 15) and P22 R1 (P22-01..09): built (patches + READMEs in `.agents/wip/p21/`,
-  `.agents/wip/p22/`): integrated and rebased in verify3; combined gate running, lands next.
+- P21-01..11, 15 and P22-01..09 LANDED in the commit that carries this text. Nothing in flight.
 Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
 media intake, daemon, drain/restart, boot recovery, control socket, `indus gateway`, reconnect, API
-server, webhooks, Telegram/Discord/Slack adapters, Demo 3); P21-12..14, 16; P22-10..15; then P16, P17.
+server, webhooks, Telegram/Discord/Slack adapters, Demo 3); P21-12 rest (flap guard, re-probe), P21-13, 14, 16; P22-10..15; then P16, P17.
 Owner items: licences (Pillow MIT-CMU; voice extra av/numpy; Piper/eSpeak NG; new P21 vendor-extra
 transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm).
 

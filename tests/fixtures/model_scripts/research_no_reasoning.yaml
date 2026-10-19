@@ -1,0 +1,6 @@
+# A batch sample whose only assistant turn carries no reasoning (it becomes a tombstone).
+turns:
+  - steps:
+      - text: ["Four."]
+      - usage: {prompt: 40, completion: 2}
+      - finish: stop

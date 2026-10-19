@@ -26,9 +26,13 @@ def test_decided_defaults() -> None:
         "fast_mode": "normal",  # P08-15
         "fast_window_s": 60.0,  # P08-15
     }
-    # Container backend rows (``docker_*``, ``container_*``) are pinned by the P11 docker tests.
+    # Container backend rows (``docker_*``, ``container_*``) are pinned by the P11 docker tests,
+    # the Singularity rows by tests/unit/backends/test_singularity.py (P21-04).
+    singularity = ("singularity_", "scratch_dir", "disk_warning_gb")
     core_terminal = {
-        k: v for k, v in d["terminal"].items() if not k.startswith(("docker_", "container_"))
+        k: v
+        for k, v in d["terminal"].items()
+        if not k.startswith(("docker_", "container_", *singularity))
     }
     assert core_terminal == {
         "backend": "local",
@@ -42,6 +46,11 @@ def test_decided_defaults() -> None:
         "daemon_term_grace_s": 2.0,
         "max_foreground_timeout": 600,
         "process_wait_auto_notify": True,
+        "modal_mode": "auto",  # P21-05: direct only (D-16.16)
+        "modal_image": "",
+        "daytona_image": "",  # P21-07
+        "vercel_runtime": "",  # P21-08
+        "sync_back_max_bytes": 2 * 1024 * 1024 * 1024,  # P21-10
         "ssh_host": "",
         "ssh_user": "",
         "ssh_port": 22,
@@ -125,6 +134,8 @@ def test_decided_defaults() -> None:
         "retry_unreachable": True,
         "failure_repeat_alert_hours": 6.0,
     }
+    # P22-08: research batch runs
+    assert d["research"] == {"runs_root": "./research-runs"}
     # P10-20: desktop control
     assert d["computer_use"] == {"driver": "stdio", "driver_cmd": "", "action_timeout_s": 30.0}
     assert d["prompt_caching"] == {"cache_ttl": "5m"}

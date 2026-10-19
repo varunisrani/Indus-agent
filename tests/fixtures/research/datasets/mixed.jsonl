@@ -1,0 +1,9 @@
+{"prompt": "first good"}
+
+{not json
+["prompt"]
+{"question": "no prompt key"}
+{"prompt": ""}
+{"prompt": 42}
+   
+{"prompt": "second good"}

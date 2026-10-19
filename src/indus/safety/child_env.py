@@ -166,9 +166,14 @@ _FLOOR_GROUPS: dict[str, tuple[str, ...]] = {
         "GITHUB_APP_PRIVATE_KEY_PATH",
         "GITHUB_TOKEN",
     ),
+    # Kept equal to (or a superset of) ``indus.backends.vendor_env.VENDOR_TOKEN_NAMES``; safety
+    # sits below backends in the layer order, so the declarations are mirrored here (P21-11).
     "sandbox vendors": (
         "DAYTONA_API_KEY",
+        "DAYTONA_JWT_TOKEN",
         "E2B_API_KEY",
+        "MODAL_OAUTH_CLIENT_SECRET",
+        "MODAL_OAUTH_REFRESH_TOKEN",
         "MODAL_TOKEN_ID",
         "MODAL_TOKEN_SECRET",
         "VERCEL_OIDC_TOKEN",

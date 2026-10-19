@@ -115,7 +115,7 @@ PyPI for packages of other platforms).
 | httpx2-jsfetch | 1.0 | BSD-3-Clause | via httpx2, Emscripten only (never installed elsewhere) | P13-03 |
 | truststore | 0.10.4 | MIT | via httpx2 / httpcore2 (the OS trust store for TLS) | P13-03 |
 | pyjwt | 2.15.1 | MIT | via mcp (OAuth helpers; `crypto` extra uses cryptography) | P13-03 |
-| opentelemetry-api | 1.45.0 | Apache-2.0 | via mcp (tracing hooks; no exporter is installed) | P13-03 |
+| opentelemetry-api | 1.45.0 | Apache-2.0 | via mcp (tracing hooks; an exporter comes only with the `daytona` extra) | P13-03 |
 | python-multipart | 0.0.32 | Apache-2.0 | via mcp (server side; unused by the client) | P13-03 |
 | sse-starlette | 3.5.0 | BSD-3-Clause | via mcp (server side; the fake MCP servers of the tests use it) | P13-03 |
 | starlette | 1.7.0 | BSD-3-Clause | via mcp / sse-starlette (server side) | P13-03 |
@@ -124,3 +124,59 @@ PyPI for packages of other platforms).
 | croniter | 6.2.4 | MIT | five-field cron expressions for scheduled jobs (`indus cron`) | P14-01 |
 | python-dateutil | 2.9.0.post0 | Apache-2.0 OR BSD-3-Clause (dual licence) | via croniter | P14-01 |
 | six | 1.17.0 | MIT | via python-dateutil | P14-01 |
+| modal | 1.6.1 | Apache-2.0 | extra `modal`: the Modal sandbox SDK (terminal backend `modal`) | P21-05 |
+| synchronicity | 0.12.6 | Apache-2.0 | extra `modal`, via modal (sync wrappers of its async API) | P21-05 |
+| grpclib | 0.4.9 | BSD-3-Clause | extra `modal`, via modal (gRPC client) | P21-05 |
+| h2 | 4.4.1 | MIT | extra `modal`, via grpclib (HTTP/2) | P21-05 |
+| hpack | 4.2.0 | MIT | extra `modal`, via h2 | P21-05 |
+| hyperframe | 6.1.0 | MIT | extra `modal`, via h2 | P21-05 |
+| cbor2 | 6.1.5 | MIT | extra `modal`, via modal | P21-05 |
+| watchfiles | 1.3.0 | MIT | extra `modal`, via modal (file watching; unused by the backend) | P21-05 |
+| toml | 0.10.2 | MIT | extras `modal`, `daytona`, via modal / daytona | P21-05 |
+| types-certifi | 2021.10.8.3 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
+| types-toml | 0.10.8.20260518 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
+| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, via modal / daytona (HTTP client) | P21-05 |
+| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
+| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
+| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
+| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp / yarl | P21-05 |
+| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp / yarl | P21-05 |
+| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, via aiohttp | P21-05 |
+| daytona | 0.220.0 | Apache-2.0 | extra `daytona`: the Daytona sandbox SDK (terminal backend `daytona`) | P21-07 |
+| daytona-api-client | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona (generated API client) | P21-07 |
+| daytona-api-client-async | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
+| daytona-toolbox-api-client | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
+| daytona-toolbox-api-client-async | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
+| daytona-analytics-api-client | 0.220.0 | Apache-2.0 (LICENSE file; no metadata field) | extra `daytona`, via daytona | P21-07 |
+| daytona-analytics-api-client-async | 0.220.0 | Apache-2.0 (LICENSE file; no metadata field) | extra `daytona`, via daytona | P21-07 |
+| aiofiles | 25.1.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
+| aiohttp-retry | 2.9.1 | MIT | extra `daytona`, via daytona | P21-07 |
+| bidict | 0.24.1 | MPL-2.0 (unmodified) | extra `daytona`, via python-socketio | P21-07 |
+| deprecated | 1.3.1 | MIT | extra `daytona`, via daytona / opentelemetry | P21-07 |
+| wrapt | 2.5.0 | BSD-2-Clause | extra `daytona`, via deprecated / opentelemetry-instrumentation | P21-07 |
+| googleapis-common-protos | 1.75.5 | Apache-2.0 | extra `daytona`, via opentelemetry-exporter-otlp-proto-http | P21-07 |
+| httpx-ws | 0.9.0 | MIT | extra `daytona`, via daytona (WebSocket over httpx) | P21-07 |
+| wsproto | 1.3.2 | MIT | extra `daytona`, via httpx-ws / simple-websocket | P21-07 |
+| obstore | 0.11.1 | MIT | extra `daytona`, via daytona (object storage client) | P21-07 |
+| opentelemetry-sdk | 1.45.0 | Apache-2.0 | extra `daytona`, via daytona (tracing; off unless DAYTONA_OTEL_ENABLED) | P21-07 |
+| opentelemetry-semantic-conventions | 0.66b0 | Apache-2.0 | extra `daytona`, via opentelemetry-sdk | P21-07 |
+| opentelemetry-proto | 1.45.0 | Apache-2.0 | extra `daytona`, via the OTLP exporter | P21-07 |
+| opentelemetry-exporter-otlp-proto-http | 1.45.0 | Apache-2.0 | extra `daytona`, via daytona (OTLP exporter; off by default) | P21-07 |
+| opentelemetry-exporter-otlp-proto-common | 1.45.0 | Apache-2.0 | extra `daytona`, via the OTLP exporter | P21-07 |
+| opentelemetry-exporter-otlp-common | 0.66b0 | Apache-2.0 | extra `daytona`, via the OTLP exporter | P21-07 |
+| opentelemetry-exporter-http-transport | 0.66b0 | Apache-2.0 | extra `daytona`, via the OTLP exporter | P21-07 |
+| opentelemetry-instrumentation | 0.66b0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
+| opentelemetry-instrumentation-aiohttp-client | 0.66b0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
+| opentelemetry-util-http | 0.66b0 | Apache-2.0 | extra `daytona`, via the aiohttp instrumentation | P21-07 |
+| python-dotenv | 1.2.4 | BSD-3-Clause | extra `daytona`, via daytona | P21-07 |
+| python-socketio | 5.17.0 | MIT | extra `daytona`, via daytona (with its `client` extra) | P21-07 |
+| python-engineio | 4.14.0 | MIT | extra `daytona`, via python-socketio | P21-07 |
+| simple-websocket | 1.1.0 | MIT | extra `daytona`, via python-engineio | P21-07 |
+| requests | 2.34.2 | Apache-2.0 | extra `daytona`, via python-socketio[client] | P21-07 |
+| charset-normalizer | 3.5.2 | MIT | extra `daytona`, via requests | P21-07 |
+| urllib3 | 2.8.0 | MIT | extra `daytona`, via requests / the generated API clients | P21-07 |
+| websocket-client | 1.9.2 | Apache-2.0 | extra `daytona`, via python-socketio[client] | P21-07 |
+| vercel-sandbox | 0.7.0 | MIT | extra `vercel`: the Vercel Sandbox SDK (terminal backend `vercel_sandbox`) | P21-08 |
+| vercel-internal-core | 0.2.0 | MIT | extra `vercel`, via vercel-sandbox | P21-08 |
+| vercel-oidc | 0.9.0 | MIT | extra `vercel`, via vercel-sandbox (OIDC token lookup) | P21-08 |
+| vercel-headers | 0.7.2 | MIT | extra `vercel`, via vercel-sandbox | P21-08 |

@@ -1,0 +1,76 @@
+{
+  "prompt": "List the folder.",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a text file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "terminal",
+        "description": "Run a shell command.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ]
+        }
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "List the folder."
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "reasoning": "One call.",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "terminal",
+            "arguments": "{\"command\":\"ls\"}"
+          },
+          "id": "call_ls"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_ls",
+      "content": "a.txt\nb.txt"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_ghost",
+      "content": "{\"error\": \"nobody asked\"}"
+    },
+    {
+      "role": "assistant",
+      "content": "Two files."
+    }
+  ]
+}
