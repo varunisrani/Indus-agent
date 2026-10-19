@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 2,
-  "remaining_pct": 98,
+  "usage_pct": 6,
+  "remaining_pct": 94,
   "resets_at": "2026-10-19T22:00:00+00:00",
-  "last_check": "2026-10-19T17:41:00+00:00",
-  "current_step": "P15 waves 2-3 building (W1..W4); last usage reading 6% at 17:11",
+  "last_check": "2026-10-19T18:08:00+00:00",
+  "current_step": "P15 waves 2-3 building (W1..W4)",
   "last_commit": "42a852e"
 }
