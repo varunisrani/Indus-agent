@@ -187,3 +187,10 @@
 - Intended differences recorded: D-16.149 … D-16.159, §2.7.
 - M2 demo state ("Done when"): met with the fake model and the injected clock — `test_m2_demo.py` runs a 10-turn session whose review writes a memory entry and creates a skill, the session's prompt is unchanged, a new `indus -z` session shows the memory block and lists the skill, `/release-notes` runs it, `indus curator status` counts it managed, +31 days `indus curator run` archives it and `indus curator restore` brings it back. Not run here: the same demo with a real key (owner/local).
 - Open seams: the classic CLI's `/learn` is a plain submitted turn (origin `foreground`, the built prompt stored as the user row); `learn.learn_turn` (origin `learn`, stores `/learn <text>`) is there for hosts that can call it — the REPL submit path has no origin channel yet. Other hosts (gateway P15, TUI P12, ACP) must call `wire_session` + `attach_review` like `cli/runtime` and pass `gateway_running` to the curator (P15). The cron store registers as a `SkillReferenceSource` in P14. `ledger_port` is still a module global for overrides (one process = one profile). Golden tool arrays still come from `load_builtins` only, so they do not show `skill_manage`. The known base failure `test_wizard::test_back_from_terminal_returns_to_model` (noted by slice D) — see the gate results of this landing.
+
+## Gate change (lead, 2026-10-19): perf tests run alone
+- The D-04.1 wall-clock tests (`-m perf`, `test_d04_1_criteria.py`) failed in four full runs in a row
+  while builders shared the machine, and passed every time run alone (marker text: numbers are only
+  meaningful run alone). The gate is now `pytest -m "not perf"` for the full suite, then
+  `pytest -m perf` on its own. CI does the same (separate step; the py3.14 job skips perf). The
+  bounds themselves are unchanged.

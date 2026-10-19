@@ -65,7 +65,11 @@ jobs:
         run: uv run pyright
 
       - name: Tests
-        run: uv run pytest -q
+        run: uv run pytest -q -m "not perf"
+
+      # D-04.1 wall-clock bounds are only meaningful without other tests competing for the CPU.
+      - name: Perf bounds (serial, alone)
+        run: uv run pytest -q -m perf
 
       # R10.22: a pull request is judged by the policy files of its base branch, so it cannot
       # loosen the guard that judges it. A policy change applies from the next pull request on.
@@ -103,7 +107,7 @@ jobs:
           enable-cache: true
 
       - name: Tests on Python 3.14
-        run: uv run --locked --python 3.14 pytest -q
+        run: uv run --locked --python 3.14 pytest -q -m "not perf"
 
   # Demo 1 (P06-14): the real `indus` in a pseudo-terminal against the fake model, on Linux and
   # macOS (pty and signal behaviour differ between them).

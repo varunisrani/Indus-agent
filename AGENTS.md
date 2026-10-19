@@ -56,7 +56,8 @@ file is the short version you must follow.
 uv sync                                         # install the dev environment
 uv run ruff check .                             # lint
 uv run ruff format --check .                    # formatting (drop --check to fix)
-uv run pytest -q                                # tests
+uv run pytest -q -m "not perf"                  # tests
+uv run pytest -q -m perf                        # D-04.1 wall-clock bounds, run alone afterwards
 uv run python -m tooling.checks --require-ref   # all clean-room guards, reference required
 ```
 

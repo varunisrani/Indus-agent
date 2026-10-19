@@ -8,6 +8,6 @@ Commands:
 ```bash
 uv sync
 uv run ruff check . && uv run ruff format --check .
-uv run pytest -q
+uv run pytest -q -m "not perf" && uv run pytest -q -m perf
 uv run python -m tooling.checks --require-ref
 ```
