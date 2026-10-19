@@ -72,7 +72,12 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
 Done: P00–P08 (P08 wave 2 landed in the commit that carries this text) and P11 (`3ae8089`).
 Landing notes for both are in LEAD-NOTES.
-Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up). Agent 1 is integrating P09 wave 1.
+Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up).
+In flight (Agent 1): P09 wave 1 integration (from `fb1204d`), and P09 wave 2 building in parallel on a
+local base = main + the three wave 1 patches applied raw: D = P09-11 skill_manage, P09-13 ledger,
+P09-24 CLI/slash; E = P09-14..17 review loop, /refine, /learn; F = P09-18..20 curator, P09-23 timeline.
+If you find the turn PAUSED, wave 2 slice patches will be in `.agents/wip/p09w2/` (base = that raw
+base, also saved there as a patch) — land wave 1 first.
 Start here — P09 wave 1 is saved, not landed: `.agents/wip/p09w1/` holds three slice patches on base
 `29ddd7b` and a README with each slice's status and the integration list:
 - A (P09-01..04, P09-25 memory, pending-write gate, frozen block, session_search): done; host wiring
