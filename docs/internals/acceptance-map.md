@@ -570,7 +570,14 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/safety/approvals/test_policy.py::test_unattended_approve_mode`
   - `tests/unit/cron/test_runner.py::test_dangerous_command_is_denied_under_cron_mode_deny`
 - **ACC-E8-1** Approvals over chat: buttons where supported, `/approve`, `/approve all`, `/deny reason`, timeout …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_prompts.py::test_a_typed_approval_that_skips_the_front_door_keeps_the_requester_rule`
+  - `tests/unit/gateway/core/test_prompts.py::test_button_presses`
+  - `tests/unit/gateway/core/test_prompts.py::test_approve_while_busy_answers_inline`
+  - `tests/unit/gateway/core/test_prompts.py::test_deny_with_a_reason`
+  - `tests/unit/gateway/core/test_prompts.py::test_a_timed_out_request_says_it_did_not_run_and_is_not_a_denial`
+  - `tests/unit/gateway/core/test_prompts.py::test_only_the_requester_or_an_admin_answers_in_a_shared_thread`
+  - `tests/unit/gateway/core/test_prompts.py::test_clarify_by_text`
+  - `tests/unit/gateway/core/test_prompts.py::test_clarify_buttons_with_paging_and_other`
 - **ACC-E9-1** Whole-script approval for `execute_code`
   - `tests/unit/tools/builtin/code/test_runner.py::test_manual_approval_denied_spawns_nothing`
   - `tests/unit/tools/builtin/code/test_runner.py::test_session_approval_is_asked_once`
@@ -728,7 +735,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cron/test_due.py::test_paused_two_days_then_resumed_runs_once`
   - `tests/unit/cron/test_ticker.py::test_daemon_fires_an_every_30m_job_twice_in_an_hour`
   - `tests/integration/cron/test_m4_demo.py::test_m4_cron_demo`
-  - Review: the ticker moves into the gateway daemon (P15-21)
+  - `tests/unit/gateway/test_cron_host.py::test_a_due_job_fires_once_at_the_first_pass_after_its_time`
+  - `tests/unit/gateway/test_cron_host.py::test_cron_tick_refuses_while_a_live_gateway_owns_the_profile`
+  - `tests/integration/gateway/test_cron_delivery.py::test_a_cron_job_reaches_the_telegram_home_channel_masked`
 - **ACC-H3-2** Fire claims: one owner per slot, heartbeats, stale claims reclaimed, tick lock
   - `tests/unit/cron/test_ticker.py::test_claim_liveness`
   - `tests/unit/cron/test_ticker.py::test_young_claim_blocks_another_process_and_stale_claim_is_reclaimed`
@@ -753,7 +762,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cron/test_targets.py::test_parser_table`
   - `tests/unit/cron/test_delivery.py::test_local_delivery_reports_the_output_document`
   - `tests/unit/cron/test_delivery.py::test_origin_resolves_to_the_stored_chat`
-  - Review: platform deliverers and `all` resolution (P15-20)
+  - `tests/unit/gateway/delivery/test_router.py::test_home_channel_target_with_thread`
+  - `tests/unit/gateway/delivery/test_router.py::test_all_is_resolved_at_fire_time`
+  - `tests/unit/gateway/delivery/test_router.py::test_hash_name_resolves_through_the_directory`
 - **ACC-H13-1** Execution ledger: an abandoned run becomes "unknown" and is never re-run
   - `tests/unit/cron/test_ledger.py::test_dead_owner_becomes_unknown`
   - `tests/unit/cron/test_ledger.py::test_unknown_never_rerun`
@@ -1038,11 +1049,15 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-J17-1** Reconnect and crash recovery that reopens the same stored session and never resubmits a prompt
   - Review: not yet planned (phase TBD)
 - **ACC-K1-1** `indus gateway run
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/gateway/test_gateway_e2e.py::test_dm_send_status_drain_and_crash_recovery`
+  - `tests/integration/gateway/test_daemon_start.py::test_the_daemon_process_serves_refuses_a_second_and_drains_on_sigterm`
+  - `tests/integration/gateway/test_daemon_start.py::test_a_dm_is_answered_and_the_status_file_follows_the_lifecycle`
+  - `tests/integration/gateway/test_signals.py::test_sigusr1_lets_the_turn_finish_refuses_new_ones_and_exits_75`
 - **ACC-K2-1** Service install: systemd user unit → launchd agent, Windows scheduled task, system units
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_gateway.py::test_install_writes_a_user_unit_and_enables_it`
+  - `tests/unit/gateway/service/test_units.py::test_golden`
 - **ACC-K3-1** One profile per gateway process. Changed (P8 decision); multiplexed profiles in one process come …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/gateway/test_daemon_start.py::test_a_second_daemon_for_the_same_profile_refuses`
 - **ACC-K4-1** Adapter contract and platform registry: enabled by credentials, explicit disable wins, token locks …
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/test_config.py::test_enablement_table`
@@ -1096,7 +1111,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/core/test_busy.py::test_steer_mode_lands_in_the_running_turn`
   - `tests/unit/gateway/core/test_batching.py::test_three_split_pastes_become_one_turn`
 - **ACC-K24-1** Intake of voice notes (transcribed, with an explicit note when inaudible), images (native or …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/intake/test_voice.py::test_empty_or_inaudible_transcripts_say_so`
+  - `tests/unit/gateway/intake/test_voice.py::test_a_merged_burst_is_transcribed_once_per_clip`
+  - `tests/unit/gateway/intake/test_media.py::test_the_128_mib_cap`
+  - `tests/unit/gateway/intake/test_media.py::test_image_mode_follows_the_model`
+  - `tests/unit/gateway/intake/test_media.py::test_documents`
+  - `tests/unit/gateway/intake/test_media.py::test_an_album_becomes_one_event`
+  - `tests/unit/gateway/intake/test_media.py::test_foreign_paths_are_refused_and_never_read`
 - **ACC-K25-1** Outbound chunking with fence carry-over and `(i/n)` markers; per-platform formatting with …
   - `tests/unit/gateway/outbound/test_chunker.py::test_fence_is_closed_and_reopened_with_its_language`
   - `tests/unit/gateway/outbound/test_formatting.py::test_golden_markdownv2_cases`
@@ -1119,17 +1140,37 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/outbound/test_sender.py::test_dead_target_skipped_then_revived`
   - `tests/unit/gateway/outbound/test_sender.py::test_only_whole_chat_failures_mark_a_target`
 - **ACC-K30-1** Delivery ledger: final replies delivered at least once across crashes, with possible duplicates …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/gateway/test_gateway_e2e.py::test_dm_send_status_drain_and_crash_recovery`
+  - `tests/integration/gateway/test_ledger_recovery.py::test_kill_point_then_boot`
+  - `tests/unit/gateway/delivery/test_ledger.py::test_boot_sweep_rules`
+  - `tests/unit/gateway/delivery/test_ledger.py::test_flood_waits_the_stated_time_capped_and_labels_the_retry`
 - **ACC-K31-1** Restart notice to home channels and one auto-resume of turns cut by a restart
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/gateway/test_boot_recovery.py::test_restart_notices_reach_home_channels_once_per_boot`
+  - `tests/integration/gateway/test_signals.py::test_sigterm_mid_turn_interrupts_notifies_and_the_next_boot_resumes_once`
 - **ACC-K32-1** Local control socket (identify, status, then more verbs) for other local processes
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/gateway/test_control_part.py::test_the_control_part_serves_reconnects_and_drains`
+  - `tests/unit/gateway/test_control_socket.py::test_identify_round_trip_and_owner_only_socket`
+  - `tests/unit/gateway/test_control_socket.py::test_wire_table`
 - **ACC-K33-1** Reconnect watcher with capped backoff, "needs attention" flag, `/platform pause
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/daemon/test_reconnect.py::test_backoff_sequence`
+  - `tests/unit/gateway/daemon/test_reconnect.py::test_needs_attention_after_threshold`
+  - `tests/unit/gateway/daemon/test_reconnect.py::test_platform_command_shows_and_holds_queued_platforms`
 - **ACC-K35-1** OpenAI-compatible API server: chat completions, responses, models, runs with …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_api_server_openai.py::test_every_route_needs_a_key_on_loopback_too`
+  - `tests/contract/gateway/test_api_server_openai.py::test_streamed_chat_frames_match_the_chunk_schema`
+  - `tests/contract/gateway/test_api_server_openai.py::test_responses_json_stream_and_lookup_match_the_schema`
+  - `tests/contract/gateway/test_api_server_openai.py::test_the_session_header_resumes_and_no_header_starts_fresh`
+  - `tests/contract/gateway/test_api_server_runs.py::test_a_run_waits_for_approval_and_the_approval_route_settles_it`
+  - `tests/contract/gateway/test_api_server_runs.py::test_the_eleventh_concurrent_run_gets_429`
+  - `tests/contract/gateway/test_api_server_runs.py::test_jobs_crud_runs_and_limits`
 - **ACC-K36-1** Webhook receiver: HMAC-verified routes, payload filters and templates, coalescing, direct delivery …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_webhook.py::test_a_bad_signature_is_401_and_a_good_one_runs_the_agent`
+  - `tests/contract/gateway/test_webhook.py::test_a_replayed_delivery_is_answered_without_a_second_turn`
+  - `tests/contract/gateway/test_webhook.py::test_the_31st_request_in_60_s_is_429`
+  - `tests/contract/gateway/test_webhook.py::test_an_insecure_route_loads_only_on_loopback`
+  - `tests/contract/gateway/test_webhook.py::test_coalescing_runs_the_newest_event_once_after_the_quiet_window`
+  - `tests/contract/gateway/test_webhook.py::test_events_filters_and_direct_delivery`
+  - `tests/unit/cli/commands/test_webhook.py::test_test_signs_and_posts_to_the_local_receiver`
 - **ACC-K52-1** `indus gateway setup` and per-platform setup helpers (WhatsApp pairing, Slack app)
   - Review: not yet planned (phase TBD)
 - **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …

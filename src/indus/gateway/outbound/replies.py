@@ -10,6 +10,9 @@ How each kind maps onto a `FinalReply`:
   it counts as unsolicited, so a chat known to be gone is skipped;
 - ``ack`` (busy acknowledgements): an ephemeral system notice, deleted after
   ``display.ephemeral_system_ttl`` where the platform can delete.
+
+A turn's final also carries its ledger key (``session_key``, ``message_ref``), so a sender with a
+delivery ledger (P15-19) records it before sending.
 """
 
 from __future__ import annotations
@@ -27,15 +30,24 @@ log = logging.getLogger(__name__)
 
 
 def final_reply_for(
-    source: Source, text: str, *, reply_to: str | None, kind: ReplyKind
+    source: Source,
+    text: str,
+    *,
+    reply_to: str | None,
+    kind: ReplyKind,
+    session_key: str | None = None,
+    message_ref: str | None = None,
 ) -> FinalReply:
     """The `FinalReply` for one intake reply of ``kind`` (see the module docstring)."""
+    final = kind == "final"
     return FinalReply(
         text,
         reply_to=reply_to,
         thread_id=source.thread_id,
         unsolicited=kind == "notice" and reply_to is None,
         ephemeral=kind == "ack",
+        session_key=session_key if final else None,
+        message_ref=message_ref if final else None,
     )
 
 
@@ -48,6 +60,13 @@ class PlatformReplies:
     def sender_for(self, platform: str) -> OutboundSender | None:
         return self._senders.get(platform.lower())
 
+    def add(self, platform: str, sender: OutboundSender) -> None:
+        """Use ``sender`` for ``platform`` (an adapter connected or reconnected)."""
+        self._senders[platform.lower()] = sender
+
+    def remove(self, platform: str) -> OutboundSender | None:
+        return self._senders.pop(platform.lower(), None)
+
     async def reply(
         self,
         source: Source,
@@ -55,12 +74,21 @@ class PlatformReplies:
         *,
         reply_to: str | None = None,
         kind: ReplyKind = "final",
+        session_key: str | None = None,
+        message_ref: str | None = None,
     ) -> DeliveryReport | None:
         sender = self.sender_for(str(source.platform))
         if sender is None:
             log.warning("no outbound sender for %s; a %s reply was dropped", source.platform, kind)
             return None
-        reply = final_reply_for(source, text, reply_to=reply_to, kind=kind)
+        reply = final_reply_for(
+            source,
+            text,
+            reply_to=reply_to,
+            kind=kind,
+            session_key=session_key,
+            message_ref=message_ref,
+        )
         return await sender.deliver(str(source.chat_id), reply)
 
     async def aclose(self) -> None:

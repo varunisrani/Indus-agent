@@ -137,6 +137,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/approvals/test_human.py::test_undeliverable_is_not_answered`
   - `tests/unit/safety/approvals/test_smart.py::test_timeouts_and_unanswered_prompts_never_count`
   - `tests/unit/safety/approvals/test_smart.py::test_judge_failure_or_deadline_asks_the_person`
+  - `tests/unit/gateway/core/test_prompts.py::test_a_timed_out_request_says_it_did_not_run_and_is_not_a_denial`
+  - `tests/unit/gateway/core/test_prompts.py::test_withdrawn_and_denied_are_reported_differently`
 - **R02.6** Isolation is about mounts, not backend names
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
   - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
@@ -244,10 +246,13 @@ Checked by `python -m tooling.checks traps`.
 - **R02.25** Toolset membership vs registration
   - Review: not yet planned (P00-guards)
 - **R02.26** Send-message is not a tool
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/delivery/test_router.py::test_no_model_tool_wraps_the_router`
 - **R02.27** Untrusted-input sessions need a tool floor, not just approvals
   - `tests/unit/safety/approvals/test_policy.py::test_unattended_contexts_deny_instantly`
-  - Review: tool floor for webhook-triggered sessions (P15)
+  - `tests/contract/gateway/test_webhook.py::test_a_webhook_session_has_exactly_the_untrusted_floor`
+  - `tests/contract/gateway/test_webhook.py::test_a_session_wider_than_the_floor_is_refused`
+  - `tests/contract/gateway/test_api_server_openai.py::test_a_flagged_command_is_denied_at_once`
+  - `tests/contract/gateway/test_api_server_openai.py::test_clarify_and_tts_are_not_in_an_api_sessions_tools`
 - **R02.28** Handler signature drift breaks plugins
   - Review: not yet planned (P00-guards)
 - **R02.29** Unscoped probes at boot
@@ -348,9 +353,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_messages.py::test_prefixed_literal_stays_a_string_in_the_store`
   - `tests/unit/state/test_messages.py::test_generated_text_round_trips_except_surrogates`
 - **R03.20** PID-based liveness across namespaces
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/daemon/test_liveness.py::test_unknowns_fail_closed_and_foreign_records_are_not_probed`
+  - `tests/unit/gateway/daemon/test_liveness.py::test_real_process_identity`
 - **R03.21** Never replay started work
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
+  - `tests/integration/gateway/test_boot_recovery.py::test_a_turn_cut_by_a_stop_resumes_once_across_three_boots`
 - **R03.22** Deleted ids must stay dead
   - `tests/unit/state/test_deletion.py::test_deleted_id_cannot_be_recreated`
   - `tests/unit/state/test_deletion.py::test_sweep_never_weakens_a_user_tombstone`
@@ -613,11 +620,13 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/repl/test_render.py::test_approval_request_golden_with_redacted_previews`
   - `tests/unit/core/test_tool_round.py::test_tool_started_arguments_are_redacted_at_the_source`
   - `tests/unit/safety/test_redaction.py::test_redact_arguments_masks_strings_and_secret_keys`
+  - `tests/unit/gateway/core/test_prompts.py::test_a_long_command_is_masked_wrapped_and_counted`
   - Review: surfaces show up to 10 lines with a "more" count (P12, P20)
 - **R06.1** Control commands must bypass both busy guards
   - `tests/unit/gateway/core/test_busy.py::test_a_turn_waiting_for_approval_is_unblocked_by_approve`
   - `tests/unit/gateway/core/test_busy.py::test_control_commands_run_inline_while_busy`
   - `tests/unit/gateway/core/test_busy.py::test_an_idle_queue_command_from_the_adapter_does_not_hold_up_reading`
+  - `tests/unit/gateway/core/test_prompts.py::test_approve_while_busy_answers_inline`
 - **R06.2** Claim the session slot before the first await
   - `tests/unit/gateway/core/test_admission.py::test_two_events_for_one_key_with_no_await_between_start_one_turn`
   - `tests/unit/gateway/core/test_admission.py::test_claims_are_synchronous_and_released_by_generation`
@@ -636,9 +645,13 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/gateway/test_adapter_contract.py::test_misbehaving_adapters_fail_the_named_check`
   - Review: chunk offsets for the remainder come with the chunker (P15-14)
 - **R06.5** Ledger states must distinguish "never started" from "maybe sent"
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/gateway/test_ledger_recovery.py::test_kill_point_then_boot`
+  - `tests/unit/gateway/delivery/test_ledger.py::test_boot_sweep_rules`
+  - `tests/unit/gateway/delivery/test_turn_wiring.py::test_active_turn_marker_clears_only_after_the_final_is_in_the_ledger`
+  - `tests/integration/gateway/test_gateway_e2e.py::test_dm_send_status_drain_and_crash_recovery`
 - **R06.6** Bare "yes" must never approve
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_prompts.py::test_plain_yes_never_approves_and_reaches_the_agent`
+  - `tests/unit/gateway/core/test_prompts.py::test_a_typed_approval_that_skips_the_front_door_keeps_the_requester_rule`
 - **R06.7** Session keys are a compatibility surface
   - `tests/unit/gateway/core/test_session_keys.py::test_keys_match_the_golden_file`
   - `tests/unit/gateway/core/test_session_keys.py::test_discord_follow_up_in_thread_matches_the_spawning_message`
@@ -686,17 +699,29 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/test_config.py::test_enablement_table`
   - `tests/unit/gateway/test_config.py::test_explicit_disable_warns_once_per_platform_names_not_values`
 - **R06.16** Token locks: startup conflict is fatal, mid-run conflict is retryable
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/gateway/test_daemon_start.py::test_a_token_collision_with_nothing_connected_exits_78`
   - `tests/unit/gateway/test_token_locks.py::test_startup_conflict_is_fatal_and_midrun_retryable`
   - `tests/unit/gateway/test_token_locks.py::test_two_processes_race_exactly_one_wins`
 - **R06.17** Exit code semantics with supervisors
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/gateway/test_daemon_start.py::test_a_second_daemon_for_the_same_profile_refuses`
+  - `tests/integration/gateway/test_daemon_start.py::test_the_daemon_process_serves_refuses_a_second_and_drains_on_sigterm`
+  - `tests/integration/gateway/test_signals.py::test_sigusr1_lets_the_turn_finish_refuses_new_ones_and_exits_75`
+  - `tests/unit/gateway/service/test_units.py::test_golden`
+  - `tests/unit/gateway/service/test_units.py::test_launchd_wrapper_maps_78_to_0`
 - **R06.18** Liveness is PID + start time, or a socket answer
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/gateway/test_control_part.py::test_the_control_part_serves_reconnects_and_drains`
+  - `tests/unit/gateway/daemon/test_liveness.py::test_a_recycled_pid_with_another_start_time_is_not_alive`
+  - `tests/unit/gateway/daemon/test_liveness.py::test_replace_never_signals_a_recycled_pid`
+  - `tests/unit/gateway/daemon/test_liveness.py::test_the_lock_excludes_another_process_and_dies_with_it`
+  - `tests/unit/gateway/test_control_socket.py::test_identify_round_trip_and_owner_only_socket`
+  - `tests/unit/cli/commands/test_gateway.py::test_a_reused_pid_is_never_signalled`
+  - `tests/unit/cli/commands/test_gateway.py::test_status_on_a_dead_pid_with_a_fresh_file_is_stale`
 - **R06.19** Unknown turns after a crash must pause, not replay
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
+  - `tests/integration/gateway/test_boot_recovery.py::test_resolve_unknown_checks_the_generation`
 - **R06.20** Drain marker staleness
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/daemon/test_drain.py::test_marker_verdicts`
+  - `tests/integration/gateway/test_signals.py::test_an_external_drain_marker_refuses_new_turns_until_it_is_removed`
 - **R06.21** Cross-session context leaks
   - `tests/unit/gateway/core/test_admission.py::test_a_subprocess_sees_only_its_own_chat_under_50_interleaved_chats`
   - `tests/unit/gateway/core/test_admission.py::test_identity_env_names_only_the_bound_chat`
@@ -715,6 +740,8 @@ Checked by `python -m tooling.checks traps`.
 - **R06.23** Empty or failed transcription must say so
   - `tests/unit/tools/builtin/media/test_stt.py::test_empty_is_inaudible`
   - `tests/unit/tools/builtin/media/test_stt.py::test_provider_error_mapped_to_plain_message`
+  - `tests/unit/gateway/intake/test_voice.py::test_empty_or_inaudible_transcripts_say_so`
+  - `tests/unit/gateway/intake/test_voice.py::test_a_failed_provider_falls_back_to_the_local_one`
 - **R06.24** Broadcast surfaces that report "dm"
   - `tests/unit/gateway/adapters/test_base.py::test_default_capabilities`
   - `tests/unit/gateway/core/test_authz.py::test_broadcast_dm_never_gets_a_code`
@@ -815,6 +842,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cron/test_delivery.py::test_delivery_failure_leaves_the_failure_streak`
   - `tests/unit/cron/test_delivery.py::test_platform_without_a_deliverer_needs_the_gateway`
   - `tests/unit/cron/test_bookkeeping.py::test_streak_three_adds_the_nudge_and_success_resets`
+  - `tests/unit/gateway/test_cron_host.py::test_a_delivery_failure_leaves_the_run_ok`
 - **R07.18** Plugin hook timeouts and fail-closed policy
   - `tests/unit/plugins/test_shell_hooks.py::test_timeout_blocks_and_kills_the_group`
   - `tests/unit/plugins/test_shell_hooks.py::test_bus_deadline_cancels_and_kills_the_group`

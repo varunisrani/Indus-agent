@@ -1,0 +1,13 @@
+{
+  "object_kind": "merge_request",
+  "user": {"username": "pine-marten"},
+  "project": {"path_with_namespace": "example-group/site"},
+  "object_attributes": {
+    "iid": 7,
+    "title": "Fix the footer links",
+    "state": "opened",
+    "action": "open",
+    "source_branch": "footer-links",
+    "target_branch": "main"
+  }
+}

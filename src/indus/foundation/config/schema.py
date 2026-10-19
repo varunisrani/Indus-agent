@@ -43,6 +43,23 @@ class AgentSection(_Section):
     )
     api_max_retries: int = Field(default=3, description="retries for a failed model call")
     gateway_timeout: int = Field(default=1800, description="seconds a messaging turn may run")
+    restart_drain_timeout: float = Field(
+        default=0.0,
+        ge=0,
+        description="gateway stop: seconds running chat turns get to finish before they are "
+        "interrupted (they resume after the restart)",
+    )
+    restart_after_turn_timeout: float = Field(
+        default=1800.0,
+        ge=0,
+        description="gateway restart (SIGUSR1): longest wait for running turns to finish",
+    )
+    cron_drain_timeout: float = Field(
+        default=30.0,
+        ge=0,
+        description="gateway stop: seconds running cron jobs get to finish (10 s of it is kept "
+        "for cleanup)",
+    )
     clarify_timeout: int = Field(
         default=3600, description="seconds to wait for an answer to a question"
     )
@@ -62,6 +79,12 @@ class AgentSection(_Section):
     )
     fast_window_s: float = Field(
         default=60, description="seconds each user turn asks for the priority tier in auto mode"
+    )
+    reconnect_attention_after: float = Field(
+        default=1800,
+        ge=0,
+        description="seconds a messaging platform may keep failing to reconnect before the "
+        "gateway flags it as needing attention (0 = never; retries go on either way)",
     )
 
 
@@ -1249,6 +1272,43 @@ class BotLoopGuardSection(_Section):
     )
 
 
+class ApiServerSection(_Section):
+    """The OpenAI-compatible HTTP API inside the gateway daemon (P15-30, P15-31)."""
+
+    enabled: bool = Field(default=False, description="serve the HTTP API from the gateway")
+    host: str = Field(default="127.0.0.1", description="address to bind (loopback by default)")
+    port: int = Field(default=8642, ge=0, le=65535, description="port to bind; 0 = any free one")
+    cors_origins: list[str] = Field(
+        default_factory=list[str],
+        description="browser origins allowed to call the API (none by default)",
+    )
+    max_concurrent_runs: int = Field(
+        default=10, ge=0, description="API turns running at once; more get 429; 0 = no cap"
+    )
+    model_name: str = Field(
+        default="indus-agent", description="the model id /v1/models shows to clients"
+    )
+    idle_close_seconds: float = Field(
+        default=900.0, gt=0, description="close an API session after this long with nothing to do"
+    )
+
+
+class WebhookSection(_Section):
+    """The webhook receiver inside the gateway daemon (P15-32)."""
+
+    enabled: bool = Field(default=False, description="receive webhooks in the gateway")
+    host: str = Field(default="127.0.0.1", description="address to bind (loopback by default)")
+    port: int = Field(default=8644, ge=0, le=65535, description="port to bind; 0 = any free one")
+    rate_limit: int = Field(default=30, ge=1, description="requests per minute per route")
+    max_body_bytes: int = Field(
+        default=1_048_576, ge=1, description="largest request body accepted, in bytes"
+    )
+    routes: dict[str, dict[str, Any]] = Field(
+        default_factory=dict[str, dict[str, Any]],
+        description="webhook routes by name (secret names a stored secret, never its value)",
+    )
+
+
 class GatewaySection(_Section):
     """The messaging gateway (``indus gateway``, P15)."""
 
@@ -1291,6 +1351,27 @@ class GatewaySection(_Section):
     )
     media_trust_recent_seconds: float = Field(
         default=600.0, ge=0, description="how recent a file must be for media_trust_recent"
+    )
+    connect_timeout_seconds: float = Field(
+        default=30.0, gt=0, description="seconds a platform may take to connect at startup"
+    )
+    systemd_watchdog_seconds: float = Field(
+        default=0.0, ge=0, description="systemd watchdog interval; 0 turns the pings off"
+    )
+    delivery_ledger: bool = Field(
+        default=True,
+        description="record each chat reply before sending it, so a crash or restart cannot "
+        "lose it (recovered replies are labelled)",
+    )
+    stt_enabled: bool = Field(
+        default=True,
+        description="transcribe voice messages people send (off: the agent gets the file path)",
+    )
+    api_server: ApiServerSection = Field(
+        default_factory=ApiServerSection, description="the OpenAI-compatible HTTP API"
+    )
+    webhook: WebhookSection = Field(
+        default_factory=WebhookSection, description="the webhook receiver"
     )
 
 

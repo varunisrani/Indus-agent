@@ -1,0 +1,14 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "number": 42,
+    "title": "Speed up the nightly import",
+    "user": {"login": "river-otter"},
+    "head": {"ref": "faster-import"},
+    "base": {"ref": "main"},
+    "labels": [{"name": "performance"}, {"name": "needs-review"}],
+    "draft": false
+  },
+  "repository": {"full_name": "example-org/data-tools", "private": true}
+}

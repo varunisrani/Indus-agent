@@ -156,7 +156,9 @@ def test_bad_format_piece_is_resent_plain_once(out_scope: Scope) -> None:
 
 def test_partial_failure_reports_only_the_undelivered_pieces(out_scope: Scope) -> None:
     adapter = recording_adapter(max_len=80)
-    adapter.send_results.extend([SendResult(ok=True), fail("transient", "connect timeout")])
+    # a long rate limit is handed back at once (no inline sleep, R06.3): the delivery stops
+    flood = fail("rate_limited", "Too Many Requests: retry after 600", retry_after=600)
+    adapter.send_results.extend([SendResult(ok=True), flood])
     index = SentIndex()
     report = _deliver(_sender(out_scope, adapter, sent_index=index), FinalReply(THREE_PIECES))
     assert report.outcome == "failed" and report.failure is not None

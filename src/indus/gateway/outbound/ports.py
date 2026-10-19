@@ -11,11 +11,18 @@ as a final edit (never skipped by the chat's send slot).
 
 from __future__ import annotations
 
+import random
 from collections.abc import Callable, Mapping
 from typing import Any
 
 from indus.gateway.adapters.base import FINAL_KEY, INTERIM_KEY, Adapter, MediaKind
-from indus.gateway.core.send import ErrorKind, SendResult
+from indus.gateway.core.send import (
+    DELIVERY_FAILED_NOTICE,
+    ErrorKind,
+    RetryPolicy,
+    SendResult,
+    send_with_retry,
+)
 from indus.gateway.outbound.chunker import LenFn
 from indus.gateway.outbound.formatting import Formatter, formatter_for
 
@@ -33,6 +40,7 @@ __all__ = [
     "length_fn",
     "max_length",
     "platform_of",
+    "send_final_with_retry",
     "send_media_file",
     "send_text",
     "typing",
@@ -112,6 +120,41 @@ async def send_text(
 ) -> SendResult:
     body = redact(text) if redact is not None else text
     return await adapter.send(chat_id, body, reply_to=reply_to, meta=_meta(meta, final))
+
+
+async def send_final_with_retry(
+    adapter: Adapter,
+    chat_id: str,
+    text: str,
+    *,
+    plain_text: str,
+    reply_to: str | None = None,
+    meta: Mapping[str, Any] | None = None,
+    notice: str | None = DELIVERY_FAILED_NOTICE,
+    rng: Callable[[], float] = random.random,
+) -> SendResult:
+    """One final piece under the P15-04 retry policy with the adapter's inline wait cap.
+
+    The plain-text fallback sends ``plain_text`` (markers stripped) with ``meta["plain"]``, so a
+    piece refused for its markup never goes out with escape characters showing."""
+
+    async def attempt(body: str, plain: bool) -> SendResult:
+        if not plain:
+            return await send_text(adapter, chat_id, body, final=True, reply_to=reply_to, meta=meta)
+        extra = {**dict(meta or {}), "plain": True}
+        wire = plain_text if body == text else body  # the policy's own notice goes as written
+        return await send_text(adapter, chat_id, wire, final=True, reply_to=reply_to, meta=extra)
+
+    policy = RetryPolicy(inline_wait_cap=adapter.capabilities.inline_wait_cap)
+    return await send_with_retry(
+        attempt,
+        text,
+        clock=adapter.clock,
+        policy=policy,
+        rng=rng,
+        notice=notice,
+        is_final=adapter.is_final_failure,
+    )
 
 
 async def edit_text(

@@ -1,0 +1,24 @@
+[Unit]
+Description=Indus Agent messaging gateway (default)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ada
+ExecStart="/opt/indus/bin/indus" "gateway" "run"
+ExecReload=/bin/kill -USR1 $MAINPID
+ExecStop=-"/opt/indus/bin/indus" "gateway" "mark-stop" "--pid" $MAINPID
+WorkingDirectory=/home/ada/.indus
+Environment="INDUS_HOME=/home/ada/.indus"
+Environment="INDUS_GATEWAY_SUPERVISED=1"
+Environment="PATH=/opt/indus/bin:/home/ada/.local/bin:/usr/bin:/usr/local/bin:/bin"
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=78
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=70
+
+[Install]
+WantedBy=multi-user.target

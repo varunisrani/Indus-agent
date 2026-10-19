@@ -133,6 +133,15 @@ wheels = [
 ]
 
 [[package]]
+name = "annotated-doc"
+version = "0.0.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/8e/38aa427ed5402449e226975b649c5dc73ccadfefeb95e6aecb8f8ea4b6b6/annotated_doc-0.0.5.tar.gz", hash = "sha256:c7e58ce09192557605d8bbd92836d7e1d520ac9580096042c0bfd197efacf1bb", size = 10758, upload-time = "2026-07-28T13:50:58.129Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/30/e900b21425a860e195f32e37657aa1f7c7f2b1bfb26f03ca209b90933c06/annotated_doc-0.0.5-py3-none-any.whl", hash = "sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101", size = 5302, upload-time = "2026-07-28T13:50:57.239Z" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -654,6 +663,23 @@ wheels = [
 ]
 
 [[package]]
+name = "fastapi"
+version = "0.142.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/56/4f/f7c30a73127e0a8bbffe788369b8359e530b01ae06e2757936fa35bc5e6d/fastapi-0.142.2.tar.gz", hash = "sha256:06366626f2e70576367714d9ab2fe8472e6c8456dba69b399f9f797ab5e92570", size = 466721, upload-time = "2026-09-30T09:51:11.277Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/b6/78aaf9141fb46742928c113f3cf6ef2259d538cb02b604b7656c1dc9883c/fastapi-0.142.2-py3-none-any.whl", hash = "sha256:bd5f4d81f1e93a88bcd77caf4dfe3c2dbffc3805407a0007e9a114c18b3a670b", size = 144409, upload-time = "2026-09-30T09:51:09.8Z" },
+]
+
+[[package]]
 name = "faster-whisper"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1080,6 +1106,7 @@ dependencies = [
     { name = "anyio" },
     { name = "click" },
     { name = "croniter" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "jsonschema" },
     { name = "keyring" },
@@ -1088,6 +1115,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "rich" },
     { name = "ruamel-yaml" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -1136,6 +1164,7 @@ requires-dist = [
     { name = "croniter", specifier = "==6.2.4" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = "==0.220.0" },
     { name = "ddgs", marker = "extra == 'web'", specifier = "==9.16.0" },
+    { name = "fastapi", specifier = "==0.142.2" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = "==1.2.1" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "jsonschema", specifier = "==4.26.0" },
@@ -1152,6 +1181,7 @@ requires-dist = [
     { name = "rich", specifier = "==15.0.0" },
     { name = "ruamel-yaml", specifier = "==0.19.1" },
     { name = "sounddevice", marker = "extra == 'voice'", specifier = "==0.5.6" },
+    { name = "uvicorn", specifier = "==0.54.0" },
     { name = "vercel-sandbox", marker = "extra == 'vercel'", specifier = "==0.7.0" },
 ]
 provides-extras = ["web", "docs", "pty", "browser", "voice", "modal", "daytona", "vercel"]

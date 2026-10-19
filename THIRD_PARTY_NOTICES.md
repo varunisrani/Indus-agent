@@ -119,11 +119,13 @@ PyPI for packages of other platforms).
 | python-multipart | 0.0.32 | Apache-2.0 | via mcp (server side; unused by the client) | P13-03 |
 | sse-starlette | 3.5.0 | BSD-3-Clause | via mcp (server side; the fake MCP servers of the tests use it) | P13-03 |
 | starlette | 1.7.0 | BSD-3-Clause | via mcp / sse-starlette (server side) | P13-03 |
-| uvicorn | 0.54.0 | BSD-3-Clause | via mcp (server side; unused by the client) | P13-03 |
+| uvicorn | 0.54.0 | BSD-3-Clause | serves the gateway's API server and webhook receiver (also via mcp) | P13-03, P15-30 |
 | pywin32 | 312 | PSF-2.0 | via mcp, Windows only (process job objects for stdio servers) | P13-03 |
 | croniter | 6.2.4 | MIT | five-field cron expressions for scheduled jobs (`indus cron`) | P14-01 |
 | python-dateutil | 2.9.0.post0 | Apache-2.0 OR BSD-3-Clause (dual licence) | via croniter | P14-01 |
 | six | 1.17.0 | MIT | via python-dateutil | P14-01 |
+| fastapi | 0.142.2 | MIT | the gateway's HTTP apps: the OpenAI-compatible API server and the webhook receiver (on starlette) | P15-30 |
+| annotated-doc | 0.0.5 | MIT | via fastapi | P15-30 |
 | modal | 1.6.1 | Apache-2.0 | extra `modal`: the Modal sandbox SDK (terminal backend `modal`) | P21-05 |
 | synchronicity | 0.12.6 | Apache-2.0 | extra `modal`, via modal (sync wrappers of its async API) | P21-05 |
 | grpclib | 0.4.9 | BSD-3-Clause | extra `modal`, via modal (gRPC client) | P21-05 |

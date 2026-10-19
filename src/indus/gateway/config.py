@@ -26,6 +26,7 @@ from typing import Any, cast
 from pydantic import ValidationError
 
 from indus.foundation import config as config_mod
+from indus.foundation.clock import Clock
 from indus.foundation.config.schema import (
     ChannelOverride,
     DisplaySection,
@@ -144,6 +145,22 @@ class PlatformSettings:
 
     def channel_override(self, chat_id: str) -> ChannelOverride | None:
         return self.section.channel_overrides.get(str(chat_id))
+
+
+@dataclass(frozen=True)
+class AdapterConfig:
+    """What a platform entry's factory gets: ``entry.factory(AdapterConfig(...)) -> Adapter``
+    (the daemon, P15-24, and ``indus send``, P15-20, build adapters the same way)."""
+
+    name: str
+    settings: PlatformSettings
+    scope: Scope
+    clock: Clock
+    proxy: str | None = None
+
+    @property
+    def extra(self) -> Mapping[str, Any]:
+        return self.settings.extra
 
 
 @dataclass(frozen=True)
@@ -313,6 +330,7 @@ def load_gateway_settings(
 
 __all__ = [
     "BUILTIN_CREDENTIALS",
+    "AdapterConfig",
     "GLOBAL_ALLOWED_USERS_ENV",
     "GLOBAL_ALLOW_ALL_ENV",
     "GatewaySettings",

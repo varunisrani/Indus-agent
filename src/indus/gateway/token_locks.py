@@ -14,20 +14,20 @@ A pid that is alive but whose start time cannot be read on either side counts as
 
 Every read-decide-write runs under one cross-process guard lock in the directory, so two racers
 can never both reclaim one stale record; records land by atomic replace with mode 0600.
+
+Process identity (``pid_alive``, ``process_start_time``) is the one shared with the daemon's
+liveness checks (``indus.state.gateway_runtime``, P15-24).
 """
 
 from __future__ import annotations
 
 import contextlib
-import errno
 import hashlib
 import json
 import logging
 import os
-import subprocess
 import sys
 import threading
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from indus.foundation import fsio
+from indus.state.gateway_runtime import pid_alive, process_start_time
 
 __all__ = [
     "GUARD_FILE",
@@ -56,64 +57,6 @@ GUARD_FILE = ".guard"
 GUARD_TIMEOUT = 10.0
 _DIR_NAME = "gateway-locks"
 _APP = "indus"
-
-
-# -- process identity -----------------------------------------------------------------------------
-
-
-def pid_alive(pid: int) -> bool:
-    """True when a process with ``pid`` exists (owned by anyone)."""
-    if pid < 1:
-        return False
-    try:
-        os.kill(pid, 0)  # signal 0 delivers nothing; it only asks whether the pid exists
-    except OSError as exc:
-        return exc.errno == errno.EPERM  # exists, but another user owns it
-    return True
-
-
-def _ps_start_time(pid: int) -> int | None:
-    try:
-        done = subprocess.run(
-            ["ps", "-o", "lstart=", "-p", str(pid)],
-            capture_output=True,
-            text=True,
-            timeout=2.0,
-            check=False,
-            env={"LC_ALL": "C", "PATH": "/bin:/usr/bin:/usr/sbin:/sbin"},
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    text = " ".join(done.stdout.split())
-    if not text:
-        return None
-    try:
-        return int(time.mktime(time.strptime(text, "%a %b %d %H:%M:%S %Y")))
-    except ValueError:
-        return None
-
-
-def process_start_time(pid: int) -> int | None:
-    """A per-process start fingerprint (None when unknown).
-
-    Linux: field 22 of ``/proc/<pid>/stat`` (clock ticks since boot). Elsewhere: ``ps``'s start
-    time in epoch seconds. Only compared with values read the same way on the same host.
-    """
-    if pid <= 0:
-        return None
-    if sys.platform.startswith("linux"):
-        try:
-            raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
-        except OSError:
-            return None
-        fields = raw.rsplit(")", 1)[-1].split()
-        try:
-            return int(fields[19])
-        except (IndexError, ValueError):
-            return None
-    if sys.platform == "win32":
-        return None
-    return _ps_start_time(pid)
 
 
 # -- names and places ------------------------------------------------------------------------------

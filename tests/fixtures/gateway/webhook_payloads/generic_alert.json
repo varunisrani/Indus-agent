@@ -1,0 +1,5 @@
+{
+  "event_type": "alert",
+  "alert": {"name": "disk almost full", "severity": "warning", "host": "build-07", "used": 0.93},
+  "tags": ["disk", "ci"]
+}

@@ -257,6 +257,29 @@ TABLES: tuple[Table, ...] = (
             ("updated_at", "REAL NOT NULL"),
         ),
     ),
+    # P15-19: the delivery ledger, one row per final reply owed to a chat (no FK: a row outlives
+    # its session's deletion until it is delivered or abandoned).
+    Table(
+        "delivery_ledger",
+        _cols(
+            ("id", "TEXT PRIMARY KEY"),
+            ("session_key", "TEXT NOT NULL"),
+            ("platform", "TEXT NOT NULL"),
+            ("chat_id", "TEXT NOT NULL"),
+            ("thread_id", "TEXT"),
+            ("content", "TEXT NOT NULL"),
+            ("pieces_json", "TEXT"),
+            ("state", "TEXT NOT NULL"),
+            ("attempts", _COUNTER),
+            ("last_error", "TEXT"),
+            ("error_kind", "TEXT"),
+            ("retry_at", "REAL"),
+            ("owner_pid", "INTEGER"),
+            ("owner_start", "INTEGER"),
+            ("created_at", "REAL NOT NULL"),
+            ("updated_at", "REAL NOT NULL"),
+        ),
+    ),
 )
 
 INDEXES: tuple[str, ...] = (
@@ -279,6 +302,7 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_session_meta_due ON session_meta(namespace, due_at) "
     "WHERE due_at IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_gateway_routes_session ON gateway_routes(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_ledger_state ON delivery_ledger(state, updated_at)",
 )
 
 TRIGGERS: tuple[str, ...] = (

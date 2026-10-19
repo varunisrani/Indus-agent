@@ -19,12 +19,16 @@ def test_decided_defaults() -> None:
         "max_turns": 150,
         "api_max_retries": 3,
         "gateway_timeout": 1800,
+        "restart_drain_timeout": 0.0,  # P15-25
+        "restart_after_turn_timeout": 1800.0,
+        "cron_drain_timeout": 30.0,  # P15-21
         "clarify_timeout": 3600,
         "local_stream_stale_timeout": 900,
         "turn_liveness_s": 600.0,  # P08-16
         "run_budget_s": 0.0,  # P08-16: off
         "fast_mode": "normal",  # P08-15
         "fast_window_s": 60.0,  # P08-15
+        "reconnect_attention_after": 1800.0,  # P15-29
     }
     # Container backend rows (``docker_*``, ``container_*``) are pinned by the P11 docker tests,
     # the Singularity rows by tests/unit/backends/test_singularity.py (P21-04).
@@ -336,6 +340,27 @@ def test_decided_defaults() -> None:
         "media_allow_dirs": [],
         "media_trust_recent": False,  # lead decision: off (no birth time on Linux)
         "media_trust_recent_seconds": 600.0,
+        "connect_timeout_seconds": 30.0,  # P15-24
+        "systemd_watchdog_seconds": 0.0,
+        "delivery_ledger": True,  # P15-19
+        "stt_enabled": True,  # P15-23
+        "api_server": {  # P15-30, P15-31
+            "enabled": False,
+            "host": "127.0.0.1",
+            "port": 8642,
+            "cors_origins": [],
+            "max_concurrent_runs": 10,
+            "model_name": "indus-agent",
+            "idle_close_seconds": 900.0,
+        },
+        "webhook": {  # P15-32
+            "enabled": False,
+            "host": "127.0.0.1",
+            "port": 8644,
+            "rate_limit": 30,
+            "max_body_bytes": 1_048_576,
+            "routes": {},
+        },
     }
     assert d["tui"] == {  # P12-31
         "theme": "auto",
@@ -461,6 +486,12 @@ def test_model_shorthand_validates() -> None:
         ("gateway.unauthorized_dm_behavior", str),
         ("gateway.media_allow_dirs", list),
         ("gateway.media_trust_recent", bool),
+        ("agent.restart_drain_timeout", float),
+        ("gateway.systemd_watchdog_seconds", float),
+        ("gateway.delivery_ledger", bool),
+        ("gateway.api_server.port", int),
+        ("gateway.api_server.cors_origins", list),
+        ("gateway.webhook.routes", dict),
         ("platforms.telegram.streaming", bool),
         ("platforms.discord.tool_progress", str),
         ("display.ephemeral_system_ttl", float),
@@ -513,3 +544,27 @@ def test_gateway_rows_validate() -> None:  # P15 wave 1
     assert schema.validate({"gateway": {"unauthorized_dm_behavior": "shout"}}) != []
     assert schema.validate({"gateway": {"bot_loop_guard": {"window_seconds": 0}}}) != []
     assert schema.validate({"display": {"ephemeral_system_ttl": -1}}) != []
+    assert schema.validate({"gateway": {"stt_enabled": False}}) == []  # P15-23
+    assert schema.validate({"gateway": {"stt_enabled": "sometimes"}}) != []
+    assert schema.validate({"agent": {"reconnect_attention_after": 0}}) == []  # P15-29
+    assert schema.validate({"agent": {"reconnect_attention_after": -1}}) != []
+
+
+def test_gateway_daemon_rows_validate() -> None:  # P15-24, P15-25
+    ok = {"agent": {"restart_drain_timeout": 5, "restart_after_turn_timeout": 60}}
+    assert schema.validate(ok) == []
+    assert schema.validate({"gateway": {"systemd_watchdog_seconds": 30}}) == []
+    assert schema.validate({"gateway": {"connect_timeout_seconds": 0}}) != []
+    assert schema.validate({"agent": {"restart_drain_timeout": -1}}) != []
+    assert schema.validate({"agent": {"cron_drain_timeout": -1}}) != []  # P15-21
+
+
+def test_http_surface_rows_validate() -> None:  # P15-30..32
+    ok = {"gateway": {"api_server": {"enabled": True, "port": 0, "cors_origins": ["https://a"]}}}
+    assert schema.validate(ok) == []
+    hook = {"gateway": {"webhook": {"routes": {"gh": {"secret": "INDUS_WEBHOOK_GH"}}}}}
+    assert schema.validate(hook) == []
+    assert schema.validate({"gateway": {"api_server": {"port": 70000}}}) != []
+    assert schema.validate({"gateway": {"api_server": {"max_concurrent_runs": -1}}}) != []
+    assert schema.validate({"gateway": {"webhook": {"rate_limit": 0}}}) != []
+    assert schema.validate({"gateway": {"webhook": {"max_body_bytes": 0}}}) != []

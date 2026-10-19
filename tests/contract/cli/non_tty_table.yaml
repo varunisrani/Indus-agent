@@ -211,10 +211,31 @@ commands:
   pairing revoke: 2
   pairing clear-pending: 0
 
+  send: 2                 # a target is required (P15-20)
+
+  gateway: 2              # a group with no default action prints its help (P15-28)
+  gateway status: 1       # not running
+  gateway stop: 0         # nothing to stop
+  gateway uninstall: 0    # no service installed for this profile
+  gateway api-key: 0      # no subcommand lists the keys (P15-30)
+  gateway api-key list: 0
+  gateway api-key create: 0   # prints the new key once
+  gateway api-key revoke: 2   # a key id is required
+
+  webhook: 0              # no subcommand lists the routes (P15-32)
+  webhook list: 0
+  webhook subscribe: 2    # a route name is required
+  webhook remove: 2
+  webhook test: 2
+
 # `long_running`: commands that run until they are stopped (a daemon loop). They cannot meet the
 # watchdog with no arguments, so the contract only checks that `--help` answers (exit 0) in time.
 long_running:
   - cron daemon
+  - gateway run           # the gateway itself
+  - gateway start         # starts a gateway (or its service) and waits for it
+  - gateway restart       # the same, after a stop
+  - gateway install       # would register a real user service; --help only here
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one
@@ -238,4 +259,6 @@ with_arguments:
   cron run no-such-job: 1
   cron remove no-such-job -y: 1
   cron notepad no-such-job list: 1
+  webhook remove no-such-route: 1
+  webhook test no-such-route: 1
   research batch missing.jsonl --run-name r1: 2   # no such dataset

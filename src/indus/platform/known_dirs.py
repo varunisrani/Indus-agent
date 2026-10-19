@@ -71,6 +71,13 @@ def mac_protected_dirs(family: str | None = None) -> tuple[str, ...]:
     return ("~/Documents", "~/Desktop", "~/Downloads", "~/Library/Mobile Documents")
 
 
+def service_bins(family: str | None = None) -> tuple[str, ...]:
+    """The system command folders a service unit's PATH ends with (POSIX; none on Windows)."""
+    if _family(family) == "win32":
+        return ()
+    return ("/usr/local/bin", "/usr/bin", "/bin")
+
+
 def vendored_bin(home: Path) -> Path:
     """Our own helper binaries live in ``<home>/bin`` (the home is passed in, never a literal)."""
     return home / "bin"

@@ -23,6 +23,13 @@ bookkeeping), then the claim is released.
 
 Global pause (``pause_all`` / ``resume_all``): a marker file; no scheduled fire starts while it is
 there, runs in flight continue, manual runs (``Ticker.run_now``) still execute.
+
+Hosted ticker (P15-21): the gateway daemon runs the passes on its own loop and holds an ownership
+lease ``<home>/cron/ticker_owner.json`` (``claim_ticker`` / ``release_ticker``), refreshed every
+pass. A ticker that is not the host's (``indus cron tick``, ``indus cron daemon``) ends its pass
+as ``deferred`` while ``ticker_owner`` finds a live lease: its holder process is not provably gone,
+its recorded start time still matches and its heartbeat is younger than ``OWNER_TTL_S``. An
+unreadable lease never blocks a tick (the tick lock and fire claims still stop a double fire).
 """
 
 from __future__ import annotations
@@ -54,21 +61,27 @@ from indus.foundation.home import secure_dir
 
 __all__ = [
     "CLAIM_TTL_S",
+    "DEFERRED_MESSAGE",
     "DRAIN_S",
     "HEARTBEAT_GRACE_S",
     "HEARTBEAT_S",
     "TICK_INTERVAL_S",
     "AlreadyRunning",
     "JobNotFound",
+    "OWNER_TTL_S",
     "PauseState",
     "TickLock",
     "TickReport",
     "Ticker",
+    "TickerOwner",
     "claim_is_live",
+    "claim_ticker",
     "global_pause",
     "in_flight",
     "pause_all",
+    "release_ticker",
     "resume_all",
+    "ticker_owner",
 ]
 
 log = logging.getLogger(__name__)
@@ -82,7 +95,13 @@ TICK_LOCK = ".tick.lock"
 HEARTBEAT_MARKER = "ticker_heartbeat"
 SUCCESS_MARKER = "ticker_last_success"
 PAUSE_FILE = "paused_all.json"
+OWNER_FILE = "ticker_owner.json"
+OWNER_TTL_S = 3 * TICK_INTERVAL_S
 BUSY_MESSAGE = "another tick is running"
+DEFERRED_MESSAGE = (
+    "the gateway (pid {pid}) runs the scheduler for this profile; not ticking here "
+    "(stop the gateway, or let it fire the jobs)"
+)
 _CONTENDED = frozenset({errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK})
 _UNWRITABLE = frozenset({errno.ENOSPC, errno.EROFS, errno.EACCES, errno.EPERM, errno.EDQUOT})
 
@@ -274,6 +293,105 @@ def read_marker(home: Path, name: str) -> datetime | None:
         return None
 
 
+# -- the hosted ticker's lease (P15-21) -----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TickerOwner:
+    """Who hosts this profile's ticker: a holder stamp (``state.holders``), the pid and its start
+    time when known, what kind of process it is and its last heartbeat."""
+
+    holder: str
+    pid: int
+    start: int | None
+    kind: str
+    heartbeat_at: datetime
+
+
+def _start_of(pid: int) -> int | None:
+    try:
+        from indus.backends.local import process_start_time
+
+        return process_start_time(pid)
+    except Exception:
+        return None
+
+
+def claim_ticker(home: Path, now: datetime, *, kind: str = "gateway") -> TickerOwner:
+    """Write (or refresh) this process's lease on the profile's ticker."""
+    from indus.state.holders import holder_stamp
+
+    pid = os.getpid()
+    owner = TickerOwner(holder_stamp(), pid, _start_of(pid), kind, now)
+    atomic_write_json(
+        _cron_dir(home) / OWNER_FILE,
+        {
+            "holder": owner.holder,
+            "pid": owner.pid,
+            "start": owner.start,
+            "kind": owner.kind,
+            "heartbeat_at": _iso(now),
+        },
+        mode=0o600,
+    )
+    return owner
+
+
+def release_ticker(home: Path) -> bool:
+    """Drop the lease when this process holds it; False when it held none."""
+    found = _read_owner(home)
+    if found is None or found.pid != os.getpid():
+        return False
+    try:
+        (settings.cron_dir(home) / OWNER_FILE).unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _read_owner(home: Path) -> TickerOwner | None:
+    try:
+        raw: object = json.loads((settings.cron_dir(home) / OWNER_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    data = cast(dict[str, Any], raw)
+    holder, pid, start = data.get("holder"), data.get("pid"), data.get("start")
+    beat = _instant(data.get("heartbeat_at"))
+    if not isinstance(holder, str) or isinstance(pid, bool) or not isinstance(pid, int):
+        return None
+    if beat is None or pid <= 0:
+        return None
+    kind = data.get("kind")
+    return TickerOwner(
+        holder,
+        pid,
+        start if isinstance(start, int) and not isinstance(start, bool) else None,
+        kind if isinstance(kind, str) else "gateway",
+        beat,
+    )
+
+
+def ticker_owner(home: Path, now: datetime, ttl: float = OWNER_TTL_S) -> TickerOwner | None:
+    """The live host of this profile's ticker, or None (see the module notes)."""
+    from indus.state.holders import holder_process_is_dead
+
+    found = _read_owner(home)
+    if found is None:
+        return None
+    age = (now - found.heartbeat_at).total_seconds()
+    if age > ttl or age < -ttl:
+        return None
+    if holder_process_is_dead(found.holder):
+        return None
+    if found.start is not None:
+        current = _start_of(found.pid)
+        if current is not None and current != found.start:
+            return None  # the pid was reused by another process
+    return found
+
+
 # -- the tick lock --------------------------------------------------------------------------------
 
 
@@ -336,7 +454,7 @@ class TickLock:
 
 @dataclass
 class TickReport:
-    status: Literal["ran", "busy", "unwritable", "paused", "failed"]
+    status: Literal["ran", "busy", "unwritable", "paused", "failed", "deferred"]
     message: str = ""
     dispatched: list[str] = field(default_factory=list[str])
     outcomes: dict[str, RunOutcome] = field(default_factory=dict[str, RunOutcome])
@@ -368,10 +486,13 @@ class _Progress:
 class Ticker:
     """One profile's ticker (see the module notes). Use it on one event loop."""
 
-    def __init__(self, env: RunEnv, *, clock: Clock | None = None) -> None:
+    def __init__(self, env: RunEnv, *, clock: Clock | None = None, hosted: bool = False) -> None:
         self.env = env
         self.clock = clock or env.scope.clock
         self.home = env.scope.home
+        # The gateway's own ticker (P15-21); any other ticker defers to a live host.
+        self.hosted = hosted
+        self._deferred_said = False
         self._limit = settings.max_parallel(env.scope)
         self._slots: asyncio.Semaphore | None = None
         self._mine: set[asyncio.Task[RunOutcome]] = set()
@@ -380,6 +501,15 @@ class Ticker:
 
     async def tick(self, *, wait: bool = True) -> TickReport:
         """One pass; with ``wait`` it also waits for the runs it started."""
+        if not self.hosted:
+            owner = ticker_owner(self.home, self.clock.now())
+            if owner is not None:
+                message = DEFERRED_MESSAGE.format(pid=owner.pid)
+                if not self._deferred_said:
+                    log.info("cron tick deferred: %s", message)
+                    self._deferred_said = True
+                return TickReport("deferred", message)
+            self._deferred_said = False
         lock = TickLock(self.home)
         state = lock.acquire()
         if state == "busy":

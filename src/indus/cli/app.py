@@ -122,9 +122,25 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
     ),
     ("cron", "indus.cli.commands.cron:cron_group", "Schedule jobs and look after them."),
     (
+        "gateway",
+        "indus.cli.commands.gateway:gateway_group",
+        "Run the messaging gateway, or install it as a service.",
+    ),
+    (
         "pairing",
         "indus.cli.commands.pairing:pairing_group",
         "Approve or revoke people who asked to use the bot from a chat.",
+    ),
+    (
+        "send",
+        # P15-20: lives with the gateway's delivery code (layer rule D-16.246), loaded by name
+        "indus.gateway.delivery.send_command:send_command",
+        "Send a message to a chat from a script or terminal.",
+    ),
+    (
+        "webhook",
+        "indus.cli.commands.webhook:webhook_group",
+        "Add, list, remove and test webhook routes of the gateway.",
     ),
     (
         "research",

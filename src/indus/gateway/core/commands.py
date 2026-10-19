@@ -353,6 +353,22 @@ _APPROVED: Final[Mapping[ApprovalChoice, str]] = {
 }
 
 
+async def _refusal(ctx: CommandContext, session_id: str) -> tuple[bool, Reply]:
+    """Who may answer (P15-22): never a bot (no reply at all), else the person whose message
+    started the turn or an admin of the chat's tier list. ``(refused, reply)``. The chat
+    prompts' front door applies the same rule; this covers a command that reaches the handler
+    without passing it."""
+    from indus.gateway.core.prompts import may_answer, requester_of
+    from indus.service import approval_copy
+
+    if ctx.source.is_bot:
+        return True, None
+    asker = await ctx.pipeline.origin_source(session_id)
+    if may_answer(ctx.pipeline, ctx.source, requester_of(asker)):
+        return False, None
+    return True, approval_copy.NOT_REQUESTER
+
+
 async def _approve(ctx: CommandContext) -> Reply:
     p = ctx.pipeline
     word = ctx.args.strip().lower()
@@ -362,6 +378,9 @@ async def _approve(ctx: CommandContext) -> Reply:
     waiting = await _open_approvals(p, sid)
     if not sid or not waiting:
         return "Nothing is waiting for your approval."
+    refused, answer = await _refusal(ctx, sid)
+    if refused:
+        return answer
     choice = ApprovalChoice.ONCE if word == "all" else _APPROVE_WORDS[word]
     targets = waiting if word == "all" else waiting[:1]
     done = 0
@@ -386,6 +405,9 @@ async def _deny(ctx: CommandContext) -> Reply:
     waiting = await _open_approvals(p, sid)
     if not sid or not waiting:
         return "Nothing is waiting for your approval."
+    refused, answer = await _refusal(ctx, sid)
+    if refused:
+        return answer
     reason = ctx.args.strip() or None
     try:
         p.service.answer_server_request(
@@ -533,6 +555,42 @@ def _automation(name: str) -> Handler:
     return run
 
 
+def _wait_words(seconds: float) -> str:
+    if seconds < 90:
+        return f"{max(0, round(seconds))} s"
+    return f"{round(seconds / 60)} min"
+
+
+def _reconnect_lines(p: AdmissionPipeline) -> list[str]:
+    """The platforms the reconnect watcher (P15-29) holds: retrying, held, down."""
+    watcher = p.reconnect
+    if watcher is None:
+        return []
+    now = watcher.clock.monotonic()
+    retrying: list[str] = []
+    held: list[str] = []
+    down: list[str] = []
+    for name, health in sorted(watcher.snapshot().items()):
+        if health.state == "fatal":
+            down.append(f"{name} ({health.error or health.error_code or 'cannot connect'})")
+            continue
+        notes = [f"{health.attempts} tries"] if health.attempts else []
+        if health.state == "retrying":
+            notes.append(f"next in {_wait_words(health.next_retry - now)}")
+        if health.needs_attention:
+            notes.append("needs attention")
+        entry = f"{name} ({', '.join(notes)})" if notes else name
+        (retrying if health.state == "retrying" else held).append(entry)
+    lines: list[str] = []
+    if retrying:
+        lines.append(f"Reconnecting: {'; '.join(retrying)}")
+    if held:
+        lines.append(f"Reconnect paused: {'; '.join(held)}")
+    if down:
+        lines.append(f"Down (needs a config fix): {'; '.join(down)}")
+    return lines
+
+
 async def _platform(ctx: CommandContext) -> Reply:
     p = ctx.pipeline
     action, target = _first(ctx.args)
@@ -543,12 +601,24 @@ async def _platform(ctx: CommandContext) -> Reply:
         lines = [f"Connected: {', '.join(live) or 'none'}"]
         if p.paused_platforms:
             lines.append(f"Paused (messages ignored): {', '.join(sorted(p.paused_platforms))}")
+        lines += _reconnect_lines(p)
         return "\n".join(lines)
     if action not in ("pause", "resume"):
         return "Usage: /platform list, /platform pause <name> or /platform resume <name>"
     target = target.lower()
     if not target:
         return f"Usage: /platform {action} <name>"
+    watcher = p.reconnect
+    if target not in p.adapters and watcher is not None and watcher.get(target) is not None:
+        if action == "pause":
+            if watcher.pause(target):
+                return (
+                    f"Stopped trying to reconnect {target}. /platform resume {target} tries again."
+                )
+            return f"{target} is not being retried right now."
+        if watcher.resume(target):
+            return f"Trying to reconnect {target} now."
+        return f"{target} isn't paused."
     if target not in p.adapters:
         return f"No platform called {target} is connected."
     if action == "pause":

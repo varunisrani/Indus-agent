@@ -135,10 +135,19 @@ class RecordingReplies(PlatformReplies):
         *,
         reply_to: str | None = None,
         kind: Any = "final",
+        session_key: str | None = None,
+        message_ref: str | None = None,
     ) -> DeliveryReport | None:
         platform = str(source.platform).lower()
         self.sent.append(Sent(kind, platform, str(source.chat_id), text, reply_to))
-        return await super().reply(source, text, reply_to=reply_to, kind=kind)
+        return await super().reply(
+            source,
+            text,
+            reply_to=reply_to,
+            kind=kind,
+            session_key=session_key,
+            message_ref=message_ref,
+        )
 
     def texts(self, kind: str | None = None) -> list[str]:
         return [s.text for s in self.sent if kind is None or s.kind == kind]

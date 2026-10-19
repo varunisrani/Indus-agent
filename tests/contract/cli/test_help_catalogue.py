@@ -56,7 +56,10 @@ GOLDEN_ORDER = [
     "hooks",
     "plugins",
     "cron",
+    "gateway",  # P15-28
     "pairing",  # P15-09
+    "send",  # P15-20
+    "webhook",  # P15-32
     "research",
 ]
 

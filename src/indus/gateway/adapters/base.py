@@ -88,6 +88,17 @@ class ChatInfo:
 
 
 @dataclass(frozen=True)
+class ChannelEntry:
+    """A chat this bot can post to, for the channel directory (P15-20)."""
+
+    id: str
+    name: str
+    type: str = "channel"
+    guild: str = ""
+    thread_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ApprovalAction:
     label: str
     choice: ApprovalChoice
@@ -589,6 +600,11 @@ class Adapter(ABC):
     async def _chat_info(self, chat_id: str) -> ChatInfo:
         return ChatInfo(name=str(chat_id))
 
+    async def list_channels(self) -> Sequence[ChannelEntry] | None:
+        """Chats this bot can post to (channel directory, P15-20); None when the platform
+        cannot list them (the directory then uses the chats it has seen)."""
+        return None
+
     def format(self, text: str) -> str:
         """Markdown from the agent → this platform's markup (P15-15)."""
         return formatter_for(self.capabilities.markup).format(text)
@@ -606,6 +622,7 @@ __all__ = [
     "ApprovalChoice",
     "ApprovalPrompt",
     "Capabilities",
+    "ChannelEntry",
     "ChatInfo",
     "ClarifyPrompt",
     "InboundSink",

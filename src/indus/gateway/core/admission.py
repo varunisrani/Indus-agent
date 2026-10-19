@@ -20,8 +20,14 @@ its own handler task, which runs ``handle``:
 7. pending prompt replies (interceptors: numbered confirmations here, clarify answers in P15-22);
 8. the busy guard (guard 2) when the key holds a claim or its session runs a turn;
 9. slash dispatch (P15-13), else the session claim;
-10. ``post_gateway_admission`` (once per admitted message, fail-open), media enrichment (P15-23
-    plugs in; the default adds the reply quote), then the turn through ``SessionService``.
+10. the session is found or created, ``post_gateway_admission`` (once per admitted message,
+    with its session id; fail-open), media enrichment (P15-23 plugs in; the default adds the
+    reply quote), then the turn through ``SessionService``.
+
+Front doors (P15-22, P15-23) see every non-internal event first, in the adapter's own await, ahead
+of control routing, busy guards and mention gating: a button press or a typed answer to a pending
+prompt, an album still being collected. A door that returns True has taken the event (it runs the
+authorization chain itself); a failing door is skipped.
 
 Claim before the first await (R06.2): ``ClaimTable.claim`` installs the key's sentinel
 synchronously, so of two events with no await between them only one starts a turn; the other is
@@ -35,7 +41,14 @@ follow-ups, P10 injected turns — leaves through one ``on_turn_end`` listener t
 origin, through the outbound sender (P15-17). A failed turn gets a short notice; an interrupted
 one says nothing. Every exit path of a turn restores a one-turn model, clears the durable
 active-turn marker, releases the claim (generation-guarded) and starts the key's next queued
-message.
+message. A turn's final carries its ledger key (session key, ``<session id>:<turn id>``) so the
+outbound sender records it in the delivery ledger (P15-19) before sending; the active-turn
+marker is cleared only after that final has been through the sender (R06.5): ``_finish`` waits
+for the turn-end listener that delivered it (bounded by ``FINAL_SETTLE_S``).
+
+Mirror notes (P15-20): a message delivered into a routed chat from elsewhere (cron, ``indus
+send``) while its session was not running here waits in the session's metadata; it is staged as
+a must-deliver note just before that session's next turn.
 """
 
 from __future__ import annotations
@@ -85,11 +98,13 @@ if TYPE_CHECKING:
     from indus.gateway.adapters.base import Adapter
     from indus.gateway.core.busy import BusyGuard
     from indus.gateway.core.commands import ChatCommands
+    from indus.gateway.daemon.reconnect import ReconnectWatcher
     from indus.service.automation import SessionAutomation
 
 __all__ = [
     "ANSWERABLE_KINDS",
     "AdmissionPipeline",
+    "FrontDoor",
     "Claim",
     "ClaimTable",
     "GatewayHooks",
@@ -117,6 +132,8 @@ _INTERRUPTED = frozenset({ExitReason.INTERRUPTED_BY_USER, ExitReason.INTERRUPTED
 _SECRET_KINDS = frozenset({"sudo", "secret"})
 _ORIGINS_KEPT = 4096
 _ANCHORS_KEPT = 1024
+FINAL_SETTLE_S = 300.0
+"""Longest wait for a turn's final to pass through the sender before the marker is cleared."""
 
 FAILED_TURN = "Sorry, I couldn't finish that reply ({reason}). Please try again."
 SECRET_PROMPT = (
@@ -276,6 +293,8 @@ class ReplySender(Protocol):
         *,
         reply_to: str | None = None,
         kind: ReplyKind = "final",
+        session_key: str | None = None,
+        message_ref: str | None = None,
     ) -> object: ...
 
 
@@ -291,6 +310,8 @@ type Interceptor = Callable[[InboundEvent, str], Awaitable[str | None]]
 """A pending prompt's reply catcher: ``None`` = not mine, a string (maybe empty) = handled."""
 
 type Enricher = Callable[[InboundEvent], Awaitable[str]]
+type FrontDoor = Callable[[InboundEvent], Awaitable[bool]]
+"""Sees an adapter event before anything else; True = taken (see the module notes)."""
 type RequestHook = Callable[[Source, ProtocolModel], Awaitable[None]]
 
 
@@ -470,6 +491,7 @@ class AdmissionPipeline:
         toolsets_for: Callable[[str], list[str] | None] = default_toolsets,
         batching: Callable[[str], TextBatchPolicy | None] | None = None,
         on_request: RequestHook | None = None,
+        front_doors: Sequence[FrontDoor] = (),
         automation: SessionAutomation | None = None,
         commands: Callable[[AdmissionPipeline], ChatCommands] | None = None,
         clock: Clock | None = None,
@@ -498,11 +520,13 @@ class AdmissionPipeline:
         self.toolsets_for = toolsets_for
         self.batching = batching
         self.on_request = on_request
+        self.front_doors: list[FrontDoor] = list(front_doors)
         self.automation = automation
         self.clock: Clock = clock or scope.clock
         self.claims = ClaimTable(self.clock)
         self.pending = PendingQueue()
         self.paused_platforms: set[str] = set()
+        self.reconnect: ReconnectWatcher | None = None  # platforms being retried (P15-29)
         self.progress_modes: dict[str, str] = {}
         self.once_next: dict[str, ModelChoice] = {}
         self._once_turns: dict[int, tuple[str, str, Source]] = {}
@@ -511,6 +535,7 @@ class AdmissionPipeline:
         self._history: dict[str, list[str]] = {}
         self._origins: OrderedDict[str, _Origin] = OrderedDict()
         self._anchors: OrderedDict[tuple[str, int], str] = OrderedDict()
+        self._finals: OrderedDict[tuple[str, int], asyncio.Event] = OrderedDict()
         self._watched: set[str] = set()
         self._tasks: set[asyncio.Task[Any]] = set()
         self._restoring = False
@@ -691,12 +716,24 @@ class AdmissionPipeline:
         *,
         reply_to: str | None = None,
         kind: ReplyKind = "command",
+        session_key: str | None = None,
+        message_ref: str | None = None,
     ) -> None:
         """Send through the outbound sender; a failure is logged, never raised."""
         if not text or not text.strip():
             return
         try:
-            await self.sender.reply(source, text, reply_to=reply_to, kind=kind)
+            if session_key is not None:
+                await self.sender.reply(
+                    source,
+                    text,
+                    reply_to=reply_to,
+                    kind=kind,
+                    session_key=session_key,
+                    message_ref=message_ref,
+                )
+            else:
+                await self.sender.reply(source, text, reply_to=reply_to, kind=kind)
         except Exception:
             log.warning("could not send a %s reply on %s", kind, source.platform, exc_info=True)
 
@@ -705,6 +742,12 @@ class AdmissionPipeline:
         self._origins.move_to_end(session_id)
         while len(self._origins) > _ORIGINS_KEPT:
             self._origins.popitem(last=False)
+
+    async def origin_source(self, session_id: str) -> Source | None:
+        """Where the session's turns come from (the chat and person of its last admitted
+        message), or None when unknown."""
+        origin = await self._origin_of(self.service.current_id(session_id))
+        return origin.source if origin is not None else None
 
     async def _origin_of(self, session_id: str) -> _Origin | None:
         found = self._origins.get(session_id)
@@ -739,6 +782,8 @@ class AdmissionPipeline:
             return
         if self._held_for_restore(event):
             return
+        if not event.internal and await self._front_door(event):
+            return
         if self.busy_guard.is_control(event):
             await self.handle(event, inline=True)  # never the background path (R06.1)
             return
@@ -753,6 +798,15 @@ class AdmissionPipeline:
             self._paste.add(key, event)
             return
         self.spawn(self.handle(event), name=f"inbound {platform}")
+
+    async def _front_door(self, event: InboundEvent) -> bool:
+        for door in list(self.front_doors):
+            try:
+                if await door(event):
+                    return True
+            except Exception:
+                log.warning("a front door failed; the message goes on as usual", exc_info=True)
+        return False
 
     def _batch_policy(self, event: InboundEvent) -> TextBatchPolicy | None:
         if self.batching is None or event.internal or event.is_command:
@@ -1150,7 +1204,7 @@ class AdmissionPipeline:
         claim.task = asyncio.current_task()
         await self._turn(event, key, claim)
 
-    async def _post_admission(self, event: InboundEvent, key: str) -> None:
+    async def _post_admission(self, event: InboundEvent, key: str, session_id: str) -> None:
         if self.hooks is None or event.internal:
             return
         try:
@@ -1158,6 +1212,7 @@ class AdmissionPipeline:
                 "post_gateway_admission",
                 event=event,
                 session_key=key,
+                session_id=session_id,
                 platform=event.source.platform,
             )
         except Exception:
@@ -1180,14 +1235,15 @@ class AdmissionPipeline:
         source = event.source
         token = f"turn-{claim.generation}"
         marked = False
+        ended = False
         sid: str | None = None
         try:
-            await self._post_admission(event, key)
             sid = await self.session_for(key, source)
             claim.session_id = sid
             identity = current_identity()
             if identity is not None:
                 bind_identity(replace(identity, session_id=sid))
+            await self._post_admission(event, key, sid)
             choice = await self.effective_model(key, source)
             if key in self.once_next:
                 del self.once_next[key]
@@ -1199,6 +1255,7 @@ class AdmissionPipeline:
             text = await self._model_text(event)
             if not text.strip():
                 return
+            await self._stage_mirror_notes(sid)
             marked = await run_blocking(
                 routes.begin_turn, self.store, key, token, label="active-turn marker"
             )
@@ -1212,6 +1269,7 @@ class AdmissionPipeline:
             claim.turn_generation = ticket.generation
             self._anchor(sid, ticket.generation, event.message_id)
             result = await self.service.wait(sid, ticket.turn_id)
+            ended = True
             if result.exit_reason is not ExitReason.COMPLETED and result.exit_reason not in (
                 _INTERRUPTED
             ):
@@ -1241,10 +1299,44 @@ class AdmissionPipeline:
                 kind="notice",
             )
         finally:
-            await self._finish(key, claim, token, marked, sid)
+            await self._finish(key, claim, token, marked, sid, wait_final=ended)
+
+    def _final_gate(self, session_id: str, generation: int) -> asyncio.Event:
+        """Set once the turn-end listener has handed this turn's final to the sender."""
+        found = self._finals.get((session_id, generation))
+        if found is None:
+            found = asyncio.Event()
+            self._finals[(session_id, generation)] = found
+            while len(self._finals) > _ANCHORS_KEPT:
+                self._finals.popitem(last=False)
+        return found
+
+    async def _await_final(self, sid: str, generation: int) -> None:
+        gate = self._final_gate(sid, generation)
+        try:
+            await asyncio.wait_for(gate.wait(), FINAL_SETTLE_S)
+        except TimeoutError:
+            log.warning("the final of %s (turn %d) was not handed over in time", sid, generation)
+        finally:
+            self._finals.pop((sid, generation), None)
+
+    async def _stage_mirror_notes(self, session_id: str) -> None:
+        from indus.gateway.delivery.mirror import stage_pending
+
+        try:
+            await stage_pending(self.store, self.service, session_id)
+        except Exception:
+            log.warning("could not stage delivery notes for %s", session_id, exc_info=True)
 
     async def _finish(
-        self, key: str, claim: Claim, token: str, marked: bool, sid: str | None
+        self,
+        key: str,
+        claim: Claim,
+        token: str,
+        marked: bool,
+        sid: str | None,
+        *,
+        wait_final: bool = False,
     ) -> None:
         once = self._once_turns.pop(claim.generation, None)
         if once is not None:
@@ -1254,6 +1346,8 @@ class AdmissionPipeline:
                 await self.apply_model(self.service.current_id(once_sid), choice)
             except Exception:
                 log.warning("could not restore the model after a one-turn switch", exc_info=True)
+        if marked and wait_final and sid is not None and claim.turn_generation is not None:
+            await self._await_final(sid, claim.turn_generation)  # R06.5: ledger before marker
         if marked:
             try:
                 await run_blocking(
@@ -1290,13 +1384,23 @@ class AdmissionPipeline:
 
     async def _on_turn_end(self, ended: TurnEnd) -> None:
         """Deliver a completed turn's final text to its chat; then the next queued message."""
-        session_id = self.service.current_id(ended.session_id)
-        origin = await self._origin_of(session_id)
-        if origin is None:
-            return
-        anchor = self._anchors.pop((ended.session_id, ended.generation), None)
-        if ended.completed and ended.final_text.strip():
-            await self.reply(origin.source, ended.final_text, reply_to=anchor, kind="final")
+        try:
+            session_id = self.service.current_id(ended.session_id)
+            origin = await self._origin_of(session_id)
+            if origin is None:
+                return
+            anchor = self._anchors.pop((ended.session_id, ended.generation), None)
+            if ended.completed and ended.final_text.strip():
+                await self.reply(
+                    origin.source,
+                    ended.final_text,
+                    reply_to=anchor,
+                    kind="final",
+                    session_key=origin.key,
+                    message_ref=f"{ended.session_id}:{ended.turn_id}",
+                )
+        finally:
+            self._final_gate(ended.session_id, ended.generation).set()
         self.drain(origin.key)
 
     # -- busy acknowledgements ---------------------------------------------------------------------

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.indus.gateway</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>"$@" &amp; child=$!; trap 'kill -TERM "$child" 2&gt;/dev/null' TERM; trap 'kill -INT "$child" 2&gt;/dev/null' INT; trap 'kill -USR1 "$child" 2&gt;/dev/null' USR1; while :; do wait "$child"; status=$?; kill -0 "$child" 2&gt;/dev/null || break; done; [ "$status" -eq 78 ] &amp;&amp; exit 0; exit "$status"</string>
+		<string>indus-gateway</string>
+		<string>/opt/indus/bin/indus</string>
+		<string>gateway</string>
+		<string>run</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/home/ada/.indus</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>INDUS_HOME</key>
+		<string>/home/ada/.indus</string>
+		<key>INDUS_GATEWAY_SUPERVISED</key>
+		<string>1</string>
+		<key>PATH</key>
+		<string>/opt/indus/bin:/home/ada/.local/bin:/usr/bin:/usr/local/bin:/bin</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>ExitTimeOut</key>
+	<integer>60</integer>
+	<key>StandardOutPath</key>
+	<string>/home/ada/.indus/logs/gateway-stdio.log</string>
+	<key>StandardErrorPath</key>
+	<string>/home/ada/.indus/logs/gateway-stdio.log</string>
+</dict>
+</plist>
