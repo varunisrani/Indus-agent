@@ -11,7 +11,8 @@
   "dependencies": {
     "@indus/client": "workspace:*",
     "ink": "8.0.0",
-    "react": "19.3.0"
+    "react": "19.3.0",
+    "zustand": "5.0.15"
   },
   "devDependencies": {
     "@types/react": "19.3.0"
