@@ -62,3 +62,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 13:50 UTC | 55% | 45% | 17:00 UTC | P15 G1-G4 integrating; P21 B1/B2 + P22 R1 building |
 | 2026-10-19 14:13 UTC | 68% | 32% | 17:00 UTC | P15 G1-G4 integrating; P21 B1/B2 + P22 R1 building; no new agents |
 | 2026-10-19 14:25 UTC | 71% | 29% | 17:00 UTC | all builders done; P15 w1 gate; P21+P22 integrating |
+| 2026-10-19 14:41 UTC | 76% | 24% | 17:00 UTC | M4 flake fix; P15 w1 waiting on it; P21+P22 integrating; ≥75% no new agents |
