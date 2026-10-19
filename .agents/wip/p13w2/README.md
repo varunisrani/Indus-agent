@@ -67,3 +67,24 @@
   `caution`. Code spans and fenced blocks must be scanned at least as strictly as prose (skills tell
   the agent to run code). Add tests for inline spans and fenced blocks.
 - Follow-up: verify the skills.sh API shape against its docs before 1.0 (no network here).
+
+## N3 — w16-p13n3.patch — DONE (P13-18 prompt sections, P13-19 shell hooks + `indus hooks`, P13-21..23 plugin install/consent/CLI, pre_llm_call)
+- New: plugins/{prompt_sections,shell_hooks,install,consent,session}.py, cli/commands/{hooks,plugins}.py,
+  tests (unit/plugins incl. test_pre_llm_call_turn through a real Agent turn; CLI tests), notes ×6.
+- Shared: core/{prologue,turn_state,agent}.py (`llm_context` seam on SessionRuntime/AgentOptions),
+  core/prompt/builder.py (BuildContext.plugin_sections — empty keeps goldens), config
+  plugins.clone_timeout_seconds / auto_update_check_hours / auto_apply, top-level hooks,
+  hooks_auto_accept (+test); cli/app.py hooks, plugins groups; contract non_tty + help catalogue;
+  traps R07.18–20, R02.22; ACC-G3-1.
+- MUST WIRE AT INTEGRATION (nothing runs in a real session otherwise): per session create the HookBus
+  and PluginHost; `plugins.session.plugin_options(options, bus, session_id=…, host=…)` and
+  `shell_hooks.register_shell_hooks(bus, scope, interactive=…, surface=…, ask=…)` from cli/runtime;
+  `--accept-hooks` global flag in GlobalArgs/global_options passed as accept=; `/plugins` slash row
+  (plugin_lines(scope), toggle_plugin(scope, name, on)); Installer.maybe_check_updates() from CLI
+  start or the maintenance timer; on_session_start / on_session_end call sites in core.
+- Decisions (need D-ids): pre_llm_call before turn-start compaction (context rides the user row's
+  api_content, protected tail); plugin sections after memory, before skills index (reference: after);
+  install token via GIT_CONFIG_* env, not argv; own capability ids (tools.override, llm.provider,
+  llm.model, llm.agent, llm.profile, llm.task, platform.actions); consent file / grant ids / section
+  frame text ours; exit 126/127 = start failure (pre_tool_call blocks).
+- Note: subagents never get llm_context or plugin sections.
