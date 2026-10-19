@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "ACTIVE",
+  "state": "READY",
   "usage_pct": 78,
   "remaining_pct": 22,
   "resets_at": "2026-10-19T11:00:00+00:00",
-  "last_check": "2026-10-19T10:00:30+00:00",
-  "current_step": "P13 wave 1 (P13-01..04, 13..17, 20, 24) merged in verify, full gate running; no builders running; patches parked in .agents/wip/p13w1",
-  "last_commit": "ab1f0c4"
+  "last_check": "2026-10-19T10:10:46+00:00",
+  "current_step": "Handed the turn to Agent 1 after P13 wave 1 (78fdc96); READY to take it back after the 11:00 UTC reset",
+  "last_commit": "917b088"
 }

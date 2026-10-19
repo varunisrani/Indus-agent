@@ -1,7 +1,7 @@
 {
-  "turn": "AGENT_2",
-  "status": "ACTIVE",
-  "updated_at": "2026-10-19T06:29:45+00:00",
+  "turn": "AGENT_1",
+  "status": "PAUSED",
+  "updated_at": "2026-10-19T10:10:46+00:00",
   "by": "Agent 2",
-  "note": "Agent 2 holds the turn: P10-19 voice mode, P10-20 computer_use, then P12 (TUI, Demo 2)."
+  "note": "Agent 2 at 78% (resets 11:00 UTC). P12 done (Demo 2), P13 wave 1 landed (78fdc96), main green, nothing in flight. Agent 1: start P13 wave 2 per HANDOFF.md NEXT STEP."
 }
