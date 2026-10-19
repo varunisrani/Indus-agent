@@ -69,3 +69,26 @@
   launches; no cloud/alt backends. Pinned 1.63.0 expects Chromium build 1243 (machine has 1194):
   test falls back to $PLAYWRIGHT_BROWSERS_PATH/chromium; users set browser.executable_path.
 - Follow-up: screenshot embed-size budget (P10-15).
+
+## Slice J — w15-p10j.patch (base 7faff19) — DONE (P10-15..18 vision, image/video, TTS, STT); uv.lock EXCLUDED
+- New: tools/builtin/media/{__init__,vision,providers,generate,tts,stt,imaging,sources,common,audio}.py,
+  tests/unit/tools/builtin/media/*, tests/fakes/media_providers.py, docs/notes/P10/{vision-analyze,
+  media-generate,tts,stt}.md.
+- Shared: tools/builtin/__init__.py; toolsets.py (CORE += vision_analyze, image_generate,
+  text_to_speech; sets image_gen, video_gen (opt-in), tts); config sections vision, image_gen, media,
+  tts, stt + test; pyproject extra `voice = ["faster-whisper==1.2.1"]` (P10-19 adds sounddevice);
+  test_toolsets.py, cli/commands/test_tools.py, test_wizard.py; goldens (regenerate); docs/notes/P04/
+  golden-prompts.md; traps R06.22, R06.23; ACC-C27-1.
+- Wiring: tool_round.handler_extras offers `aux`, `native_vision` (route supports_vision and wire
+  carries images in tool results), `subagent` (true in G's children) — same `aux` extra I needs;
+  TTS hosts may pass `platform`, `voice`; Docker: mount <home>/cache/media into the sandbox (P11
+  backends/docker) or drop `sandbox_path`.
+- LICENCE / OWNER items: Pillow not added (proposal: extra `vision = ["pillow==12.3.0"]`, licence
+  MIT-CMU not yet on the allow-list); Piper TTS runs as a separate process (bundles eSpeak NG GPL-3.0;
+  same ruling as signal-cli, D-16.71); faster-whisper extra pulls `av` whose wheels bundle LGPL FFmpeg
+  libs — licence check only walks main deps, confirm by hand.
+- Intended differences (need D-ids): over child embed cap → text route; WAV-only silence cutting;
+  vendor-neutral video_edit/extend; one TTS file per call; no [[audio_as_voice]] marker
+  (voice_compatible field); no SVG/HEIC conversion. Config choices: media.video_provider/video_model,
+  image_gen.key_name / tts.key_name default OPENAI_API_KEY, tts.provider piper, stt.max_file_mb 25.
+- Follow-up: aux TASK_TIMEOUTS vision: 120.
