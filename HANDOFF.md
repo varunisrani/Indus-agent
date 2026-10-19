@@ -75,7 +75,9 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- (nothing in flight; wave 22 adapters T/D/S next)
+- Wave 22 building from `78be7b3` (started 22:06 UTC): T = P15-33 Telegram (own Bot API client over httpx),
+  D = P15-34 Discord, S = P15-35 Slack; worktrees scratchpad wt-p15t/d/s; brief `.agents/wip/p15w4/brief.md`.
+  If paused, save each builder's patch in `.agents/wip/p15w4/`. Demo 3 (P15-36) at integration.
 - Last landings: P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
   landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
