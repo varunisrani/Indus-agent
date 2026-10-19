@@ -94,3 +94,31 @@
 - Follow-ups: daemon does not yet feed StreamConsumer / ToolProgress / typing / heartbeat (replies go out
   whole); chat sessions lack the learning loop (with_learning lives in cli/runtime.py — move to service/);
   process tests to call `python -m indus gateway run` after W4 merges; ACC-K1-2..4, K34-1 rows missing.
+
+## W2 — w20-p15w2.patch — DONE (P15-21 cron ticker in the daemon, P15-22 approvals/clarify over chat, P15-23 intake)
+- New: gateway/{cron_host,extras (install_extras — one registration function)}.py, gateway/core/prompts.py,
+  gateway/intake/{__init__,media,voice}.py, service/approval_copy.py; tests (unit gateway cron_host,
+  cron_world, extras, core/test_prompts, intake ×2, integration test_cron_delivery); notes ×3; STAND-INS
+  tests/unit/gateway/_stubs_w2.py (StubDaemon) and tests/integration/gateway/_stubs_w2.py (home-channel
+  deliverer) — delete.
+- Shared: cron/ticker.py (lease functions, Ticker(hosted=), "deferred" status); core/admission.py
+  front_doors hook (after pause/restore, before control routing/busy/mention); config gateway.stt_enabled
+  (+test); traps R02.5, R05.22, R06.1, R06.6, R06.23, R07.17; ACC-E8-1, H3-1, K24-1;
+  tests/integration/gateway/__init__.py (empty; W1 has one too).
+- Wiring (W3): `indus.gateway.extras.install_extras(daemon, cron=True)` once AdmissionPipeline is built,
+  before accepting events; needs daemon.scope, daemon.pipeline, daemon.on_start/on_stop hooks (map onto
+  W3's DaemonPart/stages); sets pipeline.enrich, pipeline.on_request, album collector + prompts as front
+  doors, starts/stops GatewayCronHost; adapters register downloads via
+  extras.intake.register_fetcher(platform, fn); buttons as metadata["button"].
+- SECURITY — fix at integration: a typed `/approve` sent straight to pipeline.handle() (bypassing
+  accept()) skips the requester check and falls back to G4's handler — make G4's /approve and /deny
+  handlers enforce the same requester-or-admin rule (and bots never answer), with a test.
+- Decisions (need D-ids): D-16.230 — no PluginUpkeep for cron runs; ticker ownership via lease file
+  <home>/cron/ticker_owner.json (stale 180 s / dead / reused pid; deferred tick exits 0) instead of a
+  control-socket probe (layer rule); requester-or-admin, admin only when an admin list is configured;
+  gateway denies only with no request deadline or broker 2 s past its own (R02.5); "native" image mode
+  is a note pointing at vision_analyze (submit is text-only — real image parts need a P04 submit seam);
+  album window 0.8 s quiet / 3 s cap; narration-of-silence settles as silent.
+- Follow-ups: CLI/TUI approval cards onto service/approval_copy.py; cache age cleanup in daemon
+  housekeeping; Docker path translation for cached files; cron ledger attempt shows ok while the job
+  shows silent.
