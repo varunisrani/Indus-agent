@@ -92,3 +92,26 @@
   (voice_compatible field); no SVG/HEIC conversion. Config choices: media.video_provider/video_model,
   image_gen.key_name / tts.key_name default OPENAI_API_KEY, tts.provider piper, stt.max_file_mb 25.
 - Follow-up: aux TASK_TIMEOUTS vision: 120.
+
+## Slice K — w15-p10k.patch (base 7faff19) — DONE (P10-21..26 MoA, presets, /btw, /goal, /loop, /heartbeat)
+- New: core/{moa,moa_presets,side_question,goals,loops,heartbeat,session_scheduler}.py,
+  service/automation.py, cli/commands/moa.py, cli/slash/automation_cmds.py, tests (158), 6 notes.
+- Shared: core/loop.py (claim, pre-request hook, _no_grace); core/turn_state.py (TurnState.moa,
+  LoopOptions.grace); providers/auxiliary.py (call_route; _once timeout=None); service/session_service.py
+  (is_idle, generation, set_input_probe, inject, notify, on_turn_end, on_session_moved — OVERLAPS G's
+  deliver_internal: merge by hand, G can use inject); protocol/events.py goal.update, loop.update,
+  heartbeat.fired + regenerated packages/protocol generated files + samples (regenerate after merge;
+  TS catalog test not run here); registry, locales, test_registry; config moa, goals, loops,
+  auxiliary.goal_judge, auxiliary.side_question; cli/app.py, cli/launch.py (start_automation),
+  cli/repl/slash_bridge.py, cli/slash/{context,dispatch}.py; test_dispatch/test_control_cmds
+  (/goal test now uses /mcp); contract help catalogue + non-TTY table; ledgers.
+- Wiring: cli/launch.start_automation (done in slice); TUI/gateway/ACP call
+  SessionAutomation.command(name, session_id, args).
+- Decisions (need D-ids): MoA advice appended to the last user message, session model is the
+  aggregator, fan-out per iteration by default (user_turn, every_n:N), reused advice marked; no preset
+  ships vendor ids; no -r short for --reference; goal verdict needs JSON boolean done, no blocked/wait;
+  active goal holds loops; several loops/heartbeats per session with ids, /loop resume added; stop
+  marker LOOP_COMPLETE; gates run unattended (approvals.unattended_mode); goals/loops/heartbeats/moa
+  arm follow rotating compaction.
+- Follow-ups: P09-15 digest helper for routed /btw; goal judge usage into the session ledger;
+  HeartbeatDriver.restore on resume; /loop of a slash command unsupported.
