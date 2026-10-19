@@ -74,12 +74,10 @@ without optional extras, as CI installs), `94d604e` (P10-19 voice, P10-20 comput
 P12-01 Ink spike → **D-04.2 decided: upstream Ink + our wrappers**; P12-02..05 `@indus/client`;
 P12-28..31 `tui_bridge`), `840100b` (zustand for the renderer). Gate at `94d604e`: `pytest -m "not
 perf"` 8931 passed / 17 skipped, `-m perf` alone 10 passed, pyright 0, pnpm green (126 JS tests).
-In flight: **wave 8 = P12 renderer** — R1 (P12-06..11, 25: stores, events, turn controller, terminal,
-themes), R2 (P12-12..15: markdown, transcript, tool trail, status rule), R3 (P12-16..20: composer,
-completion, submission, keys), R4 (P12-21..24, 26: cards, model picker, slash, config sync). The
-shared store interfaces are in LEAD-NOTES "Wave 7 landing notes" and the wave-8 contract (copied
-into LEAD-NOTES at landing). Then P12-27 app composition, P12-32 `indus --tui` launcher, P12-33 Demo 2
-(re-bench D-04.2 fps on Node 24), then P13 (MCP/plugins/hooks), P14 (cron).
+Wave 8 landed `fa4fe5e` (P12-06..26 renderer; LEAD-NOTES "Wave 8 landing notes"). In flight:
+**wave 9** — P12-27 app composition (builder running), P12-32 launcher (built, patch saved in the
+lead's scratch, lands with P12-27). Then P12-33 Demo 2 (re-bench D-04.2 fps on Node 24), then P13
+(MCP/plugins/hooks), P14 (cron).
 If you find this with the turn PAUSED, look in `.agents/wip/` for parked slices.
 Owner items open: Pillow licence (MIT-CMU); voice extra's `av` (LGPL FFmpeg) and numpy (Zlib);
 Piper/eSpeak NG ruling (D-16.71); real-key P09 demo run; D-ids for computer_use differences.
