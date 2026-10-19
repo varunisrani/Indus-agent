@@ -1,0 +1,2701 @@
+diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
+index 734daa0..7a95675 100644
+--- a/THIRD_PARTY_NOTICES.md
++++ b/THIRD_PARTY_NOTICES.md
+@@ -137,13 +137,13 @@ PyPI for packages of other platforms).
+ | toml | 0.10.2 | MIT | extras `modal`, `daytona`, via modal / daytona | P21-05 |
+ | types-certifi | 2021.10.8.3 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
+ | types-toml | 0.10.8.20260518 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
+-| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, via modal / daytona (HTTP client) | P21-05 |
+-| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+-| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+-| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+-| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp / yarl | P21-05 |
+-| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp / yarl | P21-05 |
+-| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
++| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, via modal / daytona (HTTP client); extra `slack` names it directly (Bolt's async app and Socket Mode handler, P15-35) | P21-05 |
++| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, `slack`, via aiohttp | P21-05 |
++| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `slack`, via aiohttp | P21-05 |
++| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `slack`, via aiohttp | P21-05 |
++| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `slack`, via aiohttp / yarl | P21-05 |
++| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, `research`, `slack`, via aiohttp / yarl | P21-05 |
++| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `slack`, via aiohttp | P21-05 |
+ | daytona | 0.220.0 | Apache-2.0 | extra `daytona`: the Daytona sandbox SDK (terminal backend `daytona`) | P21-07 |
+ | daytona-api-client | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona (generated API client) | P21-07 |
+ | daytona-api-client-async | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
+@@ -196,3 +196,5 @@ PyPI for packages of other platforms).
+ | xxhash | 4.0.1 | BSD-2-Clause | extra `research`, via datasets | P22-15 |
+ | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | extras `voice`, `daytona`, `research`, via huggingface-hub / onnxruntime / opentelemetry-instrumentation / transformers / datasets (row added at the P22 R2 landing) | P22-11 |
+ | colorama | 0.4.6 | BSD-3-Clause (PyPI metadata) | Windows only: extras `voice`, `research`, via tqdm / typer (row added at the P22 R2 landing) | P22-11 |
++| slack-bolt | 1.30.0 | MIT | extra `slack`: the Slack adapter's Bolt app and Socket Mode handler | P15-35 |
++| slack-sdk | 3.44.1 | MIT | extra `slack`: the Slack Web API client, via slack-bolt and directly | P15-35 |
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index e6cbd47..f23f3a4 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1072,7 +1072,15 @@ Checked by `python -m tooling.checks acceptance`.
+ - **ACC-K6-1** Discord (slash commands, components, auto-threads, role allowlist, mention gating)
+   - Review: not yet planned (phase TBD)
+ - **ACC-K7-1** Slack (Socket Mode, Block Kit, threads, ephemeral messages)
+-  - Review: not yet planned (phase TBD)
++  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_message_and_app_mention_with_one_ts_make_one_turn`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_two_workspaces_with_one_channel_id_get_different_keys`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_a_channel_message_and_its_thread_follow_up_share_one_session`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_an_approval_press_settles_the_request`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_clarify_with_many_choices_stays_within_the_block_cap`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_private_notices_are_ephemeral`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_indus_send_slack_does_no_inbound_work`
++  - Review: a live workspace run (Demo 3, P15-36)
+ - **ACC-K8-1** Signal through signal-cli
+   - Review: not yet planned (phase TBD)
+ - **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
+@@ -1081,6 +1089,7 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
+   - `tests/unit/gateway/core/test_events.py::test_property_text_not_starting_with_slash_is_never_a_command`
+   - `tests/unit/gateway/core/test_events.py::test_reply_context_from_the_index_and_own_mark`
++  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_an_app_mention_alone_counts_as_mentioned_and_a_redelivery_is_dropped`
+   - Review: burst batching (P15-12) and per-platform dedupe (P15-33..35)
+ - **ACC-K14-1** Authorization chain: per-platform and global allowlists, allow-all flags, group chat lists, role …
+   - `tests/unit/gateway/core/test_authz.py::test_chain_order`
+diff --git a/docs/notes/P15/slack-adapter.md b/docs/notes/P15/slack-adapter.md
+new file mode 100644
+index 0000000..7673880
+--- /dev/null
++++ b/docs/notes/P15/slack-adapter.md
+@@ -0,0 +1,182 @@
++# Task: Slack adapter (P15-35) Phase: 15 Owner: wave-22 builder S
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `plugins/platforms/slack/adapter.py`
++(class constants and `__init__`, handler registration, `connect` / `disconnect`, the workspace and
++DM-conversation helpers, `send` / `_post_chunks`, private notice, `edit_message`, `delete_message`,
++`send_typing` / `stop_typing`, `_resolve_thread_ts`, upload helper, the inbound path
++`_handle_slack_message*` / `_prefilter_inbound` / `_build_message_event`, inbound file kinds, the
++interactive prompt senders and the approval / clarify action handlers), `plugins/platforms/slack/
++block_kit.py` (limits, `_split_text`, `sanitize_blocks`). Phase row P15-35, research 06, LEAD-NOTES
++P15 waves 1–3 (open seams: send-only open, `register_fetcher`, Slack `typing_status_text`).
++Evidence: none.
++
++What it does (own words): connects the gateway to one Slack workspace over Socket Mode. At connect it
++checks the bot token with `auth.test` (learning the bot user id, bot id and workspace id), registers
++listeners for `message`, `app_mention` and our button actions on a Bolt app, and opens the Socket
++Mode connection with the app token. Every inbound message becomes one `InboundEvent`: DMs (`im`) are
++`dm`, channels and group DMs are `group`, replies inside a thread are `thread` with the thread's root
++`ts` as thread id; a top-level channel message names its own `ts` as the prospective thread (our
++replies open a thread there), so it and its in-thread follow-ups share one session key. The
++workspace id rides as `scope_id`, so the same channel id in two workspaces gives two keys. `message`
++and `app_mention` for one message share a `ts` and produce one event (dedupe by workspace, channel
++and `ts`, bounded); our own posts are dropped; other bots' posts (`bot_message` subtype or a
++`bot_id`) are passed on marked `is_bot` for the gateway's bot rules; housekeeping subtypes are
++dropped; an edit of a message we already took is dropped, an edit of one we never took is passed on
++marked `edited`. Our own mention is stripped and reported as `metadata["mentioned"]`; replies in a
++thread we were summoned into (or posted in) count as addressed. Files become attachments (Slack's
++private URL), with a fetcher that downloads them with the bot token for media intake.
++
++Outbound: text goes to `chat.postMessage` (already mrkdwn from the sender; `meta["plain"]` turns
++markup off), threaded under the metadata thread id or, with `reply_in_thread` (default on), under
++the message we reply to; a user id target is opened as a DM first (`conversations.open`, cache
++≤5,000). Cap 39,000 code points; longer text is refused as too long before it reaches Slack (the
++sender chunks). Edits (`chat.update`, which also drops any old blocks so button cards lose their
++buttons), deletes, ephemeral private notices (`chat.postEphemeral`), the typing indicator as
++`assistant.threads.setStatus` in a thread (configurable text; turned off for the process when the
++app lacks the scope), media through `files.uploadV2`, approvals and clarify questions as Block Kit
++action buttons whose action ids are our callback data. Ignored channels: no inbound, outbound
++refused. Errors come back classified (Slack error codes, `Retry-After` for rate limits).
++
++Send-only open (`indus send`): `auth.test` and the web client only — no listeners, no Socket Mode
++connection, so no event is consumed.
++
++Inputs → outputs: `AdapterConfig` (credentials `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`; proxy;
++`platforms.slack.*` extra: `ignored_channels`, `reply_in_thread`, `typing_status_text`; new
++`send_only`) → a connected adapter; Events API payloads → `InboundEvent`s; adapter calls →
++Web API calls and `SendResult`s.
++
++Files: `src/indus/gateway/adapters/slack/__init__.py`, `src/indus/gateway/adapters/slack/
++adapter.py`, `src/indus/gateway/adapters/slack/blocks.py`,
++`tests/unit/gateway/adapters/slack/test_adapter.py` (+ `__init__.py`),
++`tests/contract/gateway/slack_case.py` (new). Shared: `docs/internals/acceptance-map.md`, `tests/fakes/platform/slack_wire.py`
++(ts-shaped ids, regex action matching, `conversations_open` / `conversations_info`, a platform that
++finds messages by `ts`), `tests/contract/gateway/conftest.py` (registers the case),
++`src/indus/gateway/config.py` (`AdapterConfig.send_only`), `src/indus/gateway/delivery/
++send_command.py` (builds send-only adapters), `pyproject.toml` (extra `slack`),
++`THIRD_PARTY_NOTICES.md`.
++
++Edge cases / failure modes:
++- `message` then `app_mention` (same ts) → one event; Socket Mode redelivery → dropped by the same
++  dedupe; dedupe memory bounded (oldest forgotten).
++- Own posts (bot user id or bot id) never come back as input; other bots are marked, not dropped.
++- `message_changed` of a taken message: dropped (no second turn); `message_deleted`, joins, topic
++  changes: dropped.
++- Missing library: connect fails non-retryable with the install hint; bad token (`invalid_auth`,
++  `not_authed`, `token_revoked`, `account_inactive`): non-retryable; network/timeouts retryable.
++- Rate limit: `Retry-After` header (any case) becomes `retry_after`; read timeouts are "maybe
++  delivered" (never re-sent).
++- Block payload refused (`invalid_blocks`): the same call once without blocks.
++- Typing without a thread: nothing (Slack's status needs a thread).
++- File download: only `https` on `slack.com` hosts gets the bot token; anything else is refused.
++- A button press is acknowledged first, then emitted (Slack wants the ack within 3 s).
++
++Our design differences / decisions:
++- One bot token (one workspace install) per adapter; the reference can hold several bot tokens. The
++  key still carries the event's workspace id (Slack Connect / Grid channels).
++- The library is behind one seam (`SlackSdk`, loaded on first open), so the contract suite runs over
++  the wire fake with no SDK installed.
++- No `!cmd` → `/cmd` rewrite, no Slack native slash commands, no native streams (P2), no thread
++  history hydration, no reactions lifecycle, no assistant-thread titles/suggested prompts, no
++  socket watchdog (the daemon's reconnect watcher owns reconnects) — see "Not taken".
++- Mention gating, allowlists and the bot rules stay in the gateway core (P15-08/10); the adapter
++  only reports `mentioned` / `is_bot`.
++
++Tests we will write:
++- Contract suite over the wire fake (all checks + no network).
++- `message` + `app_mention` one turn; redelivery; own post dropped; bot post marked; edit rules.
++- Two workspaces, same channel id → different session keys; top-level message and its thread
++  follow-up → same key.
++- Approval press through a real `AdmissionPipeline` + `ChatPrompts` settles the request and the card
++  loses its buttons.
++- 50-block cap (clarify with many choices, caller blocks); sanitiser clamps; block refusal retry.
++- Rate limit / auth failure classification; DM open cache; ignored channels; typing status.
++- Send-only open: `indus send slack:C…` over the wire fake registers no listener and opens no socket.
++- Fetcher: token only to Slack hosts, bytes streamed.
++
++## Decisions for the lead
++- **Send-only seam:** `AdapterConfig.send_only: bool = False`; `send_command.build_adapter` passes
++  `True`. Adapters read it in `create_adapter` (Slack: skip listeners and Socket Mode). Telegram and
++  Discord builders may have chosen another shape — keep one.
++- **Fetchers:** `SlackAdapter.register_fetchers(intake)` calls `intake.register_fetcher("slack",
++  …)` and returns the undo; the daemon should call it for each connected adapter that has it (after
++  `ExtrasPart.prepare`, e.g. in `_connect`), and undo on disconnect.
++- **Outbound threading of later pieces:** `FinalReply.thread_id` comes from `source.thread_id`
++  only, so the 2nd+ piece of a reply >39,000 chars to a top-level channel message (reply_to_mode
++  `first`) goes to the channel, not the thread. Fix in the core: for Slack, use
++  `prospective_thread_id` as the outbound thread when there is no real one (not done here: it would
++  change Discord's meaning of the field).
++- **Dependencies:** extra `slack = ["slack-bolt==1.30.0", "slack-sdk==3.44.1", "aiohttp==3.14.3"]`
++  (aiohttp is what Bolt's async app and Socket Mode handler import; it is an optional extra of
++  slack-sdk, so it must be named). Not locked here (lead re-locks).
++- **Typing meta:** `outbound.ports.typing` calls `typing_start(chat_id)` with no metadata; Slack's
++  status needs the thread, so the runner should pass `{"thread_id": source.thread_id or
++  source.prospective_thread_id}` when it starts feeding `TypingLoop`.
++- **Approval / clarify cards in channels** go where `prompts._meta(source)` says: a top-level channel
++  conversation has no real thread id, so the card is posted top-level (the replies are threaded).
++  Same core fix as above (use the prospective thread for Slack).
++- Settings read from `platforms.slack` extra: `ignored_channels` (list or comma string),
++  `reply_in_thread` (default true), `typing_status_text` (default "is thinking…").
++
++Compare checklist (filled after the rewrite; reopened `adapter.py`, `block_kit.py`):
++- [x] `message` + `app_mention` sharing a ts → one event; redelivery dropped (test:
++  `tests/unit/gateway/adapters/slack/test_adapter.py::test_message_and_app_mention_with_one_ts_make_one_turn`,
++  `::test_an_app_mention_alone_counts_as_mentioned_and_a_redelivery_is_dropped`)
++- [x] workspace id in the key (`::test_two_workspaces_with_one_channel_id_get_different_keys`)
++- [x] top-level channel message keyed on its own ts so the thread follow-up matches; thread we
++  were summoned into counts as addressed (`::test_a_channel_message_and_its_thread_follow_up_share_one_session`)
++- [x] `reply_in_thread: false` → flat (`::test_without_reply_in_thread_a_channel_message_has_no_prospective_thread`)
++- [x] own posts dropped, other bots marked (`::test_own_posts_are_dropped_and_other_bots_are_marked`)
++- [x] edit of a taken message dropped; housekeeping subtypes dropped (`::test_edits_and_housekeeping`)
++- [x] gap found: the reference also treats `bot_profile`, `user_profile.is_bot` and an app post
++  without `client_msg_id` as bot-authored, passes `document_mention`, and reads the workspace from the
++  envelope's `authorizations` — added, pinned by
++  `::test_app_posts_count_as_bots_and_the_team_can_come_from_the_envelope`
++- [x] file kinds incl. Slack audio clips (`::test_files_become_attachments_with_their_kinds`)
++- [x] user id targets opened as a DM, cached (`::test_a_user_id_target_opens_the_dm_once`)
++- [x] Block Kit refusal → once without blocks for plain sends; an approval card fails instead
++  (`::test_refused_caller_blocks_are_dropped_once`, `::test_a_refused_card_fails_instead_of_losing_its_buttons`)
++- [x] edit replaces the blocks (buttons go) (`::test_an_approval_card_is_buttons_and_a_final_edit_removes_them`)
++- [x] 50-block cap, section 3000 / header 150 clamps, empty blocks dropped
++  (`::test_caller_blocks_are_capped_at_fifty`, `::test_clarify_with_many_choices_stays_within_the_block_cap`,
++  `::test_sanitize_clamps_and_drops`)
++- [x] ephemeral private notice (`::test_private_notices_are_ephemeral`); uploads threaded
++  (`::test_media_is_uploaded_into_the_thread`)
++- [x] typing = thread status; off without the scope; configurable text
++  (`::test_typing_is_a_thread_status_and_goes_off_without_the_scope`, `::test_typing_status_text_comes_from_settings`)
++- [x] Retry-After → typed flood failure (`::test_rate_limit_wait_comes_from_the_header_in_any_case`)
++- [x] refused token non-retryable and never shown; failed socket closed
++  (`::test_a_refused_token_is_not_retryable_and_never_shown`, `::test_a_failing_socket_closes_and_hides_the_app_token`)
++- [x] approval press through the real intake settles the request; a stranger's press does not
++  (`::test_an_approval_press_settles_the_request`)
++- [x] send-only open (`::test_send_only_registers_no_listener_and_opens_no_socket`,
++  `::test_indus_send_slack_does_no_inbound_work`)
++- [x] file download only to Slack hosts, sign-in page refused (`::test_the_fetcher_sends_the_token_only_to_slack`,
++  `::test_the_fetcher_refuses_a_sign_in_page`)
++- [x] shared contract suite (`tests/contract/gateway/test_adapter_contract.py`, case `slack`); vendor
++  names exist in slack-bolt 1.30.0 / slack-sdk 3.44.1 (run with the libraries installed: 8 passed)
++- Deliberate differences: one bot token per adapter (the reference loads several workspaces'
++  tokens); DMs are one session per DM channel and replies there are not threaded (the reference
++  makes each top-level DM its own thread session by default); an edit text over the cap is refused
++  as too long (the reference truncates; the stream consumer seals before the cap); the sender
++  splits long text (the reference splits inside `send`); mpim is a group (mention needed, like the
++  reference's gating) and keyed as a group.
++- Not taken (not needed in P15, with the row that brings it later or why): `!cmd` → `/cmd`
++  rewrite and Slack native slash commands (need the command registry in the adapter; follow-up);
++  native `chat.*Stream` streaming and task cards (P2); `conversations.replies` thread-history
++  hydration and restart rehydration; `reactions.add/remove` processing reactions; Assistant-thread
++  titles, suggested prompts, app-home / context events; file stubs (`check_file_info` via
++  `files.info`); link-unfurl and block-text enrichment of inbound text; `reply_broadcast`; status
++  bubbles (`send_or_update_status`); model picker; feedback buttons; the Socket Mode watchdog (the
++  daemon's reconnect watcher restarts a dead adapter); the catch-all ack for unhandled events
++  (Bolt logs them; worth adding with the manifest work); per-request proxy middleware (the proxy is
++  set on the client and the socket handler).
++
++## Status
++
++Done (2026-10-19). Adapter, Block Kit builders, contract case, unit tests and the send-only seam
++are in; shared edits: `tests/fakes/platform/slack_wire.py`, `tests/contract/gateway/conftest.py`,
++`src/indus/gateway/config.py`, `src/indus/gateway/delivery/send_command.py`, `pyproject.toml`,
++`THIRD_PARTY_NOTICES.md`, `docs/internals/acceptance-map.md` (ACC-K7-1, one ACC-K13-1 line). Left for
++the lead: re-lock (adds only slack-bolt 1.30.0 and slack-sdk 3.44.1), daemon wiring of
++`register_fetchers`, the core seams under "Decisions for the lead", typing meta (the typing port
++passes no thread, so Slack shows no status until it does).
+diff --git a/pyproject.toml b/pyproject.toml
+index c197fd6..1c52ea7 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -43,6 +43,9 @@ vercel = ["vercel-sandbox==0.7.0"]
+ # Tokenizer and dataset loading for `indus research compress` / `sample` (P22-11, P22-15;
+ # Apache-2.0, Apache-2.0; docs/notes/P22/compress-config.md). Imported lazily only.
+ research = ["datasets==5.0.1", "transformers==5.17.0"]
++# Slack Socket Mode adapter (P15-35; MIT, MIT, Apache-2.0 AND MIT). Bolt's async app and Socket Mode
++# handler import aiohttp, which slack-sdk lists only as an optional extra. Imported lazily only.
++slack = ["slack-bolt==1.30.0", "slack-sdk==3.44.1", "aiohttp==3.14.3"]
+ 
+ [project.scripts]
+ indus = "indus.cli.entry:main"
+diff --git a/src/indus/gateway/adapters/slack/__init__.py b/src/indus/gateway/adapters/slack/__init__.py
+new file mode 100644
+index 0000000..8bd98b1
+--- /dev/null
++++ b/src/indus/gateway/adapters/slack/__init__.py
+@@ -0,0 +1,22 @@
++"""The Slack adapter (P15-35): Socket Mode in, Web API out.
++
++The registry builds it through ``create_adapter`` (``indus.gateway.adapters.slack:create_adapter``)
++only for an enabled platform; importing this package never imports the Slack libraries, which load
++on the first connect (the ``slack`` extra).
++"""
++
++from __future__ import annotations
++
++from typing import TYPE_CHECKING
++
++from indus.gateway.adapters.slack.adapter import SlackAdapter
++
++if TYPE_CHECKING:
++    from indus.gateway.config import AdapterConfig
++
++__all__ = ["SlackAdapter", "create_adapter"]
++
++
++def create_adapter(config: AdapterConfig) -> SlackAdapter:
++    """The adapter for one profile's Slack settings (send-only when ``config.send_only``)."""
++    return SlackAdapter.from_config(config)
+diff --git a/src/indus/gateway/adapters/slack/adapter.py b/src/indus/gateway/adapters/slack/adapter.py
+new file mode 100644
+index 0000000..fb0fcd3
+--- /dev/null
++++ b/src/indus/gateway/adapters/slack/adapter.py
+@@ -0,0 +1,968 @@
++"""Slack over Socket Mode (P15-35).
++
++Connecting checks the bot token with ``auth.test`` (bot user id, bot id, workspace id), puts our
++listeners on a Bolt ``AsyncApp`` (``message``, ``app_mention``, our button actions) and opens the
++Socket Mode connection with the app token. A send-only adapter (``indus send``) stops after
++``auth.test``: no listener, no socket, so it never takes an event a running gateway is owed.
++
++Inbound, one Events API message becomes one `InboundEvent`:
++
++- ``im`` channels are ``dm``; channels and group DMs are ``group``; a reply inside a thread is
++  ``thread`` with the root ``ts`` as thread id (a DM keeps ``dm`` and carries the thread id).
++- A top-level channel message names its own ``ts`` as the prospective thread: our reply opens a
++  thread under it, so the message and its in-thread follow-ups share one session key.
++- The workspace id is the source's ``scope_id``: one channel id in two workspaces is two sessions.
++- ``message`` and ``app_mention`` for one message share a ``ts``; the first one wins (dedupe on
++  workspace, channel and ``ts``, which also drops Socket Mode redeliveries).
++- Our own posts never come back; other bots' posts are passed on marked ``is_bot`` for the gateway's
++  bot rules; housekeeping subtypes (joins, topic changes, deletions …) are dropped; an edit of a
++  message already taken is dropped, an edit of one never taken is passed on marked ``edited``.
++- Our mention is taken out of the text and reported as ``metadata["mentioned"]``; a message in a
++  thread we were summoned into, or posted in, counts as mentioned too.
++- Files become attachments pointing at Slack's private URL; ``media_fetcher`` downloads them with
++  the bot token (Slack hosts only) for media intake.
++
++Outbound text arrives as mrkdwn from the sender and goes to ``chat.postMessage``, threaded under the
++metadata's thread id, else (``reply_in_thread``, on by default, not in DMs) under the message it
++answers. A user id target is opened as a DM first (cached). Text over the 39,000 cap is refused as
++too long before it reaches Slack: the sender splits. Approvals and clarify questions are Block Kit
++buttons whose action ids are our callback data; an edit replaces the blocks, so a settled card loses
++its buttons. The typing indicator is ``assistant.threads.setStatus`` (Slack shows it only in a
++thread), switched off for the process once Slack says the app may not use it.
++
++Settings (``platforms.slack``): ``ignored_channels`` (no inbound, outbound refused),
++``reply_in_thread`` (default true), ``typing_status_text`` (default "is thinking…").
++
++The libraries are imported in one place, ``load_sdk``, on the first connect; tests hand in a
++`SlackSdk` built over the wire fake instead.
++"""
++
++from __future__ import annotations
++
++import logging
++import os
++import re
++from collections import OrderedDict
++from collections.abc import AsyncIterator, Callable, Hashable, Mapping
++from dataclasses import dataclass
++from datetime import UTC, datetime
++from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
++from urllib.parse import urlsplit
++
++from indus.gateway.adapters.base import (
++    REPLY_TO_KEY,
++    Adapter,
++    AdapterConnectError,
++    ApprovalPrompt,
++    Capabilities,
++    ChatInfo,
++    ClarifyPrompt,
++    InboundSink,
++    MediaKind,
++    approval_callback,
++    clarify_callback,
++    code_points,
++)
++from indus.gateway.adapters.slack import blocks as kit
++from indus.gateway.core.events import Attachment, ChatType, InboundEvent, MessageKind, Source
++from indus.gateway.core.send import SendResult
++
++if TYPE_CHECKING:
++    from indus.foundation.clock import Clock
++    from indus.gateway.config import AdapterConfig, PlatformSettings
++
++__all__ = [
++    "DEFAULT_STATUS_TEXT",
++    "MAX_LEN",
++    "SDK_LOADER",
++    "SlackAdapter",
++    "SlackSdk",
++    "is_slack_file_url",
++    "load_sdk",
++]
++
++log = logging.getLogger(__name__)
++
++PLATFORM = "slack"
++MAX_LEN = 39_000
++# Bounded memories (oldest forgotten first).
++DM_CACHE_MAX = 5_000
++SEEN_MAX = 5_000
++NAMES_MAX = 5_000
++THREADS_MAX = 5_000
++DEFAULT_STATUS_TEXT = "is thinking…"
++INSTALL_HINT = "pip install 'indus-agent[slack]'"
++
++# Message subtypes that are a person (or another bot) speaking; every other subtype is dropped.
++_SPEAKING_SUBTYPES = frozenset(
++    {"", "bot_message", "file_share", "thread_broadcast", "me_message", "document_mention"}
++)
++# Token problems no retry fixes.
++_AUTH_ERRORS = frozenset(
++    {"invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive"}
++)
++# ``assistant.threads.setStatus`` answers that mean "this app cannot show a status here".
++_STATUS_UNAVAILABLE = frozenset(
++    {
++        "missing_scope",
++        "not_allowed_token_type",
++        "unknown_method",
++        "method_deprecated",
++        "feature_not_enabled",
++        "not_allowed",
++    }
++)
++_BLOCK_REFUSALS = frozenset({"invalid_blocks", "invalid_blocks_format"})
++# Our button callbacks (``adapters.base.approval_callback`` / ``clarify_callback``).
++_OUR_ACTIONS = re.compile(r"^(?:apv|clr):")
++
++
++# -- the library seam ------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class SlackSdk:
++    """The two things the adapter builds from slack-bolt: the app (whose ``client`` is the async
++    Web API client) for a bot token, and the Socket Mode handler for an app token."""
++
++    make_app: Callable[[str, str | None], Any]
++    make_socket: Callable[[Any, str, str | None], Any]
++
++
++def load_sdk() -> SlackSdk:
++    """The real libraries (the ``slack`` extra). Raises ImportError when they are missing."""
++    from slack_bolt.adapter.socket_mode.async_handler import (  # pyright: ignore[reportMissingImports]
++        AsyncSocketModeHandler,  # pyright: ignore[reportUnknownVariableType]
++    )
++    from slack_bolt.app.async_app import AsyncApp  # pyright: ignore[reportMissingImports]
++    from slack_sdk.web.async_client import AsyncWebClient  # pyright: ignore[reportMissingImports]
++
++    def make_app(token: str, proxy: str | None) -> Any:
++        client = AsyncWebClient(token=token, proxy=proxy)
++        return AsyncApp(token=token, client=client)
++
++    def make_socket(app: Any, app_token: str, proxy: str | None) -> Any:
++        return AsyncSocketModeHandler(app, app_token, proxy=proxy)
++
++    return SlackSdk(make_app, make_socket)
++
++
++SDK_LOADER: Callable[[], SlackSdk] = load_sdk
++"""How an adapter without an injected `SlackSdk` gets one (tests replace it)."""
++
++
++# -- small helpers ---------------------------------------------------------------------------------
++
++
++class _Recent:
++    """An insertion-ordered set that forgets its oldest members past ``limit``."""
++
++    def __init__(self, limit: int) -> None:
++        self._limit = limit
++        self._items: OrderedDict[Hashable, None] = OrderedDict()
++
++    def add(self, item: Hashable) -> bool:
++        """Remember ``item``; False when it was already known."""
++        if item in self._items:
++            self._items.move_to_end(item)
++            return False
++        self._items[item] = None
++        while len(self._items) > self._limit:
++            self._items.popitem(last=False)
++        return True
++
++    def __contains__(self, item: object) -> bool:
++        return item in self._items
++
++    def __len__(self) -> int:
++        return len(self._items)
++
++
++class _Cache:
++    """A bounded string map (oldest entry dropped first)."""
++
++    def __init__(self, limit: int) -> None:
++        self._limit = limit
++        self._items: OrderedDict[str, str] = OrderedDict()
++
++    def get(self, key: str) -> str | None:
++        return self._items.get(key)
++
++    def put(self, key: str, value: str) -> None:
++        self._items[key] = value
++        self._items.move_to_end(key)
++        while len(self._items) > self._limit:
++            self._items.popitem(last=False)
++
++    def __contains__(self, key: object) -> bool:
++        return key in self._items
++
++    def __len__(self) -> int:
++        return len(self._items)
++
++
++def _mapping(value: object) -> Mapping[str, Any]:
++    return cast(Mapping[str, Any], value) if isinstance(value, Mapping) else {}
++
++
++def _text(value: object) -> str:
++    return value.strip() if isinstance(value, str) else ""
++
++
++def _api_error(exc: BaseException) -> str:
++    """Slack's error code on a Web API failure (``channel_not_found`` …), else ""."""
++    response = getattr(exc, "response", None)
++    getter = getattr(response, "get", None)
++    if not callable(getter):
++        return ""
++    try:
++        return _text(getter("error"))
++    except Exception:
++        return ""
++
++
++def _retry_after(exc: BaseException) -> float | None:
++    """The ``Retry-After`` seconds of a rate-limited call (any header spelling)."""
++    response = getattr(exc, "response", None)
++    headers = getattr(response, "headers", None)
++    if not isinstance(headers, Mapping):
++        return None
++    for name, value in cast(Mapping[object, object], headers).items():
++        if str(name).lower() == "retry-after":
++            try:
++                return max(0.0, float(str(value).strip()))
++            except ValueError:
++                return None
++    return None
++
++
++def _flag(value: object, default: bool) -> bool:
++    if isinstance(value, bool):
++        return value
++    if isinstance(value, str) and value.strip():
++        return value.strip().lower() in ("1", "true", "yes", "on")
++    return default
++
++
++def _channel_set(value: object) -> frozenset[str]:
++    if isinstance(value, str):
++        items: list[object] = list(value.split(","))
++    elif isinstance(value, list | tuple | set | frozenset):
++        items = list(cast(list[object], value))
++    else:
++        items = []
++    return frozenset(s for s in (str(i).strip() for i in items) if s)
++
++
++def _when(ts: str) -> datetime | None:
++    try:
++        return datetime.fromtimestamp(float(ts), tz=UTC)
++    except (ValueError, OverflowError, OSError):
++        return None
++
++
++def _bot_authored(event: Mapping[str, Any], subtype: str, bot_id: str) -> bool:
++    """A bot or app posted it: the bot subtype, a bot id or profile, or an app post without the
++    client message id every person's message carries."""
++    if subtype == "bot_message" or bot_id or event.get("bot_profile"):
++        return True
++    if _mapping(event.get("user_profile")).get("is_bot") is True:
++        return True
++    return bool(event.get("app_id")) and not event.get("client_msg_id")
++
++
++def _file_kind(file: Mapping[str, Any], mime: str) -> MessageKind:
++    """Slack audio clips (``slack_audio``) and audio files are voice notes for intake."""
++    if file.get("subtype") == "slack_audio" or mime.startswith("audio/"):
++        return MessageKind.VOICE
++    if mime.startswith("image/"):
++        return MessageKind.PHOTO
++    if mime.startswith("video/"):
++        return MessageKind.VIDEO
++    return MessageKind.DOCUMENT
++
++
++def is_slack_file_url(url: str) -> bool:
++    """True for an ``https`` URL on a Slack host: the only place the bot token may be sent."""
++    try:
++        parts = urlsplit(url)
++    except ValueError:
++        return False
++    host = (parts.hostname or "").lower().rstrip(".")
++    return parts.scheme == "https" and (host == "slack.com" or host.endswith(".slack.com"))
++
++
++type Fetcher = Callable[[Attachment], AsyncIterator[bytes]]
++
++
++class FetcherSeat(Protocol):
++    """Where download functions are registered (``intake.media.MediaIntake``)."""
++
++    def register_fetcher(self, platform: str, fetcher: Fetcher) -> Callable[[], None]: ...
++
++
++# -- the adapter -----------------------------------------------------------------------------------
++
++
++class SlackAdapter(Adapter):
++    platform: ClassVar[str] = PLATFORM
++    capabilities: ClassVar[Capabilities] = Capabilities(
++        max_len=MAX_LEN,
++        len_fn=code_points,
++        markup="mrkdwn",
++        supports_edit=True,
++        supports_delete=True,
++        supports_buttons=True,
++    )
++    vendor_names: ClassVar[Mapping[str, tuple[str, ...]]] = {
++        "slack_sdk.web.async_client:AsyncWebClient": (
++            "auth_test",
++            "chat_postMessage",
++            "chat_update",
++            "chat_delete",
++            "chat_postEphemeral",
++            "files_upload_v2",
++            "conversations_open",
++            "conversations_info",
++            "users_info",
++            "assistant_threads_setStatus",
++        ),
++        "slack_bolt.app.async_app:AsyncApp": ("event", "action", "client"),
++        "slack_bolt.adapter.socket_mode.async_handler:AsyncSocketModeHandler": (
++            "connect_async",
++            "close_async",
++        ),
++    }
++
++    def __init__(
++        self,
++        *,
++        clock: Clock,
++        bot_token: str,
++        app_token: str,
++        settings: PlatformSettings | None = None,
++        proxy: str | None = None,
++        send_only: bool = False,
++        sdk: SlackSdk | None = None,
++        sink: InboundSink | None = None,
++        http_transport: Any = None,
++    ) -> None:
++        super().__init__(clock=clock, settings=settings, secrets=(bot_token, app_token), sink=sink)
++        self._bot_token = bot_token
++        self._app_token = app_token
++        self._proxy = proxy
++        self.send_only = send_only
++        self._sdk = sdk
++        self._http_transport = http_transport
++        extra: Mapping[str, Any] = settings.extra if settings is not None else {}
++        self.ignored_channels = _channel_set(extra.get("ignored_channels"))
++        self.reply_in_thread = _flag(extra.get("reply_in_thread"), True)
++        self.status_text = _text(extra.get("typing_status_text")) or DEFAULT_STATUS_TEXT
++        self._app: Any = None
++        self._client: Any = None
++        self._socket: Any = None
++        self.bot_user_id = ""
++        self.bot_id = ""
++        self.team_id = ""
++        self._seen = _Recent(SEEN_MAX)
++        self._threads = _Recent(THREADS_MAX)
++        self._dm_channels = _Recent(DM_CACHE_MAX)
++        self._dm_open = _Cache(DM_CACHE_MAX)
++        self._user_names = _Cache(NAMES_MAX)
++        self._chat_names = _Cache(NAMES_MAX)
++        self._statuses: dict[str, str] = {}
++        self._status_off = False
++
++    @classmethod
++    def from_config(cls, config: AdapterConfig, *, sdk: SlackSdk | None = None) -> SlackAdapter:
++        credentials = config.settings.credentials
++        bot = _text(credentials.get("SLACK_BOT_TOKEN"))
++        app = _text(credentials.get("SLACK_APP_TOKEN"))
++        missing = [n for n, v in (("SLACK_BOT_TOKEN", bot), ("SLACK_APP_TOKEN", app)) if not v]
++        if missing:
++            raise ValueError("missing Slack credentials: " + ", ".join(missing))
++        return cls(
++            clock=config.clock,
++            bot_token=bot,
++            app_token=app,
++            settings=config.settings,
++            proxy=config.proxy,
++            send_only=config.send_only,
++            sdk=sdk,
++        )
++
++    # -- lifecycle ---------------------------------------------------------------------------------
++
++    def _auth_refused(self, exc: BaseException, what: str) -> AdapterConnectError | None:
++        code = _api_error(exc)
++        if code in _AUTH_ERRORS:
++            return AdapterConnectError(
++                f"Slack refused the {what} ({code})", retryable=False, code="auth_failed"
++            )
++        return None
++
++    async def _open(self, is_reconnect: bool) -> None:
++        sdk = self._sdk
++        if sdk is None:
++            try:
++                sdk = SDK_LOADER()
++            except ImportError:
++                raise AdapterConnectError(
++                    f"the Slack libraries are not installed: {INSTALL_HINT}",
++                    retryable=False,
++                    code="missing_dependency",
++                ) from None
++            self._sdk = sdk
++        app = sdk.make_app(self._bot_token, self._proxy)
++        client = app.client
++        try:
++            auth = _mapping(await client.auth_test())
++        except Exception as exc:
++            refused = self._auth_refused(exc, "bot token")
++            if refused is not None:
++                raise refused from None
++            raise
++        self.bot_user_id = _text(auth.get("user_id"))
++        self.bot_id = _text(auth.get("bot_id"))
++        self.team_id = _text(auth.get("team_id"))
++        self._app, self._client = app, client
++        if self.send_only:
++            return
++        app.event("message")(self._on_message)
++        app.event("app_mention")(self._on_mention)
++        app.action(_OUR_ACTIONS)(self._on_action)
++        socket = sdk.make_socket(app, self._app_token, self._proxy)
++        try:
++            await socket.connect_async()
++        except Exception as exc:
++            self._app = self._client = None
++            try:
++                await socket.close_async()
++            except Exception as close_exc:
++                log.debug("slack: closing a failed socket: %s", self.scrub(str(close_exc)))
++            refused = self._auth_refused(exc, "app token")
++            if refused is not None:
++                raise refused from None
++            raise
++        self._socket = socket
++        log.info(
++            "slack: connected to workspace %s as %s%s",
++            self.team_id or "?",
++            self.bot_user_id or "?",
++            " (reconnect)" if is_reconnect else "",
++        )
++
++    async def _close(self) -> None:
++        socket, self._socket = self._socket, None
++        self._app = self._client = None
++        self._statuses.clear()
++        if socket is not None:
++            await socket.close_async()
++
++    def _web(self) -> Any:
++        if self._client is None:
++            raise ConnectionError("not connected to Slack")
++        return self._client
++
++    # -- inbound -----------------------------------------------------------------------------------
++
++    async def _on_message(
++        self, event: Mapping[str, Any], body: Mapping[str, Any] | None = None, **_: Any
++    ) -> None:
++        await self._take(event, body, mentioned=False)
++
++    async def _on_mention(
++        self, event: Mapping[str, Any], body: Mapping[str, Any] | None = None, **_: Any
++    ) -> None:
++        await self._take(event, body, mentioned=True)
++
++    async def _take(
++        self, event: Mapping[str, Any], body: Mapping[str, Any] | None, *, mentioned: bool
++    ) -> None:
++        try:
++            built = await self.normalise(event, body, mentioned=mentioned)
++        except Exception:
++            log.exception("slack: an inbound event could not be read")
++            return
++        if built is not None:
++            await self.emit(built)
++
++    def _team_of(self, event: Mapping[str, Any], body: Mapping[str, Any] | None) -> str:
++        for payload in (event, body or {}):
++            for key in ("team", "team_id"):
++                value = payload.get(key)
++                if isinstance(value, str) and value:
++                    return value
++                found = _text(_mapping(value).get("id"))
++                if found:
++                    return found
++        for grant in cast(list[object], (body or {}).get("authorizations") or []):
++            found = _text(_mapping(grant).get("team_id"))
++            if found:
++                return found
++        return self.team_id
++
++    def is_ignored(self, channel: str) -> bool:
++        return "*" in self.ignored_channels or channel in self.ignored_channels
++
++    def _is_dm(self, channel: str) -> bool:
++        return channel.startswith("D") or channel in self._dm_channels
++
++    async def normalise(
++        self,
++        raw: Mapping[str, Any],
++        body: Mapping[str, Any] | None = None,
++        *,
++        mentioned: bool = False,
++    ) -> InboundEvent | None:
++        """One Events API message as an `InboundEvent`, or None when it is not for us."""
++        event: Mapping[str, Any] = raw
++        edited = False
++        subtype = _text(event.get("subtype"))
++        if subtype == "message_changed":
++            inner = _mapping(event.get("message"))
++            event = {
++                **inner,
++                "channel": event.get("channel") or inner.get("channel"),
++                "channel_type": event.get("channel_type") or inner.get("channel_type"),
++                "team": inner.get("team") or event.get("team"),
++            }
++            edited = True
++            subtype = _text(event.get("subtype"))
++        if subtype not in _SPEAKING_SUBTYPES:
++            return None
++        channel = _text(event.get("channel"))
++        ts = _text(event.get("ts"))
++        if not channel or not ts or self.is_ignored(channel):
++            return None
++        team = self._team_of(event, body)
++        if not self._seen.add((team, channel, ts)):
++            return None
++        user = _text(event.get("user"))
++        bot_id = _text(event.get("bot_id"))
++        if (user and user == self.bot_user_id) or (bot_id and bot_id == self.bot_id):
++            return None
++        is_bot = _bot_authored(event, subtype, bot_id)
++
++        channel_type = _text(event.get("channel_type"))
++        if channel_type == "im":
++            self._dm_channels.add(channel)
++        is_dm = channel_type == "im" or (not channel_type and self._is_dm(channel))
++        thread_ts = _text(event.get("thread_ts"))
++        in_thread = bool(thread_ts) and thread_ts != ts
++        chat_type: ChatType
++        if is_dm:
++            chat_type = "dm"
++        elif in_thread:
++            chat_type = "thread"
++        else:
++            chat_type = "group"
++        thread_id = thread_ts if in_thread else None
++        prospective = ts if chat_type == "group" and self.reply_in_thread else None
++
++        text = _text(event.get("text"))
++        if self.bot_user_id:
++            token = f"<@{self.bot_user_id}>"
++            if token in text:
++                mentioned = True
++                text = re.sub(rf"\s*{re.escape(token)}\s*", " ", text).strip()
++        anchor = thread_id or prospective
++        if anchor and not is_dm:
++            if mentioned:
++                self._threads.add((channel, anchor))
++            elif thread_id and (channel, thread_id) in self._threads:
++                mentioned = True
++
++        media: list[Attachment] = []
++        kinds: list[MessageKind] = []
++        for item in cast(list[object], event.get("files") or []):
++            file = _mapping(item)
++            url = _text(file.get("url_private_download")) or _text(file.get("url_private"))
++            if not url:
++                continue
++            mime = _text(file.get("mimetype"))
++            media.append(Attachment(ref=url, mime=mime))
++            kinds.append(_file_kind(file, mime))
++
++        metadata: dict[str, Any] = {}
++        if mentioned:
++            metadata["mentioned"] = True
++        if edited:
++            metadata["edited"] = True
++        if team:
++            metadata["team_id"] = team
++        source = Source(
++            platform=PLATFORM,
++            chat_id=channel,
++            chat_type=chat_type,
++            chat_name=None if is_dm else await self._chat_name(channel),
++            user_id=user or bot_id or None,
++            user_name=await self._user_name(user) if user and not is_bot else None,
++            thread_id=thread_id,
++            is_bot=is_bot,
++            scope_id=team or None,
++            prospective_thread_id=prospective,
++        )
++        return InboundEvent(
++            source=source,
++            text=text,
++            kind=kinds[0] if kinds else MessageKind.TEXT,
++            message_id=ts,
++            media=tuple(media),
++            metadata=metadata,
++            timestamp=_when(ts),
++        )
++
++    async def _user_name(self, user: str) -> str | None:
++        cached = self._user_names.get(user)
++        if cached is not None:
++            return cached or None
++        name = ""
++        try:
++            found = _mapping(_mapping(await self._web().users_info(user=user)).get("user"))
++            profile = _mapping(found.get("profile"))
++            name = (
++                _text(profile.get("display_name"))
++                or _text(found.get("real_name"))
++                or _text(found.get("name"))
++            )
++        except Exception as exc:
++            log.debug("slack: users.info failed: %s", self.scrub(str(exc)))
++        self._user_names.put(user, name)
++        return name or None
++
++    async def _chat_name(self, channel: str) -> str | None:
++        cached = self._chat_names.get(channel)
++        if cached is not None:
++            return cached or None
++        name = ""
++        try:
++            found = await self._conversation_info(channel)
++            name = _text(found.get("name"))
++        except Exception as exc:
++            log.debug("slack: conversations.info failed: %s", self.scrub(str(exc)))
++        self._chat_names.put(channel, name)
++        return name or None
++
++    async def _conversation_info(self, channel: str) -> Mapping[str, Any]:
++        response = await self._web().conversations_info(channel=channel)
++        return _mapping(_mapping(response).get("channel"))
++
++    async def _on_action(self, ack: Any, body: Mapping[str, Any], **_: Any) -> None:
++        """A press of one of our buttons: acknowledged at once, then handed in as an event."""
++        try:
++            await ack()
++        except Exception as exc:
++            log.debug("slack: acknowledging an action failed: %s", self.scrub(str(exc)))
++        try:
++            built = self.normalise_action(body)
++        except Exception:
++            log.exception("slack: a button press could not be read")
++            return
++        if built is not None:
++            await self.emit(built)
++
++    def normalise_action(self, body: Mapping[str, Any]) -> InboundEvent | None:
++        actions = cast(list[object], body.get("actions") or [])
++        action = _mapping(actions[0]) if actions else {}
++        data = _text(action.get("action_id")) or _text(action.get("value"))
++        channel = _text(_mapping(body.get("channel")).get("id"))
++        person = _mapping(body.get("user"))
++        user = _text(person.get("id"))
++        if not data or not channel or not user or self.is_ignored(channel):
++            return None
++        message = _mapping(body.get("message"))
++        card_ts = _text(message.get("ts"))
++        thread_ts = _text(message.get("thread_ts"))
++        in_thread = bool(thread_ts) and thread_ts != card_ts
++        is_dm = self._is_dm(channel)
++        chat_type: ChatType = "dm" if is_dm else ("thread" if in_thread else "group")
++        team = self._team_of(body, None)
++        metadata: dict[str, Any] = {"button": data}
++        if card_ts:
++            metadata["button_message_id"] = card_ts
++        if team:
++            metadata["team_id"] = team
++        source = Source(
++            platform=PLATFORM,
++            chat_id=channel,
++            chat_type=chat_type,
++            user_id=user,
++            user_name=_text(person.get("username")) or _text(person.get("name")) or None,
++            thread_id=thread_ts if in_thread else None,
++            scope_id=team or None,
++        )
++        return InboundEvent(source=source, text="", metadata=metadata)
++
++    # -- media download ----------------------------------------------------------------------------
++
++    def media_fetcher(self) -> Fetcher:
++        """Downloads an attachment's private URL with the bot token, Slack hosts only."""
++        token, proxy, transport = self._bot_token, self._proxy, self._http_transport
++
++        async def fetch(attachment: Attachment) -> AsyncIterator[bytes]:
++            import httpx
++
++            url = attachment.ref
++            if not is_slack_file_url(url):
++                raise PermissionError("not a Slack file address")
++            async with (
++                httpx.AsyncClient(
++                    proxy=proxy, transport=transport, follow_redirects=True, timeout=60.0
++                ) as http,
++                http.stream("GET", url, headers={"Authorization": f"Bearer {token}"}) as response,
++            ):
++                response.raise_for_status()
++                kind = response.headers.get("content-type", "").lower()
++                if kind.startswith("text/html") and "html" not in attachment.mime.lower():
++                    # Slack answers a sign-in page when the app lacks the files:read scope.
++                    raise PermissionError("Slack returned a web page instead of the file")
++                async for chunk in response.aiter_bytes():
++                    yield chunk
++
++        return fetch
++
++    def register_fetchers(self, seat: FetcherSeat) -> Callable[[], None]:
++        """Register this adapter's download function with media intake; returns the undo."""
++        return seat.register_fetcher(PLATFORM, self.media_fetcher())
++
++    # -- outbound ----------------------------------------------------------------------------------
++
++    def _failure(self, exc: BaseException) -> SendResult:
++        log.warning("slack: platform call failed: %s", self.scrub(f"{type(exc).__name__}: {exc}"))
++        return SendResult.failure(exc=exc, retry_after=_retry_after(exc))
++
++    def is_final_failure(self, result: SendResult) -> bool:
++        error = (result.error or "").lower()
++        return any(code in error for code in _AUTH_ERRORS)
++
++    async def _channel(self, chat_id: str) -> str:
++        """The conversation to post in: a user id is opened as a DM first (cached)."""
++        if chat_id[:1] not in ("U", "W"):
++            return chat_id
++        cached = self._dm_open.get(chat_id)
++        if cached:
++            return cached
++        response = _mapping(await self._web().conversations_open(users=chat_id))
++        opened = _text(_mapping(response.get("channel")).get("id"))
++        if not opened:
++            raise LookupError("channel_not_found: Slack opened no DM for that user")
++        self._dm_open.put(chat_id, opened)
++        self._dm_channels.add(opened)
++        return opened
++
++    def _thread_for(
++        self, channel: str, reply_to: str | None, meta: Mapping[str, Any]
++    ) -> str | None:
++        explicit = _text(meta.get("thread_id")) or _text(meta.get("thread_ts"))
++        if explicit:
++            return explicit
++        if reply_to and self.reply_in_thread and not self._is_dm(channel):
++            return str(reply_to)
++        return None
++
++    def _refusal(self, chat_id: str) -> SendResult | None:
++        if self.is_ignored(chat_id):
++            return SendResult.refused("sending to an ignored Slack channel")
++        return None
++
++    @staticmethod
++    def _too_long(text: str) -> SendResult | None:
++        size = code_points(text)
++        if size > MAX_LEN:
++            return SendResult.failure(f"msg_too_long: {size} characters (Slack takes {MAX_LEN})")
++        return None
++
++    async def _post(self, args: dict[str, Any], *, blocks_optional: bool) -> Mapping[str, Any]:
++        """``chat.postMessage``; caller blocks Slack refuses are dropped once when optional."""
++        client = self._web()
++        try:
++            return _mapping(await client.chat_postMessage(**args))
++        except Exception as exc:
++            if not (blocks_optional and "blocks" in args and _api_error(exc) in _BLOCK_REFUSALS):
++                raise
++            log.info("slack: blocks refused; sending the text alone")
++            plain = {k: v for k, v in args.items() if k != "blocks"}
++            return _mapping(await client.chat_postMessage(**plain))
++
++    def _posted(self, response: Mapping[str, Any], channel: str, thread: str | None) -> SendResult:
++        ts = _text(response.get("ts")) or _text(response.get("message_ts"))
++        if not ts:
++            return SendResult.failure("Slack answered without a message ts")
++        if thread:
++            self._threads.add((channel, thread))
++        return SendResult.sent(ts)
++
++    async def _send(
++        self, chat_id: str, text: str, reply_to: str | None, meta: dict[str, Any]
++    ) -> SendResult:
++        refused = self._refusal(chat_id) or self._too_long(text)
++        if refused is not None:
++            return refused
++        try:
++            channel = await self._channel(chat_id)
++            thread = self._thread_for(channel, reply_to, meta)
++            args: dict[str, Any] = {"channel": channel, "text": text}
++            if thread:
++                args["thread_ts"] = thread
++            if meta.get("plain"):
++                args["mrkdwn"] = False
++            else:
++                extra_blocks = kit.sanitize(meta.get("blocks"))
++                if extra_blocks:
++                    args["blocks"] = extra_blocks
++            response = await self._post(args, blocks_optional=True)
++        except Exception as exc:
++            return self._failure(exc)
++        return self._posted(response, channel, thread)
++
++    async def _edit(
++        self, chat_id: str, message_id: str, text: str, final: bool, meta: dict[str, Any]
++    ) -> SendResult:
++        refused = self._refusal(chat_id) or self._too_long(text)
++        if refused is not None:
++            return refused
++        try:
++            channel = await self._channel(chat_id)
++            client = self._web()
++            # The new blocks (none by default) replace the old ones, so a settled card loses
++            # its buttons.
++            args: dict[str, Any] = {
++                "channel": channel,
++                "ts": message_id,
++                "text": text,
++                "blocks": kit.sanitize(meta.get("blocks")) or [],
++            }
++            try:
++                await client.chat_update(**args)
++            except Exception as exc:
++                if not args["blocks"] or _api_error(exc) not in _BLOCK_REFUSALS:
++                    raise
++                await client.chat_update(**{**args, "blocks": []})
++        except Exception as exc:
++            return self._failure(exc)
++        return SendResult.sent(message_id)
++
++    async def _delete(self, chat_id: str, message_id: str) -> bool:
++        channel = await self._channel(chat_id)
++        await self._web().chat_delete(channel=channel, ts=message_id)
++        return True
++
++    async def _typing(self, chat_id: str, meta: dict[str, Any]) -> None:
++        if self._status_off or self.is_ignored(chat_id):
++            return
++        thread = _text(meta.get("thread_id")) or _text(meta.get("thread_ts"))
++        if not thread:
++            return  # Slack shows a status only inside a thread
++        await self._set_status(chat_id, thread, self.status_text)
++        self._statuses[chat_id] = thread
++
++    async def _typing_stop(self, chat_id: str) -> None:
++        thread = self._statuses.pop(chat_id, None)
++        if thread and not self._status_off:
++            await self._set_status(chat_id, thread, "")
++
++    async def _set_status(self, chat_id: str, thread: str, status: str) -> None:
++        try:
++            await self._web().assistant_threads_setStatus(
++                channel_id=chat_id, thread_ts=thread, status=status
++            )
++        except Exception as exc:
++            if _api_error(exc) in _STATUS_UNAVAILABLE:
++                self._status_off = True
++                log.info("slack: thread status is not available to this app; typing is off")
++                return
++            raise
++
++    async def _send_media(
++        self, kind: MediaKind, chat_id: str, path: str, caption: str | None, meta: dict[str, Any]
++    ) -> SendResult:
++        refused = self._refusal(chat_id)
++        if refused is not None:
++            return refused
++        try:
++            channel = await self._channel(chat_id)
++            reply_to = meta.get(REPLY_TO_KEY)
++            thread = self._thread_for(channel, str(reply_to) if reply_to else None, meta)
++            args: dict[str, Any] = {
++                "channel": channel,
++                "file": path,
++                "filename": os.path.basename(path),
++                "initial_comment": caption or "",
++            }
++            if thread:
++                args["thread_ts"] = thread
++            response = _mapping(await self._web().files_upload_v2(**args))
++        except Exception as exc:
++            return self._failure(exc)
++        files = cast(list[object], response.get("files") or [])
++        file_id = _text(_mapping(files[0]).get("id")) if files else ""
++        if thread:
++            self._threads.add((channel, thread))
++        return SendResult.sent(file_id or os.path.basename(path))
++
++    async def _send_card(
++        self, chat_id: str, text: str, card: list[dict[str, Any]], meta: dict[str, Any]
++    ) -> SendResult:
++        try:
++            channel = await self._channel(chat_id)
++            thread = self._thread_for(channel, None, meta)
++            args: dict[str, Any] = {"channel": channel, "text": text, "blocks": card}
++            if thread:
++                args["thread_ts"] = thread
++            # No text-only fallback here: a card without its buttons must fail, so the prompt
++            # falls back to the typed /approve card.
++            response = await self._post(args, blocks_optional=False)
++        except Exception as exc:
++            return self._failure(exc)
++        return self._posted(response, channel, thread)
++
++    async def _send_approval(
++        self, chat_id: str, prompt: ApprovalPrompt, meta: dict[str, Any]
++    ) -> SendResult:
++        refused = self._refusal(chat_id)
++        if refused is not None:
++            return refused
++        text = self.format(prompt.text)
++        data = [approval_callback(prompt.request_id, a.choice) for a in prompt.actions]
++        card = kit.sanitize(kit.approval_blocks(prompt, text, data)) or []
++        return await self._send_card(chat_id, text, card, meta)
++
++    async def _send_clarify(
++        self, chat_id: str, prompt: ClarifyPrompt, meta: dict[str, Any]
++    ) -> SendResult:
++        refused = self._refusal(chat_id)
++        if refused is not None:
++            return refused
++        text = self.format(prompt.question)
++        data = [clarify_callback(prompt.clarify_id, n) for n in range(len(prompt.choices))]
++        card = kit.sanitize(kit.clarify_blocks(prompt, text, data)) or []
++        return await self._send_card(chat_id, text, card, meta)
++
++    async def _send_private(
++        self, chat_id: str, user_id: str, text: str, meta: dict[str, Any]
++    ) -> SendResult:
++        refused = self._refusal(chat_id) or self._too_long(text)
++        if refused is not None:
++            return refused
++        if not user_id:
++            return SendResult.failure("a private notice needs the user it is for")
++        try:
++            channel = await self._channel(chat_id)
++            args: dict[str, Any] = {"channel": channel, "user": user_id, "text": text}
++            thread = self._thread_for(channel, None, meta)
++            if thread:
++                args["thread_ts"] = thread
++            response = _mapping(await self._web().chat_postEphemeral(**args))
++        except Exception as exc:
++            return self._failure(exc)
++        return SendResult.sent(_text(response.get("message_ts")) or _text(response.get("ts")))
++
++    async def _chat_info(self, chat_id: str) -> ChatInfo:
++        found = await self._conversation_info(chat_id)
++        kind: ChatType | None = None
++        if found.get("is_im"):
++            kind = "dm"
++        elif found.get("is_mpim") or found.get("is_channel") or found.get("is_group"):
++            kind = "group"
++        return ChatInfo(name=_text(found.get("name")) or chat_id, type=kind)
+diff --git a/src/indus/gateway/adapters/slack/blocks.py b/src/indus/gateway/adapters/slack/blocks.py
+new file mode 100644
+index 0000000..8356aa7
+--- /dev/null
++++ b/src/indus/gateway/adapters/slack/blocks.py
+@@ -0,0 +1,161 @@
++"""Block Kit payloads for the Slack adapter (P15-35).
++
++Approval cards and clarify questions are a ``section`` with the text and ``actions`` blocks of
++buttons. Each button's ``action_id`` and ``value`` are our callback data (``apv:<id>:<choice>`` /
++``clr:<id>:<n>``), so a press comes back already in the shape the chat prompts parse; action ids
++must be unique inside one actions block, which ours are.
++
++``sanitize`` is the last step before any ``blocks`` payload leaves: Slack rejects the whole message
++(``invalid_blocks``) for one oversized text or empty block, so texts are clamped to their caps,
++empty blocks are dropped and the list is cut at the 50-block maximum.
++"""
++
++from __future__ import annotations
++
++from collections.abc import Iterable, Mapping, Sequence
++from typing import Any, cast
++
++from indus.gateway.adapters.base import ApprovalPrompt, ClarifyPrompt
++from indus.gateway.outbound.formatting import SLACK_MAX_BLOCKS, SLACK_MAX_SECTION_TEXT
++
++__all__ = [
++    "BUTTONS_PER_BLOCK",
++    "BUTTON_LABEL_MAX",
++    "HEADER_TEXT_MAX",
++    "approval_blocks",
++    "button",
++    "clarify_blocks",
++    "sanitize",
++    "section",
++]
++
++type Block = dict[str, Any]
++
++BUTTONS_PER_BLOCK = 5
++BUTTON_LABEL_MAX = 75
++HEADER_TEXT_MAX = 150
++_ELLIPSIS = "…"
++
++
++def _clamp(text: str, limit: int) -> str:
++    """``text`` cut to ``limit`` characters, the cut marked with an ellipsis."""
++    if len(text) <= limit:
++        return text
++    return text[: limit - len(_ELLIPSIS)] + _ELLIPSIS
++
++
++def section(text: str) -> Block:
++    """A mrkdwn ``section`` (text clamped to the section cap)."""
++    return {
++        "type": "section",
++        "text": {"type": "mrkdwn", "text": _clamp(text, SLACK_MAX_SECTION_TEXT)},
++    }
++
++
++def button(label: str, data: str, *, style: str = "") -> Block:
++    """A button whose action id and value are ``data``; ``style`` primary/danger or none."""
++    element: Block = {
++        "type": "button",
++        "text": {"type": "plain_text", "text": _clamp(label.strip() or "?", BUTTON_LABEL_MAX)},
++        "action_id": data,
++        "value": data,
++    }
++    if style in ("primary", "danger"):
++        element["style"] = style
++    return element
++
++
++def _action_rows(buttons: Sequence[Block]) -> list[Block]:
++    return [
++        {"type": "actions", "elements": list(buttons[n : n + BUTTONS_PER_BLOCK])}
++        for n in range(0, len(buttons), BUTTONS_PER_BLOCK)
++    ]
++
++
++def approval_blocks(prompt: ApprovalPrompt, text: str, data: Iterable[str]) -> list[Block]:
++    """The approval card: ``text`` (already mrkdwn) and one button per action, ``data`` being
++    the callback for each action in order."""
++    buttons = [
++        button(action.label, payload, style=action.style)
++        for action, payload in zip(prompt.actions, data, strict=True)
++    ]
++    return [section(text), *_action_rows(buttons)]
++
++
++def clarify_blocks(prompt: ClarifyPrompt, text: str, data: Iterable[str]) -> list[Block]:
++    """The clarify question: ``text`` and one button per choice (rows of five), cut so the whole
++    card stays within the block cap."""
++    buttons = [button(label, payload) for label, payload in zip(prompt.choices, data, strict=True)]
++    room = (SLACK_MAX_BLOCKS - 1) * BUTTONS_PER_BLOCK
++    return [section(text), *_action_rows(buttons[:room])]
++
++
++def _mapping(obj: object) -> Mapping[str, Any] | None:
++    return cast(Mapping[str, Any], obj) if isinstance(obj, Mapping) else None
++
++
++def _text_of(obj: object) -> str:
++    found = _mapping(obj)
++    value = found.get("text") if found is not None else None
++    return value if isinstance(value, str) else ""
++
++
++def _clamped_text_obj(obj: Mapping[str, Any], limit: int) -> dict[str, Any]:
++    out = dict(obj)
++    text = _text_of(obj)
++    if len(text) > limit:
++        out["text"] = _clamp(text, limit)
++    return out
++
++
++def _clamped_element(element: object) -> object:
++    found = _mapping(element)
++    if found is not None and found.get("type") in ("mrkdwn", "plain_text"):
++        return _clamped_text_obj(found, SLACK_MAX_SECTION_TEXT)
++    return element
++
++
++def _clean(block: Mapping[str, Any]) -> Block | None:
++    kind = block.get("type")
++    out: Block = dict(block)
++    text_obj = _mapping(block.get("text"))
++    if kind == "section":
++        has_body = bool(block.get("fields")) or bool(block.get("accessory"))
++        if text_obj is not None and _text_of(text_obj).strip():
++            out["text"] = _clamped_text_obj(text_obj, SLACK_MAX_SECTION_TEXT)
++        elif not has_body:
++            return None
++        else:
++            out.pop("text", None)
++    elif kind == "header":
++        if text_obj is None or not _text_of(text_obj).strip():
++            return None
++        out["text"] = _clamped_text_obj(text_obj, HEADER_TEXT_MAX)
++    elif kind == "context":
++        elements = block.get("elements")
++        if not isinstance(elements, list) or not elements:
++            return None
++        out["elements"] = [_clamped_element(e) for e in cast(list[object], elements)]
++    elif kind in ("actions", "rich_text"):
++        if not block.get("elements"):
++            return None
++    elif kind == "table":
++        if not block.get("rows"):
++            return None
++    elif not isinstance(kind, str) or not kind:
++        return None
++    return out
++
++
++def sanitize(blocks: object) -> list[Block] | None:
++    """``blocks`` made safe to send (see the module notes), or None when nothing is left — the
++    caller then sends its text alone. Never raises."""
++    if not isinstance(blocks, list | tuple):
++        return None
++    out: list[Block] = []
++    for block in cast(Sequence[object], blocks):
++        found = _mapping(block)
++        cleaned = _clean(found) if found is not None else None
++        if cleaned is not None:
++            out.append(cleaned)
++    return out[:SLACK_MAX_BLOCKS] or None
+diff --git a/src/indus/gateway/config.py b/src/indus/gateway/config.py
+index ab939f3..0188bbc 100644
+--- a/src/indus/gateway/config.py
++++ b/src/indus/gateway/config.py
+@@ -157,6 +157,9 @@ class AdapterConfig:
+     scope: Scope
+     clock: Clock
+     proxy: str | None = None
++    # One-shot sends (``indus send``): connect for sending only — no listener, no update
++    # consumption, so a running gateway keeps every inbound event.
++    send_only: bool = False
+ 
+     @property
+     def extra(self) -> Mapping[str, Any]:
+diff --git a/src/indus/gateway/delivery/send_command.py b/src/indus/gateway/delivery/send_command.py
+index fef8748..f52456e 100644
+--- a/src/indus/gateway/delivery/send_command.py
++++ b/src/indus/gateway/delivery/send_command.py
+@@ -6,7 +6,8 @@ grammar (P14: ``telegram`` for the home channel, ``telegram:<chat>[:<thread>]``,
+ send from the platform registry and the profile's gateway settings; no running gateway and no
+ model are involved. A platform a plugin offers (P13 provider slot ``platform``) is found by loading
+ the profile's plugins for the send, only when TARGET names no built-in platform; adapters get the
+-same ``AdapterConfig`` the daemon gives them. The body is TEXT, else whatever is piped on stdin.
++same ``AdapterConfig`` the daemon gives them, marked ``send_only`` (no listener, no update
++consumption, so a running gateway loses nothing). The body is TEXT, else whatever is piped on stdin.
+ 
+ Files are attached only with ``--file``, and only when the gateway's media path policy (P15-18)
+ allows the file: credential and system locations are refused, symlinks are resolved first, and
+@@ -65,7 +66,7 @@ def build_adapter(
+         trust_env=bool(gateway_section(scope).trust_env),
+         platform_proxy=str(settings.extra.get("proxy") or "") or None,
+     )
+-    config = AdapterConfig(name, settings, scope, scope.clock, proxy)
++    config = AdapterConfig(name, settings, scope, scope.clock, proxy, send_only=True)
+     built = (registry or PlatformRegistry()).create_adapter(name, config)
+     return built if isinstance(built, _Adapter) else None
+ 
+diff --git a/tests/contract/gateway/conftest.py b/tests/contract/gateway/conftest.py
+index 6be5493..ff66ab1 100644
+--- a/tests/contract/gateway/conftest.py
++++ b/tests/contract/gateway/conftest.py
+@@ -125,3 +125,8 @@ def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[SocketGuard]:
+     monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+     monkeypatch.setattr(socket, "create_connection", create_connection)
+     yield guard
++
++
++# -- registered adapters (imported last: each module calls `register_case`) ------------------------
++
++from tests.contract.gateway import slack_case  # noqa: E402, F401
+diff --git a/tests/contract/gateway/slack_case.py b/tests/contract/gateway/slack_case.py
+new file mode 100644
+index 0000000..56a11c3
+--- /dev/null
++++ b/tests/contract/gateway/slack_case.py
+@@ -0,0 +1,54 @@
++"""The Slack adapter's case in the shared adapter contract (P15-35).
++
++The adapter runs over the Slack wire fake through its library seam (`SlackSdk`), so the suite needs
++no Slack library. Ids are Slack-shaped: a user ``U…`` (its DM is opened with
++``conversations.open``), a channel ``C…`` and a thread root ``ts``.
++"""
++
++from __future__ import annotations
++
++from indus.gateway.adapters.base import Adapter
++from indus.gateway.adapters.slack.adapter import MAX_LEN, SlackAdapter, SlackSdk
++from tests.contract.gateway.conftest import AdapterCase, CaseEnv, register_case
++from tests.fakes.clock import FakeClock
++from tests.fakes.platform.slack_wire import SlackPlatform, SlackWire
++
++
++def wire_sdk(wire: SlackWire) -> SlackSdk:
++    """A `SlackSdk` whose app and Socket Mode handler are the wire fake's."""
++    return SlackSdk(
++        make_app=lambda _token, _proxy: wire.app,
++        make_socket=lambda _app, app_token, _proxy: wire.handler(app_token),
++    )
++
++
++def make_env(clock: FakeClock) -> CaseEnv:
++    platform = SlackPlatform("slack", clock=clock, max_len=MAX_LEN, bot_user_id="U0BOT")
++    return CaseEnv(clock, platform, SlackWire(platform))
++
++
++def build(env: CaseEnv) -> Adapter:
++    return SlackAdapter(
++        clock=env.clock,
++        bot_token="bot-" + "contract",
++        app_token="app-" + "contract",
++        sdk=wire_sdk(env.wire),
++    )
++
++
++async def pump(env: CaseEnv, adapter: Adapter) -> None:
++    await env.wire.dispatch_pending()
++
++
++SLACK_CASE = register_case(
++    AdapterCase(
++        "slack",
++        make_env,
++        build,
++        user_id="U200",
++        group_id="C300",
++        thread_id="1700000000.000400",
++        bot_id="B500",
++        pump=pump,
++    )
++)
+diff --git a/tests/fakes/platform/slack_wire.py b/tests/fakes/platform/slack_wire.py
+index 6314f78..d26da2b 100644
+--- a/tests/fakes/platform/slack_wire.py
++++ b/tests/fakes/platform/slack_wire.py
+@@ -7,11 +7,16 @@ raise a ``SlackApiError`` stand-in carrying ``response["error"]`` (``ratelimited
+ ``invalid_blocks``, ...). Inbound events are Events API payloads (``message``, ``app_mention``
+ sharing one ``ts``, ``bot_message`` subtype, ``block_actions`` for buttons) handed to the
+ handlers the adapter registers on the fake app by ``dispatch_pending()``. Cap: 39,000.
++
++Message ids on the wire are ``ts`` strings; `SlackPlatform` (the default platform) also finds a
++message by its ``ts``, and ids that already look like a ``ts`` are kept as they are. Actions are
++matched like Bolt does: a string by equality, a compiled pattern by ``search``.
+ """
+ 
+ from __future__ import annotations
+ 
+ import itertools
++import re
+ from collections.abc import Awaitable, Callable
+ from dataclasses import dataclass, field
+ from typing import Any
+@@ -41,6 +46,8 @@ SURFACE: dict[str, tuple[str, ...]] = {
+         "conversations_replies",
+         "users_info",
+         "assistant_threads_setStatus",
++        "conversations_open",
++        "conversations_info",
+     ),
+     "slack_sdk.errors:SlackApiError": (),
+     "slack_bolt.app.async_app:AsyncApp": ("event", "action", "client"),
+@@ -88,16 +95,43 @@ def _translate(exc: FakePlatformError) -> Exception:
+     return SlackApiError("The request to the Slack API failed.", response)
+ 
+ 
++_TS_BASE = "1700000000."
++
++
++def _as_ts(value: str | None) -> str:
++    """A platform id as a Slack ``ts`` (ids that already are one are kept)."""
++    text = str(value or 0)
++    return text if "." in text else f"{_TS_BASE}{int(text):06d}"
++
++
+ def _ts(message: FakeMessage | FakeInbound) -> str:
+-    return f"1700000000.{int(message.message_id or 0):06d}"
++    return _as_ts(message.message_id)
+ 
+ 
+ def _id_of(ts: str | None) -> str | None:
+     if not ts:
+         return None
++    if not ts.startswith(_TS_BASE):
++        return ts
+     return str(int(ts.split(".", 1)[1]))
+ 
+ 
++def _buttons(blocks: list[dict[str, Any]] | None) -> tuple[Button, ...]:
++    return tuple(
++        Button(str(e.get("text", {}).get("text", "")), str(e.get("action_id", "")))
++        for b in blocks or ()
++        if b.get("type") == "actions"
++        for e in b.get("elements", ())
++    )
++
++
++class SlackPlatform(FakeChatPlatform):
++    """The fake platform with Slack's ids: a message is also found by its ``ts``."""
++
++    def message(self, message_id: str) -> FakeMessage | None:
++        return super().message(str(_id_of(str(message_id))))
++
++
+ @dataclass
+ class FakeWebClient:
+     """``AsyncWebClient`` stand-in over a `FakeChatPlatform`; ids are ``ts`` strings."""
+@@ -135,12 +169,7 @@ class FakeWebClient:
+         blocks: list[dict[str, Any]] | None = None,
+         **kw: Any,
+     ) -> SlackResponse:
+-        buttons = tuple(
+-            Button(str(e.get("text", {}).get("text", "")), str(e.get("action_id", "")))
+-            for b in blocks or ()
+-            if b.get("type") == "actions"
+-            for e in b.get("elements", ())
+-        )
++        buttons = _buttons(blocks)
+         sent = await self._do(
+             "chat_postMessage",
+             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks, **kw},
+@@ -151,10 +180,12 @@ class FakeWebClient:
+     async def chat_update(  # noqa: N802
+         self, *, channel: str, ts: str, text: str = "", **kw: Any
+     ) -> SlackResponse:
++        # Like Slack: blocks given replace the old ones (an empty list drops the buttons).
++        buttons = _buttons(kw["blocks"]) if "blocks" in kw else None
+         await self._do(
+             "chat_update",
+             {"channel": channel, "ts": ts, "text": text, **kw},
+-            self.wire.platform.edit(channel, str(_id_of(ts)), text),
++            self.wire.platform.edit(channel, str(_id_of(ts)), text, buttons=buttons),
+         )
+         return SlackResponse({"ok": True, "channel": channel, "ts": ts})
+ 
+@@ -212,6 +243,27 @@ class FakeWebClient:
+         self.calls.append(("users_info", {"user": user}))
+         return SlackResponse({"ok": True, "user": {"id": user, "name": f"user-{user}"}})
+ 
++    async def conversations_open(self, *, users: str, **kw: Any) -> SlackResponse:
++        """A user's DM; on the fake platform the DM chat id is the user id."""
++        self.calls.append(("conversations_open", {"users": users}))
++        return SlackResponse({"ok": True, "channel": {"id": users}})
++
++    async def conversations_info(self, *, channel: str, **kw: Any) -> SlackResponse:
++        chat = await self._do(
++            "conversations_info", {"channel": channel}, self.wire.platform.chat(channel)
++        )
++        return SlackResponse(
++            {
++                "ok": True,
++                "channel": {
++                    "id": chat.chat_id,
++                    "name": chat.name,
++                    "is_im": chat.kind == "dm",
++                    "is_channel": chat.kind != "dm",
++                },
++            }
++        )
++
+     async def assistant_threads_setStatus(  # noqa: N802
+         self, *, channel_id: str, thread_ts: str, status: str
+     ) -> SlackResponse:
+@@ -232,7 +284,7 @@ class FakeApp:
+     def __init__(self, wire: SlackWire) -> None:
+         self.wire = wire
+         self.events: dict[str, Handler] = {}
+-        self.actions: dict[str, Handler] = {}
++        self.actions: dict[str | re.Pattern[str], Handler] = {}
+ 
+     @property
+     def client(self) -> FakeWebClient:
+@@ -245,13 +297,23 @@ class FakeApp:
+ 
+         return register
+ 
+-    def action(self, action_id: str) -> Callable[[Handler], Handler]:
++    def action(self, action_id: str | re.Pattern[str]) -> Callable[[Handler], Handler]:
+         def register(fn: Handler) -> Handler:
+             self.actions[action_id] = fn
+             return fn
+ 
+         return register
+ 
++    def action_for(self, action_id: str) -> Handler | None:
++        """The handler Bolt would pick: an equal string, then a matching pattern, then ``*``."""
++        found = self.actions.get(action_id)
++        if found is not None:
++            return found
++        for key, handler in self.actions.items():
++            if isinstance(key, re.Pattern) and key.search(action_id):
++                return handler
++        return self.actions.get("*")
++
+ 
+ class FakeSocketModeHandler:
+     """``AsyncSocketModeHandler`` stand-in: connecting checks the app token with the platform."""
+@@ -281,7 +343,7 @@ class SlackWire:
+     FAKES: dict[str, type] = {}
+ 
+     def __init__(self, platform: FakeChatPlatform | None = None, *, team_id: str = "T1") -> None:
+-        self.platform = platform or FakeChatPlatform("slack", max_len=MAX_LEN, bot_user_id="U0BOT")
++        self.platform = platform or SlackPlatform("slack", max_len=MAX_LEN, bot_user_id="U0BOT")
+         self.team_id = team_id
+         self.client = FakeWebClient(self)
+         self.app = FakeApp(self)
+@@ -302,7 +364,7 @@ class SlackWire:
+                 "user": {"id": item.user_id},
+                 "channel": {"id": item.chat_id},
+                 "actions": [{"action_id": item.button_data, "value": item.button_data}],
+-                "message": {"ts": f"1700000000.{int(item.message_id or 0):06d}"},
++                "message": {"ts": _as_ts(item.message_id)},
+             }
+             return [("action", body)]
+         event: dict[str, Any] = {
+@@ -318,7 +380,7 @@ class SlackWire:
+         else:
+             event["user"] = item.user_id
+         if item.thread_id:
+-            event["thread_ts"] = f"1700000000.{int(item.thread_id):06d}"
++            event["thread_ts"] = _as_ts(item.thread_id)
+         if item.event == "edited":
+             event = {
+                 "type": "message",
+@@ -344,7 +406,7 @@ class SlackWire:
+             for kind, body in self.payloads(item):
+                 if kind == "action":
+                     action_id = body["actions"][0]["action_id"]
+-                    handler = self.app.actions.get(action_id) or self.app.actions.get("*")
++                    handler = self.app.action_for(action_id)
+                     if handler is not None:
+                         await handler(body=body, ack=_ack)
+                 else:
+@@ -372,6 +434,7 @@ __all__ = [
+     "FakeSocketModeHandler",
+     "FakeWebClient",
+     "SlackApiError",
++    "SlackPlatform",
+     "SlackResponse",
+     "SlackWire",
+ ]
+diff --git a/tests/unit/gateway/adapters/slack/__init__.py b/tests/unit/gateway/adapters/slack/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/unit/gateway/adapters/slack/test_adapter.py b/tests/unit/gateway/adapters/slack/test_adapter.py
+new file mode 100644
+index 0000000..fcf535f
+--- /dev/null
++++ b/tests/unit/gateway/adapters/slack/test_adapter.py
+@@ -0,0 +1,942 @@
++"""P15-35: the Slack adapter over the Slack wire fake (no Slack library needed)."""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++from collections.abc import AsyncIterator, Callable, Iterator
++from dataclasses import dataclass, field, replace
++from pathlib import Path
++from typing import Any
++
++import httpx
++import pytest
++
++from indus.core.persist import StateStore
++from indus.core.turn_state import TurnState
++from indus.foundation.config.schema import PlatformSection
++from indus.foundation.scope import Scope
++from indus.gateway.adapters.base import (
++    AdapterConnectError,
++    ApprovalAction,
++    ApprovalPrompt,
++    ClarifyPrompt,
++    approval_callback,
++)
++from indus.gateway.adapters.slack import adapter as slack_mod
++from indus.gateway.adapters.slack import blocks as kit
++from indus.gateway.adapters.slack import create_adapter
++from indus.gateway.adapters.slack.adapter import (
++    DEFAULT_STATUS_TEXT,
++    MAX_LEN,
++    SlackAdapter,
++    SlackSdk,
++    is_slack_file_url,
++)
++from indus.gateway.config import AdapterConfig, PlatformSettings
++from indus.gateway.core.admission import AdmissionPipeline, IntakeSettings
++from indus.gateway.core.authz import Authorizer, UnauthorizedHandler
++from indus.gateway.core.events import Attachment, InboundEvent, MessageKind
++from indus.gateway.core.prompts import ChatPrompts
++from indus.gateway.core.send import ErrorKind
++from indus.gateway.core.session_keys import build_session_key
++from indus.gateway.delivery import send_command
++from indus.gateway.outbound.formatting import SLACK_MAX_BLOCKS, SLACK_MAX_SECTION_TEXT
++from indus.gateway.outbound.replies import PlatformReplies
++from indus.gateway.outbound.sender import OutboundSender
++from indus.gateway.registry import PlatformRegistry
++from indus.protocol.requests_port import RequestWithdrawn
++from indus.protocol.server_requests import ApprovalAnswer
++from indus.service.session_service import SessionService
++from indus.state import registry as store_registry
++from indus.state.pairing import PairingStore
++from indus.tools.calls import ToolCall, ToolResult
++from tests.contract.gateway.slack_case import wire_sdk
++from tests.fakes.agent import fake_options
++from tests.fakes.clock import FakeClock, checkpoint
++from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn, tool_batch
++from tests.fakes.platform.core import FailureKind
++from tests.fakes.platform.slack_wire import SlackApiError, SlackPlatform, SlackResponse, SlackWire
++from tests.unit.cli.commands.cmdrun import run_cli
++
++BOT = "bot-" + "token-" + "x" * 12  # built at run time, not Slack-shaped
++APP = "app-" + "token-" + "y" * 12
++
++
++def run(coro: Any) -> Any:
++    return asyncio.run(coro)
++
++
++def settings(**extra: Any) -> PlatformSettings:
++    return PlatformSettings(
++        "slack",
++        True,
++        "credentials",
++        PlatformSection.model_validate({"extra": extra}),
++        credentials={"SLACK_BOT_TOKEN": BOT, "SLACK_APP_TOKEN": APP},
++    )
++
++
++class Rig:
++    """A Slack wire fake, an adapter over it and the events it emitted."""
++
++    def __init__(self, clock: FakeClock, *, send_only: bool = False, **extra: Any) -> None:
++        self.wire = SlackWire(
++            SlackPlatform("slack", clock=clock, max_len=MAX_LEN, bot_user_id="U0BOT")
++        )
++        self.sockets: list[Any] = []
++        base = wire_sdk(self.wire)
++
++        def make_socket(app: Any, token: str, proxy: str | None) -> Any:
++            handler = base.make_socket(app, token, proxy)
++            self.sockets.append(handler)
++            return handler
++
++        self.adapter = SlackAdapter(
++            clock=clock,
++            bot_token=BOT,
++            app_token=APP,
++            settings=settings(**extra),
++            send_only=send_only,
++            sdk=SlackSdk(base.make_app, make_socket),
++        )
++        self.events: list[InboundEvent] = []
++
++        async def sink(event: InboundEvent) -> None:
++            self.events.append(event)
++
++        self.adapter.set_sink(sink)
++
++    @property
++    def platform(self) -> SlackPlatform:
++        platform = self.wire.platform
++        assert isinstance(platform, SlackPlatform)
++        return platform
++
++    def calls(self, name: str) -> list[dict[str, Any]]:
++        return [kw for n, kw in self.wire.client.calls if n == name]
++
++    async def deliver(self, kind: str, event: dict[str, Any]) -> None:
++        handler = self.wire.app.events[kind]
++        await handler(event=event, say=None)
++
++
++def message(
++    text: str, *, channel: str = "C1", ts: str = "1700000001.000100", **kw: Any
++) -> dict[str, Any]:
++    event: dict[str, Any] = {
++        "type": "message",
++        "channel": channel,
++        "channel_type": "channel",
++        "user": "U7",
++        "text": text,
++        "ts": ts,
++        "team": "T1",
++    }
++    event.update(kw)
++    return event
++
++
++@pytest.fixture
++def rig(fake_clock: FakeClock) -> Rig:
++    return Rig(fake_clock)
++
++
++# -- inbound ---------------------------------------------------------------------------------------
++
++
++def test_message_and_app_mention_with_one_ts_make_one_turn(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        rig.platform.add_chat("C9", "group", scope_id="T1")
++        rig.platform.group("C9", "U7", "<@U0BOT> what is up", mention=True)
++        await rig.wire.dispatch_pending()
++
++    run(main())
++    assert len(rig.events) == 1
++    (event,) = rig.events
++    assert event.text == "what is up"
++    assert event.metadata["mentioned"] is True
++    assert event.source.chat_type == "group" and event.source.scope_id == "T1"
++
++
++def test_an_app_mention_alone_counts_as_mentioned_and_a_redelivery_is_dropped(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        mention = {**message("hello"), "type": "app_mention"}
++        mention.pop("channel_type")
++        await rig.deliver("app_mention", mention)
++        await rig.deliver("app_mention", dict(mention))  # Socket Mode redelivery
++        await rig.deliver("message", message("hello"))
++
++    run(main())
++    assert len(rig.events) == 1
++    assert rig.events[0].metadata.get("mentioned") is True
++    assert rig.events[0].source.chat_type == "group"
++
++
++def test_own_posts_are_dropped_and_other_bots_are_marked(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.deliver("message", message("echo", user="U0BOT", ts="1700000001.000001"))
++        await rig.deliver(
++            "message",
++            message("own app", ts="1700000001.000002", bot_id="BU0BOT", subtype="bot_message"),
++        )
++        other = message("beep", ts="1700000001.000003", subtype="bot_message", bot_id="B42")
++        other.pop("user")
++        await rig.deliver("message", other)
++
++    run(main())
++    assert [e.text for e in rig.events] == ["beep"]
++    assert rig.events[0].source.is_bot and rig.events[0].source.user_id == "B42"
++
++
++def test_edits_and_housekeeping(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.deliver("message", message("first", ts="1700000001.000010"))
++        for ts, text in (("1700000001.000010", "first, edited"), ("1700000001.000011", "late")):
++            await rig.deliver(
++                "message",
++                {
++                    "type": "message",
++                    "subtype": "message_changed",
++                    "channel": "C1",
++                    "team": "T1",
++                    "ts": "1700000002.000000",
++                    "message": message(text, ts=ts, edited={"ts": "1700000002.000000"}),
++                },
++            )
++        await rig.deliver(
++            "message", message("joined", ts="1700000001.000012", subtype="channel_join")
++        )
++        await rig.deliver(
++            "message", message("gone", ts="1700000001.000013", subtype="message_deleted")
++        )
++
++    run(main())
++    assert [(e.text, e.metadata.get("edited")) for e in rig.events] == [
++        ("first", None),
++        ("late", True),
++    ]
++
++
++def test_two_workspaces_with_one_channel_id_get_different_keys(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.deliver("message", message("hi", team="T1"))
++        await rig.deliver("message", message("hi", team="T2"))
++
++    run(main())
++    first, second = (e.source for e in rig.events)
++    assert (first.scope_id, second.scope_id) == ("T1", "T2")
++    assert first.chat_id == second.chat_id == "C1"
++    assert build_session_key(first) != build_session_key(second)
++    assert ":T1:C1" in build_session_key(first)
++
++
++def test_a_channel_message_and_its_thread_follow_up_share_one_session(rig: Rig) -> None:
++    root = "1700000001.000500"
++
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.deliver("message", message("<@U0BOT> start", ts=root))
++        await rig.deliver("message", message("more", ts="1700000001.000501", thread_ts=root))
++        await rig.deliver(
++            "message", message("other thread", ts="1700000001.000601", thread_ts="1.0")
++        )
++
++    run(main())
++    top, follow_up, stranger = rig.events
++    assert top.source.chat_type == "group" and top.source.prospective_thread_id == root
++    assert follow_up.source.chat_type == "thread" and follow_up.source.thread_id == root
++    assert build_session_key(top.source) == build_session_key(follow_up.source)
++    # A follow-up in a thread we were summoned into counts as addressed; another thread does not.
++    assert follow_up.metadata.get("mentioned") is True
++    assert "mentioned" not in stranger.metadata
++
++
++def test_without_reply_in_thread_a_channel_message_has_no_prospective_thread(
++    fake_clock: FakeClock,
++) -> None:
++    rig = Rig(fake_clock, reply_in_thread=False)
++
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.deliver("message", message("hi"))
++        await rig.adapter.send("C1", "answer", reply_to="1700000001.000100")
++
++    run(main())
++    assert rig.events[0].source.prospective_thread_id is None
++    assert rig.calls("chat_postMessage")[0]["thread_ts"] is None
++
++
++def test_files_become_attachments_with_their_kinds(rig: Rig) -> None:
++    def file(name: str, mime: str, **kw: Any) -> dict[str, Any]:
++        return {
++            "name": name,
++            "mimetype": mime,
++            "url_private_download": f"https://files.slack.com/files-pri/T1-F1/download/{name}",
++            **kw,
++        }
++
++    async def main() -> None:
++        await rig.adapter.connect()
++        cases = [
++            file("clip.webm", "video/webm", subtype="slack_audio"),
++            file("a.png", "image/png"),
++            file("film.mp4", "video/mp4"),
++            file("notes.pdf", "application/pdf"),
++        ]
++        for n, item in enumerate(cases):
++            await rig.deliver(
++                "message",
++                message("", ts=f"1700000003.00000{n}", subtype="file_share", files=[item]),
++            )
++
++    run(main())
++    assert [e.kind for e in rig.events] == [
++        MessageKind.VOICE,
++        MessageKind.PHOTO,
++        MessageKind.VIDEO,
++        MessageKind.DOCUMENT,
++    ]
++    assert rig.events[1].media[0].ref.endswith("/a.png")
++    assert rig.events[1].media[0].mime == "image/png"
++
++
++def test_ignored_channels_get_no_inbound_and_no_outbound(fake_clock: FakeClock) -> None:
++    rig = Rig(fake_clock, ignored_channels="C1, C2")
++
++    async def main() -> Any:
++        await rig.adapter.connect()
++        await rig.deliver("message", message("hi", channel="C2"))
++        return await rig.adapter.send("C1", "hello")
++
++    result = run(main())
++    assert rig.events == []
++    assert not result.ok and result.unsupported
++    assert rig.calls("chat_postMessage") == []
++
++
++def test_names_are_looked_up_once(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        rig.platform.add_chat("C1", "group", "general")
++        await rig.deliver("message", message("a", ts="1700000001.000001"))
++        await rig.deliver("message", message("b", ts="1700000001.000002"))
++
++    run(main())
++    assert [e.source.user_name for e in rig.events] == ["user-U7", "user-U7"]
++    assert [e.source.chat_name for e in rig.events] == ["general", "general"]
++    assert len(rig.calls("users_info")) == 1 and len(rig.calls("conversations_info")) == 1
++
++
++# -- outbound --------------------------------------------------------------------------------------
++
++
++def test_replies_thread_under_the_message_except_in_dms(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.deliver("message", message("dm", channel="D5", channel_type="im"))
++        await rig.adapter.send("C1", "in channel", reply_to="1700000001.000100")
++        await rig.adapter.send("C1", "in thread", meta={"thread_id": "1700000000.000009"})
++        await rig.adapter.send("D5", "in dm", reply_to="1700000001.000100")
++
++    run(main())
++    threads = [(c["text"], c["thread_ts"]) for c in rig.calls("chat_postMessage")]
++    assert threads == [
++        ("in channel", "1700000001.000100"),
++        ("in thread", "1700000000.000009"),
++        ("in dm", None),
++    ]
++
++
++def test_a_user_id_target_opens_the_dm_once(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        for text in ("one", "two"):
++            result = await rig.adapter.send("U9", text)
++            assert result.ok
++
++    run(main())
++    assert len(rig.calls("conversations_open")) == 1
++    assert rig.platform.texts("U9") == ["one", "two"]
++
++
++def test_too_long_text_never_reaches_slack(rig: Rig) -> None:
++    async def main() -> Any:
++        await rig.adapter.connect()
++        return await rig.adapter.send("C1", "x" * (MAX_LEN + 1))
++
++    result = run(main())
++    assert result.kind is ErrorKind.TOO_LONG and rig.calls("chat_postMessage") == []
++
++
++def test_rate_limit_wait_comes_from_the_header_in_any_case(rig: Rig) -> None:
++    async def limited(**_: Any) -> SlackResponse:
++        response = SlackResponse({"ok": False, "error": "ratelimited"}, {"retry-after": "42"})
++        raise SlackApiError("The request to the Slack API failed.", response)
++
++    async def main() -> Any:
++        await rig.adapter.connect()
++        rig.wire.client.chat_postMessage = limited  # type: ignore[method-assign]
++        return await rig.adapter.send("C1", "x")
++
++    result = run(main())
++    assert result.kind is ErrorKind.RATE_LIMITED and result.retry_after == 42
++    assert result.is_flood
++
++
++def test_refused_caller_blocks_are_dropped_once(rig: Rig) -> None:
++    async def main() -> Any:
++        await rig.adapter.connect()
++        rig.platform.fail(FailureKind.PARSE_ERROR, op="send")
++        table = [{"type": "table", "rows": [[{"type": "raw_text", "text": "a"}]]}]
++        return await rig.adapter.send("C1", "fallback text", meta={"blocks": table})
++
++    result = run(main())
++    posts = rig.calls("chat_postMessage")
++    assert result.ok and len(posts) == 2
++    assert posts[0]["blocks"] and posts[1]["blocks"] is None
++
++
++def test_caller_blocks_are_capped_at_fifty(rig: Rig) -> None:
++    many = [kit.section(f"part {n}") for n in range(SLACK_MAX_BLOCKS + 10)]
++
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.adapter.send("C1", "text", meta={"blocks": many})
++
++    run(main())
++    assert len(rig.calls("chat_postMessage")[0]["blocks"]) == SLACK_MAX_BLOCKS
++
++
++def test_plain_sends_turn_markup_off(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.adapter.send("C1", "*plain*", meta={"plain": True, "blocks": [kit.section("x")]})
++
++    run(main())
++    post = rig.calls("chat_postMessage")[0]
++    assert post["mrkdwn"] is False and post["blocks"] is None
++
++
++PROMPT = ApprovalPrompt(
++    request_id="req7",
++    session_key="key",
++    text="Run `rm -rf build > log`?",
++    fallback_text="Run it? Reply /approve or /deny.",
++    actions=(
++        ApprovalAction("Allow once", "once", "primary"),
++        ApprovalAction("Deny", "deny", "danger"),
++    ),
++)
++
++
++def test_an_approval_card_is_buttons_and_a_final_edit_removes_them(rig: Rig) -> None:
++    async def main() -> Any:
++        await rig.adapter.connect()
++        card = await rig.adapter.send_approval("C1", PROMPT, {"thread_id": "1700000000.000001"})
++        assert card.ok and card.message_id
++        sent = rig.platform.message(card.message_id)
++        assert sent is not None
++        assert [b.data for b in sent.buttons] == ["apv:req7:once", "apv:req7:deny"]
++        edited = await rig.adapter.edit("C1", card.message_id, "Approved once.", final=True)
++        assert edited.ok
++        return card.message_id
++
++    card_id = run(main())
++    post = rig.calls("chat_postMessage")[0]
++    assert post["thread_ts"] == "1700000000.000001"
++    section = post["blocks"][0]["text"]["text"]
++    assert "&gt;" in section  # mrkdwn-escaped
++    assert post["blocks"][1]["elements"][0]["style"] == "primary"
++    message_after = rig.platform.message(card_id)
++    assert message_after is not None and message_after.buttons == ()
++    assert message_after.text == "Approved once."
++
++
++def test_a_refused_card_fails_instead_of_losing_its_buttons(rig: Rig) -> None:
++    async def main() -> Any:
++        await rig.adapter.connect()
++        rig.platform.fail(FailureKind.PARSE_ERROR, op="send")
++        return await rig.adapter.send_approval("C1", PROMPT)
++
++    result = run(main())
++    assert not result.ok and len(rig.calls("chat_postMessage")) == 1
++
++
++def test_clarify_with_many_choices_stays_within_the_block_cap(rig: Rig) -> None:
++    prompt = ClarifyPrompt(
++        clarify_id="c1",
++        session_key="key",
++        question="Which one?",
++        choices=tuple(f"option {n}" for n in range(400)),
++    )
++
++    async def main() -> None:
++        await rig.adapter.connect()
++        assert (await rig.adapter.send_clarify("C1", prompt)).ok
++
++    run(main())
++    blocks = rig.calls("chat_postMessage")[0]["blocks"]
++    assert len(blocks) == SLACK_MAX_BLOCKS
++    assert all(len(b["elements"]) <= kit.BUTTONS_PER_BLOCK for b in blocks[1:])
++    assert blocks[1]["elements"][1]["action_id"] == "clr:c1:1"
++
++
++def test_sanitize_clamps_and_drops() -> None:
++    long_text = "y" * (SLACK_MAX_SECTION_TEXT + 50)
++    cleaned = kit.sanitize(
++        [
++            kit.section(long_text),
++            {"type": "section", "text": {"type": "mrkdwn", "text": long_text}},
++            {"type": "section", "text": {"type": "mrkdwn", "text": "  "}},
++            {"type": "header", "text": {"type": "plain_text", "text": "h" * 200}},
++            {"type": "actions", "elements": []},
++            {"type": "context", "elements": [{"type": "mrkdwn", "text": long_text}]},
++            "not a block",
++            {"no": "type"},
++        ]
++    )
++    assert cleaned is not None
++    assert [b["type"] for b in cleaned] == ["section", "section", "header", "context"]
++    assert all(len(b["text"]["text"]) == SLACK_MAX_SECTION_TEXT for b in cleaned[:2])
++    assert len(cleaned[2]["text"]["text"]) == kit.HEADER_TEXT_MAX
++    assert len(cleaned[3]["elements"][0]["text"]) == SLACK_MAX_SECTION_TEXT
++    assert kit.sanitize([]) is None and kit.sanitize("x") is None
++
++
++def test_private_notices_are_ephemeral(rig: Rig) -> None:
++    async def main() -> Any:
++        await rig.adapter.connect()
++        return await rig.adapter.send_notice_private("C1", "U7", "only you")
++
++    result = run(main())
++    assert result.ok and rig.wire.ephemeral == [("C1", "U7", "only you")]
++    assert rig.platform.texts("C1") == []
++
++
++def test_media_is_uploaded_into_the_thread(rig: Rig, tmp_path: Path) -> None:
++    report = tmp_path / "report.pdf"
++    report.write_bytes(b"%PDF")
++
++    async def main() -> Any:
++        await rig.adapter.connect()
++        return await rig.adapter.send_document(
++            "C1", str(report), caption="the report", reply_to="1700000000.000100"
++        )
++
++    result = run(main())
++    (upload,) = rig.calls("files_upload_v2")
++    assert result.ok and result.message_id and upload["filename"] == "report.pdf"
++    media = rig.platform.ops_of("media")[0]
++    assert media.thread_id == "100" and media.text == "the report"
++
++
++def test_typing_is_a_thread_status_and_goes_off_without_the_scope(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.adapter.typing_start("C1")  # no thread: nothing to show
++        await rig.adapter.typing_start("C1", {"thread_id": "1700000000.000003"})
++        await rig.adapter.typing_stop("C1")
++        rig.platform.fail(FailureKind.FORBIDDEN, op="typing")
++
++        async def no_scope(**_: Any) -> SlackResponse:
++            raise SlackApiError("failed", SlackResponse({"ok": False, "error": "missing_scope"}))
++
++        rig.wire.client.assistant_threads_setStatus = no_scope  # type: ignore[method-assign]
++        await rig.adapter.typing_start("C1", {"thread_id": "1700000000.000003"})
++        await rig.adapter.typing_start("C1", {"thread_id": "1700000000.000003"})
++
++    run(main())
++    statuses = [c["status"] for c in rig.calls("assistant_threads_setStatus")]
++    assert statuses == [DEFAULT_STATUS_TEXT, ""]
++    assert rig.adapter._status_off  # pyright: ignore[reportPrivateUsage]
++
++
++def test_typing_status_text_comes_from_settings(fake_clock: FakeClock) -> None:
++    rig = Rig(fake_clock, typing_status_text="is working on it…")
++
++    async def main() -> None:
++        await rig.adapter.connect()
++        await rig.adapter.typing_start("C1", {"thread_id": "1700000000.000003"})
++
++    run(main())
++    assert rig.calls("assistant_threads_setStatus")[0]["status"] == "is working on it…"
++
++
++# -- connect ---------------------------------------------------------------------------------------
++
++
++def test_a_refused_token_is_not_retryable_and_never_shown(rig: Rig) -> None:
++    async def refused(**_: Any) -> SlackResponse:
++        raise SlackApiError(
++            f"bad token {BOT}", SlackResponse({"ok": False, "error": "invalid_auth"})
++        )
++
++    async def main() -> AdapterConnectError:
++        rig.wire.client.auth_test = refused  # type: ignore[method-assign]
++        with pytest.raises(AdapterConnectError) as raised:
++            await rig.adapter.connect()
++        return raised.value
++
++    error = run(main())
++    assert not error.retryable and error.code == "auth_failed"
++    assert BOT not in str(error) and not rig.adapter.connected
++
++
++def test_a_failing_socket_closes_and_hides_the_app_token(
++    rig: Rig, caplog: pytest.LogCaptureFixture
++) -> None:
++    async def main() -> AdapterConnectError:
++        await rig.adapter.connect()
++        await rig.adapter.disconnect()
++
++        original = rig.wire.handler
++
++        def broken(token: str) -> Any:
++            handler = original(token)
++
++            async def connect_async() -> None:
++                raise ConnectionResetError(f"socket closed for {token}")
++
++            handler.connect_async = connect_async
++            return handler
++
++        rig.wire.handler = broken  # type: ignore[method-assign]
++        with pytest.raises(AdapterConnectError) as raised:
++            await rig.adapter.connect()
++        return raised.value
++
++    with caplog.at_level(logging.DEBUG):
++        error = run(main())
++    assert error.retryable and APP not in str(error)
++    assert APP not in caplog.text and BOT not in caplog.text
++    assert not rig.adapter.connected
++
++
++def test_a_missing_library_is_a_fatal_connect_error(
++    fake_clock: FakeClock, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    def missing() -> SlackSdk:
++        raise ImportError("No module named 'slack_bolt'")
++
++    monkeypatch.setattr(slack_mod, "SDK_LOADER", missing)
++    adapter = SlackAdapter(clock=fake_clock, bot_token=BOT, app_token=APP)
++
++    async def main() -> AdapterConnectError:
++        with pytest.raises(AdapterConnectError) as raised:
++            await adapter.connect()
++        return raised.value
++
++    error = run(main())
++    assert not error.retryable and error.code == "missing_dependency"
++    assert "indus-agent[slack]" in str(error)
++
++
++def test_send_only_registers_no_listener_and_opens_no_socket(fake_clock: FakeClock) -> None:
++    rig = Rig(fake_clock, send_only=True)
++
++    async def main() -> Any:
++        await rig.adapter.connect()
++        rig.platform.dm("U7", "nobody reads this")
++        result = await rig.adapter.send("C1", "one-shot")
++        await rig.adapter.disconnect()
++        return result
++
++    assert run(main()).ok
++    assert rig.wire.app.events == {} and rig.wire.app.actions == {}
++    assert rig.sockets == [] and rig.events == []
++    assert rig.platform.next_inbound() is not None  # still waiting for the gateway
++    assert rig.platform.texts("C1") == ["one-shot"]
++
++
++def test_create_adapter_reads_the_config(scope: Scope, fake_clock: FakeClock) -> None:
++    config = AdapterConfig("slack", settings(), scope, fake_clock, "http://proxy:3128", True)
++    adapter = create_adapter(config)
++    assert adapter.send_only and adapter.reply_in_thread
++    assert adapter._proxy == "http://proxy:3128"  # pyright: ignore[reportPrivateUsage]
++    no_app = replace(settings(), credentials={"SLACK_BOT_TOKEN": BOT})
++    with pytest.raises(ValueError, match="SLACK_APP_TOKEN"):
++        create_adapter(AdapterConfig("slack", no_app, scope, fake_clock))
++    assert BOT not in repr(adapter)
++
++
++def test_the_real_library_builds_offline() -> None:
++    pytest.importorskip("slack_bolt")
++    sdk = slack_mod.load_sdk()
++
++    async def main() -> None:
++        app = sdk.make_app(BOT, None)
++        assert callable(app.client.auth_test)
++        handler = sdk.make_socket(app, APP, None)
++        await handler.close_async()
++
++    run(main())
++
++
++# -- `indus send` ----------------------------------------------------------------------------------
++
++
++@dataclass
++class SendRig:
++    wire: SlackWire
++    platform: SlackPlatform
++    sockets: list[str] = field(default_factory=list[str])
++    built: list[SlackAdapter] = field(default_factory=list[SlackAdapter])
++
++
++@pytest.fixture
++def slack_send(
++    scope: Scope, fake_clock: FakeClock, monkeypatch: pytest.MonkeyPatch
++) -> Iterator[SendRig]:
++    """Slack enabled by credentials in the secret store; adapters built by the real
++    ``build_adapter`` (the registry's library probe passes) over the wire fake."""
++    secrets: Any = scope.secrets
++    secrets.set("SLACK_BOT_TOKEN", BOT)
++    secrets.set("SLACK_APP_TOKEN", APP)
++    platform = SlackPlatform("slack", clock=fake_clock, max_len=MAX_LEN, bot_user_id="U0BOT")
++    rig = SendRig(SlackWire(platform), platform)
++    registry = PlatformRegistry()
++    entry = registry.get("slack")
++    assert entry is not None
++    registry.register(replace(entry, check_fn=lambda: True), replace_existing=True)
++    base = wire_sdk(rig.wire)
++
++    def make_socket(app: Any, token: str, proxy: str | None) -> Any:
++        rig.sockets.append(token)
++        return base.make_socket(app, token, proxy)
++
++    monkeypatch.setattr(slack_mod, "SDK_LOADER", lambda: SlackSdk(base.make_app, make_socket))
++
++    def build(scope_: Scope, name: str, settings_: PlatformSettings, *_: Any) -> Any:
++        adapter = send_command.build_adapter(scope_, name, settings_, registry)
++        assert isinstance(adapter, SlackAdapter)
++        rig.built.append(adapter)
++        return adapter
++
++    monkeypatch.setattr(send_command, "ADAPTER_BUILDER", build)
++    yield rig
++
++
++def test_indus_send_slack_does_no_inbound_work(
++    capsys: pytest.CaptureFixture[str], scope: Scope, slack_send: SendRig
++) -> None:
++    slack_send.platform.dm("U7", "for the gateway")
++    ran = run_cli(capsys, scope, "send", "slack:C42", "deploy done")
++    assert ran.code == 0, ran.err
++    (adapter,) = slack_send.built
++    assert adapter.send_only and not adapter.connected
++    assert slack_send.platform.texts("C42") == ["deploy done"]
++    assert slack_send.wire.app.events == {} and slack_send.wire.app.actions == {}
++    assert slack_send.sockets == []
++    assert slack_send.platform.next_inbound() is not None  # the queued DM was not consumed
++    assert BOT not in ran.out + ran.err
++
++
++# -- media fetcher ---------------------------------------------------------------------------------
++
++
++def test_the_fetcher_sends_the_token_only_to_slack(fake_clock: FakeClock) -> None:
++    seen: list[httpx.Request] = []
++
++    def answer(request: httpx.Request) -> httpx.Response:
++        seen.append(request)
++        return httpx.Response(200, content=b"file-bytes", headers={"content-type": "image/png"})
++
++    adapter = SlackAdapter(
++        clock=fake_clock, bot_token=BOT, app_token=APP, http_transport=httpx.MockTransport(answer)
++    )
++    registered: list[tuple[str, Any]] = []
++
++    class Seat:
++        def register_fetcher(self, platform: str, fetcher: Any) -> Callable[[], None]:
++            registered.append((platform, fetcher))
++            return lambda: None
++
++    adapter.register_fetchers(Seat())
++    ((platform, fetch),) = registered
++    assert platform == "slack"
++
++    async def collect(ref: str) -> bytes:
++        chunks: AsyncIterator[bytes] = fetch(Attachment(ref=ref, mime="image/png"))
++        return b"".join([c async for c in chunks])
++
++    ok = "https://files.slack.com/files-pri/T1-F1/a.png"
++    assert run(collect(ok)) == b"file-bytes"
++    assert seen[0].headers["authorization"] == f"Bearer {BOT}"
++    for bad in (
++        "https://files.example/a.png",
++        "http://files.slack.com/a.png",
++        "https://slack.com.evil.io/x",
++    ):
++        with pytest.raises(PermissionError):
++            run(collect(bad))
++    assert len(seen) == 1
++    assert is_slack_file_url("https://slack.com/x") and not is_slack_file_url("ftp://slack.com/x")
++
++
++def test_the_fetcher_refuses_a_sign_in_page(fake_clock: FakeClock) -> None:
++    def answer(request: httpx.Request) -> httpx.Response:
++        return httpx.Response(200, content=b"<html>", headers={"content-type": "text/html"})
++
++    adapter = SlackAdapter(
++        clock=fake_clock, bot_token=BOT, app_token=APP, http_transport=httpx.MockTransport(answer)
++    )
++    fetch = adapter.media_fetcher()
++
++    async def collect() -> bytes:
++        chunks = fetch(Attachment(ref="https://files.slack.com/f/a.png", mime="image/png"))
++        return b"".join([c async for c in chunks])
++
++    with pytest.raises(PermissionError):
++        run(collect())
++
++
++# -- an approval press through the real intake -----------------------------------------------------
++
++
++class Asker:
++    """An inline tool that asks for approval and records the answer."""
++
++    def __init__(self) -> None:
++        self.seen: list[str] = []
++
++    async def __call__(self, call: ToolCall, state: TurnState) -> ToolResult:
++        broker = state.control.broker
++        assert broker is not None
++        try:
++            answer = await broker.ask(
++                "approval",
++                {"command": "rm -r build", "description": "deletes files"},
++                turn_id=state.turn_id,
++            )
++        except RequestWithdrawn as exc:
++            self.seen.append(f"not answered: {exc.reason.value}")
++            return ToolResult("not answered", is_error=True)
++        assert isinstance(answer, ApprovalAnswer)
++        self.seen.append(answer.choice.value)
++        return ToolResult(f"answer {answer.choice.value}")
++
++
++async def _step(rig: Rig, clock: FakeClock) -> None:
++    await rig.wire.dispatch_pending()
++    await checkpoint()
++    idle = asyncio.get_running_loop().create_future()
++    await asyncio.wait({idle}, timeout=0.002)
++    idle.cancel()
++    clock.advance(0.05)
++
++
++async def until(rig: Rig, clock: FakeClock, check: Callable[[], object]) -> None:
++    """Deliver inbound traffic and let tasks run (moving the fake clock) until ``check()``."""
++    loop = asyncio.get_running_loop()
++    end = loop.time() + 10.0
++    while not check():
++        if loop.time() > end:
++            raise AssertionError("the condition never held")
++        await _step(rig, clock)
++
++
++async def settle(rig: Rig, clock: FakeClock, rounds: int = 40) -> None:
++    """Run for a while, for checks that something did NOT happen."""
++    for _ in range(rounds):
++        await _step(rig, clock)
++
++
++def test_an_approval_press_settles_the_request(
++    scope: Scope, fake_clock: FakeClock, tmp_path: Path
++) -> None:
++    async def main() -> None:
++        asker = Asker()
++        server = FakeModelServer(
++            script_of(tool_batch(("ask", {})), text_turn("all done")), clock=fake_clock
++        )
++        store = store_registry.open_unshared(scope)
++        service = SessionService(
++            scope,
++            fake_route(server),
++            toolsets=[],
++            options=fake_options(server, session_id=None, inline={"ask": asker}),
++            store=StateStore(store),
++            lock_dir=tmp_path / "locks",
++        )
++        rig = Rig(fake_clock)
++        adapter = rig.adapter
++        sender = PlatformReplies({"slack": OutboundSender(adapter, scope=scope)})
++        env = {"INDUS_SLACK_ALLOWED_USERS": "U200"}
++        pairing = PairingStore(scope)
++        authorizer = Authorizer.from_registry(
++            PlatformRegistry(),
++            env=env.get,
++            extra_for=lambda _p: {},
++            is_paired=pairing.is_approved,
++            profile="work",
++        )
++        pipeline = AdmissionPipeline(
++            scope=scope,
++            service=service,
++            sender=sender,
++            store=store,
++            authorizer=authorizer,
++            unauthorized=UnauthorizedHandler(authorizer, pairing),
++            adapters={"slack": adapter},
++            settings=lambda: IntakeSettings(profile="work"),
++            extra_for=lambda _p: {},
++            toolsets_for=lambda _p: None,
++        )
++        prompts = ChatPrompts(pipeline)
++        prompts.install()
++        pipeline.start()
++        try:
++            await adapter.connect()
++            rig.platform.dm("U200", "clean up")
++            await until(rig, fake_clock, lambda: bool(prompts.open_cards()))
++            await until(rig, fake_clock, lambda: prompts.open_cards()[0].message_id is not None)
++            card = prompts.open_cards()[0]
++            assert card.buttons and card.message_id
++            shown = rig.platform.message(card.message_id)
++            assert shown is not None and len(shown.buttons) >= 2
++            once = approval_callback(card.request_id, "once")
++            rig.platform.button_press("U300", "U300", once, message_id=card.message_id)
++            await settle(rig, fake_clock)
++            assert asker.seen == [] and prompts.open_cards()  # a stranger's press settles nothing
++            rig.platform.button_press("U200", "U200", once, message_id=card.message_id)
++            await until(rig, fake_clock, lambda: asker.seen == ["once"])
++            await until(rig, fake_clock, lambda: "all done" in rig.platform.texts("U200"))
++            settled = rig.platform.message(card.message_id)
++            assert settled is not None and settled.buttons == ()
++        finally:
++            await prompts.aclose()
++            await pipeline.aclose()
++            await adapter.disconnect()
++            await service.aclose()
++            store.close()
++
++    run(main())
++
++
++def test_app_posts_count_as_bots_and_the_team_can_come_from_the_envelope(rig: Rig) -> None:
++    async def main() -> None:
++        await rig.adapter.connect()
++        app_post = message("from an app", ts="1700000001.000020", app_id="A1")
++        app_post.pop("team")
++        await rig.adapter._on_message(  # pyright: ignore[reportPrivateUsage]
++            app_post, {"authorizations": [{"team_id": "T9"}]}
++        )
++        person = message("from a person", ts="1700000001.000021", client_msg_id="x", app_id="A1")
++        await rig.deliver("message", person)
++        await rig.deliver(
++            "message", message("canvas", ts="1700000001.000022", subtype="document_mention")
++        )
++
++    run(main())
++    assert [(e.text, e.source.is_bot) for e in rig.events] == [
++        ("from an app", True),
++        ("from a person", False),
++        ("canvas", False),
++    ]
++    assert rig.events[0].source.scope_id == "T9"
