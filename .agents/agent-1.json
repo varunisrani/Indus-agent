@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "PAUSED",
-  "usage_pct": 78,
-  "remaining_pct": 22,
-  "resets_at": "2026-10-19T07:00:00+00:00",
-  "last_check": "2026-10-19T06:11:00+00:00",
-  "current_step": "Handed the turn to Agent 2 at the owner's request; READY to take it back when Agent 2 hands over",
+  "state": "READY",
+  "usage_pct": 0,
+  "remaining_pct": 100,
+  "resets_at": "2026-10-19T12:00:00+00:00",
+  "last_check": "2026-10-19T07:07:00+00:00",
+  "current_step": "READY: Agent 2 holds the turn (P10-19/20, P12); waiting with wait-for-turn.sh AGENT_1",
   "last_commit": "f303495"
 }
