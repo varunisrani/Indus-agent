@@ -75,21 +75,20 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- P15 waves 2–3 building (Agent 1, from `d0f29d0`): W1 = P15-19, 20 (delivery ledger, deliverers, `indus
-  send`); W2 = P15-21..23 (cron in the daemon, approvals/clarify over chat, media intake); W3 = P15-24..26
-  (daemon, drain/restart, boot recovery); W4 = P15-27..29 (control socket, `indus gateway`, reconnect,
-  /platform, hooks); W5 = P15-30..32 (API server, runs/sessions/jobs, webhooks). All five slices DONE; integrating in verify2 (W5 sent 20:20 UTC). All five patches
-  are in `.agents/wip/p15w2/` with a README (wiring, decisions); if paused, save verify2's diff there too.
 - P21 rest (B3: P21-12 rest, 13, 14, 16) and P22 rest (R2: P22-10..15) DONE as builder patches; integrating
   in scratchpad verify3 (brief: wire R2's SWE runner to B3's task_overrides, delete the R2 stand-in, re-lock
   for the `research` extra, D-16.320 onward). Patches + README in `.agents/wip/p21p22w2/`.
-- Last landings: P15-01..18 (`c0e0201`), M4 flake fix (`ec70724`), P21-01..11, 15 and
-  P22-01..09 (`42a852e`). Done: P00–P14 complete; P15 18/36; P21 11/16; P22 9/15.
-Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
-media intake, daemon, drain/restart, boot recovery, control socket, `indus gateway`, reconnect, API
-server, webhooks, Telegram/Discord/Slack adapters, Demo 3); P21-12 rest (flap guard, re-probe), P21-13, 14, 16; P22-10..15; then P16, P17.
+- Last landings: P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
+  intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
+  landing notes"), P15-01..18 (`c0e0201`), P21-01..11, 15 and P22-01..09 (`42a852e`).
+  Done: P00–P14 complete; P15 32/36; P21 11/16; P22 9/15.
+Next: land P21/P22 rest from verify3; P15-33..36 (Telegram/Discord/Slack adapters implementing
+`create_adapter(AdapterConfig)` from gateway/config.py, each with a send-only open for `indus send`, media
+download fetchers; Demo 3); then P16, P17.
 Owner items: licences (Pillow MIT-CMU; voice extra av/numpy; Piper/eSpeak NG; new P21 vendor-extra
-transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm).
+transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm); webhook `auth: auto` accepts an
+untimestamped generic signature (replay after the 1 h delivery-id window) — decide whether to require the
+timestamped form.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
