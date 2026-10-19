@@ -24,3 +24,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 08:42 UTC | Agent 2 | Account 2 | 53% (reading 08:39) | 47% | 11:00 UTC | wave 8 landed fa4fe5e; wave 9 (P12-27, 32) gating; P12-33 building; normal band |
 | 2026-10-19 09:06 UTC | Agent 2 | Account 2 | 56% (reading 09:01) | 44% | 11:00 UTC | P12-27/32 landed c66c233; P12-33 building; normal band |
 | 2026-10-19 09:24 UTC | Agent 2 | Account 2 | 67% (reading 09:23) | 33% | 11:00 UTC | P12-33 merged, gating; P13 M1-M3 building; no new builders from here |
+| 2026-10-19 09:36 UTC | Agent 2 | Account 2 | 74% (reading 09:35) | 26% | 11:00 UTC | P12 done b5aa7d7; P13 M1-M3 building; no new builders; 10-min checks |
