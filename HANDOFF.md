@@ -38,7 +38,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [~] Stage 4 — build: P00 done (`c790e93`, `ef25266`); P01 done (`cee5f44`); P03 + P02-01..07 done (`ee74300`); **P02 done** (`98fa4e8`, `928ce0b`); **P04 done** (`87719b2`…`2587135`, D-04.1 decided: asyncio core kept); P05-01..07, 22..24 done (`79695d2`, `c7e5797`); next P05-08..21, then P06 (Demo 1)
+- [~] Stage 4 — build: P00–P12 done (P12 at `b5aa7d7`); P13 wave 1 building; then P13 rest, P14
 
 ## Files changed (uncommitted or parked)
 Nothing parked in `.agents/wip/`; nothing uncommitted.
@@ -70,17 +70,20 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 **Agent 2 holds the turn (since 2026-10-19 06:30 UTC).** Landed this turn: `6df7114` (gate green
-without optional extras, as CI installs), `94d604e` (P10-19 voice, P10-20 computer_use → **P10 done**;
-P12-01 Ink spike → **D-04.2 decided: upstream Ink + our wrappers**; P12-02..05 `@indus/client`;
-P12-28..31 `tui_bridge`), `840100b` (zustand for the renderer). Gate at `94d604e`: `pytest -m "not
-perf"` 8931 passed / 17 skipped, `-m perf` alone 10 passed, pyright 0, pnpm green (126 JS tests).
-Wave 8 landed `fa4fe5e` (P12-06..26 renderer; LEAD-NOTES "Wave 8 landing notes"). In flight:
-**wave 9** — P12-27 app composition (builder running), P12-32 launcher (built, patch saved in the
-lead's scratch, lands with P12-27). Then P12-33 Demo 2 (re-bench D-04.2 fps on Node 24), then P13
-(MCP/plugins/hooks), P14 (cron).
-If you find this with the turn PAUSED, look in `.agents/wip/` for parked slices.
-Owner items open: Pillow licence (MIT-CMU); voice extra's `av` (LGPL FFmpeg) and numpy (Zlib);
-Piper/eSpeak NG ruling (D-16.71); real-key P09 demo run; D-ids for computer_use differences.
+without optional extras, as CI installs), `94d604e` (P10-19/20 → **P10 done**; P12-01 spike →
+D-04.2 decided; P12-02..05 client; P12-28..31 bridge), `fa4fe5e` (P12-06..26 renderer), `c66c233`
+(P12-27 app, P12-32 launcher), `b5aa7d7` (P12-33 Demo 2 → **P12 done**). Gate at `b5aa7d7`:
+`pytest -m "not perf"` 8975 passed / 17 skipped, `-m perf` alone 11 passed, pyright 0, pnpm green
+(854 JS tests), `pnpm --filter @indus/tui run e2e` 12 passed. Landing notes: LEAD-NOTES waves 7–9.
+In flight: **P13 wave 1** — M1 (P13-01..04 MCP config, naming, transports, lifecycle; adds the `mcp`
+SDK), M2 (P13-13..17 plugin manifest, discovery, loader, context, hooks bus), M3 (P13-20 content
+scanner, P13-24 memory provider API). Contract: LEAD-NOTES gets it at landing; if the turn is PAUSED
+look in `.agents/wip/p13w1/` for the parked slice patches (apply with `git apply --3way`, re-lock,
+regenerate goldens if tools changed, run the full gate).
+Next after wave 1: P13-05..12, 18, 19, 21..23, 25..28; then P14 (cron).
+Open: D-04.2 (f) streaming fps re-bench on an unloaded Node 24 machine (26–28 fps on Node 22 here);
+bridge follow-ups (LEAD-NOTES wave 8/9); owner items: Pillow (MIT-CMU), voice `av` (LGPL) and numpy
+licences, Piper/eSpeak NG ruling (D-16.71), real-key P09 demo run, D-ids for computer_use differences.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
