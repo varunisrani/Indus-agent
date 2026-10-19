@@ -73,8 +73,9 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). In flight: P13 wave 2 in four slices from `2f62d28` —
-N1 = P13-05..08, N2 = P13-09..12, N3 = P13-18, 19, 21..23, N4 = P13-25..28. If paused, patches are in
-`.agents/wip/p13w2/`.
+N1 = P13-05..08 and N2 = P13-09..12 DONE (patches in `.agents/wip/p13w2/`, being integrated in verify2);
+N3 = P13-18, 19, 21..23 and N4 = P13-25..28 building. If paused, all patches are in `.agents/wip/p13w2/`
+(README = reports, wiring, security items).
 Builder rules: `docs/plan/phases/builder-rules.md`; read LEAD-NOTES landing
 notes for waves 7–10 first (every seam and follow-up is there). Nothing in flight, `.agents/wip/` empty.
 Gate (CLAUDE.md): note CI installs **no optional extras** — keep optional imports pyright-ignored and
