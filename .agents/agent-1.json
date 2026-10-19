@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 25,
-  "remaining_pct": 75,
+  "usage_pct": 30,
+  "remaining_pct": 70,
   "resets_at": "2026-10-19T22:00:00+00:00",
-  "last_check": "2026-10-19T19:02:00+00:00",
-  "current_step": "P15 waves 2-3 building (W1..W4, verified writing files)",
+  "last_check": "2026-10-19T19:15:00+00:00",
+  "current_step": "P15: W1 saved; W2, W3, W4, W5 building",
   "last_commit": "42a852e"
 }
