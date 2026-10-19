@@ -44,3 +44,28 @@
   includes subagents.
 - Follow-ups: no subagent.* protocol events yet; hand-off note not shown in completion text; Docker
   container aliasing for children.
+
+## Slice I — w15-p10i.patch (base 7faff19) — DONE (P10-12..14 browser); uv.lock EXCLUDED — re-lock
+- New: tools/builtin/browser/{__init__,session,driver,tools,snapshot,cdp,vision}.py,
+  cli/slash/browser_cmds.py, tests/fakes/browser.py, tests/fixtures/web/{index,form}.html, pixel.svg,
+  tests/unit/tools/builtin/browser/*, tests/integration/tools/test_browser_local.py (real Chromium,
+  marker `browser`, local server), docs/notes/P10/browser-{session,page-tools,cdp-vision}.md.
+- Shared: pyproject extra `browser = ["playwright==1.63.0"]` (Apache-2.0, 2026-09-15; pulls greenlet
+  3.5.6, pyee 13.0.1) + `browser` marker; THIRD_PARTY_NOTICES (3 rows); toolsets.py (BROWSER_TOOLS,
+  `browser` toolset in CORE, gated on Playwright); tools/builtin/__init__.py; config `browser` section +
+  test; service/commands/registry.py (/browser `use`); cli/slash/dispatch.py; test_registry.py
+  (/browser landed); test_toolsets.py; test_wizard.py (core "browser" row); goldens (regenerate);
+  ACC-C21-1/2, C23-1, C26-1; trap R02.22.
+- SECURITY — MUST FIX AT INTEGRATION: page-initiated sub-resource requests and redirect chains through
+  a private address bypass the P05 URL check (SSRF). Add a Playwright route filter that runs every
+  request (and each redirect hop) through the P05 check, with tests against a local server that
+  redirects to / embeds a private address.
+- Wiring: core/tool_round.handler_extras offers `aux` and `main_vision`; host exit `await
+  indus.tools.builtin.browser.DEFAULT_TOOLS.manager.shutdown()`; G's child teardown calls
+  `DEFAULT_TOOLS.manager.release(task_id)` (register as a releaser).
+- Decisions: Playwright in-process, one Chromium per task, sandbox on where possible; P05 URL check on
+  the local browser too (private needs security.allow_private_urls, ?token= refused); own outline
+  walker; browser_cdp without target_id/frame_id; viewport screenshots; /browser connect never
+  launches; no cloud/alt backends. Pinned 1.63.0 expects Chromium build 1243 (machine has 1194):
+  test falls back to $PLAYWRIGHT_BROWSERS_PATH/chromium; users set browser.executable_path.
+- Follow-up: screenshot embed-size budget (P10-15).
