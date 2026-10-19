@@ -80,6 +80,8 @@ In flight:
   (daemon, drain/restart, boot recovery); W4 = P15-27..29 (control socket, `indus gateway`, reconnect,
   /platform, hooks); W5 = P15-30..32 (API server, runs/sessions/jobs, webhooks). W1, W2, W3, W4 DONE and integrating in verify2 (W5 joins when done) (patches in
   `.agents/wip/p15w2/`); if paused, the other patches go there too.
+- P21 rest (B3: P21-12 rest, 13, 14, 16) and P22 rest (R2: P22-10..15) building from `adbbe87`. If paused,
+  patches in `.agents/wip/p21/` and `.agents/wip/p22/`.
 - Last landings: P15-01..18 (`c0e0201`), M4 flake fix (`ec70724`), P21-01..11, 15 and
   P22-01..09 (`42a852e`). Done: P00–P14 complete; P15 18/36; P21 11/16; P22 9/15.
 Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
