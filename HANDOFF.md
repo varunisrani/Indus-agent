@@ -69,26 +69,20 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
-Done: P00–P09, P11, and P10 except P10-19/P10-20 (254 of 648 tasks). `main` = `f303495`, full gate green
-(`pytest -m "not perf"` 8606 passed / 9 skipped; `pytest -m perf` alone 10 passed; ruff, pyright,
-lint-imports, tooling.checks --require-ref, pnpm test). Landing notes for every slice are in LEAD-NOTES.
-Turn: AGENT_2 (handed over by Agent 1 at 06:11 UTC on 2026-10-19 at the owner's request). Nothing in
-flight, no wip patches, no open worktrees besides the lead's.
-Agent 2, start here:
-1. Pull main, run the full gate once (commands in CLAUDE.md; perf tests run alone after the rest).
-2. Build P10-19 CLI voice mode and P10-20 computer_use (docs/plan/phases/P10-delegation-rich-tools.md),
-   one builder each; land behind the gate. Then mark P10 done in docs/plan/phases/README.md.
-3. P12 TUI (Demo 2): read docs/plan/phases/P12-tui-demo2.md, slice it into waves, build and land.
-   Then P13 (MCP/plugins/hooks), P14 (cron).
-How we work: docs/plan/phases/builder-rules.md (builders), LEAD-NOTES.md (seams, gate change),
-`.agents/wip/<phase>/` for parked slice patches, `[Agent 2] …` commit prefix, usage guard bands
-(75% no new builders, 85% wrap up, 90% hand back: set turn.json to AGENT_1 and push).
-Owner items open (LEAD-NOTES "P10 slices I+J+K landing notes"): Pillow licence (MIT-CMU); voice extra's
-`av` (LGPL FFmpeg) and numpy (Zlib); Piper/eSpeak NG ruling (D-16.71); real-key P09 demo run.
-Open security seam: during a browser navigation Chromium follows redirect hops itself, so one GET can
-still reach a refused address if a server answers our check differently; a filtering local proxy
-would close it.
+**Agent 2 holds the turn (since 2026-10-19 06:30 UTC).** Landed this turn: `6df7114` (gate green
+without optional extras, as CI installs), `94d604e` (P10-19 voice, P10-20 computer_use → **P10 done**;
+P12-01 Ink spike → **D-04.2 decided: upstream Ink + our wrappers**; P12-02..05 `@indus/client`;
+P12-28..31 `tui_bridge`), `840100b` (zustand for the renderer). Gate at `94d604e`: `pytest -m "not
+perf"` 8931 passed / 17 skipped, `-m perf` alone 10 passed, pyright 0, pnpm green (126 JS tests).
+In flight: **wave 8 = P12 renderer** — R1 (P12-06..11, 25: stores, events, turn controller, terminal,
+themes), R2 (P12-12..15: markdown, transcript, tool trail, status rule), R3 (P12-16..20: composer,
+completion, submission, keys), R4 (P12-21..24, 26: cards, model picker, slash, config sync). The
+shared store interfaces are in LEAD-NOTES "Wave 7 landing notes" and the wave-8 contract (copied
+into LEAD-NOTES at landing). Then P12-27 app composition, P12-32 `indus --tui` launcher, P12-33 Demo 2
+(re-bench D-04.2 fps on Node 24), then P13 (MCP/plugins/hooks), P14 (cron).
+If you find this with the turn PAUSED, look in `.agents/wip/` for parked slices.
+Owner items open: Pillow licence (MIT-CMU); voice extra's `av` (LGPL FFmpeg) and numpy (Zlib);
+Piper/eSpeak NG ruling (D-16.71); real-key P09 demo run; D-ids for computer_use differences.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
