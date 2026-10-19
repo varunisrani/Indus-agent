@@ -6,10 +6,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "spike:bench": "node spike/bench.ts",
-    "spike:app": "vite build --ssr spike/inkSpike.tsx --outDir node_modules/.spike --emptyOutDir --logLevel warn && node node_modules/.spike/inkSpike.js"
+    "spike:app": "vite build --ssr spike/inkSpike.tsx --outDir node_modules/.spike --emptyOutDir --logLevel warn && node node_modules/.spike/inkSpike.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@indus/client": "workspace:*",
+    "@indus/protocol": "workspace:*",
+    "@indus/ui": "workspace:*",
     "ink": "8.0.0",
     "react": "19.3.0",
     "zustand": "5.0.15"

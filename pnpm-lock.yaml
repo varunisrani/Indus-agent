@@ -187,6 +187,12 @@ importers:
       '@indus/client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@indus/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@indus/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       ink:
         specifier: 8.0.0
         version: 8.0.0(@types/react@19.3.0)(react@19.3.0)

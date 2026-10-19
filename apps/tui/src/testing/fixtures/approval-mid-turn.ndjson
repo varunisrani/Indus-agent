@@ -1,0 +1,14 @@
+# A shell command needs approval in the middle of a turn; the replay waits for the answer, then
+# the command runs and the turn completes.
+{"notify":{"method":"gateway.ready","params":{"theme":"auto","protocol_version":1}}}
+{"event":{"type":"session.info","session_id":"s-approve","model":"fake-small","provider":"fake","cwd":"/work/app","running":false}}
+{"delay_ms":5,"event":{"type":"turn.started","session_id":"s-approve","turn_id":"t-approve-1","generation":1}}
+{"delay_ms":15,"event":{"type":"message.delta","session_id":"s-approve","turn_id":"t-approve-1","text":"I'll run the test suite."}}
+{"delay_ms":10,"event":{"type":"tool.started","session_id":"s-approve","turn_id":"t-approve-1","call_id":"call-sh","name":"terminal","arguments":{"command":"make test"}}}
+{"delay_ms":5,"event":{"type":"status","session_id":"s-approve","kind":"waiting","text":"approval needed"}}
+{"delay_ms":5,"ask":{"request_id":"req-approve-1","session_id":"s-approve","turn_id":"t-approve-1","deadline_s":120,"kind":"approval","command":"make test","description":"runs a shell command in /work/app","choices":["once","session","always","deny"]}}
+{"delay_ms":5,"event":{"type":"status","session_id":"s-approve","kind":"working"}}
+{"delay_ms":40,"event":{"type":"tool.completed","session_id":"s-approve","turn_id":"t-approve-1","call_id":"call-sh","name":"terminal","ok":true,"duration_ms":812,"result":"14 passed in 0.79s"}}
+{"delay_ms":15,"event":{"type":"message.delta","session_id":"s-approve","turn_id":"t-approve-1","text":"All 14 tests pass."}}
+{"delay_ms":5,"event":{"type":"turn.done","session_id":"s-approve","turn_id":"t-approve-1","reason":"completed"}}
+{"event":{"type":"message.complete","session_id":"s-approve","turn_id":"t-approve-1","text":"I'll run the test suite.\n\nAll 14 tests pass.","reason":"completed"}}

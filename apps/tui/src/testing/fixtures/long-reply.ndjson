@@ -1,0 +1,8 @@
+# A long reply of about 10,000 tokens, one short delta per millisecond; the final text is the
+# joined deltas.
+{"notify":{"method":"gateway.ready","params":{"theme":"auto","protocol_version":1}}}
+{"event":{"type":"session.info","session_id":"s-long","model":"fake-small","provider":"fake","running":false}}
+{"delay_ms":5,"event":{"type":"turn.started","session_id":"s-long","turn_id":"t-long-1","generation":1}}
+{"delay_ms":1,"repeat":2000,"event":{"type":"message.delta","session_id":"s-long","turn_id":"t-long-1","text":"Step {n}: keep going.\n"}}
+{"delay_ms":5,"event":{"type":"turn.done","session_id":"s-long","turn_id":"t-long-1","reason":"completed"}}
+{"join_deltas":"t-long-1","event":{"type":"message.complete","session_id":"s-long","turn_id":"t-long-1","text":"","reason":"completed"}}

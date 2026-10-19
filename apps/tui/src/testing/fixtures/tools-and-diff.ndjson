@@ -1,0 +1,21 @@
+# Commentary between three tool calls: a file read, an edit whose result is an inline diff, and a
+# todo update; the final text repeats the commentary so the renderer must show only the new tail.
+{"notify":{"method":"gateway.ready","params":{"theme":"auto","protocol_version":1}}}
+{"event":{"type":"session.info","session_id":"s-tools","model":"fake-small","provider":"fake","cwd":"/work/app","running":false,"tool_progress":"verbose"}}
+{"delay_ms":5,"event":{"type":"turn.started","session_id":"s-tools","turn_id":"t-tools-1","generation":3}}
+{"delay_ms":15,"event":{"type":"message.delta","session_id":"s-tools","turn_id":"t-tools-1","text":"I'll check the "}}
+{"delay_ms":10,"event":{"type":"message.delta","session_id":"s-tools","turn_id":"t-tools-1","text":"config first."}}
+{"delay_ms":10,"event":{"type":"tool.started","session_id":"s-tools","turn_id":"t-tools-1","call_id":"call-read","name":"read_file","arguments":{"path":"settings/server.toml"}}}
+{"delay_ms":30,"event":{"type":"tool.progress","session_id":"s-tools","turn_id":"t-tools-1","call_id":"call-read","message":"read 24 lines","fraction":1}}
+{"delay_ms":5,"event":{"type":"tool.completed","session_id":"s-tools","turn_id":"t-tools-1","call_id":"call-read","name":"read_file","ok":true,"duration_ms":41,"result":"[server]\nport = 8080\ntimeout_s = 5\n"}}
+{"delay_ms":15,"event":{"type":"message.delta","session_id":"s-tools","turn_id":"t-tools-1","text":"Found the setting. Editing it now."}}
+{"delay_ms":10,"event":{"type":"tool.started","session_id":"s-tools","turn_id":"t-tools-1","call_id":"call-edit","name":"patch","arguments":{"path":"settings/server.toml","old":"timeout_s = 5","new":"timeout_s = 30"}}}
+{"delay_ms":25,"event":{"type":"tool.completed","session_id":"s-tools","turn_id":"t-tools-1","call_id":"call-edit","name":"patch","ok":true,"duration_ms":18,"result":"--- a/settings/server.toml\n+++ b/settings/server.toml\n@@ -1,3 +1,3 @@\n [server]\n port = 8080\n-timeout_s = 5\n+timeout_s = 30\n"}}
+{"delay_ms":10,"event":{"type":"tool.started","session_id":"s-tools","turn_id":"t-tools-1","call_id":"call-todo","name":"todo_list","arguments":{"action":"update"}}}
+{"delay_ms":5,"event":{"type":"todo.updated","session_id":"s-tools","todos":[{"id":"1","content":"Find the timeout setting","status":"completed"},{"id":"2","content":"Raise it to 30 seconds","status":"completed"},{"id":"3","content":"Restart the service","status":"pending"}],"revision":2}}
+{"delay_ms":5,"event":{"type":"tool.completed","session_id":"s-tools","turn_id":"t-tools-1","call_id":"call-todo","name":"todo_list","ok":true,"duration_ms":3,"result":"3 items, 2 done"}}
+{"delay_ms":15,"event":{"type":"message.delta","session_id":"s-tools","turn_id":"t-tools-1","text":"Done: the timeout is now "}}
+{"delay_ms":10,"event":{"type":"message.delta","session_id":"s-tools","turn_id":"t-tools-1","text":"30 seconds. Restart the service to apply it."}}
+{"delay_ms":5,"event":{"type":"turn.done","session_id":"s-tools","turn_id":"t-tools-1","reason":"completed"}}
+{"event":{"type":"message.complete","session_id":"s-tools","turn_id":"t-tools-1","text":"I'll check the config first.\n\nFound the setting. Editing it now.\n\nDone: the timeout is now 30 seconds. Restart the service to apply it.","reason":"completed"}}
+{"event":{"type":"session.usage","session_id":"s-tools","usage":{"api_calls":4,"input_tokens":1840,"output_tokens":96,"cost_label":"$0.0021"}}}

@@ -79,6 +79,7 @@ async def fanout() -> tuple[list[float], float]:
 
 
 @pytest.mark.slow
+@pytest.mark.perf  # wall-clock p99 budget: runs in the serial perf lane (LEAD-NOTES)
 def test_fifty_sessions_through_the_driver_p99() -> None:
     latencies, wall_ms = asyncio.run(fanout())
     print(

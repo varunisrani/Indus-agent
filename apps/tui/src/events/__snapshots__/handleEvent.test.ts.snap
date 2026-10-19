@@ -1,0 +1,349 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fixture replays end in a known state > approval-mid-turn 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "I'll run the test suite.",
+      "tools": [],
+    },
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "All 14 tests pass.",
+      "tools": [
+        "terminal:done",
+      ],
+    },
+  ],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "ready",
+    "title": null,
+    "usage": null,
+  },
+}
+`;
+
+exports[`fixture replays end in a known state > clarify-two-questions 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "Exporting users and orders from Postgres.",
+      "tools": [
+        "clarify:done",
+      ],
+    },
+  ],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "ready",
+    "title": null,
+    "usage": null,
+  },
+}
+`;
+
+exports[`fixture replays end in a known state > error-turn 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [
+    {
+      "failure": {
+        "code": "provider_failed",
+        "layer": "provider",
+        "retryable": true,
+      },
+      "kind": "failure",
+      "role": "assistant",
+      "text": "The provider refused the request: rate limit reached.",
+      "tools": [],
+    },
+  ],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "ready",
+    "title": null,
+    "usage": null,
+  },
+}
+`;
+
+exports[`fixture replays end in a known state > interrupt-partial 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "Tides follow the moon. Its pull raises a bulge of water
+
+_interrupted_",
+      "tools": [],
+    },
+  ],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "ready",
+    "title": null,
+    "usage": null,
+  },
+}
+`;
+
+exports[`fixture replays end in a known state > long-reply 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "Step 1: keep going.
+Step 2: keep going.
+Step 3: keep going.
+Step 4: keep going.
+Step 5: keep going.
+Step 6: keep going.
+…(44893 chars)",
+      "tools": [],
+    },
+  ],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "ready",
+    "title": null,
+    "usage": null,
+  },
+}
+`;
+
+exports[`fixture replays end in a known state > plain-reply 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "A river cuts its valley slowly, grain by grain,
+
+and floods do most of the work.",
+      "tools": [],
+    },
+  ],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "ready",
+    "title": "How rivers shape valleys",
+    "usage": {
+      "api_calls": 1,
+      "context_tokens": 231,
+      "context_window": 32000,
+      "cost_label": "$0.0003",
+      "input_tokens": 212,
+      "output_tokens": 19,
+    },
+  },
+}
+`;
+
+exports[`fixture replays end in a known state > sessions-and-models 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "starting…",
+    "title": null,
+    "usage": null,
+  },
+}
+`;
+
+exports[`fixture replays end in a known state > tools-and-diff 1`] = `
+{
+  "overlay": {
+    "card": null,
+    "waiting": 0,
+  },
+  "transcript": [
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "I'll check the config first.",
+      "tools": [
+        "read_file:done",
+      ],
+    },
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "Found the setting. Editing it now.",
+      "tools": [
+        "patch:done",
+      ],
+    },
+    {
+      "kind": "diff",
+      "role": "assistant",
+      "text": "--- a/settings/server.toml
++++ b/settings/server.toml
+@@ -1,3 +1,3 @@
+ [server]
+ port = 8080
+-timeout_s = 5
++timeout_s = 30",
+      "tools": [],
+    },
+    {
+      "kind": "text",
+      "role": "assistant",
+      "text": "Done: the timeout is now 30 seconds. Restart the service to apply it.",
+      "tools": [
+        "todo_list:done",
+      ],
+    },
+  ],
+  "turn": {
+    "activeTools": 0,
+    "activity": [],
+    "outcome": null,
+    "reasoning": 0,
+    "segments": 0,
+    "streamBuffer": "",
+    "todos": [
+      {
+        "id": "1",
+        "status": "completed",
+        "text": "Find the timeout setting",
+      },
+      {
+        "id": "2",
+        "status": "completed",
+        "text": "Raise it to 30 seconds",
+      },
+      {
+        "id": "3",
+        "status": "pending",
+        "text": "Restart the service",
+      },
+    ],
+  },
+  "ui": {
+    "busy": false,
+    "connected": true,
+    "notice": null,
+    "statusText": "ready",
+    "title": null,
+    "usage": {
+      "api_calls": 4,
+      "cost_label": "$0.0021",
+      "input_tokens": 1840,
+      "output_tokens": 96,
+    },
+  },
+}
+`;
