@@ -72,7 +72,8 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). In flight: P13 wave 2 in four slices from `2f62d28` —
+Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P13 (P13 finished in `d4815be`).
+In flight:
 P13 DONE (MCP `aed252e`; plugins, hooks, hub in the commit that carries this text).
 Also building (Agent 1, from `adaceac`): P14 cron — C1 = P14-01..06 + 17 (grammar, next run, store,
 ledger, health, due detection, notepad), C2 = P14-07..12 (ticker, preflight, scripts, prompt, runner,
