@@ -190,6 +190,10 @@ export function createServerRequestCards(deps: ServerRequestDeps): ServerRequest
         const questions = clarifyQuestions(request);
         if (questions.length === 0) return declineAnswer(request) as ClarifyAnswer;
         const locked: Record<string, string[]> = {};
+        // The tool may finish while the last answer's lock is still on its way back; that is an
+        // answer, not a timeout, so the verdict waits for the lock's reply.
+        let locking = 0;
+        let abandoned = false;
         const full = (given: Readonly<Record<string, string[]>>): ClarifyAnswer => ({
           kind: "clarify",
           answers: Object.fromEntries(questions.map((q) => [q.id, [...(given[q.id] ?? [])]])),
@@ -202,6 +206,7 @@ export function createServerRequestCards(deps: ServerRequestDeps): ServerRequest
           (finish): ClarifyPayload => ({
             questions,
             lock: async (questionId, answer) => {
+              locking += 1;
               try {
                 const result = (await deps.rpc.call("clarify.lock", {
                   session_id: request.session_id,
@@ -216,9 +221,13 @@ export function createServerRequestCards(deps: ServerRequestDeps): ServerRequest
                   finish(full(locked));
                   return { done: true };
                 }
+                if (abandoned) deps.systemLine(clarifySummary(questions, locked, "timed out"));
                 return { done: false };
               } catch (error) {
+                if (abandoned) deps.systemLine(clarifySummary(questions, locked, "timed out"));
                 return { error: errorText(error) };
+              } finally {
+                locking -= 1;
               }
             },
             cancel: (given) => {
@@ -227,7 +236,10 @@ export function createServerRequestCards(deps: ServerRequestDeps): ServerRequest
               finish(full(locked));
             },
           }),
-          () => deps.systemLine(clarifySummary(questions, locked, "timed out")),
+          () => {
+            if (locking > 0) abandoned = true;
+            else deps.systemLine(clarifySummary(questions, locked, "timed out"));
+          },
         );
       },
 

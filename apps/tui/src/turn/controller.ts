@@ -1,8 +1,9 @@
 // The turn state machine on screen (research 05 §3.28):
 //   idle → busy (turn.started) → [interrupted-sealed (local stop)] → idle (message.complete).
-// Raw reply text collects in a buffer; a tool boundary seals it into a segment; tools attach to
-// the segment that announced them; completion shows only the part of the final text not already
-// on screen. A local stop seals at once and reconciles with the stored partial later (R05.4).
+// Raw reply text collects in a buffer; a tool boundary seals it into a segment; finished tools
+// head the next segment (the transcript draws a message's tools above its text, so the screen
+// reads in the order things happened); completion shows only the part of the final text not
+// already on screen. A local stop seals at once and reconciles with the stored partial later (R05.4).
 
 import { type Clock, systemClock } from "@indus/client";
 import type { Rpc } from "../app/rpc.ts";
@@ -486,28 +487,20 @@ export class TurnController {
     this.segments = [...this.segments, { id, text, tools, kind }];
   }
 
-  /** Tools finished since the last seal belong to the newest segment (or a tools-only one). */
+  /** Tools finished since the last seal, with no text after them yet: a tools-only segment. */
   private attachPendingTools(): void {
     if (this.pendingTools.length === 0) return;
-    const last = this.segments.at(-1);
-    if (last === undefined || last.kind === "diff") {
-      this.pushSegment("", this.pendingTools);
-    } else {
-      this.segments = [
-        ...this.segments.slice(0, -1),
-        { ...last, tools: [...last.tools, ...this.pendingTools] },
-      ];
-    }
+    this.pushSegment("", this.pendingTools);
     this.pendingTools = [];
   }
 
-  /** Seal the buffer: earlier tools attach to the previous segment, the text starts a new one. */
+  /** Seal the buffer: tools that finished before this text head its segment. */
   private seal(): void {
     const text = this.buffer.trim();
     if (text === "") return;
-    this.attachPendingTools();
     this.buffer = "";
-    this.pushSegment(text, []);
+    this.pushSegment(text, this.pendingTools);
+    this.pendingTools = [];
     this.flusher.cancel();
     this.publish();
   }
@@ -543,17 +536,9 @@ export class TurnController {
         ...(segment.tools.length > 0 ? { tools: segment.tools } : {}),
       });
     }
-    let tools = this.pendingTools;
-    const lastWrite = writes.at(-1);
-    if (
-      tools.length > 0 &&
-      lastWrite !== undefined &&
-      lastWrite.kind !== "diff" &&
-      (finalText === "" || failed)
-    ) {
-      lastWrite.tools = [...(lastWrite.tools ?? []), ...tools];
-      tools = [];
-    }
+    // Tools after the last sealed text ran before the final text: they head the final reply
+    // (or stand alone when there is none).
+    const tools = this.pendingTools;
     if (failed) {
       if (tools.length > 0) writes.push({ role: "assistant", text: "", tools });
       writes.push({

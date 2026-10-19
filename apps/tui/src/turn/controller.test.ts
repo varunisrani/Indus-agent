@@ -62,7 +62,7 @@ const messages = () => transcriptStore.getState().messages;
 const texts = () => messages().map((m) => m.text);
 
 describe("segments", () => {
-  it("seals commentary at tool boundaries: 2 text segments with the 3 tools attached", () => {
+  it("seals commentary at tool boundaries; finished tools head the text that follows them", () => {
     const { handle } = setup("s-tools");
     feed("tools-and-diff", handle, (e) => e.type === "turn.done");
     const segments = turnStore.getState().segments;
@@ -70,8 +70,15 @@ describe("segments", () => {
     expect(textSegments.map((s) => s.text)).toEqual([
       "I'll check the config first.",
       "Found the setting. Editing it now.",
+      "",
     ]);
-    expect(textSegments.map((s) => s.tools.map((t) => t.name))).toEqual([["read_file"], ["patch"]]);
+    // In the order they happened: commentary, read_file, commentary, patch, its diff.
+    expect(textSegments.map((s) => s.tools.map((t) => t.name))).toEqual([
+      [],
+      ["read_file"],
+      ["patch"],
+    ]);
+    expect(segments.map((s) => s.kind)).toEqual(["text", "text", "text", "diff"]);
     const diffs = segments.filter((s) => s.kind === "diff");
     expect(diffs).toHaveLength(1);
     expect(diffs[0]?.id.startsWith("diff")).toBe(true);
@@ -117,10 +124,13 @@ describe("segments", () => {
       "completed",
     );
     expect(messages().filter((m) => m.kind === "diff")).toEqual([]);
+    // The patch row stays between the commentary and the reply even when its diff is dropped.
     expect(messages().map((m) => m.text)).toEqual([
       "Editing.",
+      "",
       `Here is the change:\n\n\`\`\`diff\n${diff}\n\`\`\``,
     ]);
+    expect(messages()[1]?.tools?.map((t) => t.name)).toEqual(["patch"]);
   });
 
   it("keeps a diff segment out of the transcript when inline diffs are off", () => {

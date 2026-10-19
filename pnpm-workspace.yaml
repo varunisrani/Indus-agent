@@ -7,6 +7,10 @@ minimumReleaseAge: 20160
 
 # No dependency may run install scripts unless approved here on purpose.
 # `onlyBuiltDependencies` is the spelling the P00-08 spec names (pnpm 10); pnpm 11+ ignores it and
-# reads `allowBuilds` instead, so both stay empty until a dependency truly needs a build step.
-onlyBuiltDependencies: []
-allowBuilds: {}
+# reads `allowBuilds` instead. node-pty (optional, P12-33 Demo 2 E2E only) compiles its native PTY binding
+# on install; it is the only package allowed to. Being optional, a failed build (no node-gyp) skips it
+# instead of failing the install; the opt-in e2e lane needs it.
+onlyBuiltDependencies:
+  - node-pty
+allowBuilds:
+  node-pty: true

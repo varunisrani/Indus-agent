@@ -183,6 +183,29 @@ describe("clarify, sudo and secret requests", () => {
     expect(lines[0]).toContain("timed out");
   });
 
+  it("the tool completing while the last lock is in flight counts as answered (P12-33)", async () => {
+    const { server, lines, cards } = setup();
+    let release: () => void = () => {};
+    server.handle("clarify.lock", (params) =>
+      (params as { question_id?: string }).question_id === "q1"
+        ? { remaining: ["q2"] }
+        : new Promise((done) => {
+            release = () => done({ remaining: [] });
+          }),
+    );
+    void server.ask(clarify);
+    await tick();
+    const clarifyCard = payload<ClarifyPayload>();
+    expect(await clarifyCard.lock("q1", ["red"])).toEqual({ done: false });
+    const last = clarifyCard.lock("q2", []);
+    await tick();
+    cards.flushOpenClarify(); // tool.completed overtook the lock's reply
+    release();
+    await last;
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("(answered)");
+  });
+
   it("Esc on clarify keeps locked answers and skips the rest", async () => {
     const { server, lines } = setup();
     const answer = server.ask(clarify);

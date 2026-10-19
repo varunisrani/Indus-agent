@@ -1,6 +1,6 @@
 # P12 · TUI → Demo 2
 
-**Weeks:** 3 (plus frontend-track prework from week 7, see "Prework" below) · **Track:** F (+B bridge) · **Depends on:** P06 (classic CLI, slash registry, launcher flags), P04 (`SessionService`, `indus.protocol` + TS codegen into `packages/protocol`, error-code table), P05 (approvals, `terminal` guards used by `shell.exec`), P00 (pnpm workspace, `@indus/ui` tokens, Biome, vitest) · **Status:** planned
+**Weeks:** 3 (plus frontend-track prework from week 7, see "Prework" below) · **Track:** F (+B bridge) · **Depends on:** P06 (classic CLI, slash registry, launcher flags), P04 (`SessionService`, `indus.protocol` + TS codegen into `packages/protocol`, error-code table), P05 (approvals, `terminal` guards used by `shell.exec`), P00 (pnpm workspace, `@indus/ui` tokens, Biome, vitest) · **Status:** done (Agent 2, waves 7–9)
 
 ## Goal
 

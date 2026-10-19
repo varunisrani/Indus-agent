@@ -106,9 +106,20 @@ def _mtime(scope: Scope) -> float | None:
         return None
 
 
+def _stored_setting(scope: Scope, key: str) -> Any:
+    """``key`` only when the settings file sets it (``None`` otherwise, no built-in default)."""
+    try:
+        view = loader.load(scope)
+        return view.get(key) if view.is_set(key) else None
+    except Exception:
+        log.debug("settings unreadable", exc_info=True)
+        return None
+
+
 def _client_settings(scope: Scope) -> dict[str, Any]:
     return {
-        "busy": read_setting(scope, "display.busy_input_mode"),
+        # Unset stays null: the TUI's own default (queue) differs from the classic one (R05.18).
+        "busy": _stored_setting(scope, "display.busy_input_mode"),
         "show_reasoning": read_setting(scope, "display.show_reasoning"),
         "theme": tui_setting(scope, "theme"),
         "indicator": tui_setting(scope, "indicator"),
@@ -333,7 +344,8 @@ def _option(bridge: Bridge, profile: ProviderProfile, current: str) -> ProviderO
         slug=profile.name,
         name=profile.display_name or profile.name,
         auth_type=profile.auth_type,
-        authenticated=profile.auth_type == "none" or _stored(bridge, profile),
+        # A provider whose key is optional (local servers, custom endpoints) works without one.
+        authenticated=profile.auth_type in ("none", "api_key_optional") or _stored(bridge, profile),
         current=profile.name == current,
     )
 

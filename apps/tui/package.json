@@ -8,7 +8,10 @@
     "build": "vite build --ssr src/entry.tsx --outDir dist --emptyOutDir --logLevel warn",
     "spike:bench": "node spike/bench.ts",
     "spike:app": "vite build --ssr spike/inkSpike.tsx --outDir node_modules/.spike --emptyOutDir --logLevel warn && node node_modules/.spike/inkSpike.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "e2e": "pnpm run build && pnpm run typecheck:e2e && pnpm run test:e2e",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json"
   },
   "dependencies": {
     "@indus/client": "workspace:*",
@@ -19,6 +22,10 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
-    "@types/react": "19.3.0"
+    "@types/react": "19.3.0",
+    "@xterm/headless": "6.0.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "1.1.0"
   }
 }

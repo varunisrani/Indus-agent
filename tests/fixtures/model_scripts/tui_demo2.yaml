@@ -1,0 +1,26 @@
+# Demo 2 (P12-33): the TUI run. Turn 1 streams commentary and writes count.sh with a plain shell
+# command (no approval needed); turn 2 marks it executable and runs it (chmod + run needs an
+# approval card, answered with 1); turn 3 is the final answer. count.sh appends a line to runs.log
+# each time it runs, so a test can count the runs. Both tool results stay free of file paths, so
+# the screen goldens do not depend on where the temporary folder lives.
+turns:
+  - steps:
+      - text: ["Writing ", "count.sh ", "for you."]
+      - tool_call:
+          name: terminal
+          arguments: {command: "printf '#!/bin/sh\\necho once >> runs.log\\necho counted\\n' > count.sh"}
+          id: call_write_count
+      - usage: {prompt: 180, completion: 30}
+      - finish: tool_calls
+  - steps:
+      - text: ["Running ", "it now."]
+      - tool_call:
+          name: terminal
+          arguments: {command: "chmod +x count.sh && ./count.sh"}
+          id: call_run_count
+      - usage: {prompt: 240, completion: 18}
+      - finish: tool_calls
+  - steps:
+      - text: ["All done: ", "count.sh ", "printed **counted**."]
+      - usage: {prompt: 290, completion: 10}
+      - finish: stop

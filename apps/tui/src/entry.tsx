@@ -171,19 +171,25 @@ process.stdout.write(
 );
 
 const hyperlinks = capabilities.multiplexer === null && caps.terminalFamily(process.env) !== null;
-const app = ink.render(
-  createElement(RpcProvider, { rpc: runtime.rpc }, createElement(App, { runtime, hyperlinks })),
-  {
-    stdout: output.stream,
-    stdin: input.stream as unknown as NodeJS.ReadStream,
-    alternateScreen: true,
-    exitOnCtrlC: false,
-    maxFps: 60,
-    patchConsole: false,
-    kittyKeyboard: capabilities.kitty ? { mode: "enabled" } : { mode: "disabled" },
-  },
+const tree = createElement(
+  RpcProvider,
+  { rpc: runtime.rpc },
+  createElement(App, { runtime, hyperlinks }),
 );
-redraw = () => app.clear();
+const app = ink.render(tree, {
+  stdout: output.stream,
+  stdin: input.stream as unknown as NodeJS.ReadStream,
+  alternateScreen: true,
+  exitOnCtrlC: false,
+  maxFps: 60,
+  patchConsole: false,
+  kittyKeyboard: capabilities.kitty ? { mode: "enabled" } : { mode: "disabled" },
+});
+// Ink paints again only on a render: after the wipe, render the same tree to repaint at once.
+redraw = () => {
+  app.clear();
+  app.rerender(tree);
+};
 lifecycle.setUnmount(() => {
   runtime.dispose();
   app.unmount();

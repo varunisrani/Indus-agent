@@ -1,0 +1,40 @@
+╷ ┌╮╷ ┌─╮ ╷ ╷ ╭─╴
+│ │││ │ │ │ │ ╰─╮  indus agent
+╵ ╵╰┘ └─╯ ╰─╯ ╶─╯
+
+model    fake-model · custom
+folder   <work>
+tools    <n> available
+session  <session>
+
+› make a counter script and run it
+
+◆ Writing count.sh for you.
+
+◆ ✓ terminal printf '#!/bin/sh\necho once >> runs.log\necho counted\… <t>
+    ⎿ {"output": "", "exit_code": 0, "error": null}
+
+  Running it now.
+
+◆ ✓ terminal chmod +x count.sh && ./count.sh <t>
+    ⎿ {"output": "counted", "exit_code": 0, "error": null, "approval": "This command needed approval (marks a file execu
+      table and runs it straight away) and the user…
+
+  All done: count.sh printed counted.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+─ ready │ fake-model │ 290/256k 0% │ ▱▱▱▱▱▱▱▱▱▱ │ cache 0% ── <work>
+› Ask anything · / for commands · Ctrl+X sessions · Ctrl+O model
