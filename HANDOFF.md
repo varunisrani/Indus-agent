@@ -78,10 +78,11 @@ In flight:
 - P15 waves 2–3 building (Agent 1, from `d0f29d0`): W1 = P15-19, 20 (delivery ledger, deliverers, `indus
   send`); W2 = P15-21..23 (cron in the daemon, approvals/clarify over chat, media intake); W3 = P15-24..26
   (daemon, drain/restart, boot recovery); W4 = P15-27..29 (control socket, `indus gateway`, reconnect,
-  /platform, hooks); W5 = P15-30..32 (API server, runs/sessions/jobs, webhooks). W1, W2, W3, W4 DONE and integrating in verify2 (W5 joins when done) (patches in
-  `.agents/wip/p15w2/`); if paused, the other patches go there too.
-- P21 rest (B3: P21-12 rest, 13, 14, 16) and P22 rest (R2: P22-10..15) building from `adbbe87`. If paused,
-  patches in `.agents/wip/p21/` and `.agents/wip/p22/`.
+  /platform, hooks); W5 = P15-30..32 (API server, runs/sessions/jobs, webhooks). All five slices DONE; integrating in verify2 (W5 sent 20:20 UTC). All five patches
+  are in `.agents/wip/p15w2/` with a README (wiring, decisions); if paused, save verify2's diff there too.
+- P21 rest (B3: P21-12 rest, 13, 14, 16) and P22 rest (R2: P22-10..15) DONE as builder patches; integrating
+  in scratchpad verify3 (brief: wire R2's SWE runner to B3's task_overrides, delete the R2 stand-in, re-lock
+  for the `research` extra, D-16.320 onward). Patches + README in `.agents/wip/p21p22w2/`.
 - Last landings: P15-01..18 (`c0e0201`), M4 flake fix (`ec70724`), P21-01..11, 15 and
   P22-01..09 (`42a852e`). Done: P00–P14 complete; P15 18/36; P21 11/16; P22 9/15.
 Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
