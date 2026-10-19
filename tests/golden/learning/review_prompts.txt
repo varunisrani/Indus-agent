@@ -1,0 +1,108 @@
+=== memory ===
+Look back over the conversation above and decide what, if anything, is worth remembering in later sessions.
+
+Memory. You keep two small stores, and each fact belongs in exactly one of them:
+- `user` (the memory tool with target "user"): the person you work with: their role, how they like answers shaped, what they expect from you, preferences they stated or showed.
+- `memory` (target "memory"): the world you work in: project conventions, where things live, quirks of tools and services, settings that bit you.
+Pick the one store a future session would look in and write the fact there once. Never copy a fact into both stores: they are small, and duplicates push out what matters. If the tool offers only one target, the other store is switched off; use the one you have.
+Keep each entry short and durable. Prefer patching an entry that is now wrong over adding a second one that contradicts it.
+
+If nothing is worth saving, reply "Nothing worth keeping." and stop. Otherwise save it and reply with one line per change.
+
+In this review you may call only these tools: memory, read_file, search_files. Any other tool is refused, so do not try one.
+
+=== skills ===
+Look back over the conversation above and improve the skill library with what this session taught you.
+
+Skills. Assume there is something to improve: most busy sessions teach at least one small lesson. Look for corrections from the user (about the result, its format, its length or your way of working), a technique or fix that took effort to find, and any skill used in this session that turned out wrong, incomplete or out of date.
+Choose the first of these that fits:
+1. Patch a skill that was used in this session (opened with skill_view or run as /skill-name) when the lesson falls inside its job, whoever wrote it.
+2. Patch an existing broader skill that covers this class of job (find it with skills_list and skill_view).
+3. Add a support file under such a skill with skill_manage write_file: references/<topic>.md for depth, templates/<name> for starter files to copy, scripts/<name> for steps worth running as a program. Add one line to its SKILL.md that points to the new file.
+4. Only when no skill covers the class of job, create a new one named for the class (for example "release-notes"), never for today's task, error message or ticket.
+Read before you write: call skill_view on a skill (or skill_view with file_path for a support file) during this review before you change it, and base the change on what it returns. New skills and new support files need no read. If skill_manage refuses a write for lack of a fresh read, view the named target once and try once more.
+A preference about how one kind of job should be done belongs in that job's skill, not in memory; memory keeps only preferences that no skill owns.
+If two skills overlap, say so in your reply; the curator merges skills later. Never delete or archive a skill in a review.
+
+How to write a lesson into a skill:
+- A skill is the way to do one class of job well for this user: the steps in order, the tools and commands that work, the shape the user wants the result in, and the traps that cost time.
+- Put each lesson on the step it changes, as a rule in the imperative with one short reason ("Run the formatter before the type checker: the checker reads stale files otherwise.").
+- Leave out the story of this session: no incident narration, no PR or issue numbers, no dates, no quotes of what the user said. The rule has to make sense on its own.
+- One lesson, one rule. Before adding, look for the rule in the skill and its references/ files; sharpen the existing sentence instead of adding a second copy, and fix wrong text where it stands.
+- Do not repeat what the project's instruction files or the tool descriptions already say.
+- Do not record anything that only held on this machine or for a moment: a missing program, an unset key, a package not installed yet, a network blip, a flaky call that worked on retry. Never write that a tool "does not work". If setup was the problem, the fix (the install step, the setting) may go into a setup or troubleshooting skill.
+- If nothing actually worked in this session, do not write the failed attempts up as a method.
+- Rules that apply every time live in SKILL.md itself; references/ holds depth needed only sometimes, one file per topic (never per session or per incident).
+
+Reply "Nothing worth keeping." only when the session was routine: no correction, no new technique, no skill that misled you. Otherwise make the change and reply with one line per change.
+
+In this review you may call only these tools: read_file, search_files, skill_manage, skill_view, skills_list. Any other tool is refused, so do not try one.
+
+=== both ===
+Look back over the conversation above. Decide what is worth remembering, and improve the skill library with what this session taught you.
+
+Memory. You keep two small stores, and each fact belongs in exactly one of them:
+- `user` (the memory tool with target "user"): the person you work with: their role, how they like answers shaped, what they expect from you, preferences they stated or showed.
+- `memory` (target "memory"): the world you work in: project conventions, where things live, quirks of tools and services, settings that bit you.
+Pick the one store a future session would look in and write the fact there once. Never copy a fact into both stores: they are small, and duplicates push out what matters. If the tool offers only one target, the other store is switched off; use the one you have.
+Keep each entry short and durable. Prefer patching an entry that is now wrong over adding a second one that contradicts it.
+
+Skills. Assume there is something to improve: most busy sessions teach at least one small lesson. Look for corrections from the user (about the result, its format, its length or your way of working), a technique or fix that took effort to find, and any skill used in this session that turned out wrong, incomplete or out of date.
+Choose the first of these that fits:
+1. Patch a skill that was used in this session (opened with skill_view or run as /skill-name) when the lesson falls inside its job, whoever wrote it.
+2. Patch an existing broader skill that covers this class of job (find it with skills_list and skill_view).
+3. Add a support file under such a skill with skill_manage write_file: references/<topic>.md for depth, templates/<name> for starter files to copy, scripts/<name> for steps worth running as a program. Add one line to its SKILL.md that points to the new file.
+4. Only when no skill covers the class of job, create a new one named for the class (for example "release-notes"), never for today's task, error message or ticket.
+Read before you write: call skill_view on a skill (or skill_view with file_path for a support file) during this review before you change it, and base the change on what it returns. New skills and new support files need no read. If skill_manage refuses a write for lack of a fresh read, view the named target once and try once more.
+A preference about how one kind of job should be done belongs in that job's skill, not in memory; memory keeps only preferences that no skill owns.
+If two skills overlap, say so in your reply; the curator merges skills later. Never delete or archive a skill in a review.
+
+How to write a lesson into a skill:
+- A skill is the way to do one class of job well for this user: the steps in order, the tools and commands that work, the shape the user wants the result in, and the traps that cost time.
+- Put each lesson on the step it changes, as a rule in the imperative with one short reason ("Run the formatter before the type checker: the checker reads stale files otherwise.").
+- Leave out the story of this session: no incident narration, no PR or issue numbers, no dates, no quotes of what the user said. The rule has to make sense on its own.
+- One lesson, one rule. Before adding, look for the rule in the skill and its references/ files; sharpen the existing sentence instead of adding a second copy, and fix wrong text where it stands.
+- Do not repeat what the project's instruction files or the tool descriptions already say.
+- Do not record anything that only held on this machine or for a moment: a missing program, an unset key, a package not installed yet, a network blip, a flaky call that worked on retry. Never write that a tool "does not work". If setup was the problem, the fix (the install step, the setting) may go into a setup or troubleshooting skill.
+- If nothing actually worked in this session, do not write the failed attempts up as a method.
+- Rules that apply every time live in SKILL.md itself; references/ holds depth needed only sometimes, one file per topic (never per session or per incident).
+
+Act on memory, skills or both, where there is something real. Reply "Nothing worth keeping." only when neither has anything; otherwise reply with one line per change.
+
+In this review you may call only these tools: memory, read_file, search_files, skill_manage, skill_view, skills_list. Any other tool is refused, so do not try one.
+
+=== both-with-focus ===
+Look back over the conversation above. Decide what is worth remembering, and improve the skill library with what this session taught you.
+
+Memory. You keep two small stores, and each fact belongs in exactly one of them:
+- `user` (the memory tool with target "user"): the person you work with: their role, how they like answers shaped, what they expect from you, preferences they stated or showed.
+- `memory` (target "memory"): the world you work in: project conventions, where things live, quirks of tools and services, settings that bit you.
+Pick the one store a future session would look in and write the fact there once. Never copy a fact into both stores: they are small, and duplicates push out what matters. If the tool offers only one target, the other store is switched off; use the one you have.
+Keep each entry short and durable. Prefer patching an entry that is now wrong over adding a second one that contradicts it.
+
+Skills. Assume there is something to improve: most busy sessions teach at least one small lesson. Look for corrections from the user (about the result, its format, its length or your way of working), a technique or fix that took effort to find, and any skill used in this session that turned out wrong, incomplete or out of date.
+Choose the first of these that fits:
+1. Patch a skill that was used in this session (opened with skill_view or run as /skill-name) when the lesson falls inside its job, whoever wrote it.
+2. Patch an existing broader skill that covers this class of job (find it with skills_list and skill_view).
+3. Add a support file under such a skill with skill_manage write_file: references/<topic>.md for depth, templates/<name> for starter files to copy, scripts/<name> for steps worth running as a program. Add one line to its SKILL.md that points to the new file.
+4. Only when no skill covers the class of job, create a new one named for the class (for example "release-notes"), never for today's task, error message or ticket.
+Read before you write: call skill_view on a skill (or skill_view with file_path for a support file) during this review before you change it, and base the change on what it returns. New skills and new support files need no read. If skill_manage refuses a write for lack of a fresh read, view the named target once and try once more.
+A preference about how one kind of job should be done belongs in that job's skill, not in memory; memory keeps only preferences that no skill owns.
+If two skills overlap, say so in your reply; the curator merges skills later. Never delete or archive a skill in a review.
+
+How to write a lesson into a skill:
+- A skill is the way to do one class of job well for this user: the steps in order, the tools and commands that work, the shape the user wants the result in, and the traps that cost time.
+- Put each lesson on the step it changes, as a rule in the imperative with one short reason ("Run the formatter before the type checker: the checker reads stale files otherwise.").
+- Leave out the story of this session: no incident narration, no PR or issue numbers, no dates, no quotes of what the user said. The rule has to make sense on its own.
+- One lesson, one rule. Before adding, look for the rule in the skill and its references/ files; sharpen the existing sentence instead of adding a second copy, and fix wrong text where it stands.
+- Do not repeat what the project's instruction files or the tool descriptions already say.
+- Do not record anything that only held on this machine or for a moment: a missing program, an unset key, a package not installed yet, a network blip, a flaky call that worked on retry. Never write that a tool "does not work". If setup was the problem, the fix (the install step, the setting) may go into a setup or troubleshooting skill.
+- If nothing actually worked in this session, do not write the failed attempts up as a method.
+- Rules that apply every time live in SKILL.md itself; references/ holds depth needed only sometimes, one file per topic (never per session or per incident).
+
+Act on memory, skills or both, where there is something real. Reply "Nothing worth keeping." only when neither has anything; otherwise reply with one line per change.
+
+The user asked for this review and gave it a focus. Put it ahead of everything above:
+the deploy steps
+
+In this review you may call only these tools: memory, read_file, search_files, skill_manage, skill_view, skills_list. Any other tool is refused, so do not try one.

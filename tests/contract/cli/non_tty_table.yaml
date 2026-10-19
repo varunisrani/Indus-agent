@@ -89,6 +89,52 @@ commands:
   bundles create: 2
   bundles delete: 2
   bundles reload: 0
+  skills: 2               # a group with no default action prints its help
+  skills list: 0          # says there are no skills yet
+  skills view: 2
+  skills check: 0
+  skills list-modified: 0
+  skills diff: 2
+  skills sync: 0          # seeds the shipped skills into the fresh profile
+  skills opt-out: 0
+  skills opt-in: 0
+  skills reset: 2
+  skills pending: 0
+  skills approve: 2
+  skills reject: 2
+  memory: 2               # a group with no default action prints its help
+  memory show: 0
+  memory status: 0
+  memory edit: 2
+  memory pending: 0
+  memory approve: 2
+  memory reject: 2
+  memory approval: 2
+  curator: 2              # a group with no default action prints its help
+  curator status: 0
+  curator run: 0
+  curator pause: 0
+  curator resume: 0
+  curator pin: 2
+  curator unpin: 2
+  curator adopt: 2
+  curator list-unmanaged: 0
+  curator archive: 2
+  curator restore: 2
+  curator list-archived: 0
+  curator prune: 0        # nothing idle in a fresh profile
+  curator purge: 0        # archive_ttl_days is 0: says purge is off
+  curator backup: 1       # no skills folder yet
+  curator rollback: 1     # no snapshots yet
+  curator ledger: 0
+  journey: 0
+  journey list: 0
+  journey delete: 2
+  journey edit: 2
+  learning: 0
+  learning list: 0
+  learning delete: 2
+  learning edit: 2
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one
@@ -100,3 +146,5 @@ with_arguments:
   bundles create release: 2       # no --skill and no terminal to ask for the skills
   bundles delete no-such-bundle: 1
   bundles show no-such-bundle: 1
+  curator rollback --list: 0
+  journey delete ghost: 1          # needs -y without a terminal, then: no such node

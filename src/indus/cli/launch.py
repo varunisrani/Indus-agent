@@ -79,7 +79,7 @@ def build_context(launch: ReplLaunch, port: SessionPort | None = None) -> SlashC
         store=store,
         state=ReplState(toolsets=toolsets),
         create_params=SessionCreateParams(cwd=str(launch.cwd), toolsets=toolsets),
-        extensions=Extensions(skill_commands=skill_commands(launch.scope)),
+        extensions=Extensions(skill_commands=skill_commands(launch.scope, launch.session_id)),
     )
 
     def session_cwd() -> str | None:

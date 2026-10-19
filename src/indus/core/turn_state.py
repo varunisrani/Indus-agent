@@ -58,6 +58,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 __all__ = [
+    "AfterTurn",
+    "BeforeTurn",
     "EventSink",
     "Hydrator",
     "InlineExecutor",
@@ -76,6 +78,8 @@ type NoteSource = Callable[[str, "BuildContext", "NoteChannel"], object]
 """Called by the prologue once the turn's system prompt is known (built or restored) and before
 the staged notes are popped: ``(prompt text, build context, note channel)``. A host stages
 one-shot notes here (P09-07: the skills-index change note)."""
+type AfterTurn = Callable[["TurnState"], Awaitable[None] | None]
+type BeforeTurn = Callable[[], Awaitable[object] | object]
 
 
 class PersistFailed(Exception):
@@ -159,6 +163,12 @@ class SessionRuntime:
     approval_judge: object = None
     # Host note sources run by the prologue before the notes ride the user message (P09-07).
     note_sources: Sequence[NoteSource] = ()
+    # Post-turn hooks run by the exit funnel after the durable persist (P09-14: the learning
+    # review trigger). Each only starts work; a failing hook is a cleanup error, never fatal.
+    after_turn: list[AfterTurn] = field(default_factory=list[AfterTurn])
+    # Pre-turn hooks ``Agent.start_turn`` awaits before a live turn starts (P09-15: an in-flight
+    # background review is cancelled). A failing hook is logged; the turn always goes ahead.
+    before_turn: list[BeforeTurn] = field(default_factory=list[BeforeTurn])
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

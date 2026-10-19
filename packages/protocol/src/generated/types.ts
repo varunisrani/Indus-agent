@@ -116,13 +116,27 @@ export interface ErrorResponse {
   error: ErrorObject;
 }
 
-export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone;
+export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone;
 
 /** Why a turn ended. Closed set: every exit path of the turn loop maps to one value. */
 export type ExitReason = "completed" | "interrupted_by_user" | "interrupted_by_system" | "budget_exhausted" | "max_iterations" | "invalid_tool_strikes" | "persistence_failed" | "provider_failed" | "compression_exhausted" | "guardrail_halt";
 
 /** Any JSON value. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+/** A background review of the conversation finished (memory and skills, P09-16). */
+export interface LearningReviewDone {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "learning.review.done";
+  /** What the review covered: `memory`, `skills` or both. */
+  kinds: string[];
+  /** One short line per saved change, ready to show; empty when nothing was saved. */
+  summary_lines?: string[];
+}
 
 /** A piece of the assistant's visible reply. */
 export interface MessageDelta {

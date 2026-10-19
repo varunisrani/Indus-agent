@@ -90,6 +90,21 @@ class HostPort:
         service = self.host.service
         return self.host.run(lambda: service.agent(session_id).tool_names)
 
+    def refine(self, session_id: str, focus: str | None) -> str:
+        """``/refine``: start the session's background review now (P09-17); the line to show."""
+        from indus.learning import learn
+        from indus.learning.host import review_runner
+
+        service = self.host.service
+
+        async def run() -> str:
+            runner = review_runner(service.agent(session_id))
+            if runner is None:
+                return "/refine is not available in this session (it has no background review)."
+            return (await learn.refine(runner, focus=focus)).message
+
+        return self.host.call(run())
+
     def stop_processes(self, session_id: str, *, all_jobs: bool) -> int:
         processes = terminal.runtime().processes
         home = str(self.scope.home)

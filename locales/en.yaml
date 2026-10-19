@@ -143,6 +143,8 @@ slash:
   voice: "Turn voice input and spoken replies on or off"
   tools: "List tools, or enable/disable toolsets (starts a fresh session)"
   skills: "Find, install and manage skills"
+  reload-skills: "Rescan skill folders and refresh skill commands (the prompt stays as it is)"
+  bundles: "List skill bundles (each runs as its own /command)"
   memory: "Review memory writes waiting for approval"
   learn: "Turn something you describe into a reusable skill"
   curator: "Background upkeep of skills"

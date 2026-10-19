@@ -28,7 +28,9 @@ session: the agent's sink, ledger and engine move to the child id and ``on_sessi
 listeners (the host) are told ``(old id, new id)``.
 
 ``run_turn`` runs one turn and returns its ``TurnResult``; ``chat`` returns just the final text.
-While a turn runs, ``interrupt`` / ``steer`` / ``redirect`` reach it (loop thread only). Every task
+``start_turn`` first awaits the runtime's ``before_turn`` hooks (P09-15: a live turn cancels the
+session's background review); a failing hook is logged and the turn goes ahead. While a turn
+runs, ``interrupt`` / ``steer`` / ``redirect`` reach it (loop thread only). Every task
 the agent starts goes through ``spawn``, which runs it with the agent's own ``Scope`` in a copied
 context, whatever scope the caller has (R01.16). ``close`` stops a running turn, runs the agent's
 closers and the task cleanups tool backends registered, and closes clients the agent owns; every
@@ -47,6 +49,7 @@ not sent, and a retry is never sent once the binding's generation moved: the cal
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import secrets
 from collections.abc import Callable, Coroutine, Mapping, Sequence
@@ -754,6 +757,13 @@ class Agent:
         if self.current is not None:
             raise AgentBusy(f"session {self.session_id} is already running a turn")
         runtime = self.runtime
+        for hook in list(runtime.before_turn):
+            try:
+                outcome = hook()
+                if inspect.isawaitable(outcome):
+                    await outcome
+            except Exception:
+                log.warning("a pre-turn hook of %s failed", self.session_id, exc_info=True)
         if system is not None and system != runtime.prompt_context.system_message:
             runtime.prompt_context = replace(runtime.prompt_context, system_message=system)
         number = generation if generation is not None else self._generation + 1

@@ -339,8 +339,12 @@ class AuxClient:
         reasoning_effort: str | None = None,
         extra_body: Mapping[str, Any] | None = None,
         record: UsageRecorder | None = None,
+        tools: Sequence[Mapping[str, Any]] = (),
+        tool_choice: str | Mapping[str, Any] | None = None,
     ) -> AuxResult:
-        """One answer for ``task`` (see the module notes for the route order)."""
+        """One answer for ``task`` (see the module notes for the route order). ``tools`` (the
+        provider-neutral tool array) lets a side task such as the curator call tools; the caller
+        runs them and calls again."""
         timeout = timeout_s if timeout_s is not None else self.timeout_for(task)
         recorder = record if record is not None else self.record
         reasons: list[str] = []
@@ -360,6 +364,8 @@ class AuxClient:
                 reasoning_effort=effort,
                 stream=False,
                 extra_body=dict(extra_body or {}),
+                tools=list(tools),
+                tool_choice=tool_choice,
             )
             info = {"provider": route.provider, "model": route.model, "origin": candidate.origin}
             self._observe("before", task, info)

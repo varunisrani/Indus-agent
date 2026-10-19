@@ -406,3 +406,21 @@ def test_wheel_ships_the_skills_where_bundled_source_looks() -> None:
     module = Path(bs.__file__).resolve()
     packaged = module.parents[2] / "_bundled_skills"
     assert packaged.relative_to(module.parents[3]).as_posix() == "indus/_bundled_skills"
+
+
+def test_seed_first_run_only_once_and_never_when_opted_out(source: Path, home: Path) -> None:
+    env = {bs.SOURCE_ENV: str(source)}
+    report = bs.seed_first_run(home, env=env)
+    assert report is not None and sorted(report.added) == ["alpha", "beta", "gamma"]
+    _md(home, "gamma").unlink()
+    assert bs.seed_first_run(home, env=env) is None  # seeded before: left to `skills sync`
+    assert not _md(home, "gamma").exists()
+    other = home.parent / "opted-out"
+    other.mkdir()
+    bs.set_opt_out(other, True)
+    assert bs.seed_first_run(other, env=env) is None
+    assert not (other / "skills" / ".bundled_manifest").exists()
+    missing = home.parent / "no-source"
+    missing.mkdir()
+    gone = bs.seed_first_run(missing, env={bs.SOURCE_ENV: str(home.parent / "nowhere")})
+    assert gone is not None and gone.failed and not bs.manifest_path(missing).exists()

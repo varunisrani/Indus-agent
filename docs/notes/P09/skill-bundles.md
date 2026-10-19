@@ -47,8 +47,12 @@ Tests we will write:
 - None beyond the shared registry row.
 
 Compare checklist (filled after the rewrite; reopened both files):
-- [ ] slug default = file stem; bundle beats same-slug skill (test: `tests/unit/learning/skills/test_bundles.py`)
-- [ ] `create --force` and non-TTY rules (test: `tests/unit/cli/commands/test_bundles.py`)
+- [x] slug default = file stem; bundle beats same-slug skill (test: `tests/unit/learning/skills/test_bundles.py`)
+- [x] `create --force` and non-TTY rules (test: `tests/unit/cli/commands/test_bundles.py`)
+- [x] (lead, at wave 2 landing) both `.yaml` and `.yml`; a byte-order mark is read; a duplicate slug
+  keeps the first file alphabetically; an empty or missing `skills` list skips the file — all match.
+  Differences kept: no default description text when the file has none (ours shows nothing);
+  `create` without `--skill` needs a terminal instead of reading lines from stdin.
 - Deliberate differences: none of substance; texts are ours.
 - Not taken: bundle completion metadata for TUI (P12 reads `list_bundles()`).
 

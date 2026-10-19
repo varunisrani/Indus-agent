@@ -379,7 +379,13 @@ class _OneShot:
 
     def _with_store(self, store: Any, prompt: str) -> int:
         from indus.cli import resume, session_select
-        from indus.cli.runtime import SOURCE_ONESHOT, ServiceSpec, resolve_route, scope_for
+        from indus.cli.runtime import (
+            SOURCE_ONESHOT,
+            ServiceSpec,
+            learning_startup,
+            resolve_route,
+            scope_for,
+        )
         from indus.foundation.errors import IndusError
         from indus.state import sessions
 
@@ -403,6 +409,7 @@ class _OneShot:
                     return self.fail(2, f"this session was started with other values for {names}")
                 policy = session_select.replace_cwd(stored, cwd)
         run_scope = scope_for(self.state.scope, policy, auto_approve=True)
+        learning_startup(run_scope, store, interactive=False)
         try:
             route = resolve_route(run_scope, policy, self.state.overrides)
         except IndusError as exc:

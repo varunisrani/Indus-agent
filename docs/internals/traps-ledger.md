@@ -635,14 +635,24 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/learning/memory/test_tool.py::test_staging_failure_denies`
   - `tests/unit/learning/test_pending.py::test_edited_target_refuses_and_keeps_record`
 - **R07.5** Review fork recursion and cost
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/review/test_fork.py::test_review_writes_nothing_to_the_parent_transcript_and_never_reviews_itself`
+  - `tests/unit/learning/review/test_fork.py::test_seventeenth_request_is_never_sent`
+  - `tests/unit/learning/review/test_fork.py::test_budget_stops_before_crossing`
+  - `tests/unit/learning/review/test_counters.py::test_no_review_contexts`
+  - `tests/integration/learning/test_learning_host.py::test_one_shot_sessions_never_review`
 - **R07.6** Curator jurisdiction is an explicit marker, never inferred
   - `tests/unit/learning/skills/test_usage.py::test_origin_per_context`
-  - Review: curator side (jurisdiction filter on `origin=agent`) lands with P09-18 (P09-18)
+  - `tests/unit/learning/curator/test_archive.py::test_ownership_by_marker_only`
+  - `tests/unit/learning/curator/test_lifecycle.py::test_hand_written_and_learn_untouched`
+  - `tests/unit/learning/curator/test_archive.py::test_external_skill_is_not_managed`
 - **R07.7** Curator defaults are inconsistent in the reference docs
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/curator/test_lifecycle.py::test_defaults_follow_code`
+  - `tests/unit/learning/curator/test_lifecycle.py::test_fresh_install_seeds_only`
 - **R07.8** Cron skills must not be archived from under a job
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/curator/test_lifecycle.py::test_reference_source_protects`
+  - `tests/unit/learning/curator/test_lifecycle.py::test_failing_source_blocks_archive`
+  - `tests/unit/learning/curator/test_consolidate.py::test_merge_archives_and_maps`
+  - Review: the cron store registers as a reference source (P14-03)
 - **R07.9** Bare duration means recurring
   - Review: not yet planned (P00-guards)
 - **R07.10** Natural phrases with interval + time fail

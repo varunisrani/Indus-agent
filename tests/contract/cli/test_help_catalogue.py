@@ -46,9 +46,19 @@ GOLDEN_ORDER = [
     "completion",
     "logs",
     "bundles",
+    "skills",
+    "memory",
+    "curator",
+    "journey",
+    "learning",
 ]
 
-SHARED_IMPORTS: dict[str, set[str]] = {"dump": {"status"}}
+SHARED_IMPORTS: dict[str, set[str]] = {
+    "dump": {"status"},
+    "journey": {"learning"},  # one module, two names (P09-23 alias)
+    "learning": {"journey"},
+    "skills": {"memory"},  # shares the pending-write helpers (P09-24)
+}
 """Top-level command → other top-level commands whose module it may import (it reuses them)."""
 
 _PROBE = """

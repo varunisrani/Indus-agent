@@ -19,7 +19,14 @@ here (P05 wave 2 notes):
   inline executors for the selected ``memory`` / ``session_search`` only, the prompt builder that
   adds the frozen memory block, the skills index and the ``skills.auto_load`` / ``-s`` preload
   block, and the skills-index change note; ``session_search`` gets the agent's bound auxiliary
-  client once the agent is open.
+  client once the agent is open; every agent gets its background review
+  (``SessionLearning.attach_review``; one-shot runs never review);
+- the learning upkeep (P09-18): an interactive run's service carries the maintenance timer with
+  the curator check (``service.maintenance.learning_timer``), driven by the service's auxiliary
+  client and the store's idle time;
+- ``learning_startup`` before a chat run: the shipped skills are seeded into a profile that was
+  never seeded (P09-21, honouring the opt-out marker), and an interactive session start runs the
+  curator check on a daemon thread (it never blocks the chat and never raises).
 """
 
 from __future__ import annotations
@@ -41,12 +48,14 @@ from indus.foundation.config import schema
 from indus.foundation.config.loader import ConfigView, config_path
 from indus.foundation.scope import Scope
 from indus.learning import host as learning_host
+from indus.learning.review.counters import NO_REVIEW_CONTEXTS
 from indus.providers.auxiliary import AuxClient
 from indus.providers.profile import REASONING_LEVELS
 from indus.providers.route import RuntimeRoute, resolve
 from indus.service import terminal_host
 from indus.service.broker import ServerRequestBroker
 from indus.service.host_inprocess import InProcessHost
+from indus.service.maintenance import MaintenanceTimer, learning_timer, profile_idle_s
 from indus.service.session_service import AgentFactory, SessionService
 from indus.state.registry import StoreHandle
 from indus.tools import toolsets
@@ -54,6 +63,7 @@ from indus.tools.builtin import terminal
 
 __all__ = [
     "DEFAULT_TOOLSETS",
+    "learning_startup",
     "SOURCE_CLI",
     "SOURCE_ONESHOT",
     "ServiceSpec",
@@ -167,6 +177,29 @@ def with_learning(
     return wired, learning
 
 
+def learning_startup(scope: Scope, store: StoreHandle | None, *, interactive: bool) -> None:
+    """First-run skill seeding, then (interactive runs) the curator check in the background."""
+    from indus.learning.skills.bundled_sync import seed_first_run
+
+    seed_first_run(scope.home, env=scope.env)
+    if not interactive:
+        return
+    try:
+        from indus.cli.commands import curator as curator_cmds
+        from indus.foundation.scope import thread_with_scope
+        from indus.learning.curator.lifecycle import maybe_run
+
+        idle = profile_idle_s(store, scope.clock)
+        thread_with_scope(
+            lambda: maybe_run(scope, idle_s=idle, step_factory=curator_cmds.STEP_FACTORY),
+            scope=scope,
+            name="curator check",
+            daemon=True,
+        ).start()
+    except Exception:
+        log.warning("the curator check could not start", exc_info=True)
+
+
 def agent_factory(
     scope: Scope, route: RuntimeRoute, *, run_context: str, preload: Sequence[str] = ()
 ) -> AgentFactory:
@@ -191,6 +224,7 @@ def agent_factory(
         agent.runtime.environments = terminal.runtime().environments
         agent.runtime.run_context = run_context
         learning.bind_aux(agent.aux)
+        learning.attach_review(agent, no_review=run_context in NO_REVIEW_CONTEXTS)
         return agent
 
     return build
@@ -266,7 +300,17 @@ def build_service(spec: ServiceSpec) -> SessionService:
             preload=spec.policy.skills,
         ),
         aux=aux,
+        maintenance=_maintenance(spec, aux),
     )
+
+
+def _maintenance(spec: ServiceSpec, aux: AuxClient) -> MaintenanceTimer | None:
+    """An interactive run keeps the profile's learning upkeep going (P09-18); finite runs end
+    long before the first poll."""
+    if spec.run_context != "interactive":
+        return None
+    scope, handle = spec.scope, spec.store
+    return learning_timer(scope, aux=aux, idle_s=lambda: profile_idle_s(handle, scope.clock))
 
 
 def make_host(spec: ServiceSpec, *, call_timeout: float | None = None) -> InProcessHost:

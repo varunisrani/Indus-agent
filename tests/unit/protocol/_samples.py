@@ -16,6 +16,7 @@ from indus.protocol.envelope import (
 from indus.protocol.events import (
     CancelReason,
     ExitReason,
+    LearningReviewDone,
     MessageDelta,
     Notice,
     NoticeLevel,
@@ -152,6 +153,9 @@ SAMPLES: list[ProtocolModel] = [
         ),
     ),
     TurnFailure(reason="store write failed", retryable=False),
+    LearningReviewDone(
+        session_id=SID, seq=11, kinds=["memory", "skills"], summary_lines=["Memory updated"]
+    ),
     # server requests and answers
     APPROVAL,
     CLARIFY,

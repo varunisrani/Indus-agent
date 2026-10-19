@@ -243,6 +243,7 @@
     "Event": {
       "discriminator": {
         "mapping": {
+          "learning.review.done": "#/$defs/LearningReviewDone",
           "message.delta": "#/$defs/MessageDelta",
           "notice": "#/$defs/Notice",
           "reasoning.delta": "#/$defs/ReasoningDelta",
@@ -266,7 +267,8 @@
         {"$ref": "#/$defs/Status"},
         {"$ref": "#/$defs/Notice"},
         {"$ref": "#/$defs/ServerRequestCancelled"},
-        {"$ref": "#/$defs/TurnDone"}
+        {"$ref": "#/$defs/TurnDone"},
+        {"$ref": "#/$defs/LearningReviewDone"}
       ]
     },
     "ExitReason": {
@@ -286,6 +288,40 @@
       "type": "string"
     },
     "JsonValue": {},
+    "LearningReviewDone": {
+      "additionalProperties": false,
+      "description": "A background review of the conversation finished (memory and skills, P09-16).",
+      "properties": {
+        "kinds": {
+          "description": "What the review covered: ``memory``, ``skills`` or both.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "summary_lines": {
+          "description": "One short line per saved change, ready to show; empty when nothing was saved.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "type": {
+          "const": "learning.review.done",
+          "default": "learning.review.done",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq", "kinds"],
+      "type": "object"
+    },
     "MessageDelta": {
       "additionalProperties": false,
       "description": "A piece of the assistant's visible reply.",
@@ -1164,6 +1200,7 @@
       }
     },
     "events": {
+      "learning.review.done": "LearningReviewDone",
       "message.delta": "MessageDelta",
       "notice": "Notice",
       "reasoning.delta": "ReasoningDelta",

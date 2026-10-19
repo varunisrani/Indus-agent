@@ -70,18 +70,13 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
-Done: P00–P08, P11 (`3ae8089`), P09 wave 1 (memory, pending-write gate, session_search, skills core,
-starter skills — landed in the commit that carries this text). Landing notes in LEAD-NOTES.
+Done: P00–P09 (P09 wave 2 landed in the commit that carries this text; M2 demo test
+`tests/integration/learning/test_m2_demo.py`) and P11 (`3ae8089`). Landing notes in LEAD-NOTES.
 Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up).
 In flight (Agent 1):
-1. P09 wave 2 — three slices built on a raw base (main `fb1204d` + the wave 1 patches unchanged),
-   being integrated on top of landed wave 1 (in verify2): D = P09-11 skill_manage, P09-13 ledger, P09-24
-   CLI/slash; E = P09-14..17 review loop, /refine, /learn; F = P09-18..20 curator, P09-23 timeline.
-   If paused, their patches are in `.agents/wip/p09w2/` (all three add `cli/slash/learning_cmds.py` —
-   merge into one module; E and F both add `tools=` to AuxClient.call — keep one).
-2. P10 wave 1: H = P10-08..11 execute_code and kernels DONE, patch saved in `.agents/wip/p10w1/` (base
+1. P10 wave 1: H = P10-08..11 execute_code and kernels DONE, patch saved in `.agents/wip/p10w1/` (base
    `85cd8a9`; README has its wiring list). G = P10-01..07 delegation DONE too (same base; uv.lock excluded — re-lock for jsonschema).
-3. P10 slices building from `7faff19`: I = P10-12..14 browser, J = P10-15..18 vision, image/video, TTS,
+2. P10 slices building from `7faff19`: I = P10-12..14 browser, J = P10-15..18 vision, image/video, TTS,
    STT; K = P10-21..26 MoA, /btw, /goal, /loop, /heartbeat. If paused, in `.agents/wip/p10w1/` too.
 Next: P10 waves 2+ (browser, media, voice, computer use, MoA, /btw, /goal, /loop, /heartbeat), P12
 (TUI), P13 (MCP/plugins), P14 (cron).

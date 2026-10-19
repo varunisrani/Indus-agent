@@ -522,11 +522,17 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/learning/memory/test_tool.py::test_fourth_failure_is_terminal`
   - `tests/integration/learning/test_chat_wiring.py::test_memory_write_runs_inline_and_leaves_the_prompt_frozen`
 - **ACC-F5-1** Background review every N turns or tool iterations that saves memory and improves skills, under a …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/learning/test_review_fork_e2e.py::test_review_writes_memory_and_a_skill_the_next_session_sees`
+  - `tests/unit/learning/review/test_counters.py::test_trigger_after_ten_turns_hands_over_a_deep_copy`
+  - `tests/integration/learning/test_m2_demo.py::test_m2_learning_slice`
+  - `tests/integration/learning/test_learning_host.py::test_interactive_session_gets_review_refine_and_maintenance`
 - **ACC-F6-1** `/refine [focus]` runs that review on demand
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/test_learn.py::test_refine_runs_with_reviews_disabled_and_puts_the_focus_first`
+  - `tests/unit/learning/test_learn.py::test_refine_memory_remove_is_applied_directly`
+  - `tests/integration/learning/test_learning_host.py::test_interactive_session_gets_review_refine_and_maintenance`
 - **ACC-F7-1** `/learn` turns a folder, URL, conversation or notes into a skill
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/test_learn.py::test_cli_learn_submits_one_user_turn_with_the_standards`
+  - `tests/unit/learning/test_learn.py::test_learn_turn_creates_a_learn_origin_skill`
 - **ACC-F10-1** Skill format: folder with `SKILL.md` frontmatter and support folders; visibility by OS, toolset …
   - `tests/unit/learning/skills/test_format.py::test_content_limit`
   - `tests/unit/learning/skills/test_format.py::test_support_file_size`
@@ -548,9 +554,19 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/slash/test_skill_cmds.py::test_skills_and_bundles_become_commands`
   - `tests/integration/learning/test_chat_wiring.py::test_skill_preload_flag_loads_the_skill_into_the_prompt`
 - **ACC-F16-1** `skill_manage` tool (create, patch, delete, write/remove support files, batch) with limits, locks …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/skills/test_manage_tool.py::test_batch_with_bad_op_leaves_tree_identical`
+  - `tests/unit/learning/skills/test_manage_tool.py::test_pinned_delete_refused_patch_allowed`
+  - `tests/unit/learning/skills/test_manage_tool.py::test_review_patch_needs_fresh_view`
+  - `tests/unit/learning/skills/test_manage_tool.py::test_concurrent_patches_lose_nothing`
+  - `tests/integration/learning/test_learning_host.py::test_chat_skill_manage_creates_a_skill`
+  - `tests/integration/learning/test_learning_host.py::test_chat_skill_write_is_held_when_approval_is_on`
 - **ACC-F21-1** Curator phase 1: idle-triggered aging of agent-made skills to stale then archive, pin, restore …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/learning/curator/test_lifecycle.py::test_stale_then_archived`
+  - `tests/unit/learning/curator/test_lifecycle.py::test_pinned_skipped`
+  - `tests/unit/learning/curator/test_archive.py::test_archive_and_restore_round_trip`
+  - `tests/unit/cli/commands/test_curator.py::test_archive_restore_list`
+  - `tests/integration/learning/test_learning_host.py::test_interactive_start_runs_the_curator_check_off_thread`
+  - `tests/unit/service/test_maintenance.py::test_service_runs_the_timer_while_open`
 - **ACC-F24-1** Per-skill usage counters (used, viewed, patched)
   - `tests/unit/learning/skills/test_usage.py::test_counters_and_times`
   - `tests/unit/learning/skills/test_usage.py::test_two_processes_lose_no_increment`
@@ -559,6 +575,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/learning/skills/test_bundled_sync.py::test_edited_skill_kept_and_pristine_refreshed`
   - `tests/unit/learning/skills/test_bundled_sync.py::test_opt_out_marker_stops_seeding`
   - `tests/unit/cli/commands/test_profile.py::test_create_no_skills_opts_out`
+  - `tests/unit/learning/skills/test_bundled_sync.py::test_seed_first_run_only_once_and_never_when_opted_out`
+  - `tests/integration/learning/test_learning_host.py::test_first_chat_seeds_the_starter_skills_once`
+  - `tests/integration/learning/test_learning_host.py::test_opt_out_marker_stops_first_run_seeding`
 - **ACC-F29-1** Starter skill set authored by Indus from scratch; no reference skill text reused (lead default)
   - `tests/unit/learning/skills/test_starter_skills.py::test_exactly_the_starter_set`
   - `tests/unit/learning/skills/test_starter_skills.py::test_frontmatter_valid`

@@ -142,6 +142,7 @@ export interface MethodTypes {
 
 /** Event type (also the notification method) → event type name. */
 export const EVENTS = deepFreeze({
+  "learning.review.done": "LearningReviewDone",
   "message.delta": "MessageDelta",
   "notice": "Notice",
   "reasoning.delta": "ReasoningDelta",
@@ -157,6 +158,7 @@ export const EVENTS = deepFreeze({
 export type EventName = keyof typeof EVENTS;
 
 export interface EventTypes {
+  "learning.review.done": T.LearningReviewDone;
   "message.delta": T.MessageDelta;
   "notice": T.Notice;
   "reasoning.delta": T.ReasoningDelta;

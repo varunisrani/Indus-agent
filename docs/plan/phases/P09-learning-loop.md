@@ -158,16 +158,16 @@ test, or hand-edit a golden prompt file without a note entry explaining the inte
 ## Compare checklist (reopen the reference after writing)
 - [x] Memory: delimiter, limits, batch-final budget, retry cap 3, patch-span semantics, duplicate note, staging of unattended deletes match (R07.1–R07.4). (wave 1, lead at landing)
 - [x] Memory snapshot frozen per session and restored on resume; threat placeholder only in snapshot. (wave 1, lead at landing)
-- [ ] Skill limits (64 / 1,024 / 100,000 / 1 MiB), allowed support dirs, linter thresholds (60 refs, ~24k body).
-- [ ] Resolution: higher tier wins on every consumer; same-tier ambiguity error (R07.27).
-- [ ] Index 60-char clip, delta note once per change, no prompt rebuild (R07.29).
-- [ ] Slash stacking cap 5 and stop rule; inline shell off by default, 10 s.
-- [ ] `skill_manage` batch atomicity and wrong-slot error; pinned delete refused; read-before-write in review.
-- [ ] Review counters (10/10), skip list (cron, one-shot, children), whitelist, 16 iterations, budget 75%/600k/120k, digest 24 + clip 300/200, 2.0 s cancel (R07.5).
-- [ ] Curator 14/30/168/2, first-run seed, jurisdiction by explicit marker only, archive never delete, cron-protected skills (R07.6–R07.8, D-16.24).
-- [ ] Ledger 5 MiB cap, newest entry kept, 1 h blob sweep, rollback fail-closed.
-- [ ] Bundled sync origin hash, cache dirs excluded, opt-out on every path (R07.28).
-- [ ] Each intentional difference (our tokens, file names, `origin` values, notices wording) has a D-id or note entry.
+- [x] Skill limits (64 / 1,024 / 100,000 / 1 MiB), allowed support dirs, linter thresholds (60 refs, ~24k body). (wave 1, `skill-format` note)
+- [x] Resolution: higher tier wins on every consumer; same-tier ambiguity error (R07.27). (wave 1, `skill-resolver` note)
+- [x] Index 60-char clip, delta note once per change, no prompt rebuild (R07.29). (wave 1, `skills-prompt-index` note)
+- [x] Slash stacking cap 5 and stop rule; inline shell off by default, 10 s. (wave 1, `skill-invoke` note)
+- [x] `skill_manage` batch atomicity and wrong-slot error; pinned delete refused; read-before-write in review. (wave 2, `skill-manage` note; lead at landing)
+- [x] Review counters (10/10), skip list (cron, one-shot, children), whitelist, 16 iterations, budget 75%/600k/120k, digest 24 + clip 300/200, 2.0 s cancel (R07.5). (wave 2, `review-counters` / `review-fork` notes)
+- [x] Curator 14/30/168/2, first-run seed, jurisdiction by explicit marker only, archive never delete, cron-protected skills (R07.6–R07.8, D-16.24). (wave 2, `curator-lifecycle` note)
+- [x] Ledger 5 MiB cap, newest entry kept, 1 h blob sweep, rollback fail-closed. (wave 2, `skill-ledger` note)
+- [x] Bundled sync origin hash, cache dirs excluded, opt-out on every path (R07.28). (wave 1, `bundled-sync` note; first-run seeding honours the marker, wave 2)
+- [x] Each intentional difference (our tokens, file names, `origin` values, notices wording) has a D-id or note entry. (D-16.136 – D-16.159; lead at wave 2 landing)
 
 ## Traps covered
 | Trap | Pinned by test in |

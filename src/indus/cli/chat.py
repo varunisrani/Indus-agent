@@ -276,6 +276,7 @@ class _ChatRun:
         from indus.cli.runtime import (
             SOURCE_CLI,
             ServiceSpec,
+            learning_startup,
             resolve_route,
             scope_for,
         )
@@ -321,6 +322,7 @@ class _ChatRun:
             policy = restored.policy or session_select.replace_cwd(policy, Path.cwd())
 
         run_scope = scope_for(scope, policy)
+        learning_startup(run_scope, store, interactive=not self.finite)
         try:
             route = resolve_route(run_scope, policy, self.state.overrides)
         except IndusError as exc:

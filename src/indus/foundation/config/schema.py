@@ -350,6 +350,11 @@ class DisplaySection(_Section):
     bell_on_prompt: bool = Field(
         default=True, description="ring the terminal bell when a question needs an answer"
     )
+    learning_notices: Literal["off", "on", "verbose"] = Field(
+        default="on",
+        description="after a background review: off, on (one line per change) or verbose "
+        "(with a short preview)",
+    )
 
 
 class OnboardingSeen(_Section):
@@ -405,6 +410,13 @@ class AuxiliarySection(_Section):
     )
     approval: AuxTaskSection = Field(
         default_factory=AuxTaskSection, description="the smart approval judge"
+    )
+    curator: AuxTaskSection = Field(
+        default_factory=AuxTaskSection, description="the curator's consolidation pass"
+    )
+    review: AuxTaskSection = Field(
+        default_factory=AuxTaskSection,
+        description="the background review that saves memory and improves skills",
     )
 
 
@@ -528,6 +540,9 @@ class MemorySection(_Section):
         description="ask before memory writes (interactive CLI) or stage them for "
         "`indus memory approve`",
     )
+    review_interval: int = Field(
+        default=10, description="user turns between background memory reviews; 0 = never"
+    )
 
 
 class SessionSearchSection(_Section):
@@ -579,6 +594,72 @@ class SkillsSection(_Section):
     write_approval: bool = Field(
         default=False,
         description="hold every skill write the agent makes as a pending change you approve",
+    )
+    review_interval: int = Field(
+        default=10,
+        description="tool-calling steps between background skill reviews; 0 = never",
+    )
+
+
+class LearningReviewSection(_Section):
+    """The background review that runs after busy turns (P09-14..16)."""
+
+    enabled: bool = Field(
+        default=True, description="review automatically after busy turns (/refine always works)"
+    )
+    extra_tools: list[str] = Field(
+        default_factory=list, description="more of the session's tools the review may call"
+    )
+    max_input_tokens: int | None = Field(
+        default=None,
+        description="input tokens one review may spend in all; empty = 75% of the model's "
+        "window (at most 600000); 0 = no limit",
+    )
+    defer: Literal["auto", "never"] = Field(
+        default="auto",
+        description="auto: reviews on a local model server wait until the machine is quiet",
+    )
+    defer_max_age_s: float = Field(
+        default=1800.0, description="a waiting review runs anyway after this many seconds"
+    )
+
+
+class LearningSection(_Section):
+    review: LearningReviewSection = Field(
+        default_factory=LearningReviewSection, description="the background review"
+    )
+
+
+class CuratorBackupSection(_Section):
+    enabled: bool = Field(
+        default=True, description="snapshot the skills before a consolidation pass"
+    )
+    keep: int = Field(default=2, description="snapshots kept; older ones are removed")
+
+
+class CuratorSection(_Section):
+    """Idle-time upkeep of the skills the background review wrote (P09-18..20)."""
+
+    enabled: bool = Field(default=True, description="age unused agent-made skills")
+    interval_hours: int = Field(default=168, description="hours between curator runs")
+    min_idle_hours: float = Field(
+        default=2.0, description="hours the agent must be idle before a run"
+    )
+    stale_after_days: int = Field(default=14, description="unused days before a skill is stale")
+    archive_after_days: int = Field(
+        default=30, description="unused days before a skill is moved to the archive"
+    )
+    consolidate: bool = Field(
+        default=False, description="let a model merge overlapping skills on each run"
+    )
+    prune_builtins: bool = Field(
+        default=False, description="also archive unused bundled skills (never merged)"
+    )
+    archive_ttl_days: int = Field(
+        default=0, description="`indus curator purge` deletes archives older than this; 0 = never"
+    )
+    backup: CuratorBackupSection = Field(
+        default_factory=CuratorBackupSection, description="skill snapshots"
     )
 
 
@@ -689,6 +770,12 @@ class ConfigModel(BaseModel):
     )
     skills: SkillsSection = Field(
         default_factory=SkillsSection, description="skill folders and loading"
+    )
+    curator: CuratorSection = Field(
+        default_factory=CuratorSection, description="upkeep of skills the agent wrote"
+    )
+    learning: LearningSection = Field(
+        default_factory=LearningSection, description="learning from finished conversations"
     )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 

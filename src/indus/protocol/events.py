@@ -209,6 +209,17 @@ class TurnDone(EventBase):
     """Set when the turn ended in a failure."""
 
 
+class LearningReviewDone(EventBase):
+    """A background review of the conversation finished (memory and skills, P09-16)."""
+
+    type: Literal["learning.review.done"] = "learning.review.done"
+    """Event type."""
+    kinds: list[str]
+    """What the review covered: ``memory``, ``skills`` or both."""
+    summary_lines: list[str] = Field(default_factory=list[str])
+    """One short line per saved change, ready to show; empty when nothing was saved."""
+
+
 type Event = Annotated[
     TurnStarted
     | MessageDelta
@@ -219,7 +230,8 @@ type Event = Annotated[
     | Status
     | Notice
     | ServerRequestCancelled
-    | TurnDone,
+    | TurnDone
+    | LearningReviewDone,
     Field(discriminator="type"),
 ]
 """Any event, told apart by ``type``."""
@@ -235,6 +247,7 @@ EVENT_MODELS: tuple[type[EventBase], ...] = (
     Notice,
     ServerRequestCancelled,
     TurnDone,
+    LearningReviewDone,
 )
 
 

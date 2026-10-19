@@ -69,6 +69,7 @@ def test_core_list_is_the_p05_tool_set() -> None:
         "session_search",  # P09-25
         "skills_list",  # P09-08
         "skill_view",  # P09-08
+        "skill_manage",  # P09-11
     }
     assert set(resolve(CORE)) == set(CORE_TOOLS)
 
@@ -80,7 +81,7 @@ def test_named_sets() -> None:
     assert resolve("search") == ["web_search"]
     assert resolve("memory") == ["memory"]
     assert resolve("session_search") == ["session_search"]
-    assert resolve("skills") == ["skill_view", "skills_list"]
+    assert resolve("skills") == ["skill_manage", "skill_view", "skills_list"]
     assert set(resolve("debugging")) == {
         "terminal",
         "process_manage",

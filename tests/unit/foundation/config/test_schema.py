@@ -53,7 +53,25 @@ def test_decided_defaults() -> None:
     # P08 (context and cost): the union of the three wave-1 slices
     aux_task = {"provider": "auto", "model": "", "base_url": "", "reasoning_effort": "",
                 "timeout_s": None, "fallback": []}  # fmt: skip
-    assert d["auxiliary"] == {"compression": aux_task, "title": aux_task, "approval": aux_task}
+    assert d["auxiliary"] == {
+        "compression": aux_task,
+        "title": aux_task,
+        "approval": aux_task,
+        "curator": aux_task,  # P09-19
+        "review": aux_task,  # P09-15
+    }
+    # P09 slice F: the curator
+    assert d["curator"] == {
+        "enabled": True,
+        "interval_hours": 168,  # D-16.24
+        "min_idle_hours": 2.0,
+        "stale_after_days": 14,
+        "archive_after_days": 30,
+        "consolidate": False,
+        "prune_builtins": False,
+        "archive_ttl_days": 0,
+        "backup": {"enabled": True, "keep": 2},
+    }
     assert d["prompt_caching"] == {"cache_ttl": "5m"}
     assert d["compression"] == {
         "enabled": True,
@@ -76,6 +94,18 @@ def test_decided_defaults() -> None:
         "notes_char_limit": 2200,
         "profile_char_limit": 1375,
         "write_approval": False,
+        "review_interval": 10,  # P09-14
+    }
+    # P09 slice E: the background review
+    assert d["skills"]["review_interval"] == 10
+    assert d["learning"] == {
+        "review": {
+            "enabled": True,
+            "extra_tools": [],
+            "max_input_tokens": None,
+            "defer": "auto",
+            "defer_max_age_s": 1800.0,
+        }
     }
     assert d["session_search"] == {"summarize": False}
     # P09 slice B (+ the skill write gate of P09-03, added at integration)
@@ -91,6 +121,7 @@ def test_decided_defaults() -> None:
         "scan_agent_created": False,
         "ledger_max_bytes": 5 * 1024 * 1024,
         "write_approval": False,
+        "review_interval": 10,  # P09-14
     }
     assert d["context"] == {"engine": "builtin"}
     assert d["fallback"] == {"min_switch_reset_s": 0.0}  # P08-13: always switch
@@ -146,6 +177,7 @@ def test_decided_defaults() -> None:
         "cli_multiline_shortcuts": True,
         "show_reasoning": False,
         "bell_on_prompt": True,
+        "learning_notices": "on",  # P09-16
     }
     assert d["onboarding"] == {"seen": {"busy_input": False}, "setup_completed": False}
     assert d["fallback_providers"] == []

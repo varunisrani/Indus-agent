@@ -11,13 +11,16 @@ Each step is guarded on its own, so one failing step never loses the answer:
 6. leftover steer text becomes ``pending_steer`` (the next turn's message), unless the stop
    was hard;
 7. open server requests are withdrawn (turn ended);
-8. the result is stamped with ``{turn_id, current_turn_user_index}``, the exit reason and, for a
+8. the session's post-turn hooks run (``SessionRuntime.after_turn``, P09-14: the learning review
+   trigger); each one only starts work and sees the settled, stored turn;
+9. the result is stamped with ``{turn_id, current_turn_user_index}``, the exit reason and, for a
    failure, its reason / retryable flag / reset time; one log line is written (WARNING when
    abnormal) and ``turn.done`` is sent.
 """
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -187,6 +190,8 @@ async def finalize_turn(state: TurnState) -> TurnResult:
     await _guarded(state, "persist", lambda: _persist(state))
     state.pending_steer = control.leftover_steer()
     await _guarded(state, "withdraw", lambda: _withdraw(state))
+    for hook in list(state.runtime.after_turn):
+        await _guarded(state, "after_turn", functools.partial(hook, state))
     exit_reason = state.exit or ExitReason.PROVIDER_FAILED
     failure = state.failure
     if failure is None and exit_reason in FAILING:

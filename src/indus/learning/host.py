@@ -2,7 +2,8 @@
 
 Tools. ``memory`` (P09-02) and ``session_search`` (P09-25) are agent-level tools: the registry holds
 their schema (so toolset selection and the tool array see them) and the loop runs them through its
-inline table. ``skills_list`` / ``skill_view`` (P09-08) are plain registry tools. ``tool_registry``
+inline table. ``skills_list`` / ``skill_view`` (P09-08) and ``skill_manage`` (P09-11, writes gated
+by ``learning.pending``) are plain registry tools. ``tool_registry``
 builds the registry a host passes as ``AgentOptions.registry``: the P05 built-ins plus these. The
 learning modules are registered here, not in ``tools.builtin``, because tools sit below learning in
 the layer order.
@@ -23,12 +24,20 @@ Per session, ``wire_session`` gives the host:
 ``session_search`` condenses long reads through the session's bound auxiliary client, which only
 exists once the agent is open: the host calls ``SessionLearning.bind_aux(agent.aux)`` after
 ``Agent.start``.
+
+The background review (P09-14..16) is attached per agent after ``Agent.start`` with
+``SessionLearning.attach_review(agent, no_review=...)``: the runner and trigger of
+``review.fork.install_review``; the runner's ``cancel_for_live_turn`` as a ``before_turn`` hook (a
+live turn stops an in-flight review); the agent's own successful ``memory`` and ``skill_manage``
+writes reset the matching counter. ``review_runner(agent)`` finds the runner again for ``/refine``.
 """
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from indus.core.notes import NoteChannel
 from indus.core.prompt.builder import BuildContext, PromptBuilder
@@ -40,7 +49,8 @@ from indus.learning import session_search
 from indus.learning.memory import tool as memory_tool
 from indus.learning.memory.prompt_block import FrozenMemory, MemoryPromptBuilder
 from indus.learning.memory.store import MemoryStore
-from indus.learning.skills import view_tools
+from indus.learning.review.fork import ReviewRunner, install_review
+from indus.learning.skills import manage_tool, view_tools
 from indus.learning.skills.invoke import auto_load_block
 from indus.learning.skills.prompt_index import (
     IndexDeltaTracker,
@@ -52,24 +62,32 @@ from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
 from indus.tools.registry import ToolRegistry
 
+if TYPE_CHECKING:
+    from indus.core.agent import Agent
+
 __all__ = [
     "AGENT_LEVEL_TOOLS",
     "SessionLearning",
     "active_toolsets",
     "register_tools",
+    "review_runner",
     "tool_registry",
     "wire_session",
 ]
+
+_RUNNERS: weakref.WeakKeyDictionary[Agent, ReviewRunner] = weakref.WeakKeyDictionary()
 
 AGENT_LEVEL_TOOLS: tuple[str, ...] = (memory_tool.TOOL_NAME, session_search.TOOL_NAME)
 """Learning tools the loop runs inline (registered for their schema only)."""
 
 
 def register_tools(registry: ToolRegistry) -> None:
-    """Register every learning tool: memory, session_search, skills_list and skill_view."""
+    """Register every learning tool: memory, session_search, skills_list, skill_view and
+    skill_manage."""
     memory_tool.register_tools(registry)
     session_search.register_tools(registry)
     view_tools.register_tools(registry)
+    manage_tool.register_tools(registry)
 
 
 def tool_registry(clock: Clock | None = None) -> ToolRegistry:
@@ -110,6 +128,35 @@ class SessionLearning:
         """Give ``session_search`` the session's bound auxiliary client (after ``Agent.start``)."""
         if self.search is not None:
             self.search.aux = aux
+
+    def attach_review(self, agent: Agent, *, no_review: bool = False) -> ReviewRunner:
+        """Give ``agent`` its background review (see the module notes); returns the runner."""
+        runner = install_review(agent, no_review=no_review)
+        agent.runtime.before_turn.append(runner.cancel_for_live_turn)
+        _RUNNERS[agent] = runner
+        trigger = runner.trigger
+        if trigger is None:
+            return runner
+        if self.memory is not None:
+            self.memory.tool.on_success.append(lambda: trigger.note_write("memory"))
+
+        def skill_written(event: manage_tool.SkillWriteEvent) -> None:
+            if event.origin == "foreground" and event.session_id == agent.session_id:
+                trigger.note_write("skills")
+
+        manage_tool.SUCCESS_LISTENERS.append(skill_written)
+
+        def detach() -> None:
+            if skill_written in manage_tool.SUCCESS_LISTENERS:
+                manage_tool.SUCCESS_LISTENERS.remove(skill_written)
+
+        agent.on_close(detach, name="review counter listener")
+        return runner
+
+
+def review_runner(agent: Agent) -> ReviewRunner | None:
+    """The review runner ``attach_review`` gave ``agent`` (None: the session has none)."""
+    return _RUNNERS.get(agent)
 
 
 def wire_session(

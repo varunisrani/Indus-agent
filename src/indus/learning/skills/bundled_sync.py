@@ -15,6 +15,11 @@ A row for a skill we no longer ship is kept while a live or archived copy exists
 record that the copy came from us) and dropped once neither does. Generated caches are neither
 hashed nor copied. ``<home>/.no-bundled-skills`` stops every seeding path. Nothing here prompts:
 confirmations belong to the CLI.
+
+``seed_first_run`` is the first-run path for a profile nobody seeded (the default profile, which
+``indus profile create`` never made): when the home has no manifest yet it runs ``sync_bundled``
+once. A manifest, even an empty one, means the profile was seeded before and is left to
+``indus skills sync``.
 """
 
 from __future__ import annotations
@@ -50,6 +55,7 @@ __all__ = [
     "read_manifest",
     "remove_pristine",
     "reset",
+    "seed_first_run",
     "set_opt_out",
     "sync_bundled",
     "tree_hash",
@@ -413,6 +419,21 @@ def sync_bundled(
                     del rows[name]
                     report.cleaned.append(name)
         _write_manifest(home, rows)
+    return report
+
+
+def seed_first_run(home: Path, *, env: Mapping[str, str] | None = None) -> SyncReport | None:
+    """Seed ``home`` when it has never been seeded (no manifest, not opted out); None when there
+    was nothing to do. Never raises: a failure is logged and the next start tries again."""
+    try:
+        if is_opted_out(home) or manifest_path(home).exists():
+            return None
+        report = sync_bundled(home, env=env)
+    except Exception:
+        log.warning("the shipped skills were not seeded into %s", home, exc_info=True)
+        return None
+    for line in report.failed:
+        log.warning("shipped skill not seeded: %s", line)
     return report
 
 

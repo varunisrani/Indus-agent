@@ -98,7 +98,10 @@ def test_prefix_ambiguity_lists(scope: Scope) -> None:
     ctx = make_ctx(scope)
     result = dispatch("/re", ctx)
     assert result == SlashResult()
-    assert ctx.lines[0] == ("/re could be several commands: /reasoning, /reset, /resume, /retry.")
+    assert ctx.lines[0] == (
+        "/re could be several commands: "
+        "/reasoning, /refine, /reload-skills, /reset, /resume, /retry."
+    )
 
 
 def test_unknown_command_suggests(scope: Scope) -> None:

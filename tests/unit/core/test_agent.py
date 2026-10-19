@@ -441,3 +441,24 @@ def test_close_interrupts_a_running_turn(scope: Scope, fake_clock: FakeClock) ->
         return running.task.result().exit_reason
 
     assert asyncio.run(main()) is ExitReason.INTERRUPTED_BY_SYSTEM
+
+
+def test_before_turn_hooks_run_first_and_never_block(scope: Scope, fake_clock: FakeClock) -> None:
+    seen: list[str] = []
+
+    async def cancel_review() -> None:
+        seen.append("async hook")
+
+    def broken() -> None:
+        seen.append("broken hook")
+        raise RuntimeError("hook failed")
+
+    async def main() -> str:
+        agent = await open_agent(scope, server_for(fake_clock, text_turn("hi")))
+        agent.runtime.before_turn.extend([cancel_review, broken])
+        reply = await agent.chat("hello")
+        await agent.close()
+        return reply
+
+    assert asyncio.run(run_driven(main(), fake_clock)) == "hi"
+    assert seen == ["async hook", "broken hook"]

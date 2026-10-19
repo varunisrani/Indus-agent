@@ -98,6 +98,19 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
     ),
     ("logs", "indus.cli.commands.logs:logs_command", "Show and follow the log files."),
     ("bundles", "indus.cli.commands.bundles:bundles_group", "Group skills into one slash command."),
+    ("skills", "indus.cli.commands.skills:skills_group", "List, check and sync skills."),
+    (
+        "memory",
+        "indus.cli.commands.memory:memory_group",
+        "See, edit and approve what the agent remembers.",
+    ),
+    (
+        "curator",
+        "indus.cli.commands.curator:curator_group",
+        "Look after the skills the agent wrote for itself.",
+    ),
+    ("journey", "indus.cli.commands.journey:journey_group", "What the agent has learned."),
+    ("learning", "indus.cli.commands.journey:journey_group", "Same as `indus journey`."),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""

@@ -46,7 +46,7 @@ def test_bad_entries_are_refused() -> None:
 def test_every_entry_has_a_cli_handler_or_a_later_owner() -> None:
     from indus.cli.slash.dispatch import HANDLERS
 
-    landed = {"P06", "P08", "P11"}  # phases whose commands have classic CLI handlers
+    landed = {"P06", "P08", "P09", "P11"}  # phases whose commands have classic CLI handlers
     for cmd in REGISTRY:
         assert PHASE.match(cmd.owner), cmd.name
         if cmd.owner in landed:
@@ -95,6 +95,7 @@ def test_completion_lists_aliases_once() -> None:
         "/reasoning",
         "/refine",
         "/reload-mcp",
+        "/reload-skills",
         "/reload_mcp",
         "/reset",
         "/resume",
@@ -155,9 +156,10 @@ def test_command_word_and_shape() -> None:
 HELP_GROUPS = {
     "session": ["new", "clear", "history", "title", "resume", "sessions", "retry", "undo",
                 "save", "branch", "stop", "steer", "queue", "compress", "status", "context",
-                "rollback", "worktree"],
+                "refine", "journey", "rollback", "worktree"],
     "config": ["model", "reasoning", "yolo", "approvals", "fast", "config"],
-    "tools": ["tools", "checkpoints"],
+    "tools": ["tools", "skills", "reload-skills", "bundles", "memory", "learn", "curator",
+              "checkpoints"],
     "info": ["help", "usage", "whoami", "version"],
     "exit": ["quit"],
 }  # fmt: skip

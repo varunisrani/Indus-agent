@@ -29,6 +29,9 @@ conversation in a child session: the attached session moves to the child id, the
 working as an alias for every call, and the session lock moves with it.
 
 Generations are counted per attached session, in process, until P17's turn lease carries them.
+
+A ``maintenance`` timer (P09-18, ``service.maintenance``), when given, starts with the first
+attached session and stops at ``aclose``; its chores run off the event loop.
 """
 
 from __future__ import annotations
@@ -81,6 +84,7 @@ from indus.providers.auxiliary import AuxClient, auto_title, generate_title
 from indus.providers.route import RuntimeRoute
 from indus.providers.types import Usage
 from indus.service.broker import ServerRequestBroker
+from indus.service.maintenance import MaintenanceTimer
 from indus.state import sessions, titles
 from indus.state.session_lock import (
     LOCK_DIR_NAME,
@@ -201,6 +205,7 @@ class SessionService:
         owner: str = "service",
         agent_factory: AgentFactory | None = None,
         aux: AuxClient | None = None,
+        maintenance: MaintenanceTimer | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
@@ -220,6 +225,8 @@ class SessionService:
         self.aux = aux
         self._titling: set[str] = set()
         self._aliases: dict[str, str] = {}
+        self.maintenance = maintenance
+        self._maintenance_task: asyncio.Task[None] | None = None
 
     def _default_lock_dir(self) -> Path:
         if isinstance(self.store, StateStore):
@@ -268,6 +275,7 @@ class SessionService:
             session_id = new_session_id(self.scope.clock)
             options, selection = self._options_for(params)
             await self._attach(session_id, options=options, selection=selection)
+            self._start_maintenance()
             if params.title:
                 try:
                     await self._store_title(session_id, params.title, options)
@@ -287,6 +295,7 @@ class SessionService:
             attached = self._attached.get(session_id)
             if attached is None:
                 attached = await self._attach_existing(session_id)
+            self._start_maintenance()
             rows = await self.store.load(session_id)
             return SessionResumeResult(
                 session_id=session_id,
@@ -658,8 +667,26 @@ class SessionService:
     async def aclose(self) -> None:
         """Detach every session; the service accepts no more calls."""
         self._closed = True
+        await self._stop_maintenance()
         for session_id in list(self._attached):
             await self.close(session_id)
+
+    def _start_maintenance(self) -> None:
+        if self.maintenance is None or self._maintenance_task is not None or self._closed:
+            return
+        self._maintenance_task = asyncio.get_running_loop().create_task(
+            self.maintenance.run(), name="maintenance timer"
+        )
+
+    async def _stop_maintenance(self) -> None:
+        task, self._maintenance_task = self._maintenance_task, None
+        if self.maintenance is not None:
+            self.maintenance.stop()
+        if task is None:
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
 
     # -- helpers ----------------------------------------------------------------------------------
 
