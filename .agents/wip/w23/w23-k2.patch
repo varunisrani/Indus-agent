@@ -1,0 +1,3085 @@
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index d91e739..28e2553 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -30,6 +30,9 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/providers/test_http.py::test_cancel_closes_stream_within_200ms`
+   - `tests/contract/providers/test_transport_contract.py::test_cancellation_mid_stream_closes_the_response`
+   - `tests/unit/providers/test_streaming.py::test_cancellation_closes_stream_and_raises`
++  - `tests/unit/service/test_fences.py::test_interrupt_with_older_generation_is_stale_and_leaves_turn_running`
++  - `tests/unit/service/test_fences.py::test_stop_queued_claimed_meanwhile_interrupts_that_generation`
++  - `tests/unit/service/test_fences.py::test_latched_control_dropped_when_generation_released`
+   - `tests/unit/providers/test_streaming.py::test_cancellation_close_latency_under_200ms`
+   - `tests/trials/async_core/test_real_transports.py::test_interrupt_closes_the_http_stream_within_200ms`
+   - `tests/trials/async_core/test_sync_driver.py::test_sync_caller_interrupts_within_200ms`
+@@ -141,6 +144,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/safety/approvals/test_smart.py::test_judge_failure_or_deadline_asks_the_person`
+   - `tests/unit/gateway/core/test_prompts.py::test_a_timed_out_request_says_it_did_not_run_and_is_not_a_denial`
+   - `tests/unit/gateway/core/test_prompts.py::test_withdrawn_and_denied_are_reported_differently`
++  - `tests/unit/service/test_request_redelivery.py::test_all_viewers_unrenderable_settles_undeliverable_at_once`
+ - **R02.6** Isolation is about mounts, not backend names
+   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
+   - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
+@@ -575,7 +579,11 @@ Checked by `python -m tooling.checks traps`.
+ - **R05.2** Events arrive before the UI subscribes
+   - Review: not yet planned (P00-guards)
+ - **R05.3** Server requests must not stall the agent
+-  - Review: not yet planned (P00-guards)
++  - `tests/unit/service/test_request_redelivery.py::test_all_viewers_unrenderable_settles_undeliverable_at_once`
++  - `tests/unit/service/test_request_redelivery.py::test_kind_no_viewer_renders_is_refused_up_front`
++  - `tests/unit/service/test_request_redelivery.py::test_reattach_reoffers_open_approval_with_same_id`
++  - `tests/unit/service/test_request_redelivery.py::test_withdrawal_emits_settled_withdrawn`
++  - Review: TS client answers unrenderable kinds with -32601 at once (P17-20)
+ - **R05.4** Interrupt races
+   - `tests/unit/cli/repl/test_render.py::test_deltas_after_an_interrupt_are_ignored`
+   - `tests/unit/cli/repl/test_render.py::test_interrupt_mid_delta_golden`
+@@ -641,6 +649,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/gateway/core/test_admission.py::test_claims_are_synchronous_and_released_by_generation`
+   - `tests/unit/gateway/core/test_admission.py::test_a_displaced_turn_cannot_release_its_successors_claim`
+   - `tests/unit/gateway/core/test_admission.py::test_leaked_and_stale_claims_are_evicted_before_the_busy_check`
++  - `tests/unit/service/test_fences.py::test_displaced_turn_cannot_release_its_successor`
+ - **R06.3** Never sleep long flood penalties inline
+   - `tests/unit/gateway/core/test_send.py::test_long_flood_wait_is_handed_over_without_sleeping_or_notice`
+   - `tests/unit/gateway/core/test_send.py::test_no_inline_sleep_ever_exceeds_the_cap`
+diff --git a/docs/notes/P17/event-log.md b/docs/notes/P17/event-log.md
+new file mode 100644
+index 0000000..4568c21
+--- /dev/null
++++ b/docs/notes/P17/event-log.md
+@@ -0,0 +1,114 @@
++# Task: Event log and replay (P17-06) Phase: 17 Owner: wave-23 builder K2
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tui_gateway/event_replay.py` (all:
++stamping, ring, byte caps, eviction, truncation watermark, epoch), `tui_gateway/ws.py` (lines
++95–240 only: which event types are coalesced and the 33 ms window). Research 05 §3.13 (replay
++ring numbers) and §3.6 (attach hold). Closed before writing.
++Evidence: none.
++
++What it does (own words): the daemon gives every event of a session a sequence number that only
++grows (`seq`, starting at 1 per session) and stamps it with the daemon's replay epoch (a random
++token made once per daemon start). It keeps the newest events of each session in memory so a
++client that lost its socket can ask "what happened after seq c in epoch e?" and get exactly the
++missing events, in order. When it cannot answer truthfully — the epoch is another daemon's, or
++some events after the cursor were already dropped from memory — it says so (`replay_gap`) and the
++client reloads a snapshot (transcript, open requests, running state) instead of trusting a replay
++with holes.
++
++Memory is bounded: per session at most 512 events and 4 MiB of serialized payload; at most 64
++sessions; at most 64 MiB in the whole process. When the process total is over, events are dropped
++from the session that has been quiet the longest first; when there are too many sessions, the
++quietest session's buffer goes entirely. Dropping events moves the session's "evicted through"
++watermark, which is how a gap is detected. A session's counter and watermark outlive its buffer,
++so a session that comes back keeps counting up instead of restarting at 1 under a cursor a client
++still holds. An event bigger than the per-session cap is never kept; it moves the watermark.
++
++Streaming text (assistant and reasoning deltas) is coalesced before it is buffered: deltas of the
++same kind and turn that arrive within 33 ms of the first one held are joined into one event; any
++other event (or a different kind/turn) flushes the held delta first, so order is kept and the
++joined text equals the concatenation of the pieces. A timer (`flush_due` / `run_flusher`) flushes a
++held delta once its window is over.
++
++Inputs → outputs:
++- `EventLog(clock=…, epoch=None, limits=ReplayLimits(), coalesce_window=0.033)`:
++  - `append(session_id, event)` (protocol event model or mapping with a `type`) → list of
++    `LoggedEvent` made durable in the buffer by this call (zero when the delta is being held);
++  - `flush(session_id=None)`, `flush_due()`, `next_flush_at()`, `async run_flusher()`;
++  - `since(session_id, epoch, cursor)` → `Replay{events, last_seq}` or
++    `ReplayGap{reason: epoch_changed | evicted | ahead, last_seq}`;
++  - `last_seq(session_id)`, `stats()`, `add_listener(fn) -> remove` (each flushed event, in seq
++    order, outside the lock), `forget(session_id)` drops the buffer but keeps the counters.
++- `LoggedEvent{session_id, seq, size}` with `to_wire()` → the event dict with `seq` and
++  `replay_epoch` set by the log.
++
++Files: `src/indus/service/event_log.py`, `tests/unit/service/test_event_log.py`.
++
++Edge cases / failure modes:
++- cursor 0 on a fresh session → every kept event; cursor == last → empty replay.
++- cursor below the watermark (evicted) → gap; cursor above last seq (client from a broken
++  timeline) → gap `ahead`; epoch different or missing → gap `epoch_changed`.
++- the incoming event's own `seq` is ignored: the log owns numbering (the per-attachment
++  `EventSink` counter restarts on every attach).
++- payload frozen to JSON bytes when appended, so later changes to the caller's object cannot
++  change a buffered event or its byte count.
++- a listener that raises is logged and skipped.
++- appends from a worker thread are safe (one lock around counters and buffers; JSON encoding
++  outside it); `run_flusher` must run on the loop that owns the log's timer.
++
++Our design differences / decisions:
++- Names: `EventLog`, `ReplayLimits`, `Replay`, `ReplayGap`, `replay_gap` reason strings.
++- One log object per daemon (not module globals); the epoch can be passed in so the daemon shares
++  it with `gateway.ready` and `describe`.
++- Coalescing happens before numbering (one seq per joined delta), so replay and live delivery
++  carry the same joined events; the reference coalesces only on the socket writer.
++- Eviction under the process cap takes from the least recently active session (the reference
++  takes from the oldest-inserted one); spec wording "oldest sessions evicted first".
++- `since` returns a gap value instead of a truncated flag next to a partial list.
++
++Tests we will write:
++- seeded random interleavings (hypothesis is not installed; same approach as P15-14): appends of
++  deltas and other events across several sessions, a reader that alternates `since` and live
++  delivery → strictly increasing seqs with no gaps or duplicates, joined text preserved.
++- epoch change → gap; per-session count and byte caps evict oldest and produce a gap for an old
++  cursor; process byte cap evicts from the quietest session; 65th session drops the quietest
++  buffer but keeps its counter; oversized event not kept.
++- coalescing: same turn within the window joined; window over → new event; other event flushes
++  first; different turn / kind not joined; `flush_due` with a fake clock.
++
++## Decisions for the lead
++- `Replay`/`ReplayGap` are service values; P17-25 declares `session.replay_gap` and
++  `events.since` on the wire.
++- Counters for evicted sessions are kept for the life of the daemon (one int pair per session id
++  seen), as the reference does; a cap can be added if long-lived daemons see unbounded session ids.
++
++Compare checklist (filled after the rewrite; reopened `tui_gateway/event_replay.py`,
++`tui_gateway/ws.py` lines 95–240):
++- [x] Per-session monotonic seq starting at 1; the server owns it (incoming seq ignored)
++  (`test_event_log.py::test_seq_starts_at_one_per_session_and_ignores_incoming_seq`).
++- [x] Frozen payload detached from the caller's object (`test_buffer_is_frozen_against_later_mutation`).
++- [x] Ring bounds 512 events / 4 MiB per session, 64 sessions, 64 MiB per process
++  (`ReplayLimits` defaults; caps pinned by `test_event_cap_*`, `test_byte_cap_*`,
++  `test_process_byte_cap_*`, `test_session_cap_*`).
++- [x] Evicting a session keeps its counter and raises its watermark to the latest seq
++  (`test_session_cap_drops_quietest_buffer_but_keeps_its_counter`).
++- [x] Oversized event never kept and leaves a watermark (`test_oversized_event_is_not_kept`).
++- [x] Truncation = cursor below the watermark → gap; epoch per process
++  (`test_epoch_change_is_a_gap`, random tables).
++- [x] Streaming kinds coalesced 33 ms; a non-streaming event goes out behind held text, never
++  ahead of it (`test_other_event_flushes_held_text_first`).
++- Deliberate differences: we join the held pieces into one event before numbering (the reference
++  batches frames on the socket only); the process cap takes from the least recently active
++  session (the reference: oldest inserted); `since` with no epoch is a gap (the reference skips the
++  epoch check when the client sends none); a cursor past the newest seq is a gap (`ahead`) rather
++  than an empty replay; `forget` lets the host drop a closed session's buffer early.
++- Not taken: `thinking.delta` (no such event in our protocol); the debug `replay_stats` keys are
++  ours (`stats()`); module-level globals and a test reset hook (one `EventLog` object per daemon).
++
++## Status
++
++Done (2026-10-19). New files: `src/indus/service/event_log.py`,
++`tests/unit/service/test_event_log.py` (62 tests: 22 cases + 40 seeded random tables). Wiring for
++the lead: the daemon (P17-08/13) creates one `EventLog(clock=scope.clock, epoch=<instance replay
++epoch>)`, feeds every session event through `append(session_id, event)` (an `EventSink` listener),
++runs `run_flusher()` on its loop, serves `events.since` from `since(...)` and fans out to viewers
++via `add_listener` (P17-14). `gateway.ready.replay_epoch` = `EventLog.epoch`.
+diff --git a/docs/notes/P17/generation-fences.md b/docs/notes/P17/generation-fences.md
+new file mode 100644
+index 0000000..442229f
+--- /dev/null
++++ b/docs/notes/P17/generation-fences.md
+@@ -0,0 +1,141 @@
++# Task: Generation fences on controls (P17-05) Phase: 17 Owner: wave-23 builder K2
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `gateway/session_controls.py` (all:
++control routing, `interrupt` / `respond` / `respond_clarify` / `cancel` / `resolve_unknown`
++handlers, refusal data), `tui_gateway/methods_session_interrupt.py` (all: interrupt, steer and
++redirect handlers), `gateway/session_authority.py` (skim of `interrupt`, `steer_agent`,
++`adopt_agent`, `check_approval_generation`, `respond`, `cancel_or_claimed`: where the generation
++checks actually sit). Research 05 §3.7 (interrupt flow), 06 §3.9 (generation-keyed release), traps
++R01.4, R06.2, R09.11. Closed before writing.
++Evidence: none.
++
++What it does (own words): in the shared daemon several surfaces watch one session, and each
++turn of that session has a generation number. Every control a surface sends names the generation
++it means: interrupt, steer, an approval or clarify answer, and stop (which names an admission).
++If the named generation is not the one running now, the control is refused with
++`stale_generation` and the reply carries the generation that is running (or none), so the client
++can decide again. A control is never re-aimed at "whatever runs now": the turn running now may
++have been started by another surface, and stopping it because an old card was clicked would be
++wrong (R01.4). Turn bookkeeping is keyed by generation as well: only the generation that is
++running can release the session, so a displaced turn finishing late can never clear the state of
++the turn that replaced it (R06.2).
++
++Between a claim (the admission worker has picked the head and given it a generation) and the
++moment the turn's agent is ready, a control for that generation is accepted and latched; it is
++delivered when the turn adopts its controls, and dropped if that generation is released first.
++It never reaches a later generation.
++
++Inputs → outputs:
++- `GenerationFences` (one per daemon, all sessions):
++  - lifecycle (called by the admission worker / daemon host): `begin(session, generation)`,
++    `adopt(session, generation, controls) -> bool`, `release(session, generation) -> bool`,
++    `running(session) -> int | None`, `latest(session) -> int | None`;
++  - wiring: `bind_requests(session, requests, answer)` (the session's open-request book from
++    P17-07 and the broker's `answer`), `unbind(session)`;
++  - controls: `interrupt(session, generation, *, hard=False, by_system=False)`,
++    `steer(session, generation, text)` → `ControlApplied{status: delivered/latched/rejected}` or
++    `StaleGeneration{requested, current}`;
++    `respond(session, request_id, generation, answer)` → `Responded{accepted}` /
++    `RequestNotOpen` / `StaleGeneration`;
++    `async stop(session, admission_id)` → `StopResult{outcome}` (cancelled, interrupted,
++    already_settled, unknown, not_found) or `StaleGeneration`.
++- `TurnControls` protocol: what a running turn exposes (`interrupt(generation, *, hard,
++  by_system) -> bool`, `steer(text) -> bool`); the agent fits with a thin adapter.
++- `AdmissionPort` protocol (K1's P17-02 service): `receipt(admission_id)`, `cancel(admission_id)`
++  returning a receipt (sync or awaitable).
++
++Files: `src/indus/service/fences.py`, `tests/unit/service/test_fences.py`,
++`tests/unit/service/_stubs_k2.py` (stand-in for K1's admission service; removed at integration).
++
++Edge cases / failure modes:
++- interrupt with N−1 while N runs → stale, N untouched; interrupt when nothing runs → stale with
++  `current: None`; a generation from the future → stale.
++- `begin` with a generation not above the last one seen → `ValueError` (generations only grow).
++- `begin(N+1)` while N still runs (lease lost and re-claimed) → N is displaced; `release(N)` later
++  is a no-op and N+1 keeps running.
++- latched interrupt then `release` of that generation → dropped; latched steers and a latched
++  interrupt are delivered at `adopt`, steers first, then the stop (the stop wins anyway, and the
++  steer text is handled like any steer the turn never used).
++- `adopt` for a generation that is not running → refused (False), nothing delivered.
++- approval answered for a request that was withdrawn, timed out or answered elsewhere → no-op
++  `RequestNotOpen`, never an error and never another request's answer.
++- request open but answered with another generation, or for a turn that is no longer running →
++  stale.
++- stop of a queued admission → cancelled through the admission service; if the worker claimed it
++  between our read and the cancel, the receipt comes back `started` and we interrupt exactly that
++  generation (never the session's current one). Stop of a started admission whose generation has
++  already been released → `already_settled`. Stop of an `unknown` admission → `unknown` (only the
++  operator's `discard_unknown` resolves it).
++- controls run under one lock for the decision; the target's own methods run outside it and get
++  the generation again, so a turn that ended in between ignores the call.
++
++Our design differences / decisions:
++- Names: `GenerationFences`, `StaleGeneration`, `ControlApplied`, `stale_generation` code string.
++- The fence keeps the running generation in memory, fed by `begin`/`release` from whoever claims
++  turns (the admission worker). The durable copy is K1's ledger; after a daemon restart the fence
++  starts empty and every running row is `unknown` anyway (R03.21).
++- Results are values, not exceptions; the RPC layer (P17-12/13) maps `StaleGeneration` to the
++  protocol error added by P17-25 with `data.generation`.
++- Stop takes the session id as well as the admission id (every canonical verb carries the
++  session), because the admission receipt shape of P17-02 does not name the session.
++
++Tests we will write:
++- interrupt / steer stale cases; N unaffected; idle session; future generation.
++- displaced turn release does not clear its successor; non-growing `begin` refused.
++- latch before adopt delivered on adopt; dropped on release; never reaches N+1.
++- respond: open request with right generation accepted; withdrawn → no-op; wrong generation →
++  stale; second answer → no-op.
++- stop: queued → cancelled; queued-but-claimed race → interrupts that exact generation; started
++  → interrupted; released → already_settled; unknown; not found.
++
++## Decisions for the lead
++- Stale is a returned value with the running generation; P17-25 adds the protocol code
++  (`stale_generation`) and the RPC handlers turn the value into that error.
++- `stop` signature is `stop(session_id, admission_id)` (see above).
++- `steer` with no adopted controls is latched for that generation, not refused.
++
++Compare checklist (filled after the rewrite; reopened `gateway/session_controls.py`,
++`tui_gateway/methods_session_interrupt.py`, `gateway/session_authority.py` (interrupt, steer,
++adopt, respond, cancel paths)):
++- [x] Interrupt names a generation; a mismatch is refused with stale and never falls through
++  (test: `test_fences.py::test_interrupt_with_older_generation_is_stale_and_leaves_turn_running`).
++- [x] A stop accepted for a claimed turn before its agent exists is latched and fires on adopt,
++  never against a later generation (`test_latched_interrupt_delivered_on_adopt`,
++  `test_latched_control_dropped_when_generation_released`).
++- [x] Steers latched for the claimed generation reach the agent it adopts, in order
++  (`test_latched_steers_delivered_in_order_on_adopt`).
++- [x] Approval/clarify answers check the running generation before settling
++  (`test_respond_with_stale_generation_is_refused`); an answer for a withdrawn request is a no-op
++  (`test_approval_answered_for_withdrawn_request_is_a_no_op`).
++- [x] Cancel of a queued admission that the drain claimed meanwhile stops that exact claim
++  (`test_stop_queued_claimed_meanwhile_interrupts_that_generation`); a stop for a turn that has
++  already settled never reaches its successor
++  (`test_stop_of_a_finished_generation_never_hits_the_next_turn`).
++- [x] Release keyed by generation: a displaced turn cannot clear its successor (R06.2;
++  `test_displaced_turn_cannot_release_its_successor`).
++- [x] Gap found in compare: the reference keeps a stop that arrives before the claim is visible to
++  the controls; added the early-stop latch kept for that generation's `begin`
++  (`test_stop_before_the_claim_reaches_the_fence_is_kept_for_its_begin`).
++- Deliberate differences: the reference answers an interrupt whose generation equals the
++  session's last generation with success even when that turn already ended; we answer stale with
++  `current: None` (the phase row: "not the running one returns stale_generation"). The reference
++  checks the generation before looking the prompt up; we look the request up first, so a withdrawn
++  request is a quiet no-op even when its turn has also ended. A hard interrupt in the reference
++  also stops the session's background delegations; here that stays with the host's
++  `TurnControls` adapter (P17-08 wires it to `SessionService`'s hard path).
++- Not taken: hosted/compute-host task ids (`expected_hosted_task_id`), wake/voice resume after an
++  interrupt, compression-in-flight demotion of a steer to a queued prompt (P17-08 decides busy
++  behaviour), redirect (no generation is named for it in the phase row; it keeps P04's in-process
++  path), per-actor capability checks (`session:control`/`session:approve`; P17-13/14 attach
++  viewers and authorise them before calling the fence).
++
++## Status
++
++Done (2026-10-19). New files: `src/indus/service/fences.py`, `tests/unit/service/test_fences.py`;
++stand-in `tests/unit/service/_stubs_k2.py` (removed at integration). Wiring for the lead: the
++daemon host (P17-08) / admission worker (K1's P17-02) call `begin(session, generation)` at claim,
++`adopt(session, generation, controls)` once the turn's agent exists and `release(session,
++generation)` at settle; `bind_requests(session, book, broker.answer)` per attached session; the RPC
++handlers (P17-12/13) route `session.interrupt`, `session.steer`, `approval.respond`,
++`clarify.respond` and the stop verb here and map `StaleGeneration` to P17-25's `stale_generation`
++error with `to_data()`. K1's admission service replaces `FakeAdmissions` as `admissions=`.
+diff --git a/docs/notes/P17/request-redelivery.md b/docs/notes/P17/request-redelivery.md
+new file mode 100644
+index 0000000..5e34c25
+--- /dev/null
++++ b/docs/notes/P17/request-redelivery.md
+@@ -0,0 +1,132 @@
++# Task: Durable server-request re-delivery (P17-07) Phase: 17 Owner: wave-23 builder K2
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tui_gateway/server_requests.py`
++(all: ids, open table, re-offer through `open_requests`, not-shown declines, cancel and
++settlement order), `gateway/session_server_requests.py` (all: who may settle, `resolved` teardown
++for the other viewers). Research 05 §3.7 (server requests), traps R05.3, R02.5. Closed before
++writing.
++Evidence: none.
++
++What it does (own words): when the agent asks a person something (approval, clarify, sudo,
++secret) in a daemon-hosted session, the question goes to every attached viewer that can show that
++kind. It keeps a stable id `srq-<12 hex>` and stays open in the session's request book until it is
++settled. A viewer that reconnects, or that asks for missed events, is offered every still-open
++request again with `replayed: true` and the same id, so its card comes back without ringing the
++bell again and an answer from any copy of the card names the same request. The first answer
++settles it; any later answer (another viewer, an outdated card) has no effect. Every settlement is
++announced once with `request.settled {outcome: answered | withdrawn | undeliverable}` so every
++other card closes.
++
++A viewer that cannot render the kind it was sent answers `-32601` at once; the request is then
++kept for the other viewers. A viewer that advertised the decline capability may answer `4404`
++("not shown here"), which also leaves the request to the others. When no attached viewer is left
++that could answer (all refused or declined, or none can render the kind at all), the request is
++settled `undeliverable` immediately — not by waiting for a timeout — and the agent gets the
++"cannot be answered here" outcome, which is distinct from a timeout or a denial (R05.3, R02.5).
++
++Inputs → outputs:
++- `RequestBook(session_id, *, emit, generation=lambda: None)` per session:
++  - viewers: `attach(viewer) -> int` (re-offers open requests to it), `detach(viewer_id)`,
++    `can_render(kind)`, `answerable_kinds()`;
++  - lifecycle: `offer(request)` (sends to every capable viewer), `refuse(viewer_id, request_id,
++    code)` for a viewer's `-32601` / `4404`, `settle(request_id, outcome, reason=None) -> bool`
++    (first settlement wins), `bind_undeliverable(fn)` (the broker's hook);
++  - reading: `lookup(request_id) -> OpenRequest | None`, `open_requests()`,
++    `reoffer(viewer_id) -> int` (for `events.since`).
++- `RequestViewer{viewer_id, kinds, can_decline, send}`; an `Offer{request, generation, replayed}`
++  is what `send` gets (`to_wire()` gives the frame body).
++- Broker (P04-21) changes: default ids are `srq-<12 hex>`; an optional `book` makes the broker
++  ask the book whether a kind can be answered, deliver through `book.offer`, report every answer
++  and withdrawal to `book.settle`, and fail the asker with `RequestUnsupported` when the book
++  settles a request `undeliverable`.
++
++Files: `src/indus/service/request_redelivery.py`, `src/indus/service/broker.py` (shared, P04
++file), `tests/unit/service/test_request_redelivery.py`.
++
++Edge cases / failure modes:
++- no viewer attached, or none renders the kind → the broker refuses at once (nothing is opened).
++- a viewer detaches while a request is open → the request stays open for its return (until the
++  asker's own deadline); detaching is not refusing.
++- a `4404` from a viewer that did not advertise the decline capability is ignored (logged); any
++  other error code a viewer answers with counts as that viewer refusing.
++- refusal or decline for a request that is no longer open → ignored.
++- a viewer that already refused or declined a request is not re-offered it on reattach.
++- a viewer's `send` raising is logged; the request stays open for the others.
++- second answer → the broker's `SERVER_REQUEST_NOT_FOUND` (P04 behaviour) and no second
++  `request.settled`.
++- withdrawal (interrupt, timeout, turn end, session close) → `request.settled{withdrawn, reason}`
++  in addition to the P04 `server_request.cancelled` event.
++
++Our design differences / decisions:
++- Names: `RequestBook`, `RequestViewer`, `Offer`, `SettleOutcome`; constants `REQUEST_ID_PREFIX`,
++  `NOT_SHOWN_CODE = 4404`, `UNRENDERABLE_CODE = -32601` (the protocol's method-not-found code).
++- The book is in memory per session; "durable" means it outlives viewer connections, not the
++  daemon: after a daemon restart the turn waiting on it is `unknown` (R03.21) and its requests die
++  with it.
++- The reference answers an all-declined window request with a canned "not shown" result; we
++  settle it `undeliverable` and the asker gets `RequestUnsupported` with the reason in the error
++  detail, one path for both `-32601` and `4404`.
++- Batch clarify per-question locks (`clarify.lock`) are out of scope here (no phase row); our
++  clarify request is answered whole.
++- The offer carries the generation of the turn that asked (from the fences, P17-05) so the
++  client can answer `approval.respond(request_id, generation, …)`.
++
++Tests we will write:
++- reattach re-offers an open approval with the same id and `replayed: true`; `reoffer` for
++  `events.since`.
++- two answers → first wins, one `request.settled{answered}`.
++- every viewer answers `-32601` → settled `undeliverable` at once (< 50 ms, real time), asker
++  gets `RequestUnsupported`.
++- declined by one viewer (4404, advertised), answered by another; 4404 without the capability
++  ignored.
++- withdrawal emits `request.settled{withdrawn}`; detach keeps the request open; zero viewers →
++  refused up front; ids match `srq-[0-9a-f]{12}`.
++
++## Decisions for the lead
++- `request.settled` is emitted as a plain mapping event (`type: request.settled`) through the
++  session's event path; P17-25 declares its model. The P04 `server_request.cancelled` event is
++  kept for the in-process surfaces; the lead may retire it once every surface reads
++  `request.settled`.
++
++Compare checklist (filled after the rewrite; reopened `tui_gateway/server_requests.py`,
++`gateway/session_server_requests.py`):
++- [x] Ids `srq-` + 12 hex (`test_request_redelivery.py::test_request_ids_are_srq_with_twelve_hex`).
++- [x] A client that cannot answer a kind is never sent it; the ask fails at once
++  (`test_kind_no_viewer_renders_is_refused_up_front`).
++- [x] Unanswered requests re-delivered on reattach / catch-up with the same id
++  (`test_reattach_reoffers_open_approval_with_same_id`,
++  `test_events_since_reoffers_still_open_requests`).
++- [x] First settlement wins; a late response is dropped (`test_two_answers_first_wins_and_one_settled_event`,
++  `test_book_settle_is_first_wins`).
++- [x] Settled by one viewer → every other viewer's card closes (`request.settled{answered}`; the
++  reference's `request.cancel{reason: resolved}`).
++- [x] Withdrawal (interrupt, timeout, close) announced once (`test_withdrawal_emits_settled_withdrawn`,
++  `test_timeout_withdraws_and_settles_once`).
++- [x] Declines settle only when every answering viewer declined; a decline from an unknown
++  viewer is recorded nowhere (`test_declined_by_one_viewer_answered_by_another`,
++  `test_all_declined_is_undeliverable_not_shown`, `test_decline_without_capability_is_ignored`).
++- [x] Gap found in compare: the reference settles on any error response; we ignored codes other
++  than -32601/4404, so a viewer whose handler crashed could leave the agent waiting. Now any
++  other error code counts as that viewer refusing (`test_other_viewer_error_counts_as_refusal`).
++- Deliberate differences: `-32601` no longer ends the request at once — it is left to the other
++  viewers and becomes undeliverable only when none is left (phase row, R05.3); all-declined ends as
++  `undeliverable` (`RequestUnsupported` for the asker) instead of a canned "not shown" tool result;
++  the settled event is `request.settled{outcome}` instead of `request.cancel{reason}`; the
++  in-memory book is per session (the reference keeps one process-wide table and checks the
++  owning stream on each answer).
++- Not taken: batch clarify per-question locks (`clarify.lock`, no phase row); the
++  `client.capabilities` advertisement verb (P17-13/14 build `RequestViewer` from what the viewer
++  declared); per-actor `session:respond` authorisation (the WS layer, P17-13).
++
++## Status
++
++Done (2026-10-19). New files: `src/indus/service/request_redelivery.py`,
++`tests/unit/service/test_request_redelivery.py`. Shared: `src/indus/service/broker.py` (P04-21:
++default ids `srq-<12 hex>`, optional `book=` parameter, `_undeliverable` hook) and one assertion in
++`tests/unit/service/test_broker.py` (the old `sr_` id prefix). Wiring for the lead: the daemon host
++(P17-08) makes one `RequestBook(session_id, emit=lambda e: event_log.append(session_id, e),
++generation=lambda: fences.running(session_id))` per hosted session, passes it to the session's
++`ServerRequestBroker(book=…)`, attaches each viewer as `RequestViewer.of(viewer_id, kinds, send,
++can_decline=…)`, calls `book.refuse(viewer_id, request_id, code)` when a viewer answers a request
++frame with an error, and `book.reoffer(viewer_id)` from `events.since` (P17-14). In-process hosts
++pass no book and keep P04 behaviour.
+diff --git a/src/indus/service/broker.py b/src/indus/service/broker.py
+index 503023d..31fb23d 100644
+--- a/src/indus/service/broker.py
++++ b/src/indus/service/broker.py
+@@ -19,6 +19,12 @@ The broker also measures how long the agent sat waiting on a person: ``human_wai
+ the time during which at least one request was open (overlaps once). The tool executor subtracts
+ it from batch deadlines (P04-14).
+ 
++Daemon-hosted sessions (P17-07) hand the broker a ``RequestBook``: then the kinds the attached
++viewers can render decide what may be asked, the book (not ``deliver``) offers each request to the
++viewers and re-offers it on reattach, every answer and withdrawal is reported to the book (which
++announces ``request.settled``), and a request the book settles as undeliverable fails its asker
++with ``RequestUnsupported`` at once. Request ids are ``srq-<12 hex>``.
++
+ Every method runs on the session's event loop; a host on another thread marshals calls onto it.
+ """
+ 
+@@ -26,7 +32,6 @@ from __future__ import annotations
+ 
+ import asyncio
+ import logging
+-import secrets
+ from collections.abc import Callable, Iterable, Mapping
+ from dataclasses import dataclass
+ from typing import Any, cast
+@@ -34,6 +39,7 @@ from typing import Any, cast
+ from pydantic import TypeAdapter, ValidationError
+ 
+ from indus.foundation.clock import Clock
++from indus.protocol.envelope import ErrorObject
+ from indus.protocol.errors import (
+     ANSWER_KIND_MISMATCH,
+     INVALID_PARAMS,
+@@ -60,6 +66,7 @@ from indus.protocol.server_requests import (
+     ServerRequestAnswer,
+     SudoRequest,
+ )
++from indus.service.request_redelivery import RequestBook, SettleOutcome, new_request_id
+ 
+ __all__ = [
+     "AnswerModel",
+@@ -80,10 +87,6 @@ _RESERVED_KEYS = frozenset({"kind", "request_id", "session_id", "turn_id", "dead
+ _ANSWERS: TypeAdapter[AnswerModel] = TypeAdapter(ServerRequestAnswer)
+ 
+ 
+-def _new_request_id() -> str:
+-    return "sr_" + secrets.token_hex(8)
+-
+-
+ @dataclass(slots=True)
+ class _Open:
+     request: RequestModel
+@@ -102,7 +105,8 @@ class ServerRequestBroker:
+         next_seq: Callable[[], int],
+         clock: Clock,
+         answerable_kinds: Iterable[str] = (),
+-        new_id: Callable[[], str] = _new_request_id,
++        new_id: Callable[[], str] = new_request_id,
++        book: RequestBook | None = None,
+     ) -> None:
+         self.session_id = session_id
+         self._deliver = deliver
+@@ -116,11 +120,17 @@ class ServerRequestBroker:
+         self._closed = False
+         self._wait_total = 0.0
+         self._wait_since: float | None = None
++        self._book = book
++        if book is not None:
++            book.bind_undeliverable(self._undeliverable)
+ 
+     # -- configuration -------------------------------------------------------------------------
+ 
+     @property
+     def answerable_kinds(self) -> frozenset[str]:
++        """Kinds that may be asked now: the attached viewers' kinds when a book is used."""
++        if self._book is not None:
++            return self._book.answerable_kinds()
+         return self._answerable
+ 
+     def set_answerable_kinds(self, kinds: Iterable[str]) -> None:
+@@ -147,7 +157,7 @@ class ServerRequestBroker:
+         request = self._build(kind, payload, timeout=timeout, turn_id=turn_id)
+         if self._closed:
+             raise RequestWithdrawn(request.request_id, CancelReason.SESSION_CLOSED)
+-        if kind not in self._answerable:
++        if kind not in self.answerable_kinds:
+             raise RequestUnsupported(
+                 kind,
+                 make_error(
+@@ -158,7 +168,10 @@ class ServerRequestBroker:
+         future: asyncio.Future[AnswerModel] = asyncio.get_running_loop().create_future()
+         self._register(_Open(request, future))
+         try:
+-            self._deliver(request)
++            if self._book is not None:
++                self._book.offer(request)
++            else:
++                self._deliver(request)
+         except Exception:
+             # The request stays open: a client that reconnects gets it with the session.
+             log.warning("could not deliver server request %s", request.request_id, exc_info=True)
+@@ -221,6 +234,8 @@ class ServerRequestBroker:
+         parsed = _check_answer(entry.request, answer)
+         del self._open[request_id]
+         self._after_close()
++        if self._book is not None:
++            self._book.settle(request_id, SettleOutcome.ANSWERED)
+         if entry.future.done():
+             return ServerRequestAnswerResult(accepted=False)
+         entry.future.set_result(parsed)
+@@ -242,6 +257,8 @@ class ServerRequestBroker:
+         if entry is None:
+             return False
+         self._after_close()
++        if self._book is not None:
++            self._book.settle(request_id, SettleOutcome.WITHDRAWN, reason.value)
+         try:
+             event = ServerRequestCancelled(
+                 session_id=self.session_id,
+@@ -256,6 +273,15 @@ class ServerRequestBroker:
+             entry.future.set_exception(RequestWithdrawn(request_id, reason))
+         return True
+ 
++    def _undeliverable(self, request_id: str, error: ErrorObject) -> None:
++        """The book found no viewer able to answer: fail the asker now (no cancelled event)."""
++        entry = self._open.pop(request_id, None)
++        if entry is None:
++            return
++        self._after_close()
++        if not entry.future.done():
++            entry.future.set_exception(RequestUnsupported(entry.request.kind, error))
++
+     # -- state ---------------------------------------------------------------------------------
+ 
+     @property
+diff --git a/src/indus/service/event_log.py b/src/indus/service/event_log.py
+new file mode 100644
+index 0000000..08d0eab
+--- /dev/null
++++ b/src/indus/service/event_log.py
+@@ -0,0 +1,430 @@
++"""The daemon's event log: per-session sequence numbers, a replay epoch and bounded replay (P17-06).
++
++Every event the daemon sends for a session passes through ``EventLog.append``. The log numbers it
++(``seq``: 1, 2, 3 … per session, never reused while the daemon lives) and stamps the daemon's
++``replay_epoch``, a random token made once per daemon start. The newest events of each session are
++kept as frozen JSON so a client that lost its socket can ask ``since(session, epoch, cursor)`` and
++receive exactly the events after ``cursor``, in order. When that cannot be answered truthfully the
++answer is a ``ReplayGap`` and the client reloads a snapshot instead:
++
++- ``epoch_changed``: the client's epoch belongs to another daemon run (its counters restarted);
++- ``evicted``: some event after the cursor was dropped from memory (or was too big to keep);
++- ``ahead``: the cursor is past anything this daemon numbered.
++
++Memory bounds (``ReplayLimits``): per session at most 512 events and 4 MiB of payload, at most 64
++sessions, at most 64 MiB in the process. The process cap takes events from the session that has
++been quiet longest; a 65th session drops the quietest session's whole buffer. A session's counter
++and "evicted through" watermark outlive its buffer, so a returning session keeps counting up and a
++client holding an old cursor sees a gap, never a silent hole.
++
++Streaming text (``message.delta``, ``reasoning.delta``) is joined before numbering: pieces of the
++same kind and turn that arrive within ``coalesce_window`` (33 ms) of the first held piece become
++one event whose text is their concatenation. Any other event for the session flushes the held
++piece first, so order is kept. ``flush_due`` (driven by ``run_flusher`` in the daemon) flushes a
++held piece once its window is over.
++
++Listeners added with ``add_listener`` receive each numbered event (``LoggedEvent``) after it is
++kept; deliveries follow seq order when appends come from one thread (the daemon loop). A listener
++that raises is logged and skipped. Listeners must not append to the log.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import logging
++import secrets
++import threading
++from collections import OrderedDict, deque
++from collections.abc import Callable, Mapping
++from dataclasses import dataclass, field
++from typing import Any, Literal
++
++from indus.foundation.clock import Clock
++from indus.protocol.events import EventBase
++
++__all__ = [
++    "COALESCE_WINDOW_S",
++    "STREAMING_TYPES",
++    "EventLog",
++    "LoggedEvent",
++    "Replay",
++    "ReplayGap",
++    "ReplayLimits",
++    "new_replay_epoch",
++]
++
++log = logging.getLogger(__name__)
++
++COALESCE_WINDOW_S = 0.033
++"""How long a streamed text piece may wait for the next one before it is numbered."""
++
++STREAMING_TYPES = frozenset({"message.delta", "reasoning.delta"})
++"""Event types whose consecutive pieces are joined."""
++
++_MIB = 1024 * 1024
++
++type GapReason = Literal["epoch_changed", "evicted", "ahead"]
++type LogListener = Callable[[LoggedEvent], object]
++
++
++def new_replay_epoch() -> str:
++    """A fresh opaque replay epoch (one per daemon start)."""
++    return secrets.token_hex(16)
++
++
++@dataclass(frozen=True, slots=True)
++class ReplayLimits:
++    """How much replay the daemon keeps in memory."""
++
++    events_per_session: int = 512
++    bytes_per_session: int = 4 * _MIB
++    sessions: int = 64
++    bytes_process: int = 64 * _MIB
++
++    def __post_init__(self) -> None:
++        for name in ("events_per_session", "bytes_per_session", "sessions", "bytes_process"):
++            if getattr(self, name) < 1:
++                raise ValueError(f"{name} must be at least 1")
++
++
++@dataclass(frozen=True, slots=True)
++class LoggedEvent:
++    """One numbered event as the log keeps it (payload frozen as JSON bytes)."""
++
++    session_id: str
++    seq: int
++    replay_epoch: str
++    payload: bytes = field(repr=False)
++
++    @property
++    def size(self) -> int:
++        """Bytes this event counts against the caps."""
++        return len(self.payload)
++
++    @property
++    def type(self) -> str:
++        return str(self.to_wire().get("type", ""))
++
++    def to_wire(self) -> dict[str, Any]:
++        """The event as a client receives it: its fields plus ``seq`` and ``replay_epoch``."""
++        event = _thaw(self.payload)
++        event["seq"] = self.seq
++        event["replay_epoch"] = self.replay_epoch
++        return event
++
++
++@dataclass(frozen=True, slots=True)
++class Replay:
++    """The events after a cursor, oldest first."""
++
++    session_id: str
++    replay_epoch: str
++    events: tuple[dict[str, Any], ...]
++    last_seq: int
++    """The newest seq the session has (the cursor to hold after applying ``events``)."""
++
++
++@dataclass(frozen=True, slots=True)
++class ReplayGap:
++    """The log cannot replay from the cursor; the client reloads a snapshot."""
++
++    session_id: str
++    replay_epoch: str
++    last_seq: int
++    reason: GapReason
++
++    def to_wire(self) -> dict[str, Any]:
++        return {
++            "type": "session.replay_gap",
++            "session_id": self.session_id,
++            "replay_epoch": self.replay_epoch,
++            "last_seq": self.last_seq,
++            "reason": self.reason,
++        }
++
++
++@dataclass(slots=True)
++class _Held:
++    """A streamed text piece waiting for its neighbours."""
++
++    type: str
++    turn_id: object
++    base: dict[str, Any]
++    parts: list[str]
++    started: float
++
++
++@dataclass(slots=True)
++class _Ring:
++    events: deque[LoggedEvent] = field(default_factory=deque[LoggedEvent])
++    bytes: int = 0
++
++
++def _freeze(event: Mapping[str, Any]) -> bytes:
++    return json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode(
++        "utf-8", errors="surrogatepass"
++    )
++
++
++def _thaw(payload: bytes) -> dict[str, Any]:
++    value = json.loads(payload.decode("utf-8", errors="surrogatepass"))
++    assert isinstance(value, dict)
++    return dict(value)  # pyright: ignore[reportUnknownArgumentType]
++
++
++def _as_mapping(session_id: str, event: EventBase | Mapping[str, Any]) -> dict[str, Any]:
++    data = event.to_wire() if isinstance(event, EventBase) else dict(event)
++    if not isinstance(data.get("type"), str) or not data["type"]:
++        raise ValueError("an event needs a non-empty string 'type'")
++    data.pop("seq", None)  # the log numbers events itself
++    data.pop("replay_epoch", None)
++    data.setdefault("session_id", session_id)
++    return data
++
++
++class EventLog:
++    """Numbering, coalescing and bounded replay for every session of one daemon."""
++
++    def __init__(
++        self,
++        *,
++        clock: Clock,
++        epoch: str | None = None,
++        limits: ReplayLimits | None = None,
++        coalesce_window: float = COALESCE_WINDOW_S,
++    ) -> None:
++        if coalesce_window < 0:
++            raise ValueError("coalesce_window must be >= 0")
++        self._clock = clock
++        self.epoch = epoch or new_replay_epoch()
++        self.limits = limits or ReplayLimits()
++        self.coalesce_window = coalesce_window
++        self._lock = threading.Lock()
++        self._rings: OrderedDict[str, _Ring] = OrderedDict()  # least recently active first
++        self._last: dict[str, int] = {}
++        self._evicted: dict[str, int] = {}
++        self._held: dict[str, _Held] = {}
++        self._total = 0
++        self._listeners: list[LogListener] = []
++        self._wake: asyncio.Event | None = None
++        self._wake_loop: asyncio.AbstractEventLoop | None = None
++
++    # -- listeners ----------------------------------------------------------------------------
++
++    def add_listener(self, listener: LogListener) -> Callable[[], None]:
++        """Hear every numbered event; the returned callable removes the listener."""
++        self._listeners.append(listener)
++
++        def remove() -> None:
++            if listener in self._listeners:
++                self._listeners.remove(listener)
++
++        return remove
++
++    def _tell(self, entries: list[LoggedEvent]) -> None:
++        for entry in entries:
++            for listener in list(self._listeners):
++                try:
++                    listener(entry)
++                except Exception:
++                    log.warning(
++                        "an event-log listener failed on #%d of session %s",
++                        entry.seq,
++                        entry.session_id,
++                        exc_info=True,
++                    )
++
++    # -- appending ----------------------------------------------------------------------------
++
++    def append(self, session_id: str, event: EventBase | Mapping[str, Any]) -> list[LoggedEvent]:
++        """Number and keep ``event`` (a held text piece may wait; see the module notes).
++
++        Returns the events numbered by this call, oldest first: none when the piece is held, the
++        flushed held piece before this event when one was waiting.
++        """
++        if not session_id:
++            raise ValueError("session_id must not be empty")
++        data = _as_mapping(session_id, event)
++        kind = data["type"]
++        streaming = kind in STREAMING_TYPES and isinstance(data.get("text"), str)
++        payload = None if streaming else _freeze(data)  # encoded outside the lock
++        armed = False
++        with self._lock:
++            now = self._clock.monotonic()
++            done: list[LoggedEvent] = []
++            held = self._held.get(session_id)
++            if streaming:
++                text = str(data.pop("text"))
++                if (
++                    held is not None
++                    and held.type == kind
++                    and held.turn_id == data.get("turn_id")
++                    and now - held.started < self.coalesce_window
++                ):
++                    held.parts.append(text)
++                else:
++                    if held is not None:
++                        done.append(self._flush_held(session_id))
++                    self._held[session_id] = _Held(kind, data.get("turn_id"), data, [text], now)
++                    armed = True
++            else:
++                if held is not None:
++                    done.append(self._flush_held(session_id))
++                assert payload is not None
++                done.append(self._keep(session_id, payload))
++        if armed:
++            self._poke()
++        self._tell(done)
++        return done
++
++    def _flush_held(self, session_id: str) -> LoggedEvent:
++        held = self._held.pop(session_id)
++        data = dict(held.base)
++        data["text"] = "".join(held.parts)
++        return self._keep(session_id, _freeze(data))
++
++    def _keep(self, session_id: str, payload: bytes) -> LoggedEvent:
++        """Number ``payload`` and store it within the caps (lock held)."""
++        seq = self._last.get(session_id, 0) + 1
++        self._last[session_id] = seq
++        entry = LoggedEvent(session_id, seq, self.epoch, payload)
++        ring = self._ring(session_id)
++        limits = self.limits
++        if entry.size > limits.bytes_per_session or entry.size > limits.bytes_process:
++            self._evicted[session_id] = seq  # never kept: a cursor before it has a gap
++            return entry
++        ring.events.append(entry)
++        ring.bytes += entry.size
++        self._total += entry.size
++        while len(ring.events) > limits.events_per_session or ring.bytes > limits.bytes_per_session:
++            self._drop_oldest(session_id, ring)
++        while self._total > limits.bytes_process:
++            victim = next((sid for sid, r in self._rings.items() if r.events), None)
++            if victim is None:  # pragma: no cover - the total counts only kept events
++                break
++            self._drop_oldest(victim, self._rings[victim])
++        return entry
++
++    def _ring(self, session_id: str) -> _Ring:
++        ring = self._rings.get(session_id)
++        if ring is not None:
++            self._rings.move_to_end(session_id)
++            return ring
++        ring = self._rings[session_id] = _Ring()
++        while len(self._rings) > self.limits.sessions:
++            quiet, dropped = self._rings.popitem(last=False)
++            self._total -= dropped.bytes
++            self._evicted[quiet] = max(self._evicted.get(quiet, 0), self._last.get(quiet, 0))
++        return ring
++
++    def _drop_oldest(self, session_id: str, ring: _Ring) -> None:
++        entry = ring.events.popleft()
++        ring.bytes -= entry.size
++        self._total -= entry.size
++        self._evicted[session_id] = max(self._evicted.get(session_id, 0), entry.seq)
++
++    # -- flushing held text -------------------------------------------------------------------
++
++    def flush(self, session_id: str | None = None) -> list[LoggedEvent]:
++        """Number held text now (one session, or every session for ``None``)."""
++        with self._lock:
++            ids = [session_id] if session_id is not None else list(self._held)
++            done = [self._flush_held(sid) for sid in ids if sid in self._held]
++        self._tell(done)
++        return done
++
++    def flush_due(self) -> list[LoggedEvent]:
++        """Number every held piece whose coalescing window is over."""
++        with self._lock:
++            now = self._clock.monotonic()
++            due = [sid for sid, h in self._held.items() if now - h.started >= self.coalesce_window]
++            done = [self._flush_held(sid) for sid in due]
++        self._tell(done)
++        return done
++
++    def next_flush_at(self) -> float | None:
++        """The monotonic time the earliest held piece is due, or None when nothing is held."""
++        with self._lock:
++            if not self._held:
++                return None
++            return min(h.started for h in self._held.values()) + self.coalesce_window
++
++    async def run_flusher(self) -> None:
++        """Flush held text when its window ends; runs until cancelled (on the daemon loop)."""
++        self._wake = asyncio.Event()
++        self._wake_loop = asyncio.get_running_loop()
++        try:
++            while True:
++                due = self.next_flush_at()
++                if due is None:
++                    self._wake.clear()
++                    if self.next_flush_at() is None:
++                        await self._wake.wait()
++                    continue
++                delay = due - self._clock.monotonic()
++                if delay > 0:
++                    await self._clock.sleep(delay)
++                self.flush_due()
++        finally:
++            self._wake = None
++            self._wake_loop = None
++
++    def _poke(self) -> None:
++        wake, loop = self._wake, self._wake_loop
++        if wake is None or loop is None:
++            return
++        try:
++            running = asyncio.get_running_loop()
++        except RuntimeError:
++            running = None
++        if running is loop:
++            wake.set()
++        else:
++            loop.call_soon_threadsafe(wake.set)
++
++    # -- replay -------------------------------------------------------------------------------
++
++    def since(self, session_id: str, epoch: str | None, cursor: int) -> Replay | ReplayGap:
++        """The kept events of ``session_id`` after ``cursor`` (the last seq the client saw)."""
++        if cursor < 0:
++            raise ValueError("cursor must be >= 0")
++        with self._lock:
++            last = self._last.get(session_id, 0)
++            if epoch != self.epoch:
++                return ReplayGap(session_id, self.epoch, last, "epoch_changed")
++            if cursor > last:
++                return ReplayGap(session_id, self.epoch, last, "ahead")
++            if cursor < self._evicted.get(session_id, 0):
++                return ReplayGap(session_id, self.epoch, last, "evicted")
++            ring = self._rings.get(session_id)
++            kept = [e for e in ring.events if e.seq > cursor] if ring is not None else []
++        return Replay(session_id, self.epoch, tuple(e.to_wire() for e in kept), last)
++
++    def last_seq(self, session_id: str) -> int:
++        """The newest seq numbered for ``session_id`` (0 before the first)."""
++        with self._lock:
++            return self._last.get(session_id, 0)
++
++    def forget(self, session_id: str) -> None:
++        """Drop a session's buffer (held text is numbered first); its counter stays."""
++        done: list[LoggedEvent] = []
++        with self._lock:
++            if session_id in self._held:
++                done.append(self._flush_held(session_id))
++            ring = self._rings.pop(session_id, None)
++            if ring is not None:
++                self._total -= ring.bytes
++            if session_id in self._last:
++                self._evicted[session_id] = self._last[session_id]
++        self._tell(done)
++
++    def stats(self) -> dict[str, int]:
++        """Occupancy for diagnostics."""
++        with self._lock:
++            return {
++                "sessions": len(self._rings),
++                "events": sum(len(r.events) for r in self._rings.values()),
++                "bytes": self._total,
++                "held": len(self._held),
++            }
+diff --git a/src/indus/service/fences.py b/src/indus/service/fences.py
+new file mode 100644
+index 0000000..d779287
+--- /dev/null
++++ b/src/indus/service/fences.py
+@@ -0,0 +1,410 @@
++"""Generation fences: every control names the turn it means (P17-05).
++
++Each turn of a session runs under a generation number that only grows. In the shared daemon a
++session has several viewers, so a control must say which turn it targets: ``interrupt`` and
++``steer`` name a generation, an approval or clarify answer names its request and generation,
++``stop`` names an admission. When the named generation is not the one running, the control is
++refused with ``StaleGeneration`` carrying the generation that does run (or None). A control is never
++re-aimed at "the latest turn", which may belong to another surface (R01.4).
++
++Turn bookkeeping is keyed by generation too (R06.2): ``begin`` records the claimed generation,
++``adopt`` attaches the running turn's controls, ``release`` clears the session only for the
++generation that is running, so a displaced turn finishing late cannot clear its successor.
++
++Between ``begin`` and ``adopt`` (the turn is claimed but its agent is not ready) an interrupt or a
++steer for that generation is latched and delivered at ``adopt`` (steers first, then the stop); it
++is dropped when that generation is released, and never reaches a later one. A ``stop`` for an
++admission whose claim has not reached the fence yet is kept for that generation's ``begin``.
++
++The fence holds the running generation in memory, fed by whoever claims turns (the admission
++worker); the durable copy is the runtime ledger. Decisions are taken under one lock; the turn's
++own methods are called outside it and receive the generation again, so a turn that ended in
++between ignores the call. Results are values: the RPC layer maps ``StaleGeneration`` to the
++protocol's ``stale_generation`` error with the running generation in its data.
++"""
++
++from __future__ import annotations
++
++import inspect
++import threading
++from collections.abc import Awaitable, Callable, Mapping
++from dataclasses import dataclass, field
++from enum import StrEnum
++from typing import Any, ClassVar, Protocol, cast
++
++from indus.protocol.methods import ServerRequestAnswerResult
++from indus.protocol.requests_port import AnswerModel
++
++__all__ = [
++    "STALE_GENERATION",
++    "AdmissionPort",
++    "AdmissionReceipt",
++    "Answerer",
++    "ControlApplied",
++    "ControlStatus",
++    "GenerationFences",
++    "OpenRequestInfo",
++    "RequestLookup",
++    "RequestNotOpen",
++    "Responded",
++    "StaleGeneration",
++    "StopOutcome",
++    "StopResult",
++    "TurnControls",
++]
++
++STALE_GENERATION = "stale_generation"
++"""The refusal code of a control aimed at a generation that is not running."""
++
++
++# -- ports ------------------------------------------------------------------------------------
++
++
++class TurnControls(Protocol):
++    """What a running turn exposes to the fence (the agent, through a thin adapter)."""
++
++    def interrupt(self, generation: int, *, hard: bool = False, by_system: bool = False) -> bool:
++        """Stop the turn if it still is ``generation``; False when nothing was stopped."""
++        ...
++
++    def steer(self, text: str) -> bool:
++        """Hand guidance to the running turn; False when it no longer takes any."""
++        ...
++
++
++class OpenRequestInfo(Protocol):
++    """An open server request as the fence needs it."""
++
++    @property
++    def generation(self) -> int | None:
++        """The generation of the turn that asked (None when no turn asked)."""
++        ...
++
++
++class RequestLookup(Protocol):
++    """The session's open server requests (``RequestBook`` of P17-07)."""
++
++    def lookup(self, request_id: str) -> OpenRequestInfo | None: ...
++
++
++type Answerer = Callable[[str, Mapping[str, Any] | AnswerModel], ServerRequestAnswerResult]
++"""Hands an answer to the waiting request (``ServerRequestBroker.answer``)."""
++
++
++class AdmissionReceipt(Protocol):
++    """An admission's receipt (P17-02): state ``queued``/``started``/``terminal``/``unknown``."""
++
++    @property
++    def admission_id(self) -> str: ...
++
++    @property
++    def state(self) -> str: ...
++
++    @property
++    def generation(self) -> int | None: ...
++
++
++class AdmissionPort(Protocol):
++    """The admission service calls ``stop`` needs (plain or awaitable results)."""
++
++    def receipt(
++        self, admission_id: str
++    ) -> AdmissionReceipt | None | Awaitable[AdmissionReceipt | None]: ...
++
++    def cancel(self, admission_id: str) -> AdmissionReceipt | Awaitable[AdmissionReceipt]: ...
++
++
++# -- results ----------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True, slots=True)
++class StaleGeneration:
++    """The control named a generation that is not running; nothing was done."""
++
++    session_id: str
++    requested: int | None
++    current: int | None
++    """The generation running now, or None when the session is idle."""
++    code: ClassVar[str] = STALE_GENERATION
++
++    def to_data(self) -> dict[str, Any]:
++        """The ``error.data`` of the protocol refusal."""
++        data: dict[str, Any] = {"reason": self.code, "running": self.current is not None}
++        if self.current is not None:
++            data["generation"] = self.current
++        return data
++
++
++class ControlStatus(StrEnum):
++    """What happened to an accepted control."""
++
++    DELIVERED = "delivered"
++    """The running turn took it."""
++    LATCHED = "latched"
++    """The turn is claimed but not ready; it gets the control when it adopts its controls."""
++    REJECTED = "rejected"
++    """The turn is ending and took nothing."""
++
++
++@dataclass(frozen=True, slots=True)
++class ControlApplied:
++    """An interrupt or steer that reached (or is waiting for) its generation."""
++
++    session_id: str
++    generation: int
++    status: ControlStatus
++
++
++@dataclass(frozen=True, slots=True)
++class Responded:
++    """The answer reached its request."""
++
++    request_id: str
++    accepted: bool
++
++
++@dataclass(frozen=True, slots=True)
++class RequestNotOpen:
++    """The request was already answered, withdrawn or never sent: the answer did nothing."""
++
++    request_id: str
++
++
++class StopOutcome(StrEnum):
++    """What a ``stop(admission_id)`` did."""
++
++    CANCELLED = "cancelled"
++    """The admission was still queued and is now cancelled."""
++    INTERRUPTED = "interrupted"
++    """The admission's turn runs (or is claimed) and was told to stop."""
++    ALREADY_SETTLED = "already_settled"
++    """The admission's turn already ended."""
++    UNKNOWN = "unknown"
++    """The admission's outcome is unknown; only an operator discard resolves it."""
++    NOT_FOUND = "not_found"
++
++
++@dataclass(frozen=True, slots=True)
++class StopResult:
++    admission_id: str
++    outcome: StopOutcome
++    generation: int | None = None
++    status: ControlStatus | None = None
++
++
++# -- the fence --------------------------------------------------------------------------------
++
++
++@dataclass(slots=True)
++class _Stop:
++    hard: bool
++    by_system: bool
++
++
++@dataclass(slots=True)
++class _Session:
++    running: int | None = None
++    latest: int | None = None
++    controls: TurnControls | None = None
++    latched_stop: _Stop | None = None
++    latched_steers: list[str] = field(default_factory=list[str])
++    early_stop: int | None = None
++    requests: RequestLookup | None = None
++    answer: Answerer | None = None
++
++    def clear_turn(self) -> None:
++        self.running = None
++        self.controls = None
++        self.latched_stop = None
++        self.latched_steers.clear()
++
++
++async def _resolved[T](value: T | Awaitable[T]) -> T:
++    if inspect.isawaitable(value):
++        return cast(T, await value)
++    return cast(T, value)
++
++
++class GenerationFences:
++    """Generation checks for the controls of every session in one daemon."""
++
++    def __init__(self, *, admissions: AdmissionPort | None = None) -> None:
++        self._admissions = admissions
++        self._lock = threading.Lock()
++        self._sessions: dict[str, _Session] = {}
++
++    def _state(self, session_id: str) -> _Session:
++        state = self._sessions.get(session_id)
++        if state is None:
++            state = self._sessions[session_id] = _Session()
++        return state
++
++    # -- wiring -------------------------------------------------------------------------------
++
++    def bind_requests(self, session_id: str, requests: RequestLookup, answer: Answerer) -> None:
++        """Route approval/clarify answers of ``session_id`` to its request book and broker."""
++        with self._lock:
++            state = self._state(session_id)
++            state.requests = requests
++            state.answer = answer
++
++    def forget(self, session_id: str) -> None:
++        """Drop everything known about a closed session."""
++        with self._lock:
++            self._sessions.pop(session_id, None)
++
++    # -- turn lifecycle -----------------------------------------------------------------------
++
++    def begin(self, session_id: str, generation: int) -> None:
++        """``generation`` was claimed and now runs (a still-running older one is displaced)."""
++        with self._lock:
++            state = self._state(session_id)
++            if state.latest is not None and generation <= state.latest:
++                raise ValueError(
++                    f"generation {generation} of {session_id} is not above {state.latest}"
++                )
++            state.clear_turn()
++            state.running = state.latest = generation
++            if state.early_stop is not None and state.early_stop <= generation:
++                if state.early_stop == generation:
++                    state.latched_stop = _Stop(hard=True, by_system=False)
++                state.early_stop = None
++
++    def adopt(self, session_id: str, generation: int, controls: TurnControls) -> bool:
++        """The running turn attaches its controls; latched steers and stop are delivered now."""
++        with self._lock:
++            state = self._sessions.get(session_id)
++            if state is None or state.running != generation:
++                return False
++            state.controls = controls
++            steers, state.latched_steers = state.latched_steers, []
++            stop, state.latched_stop = state.latched_stop, None
++        for text in steers:
++            controls.steer(text)
++        if stop is not None:
++            controls.interrupt(generation, hard=stop.hard, by_system=stop.by_system)
++        return True
++
++    def release(self, session_id: str, generation: int) -> bool:
++        """The turn ``generation`` ended; only the running generation clears the session."""
++        with self._lock:
++            state = self._sessions.get(session_id)
++            if state is None or state.running != generation:
++                return False
++            state.clear_turn()
++            return True
++
++    def running(self, session_id: str) -> int | None:
++        """The generation running now, or None."""
++        with self._lock:
++            state = self._sessions.get(session_id)
++            return state.running if state is not None else None
++
++    def latest(self, session_id: str) -> int | None:
++        """The newest generation this fence has seen begin, or None."""
++        with self._lock:
++            state = self._sessions.get(session_id)
++            return state.latest if state is not None else None
++
++    # -- controls -----------------------------------------------------------------------------
++
++    def interrupt(
++        self, session_id: str, generation: int, *, hard: bool = False, by_system: bool = False
++    ) -> ControlApplied | StaleGeneration:
++        """Stop the turn ``generation`` of ``session_id``, and only that turn."""
++        with self._lock:
++            state = self._state(session_id)
++            if state.running is None or state.running != generation:
++                return StaleGeneration(session_id, generation, state.running)
++            controls = state.controls
++            if controls is None:
++                previous = state.latched_stop
++                state.latched_stop = _Stop(
++                    hard=hard or (previous is not None and previous.hard),
++                    by_system=by_system and (previous is None or previous.by_system),
++                )
++                return ControlApplied(session_id, generation, ControlStatus.LATCHED)
++        done = controls.interrupt(generation, hard=hard, by_system=by_system)
++        status = ControlStatus.DELIVERED if done else ControlStatus.REJECTED
++        return ControlApplied(session_id, generation, status)
++
++    def steer(
++        self, session_id: str, generation: int, text: str
++    ) -> ControlApplied | StaleGeneration:
++        """Hand ``text`` to the turn ``generation``; blank text is a caller error."""
++        if not text.strip():
++            raise ValueError("steer text must not be empty")
++        with self._lock:
++            state = self._state(session_id)
++            if state.running is None or state.running != generation:
++                return StaleGeneration(session_id, generation, state.running)
++            controls = state.controls
++            if controls is None:
++                state.latched_steers.append(text)
++                return ControlApplied(session_id, generation, ControlStatus.LATCHED)
++        done = controls.steer(text)
++        status = ControlStatus.DELIVERED if done else ControlStatus.REJECTED
++        return ControlApplied(session_id, generation, status)
++
++    def respond(
++        self,
++        session_id: str,
++        request_id: str,
++        generation: int,
++        answer: Mapping[str, Any] | AnswerModel,
++    ) -> Responded | RequestNotOpen | StaleGeneration:
++        """Answer an approval or clarify request asked by turn ``generation``.
++
++        A request that is no longer open (answered elsewhere, withdrawn, timed out) is a quiet
++        no-op. An open request answered with another generation, or whose turn no longer runs,
++        is stale. A malformed answer raises the broker's ``ProtocolError``.
++        """
++        with self._lock:
++            state = self._state(session_id)
++            requests, answer_fn, running = state.requests, state.answer, state.running
++        if requests is None or answer_fn is None:
++            return RequestNotOpen(request_id)
++        info = requests.lookup(request_id)
++        if info is None:
++            return RequestNotOpen(request_id)
++        asked_by = info.generation
++        if asked_by is not None and (asked_by != generation or running != generation):
++            return StaleGeneration(session_id, generation, running)
++        result = answer_fn(request_id, answer)
++        return Responded(request_id, result.accepted)
++
++    async def stop(self, session_id: str, admission_id: str) -> StopResult:
++        """Stop one admission: cancel it while queued, else interrupt exactly its generation."""
++        if self._admissions is None:
++            raise RuntimeError("stop needs the admission service")
++        receipt = await _resolved(self._admissions.receipt(admission_id))
++        if receipt is None:
++            return StopResult(admission_id, StopOutcome.NOT_FOUND)
++        if receipt.state == "queued":
++            receipt = await _resolved(self._admissions.cancel(admission_id))
++            if receipt.state == "terminal":
++                return StopResult(admission_id, StopOutcome.CANCELLED, receipt.generation)
++            if receipt.state == "queued":
++                raise RuntimeError(f"admission {admission_id} stayed queued after cancel")
++            # Claimed between our read and the cancel: stop that exact claim below.
++        if receipt.state == "unknown":
++            return StopResult(admission_id, StopOutcome.UNKNOWN, receipt.generation)
++        if receipt.state != "started" or receipt.generation is None:
++            return StopResult(admission_id, StopOutcome.ALREADY_SETTLED, receipt.generation)
++        return self._stop_generation(session_id, admission_id, receipt.generation)
++
++    def _stop_generation(self, session_id: str, admission_id: str, generation: int) -> StopResult:
++        with self._lock:
++            state = self._state(session_id)
++            if state.running != generation:
++                if state.latest is None or generation > state.latest:
++                    # The claim has not reached the fence yet: stop it when it begins.
++                    state.early_stop = generation
++                    return StopResult(
++                        admission_id, StopOutcome.INTERRUPTED, generation, ControlStatus.LATCHED
++                    )
++                return StopResult(admission_id, StopOutcome.ALREADY_SETTLED, generation)
++        applied = self.interrupt(session_id, generation, hard=True)
++        if isinstance(applied, StaleGeneration):  # released in between
++            return StopResult(admission_id, StopOutcome.ALREADY_SETTLED, generation)
++        return StopResult(admission_id, StopOutcome.INTERRUPTED, generation, applied.status)
+diff --git a/src/indus/service/request_redelivery.py b/src/indus/service/request_redelivery.py
+new file mode 100644
+index 0000000..8398873
+--- /dev/null
++++ b/src/indus/service/request_redelivery.py
+@@ -0,0 +1,318 @@
++"""Server requests that outlive viewer connections: offer, re-offer, settle once (P17-07).
++
++In the daemon a session may be watched by several viewers (CLI, TUI, desktop …). When the agent
++asks a person something, the session's ``RequestBook`` offers the request to every attached viewer
++that can render its kind and keeps it open until it is settled. Ids are ``srq-<12 hex>`` (strings,
++so they never collide with the client's integer request ids).
++
++- Re-offer: a viewer that attaches again, or that catches up through ``events.since``, is offered
++  every still-open request it can render once more, with ``replayed: True`` and the same id. An
++  answer from any copy of a card therefore names the same request, and the first answer wins.
++- Settlement: ``settle`` removes the request and announces it once with a ``request.settled``
++  event (``answered``, ``withdrawn`` or ``undeliverable``) so every other card closes. A second
++  settlement of the same id does nothing.
++- Refusals (R05.3): a viewer that cannot render the kind it was sent answers ``-32601`` at once;
++  a viewer that advertised the decline capability may answer ``4404`` ("not shown here"); any
++  other error a viewer answers with counts like ``-32601``. Each leaves the request to the other
++  viewers. When no attached viewer that could answer is left, the
++  request is settled ``undeliverable`` right away, never by waiting out a timeout; the broker then
++  fails the asker with ``RequestUnsupported`` (R02.5: distinct from a timeout or a denial). A
++  ``4404`` from a viewer without the capability is ignored.
++- A viewer that detaches does not refuse anything: its open requests wait for it (or another
++  viewer) until the asker's own deadline.
++
++The book lives in memory for the daemon's life; after a restart the turn that asked is
++``unknown`` (R03.21) and its requests are gone with it. Every method runs on the session's event
++loop, like the broker.
++"""
++
++from __future__ import annotations
++
++import logging
++import secrets
++from collections.abc import Callable, Iterable, Mapping
++from dataclasses import dataclass, field
++from enum import StrEnum
++from typing import Any
++
++from indus.protocol.envelope import ErrorObject
++from indus.protocol.errors import METHOD_NOT_FOUND, SERVER_REQUEST_UNSUPPORTED, make_error
++from indus.protocol.server_requests import (
++    SERVER_REQUEST_KINDS,
++    ApprovalRequest,
++    ClarifyRequest,
++    SecretRequest,
++    SudoRequest,
++)
++
++__all__ = [
++    "NOT_SHOWN_CODE",
++    "REQUEST_ID_PREFIX",
++    "SETTLED_EVENT",
++    "UNRENDERABLE_CODE",
++    "Offer",
++    "OpenRequest",
++    "RequestBook",
++    "RequestViewer",
++    "SettleOutcome",
++    "new_request_id",
++]
++
++log = logging.getLogger(__name__)
++
++REQUEST_ID_PREFIX = "srq-"
++NOT_SHOWN_CODE = 4404
++"""A viewer's "this request is not shown here" answer (only with the decline capability)."""
++UNRENDERABLE_CODE = METHOD_NOT_FOUND.code
++"""A viewer's "I cannot render this kind" answer (JSON-RPC method not found, -32601)."""
++SETTLED_EVENT = "request.settled"
++
++type OfferedRequest = ApprovalRequest | ClarifyRequest | SudoRequest | SecretRequest
++type SettledEmitter = Callable[[Mapping[str, Any]], object]
++type UndeliverableHook = Callable[[str, ErrorObject], object]
++
++
++def new_request_id() -> str:
++    """A fresh server-request id: ``srq-`` and 12 lowercase hex digits."""
++    return REQUEST_ID_PREFIX + secrets.token_hex(6)
++
++
++class SettleOutcome(StrEnum):
++    """How an open request ended."""
++
++    ANSWERED = "answered"
++    WITHDRAWN = "withdrawn"
++    UNDELIVERABLE = "undeliverable"
++
++
++@dataclass(frozen=True, slots=True)
++class Offer:
++    """One request as sent to one viewer."""
++
++    request: OfferedRequest
++    generation: int | None
++    """The generation of the turn that asked (named again in the viewer's answer)."""
++    replayed: bool
++    """True when this is a repeat of an earlier offer (reattach or catch-up)."""
++
++    def to_wire(self) -> dict[str, Any]:
++        body: dict[str, Any] = {"request": self.request.to_wire(), "replayed": self.replayed}
++        if self.generation is not None:
++            body["generation"] = self.generation
++        return body
++
++
++@dataclass(frozen=True, slots=True)
++class RequestViewer:
++    """An attached viewer as the book sees it."""
++
++    viewer_id: str
++    kinds: frozenset[str]
++    """Request kinds the viewer can render."""
++    send: Callable[[Offer], object]
++    can_decline: bool = False
++    """Whether the viewer advertised the 4404 decline capability."""
++
++    @classmethod
++    def of(
++        cls,
++        viewer_id: str,
++        kinds: Iterable[str],
++        send: Callable[[Offer], object],
++        *,
++        can_decline: bool = False,
++    ) -> RequestViewer:
++        known = frozenset(k for k in kinds if k in SERVER_REQUEST_KINDS)
++        return cls(viewer_id, known, send, can_decline)
++
++
++@dataclass(slots=True)
++class OpenRequest:
++    """A request waiting for its first answer."""
++
++    request: OfferedRequest
++    generation: int | None
++    offered: set[str] = field(default_factory=set[str])
++    """Viewer ids it was sent to."""
++    refused: dict[str, int] = field(default_factory=dict[str, int])
++    """Viewer id → the code it refused with (-32601 or 4404)."""
++
++    @property
++    def request_id(self) -> str:
++        return self.request.request_id
++
++    @property
++    def kind(self) -> str:
++        return self.request.kind
++
++
++class RequestBook:
++    """The open server requests of one session and the viewers they go to."""
++
++    def __init__(
++        self,
++        session_id: str,
++        *,
++        emit: SettledEmitter,
++        generation: Callable[[], int | None] = lambda: None,
++    ) -> None:
++        self.session_id = session_id
++        self._emit = emit
++        self._generation = generation
++        self._viewers: dict[str, RequestViewer] = {}
++        self._open: dict[str, OpenRequest] = {}
++        self._undeliverable: UndeliverableHook | None = None
++
++    def bind_undeliverable(self, hook: UndeliverableHook | None) -> None:
++        """Called with ``(request_id, error)`` when a request is settled undeliverable."""
++        self._undeliverable = hook
++
++    # -- viewers ------------------------------------------------------------------------------
++
++    def attach(self, viewer: RequestViewer) -> int:
++        """Add (or replace) a viewer and offer it every open request it can render."""
++        self._viewers[viewer.viewer_id] = viewer
++        return self.reoffer(viewer.viewer_id)
++
++    def detach(self, viewer_id: str) -> bool:
++        """Remove a viewer; its open requests stay open."""
++        return self._viewers.pop(viewer_id, None) is not None
++
++    def viewers(self) -> list[str]:
++        return list(self._viewers)
++
++    def can_render(self, kind: str) -> bool:
++        """Whether any attached viewer can render ``kind``."""
++        return any(kind in v.kinds for v in self._viewers.values())
++
++    def answerable_kinds(self) -> frozenset[str]:
++        """Every kind at least one attached viewer can render."""
++        kinds: set[str] = set()
++        for viewer in self._viewers.values():
++            kinds |= viewer.kinds
++        return frozenset(kinds)
++
++    # -- offering -----------------------------------------------------------------------------
++
++    def offer(self, request: OfferedRequest) -> OpenRequest | None:
++        """Open ``request`` and send it to every viewer that can render it.
++
++        Returns the open entry, or None when nobody could take it (then it was settled
++        undeliverable at once).
++        """
++        if request.request_id in self._open:
++            raise ValueError(f"server request {request.request_id} is already open")
++        entry = OpenRequest(request, self._generation())
++        self._open[request.request_id] = entry
++        targets = [v for v in self._viewers.values() if request.kind in v.kinds]
++        if not targets:
++            self._give_up(entry)
++            return None
++        for viewer in targets:
++            self._send(viewer, entry, replayed=False)
++        return entry if request.request_id in self._open else None
++
++    def reoffer(self, viewer_id: str) -> int:
++        """Offer ``viewer_id`` every open request it can render again (``replayed``)."""
++        viewer = self._viewers.get(viewer_id)
++        if viewer is None:
++            return 0
++        count = 0
++        for entry in list(self._open.values()):
++            if entry.kind not in viewer.kinds or viewer_id in entry.refused:
++                continue
++            if entry.request_id not in self._open:  # settled by an earlier send in this loop
++                continue
++            self._send(viewer, entry, replayed=True)
++            count += 1
++        return count
++
++    def _send(self, viewer: RequestViewer, entry: OpenRequest, *, replayed: bool) -> None:
++        entry.offered.add(viewer.viewer_id)
++        try:
++            viewer.send(Offer(entry.request, entry.generation, replayed))
++        except Exception:
++            log.warning(
++                "could not offer server request %s to viewer %s",
++                entry.request_id,
++                viewer.viewer_id,
++                exc_info=True,
++            )
++
++    # -- refusals -----------------------------------------------------------------------------
++
++    def refuse(self, viewer_id: str, request_id: str, code: int) -> bool:
++        """A viewer answered ``request_id`` with an error instead of an answer.
++
++        ``-32601`` (cannot render) and any other error code count as that viewer refusing;
++        ``4404`` counts only from a viewer with the decline capability. Returns True when the
++        refusal was recorded. When it leaves no attached viewer that could answer, the request is
++        settled undeliverable at once.
++        """
++        entry = self._open.get(request_id)
++        if entry is None:
++            return False
++        viewer = self._viewers.get(viewer_id)
++        if code == NOT_SHOWN_CODE and (viewer is None or not viewer.can_decline):
++            log.warning(
++                "viewer %s declined %s without the decline capability; ignored",
++                viewer_id,
++                request_id,
++            )
++            return False
++        entry.refused[viewer_id] = code
++        if not any(
++            entry.kind in v.kinds and v.viewer_id not in entry.refused
++            for v in self._viewers.values()
++        ):
++            self._give_up(entry)
++        return True
++
++    def _give_up(self, entry: OpenRequest) -> None:
++        codes = set(entry.refused.values())
++        reason = "not_shown" if codes == {NOT_SHOWN_CODE} else "unsupported"
++        self.settle(entry.request_id, SettleOutcome.UNDELIVERABLE, reason)
++
++    # -- settling -----------------------------------------------------------------------------
++
++    def settle(self, request_id: str, outcome: SettleOutcome, reason: str | None = None) -> bool:
++        """Close ``request_id`` with ``outcome``; only the first settlement counts."""
++        entry = self._open.pop(request_id, None)
++        if entry is None:
++            return False
++        event: dict[str, Any] = {
++            "type": SETTLED_EVENT,
++            "session_id": self.session_id,
++            "request_id": request_id,
++            "kind": entry.kind,
++            "outcome": outcome.value,
++        }
++        if reason:
++            event["reason"] = reason
++        try:
++            self._emit(event)
++        except Exception:
++            log.warning("could not announce settlement of %s", request_id, exc_info=True)
++        if outcome is SettleOutcome.UNDELIVERABLE and self._undeliverable is not None:
++            why = (
++                "every attached viewer declined it (not shown there)"
++                if reason == "not_shown"
++                else "no attached viewer can answer it"
++            )
++            error = make_error(
++                SERVER_REQUEST_UNSUPPORTED,
++                f"the {entry.kind} request could not be delivered: {why}",
++                retryable=False,
++            )
++            self._undeliverable(request_id, error)
++        return True
++
++    # -- reading ------------------------------------------------------------------------------
++
++    def lookup(self, request_id: str) -> OpenRequest | None:
++        """The open request ``request_id``, or None once settled (or never opened)."""
++        return self._open.get(request_id)
++
++    def open_requests(self) -> list[OpenRequest]:
++        """Open requests, oldest first."""
++        return list(self._open.values())
+diff --git a/tests/unit/service/_stubs_k2.py b/tests/unit/service/_stubs_k2.py
+new file mode 100644
+index 0000000..40c3778
+--- /dev/null
++++ b/tests/unit/service/_stubs_k2.py
+@@ -0,0 +1,74 @@
++# STAND-IN: removed at integration
++"""Stand-in for K1's admission service (P17-02) as P17-05's ``stop`` uses it.
++
++Assumed interface (the integrator reconciles it with ``indus.service.admissions``):
++
++- ``receipt(admission_id) -> Receipt | None`` (may be async): ``Receipt`` has ``admission_id``,
++  ``state`` (``queued`` / ``started`` / ``terminal`` / ``unknown``) and ``generation``
++  (set once started).
++- ``cancel(admission_id) -> Receipt`` (may be async): a queued admission becomes ``terminal``
++  (cancelled); an admission the worker already claimed comes back ``started`` with its generation,
++  unchanged; terminal and unknown admissions come back unchanged.
++"""
++
++from __future__ import annotations
++
++from collections.abc import Callable
++from dataclasses import dataclass, replace
++
++
++@dataclass(frozen=True, slots=True)
++class Receipt:
++    admission_id: str
++    state: str
++    generation: int | None = None
++    terminal_kind: str | None = None
++
++
++class FakeAdmissions:
++    """An in-memory admission table with an optional race hook before cancel commits."""
++
++    def __init__(self) -> None:
++        self.rows: dict[str, Receipt] = {}
++        self.before_cancel: Callable[[str], None] | None = None
++        self.calls: list[tuple[str, str]] = []
++
++    def add(self, admission_id: str, state: str, generation: int | None = None) -> None:
++        self.rows[admission_id] = Receipt(admission_id, state, generation)
++
++    def claim(self, admission_id: str, generation: int) -> None:
++        self.rows[admission_id] = replace(
++            self.rows[admission_id], state="started", generation=generation
++        )
++
++    async def receipt(self, admission_id: str) -> Receipt | None:
++        self.calls.append(("receipt", admission_id))
++        return self.rows.get(admission_id)
++
++    async def cancel(self, admission_id: str) -> Receipt:
++        self.calls.append(("cancel", admission_id))
++        if self.before_cancel is not None:
++            self.before_cancel(admission_id)
++        row = self.rows[admission_id]
++        if row.state == "queued":
++            row = self.rows[admission_id] = replace(
++                row, state="terminal", terminal_kind="cancelled"
++            )
++        return row
++
++
++class SyncAdmissions(FakeAdmissions):
++    """The same table with plain (non-async) methods."""
++
++    def receipt(self, admission_id: str) -> Receipt | None:  # type: ignore[override]
++        self.calls.append(("receipt", admission_id))
++        return self.rows.get(admission_id)
++
++    def cancel(self, admission_id: str) -> Receipt:  # type: ignore[override]
++        self.calls.append(("cancel", admission_id))
++        row = self.rows[admission_id]
++        if row.state == "queued":
++            row = self.rows[admission_id] = replace(
++                row, state="terminal", terminal_kind="cancelled"
++            )
++        return row
+diff --git a/tests/unit/service/test_broker.py b/tests/unit/service/test_broker.py
+index 9b35661..4137a04 100644
+--- a/tests/unit/service/test_broker.py
++++ b/tests/unit/service/test_broker.py
+@@ -4,6 +4,7 @@ from __future__ import annotations
+ 
+ import asyncio
+ import itertools
++import re
+ from collections.abc import Callable, Coroutine, Iterable
+ from datetime import UTC, datetime
+ from typing import Any
+@@ -327,7 +328,7 @@ def test_failing_transport_and_sink_are_not_fatal() -> None:
+         task = asyncio.ensure_future(broker.ask("approval", APPROVAL))
+         await rig.settle()
+         (open_request,) = broker.pending_requests()
+-        assert open_request.request_id.startswith("sr_")
++        assert re.fullmatch(r"srq-[0-9a-f]{12}", open_request.request_id)  # P17-07 id shape
+         assert broker.cancel_all(CancelReason.TURN_ENDED) == 1
+         with pytest.raises(RequestWithdrawn):
+             await task
+diff --git a/tests/unit/service/test_event_log.py b/tests/unit/service/test_event_log.py
+new file mode 100644
+index 0000000..7b35e07
+--- /dev/null
++++ b/tests/unit/service/test_event_log.py
+@@ -0,0 +1,375 @@
++"""P17-06: per-session seq, replay epoch, bounded replay buffer, delta coalescing."""
++
++from __future__ import annotations
++
++import asyncio
++import random
++from datetime import UTC, datetime
++from typing import Any
++
++import pytest
++
++from indus.protocol.events import MessageDelta, TurnStarted
++from indus.service.event_log import (
++    COALESCE_WINDOW_S,
++    EventLog,
++    LoggedEvent,
++    Replay,
++    ReplayGap,
++    ReplayLimits,
++)
++from tests.fakes.clock import FakeClock
++
++
++def make_log(**kw: Any) -> tuple[EventLog, FakeClock]:
++    clock = FakeClock(datetime(2026, 10, 19, 9, 0, tzinfo=UTC))
++    return EventLog(clock=clock, epoch="ep-1", **kw), clock
++
++
++def notice(text: str, session: str = "s1") -> dict[str, Any]:
++    return {"type": "notice", "session_id": session, "seq": 999, "level": "info", "text": text}
++
++
++def delta(text: str, turn: str = "t1", kind: str = "message.delta") -> dict[str, Any]:
++    return {"type": kind, "session_id": "s1", "seq": 0, "turn_id": turn, "text": text}
++
++
++def replay(result: Replay | ReplayGap) -> Replay:
++    assert isinstance(result, Replay), result
++    return result
++
++
++# -- numbering and replay ------------------------------------------------------------------------
++
++
++def test_seq_starts_at_one_per_session_and_ignores_incoming_seq() -> None:
++    elog, _ = make_log()
++    (a,) = elog.append("s1", notice("a"))
++    (b,) = elog.append("s1", notice("b"))
++    (c,) = elog.append("s2", notice("c", "s2"))
++    assert (a.seq, b.seq, c.seq) == (1, 2, 1)
++    wire = b.to_wire()
++    assert wire["seq"] == 2 and wire["replay_epoch"] == "ep-1" and wire["text"] == "b"
++    assert elog.last_seq("s1") == 2 and elog.last_seq("nobody") == 0
++
++
++def test_protocol_models_are_accepted() -> None:
++    elog, _ = make_log()
++    elog.append("s1", TurnStarted(session_id="s1", seq=40, turn_id="t1", generation=3))
++    (entry,) = elog.append("s1", notice("x"))
++    events = replay(elog.since("s1", "ep-1", 0)).events
++    assert [e["type"] for e in events] == ["turn.started", "notice"]
++    assert events[0]["generation"] == 3 and events[0]["seq"] == 1
++    assert entry.type == "notice"
++
++
++def test_since_returns_missing_events_in_order() -> None:
++    elog, _ = make_log()
++    for i in range(5):
++        elog.append("s1", notice(str(i)))
++    result = replay(elog.since("s1", "ep-1", 2))
++    assert [e["seq"] for e in result.events] == [3, 4, 5]
++    assert result.last_seq == 5 and result.replay_epoch == "ep-1"
++    assert replay(elog.since("s1", "ep-1", 5)).events == ()
++    assert replay(elog.since("fresh", "ep-1", 0)).events == ()
++
++
++def test_epoch_change_is_a_gap() -> None:
++    elog, _ = make_log()
++    elog.append("s1", notice("a"))
++    gap = elog.since("s1", "ep-old", 1)
++    assert isinstance(gap, ReplayGap) and gap.reason == "epoch_changed"
++    assert gap.to_wire() == {
++        "type": "session.replay_gap",
++        "session_id": "s1",
++        "replay_epoch": "ep-1",
++        "last_seq": 1,
++        "reason": "epoch_changed",
++    }
++    missing = elog.since("s1", None, 0)
++    assert isinstance(missing, ReplayGap) and missing.reason == "epoch_changed"
++
++
++def test_cursor_ahead_is_a_gap_and_negative_cursor_is_an_error() -> None:
++    elog, _ = make_log()
++    elog.append("s1", notice("a"))
++    gap = elog.since("s1", "ep-1", 7)
++    assert isinstance(gap, ReplayGap) and gap.reason == "ahead"
++    with pytest.raises(ValueError):
++        elog.since("s1", "ep-1", -1)
++
++
++def test_fresh_epochs_differ_between_logs() -> None:
++    clock = FakeClock(datetime(2026, 10, 19, tzinfo=UTC))
++    assert EventLog(clock=clock).epoch != EventLog(clock=clock).epoch
++
++
++# -- caps and eviction ---------------------------------------------------------------------------
++
++
++def test_event_cap_evicts_oldest_and_old_cursor_gets_a_gap() -> None:
++    elog, _ = make_log(limits=ReplayLimits(events_per_session=5))
++    for i in range(8):
++        elog.append("s1", notice(str(i)))
++    gap = elog.since("s1", "ep-1", 2)
++    assert isinstance(gap, ReplayGap) and gap.reason == "evicted" and gap.last_seq == 8
++    assert [e["seq"] for e in replay(elog.since("s1", "ep-1", 3)).events] == [4, 5, 6, 7, 8]
++    assert elog.stats()["events"] == 5
++
++
++def test_byte_cap_evicts_oldest() -> None:
++    elog, _ = make_log()
++    size = len(elog.append("probe", notice("x" * 100))[0].payload)
++    elog, _ = make_log(limits=ReplayLimits(bytes_per_session=size * 3))
++    for _ in range(6):
++        elog.append("s1", notice("x" * 100))
++    assert elog.stats()["bytes"] <= size * 3
++    assert [e["seq"] for e in replay(elog.since("s1", "ep-1", 3)).events] == [4, 5, 6]
++    assert isinstance(elog.since("s1", "ep-1", 2), ReplayGap)
++
++
++def test_process_byte_cap_takes_from_the_quietest_session() -> None:
++    elog, _ = make_log()
++    size = len(elog.append("probe", notice("y" * 50, "probe"))[0].payload)
++    elog, _ = make_log(limits=ReplayLimits(bytes_process=size * 4))
++    for _ in range(2):
++        elog.append("quiet", notice("y" * 50, "quiet"))
++    for _ in range(2):
++        elog.append("busy", notice("y" * 50, "busy"))
++    elog.append("busy", notice("y" * 50, "busy"))  # over the process cap by one event
++    assert isinstance(elog.since("quiet", "ep-1", 0), ReplayGap)
++    assert [e["seq"] for e in replay(elog.since("quiet", "ep-1", 1)).events] == [2]
++    assert len(replay(elog.since("busy", "ep-1", 0)).events) == 3
++    assert elog.stats()["bytes"] <= size * 4
++
++
++def test_session_cap_drops_quietest_buffer_but_keeps_its_counter() -> None:
++    elog, _ = make_log(limits=ReplayLimits(sessions=2))
++    elog.append("a", notice("1", "a"))
++    elog.append("b", notice("1", "b"))
++    elog.append("a", notice("2", "a"))  # b is now the quietest
++    elog.append("c", notice("1", "c"))
++    gap = elog.since("b", "ep-1", 0)
++    assert isinstance(gap, ReplayGap) and gap.reason == "evicted"
++    assert elog.stats()["sessions"] == 2
++    (back,) = elog.append("b", notice("2", "b"))
++    assert back.seq == 2  # never restarts at 1 under a cursor a client still holds
++    assert [e["seq"] for e in replay(elog.since("b", "ep-1", 1)).events] == [2]
++
++
++def test_oversized_event_is_not_kept() -> None:
++    elog, _ = make_log(limits=ReplayLimits(bytes_per_session=200))
++    elog.append("s1", notice("small"))
++    (big,) = elog.append("s1", notice("z" * 500))
++    elog.append("s1", notice("after"))
++    assert big.seq == 2
++    assert isinstance(elog.since("s1", "ep-1", 1), ReplayGap)
++    assert [e["text"] for e in replay(elog.since("s1", "ep-1", 2)).events] == ["after"]
++
++
++def test_forget_drops_buffer_keeps_counter() -> None:
++    elog, _ = make_log()
++    elog.append("s1", notice("a"))
++    elog.append("s1", delta("held"))
++    elog.forget("s1")
++    assert elog.last_seq("s1") == 2  # the held piece was numbered first
++    assert isinstance(elog.since("s1", "ep-1", 0), ReplayGap)
++    assert replay(elog.since("s1", "ep-1", 2)).events == ()
++    assert elog.append("s1", notice("b"))[0].seq == 3
++
++
++def test_buffer_is_frozen_against_later_mutation() -> None:
++    elog, _ = make_log()
++    event = notice("before")
++    elog.append("s1", event)
++    event["text"] = "after" * 1000
++    assert replay(elog.since("s1", "ep-1", 0)).events[0]["text"] == "before"
++
++
++def test_event_without_type_is_refused() -> None:
++    elog, _ = make_log()
++    with pytest.raises(ValueError):
++        elog.append("s1", {"text": "x"})
++    with pytest.raises(ValueError):
++        elog.append("", notice("x"))
++
++
++# -- coalescing ----------------------------------------------------------------------------------
++
++
++def test_deltas_within_the_window_are_joined() -> None:
++    elog, clock = make_log()
++    assert elog.append("s1", delta("Hel")) == []
++    clock.advance(0.010)
++    assert elog.append("s1", delta("lo")) == []
++    clock.advance(0.010)
++    elog.append("s1", delta(", world"))
++    (joined,) = elog.flush()
++    assert joined.seq == 1 and joined.to_wire()["text"] == "Hello, world"
++    assert joined.to_wire()["turn_id"] == "t1"
++
++
++def test_window_over_starts_a_new_event() -> None:
++    elog, clock = make_log()
++    elog.append("s1", delta("a"))
++    clock.advance(COALESCE_WINDOW_S)
++    (first,) = elog.append("s1", delta("b"))
++    assert first.to_wire()["text"] == "a"
++    (second,) = elog.flush("s1")
++    assert second.to_wire()["text"] == "b" and second.seq == 2
++
++
++def test_other_event_flushes_held_text_first() -> None:
++    elog, _ = make_log()
++    elog.append("s1", delta("partial"))
++    done = elog.append("s1", notice("tool"))
++    assert [e.to_wire()["type"] for e in done] == ["message.delta", "notice"]
++    assert [e.seq for e in done] == [1, 2]
++
++
++def test_different_turn_or_kind_is_not_joined() -> None:
++    elog, _ = make_log()
++    elog.append("s1", delta("a", turn="t1"))
++    (first,) = elog.append("s1", delta("b", turn="t2"))
++    (second,) = elog.append("s1", delta("c", turn="t2", kind="reasoning.delta"))
++    (third,) = elog.flush()
++    texts = [e.to_wire()["text"] for e in (first, second, third)]
++    assert texts == ["a", "b", "c"]
++    assert third.to_wire()["type"] == "reasoning.delta"
++
++
++def test_sessions_hold_text_separately() -> None:
++    elog, _ = make_log()
++    elog.append("s1", delta("one"))
++    elog.append("s2", {**delta("two"), "session_id": "s2"})
++    assert elog.stats()["held"] == 2
++    assert [e.session_id for e in elog.flush()] == ["s1", "s2"]
++
++
++def test_flush_due_respects_the_window() -> None:
++    elog, clock = make_log()
++    assert elog.next_flush_at() is None
++    start = clock.monotonic()
++    elog.append("s1", MessageDelta(session_id="s1", seq=0, turn_id="t1", text="x"))
++    assert elog.next_flush_at() == pytest.approx(start + COALESCE_WINDOW_S)
++    clock.advance(0.020)
++    assert elog.flush_due() == []
++    clock.advance(0.013)
++    (entry,) = elog.flush_due()
++    assert entry.to_wire()["text"] == "x"
++    assert elog.next_flush_at() is None
++
++
++def test_run_flusher_flushes_after_the_window() -> None:
++    async def body() -> None:
++        elog, clock = make_log()
++        seen: list[LoggedEvent] = []
++        elog.add_listener(seen.append)
++        task = asyncio.ensure_future(elog.run_flusher())
++        await clock.run_until_idle()
++        elog.append("s1", delta("tok"))
++        await clock.run_until_idle()
++        assert seen == []
++        await clock.advance_and_settle(COALESCE_WINDOW_S)
++        assert [e.to_wire()["text"] for e in seen] == ["tok"]
++        elog.append("s1", delta("more"))
++        await clock.run_until_idle()
++        await clock.advance_and_settle(COALESCE_WINDOW_S)
++        assert [e.to_wire()["text"] for e in seen] == ["tok", "more"]
++        task.cancel()
++        with pytest.raises(asyncio.CancelledError):
++            await task
++
++    asyncio.run(body())
++
++
++# -- listeners -----------------------------------------------------------------------------------
++
++
++def test_listeners_hear_events_in_order_and_failures_are_skipped(
++    caplog: pytest.LogCaptureFixture,
++) -> None:
++    elog, _ = make_log()
++    heard: list[int] = []
++
++    def broken(_: LoggedEvent) -> None:
++        raise RuntimeError("screen gone")
++
++    elog.add_listener(broken)
++    remove = elog.add_listener(lambda e: heard.append(e.seq))
++    elog.append("s1", delta("a"))
++    elog.append("s1", notice("b"))
++    elog.append("s1", notice("c"))
++    assert heard == [1, 2, 3]
++    assert "event-log listener failed" in caplog.text
++    remove()
++    elog.append("s1", notice("d"))
++    assert heard == [1, 2, 3]
++
++
++# -- properties (seeded random tables; hypothesis is not installed) ------------------------------
++
++
++def _random_run(seed: int, limits: ReplayLimits) -> None:
++    rng = random.Random(seed)
++    elog, clock = make_log(limits=limits)
++    sessions = ["s1", "s2", "s3"]
++    live: dict[str, list[int]] = {s: [] for s in sessions}
++    elog.add_listener(lambda e: live[e.session_id].append(e.seq))
++    pieces: dict[tuple[str, str, str], list[str]] = {}
++    cursors = dict.fromkeys(sessions, 0)
++    received: dict[str, list[int]] = {s: [] for s in sessions}
++    texts: dict[tuple[str, str, str], list[str]] = {}
++    gaps = 0
++
++    def read(session: str) -> None:
++        nonlocal gaps
++        result = elog.since(session, "ep-1", cursors[session])
++        if isinstance(result, ReplayGap):
++            gaps += 1
++            assert result.reason == "evicted"
++            cursors[session] = result.last_seq  # the client reloads a snapshot
++            return
++        seqs = [e["seq"] for e in result.events]
++        assert seqs == list(range(cursors[session] + 1, result.last_seq + 1))
++        for event in result.events:
++            if event["type"].endswith(".delta"):
++                key = (session, event["turn_id"], event["type"])
++                texts.setdefault(key, []).append(event["text"])
++        received[session].extend(seqs)
++        cursors[session] = result.last_seq
++
++    for _ in range(400):
++        session = rng.choice(sessions)
++        roll = rng.random()
++        if roll < 0.55:
++            turn = rng.choice(["t1", "t2"])
++            kind = rng.choice(["message.delta", "message.delta", "reasoning.delta"])
++            text = "".join(rng.choice("abcxyz ") for _ in range(rng.randint(1, 8)))
++            pieces.setdefault((session, turn, kind), []).append(text)
++            elog.append(session, {**delta(text, turn, kind), "session_id": session})
++        elif roll < 0.70:
++            elog.append(session, notice("n", session))
++        elif roll < 0.85:
++            clock.advance(rng.choice([0.0, 0.005, 0.02, 0.05]))
++            elog.flush_due()
++        else:
++            read(session)
++    elog.flush()
++    for session in sessions:
++        read(session)
++        assert live[session] == list(range(1, elog.last_seq(session) + 1))
++        assert received[session] == sorted(set(received[session]))
++    if gaps == 0:
++        for key, parts in pieces.items():
++            assert "".join(texts.get(key, [])) == "".join(parts), key
++
++
++@pytest.mark.parametrize("seed", range(25))
++def test_random_interleavings_replay_without_gaps_or_duplicates(seed: int) -> None:
++    _random_run(seed, ReplayLimits())
++
++
++@pytest.mark.parametrize("seed", range(15))
++def test_random_interleavings_under_tight_caps_report_gaps_not_holes(seed: int) -> None:
++    _random_run(seed, ReplayLimits(events_per_session=6, bytes_per_session=900, sessions=2))
+diff --git a/tests/unit/service/test_fences.py b/tests/unit/service/test_fences.py
+new file mode 100644
+index 0000000..03c1192
+--- /dev/null
++++ b/tests/unit/service/test_fences.py
+@@ -0,0 +1,414 @@
++"""P17-05: controls name their generation; stale ones are refused, never re-aimed (R01.4, R06.2)."""
++
++from __future__ import annotations
++
++import asyncio
++import itertools
++from datetime import UTC, datetime
++from typing import Any
++
++import pytest
++
++from indus.protocol.events import CancelReason
++from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice
++from indus.service.broker import RequestWithdrawn, ServerRequestBroker
++from indus.service.fences import (
++    STALE_GENERATION,
++    ControlApplied,
++    ControlStatus,
++    GenerationFences,
++    RequestNotOpen,
++    Responded,
++    StaleGeneration,
++    StopOutcome,
++)
++from indus.service.request_redelivery import Offer, RequestBook, RequestViewer
++from tests.fakes.clock import FakeClock
++from tests.unit.service._stubs_k2 import FakeAdmissions, SyncAdmissions
++
++APPROVAL = {"command": "git push --force", "description": "rewrites the remote branch"}
++
++
++class Controls:
++    """A running turn's controls that record every call."""
++
++    def __init__(self, generation: int, *, accept: bool = True) -> None:
++        self.generation = generation
++        self.accept = accept
++        self.calls: list[tuple[Any, ...]] = []
++
++    def interrupt(self, generation: int, *, hard: bool = False, by_system: bool = False) -> bool:
++        self.calls.append(("interrupt", generation, hard, by_system))
++        return self.accept and generation == self.generation
++
++    def steer(self, text: str) -> bool:
++        self.calls.append(("steer", text))
++        return self.accept
++
++
++def applied(result: ControlApplied | StaleGeneration) -> ControlApplied:
++    assert isinstance(result, ControlApplied), result
++    return result
++
++
++def running_turn(fences: GenerationFences, generation: int, session: str = "s1") -> Controls:
++    controls = Controls(generation)
++    fences.begin(session, generation)
++    assert fences.adopt(session, generation, controls)
++    return controls
++
++
++# -- interrupt and steer -------------------------------------------------------------------------
++
++
++def test_interrupt_with_older_generation_is_stale_and_leaves_turn_running() -> None:
++    fences = GenerationFences()
++    controls = running_turn(fences, 4)
++    result = fences.interrupt("s1", 3)
++    assert isinstance(result, StaleGeneration) and result == StaleGeneration("s1", 3, 4)
++    assert result.to_data() == {"reason": STALE_GENERATION, "running": True, "generation": 4}
++    assert controls.calls == [] and fences.running("s1") == 4
++
++
++def test_interrupt_of_running_generation_is_delivered() -> None:
++    fences = GenerationFences()
++    controls = running_turn(fences, 4)
++    assert fences.interrupt("s1", 4, hard=True) == ControlApplied("s1", 4, ControlStatus.DELIVERED)
++    assert controls.calls == [("interrupt", 4, True, False)]
++    controls.accept = False  # already stopping
++    assert applied(fences.interrupt("s1", 4)).status is ControlStatus.REJECTED
++
++
++def test_interrupt_when_idle_or_for_a_future_generation_is_stale() -> None:
++    fences = GenerationFences()
++    idle = fences.interrupt("s1", 1)
++    assert isinstance(idle, StaleGeneration) and idle.current is None
++    assert idle.to_data() == {"reason": STALE_GENERATION, "running": False}
++    running_turn(fences, 2)
++    future = fences.interrupt("s1", 3)
++    assert isinstance(future, StaleGeneration) and future.current == 2
++
++
++def test_steer_names_its_generation() -> None:
++    fences = GenerationFences()
++    controls = running_turn(fences, 9)
++    assert isinstance(fences.steer("s1", 8, "use the other file"), StaleGeneration)
++    assert applied(fences.steer("s1", 9, "use the other file")).status is ControlStatus.DELIVERED
++    assert controls.calls == [("steer", "use the other file")]
++    with pytest.raises(ValueError):
++        fences.steer("s1", 9, "   ")
++
++
++def test_sessions_are_fenced_separately() -> None:
++    fences = GenerationFences()
++    a = running_turn(fences, 1, "a")
++    running_turn(fences, 5, "b")
++    assert isinstance(fences.interrupt("a", 5), StaleGeneration)
++    assert a.calls == []
++
++
++# -- lifecycle -----------------------------------------------------------------------------------
++
++
++def test_generations_only_grow() -> None:
++    fences = GenerationFences()
++    fences.begin("s1", 3)
++    with pytest.raises(ValueError):
++        fences.begin("s1", 3)
++    with pytest.raises(ValueError):
++        fences.begin("s1", 2)
++    assert fences.latest("s1") == 3 and fences.latest("other") is None
++
++
++def test_displaced_turn_cannot_release_its_successor() -> None:
++    fences = GenerationFences()
++    old = running_turn(fences, 1)
++    new = running_turn(fences, 2)  # the old claim was displaced (lease lost and re-claimed)
++    assert not fences.release("s1", 1)
++    assert fences.running("s1") == 2
++    assert isinstance(fences.interrupt("s1", 1), StaleGeneration)
++    assert old.calls == [] and new.calls == []
++    assert fences.release("s1", 2)
++    assert fences.running("s1") is None
++    assert not fences.release("s1", 2)
++    assert not fences.release("never", 1)
++
++
++def test_latched_interrupt_delivered_on_adopt() -> None:
++    fences = GenerationFences()
++    fences.begin("s1", 6)
++    assert applied(fences.interrupt("s1", 6, hard=True)).status is ControlStatus.LATCHED
++    controls = Controls(6)
++    assert fences.adopt("s1", 6, controls)
++    assert controls.calls == [("interrupt", 6, True, False)]
++
++
++def test_latched_steers_delivered_in_order_on_adopt() -> None:
++    fences = GenerationFences()
++    fences.begin("s1", 2)
++    assert applied(fences.steer("s1", 2, "first")).status is ControlStatus.LATCHED
++    fences.steer("s1", 2, "second")
++    fences.interrupt("s1", 2, by_system=True)
++    controls = Controls(2)
++    fences.adopt("s1", 2, controls)
++    assert controls.calls == [
++        ("steer", "first"),
++        ("steer", "second"),
++        ("interrupt", 2, False, True),
++    ]
++
++
++def test_latched_control_dropped_when_generation_released() -> None:
++    fences = GenerationFences()
++    fences.begin("s1", 1)
++    fences.interrupt("s1", 1)
++    fences.steer("s1", 1, "late")
++    assert fences.release("s1", 1)
++    later = running_turn(fences, 2)
++    assert later.calls == []  # never reaches a later generation
++
++
++def test_adopt_for_a_generation_that_is_not_running_is_refused() -> None:
++    fences = GenerationFences()
++    assert not fences.adopt("s1", 1, Controls(1))
++    fences.begin("s1", 2)
++    assert not fences.adopt("s1", 1, Controls(1))
++
++
++# -- approval and clarify answers ----------------------------------------------------------------
++
++
++class Session:
++    """A broker with a request book bound to the fence, one viewer attached."""
++
++    def __init__(self, fences: GenerationFences) -> None:
++        self.clock = FakeClock(datetime(2026, 10, 19, 9, 0, tzinfo=UTC))
++        self.offers: list[Offer] = []
++        self.book = RequestBook("s1", emit=lambda e: None, generation=lambda: fences.running("s1"))
++        self.book.attach(RequestViewer.of("tui", ["approval", "clarify"], self.offers.append))
++        seqs = itertools.count(1)
++        self.broker = ServerRequestBroker(
++            session_id="s1",
++            deliver=lambda r: None,
++            emit=lambda e: None,
++            next_seq=lambda: next(seqs),
++            clock=self.clock,
++            book=self.book,
++        )
++        fences.bind_requests("s1", self.book, self.broker.answer)
++
++
++def test_respond_with_running_generation_answers_once() -> None:
++    async def body() -> None:
++        fences = GenerationFences()
++        running_turn(fences, 5)
++        session = Session(fences)
++        task = asyncio.ensure_future(session.broker.ask("approval", APPROVAL))
++        await session.clock.run_until_idle()
++        (offer,) = session.offers
++        assert offer.generation == 5
++        request_id = offer.request.request_id
++        assert fences.respond("s1", request_id, 5, {"choice": "once"}) == Responded(
++            request_id, True
++        )
++        answer = await task
++        assert isinstance(answer, ApprovalAnswer) and answer.choice is ApprovalChoice.ONCE
++        # a second answer from an outdated card has no effect
++        second = fences.respond("s1", request_id, 5, {"choice": "deny"})
++        assert second == RequestNotOpen(request_id)
++
++    asyncio.run(body())
++
++
++def test_respond_with_stale_generation_is_refused() -> None:
++    async def body() -> None:
++        fences = GenerationFences()
++        running_turn(fences, 5)
++        session = Session(fences)
++        task = asyncio.ensure_future(session.broker.ask("approval", APPROVAL))
++        await session.clock.run_until_idle()
++        request_id = session.offers[0].request.request_id
++        stale = fences.respond("s1", request_id, 4, {"choice": "always"})
++        assert stale == StaleGeneration("s1", 4, 5)
++        assert session.book.lookup(request_id) is not None and not task.done()
++        # the asking turn was displaced: its request can no longer be answered by generation 5
++        running_turn(fences, 6)
++        assert fences.respond("s1", request_id, 5, {"choice": "once"}) == StaleGeneration(
++            "s1", 5, 6
++        )
++        task.cancel()
++        await session.clock.run_until_idle()
++
++    asyncio.run(body())
++
++
++def test_approval_answered_for_withdrawn_request_is_a_no_op() -> None:
++    async def body() -> None:
++        fences = GenerationFences()
++        running_turn(fences, 5)
++        session = Session(fences)
++        task = asyncio.ensure_future(session.broker.ask("approval", APPROVAL))
++        await session.clock.run_until_idle()
++        request_id = session.offers[0].request.request_id
++        session.broker.cancel_all(CancelReason.INTERRUPTED)
++        with pytest.raises(RequestWithdrawn):
++            await task
++        assert fences.respond("s1", request_id, 5, {"choice": "once"}) == RequestNotOpen(request_id)
++        assert fences.respond("s1", "srq-000000000000", 5, {"choice": "once"}) == RequestNotOpen(
++            "srq-000000000000"
++        )
++
++    asyncio.run(body())
++
++
++def test_respond_without_bound_requests_is_not_open() -> None:
++    fences = GenerationFences()
++    running_turn(fences, 1)
++    assert isinstance(fences.respond("s1", "srq-1", 1, {"choice": "once"}), RequestNotOpen)
++
++
++def test_request_asked_outside_a_turn_has_no_generation_check() -> None:
++    async def body() -> None:
++        fences = GenerationFences()
++        session = Session(fences)  # nothing running: offers carry no generation
++        task = asyncio.ensure_future(session.broker.ask("approval", APPROVAL))
++        await session.clock.run_until_idle()
++        offer = session.offers[0]
++        assert offer.generation is None
++        result = fences.respond("s1", offer.request.request_id, 0, {"choice": "deny"})
++        assert isinstance(result, Responded) and result.accepted
++        await task
++
++    asyncio.run(body())
++
++
++# -- stop(admission) -----------------------------------------------------------------------------
++
++
++def test_stop_queued_admission_cancels_it() -> None:
++    async def body() -> None:
++        admissions = FakeAdmissions()
++        admissions.add("adm-1", "queued")
++        fences = GenerationFences(admissions=admissions)
++        result = await fences.stop("s1", "adm-1")
++        assert result.outcome is StopOutcome.CANCELLED
++        assert admissions.rows["adm-1"].state == "terminal"
++
++    asyncio.run(body())
++
++
++def test_stop_queued_claimed_meanwhile_interrupts_that_generation() -> None:
++    async def body() -> None:
++        admissions = FakeAdmissions()
++        admissions.add("adm-2", "queued")
++        fences = GenerationFences(admissions=admissions)
++        other = running_turn(fences, 3)  # another surface's turn runs now
++        claimed: list[Controls] = []
++
++        def claim(admission_id: str) -> None:  # the worker claims between our read and cancel
++            admissions.claim(admission_id, 4)
++            fences.release("s1", 3)
++            claimed.append(running_turn(fences, 4))
++
++        admissions.before_cancel = claim
++        result = await fences.stop("s1", "adm-2")
++        assert result.outcome is StopOutcome.INTERRUPTED and result.generation == 4
++        assert result.status is ControlStatus.DELIVERED
++        assert claimed[0].calls == [("interrupt", 4, True, False)]
++        assert other.calls == []
++
++    asyncio.run(body())
++
++
++def test_stop_started_admission_interrupts_exactly_its_generation() -> None:
++    async def body() -> None:
++        admissions = FakeAdmissions()
++        admissions.add("adm-3", "started", 7)
++        fences = GenerationFences(admissions=admissions)
++        controls = running_turn(fences, 7)
++        result = await fences.stop("s1", "adm-3")
++        assert result.outcome is StopOutcome.INTERRUPTED and result.generation == 7
++        assert controls.calls == [("interrupt", 7, True, False)]
++
++    asyncio.run(body())
++
++
++def test_stop_of_a_finished_generation_never_hits_the_next_turn() -> None:
++    async def body() -> None:
++        admissions = FakeAdmissions()
++        admissions.add("adm-4", "started", 7)  # receipt read just before the turn settled
++        fences = GenerationFences(admissions=admissions)
++        running_turn(fences, 7)
++        fences.release("s1", 7)
++        successor = running_turn(fences, 8)
++        result = await fences.stop("s1", "adm-4")
++        assert result.outcome is StopOutcome.ALREADY_SETTLED
++        assert successor.calls == []
++
++    asyncio.run(body())
++
++
++def test_stop_before_the_claim_reaches_the_fence_is_kept_for_its_begin() -> None:
++    async def body() -> None:
++        admissions = FakeAdmissions()
++        admissions.add("adm-5", "started", 2)
++        fences = GenerationFences(admissions=admissions)
++        running_turn(fences, 1)
++        result = await fences.stop("s1", "adm-5")
++        assert result.outcome is StopOutcome.INTERRUPTED
++        assert result.status is ControlStatus.LATCHED
++        fences.release("s1", 1)
++        controls = running_turn(fences, 2)
++        assert controls.calls == [("interrupt", 2, True, False)]
++
++    asyncio.run(body())
++
++
++@pytest.mark.parametrize(
++    ("state", "generation", "outcome"),
++    [
++        ("terminal", 3, StopOutcome.ALREADY_SETTLED),
++        ("unknown", 3, StopOutcome.UNKNOWN),
++    ],
++)
++def test_stop_of_settled_or_unknown_admissions(
++    state: str, generation: int, outcome: StopOutcome
++) -> None:
++    async def body() -> None:
++        admissions = FakeAdmissions()
++        admissions.add("adm", state, generation)
++        fences = GenerationFences(admissions=admissions)
++        controls = running_turn(fences, 4)
++        result = await fences.stop("s1", "adm")
++        assert result.outcome is outcome
++        assert controls.calls == []
++        assert ("cancel", "adm") not in admissions.calls
++
++    asyncio.run(body())
++
++
++def test_stop_unknown_admission_id_and_missing_service() -> None:
++    async def body() -> None:
++        fences = GenerationFences(admissions=FakeAdmissions())
++        assert (await fences.stop("s1", "nope")).outcome is StopOutcome.NOT_FOUND
++        with pytest.raises(RuntimeError):
++            await GenerationFences().stop("s1", "adm")
++
++    asyncio.run(body())
++
++
++def test_stop_works_with_a_plain_admission_service() -> None:
++    async def body() -> None:
++        admissions = SyncAdmissions()
++        admissions.add("adm-6", "queued")
++        fences = GenerationFences(admissions=admissions)
++        assert (await fences.stop("s1", "adm-6")).outcome is StopOutcome.CANCELLED
++
++    asyncio.run(body())
++
++
++def test_forget_drops_session_state() -> None:
++    fences = GenerationFences()
++    running_turn(fences, 3)
++    fences.forget("s1")
++    assert fences.running("s1") is None and fences.latest("s1") is None
+diff --git a/tests/unit/service/test_request_redelivery.py b/tests/unit/service/test_request_redelivery.py
+new file mode 100644
+index 0000000..38b21ca
+--- /dev/null
++++ b/tests/unit/service/test_request_redelivery.py
+@@ -0,0 +1,418 @@
++"""P17-07: server requests offered to viewers, re-offered on reattach, settled exactly once."""
++
++from __future__ import annotations
++
++import asyncio
++import itertools
++import re
++import time
++from collections.abc import Callable, Coroutine, Iterable, Mapping
++from datetime import UTC, datetime
++from typing import Any
++
++import pytest
++
++from indus.protocol.errors import SERVER_REQUEST_NOT_FOUND, SERVER_REQUEST_UNSUPPORTED
++from indus.protocol.events import CancelReason, ServerRequestCancelled
++from indus.protocol.methods import ProtocolError
++from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice, ApprovalRequest
++from indus.service.broker import (
++    AnswerModel,
++    RequestUnsupported,
++    RequestWithdrawn,
++    ServerRequestBroker,
++)
++from indus.service.request_redelivery import (
++    NOT_SHOWN_CODE,
++    UNRENDERABLE_CODE,
++    Offer,
++    RequestBook,
++    RequestViewer,
++    SettleOutcome,
++    new_request_id,
++)
++from tests.fakes.clock import FakeClock
++
++ALL_KINDS = ("approval", "clarify", "sudo", "secret")
++APPROVAL = {"command": "rm -rf build", "description": "removes build output"}
++SUDO = {"reason": "install a package"}
++
++
++def approval_request(request_id: str) -> ApprovalRequest:
++    return ApprovalRequest(
++        request_id=request_id,
++        session_id="s1",
++        command=APPROVAL["command"],
++        description=APPROVAL["description"],
++    )
++
++
++class Viewer:
++    """A fake viewer that records what it was offered."""
++
++    def __init__(self, viewer_id: str, kinds: Iterable[str] = ALL_KINDS, **kw: Any) -> None:
++        self.offers: list[Offer] = []
++        self.viewer = RequestViewer.of(viewer_id, kinds, self.offers.append, **kw)
++
++    @property
++    def ids(self) -> list[str]:
++        return [o.request.request_id for o in self.offers]
++
++
++class Rig:
++    def __init__(self, generation: int | None = 7) -> None:
++        self.clock = FakeClock(datetime(2026, 10, 19, 9, 0, tzinfo=UTC))
++        self.settled: list[Mapping[str, Any]] = []
++        self.cancelled: list[ServerRequestCancelled] = []
++        self.delivered: list[object] = []
++        self.book = RequestBook("s1", emit=self.settled.append, generation=lambda: generation)
++        seqs = itertools.count(1)
++        self.broker = ServerRequestBroker(
++            session_id="s1",
++            deliver=self.delivered.append,
++            emit=self.cancelled.append,
++            next_seq=lambda: next(seqs),
++            clock=self.clock,
++            book=self.book,
++        )
++
++    def ask(self, kind: str = "approval", payload: Mapping[str, Any] = APPROVAL, **kw: Any):
++        return asyncio.ensure_future(self.broker.ask(kind, payload, **kw))
++
++    async def settle(self) -> None:
++        await self.clock.run_until_idle()
++
++
++def run(body: Callable[[Rig], Coroutine[Any, Any, None]], rig: Rig | None = None) -> Rig:
++    rig = rig or Rig()
++    asyncio.run(body(rig))
++    return rig
++
++
++def outcomes(rig: Rig) -> list[tuple[str, str]]:
++    return [(e["request_id"], e["outcome"]) for e in rig.settled]
++
++
++# -- ids and offers ------------------------------------------------------------------------------
++
++
++def test_request_ids_are_srq_with_twelve_hex() -> None:
++    ids = {new_request_id() for _ in range(200)}
++    assert len(ids) == 200
++    assert all(re.fullmatch(r"srq-[0-9a-f]{12}", i) for i in ids)
++
++
++def test_offer_goes_to_capable_viewers_with_generation() -> None:
++    async def body(rig: Rig) -> None:
++        cli, gui = Viewer("cli", ["approval"]), Viewer("gui", ["sudo"])
++        rig.book.attach(cli.viewer)
++        rig.book.attach(gui.viewer)
++        task = rig.ask()
++        await rig.settle()
++        (offer,) = cli.offers
++        assert gui.offers == [] and rig.delivered == []  # the book delivers, not ``deliver``
++        assert offer.replayed is False and offer.generation == 7
++        assert re.fullmatch(r"srq-[0-9a-f]{12}", offer.request.request_id)
++        wire = offer.to_wire()
++        assert wire["replayed"] is False and wire["generation"] == 7
++        assert wire["request"]["request_id"] == offer.request.request_id
++        task.cancel()
++        await rig.settle()
++
++    run(body)
++
++
++def test_offer_wire_without_generation_omits_it() -> None:
++    request = approval_request("srq-000000000001")
++    assert "generation" not in Offer(request, None, replayed=True).to_wire()
++
++
++# -- re-offer ------------------------------------------------------------------------------------
++
++
++def test_reattach_reoffers_open_approval_with_same_id() -> None:
++    async def body(rig: Rig) -> None:
++        tui = Viewer("tui")
++        rig.book.attach(tui.viewer)
++        task = rig.ask()
++        await rig.settle()
++        (first,) = tui.offers
++        assert rig.book.detach("tui")
++        assert rig.book.lookup(first.request.request_id) is not None  # detaching refuses nothing
++        back = Viewer("tui")
++        assert rig.book.attach(back.viewer) == 1
++        (again,) = back.offers
++        assert again.request.request_id == first.request.request_id and again.replayed
++        assert again.generation == first.generation
++        rig.broker.answer(again.request.request_id, {"choice": "once"})
++        answer = await task
++        assert isinstance(answer, ApprovalAnswer) and answer.choice is ApprovalChoice.ONCE
++
++    run(body)
++
++
++def test_events_since_reoffers_still_open_requests() -> None:
++    async def body(rig: Rig) -> None:
++        tui = Viewer("tui")
++        rig.book.attach(tui.viewer)
++        tasks = [rig.ask(), rig.ask("sudo", SUDO)]
++        await rig.settle()
++        rig.broker.answer(tui.offers[0].request.request_id, {"choice": "deny"})
++        await rig.settle()
++        assert rig.book.reoffer("tui") == 1
++        assert tui.offers[-1].replayed and tui.offers[-1].request.kind == "sudo"
++        assert rig.book.reoffer("nobody") == 0
++        rig.broker.cancel_all(CancelReason.INTERRUPTED)
++        await asyncio.gather(*tasks, return_exceptions=True)
++
++    run(body)
++
++
++def test_viewer_that_refused_is_not_reoffered() -> None:
++    async def body(rig: Rig) -> None:
++        a, b = Viewer("a"), Viewer("b")
++        rig.book.attach(a.viewer)
++        rig.book.attach(b.viewer)
++        task = rig.ask()
++        await rig.settle()
++        request_id = a.ids[0]
++        assert rig.book.refuse("a", request_id, UNRENDERABLE_CODE)
++        assert rig.book.reoffer("a") == 0
++        assert rig.book.reoffer("b") == 1
++        rig.broker.answer(request_id, {"choice": "once"})
++        await task
++
++    run(body)
++
++
++# -- first answer wins ---------------------------------------------------------------------------
++
++
++def test_two_answers_first_wins_and_one_settled_event() -> None:
++    async def body(rig: Rig) -> None:
++        cli, tui = Viewer("cli"), Viewer("tui")
++        rig.book.attach(cli.viewer)
++        rig.book.attach(tui.viewer)
++        task = rig.ask()
++        await rig.settle()
++        request_id = cli.ids[0]
++        assert tui.ids == [request_id]
++        assert rig.broker.answer(request_id, {"choice": "session"}).accepted
++        with pytest.raises(ProtocolError) as err:
++            rig.broker.answer(request_id, {"choice": "deny"})
++        assert err.value.error is SERVER_REQUEST_NOT_FOUND
++        answer = await task
++        assert isinstance(answer, ApprovalAnswer) and answer.choice is ApprovalChoice.SESSION
++        assert outcomes(rig) == [(request_id, "answered")]
++        assert rig.settled[0]["type"] == "request.settled" and rig.settled[0]["kind"] == "approval"
++        assert rig.book.lookup(request_id) is None and rig.book.reoffer("tui") == 0
++
++    run(body)
++
++
++def test_book_settle_is_first_wins() -> None:
++    rig = Rig()
++    request = approval_request("srq-0000000000aa")
++    rig.book.attach(Viewer("v").viewer)
++    assert rig.book.offer(request) is not None
++    with pytest.raises(ValueError):
++        rig.book.offer(request)
++    assert rig.book.settle(request.request_id, SettleOutcome.ANSWERED)
++    assert not rig.book.settle(request.request_id, SettleOutcome.WITHDRAWN)
++    assert outcomes(rig) == [(request.request_id, "answered")]
++
++
++# -- unrenderable and declined -------------------------------------------------------------------
++
++
++def test_all_viewers_unrenderable_settles_undeliverable_at_once() -> None:
++    async def body(rig: Rig) -> None:
++        loop = asyncio.get_running_loop()
++
++        def refusing(viewer_id: str) -> RequestViewer:
++            def send(offer: Offer) -> None:  # answers -32601 as soon as the frame arrives
++                loop.call_soon(rig.book.refuse, viewer_id, offer.request.request_id, -32601)
++
++            return RequestViewer.of(viewer_id, ALL_KINDS, send)
++
++        rig.book.attach(refusing("old-tui"))
++        rig.book.attach(refusing("old-gui"))
++        started = time.perf_counter()
++        task = rig.ask()
++        with pytest.raises(RequestUnsupported) as err:
++            await task
++        elapsed = time.perf_counter() - started
++        assert elapsed < 0.05
++        assert err.value.kind == "approval"
++        assert err.value.error.code == SERVER_REQUEST_UNSUPPORTED.code
++        (event,) = rig.settled
++        assert event["outcome"] == "undeliverable" and event["reason"] == "unsupported"
++        assert rig.cancelled == []  # not a withdrawal and not a timeout
++        assert not rig.broker.waiting
++
++    run(body)
++
++
++def test_unrenderable_by_one_viewer_answered_by_another() -> None:
++    async def body(rig: Rig) -> None:
++        a, b = Viewer("a"), Viewer("b")
++        rig.book.attach(a.viewer)
++        rig.book.attach(b.viewer)
++        task = rig.ask()
++        await rig.settle()
++        request_id = a.ids[0]
++        assert rig.book.refuse("a", request_id, UNRENDERABLE_CODE)
++        assert rig.book.lookup(request_id) is not None
++        rig.broker.answer(request_id, {"choice": "once"})
++        assert isinstance(await task, ApprovalAnswer)
++
++    run(body)
++
++
++def test_declined_by_one_viewer_answered_by_another() -> None:
++    async def body(rig: Rig) -> None:
++        window1 = Viewer("window-1", can_decline=True)
++        window2 = Viewer("window-2", can_decline=True)
++        rig.book.attach(window1.viewer)
++        rig.book.attach(window2.viewer)
++        task = rig.ask()
++        await rig.settle()
++        request_id = window1.ids[0]
++        assert rig.book.refuse("window-1", request_id, NOT_SHOWN_CODE)
++        entry = rig.book.lookup(request_id)
++        assert entry is not None and entry.refused == {"window-1": NOT_SHOWN_CODE}
++        rig.broker.answer(request_id, {"choice": "always"})
++        answer = await task
++        assert isinstance(answer, ApprovalAnswer) and answer.choice is ApprovalChoice.ALWAYS
++        assert outcomes(rig) == [(request_id, "answered")]
++
++    run(body)
++
++
++def test_all_declined_is_undeliverable_not_shown() -> None:
++    async def body(rig: Rig) -> None:
++        rig.book.attach(Viewer("w1", can_decline=True).viewer)
++        rig.book.attach(Viewer("w2", can_decline=True).viewer)
++        task = rig.ask()
++        await rig.settle()
++        (entry,) = rig.book.open_requests()
++        rig.book.refuse("w1", entry.request_id, NOT_SHOWN_CODE)
++        rig.book.refuse("w2", entry.request_id, NOT_SHOWN_CODE)
++        with pytest.raises(RequestUnsupported) as err:
++            await task
++        assert "declined" in err.value.error.message
++        assert rig.settled[0]["reason"] == "not_shown"
++
++    run(body)
++
++
++def test_decline_without_capability_is_ignored() -> None:
++    async def body(rig: Rig) -> None:
++        cli = Viewer("cli")  # never advertised decline
++        rig.book.attach(cli.viewer)
++        task = rig.ask()
++        await rig.settle()
++        assert not rig.book.refuse("cli", cli.ids[0], NOT_SHOWN_CODE)
++        assert rig.book.lookup(cli.ids[0]) is not None and not task.done()
++        assert not rig.book.refuse("cli", "srq-ffffffffffff", UNRENDERABLE_CODE)
++        rig.broker.answer(cli.ids[0], {"choice": "deny"})
++        await task
++
++    run(body)
++
++
++def test_other_viewer_error_counts_as_refusal() -> None:
++    async def body(rig: Rig) -> None:
++        crashy = Viewer("crashy")
++        rig.book.attach(crashy.viewer)
++        task = rig.ask()
++        await rig.settle()
++        assert rig.book.refuse("crashy", crashy.ids[0], -32603)  # its handler crashed
++        with pytest.raises(RequestUnsupported):
++            await task
++        assert rig.settled[0]["reason"] == "unsupported"
++
++    run(body)
++
++
++def test_kind_no_viewer_renders_is_refused_up_front() -> None:
++    async def body(rig: Rig) -> None:
++        with pytest.raises(RequestUnsupported):
++            await rig.broker.ask("approval", APPROVAL)  # nobody attached
++        rig.book.attach(Viewer("gui", ["approval"]).viewer)
++        assert rig.broker.answerable_kinds == frozenset({"approval"})
++        assert rig.book.can_render("approval") and not rig.book.can_render("sudo")
++        with pytest.raises(RequestUnsupported):
++            await rig.broker.ask("sudo", SUDO)
++        assert rig.settled == [] and rig.book.open_requests() == []
++
++    run(body)
++
++
++def test_book_offer_with_no_capable_viewer_settles_undeliverable() -> None:
++    rig = Rig()
++    hooked: list[str] = []
++    rig.book.bind_undeliverable(lambda request_id, error: hooked.append(request_id))
++    request = approval_request("srq-0000000000bb")
++    assert rig.book.offer(request) is None
++    assert hooked == [request.request_id]
++    assert outcomes(rig) == [(request.request_id, "undeliverable")]
++
++
++# -- withdrawal and failures ---------------------------------------------------------------------
++
++
++def test_withdrawal_emits_settled_withdrawn() -> None:
++    async def body(rig: Rig) -> None:
++        tui = Viewer("tui")
++        rig.book.attach(tui.viewer)
++        task = rig.ask()
++        await rig.settle()
++        assert rig.broker.cancel_all(CancelReason.INTERRUPTED) == 1
++        with pytest.raises(RequestWithdrawn):
++            await task
++        (event,) = rig.settled
++        assert event["outcome"] == "withdrawn" and event["reason"] == "interrupted"
++        assert [e.request_id for e in rig.cancelled] == tui.ids  # the P04 event stays
++
++    run(body)
++
++
++def test_timeout_withdraws_and_settles_once() -> None:
++    async def body(rig: Rig) -> None:
++        rig.book.attach(Viewer("tui").viewer)
++        task = rig.ask(timeout=30)
++        await rig.settle()
++        await rig.clock.advance_and_settle(30)
++        with pytest.raises(RequestWithdrawn):
++            await task
++        assert [e["reason"] for e in rig.settled] == ["timed_out"]
++
++    run(body)
++
++
++def test_failing_viewer_send_keeps_request_for_others(caplog: pytest.LogCaptureFixture) -> None:
++    async def body(rig: Rig) -> None:
++        def broken(_: Offer) -> None:
++            raise ConnectionError("socket gone")
++
++        rig.book.attach(RequestViewer.of("dead", ALL_KINDS, broken))
++        good = Viewer("good")
++        rig.book.attach(good.viewer)
++        task = rig.ask()
++        await rig.settle()
++        assert "could not offer server request" in caplog.text
++        rig.broker.answer(good.ids[0], {"choice": "once"})
++        answer: AnswerModel = await task
++        assert isinstance(answer, ApprovalAnswer)
++
++    run(body)
++
++
++def test_viewer_kinds_filter_unknown_names() -> None:
++    viewer = RequestViewer.of("v", ["approval", "telepathy"], lambda offer: None)
++    assert viewer.kinds == frozenset({"approval"})
++    rig = Rig()
++    rig.book.attach(viewer)
++    assert rig.book.viewers() == ["v"] and rig.book.answerable_kinds() == {"approval"}
++    assert not rig.book.detach("nobody")
