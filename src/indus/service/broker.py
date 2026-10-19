@@ -19,6 +19,12 @@ The broker also measures how long the agent sat waiting on a person: ``human_wai
 the time during which at least one request was open (overlaps once). The tool executor subtracts
 it from batch deadlines (P04-14).
 
+Daemon-hosted sessions (P17-07) hand the broker a ``RequestBook``: then the kinds the attached
+viewers can render decide what may be asked, the book (not ``deliver``) offers each request to the
+viewers and re-offers it on reattach, every answer and withdrawal is reported to the book (which
+announces ``request.settled``), and a request the book settles as undeliverable fails its asker
+with ``RequestUnsupported`` at once. Request ids are ``srq-<12 hex>``.
+
 Every method runs on the session's event loop; a host on another thread marshals calls onto it.
 """
 
@@ -26,7 +32,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import secrets
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
@@ -34,6 +39,7 @@ from typing import Any, cast
 from pydantic import TypeAdapter, ValidationError
 
 from indus.foundation.clock import Clock
+from indus.protocol.envelope import ErrorObject
 from indus.protocol.errors import (
     ANSWER_KIND_MISMATCH,
     INVALID_PARAMS,
@@ -60,6 +66,7 @@ from indus.protocol.server_requests import (
     ServerRequestAnswer,
     SudoRequest,
 )
+from indus.service.request_redelivery import RequestBook, RequestSettlement, new_request_id
 
 __all__ = [
     "AnswerModel",
@@ -80,10 +87,6 @@ _RESERVED_KEYS = frozenset({"kind", "request_id", "session_id", "turn_id", "dead
 _ANSWERS: TypeAdapter[AnswerModel] = TypeAdapter(ServerRequestAnswer)
 
 
-def _new_request_id() -> str:
-    return "sr_" + secrets.token_hex(8)
-
-
 @dataclass(slots=True)
 class _Open:
     request: RequestModel
@@ -102,7 +105,8 @@ class ServerRequestBroker:
         next_seq: Callable[[], int],
         clock: Clock,
         answerable_kinds: Iterable[str] = (),
-        new_id: Callable[[], str] = _new_request_id,
+        new_id: Callable[[], str] = new_request_id,
+        book: RequestBook | None = None,
     ) -> None:
         self.session_id = session_id
         self._deliver = deliver
@@ -116,11 +120,17 @@ class ServerRequestBroker:
         self._closed = False
         self._wait_total = 0.0
         self._wait_since: float | None = None
+        self._book = book
+        if book is not None:
+            book.bind_undeliverable(self._undeliverable)
 
     # -- configuration -------------------------------------------------------------------------
 
     @property
     def answerable_kinds(self) -> frozenset[str]:
+        """Kinds that may be asked now: the attached viewers' kinds when a book is used."""
+        if self._book is not None:
+            return self._book.answerable_kinds()
         return self._answerable
 
     def set_answerable_kinds(self, kinds: Iterable[str]) -> None:
@@ -147,7 +157,7 @@ class ServerRequestBroker:
         request = self._build(kind, payload, timeout=timeout, turn_id=turn_id)
         if self._closed:
             raise RequestWithdrawn(request.request_id, CancelReason.SESSION_CLOSED)
-        if kind not in self._answerable:
+        if kind not in self.answerable_kinds:
             raise RequestUnsupported(
                 kind,
                 make_error(
@@ -158,7 +168,10 @@ class ServerRequestBroker:
         future: asyncio.Future[AnswerModel] = asyncio.get_running_loop().create_future()
         self._register(_Open(request, future))
         try:
-            self._deliver(request)
+            if self._book is not None:
+                self._book.offer(request)
+            else:
+                self._deliver(request)
         except Exception:
             # The request stays open: a client that reconnects gets it with the session.
             log.warning("could not deliver server request %s", request.request_id, exc_info=True)
@@ -221,6 +234,8 @@ class ServerRequestBroker:
         parsed = _check_answer(entry.request, answer)
         del self._open[request_id]
         self._after_close()
+        if self._book is not None:
+            self._book.settle(request_id, RequestSettlement.ANSWERED)
         if entry.future.done():
             return ServerRequestAnswerResult(accepted=False)
         entry.future.set_result(parsed)
@@ -242,6 +257,8 @@ class ServerRequestBroker:
         if entry is None:
             return False
         self._after_close()
+        if self._book is not None:
+            self._book.settle(request_id, RequestSettlement.WITHDRAWN, reason.value)
         try:
             event = ServerRequestCancelled(
                 session_id=self.session_id,
@@ -255,6 +272,15 @@ class ServerRequestBroker:
         if not entry.future.done():
             entry.future.set_exception(RequestWithdrawn(request_id, reason))
         return True
+
+    def _undeliverable(self, request_id: str, error: ErrorObject) -> None:
+        """The book found no viewer able to answer: fail the asker now (no cancelled event)."""
+        entry = self._open.pop(request_id, None)
+        if entry is None:
+            return
+        self._after_close()
+        if not entry.future.done():
+            entry.future.set_exception(RequestUnsupported(entry.request.kind, error))
 
     # -- state ---------------------------------------------------------------------------------
 

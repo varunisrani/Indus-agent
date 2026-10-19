@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Final, Literal
 
 from indus.foundation.errors import StoreError
-from indus.state import holders, lineage, sessions
+from indus.state import holders, lineage, runtime_ledger, sessions
 from indus.state.guards import divert_path
 from indus.state.registry import StoreHandle
 from indus.state.writer import ROUTINE
@@ -329,6 +329,9 @@ def delete_rows_in(
         doomed.extend(delegate_descendants_in(conn, doomed))
     for sid in doomed:
         write_tombstone_in(conn, sid, by=by, now=now)
+    # P17-01: the daemon's admissions for these sessions become retirement markers, so an exact
+    # retry of one answers with its receipt and never admits work for a deleted id (R03.22).
+    runtime_ledger.retire_sessions_in(conn, doomed, now)
     for batch in chunked(doomed):
         marks = _marks(batch)
         conn.execute(

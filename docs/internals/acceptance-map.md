@@ -229,7 +229,17 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/core/test_liveness.py::test_idle_turn_aborted_at_600_and_activity_at_599_keeps_it`
   - `tests/unit/core/test_liveness.py::test_touch_between_observe_and_commit_vetoes`
   - `tests/unit/core/test_liveness.py::test_hung_tool_turn_is_stopped_by_the_watchdog`
-  - Review: cross-process turn lease (P17)
+  - `tests/integration/service/test_turn_lease_multiprocess.py::test_second_process_waits_and_proceeds_after_release`
+  - `tests/integration/service/test_turn_lease_multiprocess.py::test_a_killed_holder_is_reclaimed`
+- **ACC-A63-2** A turn whose lease cannot be renewed in time is interrupted with `lease_lost`
+  - `tests/unit/service/test_turn_lease.py::test_refresh_failure_past_expiry_interrupts_with_lease_lost`
+  - `tests/unit/service/test_turn_lease.py::test_lock_errors_near_the_deadline_lose_the_lease`
+  - `tests/unit/service/test_admissions.py::test_lease_loss_interrupts_the_turn`
+- **ACC-A63-3** A hosted turn idle for 600 s is stopped as `stalled`; activity or a person-wait keeps it
+  - `tests/unit/service/test_turn_liveness.py::test_idle_600_s_aborts_once`
+  - `tests/unit/service/test_turn_liveness.py::test_activity_between_observe_and_act_vetoes_the_abort`
+  - `tests/unit/service/test_turn_liveness.py::test_long_approval_wait_is_not_aborted`
+  - `tests/unit/service/test_admissions.py::test_a_stalled_turn_is_stopped`
 - **ACC-A64-1** Closed set of turn exit reasons logged for every turn
   - Review: not yet planned (phase TBD)
 - **ACC-A65-1** Persistent goal: gates, then the judge after every finished turn; done ends it, otherwise an ordinary user message continues the work
@@ -330,6 +340,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/core/test_usage.py::test_side_call_tagged_and_kept_out_of_main_counters`
   - `tests/unit/core/test_usage.py::test_deltas_land_in_the_store_with_task_tags`
   - `tests/unit/providers/test_auxiliary.py::test_usage_recorded_with_task_tag`
+- **ACC-B25-1** Durable input ledger: an exact retry returns the original admission (and a finished one's stored text)
+  - `tests/unit/state/test_runtime_ledger.py::test_exact_retry_returns_the_same_row`
+  - `tests/unit/service/test_admissions.py::test_exact_retry_after_completion_replays_text_without_running`
+  - `tests/unit/service/test_admissions.py::test_two_concurrent_admits_of_one_request_make_one_row`
+- **ACC-B25-2** Inputs started under a dead owner become unknown, are never replayed and pause their session
+  - `tests/unit/state/test_runtime_ledger.py::test_restart_flips_started_to_unknown_and_blocks_the_next_row`
+  - `tests/unit/service/test_admissions.py::test_restart_parks_the_lost_turn_and_tells_once`
 - **ACC-B26-1** Queue a prompt to run after the current turn (`/queue`, list/edit/move/clear)
   - `tests/unit/cli/slash/test_dispatch.py::test_queue_runs_after_the_turn`
   - `tests/unit/cli/slash/test_control_cmds.py::test_queue_management`

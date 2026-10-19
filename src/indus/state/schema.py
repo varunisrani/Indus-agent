@@ -215,6 +215,8 @@ TABLES: tuple[Table, ...] = (
             ("expires_at", "REAL NOT NULL"),
         ),
     ),
+    # P17-03: the durable turn lease. ``holder`` keeps the P02 stamp shape so deletion and
+    # maintenance guards read it; the holder fields and the generation fence refresh and release.
     Table(
         "turn_leases",
         _cols(
@@ -222,6 +224,12 @@ TABLES: tuple[Table, ...] = (
             ("holder", "TEXT NOT NULL"),
             ("acquired_at", "REAL NOT NULL"),
             ("expires_at", "REAL NOT NULL"),
+            ("holder_pid", "INTEGER"),
+            ("holder_start", "INTEGER"),
+            ("holder_ns", "TEXT"),
+            ("holder_host", "TEXT"),
+            ("generation", _COUNTER),
+            ("refreshed_at", "REAL"),
         ),
     ),
     Table(
@@ -280,6 +288,61 @@ TABLES: tuple[Table, ...] = (
             ("updated_at", "REAL NOT NULL"),
         ),
     ),
+    # P17-01: the runtime ledger (daemon input FIFO). No FK to sessions: input may arrive before
+    # the session row exists, and retirement markers outlive a deleted session (R03.22).
+    Table(
+        "runtime_owner",
+        _cols(
+            ("singleton", "INTEGER PRIMARY KEY CHECK (singleton = 1)"),
+            ("epoch", "INTEGER NOT NULL"),
+            ("instance_id", "TEXT NOT NULL"),
+            ("started_at", "REAL NOT NULL"),
+        ),
+    ),
+    Table(
+        "runtime_generations",
+        _cols(
+            ("session_id", "TEXT PRIMARY KEY"),
+            ("generation", _COUNTER),
+            ("updated_at", "REAL NOT NULL"),
+        ),
+    ),
+    Table(
+        "runtime_admissions",
+        _cols(
+            ("seq", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            ("admission_id", "TEXT NOT NULL"),
+            ("principal_id", "TEXT NOT NULL"),
+            ("session_id", "TEXT NOT NULL"),
+            ("request_id", "TEXT NOT NULL"),
+            ("payload_json", "TEXT NOT NULL"),
+            ("digest", "TEXT NOT NULL"),
+            ("state", "TEXT NOT NULL"),
+            ("outcome", "TEXT"),
+            ("owner_epoch", "INTEGER NOT NULL"),
+            ("generation", "INTEGER"),
+            ("replaces", "TEXT"),
+            ("final_text", "TEXT"),
+            ("detail", "TEXT"),
+            ("created_at", "REAL NOT NULL"),
+            ("updated_at", "REAL NOT NULL"),
+        ),
+    ),
+    Table(
+        "runtime_retired",
+        _cols(
+            ("principal_id", "TEXT NOT NULL"),
+            ("session_id", "TEXT NOT NULL"),
+            ("request_id", "TEXT NOT NULL"),
+            ("admission_id", "TEXT NOT NULL"),
+            ("digest", "TEXT NOT NULL"),
+            ("outcome", "TEXT NOT NULL"),
+            ("generation", "INTEGER"),
+            ("final_text", "TEXT"),
+            ("retired_at", "REAL NOT NULL"),
+        ),
+        ("PRIMARY KEY (principal_id, session_id, request_id)",),
+    ),
 )
 
 INDEXES: tuple[str, ...] = (
@@ -303,6 +366,13 @@ INDEXES: tuple[str, ...] = (
     "WHERE due_at IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_gateway_routes_session ON gateway_routes(session_id)",
     "CREATE INDEX IF NOT EXISTS idx_delivery_ledger_state ON delivery_ledger(state, updated_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_admissions_id "
+    "ON runtime_admissions(admission_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_admissions_key "
+    "ON runtime_admissions(principal_id, session_id, request_id)",
+    "CREATE INDEX IF NOT EXISTS idx_runtime_admissions_fifo "
+    "ON runtime_admissions(session_id, state, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_runtime_retired_id ON runtime_retired(admission_id)",
 )
 
 TRIGGERS: tuple[str, ...] = (

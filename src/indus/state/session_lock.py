@@ -13,6 +13,11 @@ that provably no longer runs (a forked child kept the descriptor), the file is r
 
 Locks taken by this process are also kept in an in-process table, so threads and objects in one
 process see each other even where the file system cannot lock (then the table is all there is).
+
+Superseded (D-16.69): the durable turn lease (P17-03, ``state.turn_leases`` and
+``service.turn_lease``) is what serialises turns of a daemon-hosted session, and ``--local``
+processes take the same lease. This file lock stays only for hosts whose store has no lease table
+wiring yet; it is not consulted by the lease.
 """
 
 from __future__ import annotations

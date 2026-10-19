@@ -30,6 +30,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_http.py::test_cancel_closes_stream_within_200ms`
   - `tests/contract/providers/test_transport_contract.py::test_cancellation_mid_stream_closes_the_response`
   - `tests/unit/providers/test_streaming.py::test_cancellation_closes_stream_and_raises`
+  - `tests/unit/service/test_fences.py::test_interrupt_with_older_generation_is_stale_and_leaves_turn_running`
+  - `tests/unit/service/test_fences.py::test_stop_queued_claimed_meanwhile_stops_that_claim`
+  - `tests/unit/service/test_fences.py::test_interrupts_through_the_fence_reach_only_the_named_generation`
+  - `tests/unit/service/test_fences.py::test_stop_names_its_session`
+  - `tests/unit/service/test_fences.py::test_latched_control_dropped_when_generation_released`
   - `tests/unit/providers/test_streaming.py::test_cancellation_close_latency_under_200ms`
   - `tests/trials/async_core/test_real_transports.py::test_interrupt_closes_the_http_stream_within_200ms`
   - `tests/trials/async_core/test_sync_driver.py::test_sync_caller_interrupts_within_200ms`
@@ -141,6 +146,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/approvals/test_smart.py::test_judge_failure_or_deadline_asks_the_person`
   - `tests/unit/gateway/core/test_prompts.py::test_a_timed_out_request_says_it_did_not_run_and_is_not_a_denial`
   - `tests/unit/gateway/core/test_prompts.py::test_withdrawn_and_denied_are_reported_differently`
+  - `tests/unit/service/test_request_redelivery.py::test_all_viewers_unrenderable_settles_undeliverable_at_once`
 - **R02.6** Isolation is about mounts, not backend names
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
   - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
@@ -364,13 +370,21 @@ Checked by `python -m tooling.checks traps`.
 - **R03.20** PID-based liveness across namespaces
   - `tests/unit/gateway/daemon/test_liveness.py::test_unknowns_fail_closed_and_foreign_records_are_not_probed`
   - `tests/unit/gateway/daemon/test_liveness.py::test_real_process_identity`
+  - `tests/unit/service/test_turn_lease.py::test_holder_in_another_namespace_waits_for_expiry`
+  - `tests/integration/service/test_turn_lease_multiprocess.py::test_a_holder_from_another_namespace_is_reclaimed_only_after_expiry`
+  - `tests/unit/service/test_turn_lease.py::test_a_live_holder_cannot_be_declared_dead_without_proof`
 - **R03.21** Never replay started work
   - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
   - `tests/integration/gateway/test_boot_recovery.py::test_a_turn_cut_by_a_stop_resumes_once_across_three_boots`
+  - `tests/unit/state/test_runtime_ledger.py::test_restart_flips_started_to_unknown_and_blocks_the_next_row`
+  - `tests/unit/service/test_admissions.py::test_restart_parks_the_lost_turn_and_tells_once`
+  - `tests/unit/service/test_fences.py::test_stop_of_an_unknown_admission_changes_nothing`
 - **R03.22** Deleted ids must stay dead
   - `tests/unit/state/test_deletion.py::test_deleted_id_cannot_be_recreated`
   - `tests/unit/state/test_deletion.py::test_sweep_never_weakens_a_user_tombstone`
   - `tests/unit/state/test_portability.py::test_tombstoned_id_is_refused`
+  - `tests/unit/state/test_runtime_ledger.py::test_retired_id_stays_retired_after_an_exact_retry`
+  - `tests/unit/state/test_runtime_ledger.py::test_deleted_session_refuses_new_input`
 - **R03.23** Profile cross-talk
   - `tests/unit/foundation/test_scope.py::test_unresolved_raises`
   - `tests/unit/foundation/test_scope.py::test_child_env_pins_home`
@@ -575,7 +589,11 @@ Checked by `python -m tooling.checks traps`.
 - **R05.2** Events arrive before the UI subscribes
   - Review: not yet planned (P00-guards)
 - **R05.3** Server requests must not stall the agent
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/service/test_request_redelivery.py::test_all_viewers_unrenderable_settles_undeliverable_at_once`
+  - `tests/unit/service/test_request_redelivery.py::test_kind_no_viewer_renders_is_refused_up_front`
+  - `tests/unit/service/test_request_redelivery.py::test_reattach_reoffers_open_approval_with_same_id`
+  - `tests/unit/service/test_request_redelivery.py::test_withdrawal_emits_settled_withdrawn`
+  - Review: TS client answers unrenderable kinds with -32601 at once (P17-20)
 - **R05.4** Interrupt races
   - `tests/unit/cli/repl/test_render.py::test_deltas_after_an_interrupt_are_ignored`
   - `tests/unit/cli/repl/test_render.py::test_interrupt_mid_delta_golden`
@@ -641,6 +659,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_admission.py::test_claims_are_synchronous_and_released_by_generation`
   - `tests/unit/gateway/core/test_admission.py::test_a_displaced_turn_cannot_release_its_successors_claim`
   - `tests/unit/gateway/core/test_admission.py::test_leaked_and_stale_claims_are_evicted_before_the_busy_check`
+  - `tests/unit/service/test_turn_lease.py::test_release_is_keyed_by_holder_and_generation`
+  - `tests/unit/state/test_runtime_ledger.py::test_settle_is_fenced_by_generation`
+  - `tests/unit/service/test_fences.py::test_displaced_turn_cannot_release_its_successor`
 - **R06.3** Never sleep long flood penalties inline
   - `tests/unit/gateway/core/test_send.py::test_long_flood_wait_is_handed_over_without_sleeping_or_notice`
   - `tests/unit/gateway/core/test_send.py::test_no_inline_sleep_ever_exceeds_the_cap`
@@ -728,6 +749,8 @@ Checked by `python -m tooling.checks traps`.
 - **R06.19** Unknown turns after a crash must pause, not replay
   - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
   - `tests/integration/gateway/test_boot_recovery.py::test_resolve_unknown_checks_the_generation`
+  - `tests/unit/service/test_admissions.py::test_discard_with_an_old_generation_is_refused`
+  - `tests/unit/state/test_runtime_ledger.py::test_discard_unknown_needs_the_generation`
 - **R06.20** Drain marker staleness
   - `tests/unit/gateway/daemon/test_drain.py::test_marker_verdicts`
   - `tests/integration/gateway/test_signals.py::test_an_external_drain_marker_refuses_new_turns_until_it_is_removed`

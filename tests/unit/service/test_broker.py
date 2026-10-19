@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import re
 from collections.abc import Callable, Coroutine, Iterable
 from datetime import UTC, datetime
 from typing import Any
@@ -327,7 +328,7 @@ def test_failing_transport_and_sink_are_not_fatal() -> None:
         task = asyncio.ensure_future(broker.ask("approval", APPROVAL))
         await rig.settle()
         (open_request,) = broker.pending_requests()
-        assert open_request.request_id.startswith("sr_")
+        assert re.fullmatch(r"srq-[0-9a-f]{12}", open_request.request_id)  # P17-07 id shape
         assert broker.cancel_all(CancelReason.TURN_ENDED) == 1
         with pytest.raises(RequestWithdrawn):
             await task
