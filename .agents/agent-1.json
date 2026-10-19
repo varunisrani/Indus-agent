@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 83,
-  "remaining_pct": 17,
-  "resets_at": "2026-10-19T17:00:00+00:00",
-  "last_check": "2026-10-19T15:50:00+00:00",
-  "current_step": "P21+P22 landed (42a852e); nothing in flight; \u226575% so no new builders until the 17:00 UTC reset",
+  "usage_pct": 2,
+  "remaining_pct": 98,
+  "resets_at": "2026-10-19T22:00:00+00:00",
+  "last_check": "2026-10-19T17:10:00+00:00",
+  "current_step": "P15 waves 2-3 building (W1..W4)",
   "last_commit": "42a852e"
 }

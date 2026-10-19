@@ -75,7 +75,11 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- Nothing in flight. Last landings: P15-01..18 (`c0e0201`), M4 flake fix (`ec70724`), P21-01..11, 15 and
+- P15 waves 2–3 building (Agent 1, from `d0f29d0`): W1 = P15-19, 20 (delivery ledger, deliverers, `indus
+  send`); W2 = P15-21..23 (cron in the daemon, approvals/clarify over chat, media intake); W3 = P15-24..26
+  (daemon, drain/restart, boot recovery); W4 = P15-27..29 (control socket, `indus gateway`, reconnect,
+  /platform, hooks). If paused, patches in `.agents/wip/p15w2/`.
+- Last landings: P15-01..18 (`c0e0201`), M4 flake fix (`ec70724`), P21-01..11, 15 and
   P22-01..09 (`42a852e`). Done: P00–P14 complete; P15 18/36; P21 11/16; P22 9/15.
 Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
 media intake, daemon, drain/restart, boot recovery, control socket, `indus gateway`, reconnect, API

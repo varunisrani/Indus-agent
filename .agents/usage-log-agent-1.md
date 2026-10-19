@@ -67,3 +67,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 15:10 UTC | 80% | 20% | 17:00 UTC | P21+P22 integrating (only agent) |
 | 2026-10-19 15:23 UTC | 82% | 18% | 17:00 UTC | P21+P22 integrated; combined gate running |
 | 2026-10-19 15:50 UTC | 83% | 17% | 17:00 UTC | P21+P22 landed; nothing in flight; idle until reset |
+| 2026-10-19 17:10 UTC | 2% | 98% | 22:00 UTC | reset; P15 waves 2-3 building (W1..W4) |
