@@ -31,3 +31,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-18 23:40 UTC | 71% | 29% | 02:00 UTC | P11 final full run; P08 w2 integrating; no new builders |
 | 2026-10-18 23:46 UTC | 72% | 28% | 02:00 UTC | P11 landed (3ae8089); P08 w2 integrating; no new builders |
 | 2026-10-19 00:00 UTC | 73% | 27% | 02:00 UTC | P08 w2 rebased on P11, combined full run; no new builders |
+| 2026-10-19 00:08 UTC | 73% | 27% | 02:00 UTC | P08 w2 landed (29ddd7b); P09 w1 started (3 builders); none after 75% |
