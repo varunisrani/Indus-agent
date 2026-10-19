@@ -80,3 +80,31 @@
   streams; four English silence tokens.
 - Follow-ups: Slack raw_text cell shape vs pinned SDK (P15-35); Docker container-path translation for
   media (P11 backend).
+
+## G4 — w18-p15g4.patch — DONE (P15-11 admission pipeline + session claim, P15-12 busy guards + busy-input modes, P15-13 chat slash commands)
+- BASE: local commit 0513340 = main 8f99060 + G1 + G2 applied raw (saved as w18-p15g4-rawbase.patch
+  against 8f99060). Apply with `git apply --3way` onto the integrated G1–G3 tree; if blobs are missing,
+  rebuild 0513340 from the raw-base patch first.
+- New: gateway/core/{admission,busy,batching,commands}.py, tests/unit/gateway/core/{test_admission,
+  test_busy,test_batching,test_commands,_kit}.py (_kit = fake Telegram-named adapter over
+  FakeChatPlatform + real SessionService/fake model/store), tests/unit/gateway/_stubs_g4.py (STAND-IN for
+  the P15-17 sender — delete), notes admission/busy-guards/chat-commands.
+- Shared: service/commands/registry.py chat-only rows bg (alias background), sethome, platform, verbose,
+  personality, commands; locales/en.yaml (6 lines); tools/toolsets.py indus-telegram/discord/slack
+  bundles (= core), indus-gateway includes them; traps R06.1, R06.2, R06.21 (+R04.28, R01.16);
+  ACC-K21-1, K23-1.
+- Wiring: G3's sender offers/wraps ReplySender.reply(source, text, *, reply_to=None,
+  kind="final"|"notice"|"ack"|"command"); the daemon (P15-24) builds AdmissionPipeline(...) and start()
+  (adapter sinks → accept; answerable kinds approval/clarify; turn-end, session-moved, input-probe
+  listeners; hooks=HookBus, automation=SessionAutomation, paused=, cap=, bot_guard=, channel_model=,
+  home_for=, batching=); P15-22 via on_request= and interceptors=; P15-23 via enrich=;
+  ChatCommands(plugin_commands=, command_hooks=) seams (P13 plugin command table; gateway hook files
+  P15-29). Config row approvals.destructive_slash_confirm (default false) still missing.
+- Decisions (need D-ids): mention gating after authorization (commands and replies to the bot pass);
+  interrupt mode queues refused-redirect text (media still interrupts); cross-origin /sessions all and
+  /resume need tiers on + admin; /whoami idle-only; Telegram /start ping unanswered; /approve all =
+  once each.
+- Follow-ups: identity_env() INDUS_GATEWAY_* names are blocked by child_env (needs KEPT_PRODUCT_NAMES
+  or forced entries + extra= at terminal/code call sites); post_gateway_admission is observer-only in
+  P13's bus; active-turn marker clear should move behind the P15-19 ledger write (R06.5); pending queue
+  in memory only; no reaped-session eviction yet.
