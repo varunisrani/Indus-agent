@@ -72,11 +72,11 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`; P14 in the commit that carries this text).
+Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- P15 wave 1 (P15-01..18) LANDED in the commit that carries this text. P15-19..36 remain.
-- P21-01..11, 15 and P22-01..09 LANDED in the commit that carries this text. Nothing in flight.
+- Nothing in flight. Last landings: P15-01..18 (`c0e0201`), M4 flake fix (`ec70724`), P21-01..11, 15 and
+  P22-01..09 (`42a852e`). Done: P00–P14 complete; P15 18/36; P21 11/16; P22 9/15.
 Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
 media intake, daemon, drain/restart, boot recovery, control socket, `indus gateway`, reconnect, API
 server, webhooks, Telegram/Discord/Slack adapters, Demo 3); P21-12 rest (flap guard, re-probe), P21-13, 14, 16; P22-10..15; then P16, P17.

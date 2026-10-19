@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 82,
-  "remaining_pct": 18,
+  "usage_pct": 83,
+  "remaining_pct": 17,
   "resets_at": "2026-10-19T17:00:00+00:00",
-  "last_check": "2026-10-19T15:23:00+00:00",
-  "current_step": "P21+P22 integrated and rebased (verify3); combined gate running; no agents running",
-  "last_commit": "c0e0201"
+  "last_check": "2026-10-19T15:50:00+00:00",
+  "current_step": "P21+P22 landed (42a852e); nothing in flight; \u226575% so no new builders until the 17:00 UTC reset",
+  "last_commit": "42a852e"
 }
