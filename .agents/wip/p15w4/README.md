@@ -23,3 +23,17 @@
   text; command typed with a mention gets no thread; discord.py loaded via importlib; no CommandTree.
 - Follow-ups: ACC-K13-1 per-platform dedupe review line; forum posts, forwarded content, username→id allowlist resolution,
   missed-message recovery scan, reactions, voice (P3).
+
+## w22-p15t.patch: P15-33 Telegram (done)
+- Builder checks: gateway/contract/send/fakes/integration-gateway 1145 passed / 15 skipped; ruff, pyright, lint-imports, tooling.checks ok.
+- No new packages: own async Bot API client over httpx (bot_api.py; python-telegram-bot is LGPL-3.0). Token in URL path
+  only on a copied request via a wrapping transport; placeholder `/bot****/` everywhere else; errors scrubbed, `from None`.
+- DIFFERENT seams from S/D: send-only via `BaseAdapter.connect(..., send_only=False)` (sets `self.send_only`) instead of
+  `AdapterConfig.send_only`; fetchers via `fetch_media` + new `extras.attach_fetcher()` in ExtrasPart on platform up/down
+  instead of `register_fetchers(intake)`. Integrator keeps ONE shape for each.
+- Webhook listener default bind 0.0.0.0:8443 — lead ruling: default 127.0.0.1, public bind only by explicit config.
+- Decisions: no telegram extra; webhook secret/url from secret store then env; cold boot drops backlog unless
+  drop_pending_on_cold_boot: false; reactions and topic reminder opt-in; inbound edits ignored; command menu capped 3,500
+  chars; forum chats get chat-scoped menus; refused press = empty callback answer; retries via shared policy.
+- Follow-ups: runner should call processing_started/finished; revoked token (polling_stopped == "auth") should be a fatal
+  platform state; TELEGRAM_DOCUMENTED_METHODS hand-kept.

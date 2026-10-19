@@ -1,0 +1,4668 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index e6cbd47..b6ce8be 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1068,7 +1068,13 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/gateway/test_token_locks.py::test_startup_conflict_is_fatal_and_midrun_retryable`
+   - `tests/unit/gateway/test_registry.py::test_a_real_plugin_host_slot_feeds_the_registry`
+ - **ACC-K5-1** Telegram (polling or webhook, MarkdownV2 with plain fallback, forum topics, buttons, reactions)
+-  - Review: not yet planned (phase TBD)
++  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
++  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_4096_utf16_units_of_emoji_fit_one_message_and_one_more_unit_splits`
++  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_webhook_mode_accepts_only_pushes_with_the_secret`
++  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_forum_topic_message_gets_the_golden_topic_key`
++  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_button_press_from_an_unauthorized_user_is_refused`
++  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_typing_reactions_and_the_command_menu`
++  - `tests/unit/gateway/adapters/telegram/test_bot_api.py::test_the_token_reaches_the_wire_but_no_log_repr_or_error`
+ - **ACC-K6-1** Discord (slash commands, components, auto-threads, role allowlist, mention gating)
+   - Review: not yet planned (phase TBD)
+ - **ACC-K7-1** Slack (Socket Mode, Block Kit, threads, ephemeral messages)
+@@ -1081,6 +1087,7 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
+   - `tests/unit/gateway/core/test_events.py::test_property_text_not_starting_with_slash_is_never_a_command`
+   - `tests/unit/gateway/core/test_events.py::test_reply_context_from_the_index_and_own_mark`
++  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_duplicate_update_id_is_handled_once_also_after_a_restart`
+   - Review: burst batching (P15-12) and per-platform dedupe (P15-33..35)
+ - **ACC-K14-1** Authorization chain: per-platform and global allowlists, allow-all flags, group chat lists, role …
+   - `tests/unit/gateway/core/test_authz.py::test_chain_order`
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index d91e739..2dc25af 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -646,7 +646,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/gateway/core/test_send.py::test_no_inline_sleep_ever_exceeds_the_cap`
+   - `tests/unit/gateway/core/test_send.py::test_rate_limit_exhausted_sends_nothing_more`
+   - `tests/unit/gateway/adapters/test_base.py::test_send_with_retry_uses_the_adapters_cap`
+-  - Review: Telegram 5 s cap through the real adapter (P15-33)
++  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_97_minute_flood_wait_comes_back_typed_without_sleeping`
+ - **R06.4** Retry ambiguity: timeouts are not retryable
+   - `tests/unit/gateway/core/test_send.py::test_read_timeout_is_attempted_exactly_once`
+   - `tests/unit/gateway/core/test_send.py::test_partial_split_resumes_only_the_remainder`
+diff --git a/docs/notes/P15/telegram.md b/docs/notes/P15/telegram.md
+new file mode 100644
+index 0000000..7d61a86
+--- /dev/null
++++ b/docs/notes/P15/telegram.md
+@@ -0,0 +1,181 @@
++# Task: Telegram adapter (P15-33) Phase: 15 Owner: builder T (wave 22)
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `plugins/platforms/telegram/adapter.py`
++(constants block lines 1–520, `connect`, `_start_webhook_mode`, `_start_polling_mode`, `send` /
++`_send_text_locked` / `_send_chunk_with_retries` / `_classify_send_exception` / `_send_chunks` /
++`_with_partial_send`, `edit_message` and `_edit_overflow_split`, `_register_command_menu`,
++`_handle_callback_query` / `_callback_authorized` / `_is_callback_user_authorized`,
++`_effective_message_thread_id`, `_should_process_message`, `_handle_text_message` /
++`_handle_command`, `_build_message_event`, `_reply_context`, reactions block),
++`plugins/platforms/telegram/update_admission.py` (all), `plugins/platforms/telegram/telegram_network.py`
++(skim: keepalive, fallback transport, DoH), `gateway/run_topics.py` (topic lobby, lines 70–135),
++`gateway/run_inbound.py` (lines 1255–1275, where the lobby reminder is sent).
++Evidence: none (source-only task).
++
++Interop pin: Telegram Bot API 9.x as documented at core.telegram.org/bots/api (method and field names
++are interop facts). No library: python-telegram-bot is LGPL-3.0 and not on `licenses_allow.json`, so
++we ship our own small async client over httpx (already a core dependency, BSD-3-Clause). No
++`telegram` extra exists or is needed.
++
++What it does (own words): connects one bot to Telegram. At connect it asks `getMe` who the bot is,
++clears any webhook and long-polls `getUpdates` (or, when a webhook URL is configured, registers the
++webhook with a secret and serves it; no secret = refuse to start). Each update is admitted once
++(a bounded receipt set of recent update ids, kept 24 h and saved under the profile so a restart does
++not replay updates Telegram re-sends), handed to a dispatcher that runs at most 32 at a time,
++first-come-first-served within one chat, and normalised into an `InboundEvent` (DM / group /
++channel / forum topic, reply context, mention of the bot, media as `tg:` file refs, button presses).
++Outbound: text arrives already formatted as MarkdownV2 by the sender (P15-15/17); the adapter sends
++it with `parse_mode=MarkdownV2` (plain when the sender asks for the plain fallback), splits what is
++over 4,096 UTF-16 units itself, threads replies with `reply_parameters` and topics with
++`message_thread_id`, and classifies every failure (flood waits come back typed with their wait and
++are never slept here; the base's retry policy sleeps at most 5 s). Edits, deletes, typing (chat
++action), reactions, media uploads per kind, approval and clarify cards with inline keyboards
++(callback presses answered with `answerCallbackQuery` at once), a command menu from the slash
++registry (`setMyCommands`), and a media fetcher (`getFile` + file download) for voice notes, photos
++and documents.
++
++Inputs → outputs: `AdapterConfig` (credential `TELEGRAM_BOT_TOKEN`, proxy, `platforms.telegram.*`
++extra keys: `base_url`, `webhook_url`, `webhook_host`, `webhook_port`, `max_concurrent_updates`,
++`drop_pending_on_cold_boot`, `reactions`, `require_topics`, `poll_timeout`; secret
++`TELEGRAM_WEBHOOK_SECRET`) → `TelegramAdapter`; Bot API updates → `InboundEvent`s through `emit`;
++adapter calls → Bot API requests → `SendResult`s.
++
++Files: `src/indus/gateway/adapters/telegram/{__init__,bot_api,adapter,inbound,webhook}.py`,
++`tests/unit/gateway/adapters/telegram/{__init__,test_adapter,test_bot_api}.py`. Shared (minimal):
++`tests/fakes/platform/telegram_wire.py` (+ its SURFACE; now built on our client's types and errors),
++`tests/contract/gateway/conftest.py` (Telegram case registered),
++`tests/contract/gateway/test_vendor_names.py` (Telegram checked against our client and the
++documented method names), `tests/contract/gateway/test_adapter_contract.py` (chunk indicator regex
++also accepts the MarkdownV2-escaped form), `tests/unit/fakes/test_platform_wires.py` (imports),
++`src/indus/gateway/adapters/base.py` (`connect(send_only=True)`),
++`src/indus/gateway/delivery/send_command.py` (uses it), `src/indus/gateway/extras.py` (registers an
++adapter's `fetch_media` with the intake when the platform comes up), `src/indus/gateway/registry.py`
++(Telegram probe = httpx, hint without an extra), traps / acceptance rows.
++
++Edge cases / failure modes:
++- The token is in every request path. It must never reach a log line, an exception text, a repr or
++  argv: requests are built with a placeholder path and the real token is put in by our transport at
++  the last moment (httpx's own "HTTP Request" log line shows the placeholder); every error text is
++  scrubbed again; httpx exceptions are re-raised `from None` with their class name.
++- Empty poll returning at once (fake, proxies) must not spin: a short pause after a quick empty poll.
++- Poll errors: network → backoff (1 s doubling to 60 s); 409 conflict → backoff and a warning;
++  401 → stop polling, log once (the token was revoked).
++- Duplicate update id (re-delivery after a lost acknowledgement, or after a restart): dropped.
++- Our own echoed messages dropped; a `/cmd@otherbot` command in a group dropped.
++- Forum: a message in a topic is `chat_type="forum"`, `thread_id=<topic>`; General (no thread id)
++  is `"1"`; sends never pass thread id 1 (the API refuses it), typing does.
++- Thread gone on send: retried once without the topic. Reply anchor gone: `allow_sending_without_reply`.
++- Over-cap text: split with UTF-16 counting; a failure after some chunks landed reports the delivered
++  ids and (unless the failure was an ambiguous timeout) the undelivered source remainder.
++- Final edit over the cap: first piece edited in, the rest sent as replies; "message is not
++  modified" counts as success; interim edit over the cap shows the first piece only.
++- Callback presses: answered at once (stops the client spinner) whoever pressed; the pipeline's
++  authorization decides (an unauthorized press changes nothing).
++- Send-only open (`indus send`): `getMe` only — no webhook change, no polling, no command menu.
++- Webhook mode without `TELEGRAM_WEBHOOK_SECRET`: fatal connect error (forged updates otherwise); a
++  request with a wrong secret header gets 401 and is not processed.
++- Media: uploads over 50 MB refused before any request; downloads over 20 MB refused (Bot API
++  limits); captions cut at 1,024 UTF-16 units.
++
++Our design differences / decisions:
++- Own client (`bot_api.BotApi`), snake_case methods named after the documented camelCase methods,
++  typed results (frozen dataclasses), errors `RetryAfter`, `BadRequest`, `Forbidden`,
++  `Unauthorized`, `Conflict`, `TimedOut`, `NetworkError`.
++- No direct-IP fallback transport, no DoH discovery, no polling-stall watchdog ladder: the daemon's
++  reconnect watcher (P15-29) owns recovery; the poll loop backs off by itself.
++- No local per-chat flood cooldown: the delivery ledger owns long waits (R06.3).
++- Rich messages (Bot API 10.1), native drafts, DM topics, sticker vision: not here (P3 / later).
++- Reactions: opt-in (`platforms.telegram.reactions: true`), exposed as `processing_started` /
++  `processing_finished` on the adapter; the turn runner calls them (follow-up for the lead).
++- Topic-root reminder: opt-in `platforms.telegram.require_topics: true`; plain text in a forum's
++  General topic gets a reminder (once per 30 s per chat) instead of a turn; commands still pass.
++
++Tests we will write:
++- contract suite (Telegram case over the wire fake);
++- 4,096 UTF-16 units of emoji: one message; one more unit: split, every piece ≤ cap, nothing lost;
++- `RetryAfter(97*60)` → typed flood failure, fake clock not advanced, one API call;
++- duplicate update id ignored (and after a restart via the receipt file);
++- unauthorized button press refused through the real admission pipeline, callback still answered;
++- forum topic → session key equals the golden `forum_topic_shared` key;
++- token never in caplog / exception text / repr (real client over `httpx.MockTransport`);
++- send-only open over the wire fake through `indus send telegram:<chat>`: no `get_updates`;
++- webhook: refuses without a secret; wrong secret header 401; right one dispatches;
++- command menu names and descriptions; `/reload_mcp` → `/reload-mcp`; fetcher downloads `tg:` refs.
++
++## Decisions for the lead
++- No `telegram` extra: the client is ours over httpx (core). `registry.py` probes `httpx` for the
++  Telegram row and its hint names no extra. Change: restore an extra if a library is ever adopted.
++- Webhook secret name `TELEGRAM_WEBHOOK_SECRET` (secret store, then env), URL `TELEGRAM_WEBHOOK_URL`
++  or `platforms.telegram.webhook_url`; listener `webhook_host` (default 0.0.0.0) /
++  `webhook_port` (8443). Our own small FastAPI app under uvicorn, not the P15-32 receiver.
++- Cold boot drops the server-side update backlog (`deleteWebhook(drop_pending_updates)`) unless
++  `drop_pending_on_cold_boot: false`; a reconnect keeps it.
++- Update receipts saved at `<home>/gateway/telegram_receipts_<bot id>.json`.
++- `Adapter.connect(send_only=True)` is the send-only open; `indus send` uses it (Discord/Slack can
++  read `self.send_only` in `_open` the same way).
++- `extras.ExtrasPart` registers `adapter.fetch_media` with the intake on platform up (any adapter
++  that defines it, through `extras.attach_fetcher`), and drops it on down.
++- The command menu is cut at a text budget (names + descriptions ≤3,500 characters; today 50
++  commands are ~4.5 KB of JSON, so the tail of the registry is left out of the menu but still
++  works typed). Change: `inbound.MENU_TEXT_BUDGET`.
++- The `require_topics` reminder is sent by the adapter, before authorization (it reveals only
++  that the bot is in the group, which its members can see). Move it behind admission if wanted.
++- Inbound edits (`edited_message`) are not turned into events (an edit would start a second turn);
++  `allowed_updates` asks only for messages, channel posts and button presses.
++- The shared contract's chunk-indicator pattern accepts the MarkdownV2-escaped `\(i/n\)`.
++
++Compare checklist (filled after the rewrite; reopened `adapter.py` thread/topic helpers, cold-boot
++drop, `send_typing`, `_send_voice_bubble` / `send_voice`, `_register_command_menu` /
++`_ensure_forum_commands`, `edit_message`; `update_admission.py`):
++- [x] Connect: `getMe`, refused token fatal (test: `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_refused_token_is_a_fatal_connect_error`);
++  a failed open closes the client (`::test_a_failed_connect_closes_the_client`).
++- [x] Cold boot drops the queued backlog, a reconnect keeps it; the decision is logged
++  (`::test_connect_drops_the_backlog_on_a_cold_boot_and_keeps_it_on_a_reconnect`).
++- [x] Webhook only with its secret; secret checked before parsing
++  (`::test_webhook_mode_needs_its_secret`, `::test_webhook_mode_accepts_only_pushes_with_the_secret`,
++  `::test_the_webhook_listener_serves_on_loopback`).
++- [x] Update admission: ≤4,096 receipts, 24 h, saved per bot, reloaded after a restart
++  (`::test_a_duplicate_update_id_is_handled_once_also_after_a_restart`,
++  `::test_receipts_are_bounded_and_expire_after_a_day`); per-chat FIFO, ≤32 at once
++  (`::test_updates_of_one_chat_run_in_order_and_at_most_the_limit_at_once`).
++- [x] Sends: UTF-16 cap, own split, escaped markers, partial-split remainder only when certain
++  (`::test_4096_utf16_units_of_emoji_fit_one_message_and_one_more_unit_splits`, contract
++  `no-whole-resend`); flood waits over 5 s typed, never slept
++  (`::test_a_97_minute_flood_wait_comes_back_typed_without_sleeping`); deleted topic retried once
++  without the topic, General (1) left out of sends (`::test_topic_replies_threads_and_a_deleted_topic`).
++- [x] Gap found: the reference puts thread 1 on the chat action (sendChatAction needs it for
++  General while sendMessage refuses it) — fixed by `_typing_thread`, pinned by
++  `::test_general_topic_typing_saturated_previews_and_forum_menus`.
++- [x] Gap found: a saturated interim overflow preview was re-sent on every frame — fixed by the
++  preview memory in `_edit` (same test).
++- [x] Gap found: forum topics show only a chat-scoped command menu — fixed by `_forum_menu` (once
++  per forum chat, same test); menu also capped by a text budget (Telegram refuses large menus,
++  `::test_the_command_menu_stays_within_its_text_budget`).
++- [x] Gap found: voice files that are neither Ogg/Opus nor MP3/M4A went to sendAudio — now a
++  document (same test).
++- [x] Edits: not-modified = ok, markup refusal → plain once, final overflow split into replies
++  (`::test_edits_not_modified_markup_fallback_and_overflow`).
++- [x] Buttons: answered at once, refused upstream for strangers
++  (`::test_a_button_press_from_an_unauthorized_user_is_refused`); cards fall back to plain markup
++  (`::test_approval_cards_have_inline_keyboards_and_fall_back_to_plain_markup`).
++- [x] Reactions 👀 / 👍 / 👎 / cleared, opt-in; menu in the three scopes
++  (`::test_typing_reactions_and_the_command_menu`).
++- [x] Token never in logs, error texts or reprs (`tests/unit/gateway/adapters/telegram/test_bot_api.py::test_the_token_reaches_the_wire_but_no_log_repr_or_error`).
++- Deliberate differences: the reference answers a refused button press with a toast; we answer
++  every press with an empty answer and let the admission pipeline refuse it (no adapter-level
++  allowlist copy). The reference retries short floods and network errors inside the adapter; we
++  return the classified result and the shared retry policy (P15-04) retries. Webhook listener
++  binds 0.0.0.0 by default (reference: all interfaces incl. IPv6); set `webhook_host` for `::`.
++- Not taken: direct-IP fallback transport and DoH discovery, the polling-stall watchdog ladder
++  (the reconnect watcher owns recovery), rich messages (Bot API 10.1), native drafts, DM topics,
++  sticker vision, the model/choice pickers, voice transcoding to Ogg/Opus, video geometry probes,
++  the bot status indicator, group observation of unmentioned messages, per-chat local flood
++  cooldown.
++
++## Status
++
++Done (2026-10-19). All files above; shared edits listed under Files. Follow-ups for the lead:
++call `processing_started` / `processing_finished` from the turn runner; surface
++`polling_stopped == "auth"` to the daemon as a fatal platform state (today it is logged);
++Discord/Slack can read `self.send_only` in `_open` and use `extras.attach_fetcher` through
++`fetch_media`.
+diff --git a/src/indus/gateway/adapters/base.py b/src/indus/gateway/adapters/base.py
+index e9d571c..31cfe70 100644
+--- a/src/indus/gateway/adapters/base.py
++++ b/src/indus/gateway/adapters/base.py
+@@ -223,6 +223,8 @@ class Adapter(ABC):
+         self._sink = sink
+         self._sink_warned = False
+         self.connected = False
++        # Opened for outbound use only (``indus send``): no listener, no update consumption.
++        self.send_only = False
+         self.slots = SendSlots(clock, self.capabilities.slot_spacing)
+ 
+     def __repr__(self) -> str:
+@@ -251,10 +253,14 @@ class Adapter(ABC):
+ 
+     # -- lifecycle ---------------------------------------------------------------------------------
+ 
+-    async def connect(self, *, is_reconnect: bool = False) -> None:
+-        """Connect and start receiving; a second call while connected does nothing."""
++    async def connect(self, *, is_reconnect: bool = False, send_only: bool = False) -> None:
++        """Connect and start receiving; a second call while connected does nothing.
++
++        ``send_only``: a one-shot outbound connection (``indus send``); ``_open`` reads
++        ``self.send_only`` and starts no listener and consumes no inbound updates."""
+         if self.connected:
+             return
++        self.send_only = send_only
+         try:
+             await self._open(is_reconnect)
+         except AdapterConnectError as exc:
+diff --git a/src/indus/gateway/adapters/telegram/__init__.py b/src/indus/gateway/adapters/telegram/__init__.py
+new file mode 100644
+index 0000000..0baa7ff
+--- /dev/null
++++ b/src/indus/gateway/adapters/telegram/__init__.py
+@@ -0,0 +1,57 @@
++"""Telegram for the gateway (P15-33): ``create_adapter`` is the registry's entry point.
++
++The registry row (``indus.gateway.registry``) points at ``create_adapter``. It reads the bot token
++(``TELEGRAM_BOT_TOKEN``, already resolved into the platform settings from the secret store or the
++environment), the webhook URL and secret (``TELEGRAM_WEBHOOK_URL`` / ``TELEGRAM_WEBHOOK_SECRET``,
++secret store first, or ``platforms.telegram.webhook_url``), the proxy the gateway chose and the
++``platforms.telegram`` extra keys, and builds the adapter over our own Bot API client.
++``BOT_FACTORY`` builds the client (tests put the wire fake there).
++"""
++
++from __future__ import annotations
++
++from collections.abc import Callable
++from pathlib import Path
++
++from indus.gateway.adapters.telegram.adapter import TelegramAdapter, TelegramOptions
++from indus.gateway.adapters.telegram.bot_api import BotApi
++from indus.gateway.adapters.telegram.inbound import UpdateReceipts
++from indus.gateway.config import AdapterConfig, read_secret
++
++__all__ = ["BOT_FACTORY", "TOKEN_ENV", "TelegramAdapter", "create_adapter", "default_bot"]
++
++TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
++WEBHOOK_URL_ENV = "TELEGRAM_WEBHOOK_URL"
++WEBHOOK_SECRET_ENV = "TELEGRAM_WEBHOOK_SECRET"
++
++
++def default_bot(token: str, config: AdapterConfig) -> BotApi:
++    base_url = str(config.extra.get("base_url") or "").strip() or None
++    return BotApi(token, base_url=base_url, proxy=config.proxy)
++
++
++BOT_FACTORY: Callable[[str, AdapterConfig], BotApi] = default_bot
++
++
++def _receipts_path(home: Path) -> Callable[[int], Path]:
++    return lambda bot_id: home / "gateway" / f"telegram_receipts_{bot_id}.json"
++
++
++def create_adapter(config: AdapterConfig) -> TelegramAdapter:
++    token = config.settings.credentials.get(TOKEN_ENV) or read_secret(config.scope, TOKEN_ENV)
++    if not token:
++        raise ValueError(f"{TOKEN_ENV} is not set")
++    secret = read_secret(config.scope, WEBHOOK_SECRET_ENV)
++    options = TelegramOptions.from_extra(
++        config.extra,
++        webhook_url=read_secret(config.scope, WEBHOOK_URL_ENV),
++        webhook_secret=secret,
++    )
++    return TelegramAdapter(
++        BOT_FACTORY(token, config),
++        clock=config.clock,
++        settings=config.settings,
++        secrets=tuple(s for s in (token, secret) if s),
++        options=options,
++        receipts=UpdateReceipts(config.clock, path_for=_receipts_path(config.scope.home)),
++    )
+diff --git a/src/indus/gateway/adapters/telegram/adapter.py b/src/indus/gateway/adapters/telegram/adapter.py
+new file mode 100644
+index 0000000..c1e31b1
+--- /dev/null
++++ b/src/indus/gateway/adapters/telegram/adapter.py
+@@ -0,0 +1,784 @@
++"""The Telegram adapter (P15-33): our Bot API client (``bot_api``) behind the adapter contract.
++
++Connect: ``getMe`` (a refused token is a fatal, non-retryable connect error), then — unless the
++open is send-only (``indus send``: nothing else is touched) — the update receipts of this bot are
++loaded and updates start flowing: long polling by default (any webhook is deleted first; a cold
++boot also drops the server-side backlog unless ``drop_pending_on_cold_boot: false``), or a
++webhook when one is configured, and only with its secret. The command menu is registered in the
++background (a failure there never fails the connect).
++
++Polling: ``getUpdates`` with a 30 s long-poll; the next call's offset acknowledges what was
++received. Failures back off from 1 s to 60 s; a revoked token stops polling (logged). An empty
++answer that came back at once (a proxy that does not hold the long poll) is followed by a 1 s
++pause so the loop never spins. Every update goes through ``admit``: dropped when its id was
++already handled (``inbound.UpdateReceipts``), else queued on the dispatcher (≤32 at a time, in
++order per chat) and turned into one event (``inbound.Normaliser``).
++
++Sending: the sender (P15-17) hands us text already in MarkdownV2 (``meta["plain"]`` when it falls
++back to plain text), so ``_send`` only picks the parse mode, splits what is over 4,096 UTF-16 units
++itself (escaped ``\\(i/n\\)`` markers in MarkdownV2), threads the first piece under ``reply_to``
++and puts forum replies in their topic (never thread 1, the General topic, which the API refuses
++for sends). A topic that was deleted is retried once in the chat itself. Failures are classified
++by the base; a flood wait comes back typed with its ``retry_after`` and is never slept here (the
++retry policy sleeps at most ``inline_wait_cap`` = 5 s and hands longer waits to the ledger).
++
++Edits: "message is not modified" is success; a markup refusal is retried once as plain text (cards
++are edited with plain Markdown by the prompts module); an interim edit over the cap shows its
++first piece; a final edit over the cap edits the first piece in and sends the rest as replies.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import logging
++from collections.abc import AsyncIterator, Callable, Mapping, Sequence
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import TYPE_CHECKING, Any, ClassVar, Final
++
++from indus.foundation.blocking import run_blocking
++from indus.foundation.clock import Clock
++from indus.gateway.adapters.base import (
++    REPLY_TO_KEY,
++    Adapter,
++    AdapterConnectError,
++    ApprovalPrompt,
++    Capabilities,
++    ClarifyPrompt,
++    InboundSink,
++    MediaKind,
++    approval_callback,
++    clarify_callback,
++)
++from indus.gateway.adapters.telegram.bot_api import (
++    BOT_API_METHODS,
++    MAX_DOWNLOAD_BYTES,
++    MAX_UPLOAD_BYTES,
++    BadRequest,
++    BotApi,
++    BotCommand,
++    InlineKeyboardButton,
++    InlineKeyboardMarkup,
++    InputFile,
++    Message,
++    RetryAfter,
++    Unauthorized,
++    Update,
++    User,
++)
++from indus.gateway.adapters.telegram.inbound import (
++    GENERAL_TOPIC,
++    MAX_CONCURRENT_UPDATES,
++    Normaliser,
++    UpdateDispatcher,
++    UpdateReceipts,
++    menu_commands,
++    parse_ref,
++)
++from indus.gateway.adapters.telegram.webhook import (
++    UvicornServer,
++    WebhookOptions,
++    WebhookServer,
++    webhook_app,
++)
++from indus.gateway.core.events import Attachment, InboundEvent
++from indus.gateway.core.send import ErrorKind, SendResult, classify_send_error, is_ambiguous_timeout
++from indus.gateway.outbound.chunker import (
++    Chunked,
++    plain_marker,
++    prefix_within,
++    split_message,
++    utf16_units,
++)
++from indus.gateway.outbound.formatting import markdownv2_marker, markdownv2_to_plain
++
++if TYPE_CHECKING:
++    from indus.gateway.config import PlatformSettings
++
++__all__ = [
++    "ALLOWED_UPDATES",
++    "BOT_TARGET",
++    "LOBBY_TEXT",
++    "TelegramAdapter",
++    "TelegramOptions",
++]
++
++log = logging.getLogger(__name__)
++
++BOT_TARGET: Final = "indus.gateway.adapters.telegram.bot_api:BotApi"
++PARSE_MODE: Final = "MarkdownV2"
++MAX_LEN: Final = 4096
++CAPTION_MAX: Final = 1024
++PHOTO_MAX_BYTES: Final = 10 * 1024 * 1024
++ALLOWED_UPDATES: Final = ("message", "channel_post", "callback_query")
++MENU_SCOPES: Final = ("default", "all_private_chats", "all_group_chats")
++POLL_TIMEOUT_S: Final = 30
++QUICK_EMPTY_POLL_S: Final = 1.0
++IDLE_PAUSE_S: Final = 1.0
++BACKOFF_START_S: Final = 1.0
++BACKOFF_MAX_S: Final = 60.0
++LOBBY_COOLDOWN_S: Final = 30.0
++LOBBY_TEXT: Final = (
++    "This group talks to me in topics. Open a topic (or start a new one) and write to me there."
++)
++VOICE_SUFFIXES: Final = frozenset({".ogg", ".oga", ".opus"})
++AUDIO_SUFFIXES: Final = frozenset({".mp3", ".m4a"})
++# Forum chats that got the command menu in their own scope (topics do not show the group one).
++FORUM_MENU_MAX: Final = 1024
++# Interim overflow previews remembered so a saturated preview is not re-sent on every frame.
++PREVIEW_MEMORY: Final = 512
++REACTION_WORKING: Final = "\N{EYES}"
++REACTION_DONE: Final = "\N{THUMBS UP SIGN}"
++REACTION_FAILED: Final = "\N{THUMBS DOWN SIGN}"
++
++
++def _flag(value: object, default: bool) -> bool:
++    if isinstance(value, bool):
++        return value
++    if isinstance(value, str) and value.strip():
++        return value.strip().lower() not in ("0", "false", "no", "off")
++    return default
++
++
++def _number(value: object, default: int, *, low: int, high: int) -> int:
++    if isinstance(value, bool):
++        return default
++    try:
++        number = int(str(value).strip()) if value is not None else default
++    except ValueError:
++        return default
++    return number if low <= number <= high else default
++
++
++@dataclass(frozen=True)
++class TelegramOptions:
++    """``platforms.telegram`` settings the adapter reads (see the task note)."""
++
++    poll_timeout: int = POLL_TIMEOUT_S
++    max_concurrent_updates: int = MAX_CONCURRENT_UPDATES
++    drop_pending_on_cold_boot: bool = True
++    reactions: bool = False
++    require_topics: bool = False
++    command_menu: bool = True
++    webhook: WebhookOptions | None = field(default=None)
++
++    @classmethod
++    def from_extra(
++        cls,
++        extra: Mapping[str, Any],
++        *,
++        webhook_url: str | None = None,
++        webhook_secret: str | None = None,
++    ) -> TelegramOptions:
++        url = (webhook_url or str(extra.get("webhook_url") or "")).strip()
++        webhook = None
++        if url:
++            webhook = WebhookOptions(
++                url=url,
++                secret=(webhook_secret or "").strip() or None,
++                host=str(extra.get("webhook_host") or "0.0.0.0"),
++                port=_number(extra.get("webhook_port"), 8443, low=1, high=65535),
++            )
++        return cls(
++            poll_timeout=_number(extra.get("poll_timeout"), POLL_TIMEOUT_S, low=0, high=50),
++            max_concurrent_updates=_number(
++                extra.get("max_concurrent_updates"), MAX_CONCURRENT_UPDATES, low=1, high=256
++            ),
++            drop_pending_on_cold_boot=_flag(extra.get("drop_pending_on_cold_boot"), True),
++            reactions=_flag(extra.get("reactions"), False),
++            require_topics=_flag(extra.get("require_topics"), False),
++            command_menu=_flag(extra.get("command_menu"), True),
++            webhook=webhook,
++        )
++
++
++def _message_id(value: object) -> int | None:
++    text = str(value).strip() if value is not None else ""
++    return int(text) if text.isdigit() else None
++
++
++def _send_thread(meta: Mapping[str, Any]) -> int | None:
++    """A forum topic to send into; the General topic (1) is addressed by omitting it."""
++    raw = meta.get("thread_id")
++    text = str(raw).strip() if raw is not None else ""
++    if not text.isdigit() or text == GENERAL_TOPIC:
++        return None
++    return int(text)
++
++
++def _typing_thread(meta: Mapping[str, Any]) -> int | None:
++    """Unlike a send, a chat action needs thread 1 to show in a forum's General topic."""
++    raw = meta.get("thread_id")
++    text = str(raw).strip() if raw is not None else ""
++    return int(text) if text.isdigit() else None
++
++
++def _caption(text: str | None) -> str | None:
++    if not text or not text.strip():
++        return None
++    return text[: prefix_within(text, CAPTION_MAX, utf16_units)]
++
++
++def _not_modified(exc: BaseException) -> bool:
++    return isinstance(exc, BadRequest) and "not modified" in exc.message.lower()
++
++
++def _bad_markup(exc: BaseException) -> bool:
++    return isinstance(exc, BadRequest) and classify_send_error(exc) is ErrorKind.BAD_FORMAT
++
++
++def _rows(buttons: Sequence[InlineKeyboardButton], width: int) -> InlineKeyboardMarkup:
++    return InlineKeyboardMarkup(
++        tuple(tuple(buttons[i : i + width]) for i in range(0, len(buttons), width))
++    )
++
++
++def _file_size(path: Path) -> int:
++    return path.stat().st_size
++
++
++class TelegramAdapter(Adapter):
++    platform: ClassVar[str] = "telegram"
++    capabilities: ClassVar[Capabilities] = Capabilities(
++        max_len=MAX_LEN,
++        len_fn=utf16_units,
++        markup="markdownv2",
++        splits_natively=True,
++        supports_edit=True,
++        supports_delete=True,
++        supports_buttons=True,
++        slot_spacing=1.0,
++        inline_wait_cap=5.0,
++    )
++    vendor_names: ClassVar[Mapping[str, tuple[str, ...]]] = {
++        BOT_TARGET: (*BOT_API_METHODS, "download_file", "aclose"),
++    }
++
++    def __init__(
++        self,
++        bot: BotApi,
++        *,
++        clock: Clock,
++        settings: PlatformSettings | None = None,
++        secrets: Sequence[str] = (),
++        sink: InboundSink | None = None,
++        options: TelegramOptions | None = None,
++        receipts: UpdateReceipts | None = None,
++        server_factory: Callable[[], WebhookServer] | None = None,
++    ) -> None:
++        super().__init__(clock=clock, settings=settings, secrets=secrets, sink=sink)
++        self.bot = bot
++        self.options = options or TelegramOptions()
++        self.receipts = receipts or UpdateReceipts(clock)
++        self.normaliser = Normaliser(self.platform)
++        self.me: User | None = None
++        # Why polling ended on its own ("auth": the token was revoked), else None.
++        self.polling_stopped: str | None = None
++        self._server_factory: Callable[[], WebhookServer] = server_factory or (
++            lambda: UvicornServer(clock)
++        )
++        self._server: WebhookServer | None = None
++        self._dispatcher: UpdateDispatcher | None = None
++        self._poller: asyncio.Task[None] | None = None
++        self._housekeeping: asyncio.Task[None] | None = None
++        self._lobby_sent: dict[str, float] = {}
++        self._forum_menus: set[str] = set()
++        self._previews: dict[tuple[str, str], str] = {}
++        self._tasks: set[asyncio.Task[None]] = set()
++
++    # -- lifecycle ---------------------------------------------------------------------------------
++
++    async def _open(self, is_reconnect: bool) -> None:
++        webhook = self.options.webhook
++        if webhook is not None and not self.send_only and not webhook.secret:
++            raise AdapterConnectError(
++                "Telegram webhook mode needs a secret: set TELEGRAM_WEBHOOK_SECRET (without it "
++                "anyone who finds the URL could send the bot forged updates)",
++                retryable=False,
++                code="webhook_secret_missing",
++            )
++        try:
++            await self._start(is_reconnect, webhook)
++        except BaseException:
++            # a failed open leaves nothing running and no connection pool behind
++            await self._stop_listeners()
++            with contextlib.suppress(Exception):
++                await self.bot.aclose()
++            raise
++
++    async def _start(self, is_reconnect: bool, webhook: WebhookOptions | None) -> None:
++        try:
++            me = await self.bot.get_me()
++        except Unauthorized as exc:
++            raise AdapterConnectError(
++                f"Telegram refused the bot token ({exc.message}); create a new token with "
++                "@BotFather and update TELEGRAM_BOT_TOKEN",
++                retryable=False,
++                code="telegram_auth",
++            ) from None
++        self.me = me
++        self.normaliser.identify(me.id, me.username)
++        if self.send_only:
++            return
++        await self.receipts.bind(me.id)
++        self.polling_stopped = None
++        self._dispatcher = UpdateDispatcher(self._handle, limit=self.options.max_concurrent_updates)
++        drop = True if (not is_reconnect and self.options.drop_pending_on_cold_boot) else None
++        if not is_reconnect:
++            log.info(
++                "telegram: cold start, %s the updates queued while offline",
++                "dropping" if drop else "keeping",
++            )
++        if webhook is not None:
++            await self._start_webhook(webhook, drop)
++        else:
++            await self.bot.delete_webhook(drop_pending_updates=drop)
++            self._poller = asyncio.ensure_future(self._poll())
++        if self.options.command_menu:
++            self._housekeeping = asyncio.ensure_future(self._register_commands())
++
++    async def _close(self) -> None:
++        try:
++            await self._stop_listeners()
++            await self.receipts.flush()
++        finally:
++            await self.bot.aclose()
++
++    async def _stop_listeners(self) -> None:
++        for task in (self._poller, self._housekeeping, *self._tasks):
++            if task is not None and not task.done():
++                task.cancel()
++                with contextlib.suppress(asyncio.CancelledError, Exception):
++                    await task
++        self._poller = self._housekeeping = None
++        server, self._server = self._server, None
++        if server is not None:
++            with contextlib.suppress(Exception):
++                await server.stop()
++        dispatcher, self._dispatcher = self._dispatcher, None
++        if dispatcher is not None:
++            await dispatcher.aclose()
++
++    async def _start_webhook(self, webhook: WebhookOptions, drop: bool | None) -> None:
++        assert webhook.secret is not None
++        app = webhook_app(webhook.secret, self._pushed, webhook.path)
++        server = self._server_factory()
++        await server.start(app, webhook.host, webhook.port)
++        self._server = server
++        await self.bot.set_webhook(
++            webhook.url,
++            secret_token=webhook.secret,
++            allowed_updates=ALLOWED_UPDATES,
++            drop_pending_updates=drop,
++        )
++        log.info("telegram: receiving updates by webhook on %s:%d", webhook.host, webhook.port)
++
++    async def _register_commands(self) -> None:
++        commands = menu_commands()
++        for scope in MENU_SCOPES:
++            await self._set_menu(commands, {"type": scope})
++
++    async def _set_menu(self, commands: Sequence[BotCommand], scope: Mapping[str, Any]) -> None:
++        try:
++            await self.bot.set_my_commands(commands, scope=scope)
++        except asyncio.CancelledError:
++            raise
++        except Exception as exc:
++            log.warning(
++                "telegram: command menu not set for %s: %s", scope["type"], self.scrub(str(exc))
++            )
++
++    def _forum_menu(self, chat_id: str) -> None:
++        """Topics of a forum show only a menu set for that chat: set it once per chat."""
++        if not self.options.command_menu or chat_id in self._forum_menus:
++            return
++        if len(self._forum_menus) >= FORUM_MENU_MAX:
++            self._forum_menus.clear()
++        self._forum_menus.add(chat_id)
++        target = int(chat_id) if chat_id.lstrip("-").isdigit() else chat_id
++        task = asyncio.ensure_future(
++            self._set_menu(menu_commands(), {"type": "chat", "chat_id": target})
++        )
++        self._tasks.add(task)
++        task.add_done_callback(self._tasks.discard)
++
++    # -- inbound -----------------------------------------------------------------------------------
++
++    async def _poll(self) -> None:
++        offset: int | None = None
++        backoff = BACKOFF_START_S
++        while True:
++            started = self.clock.monotonic()
++            try:
++                updates = await self.bot.get_updates(
++                    offset=offset,
++                    timeout=self.options.poll_timeout,
++                    allowed_updates=ALLOWED_UPDATES,
++                )
++            except asyncio.CancelledError:
++                raise
++            except Unauthorized as exc:
++                self.polling_stopped = "auth"
++                log.error(
++                    "telegram: polling stopped, the bot token was refused: %s",
++                    self.scrub(str(exc)),
++                )
++                return
++            except Exception as exc:
++                log.warning(
++                    "telegram: polling failed (%s); retrying in %.0f s",
++                    self.scrub(f"{type(exc).__name__}: {exc}"),
++                    backoff,
++                )
++                await self.clock.sleep(backoff)
++                backoff = min(backoff * 2, BACKOFF_MAX_S)
++                continue
++            backoff = BACKOFF_START_S
++            for update in updates:
++                offset = max(offset or 0, update.update_id + 1)
++                self.admit(update)
++            if not updates and self.clock.monotonic() - started < QUICK_EMPTY_POLL_S:
++                await self.clock.sleep(IDLE_PAUSE_S)
++
++    async def _pushed(self, update: Update) -> None:
++        self.admit(update)
++
++    def admit(self, update: Update) -> bool:
++        """Queue one update unless its id was already seen; True when queued."""
++        dispatcher = self._dispatcher
++        if dispatcher is None:
++            return False
++        if not self.receipts.claim(update.update_id):
++            log.debug("telegram: update %s seen before; dropped", update.update_id)
++            return False
++        update_id = update.update_id
++        dispatcher.submit(update, after=lambda: self.receipts.done(update_id))
++        return True
++
++    async def idle(self) -> None:
++        """Wait until every queued update was handled (tests)."""
++        if self._dispatcher is not None:
++            await self._dispatcher.idle()
++
++    async def _handle(self, update: Update) -> None:
++        query = update.callback_query
++        if query is not None:
++            try:
++                await self.bot.answer_callback_query(query.id)
++            except Exception as exc:
++                log.debug("telegram: callback answer failed: %s", self.scrub(str(exc)))
++            event = self.normaliser.button_event(update.update_id, query)
++            if event is not None:
++                await self.emit(event)
++            return
++        message = update.message or update.channel_post
++        if message is None:
++            return
++        event = self.normaliser.message_event(update.update_id, message)
++        if event is None:
++            return
++        if event.source.chat_type == "forum":
++            self._forum_menu(event.source.chat_id)
++        if await self._lobby(event):
++            return
++        await self.emit(event)
++
++    async def _lobby(self, event: InboundEvent) -> bool:
++        """Under ``require_topics``: plain text in a forum's General topic gets a reminder
++        (once per 30 s per chat) instead of a turn. True when the event was taken."""
++        source = event.source
++        if (
++            not self.options.require_topics
++            or source.chat_type != "forum"
++            or source.thread_id != GENERAL_TOPIC
++            or source.is_bot
++            or event.is_command
++        ):
++            return False
++        now = self.clock.monotonic()
++        last = self._lobby_sent.get(source.chat_id)
++        if last is None or now - last >= LOBBY_COOLDOWN_S:
++            self._lobby_sent[source.chat_id] = now
++            await self.send(source.chat_id, self.format(LOBBY_TEXT), reply_to=event.message_id)
++        return True
++
++    async def fetch_media(self, attachment: Attachment) -> AsyncIterator[bytes]:
++        """The intake's fetcher for ``tg:`` refs: ``getFile``, then the file download."""
++        file_id = parse_ref(attachment.ref)
++        if file_id is None:
++            raise ValueError("not a Telegram file reference")
++        info = await self.bot.get_file(file_id)
++        if info.file_size is not None and info.file_size > MAX_DOWNLOAD_BYTES:
++            raise BadRequest("Bad Request: file is too big")
++        if not info.file_path:
++            raise BadRequest("Bad Request: the file has no download path")
++        async for chunk in self.bot.download_file(info.file_path):
++            yield chunk
++
++    # -- outbound: text ----------------------------------------------------------------------------
++
++    def _failure(self, exc: BaseException, delivered: Sequence[str], remainder: str) -> SendResult:
++        log.info("telegram: call failed: %s", self.scrub(f"{type(exc).__name__}: {exc}"))
++        wait = exc.retry_after if isinstance(exc, RetryAfter) else None
++        resumable = bool(delivered) and bool(remainder) and not is_ambiguous_timeout(exc)
++        return SendResult.failure(
++            exc=exc,
++            retry_after=wait,
++            delivered_ids=tuple(delivered),
++            remainder=remainder if resumable else None,
++        )
++
++    async def _post(
++        self,
++        chat_id: str,
++        text: str,
++        *,
++        parse_mode: str | None,
++        reply_to: object,
++        thread: int | None,
++        markup: InlineKeyboardMarkup | None = None,
++    ) -> Message:
++        """sendMessage; a deleted topic is retried once in the chat itself."""
++        anchor = _message_id(reply_to)
++        try:
++            return await self.bot.send_message(
++                chat_id,
++                text,
++                parse_mode=parse_mode,
++                reply_to_message_id=anchor,
++                message_thread_id=thread,
++                reply_markup=markup,
++            )
++        except BadRequest as exc:
++            if thread is None or "thread not found" not in exc.message.lower():
++                raise
++        log.info("telegram: topic %s of chat %s is gone; sending to the chat", thread, chat_id)
++        return await self.bot.send_message(
++            chat_id,
++            text,
++            parse_mode=parse_mode,
++            reply_to_message_id=anchor,
++            message_thread_id=None,
++            reply_markup=markup,
++        )
++
++    async def _send(
++        self, chat_id: str, text: str, reply_to: str | None, meta: dict[str, Any]
++    ) -> SendResult:
++        plain = meta.get("plain") is True
++        parse_mode = None if plain else PARSE_MODE
++        chunked = split_message(
++            text,
++            MAX_LEN,
++            len_fn=utf16_units,
++            marker=plain_marker if plain else markdownv2_marker,
++        )
++        thread = _send_thread(meta)
++        ids: list[str] = []
++        for n, chunk in enumerate(chunked.chunks):
++            if n:
++                await self.slots.pace(chat_id)
++            try:
++                sent = await self._post(
++                    chat_id,
++                    chunk.text,
++                    parse_mode=parse_mode,
++                    reply_to=reply_to if n == 0 else None,
++                    thread=thread,
++                )
++            except Exception as exc:
++                return self._failure(exc, ids, chunked.remainder(n))
++            ids.append(str(sent.message_id))
++        return SendResult.sent(ids[-1], tuple(ids[:-1]))
++
++    async def _edit_text(
++        self, chat_id: str, message_id: str, text: str, parse_mode: str | None
++    ) -> None:
++        try:
++            await self.bot.edit_message_text(text, chat_id, int(message_id), parse_mode=parse_mode)
++        except Exception as exc:
++            if _not_modified(exc):
++                return
++            if parse_mode is None or not _bad_markup(exc):
++                raise
++            await self._edit_text(chat_id, message_id, markdownv2_to_plain(text), None)
++
++    async def _edit(
++        self, chat_id: str, message_id: str, text: str, final: bool, meta: dict[str, Any]
++    ) -> SendResult:
++        plain = meta.get("plain") is True
++        parse_mode = None if plain else PARSE_MODE
++        marker = plain_marker if plain else markdownv2_marker
++        key = (chat_id, message_id)
++        if final:
++            self._previews.pop(key, None)
++        if utf16_units(text) > MAX_LEN:
++            chunked = split_message(text, MAX_LEN, len_fn=utf16_units, marker=marker)
++            if final:
++                return await self._edit_overflow(chat_id, message_id, chunked, parse_mode, meta)
++            text = chunked.chunks[0].text
++            if self._previews.get(key) == text:
++                return SendResult.sent(message_id)  # the saturated preview already shows this
++            if len(self._previews) >= PREVIEW_MEMORY:
++                self._previews.pop(next(iter(self._previews)))
++            self._previews[key] = text
++        elif not final:
++            self._previews.pop(key, None)
++        try:
++            await self._edit_text(chat_id, message_id, text, parse_mode)
++        except Exception as exc:
++            self._previews.pop(key, None)
++            return self._failure(exc, (), "")
++        return SendResult.sent(message_id)
++
++    async def _edit_overflow(
++        self,
++        chat_id: str,
++        message_id: str,
++        chunked: Chunked,
++        parse_mode: str | None,
++        meta: Mapping[str, Any],
++    ) -> SendResult:
++        """A final edit over the cap: the first piece in place, the rest as replies."""
++        pieces = chunked.chunks
++        try:
++            await self._edit_text(chat_id, message_id, pieces[0].text, parse_mode)
++        except Exception as exc:
++            return self._failure(exc, (), "")
++        ids = [message_id]
++        thread = _send_thread(meta)
++        for n, piece in enumerate(pieces[1:], start=1):
++            await self.slots.pace(chat_id)
++            try:
++                sent = await self._post(
++                    chat_id, piece.text, parse_mode=parse_mode, reply_to=ids[-1], thread=thread
++                )
++            except Exception as exc:
++                return self._failure(exc, ids, chunked.remainder(n))
++            ids.append(str(sent.message_id))
++        return SendResult.sent(ids[-1], tuple(ids[:-1]))
++
++    async def _delete(self, chat_id: str, message_id: str) -> bool:
++        return await self.bot.delete_message(chat_id, int(message_id))
++
++    def is_final_failure(self, result: SendResult) -> bool:
++        """A revoked token: neither a retry nor plain text can help."""
++        return not result.ok and "unauthorized" in (result.error or "").lower()
++
++    # -- typing and reactions ----------------------------------------------------------------------
++
++    async def _typing(self, chat_id: str, meta: dict[str, Any]) -> None:
++        await self.bot.send_chat_action(chat_id, "typing", message_thread_id=_typing_thread(meta))
++
++    async def _react(self, chat_id: str, message_id: str | None, emoji: str | None) -> bool:
++        if not self.options.reactions or _message_id(message_id) is None:
++            return False
++        try:
++            return await self.bot.set_message_reaction(
++                chat_id, int(str(message_id)), reaction=emoji
++            )
++        except Exception as exc:
++            log.debug("telegram: reaction failed: %s", self.scrub(str(exc)))
++            return False
++
++    async def processing_started(self, chat_id: str, message_id: str | None) -> bool:
++        """Mark a message as being worked on (``platforms.telegram.reactions: true``)."""
++        return await self._react(chat_id, message_id, REACTION_WORKING)
++
++    async def processing_finished(
++        self, chat_id: str, message_id: str | None, *, ok: bool | None
++    ) -> bool:
++        """Done (ok), failed (not ok) or cleared (None, e.g. a cancelled turn)."""
++        emoji = REACTION_DONE if ok else REACTION_FAILED if ok is False else None
++        return await self._react(chat_id, message_id, emoji)
++
++    # -- cards -------------------------------------------------------------------------------------
++
++    async def _post_card(
++        self, chat_id: str, text: str, markup: InlineKeyboardMarkup, meta: Mapping[str, Any]
++    ) -> SendResult:
++        thread = _send_thread(meta)
++        try:
++            try:
++                sent = await self._post(
++                    chat_id,
++                    self.format(text),
++                    parse_mode=PARSE_MODE,
++                    reply_to=None,
++                    thread=thread,
++                    markup=markup,
++                )
++            except Exception as exc:
++                if not _bad_markup(exc):
++                    raise
++                sent = await self._post(
++                    chat_id, text, parse_mode=None, reply_to=None, thread=thread, markup=markup
++                )
++        except Exception as exc:
++            return self._failure(exc, (), "")
++        return SendResult.sent(str(sent.message_id))
++
++    async def _send_approval(
++        self, chat_id: str, prompt: ApprovalPrompt, meta: dict[str, Any]
++    ) -> SendResult:
++        buttons = [
++            InlineKeyboardButton(a.label, approval_callback(prompt.request_id, a.choice))
++            for a in prompt.actions
++        ]
++        return await self._post_card(chat_id, prompt.text, _rows(buttons, 2), meta)
++
++    async def _send_clarify(
++        self, chat_id: str, prompt: ClarifyPrompt, meta: dict[str, Any]
++    ) -> SendResult:
++        buttons = [
++            InlineKeyboardButton(choice[:60], clarify_callback(prompt.clarify_id, n))
++            for n, choice in enumerate(prompt.choices)
++        ]
++        return await self._post_card(chat_id, prompt.question, _rows(buttons, 1), meta)
++
++    # -- media -------------------------------------------------------------------------------------
++
++    async def _send_media(
++        self, kind: MediaKind, chat_id: str, path: str, caption: str | None, meta: dict[str, Any]
++    ) -> SendResult:
++        remote = path.startswith(("https://", "http://"))
++        source: InputFile | str
++        size: int | None = None
++        if remote:
++            source = path
++        else:
++            local = Path(path)
++            try:
++                size = await run_blocking(_file_size, local, label="telegram upload")
++            except OSError as exc:
++                return SendResult.failure(f"could not read {local.name}: {type(exc).__name__}")
++            if size > MAX_UPLOAD_BYTES:
++                return SendResult.failure(
++                    f"{local.name} is larger than Telegram's 50 MB upload limit"
++                )
++            source = InputFile(local, local.name, size)
++        send = {
++            "image": self.bot.send_photo,
++            "voice": self.bot.send_voice,
++            "video": self.bot.send_video,
++            "file": self.bot.send_document,
++            "document": self.bot.send_document,
++        }[kind]
++        if kind == "image" and size is not None and size > PHOTO_MAX_BYTES:
++            send = self.bot.send_document
++        suffix = Path(path).suffix.lower()
++        if kind == "voice" and suffix not in VOICE_SUFFIXES:
++            # sendVoice takes Ogg/Opus; MP3 and M4A go as audio, anything else as a file
++            send = self.bot.send_audio if suffix in AUDIO_SUFFIXES else self.bot.send_document
++        try:
++            sent = await send(
++                chat_id,
++                source,
++                caption=_caption(caption),
++                reply_to_message_id=_message_id(meta.get(REPLY_TO_KEY)),
++                message_thread_id=_send_thread(meta),
++            )
++        except Exception as exc:
++            return self._failure(exc, (), "")
++        return SendResult.sent(str(sent.message_id))
+diff --git a/src/indus/gateway/adapters/telegram/bot_api.py b/src/indus/gateway/adapters/telegram/bot_api.py
+new file mode 100644
+index 0000000..0da5b59
+--- /dev/null
++++ b/src/indus/gateway/adapters/telegram/bot_api.py
+@@ -0,0 +1,922 @@
++"""A small async client for the Telegram Bot API over httpx (P15-33).
++
++We do not depend on a Telegram library (the common one is LGPL-3.0). This module speaks the HTTP
++interface documented at core.telegram.org/bots/api (Bot API 9.x): one POST per method,
++``{"ok": ..., "result": ...}`` answers, errors with an ``error_code`` and a ``description``.
++Method names here are the documented camelCase names in snake_case (``BOT_API_METHODS``); results
++are small frozen dataclasses with the fields the adapter reads.
++
++The bot token sits in every request path (``/bot<token>/<method>``). It must never reach a log
++line, an exception text, a repr or a command line, so:
++
++- requests are built with a placeholder in the path, and ``_TokenTransport`` swaps the real token
++  in on a copy of the request just before it goes on the wire: httpx's own request log and every
++  ``Request`` object our code or httpx holds keep the placeholder;
++- transport failures are re-raised as our own errors ``from None`` with their class name and a
++  scrubbed message; Bot API errors carry only Telegram's ``description``;
++- ``repr(BotApi)`` names the API host only.
++"""
++
++from __future__ import annotations
++
++import json
++import logging
++from collections.abc import AsyncIterator, Mapping, Sequence
++from dataclasses import dataclass, field
++from datetime import UTC, datetime
++from pathlib import Path
++from typing import Any, Final, cast
++
++import httpx
++
++from indus.foundation.blocking import run_blocking
++
++__all__ = [
++    "API_ROOT",
++    "BOT_API_METHODS",
++    "MAX_DOWNLOAD_BYTES",
++    "MAX_UPLOAD_BYTES",
++    "BadRequest",
++    "BotApi",
++    "BotCommand",
++    "CallbackQuery",
++    "Chat",
++    "Conflict",
++    "Entity",
++    "File",
++    "FileRef",
++    "Forbidden",
++    "InlineKeyboardButton",
++    "InlineKeyboardMarkup",
++    "InputFile",
++    "Message",
++    "NetworkError",
++    "RetryAfter",
++    "TelegramError",
++    "TimedOut",
++    "Unauthorized",
++    "Update",
++    "User",
++]
++
++log = logging.getLogger(__name__)
++
++API_ROOT: Final = "https://api.telegram.org"
++# Shown in the request path instead of the token (``*`` needs no escaping in a path).
++_PLACEHOLDER: Final = "****"
++# The Bot API's own size limits: uploads 50 MB, downloads through getFile 20 MB.
++MAX_UPLOAD_BYTES: Final = 50 * 1024 * 1024
++MAX_DOWNLOAD_BYTES: Final = 20 * 1024 * 1024
++
++# Our method → the documented Bot API method it calls.
++BOT_API_METHODS: Final[Mapping[str, str]] = {
++    "get_me": "getMe",
++    "get_updates": "getUpdates",
++    "set_webhook": "setWebhook",
++    "delete_webhook": "deleteWebhook",
++    "send_message": "sendMessage",
++    "edit_message_text": "editMessageText",
++    "delete_message": "deleteMessage",
++    "send_chat_action": "sendChatAction",
++    "set_message_reaction": "setMessageReaction",
++    "send_photo": "sendPhoto",
++    "send_document": "sendDocument",
++    "send_voice": "sendVoice",
++    "send_audio": "sendAudio",
++    "send_video": "sendVideo",
++    "set_my_commands": "setMyCommands",
++    "get_file": "getFile",
++    "answer_callback_query": "answerCallbackQuery",
++}
++
++
++# -- errors ----------------------------------------------------------------------------------------
++
++
++class TelegramError(Exception):
++    """A failed Bot API call. ``message`` is safe to log (no token, no URL)."""
++
++    def __init__(self, message: str) -> None:
++        super().__init__(message)
++        self.message = message
++
++
++class NetworkError(TelegramError):
++    """The request did not get an answer (connection refused, DNS, proxy, a 5xx gateway)."""
++
++
++class TimedOut(NetworkError):
++    """No answer in time after the request was sent: Telegram may have acted on it."""
++
++    def __init__(self, message: str = "Timed out") -> None:
++        super().__init__(message)
++
++
++class BadRequest(TelegramError):
++    """HTTP 400: Telegram refused the request as written."""
++
++
++class Unauthorized(TelegramError):
++    """HTTP 401/404 on a bot path: the token is wrong or was revoked."""
++
++
++class Forbidden(TelegramError):
++    """HTTP 403: the bot may not act in this chat (blocked, kicked, no rights)."""
++
++
++class Conflict(TelegramError):
++    """HTTP 409: another getUpdates consumer, or a webhook, holds this bot's updates."""
++
++
++class RetryAfter(TelegramError):
++    """HTTP 429 flood control; ``retry_after`` is the server's wait in seconds."""
++
++    def __init__(self, retry_after: float, message: str | None = None) -> None:
++        super().__init__(message or f"Flood control exceeded. Retry in {int(retry_after)} seconds")
++        self._retry_after = float(retry_after)
++
++    @property
++    def retry_after(self) -> float:
++        return self._retry_after
++
++
++# -- results ---------------------------------------------------------------------------------------
++
++
++def _dict(value: object) -> dict[str, Any]:
++    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
++
++
++def _opt_int(value: object) -> int | None:
++    return value if isinstance(value, int) and not isinstance(value, bool) else None
++
++
++def _opt_str(value: object) -> str | None:
++    return value if isinstance(value, str) else None
++
++
++@dataclass(frozen=True)
++class User:
++    id: int
++    is_bot: bool = False
++    first_name: str = ""
++    username: str | None = None
++    last_name: str | None = None
++
++    @property
++    def full_name(self) -> str:
++        return " ".join(p for p in (self.first_name, self.last_name) if p) or (self.username or "")
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> User:
++        return cls(
++            id=int(data.get("id") or 0),
++            is_bot=data.get("is_bot") is True,
++            first_name=str(data.get("first_name") or ""),
++            username=_opt_str(data.get("username")),
++            last_name=_opt_str(data.get("last_name")),
++        )
++
++
++@dataclass(frozen=True)
++class Chat:
++    id: int
++    type: str  # private, group, supergroup, channel
++    title: str | None = None
++    is_forum: bool = False
++    username: str | None = None
++    first_name: str | None = None
++    last_name: str | None = None
++
++    @property
++    def display_name(self) -> str | None:
++        if self.title:
++            return self.title
++        name = " ".join(p for p in (self.first_name, self.last_name) if p)
++        return name or self.username
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> Chat:
++        return cls(
++            id=int(data.get("id") or 0),
++            type=str(data.get("type") or ""),
++            title=_opt_str(data.get("title")),
++            is_forum=data.get("is_forum") is True,
++            username=_opt_str(data.get("username")),
++            first_name=_opt_str(data.get("first_name")),
++            last_name=_opt_str(data.get("last_name")),
++        )
++
++
++@dataclass(frozen=True)
++class FileRef:
++    """One attachment of a message (photo size, voice, audio, video, document, sticker)."""
++
++    file_id: str
++    file_unique_id: str = ""
++    file_size: int | None = None
++    mime_type: str | None = None
++    file_name: str | None = None
++    duration: int | None = None
++    width: int | None = None
++    height: int | None = None
++    emoji: str | None = None
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> FileRef:
++        return cls(
++            file_id=str(data.get("file_id") or ""),
++            file_unique_id=str(data.get("file_unique_id") or ""),
++            file_size=_opt_int(data.get("file_size")),
++            mime_type=_opt_str(data.get("mime_type")),
++            file_name=_opt_str(data.get("file_name")),
++            duration=_opt_int(data.get("duration")),
++            width=_opt_int(data.get("width")),
++            height=_opt_int(data.get("height")),
++            emoji=_opt_str(data.get("emoji")),
++        )
++
++
++@dataclass(frozen=True)
++class Entity:
++    """A message entity; ``offset`` and ``length`` count UTF-16 code units."""
++
++    type: str
++    offset: int
++    length: int
++    user: User | None = None
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> Entity:
++        user = data.get("user")
++        return cls(
++            type=str(data.get("type") or ""),
++            offset=int(data.get("offset") or 0),
++            length=int(data.get("length") or 0),
++            user=User.from_json(_dict(user)) if isinstance(user, dict) else None,
++        )
++
++
++def _file(data: Mapping[str, Any], key: str) -> FileRef | None:
++    value = data.get(key)
++    return FileRef.from_json(_dict(value)) if isinstance(value, dict) else None
++
++
++def _entities(data: Mapping[str, Any], key: str) -> tuple[Entity, ...]:
++    raw = data.get(key)
++    if not isinstance(raw, list):
++        return ()
++    return tuple(Entity.from_json(_dict(e)) for e in cast(list[object], raw) if isinstance(e, dict))
++
++
++@dataclass(frozen=True)
++class Message:
++    message_id: int
++    chat: Chat
++    text: str | None = None
++    caption: str | None = None
++    from_user: User | None = None
++    message_thread_id: int | None = None
++    reply_to_message: Message | None = None
++    voice: FileRef | None = None
++    photo: tuple[FileRef, ...] = ()
++    document: FileRef | None = None
++    date: datetime | None = None
++    is_topic_message: bool = False
++    sender_chat: Chat | None = None
++    quote_text: str | None = None
++    entities: tuple[Entity, ...] = ()
++    caption_entities: tuple[Entity, ...] = ()
++    audio: FileRef | None = None
++    video: FileRef | None = None
++    video_note: FileRef | None = None
++    animation: FileRef | None = None
++    sticker: FileRef | None = None
++    location: tuple[float, float] | None = None
++    media_group_id: str | None = None
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> Message:
++        sender = data.get("from")
++        sender_chat = data.get("sender_chat")
++        reply = data.get("reply_to_message")
++        photo = data.get("photo")
++        date = data.get("date")
++        quote = _dict(data.get("quote"))
++        where = _dict(data.get("location"))
++        location = None
++        if isinstance(where.get("latitude"), int | float) and isinstance(
++            where.get("longitude"), int | float
++        ):
++            location = (float(where["latitude"]), float(where["longitude"]))
++        return cls(
++            message_id=int(data.get("message_id") or 0),
++            chat=Chat.from_json(_dict(data.get("chat"))),
++            text=_opt_str(data.get("text")),
++            caption=_opt_str(data.get("caption")),
++            from_user=User.from_json(_dict(sender)) if isinstance(sender, dict) else None,
++            message_thread_id=_opt_int(data.get("message_thread_id")),
++            reply_to_message=cls.from_json(_dict(reply)) if isinstance(reply, dict) else None,
++            voice=_file(data, "voice"),
++            photo=tuple(
++                FileRef.from_json(_dict(p))
++                for p in cast(list[object], photo)
++                if isinstance(p, dict)
++            )
++            if isinstance(photo, list)
++            else (),
++            document=_file(data, "document"),
++            date=datetime.fromtimestamp(date, UTC) if isinstance(date, int) else None,
++            is_topic_message=data.get("is_topic_message") is True,
++            sender_chat=Chat.from_json(_dict(sender_chat))
++            if isinstance(sender_chat, dict)
++            else None,
++            quote_text=_opt_str(quote.get("text")),
++            entities=_entities(data, "entities"),
++            caption_entities=_entities(data, "caption_entities"),
++            audio=_file(data, "audio"),
++            video=_file(data, "video"),
++            video_note=_file(data, "video_note"),
++            animation=_file(data, "animation"),
++            sticker=_file(data, "sticker"),
++            location=location,
++            media_group_id=_opt_str(data.get("media_group_id")),
++        )
++
++
++@dataclass(frozen=True)
++class CallbackQuery:
++    id: str
++    from_user: User
++    data: str | None = None
++    message: Message | None = None
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> CallbackQuery:
++        message = data.get("message")
++        return cls(
++            id=str(data.get("id") or ""),
++            from_user=User.from_json(_dict(data.get("from"))),
++            data=_opt_str(data.get("data")),
++            # An inaccessible message has ``date`` 0 and no content; it still names the chat.
++            message=Message.from_json(_dict(message)) if isinstance(message, dict) else None,
++        )
++
++
++@dataclass(frozen=True)
++class Update:
++    update_id: int
++    message: Message | None = None
++    edited_message: Message | None = None
++    callback_query: CallbackQuery | None = None
++    channel_post: Message | None = None
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> Update:
++        def message(key: str) -> Message | None:
++            value = data.get(key)
++            return Message.from_json(_dict(value)) if isinstance(value, dict) else None
++
++        query = data.get("callback_query")
++        return cls(
++            update_id=int(data.get("update_id") or 0),
++            message=message("message"),
++            edited_message=message("edited_message"),
++            callback_query=CallbackQuery.from_json(_dict(query))
++            if isinstance(query, dict)
++            else None,
++            channel_post=message("channel_post"),
++        )
++
++
++@dataclass(frozen=True)
++class File:
++    """What getFile answers: ``file_path`` is valid for an hour."""
++
++    file_id: str
++    file_path: str | None = None
++    file_unique_id: str = ""
++    file_size: int | None = None
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> File:
++        return cls(
++            file_id=str(data.get("file_id") or ""),
++            file_path=_opt_str(data.get("file_path")),
++            file_unique_id=str(data.get("file_unique_id") or ""),
++            file_size=_opt_int(data.get("file_size")),
++        )
++
++
++@dataclass(frozen=True)
++class BotCommand:
++    command: str
++    description: str
++
++
++@dataclass(frozen=True)
++class InlineKeyboardButton:
++    text: str
++    callback_data: str
++
++
++@dataclass(frozen=True)
++class InlineKeyboardMarkup:
++    inline_keyboard: tuple[tuple[InlineKeyboardButton, ...], ...]
++
++    def to_json(self) -> dict[str, Any]:
++        return {
++            "inline_keyboard": [
++                [{"text": b.text, "callback_data": b.callback_data} for b in row]
++                for row in self.inline_keyboard
++            ]
++        }
++
++
++@dataclass(frozen=True)
++class InputFile:
++    """A local file to upload (read off the event loop when the request is built)."""
++
++    path: Path
++    filename: str | None = None
++    size: int | None = field(default=None, compare=False)
++
++    def __str__(self) -> str:
++        return str(self.path)
++
++
++# -- the client ------------------------------------------------------------------------------------
++
++
++class _TokenTransport(httpx.AsyncBaseTransport):
++    """Puts the token into a copy of each request's path; the original keeps the placeholder."""
++
++    def __init__(self, inner: httpx.AsyncBaseTransport, token: str) -> None:
++        self._inner = inner
++        self._marker = f"/bot{_PLACEHOLDER}/".encode()
++        self._real = f"/bot{token}/".encode()
++
++    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
++        raw = request.url.raw_path
++        if self._marker in raw:
++            url = request.url.copy_with(raw_path=raw.replace(self._marker, self._real, 1))
++            request = httpx.Request(
++                request.method,
++                url,
++                headers=request.headers,
++                stream=request.stream,
++                extensions=request.extensions,
++            )
++        return await self._inner.handle_async_request(request)
++
++    async def aclose(self) -> None:
++        await self._inner.aclose()
++
++
++def _params(values: Mapping[str, Any]) -> dict[str, Any]:
++    return {k: v for k, v in values.items() if v is not None}
++
++
++def _reply(message_id: int | str | None) -> dict[str, Any] | None:
++    if message_id is None or message_id == "":
++        return None
++    return {"message_id": int(message_id), "allow_sending_without_reply": True}
++
++
++def _markup(markup: InlineKeyboardMarkup | None) -> dict[str, Any] | None:
++    return markup.to_json() if markup is not None else None
++
++
++def _chat(chat_id: int | str) -> int | str:
++    text = str(chat_id).strip()
++    return int(text) if text.lstrip("-").isdigit() else text
++
++
++def _read_upload(path: Path) -> bytes:
++    with path.open("rb") as handle:
++        return handle.read(MAX_UPLOAD_BYTES + 1)
++
++
++class BotApi:
++    """One bot's Bot API client. Safe to reuse after ``aclose`` (a new connection pool opens)."""
++
++    def __init__(
++        self,
++        token: str,
++        *,
++        base_url: str | None = None,
++        proxy: str | None = None,
++        transport: httpx.AsyncBaseTransport | None = None,
++        connect_timeout: float = 10.0,
++        request_timeout: float = 30.0,
++    ) -> None:
++        if not token or "/" in token or any(c.isspace() for c in token):
++            raise ValueError("the Telegram bot token is empty or malformed")
++        self.__token = token
++        self._root = (base_url or API_ROOT).rstrip("/")
++        self._proxy = proxy
++        self._transport = transport
++        self._connect_timeout = connect_timeout
++        self._request_timeout = request_timeout
++        self._client: httpx.AsyncClient | None = None
++
++    def __repr__(self) -> str:
++        host = httpx.URL(self._root).host or "?"
++        return f"<BotApi {host}>"
++
++    def scrub(self, text: str) -> str:
++        """``text`` with the token masked."""
++        return text.replace(self.__token, _PLACEHOLDER) if text else text
++
++    # -- plumbing ----------------------------------------------------------------------------------
++
++    def _http(self) -> httpx.AsyncClient:
++        if self._client is None:
++            inner = self._transport or httpx.AsyncHTTPTransport(proxy=self._proxy, retries=0)
++            self._client = httpx.AsyncClient(
++                transport=_TokenTransport(inner, self.__token),
++                timeout=httpx.Timeout(self._request_timeout, connect=self._connect_timeout),
++                trust_env=False,  # the gateway already chose the proxy (``registry.proxy_for``)
++                follow_redirects=False,
++            )
++        return self._client
++
++    async def aclose(self) -> None:
++        client, self._client = self._client, None
++        if client is not None:
++            await client.aclose()
++
++    def _url(self, method: str) -> str:
++        return f"{self._root}/bot{_PLACEHOLDER}/{method}"
++
++    def _transport_error(self, exc: httpx.HTTPError) -> TelegramError:
++        name = type(exc).__name__
++        detail = self.scrub(str(exc)).strip()
++        text = f"{name}: {detail}" if detail and detail != name else name
++        if isinstance(exc, httpx.ConnectTimeout | httpx.PoolTimeout | httpx.ConnectError):
++            return NetworkError(text)  # the request never left
++        if isinstance(exc, httpx.ProxyError | httpx.UnsupportedProtocol):
++            return NetworkError(text)
++        if isinstance(
++            exc,
++            httpx.TimeoutException | httpx.ReadError | httpx.WriteError | httpx.RemoteProtocolError,
++        ):
++            return TimedOut(f"Timed out or the answer was lost ({name})")
++        return NetworkError(text)
++
++    def _api_error(self, status: int, body: Mapping[str, Any]) -> TelegramError:
++        description = self.scrub(str(body.get("description") or f"HTTP {status}"))
++        code = body.get("error_code")
++        code = code if isinstance(code, int) else status
++        wait = _dict(body.get("parameters")).get("retry_after")
++        if code == 429 or isinstance(wait, int | float):
++            return RetryAfter(float(wait) if isinstance(wait, int | float) else 1.0, description)
++        if code == 400:
++            return BadRequest(description)
++        if code in (401, 404):
++            return Unauthorized(description)
++        if code == 403:
++            return Forbidden(description)
++        if code == 409:
++            return Conflict(description)
++        if code >= 500:
++            return NetworkError(description)
++        return TelegramError(description)
++
++    async def _call(
++        self,
++        method: str,
++        params: Mapping[str, Any] | None = None,
++        *,
++        files: Mapping[str, InputFile] | None = None,
++        timeout: float | None = None,
++    ) -> Any:
++        """POST one method; the ``result`` on success, else a `TelegramError`."""
++        values = _params(params or {})
++        request_timeout = httpx.Timeout(
++            timeout if timeout is not None else self._request_timeout,
++            connect=self._connect_timeout,
++        )
++        try:
++            if files:
++                upload: dict[str, tuple[str, bytes]] = {}
++                for name, item in files.items():
++                    data = await run_blocking(_read_upload, item.path, label="telegram upload")
++                    if len(data) > MAX_UPLOAD_BYTES:
++                        raise BadRequest("Request Entity Too Large: file is over 50 MB")
++                    upload[name] = (item.filename or item.path.name, data)
++                form = {k: v if isinstance(v, str) else json.dumps(v) for k, v in values.items()}
++                response = await self._http().post(
++                    self._url(method), data=form, files=upload, timeout=request_timeout
++                )
++            else:
++                response = await self._http().post(
++                    self._url(method), json=values, timeout=request_timeout
++                )
++        except httpx.HTTPError as exc:
++            raise self._transport_error(exc) from None
++        except OSError as exc:  # reading the upload
++            raise BadRequest(f"could not read the file to upload ({type(exc).__name__})") from None
++        try:
++            body = _dict(response.json())
++        except ValueError:
++            body = {}
++        if response.status_code == 200 and body.get("ok") is True:
++            return body.get("result")
++        raise self._api_error(response.status_code, body)
++
++    # -- methods (snake_case of ``BOT_API_METHODS``) ---------------------------------------------
++
++    async def get_me(self) -> User:
++        return User.from_json(_dict(await self._call("getMe")))
++
++    async def get_updates(
++        self,
++        offset: int | None = None,
++        timeout: float = 0,
++        *,
++        limit: int | None = None,
++        allowed_updates: Sequence[str] | None = None,
++    ) -> list[Update]:
++        result = await self._call(
++            "getUpdates",
++            {
++                "offset": offset,
++                "timeout": int(timeout),
++                "limit": limit,
++                "allowed_updates": list(allowed_updates) if allowed_updates is not None else None,
++            },
++            timeout=float(timeout) + self._request_timeout,
++        )
++        rows = cast(list[object], result) if isinstance(result, list) else []
++        return [Update.from_json(_dict(row)) for row in rows if isinstance(row, dict)]
++
++    async def set_webhook(
++        self,
++        url: str,
++        secret_token: str | None = None,
++        *,
++        allowed_updates: Sequence[str] | None = None,
++        drop_pending_updates: bool | None = None,
++    ) -> bool:
++        result = await self._call(
++            "setWebhook",
++            {
++                "url": url,
++                "secret_token": secret_token,
++                "allowed_updates": list(allowed_updates) if allowed_updates is not None else None,
++                "drop_pending_updates": drop_pending_updates,
++            },
++        )
++        return result is True
++
++    async def delete_webhook(self, *, drop_pending_updates: bool | None = None) -> bool:
++        result = await self._call("deleteWebhook", {"drop_pending_updates": drop_pending_updates})
++        return result is True
++
++    async def send_message(
++        self,
++        chat_id: int | str,
++        text: str,
++        parse_mode: str | None = None,
++        reply_to_message_id: int | str | None = None,
++        message_thread_id: int | None = None,
++        reply_markup: InlineKeyboardMarkup | None = None,
++        *,
++        disable_notification: bool | None = None,
++    ) -> Message:
++        result = await self._call(
++            "sendMessage",
++            {
++                "chat_id": _chat(chat_id),
++                "text": text,
++                "parse_mode": parse_mode,
++                "reply_parameters": _reply(reply_to_message_id),
++                "message_thread_id": message_thread_id,
++                "reply_markup": _markup(reply_markup),
++                "disable_notification": disable_notification,
++                "link_preview_options": {"is_disabled": True},
++            },
++        )
++        return Message.from_json(_dict(result))
++
++    async def edit_message_text(
++        self,
++        text: str,
++        chat_id: int | str,
++        message_id: int,
++        parse_mode: str | None = None,
++        *,
++        reply_markup: InlineKeyboardMarkup | None = None,
++    ) -> Message | bool:
++        result = await self._call(
++            "editMessageText",
++            {
++                "chat_id": _chat(chat_id),
++                "message_id": int(message_id),
++                "text": text,
++                "parse_mode": parse_mode,
++                "reply_markup": _markup(reply_markup),
++                "link_preview_options": {"is_disabled": True},
++            },
++        )
++        return Message.from_json(_dict(result)) if isinstance(result, dict) else result is True
++
++    async def delete_message(self, chat_id: int | str, message_id: int) -> bool:
++        result = await self._call(
++            "deleteMessage", {"chat_id": _chat(chat_id), "message_id": int(message_id)}
++        )
++        return result is True
++
++    async def send_chat_action(
++        self, chat_id: int | str, action: str, message_thread_id: int | None = None
++    ) -> bool:
++        result = await self._call(
++            "sendChatAction",
++            {"chat_id": _chat(chat_id), "action": action, "message_thread_id": message_thread_id},
++        )
++        return result is True
++
++    async def set_message_reaction(
++        self, chat_id: int | str, message_id: int, reaction: str | None = None
++    ) -> bool:
++        """Set one emoji reaction (``None`` clears the bot's reactions)."""
++        chosen = [{"type": "emoji", "emoji": reaction}] if reaction else []
++        result = await self._call(
++            "setMessageReaction",
++            {"chat_id": _chat(chat_id), "message_id": int(message_id), "reaction": chosen},
++        )
++        return result is True
++
++    async def _send_file(
++        self,
++        method: str,
++        field_name: str,
++        chat_id: int | str,
++        source: InputFile | str,
++        *,
++        caption: str | None,
++        parse_mode: str | None,
++        reply_to_message_id: int | str | None,
++        message_thread_id: int | None,
++    ) -> Message:
++        params: dict[str, Any] = {
++            "chat_id": _chat(chat_id),
++            "caption": caption,
++            "parse_mode": parse_mode,
++            "reply_parameters": _reply(reply_to_message_id),
++            "message_thread_id": message_thread_id,
++        }
++        files: dict[str, InputFile] | None = None
++        if isinstance(source, InputFile):
++            files = {field_name: source}
++        else:
++            params[field_name] = source  # a URL or a file id Telegram already has
++        result = await self._call(method, params, files=files, timeout=120.0)
++        return Message.from_json(_dict(result))
++
++    async def send_photo(
++        self,
++        chat_id: int | str,
++        photo: InputFile | str,
++        *,
++        caption: str | None = None,
++        parse_mode: str | None = None,
++        reply_to_message_id: int | str | None = None,
++        message_thread_id: int | None = None,
++    ) -> Message:
++        return await self._send_file(
++            "sendPhoto",
++            "photo",
++            chat_id,
++            photo,
++            caption=caption,
++            parse_mode=parse_mode,
++            reply_to_message_id=reply_to_message_id,
++            message_thread_id=message_thread_id,
++        )
++
++    async def send_document(
++        self,
++        chat_id: int | str,
++        document: InputFile | str,
++        *,
++        caption: str | None = None,
++        parse_mode: str | None = None,
++        reply_to_message_id: int | str | None = None,
++        message_thread_id: int | None = None,
++    ) -> Message:
++        return await self._send_file(
++            "sendDocument",
++            "document",
++            chat_id,
++            document,
++            caption=caption,
++            parse_mode=parse_mode,
++            reply_to_message_id=reply_to_message_id,
++            message_thread_id=message_thread_id,
++        )
++
++    async def send_voice(
++        self,
++        chat_id: int | str,
++        voice: InputFile | str,
++        *,
++        caption: str | None = None,
++        parse_mode: str | None = None,
++        reply_to_message_id: int | str | None = None,
++        message_thread_id: int | None = None,
++    ) -> Message:
++        return await self._send_file(
++            "sendVoice",
++            "voice",
++            chat_id,
++            voice,
++            caption=caption,
++            parse_mode=parse_mode,
++            reply_to_message_id=reply_to_message_id,
++            message_thread_id=message_thread_id,
++        )
++
++    async def send_audio(
++        self,
++        chat_id: int | str,
++        audio: InputFile | str,
++        *,
++        caption: str | None = None,
++        parse_mode: str | None = None,
++        reply_to_message_id: int | str | None = None,
++        message_thread_id: int | None = None,
++    ) -> Message:
++        return await self._send_file(
++            "sendAudio",
++            "audio",
++            chat_id,
++            audio,
++            caption=caption,
++            parse_mode=parse_mode,
++            reply_to_message_id=reply_to_message_id,
++            message_thread_id=message_thread_id,
++        )
++
++    async def send_video(
++        self,
++        chat_id: int | str,
++        video: InputFile | str,
++        *,
++        caption: str | None = None,
++        parse_mode: str | None = None,
++        reply_to_message_id: int | str | None = None,
++        message_thread_id: int | None = None,
++    ) -> Message:
++        return await self._send_file(
++            "sendVideo",
++            "video",
++            chat_id,
++            video,
++            caption=caption,
++            parse_mode=parse_mode,
++            reply_to_message_id=reply_to_message_id,
++            message_thread_id=message_thread_id,
++        )
++
++    async def set_my_commands(
++        self, commands: Sequence[BotCommand], *, scope: Mapping[str, Any] | None = None
++    ) -> bool:
++        result = await self._call(
++            "setMyCommands",
++            {
++                "commands": [
++                    {"command": c.command, "description": c.description} for c in commands
++                ],
++                "scope": dict(scope) if scope is not None else None,
++            },
++        )
++        return result is True
++
++    async def get_file(self, file_id: str) -> File:
++        return File.from_json(_dict(await self._call("getFile", {"file_id": file_id})))
++
++    async def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> bool:
++        result = await self._call(
++            "answerCallbackQuery", {"callback_query_id": callback_query_id, "text": text}
++        )
++        return result is True
++
++    async def download_file(self, file_path: str) -> AsyncIterator[bytes]:
++        """Stream a file getFile pointed at; stops with `BadRequest` past 20 MB."""
++        if not file_path or file_path.startswith("/") or ".." in file_path.split("/"):
++            raise BadRequest("Bad Request: invalid file path")
++        url = f"{self._root}/file/bot{_PLACEHOLDER}/{file_path}"
++        total = 0
++        try:
++            async with self._http().stream("GET", url, timeout=120.0) as response:
++                if response.status_code != 200:
++                    raise self._api_error(response.status_code, {})
++                async for chunk in response.aiter_bytes():
++                    total += len(chunk)
++                    if total > MAX_DOWNLOAD_BYTES:
++                        raise BadRequest("Bad Request: file is too big")
++                    yield chunk
++        except httpx.HTTPError as exc:
++            raise self._transport_error(exc) from None
+diff --git a/src/indus/gateway/adapters/telegram/inbound.py b/src/indus/gateway/adapters/telegram/inbound.py
+new file mode 100644
+index 0000000..1976f2a
+--- /dev/null
++++ b/src/indus/gateway/adapters/telegram/inbound.py
+@@ -0,0 +1,527 @@
++"""Telegram updates → `InboundEvent`s, once each, a bounded number at a time (P15-33).
++
++- ``UpdateReceipts``: an update is handled once. Telegram re-sends an update whose
++  acknowledgement was lost (and, after a restart, whatever was not acknowledged), so the ids of
++  recently handled updates are kept — at most 4,096, none older than 24 hours (Telegram keeps an
++  unconfirmed update for at most a day) — in memory and in a small file per bot under the profile.
++- ``UpdateDispatcher``: at most 32 updates are handled at once; updates of one chat are handled in
++  arrival order, so a slow turn in one chat never holds up another.
++- ``Normaliser``: one message or button press → one event. Chat types: private → ``dm``, a group
++  or plain supergroup → ``group``, a forum supergroup → ``forum`` with the topic as ``thread_id``
++  (the General topic is ``"1"``), a channel → ``channel``. A reply anchor in a plain group is not
++  a thread. Our own messages and commands addressed to another bot are dropped. Mentions of the
++  bot (entity or ``@name`` text), replies to the bot, media (``tg:<file id>[:<name>]`` refs that
++  the adapter's fetcher downloads), albums and button presses are carried in the event.
++- Command menu helpers: registry names → Telegram command names (``-`` → ``_``) and back.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import json
++import logging
++import re
++from collections import OrderedDict
++from collections.abc import Awaitable, Callable, Sequence
++from pathlib import Path
++from typing import Any, Final, cast
++
++from indus.foundation.blocking import run_blocking
++from indus.foundation.clock import Clock
++from indus.foundation.fsio import atomic_write_json
++from indus.gateway.adapters.telegram.bot_api import (
++    BotCommand,
++    CallbackQuery,
++    Chat,
++    Entity,
++    FileRef,
++    Message,
++    Update,
++)
++from indus.gateway.core.events import Attachment, ChatType, InboundEvent, MessageKind, Source
++from indus.service.commands.registry import REGISTRY, CommandRegistry
++
++__all__ = [
++    "GENERAL_TOPIC",
++    "MAX_CONCURRENT_UPDATES",
++    "RECEIPT_CAP",
++    "RECEIPT_TTL_S",
++    "Normaliser",
++    "UpdateDispatcher",
++    "UpdateReceipts",
++    "attachment_ref",
++    "chat_key",
++    "menu_commands",
++    "parse_ref",
++]
++
++log = logging.getLogger(__name__)
++
++MAX_CONCURRENT_UPDATES: Final = 32
++RECEIPT_CAP: Final = 4096
++RECEIPT_TTL_S: Final = 24 * 60 * 60
++# Telegram addresses a forum's General topic as thread 1; messages there carry no thread id.
++GENERAL_TOPIC: Final = "1"
++REF_PREFIX: Final = "tg:"
++# setMyCommands limits: 100 commands, names [a-z0-9_]{1,32}, descriptions 1-256 characters.
++MENU_MAX: Final = 100
++MENU_DESCRIPTION_MAX: Final = 256
++# Telegram also refuses a menu whose whole payload is too large (about 4 KB, not documented), so
++# the names and descriptions together stay under this many characters.
++MENU_TEXT_BUDGET: Final = 3500
++_MENU_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
++_NAME_SAFE = re.compile(r"[^\w.\- ]")
++
++
++# -- receipts --------------------------------------------------------------------------------------
++
++
++class UpdateReceipts:
++    """Recently handled update ids of one bot (see the module notes)."""
++
++    def __init__(
++        self,
++        clock: Clock,
++        *,
++        path_for: Callable[[int], Path] | None = None,
++        cap: int = RECEIPT_CAP,
++        ttl: float = RECEIPT_TTL_S,
++    ) -> None:
++        self.clock = clock
++        self._path_for = path_for
++        self._path: Path | None = None
++        self.cap = cap
++        self.ttl = ttl
++        self._done: OrderedDict[int, float] = OrderedDict()
++        self._busy: set[int] = set()
++        self._bot_id: int | None = None
++        self._dirty = False
++        self._saver: asyncio.Task[None] | None = None
++
++    def _now(self) -> float:
++        return self.clock.now().timestamp()
++
++    async def bind(self, bot_id: int) -> None:
++        """Use the receipt file of ``bot_id`` (loaded once per bot)."""
++        if self._bot_id == bot_id:
++            return
++        self._bot_id = bot_id
++        self._done.clear()
++        self._path = self._path_for(bot_id) if self._path_for is not None else None
++        if self._path is None:
++            return
++        stored = await run_blocking(_load_receipts, self._path, label="telegram receipts")
++        cutoff = self._now() - self.ttl
++        for update_id, at in sorted(stored.items(), key=lambda item: item[1]):
++            if at > cutoff:
++                self._done[update_id] = at
++        self._trim()
++
++    def _trim(self) -> None:
++        cutoff = self._now() - self.ttl
++        while self._done:
++            oldest, at = next(iter(self._done.items()))
++            if len(self._done) <= self.cap and at > cutoff:
++                break
++            del self._done[oldest]
++
++    def claim(self, update_id: int) -> bool:
++        """True the first time an update id is seen (handled, being handled or neither)."""
++        self._trim()
++        if update_id in self._done or update_id in self._busy:
++            return False
++        self._busy.add(update_id)
++        return True
++
++    def done(self, update_id: int) -> None:
++        self._busy.discard(update_id)
++        self._done[update_id] = self._now()
++        self._done.move_to_end(update_id)
++        self._trim()
++        self._dirty = True
++        if self._path is not None and (self._saver is None or self._saver.done()):
++            self._saver = asyncio.ensure_future(self._save_loop())
++
++    def __contains__(self, update_id: object) -> bool:
++        return update_id in self._done or update_id in self._busy
++
++    def __len__(self) -> int:
++        return len(self._done)
++
++    async def _save_loop(self) -> None:
++        while self._dirty and self._path is not None:
++            self._dirty = False
++            snapshot = {str(k): v for k, v in self._done.items()}
++            try:
++                await run_blocking(_save_receipts, self._path, snapshot, label="telegram receipts")
++            except Exception as exc:
++                log.warning("telegram: update receipts not saved: %s", type(exc).__name__)
++                return
++
++    async def flush(self) -> None:
++        saver = self._saver
++        if saver is not None:
++            with contextlib.suppress(Exception):
++                await saver
++        if self._dirty and self._path is not None:
++            await self._save_loop()
++
++
++def _load_receipts(path: Path) -> dict[int, float]:
++    try:
++        raw: object = json.loads(path.read_text(encoding="utf-8"))
++    except FileNotFoundError:
++        return {}
++    except (OSError, ValueError) as exc:
++        log.warning("telegram: update receipts unreadable, starting empty: %s", type(exc).__name__)
++        return {}
++    ids = cast(dict[str, object], raw).get("update_ids") if isinstance(raw, dict) else None
++    if not isinstance(ids, dict):
++        return {}
++    found: dict[int, float] = {}
++    for key, at in cast(dict[object, object], ids).items():
++        text = str(key)
++        if text.lstrip("-").isdigit() and isinstance(at, int | float) and not isinstance(at, bool):
++            found[int(text)] = float(at)
++    return found
++
++
++def _save_receipts(path: Path, ids: dict[str, float]) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
++    atomic_write_json(path, {"update_ids": ids}, indent=None, mode=0o600)
++
++
++# -- dispatch --------------------------------------------------------------------------------------
++
++
++def chat_key(update: Update) -> int | None:
++    """The chat an update belongs to (None: no chat, runs unordered)."""
++    message = update.message or update.channel_post or update.edited_message
++    if message is not None:
++        return message.chat.id
++    query = update.callback_query
++    if query is not None and query.message is not None:
++        return query.message.chat.id
++    return None
++
++
++class UpdateDispatcher:
++    """Runs ``handle(update)`` for each submitted update: at most ``limit`` at once, in order
++    within one chat. ``handle`` must not raise (failures are logged here if it does)."""
++
++    def __init__(
++        self,
++        handle: Callable[[Update], Awaitable[None]],
++        *,
++        limit: int = MAX_CONCURRENT_UPDATES,
++    ) -> None:
++        self._handle = handle
++        self._gate = asyncio.Semaphore(max(1, limit))
++        self._tails: dict[int, asyncio.Task[None]] = {}
++        self._tasks: set[asyncio.Task[None]] = set()
++
++    def submit(self, update: Update, *, after: Callable[[], None] | None = None) -> None:
++        key = chat_key(update)
++        before = self._tails.get(key) if key is not None else None
++        task = asyncio.ensure_future(self._run(update, before, after))
++        self._tasks.add(task)
++        task.add_done_callback(self._tasks.discard)
++        if key is not None:
++            self._tails[key] = task
++
++            def forget(done: asyncio.Task[None], key: int = key) -> None:
++                if self._tails.get(key) is done:
++                    del self._tails[key]
++
++            task.add_done_callback(forget)
++
++    async def _run(
++        self,
++        update: Update,
++        before: asyncio.Task[None] | None,
++        after: Callable[[], None] | None,
++    ) -> None:
++        try:
++            if before is not None and not before.done():
++                await asyncio.wait({before})
++            async with self._gate:
++                await self._handle(update)
++        except asyncio.CancelledError:
++            raise  # not handled: the receipt is not written
++        except Exception:
++            log.exception("telegram: handling update %s failed", update.update_id)
++        if after is not None:
++            after()
++
++    @property
++    def active(self) -> int:
++        return len(self._tasks)
++
++    async def idle(self) -> None:
++        """Wait until every submitted update was handled."""
++        while self._tasks:
++            await asyncio.wait(set(self._tasks))
++
++    async def aclose(self) -> None:
++        tasks = list(self._tasks)
++        for task in tasks:
++            task.cancel()
++        for task in tasks:
++            with contextlib.suppress(asyncio.CancelledError, Exception):
++                await task
++        self._tails.clear()
++
++
++# -- refs and names --------------------------------------------------------------------------------
++
++
++def attachment_ref(file: FileRef, name: str | None = None) -> str:
++    """``tg:<file id>[:<name>]``: no ``/``, so the intake never mistakes it for a local path."""
++    label = _NAME_SAFE.sub("_", (name or "").replace("/", "_").replace("\\", "_")).strip()[:80]
++    return f"{REF_PREFIX}{file.file_id}" + (f":{label}" if label else "")
++
++
++def parse_ref(ref: str) -> str | None:
++    """The file id of a ``tg:`` ref, else None."""
++    if not ref.startswith(REF_PREFIX):
++        return None
++    file_id = ref[len(REF_PREFIX) :].split(":", 1)[0]
++    return file_id or None
++
++
++def menu_name(name: str) -> str | None:
++    """A registry command name as Telegram accepts it, or None when it cannot be one."""
++    candidate = name.lower().replace("-", "_")
++    return candidate if _MENU_NAME.match(candidate) else None
++
++
++def menu_commands(
++    registry: CommandRegistry = REGISTRY, *, budget: int = MENU_TEXT_BUDGET
++) -> list[BotCommand]:
++    """The gateway's slash commands for ``setMyCommands`` (registry order, at most 100, names and
++    descriptions within ``budget`` characters; the rest still work when typed)."""
++    rows: list[BotCommand] = []
++    seen: set[str] = set()
++    used = 0
++    for cmd in registry.commands("gateway"):
++        name = menu_name(cmd.name)
++        if name is None or name in seen:
++            continue
++        description = " ".join(registry.describe(cmd).split())[:MENU_DESCRIPTION_MAX] or name
++        used += len(name) + len(description)
++        if used > budget:
++            break
++        rows.append(BotCommand(name, description))
++        seen.add(name)
++        if len(rows) >= MENU_MAX:
++            break
++    return rows
++
++
++def _canonical_command_text(text: str, registry: CommandRegistry = REGISTRY) -> str:
++    """``/reload_mcp args`` → ``/reload-mcp args`` when only the hyphen form is a command."""
++    if not text.startswith("/"):
++        return text
++    head, sep, rest = text.partition(" ")
++    word, at, bot = head[1:].partition("@")
++    if "_" not in word or registry.resolve(word) is not None:
++        return text
++    hyphen = word.replace("_", "-")
++    if registry.resolve(hyphen) is None:
++        return text
++    return f"/{hyphen}{at}{bot}{sep}{rest}"
++
++
++def _utf16_slice(text: str, offset: int, length: int) -> str:
++    raw = text.encode("utf-16-le")
++    return raw[offset * 2 : (offset + length) * 2].decode("utf-16-le", errors="ignore")
++
++
++# -- normalising -----------------------------------------------------------------------------------
++
++
++def _chat_type(chat: Chat) -> ChatType:
++    if chat.type == "private":
++        return "dm"
++    if chat.type == "channel":
++        return "channel"
++    return "forum" if chat.is_forum else "group"
++
++
++def _topic(message: Message) -> str | None:
++    """The routable thread of a message: a forum topic (General = 1); never a reply anchor."""
++    if not message.chat.is_forum or message.chat.type not in ("group", "supergroup"):
++        return None
++    if message.message_thread_id is not None and message.is_topic_message:
++        return str(message.message_thread_id)
++    return GENERAL_TOPIC
++
++
++class Normaliser:
++    """Builds events for one bot (its id and username are learned at connect)."""
++
++    def __init__(self, platform: str = "telegram") -> None:
++        self.platform = platform
++        self.bot_id: int | None = None
++        self.username: str = ""
++
++    def identify(self, bot_id: int, username: str | None) -> None:
++        self.bot_id = bot_id
++        self.username = (username or "").lstrip("@").lower()
++
++    # -- pieces ------------------------------------------------------------------------------------
++
++    def _source(self, message: Message, sender_override: Any = None) -> Source:
++        chat = message.chat
++        chat_type = _chat_type(chat)
++        user = sender_override if sender_override is not None else message.from_user
++        if user is not None:
++            user_id: str | None = str(user.id)
++            user_name: str | None = user.full_name or None
++            is_bot = bool(user.is_bot)
++        elif message.sender_chat is not None:
++            user_id = str(message.sender_chat.id)
++            user_name = message.sender_chat.display_name
++            is_bot = False
++        else:
++            user_id = str(chat.id) if chat_type in ("dm", "channel") else None
++            user_name = chat.display_name if chat_type == "channel" else None
++            is_bot = False
++        return Source(
++            platform=self.platform,
++            chat_id=str(chat.id),
++            chat_type=chat_type,
++            chat_name=chat.display_name,
++            user_id=user_id,
++            user_name=user_name,
++            thread_id=_topic(message),
++            is_bot=is_bot,
++        )
++
++    def _own(self, message: Message | None) -> bool:
++        user = message.from_user if message is not None else None
++        return user is not None and self.bot_id is not None and user.id == self.bot_id
++
++    def mentions_bot(self, message: Message) -> bool:
++        text = message.text if message.text is not None else (message.caption or "")
++        entities: Sequence[Entity] = message.entities or message.caption_entities
++        handle = f"@{self.username}" if self.username else ""
++        if handle and text.startswith("/") and text.split(None, 1)[0].lower().endswith(handle):
++            return True  # ``/command@ourbot``
++        for entity in entities:
++            user = entity.user
++            if entity.type == "text_mention" and user is not None and user.id == self.bot_id:
++                return True
++            if entity.type in ("mention", "bot_command") and handle:
++                piece = _utf16_slice(text, entity.offset, entity.length).lower()
++                if piece == handle or piece.endswith(handle):
++                    return True
++        if not entities and handle:
++            return re.search(rf"(?<![\w@]){re.escape(handle)}\b", text, re.IGNORECASE) is not None
++        return False
++
++    def _addressed_elsewhere(self, text: str) -> bool:
++        """A ``/command@otherbot`` (only someone else's bot should answer it)."""
++        if not text.startswith("/"):
++            return False
++        head = text.split(None, 1)[0]
++        _, at, bot = head.partition("@")
++        return bool(at) and bool(self.username) and bot.lower() != self.username
++
++    @staticmethod
++    def _media(message: Message) -> tuple[MessageKind, tuple[Attachment, ...], dict[str, Any]]:
++        extra: dict[str, Any] = {}
++        if message.photo:
++            biggest = message.photo[-1]
++            return (
++                MessageKind.PHOTO,
++                (Attachment(ref=attachment_ref(biggest), mime="image/jpeg"),),
++                extra,
++            )
++        if message.voice is not None:
++            if message.voice.duration is not None:
++                extra["duration"] = message.voice.duration
++            mime = message.voice.mime_type or "audio/ogg"
++            return (
++                MessageKind.VOICE,
++                (Attachment(ref=attachment_ref(message.voice), mime=mime),),
++                extra,
++            )
++        if message.audio is not None:
++            if message.audio.duration is not None:
++                extra["duration"] = message.audio.duration
++            ref = attachment_ref(message.audio, message.audio.file_name)
++            mime = message.audio.mime_type or "audio/mpeg"
++            return MessageKind.AUDIO, (Attachment(ref=ref, mime=mime),), extra
++        for video in (message.video, message.video_note, message.animation):
++            if video is not None:
++                ref = attachment_ref(video, video.file_name)
++                return (
++                    MessageKind.VIDEO,
++                    (Attachment(ref=ref, mime=video.mime_type or "video/mp4"),),
++                    extra,
++                )
++        if message.document is not None:
++            doc = message.document
++            ref = attachment_ref(doc, doc.file_name)
++            return MessageKind.DOCUMENT, (Attachment(ref=ref, mime=doc.mime_type or ""),), extra
++        if message.sticker is not None:
++            return MessageKind.STICKER, (), extra
++        if message.location is not None:
++            return MessageKind.LOCATION, (), extra
++        return MessageKind.TEXT, (), extra
++
++    # -- events ------------------------------------------------------------------------------------
++
++    def message_event(self, update_id: int, message: Message) -> InboundEvent | None:
++        """The event for a message or channel post; None for one we must not act on."""
++        if self._own(message):
++            return None
++        raw = message.text if message.text is not None else (message.caption or "")
++        if self._addressed_elsewhere(raw):
++            return None
++        text = _canonical_command_text(raw)
++        kind, media, metadata = self._media(message)
++        if kind is MessageKind.STICKER and not text and message.sticker is not None:
++            text = message.sticker.emoji or ""
++        if kind is MessageKind.LOCATION and not text and message.location is not None:
++            lat, lon = message.location
++            text = f"[The person shared a location: {lat:.6f}, {lon:.6f}]"
++        if self.mentions_bot(message):
++            metadata["mentioned"] = True
++        if message.media_group_id:
++            metadata["media_group_id"] = message.media_group_id
++        reply = message.reply_to_message
++        reply_text = None
++        if reply is not None:
++            reply_text = message.quote_text or reply.text or reply.caption
++        author = reply.from_user if reply is not None else None
++        return InboundEvent(
++            source=self._source(message),
++            text=text,
++            kind=kind,
++            message_id=str(message.message_id),
++            update_id=update_id,
++            media=media,
++            reply_to_id=str(reply.message_id) if reply is not None else None,
++            reply_to_text=reply_text,
++            reply_to_author_id=str(author.id) if author is not None else None,
++            reply_to_author_name=(author.full_name or None) if author is not None else None,
++            reply_to_is_own=self._own(reply),
++            metadata=metadata,
++            timestamp=message.date,
++        )
++
++    def button_event(self, update_id: int, query: CallbackQuery) -> InboundEvent | None:
++        """A press of one of our inline buttons, as the presser's event in that chat."""
++        message = query.message
++        if not query.data or message is None:
++            return None
++        return InboundEvent(
++            source=self._source(message, sender_override=query.from_user),
++            text="",
++            message_id=str(message.message_id),
++            update_id=update_id,
++            metadata={"button": query.data, "callback_id": query.id},
++        )
+diff --git a/src/indus/gateway/adapters/telegram/webhook.py b/src/indus/gateway/adapters/telegram/webhook.py
+new file mode 100644
+index 0000000..ded8fc2
+--- /dev/null
++++ b/src/indus/gateway/adapters/telegram/webhook.py
+@@ -0,0 +1,115 @@
++"""Telegram webhook mode: a tiny HTTP listener Telegram pushes updates to (P15-33).
++
++Webhook mode runs only with a secret. Telegram sends the secret registered with ``setWebhook`` in
++the ``X-Telegram-Bot-Api-Secret-Token`` header of every push; a request without the exact secret
++(compared in constant time) is refused with 401 and never parsed, so nobody who merely finds the
++URL can inject updates. Bodies over 1 MiB are refused with 413, bodies that are not an update
++with 400. An accepted update is handed to ``on_update`` (the adapter's admission, which only
++queues it) and answered 200 at once.
++"""
++
++from __future__ import annotations
++
++import hmac
++import json
++import logging
++from collections.abc import Awaitable, Callable
++from dataclasses import dataclass, field
++from typing import Any, Final, Protocol
++from urllib.parse import urlparse
++
++from indus.foundation.clock import Clock
++from indus.gateway.adapters.telegram.bot_api import Update
++from indus.gateway.http.serving import BodyTooLarge, HttpServer, bind_listener, read_body
++
++__all__ = [
++    "MAX_BODY_BYTES",
++    "SECRET_HEADER",
++    "UvicornServer",
++    "WebhookOptions",
++    "WebhookServer",
++    "webhook_app",
++]
++
++log = logging.getLogger(__name__)
++
++SECRET_HEADER: Final = "X-Telegram-Bot-Api-Secret-Token"
++MAX_BODY_BYTES: Final = 1024 * 1024
++DEFAULT_PORT: Final = 8443
++
++
++@dataclass(frozen=True)
++class WebhookOptions:
++    url: str
++    secret: str | None = field(default=None, repr=False)
++    host: str = "0.0.0.0"
++    port: int = DEFAULT_PORT
++
++    @property
++    def path(self) -> str:
++        return urlparse(self.url).path or "/telegram"
++
++
++def webhook_app(secret: str, on_update: Callable[[Update], Awaitable[None]], path: str) -> Any:
++    """The ASGI app serving ``path`` (FastAPI, imported only when webhook mode is on)."""
++    from fastapi import FastAPI, Request, Response
++
++    if not secret:
++        raise ValueError("a Telegram webhook needs a secret")
++    wanted = secret.encode("utf-8")
++    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
++
++    async def receive(request: Request) -> Response:
++        given = request.headers.get(SECRET_HEADER, "").encode("utf-8")
++        if not hmac.compare_digest(given, wanted):
++            log.warning("telegram webhook: refused a push without the right secret")
++            return Response(status_code=401)
++        try:
++            body = await read_body(request, MAX_BODY_BYTES)
++        except BodyTooLarge:
++            return Response(status_code=413)
++        try:
++            data: object = json.loads(body)
++        except ValueError:
++            return Response(status_code=400)
++        if not isinstance(data, dict) or not isinstance(data.get("update_id"), int):
++            return Response(status_code=400)
++        await on_update(Update.from_json(data))  # pyright: ignore[reportUnknownArgumentType]
++        return Response(status_code=200)
++
++    # A plain route: the handler reads the raw request (no parameter injection).
++    app.add_route(path, receive, methods=["POST"])
++    return app
++
++
++class WebhookServer(Protocol):
++    async def start(self, app: Any, host: str, port: int) -> None: ...
++
++    async def stop(self) -> None: ...
++
++
++class UvicornServer:
++    """Serves the webhook app with the gateway's uvicorn helper (``gateway.http.serving``)."""
++
++    def __init__(self, clock: Clock) -> None:
++        self.clock = clock
++        self._server: HttpServer | None = None
++
++    async def start(self, app: Any, host: str, port: int) -> None:
++        sock = await bind_listener(host, port, self.clock)
++        server = HttpServer(app, sock, name="Telegram webhook")
++        try:
++            await server.start()
++        except BaseException:
++            await server.stop()
++            raise
++        self._server = server
++
++    @property
++    def address(self) -> tuple[str, int] | None:
++        return self._server.address if self._server is not None else None
++
++    async def stop(self) -> None:
++        server, self._server = self._server, None
++        if server is not None:
++            await server.stop()
+diff --git a/src/indus/gateway/delivery/send_command.py b/src/indus/gateway/delivery/send_command.py
+index fef8748..981ab88 100644
+--- a/src/indus/gateway/delivery/send_command.py
++++ b/src/indus/gateway/delivery/send_command.py
+@@ -231,7 +231,7 @@ async def _deliver(
+                         hint = f": {missing}"
+                     return f"the {name} adapter could not be built{hint}"
+                 try:
+-                    await adapter.connect()
++                    await adapter.connect(send_only=True)
+                 except AdapterConnectError as exc:
+                     return f"could not connect to {name}: {exc}"
+                 adapters[name] = adapter
+diff --git a/src/indus/gateway/extras.py b/src/indus/gateway/extras.py
+index 33f4dba..398561f 100644
+--- a/src/indus/gateway/extras.py
++++ b/src/indus/gateway/extras.py
+@@ -32,6 +32,7 @@ from indus.gateway.cron_host import GatewayCronHost
+ from indus.gateway.daemon.parts import DaemonPart, Stage
+ from indus.gateway.intake.media import (
+     AlbumCollector,
++    Fetcher,
+     MediaIntake,
+     pipeline_vision_probe,
+     vision_describer,
+@@ -40,7 +41,15 @@ from indus.gateway.intake.media import (
+ if TYPE_CHECKING:
+     from indus.gateway.daemon.process import GatewayDaemon
+ 
+-__all__ = ["DaemonSeat", "Extras", "ExtrasPart", "ExtrasSeat", "create", "install_extras"]
++__all__ = [
++    "DaemonSeat",
++    "Extras",
++    "ExtrasPart",
++    "ExtrasSeat",
++    "attach_fetcher",
++    "create",
++    "install_extras",
++]
+ 
+ log = logging.getLogger(__name__)
+ 
+@@ -123,6 +132,15 @@ def install_extras(daemon: DaemonSeat, *, cron: bool = True) -> Extras:
+     return Extras(prompts, intake, albums, host)
+ 
+ 
++def attach_fetcher(intake: MediaIntake, name: str, adapter: object) -> Callable[[], None] | None:
++    """Register the adapter's media download function (``fetch_media``, when it has one) with
++    the intake for its platform; the undo, or None when the adapter downloads nothing."""
++    fetch: Fetcher | None = getattr(adapter, "fetch_media", None)
++    if not callable(fetch):
++        return None
++    return intake.register_fetcher(name, fetch)
++
++
+ @dataclass
+ class ExtrasSeat:
+     """A ``DaemonSeat``: a scope, a pipeline and the start / stop hooks ``install_extras`` adds."""
+@@ -161,16 +179,41 @@ class ExtrasPart(DaemonPart):
+         self.cron = cron
+         self.seat: ExtrasSeat | None = None
+         self.extras: Extras | None = None
++        self._fetchers: dict[str, Callable[[], None]] = {}
++        self._listeners: list[Callable[[], None]] = []
+ 
+     async def prepare(self, daemon: GatewayDaemon) -> None:
+         self.seat = ExtrasSeat(daemon.scope, daemon.pipeline)
+         self.extras = install_extras(self.seat, cron=self.cron)
++        self._listeners = [
++            daemon.on_platform_up(self._platform_up),
++            daemon.on_platform_down(self._platform_down),
++        ]
++
++    def _platform_up(self, name: str, adapter: object) -> None:
++        """Adapters that download media (Telegram ``getFile``…) feed the intake (P15-23)."""
++        if self.extras is None:
++            return
++        self._platform_down(name, False, "replaced")
++        undo = attach_fetcher(self.extras.intake, name, adapter)
++        if undo is not None:
++            self._fetchers[name] = undo
++
++    def _platform_down(self, name: str, fatal: bool, reason: str) -> None:
++        undo = self._fetchers.pop(name, None)
++        if undo is not None:
++            undo()
+ 
+     async def start(self, daemon: GatewayDaemon) -> None:
+         if self.seat is not None:
+             await self.seat.start()
+ 
+     async def stop(self, daemon: GatewayDaemon) -> None:
++        for undo in self._listeners:
++            undo()
++        self._listeners = []
++        for name in list(self._fetchers):
++            self._platform_down(name, False, "stopping")
+         seat, self.seat = self.seat, None
+         if seat is not None:
+             await seat.stop()
+diff --git a/src/indus/gateway/registry.py b/src/indus/gateway/registry.py
+index 0fed56b..c83fe68 100644
+--- a/src/indus/gateway/registry.py
++++ b/src/indus/gateway/registry.py
+@@ -138,17 +138,21 @@ def _chat_entry(
+ def builtin_entries() -> tuple[PlatformEntry, ...]:
+     """The platforms that ship with Indus Agent, in a fixed order."""
+     return (
+-        _chat_entry(
+-            "telegram",
+-            "Telegram",
+-            sdk=("telegram",),
+-            extra_name="telegram",
+-            required_env=("TELEGRAM_BOT_TOKEN",),
+-            max_len=4096,
+-            hint=(
+-                "You are talking through Telegram. Keep replies short enough to read on a phone; "
+-                "Markdown is converted for you."
++        replace(
++            _chat_entry(
++                "telegram",
++                "Telegram",
++                # Our own Bot API client over httpx (a base dependency): no extra to install.
++                sdk=("httpx",),
++                extra_name="telegram",
++                required_env=("TELEGRAM_BOT_TOKEN",),
++                max_len=4096,
++                hint=(
++                    "You are talking through Telegram. Keep replies short enough to read on a "
++                    "phone; Markdown is converted for you."
++                ),
+             ),
++            install_hint="pip install indus-agent (Telegram needs no extra)",
+         ),
+         _chat_entry(
+             "discord",
+diff --git a/tests/contract/gateway/conftest.py b/tests/contract/gateway/conftest.py
+index 6be5493..3cab72d 100644
+--- a/tests/contract/gateway/conftest.py
++++ b/tests/contract/gateway/conftest.py
+@@ -59,6 +59,16 @@ def register_case(case: AdapterCase) -> AdapterCase:
+     return case
+ 
+ 
++def _register_platform_cases() -> None:
++    """The shipped adapters' cases (each module builds its adapter over its wire fake)."""
++    from tests.contract.gateway.telegram_case import TELEGRAM_CASE
++
++    register_case(TELEGRAM_CASE)
++
++
++_register_platform_cases()
++
++
+ async def settle[T](env: CaseEnv, awaitable: Awaitable[T], *, step: float = 0.5) -> T:
+     """Await ``awaitable`` while moving the fake clock past any sleeps it takes."""
+     task = asyncio.ensure_future(awaitable)
+diff --git a/tests/contract/gateway/telegram_case.py b/tests/contract/gateway/telegram_case.py
+new file mode 100644
+index 0000000..7b73683
+--- /dev/null
++++ b/tests/contract/gateway/telegram_case.py
+@@ -0,0 +1,45 @@
++"""The Telegram adapter in the shared contract suite (P15-33): our adapter over the wire fake."""
++
++from __future__ import annotations
++
++from typing import cast
++
++from indus.gateway.adapters.base import Adapter, utf16_units
++from indus.gateway.adapters.telegram import TelegramAdapter
++from indus.gateway.adapters.telegram.bot_api import BotApi
++from tests.contract.gateway.conftest import AdapterCase, CaseEnv
++from tests.fakes.clock import FakeClock
++from tests.fakes.platform.core import FakeChatPlatform
++from tests.fakes.platform.telegram_wire import MAX_LEN, TelegramWire
++
++
++def make_env(clock: FakeClock) -> CaseEnv:
++    platform = FakeChatPlatform(
++        "telegram", clock=clock, max_len=MAX_LEN, len_fn=utf16_units, bot_user_id="1000"
++    )
++    return CaseEnv(clock, platform, TelegramWire(platform))
++
++
++def build(env: CaseEnv) -> Adapter:
++    wire = cast(TelegramWire, env.wire)
++    return TelegramAdapter(cast(BotApi, wire.bot), clock=env.clock)
++
++
++async def pump(env: CaseEnv, adapter: Adapter) -> None:
++    """Let the poll loop pick the queued updates up and the dispatcher hand them over."""
++    assert isinstance(adapter, TelegramAdapter)
++    for _ in range(3):
++        await env.clock.advance_and_settle(1.0)
++        await adapter.idle()
++
++
++TELEGRAM_CASE = AdapterCase(
++    "telegram",
++    make_env,
++    build,
++    user_id="200",
++    group_id="-1001300",
++    thread_id="400",
++    bot_id="500",
++    pump=pump,
++)
+diff --git a/tests/contract/gateway/test_adapter_contract.py b/tests/contract/gateway/test_adapter_contract.py
+index 8dc4771..0038093 100644
+--- a/tests/contract/gateway/test_adapter_contract.py
++++ b/tests/contract/gateway/test_adapter_contract.py
+@@ -260,7 +260,8 @@ PROMPT = ApprovalPrompt(
+     ),
+ )
+ 
+-_INDICATOR = re.compile(r"^\(\d+/\d+\)$")
++# A chunk indicator ``(i/n)``; MarkdownV2 platforms send it escaped, ``\\(i/n\\)``.
++_INDICATOR = re.compile(r"^\\?\(\d+/\d+\\?\)$")
+ 
+ 
+ def _long_text(caps: Capabilities) -> str:
+diff --git a/tests/contract/gateway/test_vendor_names.py b/tests/contract/gateway/test_vendor_names.py
+index 7289d36..2cd5ed5 100644
+--- a/tests/contract/gateway/test_vendor_names.py
++++ b/tests/contract/gateway/test_vendor_names.py
+@@ -7,6 +7,9 @@ optional extras) skips its rows; ``uv sync --all-extras`` runs them.
+ 
+ The wire fakes are also checked against their own declaration, which needs no library: a fake
+ that lacks a declared name would let an adapter test pass against a surface that does not exist.
++
++Telegram has no library (P15-33): its rows point at our own Bot API client, which is always
++installed, and the client's methods are checked against the Bot API's documented method names.
+ """
+ 
+ from __future__ import annotations
+@@ -90,3 +93,58 @@ def test_every_adapter_declares_vendor_names_for_a_wire() -> None:
+             assert surface == {}
+             continue
+         assert surface, f"{owner} declares no vendor_names"
++
++
++# -- Telegram: our own Bot API client (P15-33) -----------------------------------------------------
++
++# Bot API methods as documented at core.telegram.org/bots/api (Bot API 9.x): the ones our client
++# may call. An interop fact list, written down by hand; add a name only after checking the docs.
++TELEGRAM_DOCUMENTED_METHODS = frozenset(
++    {
++        "getMe",
++        "getUpdates",
++        "setWebhook",
++        "deleteWebhook",
++        "getWebhookInfo",
++        "sendMessage",
++        "editMessageText",
++        "editMessageReplyMarkup",
++        "deleteMessage",
++        "sendChatAction",
++        "setMessageReaction",
++        "sendPhoto",
++        "sendDocument",
++        "sendVoice",
++        "sendAudio",
++        "sendVideo",
++        "sendMediaGroup",
++        "setMyCommands",
++        "deleteMyCommands",
++        "getFile",
++        "answerCallbackQuery",
++        "getChat",
++    }
++)
++
++
++def _snake(name: str) -> str:
++    return "".join(f"_{c.lower()}" if c.isupper() else c for c in name)
++
++
++def test_telegram_client_methods_are_documented_bot_api_methods() -> None:
++    from indus.gateway.adapters.telegram.bot_api import BOT_API_METHODS, BotApi
++
++    for ours, documented in BOT_API_METHODS.items():
++        assert documented in TELEGRAM_DOCUMENTED_METHODS, f"{documented} is not a Bot API method"
++        assert ours == _snake(documented), f"{ours} does not name {documented}"
++        assert callable(getattr(BotApi, ours, None)), f"BotApi has no {ours}"
++
++
++def test_the_telegram_fake_covers_every_client_method_the_adapter_calls() -> None:
++    from indus.gateway.adapters.telegram.adapter import BOT_TARGET, TelegramAdapter
++    from indus.gateway.adapters.telegram.bot_api import BOT_API_METHODS
++
++    called = set(TelegramAdapter.vendor_names[BOT_TARGET])
++    assert called <= set(TelegramWire.SURFACE[BOT_TARGET])
++    # every documented method the client speaks is one the adapter uses (no dead client code)
++    assert set(BOT_API_METHODS) <= called
+diff --git a/tests/fakes/platform/telegram_wire.py b/tests/fakes/platform/telegram_wire.py
+index e02173a..6da7e11 100644
+--- a/tests/fakes/platform/telegram_wire.py
++++ b/tests/fakes/platform/telegram_wire.py
+@@ -1,19 +1,38 @@
+-"""A fake of the Telegram library surface our adapter touches (P15-01).
+-
+-Shapes follow python-telegram-bot (method names snake_case, keyword arguments as the library
+-takes them, results with ``message_id`` / ``chat.id``), backed by one `FakeChatPlatform`.
+-Errors are raised as stand-ins named like the library's (``RetryAfter``, ``BadRequest``,
+-``Forbidden``, ``TimedOut``, ``NetworkError``) so the adapter's error mapping can be exercised.
+-Only names listed in ``SURFACE`` exist; the drift check proves each is real in the pinned
+-library (P15-33 extends both together).
++"""A fake of the Telegram client surface our adapter touches (P15-01, P15-33).
++
++We talk to Telegram through our own Bot API client (``indus.gateway.adapters.telegram.bot_api``,
++no library: the common one is LGPL-3.0). ``FakeBot`` stands in for ``BotApi``: the same method
++names and keyword arguments, the client's own result types (``Message`` with ``message_id`` /
++``chat.id``, ``Update``, ``File``…) and its own error classes (``RetryAfter``, ``BadRequest``,
++``Forbidden``, ``TimedOut``, ``NetworkError``), backed by one `FakeChatPlatform`. Only names
++listed in ``SURFACE`` exist; the drift check proves each is on the real client and that the
++client's methods are documented Bot API methods.
+ """
+ 
+ from __future__ import annotations
+ 
++from collections.abc import AsyncIterator
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+ from indus.gateway.adapters.base import utf16_units
++from indus.gateway.adapters.telegram.bot_api import (
++    BadRequest,
++    CallbackQuery,
++    Chat,
++    File,
++    FileRef,
++    Forbidden,
++    InlineKeyboardButton,
++    InlineKeyboardMarkup,
++    Message,
++    NetworkError,
++    RetryAfter,
++    TelegramError,
++    TimedOut,
++    Update,
++    User,
++)
+ from tests.fakes.platform.core import (
+     Button,
+     FailureKind,
+@@ -26,8 +45,10 @@ from tests.fakes.platform.core import (
+ 
+ MAX_LEN = 4096
+ 
++_CLIENT = "indus.gateway.adapters.telegram.bot_api"
++
+ SURFACE: dict[str, tuple[str, ...]] = {
+-    "telegram:Bot": (
++    f"{_CLIENT}:BotApi": (
+         "get_me",
+         "get_updates",
+         "set_webhook",
+@@ -45,53 +66,19 @@ SURFACE: dict[str, tuple[str, ...]] = {
+         "set_my_commands",
+         "get_file",
+         "answer_callback_query",
++        "download_file",
++        "aclose",
+     ),
+-    "telegram:InlineKeyboardButton": (),
+-    "telegram:InlineKeyboardMarkup": (),
+-    "telegram.error:RetryAfter": ("retry_after",),
+-    "telegram.error:BadRequest": (),
+-    "telegram.error:Forbidden": (),
+-    "telegram.error:TimedOut": (),
+-    "telegram.error:NetworkError": (),
++    f"{_CLIENT}:InlineKeyboardButton": (),
++    f"{_CLIENT}:InlineKeyboardMarkup": (),
++    f"{_CLIENT}:RetryAfter": ("retry_after",),
++    f"{_CLIENT}:BadRequest": (),
++    f"{_CLIENT}:Forbidden": (),
++    f"{_CLIENT}:TimedOut": (),
++    f"{_CLIENT}:NetworkError": (),
+ }
+ 
+ 
+-# -- library-shaped errors ----------------------------------------------------------------------
+-
+-
+-class TelegramError(Exception):
+-    def __init__(self, message: str) -> None:
+-        super().__init__(message)
+-        self.message = message
+-
+-
+-class NetworkError(TelegramError):
+-    pass
+-
+-
+-class TimedOut(NetworkError):
+-    def __init__(self, message: str = "Timed out") -> None:
+-        super().__init__(message)
+-
+-
+-class BadRequest(NetworkError):
+-    pass
+-
+-
+-class Forbidden(TelegramError):
+-    pass
+-
+-
+-class RetryAfter(TelegramError):
+-    def __init__(self, retry_after: float) -> None:
+-        super().__init__(f"Flood control exceeded. Retry in {int(retry_after)} seconds")
+-        self._retry_after = retry_after
+-
+-    @property
+-    def retry_after(self) -> float:
+-        return self._retry_after
+-
+-
+ def _translate(exc: FakePlatformError) -> TelegramError:
+     kind = exc.kind
+     if kind is FailureKind.RATE_LIMIT:
+@@ -99,77 +86,10 @@ def _translate(exc: FakePlatformError) -> TelegramError:
+     if kind is FailureKind.READ_TIMEOUT:
+         return TimedOut()
+     if kind is FailureKind.CONNECT_TIMEOUT:
+-        return NetworkError("httpx.ConnectError: connection refused")
++        return NetworkError("ConnectError: connection refused")
+     if kind is FailureKind.FORBIDDEN:
+         return Forbidden(exc.text)
+-    return BadRequest(exc.text.removeprefix("Bad Request: "))
+-
+-
+-# -- library-shaped objects ---------------------------------------------------------------------
+-
+-
+-@dataclass(frozen=True)
+-class InlineKeyboardButton:
+-    text: str
+-    callback_data: str
+-
+-
+-@dataclass(frozen=True)
+-class InlineKeyboardMarkup:
+-    inline_keyboard: tuple[tuple[InlineKeyboardButton, ...], ...]
+-
+-
+-@dataclass(frozen=True)
+-class User:
+-    id: int
+-    is_bot: bool
+-    first_name: str
+-    username: str | None = None
+-
+-
+-@dataclass(frozen=True)
+-class Chat:
+-    id: int
+-    type: str  # private, group, supergroup, channel
+-    title: str | None = None
+-    is_forum: bool = False
+-
+-
+-@dataclass(frozen=True)
+-class File:
+-    file_id: str
+-    file_path: str
+-
+-
+-@dataclass(frozen=True)
+-class Message:
+-    message_id: int
+-    chat: Chat
+-    text: str | None = None
+-    caption: str | None = None
+-    from_user: User | None = None
+-    message_thread_id: int | None = None
+-    reply_to_message: Message | None = None
+-    voice: File | None = None
+-    photo: tuple[File, ...] = ()
+-    document: File | None = None
+-    date: Any = None
+-
+-
+-@dataclass(frozen=True)
+-class CallbackQuery:
+-    id: str
+-    from_user: User
+-    data: str
+-    message: Message | None = None
+-
+-
+-@dataclass(frozen=True)
+-class Update:
+-    update_id: int
+-    message: Message | None = None
+-    edited_message: Message | None = None
+-    callback_query: CallbackQuery | None = None
++    return BadRequest(exc.text)
+ 
+ 
+ _CHAT_TYPES = {
+@@ -190,19 +110,28 @@ def _chat_of(item: FakeInbound) -> Chat:
+     return Chat(int(item.chat_id), kind, title, is_forum=item.chat_kind in ("thread", "forum"))
+ 
+ 
+-def _file(media: FakeMedia) -> File:
+-    return File(file_id=f"f-{media.ref}", file_path=media.ref)
++def _file(media: FakeMedia) -> FileRef:
++    duration = int(media.duration) if media.duration is not None else None
++    return FileRef(
++        file_id=f"f-{media.ref}",
++        file_unique_id=f"u-{media.ref}",
++        mime_type=media.mime or None,
++        file_name=media.ref if media.kind == "document" else None,
++        duration=duration,
++    )
+ 
+ 
+ @dataclass
+ class FakeBot:
+-    """A stand-in for ``telegram.Bot`` over a `FakeChatPlatform`."""
++    """A stand-in for ``BotApi`` over a `FakeChatPlatform`."""
+ 
+     platform: FakeChatPlatform
+     calls: list[tuple[str, dict[str, Any]]] = field(
+         default_factory=list[tuple[str, dict[str, Any]]]
+     )
+-    _offset: int = 0
++    # Bytes ``download_file`` serves per file path (default: a short text naming the path).
++    files: dict[str, bytes] = field(default_factory=dict[str, bytes])
++    bot_username: str = "indus_test_bot"
+ 
+     async def _do(self, name: str, kwargs: dict[str, Any], coro: Any) -> Any:
+         self.calls.append((name, kwargs))
+@@ -211,13 +140,25 @@ class FakeBot:
+         except FakePlatformError as exc:
+             raise _translate(exc) from None
+ 
++    def names(self) -> list[str]:
++        return [name for name, _ in self.calls]
++
+     def _message(self, sent: FakeMessage) -> Message:
+         chat = Chat(int(sent.chat_id), "private")
+         return Message(int(sent.message_id), chat, text=sent.text)
+ 
+     async def get_me(self) -> User:
+         await self._do("get_me", {}, self.platform.connect())
+-        return User(int(self.platform.bot_user_id or 1), True, self.platform.bot_name)
++        return User(
++            int(self.platform.bot_user_id or 1),
++            True,
++            self.platform.bot_name,
++            username=self.bot_username,
++        )
++
++    async def aclose(self) -> None:
++        self.calls.append(("aclose", {}))
++        await self.platform.disconnect()
+ 
+     async def get_updates(
+         self, offset: int | None = None, timeout: float = 0, **kwargs: Any
+@@ -234,19 +175,27 @@ class FakeBot:
+             original = self.platform.message(item.reply_to)
+             # Telegram does not echo rich content: the quoted text is dropped for our own messages.
+             text = None if original is None or original.from_bot else original.text
+-            reply = Message(int(item.reply_to), chat, text=text)
++            author = None
++            if original is not None and original.from_bot:
++                author = User(int(self.platform.bot_user_id or 1), True, self.platform.bot_name)
++            reply = Message(int(item.reply_to), chat, text=text, from_user=author)
+         media = item.media[0] if item.media else None
++        topic = _int(item.thread_id)
+         message = Message(
+             message_id=int(item.message_id) if item.message_id else 0,
+             chat=chat,
+             text=item.text if media is None else None,
+             caption=item.text if media is not None else None,
+             from_user=user,
+-            message_thread_id=_int(item.thread_id),
++            message_thread_id=topic,
++            is_topic_message=topic is not None and chat.is_forum,
+             reply_to_message=reply,
+             voice=_file(media) if media and media.kind == "voice" else None,
+             photo=(_file(media),) if media and media.kind == "photo" else (),
+             document=_file(media) if media and media.kind == "document" else None,
++            audio=_file(media) if media and media.kind == "audio" else None,
++            video=_file(media) if media and media.kind == "video" else None,
++            sticker=_file(media) if media and media.kind == "sticker" else None,
+             date=item.at,
+         )
+         if item.event == "button":
+@@ -269,7 +218,7 @@ class FakeBot:
+         chat_id: int | str,
+         text: str,
+         parse_mode: str | None = None,
+-        reply_to_message_id: int | None = None,
++        reply_to_message_id: int | str | None = None,
+         message_thread_id: int | None = None,
+         reply_markup: InlineKeyboardMarkup | None = None,
+         **kw: Any,
+@@ -279,7 +228,14 @@ class FakeBot:
+             for row in (reply_markup.inline_keyboard if reply_markup else ())
+             for b in row
+         )
+-        args = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode, **kw}
++        args = {
++            "chat_id": chat_id,
++            "text": text,
++            "parse_mode": parse_mode,
++            "reply_to_message_id": reply_to_message_id,
++            "message_thread_id": message_thread_id,
++            **kw,
++        }
+         sent = await self._do(
+             "send_message",
+             args,
+@@ -302,9 +258,17 @@ class FakeBot:
+         parse_mode: str | None = None,
+         **kw: Any,
+     ) -> Message:
+-        args = {"chat_id": chat_id, "message_id": message_id, "text": text, **kw}
++        args = {
++            "chat_id": chat_id,
++            "message_id": message_id,
++            "text": text,
++            "parse_mode": parse_mode,
++            **kw,
++        }
+         edited = await self._do(
+-            "edit_message_text", args, self.platform.edit(str(chat_id), str(message_id), text)
++            "edit_message_text",
++            args,
++            self.platform.edit(str(chat_id), str(message_id), text),
+         )
+         return self._message(edited)
+ 
+@@ -320,7 +284,7 @@ class FakeBot:
+         thread = str(message_thread_id) if message_thread_id else None
+         await self._do(
+             "send_chat_action",
+-            {"chat_id": chat_id, "action": action},
++            {"chat_id": chat_id, "action": action, "message_thread_id": message_thread_id},
+             self.platform.typing(str(chat_id), thread_id=thread),
+         )
+         return True
+@@ -341,10 +305,16 @@ class FakeBot:
+         caption = kw.get("caption") or ""
+         media = FakeMedia(kind, str(ref), caption=caption)
+         thread = kw.get("message_thread_id")
++        reply = kw.get("reply_to_message_id")
+         sent = await self._do(
+             name,
+-            {"chat_id": chat_id, **kw},
+-            self.platform.upload(str(chat_id), media, thread_id=str(thread) if thread else None),
++            {"chat_id": chat_id, "file": ref, **kw},
++            self.platform.upload(
++                str(chat_id),
++                media,
++                reply_to=str(reply) if reply else None,
++                thread_id=str(thread) if thread else None,
++            ),
+         )
+         return self._message(sent)
+ 
+@@ -369,7 +339,17 @@ class FakeBot:
+ 
+     async def get_file(self, file_id: str) -> File:
+         self.calls.append(("get_file", {"file_id": file_id}))
+-        return File(file_id, file_id.removeprefix("f-"))
++        path = file_id.removeprefix("f-")
++        return File(file_id, path, file_size=len(self._content(path)))
++
++    def _content(self, file_path: str) -> bytes:
++        return self.files.get(file_path, f"fake telegram file {file_path}\n".encode())
++
++    async def download_file(self, file_path: str) -> AsyncIterator[bytes]:
++        self.calls.append(("download_file", {"file_path": file_path}))
++        data = self._content(file_path)
++        for start in range(0, len(data), 64 * 1024):
++            yield data[start : start + 64 * 1024]
+ 
+     async def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> bool:
+         await self._do(
+@@ -385,14 +365,14 @@ class TelegramWire:
+ 
+     SURFACE = SURFACE
+     FAKES: dict[str, type] = {
+-        "telegram:Bot": FakeBot,
+-        "telegram:InlineKeyboardButton": InlineKeyboardButton,
+-        "telegram:InlineKeyboardMarkup": InlineKeyboardMarkup,
+-        "telegram.error:RetryAfter": RetryAfter,
+-        "telegram.error:BadRequest": BadRequest,
+-        "telegram.error:Forbidden": Forbidden,
+-        "telegram.error:TimedOut": TimedOut,
+-        "telegram.error:NetworkError": NetworkError,
++        f"{_CLIENT}:BotApi": FakeBot,
++        f"{_CLIENT}:InlineKeyboardButton": InlineKeyboardButton,
++        f"{_CLIENT}:InlineKeyboardMarkup": InlineKeyboardMarkup,
++        f"{_CLIENT}:RetryAfter": RetryAfter,
++        f"{_CLIENT}:BadRequest": BadRequest,
++        f"{_CLIENT}:Forbidden": Forbidden,
++        f"{_CLIENT}:TimedOut": TimedOut,
++        f"{_CLIENT}:NetworkError": NetworkError,
+     }
+ 
+     def __init__(self, platform: FakeChatPlatform | None = None) -> None:
+diff --git a/tests/unit/gateway/adapters/telegram/__init__.py b/tests/unit/gateway/adapters/telegram/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/unit/gateway/adapters/telegram/test_adapter.py b/tests/unit/gateway/adapters/telegram/test_adapter.py
+new file mode 100644
+index 0000000..ad1fef5
+--- /dev/null
++++ b/tests/unit/gateway/adapters/telegram/test_adapter.py
+@@ -0,0 +1,881 @@
++"""P15-33: Telegram specifics over the wire fake (the shared contract runs in tests/contract)."""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import re
++from collections.abc import Awaitable
++from datetime import UTC, datetime
++from pathlib import Path
++from typing import Any, cast
++
++import httpx
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.gateway.adapters.base import AdapterConnectError, ApprovalAction, ApprovalPrompt
++from indus.gateway.adapters.telegram import BOT_FACTORY, TelegramAdapter
++from indus.gateway.adapters.telegram import __name__ as telegram_package
++from indus.gateway.adapters.telegram.adapter import LOBBY_TEXT, TelegramOptions
++from indus.gateway.adapters.telegram.bot_api import (
++    BadRequest,
++    BotApi,
++    BotCommand,
++    Chat,
++    Entity,
++    Message,
++    NetworkError,
++    Unauthorized,
++    Update,
++    User,
++)
++from indus.gateway.adapters.telegram.inbound import (
++    Normaliser,
++    UpdateDispatcher,
++    UpdateReceipts,
++    _canonical_command_text,  # pyright: ignore[reportPrivateUsage]
++    menu_commands,
++)
++from indus.gateway.adapters.telegram.webhook import (
++    SECRET_HEADER,
++    UvicornServer,
++    WebhookOptions,
++    webhook_app,
++)
++from indus.gateway.config import AdapterConfig, PlatformSettings, load_gateway_settings
++from indus.gateway.core.busy import canonical_command
++from indus.gateway.core.events import Attachment, InboundEvent, MessageKind
++from indus.gateway.core.send import ErrorKind
++from indus.gateway.core.session_keys import build_session_key
++from indus.gateway.delivery import send_command
++from indus.gateway.extras import attach_fetcher
++from indus.gateway.intake.media import MediaIntake
++from indus.gateway.outbound.chunker import utf16_units
++from indus.gateway.registry import PlatformRegistry
++from indus.service.commands.registry import CommandDef, CommandRegistry
++from tests.fakes.clock import FakeClock, checkpoint
++from tests.fakes.model import text_turn, tool_batch
++from tests.fakes.platform.core import FailureKind, FakeChatPlatform
++from tests.fakes.platform.telegram_wire import FakeBot, TelegramWire
++from tests.unit.cli.commands.cmdrun import run_cli, write_settings
++from tests.unit.gateway.core import _kit
++from tests.unit.gateway.core._kit import ALLOWED, build_kit
++from tests.unit.gateway.core.test_prompts import Outcomes, asking, finish
++
++GOLDEN = Path(__file__).resolve().parents[4] / "fixtures" / "gateway" / "session_keys.golden.json"
++START = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
++# Built at runtime: the Telegram token shape never appears literally in the source.
++TOKEN = "".join(["55501", "234", ":", "Ab", "c-" * 16, "d"])
++EMOJI = "\N{GRINNING FACE}"  # two UTF-16 units
++
++
++class Rig:
++    """The wire fake, a Telegram adapter on it and the events it emitted."""
++
++    def __init__(self, options: TelegramOptions | None = None, **kw: Any) -> None:
++        self.clock = FakeClock(START)
++        self.platform = FakeChatPlatform(
++            "telegram", clock=self.clock, max_len=4096, len_fn=utf16_units, bot_user_id="1000"
++        )
++        self.wire = TelegramWire(self.platform)
++        self.bot = self.wire.bot
++        self.events: list[InboundEvent] = []
++        self.adapter = TelegramAdapter(
++            cast(BotApi, self.bot), clock=self.clock, options=options, **kw
++        )
++
++        async def sink(event: InboundEvent) -> None:
++            self.events.append(event)
++
++        self.adapter.set_sink(sink)
++
++    async def settle[T](self, awaitable: Awaitable[T], *, step: float = 0.5) -> T:
++        """Await while moving the fake clock past any sleeps (and letting threads finish)."""
++        task = asyncio.ensure_future(awaitable)
++        for _ in range(4000):
++            await self.clock.run_until_idle()
++            if task.done():
++                return task.result()
++            pause = asyncio.get_running_loop().create_future()
++            await asyncio.wait({pause}, timeout=0.001)  # threads (file I/O) get a moment
++            pause.cancel()
++            self.clock.advance(step)
++        task.cancel()
++        raise AssertionError("never finished on the fake clock")
++
++    async def pump(self, rounds: int = 3) -> None:
++        for _ in range(rounds):
++            await self.clock.advance_and_settle(1.0)
++            await self.adapter.idle()
++
++    def called(self, name: str) -> list[dict[str, Any]]:
++        return [kw for n, kw in self.bot.calls if n == name]
++
++
++def run(coro: Any) -> Any:
++    return asyncio.run(coro)
++
++
++# -- the phase row's Verify column -----------------------------------------------------------------
++
++
++def test_4096_utf16_units_of_emoji_fit_one_message_and_one_more_unit_splits() -> None:
++    rig = Rig()
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        whole = await rig.settle(rig.adapter.send("7", EMOJI * 2048, meta={"plain": True}))
++        assert whole.ok and whole.continuation_ids == ()
++        split = await rig.settle(rig.adapter.send("8", EMOJI * 2048 + "x", meta={"plain": True}))
++        assert split.ok and len(split.ids) == 2
++        texts = rig.platform.texts("8")
++        assert all(utf16_units(t) <= 4096 for t in texts)
++        body = "".join(re.sub(r"\s*\(\d+/\d+\)$", "", t) for t in texts)
++        assert body == EMOJI * 2048 + "x"  # nothing lost, no surrogate pair cut in half
++        await rig.adapter.disconnect()
++
++    run(main())
++    assert rig.platform.texts("7") == [EMOJI * 2048]
++
++
++def test_a_97_minute_flood_wait_comes_back_typed_without_sleeping() -> None:
++    rig = Rig()
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        before = rig.clock.monotonic()
++        sends = len(rig.called("send_message"))
++        rig.platform.fail(FailureKind.RATE_LIMIT, op="send", retry_after=97 * 60, times=2)
++        direct = await rig.adapter.send("7", "hello")
++        retried = await rig.adapter.send_with_retry("8", "hello", rng=lambda: 0.0)
++        for result in (direct, retried):
++            assert not result.ok and result.is_flood and result.kind is ErrorKind.RATE_LIMITED
++            assert result.retry_after == 97 * 60
++        assert rig.clock.monotonic() == before  # nothing slept, not even the retry policy
++        assert len(rig.called("send_message")) == sends + 2  # one call each, no notice sent
++        await rig.adapter.disconnect()
++
++    run(main())
++
++
++def test_a_duplicate_update_id_is_handled_once_also_after_a_restart(tmp_path: Path) -> None:
++    def receipts(clock: FakeClock) -> UpdateReceipts:
++        return UpdateReceipts(clock, path_for=lambda bot_id: tmp_path / f"receipts_{bot_id}.json")
++
++    first = Rig()
++    first.adapter.receipts = receipts(first.clock)
++    first.platform.dm("200", "hello")
++
++    async def main(rig: Rig, again: bool) -> None:
++        await rig.settle(rig.adapter.connect())
++        await rig.pump()
++        if again:
++            for update in rig.bot._update_log:  # pyright: ignore[reportAttributeAccessIssue]
++                assert rig.adapter.admit(update) is False
++            await rig.pump()
++        await rig.adapter.disconnect()
++
++    original = FakeBot.get_updates
++
++    async def remembering(self: FakeBot, *args: Any, **kw: Any) -> list[Update]:
++        found = await original(self, *args, **kw)
++        log: list[Update] = self.__dict__.setdefault("_update_log", [])
++        log.extend(found)
++        return found
++
++    with pytest.MonkeyPatch.context() as patch:
++        patch.setattr(FakeBot, "get_updates", remembering)
++        run(main(first, again=True))
++        assert [e.text for e in first.events] == ["hello"]
++        saved = json.loads((tmp_path / "receipts_1000.json").read_text())
++        assert list(saved["update_ids"]) == ["1"]
++
++        # a new process: Telegram re-sends the update it never saw acknowledged
++        second = Rig()
++        second.adapter.receipts = receipts(second.clock)
++        redelivered = first.bot._update_log[0]  # pyright: ignore[reportAttributeAccessIssue]
++
++        async def restart() -> None:
++            await second.settle(second.adapter.connect())
++            assert second.adapter.admit(redelivered) is False
++            await second.pump()
++            await second.adapter.disconnect()
++
++        run(restart())
++        assert second.events == []
++
++
++def test_receipts_are_bounded_and_expire_after_a_day() -> None:
++    clock = FakeClock(START)
++    receipts = UpdateReceipts(clock, cap=3)
++
++    async def main() -> None:
++        for update_id in range(1, 6):
++            assert receipts.claim(update_id)
++            receipts.done(update_id)
++        assert len(receipts) == 3 and 1 not in receipts and 5 in receipts
++        assert not receipts.claim(5)
++        clock.advance(24 * 3600 + 1)
++        assert receipts.claim(5)  # a day later the id may be Telegram's again
++
++    run(main())
++
++
++def test_a_button_press_from_an_unauthorized_user_is_refused(
++    scope: Scope, fake_clock: FakeClock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    built: list[TelegramAdapter] = []
++
++    def telegram_adapter(fake: FakeChatPlatform, *, clock: FakeClock) -> TelegramAdapter:
++        fake.bot_user_id = "1000"
++        adapter = TelegramAdapter(cast(BotApi, FakeBot(fake)), clock=clock)
++        built.append(adapter)
++        return adapter
++
++    monkeypatch.setattr(_kit, "FakeChatAdapter", telegram_adapter)
++    stranger = "999"
++
++    async def main() -> None:
++        seen = Outcomes()
++        kit = await build_kit(
++            scope,
++            fake_clock,
++            tmp_path,
++            tool_batch(("ask", {})),
++            text_turn("all done"),
++            inline={"ask": seen.approval()},
++        )
++        from indus.gateway.core.prompts import ChatPrompts
++
++        prompts = ChatPrompts(kit.pipeline)
++        prompts.install()
++        try:
++            await asking(kit, prompts)
++            card = prompts.open_cards()[0]
++            assert card.buttons and card.message_id
++            once = next(b.data for b in kit.fake.message(card.message_id).buttons)  # type: ignore[union-attr]
++            kit.fake.button_press(ALLOWED, stranger, once, message_id=card.message_id)
++            await kit.until(lambda: len(kit.fake.answered) == 1)  # the spinner stops anyway
++            await kit.settle()
++            assert seen.seen == [] and prompts.open_cards()  # nothing was approved
++            kit.fake.button_press(ALLOWED, ALLOWED, once, message_id=card.message_id)
++            await kit.until(lambda: seen.seen == ["once:"])
++            assert len(kit.fake.answered) == 2
++        finally:
++            await finish(kit, prompts)
++
++    run(main())
++    assert built and built[0].me is not None
++
++
++def test_a_forum_topic_message_gets_the_golden_topic_key() -> None:
++    golden = json.loads(GOLDEN.read_text())
++    normaliser = Normaliser()
++    normaliser.identify(1000, "indus_bot")
++    message = Message(
++        41,
++        Chat(-200, "supergroup", "Ops", is_forum=True),
++        text="deploy status?",
++        from_user=User(7, False, "Ana"),
++        message_thread_id=12,
++        is_topic_message=True,
++    )
++    event = normaliser.message_event(5, message)
++    assert event is not None
++    assert event.source.chat_type == "forum" and event.source.thread_id == "12"
++    assert build_session_key(event.source) == golden["forum_topic_shared"]
++
++
++# -- inbound ---------------------------------------------------------------------------------------
++
++
++def _message(text: str, **kw: Any) -> Message:
++    chat = kw.pop("chat", Chat(-300, "supergroup", "Team"))
++    return Message(
++        kw.pop("message_id", 9), chat, text=text, from_user=kw.pop("user", User(7)), **kw
++    )
++
++
++def test_normalising_mentions_replies_and_foreign_commands() -> None:
++    n = Normaliser()
++    n.identify(1000, "Indus_Bot")
++    mention = _message(
++        f"{EMOJI} @indus_bot hi", entities=(Entity("mention", 3, 10),)
++    )  # offsets in UTF-16 units
++    event = n.message_event(1, mention)
++    assert event is not None and event.metadata.get("mentioned") is True
++    plain_text_mention = n.message_event(2, _message("hey @INDUS_BOT"))
++    assert plain_text_mention is not None and plain_text_mention.metadata.get("mentioned")
++    assert n.message_event(3, _message("/help@other_bot")) is None
++    own = n.message_event(4, _message("/help@indus_bot"))
++    assert own is not None and own.command == "help" and own.metadata.get("mentioned")
++    reply = _message(
++        "and this?",
++        reply_to_message=_message("earlier answer", user=User(1000, True), message_id=8),
++    )
++    event = n.message_event(5, reply)
++    assert event is not None and event.reply_to_is_own and event.reply_to_id == "8"
++    assert event.reply_to_text == "earlier answer"
++    assert n.message_event(6, _message("echo", user=User(1000, True))) is None  # our own message
++
++
++def test_topics_general_and_reply_anchors() -> None:
++    n = Normaliser()
++    n.identify(1000, "indus_bot")
++    forum = Chat(-200, "supergroup", "Ops", is_forum=True)
++    general = n.message_event(1, _message("hi", chat=forum))
++    assert general is not None and (general.source.chat_type, general.source.thread_id) == (
++        "forum",
++        "1",
++    )
++    anchored = n.message_event(2, _message("hi", message_thread_id=33))  # plain group
++    assert anchored is not None and anchored.source.chat_type == "group"
++    assert anchored.source.thread_id is None  # a reply anchor is not a thread
++    channel = n.message_event(
++        3, Message(4, Chat(-500, "channel", "News"), text="post", from_user=None)
++    )
++    assert channel is not None and channel.source.chat_type == "channel"
++    assert channel.source.user_id == "-500"
++
++
++def test_underscore_commands_reach_their_hyphenated_registry_names() -> None:
++    registry = CommandRegistry([CommandDef("do-thing", "Do the thing", "tools")])
++    assert _canonical_command_text("/do_thing@indus_bot now", registry) == (
++        "/do-thing@indus_bot now"
++    )
++    assert _canonical_command_text("/unknown_word x", registry) == "/unknown_word x"
++    assert menu_commands(registry) == [BotCommand("do_thing", "Do the thing")]
++    n = Normaliser()
++    n.identify(1000, "indus_bot")
++    for word in ("reload_mcp", "reload_skills"):
++        event = n.message_event(1, _message(f"/{word} now", chat=Chat(7, "private")))
++        assert event is not None and event.command_args == "now"
++        assert canonical_command(event) == word.replace("_", "-")
++
++
++def test_inbound_media_kinds_and_refs() -> None:
++    rig = Rig()
++    rig.platform.voice("200", "200", "note.ogg", duration=4)
++    rig.platform.photo("200", "200", "pic.jpg", caption="look")
++    rig.platform.document("200", "200", "notes.txt")
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        await rig.pump()
++        await rig.adapter.disconnect()
++
++    run(main())
++    voice, photo, document = rig.events
++    assert voice.kind is MessageKind.VOICE and voice.metadata["duration"] == 4
++    assert voice.media[0].ref == "tg:f-note.ogg" and voice.media[0].mime == "audio/ogg"
++    assert photo.kind is MessageKind.PHOTO and photo.text == "look"
++    assert document.media[0].ref == "tg:f-notes.txt:notes.txt"
++    assert all("/" not in e.media[0].ref for e in rig.events)
++
++
++def test_updates_of_one_chat_run_in_order_and_at_most_the_limit_at_once() -> None:
++    running = 0
++    peak = 0
++    order: list[tuple[int, int]] = []
++
++    async def handle(update: Update) -> None:
++        nonlocal running, peak
++        running += 1
++        peak = max(peak, running)
++        for _ in range(5 if update.update_id % 2 else 1):
++            await checkpoint()
++        order.append((update.message.chat.id, update.update_id))  # type: ignore[union-attr]
++        running -= 1
++
++    def update(update_id: int, chat: int) -> Update:
++        return Update(update_id, message=Message(update_id, Chat(chat, "private")))
++
++    async def main() -> None:
++        dispatcher = UpdateDispatcher(handle, limit=2)
++        for update_id in range(1, 9):
++            dispatcher.submit(update(update_id, chat=update_id % 3))
++        await dispatcher.idle()
++
++    run(main())
++    assert peak <= 2
++    for chat in range(3):
++        ids = [u for c, u in order if c == chat]
++        assert ids == sorted(ids)
++
++
++def test_polling_backs_off_on_network_errors_and_stops_on_a_revoked_token() -> None:
++    rig = Rig()
++    failures: list[Exception] = [NetworkError("ConnectError: down"), NetworkError("again")]
++    original = FakeBot.get_updates
++
++    async def flaky(self: FakeBot, *args: Any, **kw: Any) -> list[Update]:
++        if failures:
++            raise failures.pop(0)
++        return await original(self, *args, **kw)
++
++    async def main() -> None:
++        with pytest.MonkeyPatch.context() as patch:
++            patch.setattr(FakeBot, "get_updates", flaky)
++            await rig.settle(rig.adapter.connect())
++            rig.platform.dm("200", "after the outage")
++            await rig.pump(5)
++            assert [e.text for e in rig.events] == ["after the outage"]
++            failures.append(Unauthorized("Unauthorized"))
++            await rig.pump(3)
++            assert rig.adapter.polling_stopped == "auth"
++            await rig.adapter.disconnect()
++
++    run(main())
++
++
++def test_require_topics_reminds_in_general_once_per_window() -> None:
++    rig = Rig(TelegramOptions(require_topics=True))
++    rig.platform.add_chat("-200", "forum", "Ops")
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        for text in ("one", "two", "/help"):
++            rig.platform._inbound("-200", "forum", "7", text)  # pyright: ignore[reportPrivateUsage]
++        rig.platform.thread("-200", "12", "7", "in a topic")
++        await rig.pump()
++        rig.clock.advance(31)
++        rig.platform._inbound("-200", "forum", "7", "three")  # pyright: ignore[reportPrivateUsage]
++        await rig.pump()
++        await rig.adapter.disconnect()
++
++    run(main())
++    assert [e.text for e in rig.events] == ["/help", "in a topic"]
++    reminders = [t for t in rig.platform.texts("-200") if "topics" in t]
++    assert len(reminders) == 2
++    assert rig.adapter.format(LOBBY_TEXT) in reminders
++
++
++# -- outbound --------------------------------------------------------------------------------------
++
++
++def test_topic_replies_threads_and_a_deleted_topic() -> None:
++    rig = Rig()
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        await rig.settle(
++            rig.adapter.send("-200", "in topic", reply_to="5", meta={"thread_id": "12"})
++        )
++        await rig.settle(rig.adapter.send("-200", "in general", meta={"thread_id": "1"}))
++        rig.platform.fail(FailureKind.THREAD_NOT_FOUND, op="send")
++        moved = await rig.settle(rig.adapter.send("-200", "topic gone", meta={"thread_id": "13"}))
++        assert moved.ok
++        await rig.adapter.disconnect()
++
++    run(main())
++    sends = rig.called("send_message")
++    assert sends[0]["message_thread_id"] == 12 and sends[0]["reply_to_message_id"] == 5
++    assert sends[0]["parse_mode"] == "MarkdownV2"
++    assert sends[1]["message_thread_id"] is None  # General is addressed by leaving it out
++    assert [s["message_thread_id"] for s in sends[2:]] == [13, None]
++
++
++def test_edits_not_modified_markup_fallback_and_overflow() -> None:
++    rig = Rig()
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        sent = await rig.adapter.send("7", "draft")
++        assert sent.message_id is not None
++        rig.platform.fail(FailureKind.PARSE_ERROR, op="edit")
++        fixed = await rig.adapter.edit("7", sent.message_id, "Approved.", final=True)
++        assert fixed.ok
++        long = " ".join(f"w{i:05d}" for i in range(1200))  # about 8,400 units
++        rig.clock.advance(2.0)  # past the chat's send slot: interim edits are not skipped
++        interim = await rig.adapter.edit("7", sent.message_id, long)
++        assert interim.ok and interim.message_id == sent.message_id
++        final = await rig.settle(rig.adapter.edit("7", sent.message_id, long, final=True))
++        assert final.ok and final.continuation_ids[0] == sent.message_id
++        assert len(final.ids) >= 3
++        await rig.adapter.disconnect()
++
++    run(main())
++    edits = rig.called("edit_message_text")
++    assert edits[0]["parse_mode"] == "MarkdownV2" and edits[1]["parse_mode"] is None
++    texts = rig.platform.texts("7")
++    words = [w for t in texts for w in t.split() if not re.match(r"^\\?\(\d+/\d+\\?\)$", w)]
++    assert words == [f"w{i:05d}" for i in range(1200)]
++
++
++def test_approval_cards_have_inline_keyboards_and_fall_back_to_plain_markup() -> None:
++    rig = Rig()
++    prompt = ApprovalPrompt(
++        request_id="r1",
++        session_key="k",
++        text="Run this? It deletes files.\n```\nrm -rf build\n```",
++        fallback_text="Run this? Reply /approve or /deny.",
++        actions=(ApprovalAction("Allow once", "once"), ApprovalAction("Deny", "deny")),
++    )
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        card = await rig.settle(rig.adapter.send_approval("7", prompt))
++        assert card.ok
++        rig.platform.fail(FailureKind.PARSE_ERROR, op="send")
++        again = await rig.settle(rig.adapter.send_approval("7", prompt))
++        assert again.ok
++        await rig.adapter.disconnect()
++
++    run(main())
++    first, retry_md, retry_plain = rig.called("send_message")
++    assert first["parse_mode"] == "MarkdownV2" and "deletes files\\." in first["text"]
++    assert retry_md["parse_mode"] == "MarkdownV2" and retry_plain["parse_mode"] is None
++    message = rig.platform.messages("7")[0]
++    assert [b.data for b in message.buttons] == ["apv:r1:once", "apv:r1:deny"]
++
++
++def test_media_sends_per_kind_with_caption_reply_and_topic(tmp_path: Path) -> None:
++    rig = Rig()
++    files = {name: tmp_path / name for name in ("a.png", "b.ogg", "c.mp3", "d.mp4", "e.pdf")}
++    for path in files.values():
++        path.write_bytes(b"data")
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        meta = {"thread_id": "12"}
++        a = rig.adapter
++        assert (await rig.settle(a.send_image("-200", str(files["a.png"]), caption="chart"))).ok
++        assert (await rig.settle(a.send_voice("-200", str(files["b.ogg"]), meta=meta))).ok
++        assert (await rig.settle(a.send_voice("-200", str(files["c.mp3"]), reply_to="3"))).ok
++        assert (await rig.settle(a.send_video("-200", str(files["d.mp4"])))).ok
++        assert (await rig.settle(a.send_document("-200", str(files["e.pdf"])))).ok
++        assert (await rig.settle(a.send_file("-200", "https://files.example/x.zip"))).ok
++        missing = await rig.settle(a.send_image("-200", str(tmp_path / "nope.png")))
++        assert not missing.ok
++        await rig.adapter.disconnect()
++
++    run(main())
++    names = [n for n, _ in rig.bot.calls if n.startswith("send_") and n != "send_message"]
++    assert names == [
++        "send_photo",
++        "send_voice",
++        "send_audio",
++        "send_video",
++        "send_document",
++        "send_document",
++    ]
++    calls = [kw for n, kw in rig.bot.calls if n in names]
++    assert calls[0]["caption"] == "chart"
++    assert calls[1]["message_thread_id"] == 12 and calls[2]["reply_to_message_id"] == 3
++    assert calls[5]["file"] == "https://files.example/x.zip"
++
++
++def test_typing_reactions_and_the_command_menu() -> None:
++    rig = Rig(TelegramOptions(reactions=True))
++    quiet = Rig()
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        await rig.adapter.typing_start("-200", meta={"thread_id": "12"})
++        assert await rig.adapter.processing_started("-200", "5")
++        assert await rig.adapter.processing_finished("-200", "5", ok=True)
++        assert await rig.adapter.processing_finished("-200", "5", ok=None)
++        await rig.pump(1)
++        await rig.adapter.disconnect()
++        await quiet.settle(quiet.adapter.connect())
++        assert not await quiet.adapter.processing_started("-200", "5")
++        await quiet.adapter.disconnect()
++
++    run(main())
++    assert rig.called("send_chat_action")[0]["message_thread_id"] == 12
++    assert [kw["reaction"] for kw in rig.called("set_message_reaction")] == [
++        "\N{EYES}",
++        "\N{THUMBS UP SIGN}",
++        None,
++    ]
++    assert quiet.called("set_message_reaction") == []
++    menus = rig.called("set_my_commands")
++    assert [m["scope"]["type"] for m in menus] == [
++        "default",
++        "all_private_chats",
++        "all_group_chats",
++    ]
++    commands = menus[0]["commands"]
++    assert commands == menu_commands() and 0 < len(commands) <= 100
++    assert all(re.fullmatch(r"[a-z0-9_]{1,32}", c.command) for c in commands)
++    assert all(0 < len(c.description) <= 256 for c in commands)
++    assert "reload_mcp" in [c.command for c in commands]
++
++
++def test_connect_drops_the_backlog_on_a_cold_boot_and_keeps_it_on_a_reconnect() -> None:
++    rig = Rig()
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        await rig.adapter.disconnect()
++        await rig.settle(rig.adapter.connect(is_reconnect=True))
++        await rig.adapter.disconnect()
++
++    run(main())
++    assert [kw["drop_pending_updates"] for kw in rig.called("delete_webhook")] == [True, None]
++    assert rig.adapter.me is not None and rig.adapter.me.username == "indus_test_bot"
++
++
++def test_a_refused_token_is_a_fatal_connect_error() -> None:
++    rig = Rig()
++
++    async def refuse(self: FakeBot) -> User:
++        raise Unauthorized("Unauthorized")
++
++    async def main() -> None:
++        with pytest.MonkeyPatch.context() as patch:
++            patch.setattr(FakeBot, "get_me", refuse)
++            with pytest.raises(AdapterConnectError) as caught:
++                await rig.adapter.connect()
++        assert not caught.value.retryable and caught.value.code == "telegram_auth"
++
++    run(main())
++
++
++# -- webhook mode ----------------------------------------------------------------------------------
++
++
++class RecordingServer:
++    def __init__(self) -> None:
++        self.app: Any = None
++        self.bound: tuple[str, int] | None = None
++        self.stopped = False
++
++    async def start(self, app: Any, host: str, port: int) -> None:
++        self.app, self.bound = app, (host, port)
++
++    async def stop(self) -> None:
++        self.stopped = True
++
++
++def test_webhook_mode_needs_its_secret() -> None:
++    rig = Rig(TelegramOptions(webhook=WebhookOptions("https://bot.example/tg/hook")))
++
++    async def main() -> None:
++        with pytest.raises(AdapterConnectError) as caught:
++            await rig.adapter.connect()
++        assert not caught.value.retryable and caught.value.code == "webhook_secret_missing"
++
++    run(main())
++    assert rig.bot.calls == []  # refused before any call
++
++
++def test_webhook_mode_accepts_only_pushes_with_the_secret() -> None:
++    secret = "s3cret-" + "x" * 10
++    server = RecordingServer()
++    options = TelegramOptions(
++        webhook=WebhookOptions("https://bot.example/tg/hook", secret=secret, port=8443)
++    )
++    rig = Rig(options, server_factory=lambda: server)
++    push = {
++        "update_id": 77,
++        "message": {
++            "message_id": 1,
++            "chat": {"id": 200, "type": "private"},
++            "from": {"id": 200, "first_name": "Ana"},
++            "text": "pushed",
++        },
++    }
++
++    async def post(headers: dict[str, str], body: Any) -> int:
++        transport = httpx.ASGITransport(app=server.app)
++        async with httpx.AsyncClient(transport=transport, base_url="http://hook") as client:
++            response = await client.post("/tg/hook", json=body, headers=headers)
++        return response.status_code
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        assert server.bound == ("0.0.0.0", 8443)
++        assert await post({}, push) == 401
++        assert await post({SECRET_HEADER: "wrong"}, push) == 401
++        await rig.adapter.idle()
++        assert rig.events == []
++        assert await post({SECRET_HEADER: secret}, {"nope": 1}) == 400
++        assert await post({SECRET_HEADER: secret}, push) == 200
++        assert await post({SECRET_HEADER: secret}, push) == 200  # a re-push: handled once
++        await rig.adapter.idle()
++        await rig.adapter.disconnect()
++
++    run(main())
++    assert [e.text for e in rig.events] == ["pushed"]
++    (registered,) = rig.called("set_webhook")
++    assert registered["secret_token"] == secret and registered["url"].endswith("/tg/hook")
++    assert rig.called("get_updates") == [] and server.stopped
++    assert secret not in repr(options)
++
++
++# -- wiring ----------------------------------------------------------------------------------------
++
++
++def _settings(scope: Scope) -> PlatformSettings:
++    settings = load_gateway_settings(scope).get("telegram")
++    assert settings is not None and settings.enabled
++    return settings
++
++
++def test_create_adapter_reads_credentials_and_options(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    secrets: Any = scope.secrets
++    secrets.set("TELEGRAM_BOT_TOKEN", TOKEN)
++    write_settings(scope, "platforms:\n  telegram:\n    reactions: true\n    poll_timeout: 20\n")
++    adapter = PlatformRegistry().create_adapter(
++        "telegram", AdapterConfig("telegram", _settings(scope), scope, scope.clock, None)
++    )
++    assert isinstance(adapter, TelegramAdapter)
++    assert isinstance(adapter.bot, BotApi) and BOT_FACTORY.__module__ == telegram_package
++    assert adapter.options.reactions and adapter.options.poll_timeout == 20
++    assert TOKEN not in repr(adapter) and TOKEN not in repr(adapter.bot)
++    assert adapter.scrub(f"failed: /bot{TOKEN}/getMe") == "failed: /bot****/getMe" or (
++        TOKEN not in adapter.scrub(f"failed: /bot{TOKEN}/getMe")
++    )
++    assert PlatformRegistry().missing_deps("telegram") is None  # no extra to install
++
++
++def test_indus_send_opens_telegram_send_only(
++    capsys: pytest.CaptureFixture[str], scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    secrets: Any = scope.secrets
++    secrets.set("TELEGRAM_BOT_TOKEN", TOKEN)
++    write_settings(scope, "platforms:\n  telegram:\n    home_channel:\n      chat_id: '-100'\n")
++    wire = TelegramWire()
++    wire.platform.dm("200", "an unread message nobody should consume")
++    seen: list[tuple[str, AdapterConfig]] = []
++
++    def factory(token: str, config: AdapterConfig) -> BotApi:
++        seen.append((token, config))
++        return cast(BotApi, wire.bot)
++
++    monkeypatch.setattr(f"{telegram_package}.BOT_FACTORY", factory)
++    assert send_command.ADAPTER_BUILDER is send_command.build_adapter
++    ran = run_cli(capsys, scope, "send", "telegram:42", "deploy done")
++    assert ran.code == 0, ran.err
++    assert seen and seen[0][0] == TOKEN
++    names = wire.bot.names()
++    assert names[0] == "get_me" and "send_message" in names and names[-1] == "aclose"
++    for inbound_work in ("get_updates", "delete_webhook", "set_webhook", "set_my_commands"):
++        assert inbound_work not in names
++    assert wire.platform.texts("42") == ["deploy done"]
++    assert wire.platform.next_inbound() is not None  # still unread
++    assert TOKEN not in ran.out + ran.err
++
++
++def test_the_media_fetcher_feeds_the_intake(scope: Scope) -> None:
++    rig = Rig()
++    rig.bot.files["notes.txt"] = b"line one\nline two\n"
++    rig.platform.document("200", "200", "notes.txt", caption="summarise")
++
++    async def main() -> str:
++        await rig.settle(rig.adapter.connect())
++        await rig.pump()
++        intake = MediaIntake(scope)
++        undo = attach_fetcher(intake, "telegram", rig.adapter)
++        assert undo is not None
++        text = await rig.settle(intake.enrich(rig.events[0]))
++        undo()
++        await rig.adapter.disconnect()
++        return text
++
++    text = run(main())
++    assert "line one\nline two" in text and text.endswith("summarise")
++    assert [n for n, _ in rig.bot.calls if n in ("get_file", "download_file")] == [
++        "get_file",
++        "download_file",
++    ]
++
++
++def test_fetch_media_refuses_files_over_the_download_limit_and_foreign_refs() -> None:
++    rig = Rig()
++    rig.bot.files["big.bin"] = b"x" * (20 * 1024 * 1024 + 1)
++
++    async def drain(ref: str) -> bytes:
++        return b"".join([c async for c in rig.adapter.fetch_media(Attachment(ref=ref))])
++
++    async def main() -> None:
++        with pytest.raises(BadRequest, match="too big"):
++            await drain("tg:f-big.bin")
++        with pytest.raises(ValueError):
++            await drain("/etc/passwd")
++
++    run(main())
++    assert "download_file" not in rig.bot.names()  # refused from getFile's size alone
++
++
++def test_the_webhook_listener_serves_on_loopback() -> None:
++    received: list[int] = []
++
++    async def on_update(update: Update) -> None:
++        received.append(update.update_id)
++
++    async def main() -> None:
++        server = UvicornServer(FakeClock(START))
++        await server.start(webhook_app("k" * 20, on_update, "/hook"), "127.0.0.1", 0)
++        try:
++            address = server.address
++            assert address is not None
++            url = f"http://{address[0]}:{address[1]}/hook"
++            async with httpx.AsyncClient(trust_env=False) as client:
++                denied = await client.post(url, json={"update_id": 1})
++                taken = await client.post(
++                    url, json={"update_id": 2}, headers={SECRET_HEADER: "k" * 20}
++                )
++            assert (denied.status_code, taken.status_code) == (401, 200)
++        finally:
++            await server.stop()
++
++    run(main())
++    assert received == [2]
++
++
++def test_streaming_edits_are_on_by_default_for_telegram(scope: Scope) -> None:
++    secrets: Any = scope.secrets
++    secrets.set("TELEGRAM_BOT_TOKEN", TOKEN)
++    assert _settings(scope).streaming is True
++
++
++def test_general_topic_typing_saturated_previews_and_forum_menus(tmp_path: Path) -> None:
++    rig = Rig()
++    wav = tmp_path / "speech.wav"
++    wav.write_bytes(b"RIFF")
++
++    async def main() -> None:
++        await rig.settle(rig.adapter.connect())
++        await rig.adapter.typing_start("-200", meta={"thread_id": "1"})
++        sent = await rig.adapter.send("7", "draft")
++        assert sent.message_id is not None
++        long = " ".join(f"w{i:05d}" for i in range(1200))
++        for extra in ("", " more", " and more"):  # every frame past the cap shows piece one
++            rig.clock.advance(2.0)
++            assert (await rig.adapter.edit("7", sent.message_id, long + extra)).ok
++        assert (await rig.settle(rig.adapter.send_voice("-200", str(wav)))).ok
++        for text in ("first", "second"):
++            rig.platform.thread("-200", "12", "7", text)
++        await rig.pump()
++        await rig.adapter.disconnect()
++
++    run(main())
++    assert rig.called("send_chat_action")[0]["message_thread_id"] == 1
++    assert len(rig.called("edit_message_text")) == 1
++    assert "send_document" in rig.bot.names() and "send_voice" not in rig.bot.names()
++    scopes = [kw["scope"] for kw in rig.called("set_my_commands")]
++    assert scopes.count({"type": "chat", "chat_id": -200}) == 1
++
++
++def test_the_command_menu_stays_within_its_text_budget() -> None:
++    rows = menu_commands(budget=200)
++    assert rows and sum(len(r.command) + len(r.description) for r in rows) <= 200
++    assert len(rows) < len(menu_commands())
++
++
++def test_a_failed_connect_closes_the_client() -> None:
++    rig = Rig()
++    rig.platform.fail_connect(FailureKind.CONNECT_TIMEOUT)
++
++    async def main() -> None:
++        with pytest.raises(AdapterConnectError) as caught:
++            await rig.adapter.connect()
++        assert caught.value.retryable
++
++    run(main())
++    assert rig.bot.names() == ["get_me", "aclose"]
+diff --git a/tests/unit/gateway/adapters/telegram/test_bot_api.py b/tests/unit/gateway/adapters/telegram/test_bot_api.py
+new file mode 100644
+index 0000000..90ab20a
+--- /dev/null
++++ b/tests/unit/gateway/adapters/telegram/test_bot_api.py
+@@ -0,0 +1,374 @@
++"""P15-33: our Telegram Bot API client over ``httpx.MockTransport`` (no network).
++
++The bot token travels in every request path; these tests pin that it reaches the wire and
++nothing else: not httpx's request log, not an exception text, not a repr.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import logging
++from collections.abc import Callable
++from pathlib import Path
++from typing import Any
++
++import httpx
++import pytest
++
++from indus.gateway.adapters.telegram import bot_api
++from indus.gateway.adapters.telegram.bot_api import (
++    BadRequest,
++    BotApi,
++    BotCommand,
++    Conflict,
++    Forbidden,
++    InlineKeyboardButton,
++    InlineKeyboardMarkup,
++    InputFile,
++    NetworkError,
++    RetryAfter,
++    TelegramError,
++    TimedOut,
++    Unauthorized,
++)
++
++# Built at runtime: the Telegram token shape never appears literally in the source.
++TOKEN = "".join(["98765", "4321", ":", "AA", "Hk" * 16, "z"])
++
++type Handler = Callable[[httpx.Request], httpx.Response]
++
++
++def ok(result: Any) -> httpx.Response:
++    return httpx.Response(200, json={"ok": True, "result": result})
++
++
++def refused(status: int, description: str, **parameters: Any) -> httpx.Response:
++    body: dict[str, Any] = {"ok": False, "error_code": status, "description": description}
++    if parameters:
++        body["parameters"] = parameters
++    return httpx.Response(status, json=body)
++
++
++class Wire:
++    """A mock Bot API: records what reached the wire, answers with ``handler``."""
++
++    def __init__(self, handler: Handler) -> None:
++        self.handler = handler
++        self.seen: list[httpx.Request] = []
++        self.bodies: list[bytes] = []
++
++    def __call__(self, request: httpx.Request) -> httpx.Response:
++        self.seen.append(request)
++        self.bodies.append(request.read())
++        return self.handler(request)
++
++    def client(self, **kw: Any) -> BotApi:
++        return BotApi(TOKEN, transport=httpx.MockTransport(self), **kw)
++
++    def method(self, n: int = -1) -> str:
++        return self.seen[n].url.path.rsplit("/", 1)[-1]
++
++    def json(self, n: int = -1) -> dict[str, Any]:
++        return json.loads(self.bodies[n])
++
++
++def run(coro: Any) -> Any:
++    return asyncio.run(coro)
++
++
++def me() -> dict[str, Any]:
++    return {"id": 1000, "is_bot": True, "first_name": "Indus", "username": "indus_bot"}
++
++
++def test_the_token_reaches_the_wire_but_no_log_repr_or_error(
++    caplog: pytest.LogCaptureFixture,
++) -> None:
++    caplog.set_level(logging.DEBUG)
++    calls = 0
++
++    def handler(request: httpx.Request) -> httpx.Response:
++        nonlocal calls
++        calls += 1
++        if calls == 1:
++            return ok(me())
++        if calls == 2:
++            # a transport error whose own text names the full URL, token included
++            raise httpx.ConnectError(f"cannot reach {request.url}", request=request)
++        return refused(400, "Bad Request: chat not found")
++
++    wire = Wire(handler)
++    api = wire.client()
++
++    async def main() -> list[str]:
++        texts: list[str] = []
++        user = await api.get_me()
++        assert user.id == 1000 and user.username == "indus_bot"
++        for _ in range(2):
++            try:
++                await api.send_message(42, "hi")
++            except TelegramError as exc:
++                texts.append(str(exc))
++                # no chained httpx error (its request carries the real URL) is ever shown
++                assert exc.__cause__ is None
++                assert exc.__context__ is None or exc.__suppress_context__
++        await api.aclose()
++        return texts
++
++    texts = run(main())
++    assert all(f"/bot{TOKEN}/" in str(r.url) for r in wire.seen)  # the real path on the wire
++    assert texts[0].startswith("ConnectError") and "****" in texts[0]
++    assert texts[1] == "Bad Request: chat not found"
++    assert TOKEN not in caplog.text and "/bot****/getMe" in caplog.text  # httpx's request log
++    assert all(TOKEN not in t for t in texts)
++    assert TOKEN not in repr(api) and repr(api) == "<BotApi api.telegram.org>"
++    assert TOKEN not in str(vars(api).get("_client"))
++
++
++def test_a_malformed_token_is_refused_without_echoing_it() -> None:
++    bad = "12" + "/" + "x" * 10
++    with pytest.raises(ValueError) as caught:
++        BotApi(bad)
++    assert bad not in str(caught.value)
++
++
++@pytest.mark.parametrize(
++    ("response", "error", "check"),
++    [
++        (
++            refused(429, "Too Many Requests: retry after 5820", retry_after=5820),
++            RetryAfter,
++            lambda e: e.retry_after == 5820,
++        ),
++        (refused(400, "Bad Request: can't parse entities"), BadRequest, None),
++        (refused(401, "Unauthorized"), Unauthorized, None),
++        (refused(404, "Not Found"), Unauthorized, None),
++        (refused(403, "Forbidden: bot was blocked by the user"), Forbidden, None),
++        (refused(409, "Conflict: terminated by other getUpdates request"), Conflict, None),
++        (httpx.Response(502, text="<html>bad gateway</html>"), NetworkError, None),
++    ],
++)
++def test_bot_api_errors_map_to_our_classes(
++    response: httpx.Response, error: type[TelegramError], check: Any
++) -> None:
++    wire = Wire(lambda request: response)
++
++    async def main() -> None:
++        with pytest.raises(error) as caught:
++            await wire.client().send_message(1, "x")
++        assert type(caught.value) is error
++        if check is not None:
++            assert check(caught.value)
++
++    run(main())
++
++
++@pytest.mark.parametrize(
++    ("raised", "error"),
++    [
++        (httpx.ConnectTimeout("slow connect"), NetworkError),
++        (httpx.PoolTimeout("pool"), NetworkError),
++        (httpx.ReadTimeout("slow answer"), TimedOut),
++        (httpx.RemoteProtocolError("peer closed"), TimedOut),
++        (httpx.ProxyError("proxy refused"), NetworkError),
++    ],
++)
++def test_transport_errors_say_whether_the_request_may_have_landed(
++    raised: Exception, error: type[TelegramError]
++) -> None:
++    def handler(request: httpx.Request) -> httpx.Response:
++        raise raised
++
++    async def main() -> None:
++        with pytest.raises(error) as caught:
++            await Wire(handler).client().send_message(1, "x")
++        assert type(caught.value) is error
++
++    run(main())
++
++
++def test_send_message_wire_shape() -> None:
++    sent = {"message_id": 7, "chat": {"id": -100123, "type": "supergroup", "is_forum": True}}
++    wire = Wire(lambda request: ok(sent))
++    markup = InlineKeyboardMarkup(((InlineKeyboardButton("Allow", "apv:r1:once"),),))
++
++    async def main() -> None:
++        message = await wire.client().send_message(
++            "-100123",
++            "*hi*",
++            parse_mode="MarkdownV2",
++            reply_to_message_id="55",
++            message_thread_id=12,
++            reply_markup=markup,
++        )
++        assert message.message_id == 7 and message.chat.is_forum
++
++    run(main())
++    assert wire.method() == "sendMessage"
++    body = wire.json()
++    assert body["chat_id"] == -100123 and body["parse_mode"] == "MarkdownV2"
++    assert body["reply_parameters"] == {"message_id": 55, "allow_sending_without_reply": True}
++    assert body["message_thread_id"] == 12
++    assert body["reply_markup"] == {
++        "inline_keyboard": [[{"text": "Allow", "callback_data": "apv:r1:once"}]]
++    }
++    assert "reply_to_message_id" not in body  # None values are never sent
++
++
++def test_updates_are_parsed_into_typed_results() -> None:
++    rows = [
++        {
++            "update_id": 10,
++            "message": {
++                "message_id": 3,
++                "date": 1767258000,
++                "chat": {"id": -200, "type": "supergroup", "title": "Ops", "is_forum": True},
++                "from": {"id": 7, "is_bot": False, "first_name": "Ana", "last_name": "Li"},
++                "message_thread_id": 12,
++                "is_topic_message": True,
++                "text": "@indus_bot status?",
++                "entities": [{"type": "mention", "offset": 0, "length": 10}],
++                "reply_to_message": {
++                    "message_id": 2,
++                    "chat": {"id": -200, "type": "supergroup"},
++                    "from": {"id": 1000, "is_bot": True, "first_name": "Indus"},
++                    "text": "earlier",
++                },
++                "quote": {"text": "earl"},
++            },
++        },
++        {
++            "update_id": 11,
++            "message": {
++                "message_id": 4,
++                "chat": {"id": 7, "type": "private", "first_name": "Ana"},
++                "from": {"id": 7, "first_name": "Ana"},
++                "photo": [
++                    {"file_id": "small", "file_unique_id": "s", "width": 90, "height": 90},
++                    {"file_id": "big", "file_unique_id": "b", "width": 900, "height": 900},
++                ],
++                "caption": "look",
++                "media_group_id": "album1",
++            },
++        },
++        {
++            "update_id": 12,
++            "callback_query": {
++                "id": "cb1",
++                "from": {"id": 7, "is_bot": False, "first_name": "Ana"},
++                "data": "apv:r1:once",
++                "message": {"message_id": 9, "chat": {"id": 7, "type": "private"}},
++            },
++        },
++        "not an update",
++    ]
++    wire = Wire(lambda request: ok(rows))
++
++    async def main() -> list[bot_api.Update]:
++        return await wire.client().get_updates(
++            offset=10, timeout=30, allowed_updates=("message", "callback_query")
++        )
++
++    topic, photo, press = run(main())
++    assert wire.json() == {
++        "offset": 10,
++        "timeout": 30,
++        "allowed_updates": ["message", "callback_query"],
++    }
++    message = topic.message
++    assert message is not None and message.message_thread_id == 12 and message.is_topic_message
++    assert message.chat.is_forum and message.chat.title == "Ops"
++    assert message.from_user is not None and message.from_user.full_name == "Ana Li"
++    assert message.entities[0].type == "mention" and message.entities[0].length == 10
++    assert message.reply_to_message is not None and message.quote_text == "earl"
++    assert message.date is not None and message.date.year == 2026
++    assert photo.message is not None and photo.message.photo[-1].file_id == "big"
++    assert photo.message.media_group_id == "album1"
++    assert press.callback_query is not None and press.callback_query.data == "apv:r1:once"
++
++
++def test_uploads_are_multipart_and_other_methods_json(tmp_path: Path) -> None:
++    picture = tmp_path / "chart.png"
++    picture.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
++    answer = {"message_id": 5, "chat": {"id": 1, "type": "private"}}
++    wire = Wire(lambda request: ok(answer if "send" in request.url.path else True))
++
++    async def main() -> None:
++        api = wire.client()
++        await api.send_photo(1, InputFile(picture, "chart.png"), caption="Q3", message_thread_id=3)
++        await api.send_document(1, "https://files.example/report.pdf")
++        assert await api.set_my_commands(
++            [BotCommand("help", "Show the commands")], scope={"type": "default"}
++        )
++        assert await api.set_message_reaction(1, 5, reaction="\N{EYES}")
++        assert await api.set_message_reaction(1, 5)
++
++    run(main())
++    upload = wire.seen[0]
++    assert upload.headers["content-type"].startswith("multipart/form-data")
++    assert b'filename="chart.png"' in wire.bodies[0] and b"\x89PNG" in wire.bodies[0]
++    assert b'name="message_thread_id"' in wire.bodies[0]
++    assert wire.json(1)["document"] == "https://files.example/report.pdf"
++    assert wire.json(2) == {
++        "commands": [{"command": "help", "description": "Show the commands"}],
++        "scope": {"type": "default"},
++    }
++    assert wire.json(3)["reaction"] == [{"type": "emoji", "emoji": "\N{EYES}"}]
++    assert wire.json(4)["reaction"] == []
++
++
++def test_file_download_streams_and_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
++    def handler(request: httpx.Request) -> httpx.Response:
++        if request.url.path.endswith("/getFile"):
++            return ok({"file_id": "F", "file_path": "voice/file_1.oga", "file_size": 12})
++        assert request.url.path == f"/file/bot{TOKEN}/voice/file_1.oga"
++        return httpx.Response(200, content=b"x" * 12)
++
++    wire = Wire(handler)
++
++    async def fetch(api: BotApi, path: str) -> bytes:
++        return b"".join([chunk async for chunk in api.download_file(path)])
++
++    async def main() -> None:
++        api = wire.client()
++        info = await api.get_file("F")
++        assert info.file_path == "voice/file_1.oga" and info.file_size == 12
++        assert await fetch(api, "voice/file_1.oga") == b"x" * 12
++        with pytest.raises(BadRequest):
++            await fetch(api, "../../etc/passwd")
++        monkeypatch.setattr(bot_api, "MAX_DOWNLOAD_BYTES", 10)
++        with pytest.raises(BadRequest, match="too big"):
++            await fetch(api, "voice/file_1.oga")
++
++    run(main())
++
++
++def test_the_client_can_be_reused_after_close() -> None:
++    wire = Wire(lambda request: ok(me()))
++
++    async def main() -> None:
++        api = wire.client()
++        await api.get_me()
++        await api.aclose()
++        await api.aclose()
++        await api.get_me()
++        await api.aclose()
++
++    run(main())
++    assert len(wire.seen) == 2
++
++
++def test_long_polls_wait_longer_than_the_poll() -> None:
++    timeouts: list[float | None] = []
++
++    def handler(request: httpx.Request) -> httpx.Response:
++        timeouts.append(request.extensions["timeout"]["read"])
++        return ok([])
++
++    async def main() -> None:
++        api = Wire(handler).client(request_timeout=30.0)
++        await api.get_updates(timeout=30)
++        await api.get_me()
++
++    run(main())
++    assert timeouts == [60.0, 30.0]
