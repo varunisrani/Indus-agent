@@ -43,3 +43,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 03:39 UTC | 55% | 45% | 07:00 UTC | P09 w2 integrating; P10 G,H saved; I,J,K building; no new builders from here |
 | 2026-10-19 03:56 UTC | 63% | 37% | 07:00 UTC | P09 landed; P10 G+H integrating; I saved; J,K building; no new builders |
 | 2026-10-19 04:08 UTC | 67% | 33% | 07:00 UTC | P10 G+H integrating; I,J saved; K building; no new builders |
+| 2026-10-19 04:17 UTC | 69% | 31% | 07:00 UTC | P10 G+H landed; perf gate split; I+J+K integrating |

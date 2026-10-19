@@ -77,7 +77,9 @@ In flight (Agent 1):
 1. P10 G (delegation) + H (execute_code) landed in the commit that carries this text.
 2. P10 from `7faff19`: I = P10-12..14 browser DONE (patch in wip; SECURITY item in README), J = P10-15..18 vision, image/video, TTS, STT DONE (patch in wip);
    K = P10-21..26 MoA, /btw, /goal, /loop, /heartbeat DONE (patch in wip).
-3. Integrate I, J, K from `.agents/wip/p10w1/` (README lists wiring, the browser SSRF fix, licence items).
+3. I + J + K integration in progress (Agent 1, verify2 from `2193f87`). If paused: start from the patches in
+   `.agents/wip/p10w1/` (README lists wiring, the browser SSRF fix, licence items); a partial staged
+   diff may be saved there as `ijk-integration-in-progress.patch`.
 Next: P10-19 voice mode, P10-20 computer_use; then P12 (TUI), P13 (MCP/plugins),
 P14 (cron).
 
