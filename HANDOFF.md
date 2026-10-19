@@ -75,9 +75,9 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- Wave 22 building from `78be7b3` (started 22:06 UTC): T = P15-33 Telegram (own Bot API client over httpx),
-  D = P15-34 Discord, S = P15-35 Slack; worktrees scratchpad wt-p15t/d/s; brief `.agents/wip/p15w4/brief.md`.
-  If paused, save each builder's patch in `.agents/wip/p15w4/`. Demo 3 (P15-36) at integration.
+- Wave 22: T/D/S builders DONE (P15-33..35); integrator in scratchpad verify4 merging them and building Demo 3
+  (P15-36), brief `.agents/wip/p15w4/integrator-brief.md` (lead rulings: one send-only shape, one fetcher shape,
+  Telegram webhook binds loopback by default; D-16.330 onward). Patches + README in `.agents/wip/p15w4/`.
 - Wave 23 building from `78be7b3` (started 22:33 UTC), brief `.agents/wip/w23/brief.md`: E1 = P16-01 HTTP
   listener kit; E2 = P16-06 Matrix + P16-08 Mattermost; E3 = P16-05 Signal + P16-09 Email; K1 = P17-01..04
   (runtime ledger, admission, turn lease, watchdog); K2 = P17-05..07 (generation fences, event log/replay,
