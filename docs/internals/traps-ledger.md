@@ -519,6 +519,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/commands/test_profile.py::test_clone_strips_channels`
   - `tests/unit/cli/commands/test_profile.py::test_clone_through_symlinked_env`
   - `tests/unit/cli/commands/test_profile.py::test_keychain_entries_copied_to_new_namespace`
+  - `tests/unit/gateway/test_token_locks.py::test_two_processes_race_exactly_one_wins`
+  - `tests/unit/gateway/test_token_locks.py::test_lock_name_hides_credential`
 - **R04.27** Bang shell is not a bypass
   - `tests/unit/cli/test_bang.py::test_floor_blocks_rm_rf_root`
   - `tests/unit/cli/test_bang.py::test_dangerous_command_asks_and_deny_blocks`
@@ -527,9 +529,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_bang.py::test_env_has_no_provider_key`
   - `tests/unit/cli/test_bang.py::test_only_interactive_local_sessions`
   - `tests/e2e/test_demo1.py::test_ctrl_c_during_a_bang_command_gives_130_and_the_session_goes_on`
+  - `tests/unit/gateway/core/test_admission.py::test_a_subprocess_sees_only_its_own_chat_under_50_interleaved_chats`
 - **R04.28** Quick commands hold secrets
   - `tests/unit/cli/test_quick_commands.py::test_exec_output_redacted`
   - `tests/unit/cli/test_quick_commands.py::test_exec_env_has_no_provider_key`
+  - `tests/unit/gateway/core/test_commands.py::test_quick_exec_has_no_provider_keys_and_redacted_output`
 - **R05.1** Docs describe a transport the code no longer uses
   - Review: not yet planned (P00-guards)
 - **R05.2** Events arrive before the UI subscribes
@@ -591,38 +595,80 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/test_redaction.py::test_redact_arguments_masks_strings_and_secret_keys`
   - Review: surfaces show up to 10 lines with a "more" count (P12, P20)
 - **R06.1** Control commands must bypass both busy guards
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_busy.py::test_a_turn_waiting_for_approval_is_unblocked_by_approve`
+  - `tests/unit/gateway/core/test_busy.py::test_control_commands_run_inline_while_busy`
+  - `tests/unit/gateway/core/test_busy.py::test_an_idle_queue_command_from_the_adapter_does_not_hold_up_reading`
 - **R06.2** Claim the session slot before the first await
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_admission.py::test_two_events_for_one_key_with_no_await_between_start_one_turn`
+  - `tests/unit/gateway/core/test_admission.py::test_claims_are_synchronous_and_released_by_generation`
+  - `tests/unit/gateway/core/test_admission.py::test_a_displaced_turn_cannot_release_its_successors_claim`
+  - `tests/unit/gateway/core/test_admission.py::test_leaked_and_stale_claims_are_evicted_before_the_busy_check`
 - **R06.3** Never sleep long flood penalties inline
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_send.py::test_long_flood_wait_is_handed_over_without_sleeping_or_notice`
+  - `tests/unit/gateway/core/test_send.py::test_no_inline_sleep_ever_exceeds_the_cap`
+  - `tests/unit/gateway/core/test_send.py::test_rate_limit_exhausted_sends_nothing_more`
+  - `tests/unit/gateway/adapters/test_base.py::test_send_with_retry_uses_the_adapters_cap`
+  - Review: Telegram 5 s cap through the real adapter (P15-33)
 - **R06.4** Retry ambiguity: timeouts are not retryable
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_send.py::test_read_timeout_is_attempted_exactly_once`
+  - `tests/unit/gateway/core/test_send.py::test_partial_split_resumes_only_the_remainder`
+  - `tests/unit/gateway/core/test_send.py::test_partial_without_remainder_is_never_resent_whole`
+  - `tests/contract/gateway/test_adapter_contract.py::test_misbehaving_adapters_fail_the_named_check`
+  - Review: chunk offsets for the remainder come with the chunker (P15-14)
 - **R06.5** Ledger states must distinguish "never started" from "maybe sent"
   - Review: not yet planned (P00-guards)
 - **R06.6** Bare "yes" must never approve
   - Review: not yet planned (P00-guards)
 - **R06.7** Session keys are a compatibility surface
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_session_keys.py::test_keys_match_the_golden_file`
+  - `tests/unit/gateway/core/test_session_keys.py::test_discord_follow_up_in_thread_matches_the_spawning_message`
+  - `tests/unit/gateway/core/test_session_keys.py::test_namespace`
+  - `tests/unit/state/test_gateway_routes.py::test_deleting_a_session_drops_its_routes`
 - **R06.8** Default-deny with surprising pairing defaults
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_authz.py::test_any_allowlist_flips_pair_to_ignore`
+  - `tests/unit/gateway/core/test_authz.py::test_unknown_dm_mode`
+  - `tests/unit/gateway/core/test_authz.py::test_explain_names_the_mode`
 - **R06.9** Pairing directory must resolve per call
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_pairing.py::test_directory_resolves_per_call`
+  - `tests/unit/state/test_pairing.py::test_spaced_lower_case_code_approves`
+  - `tests/unit/state/test_pairing.py::test_lockout_after_five_wrong_refuses_a_correct_code`
+  - `tests/unit/state/test_pairing.py::test_request_id_approval_ignores_lockout_and_streak`
 - **R06.10** Bot-loop budgets per conversation, not per sender pair
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_bot_loop.py::test_two_bots_share_one_budget`
+  - `tests/unit/gateway/core/test_bot_loop.py::test_blocked_is_read_only`
+  - `tests/unit/gateway/core/test_authz.py::test_bot_in_cooldown_is_refused_after_a_grant`
 - **R06.11** Chunking edge cases
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/outbound/test_chunker.py::test_pieces_fit_the_limit_under_both_length_functions`
+  - `tests/unit/gateway/outbound/test_chunker.py::test_tiny_limits_terminate`
+  - `tests/unit/gateway/outbound/test_chunker.py::test_astral_characters_are_never_split`
+  - `tests/unit/gateway/outbound/test_chunker.py::test_fence_is_closed_and_reopened_with_its_language`
+  - `tests/unit/gateway/outbound/test_formatting.py::test_escaping_can_push_a_reply_into_two_pieces`
+  - `tests/unit/gateway/outbound/test_formatting.py::test_chunks_of_markdownv2_output_parse`
 - **R06.12** Streaming frames must be prefix-stable on native-stream platforms
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/outbound/test_stream.py::test_every_non_final_send_is_marked_interim`
+  - `tests/unit/gateway/outbound/test_stream.py::test_final_edits_the_stream_message_instead_of_sending_again`
+  - `tests/unit/gateway/outbound/test_ports.py::test_marks_reach_the_door_but_never_the_wire`
+  - Review: prefix-stable frames for native streams arrive with native streaming (P2); the edit transport closes fences per frame (P15-16)
 - **R06.13** Telegram counts edits against the same per-chat allowance as sends
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_send_slot.py::test_interim_edit_while_a_send_waits_is_dropped_and_final_goes_through`
+  - `tests/unit/gateway/core/test_send_slot.py::test_five_sends_to_one_chat_start_one_second_apart`
+  - `tests/unit/gateway/adapters/test_base.py::test_edits_share_the_send_slot`
+  - `tests/unit/gateway/outbound/test_stream.py::test_three_floods_stop_edits_and_final_sends_tail`
+  - `tests/unit/gateway/outbound/test_stream.py::test_flood_backoff_is_capped_at_30_seconds`
 - **R06.14** Silence tokens are whole-message only and never hide failures
   - `tests/unit/cron/test_classify.py::test_failed_and_silent_is_delivered`
   - `tests/unit/cron/test_classify.py::test_content_is_not_silent`
+  - `tests/unit/gateway/outbound/test_filters.py::test_silence_table`
+  - `tests/unit/gateway/outbound/test_filters.py::test_failed_turn_is_never_silenced`
+  - `tests/unit/gateway/outbound/test_sender.py::test_silence_rules`
+  - `tests/unit/gateway/outbound/test_stream.py::test_silence_token_is_never_shown`
 - **R06.15** Explicit `enabled: false` must beat credentials in env
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/test_config.py::test_enablement_table`
+  - `tests/unit/gateway/test_config.py::test_explicit_disable_warns_once_per_platform_names_not_values`
 - **R06.16** Token locks: startup conflict is fatal, mid-run conflict is retryable
   - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/test_token_locks.py::test_startup_conflict_is_fatal_and_midrun_retryable`
+  - `tests/unit/gateway/test_token_locks.py::test_two_processes_race_exactly_one_wins`
 - **R06.17** Exit code semantics with supervisors
   - Review: not yet planned (P00-guards)
 - **R06.18** Liveness is PID + start time, or a socket answer
@@ -632,20 +678,31 @@ Checked by `python -m tooling.checks traps`.
 - **R06.20** Drain marker staleness
   - Review: not yet planned (P00-guards)
 - **R06.21** Cross-session context leaks
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/core/test_admission.py::test_a_subprocess_sees_only_its_own_chat_under_50_interleaved_chats`
+  - `tests/unit/gateway/core/test_admission.py::test_identity_env_names_only_the_bound_chat`
 - **R06.22** Media path policy is a security boundary
   - `tests/unit/tools/builtin/media/test_tts.py::test_output_path_refusals`
   - `tests/unit/tools/builtin/media/test_tts.py::test_output_path_symlink_into_ssh_refused`
   - `tests/unit/mcp/test_calls.py::test_media_directives_in_server_text_are_neutralised`
   - `tests/integration/service/test_mcp_host.py::test_cli_sessions_get_mcp_tools_and_reload_follows_the_config`
-  - Review: tests cover the producing side only; the sender's delivery-side policy (safe roots, deny-list) comes with P15-18 (P15-18)
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_symlink_from_cache_to_ssh_key_is_refused`
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_deny_list_table`
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_an_old_file_named_by_model_or_tool_text_is_never_sent`
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_remote_path_is_screened_twice`
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_strict_mode_refuses_recent_but_accepts_allowed_dir`
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_recent_file_trust_window`
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_policy_reads_the_profiles_gateway_section`
 - **R06.23** Empty or failed transcription must say so
   - `tests/unit/tools/builtin/media/test_stt.py::test_empty_is_inaudible`
   - `tests/unit/tools/builtin/media/test_stt.py::test_provider_error_mapped_to_plain_message`
 - **R06.24** Broadcast surfaces that report "dm"
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/adapters/test_base.py::test_default_capabilities`
+  - `tests/unit/gateway/core/test_authz.py::test_broadcast_dm_never_gets_a_code`
 - **R06.25** Gateway config loader diverges from CLI defaults
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/test_config.py::test_defaults_come_from_the_shared_table`
+  - `tests/unit/gateway/test_config.py::test_settings_round_trip_through_the_writer`
+  - `tests/unit/gateway/test_config.py::test_gateway_rows_reach_their_readers`
+  - `tests/unit/foundation/config/test_schema.py::test_gateway_rows_validate`
 - **R06.26** Multiplex secret reads must fail closed (if multiplexing is built)
   - Review: not yet planned (P00-guards)
 - **R07.1** Frozen memory snapshot vs live writes
@@ -721,6 +778,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cron/test_classify.py::test_content_is_not_silent`
   - `tests/unit/cron/test_classify.py::test_failure_token_elsewhere_is_content`
   - `tests/unit/cron/test_prompt.py::test_hint_names_the_tokens_and_the_recursion_rule`
+  - `tests/unit/gateway/outbound/test_filters.py::test_silence_table`
+  - `tests/unit/gateway/outbound/test_filters.py::test_decide_silence`
+  - Review: the cron silence-narration filter is pinned by P15-21 (P15-21)
 - **R07.15** Cron recursion
   - `tests/unit/cron/test_runner.py::test_tool_array_lacks_scheduling_and_clarify`
   - `tests/unit/cron/test_runner.py::test_denied_tools`

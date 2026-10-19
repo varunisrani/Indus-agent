@@ -56,6 +56,7 @@ GOLDEN_ORDER = [
     "hooks",
     "plugins",
     "cron",
+    "pairing",  # P15-09
 ]
 
 SHARED_IMPORTS: dict[str, set[str]] = {

@@ -199,6 +199,12 @@ commands:
   cron notepad: 2
   cron doctor: 0          # no jobs, no findings
 
+  pairing: 0              # no subcommand lists requests and paired users (P15-09)
+  pairing list: 0
+  pairing approve: 2      # a platform and a code or request id are required
+  pairing revoke: 2
+  pairing clear-pending: 0
+
 # `long_running`: commands that run until they are stopped (a daemon loop). They cannot meet the
 # watchdog with no arguments, so the contract only checks that `--help` answers (exit 0) in time.
 long_running:

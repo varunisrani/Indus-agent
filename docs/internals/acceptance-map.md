@@ -1036,7 +1036,13 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-K3-1** One profile per gateway process. Changed (P8 decision); multiplexed profiles in one process come …
   - Review: not yet planned (phase TBD)
 - **ACC-K4-1** Adapter contract and platform registry: enabled by credentials, explicit disable wins, token locks …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/test_config.py::test_enablement_table`
+  - `tests/unit/gateway/adapters/test_base.py::test_lifecycle_is_idempotent`
+  - `tests/unit/gateway/test_registry.py::test_builtins_present_in_order_with_env_names`
+  - `tests/unit/gateway/test_registry.py::test_create_adapter_imports_only_the_enabled_platform`
+  - `tests/unit/gateway/test_token_locks.py::test_startup_conflict_is_fatal_and_midrun_retryable`
+  - `tests/unit/gateway/test_registry.py::test_a_real_plugin_host_slot_feeds_the_registry`
 - **ACC-K5-1** Telegram (polling or webhook, MarkdownV2 with plain fallback, forum topics, buttons, reactions)
   - Review: not yet planned (phase TBD)
 - **ACC-K6-1** Discord (slash commands, components, auto-threads, role allowlist, mention gating)
@@ -1048,35 +1054,62 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
   - Review: not yet planned (phase TBD)
 - **ACC-K13-1** Inbound normalisation: command detection, burst text batching, per-platform dedupe, reply context …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
+  - `tests/unit/gateway/core/test_events.py::test_property_text_not_starting_with_slash_is_never_a_command`
+  - `tests/unit/gateway/core/test_events.py::test_reply_context_from_the_index_and_own_mark`
+  - Review: burst batching (P15-12) and per-platform dedupe (P15-33..35)
 - **ACC-K14-1** Authorization chain: per-platform and global allowlists, allow-all flags, group chat lists, role …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_authz.py::test_chain_order`
+  - `tests/unit/gateway/core/test_authz.py::test_errors_fail_closed`
 - **ACC-K15-1** Pairing codes for unknown DM users with expiry and lockouts; `indus pairing approve
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/state/test_pairing.py::test_lockout_after_five_wrong_refuses_a_correct_code`
+  - `tests/unit/cli/commands/test_pairing.py::test_approve_by_spaced_code`
 - **ACC-K16-1** Unknown-sender behaviour pair / ignore / decline
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_authz.py::test_decline_stamp_written_before_send`
+  - `tests/unit/gateway/core/test_authz.py::test_ignore_logs_and_notifies_home_once_per_sender`
+  - `tests/unit/gateway/core/test_authz.py::test_pair_sends_a_code_once_then_try_later_once`
 - **ACC-K18-1** Mention gating in groups and free-response channels
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_authz.py::test_mention_gating`
 - **ACC-K19-1** Bot-loop guard per conversation and optional concurrent-session cap
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_bot_loop.py::test_two_bots_share_one_budget`
+  - `tests/unit/gateway/core/test_bot_loop.py::test_concurrency_cap`
 - **ACC-K20-1** Session keys for DM, group (per user by default) and thread; conversations never reset on idle
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_session_keys.py::test_keys_match_the_golden_file`
+  - `tests/unit/state/test_gateway_routes.py::test_idle_thirty_days_keeps_the_session`
 - **ACC-K21-1** Chat slash commands (`/new`, `/resume`, `/sessions`, `/title`, `/model`, `/status`, `/stop` …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_commands.py::test_every_command_answers_while_idle`
+  - `tests/unit/gateway/core/test_commands.py::test_every_command_while_busy_runs_its_variant_or_the_fixed_reply`
+  - `tests/unit/gateway/core/test_commands.py::test_model_once_is_reverted_on_every_exit_path`
+  - `tests/unit/gateway/core/test_commands.py::test_cross_origin_session_listing_is_admin_only`
+  - `tests/unit/gateway/core/test_commands.py::test_new_rotates_the_route_to_a_fresh_session`
 - **ACC-K23-1** Busy handling with two guards; plain messages interrupt, queue or steer; acknowledgement replies
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_busy.py::test_interrupt_mode_redirects_with_one_merged_text_and_one_ack`
+  - `tests/unit/gateway/core/test_busy.py::test_queue_mode_runs_each_follow_up_as_its_own_turn_in_order`
+  - `tests/unit/gateway/core/test_busy.py::test_steer_mode_lands_in_the_running_turn`
+  - `tests/unit/gateway/core/test_batching.py::test_three_split_pastes_become_one_turn`
 - **ACC-K24-1** Intake of voice notes (transcribed, with an explicit note when inaudible), images (native or …
   - Review: not yet planned (phase TBD)
 - **ACC-K25-1** Outbound chunking with fence carry-over and `(i/n)` markers; per-platform formatting with …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/outbound/test_chunker.py::test_fence_is_closed_and_reopened_with_its_language`
+  - `tests/unit/gateway/outbound/test_formatting.py::test_golden_markdownv2_cases`
+  - `tests/unit/gateway/outbound/test_formatting.py::test_slack_table_becomes_a_table_block`
+  - `tests/unit/gateway/outbound/test_sender.py::test_reply_to_mode_table`
 - **ACC-K26-1** Files in replies via media tags with a path policy → generated files delivered as native attachments
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/outbound/test_sender.py::test_media_tags_are_sent_natively_or_refused_with_a_notice`
+  - `tests/unit/gateway/outbound/test_media_policy.py::test_symlink_from_cache_to_ssh_key_is_refused`
 - **ACC-K27-1** Silence tokens: a reply that is only the token sends nothing
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/outbound/test_sender.py::test_silence_rules`
+  - `tests/unit/gateway/outbound/test_filters.py::test_silence_table`
 - **ACC-K28-1** Typing indicator → in-place streamed edits, native drafts, tool-progress modes and status phrases
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/outbound/test_stream.py::test_edits_follow_interval_and_threshold`
+  - `tests/unit/gateway/outbound/test_progress.py::test_typing_pauses_while_approval_waits`
+  - `tests/unit/gateway/outbound/test_progress.py::test_accumulate_edits_one_bubble_with_throttle_and_repeat_counter`
+  - Review: native drafts and status phrase catalogues come with native streaming (P2)
 - **ACC-K29-1** Send retries with an error classifier and a dead-target registry
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/gateway/core/test_send.py::test_classifier_table`
+  - `tests/unit/gateway/core/test_send.py::test_transient_exhausted_sends_one_notice`
+  - `tests/unit/gateway/outbound/test_sender.py::test_dead_target_skipped_then_revived`
+  - `tests/unit/gateway/outbound/test_sender.py::test_only_whole_chat_failures_mark_a_target`
 - **ACC-K30-1** Delivery ledger: final replies delivered at least once across crashes, with possible duplicates …
   - Review: not yet planned (phase TBD)
 - **ACC-K31-1** Restart notice to home channels and one auto-resume of turns cut by a restart

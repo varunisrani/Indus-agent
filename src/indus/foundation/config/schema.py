@@ -200,6 +200,11 @@ class ApprovalsSection(_Section):
         default=True,
         description="ask before /reload-mcp (it changes the tools, so the prompt cache misses)",
     )
+    destructive_slash_confirm: bool = Field(
+        default=False,
+        description="ask before /rollback, /undo, /new and other commands that drop work "
+        "(chat and messaging)",
+    )
 
 
 class CheckpointsSection(_Section):
@@ -421,6 +426,33 @@ class DisplaySection(_Section):
         default="on",
         description="after a background review: off, on (one line per change) or verbose "
         "(with a short preview)",
+    )
+    busy_ack: bool = Field(
+        default=True,
+        description="messaging: a short note when text arrives while a reply runs (P15-12)",
+    )
+    busy_text_quiet_s: float = Field(
+        default=0.35,
+        description="messaging: seconds of quiet that close a burst of text sent while busy",
+    )
+    busy_text_cap_s: float = Field(
+        default=1.0, description="messaging: longest a burst of busy text is held before merging"
+    )
+    ephemeral_system_ttl: float = Field(
+        default=0.0,
+        ge=0,
+        description="messaging: seconds before a system notice deletes itself where the "
+        "platform can delete; 0 keeps it",
+    )
+    tool_progress_grouping: Literal["accumulate", "separate"] = Field(
+        default="accumulate",
+        description="messaging: tool lines in one edited bubble (accumulate) or one per tool",
+    )
+    heartbeat_seconds: float = Field(
+        default=180.0,
+        ge=0,
+        description="messaging: a 'still working' line every this many seconds on long turns; "
+        "0 = never",
     )
 
 
@@ -1076,6 +1108,132 @@ class McpSection(_Section):
     )
 
 
+class HomeChannelSetting(_Section):
+    """Where unsolicited output for a platform goes (cron results, notices)."""
+
+    platform: str = Field(default="", description="platform name; empty = the section's own")
+    chat_id: str = Field(default="", description="chat, channel or user id")
+    name: str = Field(default="", description="display name")
+    thread_id: str | None = Field(default=None, description="thread or topic inside the chat")
+
+
+class ChannelOverride(_Section):
+    model: str | None = Field(default=None, description="model id for this channel")
+    provider: str | None = Field(default=None, description="provider for this channel")
+    system_prompt: str | None = Field(
+        default=None, description="extra system prompt text for this channel"
+    )
+
+
+class PlatformSection(_Section):
+    """One messaging platform (P15-02). Credentials live in the keychain or .env, never here."""
+
+    enabled: bool | None = Field(
+        default=None,
+        description="unset: on when its credentials are present; false: off even with them",
+    )
+    home_channel: HomeChannelSetting | None = Field(
+        default=None, description="default chat for cron output and notices"
+    )
+    reply_to_mode: Literal["off", "first", "all"] = Field(
+        default="first",
+        description="which chunks of a long reply thread to your message: off, first or all",
+    )
+    restart_notice: bool = Field(
+        default=True, description="post a note to the home channel after the gateway restarts"
+    )
+    typing_indicator: bool = Field(default=True, description="show typing while a reply runs")
+    streaming: bool | None = Field(
+        default=None,
+        description="edit the reply in place as it is written; unset: the platform default "
+        "(Telegram on, Discord and Slack off)",
+    )
+    tool_progress: Literal["off", "new", "all", "verbose", "log"] | None = Field(
+        default=None,
+        description="tool activity shown: off, new, all, verbose, or log (an audit file only); "
+        "unset: the platform default (Telegram off, others all)",
+    )
+    channel_overrides: dict[str, ChannelOverride] = Field(
+        default_factory=dict[str, ChannelOverride],
+        description="per channel id: model, provider or system_prompt",
+    )
+    extra: dict[str, Any] = Field(
+        default_factory=dict[str, Any], description="platform-specific settings"
+    )
+
+
+class PlatformsSection(_Section):
+    """Messaging platforms by name; plugin platforms add their own names."""
+
+    telegram: PlatformSection = Field(default_factory=PlatformSection, description="Telegram")
+    discord: PlatformSection = Field(default_factory=PlatformSection, description="Discord")
+    slack: PlatformSection = Field(default_factory=PlatformSection, description="Slack")
+
+
+class MessageTimestampsSection(_Section):
+    enabled: bool = Field(
+        default=False, description="tell the model when each message was sent (never shown)"
+    )
+
+
+class BotLoopGuardSection(_Section):
+    """Stops two bots answering each other forever (P15-10)."""
+
+    enabled: bool = Field(default=True, description="count bot-authored messages per chat")
+    max_messages: int = Field(
+        default=20, ge=1, description="bot-authored messages allowed in one window"
+    )
+    window_seconds: float = Field(default=300.0, gt=0, description="length of the window")
+    cooldown_seconds: float = Field(
+        default=600.0, gt=0, description="how long a tripped chat ignores bot messages"
+    )
+
+
+class GatewaySection(_Section):
+    """The messaging gateway (``indus gateway``, P15)."""
+
+    message_timestamps: MessageTimestampsSection = Field(
+        default_factory=MessageTimestampsSection, description="send-time stamps in model context"
+    )
+    trust_env: bool = Field(
+        default=True,
+        description="platform connections use the HTTPS_PROXY / NO_PROXY environment",
+    )
+    group_sessions_per_user: bool = Field(
+        default=True, description="each person in a group chat gets their own conversation"
+    )
+    thread_sessions_per_user: bool = Field(
+        default=False, description="each person in a thread gets their own conversation"
+    )
+    unauthorized_dm_behavior: Literal["pair", "ignore", "decline"] = Field(
+        default="pair",
+        description="a direct message from someone not allowed: pair (send a pairing code), "
+        "ignore, or decline (one short refusal a day)",
+    )
+    bot_loop_guard: BotLoopGuardSection = Field(
+        default_factory=BotLoopGuardSection, description="bot-to-bot loop protection"
+    )
+    max_concurrent_sessions: int | None = Field(
+        default=None, ge=1, description="most conversations running at once; unset = no cap"
+    )
+    media_strict: bool = Field(
+        default=False,
+        description="send files only from the gateway caches and media_allow_dirs",
+    )
+    media_allow_dirs: list[str] = Field(
+        default_factory=list[str],
+        description="extra folders (absolute or ~/) whose files replies may send",
+    )
+    media_trust_recent: bool = Field(
+        default=False,
+        description="also send files written in the last media_trust_recent_seconds outside "
+        "the trusted folders (off: a file's age can be faked with touch)",
+    )
+    media_trust_recent_seconds: float = Field(
+        default=600.0, ge=0, description="how recent a file must be for media_trust_recent"
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -1239,6 +1397,12 @@ class ConfigModel(BaseModel):
     )
     hooks_auto_accept: bool = Field(
         default=False, description="run configured shell hooks without asking first"
+    )
+    platforms: PlatformsSection = Field(
+        default_factory=PlatformsSection, description="messaging platforms (indus gateway)"
+    )
+    gateway: GatewaySection = Field(
+        default_factory=GatewaySection, description="the messaging gateway"
     )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 

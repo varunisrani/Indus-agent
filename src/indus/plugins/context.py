@@ -80,6 +80,9 @@ PROVIDER_KINDS = (
     "terminal_backend",
     "approval_transport",
     "model_provider",
+    # Messaging platforms: a ``gateway.registry.PlatformEntry``; the gateway host passes
+    # ``host.providers`` to ``PlatformRegistry.load_plugin_entries`` (P15-06).
+    "platform",
 )
 SINGLE_PROVIDER_KINDS = frozenset({"context_engine"})
 

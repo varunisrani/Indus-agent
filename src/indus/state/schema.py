@@ -236,6 +236,27 @@ TABLES: tuple[Table, ...] = (
         ),
         ("PRIMARY KEY (session_id, namespace, key)",),
     ),
+    # P15-07: gateway routing index, session key -> current session (no FK: the route may be
+    # written before the service creates the session row).
+    Table(
+        "gateway_routes",
+        _cols(
+            ("session_key", "TEXT PRIMARY KEY"),
+            ("session_id", "TEXT NOT NULL"),
+            ("platform", "TEXT NOT NULL"),
+            ("chat_type", "TEXT NOT NULL"),
+            ("origin_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("display_name", "TEXT"),
+            ("model_override_json", "TEXT"),
+            ("resume_pending", _FLAG),
+            ("resume_reason", "TEXT"),
+            ("active_turn_token", "TEXT"),
+            ("active_turn_started_at", "REAL"),
+            ("prev_session_id", "TEXT"),
+            ("created_at", "REAL NOT NULL"),
+            ("updated_at", "REAL NOT NULL"),
+        ),
+    ),
 )
 
 INDEXES: tuple[str, ...] = (
@@ -257,6 +278,7 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_model_usage_model ON model_usage(model)",
     "CREATE INDEX IF NOT EXISTS idx_session_meta_due ON session_meta(namespace, due_at) "
     "WHERE due_at IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_gateway_routes_session ON gateway_routes(session_id)",
 )
 
 TRIGGERS: tuple[str, ...] = (

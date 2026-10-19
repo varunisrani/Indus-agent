@@ -342,6 +342,16 @@ BUILTIN: Final[tuple[CommandDef, ...]] = (
         busy="dispatch",
         owner="P15",
     ),
+    _cmd(
+        "bg",
+        "Run a prompt in a separate background session and post the result here",
+        "session",
+        "background",
+        args="<prompt>",
+        surfaces=CHAT_ONLY,
+        busy="dispatch",
+        owner="P15",
+    ),
     # -- settings -------------------------------------------------------------------------------
     _cmd(
         "model",
@@ -383,6 +393,41 @@ BUILTIN: Final[tuple[CommandDef, ...]] = (
         "config",
         surfaces=TERMINAL,
         busy="dispatch",
+    ),
+    _cmd(
+        "sethome",
+        "Make this chat the home channel for scheduled results and notices",
+        "config",
+        surfaces=CHAT_ONLY,
+        owner="P15",
+    ),
+    _cmd(
+        "platform",
+        "List messaging platforms, or pause / resume one",
+        "config",
+        args="[list|pause|resume] [name]",
+        subs=("list", "pause", "resume"),
+        surfaces=CHAT_ONLY,
+        busy="dispatch",
+        owner="P15",
+    ),
+    _cmd(
+        "verbose",
+        "Change how much tool activity this chat shows",
+        "config",
+        args="[off|new|all|verbose]",
+        subs=("off", "new", "all", "verbose"),
+        surfaces=CHAT_ONLY,
+        busy="dispatch",
+        owner="P15",
+    ),
+    _cmd(
+        "personality",
+        "Show or pick the agent's personality",
+        "config",
+        args="[name]",
+        surfaces=CHAT_ONLY,
+        owner="P15",
     ),
     _cmd(
         "voice",
@@ -482,6 +527,14 @@ BUILTIN: Final[tuple[CommandDef, ...]] = (
     # -- information ----------------------------------------------------------------------------
     _cmd(
         "help", "List commands; add a word to filter them", "info", args="[filter]", busy="dispatch"
+    ),
+    _cmd(
+        "commands",
+        "List every command you can run here, names only",
+        "info",
+        surfaces=CHAT_ONLY,
+        busy="dispatch",
+        owner="P15",
     ),
     _cmd("usage", "Show token use and cost of this session", "info", busy="dispatch"),
     _cmd("whoami", "Show the profile, home and session you are on", "info", busy="dispatch"),

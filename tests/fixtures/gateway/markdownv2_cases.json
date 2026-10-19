@@ -1,0 +1,80 @@
+[
+  {
+    "name": "nested emphasis",
+    "markdown": "**bold _italic_ inside** and *it* plus ~~gone~~",
+    "markdownv2": "*bold _italic_ inside* and _it_ plus ~gone~",
+    "plain": "bold italic inside and it plus gone"
+  },
+  {
+    "name": "link with parentheses",
+    "markdown": "See [the docs (v2)](https://example.com/a_(b)) now.",
+    "markdownv2": "See [the docs \\(v2\\)](https://example.com/a_(b\\)) now\\.",
+    "plain": "See the docs (v2) (https://example.com/a_(b)) now."
+  },
+  {
+    "name": "code with backslashes",
+    "markdown": "Run `C:\\path\\to\\x` then:\n```python\nprint('a\\\\b `x`')\n```",
+    "markdownv2": "Run `C:\\\\path\\\\to\\\\x` then:\n```python\nprint('a\\\\\\\\b \\`x\\`')\n```",
+    "plain": "Run C:\\path\\to\\x then:\nprint('a\\\\b `x`')"
+  },
+  {
+    "name": "lead-in fence",
+    "markdown": "Here is the code: ```sh\necho 1+1=2\n```",
+    "markdownv2": "Here is the code:\n```sh\necho 1+1=2\n```",
+    "plain": "Here is the code:\necho 1+1=2"
+  },
+  {
+    "name": "header and list",
+    "markdown": "# Title **x**\n> quoted *text*\n- item 1.5\n2. second!",
+    "markdownv2": "*Title x*\n>quoted _text_\n• item 1\\.5\n2\\. second\\!",
+    "plain": "Title x\nquoted text\n• item 1.5\n2. second!"
+  },
+  {
+    "name": "table",
+    "markdown": "| Name | Age | City |\n|---|---:|---|\n| Ann | 30 | Oslo |\n| Bob | | Rome |",
+    "markdownv2": "*Ann*\n• Age: 30\n• City: Oslo\n\n*Bob*\n• City: Rome",
+    "plain": "Ann\n• Age: 30\n• City: Oslo\n\nBob\n• City: Rome"
+  },
+  {
+    "name": "table inside a fence",
+    "markdown": "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```",
+    "markdownv2": "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```",
+    "plain": "| a | b |\n|---|---|\n| 1 | 2 |"
+  },
+  {
+    "name": "snake case",
+    "markdown": "snake_case_name and a * b and 5 - 3 = 2.",
+    "markdownv2": "snake\\_case\\_name and a \\* b and 5 \\- 3 \\= 2\\.",
+    "plain": "snake_case_name and a * b and 5 - 3 = 2."
+  },
+  {
+    "name": "unclosed markers",
+    "markdown": "**unclosed and `open [link",
+    "markdownv2": "\\*\\*unclosed and \\`open \\[link",
+    "plain": "**unclosed and `open [link"
+  },
+  {
+    "name": "unclosed fence",
+    "markdown": "```py\ncode without close",
+    "markdownv2": "```py\ncode without close\n```",
+    "plain": "code without close"
+  },
+  {
+    "name": "adjacent italics",
+    "markdown": "*a*_b_",
+    "markdownv2": "_a_​_b_",
+    "plain": "ab"
+  },
+  {
+    "name": "spoiler and specials",
+    "markdown": "||secret|| #tag {x} 1+1! |pipe| a>b",
+    "markdownv2": "||secret|| \\#tag \\{x\\} 1\\+1\\! \\|pipe\\| a\\>b",
+    "plain": "secret #tag {x} 1+1! |pipe| a>b"
+  },
+  {
+    "name": "escaped markdown",
+    "markdown": "\\*not bold\\* and \\_x\\_",
+    "markdownv2": "\\*not bold\\* and \\_x\\_",
+    "plain": "*not bold* and _x_"
+  }
+]

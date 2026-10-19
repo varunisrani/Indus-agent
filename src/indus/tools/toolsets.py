@@ -180,9 +180,13 @@ TOOLSETS: dict[str, Toolset] = {
         WEBHOOK_FLOOR,
         registry_members=False,
     ),
+    # P15-11: one bundle per chat platform, so a platform's tools can be narrowed on its own.
+    "indus-telegram": Toolset("Telegram chats", includes=(CORE,)),
+    "indus-discord": Toolset("Discord chats", includes=(CORE,)),
+    "indus-slack": Toolset("Slack chats", includes=(CORE,)),
     "indus-gateway": Toolset(
         "Messaging gateway: the union of the platform bundles it serves",
-        includes=(CORE, "indus-webhook"),
+        includes=(CORE, "indus-telegram", "indus-discord", "indus-slack", "indus-webhook"),
     ),
 }
 

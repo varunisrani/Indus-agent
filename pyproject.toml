@@ -112,6 +112,8 @@ layers = [
     "indus.foundation",
     "indus.platform",
 ]
+# No exemptions: what two top-layer siblings share (the pairing store, the gateway routes index)
+# lives below them, in indus.state or indus.service (lead rule, P15 wave 1; LEAD-NOTES).
 
 [tool.pyright]
 pythonVersion = "3.13"

@@ -233,6 +233,7 @@ def test_decided_defaults() -> None:
         "denial_breaker_threshold": 3,  # P08-14
         "smart_policy": "",  # P08-14
         "mcp_reload_confirm": True,  # P13-08
+        "destructive_slash_confirm": False,  # P11 /rollback, P15-13 chat commands
     }
     assert d["command_allowlist"] == []
     assert d["file_read_max_chars"] == 100000
@@ -288,6 +289,42 @@ def test_decided_defaults() -> None:
         "show_reasoning": False,
         "bell_on_prompt": True,
         "learning_notices": "on",  # P09-16
+        "busy_ack": True,  # P15-02 (read by P15-12)
+        "busy_text_quiet_s": 0.35,
+        "busy_text_cap_s": 1.0,
+        "ephemeral_system_ttl": 0.0,  # P15-17: notices stay unless set
+        "tool_progress_grouping": "accumulate",  # P15-16
+        "heartbeat_seconds": 180.0,
+    }
+    platform = {  # P15-02: enabled unset = follow credentials
+        "enabled": None,
+        "home_channel": None,
+        "reply_to_mode": "first",
+        "restart_notice": True,
+        "typing_indicator": True,
+        "streaming": None,  # P15-16: unset = the platform default
+        "tool_progress": None,
+        "channel_overrides": {},
+        "extra": {},
+    }
+    assert d["platforms"] == {"telegram": platform, "discord": platform, "slack": platform}
+    assert d["gateway"] == {
+        "message_timestamps": {"enabled": False},
+        "trust_env": True,  # P15-06
+        "group_sessions_per_user": True,  # P15-07
+        "thread_sessions_per_user": False,
+        "unauthorized_dm_behavior": "pair",  # P15-08
+        "bot_loop_guard": {  # P15-10
+            "enabled": True,
+            "max_messages": 20,
+            "window_seconds": 300.0,
+            "cooldown_seconds": 600.0,
+        },
+        "max_concurrent_sessions": None,
+        "media_strict": False,  # P15-18
+        "media_allow_dirs": [],
+        "media_trust_recent": False,  # lead decision: off (no birth time on Linux)
+        "media_trust_recent_seconds": 600.0,
     }
     assert d["tui"] == {  # P12-31
         "theme": "auto",
@@ -404,6 +441,18 @@ def test_model_shorthand_validates() -> None:
         ("model.context_length", int),
         ("timezone", str),
         ("_config_version", int),
+        ("platforms.telegram.enabled", bool),
+        ("platforms.slack.reply_to_mode", str),
+        ("platforms.discord.channel_overrides", dict),
+        ("gateway.message_timestamps.enabled", bool),
+        ("gateway.bot_loop_guard.max_messages", int),
+        ("gateway.max_concurrent_sessions", int),
+        ("gateway.unauthorized_dm_behavior", str),
+        ("gateway.media_allow_dirs", list),
+        ("gateway.media_trust_recent", bool),
+        ("platforms.telegram.streaming", bool),
+        ("platforms.discord.tool_progress", str),
+        ("display.ephemeral_system_ttl", float),
         ("nonsense", None),
         ("agent.nonsense", None),
     ],
@@ -443,3 +492,13 @@ def test_example_parses_to_nothing_and_uncomments_to_defaults() -> None:
     order = [k for k in expected]
     positions = [example.index(f"# {k}:") for k in order]
     assert positions == sorted(positions)
+
+
+def test_gateway_rows_validate() -> None:  # P15 wave 1
+    ok = {"gateway": {"max_concurrent_sessions": 3, "media_allow_dirs": ["~/out"]}}
+    assert schema.validate(ok) == []
+    assert schema.validate({"platforms": {"slack": {"tool_progress": "log"}}}) == []
+    assert schema.validate({"gateway": {"max_concurrent_sessions": 0}}) != []
+    assert schema.validate({"gateway": {"unauthorized_dm_behavior": "shout"}}) != []
+    assert schema.validate({"gateway": {"bot_loop_guard": {"window_seconds": 0}}}) != []
+    assert schema.validate({"display": {"ephemeral_system_ttl": -1}}) != []

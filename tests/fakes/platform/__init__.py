@@ -1,12 +1,26 @@
-"""A messaging platform that records what we send and replays scripted inbound events.
+"""Fake messaging platforms for adapter tests.
 
-Skeleton for P15: adapters will be tested against it through the platform adapter interface.
+``FakeChatPlatform`` (``core``) is the scriptable platform of P15-01: inbound injection, an
+outbound log, failure injection and a fake clock; the wire fakes (``telegram_wire``,
+``discord_wire``, ``slack_wire``) speak the vendor libraries' shapes on top of it.
+``FakePlatform`` below is the minimal P00 recorder, kept for the tests that use it.
 """
 
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+
+from tests.fakes.platform.core import (
+    Button,
+    FailureKind,
+    FakeChatPlatform,
+    FakeInbound,
+    FakeMedia,
+    FakeMessage,
+    FakePlatformError,
+    Op,
+)
 
 
 @dataclass(frozen=True)
@@ -73,4 +87,17 @@ class FakePlatform:
         return self._inbound.popleft() if self._inbound else None
 
 
-__all__ = ["Edit", "FakePlatform", "InboundEvent", "SentMessage"]
+__all__ = [
+    "Button",
+    "Edit",
+    "FailureKind",
+    "FakeChatPlatform",
+    "FakeInbound",
+    "FakeMedia",
+    "FakeMessage",
+    "FakePlatform",
+    "FakePlatformError",
+    "InboundEvent",
+    "Op",
+    "SentMessage",
+]

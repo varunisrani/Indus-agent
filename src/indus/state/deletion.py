@@ -307,6 +307,9 @@ _CHILD_TABLES: Final = (
     ("model_usage", "session_id"),
     ("compression_locks", "session_id"),
     ("turn_leases", "conversation_id"),
+    # P15-07: a gateway route pointing at a deleted session is dropped; the chat's next message
+    # gets a fresh session (the route is created again, never left dangling).
+    ("gateway_routes", "session_id"),
 )
 
 
@@ -334,6 +337,10 @@ def delete_rows_in(
         )
         for table, column in _CHILD_TABLES:
             conn.execute(f"DELETE FROM {table} WHERE {column} IN ({marks})", batch)
+        conn.execute(
+            f"UPDATE gateway_routes SET prev_session_id = NULL WHERE prev_session_id IN ({marks})",
+            batch,
+        )
         conn.execute(f"DELETE FROM sessions WHERE id IN ({marks})", batch)
     if doomed:
         conn.execute(

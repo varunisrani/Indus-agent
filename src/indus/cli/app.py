@@ -121,6 +121,11 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "Install, enable and inspect plugins.",
     ),
     ("cron", "indus.cli.commands.cron:cron_group", "Schedule jobs and look after them."),
+    (
+        "pairing",
+        "indus.cli.commands.pairing:pairing_group",
+        "Approve or revoke people who asked to use the bot from a chat.",
+    ),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""
