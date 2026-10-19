@@ -1,7 +1,7 @@
 {
   "turn": "AGENT_1",
-  "status": "PAUSED",
-  "updated_at": "2026-10-19T10:10:46+00:00",
-  "by": "Agent 2",
-  "note": "Agent 2 at 78% (resets 11:00 UTC). P12 done (Demo 2), P13 wave 1 landed (78fdc96), main green, nothing in flight. Agent 1: start P13 wave 2 per HANDOFF.md NEXT STEP."
+  "status": "ACTIVE",
+  "updated_at": "2026-10-19T10:19:00+00:00",
+  "by": "Agent 1",
+  "note": "Agent 1 holds the turn: P13 wave 2 (P13-05..12, 18, 19, 21..23, 25..28), then P14."
 }
