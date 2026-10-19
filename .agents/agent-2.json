@@ -5,7 +5,7 @@
   "usage_pct": 1,
   "remaining_pct": 99,
   "resets_at": "2026-10-19T11:00:00+00:00",
-  "last_check": "2026-10-19T06:29:45+00:00",
-  "current_step": "took the turn (06:30 UTC): gate check, then P10-19/P10-20, then P12",
+  "last_check": "2026-10-19T06:31:34+00:00",
+  "current_step": "wave 7 building: V P10-19 voice, U P10-20 computer_use, K P12-01 Ink spike + P12-02..05 client, G P12-28..31 tui_bridge; gate check of main running",
   "last_commit": "8d23a10"
 }
