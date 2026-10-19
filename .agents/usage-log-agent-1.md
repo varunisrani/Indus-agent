@@ -70,3 +70,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 17:10 UTC | 2% | 98% | 22:00 UTC | reset; P15 waves 2-3 building (W1..W4) |
 | 2026-10-19 17:41 UTC | ~6%+ (last reading 17:11) | — | 22:00 UTC | P15 W1..W4 building |
 | 2026-10-19 18:08 UTC | 6% (reading 17:40) | 94% | 22:00 UTC | P15 W1..W4 building |
+| 2026-10-19 18:37 UTC | 6% | 94% | 22:00 UTC | P15 W1..W4 restarted (cancelled at 17:11 by an interrupt; no work had been written) |
