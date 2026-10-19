@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 25,
-  "remaining_pct": 75,
+  "usage_pct": 41,
+  "remaining_pct": 59,
   "resets_at": "2026-10-19T11:00:00+00:00",
-  "last_check": "2026-10-19T07:27:26+00:00",
-  "current_step": "wave 7 built (V, U, K, G); combined gate running; then wave 8 (P12 renderer)",
-  "last_commit": "6df7114"
+  "last_check": "2026-10-19T07:59:07+00:00",
+  "current_step": "wave 8 (P12 renderer R1-R4) building; wave 7 landed (94d604e)",
+  "last_commit": "ee81798"
 }
