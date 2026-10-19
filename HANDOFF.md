@@ -75,16 +75,17 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- P21 rest (B3: P21-12 rest, 13, 14, 16) and P22 rest (R2: P22-10..15) DONE as builder patches; integrating
-  in scratchpad verify3 (brief: wire R2's SWE runner to B3's task_overrides, delete the R2 stand-in, re-lock
-  for the `research` extra, D-16.320 onward). Patches + README in `.agents/wip/p21p22w2/`.
-- Last landings: P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
+- (nothing in flight; wave 22 adapters T/D/S next)
+- Last landings: P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
+  landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
   landing notes"), P15-01..18 (`c0e0201`), P21-01..11, 15 and P22-01..09 (`42a852e`).
-  Done: P00–P14 complete; P15 32/36; P21 11/16; P22 9/15.
-Next: land P21/P22 rest from verify3; P15-33..36 (Telegram/Discord/Slack adapters implementing
-`create_adapter(AdapterConfig)` from gateway/config.py, each with a send-only open for `indus send`, media
-download fetchers; Demo 3); then P16, P17.
+  Done: P00–P14, P21, P22 complete; P15 32/36.
+Next: P15-33..36 — builders T/D/S (Telegram own Bot API client over httpx, no LGPL; Discord; Slack), each
+with `create_adapter(AdapterConfig)`, a send-only open for `indus send` and media fetchers; Demo 3 (P15-36)
+at integration. Builder brief: `.agents/wip/p15w4/brief.md`. Then P16, P17.
+Owner follow-ups from P21/P22: live vendor smoke tests, ACC-D5-2 on a real Apptainer; `research` extra
+licences to confirm: `regex` (CNRI-Python) and pyarrow's bundled zlib (Zlib) / Boost (BSL-1.0).
 Owner items: licences (Pillow MIT-CMU; voice extra av/numpy; Piper/eSpeak NG; new P21 vendor-extra
 transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm); webhook `auth: auto` accepts an
 untimestamped generic signature (replay after the 1 h delivery-id window) — decide whether to require the
