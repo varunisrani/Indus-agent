@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 80,
-  "remaining_pct": 20,
+  "usage_pct": 82,
+  "remaining_pct": 18,
   "resets_at": "2026-10-19T17:00:00+00:00",
-  "last_check": "2026-10-19T15:10:00+00:00",
-  "current_step": "P15 wave 1 landed (c0e0201); M4 flake fixed (ec70724); P21+P22 integrating (verify3); no new agents",
+  "last_check": "2026-10-19T15:23:00+00:00",
+  "current_step": "P21+P22 integrated and rebased (verify3); combined gate running; no agents running",
   "last_commit": "c0e0201"
 }
