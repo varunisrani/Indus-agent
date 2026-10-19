@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 0,
-  "remaining_pct": 100,
+  "usage_pct": 25,
+  "remaining_pct": 75,
   "resets_at": "2026-10-19T12:00:00+00:00",
-  "last_check": "2026-10-19T10:19:00+00:00",
+  "last_check": "2026-10-19T10:50:00+00:00",
   "current_step": "Took the turn; P13 wave 2 building (N1 MCP 05-08, N2 MCP 09-12, N3 hooks/plugins 18,19,21-23, N4 hub 25-28)",
   "last_commit": "2f62d28"
 }
