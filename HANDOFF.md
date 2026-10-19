@@ -81,7 +81,8 @@ In flight:
 - Wave 23 (from `78be7b3`, brief `.agents/wip/w23/brief.md`): E1 (P16-01 kit) done, lead landing it (verify5,
   D-16.350..354); K1 (P17-01..04) + K2 (P17-05..07) done, integrator in scratchpad verify6 (brief
   `.agents/wip/w23/k-integrator-brief.md`, D-16.360..379); E2 (P16-06 Matrix + 08 Mattermost) and E3 (P16-05 Signal +
-  09 Email) building in scratchpad wt-w23e2 / wt-w23e3. Patches + README in `.agents/wip/w23/`.
+  09 Email) DONE, parked — integrate after wave 22 lands (registry/credential/send-only seams overlap). E1 landing
+  carries a P08-13 fix (expired provider reset no longer arms the 60 s ladder; soak-test flake root cause). Patches + README in `.agents/wip/w23/`.
 - Last landings: P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
   landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3

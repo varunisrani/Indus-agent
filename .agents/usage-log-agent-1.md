@@ -84,3 +84,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-19 22:06 UTC | 0% | 100% | 03:00 UTC | window reset; started wave 22 builders T/D/S (P15-33..35) from 78be7b3
 2026-10-19 22:34 UTC | 12% | 88% | 03:00 UTC | T/D/S building (14-17 files each); started wave 23: E1/E2/E3 (P16) and K1/K2 (P17)
 2026-10-19 22:56 UTC | 37% | 63% | 03:00 UTC | T/D/S, E1, K2 done; wave-22 integrator (verify4), E2, E3, K1 running; lead gating E1 (verify5)
+2026-10-19 23:36 UTC | 50% | 50% | 03:00 UTC | wave-22 integrator + P17 w1 integrator running; E2/E3 parked; lead gating E1 + P08-13 cooldown fix
