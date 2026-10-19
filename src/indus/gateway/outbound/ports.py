@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from indus.gateway.adapters.base import FINAL_KEY, INTERIM_KEY, Adapter, MediaKind
+from indus.gateway.core.events import Source, reply_thread
 from indus.gateway.core.send import (
     DELIVERY_FAILED_NOTICE,
     ErrorKind,
@@ -44,6 +45,7 @@ __all__ = [
     "send_media_file",
     "send_text",
     "typing",
+    "typing_meta",
 ]
 
 type Redact = Callable[[str], str]
@@ -181,15 +183,25 @@ async def delete_message(adapter: Adapter, chat_id: str, message_id: str) -> boo
         return False
 
 
-async def typing(adapter: Adapter, chat_id: str, *, on: bool) -> None:
-    """Start or stop the typing indicator; the adapter logs and swallows its failures."""
+async def typing(
+    adapter: Adapter, chat_id: str, *, on: bool, meta: Mapping[str, Any] | None = None
+) -> None:
+    """Start or stop the typing indicator; the adapter logs and swallows its failures.
+    ``meta`` carries the thread (``typing_meta``): Slack's status is per thread."""
     try:
         if on:
-            await adapter.typing_start(chat_id)
+            await adapter.typing_start(chat_id, meta)
         else:
             await adapter.typing_stop(chat_id)
     except Exception:
         return
+
+
+def typing_meta(adapter: Adapter, source: Source) -> dict[str, Any]:
+    """The typing indicator's metadata for a turn from ``source``: its thread, or the
+    prospective thread where replying opens it (``reply_thread``)."""
+    thread = reply_thread(source, opens_thread=adapter.capabilities.reply_opens_thread)
+    return {"thread_id": thread} if thread else {}
 
 
 # Outbound media kinds → the adapter's native kind (audio goes out as a plain file).

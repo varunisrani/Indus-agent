@@ -596,6 +596,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/core/test_prompts.py::test_only_the_requester_or_an_admin_answers_in_a_shared_thread`
   - `tests/unit/gateway/core/test_prompts.py::test_clarify_by_text`
   - `tests/unit/gateway/core/test_prompts.py::test_clarify_buttons_with_paging_and_other`
+  - `tests/e2e/gateway/test_demo3.py::test_a_dangerous_command_is_approved_with_a_telegram_button`
 - **ACC-E9-1** Whole-script approval for `execute_code`
   - `tests/unit/tools/builtin/code/test_runner.py::test_manual_approval_denied_spawns_nothing`
   - `tests/unit/tools/builtin/code/test_runner.py::test_session_approval_is_asked_once`
@@ -756,6 +757,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/test_cron_host.py::test_a_due_job_fires_once_at_the_first_pass_after_its_time`
   - `tests/unit/gateway/test_cron_host.py::test_cron_tick_refuses_while_a_live_gateway_owns_the_profile`
   - `tests/integration/gateway/test_cron_delivery.py::test_a_cron_job_reaches_the_telegram_home_channel_masked`
+  - `tests/e2e/gateway/test_demo3.py::test_a_cron_job_every_30m_reaches_the_telegram_chat_on_its_tick`
 - **ACC-H3-2** Fire claims: one owner per slot, heartbeats, stale claims reclaimed, tick lock
   - `tests/unit/cron/test_ticker.py::test_claim_liveness`
   - `tests/unit/cron/test_ticker.py::test_young_claim_blocks_another_process_and_stale_claim_is_reclaimed`
@@ -783,6 +785,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/delivery/test_router.py::test_home_channel_target_with_thread`
   - `tests/unit/gateway/delivery/test_router.py::test_all_is_resolved_at_fire_time`
   - `tests/unit/gateway/delivery/test_router.py::test_hash_name_resolves_through_the_directory`
+  - `tests/e2e/gateway/test_demo3.py::test_a_cron_job_every_30m_reaches_the_telegram_chat_on_its_tick`
 - **ACC-H13-1** Execution ledger: an abandoned run becomes "unknown" and is never re-run
   - `tests/unit/cron/test_ledger.py::test_dead_owner_becomes_unknown`
   - `tests/unit/cron/test_ledger.py::test_unknown_never_rerun`
@@ -1085,11 +1088,44 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/test_token_locks.py::test_startup_conflict_is_fatal_and_midrun_retryable`
   - `tests/unit/gateway/test_registry.py::test_a_real_plugin_host_slot_feeds_the_registry`
 - **ACC-K5-1** Telegram (polling or webhook, MarkdownV2 with plain fallback, forum topics, buttons, reactions)
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_4096_utf16_units_of_emoji_fit_one_message_and_one_more_unit_splits`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_webhook_mode_accepts_only_pushes_with_the_secret`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_forum_topic_message_gets_the_golden_topic_key`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_button_press_from_an_unauthorized_user_is_refused`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_typing_reactions_and_the_command_menu`
+  - `tests/unit/gateway/adapters/telegram/test_bot_api.py::test_the_token_reaches_the_wire_but_no_log_repr_or_error`
+  - `tests/e2e/gateway/test_demo3.py::test_the_same_agent_answers_on_telegram_discord_and_slack`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_indus_send_opens_telegram_send_only`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_the_webhook_listener_binds_loopback_unless_a_host_is_configured`
+  - `tests/integration/gateway/test_three_platforms.py::test_a_revoked_telegram_token_parks_the_platform_as_fatal`
 - **ACC-K6-1** Discord (slash commands, components, auto-threads, role allowlist, mention gating)
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_command_sync_caps_at_100_with_one_warning`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_command_sync_paces_mutations_and_deletes_first`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_an_application_command_becomes_command_text`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_component_press_by_a_member_without_an_allowed_role_is_refused`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_thread_spawned_by_a_mention_shares_the_session_with_follow_ups`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_role_grant_on_guild_messages_only`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_history_backfill_on_a_mention_in_a_busy_channel`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_indus_send_opens_discord_send_only`
+  - `tests/e2e/gateway/test_demo3.py::test_the_same_agent_answers_on_telegram_discord_and_slack`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_the_core_never_addresses_a_discord_thread_before_the_adapter_opens_it`
 - **ACC-K7-1** Slack (Socket Mode, Block Kit, threads, ephemeral messages)
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_message_and_app_mention_with_one_ts_make_one_turn`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_two_workspaces_with_one_channel_id_get_different_keys`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_a_channel_message_and_its_thread_follow_up_share_one_session`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_an_approval_press_settles_the_request`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_clarify_with_many_choices_stays_within_the_block_cap`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_private_notices_are_ephemeral`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_indus_send_slack_does_no_inbound_work`
+  - `tests/e2e/gateway/test_demo3.py::test_the_same_agent_answers_on_telegram_discord_and_slack`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_every_piece_card_and_status_of_a_channel_reply_goes_into_the_thread`
+  - Review: the owner's live run with real bots, `tests/e2e/gateway/live_demo3.py` (P15-36)
 - **ACC-K8-1** Signal through signal-cli
   - Review: not yet planned (phase TBD)
 - **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
@@ -1098,10 +1134,15 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
   - `tests/unit/gateway/core/test_events.py::test_property_text_not_starting_with_slash_is_never_a_command`
   - `tests/unit/gateway/core/test_events.py::test_reply_context_from_the_index_and_own_mark`
-  - Review: burst batching (P15-12) and per-platform dedupe (P15-33..35)
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_an_app_mention_alone_counts_as_mentioned_and_a_redelivery_is_dropped`
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_duplicate_update_id_is_handled_once_also_after_a_restart`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_own_system_duplicate_and_unchanged_edit_messages_are_ignored`
+  - `tests/unit/gateway/adapters/slack/test_adapter.py::test_message_and_app_mention_with_one_ts_make_one_turn`
+  - `tests/unit/gateway/core/test_busy.py::test_interrupt_mode_redirects_with_one_merged_text_and_one_ack`
 - **ACC-K14-1** Authorization chain: per-platform and global allowlists, allow-all flags, group chat lists, role …
   - `tests/unit/gateway/core/test_authz.py::test_chain_order`
   - `tests/unit/gateway/core/test_authz.py::test_errors_fail_closed`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
 - **ACC-K15-1** Pairing codes for unknown DM users with expiry and lockouts; `indus pairing approve
   - `tests/unit/state/test_pairing.py::test_lockout_after_five_wrong_refuses_a_correct_code`
   - `tests/unit/cli/commands/test_pairing.py::test_approve_by_spaced_code`
@@ -1128,6 +1169,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/core/test_busy.py::test_queue_mode_runs_each_follow_up_as_its_own_turn_in_order`
   - `tests/unit/gateway/core/test_busy.py::test_steer_mode_lands_in_the_running_turn`
   - `tests/unit/gateway/core/test_batching.py::test_three_split_pastes_become_one_turn`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
 - **ACC-K24-1** Intake of voice notes (transcribed, with an explicit note when inaudible), images (native or …
   - `tests/unit/gateway/intake/test_voice.py::test_empty_or_inaudible_transcripts_say_so`
   - `tests/unit/gateway/intake/test_voice.py::test_a_merged_burst_is_transcribed_once_per_clip`
@@ -1136,11 +1178,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/intake/test_media.py::test_documents`
   - `tests/unit/gateway/intake/test_media.py::test_an_album_becomes_one_event`
   - `tests/unit/gateway/intake/test_media.py::test_foreign_paths_are_refused_and_never_read`
+  - `tests/integration/gateway/test_three_platforms.py::test_media_fetchers_follow_each_platform_up_and_down`
 - **ACC-K25-1** Outbound chunking with fence carry-over and `(i/n)` markers; per-platform formatting with …
   - `tests/unit/gateway/outbound/test_chunker.py::test_fence_is_closed_and_reopened_with_its_language`
   - `tests/unit/gateway/outbound/test_formatting.py::test_golden_markdownv2_cases`
   - `tests/unit/gateway/outbound/test_formatting.py::test_slack_table_becomes_a_table_block`
   - `tests/unit/gateway/outbound/test_sender.py::test_reply_to_mode_table`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
 - **ACC-K26-1** Files in replies via media tags with a path policy → generated files delivered as native attachments
   - `tests/unit/gateway/outbound/test_sender.py::test_media_tags_are_sent_natively_or_refused_with_a_notice`
   - `tests/unit/gateway/outbound/test_media_policy.py::test_symlink_from_cache_to_ssh_key_is_refused`
@@ -1162,9 +1206,11 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/integration/gateway/test_ledger_recovery.py::test_kill_point_then_boot`
   - `tests/unit/gateway/delivery/test_ledger.py::test_boot_sweep_rules`
   - `tests/unit/gateway/delivery/test_ledger.py::test_flood_waits_the_stated_time_capped_and_labels_the_retry`
+  - `tests/e2e/gateway/test_demo3.py::test_a_kill_mid_send_gives_one_labelled_recovered_reply_after_restart`
 - **ACC-K31-1** Restart notice to home channels and one auto-resume of turns cut by a restart
   - `tests/integration/gateway/test_boot_recovery.py::test_restart_notices_reach_home_channels_once_per_boot`
   - `tests/integration/gateway/test_signals.py::test_sigterm_mid_turn_interrupts_notifies_and_the_next_boot_resumes_once`
+  - `tests/integration/gateway/test_boot_recovery.py::test_a_stop_after_the_reply_went_out_neither_interrupts_nor_resumes_the_turn`
 - **ACC-K32-1** Local control socket (identify, status, then more verbs) for other local processes
   - `tests/integration/gateway/test_control_part.py::test_the_control_part_serves_reconnects_and_drains`
   - `tests/unit/gateway/test_control_socket.py::test_identify_round_trip_and_owner_only_socket`
@@ -1173,6 +1219,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/daemon/test_reconnect.py::test_backoff_sequence`
   - `tests/unit/gateway/daemon/test_reconnect.py::test_needs_attention_after_threshold`
   - `tests/unit/gateway/daemon/test_reconnect.py::test_platform_command_shows_and_holds_queued_platforms`
+  - `tests/integration/gateway/test_three_platforms.py::test_a_revoked_telegram_token_parks_the_platform_as_fatal`
 - **ACC-K35-1** OpenAI-compatible API server: chat completions, responses, models, runs with …
   - `tests/contract/gateway/test_api_server_openai.py::test_every_route_needs_a_key_on_loopback_too`
   - `tests/contract/gateway/test_api_server_openai.py::test_streamed_chat_frames_match_the_chunk_schema`

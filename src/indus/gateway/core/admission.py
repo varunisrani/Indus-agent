@@ -215,6 +215,9 @@ class Claim:
     turn_generation: int | None = None
     task: asyncio.Task[Any] | None = None
     capped: bool = False
+    # The agent's turn has ended; only its bookkeeping (final hand-over, marker, release) is
+    # left. A stop's drain leaves such a turn alone instead of interrupting and resuming it.
+    finished: bool = False
 
 
 class ClaimTable:
@@ -1269,7 +1272,7 @@ class AdmissionPipeline:
             claim.turn_generation = ticket.generation
             self._anchor(sid, ticket.generation, event.message_id)
             result = await self.service.wait(sid, ticket.turn_id)
-            ended = True
+            ended = claim.finished = True
             if result.exit_reason is not ExitReason.COMPLETED and result.exit_reason not in (
                 _INTERRUPTED
             ):

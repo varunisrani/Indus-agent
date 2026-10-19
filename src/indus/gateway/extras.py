@@ -14,7 +14,9 @@ The daemon runs it as ``ExtrasPart`` (a ``Stage.BACKGROUND`` part named in ``PAR
 ``install_extras`` in the part's ``prepare`` (the pipeline is built, nothing accepts events yet)
 through an ``ExtrasSeat``, the start hooks (the cron ticker) when BACKGROUND parts start, the stop
 hooks (cron drain, prompts and albums closed) when they stop, before adapters disconnect.
-Adapters register their download functions with ``Extras.intake.register_fetcher``.
+Media downloads: when a platform comes up the part calls the adapter's
+``register_fetchers(intake)`` (Telegram ``getFile``, Discord CDN, Slack private files) and the
+returned undo when it goes down.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from indus.cron.ticker import DRAIN_S
 from indus.foundation.scope import Scope
+from indus.gateway.adapters.base import Adapter
 from indus.gateway.core.admission import AdmissionPipeline
 from indus.gateway.core.prompts import ChatPrompts
 from indus.gateway.cron_host import GatewayCronHost
@@ -40,7 +43,15 @@ from indus.gateway.intake.media import (
 if TYPE_CHECKING:
     from indus.gateway.daemon.process import GatewayDaemon
 
-__all__ = ["DaemonSeat", "Extras", "ExtrasPart", "ExtrasSeat", "create", "install_extras"]
+__all__ = [
+    "DaemonSeat",
+    "Extras",
+    "ExtrasPart",
+    "ExtrasSeat",
+    "attach_fetcher",
+    "create",
+    "install_extras",
+]
 
 log = logging.getLogger(__name__)
 
@@ -123,6 +134,16 @@ def install_extras(daemon: DaemonSeat, *, cron: bool = True) -> Extras:
     return Extras(prompts, intake, albums, host)
 
 
+def attach_fetcher(intake: MediaIntake, adapter: Adapter) -> Callable[[], None] | None:
+    """Let the adapter register its media downloads with the intake (``register_fetchers``);
+    the undo, or None when the adapter downloads nothing. A failing adapter is logged, not fatal."""
+    try:
+        return adapter.register_fetchers(intake)
+    except Exception:
+        log.warning("%s: registering media downloads failed", adapter.platform, exc_info=True)
+        return None
+
+
 @dataclass
 class ExtrasSeat:
     """A ``DaemonSeat``: a scope, a pipeline and the start / stop hooks ``install_extras`` adds."""
@@ -161,16 +182,41 @@ class ExtrasPart(DaemonPart):
         self.cron = cron
         self.seat: ExtrasSeat | None = None
         self.extras: Extras | None = None
+        self._fetchers: dict[str, Callable[[], None]] = {}
+        self._listeners: list[Callable[[], None]] = []
 
     async def prepare(self, daemon: GatewayDaemon) -> None:
         self.seat = ExtrasSeat(daemon.scope, daemon.pipeline)
         self.extras = install_extras(self.seat, cron=self.cron)
+        self._listeners = [
+            daemon.on_platform_up(self._platform_up),
+            daemon.on_platform_down(self._platform_down),
+        ]
+
+    def _platform_up(self, name: str, adapter: Adapter) -> None:
+        """The adapter's media downloads feed the intake (P15-23) while the platform is up."""
+        if self.extras is None:
+            return
+        self._platform_down(name, False, "replaced")
+        undo = attach_fetcher(self.extras.intake, adapter)
+        if undo is not None:
+            self._fetchers[name] = undo
+
+    def _platform_down(self, name: str, fatal: bool, reason: str) -> None:
+        undo = self._fetchers.pop(name, None)
+        if undo is not None:
+            undo()
 
     async def start(self, daemon: GatewayDaemon) -> None:
         if self.seat is not None:
             await self.seat.start()
 
     async def stop(self, daemon: GatewayDaemon) -> None:
+        for undo in self._listeners:
+            undo()
+        self._listeners = []
+        for name in list(self._fetchers):
+            self._platform_down(name, False, "stopping")
         seat, self.seat = self.seat, None
         if seat is not None:
             await seat.stop()

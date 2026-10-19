@@ -13,7 +13,9 @@ import asyncio
 import json
 import os
 import sqlite3
+import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -112,6 +114,40 @@ def test_a_turn_cut_by_a_stop_resumes_once_across_three_boots(tmp_path: Path) ->
     assert boot_and_stop(scope, fake, third, tmp_path) == EXIT_OK
     assert len(fake.texts(ALLOWED)) == 3
     assert third.requests == []
+
+
+def test_a_stop_after_the_reply_went_out_neither_interrupts_nor_resumes_the_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reply is delivered but the turn still holds its claim (marker bookkeeping): a stop's
+    drain must not send the "stopped" notice nor flag the conversation for a resume (which would
+    run the finished turn again at the next boot). Found by Demo 3 (P15-36)."""
+    scope = daemon_scope(tmp_path)
+    key = dm_key(scope)
+    fake = fake_platform()
+    server = model_server(text_turn("All done."))
+    entered, gate = threading.Event(), threading.Event()
+    real_end_turn = routes.end_turn
+
+    def slow_end_turn(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        gate.wait(10.0)
+        return real_end_turn(*args, **kwargs)
+
+    monkeypatch.setattr(routes, "end_turn", slow_end_turn)
+
+    async def main() -> int:
+        flight = await fly(daemon_for(scope, fake, server, tmp_path))
+        fake.dm(ALLOWED, "hello")
+        await flight.until(lambda: fake.texts(ALLOWED) == ["All done."] and entered.is_set())
+        assert flight.daemon.pipeline.claims.keys()  # only the bookkeeping is left
+        threading.Timer(0.3, gate.set).start()
+        return await flight.stop()
+
+    assert asyncio.run(main()) == EXIT_OK
+    assert fake.texts(ALLOWED) == ["All done."]
+    entry = route(scope, key)
+    assert entry is not None and not entry.resume_pending and entry.active_turn_token is None
 
 
 def test_a_crash_left_turn_pauses_the_conversation_until_reset(tmp_path: Path) -> None:

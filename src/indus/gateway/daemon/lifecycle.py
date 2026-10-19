@@ -246,8 +246,10 @@ async def drain_turns(daemon: GatewayDaemon, *, drain_timeout: float, grace: flo
     interrupted: list[str] = []
     for key, claim in running.items():
         current = pipeline.claims.current(key)
-        if current is None or current is not claim:
-            await _unflag(daemon, key)  # finished during the drain: nothing to resume
+        if current is None or current is not claim or current.finished:
+            # finished during the drain (or only its bookkeeping is left, the reply already on
+            # its way through the ledger): nothing to interrupt, notify or resume
+            await _unflag(daemon, key)
             continue
         interrupted.append(key)
         session_id = claim.session_id if claim is not None else None

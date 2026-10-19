@@ -47,7 +47,7 @@ from indus.gateway.adapters.base import (
     parse_clarify_callback,
 )
 from indus.gateway.core.busy import canonical_command
-from indus.gateway.core.events import InboundEvent, Source
+from indus.gateway.core.events import InboundEvent, Source, reply_thread
 from indus.protocol.events import CancelReason, ServerRequestCancelled
 from indus.protocol.methods import ProtocolError
 from indus.protocol.server_requests import (
@@ -206,8 +206,11 @@ def _same_chat(a: Source, b: Source) -> bool:
     )
 
 
-def _meta(source: Source) -> dict[str, Any]:
-    return {"thread_id": source.thread_id} if source.thread_id else {}
+def _meta(source: Source, adapter: Adapter) -> dict[str, Any]:
+    """Where a card goes: the source's thread, or (``reply_opens_thread``: Slack) the
+    prospective thread the conversation is keyed on, so a channel card lands in the thread."""
+    thread = reply_thread(source, opens_thread=adapter.capabilities.reply_opens_thread)
+    return {"thread_id": thread} if thread else {}
 
 
 # -- cards -----------------------------------------------------------------------------------------
@@ -347,7 +350,9 @@ class ChatPrompts:
                 text_card,
                 actions,
             )
-            result = await adapter.send_approval(str(source.chat_id), prompt, _meta(source))
+            result = await adapter.send_approval(
+                str(source.chat_id), prompt, _meta(source, adapter)
+            )
             if result.ok:
                 shown, card.buttons, card.message_id = True, True, result.message_id
             else:
@@ -459,7 +464,7 @@ class ChatPrompts:
                 question.multi_select,
                 text,
             )
-            result = await adapter.send_clarify(str(source.chat_id), prompt, _meta(source))
+            result = await adapter.send_clarify(str(source.chat_id), prompt, _meta(source, adapter))
             if result.ok:
                 card.buttons, card.message_id = True, result.message_id
                 return True
@@ -500,7 +505,11 @@ class ChatPrompts:
             return
         with contextlib.suppress(Exception):
             await adapter.edit(
-                str(card.source.chat_id), card.message_id, text, final=True, meta=_meta(card.source)
+                str(card.source.chat_id),
+                card.message_id,
+                text,
+                final=True,
+                meta=_meta(card.source, adapter),
             )
         card.buttons = False
 
@@ -528,7 +537,7 @@ class ChatPrompts:
                     card.message_id,
                     f"{header}\n{text}",
                     final=True,
-                    meta=_meta(card.source),
+                    meta=_meta(card.source, adapter),
                 )
                 edited = result.ok
         if notify and not edited:

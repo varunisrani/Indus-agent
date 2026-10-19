@@ -1,19 +1,38 @@
-"""A fake of the Telegram library surface our adapter touches (P15-01).
+"""A fake of the Telegram client surface our adapter touches (P15-01, P15-33).
 
-Shapes follow python-telegram-bot (method names snake_case, keyword arguments as the library
-takes them, results with ``message_id`` / ``chat.id``), backed by one `FakeChatPlatform`.
-Errors are raised as stand-ins named like the library's (``RetryAfter``, ``BadRequest``,
-``Forbidden``, ``TimedOut``, ``NetworkError``) so the adapter's error mapping can be exercised.
-Only names listed in ``SURFACE`` exist; the drift check proves each is real in the pinned
-library (P15-33 extends both together).
+We talk to Telegram through our own Bot API client (``indus.gateway.adapters.telegram.bot_api``,
+no library: the common one is LGPL-3.0). ``FakeBot`` stands in for ``BotApi``: the same method
+names and keyword arguments, the client's own result types (``Message`` with ``message_id`` /
+``chat.id``, ``Update``, ``File``…) and its own error classes (``RetryAfter``, ``BadRequest``,
+``Forbidden``, ``TimedOut``, ``NetworkError``), backed by one `FakeChatPlatform`. Only names
+listed in ``SURFACE`` exist; the drift check proves each is on the real client and that the
+client's methods are documented Bot API methods.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
 from indus.gateway.adapters.base import utf16_units
+from indus.gateway.adapters.telegram.bot_api import (
+    BadRequest,
+    CallbackQuery,
+    Chat,
+    File,
+    FileRef,
+    Forbidden,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    NetworkError,
+    RetryAfter,
+    TelegramError,
+    TimedOut,
+    Update,
+    User,
+)
 from tests.fakes.platform.core import (
     Button,
     FailureKind,
@@ -26,8 +45,10 @@ from tests.fakes.platform.core import (
 
 MAX_LEN = 4096
 
+_CLIENT = "indus.gateway.adapters.telegram.bot_api"
+
 SURFACE: dict[str, tuple[str, ...]] = {
-    "telegram:Bot": (
+    f"{_CLIENT}:BotApi": (
         "get_me",
         "get_updates",
         "set_webhook",
@@ -45,51 +66,17 @@ SURFACE: dict[str, tuple[str, ...]] = {
         "set_my_commands",
         "get_file",
         "answer_callback_query",
+        "download_file",
+        "aclose",
     ),
-    "telegram:InlineKeyboardButton": (),
-    "telegram:InlineKeyboardMarkup": (),
-    "telegram.error:RetryAfter": ("retry_after",),
-    "telegram.error:BadRequest": (),
-    "telegram.error:Forbidden": (),
-    "telegram.error:TimedOut": (),
-    "telegram.error:NetworkError": (),
+    f"{_CLIENT}:InlineKeyboardButton": (),
+    f"{_CLIENT}:InlineKeyboardMarkup": (),
+    f"{_CLIENT}:RetryAfter": ("retry_after",),
+    f"{_CLIENT}:BadRequest": (),
+    f"{_CLIENT}:Forbidden": (),
+    f"{_CLIENT}:TimedOut": (),
+    f"{_CLIENT}:NetworkError": (),
 }
-
-
-# -- library-shaped errors ----------------------------------------------------------------------
-
-
-class TelegramError(Exception):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
-
-
-class NetworkError(TelegramError):
-    pass
-
-
-class TimedOut(NetworkError):
-    def __init__(self, message: str = "Timed out") -> None:
-        super().__init__(message)
-
-
-class BadRequest(NetworkError):
-    pass
-
-
-class Forbidden(TelegramError):
-    pass
-
-
-class RetryAfter(TelegramError):
-    def __init__(self, retry_after: float) -> None:
-        super().__init__(f"Flood control exceeded. Retry in {int(retry_after)} seconds")
-        self._retry_after = retry_after
-
-    @property
-    def retry_after(self) -> float:
-        return self._retry_after
 
 
 def _translate(exc: FakePlatformError) -> TelegramError:
@@ -99,77 +86,10 @@ def _translate(exc: FakePlatformError) -> TelegramError:
     if kind is FailureKind.READ_TIMEOUT:
         return TimedOut()
     if kind is FailureKind.CONNECT_TIMEOUT:
-        return NetworkError("httpx.ConnectError: connection refused")
+        return NetworkError("ConnectError: connection refused")
     if kind is FailureKind.FORBIDDEN:
         return Forbidden(exc.text)
-    return BadRequest(exc.text.removeprefix("Bad Request: "))
-
-
-# -- library-shaped objects ---------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class InlineKeyboardButton:
-    text: str
-    callback_data: str
-
-
-@dataclass(frozen=True)
-class InlineKeyboardMarkup:
-    inline_keyboard: tuple[tuple[InlineKeyboardButton, ...], ...]
-
-
-@dataclass(frozen=True)
-class User:
-    id: int
-    is_bot: bool
-    first_name: str
-    username: str | None = None
-
-
-@dataclass(frozen=True)
-class Chat:
-    id: int
-    type: str  # private, group, supergroup, channel
-    title: str | None = None
-    is_forum: bool = False
-
-
-@dataclass(frozen=True)
-class File:
-    file_id: str
-    file_path: str
-
-
-@dataclass(frozen=True)
-class Message:
-    message_id: int
-    chat: Chat
-    text: str | None = None
-    caption: str | None = None
-    from_user: User | None = None
-    message_thread_id: int | None = None
-    reply_to_message: Message | None = None
-    voice: File | None = None
-    photo: tuple[File, ...] = ()
-    document: File | None = None
-    date: Any = None
-
-
-@dataclass(frozen=True)
-class CallbackQuery:
-    id: str
-    from_user: User
-    data: str
-    message: Message | None = None
-
-
-@dataclass(frozen=True)
-class Update:
-    update_id: int
-    message: Message | None = None
-    edited_message: Message | None = None
-    callback_query: CallbackQuery | None = None
+    return BadRequest(exc.text)
 
 
 _CHAT_TYPES = {
@@ -190,19 +110,28 @@ def _chat_of(item: FakeInbound) -> Chat:
     return Chat(int(item.chat_id), kind, title, is_forum=item.chat_kind in ("thread", "forum"))
 
 
-def _file(media: FakeMedia) -> File:
-    return File(file_id=f"f-{media.ref}", file_path=media.ref)
+def _file(media: FakeMedia) -> FileRef:
+    duration = int(media.duration) if media.duration is not None else None
+    return FileRef(
+        file_id=f"f-{media.ref}",
+        file_unique_id=f"u-{media.ref}",
+        mime_type=media.mime or None,
+        file_name=media.ref if media.kind == "document" else None,
+        duration=duration,
+    )
 
 
 @dataclass
 class FakeBot:
-    """A stand-in for ``telegram.Bot`` over a `FakeChatPlatform`."""
+    """A stand-in for ``BotApi`` over a `FakeChatPlatform`."""
 
     platform: FakeChatPlatform
     calls: list[tuple[str, dict[str, Any]]] = field(
         default_factory=list[tuple[str, dict[str, Any]]]
     )
-    _offset: int = 0
+    # Bytes ``download_file`` serves per file path (default: a short text naming the path).
+    files: dict[str, bytes] = field(default_factory=dict[str, bytes])
+    bot_username: str = "indus_test_bot"
 
     async def _do(self, name: str, kwargs: dict[str, Any], coro: Any) -> Any:
         self.calls.append((name, kwargs))
@@ -211,13 +140,25 @@ class FakeBot:
         except FakePlatformError as exc:
             raise _translate(exc) from None
 
+    def names(self) -> list[str]:
+        return [name for name, _ in self.calls]
+
     def _message(self, sent: FakeMessage) -> Message:
         chat = Chat(int(sent.chat_id), "private")
         return Message(int(sent.message_id), chat, text=sent.text)
 
     async def get_me(self) -> User:
         await self._do("get_me", {}, self.platform.connect())
-        return User(int(self.platform.bot_user_id or 1), True, self.platform.bot_name)
+        return User(
+            int(self.platform.bot_user_id or 1),
+            True,
+            self.platform.bot_name,
+            username=self.bot_username,
+        )
+
+    async def aclose(self) -> None:
+        self.calls.append(("aclose", {}))
+        await self.platform.disconnect()
 
     async def get_updates(
         self, offset: int | None = None, timeout: float = 0, **kwargs: Any
@@ -234,19 +175,27 @@ class FakeBot:
             original = self.platform.message(item.reply_to)
             # Telegram does not echo rich content: the quoted text is dropped for our own messages.
             text = None if original is None or original.from_bot else original.text
-            reply = Message(int(item.reply_to), chat, text=text)
+            author = None
+            if original is not None and original.from_bot:
+                author = User(int(self.platform.bot_user_id or 1), True, self.platform.bot_name)
+            reply = Message(int(item.reply_to), chat, text=text, from_user=author)
         media = item.media[0] if item.media else None
+        topic = _int(item.thread_id)
         message = Message(
             message_id=int(item.message_id) if item.message_id else 0,
             chat=chat,
             text=item.text if media is None else None,
             caption=item.text if media is not None else None,
             from_user=user,
-            message_thread_id=_int(item.thread_id),
+            message_thread_id=topic,
+            is_topic_message=topic is not None and chat.is_forum,
             reply_to_message=reply,
             voice=_file(media) if media and media.kind == "voice" else None,
             photo=(_file(media),) if media and media.kind == "photo" else (),
             document=_file(media) if media and media.kind == "document" else None,
+            audio=_file(media) if media and media.kind == "audio" else None,
+            video=_file(media) if media and media.kind == "video" else None,
+            sticker=_file(media) if media and media.kind == "sticker" else None,
             date=item.at,
         )
         if item.event == "button":
@@ -269,7 +218,7 @@ class FakeBot:
         chat_id: int | str,
         text: str,
         parse_mode: str | None = None,
-        reply_to_message_id: int | None = None,
+        reply_to_message_id: int | str | None = None,
         message_thread_id: int | None = None,
         reply_markup: InlineKeyboardMarkup | None = None,
         **kw: Any,
@@ -279,7 +228,14 @@ class FakeBot:
             for row in (reply_markup.inline_keyboard if reply_markup else ())
             for b in row
         )
-        args = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode, **kw}
+        args = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            "reply_to_message_id": reply_to_message_id,
+            "message_thread_id": message_thread_id,
+            **kw,
+        }
         sent = await self._do(
             "send_message",
             args,
@@ -302,9 +258,24 @@ class FakeBot:
         parse_mode: str | None = None,
         **kw: Any,
     ) -> Message:
-        args = {"chat_id": chat_id, "message_id": message_id, "text": text, **kw}
+        args = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            **kw,
+        }
+        # Like the Bot API: an edit without ``reply_markup`` removes the inline keyboard.
+        markup: InlineKeyboardMarkup | None = kw.get("reply_markup")
+        buttons = tuple(
+            Button(b.text, b.callback_data)
+            for row in (markup.inline_keyboard if markup else ())
+            for b in row
+        )
         edited = await self._do(
-            "edit_message_text", args, self.platform.edit(str(chat_id), str(message_id), text)
+            "edit_message_text",
+            args,
+            self.platform.edit(str(chat_id), str(message_id), text, buttons=buttons),
         )
         return self._message(edited)
 
@@ -320,7 +291,7 @@ class FakeBot:
         thread = str(message_thread_id) if message_thread_id else None
         await self._do(
             "send_chat_action",
-            {"chat_id": chat_id, "action": action},
+            {"chat_id": chat_id, "action": action, "message_thread_id": message_thread_id},
             self.platform.typing(str(chat_id), thread_id=thread),
         )
         return True
@@ -341,10 +312,16 @@ class FakeBot:
         caption = kw.get("caption") or ""
         media = FakeMedia(kind, str(ref), caption=caption)
         thread = kw.get("message_thread_id")
+        reply = kw.get("reply_to_message_id")
         sent = await self._do(
             name,
-            {"chat_id": chat_id, **kw},
-            self.platform.upload(str(chat_id), media, thread_id=str(thread) if thread else None),
+            {"chat_id": chat_id, "file": ref, **kw},
+            self.platform.upload(
+                str(chat_id),
+                media,
+                reply_to=str(reply) if reply else None,
+                thread_id=str(thread) if thread else None,
+            ),
         )
         return self._message(sent)
 
@@ -369,7 +346,17 @@ class FakeBot:
 
     async def get_file(self, file_id: str) -> File:
         self.calls.append(("get_file", {"file_id": file_id}))
-        return File(file_id, file_id.removeprefix("f-"))
+        path = file_id.removeprefix("f-")
+        return File(file_id, path, file_size=len(self._content(path)))
+
+    def _content(self, file_path: str) -> bytes:
+        return self.files.get(file_path, f"fake telegram file {file_path}\n".encode())
+
+    async def download_file(self, file_path: str) -> AsyncIterator[bytes]:
+        self.calls.append(("download_file", {"file_path": file_path}))
+        data = self._content(file_path)
+        for start in range(0, len(data), 64 * 1024):
+            yield data[start : start + 64 * 1024]
 
     async def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> bool:
         await self._do(
@@ -385,14 +372,14 @@ class TelegramWire:
 
     SURFACE = SURFACE
     FAKES: dict[str, type] = {
-        "telegram:Bot": FakeBot,
-        "telegram:InlineKeyboardButton": InlineKeyboardButton,
-        "telegram:InlineKeyboardMarkup": InlineKeyboardMarkup,
-        "telegram.error:RetryAfter": RetryAfter,
-        "telegram.error:BadRequest": BadRequest,
-        "telegram.error:Forbidden": Forbidden,
-        "telegram.error:TimedOut": TimedOut,
-        "telegram.error:NetworkError": NetworkError,
+        f"{_CLIENT}:BotApi": FakeBot,
+        f"{_CLIENT}:InlineKeyboardButton": InlineKeyboardButton,
+        f"{_CLIENT}:InlineKeyboardMarkup": InlineKeyboardMarkup,
+        f"{_CLIENT}:RetryAfter": RetryAfter,
+        f"{_CLIENT}:BadRequest": BadRequest,
+        f"{_CLIENT}:Forbidden": Forbidden,
+        f"{_CLIENT}:TimedOut": TimedOut,
+        f"{_CLIENT}:NetworkError": NetworkError,
     }
 
     def __init__(self, platform: FakeChatPlatform | None = None) -> None:

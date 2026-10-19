@@ -7,6 +7,9 @@ optional extras) skips its rows; ``uv sync --all-extras`` runs them.
 
 The wire fakes are also checked against their own declaration, which needs no library: a fake
 that lacks a declared name would let an adapter test pass against a surface that does not exist.
+
+Telegram has no library (P15-33): its rows point at our own Bot API client, which is always
+installed, and the client's methods are checked against the Bot API's documented method names.
 """
 
 from __future__ import annotations
@@ -90,3 +93,58 @@ def test_every_adapter_declares_vendor_names_for_a_wire() -> None:
             assert surface == {}
             continue
         assert surface, f"{owner} declares no vendor_names"
+
+
+# -- Telegram: our own Bot API client (P15-33) -----------------------------------------------------
+
+# Bot API methods as documented at core.telegram.org/bots/api (Bot API 9.x): the ones our client
+# may call. An interop fact list, written down by hand; add a name only after checking the docs.
+TELEGRAM_DOCUMENTED_METHODS = frozenset(
+    {
+        "getMe",
+        "getUpdates",
+        "setWebhook",
+        "deleteWebhook",
+        "getWebhookInfo",
+        "sendMessage",
+        "editMessageText",
+        "editMessageReplyMarkup",
+        "deleteMessage",
+        "sendChatAction",
+        "setMessageReaction",
+        "sendPhoto",
+        "sendDocument",
+        "sendVoice",
+        "sendAudio",
+        "sendVideo",
+        "sendMediaGroup",
+        "setMyCommands",
+        "deleteMyCommands",
+        "getFile",
+        "answerCallbackQuery",
+        "getChat",
+    }
+)
+
+
+def _snake(name: str) -> str:
+    return "".join(f"_{c.lower()}" if c.isupper() else c for c in name)
+
+
+def test_telegram_client_methods_are_documented_bot_api_methods() -> None:
+    from indus.gateway.adapters.telegram.bot_api import BOT_API_METHODS, BotApi
+
+    for ours, documented in BOT_API_METHODS.items():
+        assert documented in TELEGRAM_DOCUMENTED_METHODS, f"{documented} is not a Bot API method"
+        assert ours == _snake(documented), f"{ours} does not name {documented}"
+        assert callable(getattr(BotApi, ours, None)), f"BotApi has no {ours}"
+
+
+def test_the_telegram_fake_covers_every_client_method_the_adapter_calls() -> None:
+    from indus.gateway.adapters.telegram.adapter import BOT_TARGET, TelegramAdapter
+    from indus.gateway.adapters.telegram.bot_api import BOT_API_METHODS
+
+    called = set(TelegramAdapter.vendor_names[BOT_TARGET])
+    assert called <= set(TelegramWire.SURFACE[BOT_TARGET])
+    # every documented method the client speaks is one the adapter uses (no dead client code)
+    assert set(BOT_API_METHODS) <= called

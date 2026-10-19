@@ -24,13 +24,13 @@ import logging
 import random
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 from indus.foundation.clock import Clock
 from indus.foundation.redact import redact_text
-from indus.gateway.core.events import ChatType, InboundEvent
+from indus.gateway.core.events import Attachment, ChatType, InboundEvent
 from indus.gateway.core.send import DELIVERY_FAILED_NOTICE, RetryPolicy, SendResult, send_with_retry
 from indus.gateway.core.send_slot import SendSlots
 from indus.gateway.outbound.chunker import LenFn, code_points, utf16_units
@@ -42,6 +42,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 InboundSink = Callable[[InboundEvent], Awaitable[None]]
+# Told when a running connection is lost for good (a revoked token): ``(code, message)``.
+FatalListener = Callable[[str, str], object]
+# A platform's download of one inbound attachment, as chunks (Telegram ``getFile`` and friends).
+type Fetcher = Callable[[Attachment], AsyncIterator[bytes]]
+
+
+class FetcherSeat(Protocol):
+    """Where adapters register their media downloads (``intake.media.MediaIntake``)."""
+
+    def register_fetcher(self, platform: str, fetcher: Fetcher) -> Callable[[], None]: ...
+
+
 MediaKind = Literal["image", "file", "voice", "video", "document"]
 ApprovalChoice = Literal["once", "session", "always", "deny"]
 APPROVAL_CHOICES: tuple[ApprovalChoice, ...] = ("once", "session", "always", "deny")
@@ -79,6 +91,10 @@ class Capabilities:
     slot_spacing: float = 0.0
     # Longest server wait slept inline before handing it to the ledger (Telegram 5).
     inline_wait_cap: float = 60.0
+    # Replying into the source's prospective thread opens that thread (Slack: ``thread_ts`` =
+    # the message ``ts``), so every reply piece, card and typing status may address it. Off where
+    # the thread does not exist until the adapter opens it (Discord).
+    reply_opens_thread: bool = False
 
 
 @dataclass(frozen=True)
@@ -223,6 +239,7 @@ class Adapter(ABC):
         self._sink = sink
         self._sink_warned = False
         self.connected = False
+        self._fatal: FatalListener | None = None
         self.slots = SendSlots(clock, self.capabilities.slot_spacing)
 
     def __repr__(self) -> str:
@@ -287,7 +304,27 @@ class Adapter(ABC):
     async def _close(self) -> None:
         """Stop listeners and close connections."""
 
+    def set_fatal_listener(self, listener: FatalListener | None) -> None:
+        """Who to tell when the running connection is lost for good (the daemon parks the
+        platform as ``fatal`` instead of retrying it)."""
+        self._fatal = listener
+
+    def report_fatal(self, code: str, message: str) -> None:
+        """The connection is gone and retrying cannot help (e.g. the token was revoked)."""
+        listener = self._fatal
+        if listener is None:
+            return
+        try:
+            listener(code, self.scrub(message))
+        except Exception:
+            log.warning("%s: the fatal-state listener failed", self.platform, exc_info=True)
+
     # -- inbound -----------------------------------------------------------------------------------
+
+    def register_fetchers(self, seat: FetcherSeat) -> Callable[[], None] | None:
+        """Register this platform's media downloads with the intake (P15-23); the undo, or None
+        when the adapter downloads nothing."""
+        return None
 
     def set_sink(self, sink: InboundSink | None) -> None:
         self._sink = sink
@@ -625,6 +662,9 @@ __all__ = [
     "ChannelEntry",
     "ChatInfo",
     "ClarifyPrompt",
+    "FatalListener",
+    "Fetcher",
+    "FetcherSeat",
     "InboundSink",
     "LenFn",
     "MediaKind",

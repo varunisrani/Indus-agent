@@ -21,7 +21,7 @@ import logging
 from collections.abc import Mapping
 
 from indus.gateway.core.admission import ReplyKind
-from indus.gateway.core.events import Source
+from indus.gateway.core.events import Source, reply_thread
 from indus.gateway.outbound.sender import DeliveryReport, FinalReply, OutboundSender
 
 __all__ = ["PlatformReplies", "final_reply_for"]
@@ -37,13 +37,17 @@ def final_reply_for(
     kind: ReplyKind,
     session_key: str | None = None,
     message_ref: str | None = None,
+    opens_thread: bool = False,
 ) -> FinalReply:
-    """The `FinalReply` for one intake reply of ``kind`` (see the module docstring)."""
+    """The `FinalReply` for one intake reply of ``kind`` (see the module docstring).
+
+    ``opens_thread``: the platform's ``Capabilities.reply_opens_thread`` — every piece of the
+    reply goes into the source's prospective thread when it has no real one (``reply_thread``)."""
     final = kind == "final"
     return FinalReply(
         text,
         reply_to=reply_to,
-        thread_id=source.thread_id,
+        thread_id=reply_thread(source, opens_thread=opens_thread),
         unsolicited=kind == "notice" and reply_to is None,
         ephemeral=kind == "ack",
         session_key=session_key if final else None,
@@ -88,6 +92,7 @@ class PlatformReplies:
             kind=kind,
             session_key=session_key,
             message_ref=message_ref,
+            opens_thread=sender.adapter.capabilities.reply_opens_thread,
         )
         return await sender.deliver(str(source.chat_id), reply)
 

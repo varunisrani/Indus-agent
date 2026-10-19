@@ -801,6 +801,9 @@ class GatewayDaemon:
         self.adapters[name] = adapter
         self.pipeline.adapters[name] = adapter
         adapter.set_sink(self.pipeline.accept)
+        adapter.set_fatal_listener(
+            lambda code, message: self._lost_for_good(name, adapter, code, message)
+        )
         self.senders[name] = self.make_sender(name, adapter)
         self.set_platform_state(name, "connected")
         log.info("platform %s connected", name)
@@ -811,7 +814,20 @@ class GatewayDaemon:
         self.set_platform_state(name, state, error_code=code, error=message)
         await self._tell(self._down, name, state == "fatal", code)
 
-    async def disconnect_platform(self, name: str, *, fatal: bool, reason: str) -> None:
+    def _lost_for_good(self, name: str, adapter: Adapter, code: str, message: str) -> None:
+        """A running adapter says retrying cannot help (a revoked token): park it as fatal, so
+        the status shows it and the reconnect watcher leaves it alone."""
+        if self.adapters.get(name) is not adapter or self.lifecycle.stopping:
+            return
+        log.error("platform %s stopped for good (%s): %s", name, code, message)
+        self.spawn(
+            self.disconnect_platform(name, fatal=True, reason=code, error=message),
+            name=f"{name} fatal stop",
+        )
+
+    async def disconnect_platform(
+        self, name: str, *, fatal: bool, reason: str, error: str | None = None
+    ) -> None:
         """Take one platform down (fatal: it is not retried and its token lock is released)."""
         adapter = self.adapters.pop(name, None)
         pipeline: AdmissionPipeline | None = getattr(self, "pipeline", None)
@@ -823,6 +839,7 @@ class GatewayDaemon:
                 await sender.aclose()
         if adapter is not None:
             adapter.set_sink(None)
+            adapter.set_fatal_listener(None)
             try:
                 await asyncio.wait_for(adapter.disconnect(), self.options.disconnect_timeout)
             except Exception:
@@ -831,7 +848,9 @@ class GatewayDaemon:
         if fatal and settings is not None and (credential := self._credential(settings)):
             self.token_locks.release(name, credential)
         if reason != "stopping":
-            self.set_platform_state(name, "fatal" if fatal else "retrying", error_code=reason)
+            self.set_platform_state(
+                name, "fatal" if fatal else "retrying", error_code=reason, error=error
+            )
         await self._tell(self._down, name, fatal, reason)
 
     # -- housekeeping ------------------------------------------------------------------------------

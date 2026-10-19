@@ -165,6 +165,10 @@ def test_telegram_bot_sends_edits_and_translates_errors() -> None:
         assert me.is_bot and wire.platform.connected
         markup = InlineKeyboardMarkup(((InlineKeyboardButton("Allow", "apv:r:once"),),))
         sent = await bot.send_message(100, "*hi*", parse_mode="MarkdownV2", reply_markup=markup)
+        kept = await bot.send_message(100, "card", reply_markup=markup)
+        await bot.edit_message_text(
+            "card, still open", chat_id=100, message_id=kept.message_id, reply_markup=markup
+        )
         await bot.edit_message_text("done", chat_id=100, message_id=sent.message_id)
         await bot.send_chat_action(100, "typing", message_thread_id=7)
         wire.platform.fail(FailureKind.RATE_LIMIT, retry_after=97 * 60)
@@ -181,9 +185,12 @@ def test_telegram_bot_sends_edits_and_translates_errors() -> None:
         return wire
 
     wire = asyncio.run(main())
-    assert wire.platform.texts("100") == ["done"]
+    assert wire.platform.texts("100") == ["done", "card, still open"]
+    # like the Bot API: an edit without reply_markup drops the keyboard, one with it keeps it
     message = wire.platform.message("1")
-    assert message is not None and message.buttons[0].data == "apv:r:once"
+    assert message is not None and message.buttons == ()
+    card = wire.platform.message("2")
+    assert card is not None and card.buttons[0].data == "apv:r:once"
     assert wire.platform.ops_of("typing")[0].thread_id == "7"
 
 

@@ -138,17 +138,21 @@ def _chat_entry(
 def builtin_entries() -> tuple[PlatformEntry, ...]:
     """The platforms that ship with Indus Agent, in a fixed order."""
     return (
-        _chat_entry(
-            "telegram",
-            "Telegram",
-            sdk=("telegram",),
-            extra_name="telegram",
-            required_env=("TELEGRAM_BOT_TOKEN",),
-            max_len=4096,
-            hint=(
-                "You are talking through Telegram. Keep replies short enough to read on a phone; "
-                "Markdown is converted for you."
+        replace(
+            _chat_entry(
+                "telegram",
+                "Telegram",
+                # Our own Bot API client over httpx (a base dependency): no extra to install.
+                sdk=("httpx",),
+                extra_name="telegram",
+                required_env=("TELEGRAM_BOT_TOKEN",),
+                max_len=4096,
+                hint=(
+                    "You are talking through Telegram. Keep replies short enough to read on a "
+                    "phone; Markdown is converted for you."
+                ),
             ),
+            install_hint="pip install indus-agent (Telegram needs no extra)",
         ),
         _chat_entry(
             "discord",

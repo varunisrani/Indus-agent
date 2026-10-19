@@ -60,12 +60,23 @@ class Source(BaseModel):
     scope_id: str | None = None
     guild_id: str | None = None
     parent_chat_id: str | None = None
-    # The thread a reply will open (Discord auto-threads), so the first message and the
-    # follow-ups inside the new thread share one session key (P15-07).
+    # The thread a reply will open (Discord auto-threads, a Slack channel message's own ts), so
+    # the first message and the follow-ups inside the new thread share one session key (P15-07).
     prospective_thread_id: str | None = None
     # The adapter verified a role grant for this sender (Discord role allowlist); the
     # authorization chain (P15-08) accepts it as a grant of its own.
     role_authorized: bool = False
+
+
+def reply_thread(source: Source, *, opens_thread: bool) -> str | None:
+    """The thread a reply to ``source`` goes into: its real thread; else, on a platform where
+    replying into the prospective thread opens it (``Capabilities.reply_opens_thread``: Slack),
+    that prospective thread, so every piece, card and status of the reply lands where the
+    session's follow-ups will come from. Elsewhere (Discord) the adapter opens the thread itself
+    and the core never addresses a thread that does not exist yet."""
+    if source.thread_id:
+        return source.thread_id
+    return (source.prospective_thread_id or None) if opens_thread else None
 
 
 class Attachment(BaseModel):
@@ -225,6 +236,7 @@ __all__ = [
     "model_text",
     "normalise_dashes",
     "parse_command",
+    "reply_thread",
     "strip_attachment_refs",
     "with_reply_context",
 ]

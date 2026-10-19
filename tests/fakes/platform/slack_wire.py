@@ -7,11 +7,16 @@ raise a ``SlackApiError`` stand-in carrying ``response["error"]`` (``ratelimited
 ``invalid_blocks``, ...). Inbound events are Events API payloads (``message``, ``app_mention``
 sharing one ``ts``, ``bot_message`` subtype, ``block_actions`` for buttons) handed to the
 handlers the adapter registers on the fake app by ``dispatch_pending()``. Cap: 39,000.
+
+Message ids on the wire are ``ts`` strings; `SlackPlatform` (the default platform) also finds a
+message by its ``ts``, and ids that already look like a ``ts`` are kept as they are. Actions are
+matched like Bolt does: a string by equality, a compiled pattern by ``search``.
 """
 
 from __future__ import annotations
 
 import itertools
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -41,6 +46,8 @@ SURFACE: dict[str, tuple[str, ...]] = {
         "conversations_replies",
         "users_info",
         "assistant_threads_setStatus",
+        "conversations_open",
+        "conversations_info",
     ),
     "slack_sdk.errors:SlackApiError": (),
     "slack_bolt.app.async_app:AsyncApp": ("event", "action", "client"),
@@ -88,14 +95,41 @@ def _translate(exc: FakePlatformError) -> Exception:
     return SlackApiError("The request to the Slack API failed.", response)
 
 
+_TS_BASE = "1700000000."
+
+
+def _as_ts(value: str | None) -> str:
+    """A platform id as a Slack ``ts`` (ids that already are one are kept)."""
+    text = str(value or 0)
+    return text if "." in text else f"{_TS_BASE}{int(text):06d}"
+
+
 def _ts(message: FakeMessage | FakeInbound) -> str:
-    return f"1700000000.{int(message.message_id or 0):06d}"
+    return _as_ts(message.message_id)
 
 
 def _id_of(ts: str | None) -> str | None:
     if not ts:
         return None
+    if not ts.startswith(_TS_BASE):
+        return ts
     return str(int(ts.split(".", 1)[1]))
+
+
+def _buttons(blocks: list[dict[str, Any]] | None) -> tuple[Button, ...]:
+    return tuple(
+        Button(str(e.get("text", {}).get("text", "")), str(e.get("action_id", "")))
+        for b in blocks or ()
+        if b.get("type") == "actions"
+        for e in b.get("elements", ())
+    )
+
+
+class SlackPlatform(FakeChatPlatform):
+    """The fake platform with Slack's ids: a message is also found by its ``ts``."""
+
+    def message(self, message_id: str) -> FakeMessage | None:
+        return super().message(str(_id_of(str(message_id))))
 
 
 @dataclass
@@ -135,12 +169,7 @@ class FakeWebClient:
         blocks: list[dict[str, Any]] | None = None,
         **kw: Any,
     ) -> SlackResponse:
-        buttons = tuple(
-            Button(str(e.get("text", {}).get("text", "")), str(e.get("action_id", "")))
-            for b in blocks or ()
-            if b.get("type") == "actions"
-            for e in b.get("elements", ())
-        )
+        buttons = _buttons(blocks)
         sent = await self._do(
             "chat_postMessage",
             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks, **kw},
@@ -151,10 +180,12 @@ class FakeWebClient:
     async def chat_update(  # noqa: N802
         self, *, channel: str, ts: str, text: str = "", **kw: Any
     ) -> SlackResponse:
+        # Like Slack: blocks given replace the old ones (an empty list drops the buttons).
+        buttons = _buttons(kw["blocks"]) if "blocks" in kw else None
         await self._do(
             "chat_update",
             {"channel": channel, "ts": ts, "text": text, **kw},
-            self.wire.platform.edit(channel, str(_id_of(ts)), text),
+            self.wire.platform.edit(channel, str(_id_of(ts)), text, buttons=buttons),
         )
         return SlackResponse({"ok": True, "channel": channel, "ts": ts})
 
@@ -212,6 +243,27 @@ class FakeWebClient:
         self.calls.append(("users_info", {"user": user}))
         return SlackResponse({"ok": True, "user": {"id": user, "name": f"user-{user}"}})
 
+    async def conversations_open(self, *, users: str, **kw: Any) -> SlackResponse:
+        """A user's DM; on the fake platform the DM chat id is the user id."""
+        self.calls.append(("conversations_open", {"users": users}))
+        return SlackResponse({"ok": True, "channel": {"id": users}})
+
+    async def conversations_info(self, *, channel: str, **kw: Any) -> SlackResponse:
+        chat = await self._do(
+            "conversations_info", {"channel": channel}, self.wire.platform.chat(channel)
+        )
+        return SlackResponse(
+            {
+                "ok": True,
+                "channel": {
+                    "id": chat.chat_id,
+                    "name": chat.name,
+                    "is_im": chat.kind == "dm",
+                    "is_channel": chat.kind != "dm",
+                },
+            }
+        )
+
     async def assistant_threads_setStatus(  # noqa: N802
         self, *, channel_id: str, thread_ts: str, status: str
     ) -> SlackResponse:
@@ -232,7 +284,7 @@ class FakeApp:
     def __init__(self, wire: SlackWire) -> None:
         self.wire = wire
         self.events: dict[str, Handler] = {}
-        self.actions: dict[str, Handler] = {}
+        self.actions: dict[str | re.Pattern[str], Handler] = {}
 
     @property
     def client(self) -> FakeWebClient:
@@ -245,12 +297,22 @@ class FakeApp:
 
         return register
 
-    def action(self, action_id: str) -> Callable[[Handler], Handler]:
+    def action(self, action_id: str | re.Pattern[str]) -> Callable[[Handler], Handler]:
         def register(fn: Handler) -> Handler:
             self.actions[action_id] = fn
             return fn
 
         return register
+
+    def action_for(self, action_id: str) -> Handler | None:
+        """The handler Bolt would pick: an equal string, then a matching pattern, then ``*``."""
+        found = self.actions.get(action_id)
+        if found is not None:
+            return found
+        for key, handler in self.actions.items():
+            if isinstance(key, re.Pattern) and key.search(action_id):
+                return handler
+        return self.actions.get("*")
 
 
 class FakeSocketModeHandler:
@@ -281,7 +343,7 @@ class SlackWire:
     FAKES: dict[str, type] = {}
 
     def __init__(self, platform: FakeChatPlatform | None = None, *, team_id: str = "T1") -> None:
-        self.platform = platform or FakeChatPlatform("slack", max_len=MAX_LEN, bot_user_id="U0BOT")
+        self.platform = platform or SlackPlatform("slack", max_len=MAX_LEN, bot_user_id="U0BOT")
         self.team_id = team_id
         self.client = FakeWebClient(self)
         self.app = FakeApp(self)
@@ -302,7 +364,7 @@ class SlackWire:
                 "user": {"id": item.user_id},
                 "channel": {"id": item.chat_id},
                 "actions": [{"action_id": item.button_data, "value": item.button_data}],
-                "message": {"ts": f"1700000000.{int(item.message_id or 0):06d}"},
+                "message": {"ts": _as_ts(item.message_id)},
             }
             return [("action", body)]
         event: dict[str, Any] = {
@@ -318,7 +380,7 @@ class SlackWire:
         else:
             event["user"] = item.user_id
         if item.thread_id:
-            event["thread_ts"] = f"1700000000.{int(item.thread_id):06d}"
+            event["thread_ts"] = _as_ts(item.thread_id)
         if item.event == "edited":
             event = {
                 "type": "message",
@@ -344,7 +406,7 @@ class SlackWire:
             for kind, body in self.payloads(item):
                 if kind == "action":
                     action_id = body["actions"][0]["action_id"]
-                    handler = self.app.actions.get(action_id) or self.app.actions.get("*")
+                    handler = self.app.action_for(action_id)
                     if handler is not None:
                         await handler(body=body, ack=_ack)
                 else:
@@ -372,6 +434,7 @@ __all__ = [
     "FakeSocketModeHandler",
     "FakeWebClient",
     "SlackApiError",
+    "SlackPlatform",
     "SlackResponse",
     "SlackWire",
 ]

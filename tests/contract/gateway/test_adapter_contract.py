@@ -260,7 +260,8 @@ PROMPT = ApprovalPrompt(
     ),
 )
 
-_INDICATOR = re.compile(r"^\(\d+/\d+\)$")
+# A chunk indicator ``(i/n)``; MarkdownV2 platforms send it escaped, ``\\(i/n\\)``.
+_INDICATOR = re.compile(r"^\\?\(\d+/\d+\\?\)$")
 
 
 def _long_text(caps: Capabilities) -> str:

@@ -654,6 +654,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_busy.py::test_control_commands_run_inline_while_busy`
   - `tests/unit/gateway/core/test_busy.py::test_an_idle_queue_command_from_the_adapter_does_not_hold_up_reading`
   - `tests/unit/gateway/core/test_prompts.py::test_approve_while_busy_answers_inline`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
 - **R06.2** Claim the session slot before the first await
   - `tests/unit/gateway/core/test_admission.py::test_two_events_for_one_key_with_no_await_between_start_one_turn`
   - `tests/unit/gateway/core/test_admission.py::test_claims_are_synchronous_and_released_by_generation`
@@ -667,13 +668,14 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_send.py::test_no_inline_sleep_ever_exceeds_the_cap`
   - `tests/unit/gateway/core/test_send.py::test_rate_limit_exhausted_sends_nothing_more`
   - `tests/unit/gateway/adapters/test_base.py::test_send_with_retry_uses_the_adapters_cap`
-  - Review: Telegram 5 s cap through the real adapter (P15-33)
+  - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_97_minute_flood_wait_comes_back_typed_without_sleeping`
 - **R06.4** Retry ambiguity: timeouts are not retryable
   - `tests/unit/gateway/core/test_send.py::test_read_timeout_is_attempted_exactly_once`
   - `tests/unit/gateway/core/test_send.py::test_partial_split_resumes_only_the_remainder`
   - `tests/unit/gateway/core/test_send.py::test_partial_without_remainder_is_never_resent_whole`
   - `tests/contract/gateway/test_adapter_contract.py::test_misbehaving_adapters_fail_the_named_check`
-  - Review: chunk offsets for the remainder come with the chunker (P15-14)
+  - `tests/unit/gateway/outbound/test_sender.py::test_partial_failure_reports_only_the_undelivered_pieces`
+  - `tests/unit/gateway/delivery/test_ledger.py::test_partial_split_resumes_only_the_undelivered_pieces`
   - `tests/unit/gateway/adapters/test_http.py::test_httpx_failures_are_classified_by_class`
   - `tests/unit/gateway/adapters/test_http.py::test_a_read_timeout_is_attempted_once_and_a_connect_failure_retried`
 - **R06.5** Ledger states must distinguish "never started" from "maybe sent"
@@ -681,18 +683,22 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/delivery/test_ledger.py::test_boot_sweep_rules`
   - `tests/unit/gateway/delivery/test_turn_wiring.py::test_active_turn_marker_clears_only_after_the_final_is_in_the_ledger`
   - `tests/integration/gateway/test_gateway_e2e.py::test_dm_send_status_drain_and_crash_recovery`
+  - `tests/e2e/gateway/test_demo3.py::test_a_kill_mid_send_gives_one_labelled_recovered_reply_after_restart`
+  - `tests/integration/gateway/test_boot_recovery.py::test_a_stop_after_the_reply_went_out_neither_interrupts_nor_resumes_the_turn`
 - **R06.6** Bare "yes" must never approve
   - `tests/unit/gateway/core/test_prompts.py::test_plain_yes_never_approves_and_reaches_the_agent`
   - `tests/unit/gateway/core/test_prompts.py::test_a_typed_approval_that_skips_the_front_door_keeps_the_requester_rule`
 - **R06.7** Session keys are a compatibility surface
   - `tests/unit/gateway/core/test_session_keys.py::test_keys_match_the_golden_file`
   - `tests/unit/gateway/core/test_session_keys.py::test_discord_follow_up_in_thread_matches_the_spawning_message`
+  - `tests/unit/gateway/adapters/discord/test_adapter.py::test_thread_spawned_by_a_mention_shares_the_session_with_follow_ups`
   - `tests/unit/gateway/core/test_session_keys.py::test_namespace`
   - `tests/unit/state/test_gateway_routes.py::test_deleting_a_session_drops_its_routes`
 - **R06.8** Default-deny with surprising pairing defaults
   - `tests/unit/gateway/core/test_authz.py::test_any_allowlist_flips_pair_to_ignore`
   - `tests/unit/gateway/core/test_authz.py::test_unknown_dm_mode`
   - `tests/unit/gateway/core/test_authz.py::test_explain_names_the_mode`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
 - **R06.9** Pairing directory must resolve per call
   - `tests/unit/state/test_pairing.py::test_directory_resolves_per_call`
   - `tests/unit/state/test_pairing.py::test_spaced_lower_case_code_approves`
@@ -709,6 +715,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/outbound/test_chunker.py::test_fence_is_closed_and_reopened_with_its_language`
   - `tests/unit/gateway/outbound/test_formatting.py::test_escaping_can_push_a_reply_into_two_pieces`
   - `tests/unit/gateway/outbound/test_formatting.py::test_chunks_of_markdownv2_output_parse`
+  - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
 - **R06.12** Streaming frames must be prefix-stable on native-stream platforms
   - `tests/unit/gateway/outbound/test_stream.py::test_every_non_final_send_is_marked_interim`
   - `tests/unit/gateway/outbound/test_stream.py::test_final_edits_the_stream_message_instead_of_sending_again`

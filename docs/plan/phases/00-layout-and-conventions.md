@@ -320,6 +320,11 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | python-docx | 1.2.0 | 2025-06-16 | MIT | extra `docs` | P05-17 |
 | openpyxl | 3.1.5 | 2024-06-28 | MIT | extra `docs` | P05-17 |
 | ptyprocess | 0.7.0 | 2020-12-28 | ISC | extra `pty` | P05-13 |
+| discord.py | 2.7.1 | 2026-03-03 | MIT | extra `discord` | P15-34 |
+| audioop-lts | 0.2.2 | 2025-08-05 | PSF-2.0 | extra `discord` (via discord.py, Python 3.13+) | P15-34 |
+| slack-bolt | 1.30.0 | 2026-07-15 | MIT | extra `slack` | P15-35 |
+| slack-sdk | 3.44.1 | 2026-09-03 | MIT | extra `slack` | P15-35 |
+| aiohttp | 3.14.3 | (already locked via modal / daytona) | Apache-2.0 AND MIT | extra `slack` (named: Bolt's async app and Socket Mode handler) | P15-35 |
 | agent-client-protocol | 0.12.1 | 2026-08-16 | **no licence metadata on PyPI** — the P19 builder checks the source repo's LICENSE; if not on the allow-list, add a written exception or stop | runtime / extra `acp` | P19 |
 | Node | 24.21.0 LTS | 2026-09-07 | MIT | `.nvmrc` | P00-08 |
 | pnpm | 12.9.1 | 2026-10-03 | MIT | `packageManager` | P00-08 |

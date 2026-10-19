@@ -125,3 +125,10 @@ def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[SocketGuard]:
     monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
     monkeypatch.setattr(socket, "create_connection", create_connection)
     yield guard
+
+
+# -- platform cases ------------------------------------------------------------------------------
+# Each module registers its case on import (``register_case`` is defined above).
+from tests.contract.gateway import discord_case as _discord_case  # noqa: E402, F401
+from tests.contract.gateway import slack_case as _slack_case  # noqa: E402, F401
+from tests.contract.gateway import telegram_case as _telegram_case  # noqa: E402, F401

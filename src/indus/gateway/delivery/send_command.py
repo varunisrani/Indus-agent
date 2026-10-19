@@ -6,7 +6,8 @@ grammar (P14: ``telegram`` for the home channel, ``telegram:<chat>[:<thread>]``,
 send from the platform registry and the profile's gateway settings; no running gateway and no
 model are involved. A platform a plugin offers (P13 provider slot ``platform``) is found by loading
 the profile's plugins for the send, only when TARGET names no built-in platform; adapters get the
-same ``AdapterConfig`` the daemon gives them. The body is TEXT, else whatever is piped on stdin.
+same ``AdapterConfig`` the daemon gives them, marked ``send_only`` (no listener, no update
+consumption, so a running gateway loses nothing). The body is TEXT, else whatever is piped on stdin.
 
 Files are attached only with ``--file``, and only when the gateway's media path policy (P15-18)
 allows the file: credential and system locations are refused, symlinks are resolved first, and
@@ -65,7 +66,7 @@ def build_adapter(
         trust_env=bool(gateway_section(scope).trust_env),
         platform_proxy=str(settings.extra.get("proxy") or "") or None,
     )
-    config = AdapterConfig(name, settings, scope, scope.clock, proxy)
+    config = AdapterConfig(name, settings, scope, scope.clock, proxy, send_only=True)
     built = (registry or PlatformRegistry()).create_adapter(name, config)
     return built if isinstance(built, _Adapter) else None
 

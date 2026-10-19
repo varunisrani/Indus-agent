@@ -126,6 +126,8 @@ PyPI for packages of other platforms).
 | six | 1.17.0 | MIT | via python-dateutil | P14-01 |
 | fastapi | 0.142.2 | MIT | the gateway's HTTP apps: the OpenAI-compatible API server and the webhook receiver (on starlette) | P15-30 |
 | annotated-doc | 0.0.5 | MIT | via fastapi; extra `research`, via typer | P15-30, P22-11 |
+| discord.py | 2.7.1 | MIT | extra `discord`: the Discord gateway adapter (client, components, command routes) | P15-34 |
+| audioop-lts | 0.2.2 | PSF-2.0 | extra `discord`, via discord.py (Python 3.13+; voice is not used) | P15-34 |
 | modal | 1.6.1 | Apache-2.0 | extra `modal`: the Modal sandbox SDK (terminal backend `modal`) | P21-05 |
 | synchronicity | 0.12.6 | Apache-2.0 | extra `modal`, via modal (sync wrappers of its async API) | P21-05 |
 | grpclib | 0.4.9 | BSD-3-Clause | extra `modal`, via modal (gRPC client) | P21-05 |
@@ -137,13 +139,13 @@ PyPI for packages of other platforms).
 | toml | 0.10.2 | MIT | extras `modal`, `daytona`, via modal / daytona | P21-05 |
 | types-certifi | 2021.10.8.3 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
 | types-toml | 0.10.8.20260518 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
-| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, via modal / daytona (HTTP client) | P21-05 |
-| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
-| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
-| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
-| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp / yarl | P21-05 |
-| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp / yarl | P21-05 |
-| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, via aiohttp | P21-05 |
+| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, `discord`, via modal / daytona / discord.py (HTTP client); extra `slack` names it directly (Bolt's async app and Socket Mode handler, P15-35) | P21-05, P15-34, P15-35 |
+| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
+| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
+| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
+| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp / yarl | P21-05 |
+| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp / yarl | P21-05 |
+| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
 | daytona | 0.220.0 | Apache-2.0 | extra `daytona`: the Daytona sandbox SDK (terminal backend `daytona`) | P21-07 |
 | daytona-api-client | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona (generated API client) | P21-07 |
 | daytona-api-client-async | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
@@ -196,3 +198,5 @@ PyPI for packages of other platforms).
 | xxhash | 4.0.1 | BSD-2-Clause | extra `research`, via datasets | P22-15 |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | extras `voice`, `daytona`, `research`, via huggingface-hub / onnxruntime / opentelemetry-instrumentation / transformers / datasets (row added at the P22 R2 landing) | P22-11 |
 | colorama | 0.4.6 | BSD-3-Clause (PyPI metadata) | Windows only: extras `voice`, `research`, via tqdm / typer (row added at the P22 R2 landing) | P22-11 |
+| slack-bolt | 1.30.0 | MIT | extra `slack`: the Slack adapter's Bolt app and Socket Mode handler | P15-35 |
+| slack-sdk | 3.44.1 | MIT | extra `slack`: the Slack Web API client, via slack-bolt and directly | P15-35 |

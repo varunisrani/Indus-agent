@@ -157,6 +157,9 @@ class AdapterConfig:
     scope: Scope
     clock: Clock
     proxy: str | None = None
+    # One-shot sends (``indus send``): connect for sending only — no listener, no update
+    # consumption, so a running gateway keeps every inbound event.
+    send_only: bool = False
 
     @property
     def extra(self) -> Mapping[str, Any]:

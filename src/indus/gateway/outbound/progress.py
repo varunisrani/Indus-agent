@@ -385,9 +385,19 @@ class ToolProgress:
 class TypingLoop:
     """Keeps the typing indicator alive while a turn runs; paused while an approval waits."""
 
-    def __init__(self, port: Adapter, chat_id: str, *, clock: Clock, interval: float = 2.0) -> None:
+    def __init__(
+        self,
+        port: Adapter,
+        chat_id: str,
+        *,
+        clock: Clock,
+        interval: float = 2.0,
+        meta: Mapping[str, Any] | None = None,
+    ) -> None:
         self._port = port
         self._chat_id = chat_id
+        # the turn's thread (``ports.typing_meta``): Slack shows its status per thread
+        self._meta = dict(meta or {})
         self._clock = clock
         self._interval = interval
         self._changed = asyncio.Event()
@@ -414,7 +424,7 @@ class TypingLoop:
                     await ports.typing(self._port, self._chat_id, on=False)
                     await self._changed.wait()
                     continue
-                await ports.typing(self._port, self._chat_id, on=True)
+                await ports.typing(self._port, self._chat_id, on=True, meta=self._meta)
                 await _sleep_or_event(self._clock, self._interval, self._changed)
         finally:
             with contextlib.suppress(Exception):
