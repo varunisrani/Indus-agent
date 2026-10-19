@@ -1,0 +1,4522 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 730f2ff..6ae559f 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -533,7 +533,10 @@ Checked by `python -m tooling.checks acceptance`.
+ - **ACC-F15-1** Every skill is a slash command (`/skill-name`, up to five stacked); `-s` preloads; auto-load list
+   - Review: not yet planned (phase TBD)
+ - **ACC-F16-1** `skill_manage` tool (create, patch, delete, write/remove support files, batch) with limits, locks …
+-  - Review: not yet planned (phase TBD)
++  - `tests/unit/learning/skills/test_manage_tool.py::test_batch_with_bad_op_leaves_tree_identical`
++  - `tests/unit/learning/skills/test_manage_tool.py::test_pinned_delete_refused_patch_allowed`
++  - `tests/unit/learning/skills/test_manage_tool.py::test_review_patch_needs_fresh_view`
++  - `tests/unit/learning/skills/test_manage_tool.py::test_concurrent_patches_lose_nothing`
+ - **ACC-F21-1** Curator phase 1: idle-triggered aging of agent-made skills to stale then archive, pin, restore …
+   - Review: not yet planned (phase TBD)
+ - **ACC-F24-1** Per-skill usage counters (used, viewed, patched)
+diff --git a/docs/notes/P09/learning-cli.md b/docs/notes/P09/learning-cli.md
+new file mode 100644
+index 0000000..3e3905e
+--- /dev/null
++++ b/docs/notes/P09/learning-cli.md
+@@ -0,0 +1,94 @@
++# Task: Learning CLI and slash surface (P09-24) Phase: 09 Owner: P09 wave 2 slice D builder
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `hermes_cli/skills_config.py` (skim),
++`hermes_cli/memory_setup.py` (status only; provider setup is P13). Closed before writing.
++Evidence: none.
++
++What it does (own words):
++
++`indus skills`:
++- `list [--source local|create_dir|external|bundled|hub] [--json]`: every scanned skill with its
++  category, where it comes from (bundled and hub from their manifests, otherwise its tier), its
++  usage state and description; `--json` prints the rows as a JSON array;
++- `view <name>`: the `SKILL.md` text and its support files;
++- `check`: validates every skill in every root against P09-05 and runs the linter; prints one line
++  per problem and per finding; exit 1 when any skill is invalid or a name is ambiguous (lint alone
++  never fails);
++- `list-modified`: bundled skills the user edited (P09-21 `list_modified`);
++- `diff <name>`: unified diff of the live copy against the shipped one;
++- `sync`: P09-21 `sync_bundled`, summary line; exit 1 when something failed;
++- `opt-out [--remove] [-y]`: writes the marker; `--remove` also deletes untouched bundled copies
++  (asks first; without a terminal needs `-y`, else exit 2);
++- `opt-in [--no-sync]`: removes the marker and syncs;
++- `reset <name> [--restore] [-y]`: forget the origin row; `--restore` replaces the copy with the
++  shipped one (asks first);
++- `pending`, `approve <id|all>`, `reject <id|all>`: staged skill writes (P09-11 with the gate on).
++
++`indus memory`:
++- `show [memory|user]`: the entries of each enabled store with usage;
++- `status`: each store on/off, usage, limit, file, the approval gate and the pending count;
++- `edit <memory|user>`: opens the store file's text in `$EDITOR` (a copy), then saves it under the
++  store lock only when the file did not change meanwhile; needs a terminal (exit 2 otherwise);
++- `pending`, `approve <id|all>`, `reject <id|all>`: P09-03 records, approvals in creation order with
++  every replaced entry printed in full;
++- `approval on|off`: writes `memory.write_approval`.
++
++Slash (classic CLI handlers; the registry entries are shared by every surface):
++- `/memory [pending|approve <id|all>|reject <id|all>|approval [on|off]]` (bare = pending);
++- `/skills [list|view <name>|reload|pending|approve <id|all>|reject <id|all>]` (bare = list);
++- `/reload-skills` = `/skills reload`: rescans the skill folders, rebuilds the REPL's skill and
++  bundle slash table, clears the list cache; the system prompt is not touched (the index delta
++  note of P09-07 tells the model at the next turn);
++- `/bundles`: lists the skill bundles.
++
++Non-TTY: nothing prompts; a verb that needs a confirmation exits 2 with guidance unless `-y`.
++
++Files: `src/indus/cli/commands/skills.py`, `src/indus/cli/commands/memory.py`,
++`src/indus/cli/slash/learning_cmds.py`, `tests/unit/cli/commands/test_skills.py`,
++`tests/unit/cli/commands/test_memory.py`, `tests/unit/cli/slash/test_learning_cmds.py`.
++
++Edge cases / failure modes:
++- unknown skill for `view`/`diff`/`reset` → exit 1 with a hint; ambiguous name → the choices;
++- `diff` of a skill we do not ship → exit 1; no difference → "no changes";
++- `approve` of an unknown id → "not found" line, exit 1 when nothing applied;
++- `memory edit` with no `$EDITOR`/`$VISUAL` → falls back to `vi`; editor exit non-zero → nothing
++  saved; file changed during the edit → nothing saved, exit 1.
++
++Our design differences / decisions:
++- exit 2 (not 1) for a needed confirmation without a terminal, as the P09-24 row says (P07 commands
++  use 1; noted for the lead);
++- `/memory` with no word shows pending (the registry text says "Review memory writes waiting for
++  approval");
++- skill `pending/approve/reject` added (see skill-manage note).
++
++Tests we will write: CliRunner per verb (fixture homes, fake clock); `check` exits 1 on an invalid
++fixture skill; `approve all` applies staged memory writes in creation order; `/reload-skills`
++registers a new slash command while prompt bytes stay identical; non-TTY confirmations exit 2.
++
++## Wiring for the lead
++- `cli/app.py` REGISTRY gains `skills` and `memory` rows (done here, shared).
++- `cli/slash/dispatch.py` HANDLERS merges `learning_cmds.HANDLERS` (done here, shared).
++- The REPL should fill `ctx.extensions.skill_commands` with
++  `learning_cmds.build_skill_commands(scope, session_id)` at start; `/reload-skills` calls the same.
++- Registry entries `reload-skills` and `bundles` added, `skills`/`memory` gain subcommands
++  (`service/commands/registry.py` and `locales/en.yaml`, shared).
++
++## Decisions for the lead
++- `indus memory edit` copies the file to a temp file for the editor instead of holding the store
++  lock during an interactive edit (the lock would make agent writes time out).
++
++Compare checklist (filled after the rewrite; reopened both reference files):
++- [x] status shows each store on/off and the memory tool state (test: `test_memory.py::test_status`)
++- [x] disabled lists read per platform (ours: resolver; `test_skills.py::test_list_json_and_source`)
++- Deliberate differences: no curses checklist to toggle skills (config `skills.disabled` via
++  `indus config`); no provider setup (P13).
++- Not taken: provider plugins listing (P13).
++
++## Status
++
++Done (2026-10-19). Shared: `src/indus/cli/app.py`, `src/indus/cli/slash/dispatch.py`,
++`src/indus/service/commands/registry.py`, `locales/en.yaml`, and the golden lists in
++`tests/unit/service/commands/test_registry.py` (help groups, `/re` completion, a `landed_names`
++set for the P09 commands that have CLI handlers so far) and `tests/unit/cli/slash/test_dispatch.py`
++(`/re` ambiguity line now includes `/reload-skills`). When slices E/F land their handlers, replace
++`landed_names` with `"P09"` in the `landed` set.
+diff --git a/docs/notes/P09/skill-ledger.md b/docs/notes/P09/skill-ledger.md
+new file mode 100644
+index 0000000..449b34a
+--- /dev/null
++++ b/docs/notes/P09/skill-ledger.md
+@@ -0,0 +1,84 @@
++# Task: Skill mutation ledger (P09-13) Phase: 09 Owner: P09 wave 2 slice D builder
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tools/skill_ledger.py` (entry shape,
++blob store, rollback, size cap). Closed before writing.
++Evidence: none.
++
++What it does (own words): every change to a skill, by anyone, appends one JSON line to
++`<home>/skills/.ledger.jsonl`. A line names who changed it (`actor`: `curator`, `agent` or `user`),
++what kind of change it was, the skill, some evidence (`absorbed_into`, `archived`, `session_id`,
++`file_path`, `rollback_of`), and two file lists: the package's files before and after, each as
++`{path, sha256}`. The bytes behind every hash are kept once in `<home>/skills/.ledger-blobs/<sha>`.
++The ledger is a record, not a gate: when it cannot be written the change still happens and a
++warning is logged.
++
++One entry can be rolled back: the files the change touched get their old bytes back and files the
++change created are removed. Before touching anything the rollback checks every blob it needs and
++appends its own entry holding the current bytes of every path it will touch (the safety capture);
++if that capture or append fails, the rollback refuses and changes nothing. The rollback entry is
++itself rollback-able (undo of an undo).
++
++Size: `skills.ledger_max_bytes` (default 5 MiB; `0` = never maintain). After an append that leaves
++the file larger than the cap, the ledger is rewritten without unchanged-file pairs (a path with the
++same hash before and after), then, if still too big, without its oldest lines until it is at most
++three quarters of the cap; the newest entry always stays. Then blobs no line references are deleted
++when older than one hour (a blob that new may belong to a capture whose line is not written yet).
++
++Inputs → outputs: `SkillLedger(home, clock, max_bytes)` →
++`capture(skill_dir) -> [FileRef]` (raises on IO), `record(action, skill, before=, after_dir=, actor=,
++evidence=) -> id | None` (never raises), `entries(skill=, limit=)` newest first, `get(id)`,
++`rollback(id) -> RollbackResult`, `maintain()`, `compact()`, `sweep_blobs()`. Actor binding:
++`bind_actor("user" | "curator" | "agent")` context manager; default `agent`.
++
++Files: `src/indus/learning/skills/ledger.py`, `tests/unit/learning/skills/test_ledger.py`.
++
++Edge cases / failure modes:
++- missing ledger → no entries; malformed lines skipped when listing, kept verbatim on compaction,
++  and they stop the blob sweep (an unreadable line may reference blobs);
++- rollback of an entry whose paths leave every skills root (hand-edited ledger) → refused;
++- a missing blob → refused before any change;
++- caches (`__pycache__`, `.venv`, `node_modules`, `.git`, tool caches) are never captured;
++- the ledger lock is `<home>/skills/.locks/ledger.lock` (cross-process, re-entrant per thread).
++
++Our design differences / decisions:
++- names: `.ledger.jsonl` and `.ledger-blobs/` under `<home>/skills/` (the phase row names them);
++- entries keep whole-package manifests at append time and compaction drops unchanged pairs (the
++  phase row's order); rollback always works on the changed paths only;
++- the safety capture and the rollback record are one entry (action `rollback`, evidence
++  `rollback_of`), written before the restore; the reference writes two;
++- actor default is `agent` for every model write (review fork included); the curator binds
++  `curator` explicitly and the CLI binds `user`;
++- paths are stored absolute; rollback accepts only paths inside the profile's skill roots
++  (local, `create_dir`, `external_dirs`) or the archive under the local root;
++- no curator-backup tarball fill-in for hollow delete entries (P09-19 owns backups; a delete
++  entry here captures the whole package itself).
++
++Tests we will write:
++- patch then rollback restores bytes; rollback of a create removes the file (and the empty dir);
++- safety capture failure (injected IO error) → refused, tree unchanged, no entry added;
++- size cap compaction keeps the newest entry; unchanged pairs dropped first;
++- blob sweep keeps a young blob and removes an old unreferenced one (injected clock);
++- a path outside the skill roots → rollback refused; missing blob → refused.
++
++## Decisions for the lead
++- Interface for slice F (curator `ledger`/`purge`/`archive`/`restore`): `SkillLedger.for_scope(scope)`,
++  `bind_actor("curator")`, `capture(dir)` before the move, `record("archive", name, before=...,
++  after_dir=new_dir)`; `entries(skill=)`, `rollback(id)`.
++
++Compare checklist (filled after the rewrite; reopened `tools/skill_ledger.py`):
++- [x] entry fields, blobs once per hash (test: `test_ledger.py::test_entry_shape_and_blobs`)
++- [x] rollback restores touched files, removes created ones (`::test_patch_then_rollback_restores_bytes`,
++  `::test_rollback_of_create_removes_the_file`)
++- [x] safety capture first, fail closed (`::test_safety_capture_failure_refuses`)
++- [x] 5 MiB default cap, unchanged pairs first, then oldest, newest kept (`::test_size_cap_keeps_newest`,
++  `::test_compaction_drops_unchanged_pairs_first`)
++- [x] 1 h blob grace (`::test_blob_sweep_respects_one_hour`)
++- [x] paths outside the roots refused (`::test_rollback_refuses_outside_paths`)
++- Deliberate differences: one rollback entry instead of pre-rollback + rollback; actor default
++  `agent`; no `skills.ledger` on/off switch (the row has none; `ledger_max_bytes: 0` only stops
++  maintenance); trim low-water 3/4 of the cap (reference uses its own fraction).
++- Not taken: curator-backup package fill for old hollow entries (P09-19 owns backups).
++
++## Status
++
++Done (2026-10-19). Shared: none.
+diff --git a/docs/notes/P09/skill-manage.md b/docs/notes/P09/skill-manage.md
+new file mode 100644
+index 0000000..a525273
+--- /dev/null
++++ b/docs/notes/P09/skill-manage.md
+@@ -0,0 +1,128 @@
++# Task: `skill_manage` tool (P09-11) Phase: 09 Owner: P09 wave 2 slice D builder
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tools/skill_manager_tool.py`
++(limits, actions, side effects), `tools/skill_manager_guards.py` (each guard),
++`tools/skill_manager_batch.py` (atomicity). Closed before writing.
++Evidence: none.
++
++What it does (own words): the model's one tool for writing skills. A call is either one action at
++the top level (`action`, `name`, …) or `operations: [...]`, a list of such actions applied all or
++nothing.
++
++Actions:
++- `create {name, content, category?}`: a new skill folder holding `SKILL.md`, in `skills.create_dir`
++  when set, else `<home>/skills/` (the schema description names the folder in use);
++- `patch {name, old_string, new_string, file_path?, replace_all?}`: replace text in `SKILL.md` or a
++  support file; the old text must occur exactly once unless `replace_all`; an empty `new_string`
++  deletes it. `patch {name, content}` rewrites `SKILL.md` whole (`edit` is an alias). Both shapes in
++  one op → error;
++- `delete {name, absorbed_into?}`: remove the skill (`absorbed_into` must name another existing
++  skill);
++- `write_file {name, file_path, file_content}` / `remove_file {name, file_path}`: support files under
++  `references/ templates/ scripts/ assets/`.
++
++How a call runs: every op's shape is checked first (pure; an op carrying another action's text key
++fails naming the key and where it belongs, and nothing applies). Then the write-approval gate
++(P09-03): when `skills.write_approval` is on, the whole call is staged as one pending write and the
++result says so. Otherwise the per-skill locks of every named skill are taken in a fixed order
++(`<home>/skills/.locks/<sha256(basename)[:16]>.lock`, outside the skill folder), the ops are played
++against an in-memory overlay of the touched files (reading disk under the locks), every guard and
++format rule runs on the result, and only then the changes are written. A write failure part-way
++restores what was already written from the bytes read before. Deletes are done last by renaming
++the folder aside (or into the archive), so a failed write can still be undone.
++
++Guards:
++- pinned skill: delete refused with an `indus curator unpin` hint; patches allowed;
++- review fork (origin `background_review`): a write to existing content needs a fresh
++  `skill_view` of that exact file in the same session (P09-08 read evidence, hash-matched);
++  otherwise refused with "view it, then retry"; deletes allowed only for curator-managed
++  (`origin=agent`, not bundled/hub), unpinned skills outside `external_dirs`, and routed to the
++  archive `<home>/skills/.archive/<name>/`;
++- paths: support paths must stay under the allowed folders; the real path of the target must stay
++  inside the real skill folder, and the skill folder inside a real skills root (symlink redirects
++  refused); a symlinked skill folder is never deleted;
++- format limits from P09-05 (`check_skill_text`, `check_support_path`, `check_support_size`);
++- optional scan of the written skill when `skills.scan_agent_created` is on: uses the scanner P13
++  registers in `SKILL_SCANNER`; while none is registered the scan is skipped with a debug log.
++
++After a successful write, each best-effort and never failing the call: a ledger entry (P09-13),
++the `skills_list` cache cleared, usage telemetry (create records origin; patch-type actions bump
++`patch_count`; delete forgets, archive sets state), lifecycle listeners (`LIFECYCLE` — a no-op list
++until P13's hook bus), success listeners (`SUCCESS_LISTENERS`, where P09-14 resets the skill review
++counter for foreground calls), and advisory lint findings in the result. Editing a bundled skill
++makes its hash differ from the manifest, so P09-21 stops refreshing it; the result says so.
++
++Inputs → outputs: tool args (+ `scope`, `session_id`) → JSON text
++`{success, message, results?, lint?, staged?, pending_id?}` or `{error, ...}`.
++`apply_pending_skill(scope, record) -> pending.Applied` replays a staged call (with a unified diff).
++
++Files: `src/indus/learning/skills/manage_tool.py`, `tests/unit/learning/skills/test_manage_tool.py`.
++
++Edge cases / failure modes:
++- unknown action, missing name, more than 20 ops → error before anything;
++- create where a folder already exists (non-empty, or a symlink) → error;
++- create of a name another skill already uses (any tier) → error;
++- patch with `old_string` not found or found several times (without `replace_all`) → error with a
++  short preview of the file;
++- a patch that breaks `SKILL.md` frontmatter → error;
++- delete in a batch with other ops on the same skill → error (delete is last for its skill).
++
++Our design differences / decisions:
++- atomicity by an in-memory overlay validated before any write (the reference snapshots folders
++  and rolls back after a failed op);
++- delete may sit in a batch (applied last, by rename-aside); the reference allows it only alone;
++- exact substring matching for `patch` (no fuzzy matcher exists here; the P05 patch tool's matcher
++  is not shared) — quote folding is not applied to skills;
++- origin comes from `indus.learning.pending.current_origin()` (the one write-origin variable);
++- the archive move is a small local function with a hook (`ARCHIVER`) the curator can replace.
++
++Tests we will write: each action's happy path; batch with one bad op leaves the tree byte-identical;
++both patch shapes → error; wrong text slot names the key; pinned delete refused; review-fork patch
++without a view refused, accepted after a view; review-fork delete of a learn-origin skill refused,
++of an agent-origin skill archived; `../` refused; symlinked support folder refused; two threads
++patching concurrently lose no edit; lint findings present with success; gate on → staged, approve
++replays with a diff; ledger entry written; bundled edit shows in `list_modified`.
++
++## Wiring for the lead
++- Register: `indus.learning.skills.manage_tool.register_tools(registry)` next to
++  `view_tools.register_tools` (toolset `skills`); add `skill_manage` with `skills_list`/`skill_view`
++  to the `skills` toolset in `tools/toolsets.py` when the integrator wires skills.
++- P09-14 counter reset: append a callable to `manage_tool.SUCCESS_LISTENERS`; it gets
++  `(SkillWriteEvent)` with `origin`, `session_id`, `actions`, `skills`.
++- Curator archive: set `manage_tool.ARCHIVER` to slice F's archive function if it has one
++  (signature `(scope, record) -> Path`).
++
++## Decisions for the lead
++- No skill `pending` verbs were named anywhere, but `pending.staged_message("skills")` points users at
++  `indus skills pending` / `/skills pending`; P09-24 adds `pending`, `approve`, `reject` to both.
++
++Compare checklist (filled after the rewrite; reopened the three reference files):
++- [x] limits 64 / 1,024 / 100,000 / 1 MiB and the four writable folders (via P09-05 checks;
++  `test_manage_tool.py::test_limits_refused`)
++- [x] both patch shapes → error; wrong slot names the key (`::test_patch_both_shapes_refused`,
++  `::test_wrong_text_slot_names_the_key`)
++- [x] batch atomic (`::test_batch_with_bad_op_leaves_tree_identical`,
++  `::test_batch_runtime_failure_leaves_tree_identical`)
++- [x] pinned delete refused, patch allowed (`::test_pinned_delete_refused_patch_allowed`)
++- [x] read-before-write in review (`::test_review_patch_needs_fresh_view`)
++- [x] review delete only for curator-managed, archived (`::test_review_delete_*`)
++- [x] lock outside the skill folder, concurrent patches (`::test_concurrent_patches_lose_nothing`)
++- [x] symlink / traversal refused (`::test_path_escapes_refused`)
++- [x] side effects never fail the call (`::test_side_effect_failures_do_not_fail_the_call`)
++- Same: 20 operations per call at most (the reference's cap; the row names none).
++- Deliberate differences: overlay instead of snapshot/rollback, so no "one destructive op per file"
++  clobber rule is needed (ops apply in order on the overlay; a later write_file simply wins);
++  delete allowed inside a batch (last op for its skill); exact matching; `write_file` never
++  targets `SKILL.md` (use patch); new skills are not held to a 60-char description (P09-05's 1,024
++  limit applies; P09-17 asks /learn for 60); no "other profiles" not-found hint; no prompt-preview
++  of clipped descriptions (P09-07 clips with a visible mark); lock name uses the first 16 hex chars
++  of the digest (phase row).
++- Follow-up for P09-19 (slice F): the reference refuses a curator-fork delete without
++  `absorbed_into`; here review-fork deletes only need curator ownership. The consolidation fork
++  should add that rule (or bind a context the guard can read).
++- Not taken: org-sharing notes, frontmatter-name fallback lookup (the P09-06 resolver is the one
++  lookup).
++
++## Status
++
++Done (2026-10-19). Shared: `docs/internals/acceptance-map.md` (ACC-F16-1 pinned to tests).
+diff --git a/locales/en.yaml b/locales/en.yaml
+index f34d71b..22a25eb 100644
+--- a/locales/en.yaml
++++ b/locales/en.yaml
+@@ -143,6 +143,8 @@ slash:
+   voice: "Turn voice input and spoken replies on or off"
+   tools: "List tools, or enable/disable toolsets (starts a fresh session)"
+   skills: "Find, install and manage skills"
++  reload-skills: "Rescan skill folders and refresh skill commands (the prompt stays as it is)"
++  bundles: "List skill bundles (each runs as its own /command)"
+   memory: "Review memory writes waiting for approval"
+   learn: "Turn something you describe into a reusable skill"
+   curator: "Background upkeep of skills"
+diff --git a/src/indus/cli/app.py b/src/indus/cli/app.py
+index 01dbc34..96d7a22 100644
+--- a/src/indus/cli/app.py
++++ b/src/indus/cli/app.py
+@@ -98,6 +98,12 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
+     ),
+     ("logs", "indus.cli.commands.logs:logs_command", "Show and follow the log files."),
+     ("bundles", "indus.cli.commands.bundles:bundles_group", "Group skills into one slash command."),
++    ("skills", "indus.cli.commands.skills:skills_group", "List, check and sync skills."),
++    (
++        "memory",
++        "indus.cli.commands.memory:memory_group",
++        "See, edit and approve what the agent remembers.",
++    ),
+ )
+ """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
+ append in the order of research 04 §3.2.4."""
+diff --git a/src/indus/cli/commands/memory.py b/src/indus/cli/commands/memory.py
+new file mode 100644
+index 0000000..148138a
+--- /dev/null
++++ b/src/indus/cli/commands/memory.py
+@@ -0,0 +1,255 @@
++"""``indus memory``: see, edit and approve what the agent remembers (P09-24).
++
++- ``show [memory|user]``: the entries of each store that is on, with its usage;
++- ``status``: each store on or off, its usage and file, the approval gate, waiting writes;
++- ``edit memory|user``: opens a copy of the store file in ``$VISUAL`` / ``$EDITOR`` (``vi``
++  otherwise) and saves it under the store lock, but only when the file did not change while it was
++  open (the agent may have written meanwhile). Needs a terminal (exit 2 without one);
++- ``pending`` / ``approve <id…|all>`` / ``reject <id…|all>``: staged writes (P09-03), approved in
++  creation order, each replaced or removed entry printed in full;
++- ``approval on|off``: the ``memory.write_approval`` gate.
++
++Provider plugins (P13) extend this group later.
++"""
++
++from __future__ import annotations
++
++import shlex
++import subprocess
++from collections.abc import Callable, Sequence
++from pathlib import Path
++
++import click
++
++from indus.cli.cmdkit import cli_state, err, group
++from indus.cli.commands._support import scope_with_config
++from indus.foundation.config import writer
++from indus.foundation.errors import IndusError
++from indus.foundation.fsio import atomic_write_text
++from indus.foundation.home import secure_dir
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.memory.store import (
++    DELIMITER,
++    STORE_LABELS,
++    TARGETS,
++    LockBusy,
++    MemoryStore,
++    Target,
++    coerce_target,
++    joined_size,
++    parse_entries,
++    store_lock,
++)
++from indus.learning.memory.tool import apply_pending
++
++__all__ = [
++    "approve_memory",
++    "launch_editor",
++    "memory_group",
++    "reject_ids",
++    "set_approval",
++    "status_lines",
++]
++
++_TARGET = click.Choice(list(TARGETS))
++
++
++def _run_editor(command: Sequence[str], path: Path) -> int:
++    return subprocess.call([*command, str(path)])
++
++
++launch_editor: Callable[[Sequence[str], Path], int] = _run_editor
++"""Runs the editor on a file and returns its exit code (tests swap in their own)."""
++
++
++def _store(scope: Scope) -> MemoryStore:
++    return MemoryStore.for_scope(scope_with_config(scope))
++
++
++def _pending(scope: Scope) -> pending.PendingStore:
++    return pending.PendingStore(scope.home, scope.clock)
++
++
++def status_lines(scope: Scope) -> list[str]:
++    """The ``status`` text (also used by ``/memory status``)."""
++    configured = scope_with_config(scope)
++    store = MemoryStore.for_scope(configured)
++    lines = ["Memory stores:"]
++    for target in TARGETS:
++        state = "on" if store.enabled(target) else "off"
++        usage = store.usage(target).text
++        lines.append(f"  {target:<7} {STORE_LABELS[target]:<14} {state:<4} {usage}")
++        lines.append(f"          {store.path(target)}")
++    gate = "on" if pending.gate_on(configured, "memory") else "off"
++    waiting = _pending(scope).count("memory")
++    lines.append(f"Write approval: {gate} (indus memory approval on|off)")
++    lines.append(f"Waiting for approval: {waiting}")
++    return lines
++
++
++def approve_memory(scope: Scope, which: str | Sequence[str]) -> list[pending.Approval]:
++    store = _store(scope)
++    return pending.approve(_pending(scope), "memory", which, lambda r: apply_pending(store, r))
++
++
++def reject_ids(scope: Scope, subsystem: pending.Subsystem, which: str | Sequence[str]) -> list[str]:
++    return pending.reject(_pending(scope), subsystem, which)
++
++
++def set_approval(scope: Scope, subsystem: pending.Subsystem, on: bool) -> None:
++    writer.save(scope, {subsystem: {"write_approval": on}})
++
++
++def which_of(ids: Sequence[str]) -> str | list[str]:
++    """``all`` stays a word; anything else is a list of ids."""
++    if len(ids) == 1 and ids[0].strip().lower() == "all":
++        return "all"
++    return [i.strip() for i in ids if i.strip()]
++
++
++@group("memory", "See, edit and approve what the agent remembers.")
++def memory_group() -> None:
++    pass
++
++
++@memory_group.command("show")
++@click.argument("target", type=_TARGET, required=False)
++def show_command(target: str | None) -> None:
++    """Print the saved entries."""
++    store = _store(cli_state().scope)
++    picked = coerce_target(target)
++    chosen: list[Target] = [picked] if picked is not None else list(TARGETS)
++    for name in chosen:
++        head = f"{STORE_LABELS[name]} ({store.path(name).name})"
++        if not store.enabled(name):
++            click.echo(f"{head}: off")
++            continue
++        entries = store.entries(name)
++        click.echo(f"{head}: {store.usage(name).text}")
++        if not entries:
++            click.echo("  (empty)")
++        for index, entry in enumerate(entries, 1):
++            first, *rest = entry.splitlines() or [""]
++            click.echo(f"  {index}. {first}")
++            for line in rest:
++                click.echo(f"     {line}")
++
++
++@memory_group.command("status")
++def status_command() -> None:
++    """Show which stores are on, how full they are, and the approval gate."""
++    for line in status_lines(cli_state().scope):
++        click.echo(line)
++
++
++def _editor(scope: Scope) -> list[str]:
++    raw = scope.env.get("VISUAL") or scope.env.get("EDITOR") or "vi"
++    return shlex.split(raw) or ["vi"]
++
++
++@memory_group.command("edit")
++@click.argument("target", type=_TARGET)
++def edit_command(target: str) -> None:
++    """Edit a store file in your editor."""
++    state = cli_state()
++    if not (state.stdin_isatty() and state.stdout_isatty()):
++        err(
++            "Editing memory needs a terminal. Without one, edit the file directly:",
++            f"  {_store(state.scope).path(coerce_target(target) or 'memory')}",
++        )
++        raise click.exceptions.Exit(2)
++    name: Target = coerce_target(target) or "memory"
++    store = _store(state.scope)
++    path = store.path(name)
++    secure_dir(path.parent, home=state.scope.home)
++    try:
++        original = path.read_text(encoding="utf-8-sig") if path.exists() else ""
++    except (OSError, UnicodeDecodeError) as exc:
++        err(f"Could not read {path}: {exc}")
++        raise click.exceptions.Exit(1) from None
++    draft = path.with_name(f".{path.stem}.edit.md")
++    atomic_write_text(draft, original, mode=0o600)
++    code = launch_editor(_editor(state.scope), draft)
++    if code != 0:
++        err(f"The editor exited with {code}; nothing was saved. Your draft is at {draft}.")
++        raise click.exceptions.Exit(1)
++    edited = draft.read_text(encoding="utf-8")
++    entries = parse_entries(edited)
++    if entries == parse_entries(original):
++        draft.unlink(missing_ok=True)
++        click.echo("No changes.")
++        return
++    try:
++        with store_lock(path, store.lock_timeout):
++            now = path.read_text(encoding="utf-8-sig") if path.exists() else ""
++            if now != original:
++                err(
++                    f"{path.name} changed while it was open, so your edit was not saved. "
++                    f"Your text is kept at {draft}; run the command again to merge it."
++                )
++                raise click.exceptions.Exit(1)
++            atomic_write_text(path, DELIMITER.join(entries))
++    except (LockBusy, OSError) as exc:
++        err(f"Could not save {path.name}: {exc}. Your text is kept at {draft}.")
++        raise click.exceptions.Exit(1) from None
++    draft.unlink(missing_ok=True)
++    size = joined_size(entries)
++    click.echo(
++        f"Saved {len(entries)} entries to {path.name} ({size:,}/{store.limit(name):,} chars)."
++    )
++    if size > store.limit(name):
++        err(
++            f"{path.name} is over its limit; the agent cannot add to it until it is shortened "
++            f"(memory.{'notes' if name == 'memory' else 'profile'}_char_limit)."
++        )
++
++
++@memory_group.command("pending")
++def pending_command() -> None:
++    """List memory writes waiting for approval."""
++    click.echo(pending.describe(_pending(cli_state().scope).list("memory")))
++
++
++@memory_group.command("approve")
++@click.argument("ids", nargs=-1, required=True)
++def approve_command(ids: tuple[str, ...]) -> None:
++    """Apply waiting writes (ids, or all) in the order they were made."""
++    results = approve_memory(cli_state().scope, which_of(ids))
++    if not results:
++        click.echo("Nothing is waiting for approval.")
++        return
++    for approval in results:
++        click.echo(pending.render_approval(approval, surface="cli"))
++    if not any(a.ok for a in results):
++        raise click.exceptions.Exit(1)
++
++
++@memory_group.command("reject")
++@click.argument("ids", nargs=-1, required=True)
++def reject_command(ids: tuple[str, ...]) -> None:
++    """Drop waiting writes (ids, or all) without applying them."""
++    removed = reject_ids(cli_state().scope, "memory", which_of(ids))
++    if not removed:
++        err("No waiting write matched.")
++        raise click.exceptions.Exit(1)
++    click.echo(f"Rejected {', '.join(removed)}.")
++
++
++@memory_group.command("approval")
++@click.argument("switch", type=click.Choice(["on", "off"]))
++def approval_command(switch: str) -> None:
++    """Turn the approval gate for memory writes on or off."""
++    scope = cli_state().scope
++    try:
++        set_approval(scope, "memory", switch == "on")
++    except IndusError as exc:
++        err(f"Not saved: {exc}")
++        raise click.exceptions.Exit(1) from None
++    if switch == "on":
++        click.echo(
++            "Memory write approval is on: the CLI asks before each write; other surfaces and "
++            "background reviews hold writes for `indus memory approve`."
++        )
++    else:
++        click.echo("Memory write approval is off: memory writes are saved straight away.")
+diff --git a/src/indus/cli/commands/skills.py b/src/indus/cli/commands/skills.py
+new file mode 100644
+index 0000000..ecb4cab
+--- /dev/null
++++ b/src/indus/cli/commands/skills.py
+@@ -0,0 +1,411 @@
++"""``indus skills``: list, view, check and sync the skills of a profile (P09-24).
++
++- ``list [--source S] [--json]``: every skill with its category, source (``local``, ``create_dir``,
++  ``external``, or ``bundled`` / ``hub`` from their manifests), lifecycle state and description;
++- ``view <name>``: ``SKILL.md`` and the support files;
++- ``check``: validates every skill and runs the advisory linter; exit 1 when a skill is invalid or
++  a name is ambiguous (lint findings alone never fail);
++- ``list-modified``: shipped skills the user edited; ``diff <name>``: the edits as a unified diff;
++- ``sync``: copy new and updated shipped skills (user edits are never touched);
++- ``opt-out [--remove] [-y]`` / ``opt-in [--no-sync]``: stop or resume shipped skills;
++- ``reset <name> [--restore] [-y]``: forget a shipped skill's origin, or put the shipped copy back;
++- ``pending`` / ``approve <id…|all>`` / ``reject <id…|all>``: skill writes held by
++  ``skills.write_approval``.
++
++Nothing prompts without a terminal: a verb that needs a confirmation exits 2 unless ``-y``.
++Hub verbs (P13) extend this group.
++"""
++
++from __future__ import annotations
++
++import difflib
++import json
++from collections.abc import Sequence
++from dataclasses import dataclass
++from pathlib import Path
++from typing import Any
++
++import click
++
++from indus.cli.cmdkit import cli_state, err, group
++from indus.cli.commands.memory import reject_ids, which_of
++from indus.cli.prompts import confirm, io_for
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.skills import bundled_sync
++from indus.learning.skills.format import SkillFormatError, check_skill_text
++from indus.learning.skills.lint import lint_skill
++from indus.learning.skills.manage_tool import apply_pending_skill
++from indus.learning.skills.resolver import (
++    TIER_LOCAL,
++    SkillError,
++    SkillRecord,
++    clear_scan_cache,
++    load_catalog,
++)
++from indus.learning.skills.usage import hub_names, usage_for
++from indus.learning.skills.view_tools import clear_list_cache, linked_files
++
++__all__ = [
++    "SOURCES",
++    "CheckReport",
++    "approve_skills",
++    "check_skills",
++    "skill_rows",
++    "skills_group",
++]
++
++SOURCES = ("local", "create_dir", "external", "bundled", "hub")
++DESCRIPTION_WIDTH = 60
++
++
++def source_of(rec: SkillRecord, shipped: set[str], hub: set[str]) -> str:
++    if rec.tier == TIER_LOCAL and rec.name in hub:
++        return "hub"
++    if rec.tier == TIER_LOCAL and rec.name in shipped:
++        return "bundled"
++    return rec.tier_name
++
++
++def skill_rows(scope: Scope) -> list[dict[str, Any]]:
++    """One row per scanned skill that is not hidden by a higher tier."""
++    catalog = load_catalog(scope)
++    skills_root = scope.home / "skills"
++    shipped = set(bundled_sync.read_manifest(scope.home))
++    hub = hub_names(skills_root)
++    usage = usage_for(scope).load()
++    rows: list[dict[str, Any]] = []
++    for rec in catalog.records:
++        if rec.status == "shadowed" or rec.plugin is not None:
++            continue
++        status = "disabled" if rec.disabled else rec.status
++        record = usage.get(rec.name, {})
++        rows.append(
++            {
++                "name": rec.load_name or rec.name,
++                "category": rec.category,
++                "source": source_of(rec, shipped, hub),
++                "state": record.get("state", "active"),
++                "status": "ok" if status == "unique" else status,
++                "description": rec.description,
++                "path": str(rec.skill_dir),
++            }
++        )
++    rows.sort(key=lambda r: (r["category"] or "", r["name"]))
++    return rows
++
++
++def _clip(text: str, width: int = DESCRIPTION_WIDTH) -> str:
++    flat = " ".join(text.split())
++    return flat if len(flat) <= width else flat[: width - 1] + "…"
++
++
++def _resolve(scope: Scope, name: str) -> SkillRecord:
++    try:
++        return load_catalog(scope).resolve(name)
++    except SkillError as exc:
++        err(f"{exc}. `indus skills list` shows the skills of this profile.")
++        raise click.exceptions.Exit(1) from None
++
++
++def _confirmed(question: str, yes: bool, guidance: str) -> None:
++    """Go on when confirmed; exit 2 without a terminal, 1 on "no"."""
++    io = io_for(cli_state(), guidance)
++    answer = confirm(io, question, assume_yes=yes)
++    if answer is None:
++        raise click.exceptions.Exit(2)
++    if not answer:
++        click.echo("Nothing changed.")
++        raise click.exceptions.Exit(1)
++
++
++@group("skills", "List, check and sync skills.")
++def skills_group() -> None:
++    pass
++
++
++# -- reading --------------------------------------------------------------------------------------
++
++
++@skills_group.command("list")
++@click.option("--source", type=click.Choice(SOURCES), help="Only skills from this source.")
++@click.option("--json", "as_json", is_flag=True, help="Print the rows as JSON.")
++def list_command(source: str | None, as_json: bool) -> None:
++    """List the skills of this profile."""
++    rows = skill_rows(cli_state().scope)
++    if source:
++        rows = [r for r in rows if r["source"] == source]
++    if as_json:
++        click.echo(json.dumps(rows, ensure_ascii=False, indent=2))
++        return
++    if not rows:
++        click.echo("No skills found." + (f" (source: {source})" if source else ""))
++        return
++    width = max(len(r["name"]) for r in rows)
++    cat_width = max(len(r["category"] or "-") for r in rows)
++    for row in rows:
++        flags = "" if row["status"] == "ok" else f" [{row['status']}]"
++        if row["state"] != "active":
++            flags += f" [{row['state']}]"
++        click.echo(
++            f"{row['name']:<{width}}  {row['category'] or '-':<{cat_width}}  {row['source']:<10}  "
++            f"{_clip(row['description'])}{flags}"
++        )
++    click.echo(f"{len(rows)} skill{'s' if len(rows) != 1 else ''}.")
++
++
++@skills_group.command("view")
++@click.argument("name")
++def view_command(name: str) -> None:
++    """Print a skill's SKILL.md and list its support files."""
++    rec = _resolve(cli_state().scope, name)
++    try:
++        text = rec.skill_md.read_text(encoding="utf-8")
++    except (OSError, UnicodeDecodeError) as exc:
++        err(f"Could not read {rec.skill_md}: {exc}")
++        raise click.exceptions.Exit(1) from None
++    click.echo(f"# {rec.name}  ({rec.skill_dir})")
++    click.echo(text.rstrip("\n"))
++    files = [f for group_files in linked_files(rec.skill_dir).values() for f in group_files]
++    if files:
++        click.echo("")
++        click.echo("Support files:")
++        for path in files:
++            click.echo(f"  {path}")
++
++
++@dataclass
++class CheckReport:
++    checked: int = 0
++    errors: list[str] | None = None
++    warnings: list[str] | None = None
++
++    @property
++    def ok(self) -> bool:
++        return not self.errors
++
++
++def check_skills(scope: Scope) -> CheckReport:
++    """Validate and lint every scanned skill (shadowed copies included: they are still files the
++    user keeps)."""
++    catalog = load_catalog(scope)
++    errors: list[str] = []
++    warnings: list[str] = []
++    checked = 0
++    for rec in catalog.records:
++        if rec.plugin is not None:
++            continue
++        checked += 1
++        where = f"{rec.name} ({rec.skill_dir})"
++        try:
++            text = rec.skill_md.read_text(encoding="utf-8")
++        except (OSError, UnicodeDecodeError) as exc:
++            errors.append(f"{where}: cannot read SKILL.md: {exc}")
++            continue
++        try:
++            check_skill_text(text)
++        except SkillFormatError as exc:
++            errors.extend(f"{where}: {problem}" for problem in exc.problems)
++            continue
++        for finding in lint_skill(text, rec.skill_dir):
++            warnings.append(f"{where}: {finding.rule}: {finding.message}")
++    for name, recs in catalog.ambiguous_names().items():
++        paths = ", ".join(str(r.skill_dir) for r in recs)
++        errors.append(f"{name}: the name is used by several skills ({paths}); rename all but one")
++    return CheckReport(checked, errors, warnings)
++
++
++@skills_group.command("check")
++def check_command() -> None:
++    """Validate every skill and run the linter; exit 1 when one is invalid."""
++    report = check_skills(cli_state().scope)
++    for line in report.errors or []:
++        click.echo(f"error    {line}")
++    for line in report.warnings or []:
++        click.echo(f"warning  {line}")
++    errors, warnings = len(report.errors or []), len(report.warnings or [])
++    click.echo(f"{report.checked} skills checked: {errors} errors, {warnings} warnings.")
++    if not report.ok:
++        raise click.exceptions.Exit(1)
++
++
++# -- shipped skills -------------------------------------------------------------------------------
++
++
++@skills_group.command("list-modified")
++def list_modified_command() -> None:
++    """List shipped skills you have edited (sync leaves them alone)."""
++    names = bundled_sync.list_modified(cli_state().scope.home)
++    if not names:
++        click.echo("No shipped skill has been edited.")
++        return
++    for name in names:
++        click.echo(name)
++
++
++def _files(folder: Path) -> dict[str, Path]:
++    out: dict[str, Path] = {}
++    if not folder.is_dir():
++        return out
++    for path in sorted(folder.rglob("*")):
++        rel = path.relative_to(folder)
++        if not path.is_file() or any(
++            part in bundled_sync.CACHE_DIRS or part.endswith(".pyc") for part in rel.parts
++        ):
++            continue
++        out[rel.as_posix()] = path
++    return out
++
++
++def _text(path: Path | None) -> list[str]:
++    if path is None:
++        return []
++    try:
++        return path.read_text(encoding="utf-8").splitlines(keepends=True)
++    except UnicodeDecodeError:
++        return [f"(binary file, {path.stat().st_size} bytes)\n"]
++
++
++def shipped_diff(scope: Scope, name: str) -> str | None:
++    """The unified diff of the live copy against the shipped one; None when not shipped."""
++    shipped = {s.name: s for s in bundled_sync.discover(bundled_sync.bundled_source(scope.env))}
++    skill = shipped.get(name)
++    if skill is None:
++        return None
++    live = _files(scope.home / "skills" / skill.rel)
++    origin = _files(skill.path)
++    chunks: list[str] = []
++    for rel in sorted(set(live) | set(origin)):
++        lines = difflib.unified_diff(
++            _text(origin.get(rel)),
++            _text(live.get(rel)),
++            fromfile=f"shipped/{skill.rel.as_posix()}/{rel}",
++            tofile=f"yours/{skill.rel.as_posix()}/{rel}",
++        )
++        chunks.extend(line if line.endswith("\n") else line + "\n" for line in lines)
++    return "".join(chunks)
++
++
++@skills_group.command("diff")
++@click.argument("name")
++def diff_command(name: str) -> None:
++    """Show how your copy of a shipped skill differs from the shipped one."""
++    text = shipped_diff(cli_state().scope, name)
++    if text is None:
++        err(f"{name!r} is not a skill that ships with Indus Agent.")
++        raise click.exceptions.Exit(1)
++    click.echo(text.rstrip("\n") if text else "No changes from the shipped version.")
++
++
++@skills_group.command("sync")
++def sync_command() -> None:
++    """Copy new and updated shipped skills (your edits are kept)."""
++    scope = cli_state().scope
++    report = bundled_sync.sync_bundled(scope.home, env=scope.env)
++    _after_change(scope)
++    click.echo(report.summary())
++    for problem in report.failed:
++        err(f"  failed: {problem}")
++    if report.failed:
++        raise click.exceptions.Exit(1)
++
++
++@skills_group.command("opt-out")
++@click.option("--remove", is_flag=True, help="Also delete shipped skills you never edited.")
++@click.option("--yes", "-y", is_flag=True, help="Do not ask first.")
++def opt_out_command(remove: bool, yes: bool) -> None:
++    """Stop copying shipped skills into this profile."""
++    scope = cli_state().scope
++    if remove:
++        preview = bundled_sync.remove_pristine(scope.home, dry_run=True)
++        if preview.removed:
++            _confirmed(
++                f"Delete {len(preview.removed)} shipped skills you never edited?",
++                yes,
++                "Deleting shipped skills needs a terminal to confirm, or -y.",
++            )
++    bundled_sync.set_opt_out(scope.home, True)
++    click.echo("Shipped skills are off for this profile; sync will not copy them.")
++    if remove:
++        report = bundled_sync.remove_pristine(scope.home)
++        _after_change(scope)
++        click.echo(f"Deleted {len(report.removed)}: {', '.join(report.removed) or 'none'}.")
++        for name, reason in report.kept:
++            click.echo(f"  kept {name}: {reason}")
++
++
++@skills_group.command("opt-in")
++@click.option("--no-sync", is_flag=True, help="Only switch back on; copy at the next sync.")
++def opt_in_command(no_sync: bool) -> None:
++    """Copy shipped skills into this profile again."""
++    scope = cli_state().scope
++    report = bundled_sync.opt_in(scope.home, seed=not no_sync, env=scope.env)
++    _after_change(scope)
++    click.echo("Shipped skills are on for this profile.")
++    if report is not None:
++        click.echo(report.summary())
++
++
++@skills_group.command("reset")
++@click.argument("name")
++@click.option("--restore", is_flag=True, help="Replace your copy with the shipped one.")
++@click.option("--yes", "-y", is_flag=True, help="Do not ask first.")
++def reset_command(name: str, restore: bool, yes: bool) -> None:
++    """Forget where a shipped skill came from, or restore the shipped copy."""
++    scope = cli_state().scope
++    if restore:
++        _confirmed(
++            f"Replace your copy of {name!r} with the shipped one? Your edits will be lost.",
++            yes,
++            "Restoring a shipped skill needs a terminal to confirm, or -y.",
++        )
++    result = bundled_sync.reset(scope.home, name, restore=restore, env=scope.env)
++    _after_change(scope)
++    (click.echo if result.ok else err)(result.message)
++    if not result.ok:
++        raise click.exceptions.Exit(1)
++
++
++def _after_change(scope: Scope) -> None:
++    clear_scan_cache()
++    clear_list_cache(scope)
++
++
++# -- staged writes --------------------------------------------------------------------------------
++
++
++def approve_skills(scope: Scope, which: str | Sequence[str]) -> list[pending.Approval]:
++    store = pending.PendingStore(scope.home, scope.clock)
++    return pending.approve(store, "skills", which, lambda r: apply_pending_skill(scope, r))
++
++
++@skills_group.command("pending")
++def pending_command() -> None:
++    """List skill writes waiting for approval."""
++    scope = cli_state().scope
++    click.echo(pending.describe(pending.PendingStore(scope.home, scope.clock).list("skills")))
++
++
++@skills_group.command("approve")
++@click.argument("ids", nargs=-1, required=True)
++def approve_command(ids: tuple[str, ...]) -> None:
++    """Apply waiting skill writes (ids, or all) and show their diffs."""
++    results = approve_skills(cli_state().scope, which_of(ids))
++    if not results:
++        click.echo("Nothing is waiting for approval.")
++        return
++    for approval in results:
++        click.echo(pending.render_approval(approval, surface="cli"))
++    if not any(a.ok for a in results):
++        raise click.exceptions.Exit(1)
++
++
++@skills_group.command("reject")
++@click.argument("ids", nargs=-1, required=True)
++def reject_command(ids: tuple[str, ...]) -> None:
++    """Drop waiting skill writes (ids, or all)."""
++    removed = reject_ids(cli_state().scope, "skills", which_of(ids))
++    if not removed:
++        err("No waiting write matched.")
++        raise click.exceptions.Exit(1)
++    click.echo(f"Rejected {', '.join(removed)}.")
+diff --git a/src/indus/cli/slash/dispatch.py b/src/indus/cli/slash/dispatch.py
+index 0c63a31..d3fb7d2 100644
+--- a/src/indus/cli/slash/dispatch.py
++++ b/src/indus/cli/slash/dispatch.py
+@@ -25,7 +25,7 @@ import logging
+ from collections.abc import Mapping
+ 
+ from indus.cli import quick_commands
+-from indus.cli.slash import checkpoint_cmds, control_cmds, session_cmds
++from indus.cli.slash import checkpoint_cmds, control_cmds, learning_cmds, session_cmds
+ from indus.cli.slash.context import ExtensionHandler, Handler, SlashContext, SlashResult
+ from indus.foundation.errors import IndusError
+ from indus.protocol.methods import ProtocolError
+@@ -50,6 +50,7 @@ HANDLERS: dict[str, Handler] = {
+     **session_cmds.HANDLERS,
+     **control_cmds.HANDLERS,
+     **checkpoint_cmds.HANDLERS,
++    **learning_cmds.HANDLERS,
+ }
+ """Canonical command name → the classic CLI's handler."""
+ 
+diff --git a/src/indus/cli/slash/learning_cmds.py b/src/indus/cli/slash/learning_cmds.py
+new file mode 100644
+index 0000000..9533076
+--- /dev/null
++++ b/src/indus/cli/slash/learning_cmds.py
+@@ -0,0 +1,220 @@
++"""Classic CLI handlers for ``/memory``, ``/skills``, ``/reload-skills`` and ``/bundles`` (P09-24).
++
++- ``/memory`` (or ``pending``) lists memory writes waiting for approval; ``approve <id…|all>`` and
++  ``reject <id…|all>`` act on them; ``approval`` shows the gate, ``approval on|off`` sets it;
++  ``status`` shows the stores;
++- ``/skills`` (or ``list``) lists skills; ``view <name>`` prints one; ``reload`` is
++  ``/reload-skills``; ``pending`` / ``approve`` / ``reject`` handle staged skill writes;
++- ``/reload-skills`` rescans the skill folders and rebuilds the REPL's skill and bundle commands
++  (``ctx.extensions.skill_commands``). The system prompt is not rebuilt: the agent learns about the
++  change from the skills-index note on the next message (P09-07);
++- ``/bundles`` lists the skill bundles.
++
++``build_skill_commands`` makes the skill and bundle command table; the REPL calls it at start and
++``/reload-skills`` calls it again.
++"""
++
++from __future__ import annotations
++
++from indus.cli.commands._support import scope_with_config
++from indus.cli.commands.memory import (
++    approve_memory,
++    reject_ids,
++    set_approval,
++    status_lines,
++    which_of,
++)
++from indus.cli.commands.skills import approve_skills, skill_rows
++from indus.cli.slash.context import ExtensionHandler, Handler, SlashContext, SlashResult
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.skills.bundles import bundle_expanders, reload_bundles, scan_bundles
++from indus.learning.skills.invoke import CommandTable, skill_command_names
++from indus.learning.skills.resolver import SkillError, clear_scan_cache, load_catalog
++from indus.learning.skills.view_tools import clear_list_cache
++
++__all__ = ["HANDLERS", "build_skill_commands", "reload_skills"]
++
++_MEMORY_USAGE = (
++    "Usage: /memory [pending | approve <id…|all> | reject <id…|all> | approval [on|off]]"
++)
++_SKILLS_USAGE = (
++    "Usage: /skills [list | view <name> | reload | pending | approve <id…|all> | reject <id…|all>]"
++)
++_LIST_WIDTH = 60
++
++
++# -- the skill command table ----------------------------------------------------------------------
++
++
++def build_skill_commands(scope: Scope, session_id: str | None) -> dict[str, ExtensionHandler]:
++    """``{command: handler}`` for every runnable skill and bundle (a bundle wins a shared slug)."""
++    catalog = load_catalog(scope, platform="cli")
++    table = CommandTable(
++        skills=skill_command_names(catalog), bundles=bundle_expanders(scope, session_id)
++    )
++
++    def make(name: str) -> ExtensionHandler:
++        def run(args: str, ctx: SlashContext) -> SlashResult:
++            expansion = table.run(
++                f"/{name} {args}".rstrip(), scope=ctx.scope, session_id=ctx.session_id
++            )
++            if expansion is None or not expansion.loaded:
++                ctx.say(f"/{name} could not be loaded; /reload-skills rescans the skill folders.")
++                return SlashResult()
++            if expansion.missing:
++                ctx.say(f"Skipped (not installed): {', '.join(expansion.missing)}")
++            return SlashResult(submit=expansion.text)
++
++        return run
++
++    return {name: make(name) for name in table.names()}
++
++
++def reload_skills(ctx: SlashContext) -> tuple[set[str], set[str]]:
++    """Rescan and swap in a fresh command table; ``(added, removed)`` command names."""
++    before = set(ctx.extensions.skill_commands)
++    clear_scan_cache()
++    clear_list_cache(ctx.scope)
++    reload_bundles()
++    fresh = build_skill_commands(ctx.scope, ctx.session_id)
++    ctx.extensions.skill_commands = fresh
++    after = set(fresh)
++    return after - before, before - after
++
++
++def _reload(ctx: SlashContext) -> SlashResult:
++    added, removed = reload_skills(ctx)
++    count = len(ctx.extensions.skill_commands)
++    ctx.say(f"Skills reloaded: {count} skill and bundle command{'s' if count != 1 else ''}.")
++    if added:
++        ctx.say("New: " + ", ".join(f"/{n}" for n in sorted(added)))
++    if removed:
++        ctx.say("Gone: " + ", ".join(f"/{n}" for n in sorted(removed)))
++    ctx.say(
++        "The system prompt is unchanged; the agent is told about new skills with your next message."
++    )
++    return SlashResult()
++
++
++# -- /memory --------------------------------------------------------------------------------------
++
++
++def _approvals(ctx: SlashContext, results: list[pending.Approval]) -> None:
++    if not results:
++        ctx.say("Nothing is waiting for approval.")
++        return
++    for approval in results:
++        ctx.say(pending.render_approval(approval, surface="cli"))
++
++
++def memory_cmd(ctx: SlashContext, args: str) -> SlashResult:
++    words = args.split()
++    sub = words[0].lower() if words else "pending"
++    rest = words[1:]
++    store = pending.PendingStore(ctx.scope.home, ctx.scope.clock)
++    if sub == "pending":
++        ctx.say(pending.describe(store.list("memory")))
++    elif sub == "status":
++        ctx.say(*status_lines(ctx.scope))
++    elif sub in ("approve", "reject") and not rest:
++        ctx.say(f"Name the writes to {sub}: /memory {sub} <id…|all> (/memory pending lists them).")
++    elif sub == "approve":
++        _approvals(ctx, approve_memory(ctx.scope, which_of(rest)))
++    elif sub == "reject":
++        removed = reject_ids(ctx.scope, "memory", which_of(rest))
++        ctx.say(f"Rejected {', '.join(removed)}." if removed else "No waiting write matched.")
++    elif sub == "approval":
++        _approval(ctx, rest)
++    else:
++        ctx.say(_MEMORY_USAGE)
++    return SlashResult()
++
++
++def _approval(ctx: SlashContext, rest: list[str]) -> None:
++    if not rest:
++        on = pending.gate_on(scope_with_config(ctx.scope), "memory")
++        ctx.say(f"Memory write approval is {'on' if on else 'off'}. /memory approval on|off")
++        return
++    word = rest[0].lower()
++    if word not in ("on", "off"):
++        ctx.say(_MEMORY_USAGE)
++        return
++    set_approval(ctx.scope, "memory", word == "on")
++    ctx.say(f"Memory write approval is now {word} (saved to the config).")
++
++
++# -- /skills --------------------------------------------------------------------------------------
++
++
++def _clip(text: str) -> str:
++    flat = " ".join(text.split())
++    return flat if len(flat) <= _LIST_WIDTH else flat[: _LIST_WIDTH - 1] + "…"
++
++
++def skills_cmd(ctx: SlashContext, args: str) -> SlashResult:
++    words = args.split()
++    sub = words[0].lower() if words else "list"
++    rest = words[1:]
++    if sub == "list":
++        rows = skill_rows(ctx.scope)
++        if not rows:
++            ctx.say("No skills yet. The agent saves them with skill_manage, or try /learn.")
++            return SlashResult()
++        width = max(len(r["name"]) for r in rows)
++        for row in rows:
++            ctx.say(f"  {row['name']:<{width}}  {_clip(row['description'])}")
++        ctx.say(f"{len(rows)} skills. /skills view <name> shows one; /<name> runs it.")
++    elif sub == "view" and rest:
++        _view(ctx, " ".join(rest))
++    elif sub == "reload":
++        return _reload(ctx)
++    elif sub == "pending":
++        store = pending.PendingStore(ctx.scope.home, ctx.scope.clock)
++        ctx.say(pending.describe(store.list("skills")))
++    elif sub == "approve" and rest:
++        _approvals(ctx, approve_skills(ctx.scope, which_of(rest)))
++    elif sub == "reject" and rest:
++        removed = reject_ids(ctx.scope, "skills", which_of(rest))
++        ctx.say(f"Rejected {', '.join(removed)}." if removed else "No waiting write matched.")
++    else:
++        ctx.say(_SKILLS_USAGE)
++    return SlashResult()
++
++
++def _view(ctx: SlashContext, name: str) -> None:
++    try:
++        rec = load_catalog(ctx.scope, platform="cli").resolve(name)
++        text = rec.skill_md.read_text(encoding="utf-8")
++    except SkillError as exc:
++        ctx.say(f"{exc}. /skills lists them.")
++        return
++    except (OSError, UnicodeDecodeError) as exc:
++        ctx.say(f"Could not read {name!r}: {exc}")
++        return
++    ctx.say(f"# {rec.name}  ({rec.skill_dir})", text.rstrip("\n"))
++
++
++def reload_skills_cmd(ctx: SlashContext, _args: str) -> SlashResult:
++    return _reload(ctx)
++
++
++def bundles_cmd(ctx: SlashContext, _args: str) -> SlashResult:
++    found = scan_bundles(ctx.scope.home)
++    if not found:
++        ctx.say("No skill bundles yet. Create one with `indus bundles create <name> --skill <s>`.")
++        return SlashResult()
++    width = max(len(slug) for slug in found) + 1
++    for slug in sorted(found):
++        bundle = found[slug]
++        line = f"  /{slug:<{width}} {', '.join(bundle.skills)}"
++        ctx.say(line + (f"  — {bundle.description}" if bundle.description else ""))
++    return SlashResult()
++
++
++HANDLERS: dict[str, Handler] = {
++    "memory": memory_cmd,
++    "skills": skills_cmd,
++    "reload-skills": reload_skills_cmd,
++    "bundles": bundles_cmd,
++}
+diff --git a/src/indus/learning/skills/ledger.py b/src/indus/learning/skills/ledger.py
+new file mode 100644
+index 0000000..534416c
+--- /dev/null
++++ b/src/indus/learning/skills/ledger.py
+@@ -0,0 +1,622 @@
++"""The skill mutation ledger: one JSON line per change to a skill, and single-entry rollback.
++
++``<home>/skills/.ledger.jsonl`` gets one line per change, whoever made it::
++
++    {id, ts, actor: curator|agent|user, action, skill,
++     evidence: {absorbed_into?, archived?, session_id?, file_path?, rollback_of?},
++     before: [{path, sha256}], after: [{path, sha256}]}
++
++``before`` / ``after`` list every file of the skill package around the change (absolute paths).
++The bytes behind each hash are stored once in ``<home>/skills/.ledger-blobs/<sha256>``.
++
++The ledger records; it never decides. ``record`` swallows every failure (logged) so a change goes
++through even when its line cannot be written. ``rollback`` is the exception: it fails closed. It
++checks every blob it needs, then appends its own entry carrying the current bytes of every path it
++will touch (so the rollback can itself be rolled back), and only then restores. If that capture
++fails nothing is changed.
++
++Size: past ``skills.ledger_max_bytes`` (default 5 MiB, ``0`` = never) the ledger is rewritten
++without unchanged-file pairs, then without its oldest lines down to three quarters of the cap (the
++newest line always stays), and blobs no line references are deleted once older than an hour.
++"""
++
++from __future__ import annotations
++
++import contextlib
++import contextvars
++import hashlib
++import json
++import logging
++import os
++import secrets
++from collections.abc import Generator, Iterable, Mapping, Sequence
++from dataclasses import dataclass, field
++from datetime import UTC
++from pathlib import Path
++from typing import Any, Literal, cast
++
++from indus.foundation.clock import Clock, SystemClock
++from indus.foundation.fsio import FileLock, atomic_write_bytes
++from indus.foundation.scope import Scope
++
++__all__ = [
++    "ACTIONS",
++    "ACTORS",
++    "BLOB_DIR",
++    "BLOB_GRACE_S",
++    "DEFAULT_MAX_BYTES",
++    "LEDGER_FILE",
++    "Actor",
++    "FileRef",
++    "LedgerEntry",
++    "RollbackResult",
++    "SkillLedger",
++    "bind_actor",
++    "current_actor",
++]
++
++log = logging.getLogger(__name__)
++
++LEDGER_FILE = ".ledger.jsonl"
++BLOB_DIR = ".ledger-blobs"
++LOCK_FILE = Path(".locks") / "ledger.lock"
++DEFAULT_MAX_BYTES = 5 * 1024 * 1024
++BLOB_GRACE_S = 3600.0
++TRIM_FRACTION = 0.75
++LOCK_TIMEOUT_S = 15.0
++
++type Actor = Literal["curator", "agent", "user"]
++ACTORS: tuple[Actor, ...] = ("curator", "agent", "user")
++ACTIONS = (
++    "create",
++    "patch",
++    "edit",
++    "write_file",
++    "remove_file",
++    "delete",
++    "archive",
++    "restore",
++    "rollback",
++    "purge",
++)
++# Folder names that are regenerated or private and never part of a skill package.
++SKIP_DIRS = frozenset(
++    {
++        ".git",
++        ".venv",
++        "venv",
++        "node_modules",
++        "__pycache__",
++        ".pytest_cache",
++        ".mypy_cache",
++        ".ruff_cache",
++    }
++)
++
++_ACTOR: contextvars.ContextVar[Actor | None] = contextvars.ContextVar(
++    "indus_ledger_actor", default=None
++)
++
++
++def current_actor() -> Actor:
++    """The bound actor, else ``agent`` (a model write, foreground or review)."""
++    return _ACTOR.get() or "agent"
++
++
++@contextlib.contextmanager
++def bind_actor(actor: Actor) -> Generator[None]:
++    """Record changes in this context as made by ``actor`` (the CLI binds ``user``, the curator
++    ``curator``)."""
++    if actor not in ACTORS:
++        raise ValueError(f"unknown ledger actor {actor!r}")
++    token = _ACTOR.set(actor)
++    try:
++        yield
++    finally:
++        _ACTOR.reset(token)
++
++
++@dataclass(frozen=True)
++class FileRef:
++    path: str
++    sha256: str
++
++    def as_dict(self) -> dict[str, str]:
++        return {"path": self.path, "sha256": self.sha256}
++
++
++def _refs(raw: object) -> list[FileRef]:
++    out: list[FileRef] = []
++    if not isinstance(raw, list):
++        return out
++    for item in cast(list[object], raw):
++        if isinstance(item, Mapping):
++            row = cast(Mapping[str, Any], item)
++            path, digest = row.get("path"), row.get("sha256")
++            if isinstance(path, str) and isinstance(digest, str):
++                out.append(FileRef(path, digest))
++    return out
++
++
++def changed_pairs(
++    before: Sequence[FileRef], after: Sequence[FileRef]
++) -> tuple[list[FileRef], list[FileRef]]:
++    """``before`` / ``after`` without the paths whose hash is the same on both sides."""
++    old = {r.path: r.sha256 for r in before}
++    new = {r.path: r.sha256 for r in after}
++    same = {p for p, h in old.items() if new.get(p) == h}
++    return [r for r in before if r.path not in same], [r for r in after if r.path not in same]
++
++
++@dataclass(frozen=True)
++class LedgerEntry:
++    id: str
++    ts: str
++    actor: str
++    action: str
++    skill: str
++    evidence: Mapping[str, Any] = field(default_factory=dict[str, Any])
++    before: tuple[FileRef, ...] = ()
++    after: tuple[FileRef, ...] = ()
++
++    def to_json(self) -> dict[str, Any]:
++        return {
++            "id": self.id,
++            "ts": self.ts,
++            "actor": self.actor,
++            "action": self.action,
++            "skill": self.skill,
++            "evidence": dict(self.evidence),
++            "before": [r.as_dict() for r in self.before],
++            "after": [r.as_dict() for r in self.after],
++        }
++
++    @classmethod
++    def from_json(cls, data: Mapping[str, Any]) -> LedgerEntry | None:
++        ident = data.get("id")
++        if not isinstance(ident, str) or not ident:
++            return None
++        evidence = data.get("evidence")
++        return cls(
++            id=ident,
++            ts=str(data.get("ts") or ""),
++            actor=str(data.get("actor") or ""),
++            action=str(data.get("action") or ""),
++            skill=str(data.get("skill") or ""),
++            evidence=dict(cast(Mapping[str, Any], evidence))
++            if isinstance(evidence, Mapping)
++            else {},
++            before=tuple(_refs(data.get("before"))),
++            after=tuple(_refs(data.get("after"))),
++        )
++
++    def changes(self) -> tuple[list[FileRef], list[FileRef]]:
++        return changed_pairs(self.before, self.after)
++
++
++@dataclass(frozen=True)
++class RollbackResult:
++    ok: bool
++    message: str
++    entry_id: str | None = None
++    """The id of the rollback's own entry (the undo of this rollback)."""
++    restored: int = 0
++    removed: int = 0
++
++
++def _is_inside(path: str, root: Path) -> bool:
++    base = os.path.normpath(os.path.abspath(root))
++    norm = os.path.normpath(path)
++    return norm != base and norm.startswith(base + os.sep)
++
++
++class SkillLedger:
++    """The ledger and blob store of one profile (see the module notes)."""
++
++    def __init__(
++        self,
++        home: Path,
++        *,
++        clock: Clock | None = None,
++        max_bytes: int = DEFAULT_MAX_BYTES,
++        roots: Iterable[Path] = (),
++    ) -> None:
++        self.home = home
++        self.skills_root = home / "skills"
++        self.path = self.skills_root / LEDGER_FILE
++        self.blobs = self.skills_root / BLOB_DIR
++        self.clock: Clock = clock if clock is not None else SystemClock()
++        self.max_bytes = max_bytes
++        self.roots: tuple[Path, ...] = (self.skills_root, *roots)
++
++    @classmethod
++    def for_scope(cls, scope: Scope) -> SkillLedger:
++        from indus.learning.skills.resolver import SkillsSettings, skills_setting
++
++        raw = skills_setting(scope, "skills.ledger_max_bytes")
++        max_bytes = raw if isinstance(raw, int) and not isinstance(raw, bool) else DEFAULT_MAX_BYTES
++        try:
++            settings = SkillsSettings.from_scope(scope)
++            roots = [root for _tier, root in settings.roots()]
++        except Exception:
++            log.debug(
++                "skill roots unreadable; the ledger trusts the local root only", exc_info=True
++            )
++            roots = []
++        return cls(scope.home, clock=scope.clock, max_bytes=max_bytes, roots=roots)
++
++    def _lock(self) -> FileLock:
++        lock = self.skills_root / LOCK_FILE
++        lock.parent.mkdir(parents=True, exist_ok=True)
++        return FileLock(lock, timeout=LOCK_TIMEOUT_S)
++
++    def _now(self) -> str:
++        return self.clock.now().astimezone(UTC).isoformat(timespec="seconds")
++
++    # -- blobs ------------------------------------------------------------------------------------
++
++    def store_blob(self, data: bytes) -> str:
++        """Keep ``data`` under its hash (once); returns the hash. Raises on IO failure."""
++        digest = hashlib.sha256(data).hexdigest()
++        target = self.blobs / digest
++        if not target.is_file():
++            self.blobs.mkdir(parents=True, exist_ok=True)
++            atomic_write_bytes(target, data, mode=0o600)
++        return digest
++
++    def read_blob(self, digest: str) -> bytes | None:
++        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
++            return None
++        try:
++            return (self.blobs / digest).read_bytes()
++        except OSError:
++            return None
++
++    # -- capture ----------------------------------------------------------------------------------
++
++    @staticmethod
++    def package_files(folder: Path) -> list[Path]:
++        """Every file of a skill package, sorted (regenerated and private folders skipped)."""
++        if folder.is_file():
++            return [folder]
++        if not folder.is_dir():
++            return []
++        found: list[Path] = []
++        for current, dirs, files in os.walk(folder):
++            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
++            found.extend(Path(current) / name for name in files)
++        return sorted(found)
++
++    def capture(self, folder: Path | None) -> list[FileRef]:
++        """``{path, sha256}`` for every file of ``folder`` (blobs stored). Raises on IO failure."""
++        if folder is None:
++            return []
++        return [
++            FileRef(str(p), self.store_blob(p.read_bytes())) for p in self.package_files(folder)
++        ]
++
++    def capture_quietly(self, folder: Path | None) -> list[FileRef] | None:
++        """``capture`` for telemetry: None (logged) instead of raising."""
++        try:
++            return self.capture(folder)
++        except Exception as exc:
++            log.warning("skill ledger: could not capture %s: %s", folder, exc)
++            return None
++
++    # -- writing ----------------------------------------------------------------------------------
++
++    def _append(self, entry: LedgerEntry) -> None:
++        line = json.dumps(entry.to_json(), ensure_ascii=False) + "\n"
++        self.skills_root.mkdir(parents=True, exist_ok=True)
++        with self._lock():
++            with open(self.path, "a", encoding="utf-8") as handle:
++                handle.write(line)
++                handle.flush()
++                os.fsync(handle.fileno())
++            self._maintain_locked()
++
++    def _entry(
++        self,
++        action: str,
++        skill: str,
++        before: Sequence[FileRef],
++        after: Sequence[FileRef],
++        actor: Actor | None,
++        evidence: Mapping[str, Any] | None,
++    ) -> LedgerEntry:
++        return LedgerEntry(
++            id=secrets.token_hex(6),
++            ts=self._now(),
++            actor=actor if actor in ACTORS else current_actor(),
++            action=action,
++            skill=skill,
++            evidence={k: v for k, v in (evidence or {}).items() if v is not None},
++            before=tuple(before),
++            after=tuple(after),
++        )
++
++    def record(
++        self,
++        action: str,
++        skill: str,
++        *,
++        before: Sequence[FileRef] | None = None,
++        after: Sequence[FileRef] | None = None,
++        after_dir: Path | None = None,
++        actor: Actor | None = None,
++        evidence: Mapping[str, Any] | None = None,
++    ) -> str | None:
++        """Append one entry; its id, or None when it could not be written (never raises).
++        ``after`` wins over ``after_dir`` (captured now)."""
++        try:
++            after_refs = list(after) if after is not None else self.capture(after_dir)
++            entry = self._entry(action, skill, before or [], after_refs, actor, evidence)
++            self._append(entry)
++            return entry.id
++        except Exception as exc:
++            log.warning("skill ledger: %s of %s not recorded: %s", action, skill, exc)
++            return None
++
++    # -- reading ----------------------------------------------------------------------------------
++
++    def _lines(self) -> list[str] | None:
++        try:
++            raw = self.path.read_bytes()
++        except FileNotFoundError:
++            return []
++        except OSError as exc:
++            log.warning("skill ledger %s unreadable: %s", self.path, exc)
++            return None
++        try:
++            text = raw.decode("utf-8-sig")
++        except UnicodeDecodeError:
++            log.warning("skill ledger %s is not UTF-8", self.path)
++            return None
++        return [line for line in text.split("\n") if line.strip()]
++
++    def entries(self, skill: str | None = None, limit: int | None = None) -> list[LedgerEntry]:
++        """Entries, newest first; malformed lines are skipped."""
++        rows: list[LedgerEntry] = []
++        for line in reversed(self._lines() or []):
++            try:
++                data = json.loads(line)
++            except ValueError:
++                continue
++            if not isinstance(data, Mapping):
++                continue
++            entry = LedgerEntry.from_json(cast(Mapping[str, Any], data))
++            if entry is None or (skill is not None and entry.skill != skill):
++                continue
++            rows.append(entry)
++            if limit is not None and len(rows) >= limit:
++                break
++        return rows
++
++    def get(self, entry_id: str) -> LedgerEntry | None:
++        return next((e for e in self.entries() if e.id == entry_id), None)
++
++    # -- rollback ---------------------------------------------------------------------------------
++
++    def _allowed(self, path: str) -> bool:
++        if not os.path.isabs(path) or ".." in Path(path).parts:
++            return False
++        private = (self.blobs, self.skills_root / ".locks")
++        if any(_is_inside(path, p) for p in private) or os.path.normpath(path) == str(self.path):
++            return False
++        return any(_is_inside(path, root) for root in self.roots)
++
++    def rollback(self, entry_id: str, *, actor: Actor | None = None) -> RollbackResult:
++        """Put back the files ``entry_id`` changed (see the module notes)."""
++        entry = self.get(entry_id)
++        if entry is None:
++            return RollbackResult(False, f"no ledger entry {entry_id!r}")
++        before, after = entry.changes()
++        if not before and not after:
++            return RollbackResult(False, f"entry {entry_id} changed no files; nothing to roll back")
++        for ref in (*before, *after):
++            if not self._allowed(ref.path):
++                return RollbackResult(
++                    False, f"refused: entry {entry_id} names {ref.path}, outside the skill folders"
++                )
++        restore: list[tuple[Path, bytes]] = []
++        for ref in before:
++            data = self.read_blob(ref.sha256)
++            if data is None:
++                return RollbackResult(
++                    False,
++                    f"the saved copy of {ref.path} is missing ({ref.sha256[:12]}); nothing changed",
++                )
++            restore.append((Path(ref.path), data))
++        touched = sorted({ref.path for ref in (*before, *after)})
++        try:
++            current = [
++                FileRef(p, self.store_blob(Path(p).read_bytes()))
++                for p in touched
++                if Path(p).is_file()
++            ]
++            safety = self._entry(
++                "rollback",
++                entry.skill,
++                current,
++                [FileRef(str(p), hashlib.sha256(d).hexdigest()) for p, d in restore],
++                actor,
++                {"rollback_of": entry_id},
++            )
++            self._append(safety)
++        except Exception as exc:
++            log.warning("skill ledger: rollback safety capture failed: %s", exc)
++            return RollbackResult(
++                False,
++                f"could not save the current files before rolling back ({exc}); nothing changed",
++            )
++        keep = {ref.path for ref in before}
++        restored = removed = 0
++        try:
++            for path, data in restore:
++                path.parent.mkdir(parents=True, exist_ok=True)
++                atomic_write_bytes(path, data)
++                restored += 1
++            for ref in after:
++                if ref.path in keep:
++                    continue
++                target = Path(ref.path)
++                if target.is_file() or target.is_symlink():
++                    target.unlink()
++                    removed += 1
++                    self._prune_empty(target.parent)
++        except OSError as exc:
++            log.error("skill ledger: rollback of %s stopped part-way: %s", entry_id, exc)
++            return RollbackResult(
++                False,
++                f"rollback stopped part-way ({exc}); roll back entry {safety.id} to return to "
++                "where you were",
++                safety.id,
++                restored,
++                removed,
++            )
++        return RollbackResult(
++            True,
++            f"rolled back {entry.action} of {entry.skill!r} ({entry_id}): {restored} file(s) "
++            f"restored, {removed} removed; undo with entry {safety.id}",
++            safety.id,
++            restored,
++            removed,
++        )
++
++    def _prune_empty(self, folder: Path) -> None:
++        """Remove empty folders upward, never a skills root itself."""
++        roots = {os.path.normpath(os.path.abspath(r)) for r in self.roots}
++        current = folder
++        while os.path.normpath(os.path.abspath(current)) not in roots and any(
++            _is_inside(str(current), r) for r in self.roots
++        ):
++            try:
++                current.rmdir()
++            except OSError:
++                return
++            current = current.parent
++
++    # -- size -------------------------------------------------------------------------------------
++
++    def maintain(self) -> None:
++        """Run the size rules now (normally after each append)."""
++        try:
++            with self._lock():
++                self._maintain_locked()
++        except Exception as exc:
++            log.warning("skill ledger maintenance failed: %s", exc)
++
++    def _maintain_locked(self) -> None:
++        if self.max_bytes <= 0:
++            return
++        try:
++            if self.path.stat().st_size <= self.max_bytes:
++                return
++            size = self._compact_locked()
++            if size > self.max_bytes:
++                self._trim_locked(int(self.max_bytes * TRIM_FRACTION))
++            self._sweep_locked()
++        except Exception as exc:
++            log.warning("skill ledger maintenance failed; the ledger is left as it is: %s", exc)
++
++    def _rewrite(self, lines: Sequence[str]) -> int:
++        data = "".join(line + "\n" for line in lines).encode("utf-8")
++        atomic_write_bytes(self.path, data)
++        return len(data)
++
++    def compact(self) -> int:
++        """Drop unchanged-file pairs from every entry; the new size in bytes."""
++        with self._lock():
++            return self._compact_locked()
++
++    def _compact_locked(self) -> int:
++        lines = self._lines()
++        if lines is None:
++            return self.path.stat().st_size if self.path.exists() else 0
++        out: list[str] = []
++        for line in lines:
++            try:
++                data = json.loads(line)
++            except ValueError:
++                out.append(line)
++                continue
++            entry = (
++                LedgerEntry.from_json(cast(Mapping[str, Any], data))
++                if isinstance(data, Mapping)
++                else None
++            )
++            if entry is None or entry.action == "rollback":
++                out.append(line)
++                continue
++            before, after = entry.changes()
++            slim = LedgerEntry(
++                entry.id,
++                entry.ts,
++                entry.actor,
++                entry.action,
++                entry.skill,
++                entry.evidence,
++                tuple(before),
++                tuple(after),
++            )
++            out.append(json.dumps(slim.to_json(), ensure_ascii=False))
++        return self._rewrite(out)
++
++    def _trim_locked(self, target: int) -> int:
++        lines = self._lines()
++        if not lines:
++            return 0
++        kept: list[str] = []
++        size = 0
++        for line in reversed(lines):
++            cost = len(line.encode("utf-8")) + 1
++            if kept and size + cost > target:
++                break
++            kept.append(line)
++            size += cost
++        dropped = len(lines) - len(kept)
++        if dropped:
++            kept.reverse()
++            self._rewrite(kept)
++        return dropped
++
++    def sweep_blobs(self) -> int:
++        """Delete blobs no entry references and older than ``BLOB_GRACE_S``; how many went."""
++        with self._lock():
++            return self._sweep_locked()
++
++    def _sweep_locked(self) -> int:
++        if not self.blobs.is_dir():
++            return 0
++        lines = self._lines()
++        if lines is None:
++            return 0
++        referenced: set[str] = set()
++        for line in lines:
++            try:
++                data = json.loads(line)
++            except ValueError:
++                log.warning("skill ledger has an unreadable line; blob sweep skipped")
++                return 0
++            entry = (
++                LedgerEntry.from_json(cast(Mapping[str, Any], data))
++                if isinstance(data, Mapping)
++                else None
++            )
++            if entry is None:
++                log.warning("skill ledger has an unreadable line; blob sweep skipped")
++                return 0
++            referenced.update(r.sha256 for r in (*entry.before, *entry.after))
++        cutoff = self.clock.now().timestamp() - BLOB_GRACE_S
++        removed = 0
++        for blob in self.blobs.iterdir():
++            if blob.name in referenced or not blob.is_file():
++                continue
++            try:
++                if blob.stat().st_mtime > cutoff:
++                    continue
++                blob.unlink()
++            except OSError:
++                continue
++            removed += 1
++        return removed
+diff --git a/src/indus/learning/skills/manage_tool.py b/src/indus/learning/skills/manage_tool.py
+new file mode 100644
+index 0000000..35be245
+--- /dev/null
++++ b/src/indus/learning/skills/manage_tool.py
+@@ -0,0 +1,1117 @@
++"""``skill_manage``: the model's tool for creating and changing skills (P09-11).
++
++One call is a single action (``action``, ``name`` and that action's fields at the top level) or
++``operations: [...]``, several actions applied all or nothing:
++
++- ``create {name, content, category?}`` — a new skill folder with ``SKILL.md`` in
++  ``skills.create_dir`` when set, else ``<home>/skills/``;
++- ``patch {name, old_string, new_string, file_path?, replace_all?}`` — replace text in ``SKILL.md``
++  or a support file (exactly one match unless ``replace_all``; an empty ``new_string`` deletes);
++  ``patch {name, content}`` (alias ``edit``) rewrites ``SKILL.md`` whole;
++- ``delete {name, absorbed_into?}``;
++- ``write_file {name, file_path, file_content}`` / ``remove_file {name, file_path}`` — support files
++  under ``references/``, ``templates/``, ``scripts/`` or ``assets/``.
++
++How a call runs:
++
++1. Every op's shape is checked without touching anything. An op that carries another action's text
++   field fails naming that field and where the text belongs; nothing in the call applies.
++2. With ``skills.write_approval`` on, the whole call is staged as one pending write (P09-03).
++3. The locks of every named skill are taken in a fixed order (``<home>/skills/.locks/``, outside
++   the skill folders, so deleting a folder never removes a lock someone waits on). The ops are then
++   played against an in-memory overlay of the files they touch, reading the disk under the locks,
++   and every guard and format rule runs on the result.
++4. Only then are files written. If a write fails part-way, the files already written get their old
++   bytes back. Deleted folders are moved aside (or into the archive) last, so they can be put back.
++
++Guards: a pinned skill cannot be deleted (patches are fine); inside the review fork a change to
++existing content needs a fresh ``skill_view`` of that file in the same session, and deletes are
++allowed only for curator-managed, unpinned skills outside ``external_dirs`` and go to
++``<home>/skills/.archive/``; paths must stay inside the skill folder and the skill folder inside a
++skills root, after symlinks.
++
++After success (each step best-effort, never failing the call): a ledger entry, the list cache
++cleared, usage telemetry, lifecycle and success listeners, and advisory lint findings in the result.
++"""
++
++from __future__ import annotations
++
++import contextlib
++import copy
++import hashlib
++import json
++import logging
++import os
++import secrets
++import shutil
++from collections.abc import Callable, Iterator, Mapping, Sequence
++from dataclasses import dataclass, field
++from datetime import UTC
++from pathlib import Path
++from typing import Any, cast
++
++from indus.foundation.fsio import FileLock, atomic_write_bytes
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.skills.format import (
++    SKILL_FILE,
++    SkillFormatError,
++    check_category,
++    check_name,
++    check_skill_text,
++    check_support_path,
++    check_support_size,
++)
++from indus.learning.skills.ledger import FileRef, SkillLedger
++from indus.learning.skills.lint import lint_skill
++from indus.learning.skills.resolver import (
++    TIER_EXTERNAL,
++    SkillCatalog,
++    SkillError,
++    SkillRecord,
++    SkillsSettings,
++    clear_scan_cache,
++    load_catalog,
++    skills_setting,
++)
++from indus.learning.skills.usage import bundled_names, usage_for
++from indus.learning.skills.view_tools import READS, clear_list_cache
++from indus.tools.calls import ToolResult
++from indus.tools.registry import ToolRegistry, ToolTraits
++
++__all__ = [
++    "ACTIONS",
++    "ARCHIVE_DIR",
++    "ARCHIVER",
++    "LIFECYCLE",
++    "MAX_OPS",
++    "SKILL_MANAGE_SCHEMA",
++    "SKILL_SCANNER",
++    "SUCCESS_LISTENERS",
++    "TOOLSET",
++    "TOOL_NAME",
++    "SkillWriteEvent",
++    "apply_pending_skill",
++    "lock_path",
++    "register_tools",
++    "run_operations",
++    "schema_overrides",
++    "skill_manage",
++]
++
++log = logging.getLogger(__name__)
++
++TOOL_NAME = "skill_manage"
++TOOLSET = "skills"
++MAX_OPS = 20
++LOCK_TIMEOUT_S = 30.0
++ARCHIVE_DIR = ".archive"
++LOCKS_DIR = ".locks"
++PREVIEW_CHARS = 400
++ACTIONS = ("create", "patch", "edit", "delete", "write_file", "remove_file")
++PATCH_TYPES = frozenset({"patch", "edit", "write_file", "remove_file"})
++
++# Text fields, and what reads each one.
++_SLOT_OWNER: Mapping[str, str] = {
++    "content": "create, or patch as a whole-file rewrite",
++    "new_string": "patch (together with old_string)",
++    "file_content": "write_file",
++}
++_SLOTS_READ: Mapping[str, tuple[tuple[str, ...], str]] = {
++    "create": (("content",), "'content'"),
++    "edit": (("content",), "'content'"),
++    "patch": (("content", "new_string"), "'old_string'/'new_string' or 'content'"),
++    "write_file": (("file_content",), "'file_content'"),
++    "delete": ((), "nowhere (delete takes no text)"),
++    "remove_file": ((), "nowhere (remove_file takes no text)"),
++}
++
++# -- extension points ------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class SkillWriteEvent:
++    """What one successful call changed (for listeners)."""
++
++    origin: str
++    session_id: str | None
++    actions: tuple[str, ...]
++    skills: tuple[str, ...]
++    created: tuple[str, ...] = ()
++    deleted: tuple[str, ...] = ()
++    archived: tuple[str, ...] = ()
++
++
++type Listener = Callable[[SkillWriteEvent], object]
++
++SUCCESS_LISTENERS: list[Listener] = []
++"""Called after every successful call (P09-14 resets the skill review counter here)."""
++
++LIFECYCLE: list[Listener] = []
++"""The ``on_skill_lifecycle`` hook: a plain list until P13's hook bus takes it over."""
++
++SKILL_SCANNER: Callable[[Path], str | None] | None = None
++"""P13's content scanner: returns why a skill folder is refused, or None. Unset here."""
++
++
++def _default_archiver(scope: Scope, folder: Path, name: str) -> Path:
++    archive = scope.home / "skills" / ARCHIVE_DIR
++    archive.mkdir(parents=True, exist_ok=True)
++    dest = archive / name
++    if dest.exists() or dest.is_symlink():
++        stamp = scope.clock.now().astimezone(UTC).strftime("%Y%m%d%H%M%S")
++        dest = archive / f"{name}-{stamp}"
++        if dest.exists():
++            dest = archive / f"{name}-{stamp}-{secrets.token_hex(2)}"
++    shutil.move(str(folder), str(dest))
++    return dest
++
++
++ARCHIVER: Callable[[Scope, Path, str], Path] = _default_archiver
++"""Moves a skill folder into the archive and returns where it went (the curator may replace it)."""
++
++
++# -- schema ---------------------------------------------------------------------------------------
++
++_DESCRIPTION = (
++    "Create and improve skills: saved procedures for recurring kinds of work. Give one action "
++    "(action, name and its fields) or operations: a list applied all or nothing. Actions: "
++    "create (full SKILL.md with frontmatter name and description; {where}), patch (old_string -> "
++    "new_string in SKILL.md or file_path; prefer this; an empty new_string deletes), patch with "
++    "content alone (rewrites SKILL.md whole; view it first), write_file / remove_file (support "
++    "files under references/, templates/, scripts/ or assets/), delete. Write rules, not stories: "
++    "state what to do and why, with no ticket numbers, dates or incident narratives."
++)
++_WHERE_DEFAULT = "new skills go to this profile's skills folder"
++
++_OP_PROPERTIES: dict[str, Any] = {
++    "action": {"type": "string", "enum": list(ACTIONS)},
++    "name": {
++        "type": "string",
++        "description": "The skill (lowercase letters, digits, '.', '_', '-'; at most 64).",
++    },
++    "content": {
++        "type": "string",
++        "description": "create: the full SKILL.md. patch without old_string: the new SKILL.md.",
++    },
++    "category": {"type": "string", "description": "create: optional category folder."},
++    "old_string": {"type": "string", "description": "patch: the exact text to replace."},
++    "new_string": {"type": "string", "description": "patch: the replacement ('' deletes)."},
++    "replace_all": {"type": "boolean", "description": "patch: replace every match."},
++    "file_path": {
++        "type": "string",
++        "description": "Support file relative to the skill folder, e.g. references/api.md.",
++    },
++    "file_content": {"type": "string", "description": "write_file: the whole file."},
++    "absorbed_into": {
++        "type": "string",
++        "description": "delete: the existing skill that now holds this one's content.",
++    },
++}
++
++SKILL_MANAGE_SCHEMA: dict[str, Any] = {
++    "description": _DESCRIPTION.format(where=_WHERE_DEFAULT),
++    "parameters": {
++        "type": "object",
++        "properties": {
++            **_OP_PROPERTIES,
++            "operations": {
++                "type": "array",
++                "description": f"Up to {MAX_OPS} actions applied together; each names its skill.",
++                "items": {
++                    "type": "object",
++                    "properties": _OP_PROPERTIES,
++                    "required": ["action", "name"],
++                },
++            },
++        },
++        "required": [],
++    },
++}
++
++
++def schema_overrides(scope: Scope | None) -> Mapping[str, Any] | None:
++    """The description names the folder new skills go to in this profile."""
++    if scope is None:
++        return None
++    try:
++        where = SkillsSettings.from_scope(scope).write_root
++    except Exception:
++        log.debug("skill folder unknown for the schema", exc_info=True)
++        return None
++    return {"description": _DESCRIPTION.format(where=f"new skills go to {where}")}
++
++
++# -- parsing --------------------------------------------------------------------------------------
++
++
++class _Refused(Exception):
++    def __init__(self, message: str, **extra: Any) -> None:
++        super().__init__(message)
++        self.message = message
++        self.extra = extra
++
++
++@dataclass(frozen=True)
++class Op:
++    index: int
++    action: str
++    """Normalised: a whole-file ``patch`` becomes ``edit``."""
++    name: str
++    content: str | None = None
++    category: str | None = None
++    old_string: str | None = None
++    new_string: str | None = None
++    replace_all: bool = False
++    file_path: str | None = None
++    file_content: str | None = None
++    absorbed_into: str | None = None
++
++    @property
++    def lock_key(self) -> str:
++        return Path(self.name.strip().strip("/")).name
++
++    def to_json(self) -> dict[str, Any]:
++        data: dict[str, Any] = {"action": self.action, "name": self.name}
++        for key in (
++            "content",
++            "category",
++            "old_string",
++            "new_string",
++            "file_path",
++            "file_content",
++            "absorbed_into",
++        ):
++            value = getattr(self, key)
++            if value is not None:
++                data[key] = value
++        if self.replace_all:
++            data["replace_all"] = True
++        return data
++
++    def label(self) -> str:
++        where = f" {self.file_path}" if self.file_path else ""
++        return f"{self.action} {self.name}{where}"
++
++
++def _str_or_none(raw: Mapping[str, Any], key: str, where: str) -> str | None:
++    value = raw.get(key)
++    if value is None or isinstance(value, str):
++        return value
++    raise _Refused(f"{where}{key} must be text")
++
++
++def _parse_one(raw: Mapping[str, Any], index: int, where: str, default_name: str | None) -> Op:
++    action = raw.get("action")
++    if not isinstance(action, str) or action not in ACTIONS:
++        raise _Refused(f"{where}action must be one of: {', '.join(ACTIONS)}")
++    name = raw.get("name") or default_name
++    if not isinstance(name, str) or not name.strip():
++        raise _Refused(f"{where}name is required (the skill this {action} targets)")
++    name = name.strip()
++    reads, home = _SLOTS_READ[action]
++    stray = [k for k in _SLOT_OWNER if k not in reads and raw.get(k) is not None]
++    if stray:
++        listed = " and ".join(f"'{k}' (that field is for {_SLOT_OWNER[k]})" for k in stray)
++        raise _Refused(
++            f"{where}{action} on {name!r} carries {listed}; move that text to {home}",
++            misplaced=stray,
++        )
++    fields = {
++        key: _str_or_none(raw, key, where)
++        for key in (
++            "content",
++            "category",
++            "old_string",
++            "new_string",
++            "file_path",
++            "file_content",
++            "absorbed_into",
++        )
++    }
++    replace_all = raw.get("replace_all") is True
++    content = fields["content"]
++    if action == "patch":
++        if content and (fields["old_string"] or fields["new_string"] is not None):
++            raise _Refused(
++                f"{where}patch takes either old_string/new_string (a targeted change) or content "
++                "(a whole-file rewrite), not both"
++            )
++        if content:
++            action = "edit"
++        else:
++            if not fields["old_string"]:
++                raise _Refused(
++                    f"{where}patch needs old_string: the exact text now in the file (view the "
++                    "skill and copy it), or content to rewrite SKILL.md whole"
++                )
++            if fields["new_string"] is None:
++                raise _Refused(f"{where}patch needs new_string (use '' to delete the text)")
++    if action in ("create", "edit") and not content:
++        raise _Refused(f"{where}{action} needs content: the full SKILL.md text")
++    if action in ("write_file", "remove_file") and not fields["file_path"]:
++        raise _Refused(f"{where}{action} needs file_path, e.g. references/notes.md")
++    if action == "write_file" and fields["file_content"] is None:
++        raise _Refused(f"{where}write_file needs file_content (the whole file)")
++    if action == "create":
++        problem = check_name(name) or check_category(fields["category"])
++        if problem is not None:
++            raise _Refused(f"{where}{problem}")
++    elif check_name(Path(name.strip("/")).name) is not None:
++        raise _Refused(f"{where}{check_name(Path(name.strip('/')).name)}")
++    return Op(
++        index=index,
++        action=action,
++        name=name,
++        content=content,
++        category=fields["category"] or None,
++        old_string=fields["old_string"],
++        new_string=fields["new_string"],
++        replace_all=replace_all,
++        file_path=fields["file_path"],
++        file_content=fields["file_content"],
++        absorbed_into=fields["absorbed_into"],
++    )
++
++
++def parse_operations(args: Mapping[str, Any]) -> list[Op]:
++    """Every op of a call, shape-checked; raises ``_Refused`` on the first problem."""
++    raw_ops = args.get("operations")
++    default_name = args.get("name") if isinstance(args.get("name"), str) else None
++    if raw_ops is None:
++        if args.get("action") is None:
++            raise _Refused("give an action (with name) or an operations list")
++        return [_parse_one(args, 0, "", None)]
++    if not isinstance(raw_ops, list) or not raw_ops:
++        raise _Refused("operations must be a non-empty list")
++    items = cast(list[object], raw_ops)
++    if len(items) > MAX_OPS:
++        raise _Refused(f"at most {MAX_OPS} operations per call; split the work")
++    ops: list[Op] = []
++    for i, item in enumerate(items):
++        where = f"operations[{i}]: "
++        if not isinstance(item, Mapping):
++            raise _Refused(f"{where}each operation is an object")
++        ops.append(_parse_one(cast(Mapping[str, Any], item), i, where, default_name))
++    seen: dict[str, list[Op]] = {}
++    for op in ops:
++        earlier = seen.setdefault(op.lock_key, [])
++        if op.action == "create" and earlier:
++            raise _Refused(
++                f"operations[{op.index}]: create of {op.name!r} must come before the other "
++                "operations on it"
++            )
++        if any(e.action == "delete" for e in earlier):
++            raise _Refused(
++                f"operations[{op.index}]: {op.name!r} is deleted by an earlier operation; "
++                "delete must be the last operation on a skill"
++            )
++        earlier.append(op)
++    return ops
++
++
++# -- locks ----------------------------------------------------------------------------------------
++
++
++def lock_path(home: Path, name: str) -> Path:
++    """The per-skill lock: keyed on the base name, so ``foo`` and ``cat/foo`` share one."""
++    digest = hashlib.sha256(Path(name.strip().strip("/")).name.encode("utf-8")).hexdigest()
++    return home / "skills" / LOCKS_DIR / f"{digest[:16]}.lock"
++
++
++@contextlib.contextmanager
++def _locked(home: Path, names: Sequence[str]) -> Iterator[None]:
++    paths = sorted({lock_path(home, n) for n in names})
++    if paths:
++        paths[0].parent.mkdir(parents=True, exist_ok=True)
++    with contextlib.ExitStack() as stack:
++        for path in paths:
++            stack.enter_context(FileLock(path, timeout=LOCK_TIMEOUT_S))
++        yield
++
++
++# -- the overlay ----------------------------------------------------------------------------------
++
++
++def _inside(path: Path | str, folder: Path | str) -> bool:
++    real = os.path.realpath(path)
++    base = os.path.realpath(folder)
++    return real == base or real.startswith(base + os.sep)
++
++
++@dataclass
++class _Target:
++    name: str
++    folder: Path
++    record: SkillRecord | None
++    created: bool = False
++    files: dict[str, bytes | None] = field(default_factory=dict[str, bytes | None])
++    original: dict[str, bytes | None] = field(default_factory=dict[str, bytes | None])
++    deleted: bool = False
++    archive: bool = False
++    absorbed_into: str | None = None
++    ops: list[Op] = field(default_factory=list[Op])
++
++
++class _Plan:
++    def __init__(
++        self,
++        scope: Scope,
++        catalog: SkillCatalog,
++        settings: SkillsSettings,
++        *,
++        session_id: str | None,
++        review: bool,
++        archive_deletes: bool,
++    ) -> None:
++        self.scope = scope
++        self.catalog = catalog
++        self.settings = settings
++        self.session_id = session_id
++        self.review = review
++        self.archive_deletes = archive_deletes
++        self.targets: dict[str, _Target] = {}
++        self.order: list[str] = []
++        self.batch = False
++        self.usage = usage_for(scope)
++
++    # -- lookup -----------------------------------------------------------------------------------
++
++    def roots(self) -> list[Path]:
++        return [root for _tier, root in self.settings.roots()]
++
++    def _target(self, op: Op) -> _Target:
++        key = op.lock_key
++        found = self.targets.get(key)
++        if found is not None:
++            return found
++        try:
++            rec = self.catalog.resolve(op.name)
++        except SkillError as exc:
++            raise _Refused(f"{exc}; skills_list shows the skills you can change") from None
++        if rec.plugin is not None:
++            raise _Refused(f"{rec.name!r} comes from a plugin and cannot be changed here")
++        if not any(_inside(rec.skill_dir, root) for root in self.roots()):
++            raise _Refused(f"{rec.name!r} resolves outside the skill folders; it is not changed")
++        target = _Target(name=rec.name, folder=rec.skill_dir, record=rec)
++        self.targets[key] = target
++        self.order.append(key)
++        return target
++
++    def _create(self, op: Op) -> _Target:
++        name = op.name
++        if any(r.name == name for r in self.catalog.records):
++            where = next(r.skill_dir for r in self.catalog.records if r.name == name)
++            raise _Refused(f"a skill named {name!r} already exists at {where}")
++        root = self.settings.write_root
++        folder = root / (op.category or "") / name
++        if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
++            raise _Refused(f"cannot create {name!r}: {folder} exists and is not a folder")
++        if folder.is_dir() and any(folder.iterdir()):
++            raise _Refused(f"cannot create {name!r}: {folder} already holds files")
++        if not _inside(folder.parent, root) and folder.parent.exists():
++            raise _Refused(f"cannot create {name!r}: {folder.parent} leads outside {root}")
++        target = _Target(name=name, folder=folder, record=None, created=True)
++        self.targets[op.lock_key] = target
++        self.order.append(op.lock_key)
++        return target
++
++    # -- reading through the overlay --------------------------------------------------------------
++
++    def _path(self, target: _Target, rel: str) -> Path:
++        path = target.folder / rel
++        if not target.created and not _inside(path, target.folder):
++            raise _Refused(f"{rel!r} leads outside the folder of {target.name!r}; refused")
++        return path
++
++    def _disk(self, target: _Target, rel: str) -> bytes | None:
++        if rel not in target.original:
++            if target.created:
++                target.original[rel] = None
++            else:
++                path = self._path(target, rel)
++                try:
++                    target.original[rel] = path.read_bytes() if path.is_file() else None
++                except OSError as exc:
++                    raise _Refused(f"could not read {rel!r}: {exc.strerror or exc}") from None
++        return target.original[rel]
++
++    def read(self, target: _Target, rel: str) -> bytes | None:
++        if rel in target.files:
++            return target.files[rel]
++        return self._disk(target, rel)
++
++    def _guard_read(self, target: _Target, rel: str, action: str) -> None:
++        """Review fork: changing existing content needs a fresh view of exactly that content."""
++        if not self.review or rel in target.files or target.created:
++            return
++        current = self._disk(target, rel)
++        if current is None:
++            return
++        if READS.fresh(self.session_id, target.name, rel, current):
++            return
++        hint = (
++            f"skill_view(name='{target.name}')"
++            if rel == SKILL_FILE
++            else f"skill_view(name='{target.name}', file_path='{rel}')"
++        )
++        raise _Refused(
++            f"{action} of {rel} in {target.name!r} refused: its current content was not viewed in "
++            f"this review. Call {hint}, then retry with the text it returns.",
++            view_required=True,
++        )
++
++    # -- the actions ------------------------------------------------------------------------------
++
++    def apply(self, op: Op) -> None:
++        where = f"operations[{op.index}] ({op.label()}): " if self.batch else ""
++        try:
++            getattr(self, f"_do_{op.action}")(op)
++        except _Refused as exc:
++            raise _Refused(where + exc.message, failed_index=op.index, **exc.extra) from None
++        except SkillFormatError as exc:
++            raise _Refused(where + str(exc), failed_index=op.index) from None
++
++    def _do_create(self, op: Op) -> None:
++        target = self._create(op)
++        target.ops.append(op)
++        target.files[SKILL_FILE] = (op.content or "").encode("utf-8")
++
++    def _do_edit(self, op: Op) -> None:
++        target = self._target(op)
++        self._live(target, op)
++        self._guard_read(target, SKILL_FILE, "rewrite")
++        target.ops.append(op)
++        target.files[SKILL_FILE] = (op.content or "").encode("utf-8")
++
++    def _do_patch(self, op: Op) -> None:
++        target = self._target(op)
++        self._live(target, op)
++        rel = SKILL_FILE
++        if op.file_path and op.file_path.strip() not in (SKILL_FILE, f"./{SKILL_FILE}"):
++            rel = check_support_path(op.file_path).as_posix()
++        self._path(target, rel)
++        current = self.read(target, rel)
++        if current is None:
++            raise _Refused(f"{target.name!r} has no file {rel}")
++        self._guard_read(target, rel, "patch")
++        try:
++            text = current.decode("utf-8")
++        except UnicodeDecodeError:
++            raise _Refused(f"{rel} is not text; replace it with write_file") from None
++        old = op.old_string or ""
++        found = text.count(old)
++        if found == 0:
++            preview = text[:PREVIEW_CHARS] + ("…" if len(text) > PREVIEW_CHARS else "")
++            raise _Refused(
++                f"old_string was not found in {rel}; copy it exactly from the file",
++                file_preview=preview,
++            )
++        if found > 1 and not op.replace_all:
++            raise _Refused(
++                f"old_string occurs {found} times in {rel}; include more of the surrounding text "
++                "or set replace_all"
++            )
++        new = op.new_string or ""
++        text = text.replace(old, new) if op.replace_all else text.replace(old, new, 1)
++        target.ops.append(op)
++        target.files[rel] = text.encode("utf-8")
++
++    def _do_write_file(self, op: Op) -> None:
++        target = self._target(op)
++        self._live(target, op)
++        rel = check_support_path(op.file_path or "").as_posix()
++        data = (op.file_content or "").encode("utf-8")
++        check_support_size(data)
++        self._path(target, rel)
++        self._guard_read(target, rel, "write_file over")
++        target.ops.append(op)
++        target.files[rel] = data
++
++    def _do_remove_file(self, op: Op) -> None:
++        target = self._target(op)
++        self._live(target, op)
++        rel = check_support_path(op.file_path or "").as_posix()
++        self._path(target, rel)
++        if self.read(target, rel) is None:
++            raise _Refused(f"{target.name!r} has no file {rel}")
++        self._guard_read(target, rel, "remove_file of")
++        target.ops.append(op)
++        target.files[rel] = None
++
++    def _do_delete(self, op: Op) -> None:
++        target = self._target(op)
++        self._live(target, op)
++        name = target.name
++        if target.created:
++            raise _Refused(f"{name!r} is created in this same call; leave it out instead")
++        if self.usage.is_pinned(name):
++            raise _Refused(
++                f"{name!r} is pinned, so it cannot be deleted (patches are still allowed). The "
++                f"user can run `indus curator unpin {name}` first."
++            )
++        if self.review:
++            reason = self._review_delete_problem(target)
++            if reason is not None:
++                raise _Refused(f"the review may not delete {name!r}: {reason}")
++        if target.folder.is_symlink():
++            raise _Refused(f"{name!r} is a link to another folder; it is not deleted here")
++        for root in self.roots():
++            if os.path.realpath(target.folder) == os.path.realpath(root):
++                raise _Refused(f"{name!r} resolves to a skills root; refused")
++        absorbed = (op.absorbed_into or "").strip()
++        if absorbed:
++            if Path(absorbed).name == Path(name).name:
++                raise _Refused("absorbed_into must name another skill")
++            other = self.targets.get(Path(absorbed).name)
++            if (other is None or other.deleted) and self.catalog.find(absorbed) is None:
++                raise _Refused(
++                    f"absorbed_into={absorbed!r} does not exist; create or patch it first"
++                )
++        target.ops.append(op)
++        target.deleted = True
++        target.archive = self.archive_deletes
++        target.absorbed_into = absorbed or None
++
++    def _review_delete_problem(self, target: _Target) -> str | None:
++        rec = target.record
++        if rec is not None and rec.tier == TIER_EXTERNAL:
++            return "it lives in skills.external_dirs, which the review does not manage"
++        if not self.usage.is_curator_managed(target.name):
++            return (
++                "only skills the review created itself (curator-managed) may be removed by it; "
++                "this one was written by hand, by /learn or ships with Indus Agent"
++            )
++        return None
++
++    def _live(self, target: _Target, op: Op) -> None:
++        if target.deleted:
++            raise _Refused(f"{target.name!r} is deleted earlier in this call")
++
++    # -- final checks -----------------------------------------------------------------------------
++
++    def check(self) -> None:
++        for key in self.order:
++            target = self.targets[key]
++            if target.deleted or SKILL_FILE not in target.files:
++                continue
++            data = target.files[SKILL_FILE]
++            if data is None:
++                raise _Refused(f"SKILL.md of {target.name!r} cannot be removed")
++            try:
++                check_skill_text(data.decode("utf-8"), expected_name=target.name)
++            except SkillFormatError as exc:
++                verb = "created" if target.created else "changed"
++                raise _Refused(f"{target.name!r} would be invalid once {verb}: {exc}") from None
++
++
++# -- committing -----------------------------------------------------------------------------------
++
++
++@dataclass
++class _Undo:
++    files: list[tuple[Path, bytes | None]] = field(default_factory=list[tuple[Path, bytes | None]])
++    moves: list[tuple[Path, Path]] = field(default_factory=list[tuple[Path, Path]])
++    made: list[Path] = field(default_factory=list[Path])
++
++    def run(self) -> None:
++        for src, dest in reversed(self.moves):
++            try:
++                shutil.move(str(dest), str(src))
++            except OSError as exc:
++                log.error("could not move %s back to %s: %s", dest, src, exc)
++        for path, data in reversed(self.files):
++            try:
++                if data is None:
++                    path.unlink(missing_ok=True)
++                else:
++                    path.parent.mkdir(parents=True, exist_ok=True)
++                    atomic_write_bytes(path, data)
++            except OSError as exc:
++                log.error("could not restore %s: %s", path, exc)
++        for folder in reversed(self.made):
++            _prune(folder, stop=None)
++
++
++def _prune(folder: Path, stop: Path | None) -> None:
++    """Remove ``folder`` and its empty parents while empty, never ``stop`` or above."""
++    current = folder
++    while stop is None or (current != stop and _inside(current, stop)):
++        try:
++            current.rmdir()
++        except OSError:
++            return
++        if stop is None:
++            return
++        current = current.parent
++
++
++def _commit(plan: _Plan) -> tuple[_Undo, dict[str, Path]]:
++    """Write every change; on failure undo what was written and raise."""
++    undo = _Undo()
++    archived: dict[str, Path] = {}
++    aside: list[Path] = []
++    try:
++        for key in plan.order:
++            target = plan.targets[key]
++            if target.deleted:
++                continue
++            if target.created:
++                missing = [p for p in (target.folder, *target.folder.parents) if not p.exists()]
++                target.folder.mkdir(parents=True, exist_ok=True)
++                undo.made.extend(reversed(missing))
++            for rel, data in target.files.items():
++                path = target.folder / rel
++                before = target.original.get(rel)
++                if data is None:
++                    if path.is_file() or path.is_symlink():
++                        path.unlink()
++                        undo.files.append((path, before))
++                        _prune(path.parent, stop=target.folder)
++                    continue
++                if not path.parent.is_dir():
++                    made = [p for p in (path.parent, *path.parent.parents) if not p.exists()]
++                    path.parent.mkdir(parents=True, exist_ok=True)
++                    undo.made.extend(reversed(made))
++                atomic_write_bytes(path, data, mode=None if before is not None else 0o644)
++                undo.files.append((path, before))
++        for key in plan.order:
++            target = plan.targets[key]
++            if not target.deleted:
++                continue
++            if target.archive:
++                dest = ARCHIVER(plan.scope, target.folder, target.name)
++                undo.moves.append((target.folder, dest))
++                archived[target.name] = dest
++            else:
++                dest = target.folder.with_name(
++                    f".{target.folder.name}.deleting-{secrets.token_hex(3)}"
++                )
++                os.replace(target.folder, dest)
++                undo.moves.append((target.folder, dest))
++                aside.append(dest)
++    except BaseException:
++        undo.run()
++        raise
++    for folder in aside:
++        try:
++            shutil.rmtree(folder)
++        except OSError as exc:
++            log.warning("deleted skill left at %s: %s", folder, exc)
++    for key in plan.order:
++        target = plan.targets[key]
++        if target.deleted and not target.archive:
++            root = next((r for r in plan.roots() if _inside(target.folder, r)), None)
++            if root is not None:
++                _prune(target.folder.parent, stop=root)
++    return undo, archived
++
++
++# -- running a call -------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class Outcome:
++    ok: bool
++    body: dict[str, Any]
++    diffs: tuple[tuple[str, str, str], ...] = ()
++    """``(path, before, after)`` text of each changed file (for approval output)."""
++
++
++def _ledger_action(target: _Target) -> str:
++    if target.created:
++        return "create"
++    if target.deleted:
++        return "archive" if target.archive else "delete"
++    kinds = {op.action for op in target.ops}
++    return kinds.pop() if len(kinds) == 1 else "patch"
++
++
++def _side_effects(
++    plan: _Plan,
++    origin: str,
++    before: Mapping[str, list[FileRef] | None],
++    archived: Mapping[str, Path],
++    body: dict[str, Any],
++) -> None:
++    scope = plan.scope
++    targets = [plan.targets[k] for k in plan.order]
++    try:
++        ledger = SkillLedger.for_scope(scope)
++        for target in targets:
++            prior = before.get(target.name)
++            evidence: dict[str, Any] = {"session_id": plan.session_id}
++            paths = [op.file_path for op in target.ops if op.file_path]
++            if len(paths) == 1:
++                evidence["file_path"] = paths[0]
++            if target.deleted:
++                evidence["absorbed_into"] = target.absorbed_into
++                evidence["archived"] = target.archive
++            ledger.record(
++                _ledger_action(target),
++                target.name,
++                before=prior if prior is not None else [],
++                after_dir=archived.get(target.name)
++                if target.archive
++                else (None if target.deleted else target.folder),
++                evidence=evidence,
++            )
++    except Exception:
++        log.warning("skill ledger not written", exc_info=True)
++    try:
++        clear_list_cache(scope)
++        clear_scan_cache()
++    except Exception:
++        log.warning("skill caches not cleared", exc_info=True)
++    try:
++        usage = usage_for(scope)
++        for target in targets:
++            if target.created:
++                usage.record_created(target.name, origin=origin)
++            elif target.deleted and target.archive:
++                usage.set_state(target.name, "archived")
++            elif target.deleted:
++                usage.forget(target.name)
++            elif any(op.action in PATCH_TYPES for op in target.ops):
++                usage.bump_patch(target.name)
++    except Exception:
++        log.warning("skill usage not recorded", exc_info=True)
++    lint: list[dict[str, str]] = []
++    notes: list[str] = []
++    try:
++        shipped = bundled_names(scope.home / "skills")
++        for target in targets:
++            if target.deleted:
++                continue
++            data = target.files.get(SKILL_FILE)
++            text = data.decode("utf-8") if data else (target.folder / SKILL_FILE).read_text("utf-8")
++            for finding in lint_skill(text, target.folder):
++                lint.append({"skill": target.name, **finding.as_dict()})
++            if not target.created and target.name in shipped:
++                notes.append(
++                    f"{target.name!r} ships with Indus Agent; it now counts as edited, so "
++                    "`indus skills sync` will leave it as it is"
++                )
++    except Exception:
++        log.warning("skill lint failed", exc_info=True)
++    if lint:
++        body["lint"] = lint
++        body["lint_hint"] = "Saved. These are advice, not errors; patch the skill to address them."
++    if notes:
++        body["notes"] = notes
++    event = SkillWriteEvent(
++        origin=origin,
++        session_id=plan.session_id,
++        actions=tuple(op.action for t in targets for op in t.ops),
++        skills=tuple(t.name for t in targets),
++        created=tuple(t.name for t in targets if t.created),
++        deleted=tuple(t.name for t in targets if t.deleted and not t.archive),
++        archived=tuple(t.name for t in targets if t.archive),
++    )
++    for listener in (*LIFECYCLE, *SUCCESS_LISTENERS):
++        try:
++            listener(event)
++        except Exception:
++            log.warning("a skill write listener failed", exc_info=True)
++
++
++def _scan(plan: _Plan) -> str | None:
++    if not bool(skills_setting(plan.scope, "skills.scan_agent_created")):
++        return None
++    scanner = SKILL_SCANNER
++    if scanner is None:
++        log.debug("skills.scan_agent_created is on but no scanner is registered; scan skipped")
++        return None
++    for key in plan.order:
++        target = plan.targets[key]
++        if target.deleted:
++            continue
++        try:
++            problem = scanner(target.folder)
++        except Exception:
++            log.warning("skill scan of %s failed", target.folder, exc_info=True)
++            continue
++        if problem:
++            return f"{target.name!r} was refused by the content scan: {problem}"
++    return None
++
++
++def _diffs(plan: _Plan) -> tuple[tuple[str, str, str], ...]:
++    out: list[tuple[str, str, str]] = []
++    for key in plan.order:
++        target = plan.targets[key]
++        if target.deleted:
++            continue
++        for rel, data in target.files.items():
++            old = target.original.get(rel)
++            try:
++                before = old.decode("utf-8") if old else ""
++                after = data.decode("utf-8") if data else ""
++            except UnicodeDecodeError:
++                continue
++            out.append((f"{target.name}/{rel}", before, after))
++    return tuple(out)
++
++
++def _capture_before(plan: _Plan) -> dict[str, list[FileRef] | None]:
++    """The ledger's before-state of every touched skill (telemetry: failures give None)."""
++    try:
++        ledger = SkillLedger.for_scope(plan.scope)
++    except Exception:
++        log.warning("skill ledger unavailable; this change is not recorded", exc_info=True)
++        return {}
++    out: dict[str, list[FileRef] | None] = {}
++    for key in plan.order:
++        target = plan.targets[key]
++        out[target.name] = [] if target.created else ledger.capture_quietly(target.folder)
++    return out
++
++
++def run_operations(
++    scope: Scope,
++    ops: Sequence[Op],
++    *,
++    session_id: str | None = None,
++    origin: str | None = None,
++    replay: bool = False,
++) -> Outcome:
++    """Apply already-parsed ops under the locks (no approval gate). ``replay`` marks a person's
++    approval of a staged write: the review fork's read guard does not apply then."""
++    who = origin or pending.current_origin()
++    review = who == "background_review" and not replay
++    try:
++        settings = SkillsSettings.from_scope(scope)
++        with _locked(scope.home, [op.lock_key for op in ops]):
++            catalog = load_catalog(scope, settings=settings)
++            plan = _Plan(
++                scope,
++                catalog,
++                settings,
++                session_id=session_id,
++                review=review,
++                archive_deletes=who == "background_review",
++            )
++            plan.batch = len(ops) > 1
++            for op in ops:
++                plan.apply(op)
++            plan.check()
++            before = _capture_before(plan)
++            try:
++                undo, archived = _commit(plan)
++            except OSError as exc:
++                return Outcome(False, {"error": f"nothing was saved: {exc.strerror or exc}"})
++            problem = _scan(plan)
++            if problem is not None:
++                undo.run()
++                return Outcome(False, {"error": problem + "; nothing was saved"})
++            body = _success_body(plan, archived)
++            _side_effects(plan, who, before, archived, body)
++            return Outcome(True, body, _diffs(plan))
++    except _Refused as exc:
++        return Outcome(False, {"error": exc.message, **exc.extra})
++    except TimeoutError as exc:
++        return Outcome(False, {"error": f"the skill is being changed elsewhere; retry ({exc})"})
++
++
++def _success_body(plan: _Plan, archived: Mapping[str, Path]) -> dict[str, Any]:
++    results: list[dict[str, Any]] = []
++    for key in plan.order:
++        target = plan.targets[key]
++        for op in target.ops:
++            row: dict[str, Any] = {"action": op.action, "name": target.name}
++            if op.file_path:
++                row["file_path"] = op.file_path
++            if op.action == "create":
++                row["path"] = str(target.folder)
++            if op.action == "delete" and target.name in archived:
++                row["archived_to"] = str(archived[target.name])
++            results.append(row)
++    count = len(results)
++    names = ", ".join(plan.targets[k].name for k in plan.order)
++    return {
++        "success": True,
++        "message": f"{count} change{'s' if count != 1 else ''} saved ({names}).",
++        "results": results,
++    }
++
++
++def _summary(ops: Sequence[Op]) -> str:
++    return "; ".join(op.label() for op in ops)
++
++
++def skill_manage(
++    args: Mapping[str, Any], *, scope: Scope | None = None, session_id: str | None = None
++) -> str:
++    """The tool handler (see the module notes)."""
++    if scope is None:
++        return ToolResult.error("skill_manage needs a profile scope").text
++    try:
++        ops = parse_operations(args)
++    except _Refused as exc:
++        return ToolResult.error(exc.message, **exc.extra).text
++    origin = pending.current_origin()
++    decision = pending.decide(
++        "skills", gate=pending.gate_on(scope, "skills"), origin=origin, can_ask=False
++    )
++    if decision != "allow":
++        try:
++            record = pending.PendingStore(scope.home, scope.clock).stage(
++                "skills",
++                {"operations": [op.to_json() for op in ops], "session_id": session_id},
++                summary=_summary(ops),
++                origin=origin,
++            )
++        except Exception as exc:
++            log.error("staging a skill write failed", exc_info=True)
++            return ToolResult.error(f"the write could not be held for approval ({exc})").text
++        return json.dumps(
++            {
++                "success": True,
++                "staged": True,
++                "pending_id": record.id,
++                "message": pending.staged_message("skills"),
++            },
++            ensure_ascii=False,
++        )
++    outcome = run_operations(scope, ops, session_id=session_id, origin=origin)
++    if not outcome.ok:
++        message = str(outcome.body.get("error", "refused"))
++        extra = {k: v for k, v in outcome.body.items() if k != "error"}
++        return ToolResult.error(message, **extra).text
++    return json.dumps(outcome.body, ensure_ascii=False)
++
++
++def apply_pending_skill(scope: Scope, record: pending.PendingWrite) -> pending.Applied:
++    """Replay a staged skill write for ``indus skills approve`` / ``/skills approve`` (the full
++    diff; ``pending.render_approval`` cuts it for chat surfaces)."""
++    payload = record.payload
++    try:
++        ops = parse_operations({"operations": copy.deepcopy(payload.get("operations"))})
++    except _Refused as exc:
++        return pending.Applied(False, f"the staged record is not valid: {exc.message}")
++    session = payload.get("session_id")
++    outcome = run_operations(
++        scope,
++        ops,
++        session_id=session if isinstance(session, str) else None,
++        origin=record.origin,
++        replay=True,
++    )
++    if not outcome.ok:
++        return pending.Applied(False, str(outcome.body.get("error", "refused")))
++    diff = "".join(
++        pending.skill_diff(before, after, path, surface="cli")
++        for path, before, after in outcome.diffs
++    )
++    return pending.Applied(True, str(outcome.body.get("message", "")), diff=diff)
++
++
++def register_tools(registry: ToolRegistry) -> None:
++    registry.register(
++        TOOL_NAME,
++        TOOLSET,
++        SKILL_MANAGE_SCHEMA,
++        skill_manage,
++        schema_overrides=schema_overrides,
++        traits=ToolTraits(mutating=True),
++    )
+diff --git a/src/indus/service/commands/registry.py b/src/indus/service/commands/registry.py
+index d557791..2fc8d6d 100644
+--- a/src/indus/service/commands/registry.py
++++ b/src/indus/service/commands/registry.py
+@@ -396,12 +396,29 @@ BUILTIN: Final[tuple[CommandDef, ...]] = (
+         surfaces=TERMINAL,
+         mode="mixed",
+     ),
+-    _cmd("skills", "Find, install and manage skills", "tools", args="[subcommand]", owner="P09"),
++    _cmd(
++        "skills",
++        "Find, install and manage skills",
++        "tools",
++        args="[list|view|reload|pending|approve|reject] [name|id]",
++        subs=("list", "view", "reload", "pending", "approve", "reject"),
++        mode="mixed",
++        owner="P09",
++    ),
++    _cmd(
++        "reload-skills",
++        "Rescan skill folders and refresh skill commands (the prompt stays as it is)",
++        "tools",
++        owner="P09",
++    ),
++    _cmd("bundles", "List skill bundles (each runs as its own /command)", "tools", owner="P09"),
+     _cmd(
+         "memory",
+         "Review memory writes waiting for approval",
+         "tools",
+-        args="[subcommand]",
++        args="[pending|approve|reject|approval|status] [id|all|on|off]",
++        subs=("pending", "approve", "reject", "approval", "status"),
++        mode="mixed",
+         owner="P09",
+     ),
+     _cmd(
+diff --git a/tests/unit/cli/commands/test_memory.py b/tests/unit/cli/commands/test_memory.py
+new file mode 100644
+index 0000000..435c01d
+--- /dev/null
++++ b/tests/unit/cli/commands/test_memory.py
+@@ -0,0 +1,164 @@
++"""``indus memory`` verbs (P09-24)."""
++
++from __future__ import annotations
++
++from collections.abc import Sequence
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.cli.commands import memory as memory_cmd
++from indus.foundation.config import loader
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.memory.store import DELIMITER, MemoryStore
++from tests.unit.cli.commands._helpers_d import run
++
++
++def seed(scope: Scope, *entries: str, target: str = "MEMORY.md") -> Path:
++    folder = scope.home / "memories"
++    folder.mkdir(parents=True, exist_ok=True)
++    path = folder / target
++    path.write_text(DELIMITER.join(entries), encoding="utf-8")
++    return path
++
++
++def stage_add(scope: Scope, text: str) -> pending.PendingWrite:
++    return pending.PendingStore(scope.home, scope.clock).stage(
++        "memory",
++        {"target": "memory", "operations": [{"action": "add", "content": text}]},
++        summary=f"add: {text}",
++        origin="background_review",
++    )
++
++
++def test_show(scope: Scope) -> None:
++    seed(scope, "Prefers short answers.", "Uses uv.\nNever pip.")
++    result = run(scope, "memory", "show", "memory")
++    assert result.code == 0
++    assert "saved notes (MEMORY.md):" in result.out
++    assert "  1. Prefers short answers." in result.out
++    assert "  2. Uses uv.\n     Never pip." in result.out
++    both = run(scope, "memory", "show")
++    assert "user profile (USER.md):" in both.out and "(empty)" in both.out
++
++
++def test_status(scope: Scope) -> None:
++    seed(scope, "x" * 100)
++    stage_add(scope, "later")
++    result = run(scope, "memory", "status")
++    assert result.code == 0
++    assert "memory  saved notes" in result.out and "on" in result.out
++    assert "100/2,200 chars" in result.out
++    assert "Write approval: off" in result.out
++    assert "Waiting for approval: 1" in result.out
++
++
++def test_approval_on_off_writes_config(scope: Scope) -> None:
++    result = run(scope, "memory", "approval", "on")
++    assert result.code == 0, result.err
++    assert loader.load(scope).get("memory.write_approval") is True
++    assert "Write approval: on" in run(scope, "memory", "status").out
++    run(scope, "memory", "approval", "off")
++    assert loader.load(scope).get("memory.write_approval") is False
++
++
++def test_approve_all_applies_in_creation_order(scope: Scope) -> None:
++    first = stage_add(scope, "First fact.")
++    second = stage_add(scope, "Second fact.")
++    listed = run(scope, "memory", "pending")
++    assert listed.out.index(first.id) < listed.out.index(second.id)
++    result = run(scope, "memory", "approve", "all")
++    assert result.code == 0, result.err
++    assert result.out.index(first.id) < result.out.index(second.id)
++    assert MemoryStore(scope.home).entries("memory") == ["First fact.", "Second fact."]
++    assert run(scope, "memory", "pending").out.strip() == "Nothing is waiting for approval."
++
++
++def test_approve_shows_replaced_entry_and_refuses_stale(scope: Scope) -> None:
++    seed(scope, "Old fact.", "Other fact.")
++    store = pending.PendingStore(scope.home, scope.clock)
++    ops = [{"action": "remove", "old_text": "Old fact", "pinned_entry": "Old fact."}]
++    record = store.stage(
++        "memory", {"target": "memory", "operations": ops}, summary="remove", origin="foreground"
++    )
++    stale = store.stage(
++        "memory",
++        {
++            "target": "memory",
++            "operations": [{"action": "remove", "old_text": "Gone", "pinned_entry": "Gone."}],
++        },
++        summary="remove gone",
++        origin="foreground",
++    )
++    result = run(scope, "memory", "approve", record.id, stale.id)
++    assert result.code == 0
++    assert "replaced or removed:\n    Old fact." in result.out
++    assert "not applied" in result.out
++    assert [r.id for r in store.list("memory")] == [stale.id]
++
++
++def test_approve_unknown_exits_1(scope: Scope) -> None:
++    result = run(scope, "memory", "approve", "abc123")
++    assert result.code == 1
++    assert "no pending write abc123" in result.out
++
++
++def test_reject(scope: Scope) -> None:
++    record = stage_add(scope, "Nope.")
++    assert run(scope, "memory", "reject", record.id).out.strip() == f"Rejected {record.id}."
++    assert MemoryStore(scope.home).entries("memory") == []
++    assert run(scope, "memory", "reject", "all").code == 1
++
++
++def test_edit_needs_a_terminal(scope: Scope) -> None:
++    result = run(scope, "memory", "edit", "memory")
++    assert result.code == 2
++    assert "needs a terminal" in result.err
++
++
++def _editor(text: str, calls: list[Sequence[str]]) -> Any:
++    def edit(command: Sequence[str], path: Path) -> int:
++        calls.append(command)
++        path.write_text(text, encoding="utf-8")
++        return 0
++
++    return edit
++
++
++def test_edit_saves(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    path = seed(scope, "One.")
++    calls: list[Sequence[str]] = []
++    monkeypatch.setattr(memory_cmd, "launch_editor", _editor("One.\n§\nTwo.\n", calls))
++    edited = scope.with_env(scope.env.with_overlay({"EDITOR": "nano -w", "VISUAL": None}))
++    result = run(edited, "memory", "edit", "memory", tty=True)
++    assert result.code == 0, result.err
++    assert calls == [["nano", "-w"]]
++    assert path.read_text(encoding="utf-8") == "One.\n§\nTwo."
++    assert "Saved 2 entries" in result.out
++    assert not list(path.parent.glob(".*.edit.md"))
++
++
++def test_edit_refuses_when_the_file_changed(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    path = seed(scope, "One.")
++
++    def racing(_command: Sequence[str], draft: Path) -> int:
++        path.write_text("Agent wrote this.", encoding="utf-8")
++        draft.write_text("Mine.", encoding="utf-8")
++        return 0
++
++    monkeypatch.setattr(memory_cmd, "launch_editor", racing)
++    result = run(scope, "memory", "edit", "memory", tty=True)
++    assert result.code == 1
++    assert "changed while it was open" in result.err
++    assert path.read_text(encoding="utf-8") == "Agent wrote this."
++
++
++def test_edit_no_change_and_failed_editor(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    seed(scope, "One.")
++    monkeypatch.setattr(memory_cmd, "launch_editor", _editor("One.", []))
++    assert run(scope, "memory", "edit", "memory", tty=True).out.strip() == "No changes."
++    monkeypatch.setattr(memory_cmd, "launch_editor", lambda _c, _p: 3)
++    failed = run(scope, "memory", "edit", "user", tty=True)
++    assert failed.code == 1 and "exited with 3" in failed.err
+diff --git a/tests/unit/cli/commands/test_skills.py b/tests/unit/cli/commands/test_skills.py
+new file mode 100644
+index 0000000..11bd4d5
+--- /dev/null
++++ b/tests/unit/cli/commands/test_skills.py
+@@ -0,0 +1,193 @@
++"""``indus skills`` verbs (P09-24)."""
++
++from __future__ import annotations
++
++import json
++import shutil
++from collections.abc import Iterator
++from pathlib import Path
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.skills import bundled_sync
++from indus.learning.skills.resolver import clear_scan_cache
++from indus.learning.skills.view_tools import clear_list_cache
++from tests.unit.cli.commands._helpers_d import run
++from tests.unit.learning.skills.helpers import make_skill, skill_md, with_skills_config
++
++INVALID = Path(__file__).resolve().parents[3] / "fixtures" / "skills" / "invalid"
++
++
++@pytest.fixture(autouse=True)
++def _clean() -> Iterator[None]:
++    clear_scan_cache()
++    clear_list_cache()
++    yield
++    clear_scan_cache()
++
++
++@pytest.fixture
++def shipped(tmp_path: Path) -> Path:
++    """A shipped skills tree with one skill, ``dev/shipped``."""
++    source = tmp_path / "shipped-tree"
++    make_skill(source, "dev/shipped", description="Ships with the product.")
++    return source
++
++
++@pytest.fixture
++def home_scope(scope: Scope, shipped: Path) -> Scope:
++    """The test profile, pointed at the fake shipped tree and seeded from it."""
++    seeded = scope.with_env(scope.env.with_overlay({bundled_sync.SOURCE_ENV: str(shipped)}))
++    report = bundled_sync.sync_bundled(seeded.home, source=shipped)
++    assert report.added == ["shipped"]
++    return seeded
++
++
++def test_list_json_and_source(home_scope: Scope, tmp_path: Path) -> None:
++    make_skill(home_scope.home / "skills", "notes", description="My own notes.")
++    external = tmp_path / "ext"
++    make_skill(external, "outside", description="From elsewhere.")
++    scoped = with_skills_config(home_scope, external_dirs=[str(external)])
++    result = run(scoped, "skills", "list", "--json")
++    assert result.code == 0, result.err
++    rows = {r["name"]: r for r in json.loads(result.out)}
++    assert {n: r["source"] for n, r in rows.items()} == {
++        "notes": "local",
++        "shipped": "bundled",
++        "outside": "external",
++    }
++    assert rows["notes"]["state"] == "active" and rows["notes"]["status"] == "ok"
++    result = run(scoped, "skills", "list", "--source", "bundled")
++    assert result.code == 0
++    assert "shipped" in result.out and "notes" not in result.out
++    assert result.out.strip().endswith("1 skill.")
++
++
++def test_view(home_scope: Scope) -> None:
++    folder = make_skill(home_scope.home / "skills", "notes", body="Do the thing.\n")
++    (folder / "references").mkdir()
++    (folder / "references" / "a.md").write_text("A\n", encoding="utf-8")
++    result = run(home_scope, "skills", "view", "notes")
++    assert result.code == 0
++    assert "Do the thing." in result.out
++    assert "references/a.md" in result.out
++    missing = run(home_scope, "skills", "view", "nope")
++    assert missing.code == 1 and "no skill named 'nope'" in missing.err
++
++
++def test_check_passes_with_warnings(home_scope: Scope) -> None:
++    body = "Rule.\n" + ("word " * 5000) + "\n"
++    make_skill(home_scope.home / "skills", "long", body=body)
++    result = run(home_scope, "skills", "check")
++    assert result.code == 0, result.out
++    assert "lint.oversized" in result.out
++    assert "0 errors, 1 warnings" in result.out
++
++
++def test_check_exits_1_on_an_invalid_skill(home_scope: Scope) -> None:
++    shutil.copytree(
++        INVALID / "missing-description", home_scope.home / "skills" / "missing-description"
++    )
++    result = run(home_scope, "skills", "check")
++    assert result.code == 1
++    assert "error    missing-description" in result.out
++    assert "description" in result.out
++
++
++def test_check_flags_ambiguous_names(home_scope: Scope) -> None:
++    make_skill(home_scope.home / "skills", "a/twin", name="twin", body="One.\n")
++    make_skill(home_scope.home / "skills", "b/twin", name="twin", body="Two.\n")
++    result = run(home_scope, "skills", "check")
++    assert result.code == 1
++    assert "twin: the name is used by several skills" in result.out
++
++
++def test_list_modified_and_diff(home_scope: Scope) -> None:
++    result = run(home_scope, "skills", "list-modified")
++    assert result.out.strip() == "No shipped skill has been edited."
++    assert run(home_scope, "skills", "diff", "shipped").out.strip() == (
++        "No changes from the shipped version."
++    )
++    copy = home_scope.home / "skills" / "dev" / "shipped" / "SKILL.md"
++    copy.write_text(skill_md("shipped", "Ships with the product.", body="Mine now.\n"), "utf-8")
++    assert run(home_scope, "skills", "list-modified").out.strip() == "shipped"
++    diff = run(home_scope, "skills", "diff", "shipped")
++    assert diff.code == 0
++    assert "-Steps go here." in diff.out and "+Mine now." in diff.out
++    assert run(home_scope, "skills", "diff", "notes").code == 1
++
++
++def test_sync_adds_new_shipped_skills(home_scope: Scope, shipped: Path) -> None:
++    make_skill(shipped, "ops/second")
++    result = run(home_scope, "skills", "sync")
++    assert result.code == 0
++    assert "1 added" in result.out
++    assert (home_scope.home / "skills" / "ops" / "second" / "SKILL.md").is_file()
++
++
++def test_opt_out_remove_needs_confirmation(home_scope: Scope) -> None:
++    result = run(home_scope, "skills", "opt-out", "--remove")
++    assert result.code == 2
++    assert "-y" in result.err
++    assert (home_scope.home / "skills" / "dev" / "shipped").is_dir()
++    assert not bundled_sync.is_opted_out(home_scope.home)
++    result = run(home_scope, "skills", "opt-out", "--remove", "-y")
++    assert result.code == 0, result.err
++    assert "Deleted 1: shipped" in result.out
++    assert bundled_sync.is_opted_out(home_scope.home)
++    assert not (home_scope.home / "skills" / "dev" / "shipped").exists()
++
++
++def test_opt_out_with_tty_confirmation(home_scope: Scope) -> None:
++    result = run(home_scope, "skills", "opt-out", "--remove", tty=True, input="n\n")
++    assert result.code == 1 and "Nothing changed." in result.out
++    result = run(home_scope, "skills", "opt-out", "--remove", tty=True, input="y\n")
++    assert result.code == 0
++    assert not (home_scope.home / "skills" / "dev" / "shipped").exists()
++
++
++def test_opt_in_syncs(home_scope: Scope) -> None:
++    run(home_scope, "skills", "opt-out", "--remove", "-y")
++    result = run(home_scope, "skills", "opt-in")
++    assert result.code == 0
++    assert not bundled_sync.is_opted_out(home_scope.home)
++    assert (home_scope.home / "skills" / "dev" / "shipped" / "SKILL.md").is_file()
++
++
++def test_reset_and_restore(home_scope: Scope) -> None:
++    copy = home_scope.home / "skills" / "dev" / "shipped" / "SKILL.md"
++    copy.write_text(skill_md("shipped", body="Edited.\n"), encoding="utf-8")
++    refused = run(home_scope, "skills", "reset", "shipped", "--restore")
++    assert refused.code == 2
++    assert "Edited." in copy.read_text(encoding="utf-8")
++    restored = run(home_scope, "skills", "reset", "shipped", "--restore", "-y")
++    assert restored.code == 0, restored.err
++    assert "Steps go here." in copy.read_text(encoding="utf-8")
++    untracked = run(home_scope, "skills", "reset", "shipped")
++    assert untracked.code == 0
++    assert "shipped" not in bundled_sync.read_manifest(home_scope.home)
++    assert run(home_scope, "skills", "reset", "nothing-like-it").code == 1
++
++
++def test_pending_approve_reject(home_scope: Scope) -> None:
++    make_skill(home_scope.home / "skills", "notes")
++    store = pending.PendingStore(home_scope.home, home_scope.clock)
++    patch = {"action": "patch", "name": "notes", "old_string": "Steps", "new_string": "Moves"}
++    first = store.stage("skills", {"operations": [patch]}, summary="patch notes", origin="learn")
++    second = store.stage(
++        "skills",
++        {"operations": [{"action": "delete", "name": "notes"}]},
++        summary="delete notes",
++        origin="learn",
++    )
++    listed = run(home_scope, "skills", "pending")
++    assert first.id in listed.out and second.id in listed.out
++    assert run(home_scope, "skills", "reject", second.id).code == 0
++    approved = run(home_scope, "skills", "approve", "all")
++    assert approved.code == 0, approved.err
++    assert "+Moves go here." in approved.out
++    assert "Moves" in (home_scope.home / "skills" / "notes" / "SKILL.md").read_text("utf-8")
++    assert store.list("skills") == []
++    assert run(home_scope, "skills", "reject", "all").code == 1
+diff --git a/tests/unit/cli/slash/test_dispatch.py b/tests/unit/cli/slash/test_dispatch.py
+index 266e6c0..b8a30ef 100644
+--- a/tests/unit/cli/slash/test_dispatch.py
++++ b/tests/unit/cli/slash/test_dispatch.py
+@@ -98,7 +98,9 @@ def test_prefix_ambiguity_lists(scope: Scope) -> None:
+     ctx = make_ctx(scope)
+     result = dispatch("/re", ctx)
+     assert result == SlashResult()
+-    assert ctx.lines[0] == ("/re could be several commands: /reasoning, /reset, /resume, /retry.")
++    assert ctx.lines[0] == (
++        "/re could be several commands: /reasoning, /reload-skills, /reset, /resume, /retry."
++    )
+ 
+ 
+ def test_unknown_command_suggests(scope: Scope) -> None:
+diff --git a/tests/unit/cli/slash/test_learning_cmds.py b/tests/unit/cli/slash/test_learning_cmds.py
+new file mode 100644
+index 0000000..cee6631
+--- /dev/null
++++ b/tests/unit/cli/slash/test_learning_cmds.py
+@@ -0,0 +1,147 @@
++"""P09-24: ``/memory``, ``/skills``, ``/reload-skills`` and ``/bundles`` in the classic CLI."""
++
++from __future__ import annotations
++
++from collections.abc import Iterator
++
++import pytest
++
++from indus.cli.slash.dispatch import dispatch
++from indus.cli.slash.learning_cmds import build_skill_commands
++from indus.foundation.config import loader
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.memory.store import MemoryStore
++from indus.learning.skills.bundles import reload_bundles, save_bundle
++from indus.learning.skills.resolver import clear_scan_cache
++from indus.learning.skills.view_tools import clear_list_cache
++from indus.service.commands.registry import REGISTRY
++from tests.unit.cli.slash._fakes import Ctx, FakePort, make_ctx
++from tests.unit.learning.skills.helpers import make_skill
++
++
++@pytest.fixture(autouse=True)
++def _clean() -> Iterator[None]:
++    clear_scan_cache()
++    clear_list_cache()
++    reload_bundles()
++    yield
++    clear_scan_cache()
++
++
++@pytest.fixture
++def ctx(scope: Scope) -> Ctx:
++    made = make_ctx(scope)
++    made.extensions.skill_commands = build_skill_commands(scope, made.session_id)
++    return made
++
++
++def test_registry_entries() -> None:
++    for name in ("memory", "skills", "reload-skills", "bundles"):
++        cmd = REGISTRY.resolve(name)
++        assert cmd is not None and cmd.owner == "P09"
++    skills = REGISTRY.resolve("skills")
++    assert skills is not None and "reload" in skills.subcommands
++
++
++def test_reload_skills_registers_a_new_command_without_touching_the_session(
++    scope: Scope, ctx: Ctx
++) -> None:
++    make_skill(scope.home / "skills", "first", body="First body.\n")
++    assert "fresh" not in ctx.extensions.skill_commands
++    dispatch("/reload-skills", ctx)
++    assert "first" in ctx.extensions.skill_commands
++    assert any(line.startswith("New: /first") for line in ctx.lines)
++    make_skill(scope.home / "skills", "fresh", body="Fresh body.\n")
++    ctx.lines.clear()
++    dispatch("/skills reload", ctx)
++    assert "New: /fresh" in ctx.lines
++    assert "The system prompt is unchanged" in ctx.text
++    port = ctx.port
++    assert isinstance(port, FakePort) and port.calls == []
++    result = dispatch("/fresh tidy the notes", ctx)
++    assert result.submit is not None
++    assert "Fresh body." in result.submit and "tidy the notes" in result.submit
++
++
++def test_skill_commands_stack(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "alpha", body="Alpha body.\n")
++    make_skill(scope.home / "skills", "beta", body="Beta body.\n")
++    made = make_ctx(scope)
++    made.extensions.skill_commands = build_skill_commands(scope, made.session_id)
++    result = dispatch("/alpha /beta go", made)
++    assert result.submit is not None
++    assert "Alpha body." in result.submit and "Beta body." in result.submit
++
++
++def test_bundles(scope: Scope, ctx: Ctx) -> None:
++    dispatch("/bundles", ctx)
++    assert "No skill bundles yet" in ctx.text
++    make_skill(scope.home / "skills", "alpha", body="Alpha body.\n")
++    save_bundle(scope.home, "morning", ["alpha", "absent"], description="Start of day")
++    ctx.lines.clear()
++    dispatch("/bundles", ctx)
++    assert "/morning" in ctx.text and "alpha, absent" in ctx.text
++    dispatch("/reload-skills", ctx)
++    result = dispatch("/morning now", ctx)
++    assert result.submit is not None and "Alpha body." in result.submit
++    assert "Skipped (not installed): absent" in ctx.text
++
++
++def test_skills_list_and_view(scope: Scope, ctx: Ctx) -> None:
++    dispatch("/skills", ctx)
++    assert "No skills yet" in ctx.text
++    make_skill(scope.home / "skills", "notes", description="Keep notes tidy.")
++    ctx.lines.clear()
++    dispatch("/skills list", ctx)
++    assert "notes  Keep notes tidy." in ctx.text
++    ctx.lines.clear()
++    dispatch("/skills view notes", ctx)
++    assert "Steps go here." in ctx.text
++    ctx.lines.clear()
++    dispatch("/skills view nope", ctx)
++    assert "no skill named 'nope'" in ctx.text
++    ctx.lines.clear()
++    dispatch("/skills frobnicate", ctx)
++    assert ctx.lines[0].startswith("Usage: /skills")
++
++
++def test_skills_pending_and_approve(scope: Scope, ctx: Ctx) -> None:
++    make_skill(scope.home / "skills", "notes")
++    store = pending.PendingStore(scope.home, scope.clock)
++    op = {"action": "patch", "name": "notes", "old_string": "Steps", "new_string": "Moves"}
++    record = store.stage("skills", {"operations": [op]}, summary="patch notes", origin="learn")
++    dispatch("/skills pending", ctx)
++    assert record.id in ctx.text
++    dispatch(f"/skills approve {record.id}", ctx)
++    assert "+Moves go here." in ctx.text
++    assert store.list("skills") == []
++
++
++def test_memory_pending_approve_reject(scope: Scope, ctx: Ctx) -> None:
++    store = pending.PendingStore(scope.home, scope.clock)
++
++    def stage(text: str) -> pending.PendingWrite:
++        payload = {"target": "memory", "operations": [{"action": "add", "content": text}]}
++        return store.stage("memory", payload, summary=f"add {text}", origin="background_review")
++
++    keep, drop = stage("Keep this."), stage("Drop this.")
++    dispatch("/memory", ctx)
++    assert keep.id in ctx.text and drop.id in ctx.text
++    dispatch(f"/memory reject {drop.id}", ctx)
++    assert f"Rejected {drop.id}." in ctx.lines
++    dispatch("/memory approve", ctx)
++    assert "Name the writes to approve" in ctx.lines[-1]
++    dispatch("/memory approve all", ctx)
++    assert MemoryStore(scope.home).entries("memory") == ["Keep this."]
++
++
++def test_memory_approval_switch_and_status(scope: Scope, ctx: Ctx) -> None:
++    dispatch("/memory approval", ctx)
++    assert "Memory write approval is off" in ctx.lines[-1]
++    dispatch("/memory approval on", ctx)
++    assert loader.load(scope).get("memory.write_approval") is True
++    dispatch("/memory status", ctx)
++    assert "Write approval: on" in ctx.text
++    dispatch("/memory approval maybe", ctx)
++    assert ctx.lines[-1].startswith("Usage: /memory")
+diff --git a/tests/unit/learning/skills/test_ledger.py b/tests/unit/learning/skills/test_ledger.py
+new file mode 100644
+index 0000000..dc9d732
+--- /dev/null
++++ b/tests/unit/learning/skills/test_ledger.py
+@@ -0,0 +1,283 @@
++"""The skill mutation ledger: entries, blobs, rollback, size cap (P09-13)."""
++
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.learning.skills import ledger as ledger_mod
++from indus.learning.skills.ledger import (
++    BLOB_GRACE_S,
++    LEDGER_FILE,
++    FileRef,
++    SkillLedger,
++    bind_actor,
++    current_actor,
++)
++from tests.fakes.clock import FakeClock
++from tests.unit.learning.skills.helpers import make_skill, skill_md, with_skills_config
++
++
++def tree_bytes(root: Path) -> dict[str, bytes]:
++    return {
++        p.relative_to(root).as_posix(): p.read_bytes()
++        for p in sorted(root.rglob("*"))
++        if p.is_file() and not p.relative_to(root).parts[0].startswith(".")
++    }
++
++
++def ledger_for(scope: Scope, max_bytes: int = ledger_mod.DEFAULT_MAX_BYTES) -> SkillLedger:
++    return SkillLedger(scope.home, clock=scope.clock, max_bytes=max_bytes)
++
++
++def test_entry_shape_and_blobs(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "dev/notes")
++    led = ledger_for(scope)
++    before = led.capture(folder)
++    (folder / "SKILL.md").write_text(skill_md("notes", body="New steps.\n"), encoding="utf-8")
++    entry_id = led.record(
++        "patch", "notes", before=before, after_dir=folder, evidence={"session_id": "s1"}
++    )
++    assert entry_id is not None
++    line = json.loads((root / LEDGER_FILE).read_text(encoding="utf-8").strip())
++    assert set(line) == {"id", "ts", "actor", "action", "skill", "evidence", "before", "after"}
++    assert line["actor"] == "agent"
++    assert line["action"] == "patch"
++    assert line["evidence"] == {"session_id": "s1"}
++    assert line["before"][0]["path"] == str(folder / "SKILL.md")
++    for ref in (*line["before"], *line["after"]):
++        blob = led.read_blob(ref["sha256"])
++        assert blob is not None
++    # the same bytes are stored once
++    led.capture(folder)
++    assert len(list(led.blobs.iterdir())) == 2
++
++
++def test_actor_binding() -> None:
++    assert current_actor() == "agent"
++    with bind_actor("user"):
++        assert current_actor() == "user"
++    with pytest.raises(ValueError, match="unknown ledger actor"), bind_actor("someone"):  # type: ignore[arg-type]
++        pass
++
++
++def test_patch_then_rollback_restores_bytes(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "notes")
++    (folder / "references").mkdir()
++    (folder / "references" / "a.md").write_text("alpha\n", encoding="utf-8")
++    original = tree_bytes(root)
++    led = ledger_for(scope)
++    before = led.capture(folder)
++    (folder / "SKILL.md").write_text(skill_md("notes", body="Changed.\n"), encoding="utf-8")
++    entry_id = led.record("patch", "notes", before=before, after_dir=folder)
++    assert entry_id is not None
++
++    result = led.rollback(entry_id)
++    assert result.ok, result.message
++    assert result.restored == 1 and result.removed == 0
++    assert tree_bytes(root) == original
++    newest = led.entries()[0]
++    assert newest.action == "rollback"
++    assert newest.evidence == {"rollback_of": entry_id}
++    # the rollback itself can be undone
++    undo = led.rollback(newest.id)
++    assert undo.ok, undo.message
++    assert b"Changed." in (folder / "SKILL.md").read_bytes()
++
++
++def test_rollback_of_create_removes_the_file(scope: Scope) -> None:
++    root = scope.home / "skills"
++    root.mkdir(parents=True)
++    led = ledger_for(scope)
++    folder = make_skill(root, "tools/fresh")
++    entry_id = led.record("create", "fresh", before=[], after_dir=folder)
++    assert entry_id is not None
++    result = led.rollback(entry_id)
++    assert result.ok, result.message
++    assert result.removed == 1
++    assert not folder.exists()
++    assert not (root / "tools").exists()
++    assert root.is_dir()
++
++
++def test_safety_capture_failure_refuses(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "notes")
++    led = ledger_for(scope)
++    before = led.capture(folder)
++    (folder / "SKILL.md").write_text(skill_md("notes", body="Edited.\n"), encoding="utf-8")
++    entry_id = led.record("patch", "notes", before=before, after_dir=folder)
++    assert entry_id is not None
++    edited = tree_bytes(root)
++    lines_before = (root / LEDGER_FILE).read_text(encoding="utf-8")
++
++    def broken(_self: SkillLedger, _data: bytes) -> str:
++        raise OSError(28, "No space left on device")
++
++    monkeypatch.setattr(SkillLedger, "store_blob", broken)
++    result = led.rollback(entry_id)
++    assert not result.ok
++    assert "nothing changed" in result.message
++    assert tree_bytes(root) == edited
++    assert (root / LEDGER_FILE).read_text(encoding="utf-8") == lines_before
++
++
++def test_missing_blob_refuses(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "notes")
++    led = ledger_for(scope)
++    before = led.capture(folder)
++    (folder / "SKILL.md").write_text(skill_md("notes", body="Edited.\n"), encoding="utf-8")
++    entry_id = led.record("patch", "notes", before=before, after_dir=folder)
++    assert entry_id is not None
++    (led.blobs / before[0].sha256).unlink()
++    result = led.rollback(entry_id)
++    assert not result.ok and "missing" in result.message
++    assert b"Edited." in (folder / "SKILL.md").read_bytes()
++
++
++def test_rollback_refuses_outside_paths(scope: Scope, tmp_path: Path) -> None:
++    outside = tmp_path / "elsewhere.txt"
++    outside.write_text("keep me\n", encoding="utf-8")
++    led = ledger_for(scope)
++    digest = led.store_blob(b"overwritten\n")
++    entry_id = led.record(
++        "patch",
++        "evil",
++        before=[FileRef(str(outside), digest)],
++        after=[FileRef(str(outside), "0" * 64)],
++    )
++    assert entry_id is not None
++    result = led.rollback(entry_id)
++    assert not result.ok and "outside the skill folders" in result.message
++    assert outside.read_text(encoding="utf-8") == "keep me\n"
++
++
++def test_external_root_is_allowed(scope: Scope, tmp_path: Path) -> None:
++    external = tmp_path / "shared-skills"
++    folder = make_skill(external, "shared")
++    scoped = with_skills_config(scope, external_dirs=[str(external)])
++    led = SkillLedger.for_scope(scoped)
++    before = led.capture(folder)
++    (folder / "SKILL.md").write_text(skill_md("shared", body="Other.\n"), encoding="utf-8")
++    entry_id = led.record("patch", "shared", before=before, after_dir=folder)
++    assert entry_id is not None
++    assert led.rollback(entry_id).ok
++
++
++def test_record_never_raises(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    led = ledger_for(scope)
++
++    def broken(_self: SkillLedger, _entry: object) -> None:
++        raise OSError(13, "Permission denied")
++
++    monkeypatch.setattr(SkillLedger, "_append", broken)
++    assert led.record("create", "x", before=[], after=[]) is None
++
++
++def _fill(led: SkillLedger, folder: Path, count: int) -> list[str]:
++    ids: list[str] = []
++    for n in range(count):
++        before = led.capture(folder)
++        (folder / "SKILL.md").write_text(skill_md("big", body=f"Round {n}.\n"), encoding="utf-8")
++        entry_id = led.record("patch", "big", before=before, after_dir=folder)
++        assert entry_id is not None
++        ids.append(entry_id)
++    return ids
++
++
++def test_size_cap_keeps_newest(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "big")
++    led = ledger_for(scope, max_bytes=1500)
++    ids = _fill(led, folder, 12)
++    size = (root / LEDGER_FILE).stat().st_size
++    assert size <= 1500
++    kept = [e.id for e in led.entries()]
++    assert kept[0] == ids[-1]
++    assert len(kept) < len(ids)
++
++
++def test_size_cap_zero_never_maintains(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "big")
++    led = ledger_for(scope, max_bytes=0)
++    ids = _fill(led, folder, 12)
++    assert [e.id for e in led.entries()] == list(reversed(ids))
++
++
++def test_newest_entry_survives_a_tiny_cap(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "big")
++    led = ledger_for(scope, max_bytes=10)
++    ids = _fill(led, folder, 3)
++    assert [e.id for e in led.entries()] == [ids[-1]]
++
++
++def test_compaction_drops_unchanged_pairs_first(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "pkg")
++    refs = folder / "references"
++    refs.mkdir()
++    for n in range(20):
++        (refs / f"note-{n:02d}.md").write_text(f"note {n}\n", encoding="utf-8")
++    led = ledger_for(scope, max_bytes=0)
++    ids = _fill(led, folder, 3)
++    full = (root / LEDGER_FILE).stat().st_size
++    led.max_bytes = full - 1
++    led.maintain()
++    entries = led.entries()
++    assert [e.id for e in entries] == list(reversed(ids))  # nothing trimmed
++    for entry in entries:
++        assert [Path(r.path).name for r in entry.before] == ["SKILL.md"]
++    assert (root / LEDGER_FILE).stat().st_size < full
++
++
++def test_blob_sweep_respects_one_hour(scope: Scope, fake_clock: FakeClock) -> None:
++    led = ledger_for(scope)
++    young = led.store_blob(b"young")
++    old = led.store_blob(b"old")
++    kept = led.store_blob(b"referenced")
++    led.record("create", "x", before=[], after=[FileRef(str(scope.home / "skills/x"), kept)])
++    now = fake_clock.now().timestamp()
++    os.utime(led.blobs / young, (now - BLOB_GRACE_S + 60, now - BLOB_GRACE_S + 60))
++    os.utime(led.blobs / old, (now - BLOB_GRACE_S - 60, now - BLOB_GRACE_S - 60))
++    os.utime(led.blobs / kept, (now - 10 * BLOB_GRACE_S, now - 10 * BLOB_GRACE_S))
++    assert led.sweep_blobs() == 1
++    assert sorted(p.name for p in led.blobs.iterdir()) == sorted([young, kept])
++    fake_clock.advance(120)
++    assert led.sweep_blobs() == 1
++    assert [p.name for p in led.blobs.iterdir()] == [kept]
++
++
++def test_malformed_lines_skip_listing_and_block_sweep(scope: Scope) -> None:
++    led = ledger_for(scope)
++    entry_id = led.record("create", "x", before=[], after=[])
++    with open(led.path, "a", encoding="utf-8") as handle:
++        handle.write("{not json\n")
++    orphan = led.store_blob(b"orphan")
++    os.utime(led.blobs / orphan, (0, 0))
++    assert [e.id for e in led.entries()] == [entry_id]
++    assert led.sweep_blobs() == 0
++    assert (led.blobs / orphan).exists()
++
++
++def test_caches_are_not_captured(scope: Scope) -> None:
++    folder = make_skill(scope.home / "skills", "tool")
++    (folder / "scripts" / "__pycache__").mkdir(parents=True)
++    (folder / "scripts" / "__pycache__" / "x.pyc").write_bytes(b"\0")
++    (folder / "scripts" / "run.py").write_text("print(1)\n", encoding="utf-8")
++    names = sorted(Path(r.path).name for r in ledger_for(scope).capture(folder))
++    assert names == ["SKILL.md", "run.py"]
++
++
++def test_for_scope_reads_the_cap(scope: Scope) -> None:
++    led = SkillLedger.for_scope(with_skills_config(scope, ledger_max_bytes=1234))
++    assert led.max_bytes == 1234
++    assert SkillLedger.for_scope(scope).max_bytes == ledger_mod.DEFAULT_MAX_BYTES
+diff --git a/tests/unit/learning/skills/test_manage_tool.py b/tests/unit/learning/skills/test_manage_tool.py
+new file mode 100644
+index 0000000..b1451bd
+--- /dev/null
++++ b/tests/unit/learning/skills/test_manage_tool.py
+@@ -0,0 +1,574 @@
++"""``skill_manage``: actions, guards, batches, side effects (P09-11)."""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import os
++import threading
++from collections.abc import Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.learning import pending
++from indus.learning.skills import manage_tool
++from indus.learning.skills.bundled_sync import list_modified, tree_hash
++from indus.learning.skills.ledger import SkillLedger
++from indus.learning.skills.manage_tool import (
++    SUCCESS_LISTENERS,
++    SkillWriteEvent,
++    apply_pending_skill,
++    lock_path,
++    register_tools,
++    schema_overrides,
++    skill_manage,
++)
++from indus.learning.skills.resolver import clear_scan_cache
++from indus.learning.skills.usage import SkillUsage, usage_for
++from indus.learning.skills.view_tools import READS, clear_list_cache, skill_view
++from indus.tools.registry import ToolRegistry
++from tests.unit.learning.skills.helpers import make_skill, skill_md, with_skills_config
++
++
++@pytest.fixture(autouse=True)
++def _clean() -> Iterator[None]:
++    clear_scan_cache()
++    clear_list_cache()
++    READS.clear()
++    yield
++    SUCCESS_LISTENERS.clear()
++    manage_tool.LIFECYCLE.clear()
++
++
++def call(scope: Scope, session_id: str | None = None, **args: Any) -> dict[str, Any]:
++    return json.loads(skill_manage(args, scope=scope, session_id=session_id))
++
++
++def tree(root: Path) -> dict[str, bytes]:
++    """Every file under ``root`` except our own bookkeeping (ledger, locks, usage)."""
++    out: dict[str, bytes] = {}
++    for path in sorted(root.rglob("*")):
++        rel = path.relative_to(root)
++        if path.is_file() and not rel.parts[0].startswith("."):
++            out[rel.as_posix()] = path.read_bytes()
++    return out
++
++
++def view(scope: Scope, session_id: str, **args: Any) -> dict[str, Any]:
++    return json.loads(asyncio.run(skill_view(args, scope=scope, session_id=session_id)))
++
++
++# -- actions -------------------------------------------------------------------------------------
++
++
++def test_create_happy_path(scope: Scope) -> None:
++    out = call(scope, action="create", name="notes", category="writing", content=skill_md("notes"))
++    assert out["success"] is True, out
++    folder = scope.home / "skills" / "writing" / "notes"
++    assert (folder / "SKILL.md").read_text(encoding="utf-8") == skill_md("notes")
++    assert out["results"] == [{"action": "create", "name": "notes", "path": str(folder)}]
++    record = usage_for(scope).get("notes")
++    assert record["origin"] == "learn"
++    entry = SkillLedger.for_scope(scope).entries()[0]
++    assert (entry.action, entry.skill, entry.actor) == ("create", "notes", "agent")
++    assert [Path(r.path).name for r in entry.after] == ["SKILL.md"]
++
++
++def test_create_goes_to_create_dir(scope: Scope, tmp_path: Path) -> None:
++    target = tmp_path / "shared"
++    scoped = with_skills_config(scope, create_dir=str(target))
++    assert call(scoped, action="create", name="notes", content=skill_md("notes"))["success"]
++    assert (target / "notes" / "SKILL.md").is_file()
++    overrides = schema_overrides(scoped)
++    assert overrides is not None and str(target) in overrides["description"]
++
++
++def test_create_refuses_existing_names_and_folders(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "dev/notes")
++    out = call(scope, action="create", name="notes", content=skill_md("notes"))
++    assert "already exists" in out["error"]
++    busy = scope.home / "skills" / "other"
++    busy.mkdir(parents=True)
++    (busy / "stray.txt").write_text("x", encoding="utf-8")
++    out = call(scope, action="create", name="other", content=skill_md("other"))
++    assert "already holds files" in out["error"]
++
++
++def test_patch_targeted_replace_all_and_delete_text(scope: Scope) -> None:
++    folder = make_skill(scope.home / "skills", "notes", body="Step one.\nStep one.\nEnd.\n")
++    out = call(scope, action="patch", name="notes", old_string="Step one.", new_string="X")
++    assert "occurs 2 times" in out["error"]
++    out = call(
++        scope,
++        action="patch",
++        name="notes",
++        old_string="Step one.",
++        new_string="Step 1.",
++        replace_all=True,
++    )
++    assert out["success"], out
++    out = call(scope, action="patch", name="notes", old_string="End.\n", new_string="")
++    assert out["success"], out
++    body = (folder / "SKILL.md").read_text(encoding="utf-8")
++    assert "Step 1.\nStep 1.\n" in body and "End." not in body
++    assert usage_for(scope).get("notes")["patch_count"] == 2
++
++
++def test_patch_not_found_shows_preview(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    out = call(scope, action="patch", name="notes", old_string="missing", new_string="x")
++    assert "was not found" in out["error"]
++    assert out["file_preview"].startswith("---")
++
++
++def test_full_rewrite_and_edit_alias(scope: Scope) -> None:
++    folder = make_skill(scope.home / "skills", "notes")
++    out = call(scope, action="patch", name="notes", content=skill_md("notes", body="New.\n"))
++    assert out["results"][0]["action"] == "edit"
++    out = call(scope, action="edit", name="notes", content=skill_md("notes", body="Newer.\n"))
++    assert out["success"], out
++    assert "Newer." in (folder / "SKILL.md").read_text(encoding="utf-8")
++
++
++def test_rewrite_must_keep_the_name_and_format(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    out = call(scope, action="edit", name="notes", content=skill_md("renamed"))
++    assert "does not match" in out["error"]
++    out = call(scope, action="edit", name="notes", content="no frontmatter here\n")
++    assert "frontmatter" in out["error"]
++
++
++def test_write_and_remove_support_files(scope: Scope) -> None:
++    folder = make_skill(scope.home / "skills", "notes")
++    out = call(
++        scope, action="write_file", name="notes", file_path="references/a.md", file_content="A\n"
++    )
++    assert out["success"], out
++    assert (folder / "references" / "a.md").read_text(encoding="utf-8") == "A\n"
++    out = call(
++        scope,
++        action="patch",
++        name="notes",
++        file_path="references/a.md",
++        old_string="A",
++        new_string="B",
++    )
++    assert out["success"], out
++    assert (folder / "references" / "a.md").read_text(encoding="utf-8") == "B\n"
++    out = call(scope, action="remove_file", name="notes", file_path="references/a.md")
++    assert out["success"], out
++    assert not (folder / "references").exists()
++    out = call(scope, action="remove_file", name="notes", file_path="references/a.md")
++    assert "has no file" in out["error"]
++
++
++def test_delete_foreground(scope: Scope) -> None:
++    folder = make_skill(scope.home / "skills", "dev/notes")
++    make_skill(scope.home / "skills", "dev/keep")
++    usage_for(scope).bump_use("notes")
++    out = call(scope, action="delete", name="notes")
++    assert out["success"], out
++    assert not folder.exists()
++    assert (scope.home / "skills" / "dev" / "keep").is_dir()
++    assert "notes" not in usage_for(scope).load()
++    entry = SkillLedger.for_scope(scope).entries()[0]
++    assert entry.action == "delete" and entry.after == ()
++    assert SkillLedger.for_scope(scope).rollback(entry.id).ok
++    assert (folder / "SKILL.md").is_file()
++
++
++def test_delete_absorbed_into_must_exist(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    out = call(scope, action="delete", name="notes", absorbed_into="umbrella")
++    assert "does not exist" in out["error"]
++    make_skill(scope.home / "skills", "umbrella")
++    assert call(scope, action="delete", name="notes", absorbed_into="umbrella")["success"]
++    entry = SkillLedger.for_scope(scope).entries()[0]
++    assert entry.evidence["absorbed_into"] == "umbrella"
++
++
++# -- shapes ---------------------------------------------------------------------------------------
++
++
++def test_patch_both_shapes_refused(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    out = call(
++        scope,
++        action="patch",
++        name="notes",
++        content=skill_md("notes"),
++        old_string="Steps",
++        new_string="Moves",
++    )
++    assert "not both" in out["error"]
++
++
++def test_wrong_text_slot_names_the_key(scope: Scope) -> None:
++    out = call(scope, action="create", name="notes", file_content=skill_md("notes"))
++    assert "'file_content'" in out["error"] and "move that text to 'content'" in out["error"]
++    assert out["misplaced"] == ["file_content"]
++
++
++def test_unknown_action_and_missing_name(scope: Scope) -> None:
++    assert "action must be one of" in call(scope, action="rename", name="x")["error"]
++    assert "name is required" in call(scope, action="delete")["error"]
++    assert "operations" in call(scope)["error"]
++
++
++def test_limits_refused(scope: Scope) -> None:
++    out = call(scope, action="create", name="Bad Name", content=skill_md("bad"))
++    assert "not allowed" in out["error"]
++    long_desc = "d" * 1025
++    out = call(scope, action="create", name="big", content=skill_md("big", long_desc))
++    assert "description" in out["error"]
++    make_skill(scope.home / "skills", "notes")
++    out = call(
++        scope,
++        action="write_file",
++        name="notes",
++        file_path="references/huge.bin",
++        file_content="x" * (1024 * 1024 + 1),
++    )
++    assert "1 MiB" in out["error"]
++    out = call(
++        scope, action="write_file", name="notes", file_path="examples/a.md", file_content="x"
++    )
++    assert "support files go under" in out["error"]
++
++
++# -- batches --------------------------------------------------------------------------------------
++
++
++def test_batch_applies_together(scope: Scope) -> None:
++    out = call(
++        scope,
++        operations=[
++            {"action": "create", "name": "notes", "content": skill_md("notes")},
++            {
++                "action": "write_file",
++                "name": "notes",
++                "file_path": "templates/t.md",
++                "file_content": "T\n",
++            },
++            {"action": "patch", "name": "notes", "old_string": "Steps", "new_string": "Moves"},
++        ],
++    )
++    assert out["success"], out
++    folder = scope.home / "skills" / "notes"
++    assert "Moves go here." in (folder / "SKILL.md").read_text(encoding="utf-8")
++    assert (folder / "templates" / "t.md").is_file()
++    assert [r["action"] for r in out["results"]] == ["create", "write_file", "patch"]
++
++
++def test_batch_with_bad_op_leaves_tree_identical(scope: Scope) -> None:
++    root = scope.home / "skills"
++    make_skill(root, "notes")
++    make_skill(root, "other")
++    before = tree(root)
++    out = call(
++        scope,
++        operations=[
++            {"action": "patch", "name": "notes", "old_string": "Steps", "new_string": "Moves"},
++            {"action": "create", "name": "fresh", "content": skill_md("fresh")},
++            {"action": "patch", "name": "other", "old_string": "nowhere", "new_string": "x"},
++        ],
++    )
++    assert out["failed_index"] == 2
++    assert out["error"].startswith("operations[2] (patch other)")
++    assert tree(root) == before
++    assert not (root / "fresh").exists()
++
++
++def test_batch_shape_error_names_op_and_key(scope: Scope) -> None:
++    root = scope.home / "skills"
++    make_skill(root, "notes")
++    before = tree(root)
++    out = call(
++        scope,
++        operations=[
++            {"action": "patch", "name": "notes", "old_string": "Steps", "new_string": "Moves"},
++            {
++                "action": "write_file",
++                "name": "notes",
++                "file_path": "references/a.md",
++                "content": "x",
++            },  # fmt: skip
++        ],
++    )
++    assert out["error"].startswith("operations[1]: write_file on 'notes' carries 'content'")
++    assert tree(root) == before
++
++
++def test_batch_runtime_failure_leaves_tree_identical(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    root = scope.home / "skills"
++    make_skill(root, "notes")
++    make_skill(root, "other")
++    before = tree(root)
++    real = manage_tool.atomic_write_bytes
++    calls = {"n": 0}
++
++    def flaky(path: Path, data: bytes, **kwargs: Any) -> Path:
++        calls["n"] += 1
++        if calls["n"] == 3:
++            raise OSError(28, "No space left on device")
++        return real(path, data, **kwargs)
++
++    monkeypatch.setattr(manage_tool, "atomic_write_bytes", flaky)
++    out = call(
++        scope,
++        operations=[
++            {"action": "patch", "name": "notes", "old_string": "Steps", "new_string": "Moves"},
++            {"action": "create", "name": "fresh", "content": skill_md("fresh")},
++            {"action": "patch", "name": "other", "old_string": "Steps", "new_string": "Moves"},
++        ],
++    )
++    assert "nothing was saved" in out["error"]
++    monkeypatch.setattr(manage_tool, "atomic_write_bytes", real)
++    assert tree(root) == before
++    assert not (root / "fresh").exists()
++
++
++def test_delete_must_be_last_for_its_skill(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    out = call(
++        scope,
++        operations=[
++            {"action": "delete", "name": "notes"},
++            {"action": "patch", "name": "notes", "old_string": "Steps", "new_string": "x"},
++        ],
++    )
++    assert "delete must be the last operation" in out["error"]
++
++
++def test_too_many_operations(scope: Scope) -> None:
++    ops = [{"action": "delete", "name": f"s{n}"} for n in range(manage_tool.MAX_OPS + 1)]
++    assert "at most" in call(scope, operations=ops)["error"]
++
++
++# -- guards ---------------------------------------------------------------------------------------
++
++
++def test_pinned_delete_refused_patch_allowed(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    usage_for(scope).set_pinned("notes", True)
++    out = call(scope, action="delete", name="notes")
++    assert "pinned" in out["error"] and "indus curator unpin notes" in out["error"]
++    out = call(scope, action="patch", name="notes", old_string="Steps", new_string="Moves")
++    assert out["success"], out
++
++
++def test_review_patch_needs_fresh_view(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    with pending.bind_origin("background_review", attended=False):
++        out = call(scope, "review-1", action="patch", name="notes", old_string="Steps",
++                   new_string="Moves")  # fmt: skip
++        assert out["view_required"] is True
++        assert "skill_view(name='notes')" in out["error"]
++        view(scope, "review-1", name="notes")
++        out = call(scope, "review-1", action="patch", name="notes", old_string="Steps",
++                   new_string="Moves")  # fmt: skip
++        assert out["success"], out
++        # the view is of the old bytes now: a second patch needs another view
++        out = call(scope, "review-1", action="patch", name="notes", old_string="Moves",
++                   new_string="Runs")  # fmt: skip
++        assert out["view_required"] is True
++
++
++def test_review_support_file_view_is_per_file(scope: Scope) -> None:
++    folder = make_skill(scope.home / "skills", "notes")
++    (folder / "references").mkdir()
++    (folder / "references" / "a.md").write_text("alpha\n", encoding="utf-8")
++    with pending.bind_origin("background_review", attended=False):
++        view(scope, "r", name="notes")
++        out = call(scope, "r", action="patch", name="notes", file_path="references/a.md",
++                   old_string="alpha", new_string="beta")  # fmt: skip
++        assert "skill_view(name='notes', file_path='references/a.md')" in out["error"]
++        view(scope, "r", name="notes", file_path="references/a.md")
++        out = call(scope, "r", action="patch", name="notes", file_path="references/a.md",
++                   old_string="alpha", new_string="beta")  # fmt: skip
++        assert out["success"], out
++        # a new file needs no view
++        out = call(scope, "r", action="write_file", name="notes", file_path="references/b.md",
++                   file_content="new\n")  # fmt: skip
++        assert out["success"], out
++
++
++def test_review_delete_of_learn_origin_refused(scope: Scope) -> None:
++    assert call(scope, action="create", name="mine", content=skill_md("mine"))["success"]
++    with pending.bind_origin("background_review", attended=False):
++        out = call(scope, "r", action="delete", name="mine")
++    assert "the review may not delete 'mine'" in out["error"]
++    assert (scope.home / "skills" / "mine").is_dir()
++
++
++def test_review_delete_of_agent_skill_is_archived(scope: Scope) -> None:
++    with pending.bind_origin("background_review", attended=False):
++        assert call(scope, "r", action="create", name="made", content=skill_md("made"))["success"]
++        assert usage_for(scope).get("made")["origin"] == "agent"
++        out = call(scope, "r", action="delete", name="made")
++    assert out["success"], out
++    archived = scope.home / "skills" / ".archive" / "made"
++    assert out["results"][0]["archived_to"] == str(archived)
++    assert (archived / "SKILL.md").is_file()
++    assert not (scope.home / "skills" / "made").exists()
++    assert usage_for(scope).get("made")["state"] == "archived"
++    entry = SkillLedger.for_scope(scope).entries()[0]
++    assert entry.action == "archive" and entry.evidence["archived"] is True
++
++
++def test_review_delete_of_pinned_agent_skill_refused(scope: Scope) -> None:
++    with pending.bind_origin("background_review", attended=False):
++        call(scope, "r", action="create", name="made", content=skill_md("made"))
++        usage_for(scope).set_pinned("made", True)
++        assert "pinned" in call(scope, "r", action="delete", name="made")["error"]
++
++
++def test_path_escapes_refused(scope: Scope, tmp_path: Path) -> None:
++    folder = make_skill(scope.home / "skills", "notes")
++    out = call(scope, action="write_file", name="notes", file_path="../evil.md", file_content="x")
++    assert "'..'" in out["error"]
++    out = call(
++        scope, action="write_file", name="notes", file_path="references/../../x", file_content="x"
++    )
++    assert "'..'" in out["error"]
++    outside = tmp_path / "outside"
++    outside.mkdir()
++    os.symlink(outside, folder / "references")
++    out = call(
++        scope, action="write_file", name="notes", file_path="references/a.md", file_content="x"
++    )
++    assert "leads outside" in out["error"]
++    assert list(outside.iterdir()) == []
++
++
++def test_symlinked_skill_outside_roots_refused(scope: Scope, tmp_path: Path) -> None:
++    elsewhere = make_skill(tmp_path / "elsewhere", "linked")
++    root = scope.home / "skills"
++    root.mkdir(parents=True)
++    os.symlink(elsewhere, root / "linked")
++    out = call(scope, action="patch", name="linked", old_string="Steps", new_string="x")
++    assert "outside the skill folders" in out["error"]
++    assert "Steps" in (elsewhere / "SKILL.md").read_text(encoding="utf-8")
++
++
++def test_lock_lives_outside_the_skill(scope: Scope) -> None:
++    path = lock_path(scope.home, "dev/notes")
++    assert path == lock_path(scope.home, "notes")
++    assert path.parent == scope.home / "skills" / ".locks"
++    assert len(path.stem) == 16
++
++
++def test_concurrent_patches_lose_nothing(scope: Scope) -> None:
++    lines = "".join(f"line {n}\n" for n in range(8))
++    folder = make_skill(scope.home / "skills", "notes", body=lines)
++    errors: list[str] = []
++    barrier = threading.Barrier(2)
++
++    def worker(numbers: range) -> None:
++        barrier.wait()
++        for n in numbers:
++            out = call(scope, action="patch", name="notes", old_string=f"line {n}\n",
++                       new_string=f"done {n}\n")  # fmt: skip
++            if not out.get("success"):
++                errors.append(str(out))
++
++    threads = [threading.Thread(target=worker, args=(r,)) for r in (range(0, 4), range(4, 8))]
++    for t in threads:
++        t.start()
++    for t in threads:
++        t.join(timeout=60)
++    assert errors == []
++    body = (folder / "SKILL.md").read_text(encoding="utf-8")
++    assert all(f"done {n}\n" in body for n in range(8))
++
++
++# -- side effects ---------------------------------------------------------------------------------
++
++
++def test_lint_findings_present_but_write_succeeds(scope: Scope) -> None:
++    body = "Rule.\n" + ("word " * 5000) + "\n"
++    out = call(scope, action="create", name="long", content=skill_md("long", body=body))
++    assert out["success"], out
++    assert [f["rule"] for f in out["lint"]] == ["lint.oversized"]
++    assert (scope.home / "skills" / "long" / "SKILL.md").is_file()
++
++
++def test_listeners_get_the_event(scope: Scope) -> None:
++    seen: list[SkillWriteEvent] = []
++    SUCCESS_LISTENERS.append(seen.append)
++    manage_tool.LIFECYCLE.append(seen.append)
++    call(scope, "s1", action="create", name="notes", content=skill_md("notes"))
++    assert len(seen) == 2
++    assert seen[0].origin == "foreground" and seen[0].session_id == "s1"
++    assert seen[0].created == ("notes",) and seen[0].actions == ("create",)
++
++
++def test_side_effect_failures_do_not_fail_the_call(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    def boom(*_args: object, **_kwargs: object) -> object:
++        raise RuntimeError("telemetry down")
++
++    monkeypatch.setattr(SkillUsage, "record_created", boom)
++    monkeypatch.setattr(manage_tool, "lint_skill", boom)
++    monkeypatch.setattr(SkillLedger, "for_scope", boom)
++    SUCCESS_LISTENERS.append(boom)
++    out = call(scope, action="create", name="notes", content=skill_md("notes"))
++    assert out["success"], out
++    assert (scope.home / "skills" / "notes" / "SKILL.md").is_file()
++
++
++def test_bundled_edit_marks_user_modified(scope: Scope) -> None:
++    root = scope.home / "skills"
++    folder = make_skill(root, "dev/shipped")
++    (root / ".bundled_manifest").write_text(f"shipped:{tree_hash(folder)}\n", encoding="utf-8")
++    assert list_modified(scope.home) == []
++    out = call(scope, action="patch", name="shipped", old_string="Steps", new_string="Moves")
++    assert out["success"], out
++    assert "indus skills sync" in out["notes"][0]
++    assert list_modified(scope.home) == ["shipped"]
++
++
++def test_scan_hook_refuses_and_restores(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    folder = make_skill(scope.home / "skills", "notes")
++    original = (folder / "SKILL.md").read_bytes()
++    scoped = with_skills_config(scope, scan_agent_created=True)
++    monkeypatch.setattr(manage_tool, "SKILL_SCANNER", lambda _path: "found a secret")
++    out = call(scoped, action="patch", name="notes", old_string="Steps", new_string="Moves")
++    assert "content scan" in out["error"]
++    assert (folder / "SKILL.md").read_bytes() == original
++    monkeypatch.setattr(manage_tool, "SKILL_SCANNER", None)
++    assert call(scoped, action="patch", name="notes", old_string="Steps", new_string="Moves")[
++        "success"
++    ]
++
++
++# -- approval gate --------------------------------------------------------------------------------
++
++
++def test_gate_stages_and_approve_replays_with_diff(scope: Scope) -> None:
++    make_skill(scope.home / "skills", "notes")
++    gated = with_skills_config(scope, write_approval=True)
++    out = call(gated, action="patch", name="notes", old_string="Steps", new_string="Moves")
++    assert out["staged"] is True
++    store = pending.PendingStore(scope.home, scope.clock)
++    (record,) = store.list("skills")
++    assert record.summary == "patch notes"
++    assert "Steps" in (scope.home / "skills" / "notes" / "SKILL.md").read_text(encoding="utf-8")
++    (approval,) = pending.approve(store, "skills", "all", lambda r: apply_pending_skill(gated, r))
++    assert approval.ok, approval.applied.message
++    assert "-Steps go here." in approval.applied.diff
++    assert "+Moves go here." in approval.applied.diff
++    assert store.list("skills") == []
++
++
++def test_register_tools(scope: Scope) -> None:
++    registry = ToolRegistry(clock=scope.clock)
++    register_tools(registry)
++    entry = registry.get("skill_manage")
++    assert entry is not None and entry.toolset == "skills"
+diff --git a/tests/unit/service/commands/test_registry.py b/tests/unit/service/commands/test_registry.py
+index 75b617e..8445cc6 100644
+--- a/tests/unit/service/commands/test_registry.py
++++ b/tests/unit/service/commands/test_registry.py
+@@ -47,9 +47,11 @@ def test_every_entry_has_a_cli_handler_or_a_later_owner() -> None:
+     from indus.cli.slash.dispatch import HANDLERS
+ 
+     landed = {"P06", "P08", "P11"}  # phases whose commands have classic CLI handlers
++    # P09 commands that have landed so far (the rest of P09 arrives with later slices).
++    landed_names = {"memory", "skills", "reload-skills", "bundles"}
+     for cmd in REGISTRY:
+         assert PHASE.match(cmd.owner), cmd.name
+-        if cmd.owner in landed:
++        if cmd.owner in landed or cmd.name in landed_names:
+             assert cmd.name in HANDLERS, f"/{cmd.name} is owned by {cmd.owner} but has no handler"
+         else:
+             assert cmd.owner > "P06", f"/{cmd.name} owner {cmd.owner}"
+@@ -95,6 +97,7 @@ def test_completion_lists_aliases_once() -> None:
+         "/reasoning",
+         "/refine",
+         "/reload-mcp",
++        "/reload-skills",
+         "/reload_mcp",
+         "/reset",
+         "/resume",
+@@ -157,7 +160,7 @@ HELP_GROUPS = {
+                 "save", "branch", "stop", "steer", "queue", "compress", "status", "context",
+                 "rollback", "worktree"],
+     "config": ["model", "reasoning", "yolo", "approvals", "fast", "config"],
+-    "tools": ["tools", "checkpoints"],
++    "tools": ["tools", "skills", "reload-skills", "bundles", "memory", "checkpoints"],
+     "info": ["help", "usage", "whoami", "version"],
+     "exit": ["quit"],
+ }  # fmt: skip
