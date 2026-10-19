@@ -454,7 +454,14 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     name: "sessions",
     aliases: ["switch", "session", "resume"],
     summary: "browse, switch or resume sessions",
-    run: (_arg, ctx) => (ctx.openSessions ? ctx.openSessions() : unavailable(ctx, "sessions")),
+    run: (arg, ctx) => {
+      // `/sessions new [title]` starts a session right away (the current one stays live).
+      const words = arg.trim().split(/\s+/);
+      if (words[0]?.toLowerCase() === "new" && ctx.newLiveSession) {
+        return ctx.newLiveSession(words.slice(1).join(" ") || undefined);
+      }
+      return ctx.openSessions ? ctx.openSessions() : unavailable(ctx, "sessions");
+    },
   },
   {
     name: "image",

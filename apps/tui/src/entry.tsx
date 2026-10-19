@@ -1,5 +1,5 @@
-// The TUI's entry: terminal checks and mode hygiene first, then the bridge child, the stores and
-// Ink. The full app composition arrives with P12-27; until then a small boot view renders.
+// The TUI's entry: terminal checks and mode hygiene first, then the bridge child, the app runtime
+// (P12-27) and Ink.
 //
 // Order matters: truecolor and NODE_ENV are set before React or any colour library loads, the
 // mode reset is written before the first frame, and every exit path goes through `Lifecycle`.
@@ -35,10 +35,10 @@ const [
   { bootTheme, bootCachePath, writeBootTheme },
   detect,
   theme,
-  { rpcFromClient, RpcProvider },
-  { TurnController },
-  { createEventHandler },
-  { BootView },
+  { RpcProvider },
+  { AppRuntime, LinkWatch },
+  { App },
+  { splitCommand },
 ] = await Promise.all([
   import("@indus/client"),
   import("@indus/client/stdio"),
@@ -53,9 +53,9 @@ const [
   import("./theme/detect.ts"),
   import("./theme/theme.ts"),
   import("./app/rpc.ts"),
-  import("./turn/controller.ts"),
-  import("./events/handleEvent.ts"),
-  import("./bootView.tsx"),
+  import("./app/appRuntime.ts"),
+  import("./app/App.tsx"),
+  import("./composer/externalEditor.ts"),
 ]);
 
 // The first frame paints the cached theme (no flash); detection refines it after.
@@ -83,19 +83,31 @@ const stopMemory = new MemoryMonitor({
 }).start();
 process.on("beforeExit", stopMemory);
 
-// The bridge child.
-const bridgeCommand = process.env.INDUS_TUI_BRIDGE_COMMAND?.trim();
+// The bridge child. `INDUS_TUI_BRIDGE_COMMAND` may be a program or a program with arguments; the
+// bridge arguments are added unless it names them itself.
+const bridgeWords = splitCommand(process.env.INDUS_TUI_BRIDGE_COMMAND?.trim() ?? "");
+const [bridgeProgram, ...bridgeArgs] = bridgeWords;
+const bridgeSpawn =
+  bridgeProgram === undefined
+    ? {}
+    : {
+        command: bridgeProgram,
+        args: bridgeArgs.includes("tui-bridge")
+          ? bridgeArgs
+          : [...bridgeArgs, "tui-bridge", "--stdio"],
+      };
 let bridgePid: number | undefined;
+const links = new LinkWatch();
 const client = new IndusClient({
-  connect: (hooks) => {
+  connect: links.wrap((hooks) => {
     const transport = spawnStdioTransport({
-      ...(bridgeCommand ? { command: bridgeCommand } : {}),
+      ...bridgeSpawn,
       logs: hooks.logs,
       onEvent: hooks.onEvent,
     });
     bridgePid = transport.pid;
     return transport;
-  },
+  }),
 });
 lifecycle.setBridgeStopper(() => {
   void client.close();
@@ -107,12 +119,31 @@ lifecycle.setBridgeStopper(() => {
   }
 });
 
-const rpc = rpcFromClient(client);
-const controller = new TurnController({ rpc });
 const themePinned = detect.detectFromEnv(process.env) !== null;
-const handle = createEventHandler({ controller, themePinned });
-client.subscribe(handle);
-client.start();
+let redraw: () => void = () => {};
+const runtime = new AppRuntime({
+  client,
+  links,
+  env: process.env,
+  themePinned,
+  exit: (code, reason) => lifecycle.quit(code, reason),
+  redraw: () => redraw(),
+  emit: (sequence) => {
+    process.stdout.write(sequence);
+  },
+  suspend: async (run) => {
+    const handoff = caps.editorHandoff(capabilities);
+    // The editor runs synchronously, so nothing reads our stdin meanwhile.
+    process.stdout.write(handoff.before);
+    try {
+      await run();
+    } finally {
+      process.stdout.write(handoff.after);
+      redraw();
+    }
+  },
+});
+runtime.start();
 
 // Our wrappers around Ink's streams.
 const output = gateStdout(process.stdout, {
@@ -139,13 +170,21 @@ process.stdout.write(
   seq.pasteOn + caps.mouseOn(capabilities.mouse) + (capabilities.otherKeys ? seq.otherKeysOn : ""),
 );
 
-const app = ink.render(createElement(RpcProvider, { rpc }, createElement(BootView)), {
-  stdout: output.stream,
-  stdin: input.stream as unknown as NodeJS.ReadStream,
-  alternateScreen: true,
-  exitOnCtrlC: false,
-  maxFps: 60,
-  patchConsole: false,
-  kittyKeyboard: capabilities.kitty ? { mode: "enabled" } : { mode: "disabled" },
+const hyperlinks = capabilities.multiplexer === null && caps.terminalFamily(process.env) !== null;
+const app = ink.render(
+  createElement(RpcProvider, { rpc: runtime.rpc }, createElement(App, { runtime, hyperlinks })),
+  {
+    stdout: output.stream,
+    stdin: input.stream as unknown as NodeJS.ReadStream,
+    alternateScreen: true,
+    exitOnCtrlC: false,
+    maxFps: 60,
+    patchConsole: false,
+    kittyKeyboard: capabilities.kitty ? { mode: "enabled" } : { mode: "disabled" },
+  },
+);
+redraw = () => app.clear();
+lifecycle.setUnmount(() => {
+  runtime.dispose();
+  app.unmount();
 });
-lifecycle.setUnmount(() => app.unmount());

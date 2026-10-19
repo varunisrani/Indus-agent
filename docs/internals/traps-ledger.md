@@ -465,7 +465,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/auth/test_pkce.py::test_round_trip_mints_a_key`
 - **R04.19** Non-TTY behaviour
   - `tests/unit/cli/test_chat_select.py::test_non_tty_forces_classic`
-  - `tests/unit/cli/test_chat_select.py::test_tui_flag_exits_2`
+  - `tests/unit/cli/test_chat_select.py::test_tui_flag_without_node_falls_back_to_classic`
+  - `tests/unit/cli/test_tui_launch.py::test_piped_run_with_tui_setting_stays_classic`
   - `tests/unit/cli/test_chat_select.py::test_finite_query_without_a_terminal`
   - `tests/unit/cli/test_prompts.py::test_no_terminal_raises_with_guidance`
   - `tests/unit/cli/test_first_run.py::test_non_tty_exits_1_with_guidance`

@@ -239,15 +239,18 @@ def test_non_tty_forces_classic(scope: Scope) -> None:
     assert chat_mod.choose_interface(state, GlobalArgs()) == ("classic", None)
     state.stdin_isatty = lambda: True
     state.stdout_isatty = lambda: True
-    kind, note = chat_mod.choose_interface(state, GlobalArgs())
-    assert kind == "classic" and note
+    assert chat_mod.choose_interface(state, GlobalArgs()) == ("tui", None)
     assert chat_mod.choose_interface(state, GlobalArgs(interface="cli")) == ("classic", None)
 
 
-def test_tui_flag_exits_2(scope: Scope, capsys: pytest.CaptureFixture[str]) -> None:
+def test_tui_flag_without_node_falls_back_to_classic(
+    scope: Scope, repl: RecordingRepl, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     state = make_state(scope, FakeModelServer(script_of(text_turn("x"))))
-    assert chat_mod.run_chat(state, GlobalArgs(interface="tui"), ChatArgs()) == 2
-    assert "not part of this build" in capsys.readouterr().err
+    state.scope = state.scope.with_env(state.scope.env.with_overlay({"PATH": str(tmp_path)}))
+    assert chat_mod.run_chat(state, GlobalArgs(interface="tui"), ChatArgs()) == 0
+    assert len(repl.launches) == 1
+    assert "indus --cli" in capsys.readouterr().err
 
 
 def test_usage_errors_exit_2(scope: Scope) -> None:

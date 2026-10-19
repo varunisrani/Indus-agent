@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
+    "build": "vite build --ssr src/entry.tsx --outDir dist --emptyOutDir --logLevel warn",
     "spike:bench": "node spike/bench.ts",
     "spike:app": "vite build --ssr spike/inkSpike.tsx --outDir node_modules/.spike --emptyOutDir --logLevel warn && node node_modules/.spike/inkSpike.js",
     "test": "vitest run"

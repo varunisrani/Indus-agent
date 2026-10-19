@@ -30,6 +30,8 @@ export interface SlashContext {
 
   // Hooks other slices provide; a missing one makes its command say it is not available yet.
   newSession?(title?: string): void;
+  /** A new session that leaves the current one live (`/sessions new`). */
+  newLiveSession?(title?: string): void;
   switchSession?(sessionId: string): void;
   openSessions?(): void;
   redraw?(): void;

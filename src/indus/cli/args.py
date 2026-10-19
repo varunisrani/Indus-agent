@@ -109,6 +109,7 @@ class GlobalArgs:
     usage_file: str | None = None
     worktree: str | None = None
     checkpoints: bool = False
+    dev: bool = False
 
     @classmethod
     def from_values(cls, values: Mapping[str, Any]) -> GlobalArgs:

@@ -298,6 +298,14 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
             help="Pick the full-screen interface or the classic prompt.",
         )
     )
+    add(
+        click.option(
+            "--dev",
+            **_not_given(True),
+            hidden=True,
+            help="With --tui: run the interface from its TypeScript sources (contributors).",
+        )
+    )
     return opts
 
 
@@ -324,7 +332,7 @@ def globals_from(values: dict[str, Any]) -> GlobalArgs:
     """``GlobalArgs`` from click's parameter values (``interface`` as a word)."""
     values = dict(values)
     values["interface"] = _interface_word(values.get("interface"))
-    for name in ("no_restore_cwd", "yolo", "pass_session_id", "checkpoints"):
+    for name in ("no_restore_cwd", "yolo", "pass_session_id", "checkpoints", "dev"):
         if values.get(name) is False:
             values.pop(name)
     if not values.get("skills"):

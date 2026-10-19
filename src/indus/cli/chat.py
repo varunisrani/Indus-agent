@@ -1,8 +1,9 @@
 """``indus chat`` (also bare ``indus``): pick the interface and the session, then run it.
 
-Interface (R04.19): ``--cli`` → classic; ``--tui`` → not built yet (P12), exit 2; stdin or stdout
-not a terminal → classic, whatever the settings say; ``INDUS_TUI=1`` or ``display.interface: tui``
-→ a one-line note and classic until P12.
+Interface (R04.19, ``tui_launch.wants_tui``): ``--cli`` → classic; ``--tui`` → the full-screen
+renderer; stdin or stdout not a terminal → classic, whatever the settings say; ``INDUS_TUI=1`` or
+``display.interface: tui`` → the renderer. When the renderer cannot start (``tui_launch.run``
+returns None after saying why) the classic prompt runs.
 
 Then: ``--in DIR`` is entered, ``-w [NAME]`` makes a new worktree of the repository here and enters
 it (P11-20; the launch record and ``worktrees.json`` name it, so a resume moves back into it),
@@ -36,7 +37,6 @@ from indus.cli.args import AUTO_WORKTREE, ChatArgs, CliState, GlobalArgs
 from indus.cli.handoff import REPL_ENTRY, ReplEntry, ReplLaunch
 
 __all__ = [
-    "TUI_PENDING",
     "chat_command",
     "choose_interface",
     "load_repl",
@@ -45,12 +45,6 @@ __all__ = [
 ]
 
 log = logging.getLogger(__name__)
-
-TUI_PENDING = (
-    "The full-screen interface is not part of this build yet; it arrives in a later release. "
-    "Run `indus --cli` (or plain `indus`) for the classic prompt."
-)
-_TUI_NOTE = "The full-screen interface is not available yet; using the classic prompt."
 
 
 def _err(*lines: str) -> None:
@@ -66,20 +60,12 @@ def load_repl() -> ReplEntry:
 
 
 def choose_interface(state: CliState, args: GlobalArgs) -> tuple[str, str | None]:
-    """``("classic", note)`` or ``("tui", None)`` (see the module notes)."""
-    if args.interface == "cli":
-        return "classic", None
-    if args.interface == "tui":
-        return "tui", None
-    if not (state.stdin_isatty() and state.stdout_isatty()):
-        return "classic", None
-    wanted = state.scope.env.get("INDUS_TUI", "").strip() == "1"
-    if not wanted and state.scope.config is not None:
-        try:
-            wanted = str(state.scope.config.get("display.interface") or "").lower() == "tui"
-        except Exception:
-            wanted = False
-    return "classic", (_TUI_NOTE if wanted else None)
+    """``("classic", None)`` or ``("tui", None)`` (see the module notes)."""
+    from indus.cli.tui_launch import wants_tui
+
+    terminal = state.stdin_isatty() and state.stdout_isatty()
+    wanted = wants_tui(args, terminal=terminal, env=state.scope.env, config=state.scope.config)
+    return ("tui" if wanted else "classic"), None
 
 
 def read_query(chat: ChatArgs) -> str | None:
@@ -187,9 +173,6 @@ def run_chat(state: CliState, args: GlobalArgs, chat: ChatArgs) -> int:
         _err(f"indus chat: {problem}")
         return 2
     interface, note = choose_interface(state, args)
-    if interface == "tui":
-        _err(TUI_PENDING)
-        return 2
     stop = _guards(state, args)
     if stop is not None:
         return stop
@@ -198,6 +181,12 @@ def run_chat(state: CliState, args: GlobalArgs, chat: ChatArgs) -> int:
     except OSError as exc:
         _err(f"indus chat: cannot read {chat.query_file}: {exc.strerror or exc}")
         return 1
+    if interface == "tui":
+        from indus.cli import tui_launch
+
+        code = tui_launch.run(state, args, chat, query=query, dev=args.dev)
+        if code is not None:
+            return code
     terminal = state.stdin_isatty() and state.stdout_isatty()
     finite = query is not None and (chat.oneshot or chat.quiet or not terminal)
     return _ChatRun(state, args, chat, query=query, finite=finite, note=note).run()
