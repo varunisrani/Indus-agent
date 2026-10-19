@@ -41,3 +41,29 @@
 - Follow-ups: drop dead dynamic registration on invalid_client; guard the SDK's guessed /register;
   login clears old tokens before the browser step (reference snapshots/restores — consider fixing);
   no own CIMD document; sampling deprecated from protocol 2026-07-28 (client side kept).
+
+## N4 — w16-p13n4.patch — DONE (P13-25..28 skills hub sources, install pipeline, hub CLI + deep link, project-skill trust)
+- New: learning/skills/hub/{__init__,lock,sources,install}.py, learning/skills/project_trust.py,
+  cli/commands/skills_hub.py, tests (hub, project trust, CLI), fixtures tests/fixtures/{hub,repos/
+  project_skills}/ (contains an inert dangerous-skill fixture for the scanner), notes ×4.
+- Shared: learning/skills/{resolver (project tier, quarantined, SkillQuarantined), usage (hub_names
+  reads hub lock; HUB_LOCK_FILE import), invoke (trust_of), prompt_index ([project] tag)}.py;
+  cli/commands/skills.py (register_hub_verbs; `project` source); cli/slash/learning_cmds.py (/skills
+  search|install); service/commands/registry.py; cli/launch.py + cli/repl/banner.py (project skills
+  trust question + banner row); config skills.hub.*, skills.trusted_project_dirs,
+  skills.project_discovery (+test); non_tty_table (15 rows); traps R07.26; ACC-F11-1, F12-1, F26-1/2,
+  F30-1; P09 test helpers write real lock entries (record_hub).
+- Lock format: <home>/skills/.hub/lock.json {"version":1,"installed":{name:{…, trust, verdict, …}}};
+  unknown trust = community.
+- Wiring: P14 cron wraps runs in project_trust.bind_project_cwd(job.workdir); P20 desktop calls
+  skills_hub.deep_link_install(scope, url, confirm_install=…); P15 gateway buttons for /skills install;
+  packaging rule for optional-skills/ later.
+- Decisions: `skills check-updates` (P09 owns `skills check`); no default taps; hub never overwrites a
+  skill it did not install; quarantined SKILL.md renamed to the install name; update --force only
+  overwrites local edits; non-TTY install without -y exits 2, blocked exits 1; interactive surfaces
+  cli/tui/desktop; a "no" is remembered per root.
+- SECURITY — MUST FIX AT INTEGRATION (content_scan, P13-20): a dangerous command inside an inline code
+  span (e.g. `chmod -R 777 /etc` in backticks) scans `safe` while the same text unquoted scans
+  `caution`. Code spans and fenced blocks must be scanned at least as strictly as prose (skills tell
+  the agent to run code). Add tests for inline spans and fenced blocks.
+- Follow-up: verify the skills.sh API shape against its docs before 1.0 (no network here).
