@@ -80,6 +80,9 @@ Also building (Agent 1, from `adaceac`): P14 cron — C1 = P14-01..06 + 17 (gram
 ledger, health, due detection, notepad), C2 = P14-07..12 (ticker, preflight, scripts, prompt, runner,
 classification), C3 = P14-13..16, 18, 19 (delivery, bookkeeping, incidents, monitor, tool, CLI). If
 paused, patches in `.agents/wip/p14/`. C1, C2, C3 DONE (patches there); integrating in verify3.
+Also building (Agent 1, from `8f99060`): P15 wave 1 — G1 = P15-01..05 (fake platform harness, gateway
+config, inbound events, send result/retry, adapter base), G2 = P15-06..10 (registry/locks, session keys,
+authorization, pairing, bot-loop/concurrency/admin tiers). If paused, patches in `.agents/wip/p15w1/`.
 Builder rules: `docs/plan/phases/builder-rules.md`; read LEAD-NOTES landing
 notes for waves 7–10 first (every seam and follow-up is there). Nothing in flight, `.agents/wip/` empty.
 Gate (CLAUDE.md): note CI installs **no optional extras** — keep optional imports pyright-ignored and

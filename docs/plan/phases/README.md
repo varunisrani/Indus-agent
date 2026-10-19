@@ -35,7 +35,7 @@ acceptance, done when. Paths and conventions come from
 | P12 | [P12-tui-demo2.md](P12-tui-demo2.md) | 3 | 33 | 149 | 10 | 5 | 33 | **Demo 2** (M3) | done (94d604e, fa4fe5e, c66c233; Demo 2 in this commit) |
 | P13 | [P13-mcp-plugins-hooks-hub.md](P13-mcp-plugins-hooks-hub.md) | 2 | 28 | 61 | 13 | 5 | 28 | — | in progress (wave 1 78fdc96; 05..12 in this commit; 18, 19, 21..23, 25..28 saved) |
 | P14 | [P14-cron.md](P14-cron.md) | 1.5 | 19 | 47 | 9 | 4 | 19 | M4 | building (C1, C2, C3) |
-| P15 | [P15-gateway-core-demo3.md](P15-gateway-core-demo3.md) | 2.5 | 36 | 131 | 11 | 6 | 36 | **Demo 3** | planned |
+| P15 | [P15-gateway-core-demo3.md](P15-gateway-core-demo3.md) | 2.5 | 36 | 131 | 11 | 6 | 36 | **Demo 3** | wave 1 building |
 | P16 | [P16-more-platforms.md](P16-more-platforms.md) | 3 | 36 | 136 | 6 | 4 | 36 | — | planned |
 | P17 | [P17-daemon-shared-backend.md](P17-daemon-shared-backend.md) | 2.5 | 27 | 65 | 17 | 2 | 27 | M5 | planned |
 | P18 | [P18-web-dashboard.md](P18-web-dashboard.md) | 2.5 | 30 | 148 | 11 | 6 | 30 | — | planned |
