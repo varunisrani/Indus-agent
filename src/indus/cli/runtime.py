@@ -176,7 +176,7 @@ def with_learning(
     preload: Sequence[str] = (),
 ) -> tuple[AgentOptions, learning_host.SessionLearning]:
     """``options`` with the learning loop wired in (see the module notes)."""
-    registry = options.registry or learning_host.tool_registry(scope.clock)
+    registry = options.registry or _tool_registry(scope)
     chosen = toolsets.select(
         selection,
         options.disabled_toolsets,
@@ -209,6 +209,19 @@ def with_learning(
     return wired, learning
 
 
+def _tool_registry(scope: Scope) -> ToolRegistry:
+    """Built-in and learning tools plus ``cronjob_manage`` (P14-18) over this process's cron
+    backend (registered by importing the host)."""
+    from indus.cron import tool as cron_tool
+    from indus.service import cron_host
+
+    cron_host.install()
+
+    registry = learning_host.tool_registry(scope.clock)
+    cron_tool.register_tools(registry)
+    return registry
+
+
 def _base_builder(options: AgentOptions) -> Builder:
     if options.subagent_builder is not None:
         return options.subagent_builder
@@ -226,10 +239,16 @@ def learning_startup(scope: Scope, store: StoreHandle | None, *, interactive: bo
         from indus.cli.commands import curator as curator_cmds
         from indus.foundation.scope import thread_with_scope
         from indus.learning.curator.lifecycle import maybe_run
+        from indus.service.cron_refs import cron_references
 
         idle = profile_idle_s(store, scope.clock)
+
+        def check() -> None:
+            with cron_references(scope):  # cron jobs' skills stay protected (P14-03)
+                maybe_run(scope, idle_s=idle, step_factory=curator_cmds.STEP_FACTORY)
+
         thread_with_scope(
-            lambda: maybe_run(scope, idle_s=idle, step_factory=curator_cmds.STEP_FACTORY),
+            check,
             scope=scope,
             name="curator check",
             daemon=True,

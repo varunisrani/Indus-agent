@@ -82,6 +82,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_route.py::test_config_anthropic_ignores_shell_openai_base_url`
   - `tests/unit/providers/test_classify.py::test_host_hint_only_for_non_default_host`
   - `tests/unit/providers/test_classify.py::test_no_message_contains_the_key`
+  - `tests/unit/cron/test_tool.py::test_base_url_rule`
 - **R01.12** Vendor impersonation and billing evasion
   - `tests/unit/providers/test_profile.py::test_foreign_user_agent_refused`
   - `tests/unit/providers/test_profile.py::test_foreign_product_token_in_any_header_refused`
@@ -215,6 +216,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/browser/test_session.py::test_launch_env_lacks_provider_keys_and_credentials`
   - `tests/unit/plugins/test_shell_hooks.py::test_env_is_scrubbed`
   - Review: other child processes (P00-guards)
+  - `tests/unit/cron/test_script.py::test_env_lacks_provider_keys_and_keeps_passthrough`
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
   - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
@@ -615,7 +617,8 @@ Checked by `python -m tooling.checks traps`.
 - **R06.13** Telegram counts edits against the same per-chat allowance as sends
   - Review: not yet planned (P00-guards)
 - **R06.14** Silence tokens are whole-message only and never hide failures
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_classify.py::test_failed_and_silent_is_delivered`
+  - `tests/unit/cron/test_classify.py::test_content_is_not_silent`
 - **R06.15** Explicit `enabled: false` must beat credentials in env
   - Review: not yet planned (P00-guards)
 - **R06.16** Token locks: startup conflict is fatal, mid-run conflict is retryable
@@ -668,6 +671,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/learning/review/test_fork.py::test_budget_stops_before_crossing`
   - `tests/unit/learning/review/test_counters.py::test_no_review_contexts`
   - `tests/integration/learning/test_learning_host.py::test_one_shot_sessions_never_review`
+  - `tests/unit/cron/test_runner.py::test_review_is_never_attached`
 - **R07.6** Curator jurisdiction is an explicit marker, never inferred
   - `tests/unit/learning/skills/test_usage.py::test_origin_per_context`
   - `tests/unit/learning/curator/test_archive.py::test_ownership_by_marker_only`
@@ -680,25 +684,57 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/learning/curator/test_lifecycle.py::test_reference_source_protects`
   - `tests/unit/learning/curator/test_lifecycle.py::test_failing_source_blocks_archive`
   - `tests/unit/learning/curator/test_consolidate.py::test_merge_archives_and_maps`
-  - Review: the cron store registers as a reference source (P14-03)
+  - `tests/unit/cron/test_store.py::test_curator_skips_skill_of_paused_job`
+  - `tests/unit/cron/test_store.py::test_rename_rewrites_job_skills`
+  - `tests/unit/service/test_cron_host.py::test_host_start_protects_the_skills_of_cron_jobs`
 - **R07.9** Bare duration means recurring
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_grammar.py::test_bare_duration_is_recurring`
+  - `tests/unit/cron/test_grammar.py::test_in_duration_is_once`
 - **R07.10** Natural phrases with interval + time fail
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_grammar.py::test_every_1d_at_is_daily`
+  - `tests/unit/cron/test_grammar.py::test_every_n_days_anchored_interval`
+  - `tests/unit/cron/test_grammar.py::test_every_7_days_is_weekly_cron`
 - **R07.11** Timezones and DST in cron
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_grammar.py::test_naive_iso_uses_configured_zone`
+  - `tests/unit/cron/test_next_run.py::test_fall_back_fires_once_from_first_fold`
+  - `tests/unit/cron/test_next_run.py::test_fall_back_base_in_second_fold`
+  - `tests/unit/cron/test_next_run.py::test_spring_forward_gap_fires_at_three_once`
+  - `tests/unit/cron/test_next_run.py::test_interval_anchored_on_last_run`
+  - `tests/unit/cron/test_due.py::test_late_run_in_repeated_hour_not_doubled`
+  - `tests/integration/cron/test_m4_demo.py::test_a_late_run_in_the_repeated_fall_back_hour_fires_once`
 - **R07.12** Recurring jobs must never silently complete
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_next_run.py::test_broken_expression_goes_to_error_then_heals`
+  - `tests/unit/cron/test_due.py::test_error_state_self_heals`
 - **R07.13** Exactly-once is not available; prefer at-most-once
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_ledger.py::test_record_exists_before_dispatch`
+  - `tests/unit/cron/test_ledger.py::test_completed_slot_not_replayed_after_old_jobs_file`
+  - `tests/unit/cron/test_ledger.py::test_unknown_never_rerun`
+  - `tests/unit/cron/test_store_health.py::test_enospc_blocks_every_fire`
+  - `tests/unit/cron/test_ticker.py::test_young_claim_blocks_another_process_and_stale_claim_is_reclaimed`
+  - `tests/unit/cron/test_ticker.py::test_unwritable_store_fires_nothing`
+  - `tests/unit/cron/test_ticker.py::test_completed_slot_is_never_replayed`
+  - `tests/unit/cron/test_ticker.py::test_markers_and_attempt_recorded_before_dispatch`
+  - `tests/unit/cron/test_ticker.py::test_lost_claim_stops_the_run`
+  - `tests/integration/cron/test_m4_demo.py::test_m4_cron_demo`
 - **R07.14** Silence and failure tokens are model-facing and fragile
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_classify.py::test_silent_forms`
+  - `tests/unit/cron/test_classify.py::test_content_is_not_silent`
+  - `tests/unit/cron/test_classify.py::test_failure_token_elsewhere_is_content`
+  - `tests/unit/cron/test_prompt.py::test_hint_names_the_tokens_and_the_recursion_rule`
 - **R07.15** Cron recursion
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_runner.py::test_tool_array_lacks_scheduling_and_clarify`
+  - `tests/unit/cron/test_runner.py::test_denied_tools`
+  - `tests/unit/cron/test_prompt.py::test_hint_names_the_tokens_and_the_recursion_rule`
+  - `tests/unit/cron/test_tool.py::test_cron_session_needs_the_opt_in`
+  - `tests/unit/cron/test_tool.py::test_cron_created_job_origin_is_pinned_to_the_parent`
 - **R07.16** Preflight alerts once, spends nothing
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_preflight.py::test_missing_key_blocks_without_a_model_call_and_alerts_once`
+  - `tests/unit/cron/test_preflight.py::test_reconnecting_mcp_server_passes_and_empty_one_blocks`
+  - `tests/unit/cron/test_preflight.py::test_alert_book_alerts_once_per_reason`
 - **R07.17** Delivery success ≠ run success
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/cron/test_delivery.py::test_delivery_failure_leaves_the_failure_streak`
+  - `tests/unit/cron/test_delivery.py::test_platform_without_a_deliverer_needs_the_gateway`
+  - `tests/unit/cron/test_bookkeeping.py::test_streak_three_adds_the_nudge_and_success_resets`
 - **R07.18** Plugin hook timeouts and fail-closed policy
   - `tests/unit/plugins/test_shell_hooks.py::test_timeout_blocks_and_kills_the_group`
   - `tests/unit/plugins/test_shell_hooks.py::test_bus_deadline_cancels_and_kills_the_group`

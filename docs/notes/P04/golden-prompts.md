@@ -124,3 +124,7 @@ Done (2026-10-18). Goldens hold `[]` tool arrays until P05 registers tools; rege
   OpenAI-compatible images provider under the stock config). The video tools are absent: no video
   provider is registered in a stock build. `prompt.txt` is unchanged. Regenerated with
   `--update-golden`; diff reviewed (255 added lines over four `tools.json`, nothing removed).
+- 2026-10-19 (P14 slice C2, cron runner): P14-11 takes `clarify` out of the `indus-cron` bundle
+  (a scheduled run has nobody to answer a question), so `cron/tools.json` lost the `clarify`
+  schema. `prompt.txt` is unchanged. Regenerated with `--update-golden`; diff reviewed (36 lines
+  removed from `cron/tools.json`, nothing else changed).

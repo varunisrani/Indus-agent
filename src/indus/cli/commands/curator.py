@@ -162,10 +162,17 @@ def run_lines(
         "step_factory": STEP_FACTORY,
     }
     if background:
+        from indus.cron.store import CronStore
+        from indus.service.cron_refs import register_cron_references
+
+        register_cron_references(CronStore(scope))  # for this process's life (P14-03)
         run_in_background(scope, **kwargs)
         say("curator: running in the background; `indus curator status` shows the result")
         return 0, lines
-    outcome = run_curator(scope, on_line=say, **kwargs)
+    from indus.service.cron_refs import cron_references
+
+    with cron_references(scope):  # skills cron jobs use stay protected (P14-03)
+        outcome = run_curator(scope, on_line=say, **kwargs)
     auto = outcome.transitions
     verb = "would change" if dry_run else "changed"
     say(

@@ -30,6 +30,7 @@ from indus.cli.slash import (
     browser_cmds,
     checkpoint_cmds,
     control_cmds,
+    cron_cmds,
     learning_cmds,
     mcp_cmds,
     plugin_cmds,
@@ -65,6 +66,7 @@ HANDLERS: dict[str, Handler] = {
     **mcp_cmds.HANDLERS,
     **plugin_cmds.HANDLERS,
     **voice.HANDLERS,
+    **cron_cmds.HANDLERS,
 }
 """Canonical command name → the classic CLI's handler."""
 

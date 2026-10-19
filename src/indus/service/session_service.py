@@ -83,6 +83,7 @@ from indus.core.events import EventListener, EventSink, RequestListener
 from indus.core.persist import MemoryStore, StateStore, TranscriptStore
 from indus.core.session_scheduler import TurnEnd, TurnEndListener
 from indus.core.turn_state import TurnResult
+from indus.cron import tool as cron_tool
 from indus.foundation.blocking import run_blocking
 from indus.foundation.errors import IndusError
 from indus.foundation.ids import new_session_id
@@ -216,6 +217,7 @@ class _Attached:
     steers: dict[str, str] = field(default_factory=dict[str, str])
     settled: set[str] = field(default_factory=set[str])
     internal: list[str] = field(default_factory=list[str])  # waiting for the turn to end
+    undo: list[Callable[[], None]] = field(default_factory=list[Callable[[], None]])
 
     @property
     def running(self) -> RunningTurn | None:
@@ -534,6 +536,12 @@ class SessionService:
         subagents.set_delivery(agent, lambda text: self.deliver_internal(attached, text))
         if self.plugins is not None:
             await self.plugins.session_started(session_id, options)
+        # `cronjob_manage run` results (P14-18) arrive the same way as background subagents'.
+        attached.undo.append(
+            cron_tool.register_result_sink(
+                session_id, lambda text: self.deliver_internal(attached, text)
+            )
+        )
         return attached
 
     def _follow(self, attached: _Attached, old: str, new: str) -> None:
@@ -545,6 +553,10 @@ class SessionService:
         self._aliases[old] = new
         attached.session_id = new
         attached.broker.session_id = new
+        # `cronjob_manage run` results follow the session to its new id (P14-18).
+        attached.undo.append(
+            cron_tool.register_result_sink(new, lambda text: self.deliver_internal(attached, text))
+        )
         if old in self._titling:
             self._titling.add(new)
         self._tell_moved(attached, old, new)
@@ -861,6 +873,8 @@ class SessionService:
         except Exception:
             log.warning("closing the agent of %s failed", session_id, exc_info=True)
         finally:
+            for undo in attached.undo:
+                undo()
             attached.broker.close()
             attached.lock.release()
             await code_host.end_session(session_id, *self._ids_leading_to(session_id))

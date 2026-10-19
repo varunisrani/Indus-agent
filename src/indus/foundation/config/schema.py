@@ -693,6 +693,66 @@ class GoalsSection(_Section):
     max_turns: int = Field(default=20, description="turns a goal may use before it pauses")
 
 
+class CronSection(_Section):
+    """Scheduled jobs (P14): catch-up, ticker, preflight, scripts, runs, output and delivery."""
+
+    catch_up_missed: bool = Field(
+        default=True,
+        description="a job that missed its slot by more than its grace runs once to catch up; "
+        "false skips to the next slot",
+    )
+    max_parallel_jobs: int = Field(
+        default=0, ge=0, description="jobs run at once by one ticker; 0 = no limit, 1 = in turn"
+    )
+    preflight: bool = Field(
+        default=True, description="check keys, skills, targets and scripts before a run spends"
+    )
+    script_timeout_seconds: int = Field(
+        default=3600, description="seconds a job script may run before its process tree is killed"
+    )
+    toolsets: list[str] | None = Field(
+        default=None, description="toolsets of agent jobs without their own; unset = indus-cron"
+    )
+    allow_agent_scheduling: bool = Field(
+        default=False, description="let a scheduled run create or change scheduled jobs"
+    )
+    model: str = Field(default="", description="model for unpinned jobs; empty = the main model")
+    provider: str = Field(
+        default="", description="provider for unpinned jobs; empty = the main provider"
+    )
+    inactivity_timeout_seconds: int = Field(
+        default=600, description="seconds an agent run may show no progress; 0 = no limit"
+    )
+    output_retention: int = Field(
+        default=50, description="output documents kept per job; 0 or less keeps all"
+    )
+    cleanup_timeout_seconds: float = Field(
+        default=10.0, description="seconds one cleanup step after a run may take before it is left"
+    )
+    wrap_response: bool = Field(
+        default=True,
+        description="frame delivered job output with a header naming the job and a footer",
+    )
+    local_notify: bool = Field(
+        default=False,
+        description="also show a local notification when a job's output is saved (local delivery)",
+    )
+    failure_nudge_threshold: int = Field(
+        default=3,
+        ge=0,
+        description="failures in a row before a recurring job's alert asks for a review; 0 = off",
+    )
+    retry_unreachable: bool = Field(
+        default=True,
+        description="re-run a recurring job after 5, 15 and 30 min when the model was unreachable",
+    )
+    failure_repeat_alert_hours: float = Field(
+        default=6.0,
+        ge=0,
+        description="hours before the same failure alerts again; 0 = alert on every failed run",
+    )
+
+
 class LoopsSection(_Section):
     """Repeating prompts: /loop (P10-25)."""
 
@@ -1159,6 +1219,9 @@ class ConfigModel(BaseModel):
     goals: GoalsSection = Field(default_factory=GoalsSection, description="standing goals (/goal)")
     loops: LoopsSection = Field(
         default_factory=LoopsSection, description="repeating prompts (/loop)"
+    )
+    cron: CronSection = Field(
+        default_factory=CronSection, description="scheduled jobs (indus cron)"
     )
     plugins: PluginsSection = Field(
         default_factory=PluginsSection, description="Python plugins and their hooks"

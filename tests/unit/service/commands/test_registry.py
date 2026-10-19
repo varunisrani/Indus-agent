@@ -48,10 +48,10 @@ def test_every_entry_has_a_cli_handler_or_a_later_owner() -> None:
 
     landed = {"P06", "P08", "P09", "P11"}  # phases whose commands have classic CLI handlers
     # commands of a phase landing in slices (P10: /browser; goals, loops, heartbeats, /btw, /moa,
-    # /voice; P13: /mcp, /reload-mcp, /plugins)
+    # /voice; P13: /mcp, /reload-mcp, /plugins; P14: /cron)
     landed_commands = {
         "browser", "btw", "goal", "subgoal", "loop", "heartbeat", "moa", "voice", "mcp",
-        "reload-mcp", "plugins",
+        "reload-mcp", "plugins", "cron",
     }  # fmt: skip
     for cmd in REGISTRY:
         assert PHASE.match(cmd.owner), cmd.name
@@ -166,7 +166,7 @@ HELP_GROUPS = {
                 "rollback", "worktree"],
     "config": ["model", "reasoning", "yolo", "approvals", "fast", "config", "voice"],
     "tools": ["tools", "skills", "reload-skills", "bundles", "memory", "learn", "curator",
-              "browser", "checkpoints", "mcp", "reload-mcp", "plugins"],
+              "browser", "checkpoints", "mcp", "reload-mcp", "plugins", "cron"],
     "info": ["help", "usage", "whoami", "version"],
     "exit": ["quit"],
 }  # fmt: skip

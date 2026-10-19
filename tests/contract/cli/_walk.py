@@ -52,10 +52,12 @@ def key(path: CommandPath) -> str:
 
 @dataclass(frozen=True)
 class Table:
-    """``commands``: command path → exit code with no arguments; ``with_arguments``: argv → code."""
+    """``commands``: command path → exit code with no arguments; ``with_arguments``: argv → code;
+    ``long_running``: commands that run until stopped (only their ``--help`` is run)."""
 
     commands: dict[str, int]
     with_arguments: dict[str, int]
+    long_running: frozenset[str] = frozenset()
 
 
 def _codes(raw: object, section: str) -> dict[str, int]:
@@ -71,9 +73,12 @@ def load_table() -> Table:
     raw = yamlio.load_safe(TABLE.read_bytes())
     assert isinstance(raw, dict), f"{TABLE} must hold `commands` and `with_arguments`"
     doc = cast(dict[str, object], raw)
+    loops = doc.get("long_running") or []
+    assert isinstance(loops, list), f"{TABLE.name}: `long_running` must list command paths"
     return Table(
         commands=_codes(doc.get("commands"), "commands"),
         with_arguments=_codes(doc.get("with_arguments") or {}, "with_arguments"),
+        long_running=frozenset(str(name) for name in cast(list[object], loops)),
     )
 
 

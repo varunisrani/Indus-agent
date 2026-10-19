@@ -204,42 +204,6 @@
   },
   {
     "function": {
-      "description": "Ask the user something when you need a decision, a missing detail or feedback before going on. Put every question in questions (1 to 5); questions that do not depend on each other belong in one call, while a question whose wording depends on another answer needs its own call. Each question can offer up to 4 choices (put the one you recommend first; it is marked for the user, who can also type their own answer), allow several picks with multi_select, or be open (no choices). Give choices only in choices, never listed inside the question text. The result has one response per question, in order, each answered, skipped or unanswered, and an outcome: submitted, cancelled, timed_out or undelivered. Decide small things yourself; risky commands are confirmed by the terminal tool, not here.",
-      "name": "clarify",
-      "parameters": {
-        "properties": {
-          "questions": {
-            "description": "The questions, in the order to show them.",
-            "items": {
-              "properties": {
-                "choices": {
-                  "description": "Choices to pick from, recommended one first; leave out for an open question.",
-                  "items": {"type": "string"},
-                  "maxItems": 4,
-                  "type": "array"
-                },
-                "multi_select": {
-                  "description": "Allow picking more than one choice.",
-                  "type": "boolean"
-                },
-                "question": {"description": "The question itself.", "type": "string"}
-              },
-              "required": ["question"],
-              "type": "object"
-            },
-            "maxItems": 5,
-            "minItems": 1,
-            "type": "array"
-          }
-        },
-        "required": ["questions"],
-        "type": "object"
-      }
-    },
-    "type": "function"
-  },
-  {
-    "function": {
       "description": "Look at and operate desktop applications on this computer through a background desktop driver: the user's pointer and keyboard focus are left alone. Start with action='capture' (mode 'som' numbers every control on a screenshot), then act on a control by its number with `element`; use pixel `x`/`y` only when no number fits. Capture again after anything that changes the screen, and check the result before repeating an action. Every action except capture, list_apps and wait asks the user first. Screenshots are saved; share one as MEDIA:<path> only when the user wants to see it.",
       "name": "computer_use",
       "parameters": {

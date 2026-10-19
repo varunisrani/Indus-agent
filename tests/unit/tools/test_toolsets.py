@@ -78,6 +78,7 @@ def test_core_list_is_the_p05_tool_set_plus_delegation() -> None:
         "image_generate",  # P10-16
         "text_to_speech",  # P10-17
         "computer_use",  # P10-20
+        "cronjob_manage",  # P14-18
     }
     assert set(resolve(CORE)) == set(CORE_TOOLS)
 
@@ -113,17 +114,24 @@ def test_named_sets() -> None:
 def test_platform_bundles() -> None:
     core = set(CORE_TOOLS)
     assert set(resolve("indus-cli")) == core
-    assert set(resolve("indus-cron")) == core
+    # P14-11: unattended; P14-18 / R07.15: no scheduling tool unless the runner adds `cronjob`
+    assert set(resolve("indus-cron")) == core - {"clarify", "cronjob_manage"}
     assert set(resolve("indus-acp")) == core - {
         "clarify",
         "image_generate",
         "text_to_speech",
         "computer_use",
+        "cronjob_manage",
     }
     assert set(resolve("indus-api-server")) == core - {"clarify", "text_to_speech", "computer_use"}
     assert resolve("indus-webhook") == sorted(WEBHOOK_FLOOR)
     assert set(resolve("indus-gateway")) == core | set(WEBHOOK_FLOOR)
-    assert set(resolve("coding")) == core - {"image_generate", "text_to_speech", "computer_use"}
+    assert set(resolve("coding")) == core - {
+        "image_generate",
+        "text_to_speech",
+        "computer_use",
+        "cronjob_manage",
+    }
     assert TOOLSETS["coding"].posture
 
 

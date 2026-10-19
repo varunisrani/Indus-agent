@@ -106,6 +106,25 @@ def test_decided_defaults() -> None:
         "discovery_concurrency": 4,
         "osv_preflight": True,
     }
+    # P14 (C1 catch-up, C2 ticker/preflight/scripts/runs/output, C3 delivery and failures)
+    assert d["cron"] == {
+        "catch_up_missed": True,
+        "max_parallel_jobs": 0,
+        "preflight": True,
+        "script_timeout_seconds": 3600,
+        "toolsets": None,
+        "allow_agent_scheduling": False,
+        "model": "",
+        "provider": "",
+        "inactivity_timeout_seconds": 600,
+        "output_retention": 50,
+        "cleanup_timeout_seconds": 10.0,
+        "wrap_response": True,
+        "local_notify": False,
+        "failure_nudge_threshold": 3,
+        "retry_unreachable": True,
+        "failure_repeat_alert_hours": 6.0,
+    }
     # P10-20: desktop control
     assert d["computer_use"] == {"driver": "stdio", "driver_cmd": "", "action_timeout_s": 30.0}
     assert d["prompt_caching"] == {"cache_ttl": "5m"}

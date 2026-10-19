@@ -26,6 +26,7 @@ from types import TracebackType
 from typing import Any, Self
 
 from indus.core.turn_state import TurnResult
+from indus.cron.store import CronStore
 from indus.foundation.scope import Scope, thread_with_scope, use_scope
 from indus.protocol.base import ProtocolModel
 from indus.protocol.events import EventBase
@@ -41,6 +42,7 @@ from indus.protocol.methods import (
 )
 from indus.protocol.requests_port import AnswerModel
 from indus.protocol.server_requests import SERVER_REQUEST_KINDS
+from indus.service.cron_refs import register_cron_references
 from indus.service.session_service import SessionService
 
 __all__ = ["ALL_KINDS", "DEFAULT_CALL_TIMEOUT", "Feed", "InProcessHost"]
@@ -76,6 +78,7 @@ class InProcessHost:
         self._ready = threading.Event()
         self._service: SessionService | None = None
         self._stopped = False
+        self._undo_refs: Callable[[], None] | None = None
 
     # -- lifecycle --------------------------------------------------------------------------------
 
@@ -83,6 +86,9 @@ class InProcessHost:
         """Start the loop thread and build the service on it."""
         if self._thread is not None:
             return self
+        if self._scope is not None:
+            # The curator never archives a skill a cron job of this profile names (P14-03).
+            self._undo_refs = register_cron_references(CronStore(self._scope))
         self._thread = thread_with_scope(self._run, scope=self._scope, name=self._name, daemon=True)
         self._thread.start()
         if not self._ready.wait(10.0):
@@ -113,6 +119,9 @@ class InProcessHost:
         if self._stopped or self._thread is None:
             return
         self._stopped = True
+        if self._undo_refs is not None:
+            self._undo_refs()
+            self._undo_refs = None
         loop = self._loop
         try:
             if self._service is not None:

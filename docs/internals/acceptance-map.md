@@ -560,6 +560,7 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-E7-1** Unattended policies for cron, one-shot and API/webhook runs, deny by default
   - `tests/unit/safety/approvals/test_policy.py::test_unattended_contexts_deny_instantly`
   - `tests/unit/safety/approvals/test_policy.py::test_unattended_approve_mode`
+  - `tests/unit/cron/test_runner.py::test_dangerous_command_is_denied_under_cron_mode_deny`
 - **ACC-E8-1** Approvals over chat: buttons where supported, `/approve`, `/approve all`, `/deny reason`, timeout …
   - Review: not yet planned (phase TBD)
 - **ACC-E9-1** Whole-script approval for `execute_code`
@@ -698,27 +699,68 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/integration/service/test_mcp_host.py::test_cli_sessions_get_mcp_tools_and_reload_follows_the_config`
   - Review: picker and catalogue install are not in 1.0's `indus mcp` (P13-12 note)
 - **ACC-H1-1** Cron jobs stored per profile with locking; each run writes an output document
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_store.py::test_two_processes_never_lose_jobs`
+  - `tests/unit/cron/test_store.py::test_lock_wait_then_busy`
+  - `tests/unit/cron/test_store.py::test_repair_drops_junk_and_warns_types_only`
+  - `tests/unit/cron/test_output.py::test_document_path_and_round_trip`
+  - `tests/integration/cron/test_m4_demo.py::test_m4_cron_demo`
 - **ACC-H2-1** Schedule grammar: natural day/time phrases, `every <dur>`, cron expressions, ISO times, `in <dur>` …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_grammar.py::test_weekdays_at_9am`
+  - `tests/unit/cron/test_grammar.py::test_day_list_with_commas_and_and`
+  - `tests/unit/cron/test_grammar.py::test_bare_duration_is_recurring`
+  - `tests/unit/cron/test_grammar.py::test_garbage_lists_the_forms`
+  - `tests/unit/cron/test_grammar.py::test_display_round_trips`
+- **ACC-H2-2** DST: a daily job fires once on the fall-back night and once after a spring-forward gap
+  - `tests/unit/cron/test_next_run.py::test_fall_back_fires_once_from_first_fold`
+  - `tests/unit/cron/test_next_run.py::test_spring_forward_gap_fires_at_three_once`
+  - `tests/integration/cron/test_m4_demo.py::test_a_late_run_in_the_repeated_fall_back_hour_fires_once`
 - **ACC-H3-1** Gateway ticker every 60 s with on-time / late / catch-up rules and fire claims
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_due.py::test_hourly_three_hours_behind_runs_once`
+  - `tests/unit/cron/test_due.py::test_catch_up_off_skips`
+  - `tests/unit/cron/test_due.py::test_paused_two_days_then_resumed_runs_once`
+  - `tests/unit/cron/test_ticker.py::test_daemon_fires_an_every_30m_job_twice_in_an_hour`
+  - `tests/integration/cron/test_m4_demo.py::test_m4_cron_demo`
+  - Review: the ticker moves into the gateway daemon (P15-21)
+- **ACC-H3-2** Fire claims: one owner per slot, heartbeats, stale claims reclaimed, tick lock
+  - `tests/unit/cron/test_ticker.py::test_claim_liveness`
+  - `tests/unit/cron/test_ticker.py::test_young_claim_blocks_another_process_and_stale_claim_is_reclaimed`
+  - `tests/unit/cron/test_ticker.py::test_second_concurrent_tick_exits`
+  - `tests/unit/cron/test_ticker.py::test_claim_heartbeat_keeps_a_long_run_alive`
 - **ACC-H4-1** Agent jobs run in a fresh session with a scheduling hint, attached skills, output chaining …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_runner.py::test_the_session_is_hidden_and_marked_cron`
+  - `tests/unit/cron/test_runner.py::test_workdir_context_file_is_loaded`
+  - `tests/unit/cron/test_runner.py::test_pinned_route_does_not_fall_back`
+  - `tests/unit/cron/test_prompt.py::test_golden_assembled_prompt`
 - **ACC-H5-1** Script-only jobs whose stdout is the message (no model)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_runner.py::test_script_only_job`
+  - `tests/integration/cron/test_tick_e2e.py::test_tick_process_runs_a_script_only_job`
 - **ACC-H8-1** Preflight checks; a misconfigured job alerts once and costs no tokens
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_preflight.py::test_missing_key_blocks_without_a_model_call_and_alerts_once`
+  - `tests/unit/cron/test_preflight.py::test_platform_target_before_the_gateway_is_blocked`
 - **ACC-H9-1** Silence token (nothing new → no message) and failure token
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_classify.py::test_silent_forms`
+  - `tests/unit/cron/test_classify.py::test_failure_token_on_the_first_line_fails_the_run`
+  - `tests/unit/cron/test_runner.py::test_reply_classification_and_document`
 - **ACC-H10-1** Delivery to origin, local files, a platform's home channel, `platform:chat[:thread]`, all, or lists
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_targets.py::test_parser_table`
+  - `tests/unit/cron/test_delivery.py::test_local_delivery_reports_the_output_document`
+  - `tests/unit/cron/test_delivery.py::test_origin_resolves_to_the_stored_chat`
+  - Review: platform deliverers and `all` resolution (P15-20)
 - **ACC-H13-1** Execution ledger: an abandoned run becomes "unknown" and is never re-run
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_ledger.py::test_dead_owner_becomes_unknown`
+  - `tests/unit/cron/test_ledger.py::test_unknown_never_rerun`
+  - `tests/integration/cron/test_m4_demo.py::test_m4_cron_demo`
 - **ACC-H15-1** `cronjob_manage` model tool (create, list, update, pause, resume, remove, async run); cron runs …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cron/test_tool.py::test_create_list_and_defaults`
+  - `tests/unit/cron/test_tool.py::test_run_returns_a_handle_and_the_result_arrives_later`
+  - `tests/unit/cron/test_tool.py::test_refs_errors_and_lifecycle_actions`
+  - `tests/unit/cron/test_tool.py::test_cron_session_needs_the_opt_in`
 - **ACC-H16-1** `/cron` and `indus cron` create/edit/list/pause/resume/run/remove/status/tick → runs history …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_cron.py::test_slash_add_every_30m_creates_a_recurring_local_job`
+  - `tests/unit/cli/commands/test_cron.py::test_edit_skills_replace_add_remove_clear`
+  - `tests/unit/cli/commands/test_cron.py::test_status_reads_the_markers`
+  - `tests/unit/cli/commands/test_cron.py::test_doctor_exit_codes`
+  - `tests/integration/cron/test_tick_e2e.py::test_tick_process_runs_a_script_only_job`
 - **ACC-I1-1** `indus` command; bare `indus` opens a chat; about seventy subcommands in a stable help order
   - `tests/unit/cli/test_app.py::test_bare_indus_runs_chat`
   - `tests/unit/cli/test_app.py::test_help_order_follows_registration`

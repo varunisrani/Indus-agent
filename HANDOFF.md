@@ -72,13 +72,10 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P13 (P13 finished in `d4815be`).
+Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`; P14 in the commit that carries this text).
 In flight:
 P13 DONE (MCP `aed252e`; plugins, hooks, hub in the commit that carries this text).
-Also building (Agent 1, from `adaceac`): P14 cron — C1 = P14-01..06 + 17 (grammar, next run, store,
-ledger, health, due detection, notepad), C2 = P14-07..12 (ticker, preflight, scripts, prompt, runner,
-classification), C3 = P14-13..16, 18, 19 (delivery, bookkeeping, incidents, monitor, tool, CLI). If
-paused, patches in `.agents/wip/p14/`. C1, C2, C3 DONE (patches there); integrating in verify3.
+P14 DONE (cron; the commit that carries this text; M4 demo test tests/integration/cron/test_m4_demo.py).
 Also building (Agent 1, from `8f99060`): P15 wave 1 — G1 = P15-01..05 DONE (fake platform harness, gateway
 config, inbound events, send result/retry, adapter base), G2 = P15-06..10 (registry/locks, session keys,
 authorization, pairing, bot-loop/concurrency/admin tiers) DONE (patch in wip); G3 = P15-14..18 (chunker,

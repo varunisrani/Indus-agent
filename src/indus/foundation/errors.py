@@ -108,6 +108,18 @@ ERROR_CODES: dict[str, str] = {
     "mcp.auth_required": "an MCP server needs a new OAuth sign-in (indus mcp login)",
     "mcp.oauth_failed": "an MCP OAuth sign-in could not finish",
     "mcp.malware_refused": "an MCP server package has a malware advisory, so it was not started",
+    # P14 scheduled jobs
+    "cron.error": "scheduled job problem",
+    "cron.bad_schedule": "the schedule text is not one of the accepted forms",
+    "cron.oneshot_past": "a one-shot time is more than 120 s in the past",
+    "cron.next_run_failed": "the next run of a recurring job cannot be computed",
+    "cron.invalid_job": "a job definition breaks a rule (payload, mode, field value)",
+    "cron.job_not_found": "no job has this id or name",
+    "cron.ambiguous_job": "the name matches more than one job; use the id",
+    "cron.store_busy": "another process held the cron job store lock past the time budget",
+    "cron.slot_taken": "this scheduled slot already has an attempt; it is never run twice",
+    "cron.attempt_final": "the attempt is already finished; finished attempts never change",
+    "cron.notepad_limit": "a notepad write would break the size limits; nothing was written",
 }
 
 

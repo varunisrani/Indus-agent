@@ -181,6 +181,28 @@ commands:
   plugins capabilities: 2
   plugins check-updates: 0
   plugins validate: 2
+  cron: 2                 # a group with no default action prints its help
+  cron create: 2
+  cron edit: 2
+  cron list: 0            # says there are no jobs yet
+  cron pause: 2
+  cron resume: 2
+  cron run: 2
+  cron remove: 2
+  cron status: 0
+  cron tick: 0            # one pass over an empty store
+  cron pause-all: 0
+  cron resume-all: 0
+  cron runs: 2
+  cron history: 0
+  cron incidents: 0
+  cron notepad: 2
+  cron doctor: 0          # no jobs, no findings
+
+# `long_running`: commands that run until they are stopped (a daemon loop). They cannot meet the
+# watchdog with no arguments, so the contract only checks that `--help` answers (exit 0) in time.
+long_running:
+  - cron daemon
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one
@@ -201,3 +223,6 @@ with_arguments:
   hooks revoke deadbeef: 1         # no such approval
   plugins remove ghost: 1          # needs -y without a terminal
   plugins enable ghost: 1
+  cron run no-such-job: 1
+  cron remove no-such-job -y: 1
+  cron notepad no-such-job list: 1

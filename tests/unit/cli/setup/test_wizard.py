@@ -26,6 +26,7 @@ BUNDLE_TOOLS = [
     "clarify —",
     "code_execution —",
     "computer_use —",  # P10-20
+    "cronjob —",  # P14-18
     "delegation —",
     "file —",
     "image_gen —",  # P10-16

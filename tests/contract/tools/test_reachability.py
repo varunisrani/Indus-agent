@@ -68,5 +68,10 @@ def test_webhook_bundle_is_exactly_its_floor(builtins: ToolRegistry) -> None:
 
 def test_every_bundle_starts_from_core(builtins: ToolRegistry) -> None:
     core = set(resolve(toolsets.CORE, builtins))
-    for name in ("indus-cli", "indus-cron", "indus-gateway"):
+    for name in ("indus-cli", "indus-gateway"):
         assert core <= set(resolve(name, builtins)), name
+    # Scheduled jobs: everything in core but the question back to a person (P14-11) and the
+    # scheduling tool (R07.15; the cron runner adds the `cronjob` toolset only on opt-in).
+    cron = set(resolve("indus-cron", builtins))
+    assert core - {"clarify", "cronjob_manage"} <= cron
+    assert not {"clarify", "cronjob_manage"} & cron

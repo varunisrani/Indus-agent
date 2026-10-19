@@ -67,12 +67,13 @@ CORE_TOOLS: tuple[str, ...] = (
     "image_generate",
     "text_to_speech",
     "computer_use",
+    "cronjob_manage",
 )
 # Left out of the coding posture once those tools exist.
 NOT_FOR_CODING = frozenset({"image_generate", "text_to_speech", "cronjob_manage", "computer_use"})
 # Tools the tool-search bridge (C4, not built yet) keeps out of the model's array by default and
 # offers through search instead.
-DEFERRED_BY_DEFAULT = frozenset({"computer_use"})
+DEFERRED_BY_DEFAULT = frozenset({"computer_use", "cronjob_manage"})
 # Read-only research and a question back to the sender: the whole webhook floor.
 WEBHOOK_FLOOR: tuple[str, ...] = ("web_search", "web_extract", "vision_analyze", "clarify")
 
@@ -126,6 +127,7 @@ _NAMED: dict[str, Toolset] = {
         "Look at and operate desktop apps in the background (needs a desktop driver)",
         "computer_use",
     ),
+    "cronjob": _set("Schedule jobs that run later or on a repeat", "cronjob_manage"),
 }
 
 
@@ -158,7 +160,13 @@ TOOLSETS: dict[str, Toolset] = {
     "safe": _set("Research without shell access or file writes", includes=("web", "vision")),
     "coding": _bundle("Working on code: files, shell, web docs, planning", _CODING, posture=True),
     "indus-cli": Toolset("Interactive command line", includes=(CORE,)),
-    "indus-cron": Toolset("Scheduled jobs", includes=(CORE,)),
+    # Scheduled jobs run unattended: nobody can answer a question (P14-11), and a job may not
+    # schedule jobs (R07.15): the cron runner adds the `cronjob` toolset only under
+    # cron.allow_agent_scheduling.
+    "indus-cron": _bundle(
+        "Scheduled jobs: core tools without questions or scheduling",
+        _core_minus("clarify", "cronjob_manage"),
+    ),
     "indus-acp": _bundle(
         "Editor integration: the coding posture without interactive questions",
         (t for t in _CODING if t != "clarify"),

@@ -13,6 +13,7 @@ import httpx
 
 from indus.core.persist import MemoryStore
 from indus.core.references import SECTION_OPEN
+from indus.cron import tool as cron_tool
 from indus.foundation.scope import Scope
 from indus.protocol.events import Notice
 from indus.providers.auxiliary import AuxClient
@@ -227,6 +228,8 @@ def test_compress_with_rotation_moves_the_attached_session(
         outcome = await svc.compress(sid, "the refactor")
         assert outcome.status == "compressed", outcome
         child = svc.current_id(sid)
+        # `cronjob_manage run` results follow the session to its new id (P14-18)
+        assert cron_tool._sink_for(child) is not None  # pyright: ignore[reportPrivateUsage]
         # the old id keeps working as an alias
         ticket = await svc.submit(sid, "next step")
         result = await svc.wait(sid, ticket.turn_id)
@@ -246,5 +249,6 @@ def test_compress_with_rotation_moves_the_attached_session(
             "next step"
         )
         asyncio.run(svc.aclose())
+        assert cron_tool._sink_for(child) is None  # pyright: ignore[reportPrivateUsage]
     finally:
         handle.close()

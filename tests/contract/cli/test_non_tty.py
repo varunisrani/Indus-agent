@@ -38,7 +38,8 @@ def fresh(scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iter
 
 def test_table_names_every_command_and_nothing_else() -> None:
     registered = {key(path) for path in commands()}
-    listed = set(TABLE.commands)
+    listed = set(TABLE.commands) | TABLE.long_running
+    assert not set(TABLE.commands) & TABLE.long_running, "a command is listed twice"
     assert registered - listed == set(), "commands without a row in non_tty_table.yaml"
     assert listed - registered == set(), "rows for commands the app does not register"
 
@@ -62,3 +63,9 @@ def test_without_arguments(fresh: Scope, name: str, expected: int) -> None:
 @pytest.mark.parametrize(("argv", "expected"), sorted(TABLE.with_arguments.items()))
 def test_guidance_with_arguments(fresh: Scope, argv: str, expected: int) -> None:
     _check(fresh, tuple(argv.split()), expected)
+
+
+@pytest.mark.parametrize("name", sorted(TABLE.long_running))
+def test_long_running_commands_answer_help(fresh: Scope, name: str) -> None:
+    """A loop that runs until stopped cannot end within the watchdog: its help must."""
+    _check(fresh, (*name.split(), "--help"), 0)

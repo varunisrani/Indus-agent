@@ -11,6 +11,7 @@ cheap: only the first ``SCAN_LIMIT`` characters are looked at. Two pattern sets:
 
 ``memory`` and ``skill`` name the strict set for the learning loop's own writes (P09): a saved
 memory entry or an agent-written skill reaches every later session, so it gets the strict set.
+``cron`` names it for scheduled jobs (P14): their prompts run unattended, again and again.
 
 Invisible and bidirectional control characters are reported one id per code point
 (``invisible:U+200B``) and are checked on the raw text, because NFKC folding (used for the
@@ -36,7 +37,7 @@ __all__ = [
     "scan",
 ]
 
-Scope = Literal["context", "strict", "memory", "skill"]
+Scope = Literal["context", "strict", "memory", "skill", "cron"]
 
 SCAN_LIMIT = 100_000
 
@@ -156,6 +157,7 @@ _COMPILED: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     "strict": _STRICT,
     "memory": _STRICT,
     "skill": _STRICT,
+    "cron": _STRICT,
 }
 
 
