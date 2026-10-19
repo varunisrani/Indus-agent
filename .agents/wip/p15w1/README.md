@@ -108,3 +108,7 @@
   or forced entries + extra= at terminal/code call sites); post_gateway_admission is observer-only in
   P13's bus; active-turn marker clear should move behind the P15-19 ledger write (R06.5); pending queue
   in memory only; no reaped-session eviction yet.
+
+## Integrated commit (ready to land)
+`p15w1-integrated.patch` = the integrated, rebased P15 wave 1 commit (git format-patch). Apply with `git am` on main
+after the P14 M4 flake fix lands; combined gate was green except that flaky test (11280 passed, perf 11/11).
