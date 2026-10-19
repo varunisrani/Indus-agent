@@ -79,6 +79,12 @@ In flight:
   running, lands next. Patches + README in `.agents/wip/p15w1/`.
 - P21 B1 + B2 (P21-01..11, 15) and P22 R1 (P22-01..09): built (patches + READMEs in `.agents/wip/p21/`,
   `.agents/wip/p22/`), integrating in verify3.
+Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
+media intake, daemon, drain/restart, boot recovery, control socket, `indus gateway`, reconnect, API
+server, webhooks, Telegram/Discord/Slack adapters, Demo 3); P21-12..14, 16; P22-10..15; then P16, P17.
+Owner items: licences (Pillow MIT-CMU; voice extra av/numpy; Piper/eSpeak NG; new P21 vendor-extra
+transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm).
+
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
   reference only for the Compare step. Evidence and captures stay in `~/rea-lab/`.
