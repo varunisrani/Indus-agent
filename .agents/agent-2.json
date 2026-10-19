@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "READY",
-  "usage_pct": 71,
-  "remaining_pct": 29,
-  "resets_at": "2026-10-18T19:20:00+00:00",
-  "last_check": "2026-10-18T17:49:32+00:00",
-  "current_step": "Handed the turn to Agent 1 after P05 wave 1 (c7e5797); READY to take it back after the 19:20 UTC reset",
-  "last_commit": "c7e5797"
+  "state": "ACTIVE",
+  "usage_pct": 1,
+  "remaining_pct": 99,
+  "resets_at": "2026-10-19T11:00:00+00:00",
+  "last_check": "2026-10-19T06:29:45+00:00",
+  "current_step": "took the turn (06:30 UTC): gate check, then P10-19/P10-20, then P12",
+  "last_commit": "8d23a10"
 }
