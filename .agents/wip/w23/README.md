@@ -36,3 +36,32 @@ E1 (P16-01 HTTP listener kit) is being landed alone by the lead (D-16.350..354).
   timings are constants.
 - Follow-ups: runtime.* codes onto protocol table (P17-25); backups still include ledger tables (R03.21 says exclude);
   rehoming queued input on automatic reset; a worker meeting a refusing gate exits (drain-ender restarts it).
+
+## w23-e2.patch: P16-06 Matrix (plain) + P16-08 Mattermost — done
+- Builder checks: own + contract 148 passed / 25 skipped; wider gateway/cli/foundation/integration-gateway 2721 passed;
+  ruff, pyright, lint-imports, tooling.checks ok. Own Matrix C-S client over httpx (no mautrix; MPL left for P16-07 E2EE).
+- Extra `mattermost = ["httpx-ws==0.9.0"]` (MIT; httpx-ws + wsproto already locked via daytona) — re-lock (metadata only).
+- Shared: contract conftest `_register_p16_cases()`; config schema rows platforms.matrix / platforms.mattermost (+ test).
+- Wiring (core): registry rows `_chat_entry("matrix", ..., sdk=("httpx",), extra_name="matrix", required_env=(MATRIX_ACCESS_TOKEN,
+  MATRIX_HOMESERVER), max_len=15000)` and mattermost (sdk httpx_ws, required_env MATTERMOST_TOKEN, MATTERMOST_URL, max_len 4000);
+  BUILTIN_CREDENTIALS matrix: (MATRIX_ACCESS_TOKEN,), mattermost: (MATTERMOST_TOKEN,) (URLs not masked); daemon hooks
+  register_fetchers, lost_handler(reason, fatal) → disconnect_platform + reconnect watcher, processing reactions.
+  Send-only: inbound starts only once set_sink installs a sink (no change needed). P16-32: register matrix.split_target.
+- Decisions: auto_thread off by default; m.notice → bot-marked events; sync backoff 2→60 s; Mattermost token only in upgrade
+  header; @channel/@all/@here defused; e2ee optional/required seam (required fails fatal until P16-07).
+
+## w23-e3.patch: P16-05 Signal + P16-09 Email — done
+- Builder checks: signal 31, email 93, own+contract 218 passed / 23 skipped, unit/gateway 995 passed; ruff, pyright,
+  lint-imports, tooling.checks ok. No new packages (signal-cli GPL-3.0 only as the user's own separate process; email stdlib).
+- Shared (review): contract conftest `AdapterCase.lacks` + case imports; test_adapter_contract honours `lacks`, `_long_text`
+  linear; test_vendor_names adds EmailWire; traps R06.3, R06.8; ACC-K8-1.
+- Wiring (core): registry rows signal (probe httpx, required_env SIGNAL_HTTP_URL, SIGNAL_ACCOUNT, max_len 8000,
+  group_chats_env INDUS_SIGNAL_GROUP_ALLOWED_CHATS) and email (stdlib probe, required_env EMAIL_ADDRESS, EMAIL_PASSWORD,
+  EMAIL_IMAP_HOST, EMAIL_SMTP_HOST, max_len 50000) + BUILTIN_CREDENTIALS; send-only: `adapter.inbound_enabled = False`
+  before connect (reconcile with wave-22's AdapterConfig.send_only); register_fetcher(name, adapter.fetch_attachment);
+  token-lock key SIGNAL_ACCOUNT / address+IMAP host.
+- Decisions: plain text only; no client-side attachment rate model; Signal groups need a mention unless require_mention
+  false; email replies over 50,000 split into threaded mails; empty mail ignored; X-Auto-Response-Suppress alone not dropped;
+  From trusted only via topmost Authentication-Results with pinned authserv-id + DMARC/aligned SPF/DKIM.
+- Follow-ups: R06.8 core order (adapter DM policy before global unauthorized_dm_behavior); Adapter.report_failure hook;
+  `lacks` into Capabilities; allowlists compare exactly (lower-case emails).
