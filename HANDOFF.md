@@ -80,7 +80,7 @@ In flight (Agent 1):
    If paused, their patches are in `.agents/wip/p09w2/` (all three add `cli/slash/learning_cmds.py` —
    merge into one module; E and F both add `tools=` to AuxClient.call — keep one).
 2. P10 wave 1: H = P10-08..11 execute_code and kernels DONE, patch saved in `.agents/wip/p10w1/` (base
-   `85cd8a9`; README has its wiring list). G = P10-01..07 delegation still building from `85cd8a9`.
+   `85cd8a9`; README has its wiring list). G = P10-01..07 delegation DONE too (same base; uv.lock excluded — re-lock for jsonschema).
 3. P10 slices building from `7faff19`: I = P10-12..14 browser, J = P10-15..18 vision, image/video, TTS,
    STT. If paused, in `.agents/wip/p10w1/` too.
 Next: P10 waves 2+ (browser, media, voice, computer use, MoA, /btw, /goal, /loop, /heartbeat), P12

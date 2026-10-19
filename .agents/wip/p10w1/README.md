@@ -19,3 +19,28 @@
   remote `python` ≥3.8 fallback; 0.5 s remote poll serves both results and tool requests.
 - Follow-ups: public Environment.temp_dir; sweep crashed-host staging dirs >7 d; move RemoteShell to
   tests/fakes/backend/.
+
+## Slice G — w15-p10g.patch (base 85cd8a9) — DONE (P10-01..07 delegation); uv.lock EXCLUDED — re-lock
+- New: tools/builtin/delegate.py; core/subagents/{__init__,delegation,child,batch,output_schema,
+  background,teardown,worktree}.py; tests/unit/core/subagents/*, tests/unit/tools/builtin/test_delegate.py,
+  tests/fakes/subagents.py, tests/integration/core/test_delegate_batch.py (M2 demo);
+  tests/unit/core/subagents/_stubs_g.py (STAND-IN for H's kernel pool — delete); docs/notes/P10/ ×7.
+- Shared: core/agent.py (AgentOptions.only_tools, delegation_depth; lazy delegate executor);
+  core/turn_state.py (max_child_calls from delegation.max_concurrent_children); tools/builtin/__init__.py;
+  tools/toolsets.py (`delegation` toolset, delegate_task in CORE_TOOLS — H and P09 w1 also edit);
+  config DelegationSection + test; backends/processes.py (handoff grants, transfer_ownership,
+  handoff_note); tools/builtin/process_manage.py (`handoff` live, `purpose` arg) + test;
+  service/session_service.py (deliver_internal, stop_subagents); cli/slash/port.py (/stop, /new stop
+  subagents); goldens tests/golden/prompt_surface/*/tools.json (regenerate after merge);
+  test_toolsets.py, test_wizard.py (union with H and P09 w1); pyproject.toml jsonschema==4.26.0
+  (MIT, 2026-01-07; pulls attrs, referencing, jsonschema-specifications, rpds-py — all MIT);
+  THIRD_PARTY_NOTICES.md; traps R01.2/4/16, R02.17/32; ACC-C36-1.
+- Wiring: H's kernel pool registers via core.subagents.teardown.register_releaser(...) and uses
+  child_kernel_key (H's report: child passes code_kernel_owner=kernel.child_owner(parent, child),
+  dispose_child at teardown) — reconcile the two names into one; then delete _stubs_g.py.
+- Decisions: delegate_task in CORE_TOOLS; background only with a delivering host + interactive
+  context; usage rolled up on the parent ledger only; hand-off `purpose` arg; steer via P04 steer row;
+  async cap queues (reference rejects); images listed as paths/URLs until P10-15; /stop count
+  includes subagents.
+- Follow-ups: no subagent.* protocol events yet; hand-off note not shown in completion text; Docker
+  container aliasing for children.
