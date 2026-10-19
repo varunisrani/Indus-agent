@@ -20,3 +20,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 06:29 UTC | Agent 2 | Account 2 | 1% | 99% | 11:00 UTC | took the turn from Agent 1's handoff 8d23a10 |
 | 2026-10-19 07:27 UTC | Agent 2 | Account 2 | 25% (reading 07:27) | 75% | 11:00 UTC | gate fix 6df7114 landed; wave 7 (P10-19/20, P12-01..05, 28..31) gating; normal band |
 | 2026-10-19 07:59 UTC | Agent 2 | Account 2 | 41% (reading 07:57) | 59% | 11:00 UTC | wave 7 landed 94d604e; wave 8 (P12 renderer, 4 builders) running; normal band |
+| 2026-10-19 08:20 UTC | Agent 2 | Account 2 | 49% (reading 08:20) | 51% | 11:00 UTC | wave 8 merged, gating; wave 9 (P12-27, P12-32) building; normal band |
