@@ -21,3 +21,23 @@
   enabled servers start); SECURITY: `MEDIA:` lines inside server text are not neutralised — the P15
   delivery scanner must deliver trusted paths only (or neutralise here); a non-boolean readOnlyHint
   makes the SDK reject the whole listing; no cache expiry (ttlMs ignored).
+
+## N2 — w16-p13n2.patch — DONE (P13-09..12 OAuth, sampling+elicitation, OSV preflight, `indus mcp`)
+- New: mcp/{oauth,sampling,osv,extras}.py, cli/commands/mcp.py, tests (unit/mcp, cli test_mcp),
+  fakes tests/fakes/mcp/{oauth_server,asking_server}.py, notes ×4.
+- Shared: providers/auth/pkce.py (keeps `iss`, RFC 9207); providers/auxiliary.py call_route gains
+  temperature, tools; foundation/errors.py codes mcp.auth_required / oauth_failed / malware_refused;
+  config mcp.osv_preflight (+test); cli/app.py `mcp` row; contract non_tty_table + help catalogue;
+  traps R07.22/24, ACC-G19-1.
+- Wiring onto N1: per server `indus.mcp.extras.extras_for(name, server, scope,
+  sampling=aux_backend(aux))` → pass extras.options + extras.opener() to ManagedServer; P13-06 call
+  path wraps each tools/call in `extras.requesters.serving(port, unattended=…, turn_id=…)`;
+  /reload-mcp rebuilds extras; P13-07 uses McpAuthRequired for the parked warning; /mcp and
+  /reload-mcp chat commands can use status_rows / status_lines.
+- Decisions: only explicit logins interactive; in-process refresh fence, store re-read for
+  cross-process logins; secret names MCP_OAUTH_<SAFE>_<sha8>_*; oauth.scope / client_metadata_url read
+  as extra keys; sampling advertises tools when max_tool_rounds > 0; elicitation returns values;
+  unversioned packages checked by name; `add` has no checklist; unknown server in `mcp test` exits 1.
+- Follow-ups: drop dead dynamic registration on invalid_client; guard the SDK's guessed /register;
+  login clears old tokens before the browser step (reference snapshots/restores — consider fixing);
+  no own CIMD document; sampling deprecated from protocol 2026-07-28 (client side kept).
