@@ -78,6 +78,8 @@ local base = main + the three wave 1 patches applied raw: D = P09-11 skill_manag
 P09-24 CLI/slash; E = P09-14..17 review loop, /refine, /learn; F = P09-18..20 curator, P09-23 timeline.
 If you find the turn PAUSED, wave 2 slice patches will be in `.agents/wip/p09w2/` (base = that raw
 base, also saved there as a patch) — land wave 1 first.
+Also building (Agent 1, from `85cd8a9`): P10 wave 1 — G = P10-01..07 delegation, H = P10-08..11
+execute_code and kernels. Saved slices, if paused, in `.agents/wip/p10w1/`.
 Start here — P09 wave 1 is saved, not landed: `.agents/wip/p09w1/` holds three slice patches on base
 `29ddd7b` and a README with each slice's status and the integration list:
 - A (P09-01..04, P09-25 memory, pending-write gate, frozen block, session_search): done; host wiring
