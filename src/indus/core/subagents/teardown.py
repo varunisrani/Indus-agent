@@ -11,9 +11,11 @@
   task.
 
 Releasers and the lifecycle hook bus are seams: later phases register theirs
-(``register_releaser``, ``set_lifecycle_hooks``; browser sessions from P10-12, vision embed
-counters from P10-15); until P13 the bus does nothing. One releaser is built in: ``code-kernels``
-disposes the child's ``execute_code`` kernels, local and remote (P10-10/11). A child's kernels are
+(``register_releaser``, ``set_lifecycle_hooks``); until P13 the bus does nothing. Two releasers
+are built in: ``code-kernels`` disposes the child's ``execute_code`` kernels, local and remote
+(P10-10/11), and ``browser-sessions`` closes the child's browser (P10-12: its tools run under the
+child's session id as task id), force-reaping it when the close fails. Vision embed counters
+(P10-15) live in a bounded table and need no releaser. A child's kernels are
 kept under the owner ``kernel.child_owner(parent, child)`` (``<parent>::child::<child>``), which
 ``build_child`` gives the child's runtime as ``code_kernel_owner``; the pool pins them outside the
 top-level LRU while they live (R02.32). A releaser that fails is logged; it never stops the rest
@@ -31,12 +33,14 @@ from typing import Any, Protocol
 from indus.backends.processes import MAX_HANDOFFS, ProcessRegistry
 from indus.foundation.scope import Scope
 from indus.safety.redaction import redact_output
+from indus.tools.builtin import browser
 from indus.tools.builtin.code import kernel as code_kernel
 
 __all__ = [
     "NO_LIFECYCLE_HOOKS",
     "ChildResources",
     "LifecycleHooks",
+    "BROWSER_RELEASER",
     "KERNEL_RELEASER",
     "Releaser",
     "lifecycle_hooks",
@@ -48,6 +52,7 @@ log = logging.getLogger(__name__)
 
 ORPHAN_SOURCE = "subagent ended"
 KERNEL_RELEASER = "code-kernels"
+BROWSER_RELEASER = "browser-sessions"
 
 type Releaser = Callable[[str, str], object]
 """``releaser(parent_session_id, child_session_id)``: free what the child held (may be async)."""
@@ -165,4 +170,9 @@ async def _release_kernels(parent_session_id: str, child_session_id: str) -> Non
     await code_kernel.dispose_child(child_session_id)
 
 
+async def _release_browser(parent_session_id: str, child_session_id: str) -> None:
+    await browser.DEFAULT_TOOLS.manager.end(child_session_id)
+
+
 register_releaser(KERNEL_RELEASER, _release_kernels)
+register_releaser(BROWSER_RELEASER, _release_browser)

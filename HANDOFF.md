@@ -73,15 +73,16 @@ Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/ph
 Done: P00–P09 (P09 wave 2 landed in the commit that carries this text; M2 demo test
 `tests/integration/learning/test_m2_demo.py`) and P11 (`3ae8089`). Landing notes in LEAD-NOTES.
 Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up).
-In flight (Agent 1):
-1. P10 G (delegation) + H (execute_code) landed in the commit that carries this text.
-2. P10 from `7faff19`: I = P10-12..14 browser DONE (patch in wip; SECURITY item in README), J = P10-15..18 vision, image/video, TTS, STT DONE (patch in wip);
-   K = P10-21..26 MoA, /btw, /goal, /loop, /heartbeat DONE (patch in wip).
-3. I + J + K integration in progress (Agent 1, verify2 from `2193f87`). If paused: start from the patches in
-   `.agents/wip/p10w1/` (README lists wiring, the browser SSRF fix, licence items); a partial staged
-   diff may be saved there as `ijk-integration-in-progress.patch`.
-Next: P10-19 voice mode, P10-20 computer_use; then P12 (TUI), P13 (MCP/plugins),
-P14 (cron).
+P10: 24 of 26 tasks landed — G + H (`2193f87`) and I + J + K (the commit that carries this text).
+Nothing in flight.
+Next:
+1. P10-19 CLI voice mode and P10-20 computer_use (then P10 is done).
+2. P12 (TUI, Demo 2), P13 (MCP/plugins/hooks), P14 (cron).
+Owner items from P10 (LEAD-NOTES, "P10 slices I+J+K landing notes"): Pillow licence (MIT-CMU), the
+voice extra's `av` (LGPL FFmpeg) and numpy (Zlib) licences, Piper/eSpeak NG ruling (D-16.71).
+Open security seam: during a browser navigation Chromium follows redirect hops itself, so one GET can
+still reach a refused address if a server answers our check differently; a filtering local proxy
+would close it.
 
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the

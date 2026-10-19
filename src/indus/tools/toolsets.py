@@ -33,6 +33,15 @@ BUNDLE_PREFIX = "indus-"
 CORE = "core"
 MEMO_MAX = 256
 
+# The browser tools (P10-12..14); their probes drop them where Playwright (or, for browser_cdp,
+# a live CDP endpoint) is missing.
+BROWSER_TOOLS: tuple[str, ...] = tuple(
+    f"browser_{verb}"
+    for verb in (
+        "back", "cdp", "click", "console", "dialog", "get_images",
+        "navigate", "press", "scroll", "snapshot", "type", "vision",
+    )
+)  # fmt: skip
 # The tools every platform bundle starts from. Later phases append their tools here (and to the
 # named sets below) when they land.
 CORE_TOOLS: tuple[str, ...] = (
@@ -53,6 +62,10 @@ CORE_TOOLS: tuple[str, ...] = (
     "skill_manage",
     "execute_code",
     "delegate_task",
+    *BROWSER_TOOLS,
+    "vision_analyze",
+    "image_generate",
+    "text_to_speech",
 )
 # Left out of the coding posture once those tools exist.
 NOT_FOR_CODING = frozenset({"image_generate", "text_to_speech", "cronjob_manage", "computer_use"})
@@ -84,6 +97,14 @@ _NAMED: dict[str, Toolset] = {
     "web": _set("Search the web and extract page content", "web_search", "web_extract"),
     "search": _set("Web search without page extraction", "web_search"),
     "vision": _set("Look at and describe images", "vision_analyze"),
+    "image_gen": _set("Create images from a description", "image_generate"),
+    "video_gen": _set(
+        "Create and change short videos (needs a video service)",
+        "video_generate",
+        "video_edit",
+        "video_extend",
+    ),
+    "tts": _set("Turn text into spoken audio files", "text_to_speech"),
     "todo": _set("Plan and track multi-step work in the session", "todo_list"),
     "clarify": _set("Ask the user a question and wait for the answer", "clarify"),
     "memory": _set("Save short facts that every later session should know", "memory"),
@@ -96,6 +117,7 @@ _NAMED: dict[str, Toolset] = {
     ),
     "code_execution": _set("Run Python that calls the file, web and shell tools", "execute_code"),
     "delegation": _set("Hand tasks to subagents and control them", "delegate_task"),
+    "browser": _set("Drive a headless browser: open, read and operate web pages", *BROWSER_TOOLS),
 }
 
 

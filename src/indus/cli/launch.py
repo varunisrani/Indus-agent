@@ -15,6 +15,8 @@ commands are wired).
   ``ctx.extensions.skill_commands``, and the banner's skill count;
 - the banner, the recap of a resumed session, the status bar's first values and the seeded ``-q``
   text, sent as typed once the prompt is up (no slash or ``!`` handling);
+- the P10 session features (``start_automation``): goals, loops, heartbeats, ``/btw`` and
+  ``/moa`` run on the host's loop; the REPL's queued messages count as input waiting;
 - the status bar's source: the attached agent's route, its usage ledger (``Agent.usage``, P08-08:
   last prompt size and cost, never a cost the ledger could not price) and its compaction count.
   It reads plain counters from the REPL thread without a loop hop; a failed read only falls back
@@ -37,7 +39,13 @@ if TYPE_CHECKING:
     from indus.cli.slash.context import SessionPort, SlashContext
     from indus.foundation.scope import Scope
 
-__all__ = ["build_context", "make_on_resume", "run_launch", "status_from_agent"]
+__all__ = [
+    "build_context",
+    "make_on_resume",
+    "run_launch",
+    "start_automation",
+    "status_from_agent",
+]
 
 log = logging.getLogger(__name__)
 
@@ -207,6 +215,35 @@ def _status_source(launch: ReplLaunch, link: dict[str, Repl]) -> Callable[[], St
     return source
 
 
+def start_automation(launch: ReplLaunch, ctx: SlashContext, link: dict[str, Repl]) -> None:
+    """Start the host's goals, loops, heartbeats, ``/btw`` and ``/moa`` (P10-21..26) and bind
+    them to the slash context. The REPL's queued messages count as input waiting, so a goal
+    continuation, a loop run or a heartbeat never jumps ahead of what the person typed."""
+    from indus.cli.slash.automation_cmds import HostAutomation
+    from indus.service.automation import SessionAutomation
+
+    host = launch.host
+    try:
+        service = host.service
+
+        async def start() -> SessionAutomation:
+            automation = SessionAutomation(service)
+            automation.start()
+            return automation
+
+        automation = host.call(start())
+    except Exception:
+        log.warning("goals, loops and heartbeats are not available in this chat", exc_info=True)
+        return
+
+    def waiting(session_id: str) -> bool:
+        repl = link.get("repl")
+        return repl is not None and session_id == repl.session_id and bool(repl.pending)
+
+    host.run(lambda: service.set_input_probe(waiting))
+    ctx.automation = HostAutomation(host, automation)
+
+
 def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> int:
     """Run the classic REPL for ``launch``; returns the exit code (see the module notes)."""
     from indus.cli.repl.app import ReplOptions, run_repl
@@ -217,6 +254,7 @@ def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> 
     get = _config_get(scope)
     ctx = build_context(launch)
     link: dict[str, Repl] = {}
+    start_automation(launch, ctx, link)
     for line in launch.notices:
         _echo(line)
     options = ReplOptions.from_scope(

@@ -133,6 +133,19 @@ class RuntimeRoute:
         return is_loopback(self.base_url)
 
 
+# API modes whose wire carries images inside a tool result (P10-12, P10-15): Anthropic's
+# ``tool_result`` blocks take image parts; the other transports send a tool result as text only.
+TOOL_IMAGE_API_MODES = frozenset({"anthropic_messages"})
+
+
+def sees_tool_images(route: object) -> bool:
+    """Does the main model see an image a tool returns? The route's provider declares vision and
+    its wire carries images in tool results."""
+    if not isinstance(route, RuntimeRoute) or route.api_mode not in TOOL_IMAGE_API_MODES:
+        return False
+    return route.profile is not None and route.profile.supports_vision
+
+
 # -- keys ---------------------------------------------------------------------------------------
 
 

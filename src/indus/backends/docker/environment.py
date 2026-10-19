@@ -24,6 +24,10 @@ the next process (the orphan reaper sweeps leftovers, ``reaper.py``); otherwise 
 (``stop -t 10``) and removed. A client that cannot reach its daemon raises a connection error:
 the registry answers "degraded" and the next call starts over. A container that vanished is
 recovered by ``recovery.py``.
+
+Read-only mounts: the profile's skills (``/root/.indus/skills``), its media cache
+(``/root/.indus/cache/media``, created when missing: the media tools name generated files there
+for a Docker terminal, P10-16/17), credential files and registered sources.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, cast
 
 from indus.backends.capture import DEFAULT_MAX_CHARS
@@ -108,6 +113,10 @@ LABEL_ENVIRONMENT = "indus-environment"
 SHARED_TASK = "shared"
 SANDBOX_TEMP = "/tmp"  # noqa: S108 - inside the container (a size-capped tmpfs)
 SKILLS_TARGET = "/root/.indus/skills"
+# Generated images, video and speech (P10-16/17) are cached under <home>/cache/media; the media
+# tools report this in-container name for them (``sandbox_path``), so the folder is mounted.
+MEDIA_DIR = Path("cache") / "media"
+MEDIA_TARGET = "/root/.indus/cache/media"
 RUN_TIMEOUT_S = 120.0  # a first run may pull the image
 PS_TIMEOUT_S = 10.0
 START_TIMEOUT_S = 30.0
@@ -562,6 +571,17 @@ def skills_mounts(scope: Scope) -> list[ReadonlyMount]:
     return [ReadonlyMount(str(skills), SKILLS_TARGET, "dir")] if skills.is_dir() else []
 
 
+def media_mounts(scope: Scope) -> list[ReadonlyMount]:
+    """The profile's media cache, read-only (created first, so files made later show up)."""
+    media = scope.home / MEDIA_DIR
+    try:
+        media.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log.warning("the media cache %s could not be created; not mounted", media)
+        return []
+    return [ReadonlyMount(str(media), MEDIA_TARGET, "dir")]
+
+
 def _host_cwd(scope: Scope, override: object) -> str:
     raw = str(override) if override else str(_config(scope, "terminal.cwd") or ".")
     home = scope.env.get("HOME") or ""
@@ -599,6 +619,7 @@ async def open_docker(
         user_home=scope.env.get("HOME"),
         readonly=[
             *skills_mounts(scope),
+            *media_mounts(scope),
             *credential_mounts(scope, request.session_id),
             *readonly_from_sources(scope),
         ],

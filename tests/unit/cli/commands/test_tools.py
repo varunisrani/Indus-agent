@@ -73,7 +73,8 @@ def test_list_default_bundle(capsys: pytest.CaptureFixture[str], scope: Scope) -
     assert "Toolsets for cli (the indus-cli bundle):" in ran.out
     assert "[x] terminal" in ran.out
     assert "[x] web" in ran.out
-    assert "[ ] vision" in ran.out
+    assert "[x] vision" in ran.out  # P10-15: in the core list
+    assert "[ ] video_gen" in ran.out
     assert _saved(scope) is None
 
 
@@ -81,7 +82,7 @@ def test_failing_probe_reason_shown(capsys: pytest.CaptureFixture[str], scope: S
     ran = run_cli(capsys, scope, "tools", "list")
     assert "radar_scan: needs RADAR_API_KEY" in ran.out
     assert "sonar_ping: its readiness check says no here" in ran.out
-    assert "vision_analyze: not part of this build yet" in ran.out
+    assert "video_generate: not part of this build yet" in ran.out  # no video service here
 
 
 def test_enable_disable_persist(capsys: pytest.CaptureFixture[str], scope: Scope) -> None:

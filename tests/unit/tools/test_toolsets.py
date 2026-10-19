@@ -11,6 +11,7 @@ from indus.foundation.scope import Scope
 from indus.tools import toolsets
 from indus.tools.registry import ToolRegistry, scope_key
 from indus.tools.toolsets import (
+    BROWSER_TOOLS,
     CORE,
     CORE_TOOLS,
     TOOLSETS,
@@ -72,6 +73,10 @@ def test_core_list_is_the_p05_tool_set_plus_delegation() -> None:
         "skill_manage",  # P09-11
         "execute_code",  # P10-08
         "delegate_task",  # P10-01
+        *BROWSER_TOOLS,  # P10-12..14
+        "vision_analyze",  # P10-15
+        "image_generate",  # P10-16
+        "text_to_speech",  # P10-17
     }
     assert set(resolve(CORE)) == set(CORE_TOOLS)
 
@@ -81,10 +86,15 @@ def test_named_sets() -> None:
     assert resolve("file") == ["patch", "read_file", "search_files", "write_file"]
     assert resolve("web") == ["web_extract", "web_search"]
     assert resolve("search") == ["web_search"]
+    assert resolve("browser") == sorted(BROWSER_TOOLS)
     assert resolve("memory") == ["memory"]
     assert resolve("session_search") == ["session_search"]
     assert resolve("skills") == ["skill_manage", "skill_view", "skills_list"]
     assert resolve("code_execution") == ["execute_code"]
+    assert resolve("vision") == ["vision_analyze"]
+    assert resolve("image_gen") == ["image_generate"]
+    assert resolve("video_gen") == ["video_edit", "video_extend", "video_generate"]
+    assert resolve("tts") == ["text_to_speech"]
     assert set(resolve("debugging")) == {
         "terminal",
         "process_manage",
@@ -102,11 +112,12 @@ def test_platform_bundles() -> None:
     core = set(CORE_TOOLS)
     assert set(resolve("indus-cli")) == core
     assert set(resolve("indus-cron")) == core
-    assert set(resolve("indus-acp")) == core - {"clarify"}
-    assert set(resolve("indus-api-server")) == core - {"clarify"}
+    assert set(resolve("indus-acp")) == core - {"clarify", "image_generate", "text_to_speech"}
+    assert set(resolve("indus-api-server")) == core - {"clarify", "text_to_speech"}
     assert resolve("indus-webhook") == sorted(WEBHOOK_FLOOR)
     assert set(resolve("indus-gateway")) == core | set(WEBHOOK_FLOOR)
-    assert set(resolve("coding")) == core and TOOLSETS["coding"].posture
+    assert set(resolve("coding")) == core - {"image_generate", "text_to_speech"}
+    assert TOOLSETS["coding"].posture
 
 
 def test_cycle_resolves(extra_sets: dict[str, Toolset]) -> None:

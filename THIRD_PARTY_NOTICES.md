@@ -77,6 +77,23 @@ PyPI for packages of other platforms).
 | ptyprocess | 0.7.0 | ISC | extra `pty`: pseudo-terminals for interactive background processes (also via pexpect, dev only) | P05-13 |
 | ddgs | 9.16.0 | MIT | extra `web`: keyless web search | P05-23 |
 | primp | 2.0.1 | MIT | extra `web`, via ddgs | P05-23 |
+| playwright | 1.63.0 | Apache-2.0 | extra `browser`: drives Chromium for the browser tools (the wheel carries the Playwright driver and its Node.js runtime; Chromium itself is installed separately, never shipped) | P10-12 |
+| greenlet | 3.5.6 | MIT AND PSF-2.0 | extra `browser`, via playwright | P10-12 |
+| pyee | 13.0.1 | MIT | extra `browser`, via playwright | P10-12 |
+| faster-whisper | 1.2.1 | MIT | extra `voice`: local speech to text for the STT library | P10-18 |
+| av | 19.0.1 | BSD-3-Clause (the wheels bundle FFmpeg libraries under LGPL-2.1-or-later; owner check open, see LEAD-NOTES) | extra `voice`, via faster-whisper (audio decoding) | P10-18 |
+| ctranslate2 | 4.8.2 | MIT | extra `voice`, via faster-whisper (inference engine) | P10-18 |
+| huggingface-hub | 1.33.0 | Apache-2.0 | extra `voice`, via faster-whisper / tokenizers (model download) | P10-18 |
+| hf-xet | 1.6.0 | Apache-2.0 | extra `voice`, via huggingface-hub | P10-18 |
+| filelock | 4.0.10 | MIT | extra `voice`, via huggingface-hub | P10-18 |
+| fsspec | 2026.9.0 | BSD-3-Clause | extra `voice`, via huggingface-hub | P10-18 |
+| tqdm | 4.70.1 | MPL-2.0 AND MIT (unmodified) | extra `voice`, via faster-whisper / huggingface-hub | P10-18 |
+| pyyaml | 6.0.3 | MIT | extra `voice`, via ctranslate2 / huggingface-hub | P10-18 |
+| onnxruntime | 1.30.0 | MIT | extra `voice`, via faster-whisper (voice activity filter) | P10-18 |
+| flatbuffers | 25.12.19 | Apache-2.0 | extra `voice`, via onnxruntime | P10-18 |
+| protobuf | 7.36.2 | BSD-3-Clause | extra `voice`, via onnxruntime | P10-18 |
+| numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 (Zlib is not on the allow-list; owner check open, see LEAD-NOTES) | extra `voice`, via ctranslate2 / onnxruntime | P10-18 |
+| tokenizers | 0.23.2 | Apache-2.0 | extra `voice`, via faster-whisper | P10-18 |
 | prompt_toolkit | 3.0.53 | BSD-3-Clause | the classic REPL's prompt, keys and status bar | P06-04 |
 | wcwidth | 0.9.1 | MIT | via prompt_toolkit | P06-04 |
 | jsonschema | 4.26.0 | MIT | checks subagent answers against `output_schema` | P10-04 |

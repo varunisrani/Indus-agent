@@ -220,6 +220,55 @@ class LearningReviewDone(EventBase):
     """One short line per saved change, ready to show; empty when nothing was saved."""
 
 
+class GoalUpdate(EventBase):
+    """The session's standing goal changed (set, judged, continued, paused, done, cleared)."""
+
+    type: Literal["goal.update"] = "goal.update"
+    """Event type."""
+    status: Literal["active", "paused", "done", "cleared"]
+    """Where the goal stands."""
+    goal: str
+    """The objective."""
+    turns_used: NonNegativeInt
+    """Turns counted against the budget so far."""
+    max_turns: NonNegativeInt
+    """The turn budget."""
+    reason: str = ""
+    """Why it changed: the judge's reason, a failing gate, a pause cause."""
+
+
+class LoopUpdate(EventBase):
+    """One of the session's loops changed (set, ticked, finished, paused, stopped)."""
+
+    type: Literal["loop.update"] = "loop.update"
+    """Event type."""
+    loop_id: str
+    """The loop's id within the session."""
+    status: Literal["active", "paused", "done", "stopped"]
+    """Where the loop stands."""
+    prompt: str
+    """The repeated prompt."""
+    ticks: NonNegativeInt
+    """Runs fired so far."""
+    next_due_at: datetime | None = None
+    """When the next run is due, while active."""
+    reason: str = ""
+    """Why it changed, when it stopped or paused."""
+
+
+class HeartbeatFired(EventBase):
+    """A heartbeat sent its recurring instruction into the session (shown as a "wake" row)."""
+
+    type: Literal["heartbeat.fired"] = "heartbeat.fired"
+    """Event type."""
+    heartbeat_id: str
+    """The heartbeat's id within the session."""
+    prompt: str
+    """The recurring instruction."""
+    fire_count: NonNegativeInt
+    """How many times it has fired, this one included."""
+
+
 type Event = Annotated[
     TurnStarted
     | MessageDelta
@@ -231,7 +280,10 @@ type Event = Annotated[
     | Notice
     | ServerRequestCancelled
     | TurnDone
-    | LearningReviewDone,
+    | LearningReviewDone
+    | GoalUpdate
+    | LoopUpdate
+    | HeartbeatFired,
     Field(discriminator="type"),
 ]
 """Any event, told apart by ``type``."""
@@ -248,6 +300,9 @@ EVENT_MODELS: tuple[type[EventBase], ...] = (
     ServerRequestCancelled,
     TurnDone,
     LearningReviewDone,
+    GoalUpdate,
+    LoopUpdate,
+    HeartbeatFired,
 )
 
 

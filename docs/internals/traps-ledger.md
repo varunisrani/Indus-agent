@@ -11,13 +11,20 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/core/test_cache_plan.py::test_never_more_than_four_markers`
   - `tests/unit/providers/transports/test_responses.py::test_reasoning_replayed_byte_identical`
   - Review: golden prompt and tool-array byte tests (P04-22)
+  - `tests/unit/core/test_moa.py::test_system_prompt_bytes_match_a_plain_turn`
+  - `tests/unit/core/test_side_question.py::test_fork_answers_from_the_warm_prefix_and_writes_nothing`
+  - `tests/unit/service/test_automation.py::test_goal_runs_until_the_judge_says_done`
 - **R01.2** Role alternation under every failure path
   - Review: not yet planned (P00-guards)
   - `tests/unit/core/subagents/test_batch.py::test_parent_interrupt_reaches_every_child_and_transcripts_stay_valid`
+  - `tests/unit/core/test_moa.py::test_alternation_rejection_merges_and_is_remembered`
+  - `tests/unit/core/test_moa.py::test_every_iteration_asks_again_and_tool_rounds_stay_paired`
 - **R01.3** Persist order
   - `tests/integration/core/test_persist_order.py::test_crash_at_each_write_point_then_restart`
   - `tests/e2e/test_demo1.py::test_kill_after_the_approval_runs_the_command_at_most_once`
 - **R01.4** Interrupt races
+  - `tests/unit/core/test_moa.py::test_interrupt_cancels_pending_references`
+  - `tests/unit/core/test_moa.py::test_interrupt_during_references_ends_the_turn_before_the_request`
   - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_mid_text_stream`
   - `tests/trials/async_core/test_interrupt_latency.py::test_interrupt_with_pending_delta_after_tool_calls`
   - `tests/unit/providers/test_http.py::test_cancel_closes_stream_within_200ms`
@@ -129,6 +136,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
   - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
   - `tests/unit/backends/docker/test_mounts.py::test_host_paths_mounted_only_for_writable_host_binds`
+  - `tests/unit/backends/docker/test_mounts.py::test_media_cache_is_mounted_where_the_media_tools_say`
   - `tests/unit/backends/docker/test_recovery.py::test_mounted_cwd_goes_through_approval`
   - `tests/unit/backends/docker/test_recovery.py::test_unmounted_skips_prompt_but_deny_glob_blocks`
 - **R02.7** Credentials on the command line
@@ -204,6 +212,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/docker/test_env.py::test_blocked_name_never_forwarded`
   - `tests/unit/backends/docker/test_env.py::test_client_env_is_minimal_plus_client_controls`
   - `tests/unit/tools/builtin/code/test_runner.py::test_child_env_has_no_credentials`
+  - `tests/unit/tools/builtin/browser/test_session.py::test_launch_env_lacks_provider_keys_and_credentials`
   - Review: other child processes (P00-guards)
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
@@ -620,9 +629,12 @@ Checked by `python -m tooling.checks traps`.
 - **R06.21** Cross-session context leaks
   - Review: not yet planned (P00-guards)
 - **R06.22** Media path policy is a security boundary
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/media/test_tts.py::test_output_path_refusals`
+  - `tests/unit/tools/builtin/media/test_tts.py::test_output_path_symlink_into_ssh_refused`
+  - Review: tests cover the producing side only; the sender's delivery-side policy (safe roots, deny-list) comes with P15-18 (P15-18)
 - **R06.23** Empty or failed transcription must say so
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/media/test_stt.py::test_empty_is_inaudible`
+  - `tests/unit/tools/builtin/media/test_stt.py::test_provider_error_mapped_to_plain_message`
 - **R06.24** Broadcast surfaces that report "dm"
   - Review: not yet planned (P00-guards)
 - **R06.25** Gateway config loader diverges from CLI defaults

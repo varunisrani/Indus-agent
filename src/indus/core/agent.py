@@ -623,6 +623,8 @@ class Agent:
             # The smart approval judge asks the session's auxiliary model (P08-14).
             approval_judge=judge_from_aux(self.aux) if self.aux is not None else None,
             note_sources=tuple(options.note_sources),
+            aux=self.aux,
+            subagent=options.delegation_depth > 0,
         )
         caller = self.caller
         self.fallback = FallbackChain(

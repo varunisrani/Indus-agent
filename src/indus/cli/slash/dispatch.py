@@ -25,7 +25,14 @@ import logging
 from collections.abc import Mapping
 
 from indus.cli import quick_commands
-from indus.cli.slash import checkpoint_cmds, control_cmds, learning_cmds, session_cmds
+from indus.cli.slash import (
+    automation_cmds,
+    browser_cmds,
+    checkpoint_cmds,
+    control_cmds,
+    learning_cmds,
+    session_cmds,
+)
 from indus.cli.slash.context import ExtensionHandler, Handler, SlashContext, SlashResult
 from indus.foundation.errors import IndusError
 from indus.protocol.methods import ProtocolError
@@ -51,6 +58,8 @@ HANDLERS: dict[str, Handler] = {
     **control_cmds.HANDLERS,
     **checkpoint_cmds.HANDLERS,
     **learning_cmds.HANDLERS,
+    **browser_cmds.HANDLERS,
+    **automation_cmds.HANDLERS,
 }
 """Canonical command name → the classic CLI's handler."""
 

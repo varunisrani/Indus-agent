@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fixture form</title></head>
+<body>
+  <h1>Say hello</h1>
+  <label for="name">Your name</label>
+  <input id="name" type="text" value="placeholder text">
+  <button id="greet" type="button">Greet</button>
+  <button id="ask" type="button">Ask first</button>
+  <p id="out"></p>
+  <script>
+    document.getElementById("greet").addEventListener("click", () => {
+      const name = document.getElementById("name").value;
+      document.getElementById("out").textContent = "Hello, " + name + "!";
+    });
+    document.getElementById("ask").addEventListener("click", () => {
+      const answer = prompt("What is the word?", "none");
+      document.getElementById("out").textContent = "The word is " + answer;
+    });
+  </script>
+</body>
+</html>

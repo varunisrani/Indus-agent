@@ -30,7 +30,7 @@ acceptance, done when. Paths and conventions come from
 | P07 | [P07-cli-commands.md](P07-cli-commands.md) | 2 | 26 | 68 | 5 | 4 | 26 | — | done (9bb6c46) |
 | P08 | [P08-context-and-cost.md](P08-context-and-cost.md) | 1.5 | 19 | 49 | 9 | 4 | 19 | — | done (822b6cd wave 1; wave 2 in this commit) |
 | P09 | [P09-learning-loop.md](P09-learning-loop.md) | 2 | 25 | 82 | 9 | 5 | 25 | M2 | done (3d55449 wave 1; wave 2 in this commit) |
-| P10 | [P10-delegation-rich-tools.md](P10-delegation-rich-tools.md) | 2 | 26 | 69 | 11 | 6 | 26 | — | 11 landed (G, H in this commit); I, J, K saved; P10-19, 20 to build |
+| P10 | [P10-delegation-rich-tools.md](P10-delegation-rich-tools.md) | 2 | 26 | 69 | 11 | 6 | 26 | — | 24 landed (2193f87; I, J, K in this commit); P10-19, 20 to build |
 | P11 | [P11-docker-ssh-backends.md](P11-docker-ssh-backends.md) | 1.5 | 21 | 50 | 11 | 3 | 21 | — | done (3ae8089) |
 | P12 | [P12-tui-demo2.md](P12-tui-demo2.md) | 3 | 33 | 149 | 10 | 5 | 33 | **Demo 2** (M3) | planned |
 | P13 | [P13-mcp-plugins-hooks-hub.md](P13-mcp-plugins-hooks-hub.md) | 2 | 28 | 61 | 13 | 5 | 28 | — | planned |

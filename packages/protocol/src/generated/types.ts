@@ -116,10 +116,46 @@ export interface ErrorResponse {
   error: ErrorObject;
 }
 
-export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone;
+export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone | GoalUpdate | LoopUpdate | HeartbeatFired;
 
 /** Why a turn ended. Closed set: every exit path of the turn loop maps to one value. */
 export type ExitReason = "completed" | "interrupted_by_user" | "interrupted_by_system" | "budget_exhausted" | "max_iterations" | "invalid_tool_strikes" | "persistence_failed" | "provider_failed" | "compression_exhausted" | "guardrail_halt";
+
+/** The session's standing goal changed (set, judged, continued, paused, done, cleared). */
+export interface GoalUpdate {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "goal.update";
+  /** Where the goal stands. */
+  status: "active" | "paused" | "done" | "cleared";
+  /** The objective. */
+  goal: string;
+  /** Turns counted against the budget so far. */
+  turns_used: number;
+  /** The turn budget. */
+  max_turns: number;
+  /** Why it changed: the judge's reason, a failing gate, a pause cause. */
+  reason?: string;
+}
+
+/** A heartbeat sent its recurring instruction into the session (shown as a "wake" row). */
+export interface HeartbeatFired {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "heartbeat.fired";
+  /** The heartbeat's id within the session. */
+  heartbeat_id: string;
+  /** The recurring instruction. */
+  prompt: string;
+  /** How many times it has fired, this one included. */
+  fire_count: number;
+}
 
 /** Any JSON value. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -136,6 +172,28 @@ export interface LearningReviewDone {
   kinds: string[];
   /** One short line per saved change, ready to show; empty when nothing was saved. */
   summary_lines?: string[];
+}
+
+/** One of the session's loops changed (set, ticked, finished, paused, stopped). */
+export interface LoopUpdate {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "loop.update";
+  /** The loop's id within the session. */
+  loop_id: string;
+  /** Where the loop stands. */
+  status: "active" | "paused" | "done" | "stopped";
+  /** The repeated prompt. */
+  prompt: string;
+  /** Runs fired so far. */
+  ticks: number;
+  /** When the next run is due, while active. */
+  next_due_at?: string | null;
+  /** Why it changed, when it stopped or paused. */
+  reason?: string;
 }
 
 /** A piece of the assistant's visible reply. */

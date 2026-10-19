@@ -25,6 +25,11 @@ web = ["ddgs==9.16.0"]
 docs = ["openpyxl==3.1.5", "pypdf==6.19.0", "python-docx==1.2.0"]
 # Pseudo-terminals for interactive background processes (P05-13; ISC, 00-layout section 4).
 pty = ["ptyprocess==0.7.0"]
+# Headless Chromium for the browser tools (P10-12; Apache-2.0, 00-layout section 4).
+browser = ["playwright==1.63.0"]
+# Local speech to text for the STT library (P10-18; MIT, 00-layout section 4). P10-19 adds the
+# audio device library here.
+voice = ["faster-whisper==1.2.1"]
 
 [project.scripts]
 indus = "indus.cli.entry:main"
@@ -83,6 +88,7 @@ markers = [
     "network: needs network access",
     "docker: needs a reachable Docker daemon (live backend lanes, P11-21)",
     "live: talks to a real provider with a real key (INDUS_LIVE=1); skips cleanly without one",
+    "browser: drives a real Chromium (the browser extra); skips cleanly without one",
 ]
 
 [tool.importlinter]

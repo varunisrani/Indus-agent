@@ -59,6 +59,9 @@ def test_decided_defaults() -> None:
         "approval": aux_task,
         "curator": aux_task,  # P09-19
         "review": aux_task,  # P09-15
+        "goal_judge": aux_task,  # P10-24
+        "side_question": aux_task,  # P10-23
+        "vision": aux_task,  # P10-15
     }
     # P09 slice F: the curator
     assert d["curator"] == {
@@ -72,6 +75,15 @@ def test_decided_defaults() -> None:
         "archive_ttl_days": 0,
         "backup": {"enabled": True, "keep": 2},
     }
+    # P10 slice K: mixture of agents, goals, loops
+    assert d["moa"] == {
+        "presets": {},
+        "default_preset": "",
+        "reference_timeout": None,
+        "privacy_filter": "",
+    }
+    assert d["goals"] == {"max_turns": 20}
+    assert d["loops"] == {"min_interval_seconds": 30, "max_ticks": 100}
     assert d["prompt_caching"] == {"cache_ttl": "5m"}
     assert d["compression"] == {
         "enabled": True,
@@ -123,6 +135,35 @@ def test_decided_defaults() -> None:
         "write_approval": False,
         "review_interval": 10,  # P09-14
     }
+    # P10 slice J: media tools
+    assert d["vision"] == {"download_timeout": 30.0, "embed_target_kb": 256}
+    assert d["image_gen"] == {
+        "provider": "",
+        "model": "",
+        "base_url": "",
+        "key_name": "OPENAI_API_KEY",
+        "max_parallel_requests": 4,
+    }
+    assert d["media"] == {"video_provider": "", "video_model": ""}
+    assert d["tts"] == {
+        "provider": "piper",  # D-16.71
+        "voice": "",
+        "speed": 1.0,
+        "model": "",
+        "base_url": "",
+        "key_name": "OPENAI_API_KEY",
+        "piper_binary": "piper",
+        "piper_model": "",
+    }
+    assert d["stt"] == {
+        "provider": "",
+        "model": "",
+        "base_url": "",
+        "language": "",
+        "local_model": "base",
+        "local_device": "auto",
+        "max_file_mb": 25.0,
+    }
     assert d["context"] == {"engine": "builtin"}
     assert d["fallback"] == {"min_switch_reset_s": 0.0}  # P08-13: always switch
     assert d["approvals"] == {
@@ -162,6 +203,17 @@ def test_decided_defaults() -> None:
         "extract_backend": "",
         "keyless_rescue": True,
         "searxng_url": "",
+    }
+    assert d["browser"] == {
+        "inactivity_timeout": 120,
+        "command_timeout": 30,
+        "snapshot_threshold": 15000,
+        "snapshot_summary": False,
+        "cdp_url": "",
+        "executable_path": "",
+        "env_passthrough": [],
+        "dialog_policy": "must_respond",
+        "dialog_timeout_s": 300,
     }
     assert d["display"] == {
         "language": "en",

@@ -344,6 +344,37 @@ class WebSection(_Section):
     searxng_url: str = Field(default="", description="your SearXNG instance, e.g. http://host:8080")
 
 
+class BrowserSection(_Section):
+    inactivity_timeout: int = Field(
+        default=120, description="seconds an unused browser session stays open (at least 30)"
+    )
+    command_timeout: int = Field(
+        default=30, description="seconds one browser command may take (at least 5)"
+    )
+    snapshot_threshold: int = Field(
+        default=15000, description="page outline characters shown before it is cut (at least 1000)"
+    )
+    snapshot_summary: bool = Field(
+        default=False, description="let the side-task model condense long page outlines"
+    )
+    cdp_url: str = Field(
+        default="", description="attach to this running browser (CDP) instead of launching one"
+    )
+    executable_path: str = Field(
+        default="", description="Chromium to launch; empty = the one Playwright installed"
+    )
+    env_passthrough: list[str] = Field(
+        default_factory=list,
+        description="extra environment names the browser gets (values from your secrets)",
+    )
+    dialog_policy: Literal["must_respond", "auto_dismiss", "auto_accept"] = Field(
+        default="must_respond", description="JavaScript dialogs: wait for the agent, or answer"
+    )
+    dialog_timeout_s: int = Field(
+        default=300, description="seconds an unanswered dialog waits before it is dismissed"
+    )
+
+
 class DisplaySection(_Section):
     language: str = Field(default="en", description="interface language")
     interface: Literal["cli", "tui"] = Field(
@@ -449,6 +480,18 @@ class AuxiliarySection(_Section):
     review: AuxTaskSection = Field(
         default_factory=AuxTaskSection,
         description="the background review that saves memory and improves skills",
+    )
+    goal_judge: AuxTaskSection = Field(
+        default_factory=AuxTaskSection,
+        description="the /goal and /loop --until judge (30 s per call when timeout_s is empty)",
+    )
+    side_question: AuxTaskSection = Field(
+        default_factory=AuxTaskSection,
+        description="/btw answers; a provider or model here sends them there with a digest",
+    )
+    vision: AuxTaskSection = Field(
+        default_factory=AuxTaskSection,
+        description="images read by the aux model (120 s per call when timeout_s is empty)",
     )
 
 
@@ -590,6 +633,42 @@ class ContextSection(_Section):
     )
 
 
+class MoaSection(_Section):
+    """Mixture-of-agents presets (P10-21, P10-22); `indus moa` edits them."""
+
+    presets: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="name → {reference_models: [{provider, model, enabled, reasoning_effort}], "
+        "aggregator, reference_timeout, fanout}",
+    )
+    default_preset: str = Field(default="", description="the preset /moa uses when none is named")
+    reference_timeout: float | None = Field(
+        default=None, description="seconds one reference model may take; empty = no limit"
+    )
+    privacy_filter: Literal["", "display", "full"] = Field(
+        default="",
+        description="mask emails and phone numbers in reference answers: display (shown text) "
+        "or full (also what the model gets)",
+    )
+
+
+class GoalsSection(_Section):
+    """Standing goals: /goal (P10-24)."""
+
+    max_turns: int = Field(default=20, description="turns a goal may use before it pauses")
+
+
+class LoopsSection(_Section):
+    """Repeating prompts: /loop (P10-25)."""
+
+    min_interval_seconds: int = Field(
+        default=30, description="shortest loop interval; shorter ones are raised (never below 5)"
+    )
+    max_ticks: int = Field(
+        default=100, description="runs before a loop pauses itself; 0 = no limit"
+    )
+
+
 class SkillsSection(_Section):
     """Where skills come from and how they load (P09-06..13)."""
 
@@ -718,6 +797,74 @@ class CodeExecutionSection(_Section):
     )
 
 
+class VisionSection(_Section):
+    """``vision_analyze`` (P10-15)."""
+
+    download_timeout: float = Field(default=30, description="seconds an image download may take")
+    embed_target_kb: int = Field(
+        default=256,
+        description="size an image is shrunk to before the main model sees it (64-4096 KB)",
+    )
+
+
+class ImageGenSection(_Section):
+    """``image_generate`` (P10-16): the user's choice of service and model."""
+
+    provider: str = Field(default="", description="image service; empty = the first ready one")
+    model: str = Field(default="", description="model id; empty = the service's default")
+    base_url: str = Field(
+        default="", description="OpenAI-compatible images endpoint; empty = api.openai.com/v1"
+    )
+    key_name: str = Field(
+        default="OPENAI_API_KEY", description="secret holding the images endpoint's key"
+    )
+    max_parallel_requests: int = Field(default=4, description="image requests that may run at once")
+
+
+class MediaSection(_Section):
+    """Video generation (P10-16): the user's choice of service and model."""
+
+    video_provider: str = Field(
+        default="", description="video service; empty = the first ready one"
+    )
+    video_model: str = Field(default="", description="model id; empty = the service's default")
+
+
+class TtsSection(_Section):
+    """``text_to_speech`` (P10-17)."""
+
+    provider: str = Field(default="piper", description="speech engine: piper (local) or openai")
+    voice: str = Field(default="", description="voice name for engines that have several")
+    speed: float = Field(default=1.0, description="speaking speed, 0.25-4.0")
+    model: str = Field(default="", description="model id for the openai engine")
+    base_url: str = Field(
+        default="", description="OpenAI-compatible speech endpoint; empty = api.openai.com/v1"
+    )
+    key_name: str = Field(
+        default="OPENAI_API_KEY", description="secret holding the speech endpoint's key"
+    )
+    piper_binary: str = Field(default="piper", description="the Piper program (name or path)")
+    piper_model: str = Field(default="", description="path to a Piper voice model (.onnx)")
+
+
+class SttSection(_Section):
+    """Speech to text (P10-18)."""
+
+    provider: str = Field(
+        default="", description="local, openai or groq; empty = the first ready one"
+    )
+    model: str = Field(default="", description="model id for openai/groq; empty = their default")
+    base_url: str = Field(
+        default="", description="OpenAI-compatible transcription endpoint for the openai provider"
+    )
+    language: str = Field(default="", description="language code to expect; empty = detect")
+    local_model: str = Field(default="base", description="faster-whisper model size")
+    local_device: str = Field(default="auto", description="faster-whisper device: auto, cpu, cuda")
+    max_file_mb: float = Field(
+        default=25, description="largest file sent in one request when the provider sets no cap"
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -766,6 +913,9 @@ class ConfigModel(BaseModel):
         default_factory=SecuritySection, description="secrets and redaction"
     )
     web: WebSection = Field(default_factory=WebSection, description="web search and page extract")
+    browser: BrowserSection = Field(
+        default_factory=BrowserSection, description="the agent's headless browser"
+    )
     display: DisplaySection = Field(default_factory=DisplaySection, description="the interface")
     session: SessionSection = Field(
         default_factory=SessionSection, description="how the CLI picks a session to continue"
@@ -837,6 +987,20 @@ class ConfigModel(BaseModel):
     )
     delegation: DelegationSection = Field(
         default_factory=DelegationSection, description="subagents (delegate_task)"
+    )
+    vision: VisionSection = Field(
+        default_factory=VisionSection, description="looking at images (vision_analyze)"
+    )
+    image_gen: ImageGenSection = Field(
+        default_factory=ImageGenSection, description="image generation"
+    )
+    media: MediaSection = Field(default_factory=MediaSection, description="video generation")
+    tts: TtsSection = Field(default_factory=TtsSection, description="text to speech")
+    stt: SttSection = Field(default_factory=SttSection, description="speech to text")
+    moa: MoaSection = Field(default_factory=MoaSection, description="mixture of agents (/moa)")
+    goals: GoalsSection = Field(default_factory=GoalsSection, description="standing goals (/goal)")
+    loops: LoopsSection = Field(
+        default_factory=LoopsSection, description="repeating prompts (/loop)"
     )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 

@@ -5,7 +5,8 @@ The REPL (``indus.cli.repl``) builds one ``SlashContext`` per chat and passes it
 
 - they print through ``ctx.out`` (one call per line of plain text);
 - they reach the session service through ``ctx.port`` (a ``SessionPort``; ``port.HostPort`` adapts
-  the in-process host) and the store through ``ctx.store``;
+  the in-process host) and the store through ``ctx.store``; the P10 session features (``/goal``,
+  ``/loop``, ``/heartbeat``, ``/btw``, ``/moa``) through ``ctx.automation`` when the host runs them;
 - they answer with a ``SlashResult`` saying what the REPL must do next — leave, switch to another
   session, clear the screen, send a message as a turn, or put text back in the composer.
 
@@ -29,6 +30,8 @@ from indus.providers.route import RuntimeRoute
 from indus.state.registry import StoreHandle
 
 __all__ = [
+    "AutomationPort",
+    "AutomationReply",
     "CompressReport",
     "Extensions",
     "ExtensionHandler",
@@ -155,6 +158,22 @@ class SessionPort(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class AutomationReply:
+    """A P10 command's answer: lines to show, and text to send as the next message."""
+
+    lines: tuple[str, ...]
+    submit: str | None = None
+
+
+class AutomationPort(Protocol):
+    """The host's P10 session features (``service.automation.SessionAutomation``), blocking."""
+
+    def run(self, command: str, session_id: str, args: str) -> AutomationReply:
+        """Run ``/command args`` for the session."""
+        ...
+
+
 type Handler = Callable[["SlashContext", str], SlashResult]
 """A built-in command handler: ``(ctx, arguments)``; arguments keep their case."""
 
@@ -225,6 +244,7 @@ class SlashContext:
     extensions: Extensions = field(default_factory=Extensions)
     catalogue: Mapping[str, str] | None = None
     busy_wait_s: float = 30.0
+    automation: AutomationPort | None = None
 
     @property
     def time(self) -> Clock:

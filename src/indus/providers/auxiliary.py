@@ -14,8 +14,8 @@ A candidate that cannot be built (unknown provider, no key, no model) is skipped
 ends in HTTP 402 (billing / credits) falls through to the next. Any other failure belongs to the
 caller, who usually has a deterministic path (a fallback summary, a human prompt). The call is
 non-streaming, has P03's classified retry (one retry by default) and a deadline per task on the
-injected clock (``auxiliary.<task>.timeout_s``; compression 120 s, titles and approvals 30 s,
-others 60 s).
+injected clock (``auxiliary.<task>.timeout_s``; compression and vision 120 s, titles and
+approvals 30 s, others 60 s).
 
 Auxiliary calls never go through the turn loop, so loop-level request hooks never see them; the
 client has its own observers instead (P13 attaches plugin hooks there; their failures are
@@ -74,7 +74,12 @@ __all__ = [
     "generate_title",
 ]
 
-TASK_TIMEOUTS: Mapping[str, float] = {"compression": 120.0, "title": 30.0, "approval": 30.0}
+TASK_TIMEOUTS: Mapping[str, float] = {
+    "compression": 120.0,
+    "title": 30.0,
+    "approval": 30.0,
+    "vision": 120.0,  # P10-15: an image and a question to the text route
+}
 DEFAULT_TIMEOUT_S = 60.0
 DEFAULT_RETRIES = 1
 AUTO = "auto"
@@ -291,7 +296,7 @@ class AuxClient:
             log.warning("usage of an auxiliary %s call was not recorded", task, exc_info=True)
 
     async def _once(
-        self, task: str, route: RuntimeRoute, request: ChatRequest, timeout: float
+        self, task: str, route: RuntimeRoute, request: ChatRequest, timeout: float | None
     ) -> AuxResult:
         transport = get_transport(route.api_mode)
         client = self._client(route)
@@ -311,11 +316,8 @@ class AuxClient:
             )
 
         started = self.clock.monotonic()
-        outcome = await _until(
-            retry_call(attempt, max_retries=self.max_retries, clock=self.clock),
-            self.clock,
-            timeout,
-        )
+        work = retry_call(attempt, max_retries=self.max_retries, clock=self.clock)
+        outcome = await (work if timeout is None else _until(work, self.clock, timeout))
         if not isinstance(outcome, CallResult):
             raise ProviderError("the auxiliary call ended without an answer")
         response = outcome.response
@@ -387,6 +389,40 @@ class AuxClient:
             await self._record(recorder, task, route, result)
             return result
         raise AuxUnavailable(task, reasons)
+
+    async def call_route(
+        self,
+        task: str,
+        route: RuntimeRoute,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None = None,
+        timeout_s: float | None = None,
+        reasoning_effort: str | None = None,
+        record: UsageRecorder | None = None,
+    ) -> AuxResult:
+        """One answer for ``task`` from the given ``route`` (no candidate walk): a side task
+        that names its own model per call (P10-21 mixture-of-agents references). ``timeout_s``
+        None means no deadline. Usage goes to the recorder with the task tag, like ``call``."""
+        recorder = record if record is not None else self.record
+        request = ChatRequest(
+            model=route.model,
+            messages=list(messages),
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort or None,
+            stream=False,
+        )
+        info = {"provider": route.provider, "model": route.model, "origin": "explicit"}
+        self._observe("before", task, info)
+        try:
+            result = await self._once(task, route, request, timeout_s)
+        except RetryFailed as exc:
+            self._observe("failed", task, {**info, "reason": exc.classified.reason})
+            raise
+        result = replace(result, origin="explicit")
+        self._observe("after", task, {**info, "latency_s": result.latency_s})
+        await self._record(recorder, task, route, result)
+        return result
 
     # -- windows -----------------------------------------------------------------------------------
 

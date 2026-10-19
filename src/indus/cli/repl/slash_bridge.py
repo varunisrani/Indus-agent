@@ -112,7 +112,18 @@ def complete_for(ctx: SlashContext) -> Callable[[str], list[Candidate]]:
 
     def complete(text: str) -> list[Candidate]:
         names = runnable_names(ctx)
-        return REGISTRY.complete(text, names, extra=names)
+        found = REGISTRY.complete(text, names, extra=names)
+        head, _, rest = text.partition(" ")
+        if head.lower() == "/moa" and "moa" in names and " " not in rest.strip():
+            from indus.core.moa_presets import preset_names  # P10-22: preset names after /moa
+
+            typed = rest.strip().lower()
+            found += [
+                Candidate(name, "preset")
+                for name in preset_names(ctx.scope)
+                if name.lower().startswith(typed)
+            ]
+        return found
 
     return complete
 

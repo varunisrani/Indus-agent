@@ -207,6 +207,18 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/providers/test_registry.py::test_config_custom_provider_details`
   - `tests/unit/providers/test_registry.py::test_local_server_aliases`
   - `tests/unit/cli/test_model_picker.py::test_active_provider_table`
+- **ACC-A60-1** Mixture-of-agents turns: a flagged turn asks the preset's reference models in parallel before each request and the session's model acts on their labelled advice (user message only, never the system prompt)
+  - `tests/unit/core/test_moa.py::test_three_references_in_parallel_and_the_block_on_the_user_message`
+  - `tests/unit/core/test_moa.py::test_system_prompt_bytes_match_a_plain_turn`
+  - `tests/unit/core/test_moa.py::test_a_timed_out_reference_is_noted_and_the_turn_goes_on`
+  - `tests/unit/core/test_moa.py::test_interrupt_cancels_pending_references`
+  - `tests/unit/service/test_automation.py::test_moa_command_arms_the_next_turn`
+- **ACC-A61-1** Side question (`/btw`) answers from a detached copy without changing the session (warm prefix, tools refused, at most 3 calls)
+  - `tests/unit/core/test_side_question.py::test_fork_answers_from_the_warm_prefix_and_writes_nothing`
+  - `tests/unit/core/test_side_question.py::test_tools_are_refused_and_no_fourth_call_is_made`
+  - `tests/unit/core/test_side_question.py::test_runs_beside_a_turn_in_flight_without_interrupting_it`
+- **ACC-A61-2** Side question without a live agent: the stored transcript (2,000 per message, 24,000 in all, newest kept) in one auxiliary call
+  - `tests/unit/core/test_side_question.py::test_no_live_agent_falls_back_to_the_transcript`
 - **ACC-A62-1** Fast mode: `/fast normal|fast|auto` layers the route's declared priority tier onto requests (always, or for a window per user turn) only on routes that declare it
   - `tests/unit/core/test_fast_mode.py::test_tier_only_inside_the_window`
   - `tests/unit/core/test_fast_mode.py::test_window_opens_per_turn_and_expires`
@@ -220,6 +232,28 @@ Checked by `python -m tooling.checks acceptance`.
   - Review: cross-process turn lease (P17)
 - **ACC-A64-1** Closed set of turn exit reasons logged for every turn
   - Review: not yet planned (phase TBD)
+- **ACC-A65-1** Persistent goal: gates, then the judge after every finished turn; done ends it, otherwise an ordinary user message continues the work
+  - `tests/unit/core/test_goals.py::test_done_on_turn_three_completes_with_no_fourth_continuation`
+  - `tests/unit/core/test_goals.py::test_a_failing_gate_is_the_next_message_and_the_judge_waits`
+  - `tests/unit/core/test_goals.py::test_a_message_from_the_person_wins_over_a_queued_continuation`
+  - `tests/unit/core/test_goals.py::test_the_goal_survives_a_restart`
+  - `tests/unit/service/test_automation.py::test_goal_runs_until_the_judge_says_done`
+- **ACC-A65-2** Goal auto-pause: 3 unreadable verdicts, 5 failed judge calls, a gate failing past its retries, or the turn budget
+  - `tests/unit/core/test_goals.py::test_three_unreadable_verdicts_pause`
+  - `tests/unit/core/test_goals.py::test_five_transport_failures_pause`
+  - `tests/unit/core/test_goals.py::test_a_gate_that_keeps_failing_pauses`
+  - `tests/unit/core/test_goals.py::test_the_turn_budget_pauses_with_a_notice`
+- **ACC-A66-1** Loops: interval or self-paced runs as ordinary user turns; the marker on its own last line, `--times`, `--until` end them, `loops.max_ticks` pauses
+  - `tests/unit/core/test_loops.py::test_marker_on_its_own_line_ends_the_loop`
+  - `tests/unit/core/test_loops.py::test_self_paced_doubles_while_unchanged_and_snaps_back`
+  - `tests/unit/core/test_loops.py::test_times_stops_after_n_runs`
+  - `tests/unit/core/test_loops.py::test_tick_budget_pauses_and_resume_goes_on`
+  - `tests/unit/core/test_loops.py::test_busy_session_delays_the_tick`
+- **ACC-A66-2** Heartbeats fire only into an idle session with an empty input queue (60 s floor, 5 s poll, restored from the last fire)
+  - `tests/unit/core/test_heartbeat.py::test_fires_at_the_due_tick_on_an_idle_session`
+  - `tests/unit/core/test_heartbeat.py::test_busy_skips_then_fires_when_idle`
+  - `tests/unit/core/test_heartbeat.py::test_restart_restores_and_counts_from_the_last_fire`
+  - `tests/unit/service/test_automation.py::test_heartbeat_fires_through_the_scheduler`
 - **ACC-A68-1** Context-engine interface; the built-in engine is selected by `context.engine` and plugins never activate by themselves
   - `tests/unit/core/compression/test_engine.py::test_build_engine_follows_config`
   - Review: plugin engine path (P13)
@@ -398,9 +432,24 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-C19-1** SSRF policy (private and metadata ranges blocked after DNS) and a website blocklist
   - Review: not yet planned (phase TBD)
 - **ACC-C21-1** Browser tools on local headless Chromium: open a page, take an accessibility snapshot, click, type …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/tools/test_browser_local.py::test_navigate_snapshot_click_type_back`
+  - `tests/unit/tools/builtin/browser/test_tools.py::test_click_resolves_the_ref_to_the_session_attribute`
+- **ACC-C21-2** Browser navigation passes the URL gate before any fetch and is checked again after redirects
+  - `tests/unit/tools/builtin/browser/test_tools.py::test_metadata_address_is_refused_before_any_browser_starts`
+  - `tests/unit/tools/builtin/browser/test_tools.py::test_redirect_to_a_private_address_is_blocked_after_the_redirect`
+  - `tests/unit/tools/builtin/browser/test_guard.py::test_resource_redirect_into_a_private_address_never_reaches_it`
+  - `tests/unit/tools/builtin/browser/test_guard.py::test_page_embeds_pass_the_scope_check`
+  - `tests/integration/tools/test_browser_ssrf.py::test_page_requests_and_redirect_hops_never_reach_a_refused_address`
+- **ACC-C23-1** `browser_cdp` only with a live CDP endpoint; `browser_dialog` answers captured native dialogs
+  - `tests/unit/tools/builtin/browser/test_cdp_vision.py::test_no_cdp_endpoint_means_no_browser_cdp_in_the_tool_array`
+  - `tests/unit/tools/builtin/browser/test_cdp_vision.py::test_dialog_is_captured_shown_and_accepted`
+- **ACC-C26-1** `/browser connect|disconnect|status|use local` switches the profile's browser on the next call
+  - `tests/unit/tools/builtin/browser/test_cdp_vision.py::test_browser_connect_switches_the_sessions_driver`
 - **ACC-C27-1** `vision_analyze`: native image input on vision models, auxiliary vision model otherwise, region …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/media/test_vision.py::test_native_downscales_4000px`
+  - `tests/unit/tools/builtin/media/test_vision.py::test_region_crop_pixel_exact`
+  - `tests/unit/tools/builtin/media/test_vision.py::test_non_vision_route_asks_the_side_model`
+  - `tests/unit/tools/builtin/media/test_vision.py::test_fourth_embed_in_child_goes_to_text`
 - **ACC-C33-1** `todo_list` with statuses, merge/replace, a live panel, and re-injection after compression
   - Review: not yet planned (phase TBD)
 - **ACC-C34-1** `clarify`: 1–5 questions with choices and multi-select, answered on every surface
@@ -791,6 +840,12 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/commands/test_fallback.py::test_malformed_entries_are_reported`
   - `tests/unit/cli/commands/test_fallback.py::test_non_tty_argument_forms`
   - `tests/unit/cli/commands/test_fallback.py::test_add_with_picker_keeps_primary`
+- **ACC-I28-1** `indus moa list|configure [name]|delete <name>`: validation lists every problem, writes keep comments, the default preset cannot be deleted
+  - `tests/unit/cli/commands/test_moa.py::test_configure_by_flags_keeps_comments`
+  - `tests/unit/cli/commands/test_moa.py::test_configure_refuses_and_lists_every_problem`
+  - `tests/unit/cli/commands/test_moa.py::test_delete_refuses_the_default_preset`
+  - `tests/unit/cli/commands/test_moa.py::test_list_output`
+  - `tests/unit/core/test_moa_presets.py::test_every_problem_is_listed_at_once`
 - **ACC-I29-1** Setup wizard: sections (model, terminal, gateway, tools, agent), non-interactive guidance, full and …
   - `tests/unit/cli/setup/test_wizard.py::test_full_first_install`
   - `tests/unit/cli/setup/test_wizard.py::test_blank_slate`

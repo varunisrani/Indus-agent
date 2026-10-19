@@ -20,18 +20,22 @@ from tests.fakes.prompts import BACK, CANCEL, ScriptedDriver, scripted
 
 FAKE_KEY = "test" + "-key-" + "0123456789abcdef"
 MODELS = "https://openrouter.ai/api/v1/models"
-# the cli bundle's rows (vision is offered but not in the bundle)
+# the cli bundle's rows (video_gen is offered but not in the bundle)
 BUNDLE_TOOLS = [
+    "browser —",
     "clarify —",
     "code_execution —",
     "delegation —",
     "file —",
+    "image_gen —",  # P10-16
     "memory —",
     "search —",
     "session_search —",
     "skills —",
     "terminal —",
     "todo —",
+    "tts —",  # P10-17
+    "vision —",  # P10-15
     "web —",
 ]
 

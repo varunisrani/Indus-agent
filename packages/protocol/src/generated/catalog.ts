@@ -142,7 +142,10 @@ export interface MethodTypes {
 
 /** Event type (also the notification method) → event type name. */
 export const EVENTS = deepFreeze({
+  "goal.update": "GoalUpdate",
+  "heartbeat.fired": "HeartbeatFired",
   "learning.review.done": "LearningReviewDone",
+  "loop.update": "LoopUpdate",
   "message.delta": "MessageDelta",
   "notice": "Notice",
   "reasoning.delta": "ReasoningDelta",
@@ -158,7 +161,10 @@ export const EVENTS = deepFreeze({
 export type EventName = keyof typeof EVENTS;
 
 export interface EventTypes {
+  "goal.update": T.GoalUpdate;
+  "heartbeat.fired": T.HeartbeatFired;
   "learning.review.done": T.LearningReviewDone;
+  "loop.update": T.LoopUpdate;
   "message.delta": T.MessageDelta;
   "notice": T.Notice;
   "reasoning.delta": T.ReasoningDelta;

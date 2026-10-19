@@ -20,6 +20,9 @@ Fallback (P08-13): a provider failure that outlived P03's retries and the creden
 content-filter refusal with nothing shown, or the empty-answer ladder giving up moves the session
 to the next fallback route (``core.fallback``) and the request is rebuilt for it.
 
+Mixture of agents (P10-21): a turn the host armed (``core.moa``) asks the preset's reference
+models before each request and the advice rides on the request's last user message.
+
 Restarts that produced no answer (a redirect, a route change, a fallback, an overflow recovery)
 give the iteration back and bump ``restart_count``; more than ``max_restarts`` end the turn. When
 the budget runs out, one toolless grace request asks for a summary (retried once when empty, think
@@ -38,6 +41,7 @@ from dataclasses import replace
 from typing import Any
 
 from indus.core import loop_texts as texts
+from indus.core import moa
 from indus.core.compression.engine import expect_usage, run_gate
 from indus.core.exit_reasons import ExitReason, Failure
 from indus.core.fallback import fall_back
@@ -91,6 +95,7 @@ async def run_turn(state: TurnState) -> TurnResult:
     try:
         await run_prologue(state)
         if not state.ended:
+            state.moa = moa.claim(state)
             await _iterate(state)
     except PersistFailed as exc:
         _end_persist(state, exc)
@@ -146,7 +151,19 @@ async def _iterate(state: TurnState) -> None:
         except Exception as exc:
             _on_outer_error(state, exc)
     if not state.ended:
-        await _grace(state)
+        if state.options.grace:
+            await _grace(state)
+        else:
+            _no_grace(state)
+
+
+def _no_grace(state: TurnState) -> None:
+    cap = state.options.max_iterations
+    reason = (
+        ExitReason.MAX_ITERATIONS if cap and state.api_calls >= cap else ExitReason.BUDGET_EXHAUSTED
+    )
+    limit = str(cap) if cap else texts.LIMIT_UNLIMITED
+    state.end(reason, final_text=texts.LIMIT_REPLY.format(limit=limit))
 
 
 async def _iteration(state: TurnState) -> None:
@@ -160,9 +177,15 @@ async def _iteration(state: TurnState) -> None:
         await run_gate(state, "post_tool" if state.tail_role() == "tool" else "pressure")
         if state.ended:
             return
+    request = _request(state, with_tools=True)
+    if state.moa is not None:
+        request = await state.moa.before_request(state, request)
+        if state.control.interrupted:
+            _interrupted_exit(state)
+            return
     expect_usage(state)  # the answer's usage reaches the engine through the ledger (P08-08)
     try:
-        outcome = await _call_model(state, _request(state, with_tools=True))
+        outcome = await _call_model(state, request)
     finally:
         expect_usage(state, done=True)
     if isinstance(outcome, ClassifiedError):

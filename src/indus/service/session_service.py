@@ -24,6 +24,13 @@ After a session's first completed exchange, an ``aux`` client (P08-17), when giv
 title on the side (``llm`` provenance); the turn never waits for it. The same client is handed to
 every agent (``AgentOptions.aux``) for its compression summaries.
 
+Between turns (P10): ``inject`` starts a turn with an ordinary user message on the host's own
+initiative (goal continuations, loop ticks, heartbeats) — only while the session is idle, which
+means no running turn and nothing waiting in the surface's input queue (``set_input_probe``), so a
+message the person sent always wins. ``on_turn_end`` listeners hear every finished turn;
+``notify`` sends a host event (``goal.update`` and friends) on the session's stream. The service is
+the ``SessionHost`` of ``core.session_scheduler``.
+
 ``compress`` runs a manual ``/compress`` between turns (P08-05). A rotating compaction continues a
 conversation in a child session: the attached session moves to the child id, the old id keeps
 working as an alias for every call, and the session lock moves with it.
@@ -63,6 +70,7 @@ from indus.core.agent import Agent, AgentBusy, AgentOptions, RunningTurn
 from indus.core.compression.engine import Outcome
 from indus.core.events import EventListener, EventSink, RequestListener
 from indus.core.persist import MemoryStore, StateStore, TranscriptStore
+from indus.core.session_scheduler import TurnEnd, TurnEndListener
 from indus.core.turn_state import TurnResult
 from indus.foundation.blocking import run_blocking
 from indus.foundation.errors import IndusError
@@ -242,6 +250,9 @@ class SessionService:
         self.maintenance = maintenance
         self._maintenance_task: asyncio.Task[None] | None = None
         self.kernels = kernels
+        self._input_probe: Callable[[str], bool] | None = None
+        self._turn_end: list[TurnEndListener] = []
+        self._moved: list[Callable[[str, str], object]] = []
 
     def _default_lock_dir(self) -> Path:
         if isinstance(self.store, StateStore):
@@ -273,6 +284,107 @@ class SessionService:
 
     def agent(self, session_id: str) -> Agent:
         return self._get(session_id).agent
+
+    # -- host side (P10: goals, loops, heartbeats) ------------------------------------------------
+
+    def set_input_probe(self, probe: Callable[[str], bool] | None) -> None:
+        """``probe(session_id)`` true means the surface holds input for that session that has not
+        been sent yet (a queued message): the session is not idle then. ``None`` removes it."""
+        self._input_probe = probe
+
+    def _input_waiting(self, session_id: str) -> bool:
+        probe = self._input_probe
+        if probe is None:
+            return False
+        try:
+            return bool(probe(session_id))
+        except Exception:
+            log.warning("the input probe failed for session %s", session_id, exc_info=True)
+            return True  # unknown: do not start a turn over it
+
+    def is_idle(self, session_id: str) -> bool:
+        """Attached, no turn running and nothing waiting in its input queue."""
+        session_id = self.current_id(session_id)
+        attached = self._attached.get(session_id)
+        if attached is None or attached.running is not None or attached.agent.closed:
+            return False
+        return not self._input_waiting(session_id)
+
+    def generation(self, session_id: str) -> int:
+        """Turns the session's agent started in this process (0 before the first)."""
+        return self._get(session_id).agent.generation
+
+    async def inject(
+        self, session_id: str, text: str, *, origin: str, if_generation: int | None = None
+    ) -> bool:
+        """Start a turn with ``text`` as an ordinary user message when the session is idle (and,
+        with ``if_generation``, no other turn started since). False otherwise; never raises for a
+        busy or detached session."""
+        if self._closed or not text.strip():
+            return False
+        session_id = self.current_id(session_id)
+        attached = self._attached.get(session_id)
+        if attached is None or not self.is_idle(session_id):
+            return False
+        if if_generation is not None and attached.agent.generation != if_generation:
+            return False
+        try:
+            await self._start(attached, text)
+        except ProtocolError as exc:
+            log.info("%s message for session %s not started: %s", origin, session_id, exc)
+            return False
+        log.info("started a %s turn in session %s", origin, session_id)
+        return True
+
+    def notify(self, session_id: str, event: type[EventBase], **fields: Any) -> None:
+        """Send one host event on the session's stream; a failure is logged, never raised."""
+        attached = self._attached.get(self.current_id(session_id))
+        if attached is None:
+            return
+        try:
+            sink = attached.sink
+            sink.emit(event(session_id=attached.session_id, seq=sink.next_seq(), **fields))
+        except Exception:
+            log.warning("could not send a %s event", event.__name__, exc_info=True)
+
+    def on_turn_end(self, listener: TurnEndListener) -> Callable[[], None]:
+        """Call ``listener(TurnEnd)`` after each turn of every attached session (coroutines run
+        as the agent's tasks); returns the undo."""
+        self._turn_end.append(listener)
+        return lambda: self._turn_end.remove(listener) if listener in self._turn_end else None
+
+    def on_session_moved(self, listener: Callable[[str, str], object]) -> Callable[[], None]:
+        """Call ``listener(old id, new id)`` when a rotating compaction moves an attached session
+        (coroutines run as the agent's tasks); returns the undo."""
+        self._moved.append(listener)
+        return lambda: self._moved.remove(listener) if listener in self._moved else None
+
+    def _tell_moved(self, attached: _Attached, old: str, new: str) -> None:
+        for listener in list(self._moved):
+            try:
+                outcome = listener(old, new)
+                if asyncio.iscoroutine(outcome):
+                    attached.agent.spawn(outcome, name="session-moved listener")
+            except Exception:
+                log.warning("a session-moved listener failed", exc_info=True)
+
+    def _tell_turn_end(self, attached: _Attached, running: RunningTurn, result: TurnResult) -> None:
+        if not self._turn_end:
+            return
+        ended = TurnEnd(
+            session_id=attached.session_id,
+            turn_id=running.turn_id,
+            final_text=result.final_text or "",
+            completed=result.exit_reason is ExitReason.COMPLETED,
+            generation=running.generation,
+        )
+        for listener in list(self._turn_end):
+            try:
+                outcome = listener(ended)
+                if asyncio.iscoroutine(outcome):
+                    attached.agent.spawn(outcome, name="turn-end listener")
+            except Exception:
+                log.warning("a turn-end listener failed", exc_info=True)
 
     # -- create / resume --------------------------------------------------------------------------
 
@@ -407,6 +519,7 @@ class SessionService:
         attached.broker.session_id = new
         if old in self._titling:
             self._titling.add(new)
+        self._tell_moved(attached, old, new)
         taken = try_lock_session(self.lock_dir, new, owner=self.owner)
         if isinstance(taken, LockBusy):
             log.warning("session %s continues in %s, whose lock is held: %s", old, new, taken)
@@ -534,6 +647,7 @@ class SessionService:
         while len(attached.results) > KEPT_RESULTS:
             attached.results.popitem(last=False)
         self._maybe_title(attached, result)
+        self._tell_turn_end(attached, running, result)
         control = running.state.control
         left = [text for ticket, text in attached.steers.items() if control.withdraw_steer(ticket)]
         if result.pending_steer:
@@ -615,15 +729,19 @@ class SessionService:
             attached.agent.spawn(self._internal_turn(attached), name="internal message")
 
     async def _internal_turn(self, attached: _Attached) -> None:
+        """Deliver the queued results through ``inject``: only while the session is idle, so a
+        running turn or a message the person queued goes first; the next turn's end retries."""
         if attached.running is not None or attached.agent.closed or not attached.internal:
             return  # the running turn's end delivers it
         text = "\n\n".join(attached.internal)
         attached.internal.clear()
         try:
-            await self._start(attached, text)
+            started = await self.inject(attached.session_id, text, origin="subagent result")
         except Exception:
-            attached.internal.insert(0, text)
+            started = False
             log.warning("could not start the turn for an internal message", exc_info=True)
+        if not started:
+            attached.internal.insert(0, text)
 
     async def stop_subagents(self, session_id: str) -> int:
         """Stop every background subagent of the session; how many were still working."""

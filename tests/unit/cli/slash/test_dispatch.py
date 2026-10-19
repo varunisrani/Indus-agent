@@ -115,8 +115,8 @@ def test_unknown_command_suggests(scope: Scope) -> None:
 
 def test_planned_and_other_surface_commands_say_so(scope: Scope) -> None:
     ctx = make_ctx(scope)
-    dispatch("/goal ship it", ctx)
-    assert ctx.lines == ["/goal is not built yet; it arrives with P10."]
+    dispatch("/mcp", ctx)
+    assert ctx.lines == ["/mcp is not built yet; it arrives with P13."]
     ctx.lines.clear()
     dispatch("/approve", ctx)
     assert ctx.lines == ["/approve is not available here; it works in: gateway."]

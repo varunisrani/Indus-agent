@@ -15,6 +15,12 @@ when they end:
   (``kernel.run_reaper``, window = ``code_execution.kernel_idle_timeout``) when the host is
   long-lived, and ``shutdown()`` at host exit stops the reaper and closes both pools.
   ``kernel``'s ``atexit`` hook still kills whatever is left if a host never gets that far.
+
+Browser sessions (P10-12) follow the same ownership: a closed session's browser is closed with
+its kernels (the browser tools run under the session id as task id), and ``shutdown()`` closes
+every browser of the process (``browser.DEFAULT_TOOLS.manager.shutdown()``, the sessions of the
+host's loop and the Playwright driver). A subagent's browser ends with the subagent
+(``browser-sessions`` releaser).
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ import logging
 from dataclasses import dataclass, field
 
 from indus.foundation.scope import Scope
+from indus.tools.builtin import browser
 from indus.tools.builtin.code import kernel, remote
 from indus.tools.builtin.code.settings import CodeSettings
 
@@ -34,13 +41,15 @@ log = logging.getLogger(__name__)
 
 
 async def end_session(*session_ids: str) -> int:
-    """Dispose the kernels of a closed session (all of its ids); how many were closed."""
+    """Dispose the kernels and close the browser of a closed session (all of its ids); how many
+    kernels were closed."""
     closed = 0
     for session_id in dict.fromkeys(i for i in session_ids if i):
         try:
             closed += await kernel.dispose_session(session_id)
         except Exception:
             log.warning("could not close the code kernels of %s", session_id, exc_info=True)
+        await browser.DEFAULT_TOOLS.manager.end(session_id)
     return closed
 
 
@@ -69,7 +78,7 @@ class KernelUpkeep:
         return self._task is not None and not self._task.done()
 
     async def shutdown(self) -> None:
-        """Host exit: stop the reaper and close every kernel of this process."""
+        """Host exit: stop the reaper, close every kernel and every browser of this process."""
         self._closed = True
         task, self._task = self._task, None
         if task is not None:
@@ -81,3 +90,7 @@ class KernelUpkeep:
                 await pool.shutdown()
             except Exception:
                 log.warning("could not close the %s code kernels", pool.label, exc_info=True)
+        try:
+            await browser.DEFAULT_TOOLS.manager.shutdown()
+        except Exception:
+            log.warning("could not close the browser sessions", exc_info=True)

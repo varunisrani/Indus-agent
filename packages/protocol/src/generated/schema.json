@@ -243,7 +243,10 @@
     "Event": {
       "discriminator": {
         "mapping": {
+          "goal.update": "#/$defs/GoalUpdate",
+          "heartbeat.fired": "#/$defs/HeartbeatFired",
           "learning.review.done": "#/$defs/LearningReviewDone",
+          "loop.update": "#/$defs/LoopUpdate",
           "message.delta": "#/$defs/MessageDelta",
           "notice": "#/$defs/Notice",
           "reasoning.delta": "#/$defs/ReasoningDelta",
@@ -268,7 +271,10 @@
         {"$ref": "#/$defs/Notice"},
         {"$ref": "#/$defs/ServerRequestCancelled"},
         {"$ref": "#/$defs/TurnDone"},
-        {"$ref": "#/$defs/LearningReviewDone"}
+        {"$ref": "#/$defs/LearningReviewDone"},
+        {"$ref": "#/$defs/GoalUpdate"},
+        {"$ref": "#/$defs/LoopUpdate"},
+        {"$ref": "#/$defs/HeartbeatFired"}
       ]
     },
     "ExitReason": {
@@ -286,6 +292,78 @@
         "guardrail_halt"
       ],
       "type": "string"
+    },
+    "GoalUpdate": {
+      "additionalProperties": false,
+      "description": "The session's standing goal changed (set, judged, continued, paused, done, cleared).",
+      "properties": {
+        "goal": {"description": "The objective.", "type": "string"},
+        "max_turns": {"description": "The turn budget.", "minimum": 0, "type": "integer"},
+        "reason": {
+          "default": "",
+          "description": "Why it changed: the judge's reason, a failing gate, a pause cause.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "description": "Where the goal stands.",
+          "enum": ["active", "paused", "done", "cleared"],
+          "type": "string"
+        },
+        "turns_used": {
+          "description": "Turns counted against the budget so far.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "goal.update",
+          "default": "goal.update",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq", "status", "goal", "turns_used", "max_turns"],
+      "type": "object"
+    },
+    "HeartbeatFired": {
+      "additionalProperties": false,
+      "description": "A heartbeat sent its recurring instruction into the session (shown as a \"wake\" row).",
+      "properties": {
+        "fire_count": {
+          "description": "How many times it has fired, this one included.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "heartbeat_id": {"description": "The heartbeat's id within the session.", "type": "string"},
+        "prompt": {"description": "The recurring instruction.", "type": "string"},
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "heartbeat.fired",
+          "default": "heartbeat.fired",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq", "heartbeat_id", "prompt", "fire_count"],
+      "type": "object"
     },
     "JsonValue": {},
     "LearningReviewDone": {
@@ -320,6 +398,48 @@
         }
       },
       "required": ["session_id", "seq", "kinds"],
+      "type": "object"
+    },
+    "LoopUpdate": {
+      "additionalProperties": false,
+      "description": "One of the session's loops changed (set, ticked, finished, paused, stopped).",
+      "properties": {
+        "loop_id": {"description": "The loop's id within the session.", "type": "string"},
+        "next_due_at": {
+          "anyOf": [{"format": "date-time", "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "When the next run is due, while active."
+        },
+        "prompt": {"description": "The repeated prompt.", "type": "string"},
+        "reason": {
+          "default": "",
+          "description": "Why it changed, when it stopped or paused.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "description": "Where the loop stands.",
+          "enum": ["active", "paused", "done", "stopped"],
+          "type": "string"
+        },
+        "ticks": {"description": "Runs fired so far.", "minimum": 0, "type": "integer"},
+        "type": {
+          "const": "loop.update",
+          "default": "loop.update",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq", "loop_id", "status", "prompt", "ticks"],
       "type": "object"
     },
     "MessageDelta": {
@@ -1200,7 +1320,10 @@
       }
     },
     "events": {
+      "goal.update": "GoalUpdate",
+      "heartbeat.fired": "HeartbeatFired",
       "learning.review.done": "LearningReviewDone",
+      "loop.update": "LoopUpdate",
       "message.delta": "MessageDelta",
       "notice": "Notice",
       "reasoning.delta": "ReasoningDelta",

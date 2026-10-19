@@ -340,3 +340,33 @@ def test_tool_started_arguments_are_redacted_at_the_source(
     started = [e for e in k.events if isinstance(e, ToolStarted)]
     shown = json.dumps([e.arguments for e in started])
     assert started and token not in shown and "9" * 30 not in shown
+
+
+def test_media_and_browser_extras_follow_the_runtime(scope: Scope, fake_clock: FakeClock) -> None:
+    from indus.providers.profile import ProviderProfile
+    from indus.providers.route import RuntimeRoute
+
+    k = kit(scope, fake_clock, text_turn("done"))
+    asyncio.run(k.turn("go"))
+    state = k.last_state
+    assert state is not None
+    extras = handler_extras(state)
+    assert "aux" not in extras  # no aux client in this kit
+    assert extras["native_vision"] is False and extras["subagent"] is False
+
+    aux = object()
+    seeing = ProviderProfile(
+        "vendor-x", "https://x.example", "anthropic_messages", supports_vision=True
+    )
+    state.runtime.aux = aux
+    state.runtime.subagent = True
+    state.runtime.route = RuntimeRoute("vendor-x", "m", "anthropic_messages", "", profile=seeing)
+    extras = handler_extras(state)
+    assert extras["aux"] is aux and extras["subagent"] is True
+    assert extras["native_vision"] is True
+    # A wire that sends tool results as text never gets images, whatever the profile says.
+    state.runtime.route = RuntimeRoute("vendor-x", "m", "chat_completions", "", profile=seeing)
+    assert handler_extras(state)["native_vision"] is False
+    blind = ProviderProfile("vendor-y", "https://y.example", "anthropic_messages")
+    state.runtime.route = RuntimeRoute("vendor-y", "m", "anthropic_messages", "", profile=blind)
+    assert handler_extras(state)["native_vision"] is False

@@ -110,3 +110,17 @@ Done (2026-10-18). Goldens hold `[]` tool arrays until P05 registers tools; rege
   same bytes (checked with `ddgs` hidden). `prompt.txt` is unchanged (no guidance lines for these
   tools yet). Regenerated once with `--update-golden`; diff reviewed (912 added lines over four
   `tools.json`, nothing removed).
+- 2026-10-19 (P10 wave 1, slice I): P10-12..14 registered the `browser` toolset (12 tools:
+  `browser_navigate` … `browser_dialog`) and added it to `CORE_TOOLS`, so every surface's
+  `tools.json` gained their schemas (`browser_cdp` shows because the generator lets every probe
+  pass; live, it needs a reachable CDP endpoint). `prompt.txt` is unchanged. Regenerated once with
+  `--update-golden`; only additions. Slices G and H regenerate for their toolsets too — the lead
+  regenerates once after merging.
+- 2026-10-19 (P10 slice J, media tools): P10-15..17 registered `vision_analyze`,
+  `image_generate` and `text_to_speech` and added them to the core list, so `cli` and `cron` gained
+  all three schemas, `api_server` the first two (no speech there) and `acp` only
+  `vision_analyze` (the coding posture leaves out image and speech tools). `image_generate`'s
+  description and optional parameters come from the active provider's capabilities (the built-in
+  OpenAI-compatible images provider under the stock config). The video tools are absent: no video
+  provider is registered in a stock build. `prompt.txt` is unchanged. Regenerated with
+  `--update-golden`; diff reviewed (255 added lines over four `tools.json`, nothing removed).

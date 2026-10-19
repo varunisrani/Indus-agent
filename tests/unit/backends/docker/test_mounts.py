@@ -208,3 +208,21 @@ def test_unlisted_credential_files_mean_no_mounts(tmp_path: Path) -> None:
     from indus.backends.docker.mounts import credential_mounts
 
     assert credential_mounts(make_scope(tmp_path / "h")) == []
+
+
+def test_media_cache_is_mounted_where_the_media_tools_say(tmp_path: Path) -> None:
+    from indus.backends.docker.environment import MEDIA_TARGET, media_mounts
+    from indus.tools.builtin.media.common import sandbox_path
+    from tests.fakes.agent import DictConfig
+
+    home = tmp_path / "profile"
+    home.mkdir()
+    scope = make_scope(home, env={"HOME": str(home)})
+    (mount,) = media_mounts(scope)  # created when missing, so later files show up
+    assert Path(mount.host_path) == home / "cache" / "media" and Path(mount.host_path).is_dir()
+    plan = _plan(tmp_path, BASE, readonly=[mount])
+    assert _pairs(plan.readonly_args, "-v") == [f"{mount.host_path}:{MEDIA_TARGET}:ro"]
+    assert not plan.host_paths_mounted
+    made = Path(mount.host_path) / "image-1.png"
+    docker = scope.with_config(DictConfig({"terminal": {"backend": "docker"}}))
+    assert sandbox_path(docker, made) == f"{MEDIA_TARGET}/image-1.png"

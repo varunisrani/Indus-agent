@@ -47,9 +47,11 @@ def test_every_entry_has_a_cli_handler_or_a_later_owner() -> None:
     from indus.cli.slash.dispatch import HANDLERS
 
     landed = {"P06", "P08", "P09", "P11"}  # phases whose commands have classic CLI handlers
+    # commands of a phase landing in slices (P10: /browser; goals, loops, heartbeats, /btw, /moa)
+    landed_commands = {"browser", "btw", "goal", "subgoal", "loop", "heartbeat", "moa"}
     for cmd in REGISTRY:
         assert PHASE.match(cmd.owner), cmd.name
-        if cmd.owner in landed:
+        if cmd.owner in landed or cmd.name in landed_commands:
             assert cmd.name in HANDLERS, f"/{cmd.name} is owned by {cmd.owner} but has no handler"
         else:
             assert cmd.owner > "P06", f"/{cmd.name} owner {cmd.owner}"
@@ -156,10 +158,11 @@ def test_command_word_and_shape() -> None:
 HELP_GROUPS = {
     "session": ["new", "clear", "history", "title", "resume", "sessions", "retry", "undo",
                 "save", "branch", "stop", "steer", "queue", "compress", "status", "context",
-                "refine", "journey", "rollback", "worktree"],
+                "btw", "goal", "subgoal", "loop", "heartbeat", "moa", "refine", "journey",
+                "rollback", "worktree"],
     "config": ["model", "reasoning", "yolo", "approvals", "fast", "config"],
     "tools": ["tools", "skills", "reload-skills", "bundles", "memory", "learn", "curator",
-              "checkpoints"],
+              "browser", "checkpoints"],
     "info": ["help", "usage", "whoami", "version"],
     "exit": ["quit"],
 }  # fmt: skip

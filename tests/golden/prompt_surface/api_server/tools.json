@@ -1,6 +1,209 @@
 [
   {
     "function": {
+      "description": "Go back to the previous page in the browser's history. Open a page with browser_navigate first.",
+      "name": "browser_back",
+      "parameters": {"properties": {}, "required": [], "type": "object"}
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Send one raw Chrome DevTools Protocol command to the browser session, for things the other browser tools cannot do (cookies, network conditions, emulation, performance data). Page-level domains (Page, Runtime, DOM, Network, Emulation …) run on the current tab; Browser.* and Target.* run at browser level. Each call is independent: event subscriptions do not carry over. Method names and parameters follow the protocol reference at https://chromedevtools.github.io/devtools-protocol/. Prefer the dedicated browser tools when they can do the job.",
+      "name": "browser_cdp",
+      "parameters": {
+        "properties": {
+          "method": {
+            "description": "Protocol method, e.g. 'Network.getCookies' or 'Runtime.evaluate'.",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "The method's parameters; leave out when it takes none.",
+            "type": "object"
+          },
+          "timeout": {
+            "default": 30.0,
+            "description": "Seconds to wait for the answer (default 30, at most 300).",
+            "type": "number"
+          }
+        },
+        "required": ["method"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Click the element with the given ref from the latest snapshot. Open a page with browser_navigate first.",
+      "name": "browser_click",
+      "parameters": {
+        "properties": {"ref": {"description": "The element's ref, e.g. @e5.", "type": "string"}},
+        "required": ["ref"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Read the page's console messages (log, warning, error …) and uncaught JavaScript errors, for example to find out why a page misbehaves. With expression, run that JavaScript in the page instead (like the developer tools console) and get its value back as JSON; code that reaches a refused address is not run. Open a page with browser_navigate first.",
+      "name": "browser_console",
+      "parameters": {
+        "properties": {
+          "clear": {
+            "default": false,
+            "description": "Empty the message lists after reading them.",
+            "type": "boolean"
+          },
+          "expression": {
+            "description": "JavaScript to evaluate in the page, e.g. document.title.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Answer a JavaScript dialog (alert, confirm, prompt or beforeunload) that is holding up the page. Open dialogs are listed under pending_dialogs in browser_snapshot results and in the error of any browser call they block. 'accept' presses OK (for prompt, with prompt_text as the answer; for beforeunload, leaves the page); 'dismiss' presses Cancel. Pass dialog_id only when more than one dialog is open.",
+      "name": "browser_dialog",
+      "parameters": {
+        "properties": {
+          "action": {"enum": ["accept", "dismiss"], "type": "string"},
+          "dialog_id": {
+            "description": "Which open dialog to answer (from pending_dialogs[].id).",
+            "type": "string"
+          },
+          "prompt_text": {
+            "description": "The answer typed into a prompt() dialog; ignored for others.",
+            "type": "string"
+          }
+        },
+        "required": ["action"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "List the images on the current page: address, alt text and natural size (inline data images are left out). Useful to pick an image for the vision tools. Open a page with browser_navigate first.",
+      "name": "browser_get_images",
+      "parameters": {"properties": {}, "required": [], "type": "object"}
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Open a web page in the agent's browser (a headless Chromium kept for this task). Use it for pages that need interaction or run scripts: forms, logins, single-page apps. For plain reading prefer web_extract, and for raw files (.json, .md, .txt, APIs) a fetch: both are faster. The result gives the final address, the title and an outline of the page in which every interactive element has a ref such as @e3, so you can click or type next without a separate snapshot. Internal network addresses and addresses that carry credentials are refused.",
+      "name": "browser_navigate",
+      "parameters": {
+        "properties": {
+          "url": {
+            "description": "The address to open, e.g. https://example.com/login.",
+            "type": "string"
+          }
+        },
+        "required": ["url"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Press one key on the page, for example Enter to send a form, Tab to move on, Escape to close a popup, or ArrowDown in a list. Open a page with browser_navigate first.",
+      "name": "browser_press",
+      "parameters": {
+        "properties": {
+          "key": {"description": "Key name: Enter, Tab, Escape, ArrowDown, a, …", "type": "string"}
+        },
+        "required": ["key"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Scroll the page by about half a screen to reach content above or below the visible part. Open a page with browser_navigate first.",
+      "name": "browser_scroll",
+      "parameters": {
+        "properties": {
+          "direction": {
+            "description": "Which way to scroll.",
+            "enum": ["up", "down"],
+            "type": "string"
+          }
+        },
+        "required": ["direction"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Read the current page as an outline. Interactive elements carry refs (@e1, @e2 …) for browser_click and browser_type; refs change when the page changes, so take a new snapshot after actions that alter it. full=false (default) lists interactive elements and headings; full=true adds all visible text. A long outline is cut, and the result names the saved file and the read_file call that shows the rest. Open JavaScript dialogs are listed under pending_dialogs. Open a page with browser_navigate first.",
+      "name": "browser_snapshot",
+      "parameters": {
+        "properties": {
+          "full": {
+            "default": false,
+            "description": "true: include all visible text, not only interactive elements.",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Put text into a field (input, text area or editable element) given by its ref. The field is cleared first. Press Enter afterwards with browser_press when a form should be sent. Open a page with browser_navigate first.",
+      "name": "browser_type",
+      "parameters": {
+        "properties": {
+          "ref": {"description": "The field's ref, e.g. @e3.", "type": "string"},
+          "text": {"description": "The text the field should hold.", "type": "string"}
+        },
+        "required": ["ref", "text"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Take a screenshot of the current browser page and look at it, for what the text outline cannot show: layout, images, charts, CAPTCHAs, visual errors. Ask a precise question. When your model can see images the screenshot is attached for you to look at; otherwise a vision model answers the question. The result includes screenshot_path; write MEDIA:<screenshot_path> in your reply to show the user the image. Open a page with browser_navigate first.",
+      "name": "browser_vision",
+      "parameters": {
+        "properties": {
+          "annotate": {
+            "default": false,
+            "description": "Put [N] labels on interactive elements; [N] is ref @eN.",
+            "type": "boolean"
+          },
+          "question": {
+            "description": "What you want to know about the page, as precisely as you can.",
+            "type": "string"
+          }
+        },
+        "required": ["question"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
       "description": "Hand tasks to subagents. Each subagent starts with an empty conversation, its own terminal session and a reduced tool set, works on its task alone and gives back only a final summary. Put every task in tasks; several tasks run side by side.\n\nOn an interactive surface the subagents run in the background: the call returns at once and their results arrive as a new message between your turns. Do what does not depend on them, say briefly what is running, and end your turn; do not poll or wait for them. In one-shot runs, scheduled jobs and inside another subagent the call waits and returns the results itself. Subagents live only as long as this process: work that has to survive a restart or the end of the session belongs in a scheduled job or a background process.\n\nGood uses: work that needs its own reasoning, work that would flood this conversation with output, and independent pieces that can run in parallel. Not for: a single tool call (make it yourself), mechanical scripted steps, or anything that needs the user's answers (subagents cannot ask questions).\n\nRules: subagents know nothing of this conversation, so the goal and context must carry everything. Their summaries are their own account, not checked facts: before telling the user that something was published, uploaded or written, ask the subagent for a handle (URL, id, absolute path) and check it yourself. Subagents cannot ask the user, keep memory or schedule jobs, and they cannot delegate further. They use your model unless delegation.model in the config names another.",
       "name": "delegate_task",
       "parameters": {
@@ -74,6 +277,39 @@
           }
         },
         "required": ["code"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Create an image from a text description and save it. The image service and model are chosen in the user's settings, not by you. Returns the saved file's absolute path (or a URL); show it to the user the way this surface delivers files. Active service: OpenAI-compatible images API. It can change an existing image: pass it as image_url. It accepts up to 4 reference images for style or content (reference_image_urls).",
+      "name": "image_generate",
+      "parameters": {
+        "properties": {
+          "aspect_ratio": {
+            "default": "landscape",
+            "description": "Shape of the image.",
+            "enum": ["landscape", "square", "portrait"],
+            "type": "string"
+          },
+          "image_url": {
+            "description": "An image to change (URL, local path or data: URL).",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "What the image should show, in detail (or the change to make).",
+            "type": "string"
+          },
+          "reference_image_urls": {
+            "description": "Images to take style or content from.",
+            "items": {"type": "string"},
+            "maxItems": 4,
+            "type": "array"
+          }
+        },
+        "required": ["prompt"],
         "type": "object"
       }
     },
@@ -305,6 +541,31 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Look at an image and answer a question about it. The image can be a web address (http/https), a local file path or a data: URL; internal network addresses are refused. PNG, JPEG, GIF and WebP are accepted (the type is read from the file itself). Pass region [x1, y1, x2, y2] in the original image's pixels to look closely at one part at full resolution. When the answer mentions coordinates of a shrunk or cropped image, the result says how to map them back.",
+      "name": "vision_analyze",
+      "parameters": {
+        "properties": {
+          "image_url": {
+            "description": "Where the image is: http(s) URL, local path, file:// URI or data: URL.",
+            "type": "string"
+          },
+          "question": {"description": "What you want to know about the image.", "type": "string"},
+          "region": {
+            "description": "Optional [x1, y1, x2, y2] box in original image pixels to cut out before looking.",
+            "items": {"type": "number"},
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          }
+        },
+        "required": ["image_url", "question"],
         "type": "object"
       }
     },

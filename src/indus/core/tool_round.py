@@ -24,8 +24,11 @@ Handlers may ask for these context keywords beyond the ``ToolContext`` fields (`
 (``SessionRuntime.run_context``: ``interactive``, ``single_query``, ``cron`` or ``unattended``, set
 by the host) and ``approval_judge`` (``SessionRuntime.approval_judge``, the smart approval judge,
 P08-14) and ``code_kernel_owner`` (``SessionRuntime.code_kernel_owner``, a subagent's kernel
-owner, P10-06), each offered only when the turn has one; always ``tool_registry``, ``tool_hooks``
-and ``enabled_tools`` (the session's registry, hooks and tool names, for ``execute_code``).
+owner, P10-06) and ``aux`` (``SessionRuntime.aux``, the bound auxiliary client), each offered
+only when the turn has one; always ``tool_registry``, ``tool_hooks`` and ``enabled_tools`` (the
+session's registry, hooks and tool names, for ``execute_code``), ``native_vision`` (the current
+route shows the main model images a tool returns, ``providers.route.sees_tool_images``) and
+``subagent`` (``SessionRuntime.subagent``: the session is a delegated child).
 """
 
 from __future__ import annotations
@@ -48,6 +51,7 @@ from indus.core.tool_plan import PlanCall, plan_segments, traits_for
 from indus.core.transcript import TranscriptRow
 from indus.core.turn_state import PersistFailed, TurnState
 from indus.protocol.events import ToolCompleted, ToolStarted
+from indus.providers.route import sees_tool_images
 from indus.providers.types import NormalizedResponse
 from indus.safety.redaction import redact_arguments
 from indus.tools.calls import ToolCall, ToolContext, ToolResult
@@ -478,6 +482,11 @@ def handler_extras(state: TurnState) -> dict[str, Any]:
     extras["enabled_tools"] = state.runtime.tool_names()
     if state.runtime.code_kernel_owner is not None:
         extras["code_kernel_owner"] = state.runtime.code_kernel_owner
+    # Browser and media tools (P10-12..17): the aux client, vision through the main model, child.
+    if state.runtime.aux is not None:
+        extras["aux"] = state.runtime.aux
+    extras["native_vision"] = sees_tool_images(state.runtime.route)
+    extras["subagent"] = state.runtime.subagent
     return extras
 
 

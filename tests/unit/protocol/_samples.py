@@ -16,7 +16,10 @@ from indus.protocol.envelope import (
 from indus.protocol.events import (
     CancelReason,
     ExitReason,
+    GoalUpdate,
+    HeartbeatFired,
     LearningReviewDone,
+    LoopUpdate,
     MessageDelta,
     Notice,
     NoticeLevel,
@@ -155,6 +158,27 @@ SAMPLES: list[ProtocolModel] = [
     TurnFailure(reason="store write failed", retryable=False),
     LearningReviewDone(
         session_id=SID, seq=11, kinds=["memory", "skills"], summary_lines=["Memory updated"]
+    ),
+    GoalUpdate(
+        session_id=SID,
+        seq=12,
+        status="active",
+        goal="make the tests pass",
+        turns_used=2,
+        max_turns=20,
+        reason="two tests still fail",
+    ),
+    LoopUpdate(
+        session_id=SID,
+        seq=13,
+        loop_id="l1",
+        status="active",
+        prompt="check the build",
+        ticks=3,
+        next_due_at=datetime(2026, 1, 1, 9, 5, tzinfo=UTC),
+    ),
+    HeartbeatFired(
+        session_id=SID, seq=14, heartbeat_id="h1", prompt="look at the inbox", fire_count=4
     ),
     # server requests and answers
     APPROVAL,

@@ -107,6 +107,9 @@ class LoopOptions:
     guardrails: GuardrailConfig | None = None
     result_budget: Budget | None = None
     rng_seed: int | None = None
+    # False: when the budget runs out the turn ends without the toolless summary request (a
+    # side-question fork, P10-23, must never make more than its ``max_iterations`` calls).
+    grace: bool = True
 
     @classmethod
     def from_scope(cls, scope: Scope | None, **values: Any) -> LoopOptions:
@@ -177,6 +180,11 @@ class SessionRuntime:
     # ``<parent>::child::<child>``, pinned while the child lives, disposed at its teardown),
     # offered to tools as ``code_kernel_owner``. None: the session id.
     code_kernel_owner: str | None = None
+    # The session's auxiliary client bound to its route (``AuxClient.bound``), offered to tools as
+    # ``aux`` (P10-12..17: page summaries, vision on the text route). None: no aux client.
+    aux: object = None
+    # True in a delegated child (P10-02), offered to tools as ``subagent``.
+    subagent: bool = False
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)
@@ -255,6 +263,8 @@ class TurnState:
     turn_tool_chars: int = 0
     stored_at_start: int = 0
     system_prompt: str = ""
+    # The mixture-of-agents plan of this turn (P10-21, ``core.moa.MoaTurn``); None: a plain turn.
+    moa: Any = None
 
     # -- views -----------------------------------------------------------------------------------
 

@@ -111,6 +111,7 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
     ),
     ("journey", "indus.cli.commands.journey:journey_group", "What the agent has learned."),
     ("learning", "indus.cli.commands.journey:journey_group", "Same as `indus journey`."),
+    ("moa", "indus.cli.commands.moa:moa_group", "Mixture-of-agents presets for /moa."),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""
