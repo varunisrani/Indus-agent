@@ -108,3 +108,18 @@ Compare checklist (filled after the rewrite; reopened `tools/skills_guard.py`):
 ## Status
 
 Done (2026-10-19). Shared: `safety/threat_scan.py` gains `locate()` / `Hit` and public `TAG_FIRST`/`TAG_LAST` (the injection phrases reuse it; `scan()` unchanged, its tests still pass). 62 scanner tests pass.
+
+## Landing fix (lead, P13 wave 2 N3+N4, D-16.192)
+A command quoted in markup scanned lower than the same command in prose (`` `chmod -R 777 /etc` ``
+was `safe`, the bare text `caution`; a fence closing on the command's line, indentation, quotes and
+`<code>` tags hid others the same way): the patterns end at whitespace or shell punctuation and some
+anchor at the start of a command. Each line is now also matched as its code span, `<code>` and quote
+contents and as a markup-free, indentation-free reading (`_command_views`); views only add
+findings, and the negatable prose rule still reads the whole line. Tests:
+`test_content_scan.py::test_code_spans_and_fences_scan_at_least_as_strictly_as_prose` (9 commands ×
+12 wrappers), `::test_inline_span_command_is_caution_like_prose`,
+`::test_fenced_block_in_skill_md_keeps_full_severity`, `::test_fenced_block_in_docs_steps_down_like_prose`,
+`::test_a_negation_before_a_quoted_phrase_still_counts`, four new corpus positives and three
+negatives; the hub (`test_install.py::test_commands_in_code_spans_and_fences_are_not_hidden_from_the_policy`)
+and project skills (`test_project_trust.py::test_a_command_in_a_code_span_or_fence_is_quarantined`).
+Cost: about twice the time on a line that has markup (1 MB of such lines: 2.3 s → 4.8 s).

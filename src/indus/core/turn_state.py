@@ -64,6 +64,7 @@ __all__ = [
     "EventSink",
     "Hydrator",
     "InlineExecutor",
+    "LlmContextSource",
     "LoopOptions",
     "PersistFailed",
     "SessionRuntime",
@@ -79,6 +80,10 @@ type NoteSource = Callable[[str, "BuildContext", "NoteChannel"], object]
 """Called by the prologue once the turn's system prompt is known (built or restored) and before
 the staged notes are popped: ``(prompt text, build context, note channel)``. A host stages
 one-shot notes here (P09-07: the skills-index change note)."""
+type LlmContextSource = Callable[[Mapping[str, Any]], Awaitable[str | None]]
+"""Asked once per user turn by the prologue, before the user row is stored (P13-17
+``pre_llm_call``): the answer is appended to that row's ``api_content``, never to the system prompt.
+The payload names are listed in ``prologue.llm_context_payload``."""
 type AfterTurn = Callable[["TurnState"], Awaitable[None] | None]
 type BeforeTurn = Callable[[], Awaitable[object] | object]
 type OnCompaction = Callable[[], object]
@@ -191,6 +196,8 @@ class SessionRuntime:
     # here, the one point besides a new session where it may change, R01.1). A failing hook is
     # logged; the compaction goes on.
     on_compaction: list[OnCompaction] = field(default_factory=list[OnCompaction])
+    # Extra context for this turn's user message (P13-17 ``pre_llm_call``); None: no hook.
+    llm_context: LlmContextSource | None = None
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

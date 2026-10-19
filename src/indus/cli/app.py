@@ -114,6 +114,12 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
     ("learning", "indus.cli.commands.journey:journey_group", "Same as `indus journey`."),
     ("moa", "indus.cli.commands.moa:moa_group", "Mixture-of-agents presets for /moa."),
     ("mcp", "indus.cli.commands.mcp:mcp_group", "Add, test and manage MCP servers."),
+    ("hooks", "indus.cli.commands.hooks:hooks_group", "Inspect, test and approve shell hooks."),
+    (
+        "plugins",
+        "indus.cli.commands.plugins:plugins_group",
+        "Install, enable and inspect plugins.",
+    ),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""
@@ -265,6 +271,13 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
     add(click.option("--yolo", **_not_given(True), help="Run risky commands without asking."))
     add(
         click.option(
+            "--accept-hooks",
+            **_not_given(True),
+            help="Run the configured shell hooks without asking about new ones first.",
+        )
+    )
+    add(
+        click.option(
             "--pass-session-id",
             **_not_given(True),
             help="Tell the model its session id.",
@@ -333,7 +346,14 @@ def globals_from(values: dict[str, Any]) -> GlobalArgs:
     """``GlobalArgs`` from click's parameter values (``interface`` as a word)."""
     values = dict(values)
     values["interface"] = _interface_word(values.get("interface"))
-    for name in ("no_restore_cwd", "yolo", "pass_session_id", "checkpoints", "dev"):
+    for name in (
+        "no_restore_cwd",
+        "yolo",
+        "accept_hooks",
+        "pass_session_id",
+        "checkpoints",
+        "dev",
+    ):
         if values.get(name) is False:
             values.pop(name)
     if not values.get("skills"):

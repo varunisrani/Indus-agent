@@ -12,7 +12,8 @@ commands are wired).
   ``--no-restore-cwd`` / ``--in``, auto-approve, breadcrumb), the model the session was last
   switched to (``model_override`` or its launch record) and the recap;
 - the skill and bundle slash commands (``slash.skill_cmds``, P09-09/10) in
-  ``ctx.extensions.skill_commands``, and the banner's skill count;
+  ``ctx.extensions.skill_commands``, and the banner's skill count; the running host's plugin
+  slash commands (``slash.plugin_cmds``, P13-16) in ``ctx.extensions.plugin_commands``;
 - the banner, the recap of a resumed session, the status bar's first values and the seeded ``-q``
   text, sent as typed once the prompt is up (no slash or ``!`` handling);
 - the P10 session features (``start_automation``): goals, loops, heartbeats, ``/btw`` and
@@ -29,6 +30,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
@@ -75,6 +77,7 @@ def _echo(line: str) -> None:
 def build_context(launch: ReplLaunch, port: SessionPort | None = None) -> SlashContext:
     """The slash context of one chat (output goes to stdout until ``wire_slash`` binds it)."""
     from indus.cli.slash.context import Extensions, ReplState, SlashContext
+    from indus.cli.slash.plugin_cmds import plugin_commands
     from indus.cli.slash.port import HostPort
     from indus.cli.slash.skill_cmds import skill_commands
     from indus.protocol.methods import SessionCreateParams
@@ -90,7 +93,10 @@ def build_context(launch: ReplLaunch, port: SessionPort | None = None) -> SlashC
         store=store,
         state=ReplState(toolsets=toolsets),
         create_params=SessionCreateParams(cwd=str(launch.cwd), toolsets=toolsets),
-        extensions=Extensions(skill_commands=skill_commands(launch.scope, launch.session_id)),
+        extensions=Extensions(
+            plugin_commands=plugin_commands(launch.scope),
+            skill_commands=skill_commands(launch.scope, launch.session_id),
+        ),
     )
 
     def session_cwd() -> str | None:
@@ -157,9 +163,40 @@ def make_on_resume(
     return on_resume
 
 
-def _banner(launch: ReplLaunch, port: SessionPort, skills: int = 0) -> Any:
-    from pathlib import Path
+def project_skills_check(
+    launch: ReplLaunch, ask: Callable[[Path, int], bool | None] | None = None
+) -> int:
+    """Offer once (on a terminal) to trust this repo's skills; the count left unloaded (P13-28)."""
+    import sys
 
+    from indus.learning.skills import project_trust
+
+    def ask_terminal(root: Path, count: int) -> bool | None:
+        noun = "skill" if count == 1 else "skills"
+        try:
+            return click.confirm(
+                f"{root} has {count} project {noun} for the agent. Trust this repo and load "
+                "them (they are scanned first)?",
+                default=False,
+            )
+        except (click.Abort, EOFError):
+            return None
+
+    interactive = ask is not None or (sys.stdin.isatty() and sys.stdout.isatty())
+    try:
+        state = project_trust.offer_trust(
+            launch.scope,
+            platform="cli" if interactive else "cli-batch",
+            ask=ask or ask_terminal,
+            cwd=launch.cwd,
+        )
+    except Exception:
+        log.warning("project skills could not be checked", exc_info=True)
+        return 0
+    return state.pending
+
+
+def _banner(launch: ReplLaunch, port: SessionPort, skills: int = 0, pending: int = 0) -> Any:
     from indus import __version__
     from indus.cli.repl.banner import BannerInfo, banner
 
@@ -178,6 +215,7 @@ def _banner(launch: ReplLaunch, port: SessionPort, skills: int = 0) -> Any:
         skill_count=skills,
         session_title=launch.title or "",
         resumed=launch.resumed,
+        project_skills_pending=pending,
     )
     return banner(info, user_home=Path.home())
 
@@ -266,6 +304,7 @@ def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> 
 
     scope = launch.scope
     get = _config_get(scope)
+    pending = project_skills_check(launch)
     ctx = build_context(launch)
     link: dict[str, Repl] = {}
     start_automation(launch, ctx, link)
@@ -294,7 +333,7 @@ def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> 
         launch.session_id,
         scope=scope,
         options=options,
-        banner=_banner(launch, ctx.port, _skill_count(ctx)),
+        banner=_banner(launch, ctx.port, _skill_count(ctx), pending),
         recap=shown_recap,
         slash_ctx=ctx,
         on_resume=make_on_resume(launch, ctx, link),

@@ -5,8 +5,11 @@ route resolved from the profile, the P02 store, the process terminal runtime sha
 agent (``SessionRuntime.environments``), ``interactive`` run context for the approval pipeline,
 one auxiliary client for titles and summaries, the ``execute_code`` kernel upkeep, and the
 profile's MCP servers (one shared tool registry, ``service.mcp_host.McpUpkeep`` with the config
-watcher; the bridge's ``reload.mcp`` reaches the same host). At bridge shutdown the terminal
-runtime is shut down after the service.
+watcher; the bridge's ``reload.mcp`` reaches the same host), and the profile's plugins and shell
+hooks (``service.plugin_host.PluginUpkeep`` on the same registry; the bridge has no consent
+question yet, so a shell hook runs here only once agreed to in the classic CLI, or with
+``INDUS_ACCEPT_HOOKS`` / ``hooks_auto_accept``). At bridge shutdown the terminal runtime is shut
+down after the service.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from indus.providers.route import resolve
 from indus.service import terminal_host
 from indus.service.code_host import KernelUpkeep
 from indus.service.mcp_host import McpUpkeep
+from indus.service.plugin_host import PluginUpkeep
 from indus.service.session_service import SessionService
 from indus.state import registry
 from indus.state.registry import StoreHandle
@@ -100,6 +104,7 @@ def make_service(bridge: Bridge) -> SessionService:
         aux=aux,
         kernels=KernelUpkeep(scope, reaper=True),
         mcp=McpUpkeep(scope, tool_registry, aux=aux, watch=True),
+        plugins=PluginUpkeep(scope, tool_registry, surface="tui", cwd=str(cwd)),
     )
 
     async def shut_terminal() -> None:

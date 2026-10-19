@@ -7,14 +7,15 @@ The index is a compact block in the prompt's volatile tier::
 
     <skills_index>
     ### <category>[ — <category label>]
-    - <name>: <description clipped to 60 characters, "…" when clipped>
+    - <name>: [project] <description clipped to 60 characters, "…" when clipped>
     [names only] <category>: a, b, c
     </skills_index>
 
-It is built once per prompt build (``SkillsIndexBuilder`` wraps the P04 builder) and frozen with
-the prompt. Each turn ``stage_index_delta`` compares the rows the prompt carries with the rows the
-session would build now and stages one note on the turn's note channel when that difference
-changed; the prompt itself only changes at the next compaction rebuild.
+``[project]`` marks a skill from the trusted repo's own folders (P13-28); other rows carry no
+tag. It is built once per prompt build (``SkillsIndexBuilder`` wraps the P04 builder) and frozen
+with the prompt. Each turn ``stage_index_delta`` compares the rows the prompt carries with the
+rows the session would build now and stages one note on the turn's note channel when that
+difference changed; the prompt itself only changes at the next compaction rebuild.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from typing import Protocol
 from indus.core.prompt.builder import BuildContext, PromptParts
 from indus.foundation.scope import Scope
 from indus.learning.skills.format import VisibilityContext
-from indus.learning.skills.resolver import SkillCatalog, SkillRecord, load_catalog
+from indus.learning.skills.resolver import TIER_PROJECT, SkillCatalog, SkillRecord, load_catalog
 
 __all__ = [
     "BLOCK_END",
@@ -52,6 +53,7 @@ BLOCK_END = "</skills_index>"
 GENERAL = "general"
 NAMES_ONLY = "[names only]"
 VIEW_TOOL = "skill_view"
+PROJECT_TAG = "[project] "
 
 HEADING = "## Skills"
 GUIDANCE = (
@@ -105,7 +107,8 @@ class IndexOptions:
 
 
 def _row(rec: SkillRecord) -> str:
-    return f"- {rec.name}: {clip_description(rec.description)}"
+    tag = PROJECT_TAG if rec.tier == TIER_PROJECT else ""
+    return f"- {rec.name}: {tag}{clip_description(rec.description)}"
 
 
 def build_index(catalog: SkillCatalog, options: IndexOptions) -> str:

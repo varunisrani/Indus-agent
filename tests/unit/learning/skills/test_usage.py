@@ -18,6 +18,7 @@ from indus.learning.skills.usage import (
     creation_origin,
 )
 from tests.fakes.clock import FakeClock
+from tests.unit.learning.skills.helpers import record_hub
 
 
 @pytest.fixture
@@ -97,8 +98,7 @@ def test_default_origin_and_attended_flag() -> None:
 def test_bundled_and_hub_not_written(usage: SkillUsage) -> None:
     usage.root.mkdir(parents=True)
     (usage.root / ".bundled_manifest").write_text("git-workflow:abc123\n")
-    (usage.root / ".hub").mkdir()
-    (usage.root / ".hub" / "lock.json").write_text(json.dumps({"installed": {"hubbed": {}}}))
+    record_hub(usage.root, "hubbed")
     assert usage.bump_use("git-workflow") is None
     assert usage.bump_view("hubbed") is None
     assert not usage.path.exists()

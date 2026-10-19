@@ -425,6 +425,7 @@ class _OneShot:
             answerable_kinds=(),
             overrides=self.state.overrides,
             new_session=session_id is None,
+            accept_hooks=args.accept_hooks,
         )
         with _silenced() as (real_out, real_err):
             result, failure = _run(spec, prompt, session_id)

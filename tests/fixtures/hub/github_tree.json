@@ -1,0 +1,21 @@
+{
+  "sha": "5f1e0c7",
+  "truncated": false,
+  "tree": [
+    {"path": "README.md", "mode": "100644", "type": "blob"},
+    {"path": "skills", "mode": "040000", "type": "tree"},
+    {"path": "skills.sh.json", "mode": "100644", "type": "blob"},
+    {"path": "skills/.hidden", "mode": "040000", "type": "tree"},
+    {"path": "skills/.hidden/SKILL.md", "mode": "100644", "type": "blob"},
+    {"path": "skills/_drafts", "mode": "040000", "type": "tree"},
+    {"path": "skills/_drafts/SKILL.md", "mode": "100644", "type": "blob"},
+    {"path": "skills/notes-tool", "mode": "040000", "type": "tree"},
+    {"path": "skills/notes-tool/SKILL.md", "mode": "100644", "type": "blob"},
+    {"path": "skills/sql-helper", "mode": "040000", "type": "tree"},
+    {"path": "skills/sql-helper/SKILL.md", "mode": "100644", "type": "blob"},
+    {"path": "skills/sql-helper/references", "mode": "040000", "type": "tree"},
+    {"path": "skills/sql-helper/references/dialects.md", "mode": "100644", "type": "blob"},
+    {"path": "skills/sql-helper/scripts", "mode": "040000", "type": "tree"},
+    {"path": "skills/sql-helper/scripts/unused.sh", "mode": "100755", "type": "blob"}
+  ]
+}

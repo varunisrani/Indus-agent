@@ -792,6 +792,58 @@ def _scan_blobs(c: _Collector, number: int, line: str) -> None:
         return
 
 
+# Markup around a command (code spans, fences, quotes, ``<code>`` tags, a closing full stop) must
+# never hide it: the patterns end on whitespace or shell punctuation and some anchor at the start
+# of a command, so each line is also matched as the bare commands it quotes.
+_CODE_SPAN = re.compile(r"(`+)(.+?)\1|<(code|pre|kbd|samp|tt)\b[^>]*>(.+?)</\3\s*>", _I)
+_QUOTED = re.compile(r"\"([^\"\n]+)\"|'([^'\n]+)'")
+_MARKUP = re.compile(r"`+|[\"']|</?(?:code|pre|kbd|samp|tt)\b[^>]*>", _I)
+_SENTENCE_END = re.compile(r"(?<=\S)[.,!?]+(?=\s|$)")
+_VIEW_HINT = frozenset("`'\"<.,!?")
+
+
+def _command_views(line: str) -> tuple[str, ...]:
+    """Other readings of ``line`` that a command quoted in it would match as (never ``line``).
+
+    Each inline code span's (or ``<code>`` tag's) contents and each quoted string on its own (so
+    a pattern that starts at a command sees it), and the whole line with the markup and sentence
+    punctuation turned into spaces and the indentation dropped (so one that ends at whitespace
+    does). Views only ever add findings: code is scanned at least as strictly as the prose.
+    """
+    stripped = line.strip()
+    if stripped == line and not _VIEW_HINT.intersection(line):
+        return ()
+    views: list[str] = [(m.group(2) or m.group(4)).strip() for m in _CODE_SPAN.finditer(line)]
+    views.extend((m.group(1) or m.group(2)).strip() for m in _QUOTED.finditer(line))
+    views.append(_SENTENCE_END.sub(" ", _MARKUP.sub(" ", stripped)).strip())
+    views.append(stripped)
+    seen: dict[str, None] = {}
+    for view in views:
+        if view and view != line:
+            seen.setdefault(view, None)
+    return tuple(seen)
+
+
+def _scan_commands(c: _Collector, number: int, text: str, allowed: frozenset[str]) -> None:
+    """The command-shaped rules over one reading of line ``number``."""
+    _scan_exfiltration(c, number, text, allowed)
+    for table, category in (
+        (_DESTRUCTIVE, "destructive"),
+        (_SUPPLY, "supply_chain"),
+        (_INJECTION, "injection"),
+        (_PERSISTENCE, "persistence"),
+    ):
+        for rule, severity, pattern in table:
+            match = pattern.search(text)
+            if match is None:
+                continue
+            if rule in _NEGATABLE:
+                # Prose rules read the whole line, so a negation before a quote still counts.
+                continue
+            c.add(rule, cast(Category, category), severity, number)
+    _scan_agent_config(c, number, text)
+
+
 def _scan_lines(c: _Collector, *, skill_md: bool, allowed: frozenset[str]) -> None:
     for number, line in enumerate(c.lines, start=1):
         for rule, severity, excerpt in _invisible(line, number == 1):
@@ -813,6 +865,8 @@ def _scan_lines(c: _Collector, *, skill_md: bool, allowed: frozenset[str]) -> No
                     continue
                 c.add(rule, cast(Category, category), severity, number)
         _scan_agent_config(c, number, line)
+        for view in _command_views(line):
+            _scan_commands(c, number, view, allowed)
         _scan_paths(c, number, line, skill_md)
         if len(line) >= 200:
             _scan_blobs(c, number, line)

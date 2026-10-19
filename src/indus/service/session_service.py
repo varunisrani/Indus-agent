@@ -54,6 +54,12 @@ MCP servers (P13-05..12, ``service.mcp_host``): ``mcp``, when given, starts the 
 before the first agent is built (discovery runs once), adds the umbrella ``mcp`` toolset to each
 agent's selection, tells every attached agent when the tool surface changes (rebuilt at its next
 compaction) and closes the servers at ``aclose``.
+
+Plugins and shell hooks (P13-13..23, ``service.plugin_host``): ``plugins``, when given, loads the
+profile's allowed plugins and the agreed shell hooks before the first agent is built, adds the
+plugins' toolsets to each selection, gives each top-level agent the hooks-bus seams and the frozen
+plugin prompt sections, runs ``on_session_start`` after a session is attached and
+``on_session_end`` before it is closed, and takes every registration back at ``aclose``.
 """
 
 from __future__ import annotations
@@ -111,6 +117,7 @@ from indus.service.broker import ServerRequestBroker
 from indus.service.code_host import KernelUpkeep
 from indus.service.maintenance import MaintenanceTimer
 from indus.service.mcp_host import McpUpkeep
+from indus.service.plugin_host import PluginUpkeep
 from indus.state import sessions, titles
 from indus.state.session_lock import (
     LOCK_DIR_NAME,
@@ -235,6 +242,7 @@ class SessionService:
         maintenance: MaintenanceTimer | None = None,
         kernels: KernelUpkeep | None = None,
         mcp: McpUpkeep | None = None,
+        plugins: PluginUpkeep | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
@@ -258,6 +266,7 @@ class SessionService:
         self._maintenance_task: asyncio.Task[None] | None = None
         self.kernels = kernels
         self.mcp = mcp
+        self.plugins = plugins
         self._input_probe: Callable[[str], bool] | None = None
         self._turn_end: list[TurnEndListener] = []
         self._moved: list[Callable[[str, str], object]] = []
@@ -509,6 +518,10 @@ class SessionService:
             if self.mcp is not None:
                 await self.mcp.start()
                 selection = self.mcp.selection(selection)
+            if self.plugins is not None:
+                await self.plugins.start()
+                selection = self.plugins.selection(selection)
+                options = self.plugins.options(options, session_id)
             agent = await self._factory(session_id, sink, broker, options, selection)
             if self.mcp is not None:
                 self.mcp.attach(agent)
@@ -519,6 +532,8 @@ class SessionService:
         self._attached[session_id] = attached
         agent.on_session_moved(lambda old, new: self._follow(attached, old, new))
         subagents.set_delivery(agent, lambda text: self.deliver_internal(attached, text))
+        if self.plugins is not None:
+            await self.plugins.session_started(session_id, options)
         return attached
 
     def _follow(self, attached: _Attached, old: str, new: str) -> None:
@@ -839,6 +854,8 @@ class SessionService:
         attached = self._attached.pop(session_id, None)
         if attached is None:
             return
+        if self.plugins is not None:
+            await self.plugins.session_ended(session_id, attached.agent.options)
         try:
             await attached.agent.close()
         except Exception:
@@ -854,6 +871,8 @@ class SessionService:
         await self._stop_maintenance()
         for session_id in list(self._attached):
             await self.close(session_id)
+        if self.plugins is not None:
+            await self.plugins.shutdown()
         if self.mcp is not None:
             await self.mcp.shutdown()
         if self.kernels is not None:

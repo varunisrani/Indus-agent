@@ -111,7 +111,10 @@ def test_interactive_session_gets_review_refine_and_maintenance(
             assert runner.cancel_for_live_turn in agent.runtime.before_turn
             assert "skill_manage" in agent.tool_names
             assert len(manage_tool.SUCCESS_LISTENERS) == listeners + 1
-            assert service.maintenance is not None and service.maintenance.names == ["curator"]
+            assert service.maintenance is not None and service.maintenance.names == [
+                "curator",
+                "plugin updates",
+            ]
 
             port = HostPort(host, scope)
             assert port.refine(sid, None).startswith("Nothing to review yet")

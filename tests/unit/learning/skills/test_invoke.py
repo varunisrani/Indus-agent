@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 
@@ -26,7 +25,7 @@ from indus.learning.skills.invoke import (
 from indus.learning.skills.prompt_index import SkillsIndexBuilder, catalog_index_source
 from indus.learning.skills.resolver import clear_scan_cache, load_catalog
 from indus.learning.skills.usage import usage_for
-from tests.unit.learning.skills.helpers import FakeConfig, make_skill
+from tests.unit.learning.skills.helpers import FakeConfig, make_skill, record_hub
 
 NAMES = {"a", "b", "c", "d", "e", "f"}
 
@@ -130,10 +129,7 @@ def test_inline_shell_timeout_marker(scope: Scope) -> None:
 def test_inline_shell_never_for_community_skills(scope: Scope) -> None:
     root = scope.home / "skills"
     make_skill(root, "hubbed", body="X: !`id`\n")
-    (root / ".hub").mkdir()
-    (root / ".hub" / "lock.json").write_text(
-        json.dumps({"installed": {"hubbed": {"trust": "community"}}})
-    )
+    record_hub(root, "hubbed", trust="community")
     on = scope.with_config(FakeConfig({"skills": {"inline_shell": True}}))
     runner = Runner()
     out = expand_skills(["hubbed"], "", scope=on, runner=runner)

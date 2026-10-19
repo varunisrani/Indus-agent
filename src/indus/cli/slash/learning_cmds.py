@@ -36,6 +36,7 @@ from indus.cli.commands.memory import (
     which_of,
 )
 from indus.cli.commands.skills import approve_skills, skill_rows
+from indus.cli.commands.skills_hub import slash_install, slash_search_lines
 from indus.cli.slash.context import Handler, SlashContext, SlashResult
 from indus.cli.slash.skill_cmds import skill_commands
 from indus.learning import pending
@@ -58,7 +59,8 @@ _MEMORY_USAGE = (
     "Usage: /memory [pending | approve <id…|all> | reject <id…|all> | approval [on|off]]"
 )
 _SKILLS_USAGE = (
-    "Usage: /skills [list | view <name> | reload | pending | approve <id…|all> | reject <id…|all>]"
+    "Usage: /skills [list | view <name> | reload | pending | approve <id…|all> | reject <id…|all>"
+    " | search <query> | install <identifier>]"
 )
 _LIST_WIDTH = 60
 CURATOR_USAGE = "Usage: /curator [status|run [--dry-run]|pause|resume]"
@@ -174,6 +176,18 @@ def skills_cmd(ctx: SlashContext, args: str) -> SlashResult:
     elif sub == "reject" and rest:
         removed = reject_ids(ctx.scope, "skills", which_of(rest))
         ctx.say(f"Rejected {', '.join(removed)}." if removed else "No waiting write matched.")
+    elif sub == "search" and rest:
+        ctx.say(*slash_search_lines(ctx.scope, " ".join(rest)))
+    elif sub == "install" and len(rest) == 1:
+        result = slash_install(
+            ctx.scope,
+            rest[0],
+            confirm_install=ctx.confirm if ctx.interactive else None,
+            say=ctx.say,
+        )
+        ctx.say(f"Installed {result.name}." if result.ok else f"Not installed: {result.message}")
+        if result.ok:
+            reload_skills(ctx)
     else:
         ctx.say(_SKILLS_USAGE)
     return SlashResult()

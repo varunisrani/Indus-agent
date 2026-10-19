@@ -47,6 +47,8 @@ class BannerInfo:
     skill_count: int = 0
     session_title: str = ""
     resumed: bool = False
+    project_skills_pending: int = 0
+    """Skills in this repo left unloaded until it is trusted (P13-28)."""
 
 
 def _home_relative(path: Path | str, home: Path | None) -> str:
@@ -75,6 +77,13 @@ def banner(info: BannerInfo, *, user_home: Path | None = None) -> RenderableType
     tools = "tool" if info.tool_count == 1 else "tools"
     skills = "skill" if info.skill_count == 1 else "skills"
     row("loaded", f"{info.tool_count} {tools} · {info.skill_count} {skills}")
+    if info.project_skills_pending:
+        count = info.project_skills_pending
+        row(
+            "project",
+            f"{count} skill{'' if count == 1 else 's'} in this repo not loaded "
+            "(indus skills trust-project)",
+        )
     if info.session_title:
         row("session", info.session_title)
     rows.append(KEY_HINT, style="dim italic")

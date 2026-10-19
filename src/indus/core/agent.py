@@ -83,6 +83,7 @@ from indus.core.transcript import TranscriptRow
 from indus.core.turn_state import (
     Hydrator,
     InlineExecutor,
+    LlmContextSource,
     LoopOptions,
     NoteSource,
     SessionRuntime,
@@ -186,6 +187,8 @@ class AgentOptions:
     pools: PoolSet | None = None
     # Host note sources the prologue runs before the user message (P09-07 skills delta).
     note_sources: Sequence[NoteSource] = ()
+    # Context for each turn's user message from the plugin hooks bus (P13-17 ``pre_llm_call``).
+    llm_context: LlmContextSource | None = None
     # Subagents (P10-02): the exact tools a child may have (None: the selection decides) and the
     # child's delegation depth (0 for a top-level agent).
     only_tools: frozenset[str] | None = None
@@ -645,6 +648,7 @@ class Agent:
             # The smart approval judge asks the session's auxiliary model (P08-14).
             approval_judge=judge_from_aux(self.aux) if self.aux is not None else None,
             note_sources=tuple(options.note_sources),
+            llm_context=options.llm_context,
             aux=self.aux,
             subagent=options.delegation_depth > 0,
         )

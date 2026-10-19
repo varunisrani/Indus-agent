@@ -2,7 +2,8 @@
 
 Roots are scanned in tier order, highest first:
 
-1. project (reserved for P13; always empty here),
+1. project: ``.indus/skills`` and ``.agents/skills`` of the current repo, only once the user
+   trusted it (``project_trust``; P13-28),
 2. the profile's ``<home>/skills/`` (the source of truth),
 3. ``skills.create_dir`` (where agent-created skills go when set),
 4. each ``skills.external_dirs`` entry (``~`` and ``${VAR}`` expanded; missing folders skipped).
@@ -14,6 +15,10 @@ that are provably one skill — one real file reached through a symlink, or byte
 are not a conflict: the shallowest path wins. ``skills.disabled`` and
 ``skills.platform_disabled.<surface>`` hide a skill and make ``resolve`` refuse it. Plugin skills
 are named ``plugin:skill`` and live outside the tiers.
+
+A project skill the content scan found dangerous is ``quarantined``: it takes no part in name
+resolution (it hides nothing below it), is never listed, and ``resolve`` refuses it with the
+reason (``SkillQuarantined``).
 
 External folders are read and written in place; they are a convenience, not a protection boundary.
 
@@ -59,6 +64,7 @@ __all__ = [
     "SkillDisabled",
     "SkillError",
     "SkillNotFound",
+    "SkillQuarantined",
     "SkillRecord",
     "SkillsSettings",
     "clear_scan_cache",
@@ -85,7 +91,7 @@ TIER_NAMES = {
 # Folder names never scanned for skills (plus every name starting with a dot).
 SKIP_DIRS = frozenset({"node_modules", "__pycache__", "venv", "site-packages", "dist", "build"})
 
-Status = Literal["unique", "ambiguous", "shadowed", "broken"]
+Status = Literal["unique", "ambiguous", "shadowed", "broken", "quarantined"]
 
 
 class SkillError(LookupError):
@@ -109,6 +115,10 @@ class SkillDisabled(SkillError):
 
 
 class SkillBroken(SkillError):
+    pass
+
+
+class SkillQuarantined(SkillError):
     pass
 
 
@@ -146,6 +156,11 @@ class SkillsSettings:
     disabled: frozenset[str] = frozenset()
     project_dirs: tuple[Path, ...] = ()
     plugin_roots: Mapping[str, Path] = field(default_factory=dict[str, Path])
+    quarantined: Mapping[str, str] = field(default_factory=dict[str, str])
+    """``realpath(project skill folder)`` -> why it may not load (P13-28)."""
+    project_root: Path | None = None
+    project_pending: int = 0
+    """Skills found in an untrusted repo: counted for the banner, never loaded."""
 
     @property
     def write_root(self) -> Path:
@@ -170,11 +185,22 @@ class SkillsSettings:
             per = skills_setting(scope, "skills.platform_disabled")
             if isinstance(per, Mapping):
                 disabled.update(_str_list(per.get(platform)))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        from indus.learning.skills import project_trust
+
+        try:
+            project = project_trust.project_skills(scope)
+        except Exception:
+            log.warning("project skills could not be checked; none loaded", exc_info=True)
+            project = project_trust.ProjectSkills()
         return cls(
             local_root=scope.home / "skills",
             create_dir=create_dir,
             external_dirs=externals,
             disabled=frozenset(disabled),
+            project_dirs=project.load_dirs,
+            quarantined=dict(project.quarantined),
+            project_root=project.root,
+            project_pending=project.pending,
         )
 
     def roots(self) -> list[tuple[int, Path]]:
@@ -273,7 +299,10 @@ def _parse_cached(skill_md: Path, folder_name: str) -> _Parsed:
 
 
 def _scan_root(
-    tier: int, root: Path, plugin: str | None = None
+    tier: int,
+    root: Path,
+    plugin: str | None = None,
+    quarantined: Mapping[str, str] | None = None,
 ) -> tuple[list[SkillRecord], dict[str, str]]:
     """Records under ``root`` and the category labels found there (category path → text)."""
     records: list[SkillRecord] = []
@@ -297,6 +326,21 @@ def _scan_root(
             dirs[:] = []
             parsed = _parse_cached(here / SKILL_FILE, here.name)
             name = f"{plugin}:{parsed.name}" if plugin else parsed.name
+            held = (quarantined or {}).get(os.path.realpath(here)) if tier == TIER_PROJECT else None
+            if held:
+                records.append(
+                    SkillRecord(
+                        name=name,
+                        tier=tier,
+                        root=root,
+                        skill_dir=here,
+                        relative_path=rel,
+                        frontmatter=parsed.frontmatter,
+                        error=held,
+                        status="quarantined",
+                    )
+                )
+                continue
             records.append(
                 SkillRecord(
                     name=name,
@@ -347,7 +391,7 @@ def _resolve_statuses(records: list[SkillRecord]) -> list[SkillRecord]:
     out = list(records)
     groups: dict[str, list[int]] = {}
     for i, rec in enumerate(out):
-        if rec.status != "broken":
+        if rec.status not in ("broken", "quarantined"):
             groups.setdefault(rec.name, []).append(i)
     rel_owners: dict[tuple[int, str], int] = {}
     for rec in out:
@@ -446,9 +490,15 @@ class SkillCatalog:
     def resolve(self, identifier: str) -> SkillRecord:
         """The one skill ``identifier`` (name, relative path or absolute path) names."""
         found = self._match(identifier)
-        healthy = [r for r in found if r.status != "broken"]
+        held = [r for r in found if r.status == "quarantined"]
+        healthy = [r for r in found if r.status not in ("broken", "quarantined")]
         if not found:
             raise SkillNotFound(f"no skill named {identifier!r}")
+        if not healthy and held:
+            raise SkillQuarantined(
+                f"skill {identifier!r} from the project at {held[0].root} is quarantined: "
+                f"{held[0].error}. It stays unloaded until the file is fixed"
+            )
         if not healthy:
             raise SkillBroken(f"skill {identifier!r} cannot be loaded: {found[0].error}")
         if len(healthy) > 1:
@@ -485,7 +535,7 @@ def load_catalog(
     records: list[SkillRecord] = []
     labels: dict[str, str] = {}
     for tier, root in settings.roots():
-        found, root_labels = _scan_root(tier, root)
+        found, root_labels = _scan_root(tier, root, quarantined=settings.quarantined)
         records.extend(found)
         for key, text in root_labels.items():
             labels.setdefault(key, text)

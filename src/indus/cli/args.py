@@ -109,6 +109,7 @@ class GlobalArgs:
     usage_file: str | None = None
     worktree: str | None = None
     checkpoints: bool = False
+    accept_hooks: bool = False
     dev: bool = False
 
     @classmethod

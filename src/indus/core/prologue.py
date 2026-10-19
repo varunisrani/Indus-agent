@@ -11,7 +11,8 @@ In order:
 5. the system prompt is restored or built (P04-07);
 6. the session row is made to exist **with** that prompt;
 7. the user row is staged: ``content`` is what the user typed (``persist_text`` when given),
-   ``api_content`` is the exact text sent (the message, any API-only prefix, the one-shot notes);
+   ``api_content`` is the exact text sent (the message, any API-only prefix, the context the
+   ``llm_context`` source returned for this turn (P13-17 ``pre_llm_call``), the one-shot notes);
 8. every pending row, the user row last, is stored **before the first provider call**;
 9. the context engine (P08-05) adopts its persisted anchor once, then the turn-start preflight
    gate may compress the transcript (the user row stays in the protected tail).
@@ -27,8 +28,9 @@ calling the model.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from indus.core import liveness
 from indus.core import loop_texts as texts
@@ -42,9 +44,12 @@ from indus.protocol.events import TurnStarted
 from indus.state.messages import scrub_surrogates
 from indus.tools.calls import ToolResult
 
+if TYPE_CHECKING:
+    from indus.core.prompt.builder import BuildContext
+
 log = logging.getLogger(__name__)
 
-__all__ = ["run_prologue", "scrub_message"]
+__all__ = ["llm_context_payload", "run_prologue", "scrub_message"]
 
 
 def scrub_message(value: Any) -> Any:
@@ -152,13 +157,57 @@ def _hydrate(state: TurnState, history: list[TranscriptRow]) -> None:
             log.warning("history hydrator %s failed; its state starts empty", name, exc_info=True)
 
 
-def _user_row(state: TurnState, notes: str) -> TranscriptRow:
+def _message_text(message: Any) -> str:
+    if isinstance(message, str):
+        return message
+    if isinstance(message, list):
+        parts = [
+            cast(Mapping[str, Any], p).get("text")
+            for p in cast(list[Any], message)
+            if isinstance(p, Mapping)
+        ]
+        return "\n".join(p for p in parts if isinstance(p, str))
+    return ""
+
+
+def llm_context_payload(
+    state: TurnState, ctx: BuildContext, history: list[TranscriptRow]
+) -> dict[str, Any]:
+    """What the ``llm_context`` source is told about this turn (keyword names of the hook)."""
+    return {
+        "session_id": state.session_id,
+        "turn_id": state.turn_id,
+        "user_message": _message_text(scrub_message(state.message)),
+        "conversation_history": [r.to_message() for r in history],
+        "is_first_turn": not any(r.role == "user" for r in history),
+        "model": ctx.model,
+        "provider": ctx.provider,
+        "platform": ctx.platform,
+        "cwd": str(ctx.cwd) if ctx.cwd is not None else "",
+    }
+
+
+async def _llm_context(state: TurnState, ctx: BuildContext, history: list[TranscriptRow]) -> str:
+    """This turn's extra context for the user message ("" when none or the source failed)."""
+    source = state.runtime.llm_context
+    if source is None:
+        return ""
+    try:
+        text = await source(llm_context_payload(state, ctx, history))
+    except Exception:
+        log.warning("the pre-turn context hook failed; the turn goes on without it", exc_info=True)
+        return ""
+    return text.strip() if isinstance(text, str) else ""
+
+
+def _user_row(state: TurnState, notes: str, context: str = "") -> TranscriptRow:
     message = scrub_message(state.message)
     persist = scrub_message(state.persist_text) if state.persist_text is not None else None
     staged: dict[str, Any] = {"role": "user", "content": message}
     if isinstance(message, str) and isinstance(persist, str) and persist != message:
         staged = {"role": "user", "content": persist, "api_content": message}
-    return TranscriptRow.from_message(attach_notes(staged, notes))
+    # Hook context first, then the host's one-shot notes; both only in what is sent.
+    return TranscriptRow.from_message(attach_notes(attach_notes(staged, context), notes))
 
 
 async def run_prologue(state: TurnState) -> None:
@@ -195,12 +244,13 @@ async def run_prologue(state: TurnState) -> None:
         except Exception as exc:
             raise PersistFailed(f"could not create the session row: {exc}") from exc
 
+    context = await _llm_context(state, ctx, history)
     for source in runtime.note_sources:
         try:
             source(state.system_prompt, ctx, runtime.prompts.notes)
         except Exception:
             log.warning("a host note source failed; its note is skipped", exc_info=True)
-    state.add(_user_row(state, runtime.prompts.notes.pop()))
+    state.add(_user_row(state, runtime.prompts.notes.pop(), context))
     state.user_index = len(state.rows) - 1
     await state.flush()
     runtime.hydrated = True

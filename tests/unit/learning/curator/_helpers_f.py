@@ -15,7 +15,7 @@ from indus.learning.curator import ledger_port
 from indus.learning.skills.ledger import SkillLedger
 from indus.learning.skills.resolver import clear_scan_cache
 from indus.learning.skills.usage import SkillUsage
-from tests.unit.learning.skills.helpers import FakeConfig, make_skill
+from tests.unit.learning.skills.helpers import FakeConfig, make_skill, record_hub
 
 DAY = 86400.0
 
@@ -92,11 +92,8 @@ def mark_bundled(scope: Scope, *names: str) -> None:
 
 
 def mark_hub(scope: Scope, *names: str) -> None:
-    import json
-
-    path = skills_root(scope) / ".hub" / "lock.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"installed": {n: {} for n in names}}), encoding="utf-8")
+    for name in names:
+        record_hub(skills_root(scope), name)
 
 
 def record(scope: Scope, name: str) -> dict[str, Any]:

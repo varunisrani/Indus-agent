@@ -102,6 +102,21 @@ commands:
   skills pending: 0
   skills approve: 2
   skills reject: 2
+  skills browse: 0        # P13-27: catalogue and taps only; empty in a fresh profile
+  skills search: 2
+  skills inspect: 2
+  skills install: 2
+  skills check-updates: 0 # no hub skills yet
+  skills update: 2        # needs a name or --all
+  skills audit: 0
+  skills uninstall: 2
+  skills tap: 2
+  skills tap list: 0
+  skills tap add: 2
+  skills tap remove: 2
+  skills trust: 2
+  skills untrust: 2
+  skills trust-project: 1 # P13-28: the fresh cwd is not inside a git repository
   memory: 2               # a group with no default action prints its help
   memory show: 0
   memory status: 0
@@ -150,6 +165,22 @@ commands:
   mcp disable: 2
   mcp login: 2
   mcp configure: 2
+  hooks: 2                # a group with no default action prints its help
+  hooks list: 0           # no hooks configured: says so
+  hooks test: 2           # EVENT is required
+  hooks revoke: 2
+  hooks doctor: 0         # nothing to check
+  plugins: 2              # a group with no default action prints its help
+  plugins list: 0
+  plugins install: 2
+  plugins update: 2       # a name or --all is required
+  plugins remove: 2
+  plugins enable: 2
+  plugins disable: 2
+  plugins info: 2
+  plugins capabilities: 2
+  plugins check-updates: 0
+  plugins validate: 2
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one
@@ -167,3 +198,6 @@ with_arguments:
   mcp test no-such-server: 1
   mcp configure no-such-server: 1
   mcp remove no-such-server: 1
+  hooks revoke deadbeef: 1         # no such approval
+  plugins remove ghost: 1          # needs -y without a terminal
+  plugins enable ghost: 1

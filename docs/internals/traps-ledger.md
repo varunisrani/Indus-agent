@@ -213,6 +213,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/docker/test_env.py::test_client_env_is_minimal_plus_client_controls`
   - `tests/unit/tools/builtin/code/test_runner.py::test_child_env_has_no_credentials`
   - `tests/unit/tools/builtin/browser/test_session.py::test_launch_env_lacks_provider_keys_and_credentials`
+  - `tests/unit/plugins/test_shell_hooks.py::test_env_is_scrubbed`
   - Review: other child processes (P00-guards)
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
@@ -699,11 +700,24 @@ Checked by `python -m tooling.checks traps`.
 - **R07.17** Delivery success ≠ run success
   - Review: not yet planned (P00-guards)
 - **R07.18** Plugin hook timeouts and fail-closed policy
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/plugins/test_shell_hooks.py::test_timeout_blocks_and_kills_the_group`
+  - `tests/unit/plugins/test_shell_hooks.py::test_bus_deadline_cancels_and_kills_the_group`
+  - `tests/unit/plugins/test_shell_hooks.py::test_post_hook_failure_fails_open`
+  - `tests/unit/plugins/test_pre_llm_call_turn.py::test_plugin_context_rides_the_user_message`
+  - `tests/integration/service/test_plugin_host.py::test_plugins_and_shell_hooks_run_in_a_cli_session`
 - **R07.19** Plugins are not a sandbox
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/plugins/test_install.py::test_pin_installs_the_exact_commit`
+  - `tests/unit/plugins/test_install.py::test_pin_mismatch_refused`
+  - `tests/unit/plugins/test_install.py::test_pinned_update_refused`
+  - `tests/unit/plugins/test_install.py::test_token_only_in_one_command_env`
+  - `tests/unit/plugins/test_install.py::test_dangerous_blocked_even_with_force`
+  - `tests/unit/plugins/test_consent.py::test_non_tty_grants_nothing`
+  - `tests/unit/plugins/test_consent.py::test_update_adding_capability_stays_off_until_granted`
 - **R07.20** Plugin system-prompt sections must be frozen
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/plugins/test_prompt_sections.py::test_resume_restores_stored_bytes`
+  - `tests/unit/plugins/test_prompt_sections.py::test_compaction_rebuild_reuses_the_frozen_block`
+  - `tests/unit/plugins/test_prompt_sections.py::test_no_sections_leave_the_prompt_unchanged`
+  - `tests/integration/service/test_plugin_host.py::test_plugins_and_shell_hooks_run_in_a_cli_session`
 - **R07.21** MCP tool name length
   - Review: not yet planned (P00-guards)
 - **R07.22** MCP stdio env leakage and spawn storms
@@ -730,7 +744,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/mcp/test_discovery.py::test_read_only_hints_come_from_the_wire`
   - `tests/contract/mcp/test_host_live.py::test_stdio_server_tools_are_prefixed_and_callable`
 - **R07.26** Project skills are an injection vector
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/learning/skills/test_project_trust.py::test_untrusted_repo_counts_but_never_indexes`
+  - `tests/unit/learning/skills/test_project_trust.py::test_trusted_repo_indexes_with_project_tag_and_quarantines`
+  - `tests/unit/learning/skills/test_project_trust.py::test_editing_a_trusted_skill_rescans`
+  - `tests/unit/learning/skills/test_project_trust.py::test_cron_in_an_untrusted_repo_never_prompts_and_loads_nothing`
+  - `tests/unit/learning/skills/test_project_trust.py::test_a_command_in_a_code_span_or_fence_is_quarantined`
 - **R07.27** Same-name skills
   - `tests/unit/learning/skills/test_resolver.py::test_cross_tier_shadowing_is_the_same_for_every_consumer`
   - `tests/unit/learning/skills/test_resolver.py::test_same_tier_duplicate_is_ambiguous`
@@ -914,3 +932,5 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
 - **R10.30** Supply-chain scans are heuristics
   - Review: not yet planned (P00-guards)
+  - `tests/unit/safety/test_content_scan.py::test_code_spans_and_fences_scan_at_least_as_strictly_as_prose`
+  - `tests/unit/learning/skills/hub/test_install.py::test_commands_in_code_spans_and_fences_are_not_hidden_from_the_policy`

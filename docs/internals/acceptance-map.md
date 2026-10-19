@@ -609,6 +609,12 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-F11-1** Skill discovery tiers (project, home, create dir, external dirs), duplicate rules and a disabled …
   - `tests/unit/learning/skills/test_resolver.py::test_cross_tier_shadowing_is_the_same_for_every_consumer`
   - `tests/unit/learning/skills/test_resolver.py::test_disabled_hidden_and_refused`
+  - `tests/unit/learning/skills/test_project_trust.py::test_trusted_repo_indexes_with_project_tag_and_quarantines`
+- **ACC-F12-1** Project skills loaded only after the user trusts the repo, scanned and quarantined if dangerous
+  - `tests/unit/learning/skills/test_project_trust.py::test_untrusted_repo_counts_but_never_indexes`
+  - `tests/unit/learning/skills/test_project_trust.py::test_trusted_repo_indexes_with_project_tag_and_quarantines`
+  - `tests/unit/learning/skills/test_project_trust.py::test_editing_a_trusted_skill_rescans`
+  - `tests/unit/learning/skills/test_project_trust.py::test_cron_in_an_untrusted_repo_never_prompts_and_loads_nothing`
 - **ACC-F13-1** Compact skills index in the prompt; added or removed skills announced once mid-session
   - `tests/unit/learning/skills/test_prompt_index.py::test_golden_index`
   - `tests/unit/learning/skills/test_prompt_index.py::test_mid_session_add_and_remove`
@@ -639,6 +645,13 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-F24-1** Per-skill usage counters (used, viewed, patched)
   - `tests/unit/learning/skills/test_usage.py::test_counters_and_times`
   - `tests/unit/learning/skills/test_usage.py::test_two_processes_lose_no_increment`
+- **ACC-F26-1** Skills hub: install with scan and trust policy (search, install, update, audit, uninstall)
+  - `tests/unit/learning/skills/hub/test_install.py::test_community_caution_blocked_then_force_installs`
+  - `tests/unit/learning/skills/hub/test_install.py::test_dangerous_never_installs`
+  - `tests/unit/learning/skills/hub/test_install.py::test_github_install_copies_only_referenced_files`
+  - `tests/unit/cli/commands/test_skills_hub.py::test_non_tty_caution_install_without_force_exits_1`
+- **ACC-F26-2** Hub update skips locally edited skills
+  - `tests/unit/learning/skills/hub/test_install.py::test_check_update_and_local_edits`
 - **ACC-F28-1** Bundled skills seeded into the home with an origin-hash manifest; user edits never overwritten …
   - `tests/unit/learning/skills/test_bundled_sync.py::test_seed_copies_packages_and_records_origins`
   - `tests/unit/learning/skills/test_bundled_sync.py::test_edited_skill_kept_and_pristine_refreshed`
@@ -652,16 +665,21 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/learning/skills/test_starter_skills.py::test_frontmatter_valid`
   - `tests/unit/learning/skills/test_starter_skills.py::test_lint_clean`
   - `tests/unit/learning/skills/test_starter_skills.py::test_seeding_installs_exactly_the_starter_set`
+- **ACC-F30-1** Optional "official" catalogue source works when empty
+  - `tests/unit/learning/skills/hub/test_sources.py::test_official_empty_catalogue_works`
+  - `tests/unit/learning/skills/hub/test_sources.py::test_official_catalogue_is_builtin_trust`
 - **ACC-F31-1** `session_search` tool for recalling past conversations
   - `tests/unit/learning/test_session_search.py::test_discover_excludes_current_lineage`
   - `tests/unit/learning/test_session_search.py::test_read_window_bounded_and_tool_output_clipped`
   - `tests/unit/learning/test_session_search.py::test_secret_is_redacted`
 - **ACC-G1-1** Plugin manifest and discovery from bundled, user, project and entry-point sources; general plugins …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/service/test_plugin_host.py::test_done_when_demo_installed_plugin_adds_a_tool_and_blocks_curl`
 - **ACC-G2-1** Plugin context API: tools, hooks, slash and CLI commands, skills → providers, platforms, context …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/service/test_plugin_host.py::test_plugins_and_shell_hooks_run_in_a_cli_session`
 - **ACC-G3-1** Hook catalogue: pre/post tool (pre blocks fail closed), pre/post LLM, session start/end → the full …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/plugins/test_shell_hooks.py::test_fake_hook_blocks_a_tool`
+  - `tests/unit/plugins/test_pre_llm_call_turn.py::test_plugin_context_rides_the_user_message`
+  - `tests/integration/service/test_plugin_host.py::test_indus_z_with_accept_hooks_runs_the_plugin_and_the_hooks`
 - **ACC-G14-1** MCP client: stdio, Streamable HTTP and SSE servers; filtered environment; prefixed tool names …
   - `tests/contract/mcp/test_host_live.py::test_stdio_server_tools_are_prefixed_and_callable`
   - `tests/contract/mcp/test_host_live.py::test_http_server_tools_through_the_host`

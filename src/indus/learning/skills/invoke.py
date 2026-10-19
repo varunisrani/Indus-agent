@@ -19,7 +19,6 @@ to the prompt when it is first built; missing names warn once and are skipped, a
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import subprocess
@@ -30,6 +29,7 @@ from pathlib import Path
 
 from indus.foundation.scope import Scope
 from indus.learning.skills.format import ConfigVar, VisibilityContext, split_frontmatter
+from indus.learning.skills.hub.lock import trust_of
 from indus.learning.skills.resolver import (
     SkillCatalog,
     SkillError,
@@ -37,7 +37,7 @@ from indus.learning.skills.resolver import (
     load_catalog,
     skills_setting,
 )
-from indus.learning.skills.usage import HUB_LOCK, usage_for
+from indus.learning.skills.usage import usage_for
 from indus.learning.skills.view_tools import linked_files
 from indus.platform.locate import which
 from indus.safety.child_env import child_env
@@ -135,15 +135,8 @@ def skill_command_names(
 
 
 def is_community_skill(scope: Scope, rec: SkillRecord) -> bool:
-    """True for a hub skill whose lock row says ``trust: community`` (P13 owns the hub)."""
-    try:
-        data = json.loads((scope.home / "skills" / HUB_LOCK).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    if isinstance(data, dict) and isinstance(data.get("installed"), dict):
-        data = data["installed"]
-    row = data.get(rec.name) if isinstance(data, dict) else None  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-    return isinstance(row, dict) and row.get("trust") == "community"  # pyright: ignore[reportUnknownMemberType]
+    """True for a hub skill installed with ``community`` trust (an unknown trust counts as one)."""
+    return trust_of(scope.home / "skills", rec.name) == "community"
 
 
 def default_runner(scope: Scope) -> ShellRunner:

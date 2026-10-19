@@ -13,7 +13,9 @@
   ``skills.write_approval``.
 
 Nothing prompts without a terminal: a verb that needs a confirmation exits 2 unless ``-y``.
-Hub verbs (P13) extend this group.
+Hub verbs (``browse``, ``search``, ``inspect``, ``install``, ``check-updates``, ``update``,
+``audit``, ``uninstall``, ``tap``, ``trust``/``untrust``) and ``trust-project`` come from
+``skills_hub``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import click
 
 from indus.cli.cmdkit import cli_state, err, group
 from indus.cli.commands.memory import reject_ids, which_of
+from indus.cli.commands.skills_hub import register as register_hub_verbs
 from indus.cli.prompts import confirm, io_for
 from indus.foundation.scope import Scope
 from indus.learning import pending
@@ -55,7 +58,7 @@ __all__ = [
     "skills_group",
 ]
 
-SOURCES = ("local", "create_dir", "external", "bundled", "hub")
+SOURCES = ("project", "local", "create_dir", "external", "bundled", "hub")
 DESCRIPTION_WIDTH = 60
 
 
@@ -409,3 +412,8 @@ def reject_command(ids: tuple[str, ...]) -> None:
         err("No waiting write matched.")
         raise click.exceptions.Exit(1)
     click.echo(f"Rejected {', '.join(removed)}.")
+
+
+# -- hub verbs (P13-27) and trust-project (P13-28) -------------------------------------------------
+
+register_hub_verbs(skills_group)

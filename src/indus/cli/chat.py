@@ -334,6 +334,7 @@ class _ChatRun:
             run_context="single_query" if self.finite else "interactive",
             overrides=self.state.overrides,
             new_session=session_id is None,
+            accept_hooks=args.accept_hooks,
         )
         if self.finite:
             from indus.cli.oneshot import run_finite

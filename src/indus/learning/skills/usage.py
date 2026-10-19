@@ -32,6 +32,9 @@ from indus.foundation.clock import Clock, SystemClock
 from indus.foundation.fsio import FileLock, atomic_write_json
 from indus.foundation.scope import Scope
 from indus.learning.pending import Origin, current_origin
+from indus.learning.skills.hub.lock import HUB_DIR
+from indus.learning.skills.hub.lock import LOCK_FILE as HUB_LOCK_FILE
+from indus.learning.skills.hub.lock import hub_names as lock_hub_names
 
 __all__ = [
     "BACKGROUND_REVIEW",
@@ -52,7 +55,7 @@ log = logging.getLogger(__name__)
 USAGE_FILE = ".usage.json"
 LOCK_FILE = ".usage.lock"
 BUNDLED_MANIFEST = ".bundled_manifest"
-HUB_LOCK = Path(".hub") / "lock.json"
+HUB_LOCK = Path(HUB_DIR) / HUB_LOCK_FILE
 STATES = ("active", "stale", "archived")
 LOCK_TIMEOUT_S = 10.0
 
@@ -81,14 +84,8 @@ def bundled_names(skills_root: Path) -> set[str]:
 
 
 def hub_names(skills_root: Path) -> set[str]:
-    """Names in the hub lock (P13 owns the format; a mapping or ``installed`` mapping here)."""
-    try:
-        data = json.loads((skills_root / HUB_LOCK).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return set()
-    if isinstance(data, dict) and isinstance(data.get("installed"), dict):
-        data = data["installed"]
-    return {str(k) for k in cast(dict[str, Any], data)} if isinstance(data, dict) else set()
+    """Names in the hub lock (``.hub/lock.json``, shape owned by ``skills.hub.lock``)."""
+    return lock_hub_names(skills_root)
 
 
 def _count(value: object) -> int:

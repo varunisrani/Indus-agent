@@ -188,7 +188,7 @@ slash:
   checkpoints: "Turn file checkpoints on or off"
   mcp: "Show connected MCP servers"
   reload-mcp: "Reconnect MCP servers from the config"
-  plugins: "List installed plugins"
+  plugins: "List plugins, or enable/disable one for this profile"
   cron: "Manage scheduled jobs"
   help: "List commands; add a word to filter them"
   usage: "Show token use and cost of this session"

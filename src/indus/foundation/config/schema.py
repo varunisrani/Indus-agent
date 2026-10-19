@@ -704,6 +704,22 @@ class LoopsSection(_Section):
     )
 
 
+class SkillsHubSection(_Section):
+    """The skills hub (P13-25..27)."""
+
+    search_timeout: float = Field(
+        default=30.0, description="seconds a hub search may take across all sources"
+    )
+    well_known: list[str] = Field(
+        default_factory=list,
+        description="sites whose /.well-known/skills/index.json the hub searches",
+    )
+    advisory_scanner: str = Field(
+        default="",
+        description="extra scanner program run on hub skills before install (advice only)",
+    )
+
+
 class SkillsSection(_Section):
     """Where skills come from and how they load (P09-06..13)."""
 
@@ -744,6 +760,16 @@ class SkillsSection(_Section):
     review_interval: int = Field(
         default=10,
         description="tool-calling steps between background skill reviews; 0 = never",
+    )
+    hub: SkillsHubSection = Field(
+        default_factory=SkillsHubSection, description="the skills hub (P13-25..27)"
+    )
+    trusted_project_dirs: list[str] = Field(
+        default_factory=list,
+        description="repos whose .indus/skills and .agents/skills load (P13-28)",
+    )
+    project_discovery: bool = Field(
+        default=True, description="look for skills inside the current repo at all (P13-28)"
     )
 
 
@@ -963,6 +989,15 @@ class PluginsSection(_Section):
         description="per plugin: settings, mcp_allowlist, allow_tool_override, "
         "granted_capabilities",
     )
+    clone_timeout_seconds: float = Field(
+        default=300.0, description="seconds one git step of a plugin install may take (3600 max)"
+    )
+    auto_update_check_hours: float = Field(
+        default=24.0, description="hours between plugin update checks; 0 = never check"
+    )
+    auto_apply: bool = Field(
+        default=False, description="apply plugin updates found by the check without asking"
+    )
 
 
 class McpSection(_Section):
@@ -1134,6 +1169,14 @@ class ConfigModel(BaseModel):
         "secrets only as ${NAME}",
     )
     mcp: McpSection = Field(default_factory=McpSection, description="the MCP client")
+    hooks: dict[str, Any] = Field(
+        default_factory=dict[str, Any],
+        description="shell hooks by event: a list of {command, matcher?, timeout?} each; every "
+        "command is asked about once before it runs (`indus hooks list`)",
+    )
+    hooks_auto_accept: bool = Field(
+        default=False, description="run configured shell hooks without asking first"
+    )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 

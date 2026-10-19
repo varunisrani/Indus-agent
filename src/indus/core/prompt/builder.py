@@ -8,7 +8,8 @@ likely to change to the most likely, so a longest-prefix provider cache keeps as
   no workspace snapshot, the workspace guidance and the platform hint;
 - **context**: the caller's system text, project context files, then anything naming the current
   worktree (the snapshot and the trailing guidance after it);
-- **volatile**: memory snapshot, user-profile snapshot, skills index (P09-04 order), the
+- **volatile**: memory snapshot, user-profile snapshot, the external memory provider's block, the
+  plugin sections (P13-18, frozen per conversation), skills index (P09-04 order), the
   active-profile line, the date block and finally the runtime block between ``RUNTIME_HEADING``
   and ``RUNTIME_END``.
 
@@ -126,6 +127,8 @@ class BuildContext:
     profile_snapshot: str = ""
     # The external memory provider's static block, frozen for the session (P13-24); "" = none.
     memory_provider_block: str = ""
+    # The plugin sections block rendered once for the conversation (P13-18); "" = none.
+    plugin_sections: str = ""
     # The memory tool's guidance for this session (P09-04): None = the stock text, "" = none.
     memory_guidance: str | None = None
     started_at: datetime | None = None
@@ -406,6 +409,7 @@ class PromptBuilder:
             ctx.memory_snapshot,
             ctx.profile_snapshot,
             ctx.memory_provider_block,
+            ctx.plugin_sections,
             ctx.skills_index,
             _active_profile_line(scope),
             date_block(ctx),

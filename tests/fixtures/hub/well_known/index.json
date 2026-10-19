@@ -1,0 +1,6 @@
+{
+  "skills": [
+    {"name": "pdf-tools", "description": "Split, merge and read PDF files.", "files": ["SKILL.md", "references/usage.md"]},
+    {"name": "notes", "description": "Keep a running notes file.", "files": ["SKILL.md"]}
+  ]
+}

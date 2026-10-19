@@ -92,7 +92,13 @@ def test_decided_defaults() -> None:
         "load_timeout_seconds": 10.0,
         "hook_callback_timeout": 30.0,
         "entries": {},
+        "clone_timeout_seconds": 300.0,  # P13-21
+        "auto_update_check_hours": 24.0,
+        "auto_apply": False,
     }
+    # P13-19: shell hooks
+    assert d["hooks"] == {}
+    assert d["hooks_auto_accept"] is False
     # P13-01: the MCP client
     assert d["mcp_servers"] == {}
     assert d["mcp"] == {
@@ -154,6 +160,10 @@ def test_decided_defaults() -> None:
         "ledger_max_bytes": 5 * 1024 * 1024,
         "write_approval": False,
         "review_interval": 10,  # P09-14
+        # P13-25..28: the skills hub and project skills
+        "hub": {"search_timeout": 30.0, "well_known": [], "advisory_scanner": ""},
+        "trusted_project_dirs": [],
+        "project_discovery": True,
     }
     # P10 slice J: media tools
     assert d["vision"] == {"download_timeout": 30.0, "embed_target_kb": 256}

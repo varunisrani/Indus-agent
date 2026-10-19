@@ -40,16 +40,24 @@ here (P05 wave 2 notes):
   service; ``McpUpkeep`` starts the profile's servers before the first agent (discovery once),
   adds the ``mcp`` toolset to the platform bundle, samples through the run's auxiliary client and
   closes the servers at exit; an interactive run also watches the config file for
-  ``mcp_servers`` edits.
+  ``mcp_servers`` edits;
+- plugins and shell hooks (P13-13..23, ``service.plugin_host``): ``PluginUpkeep`` loads the
+  enabled plugins into the run's registry and registers the configured shell hooks on one hooks
+  bus before the first agent; an interactive terminal is asked once about each new shell hook
+  (``--accept-hooks`` / ``INDUS_ACCEPT_HOOKS`` / ``hooks_auto_accept`` accept without asking, a
+  finite run skips unconsented hooks with a warning); each top-level agent gets the bus seams
+  (tool guards, ``pre_llm_call`` context on the user message) and the frozen plugin prompt
+  sections, subagents neither; the interactive run's maintenance timer checks for plugin updates
+  (``plugins.auto_update_check_hours``), never at start.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from indus.cli.args import HostOverrides
 from indus.cli.session_select import LAUNCH_KEY, LaunchPolicy, workspace_key
@@ -73,10 +81,15 @@ from indus.service.code_host import KernelUpkeep
 from indus.service.host_inprocess import InProcessHost
 from indus.service.maintenance import MaintenanceTimer, learning_timer, profile_idle_s
 from indus.service.mcp_host import McpUpkeep
+from indus.service.plugin_host import PluginUpkeep, update_check
 from indus.service.session_service import AgentFactory, SessionService
 from indus.state.registry import StoreHandle
 from indus.tools import toolsets
 from indus.tools.builtin import terminal
+from indus.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from indus.plugins.shell_hooks import HookSpec
 
 __all__ = [
     "DEFAULT_TOOLSETS",
@@ -268,6 +281,7 @@ class ServiceSpec:
     answerable_kinds: Iterable[str] = ()
     overrides: HostOverrides | None = None
     new_session: bool = True
+    accept_hooks: bool = False
 
 
 def _session_fields(spec: ServiceSpec, cwd: Path) -> dict[str, Any]:
@@ -332,7 +346,38 @@ def build_service(spec: ServiceSpec) -> SessionService:
         # The CLI owns its process: kernels end at exit; an interactive run reaps idle ones.
         kernels=KernelUpkeep(spec.scope, reaper=spec.run_context == "interactive"),
         mcp=McpUpkeep(spec.scope, registry, aux=aux, watch=spec.run_context == "interactive"),
+        plugins=_plugins(spec, registry, cwd),
     )
+
+
+def _plugins(spec: ServiceSpec, registry: ToolRegistry, cwd: Path) -> PluginUpkeep:
+    """The run's plugins and shell hooks; only a terminal REPL asks about a new hook."""
+    import sys
+
+    interactive = spec.run_context == "interactive"
+    ask: Callable[[HookSpec], bool] | None = None
+    if interactive and sys.stdin.isatty() and sys.stdout.isatty():
+        ask = _ask_hook
+    return PluginUpkeep(
+        spec.scope,
+        registry,
+        surface="cli" if interactive else f"cli ({spec.run_context})",
+        interactive=interactive,
+        accept=spec.accept_hooks,
+        ask=ask,
+        cwd=str(cwd),
+    )
+
+
+def _ask_hook(spec: HookSpec) -> bool:
+    import click
+
+    from indus.plugins.shell_hooks import consent_text
+
+    try:
+        return click.confirm(f"{consent_text(spec)}\nAllow it?", default=False, err=True)
+    except (click.Abort, EOFError):
+        return False
 
 
 def _maintenance(spec: ServiceSpec, aux: AuxClient) -> MaintenanceTimer | None:
@@ -341,7 +386,9 @@ def _maintenance(spec: ServiceSpec, aux: AuxClient) -> MaintenanceTimer | None:
     if spec.run_context != "interactive":
         return None
     scope, handle = spec.scope, spec.store
-    return learning_timer(scope, aux=aux, idle_s=lambda: profile_idle_s(handle, scope.clock))
+    timer = learning_timer(scope, aux=aux, idle_s=lambda: profile_idle_s(handle, scope.clock))
+    timer.register("plugin updates", update_check(scope))
+    return timer
 
 
 def make_host(spec: ServiceSpec, *, call_timeout: float | None = None) -> InProcessHost:
