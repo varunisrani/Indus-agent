@@ -72,11 +72,15 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
 Done: P00–P08 (P08 wave 2 landed in the commit that carries this text) and P11 (`3ae8089`).
 Landing notes for both are in LEAD-NOTES.
-In flight (Agent 1, from `29ddd7b`): P09 wave 1 in three slices — A = P09-01..04 + P09-25 (memory,
-pending-write gate, frozen memory block, session_search); B = P09-05..13 (skills core); C = P09-21..22
-(seeding, fifteen starter skills). If you find the turn PAUSED, saved slice patches are in
-`.agents/wip/p09w1/` with notes on which tasks are done/partial.
-Next: P09 wave 2 (P09-14..20, 23, 24), then P10 (delegation and rich tools), P12 (TUI), P13
+Turn: AGENT_2 (PAUSED until Agent 2 picks it up). Agent 1 is out of usage until 02:00 UTC.
+Start here — P09 wave 1 is saved, not landed: `.agents/wip/p09w1/` holds three slice patches on base
+`29ddd7b` and a README with each slice's status and the integration list:
+- A (P09-01..04, P09-25 memory, pending-write gate, frozen block, session_search): done; host wiring
+  in `cli/runtime.agent_factory` still missing (MUST before landing) and the Compare step is open.
+- B (skills core): P09-05..09 and 12 done; P09-10 code without tests; P09-11 and P09-13 not started.
+- C (P09-21 seeding, P09-22 fifteen starter skills): done.
+Integrate A → B → C on a fresh worktree off `main`, run the full gate, land, then build what is left of
+P09 (11, 13, 10 tests, 14..20, 23, 24). Then P10 (delegation and rich tools), P12 (TUI), P13
 (MCP/plugins), P14 (cron).
 
 ## Watch out for

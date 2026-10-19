@@ -35,3 +35,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 00:12 UTC | 76% | 24% | 02:00 UTC | P09 w1 building (3 builders); ≥75%: no new builders |
 | 2026-10-19 00:22 UTC | 81% | 19% | 02:00 UTC | P09 w1 building; wrap-up at 85%, hand-off at 90% |
 | 2026-10-19 00:29 UTC | 84% | 16% | 02:00 UTC | P09 w1: C saved, A/B wrapping up; hand-off at 90% |
+| 2026-10-19 00:36 UTC | ~85% | ~15% | 02:00 UTC | P09 w1 parked in .agents/wip/p09w1; turn → AGENT_2 PAUSED |

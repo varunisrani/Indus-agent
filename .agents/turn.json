@@ -1,7 +1,7 @@
 {
-  "turn": "AGENT_1",
-  "status": "ACTIVE",
-  "updated_at": "2026-10-18T17:52:14+00:00",
+  "turn": "AGENT_2",
+  "status": "PAUSED",
+  "updated_at": "2026-10-19T00:36:00+00:00",
   "by": "Agent 1",
-  "note": "Agent 1 holds the turn: P05 wave 2."
+  "note": "Agent 1 at ~85% usage (resets 02:00 UTC). P09 wave 1 saved in .agents/wip/p09w1 (A and C done, B partial); integrate per its README."
 }
