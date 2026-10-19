@@ -75,36 +75,10 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`; P14 in the commit that carries this text).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- P15 wave 1: G1..G4 built (patches in `.agents/wip/p15w1/`), integrating together in verify2.
-- P21 (from `730cf11`): B1 = P21-01..04, 11, 15 (records, SDK wrapper, stdin staging, Singularity, vendor
-  creds, fakes); B2 = P21-05..10 (Modal, Daytona, Vercel, sync-back). P22: R1 = P22-01..09 (batch runner,
-  `indus research`). If paused, patches in `.agents/wip/p21/` and `.agents/wip/p22/`.
-Also building (Agent 1, from `8f99060`): P15 wave 1 — G1 = P15-01..05 DONE (fake platform harness, gateway
-config, inbound events, send result/retry, adapter base), G2 = P15-06..10 (registry/locks, session keys,
-authorization, pairing, bot-loop/concurrency/admin tiers) DONE (patch in wip); G3 = P15-14..18 (chunker,
-formatters, stream consumer, outbound sender, media path policy) DONE (patch in wip); G4 = P15-11..13 (admission, busy guards,
-chat slash commands; based on G1+G2 applied raw) DONE (patch in wip). G1+G2+G3 integrating in verify2 (layer fix:
-stores the CLI needs move below cli/gateway; media_trust_recent defaults to false). If paused, patches in
-`.agents/wip/p15w1/`.
-Builder rules: `docs/plan/phases/builder-rules.md`; read LEAD-NOTES landing
-notes for waves 7–10 first (every seam and follow-up is there). Nothing in flight, `.agents/wip/` empty.
-Gate (CLAUDE.md): note CI installs **no optional extras** — keep optional imports pyright-ignored and
-pin probes in tests that need an extra; perf tests run alone (`-m perf`), and `tests/conftest.py`
-freezes collected objects out of the GC for perf runs. TUI e2e: `pnpm --filter @indus/tui run e2e`
-(needs `node-gyp` for the optional `node-pty`).
-1. **P13 wave 2** (spec `docs/plan/phases/P13-mcp-plugins-hooks-hub.md`): P13-05..12 (MCP discovery
-   + registration, calls, trust/breaker, reload/list_changed, OAuth, sampling/elicitation, OSV
-   preflight, `indus mcp` CLI) on M1's connection API; P13-18 prompt sections, P13-19 shell hooks +
-   `indus hooks`; P13-21..23 plugin install/consent/CLI (use `content_scan`); P13-25..28 skills hub +
-   project-skill trust. Wire the deferred seams: `pre_llm_call` in `core/prologue.py`, plugin
-   `approve` with P13-07, memory provider manager into the session host, plugin skills/commands.
-2. Then P14 (cron).
-3. Open: D-04.2 (f) streaming fps re-bench on an unloaded Node 24 machine (26–28 fps on Node 22 here);
-   bridge follow-ups (LEAD-NOTES waves 8/9: launch options in `session.create`, `session.delete`,
-   model list, `config.get` fields, segment boundary on redirect); packaging force-include of
-   `apps/tui/dist`; D-ids listed in wave 7/10 notes; owner items: Pillow (MIT-CMU), voice `av`
-   (LGPL) and numpy licences, Piper/eSpeak NG ruling (D-16.71), real-key P09 demo run.
-
+- P15 wave 1 (G1..G4, P15-01..18): integrated and rebased in verify2; full gate on the combined tree
+  running, lands next. Patches + README in `.agents/wip/p15w1/`.
+- P21 B1 + B2 (P21-01..11, 15) and P22 R1 (P22-01..09): built (patches + READMEs in `.agents/wip/p21/`,
+  `.agents/wip/p22/`), integrating in verify3.
 ## Watch out for
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
   reference only for the Compare step. Evidence and captures stay in `~/rea-lab/`.

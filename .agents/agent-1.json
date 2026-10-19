@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 68,
-  "remaining_pct": 32,
+  "usage_pct": 71,
+  "remaining_pct": 29,
   "resets_at": "2026-10-19T17:00:00+00:00",
-  "last_check": "2026-10-19T14:13:00+00:00",
-  "current_step": "P14 done (b1f2839); P15 G1-G4 integrating; P21 B1/B2 and P22 R1 building",
+  "last_check": "2026-10-19T14:25:00+00:00",
+  "current_step": "P15 w1 combined gate (verify2); P21 B1+B2 and P22 R1 integrating (verify3); no new builders",
   "last_commit": "b1f2839"
 }
