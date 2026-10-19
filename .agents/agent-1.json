@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 29,
-  "remaining_pct": 71,
+  "usage_pct": 45,
+  "remaining_pct": 55,
   "resets_at": "2026-10-19T12:00:00+00:00",
-  "last_check": "2026-10-19T11:00:00+00:00",
+  "last_check": "2026-10-19T11:24:00+00:00",
   "current_step": "P13 w2: N1-N4 built (patches in wip), N1+N2 integrating; P14 C1-C3 building",
   "last_commit": "2f62d28"
 }
