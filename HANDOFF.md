@@ -75,12 +75,13 @@ starter skills — landed in the commit that carries this text). Landing notes i
 Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up).
 In flight (Agent 1):
 1. P09 wave 2 — three slices built on a raw base (main `fb1204d` + the wave 1 patches unchanged),
-   waiting to be integrated on top of landed wave 1: D = P09-11 skill_manage, P09-13 ledger, P09-24
+   being integrated on top of landed wave 1 (in verify2): D = P09-11 skill_manage, P09-13 ledger, P09-24
    CLI/slash; E = P09-14..17 review loop, /refine, /learn; F = P09-18..20 curator, P09-23 timeline.
    If paused, their patches are in `.agents/wip/p09w2/` (all three add `cli/slash/learning_cmds.py` —
    merge into one module; E and F both add `tools=` to AuxClient.call — keep one).
 2. P10 wave 1 building from `85cd8a9`: G = P10-01..07 delegation, H = P10-08..11 execute_code and
    kernels. If paused, in `.agents/wip/p10w1/`.
+3. P10 browser slice I = P10-12..14 building from `7faff19`. If paused, in `.agents/wip/p10w1/` too.
 Next: P10 waves 2+ (browser, media, voice, computer use, MoA, /btw, /goal, /loop, /heartbeat), P12
 (TUI), P13 (MCP/plugins), P14 (cron).
 
