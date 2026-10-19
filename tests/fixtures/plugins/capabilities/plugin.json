@@ -1,0 +1,7 @@
+{
+  "name": "capabilities",
+  "version": "2.0.0",
+  "description": "Declares what it would like to be allowed",
+  "capabilities": ["tools.override", "platform.actions"],
+  "requires_env": [{"name": "SAMPLE_SERVICE_KEY", "prompt": "Key for the sample service", "secret": true}]
+}

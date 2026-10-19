@@ -77,6 +77,10 @@ ERROR_CODES: dict[str, str] = {
     "blocking.pool_full": "every worker of a blocking pool is busy; the work was refused",
     "blocking.pool_closed": "the blocking pool was shut down; the work was refused",
     "blocking.deadline_missed": "blocking work missed its deadline and was abandoned",
+    "plugins.error": "a plugin could not be loaded or used",
+    "plugins.load_failed": "a plugin's import or register() failed; it was skipped",
+    "plugins.permission": "a plugin asked for something its operator did not allow",
+    "plugins.closed": "a plugin whose load was abandoned tried to register something",
     "backend.error": "terminal backend problem",
     "backend.connection": "the terminal backend could not be reached; the command did not run",
     "backend.unavailable": "the terminal backend cannot be created here (missing dependency)",
@@ -93,6 +97,14 @@ ERROR_CODES: dict[str, str] = {
     "auth.relogin_required": "the stored grant is no longer valid; sign in again",
     "auth.callback_timeout": "no browser callback arrived before the deadline",
     "auth.port_busy": "the provider's fixed callback port is in use",
+    "mcp.error": "MCP client problem",
+    "mcp.config_invalid": "an mcp_servers entry is malformed; that server was skipped",
+    "mcp.unresolved_ref": "a ${NAME} in a remote MCP server's URL or headers is not set",
+    "mcp.client_cert_missing": "an MCP server's client certificate or key file does not exist",
+    "mcp.url_refused": "an MCP server URL was refused (scheme, blocklist or metadata address)",
+    "mcp.connect_timeout": "an MCP server did not finish connecting within its connect timeout",
+    "mcp.connect_failed": "an MCP server could not be started or reached",
+    "mcp.unavailable": "the MCP server is not connected (reconnecting, parked or closed)",
 }
 
 

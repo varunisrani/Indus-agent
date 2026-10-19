@@ -29,6 +29,7 @@ from indus.foundation.fsio import atomic_write_text
 from indus.foundation.home import secure_dir
 from indus.foundation.scope import Scope
 from indus.learning import pending
+from indus.learning.memory import providers
 from indus.learning.memory.store import (
     DELIMITER,
     STORE_LABELS,
@@ -47,8 +48,10 @@ __all__ = [
     "approve_memory",
     "launch_editor",
     "memory_group",
+    "provider_status_line",
     "reject_ids",
     "set_approval",
+    "set_provider",
     "status_lines",
 ]
 
@@ -85,7 +88,36 @@ def status_lines(scope: Scope) -> list[str]:
     waiting = _pending(scope).count("memory")
     lines.append(f"Write approval: {gate} (indus memory approval on|off)")
     lines.append(f"Waiting for approval: {waiting}")
+    lines.append(provider_status_line(configured))
     return lines
+
+
+def provider_status_line(scope: Scope) -> str:
+    """One line on the external memory provider (P13-24)."""
+    name = ""
+    if scope.config is not None:
+        try:
+            value = scope.config.get("memory.provider")
+        except Exception:
+            value = None
+        name = value.strip() if isinstance(value, str) else ""
+    if providers.is_core_provider(name):
+        return "External provider: none (built-in memory only)"
+    provider = providers.resolve_provider(name)
+    if provider is None:
+        return f"External provider: {name} (not installed)"
+    try:
+        available = provider.is_available()
+    except Exception:
+        available = False
+    if available:
+        return f"External provider: {name} (ready)"
+    reason = ""
+    try:
+        reason = provider.unavailable_reason()
+    except Exception:
+        reason = ""
+    return f"External provider: {name} (unavailable{f': {reason}' if reason else ''})"
 
 
 def approve_memory(scope: Scope, which: str | Sequence[str]) -> list[pending.Approval]:
@@ -141,6 +173,59 @@ def status_command() -> None:
     """Show which stores are on, how full they are, and the approval gate."""
     for line in status_lines(cli_state().scope):
         click.echo(line)
+
+
+def set_provider(scope: Scope, name: str) -> None:
+    """Write ``memory.provider`` (and run the provider's non-secret config schema)."""
+    writer.save(scope, {"memory": {"provider": name}})
+
+
+@memory_group.command("setup")
+@click.argument("name", required=False)
+def setup_command(name: str | None) -> None:
+    """Choose the external memory provider (name), or list the installed ones."""
+    scope = scope_with_config(cli_state().scope)
+    installed = sorted(providers.installed_providers())
+    if name is None:
+        if not installed:
+            click.echo(
+                "No external memory providers are installed. Install one as a plugin, then run "
+                "`indus memory setup <name>`."
+            )
+            return
+        click.echo("Installed memory providers:")
+        for provider_name in installed:
+            click.echo(f"  {provider_name}")
+        click.echo("Run `indus memory setup <name>` to use one.")
+        return
+    provider = providers.resolve_provider(name)
+    if provider is None:
+        err(
+            f"No memory provider named {name!r} is installed. "
+            + (f"Installed: {', '.join(installed)}." if installed else "None are installed.")
+        )
+        raise click.exceptions.Exit(1)
+    try:
+        set_provider(scope, provider.name)
+    except IndusError as exc:
+        err(f"Not saved: {exc}")
+        raise click.exceptions.Exit(1) from None
+    click.echo(
+        f"Memory provider {provider.name!r} is now active alongside the built-in stores. "
+        "Fill its settings if it needs any, then check `indus memory status`."
+    )
+
+
+@memory_group.command("off")
+def off_command() -> None:
+    """Turn the external memory provider off (built-in memory stays on)."""
+    scope = cli_state().scope
+    try:
+        set_provider(scope, "")
+    except IndusError as exc:
+        err(f"Not saved: {exc}")
+        raise click.exceptions.Exit(1) from None
+    click.echo("External memory provider off; the built-in stores still work.")
 
 
 def _editor(scope: Scope) -> list[str]:

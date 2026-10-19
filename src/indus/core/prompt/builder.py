@@ -124,6 +124,8 @@ class BuildContext:
     skills_index: str = ""
     memory_snapshot: str = ""
     profile_snapshot: str = ""
+    # The external memory provider's static block, frozen for the session (P13-24); "" = none.
+    memory_provider_block: str = ""
     # The memory tool's guidance for this session (P09-04): None = the stock text, "" = none.
     memory_guidance: str | None = None
     started_at: datetime | None = None
@@ -403,6 +405,7 @@ class PromptBuilder:
         volatile = [
             ctx.memory_snapshot,
             ctx.profile_snapshot,
+            ctx.memory_provider_block,
             ctx.skills_index,
             _active_profile_line(scope),
             date_block(ctx),

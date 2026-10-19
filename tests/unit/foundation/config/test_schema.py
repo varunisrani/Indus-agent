@@ -84,6 +84,18 @@ def test_decided_defaults() -> None:
     }
     assert d["goals"] == {"max_turns": 20}
     assert d["loops"] == {"min_interval_seconds": 30, "max_ticks": 100}
+    # P13-14/15/17: plugins
+    assert d["plugins"] == {
+        "enabled": [],
+        "disabled": [],
+        "project": False,
+        "load_timeout_seconds": 10.0,
+        "hook_callback_timeout": 30.0,
+        "entries": {},
+    }
+    # P13-01: the MCP client
+    assert d["mcp_servers"] == {}
+    assert d["mcp"] == {"auto_reload_on_config_change": True, "discovery_concurrency": 4}
     # P10-20: desktop control
     assert d["computer_use"] == {"driver": "stdio", "driver_cmd": "", "action_timeout_s": 30.0}
     assert d["prompt_caching"] == {"cache_ttl": "5m"}
@@ -109,6 +121,8 @@ def test_decided_defaults() -> None:
         "profile_char_limit": 1375,
         "write_approval": False,
         "review_interval": 10,  # P09-14
+        "provider": "",  # P13-24
+        "provider_recall_spill": False,  # P13-24
     }
     # P09 slice E: the background review
     assert d["skills"]["review_interval"] == 10

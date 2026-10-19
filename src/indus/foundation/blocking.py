@@ -8,11 +8,10 @@ a deadline turns a call that does not come back into ``DeadlineMissed`` for the 
 Abandoned, never killed: Python cannot stop a thread, so work past its deadline (or whose caller
 was cancelled) is left to finish on its own. It keeps its worker until it does, whatever it
 returns or raises later is dropped, and one WARNING says so. Pools never grow. When every worker
-is busy, the ``io`` and ``tools`` pools let a bounded number of calls wait for a worker in arrival
-order (the wait counts against the caller's deadline; a call whose caller gave up while waiting
-never runs); past that bound, and at once in the ``hooks`` pool, new work is refused with
-``PoolFull``. Workers are daemon threads, so a stuck call never holds up process exit, and
-``shutdown`` never waits for one.
+is busy, each named pool lets a bounded number of calls wait for a worker in arrival order (the
+wait counts against the caller's deadline; a call whose caller gave up while waiting never runs);
+past that bound new work is refused with ``PoolFull``. Workers are daemon threads, so a stuck
+call never holds up process exit, and ``shutdown`` never waits for one.
 
 Child processes are not this module's job: the terminal runner owns their timeout and kill.
 """
@@ -46,13 +45,16 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-# Workers per named pool. ``hooks`` is small on purpose: a hung plugin hook should be refused
-# quickly rather than pile up threads (the size the P00/P03 trial measured).
-POOL_SIZES: Mapping[str, int] = MappingProxyType({"io": 8, "tools": 8, "hooks": 2})
-# Calls that may wait for a busy pool's worker before new work is refused. Many sessions starting
-# turns at once read their transcripts through ``io``/``tools`` (D-04.1 criterion c), so those
-# queue; a hung plugin hook must not collect a backlog behind it, so ``hooks`` refuses at once.
-POOL_QUEUE_LIMITS: Mapping[str, int] = MappingProxyType({"io": 256, "tools": 256, "hooks": 0})
+# Workers per named pool. ``hooks`` holds plugin hook callbacks (P13-17): the hooks bus lets one
+# hung callback strand at most three workers and suppresses it meanwhile, so eight leave room for
+# the healthy callbacks of other plugins.
+POOL_SIZES: Mapping[str, int] = MappingProxyType({"io": 8, "tools": 8, "hooks": 8})
+# Calls that may wait for a busy pool's worker before new work is refused; the wait counts against
+# the caller's deadline. Many sessions starting turns at once read their transcripts through
+# ``io``/``tools`` (D-04.1 criterion c). ``hooks`` gets a short queue so a burst of parallel tool
+# calls is not refused (and so blocked, R07.18) only because every hook worker is momentarily
+# busy; a hook that cannot start within its deadline still misses it.
+POOL_QUEUE_LIMITS: Mapping[str, int] = MappingProxyType({"io": 256, "tools": 256, "hooks": 32})
 
 
 class BlockingError(IndusError):
@@ -73,9 +75,13 @@ class PoolClosed(BlockingError):
 
 
 class DeadlineMissed(BlockingError, TimeoutError):
-    """The work did not finish in time. It was abandoned, not stopped: its thread runs on."""
+    """The work did not finish in time. It was abandoned, not stopped: its thread runs on.
+
+    ``started`` is False when it was still waiting for a worker: then it never runs at all.
+    """
 
     default_code = "blocking.deadline_missed"
+    started: bool = True
 
 
 def _describe(fn: Callable[..., object]) -> str:
@@ -221,7 +227,9 @@ class BlockingPool:
                     deadline,
                     self.name,
                 )
-                raise DeadlineMissed(f"{what} did not start within {deadline:g} s")
+                missed = DeadlineMissed(f"{what} did not start within {deadline:g} s")
+                missed.started = False
+                raise missed
             log.warning(
                 "%s missed its %g s deadline in the %s pool; abandoned, its thread runs on "
                 "(%d of %d workers busy)",

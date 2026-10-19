@@ -21,9 +21,20 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass
 from typing import Literal
 
-__all__ = ["HIDDEN_CHARACTERS", "SCAN_LIMIT", "Scope", "is_hidden_character", "scan"]
+__all__ = [
+    "HIDDEN_CHARACTERS",
+    "SCAN_LIMIT",
+    "TAG_FIRST",
+    "TAG_LAST",
+    "Hit",
+    "Scope",
+    "is_hidden_character",
+    "locate",
+    "scan",
+]
 
 Scope = Literal["context", "strict", "memory", "skill"]
 
@@ -43,7 +54,7 @@ HIDDEN_CHARACTERS = frozenset(
     )
 )
 # Unicode "tag" characters mirror ASCII invisibly and are used to smuggle instructions.
-_TAG_FIRST, _TAG_LAST = 0xE0000, 0xE007F
+TAG_FIRST, TAG_LAST = 0xE0000, 0xE007F
 
 # Up to a few words between the key words of a phrase; bounded so the regex cannot backtrack badly.
 _GAP = r"(?:[\w'-]+[\s,]+){0,5}?"
@@ -150,14 +161,47 @@ _COMPILED: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
 
 def is_hidden_character(char: str) -> bool:
     code = ord(char)
-    return char in HIDDEN_CHARACTERS or _TAG_FIRST <= code <= _TAG_LAST
+    return char in HIDDEN_CHARACTERS or TAG_FIRST <= code <= TAG_LAST
+
+
+@dataclass(frozen=True)
+class Hit:
+    """One pattern match: the finding id, its 1-based line and the matched text (NFKC-folded)."""
+
+    id: str
+    line: int
+    text: str
+
+
+def _patterns(scope: str) -> tuple[tuple[str, re.Pattern[str]], ...]:
+    patterns = _COMPILED.get(scope)
+    if patterns is None:
+        raise ValueError(f"unknown threat-scan scope: {scope!r}")
+    return patterns
+
+
+def locate(text: str, *, scope: Scope = "context") -> tuple[Hit, ...]:
+    """Every pattern match in the first ``SCAN_LIMIT`` characters of ``text``, with its line.
+
+    The same patterns as ``scan`` (hidden characters are left to the caller); used by the content
+    scanner (P13-20), which reports findings per file and line. Lines count ``\\n`` only.
+    """
+    patterns = _patterns(scope)
+    if not text:
+        return ()
+    folded = unicodedata.normalize("NFKC", text[:SCAN_LIMIT])
+    hits: list[Hit] = []
+    for name, pattern in patterns:
+        for match in pattern.finditer(folded):
+            line = folded.count("\n", 0, match.start()) + 1
+            hits.append(Hit(name, line, match.group(0)))
+    hits.sort(key=lambda h: h.line)
+    return tuple(hits)
 
 
 def scan(text: str, *, scope: Scope = "context") -> tuple[str, ...]:
     """Finding ids for ``text`` in ``scope``, in a stable order, each id once."""
-    patterns = _COMPILED.get(scope)
-    if patterns is None:
-        raise ValueError(f"unknown threat-scan scope: {scope!r}")
+    patterns = _patterns(scope)
     if not text:
         return ()
     window = text[:SCAN_LIMIT]

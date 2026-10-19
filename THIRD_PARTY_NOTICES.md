@@ -108,3 +108,16 @@ PyPI for packages of other platforms).
 | Pygments | 2.21.0 | BSD-2-Clause | via rich | P06-05 |
 | click | 8.5.0 | BSD-3-Clause | the `indus` command line: commands, global flags, help (also via ddgs in extra `web`) | P06-01 |
 | pexpect | 4.9.0 | ISC | dev only, never shipped: drives `indus` in a pseudo-terminal for the Demo 1 end-to-end tests | P06-14 |
+| mcp | 2.3.0 | MIT | the official MCP Python SDK: the MCP client (stdio, Streamable HTTP and SSE transports, sessions) | P13-03 |
+| mcp-types | 2.3.0 | MIT | via mcp (protocol message models) | P13-03 |
+| httpx2 | 2.13.1 | BSD-3-Clause | via mcp (the SDK's HTTP client; the MCP HTTP transports use it) | P13-03 |
+| httpcore2 | 2.13.1 | BSD-3-Clause | via httpx2 | P13-03 |
+| httpx2-jsfetch | 1.0 | BSD-3-Clause | via httpx2, Emscripten only (never installed elsewhere) | P13-03 |
+| truststore | 0.10.4 | MIT | via httpx2 / httpcore2 (the OS trust store for TLS) | P13-03 |
+| pyjwt | 2.15.1 | MIT | via mcp (OAuth helpers; `crypto` extra uses cryptography) | P13-03 |
+| opentelemetry-api | 1.45.0 | Apache-2.0 | via mcp (tracing hooks; no exporter is installed) | P13-03 |
+| python-multipart | 0.0.32 | Apache-2.0 | via mcp (server side; unused by the client) | P13-03 |
+| sse-starlette | 3.5.0 | BSD-3-Clause | via mcp (server side; the fake MCP servers of the tests use it) | P13-03 |
+| starlette | 1.7.0 | BSD-3-Clause | via mcp / sse-starlette (server side) | P13-03 |
+| uvicorn | 0.54.0 | BSD-3-Clause | via mcp (server side; unused by the client) | P13-03 |
+| pywin32 | 312 | PSF-2.0 | via mcp, Windows only (process job objects for stdio servers) | P13-03 |

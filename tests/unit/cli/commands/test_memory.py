@@ -12,6 +12,7 @@ from indus.cli.commands import memory as memory_cmd
 from indus.foundation.config import loader
 from indus.foundation.scope import Scope
 from indus.learning import pending
+from indus.learning.memory import providers
 from indus.learning.memory.store import DELIMITER, MemoryStore
 from tests.unit.cli.commands._helpers_d import run
 
@@ -162,3 +163,66 @@ def test_edit_no_change_and_failed_editor(scope: Scope, monkeypatch: pytest.Monk
     monkeypatch.setattr(memory_cmd, "launch_editor", lambda _c, _p: 3)
     failed = run(scope, "memory", "edit", "user", tty=True)
     assert failed.code == 1 and "exited with 3" in failed.err
+
+
+# -- external memory provider (P13-24) ------------------------------------------------------------
+
+
+class _Fake(providers.BaseMemoryProvider):
+    def __init__(self, name: str, *, available: bool = True, reason: str = "") -> None:
+        self._name = name
+        self._available = available
+        self._reason = reason
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def is_available(self) -> bool:
+        return self._available
+
+    def unavailable_reason(self) -> str:
+        return self._reason
+
+
+@pytest.fixture
+def _registry() -> Any:
+    providers.clear_registry()
+    yield
+    providers.clear_registry()
+
+
+def test_status_shows_no_provider_by_default(scope: Scope, _registry: Any) -> None:
+    result = run(scope, "memory", "status")
+    assert "External provider: none (built-in memory only)" in result.out
+
+
+def test_setup_lists_and_selects_a_provider(scope: Scope, _registry: Any) -> None:
+    providers.register_provider("notes", lambda: _Fake("notes"))
+    listing = run(scope, "memory", "setup")
+    assert "notes" in listing.out
+    chosen = run(scope, "memory", "setup", "notes")
+    assert chosen.code == 0
+    status = run(scope, "memory", "status")
+    assert "External provider: notes (ready)" in status.out
+
+
+def test_setup_unknown_provider_fails(scope: Scope, _registry: Any) -> None:
+    result = run(scope, "memory", "setup", "ghost")
+    assert result.code == 1
+    assert "ghost" in result.err
+
+
+def test_status_reports_unavailable_provider(scope: Scope, _registry: Any) -> None:
+    providers.register_provider("notes", lambda: _Fake("notes", available=False, reason="no key"))
+    run(scope, "memory", "setup", "notes")
+    status = run(scope, "memory", "status")
+    assert "unavailable: no key" in status.out
+
+
+def test_off_clears_the_provider(scope: Scope, _registry: Any) -> None:
+    providers.register_provider("notes", lambda: _Fake("notes"))
+    run(scope, "memory", "setup", "notes")
+    off = run(scope, "memory", "off")
+    assert off.code == 0
+    assert "External provider: none" in run(scope, "memory", "status").out

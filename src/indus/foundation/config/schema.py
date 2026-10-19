@@ -639,6 +639,16 @@ class MemorySection(_Section):
     review_interval: int = Field(
         default=10, description="user turns between background memory reviews; 0 = never"
     )
+    provider: str = Field(
+        default="",
+        description="name of one external memory provider to run beside the built-in stores "
+        "(empty = built-in only)",
+    )
+    provider_recall_spill: bool = Field(
+        default=False,
+        description="replace oversize external-provider recall with a head/tail preview and a "
+        "saved file path",
+    )
 
 
 class SessionSearchSection(_Section):
@@ -920,6 +930,48 @@ class VoiceSection(_Section):
     read_aloud: bool = Field(default=False, description="speak each final answer while voice is on")
 
 
+class PluginsSection(_Section):
+    """Python plugins (P13-13..17): which may load and how long they get."""
+
+    enabled: list[str] = Field(
+        default_factory=list[str],
+        description="plugins allowed to load (`indus plugins enable <name>`); others are only "
+        "listed",
+    )
+    disabled: list[str] = Field(
+        default_factory=list[str], description="plugins never loaded, even when enabled"
+    )
+    project: bool = Field(
+        default=False,
+        description="also load plugins from the project's .indus/plugins/ (never in the gateway)",
+    )
+    load_timeout_seconds: float = Field(
+        default=10.0,
+        description="seconds one plugin's import and register() may take; 0 = no limit",
+    )
+    hook_callback_timeout: float = Field(
+        default=30.0,
+        description="seconds a hot-path plugin hook may take; 0 = no limit (a pre-tool hook that "
+        "misses it blocks the tool)",
+    )
+    entries: dict[str, dict[str, Any]] = Field(
+        default_factory=dict[str, dict[str, Any]],
+        description="per plugin: settings, mcp_allowlist, allow_tool_override, "
+        "granted_capabilities",
+    )
+
+
+class McpSection(_Section):
+    """The MCP client as a whole (P13-01); each server lives under ``mcp_servers.<name>``."""
+
+    auto_reload_on_config_change: bool = Field(
+        default=True, description="reconnect servers when mcp_servers changes on disk"
+    )
+    discovery_concurrency: int = Field(
+        default=4, ge=0, description="servers connecting at once at startup and reload; 0 = all"
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -1064,6 +1116,15 @@ class ConfigModel(BaseModel):
     loops: LoopsSection = Field(
         default_factory=LoopsSection, description="repeating prompts (/loop)"
     )
+    plugins: PluginsSection = Field(
+        default_factory=PluginsSection, description="Python plugins and their hooks"
+    )
+    mcp_servers: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="MCP servers by name: command/args/env (stdio) or url/headers (http, sse); "
+        "secrets only as ${NAME}",
+    )
+    mcp: McpSection = Field(default_factory=McpSection, description="the MCP client")
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 

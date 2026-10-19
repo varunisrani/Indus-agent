@@ -1,0 +1,3 @@
+name: hanging
+version: 0.1.0
+description: Waits in register() until the test lets it go

@@ -337,8 +337,9 @@ def test_waiting_call_past_its_deadline_or_cancelled_never_runs(fake_clock: Fake
         gone = asyncio.create_task(pool.run(ran.append, "cancelled"))
         await until_async(lambda: pool.waiting == 2 and fake_clock.pending == 1)
         fake_clock.advance(1.0)
-        with pytest.raises(DeadlineMissed, match="did not start within 1 s"):
+        with pytest.raises(DeadlineMissed, match="did not start within 1 s") as missed:
             await late
+        assert missed.value.started is False  # it never runs: nothing to count as stuck
         gone.cancel()
         with pytest.raises(asyncio.CancelledError):
             await gone
@@ -355,9 +356,9 @@ def test_waiting_call_past_its_deadline_or_cancelled_never_runs(fake_clock: Fake
     assert ran == ["after"]  # the two calls whose callers gave up never ran
 
 
-def test_named_pools_wait_except_hooks() -> None:
+def test_named_pools_queue_limits() -> None:
     limits = {name: p.queue_limit for name, p in POOLS.items()}
-    assert limits == {"io": 256, "tools": 256, "hooks": 0}
+    assert limits == {"io": 256, "tools": 256, "hooks": 32}
     with pytest.raises(ValueError, match="queue_limit"):
         BlockingPool("bad", 1, queue_limit=-1)
 
@@ -374,8 +375,9 @@ def test_hung_hook_abandoned_without_blocking_a_second_call(fake_clock: FakeCloc
         meanwhile = await hooks.run(lambda: "second", deadline=1.0, clock=fake_clock)
         assert not stuck.done()
         fake_clock.advance(1.0)
-        with pytest.raises(DeadlineMissed):
+        with pytest.raises(DeadlineMissed) as missed:
             await stuck
+        assert missed.value.started is True  # it ran and is still running: abandoned
         after = await hooks.run(lambda: "third", deadline=1.0, clock=fake_clock)
         assert hooks.busy == 1
         return meanwhile, after
@@ -418,7 +420,7 @@ def test_shutdown_never_waits_on_abandoned_work() -> None:
 
 
 def test_named_pools_and_their_sizes() -> None:
-    assert {name: p.workers for name, p in POOLS.items()} == {"io": 8, "tools": 8, "hooks": 2}
+    assert {name: p.workers for name, p in POOLS.items()} == {"io": 8, "tools": 8, "hooks": 8}
     name = asyncio.run(run_blocking(lambda: threading.current_thread().name, pool="hooks"))
     assert name.startswith("indus-hooks-")
     assert asyncio.run(run_blocking(str.upper, "abc")) == "ABC"  # default pool is io

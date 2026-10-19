@@ -1,0 +1,9 @@
+name: good
+version: 1.2.0
+description: A well-behaved sample plugin
+author: {name: Sample Author, url: https://example.invalid}
+license: MIT
+tags: [sample, test]
+provides_tools: [sample_echo]
+provides_hooks: [pre_tool_call, post_tool_call]
+manifest_version: 2

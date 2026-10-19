@@ -744,9 +744,8 @@ def test_d_hanging_sync_hook_abandoned_without_blocking_others(
             task_a = asyncio.ensure_future(
                 run_once(kit_a, "look both up", hooks=seam, on_event=stamped(kit_a, stamps["a"]))
             )
-            # B starts once A's hook hangs and A's sibling call has run (both hook workers
-            # are then back to one stuck, one free; racing the sibling's own hook for the second
-            # worker would be refused: see the decision note).
+            # B starts once A's hook hangs and A's sibling call has run (one hook worker stuck,
+            # the rest free).
             while not (hang.started.is_set() and "fine" in ran):
                 await REAL.sleep(0.001)
             out["b"] = await run_once(
@@ -756,8 +755,8 @@ def test_d_hanging_sync_hook_abandoned_without_blocking_others(
             out["a"] = await task_a
             out["t0"] = t0
             out["stuck_after_a"] = hooks_pool.busy - baseline
-            # Pool bound: a second hung hook takes the last worker; the next hooked call is
-            # refused at once instead of queueing behind them.
+            # Two hung hooks at once: they hold two of the eight hook workers (P13-17); another
+            # session's hooked call still runs at once instead of waiting behind them.
             hang.started.clear()
             task_c = asyncio.ensure_future(
                 run_once(kit_c, "hang again", hooks=seam, on_event=stamped(kit_c, stamps["c"]))
@@ -786,7 +785,7 @@ def test_d_hanging_sync_hook_abandoned_without_blocking_others(
     sibling_s = ran["fine"] - t0
     print(
         f"\nD041 d: hung_call_blocked_s={hung_s:.3f} sibling_ran_s={sibling_s:.3f} "
-        f"other_session_done_s={out['b_done_s']:.3f} refused_call_s={out['d_s']:.3f} "
+        f"other_session_done_s={out['b_done_s']:.3f} third_call_s={out['d_s']:.3f} "
         f"heartbeat_max_gap_ms={beat.max_gap * 1000:.1f} hook_threads={out['threads']}"
     )
     # The hung hook is abandoned at its deadline and its call is blocked (fail closed).
@@ -807,9 +806,8 @@ def test_d_hanging_sync_hook_abandoned_without_blocking_others(
         assert result.final_text == final
         check_alternation(result.rows)
     assert "same answer" in str(next(r for r in b.rows if r.role == "tool").content)
-    # Both hook workers stuck: the next hooked call is refused at once (PoolFull), never queued,
-    # and the pool never grew.
-    refused = next(r for r in d.rows if r.role == "tool")
-    assert "PoolFull" in str(refused.content)
+    # Two hook workers stuck: the next hooked call still runs at once (the pool bound itself is
+    # pinned in tests/unit/foundation/test_blocking.py), and the pool never grew.
+    assert "same answer" in str(next(r for r in d.rows if r.role == "tool").content)
     assert out["d_s"] < HOOK_TIMEOUT_S / 2
     assert out["threads"] <= POOLS["hooks"].workers

@@ -12,6 +12,7 @@ dependencies = [
     "httpx==0.28.1",
     "jsonschema==4.26.0",
     "keyring==25.7.0",
+    "mcp==2.3.0",
     "prompt_toolkit==3.0.53",
     "pydantic==2.13.5",
     "rich==15.0.0",

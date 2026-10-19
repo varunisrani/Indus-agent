@@ -110,6 +110,8 @@ commands:
   memory approve: 2
   memory reject: 2
   memory approval: 2
+  memory setup: 0         # no provider installed: says so and exits 0
+  memory off: 0
   curator: 2              # a group with no default action prints its help
   curator status: 0
   curator run: 0
