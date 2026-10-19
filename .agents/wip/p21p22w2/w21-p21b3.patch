@@ -1,0 +1,3249 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index aa4307f..2c72a26 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -513,7 +513,7 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/contract/backends/test_execution_contract.py::test_cd_moves_the_environment`
+ - **ACC-D5-2** Singularity persistent overlay is recorded and reused after a restart
+   - `tests/unit/backends/test_singularity.py::test_persistent_overlay_recorded_and_reused`
+-  - Review: files surviving a real overlay restart need a real Apptainer (live lane, P21-16)
++  - Review: files surviving a real overlay restart need a real Apptainer: `tests/integration/backends/test_remote_backends_live.py` (opt-in `INDUS_LIVE_APPTAINER=1`; P21-16)
+ - **ACC-D11-1** Environment cache per key with creation lock, idle reaper, per-profile isolation, clean teardown at …
+   - Review: not yet planned (phase TBD)
+ - **ACC-D12-1** Remote file sync: credential files and skills pushed before commands, changed files synced back on …
+@@ -527,6 +527,7 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/backends/docker/test_environment.py::test_daemon_gone_mid_call_degrades_and_next_call_recreates`
+   - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`
+   - `tests/contract/backends/test_docker_ssh_contract.py::test_lost_connection_answers_degraded`
++  - `tests/contract/backends/test_sdk_backends_contract.py::test_lost_vendor_link_answers_degraded`
+ - **ACC-D13-2** SSH unreachable, host key changed or login refused: degraded result with a retry hint, rebuilt next call
+   - `tests/unit/backends/ssh/test_environment.py::test_host_key_change_is_degraded_never_accepted`
+   - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index 1740ab7..b6267c5 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -115,15 +115,17 @@ Checked by `python -m tooling.checks traps`.
+ - **R02.2** Bounded vs full-fidelity capture
+   - `tests/unit/tools/builtin/test_file_ops.py::test_shell_calls_are_never_bounded`
+   - `tests/unit/tools/builtin/test_file_ops.py::test_three_megabyte_round_trip_is_byte_exact`
+-  - Review: bounded foreground capture side is pinned by P05-02 (wave 1)
+   - `tests/unit/backends/test_remote_processes.py::test_poll_feeds_output_and_completion_fires_once`
+   - `tests/unit/tools/builtin/code/test_remote.py::test_two_megabyte_tool_result_arrives_whole`
+   - `tests/unit/backends/test_remote_processes.py::test_large_log_read_intact_across_a_split_character`
+   - `tests/unit/backends/modal/test_exec.py::test_twenty_mib_download_is_not_truncated`
+   - `tests/unit/backends/vercel/test_exec.py::test_download_is_unbounded`
++  - `tests/contract/backends/test_execution_contract.py::test_bounded_capture_cuts_and_keeps_the_full_text`
++  - `tests/contract/backends/test_execution_contract.py::test_unbounded_capture_keeps_everything`
+ - **R02.3** Timeouts that never fire
+   - `tests/contract/backends/test_execution_contract.py::test_deadline_gives_124_and_the_flag`
+   - `tests/unit/backends/docker/test_environment.py::test_deadline_kills_inside_the_container_too`
++  - `tests/contract/backends/test_execution_contract.py::test_interrupt_gives_130`
+ - **R02.4** Floors must precede every bypass
+   - `tests/unit/backends/docker/test_recovery.py::test_unmounted_skips_prompt_but_deny_glob_blocks`
+   - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
+@@ -155,6 +157,7 @@ Checked by `python -m tooling.checks traps`.
+   - Review: the live `/proc/<pid>/cmdline` check runs in the docker lane (`tests/integration/backends/test_docker_live.py`, skipped without a daemon; P11-21)
+   - `tests/unit/backends/test_singularity.py::test_passthrough_values_travel_in_the_client_env`
+   - `tests/unit/backends/test_vendor_env.py::test_sdk_exec_puts_values_in_env_not_text`
++  - `tests/contract/backends/test_sdk_backends_contract.py::test_values_ride_the_sdk_env_parameter_only`
+ - **R02.8** Multiprofile scoping everywhere
+   - `tests/unit/backends/docker/test_environment.py::test_runs_commands_in_a_labelled_container`
+   - `tests/unit/backends/docker/test_reaper.py::test_only_stale_labelled_containers_of_this_profile`
+@@ -162,6 +165,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/backends/test_process_checkpoint.py::test_each_profile_has_its_own_checkpoint`
+   - Review: other areas still to pin (P00-guards)
+   - `tests/unit/backends/test_sandbox_records.py::test_profile_isolation`
++  - `tests/unit/backends/test_task_overrides.py::test_profile_scoping_and_clear`
+ - **R02.9** Approved command killed by a stale interrupt
+   - `tests/unit/safety/approvals/test_human.py::test_stale_interrupt_cleared_once`
+   - Review: the terminal tool calls `clear_stale_interrupt` once before its retry loop (P05-12)
+@@ -169,6 +173,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_not_recorded_with_workdir`
+   - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_not_recorded_without_marker`
+   - `tests/unit/tools/builtin/test_terminal_result.py::test_cwd_is_per_session_and_profile`
++  - `tests/contract/backends/test_execution_contract.py::test_exit_without_marker_keeps_the_cwd`
+ - **R02.11** Foreground refusals that create retry loops
+   - `tests/unit/tools/builtin/test_terminal_plan.py::test_foreground_heartbeat_is_dropped`
+   - `tests/unit/tools/builtin/test_terminal_plan.py::test_trailing_amp_becomes_background`
+@@ -180,6 +185,8 @@ Checked by `python -m tooling.checks traps`.
+ - **R02.13** Flapping availability probes strip tools mid-session
+   - `tests/unit/backends/docker/test_probe.py::test_flake_grace_serves_last_good`
+   - Review: the ssh row has no availability probe; an unreachable host is a per-call degraded result, never a removed tool (P11-09)
++  - `tests/unit/backends/test_remote_probes.py::test_one_flake_after_a_success_serves_last_good_until_confirmed_30s_later`
++  - `tests/unit/backends/test_remote_probes.py::test_a_failure_long_after_the_last_success_is_honoured_at_once`
+ - **R02.14** Stale whole-file overwrite
+   - `tests/unit/tools/builtin/test_write_file.py::test_existing_file_never_read_is_refused`
+   - `tests/unit/tools/builtin/test_write_file.py::test_file_changed_on_disk_after_the_read_is_refused`
+@@ -211,6 +218,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/backends/test_remote_processes.py::test_backend_gone_marks_the_job_lost`
+   - `tests/unit/backends/modal/test_lifecycle.py::test_bad_snapshot_falls_back_to_the_base_image_and_flags_recreated`
+   - `tests/unit/backends/vercel/test_exec.py::test_replaced_sandbox_loses_background_jobs`
++  - `tests/contract/backends/test_sdk_backends_contract.py::test_a_replaced_sandbox_says_so_once`
+ - **R02.20** Docker self-inconsistencies
+   - `tests/unit/backends/docker/test_args.py::test_contradicting_network_is_refused`
+   - `tests/unit/backends/docker/test_args.py::test_snap_compat`
+@@ -251,7 +259,8 @@ Checked by `python -m tooling.checks traps`.
+ - **R02.28** Handler signature drift breaks plugins
+   - Review: not yet planned (P00-guards)
+ - **R02.29** Unscoped probes at boot
+-  - Review: not yet planned (P00-guards)
++  - `tests/unit/backends/test_remote_probes.py::test_an_unscoped_probe_caches_nothing_and_the_first_scoped_call_checks`
++  - `tests/unit/backends/test_remote_probes.py::test_a_check_that_loses_its_scope_is_quiet_and_not_remembered`
+ - **R02.30** SDK backends lie about timeouts
+   - `tests/unit/backends/test_sdk_call.py::test_never_returning_call_hits_the_deadline_and_cancels_once`
+   - `tests/unit/backends/test_sdk_call.py::test_exec_never_retried`
+diff --git a/docs/notes/P21/contract-suite.md b/docs/notes/P21/contract-suite.md
+new file mode 100644
+index 0000000..51f1c3d
+--- /dev/null
++++ b/docs/notes/P21/contract-suite.md
+@@ -0,0 +1,53 @@
++# Task: Contract suite over seven backends + live lane (P21-16) Phase: 21 Owner: P21 slice B3 builder
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tests/tools/` (names of the
++Daytona, Vercel Sandbox, Modal and base-environment tests only, for the edge-case list). Closed
++before writing. Evidence: none.
++
++What it does (own words): the P05 execution contract (snapshot, cwd marker, odd output, timeout
++backstop rc 124 + flag, interrupt rc 130, stdin, bounded vs unbounded capture) already runs over
++local, docker, ssh, singularity and the scripted fake. This task adds the three SDK sandboxes,
++each over its fake SDK (`tests/fakes/backend/fake_*.py`, P21-15) through the real backend modules,
++so the shared cases run unchanged for all seven backends. A second module adds what a sandbox in
++someone's cloud must also keep: per-session values never frozen in the snapshot (R02.1), forwarded
++values only in the SDK's env parameter (R02.7), a replaced sandbox flagged once with
++`environment_recreated` (R02.19), background jobs started, polled and killed inside the sandbox,
++file read/write/patch through the backend's file operations, and a lost vendor link answered as
++`degraded`. A `network`-marked live module runs "echo, write a file, read it back, recreate the
++sandbox, read it again" against each real vendor, and skips cleanly without credentials, the SDK
++extra or the CLI.
++
++Inputs → outputs:
++- `tests/contract/backends/conftest.py` (shared, P21-16 row): `SDK_ROWS`; `contract_entries()`
++  adds the three SDK rows; the rig installs a fake vendor account (`Cloud`) and the fake SDK for
++  the row under test, hands the factory the fake module, the real `VendorSupport`, the profile's
++  real records store and the cloud's temp dir; vendor credentials are built at runtime (never a
++  literal) and merged with any test secrets; the row's workdir lives inside the fake cloud (the
++  fake maps sandbox paths there). New fixture `sdk_backend` (the three rows).
++- `tests/contract/backends/test_sdk_backends_contract.py`: the SDK-only cases above.
++- `tests/integration/backends/test_remote_backends_live.py`: markers `network` (all) and `live`;
++  one test per vendor (Modal, Daytona, Vercel Sandbox, Apptainer); skip reasons name what is
++  missing (`INDUS_LIVE_<VENDOR>=1` opt-in, credentials, extra, CLI).
++
++Edge cases:
++- CI installs no extras: the fakes stand in for the SDK, so the rig's rows carry no probe (the
++  real probe would report the missing extra); the backends never import the SDK when a module is
++  handed in.
++- The fake sandbox runs real bash on this machine: every row's temp dir is the test's own
++  directory, so nothing lands in `/tmp`.
++- The live lane never runs in the default loop (`network` marker deselected) and needs an explicit
++  opt-in variable as well as credentials, since it creates billable sandboxes.
++
++Our design differences / decisions:
++- The live lane's "persist across recreate" uses a persistent sandbox (snapshot / stop-start) and
++  checks the file after a full cleanup and reopen; on Apptainer it uses the persistent overlay.
++- Decision for the lead: the live lane needs `INDUS_LIVE_<VENDOR>=1` besides credentials (a stray
++  token in a developer's environment must not start paid sandboxes).
++
++Tests planned: `uv run pytest tests/contract/backends` green for local, docker, ssh, singularity,
++modal, daytona, vercel_sandbox (and the fake); the live module skips cleanly here.
++
++Compare checklist (after writing):
++- [x] edge cases from the reference names covered: home-relative default cwd (unit tests, B2),
++  staged stdin not in argv (P21-03 unit + contract stdin case), interrupt rc 130, recreated sandbox
++  before a command (contract `environment_recreated`), cleanup idempotent (contract protocol case).
+diff --git a/docs/notes/P21/doctor-setup.md b/docs/notes/P21/doctor-setup.md
+new file mode 100644
+index 0000000..95f36a3
+--- /dev/null
++++ b/docs/notes/P21/doctor-setup.md
+@@ -0,0 +1,82 @@
++# Task: Doctor and setup entries for the cloud backends (P21-13) Phase: 21 Owner: P21 slice B3 builder
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `hermes_cli/doctor_tools.py`
++(`_check_daytona_backend`, `_check_vercel_backend`, `_check_terminal_backend`),
++`hermes_cli/setup_terminal.py` (the backend picker and the per-backend setup steps). Closed before
++writing. Evidence: none.
++
++What it does (own words): `indus doctor` says, for each of the four new backends (singularity,
++modal, daytona, vercel_sandbox), in one line, whether it can run here and if not why; for the
++backend the profile has selected it adds the detail rows (CLI or SDK, credentials present, a
++writable scratch/cache dir, and for Singularity how full the scratch dir is). `indus setup`'s
++terminal step shows every backend with a one-line description and, once one is picked, asks only
++for what that backend needs, storing credentials in the profile's secret store (never in `.env`,
++never printed). Without a terminal, `indus setup --non-interactive --terminal-backend NAME` reads
++the credentials from the environment, stores them and selects the backend.
++
++Inputs → outputs:
++- `indus.cli.doctor.remote_backends`:
++  - check `remote_backends` ("Cloud and container backends", order 105): one finding per backend,
++    id `backend.<name>.ready`; `ok` when the guarded row probe passes; otherwise `info` with the
++    reason for a backend that is not selected, and `info` pointing at the detail rows for the
++    selected one (the detail rows carry the error, so a problem is counted once).
++  - `detail_findings(scope, backend) -> list[Finding]` used by `check_backend` (shared,
++    `cli/doctor/checks.py`) for the four names: `backend.<name>` (CLI path / SDK distribution and
++    version, or the reason naming the extra), `backend.<name>.credentials` (names present, values
++    never shown; missing names and a fix), `backend.<name>.settings` (mode/disk refusals from the
++    backend's own `requirement_reason`, only when credentials are fine), `backend.<name>.scratch`
++    (scratch dir for Singularity, the sync-back cache dir `<home>/cache/sync-back` for the SDK
++    backends: writable, or its nearest existing parent is), `backend.singularity.disk` (usage vs
++    `terminal.disk_warning_gb`: `warn` above, `ok` below).
++- `indus.cli.setup.remote_backends`:
++  - `DESCRIPTIONS` (one line per built-in backend, our words), `label(name)`;
++  - `NEEDS` per backend: the first sign-in set from `vendor_env.REQUIRED_SETS` with prompts
++    (tokens asked as secrets, project/team ids as text);
++  - `configure(ctx, backend) -> None`: the interactive questions after the picker (says whether the
++    SDK extra or CLI is there; asks each missing field; for a field already set asks whether to
++    replace it, default no; blank = skip; stores through the profile `SecretStore`);
++  - `apply_non_interactive(scope, backend, env) -> int`: unknown name → 2; for the SDK backends the
++    first-set names found in the environment are stored; if the backend still cannot sign in the
++    missing names are listed and the run ends 1 without changing `terminal.backend`; otherwise the
++    backend is saved and 0 returned. Output names variables only.
++- shared: `cli/setup/__init__.py` (`--terminal-backend` option), `cli/setup/wizard.py`
++  (`SetupOptions.terminal_backend`; the non-interactive branch calls `apply_non_interactive`),
++  `cli/setup/sections.py` (`terminal_section` labels from `DESCRIPTIONS`, then `configure`),
++  `cli/doctor/checks.py` (`check_backend` hands the four names to `detail_findings`; the module
++  imports `remote_backends` so its check registers), `tests/unit/cli/commands/test_doctor.py`
++  (check order list gains `remote_backends`).
++
++Edge cases:
++- No SecretStore on the scope: the profile's store is opened as `security.secret_store` says
++  (`cli.commands._support.secret_store`), never `.env`.
++- A stored value is never shown; the prompt says "already set (secret store)" or "(environment)".
++- Vercel OIDC token: not asked and not stored by setup (short-lived); it still counts when present
++  in the environment at run time (the backend's alternative sign-in).
++- `--terminal-backend` without `--non-interactive` on a terminal: still never asks (the flag means
++  "set it from the environment"); documented in the help text.
++- Doctor never imports an SDK (package metadata only) and never calls the network.
++
++Our design differences / decisions (for the lead):
++- No automatic install of the SDK extra from setup (the reference installs it); we print the
++  `pip`/`uv` extra to install. Smallest choice; easy to add later.
++- No `.vercel/project.json` lookup for defaults (reference reads the nearest link file); asked
++  plainly instead.
++- The selected backend's summary row is `info` so the same problem is not counted twice in the
++  doctor's "issues left".
++
++Tests planned:
++- `tests/unit/cli/doctor/test_remote_backends.py`: doctor (CliRunner through the app dispatch)
++  per state: ok (extra present via metadata stub, credentials in a fake keychain), missing extra
++  (names the extra), missing token (names the variable, value never printed); singularity CLI
++  found/missing and disk warning; scratch not writable; summary rows for the four backends.
++- `tests/unit/cli/setup/test_remote_backends.py`: interactive setup picks daytona and the key lands
++  in the fake keychain, not `.env`, never in the output; existing key kept by default; vercel asks
++  three fields; non-interactive with env credentials stores and selects; missing env → exit 1 and
++  config unchanged; unknown backend → 2.
++
++Compare checklist (after writing):
++- [x] reference checks credentials by env presence only; ours reads secret store then env (D-16.22).
++- [x] reference offers managed Modal billing in setup; ours has no managed mode (D-16.16).
++- [x] reference writes credentials to `.env`; ours to the secret store (P4).
++- [x] reference shows Singularity only on Linux; ours lists it everywhere and the probe says why it
++  cannot run (CLI not found). Decision for the lead.
+diff --git a/docs/notes/P21/remote-probes.md b/docs/notes/P21/remote-probes.md
+new file mode 100644
+index 0000000..e32c3a2
+--- /dev/null
++++ b/docs/notes/P21/remote-probes.md
+@@ -0,0 +1,73 @@
++# Task: Registration and requirement probes, the rest (P21-12) Phase: 21 Owner: P21 slice B3 builder
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tools/terminal_tool_backends.py`
++(`_create_environment`, `_check_requirements`, `_modal_pre`, `_daytona_post`,
++`terminal_backend_unavailable_reason`), and for the grace rule `tools/registry.py` (the check-fn
++cache). Closed before writing. Evidence: none.
++
++Already landed (B1+B2, lead wiring): the four rows are in `default_entries`, each with a pure probe
++(`singularity_probe`: CLI on PATH; `modal_probe` / `daytona_probe` / `vercel_probe`: the extra's
++distribution in package metadata, then the backend's `requirement_reason`). Not built: the flapping
++guard (R02.13) and the unscoped-probe rule (R02.29). That is this slice.
++
++What it does (own words): a probe answer can wobble for reasons that have nothing to do with the
++backend: a secret store that times out once makes a token look missing, a PATH lookup on a busy
++network home can fail. If the terminal tool disappears on one such wobble the model tells the user
++"there is no terminal". So each of the four rows' probes is wrapped in a guard, kept per profile:
++
++- success → remembered as last-good (time stamp), any failure streak is forgotten;
++- a failure within `FLAP_GRACE_S` (120 s) of the last success serves the last-good answer (None) and
++  starts a failure streak; a warning is logged;
++- a further failure while the streak is younger than `CONFIRM_GAP_S` (30 s) still serves last-good;
++- a failure when the streak is at least 30 s old (two consecutive failures 30 s apart), or with no
++  success in the last 120 s, is honoured: the reason is returned and last-good is dropped, so the
++  next failure is honoured at once and only a new success brings the backend back;
++- a check that raises answers "the <backend> check failed: <type>: <text>", counted as a failure.
++
++Unscoped probes (R02.29): a probe asked with no scope (`None`, e.g. a startup notice in a host that
++has no profile yet) or whose check raises `ScopeUnresolved` logs at debug level, records nothing and
++returns a fixed "not checked yet" reason. Nothing is cached, so the first call with a scope runs the
++check for real (logged once at info as a re-probe).
++
++Inputs → outputs:
++- `GuardedProbe(name, check, *, clock=None, grace_s=FLAP_GRACE_S, confirm_s=CONFIRM_GAP_S)`;
++  `__call__(scope | None) -> str | None` (the row's probe); `last_reason(scope) -> str | None`
++  (what the last honoured or served-through failure said, for `doctor` and the startup notice);
++  `clear()`.
++- `guard_entry(entry) -> BackendEntry` (the same row with its probe wrapped; a row without a probe
++  is returned unchanged); `GUARDED_BACKENDS` = the four names; `guarded_probe(name)` returns the
++  process-wide guard of a row (one per name, so doctor and the registry see the same history).
++- `default_entries` (shared, `registry.py`) wraps the four rows through `guard_entry`.
++
++Edge cases:
++- Two profiles never share a history (keyed by profile home, R02.8).
++- The clock is the scope's clock unless one is injected (tests use a fake clock).
++- A missing extra is a failure like any other; it never flaps in practice, and it names the extra.
++
++Our design differences / decisions:
++- The guard is per backend row and sits under the tool registry's own probe cache (which keeps its
++  60 s grace, P04). Both rules agree on "one flake does not remove the tool"; ours adds the 30 s
++  confirmation the phase asks for. Decision for the lead: the two layers are kept separate (the tool
++  registry's grace covers every tool; this one only the cloud rows).
++- "Two consecutive failures 30 s apart" read as: a failure streak whose first and latest failure
++  are at least 30 s apart; failures closer together are still served last-good while inside the
++  120 s window.
++- Docker keeps its own `Availability` (60 s grace, 30 s cache); not changed here.
++
++Tests planned (`tests/unit/backends/test_remote_probes.py`):
++- probe table per backend (installed/missing extra, credentials present/absent, CLI found or not);
++- grace on a fake clock: ok → fail (served) → fail 10 s later (served) → fail 30 s after the first
++  (honoured) → fail again (honoured) → ok (available);
++- failure more than 120 s after the last success is honoured at once;
++- a raising check is a failure with the exception named;
++- unscoped (None and `ScopeUnresolved`) answers "not checked yet", caches nothing, next scoped call
++  runs the check;
++- profiles are independent;
++- `default_entries` rows for the four backends carry guarded probes; seven built-ins listed.
++
++Compare checklist (after writing):
++- [x] reference keeps one module-level "last reason" for doctor/startup; ours keeps it per profile
++  per row (`last_reason`).
++- [x] reference grace is one 60 s window on the generic check cache; ours adds the 30 s confirmation
++  on the four rows (phase rule), and serves last-good without caching.
++- [x] no network, no SDK import in any probe (unchanged from B1/B2).
+diff --git a/docs/notes/P21/task-overrides.md b/docs/notes/P21/task-overrides.md
+new file mode 100644
+index 0000000..eff1c95
+--- /dev/null
++++ b/docs/notes/P21/task-overrides.md
+@@ -0,0 +1,75 @@
++# Task: Per-task overrides (P21-14) Phase: 21 Owner: P21 slice B3 builder
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `batch_runner.py`
++(`_prepare_container_image`), `tools/terminal_tool.py` (`_resolve_container_task_id`,
++`_get_env_config`, and the override registry next to them). Closed before writing. Evidence: none.
++
++What it does (own words): some work needs one task to run somewhere other than the profile's
++default sandbox: a research dataset row that names a container image or a working directory, or a
++delegated task. A small process-wide registry holds, per profile and task id, an image / backend /
++cwd override. The environment registry consults it for every call: a call whose task id has an
++override, or whose session was bound to such a task, gets its own environment key
++(`task:<task id>`), so it never reuses the default sandbox (02 §3.8 rule 1), and the factory sees
++the override:
++
++| backend | image override becomes |
++|---|---|
++| docker | `terminal.docker_image` for that environment only (config overlay on the scope it is built with) |
++| singularity | `terminal.singularity_image = docker://<image>` (an image that already names a scheme is kept) |
++| modal, daytona | the call override `image` (what their settings already read) |
++| vercel_sandbox | ignored, one warning per process (Vercel picks runtimes, not images) |
++| local, ssh | ignored, one warning per process (they run no image) |
++
++`cwd` becomes the call override `cwd` (all factories read it); `backend` becomes the call override
++`backend` (the registry's `backend_name` reads it).
++
++Inputs → outputs (`src/indus/backends/task_overrides.py`):
++- `TaskOverride(image=None, backend=None, cwd=None)`; `.empty`.
++- `TaskOverrides`: `set(scope, task_id, override)`, `bind(scope, session_id, task_id)` (a session
++  that runs the task: the batch runner's session, a delegated child), `get(scope, task_id)`,
++  `resolve(scope, ident) -> (task_id, TaskOverride) | None` (ident is a task id or a bound session
++  id), `clear(scope, task_id) -> bool` (drops the override and its bindings). Keys are
++  `(profile home, id)` (R02.8). `TASK_OVERRIDES` is the process's registry.
++- `plan(scope, task_id, override) -> TaskPlan(scope, overrides)`: the scope the factory gets
++  (with the config overlay) and the call overrides (always carrying `task` so the registry keys it
++  per task, even when the image was ignored).
++- `register_row(scope, task_id, image, cwd) -> str | None`: the P22 seam's registrar (stores the
++  row's image and cwd; a row with neither registers nothing; returns None, the seam's "no
++  problem").
++- `plan(scope, task_id, override)` takes the task id so the planned call overrides carry it.
++- shared: `backends/registry.py` (`key_for` / `acquire` / `release` resolve registered overrides
++  when the call passes none; the factory gets the planned scope); `research/worker.py`
++  (`ImagePrep.register` defaults to the task-override registrar; `SessionAgentRunner` binds its
++  session to the task id before the first turn, releases the task's environment and clears the
++  override when the conversation ends); `research/batch.py` (the up-front warning about image rows
++  now says they run in their own sandbox); `tests/unit/research/test_worker.py` (the "refused until
++  P21-14" test now checks the override is registered).
++
++Edge cases:
++- Override registered for profile A is invisible to profile B (same task id).
++- An explicit `overrides` mapping on a call wins over the registry.
++- Clearing the task drops the bindings, so a later call of the same session id goes back to its
++  default key.
++- A pinned Docker image (`terminal.docker_image_pinned`) still applies to the override: an override
++  image without a digest is refused by the Docker settings (decision: the pin is a profile rule,
++  a dataset row cannot lift it).
++
++Our design differences / decisions (for the lead):
++- A cwd-only override also gets its own environment key (the phase rule: "overrides produce their
++  own env key"); the reference collapses cwd-only overrides onto the shared sandbox.
++- Docker and Singularity get the image through a config overlay on the scope the factory receives,
++  so their modules did not change.
++- Local and SSH ignore an image with one warning, like Vercel.
++
++Tests planned (`tests/unit/backends/test_task_overrides.py`): mapping table per backend; env key
++differs from the default and is `task:<id>`; bound session resolves to the task key; cleared after
++the task (key back to the session's); profile scoping; explicit overrides win; Vercel/local warn
++once; the factory receives the overlaid image for docker/singularity and `image` for modal/daytona;
++the worker registrar stores the row's image and cwd.
++
++Compare checklist (after writing):
++- [x] reference maps one row image to docker/modal/daytona images and `docker://` for singularity;
++  same here; Vercel ignored with a warning (phase rule).
++- [x] reference clears overrides, cwd record and alias at rollout end; ours clears the override and
++  its session bindings and releases the task environment.
++- [x] reference keys overrides by a routed-profile-qualified id; ours by profile home.
+diff --git a/src/indus/backends/registry.py b/src/indus/backends/registry.py
+index 1184737..54d8ae9 100644
+--- a/src/indus/backends/registry.py
++++ b/src/indus/backends/registry.py
+@@ -6,7 +6,9 @@ cloud backends (P11, P21) only add rows. The backend is chosen by ``terminal.bac
+ call's ``Scope`` config, never by process environment variables (D-16.75).
+ 
+ Keys (``EnvKey``) always start with the profile home, so two profiles never share an
+-environment (R02.8): calls with per-task overrides get their task's own key; a backend whose row
++environment (R02.8): calls with per-task overrides (passed in, or registered in
++``task_overrides.TASK_OVERRIDES`` for the task or the session's bound task, P21-14) get their
++task's own key and their factory the planned scope and overrides; a backend whose row
+ says it is ``profile_scoped`` for the scope (a persistent container, P11) gets one ``profile`` key
+ that a session's release leaves alone; everything else the session's key (or ``default``), and
+ host-local control calls a separate ``host`` key. Creation
+@@ -40,6 +42,7 @@ from indus.backends.contract import (
+     ExecResult,
+ )
+ from indus.backends.local import LOCAL_FLAGS, open_local
++from indus.backends.task_overrides import TASK_OVERRIDES, plan
+ from indus.backends.wait import FOREGROUND
+ from indus.foundation.clock import Clock, SystemClock
+ from indus.foundation.config.schema import default_for
+@@ -159,6 +162,7 @@ SSH_ROW_FLAGS = BackendFlags(
+ 
+ def default_entries() -> list[BackendEntry]:
+     from indus.backends.docker import docker_entry
++    from indus.backends.remote_probes import guard_entry
+     from indus.backends.sdk_entries import sdk_entries
+     from indus.backends.singularity import singularity_entry
+ 
+@@ -166,11 +170,29 @@ def default_entries() -> list[BackendEntry]:
+         BackendEntry("local", _create_local, LOCAL_FLAGS),
+         docker_entry(),
+         BackendEntry("ssh", _create_ssh, SSH_ROW_FLAGS),
+-        singularity_entry(),
+-        *sdk_entries(),
++        # The cloud rows' probes sit behind the flapping guard (P21-12, R02.13 / R02.29).
++        *(guard_entry(entry) for entry in (singularity_entry(), *sdk_entries())),
+     ]
+ 
+ 
++def _resolved(
++    scope: Scope,
++    task_id: str | None,
++    session_id: str | None,
++    overrides: Mapping[str, Any] | None,
++) -> tuple[str | None, Mapping[str, Any] | None, Scope]:
++    """(task id, call overrides, factory scope) for one call. Explicit overrides win; else an
++    override registered for the task, or for the task the session is bound to (P21-14)."""
++    if overrides:
++        return task_id, overrides, scope
++    found = TASK_OVERRIDES.resolve(scope, task_id) or TASK_OVERRIDES.resolve(scope, session_id)
++    if found is None:
++        return task_id, overrides, scope
++    task, override = found
++    planned = plan(scope, task, override)
++    return task, planned.overrides, planned.scope
++
++
+ def _config(scope: Scope, key: str) -> Any:
+     value = scope.config.get(key) if scope.config is not None else None
+     return default_for(key) if value is None else value
+@@ -236,6 +258,7 @@ class EnvironmentRegistry:
+         home = str(scope.home)
+         if host_local:
+             return EnvKey(home, "host", session_id or task_id or "default", "local")
++        task_id, overrides, _ = _resolved(scope, task_id, session_id, overrides)
+         backend = self.backend_name(scope, overrides)
+         if overrides and task_id:
+             return EnvKey(home, "task", task_id, backend)
+@@ -275,6 +298,9 @@ class EnvironmentRegistry:
+                 "this profile's config could not be read, so its terminal settings are unknown; "
+                 "fix config.yaml and try again"
+             )
++        create_scope = scope
++        if not host_local:
++            task_id, overrides, create_scope = _resolved(scope, task_id, session_id, overrides)
+         key = self.key_for(
+             scope,
+             task_id=task_id,
+@@ -299,10 +325,10 @@ class EnvironmentRegistry:
+                     f"{', '.join(self.names()) or 'none'})"
+                 )
+             if entry.probe is not None:
+-                problem = entry.probe(scope)
++                problem = entry.probe(create_scope)
+                 if problem:
+                     raise BackendUnavailable(problem)
+-            request = CreateRequest(scope, key, task_id, session_id, dict(overrides or {}))
++            request = CreateRequest(create_scope, key, task_id, session_id, dict(overrides or {}))
+             try:
+                 env = await entry.factory(request)
+             except ImportError as exc:
+diff --git a/src/indus/backends/remote_probes.py b/src/indus/backends/remote_probes.py
+new file mode 100644
+index 0000000..d1c0fb7
+--- /dev/null
++++ b/src/indus/backends/remote_probes.py
+@@ -0,0 +1,179 @@
++# pyright: strict
++"""Flapping guard and unscoped rule for the cloud backends' probes (P21-12, R02.13, R02.29).
++
++The rows ``singularity``, ``modal``, ``daytona`` and ``vercel_sandbox`` probe without the network
++(CLI on PATH, SDK extra installed, credentials present). Those lookups can still wobble: a secret
++store that times out once makes a token look missing. ``GuardedProbe`` keeps a short history per
++profile so one wobble does not take the terminal away:
++
++* a success is remembered as last-good and ends any failure streak;
++* a failure within ``FLAP_GRACE_S`` of the last success is served as last-good (available) and
++  starts a streak; further failures are served too while the streak is younger than
++  ``CONFIRM_GAP_S``;
++* a failure once the streak is ``CONFIRM_GAP_S`` old, or with no success in ``FLAP_GRACE_S``, is
++  honoured: its reason is returned and last-good is dropped, so only a new success brings the
++  backend back.
++
++A probe asked with no scope (a host with no profile yet), or whose check raises
++``ScopeUnresolved``, logs quietly, records nothing and answers ``UNSCOPED_REASON``; the first call
++with a scope runs the check for real (R02.29).
++"""
++
++from __future__ import annotations
++
++import dataclasses
++import logging
++import threading
++from collections.abc import Callable
++from dataclasses import dataclass
++from typing import TYPE_CHECKING
++
++from indus.foundation.clock import Clock
++from indus.foundation.errors import ScopeUnresolved
++from indus.foundation.scope import Scope
++
++if TYPE_CHECKING:
++    from indus.backends.registry import BackendEntry
++
++__all__ = [
++    "CONFIRM_GAP_S",
++    "FLAP_GRACE_S",
++    "GUARDED_BACKENDS",
++    "UNSCOPED_REASON",
++    "GuardedProbe",
++    "guard_entry",
++    "guarded_probe",
++    "reset_guards",
++]
++
++log = logging.getLogger(__name__)
++
++FLAP_GRACE_S = 120.0
++CONFIRM_GAP_S = 30.0
++GUARDED_BACKENDS = ("singularity", "modal", "daytona", "vercel_sandbox")
++UNSCOPED_REASON = (
++    "not checked yet: no profile is active here; it is checked again on the first turn"
++)
++
++type Check = Callable[[Scope], str | None]
++
++
++@dataclass(slots=True)
++class _History:
++    last_ok: float | None = None
++    streak_from: float | None = None
++    reason: str | None = None
++
++
++class GuardedProbe:
++    """One row's probe with the flapping guard (see the module notes)."""
++
++    def __init__(
++        self,
++        name: str,
++        check: Check,
++        *,
++        clock: Clock | None = None,
++        grace_s: float = FLAP_GRACE_S,
++        confirm_s: float = CONFIRM_GAP_S,
++    ) -> None:
++        self.name = name
++        self.check = check
++        self.clock = clock
++        self.grace_s = grace_s
++        self.confirm_s = confirm_s
++        self._lock = threading.Lock()
++        self._history: dict[str, _History] = {}
++        self._unscoped_seen = False
++
++    def clear(self) -> None:
++        with self._lock:
++            self._history.clear()
++            self._unscoped_seen = False
++
++    def last_reason(self, scope: Scope) -> str | None:
++        """What the latest failure for this profile said (None after a success or none yet)."""
++        with self._lock:
++            history = self._history.get(str(scope.home))
++            return history.reason if history is not None else None
++
++    def _unscoped(self, why: str) -> str:
++        with self._lock:
++            self._unscoped_seen = True
++        log.debug("%s probe not run (%s); checked again on the first scoped turn", self.name, why)
++        return UNSCOPED_REASON
++
++    def __call__(self, scope: Scope | None) -> str | None:
++        if scope is None:
++            return self._unscoped("no profile scope")
++        with self._lock:
++            if self._unscoped_seen:
++                self._unscoped_seen = False
++                log.info("%s probe runs now that a profile scope exists", self.name)
++        clock = self.clock if self.clock is not None else scope.clock
++        try:
++            problem = self.check(scope)
++        except ScopeUnresolved:
++            return self._unscoped("the check lost its profile scope")
++        except Exception as exc:  # a probe answers, never raises
++            problem = f"the {self.name} check failed: {type(exc).__name__}: {exc}"
++        now = clock.monotonic()
++        with self._lock:
++            history = self._history.setdefault(str(scope.home), _History())
++            if problem is None:
++                history.last_ok = now
++                history.streak_from = None
++                history.reason = None
++                return None
++            history.reason = problem
++            recent = history.last_ok is not None and now - history.last_ok < self.grace_s
++            if history.streak_from is None:
++                history.streak_from = now
++            young = now - history.streak_from < self.confirm_s
++            if recent and young:
++                log.warning(
++                    "%s probe failed %.0f s after it passed (%s); serving the last good answer",
++                    self.name,
++                    now - (history.last_ok or now),
++                    problem,
++                )
++                return None
++            history.last_ok = None
++            return problem
++
++
++_GUARDS: dict[str, GuardedProbe] = {}
++_GUARDS_LOCK = threading.Lock()
++
++
++def guarded_probe(name: str, check: Check | None = None) -> GuardedProbe | None:
++    """The process-wide guard of row ``name`` (created around ``check`` on first use)."""
++    with _GUARDS_LOCK:
++        guard = _GUARDS.get(name)
++        if guard is None and check is not None:
++            guard = _GUARDS[name] = GuardedProbe(name, check)
++        return guard
++
++
++def reset_guards() -> None:
++    """Forget every guard's history (tests, and after a config or secret change)."""
++    with _GUARDS_LOCK:
++        guards = list(_GUARDS.values())
++    for guard in guards:
++        guard.clear()
++
++
++def guard_entry(entry: BackendEntry) -> BackendEntry:
++    """``entry`` with its probe behind the process-wide guard of its name (unchanged when the row
++    has no probe or is not one of ``GUARDED_BACKENDS``)."""
++    if (
++        entry.probe is None
++        or entry.name not in GUARDED_BACKENDS
++        or isinstance(entry.probe, GuardedProbe)
++    ):
++        return entry
++    guard = guarded_probe(entry.name, entry.probe)
++    if guard is None:  # pragma: no cover - created just above
++        return entry
++    guard.check = entry.probe
++    return dataclasses.replace(entry, probe=guard)
+diff --git a/src/indus/backends/task_overrides.py b/src/indus/backends/task_overrides.py
+new file mode 100644
+index 0000000..c7fbeac
+--- /dev/null
++++ b/src/indus/backends/task_overrides.py
+@@ -0,0 +1,231 @@
++# pyright: strict
++"""Per-task image / backend / cwd overrides (P21-14).
++
++One task (a research dataset row, a delegated task) can ask for its own sandbox: another container
++image, another backend or another working directory. ``TaskOverrides`` holds those per profile
++home and task id; a session that runs the task is bound to it. The environment registry asks
++``TASK_OVERRIDES`` on every call that names no overrides itself: a call of an overridden task (or
++of a session bound to one) gets its own environment key, ``task:<task id>``, so it never reuses the
++default sandbox, and its factory is handed the override through ``plan``:
++
++* docker: the image as ``terminal.docker_image`` in a config overlay on the factory's scope;
++* singularity: ``terminal.singularity_image`` = ``docker://<image>`` (a ref with a scheme is kept);
++* modal, daytona: the call override ``image``;
++* vercel_sandbox, local, ssh: the image is ignored with one warning per backend and process.
++
++``cwd`` and ``backend`` become call overrides of the same names. Every planned mapping carries
++``task`` so the call is keyed per task even when nothing else is left.
++"""
++
++from __future__ import annotations
++
++import logging
++import threading
++from collections.abc import Mapping
++from dataclasses import dataclass, field
++from typing import Any
++
++from indus.foundation.config.schema import default_for
++from indus.foundation.scope import ConfigSource, Scope
++
++__all__ = [
++    "IMAGE_IN_CALL",
++    "IMAGE_IN_CONFIG",
++    "TASK_OVERRIDES",
++    "LayeredConfig",
++    "TaskOverride",
++    "TaskOverrides",
++    "TaskPlan",
++    "backend_for",
++    "plan",
++    "register_row",
++    "reset_warnings",
++]
++
++log = logging.getLogger(__name__)
++
++TASK_KEY = "task"
++# Backends whose image comes from config (overlaid per task) or from the call override ``image``.
++IMAGE_IN_CONFIG: Mapping[str, str] = {
++    "docker": "terminal.docker_image",
++    "singularity": "terminal.singularity_image",
++}
++IMAGE_IN_CALL = frozenset({"modal", "daytona"})
++
++
++@dataclass(frozen=True, slots=True)
++class TaskOverride:
++    """What one task asks for; None leaves the profile's setting."""
++
++    image: str | None = None
++    backend: str | None = None
++    cwd: str | None = None
++
++    @property
++    def empty(self) -> bool:
++        return not (self.image or self.backend or self.cwd)
++
++
++@dataclass
++class _Table:
++    overrides: dict[tuple[str, str], TaskOverride] = field(
++        default_factory=dict[tuple[str, str], TaskOverride]
++    )
++    sessions: dict[tuple[str, str], str] = field(default_factory=dict[tuple[str, str], str])
++
++
++class TaskOverrides:
++    """Overrides per (profile home, task id) and the sessions bound to a task."""
++
++    def __init__(self) -> None:
++        self._lock = threading.Lock()
++        self._table = _Table()
++
++    def __len__(self) -> int:
++        with self._lock:
++            return len(self._table.overrides)
++
++    def set(self, scope: Scope, task_id: str, override: TaskOverride) -> None:
++        if not task_id:
++            raise ValueError("a task override needs a task id")
++        with self._lock:
++            self._table.overrides[(str(scope.home), task_id)] = override
++
++    def bind(self, scope: Scope, session_id: str, task_id: str) -> None:
++        """Calls of ``session_id`` run as ``task_id`` (until the task is cleared)."""
++        with self._lock:
++            self._table.sessions[(str(scope.home), session_id)] = task_id
++
++    def get(self, scope: Scope, task_id: str) -> TaskOverride | None:
++        with self._lock:
++            return self._table.overrides.get((str(scope.home), task_id))
++
++    def resolve(self, scope: Scope, ident: str | None) -> tuple[str, TaskOverride] | None:
++        """``ident`` as a task id with an override, or as a session bound to one."""
++        if not ident:
++            return None
++        home = str(scope.home)
++        with self._lock:
++            found = self._table.overrides.get((home, ident))
++            if found is not None:
++                return ident, found
++            task = self._table.sessions.get((home, ident))
++            if task is None:
++                return None
++            found = self._table.overrides.get((home, task))
++            return (task, found) if found is not None else None
++
++    def clear(self, scope: Scope, task_id: str) -> bool:
++        """Drop ``task_id``'s override and every session bound to it."""
++        home = str(scope.home)
++        with self._lock:
++            dropped = self._table.overrides.pop((home, task_id), None) is not None
++            for key in [
++                k for k, t in self._table.sessions.items() if k[0] == home and t == task_id
++            ]:
++                del self._table.sessions[key]
++            return dropped
++
++    def reset(self) -> None:
++        with self._lock:
++            self._table = _Table()
++
++
++TASK_OVERRIDES = TaskOverrides()
++
++
++# -- planning -------------------------------------------------------------------------------------
++
++
++class LayeredConfig:
++    """A config view with a few dotted keys answered from ``overlay`` first."""
++
++    def __init__(self, base: ConfigSource | None, overlay: Mapping[str, object]) -> None:
++        self.base = base
++        self.overlay = dict(overlay)
++
++    def get(self, path: str, /) -> object:
++        if path in self.overlay:
++            return self.overlay[path]
++        return self.base.get(path) if self.base is not None else None
++
++    def __getattr__(self, name: str) -> Any:  # e.g. ``failed`` on a config that could not be read
++        if name.startswith("__") or self.base is None:
++            raise AttributeError(name)
++        return getattr(self.base, name)
++
++
++@dataclass(frozen=True, slots=True)
++class TaskPlan:
++    """The scope a factory is built with and the call overrides for one task."""
++
++    scope: Scope
++    overrides: Mapping[str, Any]
++
++
++_warned: set[str] = set()
++_warned_lock = threading.Lock()
++
++
++def reset_warnings() -> None:
++    with _warned_lock:
++        _warned.clear()
++
++
++def _warn_once(backend: str, image: str) -> None:
++    with _warned_lock:
++        if backend in _warned:
++            return
++        _warned.add(backend)
++    log.warning(
++        "the %s backend runs no container image of yours; the per-task image %s is ignored",
++        backend,
++        image,
++    )
++
++
++def backend_for(scope: Scope, override: TaskOverride) -> str:
++    """The backend a task runs on: its own choice, else the profile's ``terminal.backend``."""
++    if override.backend:
++        return override.backend.strip().lower()
++    value = scope.config.get("terminal.backend") if scope.config is not None else None
++    if value is None:
++        value = default_for("terminal.backend")
++    return str(value or "local").strip().lower()
++
++
++def _singularity_ref(image: str) -> str:
++    return image if "://" in image else f"docker://{image}"
++
++
++def plan(scope: Scope, task_id: str, override: TaskOverride) -> TaskPlan:
++    """How ``override`` reaches the factory of ``task_id``'s environment (module notes)."""
++    calls: dict[str, Any] = {TASK_KEY: task_id}
++    if override.backend:
++        calls["backend"] = override.backend.strip().lower()
++    if override.cwd:
++        calls["cwd"] = override.cwd
++    image = (override.image or "").strip()
++    if not image:
++        return TaskPlan(scope, calls)
++    backend = backend_for(scope, override)
++    if backend in IMAGE_IN_CALL:
++        calls["image"] = image
++        return TaskPlan(scope, calls)
++    key = IMAGE_IN_CONFIG.get(backend)
++    if key is None:
++        _warn_once(backend, image)
++        return TaskPlan(scope, calls)
++    value = _singularity_ref(image) if backend == "singularity" else image
++    layered = LayeredConfig(scope.config, {key: value})
++    return TaskPlan(scope.with_config(layered), calls)
++
++
++def register_row(scope: Scope, task_id: str, image: str | None, cwd: str | None) -> str | None:
++    """Register a dataset row's image and cwd for ``task_id`` (the batch runner's seam);
++    returns why it cannot, or None."""
++    override = TaskOverride(image=(image or "").strip() or None, cwd=(cwd or "").strip() or None)
++    if override.empty:
++        return None
++    TASK_OVERRIDES.set(scope, task_id, override)
++    return None
+diff --git a/src/indus/cli/doctor/checks.py b/src/indus/cli/doctor/checks.py
+index b5b2757..e47042d 100644
+--- a/src/indus/cli/doctor/checks.py
++++ b/src/indus/cli/doctor/checks.py
+@@ -19,7 +19,13 @@ from typing import Any, cast
+ 
+ import httpx
+ 
+-from indus.cli.doctor import DoctorContext, Finding, Severity, register
++from indus.cli.doctor import (
++    DoctorContext,
++    Finding,
++    Severity,
++    register,
++    remote_backends,  # registers the cloud backends check (P21-13)
++)
+ from indus.foundation import config as config_mod
+ from indus.foundation import fsio
+ from indus.foundation.config import loader as config_loader
+@@ -497,6 +503,8 @@ def check_backend(ctx: DoctorContext) -> list[Finding]:
+             Finding("backend", cast(Severity, severity), message, fix=fix)
+             for severity, message, fix in setup_findings(scoped)
+         ]
++    if backend in remote_backends.REMOTE_BACKENDS:
++        return remote_backends.detail_findings(ctx.scope, backend)
+     return [
+         Finding(
+             "backend",
+diff --git a/src/indus/cli/doctor/remote_backends.py b/src/indus/cli/doctor/remote_backends.py
+new file mode 100644
+index 0000000..42ee38d
+--- /dev/null
++++ b/src/indus/cli/doctor/remote_backends.py
+@@ -0,0 +1,200 @@
++"""``indus doctor`` rows for the cloud and container backends (P21-13).
++
++One summary line per backend (``singularity``, ``modal``, ``daytona``, ``vercel_sandbox``) says
++whether it can run here, through the same guarded probe the terminal uses. For the backend the
++profile selected, ``check_backend`` adds the detail rows from ``detail_findings``: the CLI or the
++SDK extra, credentials (names only, never values), the backend's own settings refusals, a writable
++scratch or cache dir, and for Singularity how full its scratch dir is.
++
++No SDK is imported (package metadata only) and nothing touches the network.
++"""
++
++from __future__ import annotations
++
++import os
++from pathlib import Path
++
++from indus.cli.doctor import DoctorContext, Finding, register
++from indus.foundation import config as config_mod
++from indus.foundation.scope import Scope
++
++__all__ = ["REMOTE_BACKENDS", "check_remote_backends", "detail_findings", "writable_problem"]
++
++REMOTE_BACKENDS = ("singularity", "modal", "daytona", "vercel_sandbox")
++SETUP_FIX = "run `indus setup terminal` (or store the names with `indus auth`)"
++GIB = 1024**3
++
++
++def _scoped(scope: Scope) -> Scope:
++    return scope.with_config(config_mod.load(scope))
++
++
++def _selected(scope: Scope) -> str:
++    return str(config_mod.load(scope).get("terminal.backend") or "local").strip().lower()
++
++
++def _probe_reason(scope: Scope, backend: str) -> str | None:
++    from indus.backends.registry import default_entries
++
++    for entry in default_entries():
++        if entry.name == backend:
++            return entry.probe(scope) if entry.probe is not None else None
++    return f"no {backend} backend is registered"
++
++
++def writable_problem(path: Path) -> str | None:
++    """Why ``path`` (a directory, created on first use) cannot be written, or None."""
++    if path.exists():
++        if not path.is_dir():
++            return f"{path} is not a directory"
++        return None if os.access(path, os.W_OK | os.X_OK) else f"{path} is not writable"
++    parent = path.parent
++    while not parent.exists() and parent != parent.parent:
++        parent = parent.parent
++    if os.access(parent, os.W_OK | os.X_OK):
++        return None
++    return f"{path} does not exist and {parent} is not writable, so it cannot be created"
++
++
++# -- detail rows ----------------------------------------------------------------------------------
++
++
++def _scratch_row(backend: str, path: Path, what: str) -> Finding:
++    problem = writable_problem(path)
++    if problem is None:
++        return Finding(f"backend.{backend}.scratch", "ok", f"{what}: {path}")
++    return Finding(
++        f"backend.{backend}.scratch",
++        "error",
++        problem,
++        fix=f"make {path} writable or point terminal.scratch_dir somewhere writable",
++    )
++
++
++def _singularity_rows(scope: Scope) -> list[Finding]:
++    from indus.backends.singularity import NOT_FOUND_REASON, dir_usage, find_cli, settings_for
++
++    rows: list[Finding] = []
++    cli = find_cli(scope)
++    if cli is None:
++        rows.append(
++            Finding(
++                "backend.singularity",
++                "error",
++                f"terminal.backend is singularity but {NOT_FOUND_REASON} on PATH",
++                fix="install Apptainer (1.2 or later) or SingularityCE (4.0 or later)",
++            )
++        )
++    else:
++        rows.append(Finding("backend.singularity", "ok", f"container CLI: {cli}"))
++    settings = settings_for(scope)
++    rows.append(_scratch_row("singularity", settings.scratch_dir, "scratch dir"))
++    limit = settings.disk_warning_gb
++    used = dir_usage(settings.scratch_dir) if settings.scratch_dir.is_dir() else 0
++    if limit > 0 and used > limit * GIB:
++        rows.append(
++            Finding(
++                "backend.singularity.disk",
++                "warn",
++                f"the scratch dir uses {used / GIB:.1f} GB, above the {limit:g} GB warning level",
++                fix="remove old overlays or SIF files there, or raise terminal.disk_warning_gb",
++            )
++        )
++    else:
++        rows.append(
++            Finding(
++                "backend.singularity.disk",
++                "ok",
++                f"the scratch dir uses {used / GIB:.1f} GB (warning above {limit:g} GB)",
++            )
++        )
++    return rows
++
++
++def _settings_reason(scope: Scope, backend: str) -> str | None:
++    if backend == "modal":
++        from indus.backends.modal.lifecycle import requirement_reason as modal_reason
++
++        return modal_reason(scope)
++    if backend == "daytona":
++        from indus.backends.daytona import requirement_reason as daytona_reason
++
++        return daytona_reason(scope)
++    from indus.backends.vercel.lifecycle import requirement_reason as vercel_reason
++
++    return vercel_reason(scope)
++
++
++def _sdk_rows(scope: Scope, backend: str) -> list[Finding]:
++    from indus.backends.sdk_entries import extra_missing
++    from indus.backends.sync_back import temp_root
++    from indus.backends.vendor_env import vendor_credentials
++
++    rows: list[Finding] = []
++    missing_extra = extra_missing(backend)
++    if missing_extra is not None:
++        rows.append(
++            Finding(
++                f"backend.{backend}",
++                "error",
++                missing_extra,
++                fix="install the extra named above, then run `indus doctor` again",
++            )
++        )
++    else:
++        rows.append(Finding(f"backend.{backend}", "ok", f"the {backend} SDK is installed"))
++    found = vendor_credentials(scope, backend)
++    reason = found.reason(backend)
++    if reason is None:
++        names = ", ".join(sorted(found.values))
++        rows.append(
++            Finding(
++                f"backend.{backend}.credentials",
++                "ok",
++                f"credentials present: {names} (values not shown)",
++            )
++        )
++        settings = _settings_reason(scope, backend)
++        if settings is not None:
++            rows.append(
++                Finding(
++                    f"backend.{backend}.settings",
++                    "error",
++                    settings,
++                    fix="fix the terminal settings in config.yaml (`indus config`)",
++                )
++            )
++    else:
++        rows.append(Finding(f"backend.{backend}.credentials", "error", reason, fix=SETUP_FIX))
++    rows.append(_scratch_row(backend, temp_root(scope.home), "sync-back cache dir"))
++    return rows
++
++
++def detail_findings(scope: Scope, backend: str) -> list[Finding]:
++    """The detail rows for the selected ``backend`` (one of ``REMOTE_BACKENDS``)."""
++    scoped = _scoped(scope)
++    if backend == "singularity":
++        return _singularity_rows(scoped)
++    return _sdk_rows(scoped, backend)
++
++
++# -- the summary check ----------------------------------------------------------------------------
++
++
++@register("remote_backends", "Cloud and container backends", order=105)
++def check_remote_backends(ctx: DoctorContext) -> list[Finding]:
++    scope = _scoped(ctx.scope)
++    selected = _selected(ctx.scope)
++    rows: list[Finding] = []
++    for backend in REMOTE_BACKENDS:
++        reason = _probe_reason(scope, backend)
++        mark = " (selected)" if backend == selected else ""
++        if reason is None:
++            rows.append(Finding(f"backend.{backend}.ready", "ok", f"{backend}{mark}: can run here"))
++            continue
++        if backend == selected:
++            message = f"{backend}{mark}: cannot run here: {reason} (details under Terminal backend)"
++        else:
++            message = f"{backend}: not available: {reason}"
++        rows.append(Finding(f"backend.{backend}.ready", "info", message))
++    return rows
+diff --git a/src/indus/cli/setup/__init__.py b/src/indus/cli/setup/__init__.py
+index d59b7c8..2f45398 100644
+--- a/src/indus/cli/setup/__init__.py
++++ b/src/indus/cli/setup/__init__.py
+@@ -30,9 +30,22 @@ __all__ = ["setup_command"]
+ @click.option(
+     "--quick", is_flag=True, help="On a set-up install, ask only about what is still missing."
+ )
++@click.option(
++    "--terminal-backend",
++    "terminal_backend",
++    metavar="NAME",
++    default=None,
++    help="Select this terminal backend without asking; its credentials are read from the "
++    "environment and kept in the secret store.",
++)
+ @click.pass_context
+ def setup_command(
+-    ctx: click.Context, section: str | None, non_interactive: bool, reset: bool, quick: bool
++    ctx: click.Context,
++    section: str | None,
++    non_interactive: bool,
++    reset: bool,
++    quick: bool,
++    terminal_backend: str | None,
+ ) -> int:
+     from indus.cli.args import CliState
+     from indus.cli.setup.wizard import SetupOptions, run_setup
+@@ -41,6 +54,10 @@ def setup_command(
+     if state is None:
+         raise click.UsageError("setup was started without its process state")
+     options = SetupOptions(
+-        section=section, non_interactive=non_interactive, reset=reset, quick=quick
++        section=section,
++        non_interactive=non_interactive,
++        reset=reset,
++        quick=quick,
++        terminal_backend=terminal_backend,
+     )
+     return run_setup(state, options)
+diff --git a/src/indus/cli/setup/remote_backends.py b/src/indus/cli/setup/remote_backends.py
+new file mode 100644
+index 0000000..ca88ceb
+--- /dev/null
++++ b/src/indus/cli/setup/remote_backends.py
+@@ -0,0 +1,176 @@
++"""The terminal step's backend list and the questions each cloud backend needs (P21-13).
++
++``DESCRIPTIONS`` gives every built-in backend a one-line description for the picker. After the
++pick, ``configure`` asks only what that backend needs: the Modal token pair, the Daytona API key,
++or the Vercel token with its project and team ids. Answers go to the profile's secret store (the
++OS keychain or its owner-only file), never to ``.env``, and are never printed; a field that is
++already set is kept unless the user asks to replace it.
++
++Without a terminal, ``apply_non_interactive`` takes the same names from the environment
++(``indus setup --non-interactive --terminal-backend NAME``).
++"""
++
++from __future__ import annotations
++
++from collections.abc import Mapping
++from dataclasses import dataclass
++from typing import TYPE_CHECKING
++
++import click
++
++from indus.cli.prompts import ask_secret, ask_text, ask_yes_no
++
++if TYPE_CHECKING:
++    from indus.cli.setup.sections import SetupContext
++    from indus.foundation.scope import Scope
++    from indus.foundation.secrets import SecretStore
++
++__all__ = [
++    "DESCRIPTIONS",
++    "NEEDS",
++    "Need",
++    "apply_non_interactive",
++    "configure",
++    "label",
++]
++
++DESCRIPTIONS: Mapping[str, str] = {
++    "local": "on this machine, in your own shell",
++    "docker": "in a container on this machine (Docker or Podman)",
++    "ssh": "on another machine you reach over SSH",
++    "singularity": "in an Apptainer/SingularityCE instance (HPC clusters, no root daemon)",
++    "modal": "in a Modal cloud sandbox, billed to your own Modal account",
++    "daytona": "in a Daytona cloud sandbox that keeps its files when stopped",
++    "vercel_sandbox": "in a Vercel cloud microVM; files kept through snapshots",
++}
++
++
++@dataclass(frozen=True, slots=True)
++class Need:
++    """One value a backend needs: its variable name, the question, whether it is a secret."""
++
++    name: str
++    question: str
++    secret: bool = True
++
++
++# The first sign-in set of each backend (``vendor_env.REQUIRED_SETS``), with our questions. The
++# Vercel OIDC token is short-lived, so setup never stores it.
++NEEDS: Mapping[str, tuple[Need, ...]] = {
++    "modal": (
++        Need("MODAL_TOKEN_ID", "Modal token id"),
++        Need("MODAL_TOKEN_SECRET", "Modal token secret"),
++    ),
++    "daytona": (Need("DAYTONA_API_KEY", "Daytona API key"),),
++    "vercel_sandbox": (
++        Need("VERCEL_TOKEN", "Vercel access token"),
++        Need("VERCEL_PROJECT_ID", "Vercel project id", secret=False),
++        Need("VERCEL_TEAM_ID", "Vercel team id", secret=False),
++    ),
++}
++
++
++def label(name: str) -> str:
++    """The picker row for backend ``name``."""
++    text = DESCRIPTIONS.get(name)
++    return f"{name} — {text}" if text else name
++
++
++def _store(scope: Scope) -> SecretStore:
++    from indus.cli.commands._support import secret_store
++
++    return secret_store(scope)
++
++
++def _where(store: SecretStore) -> str:
++    return "the OS keychain" if store.backend_name == "keychain" else "the profile's secret file"
++
++
++def _stored(store: SecretStore, name: str) -> bool:
++    try:
++        return bool(store.get(name))
++    except Exception:
++        return False
++
++
++def _extra_line(backend: str) -> str | None:
++    from indus.backends.sdk_entries import extra_missing
++
++    problem = extra_missing(backend)
++    if problem is None:
++        return None
++    return f"{problem}; the backend stays unavailable until it is installed."
++
++
++def configure(ctx: SetupContext, backend: str) -> None:
++    """Ask what ``backend`` needs and store it (nothing to ask for local, docker and ssh)."""
++    say = ctx.io.say
++    if backend == "singularity":
++        from indus.backends.singularity import NOT_FOUND_REASON, find_cli
++
++        found = find_cli(ctx.scope)
++        say(f"Container CLI: {found}" if found else f"{NOT_FOUND_REASON} on PATH yet.")
++        return
++    needs = NEEDS.get(backend)
++    if not needs:
++        return
++    missing = _extra_line(backend)
++    if missing is not None:
++        say(missing)
++    store = _store(ctx.scope)
++    say(f"Credentials are kept in {_where(store)}; they are never written to .env or shown.")
++    for need in needs:
++        if _stored(store, need.name):
++            if not ask_yes_no(ctx.io, f"{need.name} is already stored. Replace it?", False):
++                continue
++        elif ctx.scope.env.get(need.name):
++            say(f"{need.name} is set in the environment; storing a value here takes precedence.")
++        value = (
++            ask_secret(ctx.io, need.question) if need.secret else ask_text(ctx.io, need.question)
++        )
++        value = value.strip()
++        if not value:
++            say(f"{need.name}: skipped.")
++            continue
++        store.set(need.name, value)
++        say(f"{need.name}: saved.")
++
++
++def apply_non_interactive(scope: Scope, backend: str, env: Mapping[str, str]) -> int:
++    """Select ``backend`` with credentials from ``env``; returns the exit code (see the notes)."""
++    from indus.backends.registry import default_entries
++    from indus.foundation import config
++
++    names = [entry.name for entry in default_entries()]
++    chosen = backend.strip().lower()
++    if chosen not in names:
++        click.echo(
++            f"indus setup: there is no terminal backend called {backend!r} "
++            f"(available: {', '.join(names)}).",
++            err=True,
++        )
++        return 2
++    needs = NEEDS.get(chosen, ())
++    if needs:
++        from indus.backends.vendor_env import vendor_credentials
++
++        store = _store(scope)
++        for need in needs:
++            value = (env.get(need.name) or "").strip()
++            if value:
++                store.set(need.name, value)
++                click.echo(f"Stored {need.name} from the environment in {_where(store)}.")
++        found = vendor_credentials(scope.with_secrets(store).with_env(scope.env), chosen)
++        if found.missing:
++            click.echo(
++                f"indus setup: the {chosen} backend still needs {', '.join(found.missing)}; "
++                "set them in the environment and run this again. terminal.backend is unchanged.",
++                err=True,
++            )
++            return 1
++        missing = _extra_line(chosen)
++        if missing is not None:
++            click.echo(missing)
++    config.save(scope, {"terminal": {"backend": chosen}})
++    click.echo(f"Commands run on: {chosen}. Check it with `indus doctor`.")
++    return 0
+diff --git a/src/indus/cli/setup/sections.py b/src/indus/cli/setup/sections.py
+index b2127e3..16e7337 100644
+--- a/src/indus/cli/setup/sections.py
++++ b/src/indus/cli/setup/sections.py
+@@ -138,9 +138,11 @@ def terminal_section(ctx: SetupContext) -> None:
+     names = [*ready, *(n for n in PLANNED_BACKENDS if n not in ready)]
+ 
+     def label(name: str) -> str:
++        from indus.cli.setup.remote_backends import label as described
++
+         if name not in ready:
+             return f"{name} (not available yet; arrives in a later release)"
+-        return f"{name} (on this machine)" if name == "local" else name
++        return described(name)
+ 
+     labels = [label(name) for name in names]
+     default = names.index(current) if current in names else 0
+@@ -148,6 +150,10 @@ def terminal_section(ctx: SetupContext) -> None:
+     if chosen not in ready:
+         ctx.io.say(f"The {chosen} backend is not available in this version; commands stay local.")
+         chosen = "local" if current not in ready else current
++    if chosen in ready:
++        from indus.cli.setup.remote_backends import configure
++
++        configure(ctx, chosen)  # asks only what this backend needs (P21-13)
+     if chosen != current:
+         _save(ctx.scope, {"terminal": {"backend": chosen}})
+     ctx.io.say(f"Commands run on: {chosen}.")
+diff --git a/src/indus/cli/setup/wizard.py b/src/indus/cli/setup/wizard.py
+index be8ccff..4094bee 100644
+--- a/src/indus/cli/setup/wizard.py
++++ b/src/indus/cli/setup/wizard.py
+@@ -68,6 +68,7 @@ class SetupOptions:
+     non_interactive: bool = False
+     reset: bool = False
+     quick: bool = False
++    terminal_backend: str | None = None  # select it from env credentials, never asking (P21-13)
+ 
+ 
+ @dataclass
+@@ -189,6 +190,10 @@ def run_setup(state: CliState, options: SetupOptions, *, deps: SetupDeps | None
+     except IndusError as exc:
+         _err(f"indus setup: {exc.message}")
+         return 1
++    if options.terminal_backend is not None:
++        from indus.cli.setup.remote_backends import apply_non_interactive
++
++        return apply_non_interactive(scope, options.terminal_backend, scope.env)
+     io = deps.io or Interactive.for_terminal(
+         stdin_isatty=state.stdin_isatty,
+         stdout_isatty=state.stdout_isatty,
+diff --git a/src/indus/research/batch.py b/src/indus/research/batch.py
+index 01ebfca..b608850 100644
+--- a/src/indus/research/batch.py
++++ b/src/indus/research/batch.py
+@@ -362,8 +362,8 @@ class BatchRunner:
+         images = sum(1 for _, row in left if row.image)
+         if images:
+             self.warn(
+-                f"{images} prompt(s) name a container image; they fail until per-task backend "
+-                "overrides exist (P21-14)"
++                f"{images} prompt(s) name a container image; each runs in its own sandbox "
++                "(backends without images ignore it with a warning)"
+             )
+         skipped = len(dataset.rows) - len(left)
+         self.out(
+diff --git a/src/indus/research/worker.py b/src/indus/research/worker.py
+index 3d8d508..d9dc924 100644
+--- a/src/indus/research/worker.py
++++ b/src/indus/research/worker.py
+@@ -4,9 +4,11 @@ A pool process runs whole batches, one prompt after another. For each prompt not
+ 
+ 1. a row naming a container image, with ``terminal.backend: docker``, has its image checked
+    locally (10 s) and pulled when absent (600 s) **before any model call**; a failed pull is a
+-   failure result with the first 500 characters of the error. The per-task override (task id
+-   ``task_<index>``) then goes through ``register_image``; per-task backend overrides (P21-14) do
+-   not exist yet, so the default hook refuses and image rows fail without a model call;
++   failure result with the first 500 characters of the error. The row's image and cwd are then
++   registered as the per-task override of task ``task_<index>`` (P21-14,
++   ``backends.task_overrides``): the conversation's session is bound to that task, so its
++   terminal and file tools get their own sandbox; the task's environment is released and the
++   override cleared when the prompt ends;
+ 2. its toolsets are sampled from the distribution with the prompt's own RNG (P22-02);
+ 3. a fresh in-process agent runs one conversation (``SessionAgentRunner``): a ``SessionService``
+    over a ``MemoryStore`` (nothing lands in the profile's session store), built-in tools only (no
+@@ -41,6 +43,7 @@ from datetime import UTC
+ from pathlib import Path
+ from typing import Any, Literal, Protocol
+ 
++from indus.backends.task_overrides import TASK_OVERRIDES, register_row
+ from indus.core.agent import Agent, AgentOptions
+ from indus.core.events import EventSink
+ from indus.core.model_call import ModelCaller, OnEvent, OnWait
+@@ -110,10 +113,7 @@ PARTIAL_EXITS = frozenset(
+         ExitReason.GUARDRAIL_HALT,
+     }
+ )
+-NO_IMAGE_OVERRIDES = (
+-    "per-task container images need per-task backend overrides (P21-14), which this build does "
+-    "not have yet"
+-)
++NO_IMAGE_OVERRIDES = "per-task container images are turned off for this run"
+ 
+ type Out = Callable[[str], None]
+ 
+@@ -334,6 +334,7 @@ class SessionAgentRunner:
+         session_id: str | None = None
+         try:
+             session_id = (await service.create()).session_id
++            TASK_OVERRIDES.bind(self.scope, session_id, task_id)  # its overrides, if any (P21-14)
+             ticket = await service.submit(session_id, prompt)
+             result = await service.wait(session_id, ticket.turn_id)
+             current = service.current_id(session_id)
+@@ -403,11 +404,12 @@ def _command_runner(scope: Scope) -> Command:
+ 
+ @dataclass
+ class ImagePrep:
+-    """Gets a row's container image ready before any model call (see the module notes)."""
++    """Gets a row's container image ready before any model call (see the module notes).
++    ``register`` replaces the per-task override registrar (``refuse_images`` refuses image rows)."""
+ 
+     scope: Scope
+     command: Command | None = None
+-    register: ImageRegistrar = refuse_images
++    register: ImageRegistrar | None = None
+ 
+     def backend(self) -> str:
+         config = self.scope.config
+@@ -416,9 +418,9 @@ class ImagePrep:
+ 
+     async def __call__(self, row: DatasetRow, task_id: str) -> str | None:
+         image = row.image
+-        if not image:
++        if not image and not row.cwd:
+             return None
+-        if self.backend() == DOCKER_BACKEND:
++        if image and self.backend() == DOCKER_BACKEND:
+             command = self.command or _command_runner(self.scope)
+             code, _ = await command(["docker", "image", "inspect", image], PROBE_TIMEOUT_S)
+             if code != 0:
+@@ -426,7 +428,9 @@ class ImagePrep:
+                 if code != 0:
+                     preview = error.strip()[:ERROR_PREVIEW]
+                     return f"container image {image} is not available: {preview}"
+-        return await self.register(task_id, row)
++        if self.register is not None:
++            return await self.register(task_id, row)
++        return register_row(self.scope, task_id, image, row.cwd)
+ 
+ 
+ # -- one prompt, one batch -------------------------------------------------------------------------
+@@ -477,6 +481,8 @@ async def run_prompt(
+     except Exception as exc:
+         log.debug("prompt %s failed", index, exc_info=True)
+         return PromptResult(index, "failed", f"{type(exc).__name__}: {exc}")
++    finally:
++        TASK_OVERRIDES.clear(scope, task_id)  # the runner released the task's environment
+     reason = conversation.exit_reason
+     if reason not in COMPLETE_EXITS and reason not in PARTIAL_EXITS:
+         detail = f" ({conversation.detail})" if conversation.detail else ""
+diff --git a/tests/contract/backends/conftest.py b/tests/contract/backends/conftest.py
+index 02133e8..87c20b1 100644
+--- a/tests/contract/backends/conftest.py
++++ b/tests/contract/backends/conftest.py
+@@ -6,9 +6,13 @@ and ``scp`` clients (``tests/fakes/backend/ssh_cli.py``) and the scripted fake b
+ in ``test_execution_contract.py`` runs against each of them unchanged; the cases that only make
+ sense for a backend that is not this machine are in ``test_docker_ssh_contract.py``. Singularity
+ runs over the fake ``apptainer`` CLI (``tests/fakes/backend/fake_apptainer.py``) in the shared and
+-shell rows (P21-04); the cloud sandboxes add their rows here (P21-16). The same cases against a
+-real Docker daemon and a real sshd are the live lanes in ``tests/integration/backends/`` (markers
+-``docker`` and ``network``).
++shell rows (P21-04). The cloud sandboxes (``modal``, ``daytona``, ``vercel_sandbox``) run through
++their real backend modules over the fake SDKs (``tests/fakes/backend/fake_*.py``) and one fake
++vendor account (``sdk_kit.Cloud``) per test (P21-16); their own cases are in
++``test_sdk_backends_contract.py``. The rig's SDK rows carry no probe: the fakes stand for the SDK
++extras, which CI does not install. The same cases against a real Docker daemon, a real sshd and
++the real vendors are the live lanes in ``tests/integration/backends/`` (markers ``docker`` and
++``network``).
+ 
+ The fake clients run "container" and "remote" commands on this machine, so each test points the
+ Docker sandbox temp dir and the SSH remote temp dir at its own directory: nothing lands in the
+@@ -45,6 +49,7 @@ from tests.fakes.agent import DictConfig
+ from tests.fakes.backend.docker_cli import FakeDocker
+ from tests.fakes.backend.environment import FakeEnvironment, Rule
+ from tests.fakes.backend.fake_apptainer import FakeApptainer
++from tests.fakes.backend.sdk_kit import Cloud
+ from tests.fakes.backend.ssh_cli import FakeSsh, install, redirect_remote_tmp
+ from tests.fakes.terminal import FakeSecrets
+ 
+@@ -58,7 +63,25 @@ DOCKER_IMAGE = "registry.test/indus-sandbox:contract"
+ SSH_HOST = "box.test"
+ SSH_USER = "dev"
+ REMOTE_ROWS = ("docker", "ssh")
+-SHELL_ROWS = ("local", *REMOTE_ROWS, "singularity")
++SDK_ROWS = ("modal", "daytona", "vercel_sandbox")
++SHELL_ROWS = ("local", *REMOTE_ROWS, "singularity", *SDK_ROWS)
++RECORD_KINDS = {"modal": "modal", "vercel_sandbox": "vercel"}
++
++
++def vendor_credentials(name: str) -> dict[str, str]:
++    """Made-up credentials a fake SDK accepts (built at run time, never a literal)."""
++    salt = os.urandom(4).hex()
++    if name == "modal":
++        return {"MODAL_TOKEN_ID": "id-" + salt, "MODAL_TOKEN_SECRET": "sec-" + salt}
++    if name == "daytona":
++        return {"DAYTONA_API_KEY": "dk-" + salt}
++    if name == "vercel_sandbox":
++        return {
++            "VERCEL_TOKEN": "vt-" + salt,
++            "VERCEL_PROJECT_ID": "prj_" + salt,
++            "VERCEL_TEAM_ID": "team_" + salt,
++        }
++    return {}
+ 
+ 
+ async def _create_fake(request: CreateRequest) -> Environment:
+@@ -83,6 +106,9 @@ class Rig:
+     ssh: FakeSsh | None = None
+     apptainer: FakeApptainer | None = None
+     runtime_dir: str | None = None
++    cloud: Cloud | None = None
++    sdk: Any = None  # the fake SDK of the row under test (FakeModal, FakeDaytona, FakeVercel)
++    credentials: dict[str, str] = field(default_factory=lambda: {})
+     opened: list[Environment] = field(default_factory=lambda: [])
+ 
+     def entries(self) -> list[BackendEntry]:
+@@ -91,10 +117,56 @@ class Rig:
+         for entry in contract_entries():
+             if entry.name == "docker":
+                 rows.append(dataclasses.replace(entry, factory=self._create_docker))
++            elif entry.name in SDK_ROWS:
++                rows.append(dataclasses.replace(entry, factory=self._create_sdk, probe=None))
+             else:
+                 rows.append(entry)
+         return rows
+ 
++    @property
++    def sandbox_tmp(self) -> str:
++        assert self.cloud is not None
++        return str(self.cloud.root / "tmp")
++
++    async def _create_sdk(self, request: CreateRequest) -> Environment:
++        from indus.backends.sdk_entries import task_key_for
++        from indus.backends.sdk_ports import ProfileRecords, VendorSupport
++
++        assert self.sdk is not None, "an SDK row needs its fake SDK"
++        scope = request.scope
++        common: dict[str, Any] = {
++            "support": VendorSupport(),
++            "session_id": request.session_id,
++            "task_key": task_key_for(request),
++            "overrides": request.overrides,
++            "temp_dir": self.sandbox_tmp,
++        }
++        name = request.key.backend
++        if name == "modal":
++            from indus.backends.modal.exec import open_modal
++
++            env: Environment = await open_modal(
++                scope,
++                records=ProfileRecords.for_scope(scope, RECORD_KINDS[name]),
++                sdk=self.sdk.module,
++                **common,
++            )
++        elif name == "daytona":
++            from indus.backends.daytona import open_daytona
++
++            env = await open_daytona(scope, sdk=self.sdk.module, **common)
++        else:
++            from indus.backends.vercel.exec import open_vercel
++
++            env = await open_vercel(
++                scope,
++                records=ProfileRecords.for_scope(scope, RECORD_KINDS[name]),
++                sdk=self.sdk.sync_module,
++                **common,
++            )
++        self.opened.append(env)
++        return env
++
+     async def _create_docker(self, request: CreateRequest) -> Environment:
+         from indus.backends.docker.environment import open_docker
+ 
+@@ -108,11 +180,17 @@ class Rig:
+ 
+ def contract_entries() -> list[BackendEntry]:
+     """Every backend the contract suite covers (the registry's rows plus the fake)."""
++    from indus.backends.sdk_entries import sdk_entries
+     from indus.backends.singularity import singularity_entry
+ 
+     fake = FakeEnvironment()
+     rows = [e for e in default_entries() if e.name in ("local", *REMOTE_ROWS)]
+-    return [*rows, singularity_entry(), BackendEntry("fake", _create_fake, fake.flags)]
++    return [
++        *rows,
++        singularity_entry(),
++        *sdk_entries(),
++        BackendEntry("fake", _create_fake, fake.flags),
++    ]
+ 
+ 
+ BACKENDS = [entry.name for entry in contract_entries()]
+@@ -171,6 +249,9 @@ def _row_scope(
+             backend="singularity", singularity_image=str(image), container_persistent=False
+         )
+         overlay["PATH"] = rig.apptainer.path_env(path)
++    elif name in SDK_ROWS:
++        settings.update(backend=name, container_persistent=False, docker_image=DOCKER_IMAGE)
++        secrets = {**rig.credentials, **(secrets or {})}
+     settings.update(terminal)
+     scope = base.with_config(DictConfig({"terminal": settings}))
+     if overlay:
+@@ -208,17 +289,39 @@ def _install_row(name: str, root: Path, monkeypatch: pytest.MonkeyPatch) -> tupl
+         rig.apptainer = FakeApptainer(root / "fake-apptainer")
+         rig.apptainer.install()
+         (rig.apptainer.root / "sandbox.sif").write_text("SIF\n", encoding="utf-8")
++    elif name in SDK_ROWS:
++        rig.cloud = Cloud(root / "cloud")
++        rig.credentials = vendor_credentials(name)
++        # A new sandbox starts from its image's files: the image holds the workdir and ``sub``.
++        keep = {str(rig.cloud.root / "work" / "sub" / ".keep"): b""}
++        rig.cloud.images[DOCKER_IMAGE] = keep
++        rig.cloud.images[""] = keep  # Vercel's default image
++        if name == "modal":
++            from tests.fakes.backend.fake_modal import FakeModal
++
++            rig.sdk = FakeModal(rig.cloud)
++        elif name == "daytona":
++            from tests.fakes.backend.fake_daytona import FakeDaytona
++
++            rig.sdk = FakeDaytona(rig.cloud)
++        else:
++            from tests.fakes.backend.fake_vercel import FakeVercel
++
++            rig.sdk = FakeVercel(rig.cloud, workspace=str(rig.cloud.root / "workspace"))
+     return rig, cleanup
+ 
+ 
+ def _make_backend(
+     name: str, scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+ ) -> Iterator[Backend]:
+-    if name in (*REMOTE_ROWS, "singularity") and shutil.which("bash") is None:
+-        pytest.skip("the fake docker, ssh and apptainer clients run commands with bash")
+-    work = tmp_path / "work"
+-    (work / "sub").mkdir(parents=True)
++    if name in (*REMOTE_ROWS, "singularity", *SDK_ROWS) and shutil.which("bash") is None:
++        pytest.skip("the fake docker, ssh, apptainer and SDK sandboxes run commands with bash")
++    if name in SDK_ROWS and shutil.which("timeout") is None:
++        pytest.skip("the SDK sandboxes wrap every command in the timeout guard")
+     rig, cleanup = _install_row(name, tmp_path / "rig", monkeypatch)
++    # A fake cloud maps only paths inside its own root as they are; the workdir lives there.
++    work = rig.cloud.root / "work" if rig.cloud is not None else tmp_path / "work"
++    (work / "sub").mkdir(parents=True)
+     FOREGROUND.reset_for_tests()
+     backend = Backend(name, scope, os.path.realpath(work), rig, base=scope)
+     backend.configure()
+@@ -231,6 +334,8 @@ def _make_backend(
+ 
+             probe.clear_caches()
+             reaper.reset_for_tests()
++        if rig.cloud is not None:
++            rig.cloud.release()
+         for directory in cleanup:
+             shutil.rmtree(directory, ignore_errors=True)
+ 
+@@ -265,3 +370,14 @@ def remote_backend(
+ ) -> Iterator[Backend]:
+     """The rows that are not this machine."""
+     yield from _make_backend(str(request.param), scope, tmp_path, monkeypatch)
++
++
++@pytest.fixture(params=list(SDK_ROWS))
++def sdk_backend(
++    request: pytest.FixtureRequest,
++    scope: Scope,
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> Iterator[Backend]:
++    """The cloud sandbox rows (over their fake SDKs)."""
++    yield from _make_backend(str(request.param), scope, tmp_path, monkeypatch)
+diff --git a/tests/contract/backends/test_sdk_backends_contract.py b/tests/contract/backends/test_sdk_backends_contract.py
+new file mode 100644
+index 0000000..24eb196
+--- /dev/null
++++ b/tests/contract/backends/test_sdk_backends_contract.py
+@@ -0,0 +1,181 @@
++"""Contract cases for the cloud sandboxes (P21-16): modal, daytona, vercel_sandbox.
++
++The shared cases (output, marker, cwd, odd output, deadline 124, interrupt 130, stdin, bounded vs
++unbounded capture) run for these rows in ``test_execution_contract.py``, and the snapshot rule
++(R02.1) in ``test_docker_ssh_contract.py``. These add what a sandbox in someone's cloud must also
++keep, each over the row's fake SDK: forwarded values only in the SDK's env parameter (R02.7), a
++sandbox replaced at open flagged once (R02.19; Daytona restarts a stopped sandbox with its files
++instead), background jobs started, polled and killed inside the sandbox, file write/read/patch
++through the backend, and a lost vendor link answered as ``degraded``.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import os
++from typing import Any
++
++from indus.backends.contract import ExecResult
++from indus.backends.processes import ProcessRecord, ProcessRegistry, SpawnRequest
++from indus.backends.registry import BackendStatus
++from indus.backends.remote_processes import RemoteJob
++from indus.backends.sandbox_records import SandboxRecords
++from indus.foundation.clock import SystemClock
++from indus.tools.builtin.patch import patch
++from indus.tools.builtin.read_file import read_file
++from indus.tools.builtin.write_file import write_file
++from tests.contract.backends.conftest import RECORD_KINDS, Backend
++from tests.fakes.terminal import forge_token
++
++NAME = "CONTRACT_TOKEN"
++REAL = SystemClock()
++TASK = "contract"  # the task id ``Backend.open`` acquires with
++EXEC_METHOD = {
++    "modal": "Sandbox.exec",
++    "daytona": "Process.exec",
++    "vercel_sandbox": "Sandbox.create_process",
++}
++
++
++def test_values_ride_the_sdk_env_parameter_only(sdk_backend: Backend) -> None:
++    value = forge_token()
++    sdk_backend.configure(env_passthrough=[NAME], secrets={NAME: value})
++
++    async def go() -> ExecResult:
++        async with sdk_backend.open() as env:
++            return await env.execute(f'printf %s "${NAME}"')
++
++    result = asyncio.run(go())
++    assert result.output == value
++    cloud = sdk_backend.rig.cloud
++    assert cloud is not None
++    calls = cloud.calls_of(EXEC_METHOD[sdk_backend.name])
++    assert calls, "the fake SDK recorded no exec"
++    assert not any(value in repr(call.args) for call in calls)  # never in the command (R02.7)
++    assert any(value in repr(call.kwargs.get("env")) for call in calls)  # only in env=
++    assert not any(value in " ".join(argv) for argv in cloud.ran)
++
++
++def test_a_replaced_sandbox_says_so_once(sdk_backend: Backend) -> None:
++    sdk_backend.configure(container_persistent=True)
++    kind = RECORD_KINDS.get(sdk_backend.name)
++    if kind is not None:  # a stored snapshot that no longer exists: started from the image
++        SandboxRecords.for_scope(sdk_backend.scope, kind).put(TASK, snapshot_id="im-gone")
++
++    async def go() -> tuple[ExecResult, ExecResult, ExecResult]:
++        async with sdk_backend.open() as env:
++            first = await env.execute("printf %s one > kept.txt; printf %s ok")
++            if kind is None:  # Daytona: stopped behind our back, started again with its files
++                sandbox: Any = getattr(env, "sandbox")  # noqa: B009 - the Daytona handle
++                sandbox.stop()
++            second = await env.execute("cat kept.txt")
++            third = await env.execute("printf %s ok")
++            return first, second, third
++
++    first, second, third = asyncio.run(go())
++    assert first.output == "ok" and second.output == "one" and third.output == "ok"
++    if kind is not None:
++        assert first.environment_recreated and not second.environment_recreated
++        assert SandboxRecords.for_scope(sdk_backend.scope, kind).get(TASK) is not None  # saved
++    else:
++        assert not first.environment_recreated and not second.environment_recreated
++        cloud = sdk_backend.rig.cloud
++        assert cloud is not None and "Sandbox.start" in cloud.methods()
++    assert not third.environment_recreated
++
++
++async def _until(record: ProcessRecord, done: object, seconds: float = 10.0) -> None:
++    handle = record.handle
++    assert isinstance(handle, RemoteJob) and handle.poller is not None
++    deadline = REAL.monotonic() + seconds
++    while REAL.monotonic() < deadline:
++        await handle.poller.round()
++        if callable(done) and done():
++            return
++        await REAL.sleep(0.1)  # the fake sandboxes run real processes: real time
++
++
++def test_background_job_starts_polls_and_is_killed_inside(sdk_backend: Backend) -> None:
++    async def go() -> tuple[ProcessRecord, ProcessRecord]:
++        processes = ProcessRegistry()
++        async with sdk_backend.open() as env:
++
++            def request(command: str) -> SpawnRequest:
++                return SpawnRequest(
++                    command,
++                    sdk_backend.scope,
++                    "s1",
++                    f"contract@{sdk_backend.name}",
++                    sdk_backend.workdir,
++                    {},
++                    environment=env,
++                )
++
++            short = await processes.spawn(request("printf 'from inside\\n'; exit 3"))
++            long = await processes.spawn(request("printf 'ready\\n'; sleep 30"))
++            assert isinstance(short.handle, RemoteJob) and isinstance(long.handle, RemoteJob)
++            await _until(short, lambda: short.exited)
++            await _until(long, lambda: "ready" in long.buffer)
++            await processes.kill(long)
++            await processes.shutdown()
++            return short, long
++
++    short, long = asyncio.run(go())
++    assert short.exited and short.exit_code == 3 and short.buffer == "from inside\n"
++    assert long.exited and long.reason == "killed" and "ready" in long.buffer
++
++
++def test_file_write_read_and_patch_through_the_backend(sdk_backend: Backend) -> None:
++    target = os.path.join(sdk_backend.workdir, "notes", "plan.txt")
++
++    async def go() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str]:
++        registry = sdk_backend.registry()
++        common: dict[str, Any] = {
++            "scope": sdk_backend.scope,
++            "task_id": "files",
++            "session_id": "files",
++            "environments": registry,
++        }
++        try:
++            first = {"path": target, "content": "step one\n"}
++            wrote = json.loads(await write_file(first, **common))
++            read = json.loads(await read_file({"path": target}, **common))
++            edit = {"path": target, "old_string": "step one", "new_string": "step two"}
++            patched = json.loads(await patch(edit, **common))
++            _key, env = await registry.acquire(sdk_backend.scope, session_id="files")
++            seen = await env.execute(f"cat {target}")
++            return wrote, read, patched, seen.output
++        finally:
++            await registry.shutdown(fence=False)
++
++    wrote, read, patched, seen = asyncio.run(go())
++    assert wrote.get("verified") is True and wrote.get("dirs_created") is True, wrote
++    assert "step one" in read.get("content", ""), read
++    assert patched.get("success") is True, patched
++    assert seen == "step two\n"  # the sandbox itself holds the patched file
++
++
++def test_lost_vendor_link_answers_degraded(sdk_backend: Backend) -> None:
++    cloud = sdk_backend.rig.cloud
++    assert cloud is not None
++
++    async def go() -> tuple[ExecResult | BackendStatus, ExecResult | BackendStatus]:
++        registry = sdk_backend.registry()
++        options: dict[str, Any] = {
++            "scope": sdk_backend.scope,
++            "task_id": TASK,
++            "overrides": sdk_backend.overrides(),
++        }
++        try:
++            first = await registry.run("echo up", **options)
++            cloud.fail_with(EXEC_METHOD[sdk_backend.name], ConnectionResetError("link down"), 5)
++            second = await registry.run("echo again", **options)
++            return first, second
++        finally:
++            await registry.shutdown(fence=False)
++
++    first, second = asyncio.run(go())
++    assert isinstance(first, ExecResult) and first.output == "up\n"
++    assert isinstance(second, BackendStatus) and second.status == "degraded", second
++    assert second.reason and second.retry_hint
+diff --git a/tests/integration/backends/test_remote_backends_live.py b/tests/integration/backends/test_remote_backends_live.py
+new file mode 100644
+index 0000000..35b23f2
+--- /dev/null
++++ b/tests/integration/backends/test_remote_backends_live.py
+@@ -0,0 +1,140 @@
++"""Live lane of the cloud and container backends (P21-16): Modal, Daytona, Vercel Sandbox and
++Apptainer/Singularity against the real thing.
++
++Marker ``network``. Each vendor runs only when asked (``INDUS_LIVE_MODAL=1``,
++``INDUS_LIVE_DAYTONA=1``, ``INDUS_LIVE_VERCEL=1``, ``INDUS_LIVE_APPTAINER=1``: these lanes create
++billable sandboxes, so a stray token alone never starts one), with the vendor's credentials in the
++environment (the names ``vendor_env`` declares), the SDK extra installed or the CLI on PATH; the
++skip reason names what is missing. All of it is read at import, before the test fixtures drop
++inherited ``INDUS_*`` variables.
++
++Each run: ``echo``, write a file, read it back, end the sandbox (persistent: snapshot, stop or
++overlay), open it again and read the file once more. The sandbox is keyed by a fresh task id
++(``live-<hex>``), so it never meets a profile's own sandbox. What is left afterwards: the last
++snapshot (Modal, Vercel), the stopped sandbox (Daytona) or the overlay under the test's temp dir.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import os
++import shutil
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.backends.contract import ExecResult
++from indus.backends.registry import BackendStatus, EnvironmentRegistry, default_entries
++from indus.backends.sdk_entries import extra_missing
++from indus.backends.vendor_env import REQUIRED_SETS, VENDOR_TOKEN_NAMES
++from indus.foundation.scope import Scope
++from tests.fakes.agent import DictConfig
++from tests.fakes.terminal import FakeSecrets
++
++pytestmark = pytest.mark.network
++
++OPT_IN = {
++    "modal": os.environ.get("INDUS_LIVE_MODAL") == "1",
++    "daytona": os.environ.get("INDUS_LIVE_DAYTONA") == "1",
++    "vercel_sandbox": os.environ.get("INDUS_LIVE_VERCEL") == "1",
++    "singularity": os.environ.get("INDUS_LIVE_APPTAINER") == "1",
++}
++OPT_IN_NAME = {
++    "modal": "INDUS_LIVE_MODAL",
++    "daytona": "INDUS_LIVE_DAYTONA",
++    "vercel_sandbox": "INDUS_LIVE_VERCEL",
++    "singularity": "INDUS_LIVE_APPTAINER",
++}
++APPTAINER_IMAGE = os.environ.get("INDUS_LIVE_APPTAINER_IMAGE") or "docker://debian:bookworm-slim"
++STEP_TIMEOUT_S = 300.0
++
++
++def _credentials(backend: str) -> dict[str, str]:
++    names = {*VENDOR_TOKEN_NAMES.get(backend, ())}
++    names.update(n for group in REQUIRED_SETS.get(backend, ()) for n in group)
++    return {name: value for name in sorted(names) if (value := os.environ.get(name))}
++
++
++CREDENTIALS = {name: _credentials(name) for name in ("modal", "daytona", "vercel_sandbox")}
++
++
++def _problem(backend: str) -> str | None:
++    """Why ``backend``'s live lane cannot run here, or None."""
++    if not OPT_IN[backend]:
++        return f"set {OPT_IN_NAME[backend]}=1 to run the live {backend} lane"
++    if backend == "singularity":
++        if shutil.which("apptainer") is None and shutil.which("singularity") is None:
++            return "Apptainer or Singularity is not on PATH"
++        return None
++    missing = extra_missing(backend)
++    if missing is not None:
++        return missing
++    found = CREDENTIALS[backend]
++    if not any(all(name in found for name in group) for group in REQUIRED_SETS[backend]):
++        wanted = " and ".join(REQUIRED_SETS[backend][0])
++        return f"the live {backend} lane needs {wanted} in the environment"
++    return None
++
++
++def _live_scope(scope: Scope, backend: str, tmp_path: Path) -> Scope:
++    terminal: dict[str, Any] = {"backend": backend, "container_persistent": True, "timeout": 120}
++    if backend == "singularity":
++        terminal.update(singularity_image=APPTAINER_IMAGE, scratch_dir=str(tmp_path / "scratch"))
++    live = scope.with_config(DictConfig({"terminal": terminal}))
++    return live.with_secrets(FakeSecrets(CREDENTIALS.get(backend, {})))
++
++
++async def _run(registry: EnvironmentRegistry, command: str, **options: Any) -> ExecResult:
++    result = await registry.run(command, timeout=STEP_TIMEOUT_S, **options)
++    assert not isinstance(result, BackendStatus), result.to_dict()
++    assert result.returncode == 0, result.output
++    return result
++
++
++def _round_trip(scope: Scope, backend: str) -> tuple[str, str, str, str]:
++    token = os.urandom(6).hex()
++    options: dict[str, Any] = {
++        "scope": scope,
++        "task_id": f"live-{os.urandom(4).hex()}",
++        "overrides": {"backend": backend},
++    }
++
++    async def go() -> tuple[str, str, str, str]:
++        first = EnvironmentRegistry(default_entries())
++        try:
++            echo = await _run(first, "echo live-ok", **options)
++            write = f"printf %s {token} > indus-live.txt && cat indus-live.txt"
++            wrote = await _run(first, write, **options)
++        finally:
++            await first.shutdown(fence=False)  # persistent: snapshot / stop / keep the overlay
++        second = EnvironmentRegistry(default_entries())
++        try:
++            back = await _run(second, "cat indus-live.txt", **options)
++        finally:
++            await second.shutdown(fence=False)
++        return token, echo.output, wrote.output, back.output
++
++    return asyncio.run(go())
++
++
++@pytest.mark.parametrize("backend", ["modal", "daytona", "vercel_sandbox", "singularity"])
++def test_echo_write_read_and_persist_across_recreate(
++    scope: Scope, tmp_path: Path, backend: str
++) -> None:
++    problem = _problem(backend)
++    if problem is not None:
++        pytest.skip(problem)
++    token, echo, wrote, back = _round_trip(_live_scope(scope, backend, tmp_path), backend)
++    assert echo.strip() == "live-ok"
++    assert wrote == token
++    assert back == token  # the file survived the sandbox ending and coming back
++
++
++def test_the_lane_skips_without_opt_in_or_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setitem(OPT_IN, "modal", False)
++    assert "INDUS_LIVE_MODAL=1" in (_problem("modal") or "")
++    monkeypatch.setitem(OPT_IN, "daytona", True)
++    monkeypatch.setitem(CREDENTIALS, "daytona", {})
++    reason = _problem("daytona") or ""
++    assert "DAYTONA_API_KEY" in reason or "`daytona` extra" in reason
+diff --git a/tests/unit/backends/test_remote_probes.py b/tests/unit/backends/test_remote_probes.py
+new file mode 100644
+index 0000000..d9a7544
+--- /dev/null
++++ b/tests/unit/backends/test_remote_probes.py
+@@ -0,0 +1,304 @@
++"""Probe table of the cloud rows and the flapping guard (P21-12, R02.13, R02.29)."""
++
++from __future__ import annotations
++
++import importlib.metadata
++import logging
++import stat
++from collections.abc import Iterator
++from datetime import UTC, datetime
++from pathlib import Path
++
++import pytest
++
++from indus.backends import remote_probes
++from indus.backends.registry import default_entries
++from indus.backends.remote_probes import (
++    CONFIRM_GAP_S,
++    FLAP_GRACE_S,
++    GUARDED_BACKENDS,
++    UNSCOPED_REASON,
++    GuardedProbe,
++    guard_entry,
++)
++from indus.foundation.errors import ScopeUnresolved
++from indus.foundation.scope import Scope
++from tests.fakes.clock import FakeClock
++from tests.fakes.terminal import terminal_scope
++
++
++@pytest.fixture(autouse=True)
++def fresh_guards() -> Iterator[None]:
++    remote_probes.reset_guards()
++    yield
++    remote_probes.reset_guards()
++
++
++def _installed(_: str) -> object:
++    return object()
++
++
++def _absent(name: str) -> object:
++    raise importlib.metadata.PackageNotFoundError(name)
++
++
++class Script:
++    """A check that answers from a list (None = ok), then repeats the last answer."""
++
++    def __init__(self, *answers: str | None | BaseException) -> None:
++        self.answers = list(answers)
++        self.calls = 0
++
++    def __call__(self, scope: Scope) -> str | None:
++        self.calls += 1
++        answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
++        if isinstance(answer, BaseException):
++            raise answer
++        return answer
++
++
++def _clock() -> FakeClock:
++    return FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
++
++
++# -- the probe table ------------------------------------------------------------------------------
++
++
++def _with_path(scope: Scope, path: Path) -> Scope:
++    return scope.with_env(scope.env.with_overlay({"PATH": str(path)}))
++
++
++def _fake_cli(folder: Path, name: str) -> None:
++    folder.mkdir(parents=True, exist_ok=True)
++    tool = folder / name
++    tool.write_text("#!/bin/sh\nexit 0\n")
++    tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
++
++
++CREDENTIALS = {
++    "modal": {"MODAL_TOKEN_ID": "i" + "1", "MODAL_TOKEN_SECRET": "s" + "1"},
++    "daytona": {"DAYTONA_API_KEY": "k" + "1"},
++    "vercel_sandbox": {
++        "VERCEL_TOKEN": "t" + "1",
++        "VERCEL_PROJECT_ID": "p" + "1",
++        "VERCEL_TEAM_ID": "m" + "1",
++    },
++}
++
++
++@pytest.mark.parametrize(
++    ("backend", "extra", "secrets", "expect"),
++    [
++        ("modal", False, "all", "`modal` extra"),
++        ("modal", True, "none", "MODAL_TOKEN_ID"),
++        ("modal", True, "all", None),
++        ("daytona", False, "all", "`daytona` extra"),
++        ("daytona", True, "none", "DAYTONA_API_KEY"),
++        ("daytona", True, "all", None),
++        ("vercel_sandbox", False, "all", "`vercel` extra"),
++        ("vercel_sandbox", True, "none", "VERCEL_TOKEN"),
++        ("vercel_sandbox", True, "all", None),
++    ],
++)
++def test_sdk_probe_table(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++    backend: str,
++    extra: bool,
++    secrets: str,
++    expect: str | None,
++) -> None:
++    monkeypatch.setattr(importlib.metadata, "distribution", _installed if extra else _absent)
++    for name in ("MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET", "DAYTONA_API_KEY", "VERCEL_OIDC_TOKEN"):
++        monkeypatch.delenv(name, raising=False)
++    for name in ("VERCEL_TOKEN", "VERCEL_PROJECT_ID", "VERCEL_TEAM_ID"):
++        monkeypatch.delenv(name, raising=False)
++    scope = terminal_scope(
++        tmp_path,
++        {"terminal": {"backend": backend}},
++        secrets=CREDENTIALS[backend] if secrets == "all" else {},
++    )
++    rows = {entry.name: entry for entry in default_entries()}
++    probe = rows[backend].probe
++    assert probe is not None
++    answer = probe(scope)
++    if expect is None:
++        assert answer is None
++    else:
++        assert expect in (answer or "")
++
++
++@pytest.mark.parametrize(
++    ("installed", "expect"),
++    [("apptainer", None), ("singularity", None), (None, "Apptainer or Singularity")],
++)
++def test_singularity_probe_table(tmp_path: Path, installed: str | None, expect: str | None) -> None:
++    folder = tmp_path / "bin"
++    folder.mkdir()
++    if installed:
++        _fake_cli(folder, installed)
++    scope = _with_path(terminal_scope(tmp_path, {"terminal": {"backend": "singularity"}}), folder)
++    probe = {entry.name: entry for entry in default_entries()}["singularity"].probe
++    assert probe is not None
++    answer = probe(scope)
++    if expect is None:
++        assert answer is None
++    else:
++        assert expect in (answer or "")
++
++
++def test_the_registry_lists_seven_rows_and_guards_the_four_cloud_probes() -> None:
++    rows = default_entries()
++    assert [entry.name for entry in rows] == [
++        "local",
++        "docker",
++        "ssh",
++        "singularity",
++        "modal",
++        "daytona",
++        "vercel_sandbox",
++    ]
++    guarded = {entry.name for entry in rows if isinstance(entry.probe, GuardedProbe)}
++    assert guarded == set(GUARDED_BACKENDS)
++    again = {entry.name: entry.probe for entry in default_entries()}
++    first = {entry.name: entry.probe for entry in rows}
++    for name in GUARDED_BACKENDS:  # one guard per row for the process, never a guard of a guard
++        assert again[name] is first[name]
++        probe = again[name]
++        assert isinstance(probe, GuardedProbe) and not isinstance(probe.check, GuardedProbe)
++
++
++def test_rows_outside_the_cloud_set_are_left_alone() -> None:
++    rows = {entry.name: entry for entry in default_entries()}
++    assert guard_entry(rows["docker"]) is rows["docker"]
++    assert guard_entry(rows["local"]) is rows["local"]
++
++
++# -- the flapping guard (R02.13) ------------------------------------------------------------------
++
++
++def test_one_flake_after_a_success_serves_last_good_until_confirmed_30s_later(
++    tmp_path: Path, caplog: pytest.LogCaptureFixture
++) -> None:
++    clock = _clock()
++    check = Script(None, "token missing", "token missing", "token missing", "token missing", None)
++    guard = GuardedProbe("modal", check, clock=clock)
++    scope = terminal_scope(tmp_path)
++    assert guard(scope) is None  # ok
++    clock.advance(5)
++    with caplog.at_level(logging.WARNING, logger="indus.backends.remote_probes"):
++        assert guard(scope) is None  # first failure: served
++    assert "serving the last good answer" in caplog.text
++    assert guard.last_reason(scope) == "token missing"
++    clock.advance(CONFIRM_GAP_S - 10)
++    assert guard(scope) is None  # streak only 20 s old: still served
++    clock.advance(10)
++    assert guard(scope) == "token missing"  # streak 30 s old: honoured
++    clock.advance(1)
++    assert guard(scope) == "token missing"  # stays down without a success
++    clock.advance(1)
++    assert guard(scope) is None  # a success brings it back
++    assert guard.last_reason(scope) is None
++    assert check.calls == 6
++
++
++def test_a_failure_long_after_the_last_success_is_honoured_at_once(tmp_path: Path) -> None:
++    clock = _clock()
++    guard = GuardedProbe("daytona", Script(None, "no key"), clock=clock)
++    scope = terminal_scope(tmp_path)
++    assert guard(scope) is None
++    clock.advance(FLAP_GRACE_S + 1)
++    assert guard(scope) == "no key"
++
++
++def test_never_ok_is_unavailable_from_the_first_failure(tmp_path: Path) -> None:
++    guard = GuardedProbe("vercel_sandbox", Script("no token"), clock=_clock())
++    assert guard(terminal_scope(tmp_path)) == "no token"
++
++
++def test_the_grace_window_ends_120s_after_the_success(tmp_path: Path) -> None:
++    clock = _clock()
++    guard = GuardedProbe("modal", Script(None, "x"), clock=clock)
++    scope = terminal_scope(tmp_path)
++    assert guard(scope) is None
++    clock.advance(FLAP_GRACE_S - 10)
++    assert guard(scope) is None  # inside the window: served, streak starts
++    clock.advance(15)
++    assert guard(scope) == "x"  # streak young, but the window is over
++
++
++def test_a_raising_check_is_a_failure_that_names_the_exception(tmp_path: Path) -> None:
++    clock = _clock()
++    guard = GuardedProbe("singularity", Script(RuntimeError("boom")), clock=clock)
++    answer = guard(terminal_scope(tmp_path)) or ""
++    assert "singularity check failed" in answer and "RuntimeError: boom" in answer
++
++
++def test_profiles_keep_their_own_history(tmp_path: Path) -> None:
++    clock = _clock()
++    answers: dict[str, list[str | None]] = {"a": [None, "down"], "b": ["down"]}
++
++    def check(scope: Scope) -> str | None:
++        queue = answers[scope.home.name]
++        return queue.pop(0) if len(queue) > 1 else queue[0]
++
++    guard = GuardedProbe("modal", check, clock=clock)
++    a = terminal_scope(tmp_path, name="a")
++    b = terminal_scope(tmp_path, name="b")
++    assert guard(a) is None
++    clock.advance(1)
++    assert guard(b) == "down"  # b never succeeded: no grace borrowed from a
++    assert guard(a) is None  # a's flake is served
++
++
++def test_the_scope_clock_is_used_when_none_is_injected(tmp_path: Path) -> None:
++    clock = _clock()
++    guard = GuardedProbe("modal", Script(None, "x"))
++    scope = terminal_scope(tmp_path, clock=clock)
++    assert guard(scope) is None
++    clock.advance(FLAP_GRACE_S + 1)
++    assert guard(scope) == "x"
++
++
++# -- unscoped probes (R02.29) ---------------------------------------------------------------------
++
++
++def test_an_unscoped_probe_caches_nothing_and_the_first_scoped_call_checks(
++    tmp_path: Path, caplog: pytest.LogCaptureFixture
++) -> None:
++    check = Script("no token")
++    guard = GuardedProbe("modal", check, clock=_clock())
++    with caplog.at_level(logging.DEBUG, logger="indus.backends.remote_probes"):
++        assert guard(None) == UNSCOPED_REASON
++    assert check.calls == 0
++    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
++    scope = terminal_scope(tmp_path)
++    assert guard.last_reason(scope) is None
++    with caplog.at_level(logging.INFO, logger="indus.backends.remote_probes"):
++        assert guard(scope) == "no token"
++    assert check.calls == 1
++    assert "probe runs now that a profile scope exists" in caplog.text
++
++
++def test_a_check_that_loses_its_scope_is_quiet_and_not_remembered(
++    tmp_path: Path, caplog: pytest.LogCaptureFixture
++) -> None:
++    clock = _clock()
++    check = Script(ScopeUnresolved("no scope"), None)
++    guard = GuardedProbe("daytona", check, clock=clock)
++    scope = terminal_scope(tmp_path)
++    with caplog.at_level(logging.DEBUG, logger="indus.backends.remote_probes"):
++        assert guard(scope) == UNSCOPED_REASON
++    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
++    assert guard.last_reason(scope) is None
++    assert guard(scope) is None  # the next call checks for real
++
++
++def test_unscoped_answer_after_a_success_does_not_end_the_grace(tmp_path: Path) -> None:
++    clock = _clock()
++    guard = GuardedProbe("modal", Script(None, "x"), clock=clock)
++    scope = terminal_scope(tmp_path)
++    assert guard(scope) is None
++    assert guard(None) == UNSCOPED_REASON
++    clock.advance(1)
++    assert guard(scope) is None  # the flake grace still applies
+diff --git a/tests/unit/backends/test_task_overrides.py b/tests/unit/backends/test_task_overrides.py
+new file mode 100644
+index 0000000..52f8e39
+--- /dev/null
++++ b/tests/unit/backends/test_task_overrides.py
+@@ -0,0 +1,244 @@
++"""Per-task image / backend / cwd overrides (P21-14)."""
++
++from __future__ import annotations
++
++import logging
++from collections.abc import Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.backends import task_overrides
++from indus.backends.contract import BackendFlags, Environment
++from indus.backends.registry import BackendEntry, CreateRequest, EnvironmentRegistry
++from indus.backends.task_overrides import (
++    TASK_OVERRIDES,
++    LayeredConfig,
++    TaskOverride,
++    plan,
++    register_row,
++)
++from indus.foundation.scope import Scope
++from tests.fakes.backend.environment import FakeEnvironment
++from tests.fakes.terminal import terminal_scope
++from tests.unit.backends._aio import aio
++
++IMAGE = "registry.example/team/img:1"
++
++
++@pytest.fixture(autouse=True)
++def fresh() -> Iterator[None]:
++    TASK_OVERRIDES.reset()
++    task_overrides.reset_warnings()
++    yield
++    TASK_OVERRIDES.reset()
++    task_overrides.reset_warnings()
++
++
++def _scope(tmp_path: Path, backend: str = "local", *, name: str = "home") -> Scope:
++    return terminal_scope(tmp_path, {"terminal": {"backend": backend}}, name=name)
++
++
++# -- the mapping table ----------------------------------------------------------------------------
++
++
++@pytest.mark.parametrize(
++    ("backend", "config_key", "config_value", "call_image"),
++    [
++        ("docker", "terminal.docker_image", IMAGE, None),
++        ("singularity", "terminal.singularity_image", f"docker://{IMAGE}", None),
++        ("modal", None, None, IMAGE),
++        ("daytona", None, None, IMAGE),
++        ("vercel_sandbox", None, None, None),
++        ("local", None, None, None),
++        ("ssh", None, None, None),
++    ],
++)
++def test_image_mapping_per_backend(
++    tmp_path: Path,
++    backend: str,
++    config_key: str | None,
++    config_value: str | None,
++    call_image: str | None,
++) -> None:
++    scope = _scope(tmp_path, backend)
++    planned = plan(scope, "task_7", TaskOverride(image=IMAGE))
++    assert planned.overrides.get("image") == call_image
++    assert planned.overrides["task"] == "task_7"
++    if config_key is None:
++        assert planned.scope is scope
++    else:
++        assert planned.scope.config is not None
++        assert planned.scope.config.get(config_key) == config_value
++        assert planned.scope.config.get("terminal.backend") == backend  # the rest shines through
++        assert scope.config is not None and scope.config.get(config_key) != config_value
++
++
++def test_a_singularity_ref_with_a_scheme_is_kept(tmp_path: Path) -> None:
++    scope = _scope(tmp_path, "singularity")
++    planned = plan(scope, "t", TaskOverride(image="library://x/y:1"))
++    assert planned.scope.config is not None
++    assert planned.scope.config.get("terminal.singularity_image") == "library://x/y:1"
++
++
++def test_backend_and_cwd_become_call_overrides(tmp_path: Path) -> None:
++    scope = _scope(tmp_path, "local")
++    planned = plan(scope, "t", TaskOverride(image=IMAGE, backend="Docker", cwd="/work/a"))
++    assert planned.overrides == {"task": "t", "backend": "docker", "cwd": "/work/a"}
++    assert planned.scope.config is not None
++    assert planned.scope.config.get("terminal.docker_image") == IMAGE
++
++
++def test_ignored_images_warn_once_per_backend(
++    tmp_path: Path, caplog: pytest.LogCaptureFixture
++) -> None:
++    scope = _scope(tmp_path, "vercel_sandbox")
++    with caplog.at_level(logging.WARNING, logger="indus.backends.task_overrides"):
++        plan(scope, "a", TaskOverride(image=IMAGE))
++        plan(scope, "b", TaskOverride(image=IMAGE))
++    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
++    assert len(warnings) == 1 and "vercel_sandbox" in warnings[0].getMessage()
++
++
++def test_layered_config_forwards_attributes(tmp_path: Path) -> None:
++    class Broken:
++        failed = True
++
++        def get(self, path: str, /) -> object:
++            return None
++
++    layered = LayeredConfig(Broken(), {"terminal.docker_image": IMAGE})
++    assert layered.failed is True
++    assert layered.get("terminal.docker_image") == IMAGE
++    assert layered.get("terminal.backend") is None
++
++
++# -- the registry ---------------------------------------------------------------------------------
++
++
++def test_profile_scoping_and_clear(tmp_path: Path) -> None:
++    a = _scope(tmp_path, name="a")
++    b = _scope(tmp_path, name="b")
++    TASK_OVERRIDES.set(a, "task_1", TaskOverride(image=IMAGE))
++    TASK_OVERRIDES.bind(a, "sess-1", "task_1")
++    assert TASK_OVERRIDES.resolve(a, "task_1") == ("task_1", TaskOverride(image=IMAGE))
++    assert TASK_OVERRIDES.resolve(a, "sess-1") == ("task_1", TaskOverride(image=IMAGE))
++    assert TASK_OVERRIDES.resolve(b, "task_1") is None  # R02.8
++    assert TASK_OVERRIDES.resolve(b, "sess-1") is None
++    assert TASK_OVERRIDES.clear(a, "task_1") is True
++    assert TASK_OVERRIDES.resolve(a, "sess-1") is None
++    assert TASK_OVERRIDES.clear(a, "task_1") is False
++    assert len(TASK_OVERRIDES) == 0
++
++
++def test_register_row_skips_empty_rows(tmp_path: Path) -> None:
++    scope = _scope(tmp_path)
++    assert register_row(scope, "task_0", None, "  ") is None
++    assert TASK_OVERRIDES.get(scope, "task_0") is None
++    assert register_row(scope, "task_1", f" {IMAGE} ", "/w") is None
++    assert TASK_OVERRIDES.get(scope, "task_1") == TaskOverride(image=IMAGE, cwd="/w")
++
++
++# -- environment keys and factories ---------------------------------------------------------------
++
++
++class Recorder:
++    """Factories that record their request and hand out fake environments."""
++
++    def __init__(self) -> None:
++        self.requests: list[CreateRequest] = []
++
++    def entry(self, name: str) -> BackendEntry:
++        async def factory(request: CreateRequest) -> Environment:
++            self.requests.append(request)
++            return FakeEnvironment()
++
++        return BackendEntry(name, factory, BackendFlags(isolated=True, host_local=False))
++
++
++def _registry(recorder: Recorder) -> EnvironmentRegistry:
++    names = ("local", "docker", "singularity", "modal", "daytona", "vercel_sandbox")
++    return EnvironmentRegistry([recorder.entry(name) for name in names])
++
++
++def test_an_override_gets_its_own_env_key(tmp_path: Path) -> None:
++    scope = _scope(tmp_path, "docker")
++    registry = _registry(Recorder())
++    default = registry.key_for(scope, session_id="s1")
++    TASK_OVERRIDES.set(scope, "task_3", TaskOverride(image=IMAGE))
++    by_task = registry.key_for(scope, task_id="task_3", session_id="s1")
++    assert by_task != default
++    assert (by_task.kind, by_task.ident, by_task.backend) == ("task", "task_3", "docker")
++    TASK_OVERRIDES.bind(scope, "s1", "task_3")
++    assert registry.key_for(scope, session_id="s1") == by_task
++    TASK_OVERRIDES.clear(scope, "task_3")
++    assert registry.key_for(scope, session_id="s1") == default
++
++
++def test_an_image_ignored_on_vercel_still_keys_per_task(tmp_path: Path) -> None:
++    scope = _scope(tmp_path, "vercel_sandbox")
++    registry = _registry(Recorder())
++    TASK_OVERRIDES.set(scope, "task_1", TaskOverride(image=IMAGE))
++    key = registry.key_for(scope, task_id="task_1")
++    assert (key.kind, key.ident) == ("task", "task_1")
++
++
++def test_explicit_overrides_win(tmp_path: Path) -> None:
++    scope = _scope(tmp_path, "docker")
++    registry = _registry(Recorder())
++    TASK_OVERRIDES.set(scope, "task_1", TaskOverride(backend="modal"))
++    key = registry.key_for(scope, task_id="task_1", overrides={"backend": "daytona"})
++    assert key.backend == "daytona"
++
++
++@pytest.mark.parametrize(
++    ("backend", "check"),
++    [
++        ("docker", lambda r: r.scope.config.get("terminal.docker_image") == IMAGE),
++        (
++            "singularity",
++            lambda r: r.scope.config.get("terminal.singularity_image") == f"docker://{IMAGE}",
++        ),
++        ("modal", lambda r: r.overrides.get("image") == IMAGE),
++        ("daytona", lambda r: r.overrides.get("image") == IMAGE),
++        ("vercel_sandbox", lambda r: "image" not in r.overrides),
++    ],
++)
++@aio
++async def test_the_factory_gets_the_task_image(tmp_path: Path, backend: str, check: Any) -> None:
++    scope = _scope(tmp_path, backend)
++    recorder = Recorder()
++    registry = _registry(recorder)
++    TASK_OVERRIDES.set(scope, "task_2", TaskOverride(image=IMAGE, cwd="/work/t2"))
++    TASK_OVERRIDES.bind(scope, "sess", "task_2")
++    try:
++        key, _env = await registry.acquire(scope, session_id="sess")
++        assert (key.kind, key.ident) == ("task", "task_2")
++        [request] = recorder.requests
++        assert request.task_id == "task_2" and request.session_id == "sess"
++        assert request.overrides.get("cwd") == "/work/t2"
++        assert check(request)
++        await registry.acquire(scope, session_id="other")  # the default sandbox is separate
++        assert len(recorder.requests) == 2
++        assert recorder.requests[1].overrides == {}
++        assert recorder.requests[1].key.kind != "task"
++        assert await registry.release(scope, session_id="sess") is True
++        assert key not in registry.live()
++    finally:
++        await registry.shutdown(fence=False)
++
++
++@aio
++async def test_a_backend_override_picks_another_row(tmp_path: Path) -> None:
++    scope = _scope(tmp_path, "local")
++    recorder = Recorder()
++    registry = _registry(recorder)
++    TASK_OVERRIDES.set(scope, "task_9", TaskOverride(backend="docker", image=IMAGE))
++    try:
++        key, _env = await registry.acquire(scope, task_id="task_9")
++        assert key.backend == "docker"
++        assert recorder.requests[0].scope.config is not None
++        assert recorder.requests[0].scope.config.get("terminal.docker_image") == IMAGE
++    finally:
++        await registry.shutdown(fence=False)
+diff --git a/tests/unit/cli/commands/test_doctor.py b/tests/unit/cli/commands/test_doctor.py
+index a71b7bc..34ea161 100644
+--- a/tests/unit/cli/commands/test_doctor.py
++++ b/tests/unit/cli/commands/test_doctor.py
+@@ -84,6 +84,7 @@ def test_check_order_is_stable() -> None:
+         "providers",
+         "store",
+         "backend",
++        "remote_backends",  # P21-13
+         "external",
+         "tools",
+         "computer_use",  # P10-20
+diff --git a/tests/unit/cli/doctor/__init__.py b/tests/unit/cli/doctor/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/unit/cli/doctor/test_remote_backends.py b/tests/unit/cli/doctor/test_remote_backends.py
+new file mode 100644
+index 0000000..d6e0eaf
+--- /dev/null
++++ b/tests/unit/cli/doctor/test_remote_backends.py
+@@ -0,0 +1,235 @@
++"""P21-13: `indus doctor` rows for the cloud and container backends."""
++
++from __future__ import annotations
++
++import importlib.metadata
++import os
++import stat
++from collections.abc import Callable, Iterator
++from pathlib import Path
++
++import pytest
++
++from indus.backends import remote_probes
++from indus.cli import doctor
++from indus.cli.doctor import DoctorContext, Finding
++from indus.cli.doctor import remote_backends as rb
++from indus.foundation import config
++from indus.foundation.config import loader
++from indus.foundation.scope import EnvView, Scope
++from indus.foundation.secrets import INDEX_FILE, KeychainBackend, SecretStore
++from tests.unit.cli.commands._helpers_d import run, store_globals  # noqa: F401
++
++DAYTONA_KEY = "dk" + "-test-" + "0123456789"
++MODAL_ID = "ak" + "-test-" + "id01"
++MODAL_SECRET = "as" + "-test-" + "secret01"
++VENDOR_DISTS = {"modal", "daytona", "vercel-sandbox"}
++
++
++class DictKeyring:
++    """A keychain that lives in a dict (never the OS keychain)."""
++
++    def __init__(self) -> None:
++        self.data: dict[tuple[str, str], str] = {}
++
++    def get_password(self, service: str, username: str, /) -> str | None:
++        return self.data.get((service, username))
++
++    def set_password(self, service: str, username: str, password: str, /) -> None:
++        self.data[(service, username)] = password
++
++    def delete_password(self, service: str, username: str, /) -> None:
++        del self.data[(service, username)]
++
++
++@pytest.fixture(autouse=True)
++def fresh_guards() -> Iterator[None]:
++    remote_probes.reset_guards()
++    yield
++    remote_probes.reset_guards()
++
++
++@pytest.fixture
++def bin_dir(tmp_path: Path) -> Path:
++    folder = tmp_path / "bin"
++    folder.mkdir()
++    return folder
++
++
++@pytest.fixture
++def clean(scope: Scope, bin_dir: Path) -> Scope:
++    loader.reset()
++    store = SecretStore(KeychainBackend(DictKeyring(), scope.profile_id), scope.home / INDEX_FILE)
++    env = EnvView({"INDUS_HOME": str(scope.home), "PATH": f"{bin_dir}{os.pathsep}/usr/bin:/bin"})
++    return scope.with_env(env).with_secrets(store)
++
++
++def _without(*missing: str) -> Callable[[str], object]:
++    real = importlib.metadata.distribution
++
++    def lookup(name: str) -> object:
++        if name in missing:
++            raise importlib.metadata.PackageNotFoundError(name)
++        if name in VENDOR_DISTS:
++            return object()
++        return real(name)
++
++    return lookup
++
++
++@pytest.fixture
++def sdks_installed(monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setattr(importlib.metadata, "distribution", _without())
++
++
++def _select(scope: Scope, backend: str, **terminal: object) -> None:
++    config.save(scope, {"terminal": {"backend": backend, **terminal}})
++
++
++def _rows(scope: Scope, check_id: str) -> list[Finding]:
++    for spec, found in doctor.run_checks(DoctorContext(scope)):
++        if spec.id == check_id:
++            return found
++    raise AssertionError(f"no {check_id} check")
++
++
++def _fake_cli(folder: Path, name: str) -> None:
++    tool = folder / name
++    tool.write_text("#!/bin/sh\nexit 0\n")
++    tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
++
++
++# -- through the command --------------------------------------------------------------------------
++
++
++def test_doctor_ok_for_a_selected_backend_with_its_key(clean: Scope, sdks_installed: None) -> None:
++    _select(clean, "daytona")
++    assert isinstance(clean.secrets, SecretStore)
++    clean.secrets.set("DAYTONA_API_KEY", DAYTONA_KEY)
++    result = run(clean, "doctor")
++    out = result.out
++    assert "Cloud and container backends" in out
++    assert "[ok  ] daytona (selected): can run here" in out
++    assert "the daytona SDK is installed" in out
++    assert "credentials present: DAYTONA_API_KEY (values not shown)" in out
++    assert "sync-back cache dir" in out
++    assert DAYTONA_KEY not in out and DAYTONA_KEY not in result.err
++
++
++def test_doctor_names_the_missing_extra(clean: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setattr(importlib.metadata, "distribution", _without("modal"))
++    _select(clean, "modal")
++    assert isinstance(clean.secrets, SecretStore)
++    clean.secrets.set("MODAL_TOKEN_ID", MODAL_ID)
++    clean.secrets.set("MODAL_TOKEN_SECRET", MODAL_SECRET)
++    result = run(clean, "doctor")
++    assert result.code == 1
++    assert "indus-agent[modal]" in result.out
++    assert "modal (selected): cannot run here" in result.out
++    assert MODAL_SECRET not in result.out and MODAL_ID not in result.out
++
++
++def test_doctor_names_the_missing_token(clean: Scope, sdks_installed: None) -> None:
++    _select(clean, "vercel_sandbox")
++    result = run(clean, "doctor")
++    assert result.code == 1
++    assert "Vercel Sandbox credentials missing" in result.out
++    assert "VERCEL_TOKEN" in result.out
++    assert "indus setup terminal" in result.out
++
++
++# -- the rows -------------------------------------------------------------------------------------
++
++
++def test_one_summary_line_per_backend(clean: Scope, sdks_installed: None) -> None:
++    rows = _rows(clean, "remote_backends")
++    assert [row.id for row in rows] == [
++        "backend.singularity.ready",
++        "backend.modal.ready",
++        "backend.daytona.ready",
++        "backend.vercel_sandbox.ready",
++    ]
++    assert all(row.severity == "info" for row in rows)  # none selected, none can run: no problem
++    by_id = {row.id: row.message for row in rows}
++    assert "Apptainer or Singularity not found" in by_id["backend.singularity.ready"]
++    assert "MODAL_TOKEN_ID" in by_id["backend.modal.ready"]
++    assert "DAYTONA_API_KEY" in by_id["backend.daytona.ready"]
++
++
++def test_a_modal_settings_refusal_shows_once_credentials_are_there(
++    clean: Scope, sdks_installed: None
++) -> None:
++    _select(clean, "modal", modal_mode="managed")
++    assert isinstance(clean.secrets, SecretStore)
++    clean.secrets.set("MODAL_TOKEN_ID", MODAL_ID)
++    clean.secrets.set("MODAL_TOKEN_SECRET", MODAL_SECRET)
++    rows = {row.id: row for row in rb.detail_findings(clean, "modal")}
++    assert rows["backend.modal.credentials"].severity == "ok"
++    assert rows["backend.modal.settings"].severity == "error"
++    assert "D-16.16" in rows["backend.modal.settings"].message
++
++
++def test_singularity_cli_found_and_scratch_ok(clean: Scope, bin_dir: Path) -> None:
++    _fake_cli(bin_dir, "apptainer")
++    _select(clean, "singularity")
++    rows = {row.id: row for row in _rows(clean, "backend")}
++    assert rows["backend.singularity"].severity == "ok"
++    assert str(bin_dir / "apptainer") in rows["backend.singularity"].message
++    assert rows["backend.singularity.scratch"].severity == "ok"
++    assert rows["backend.singularity.disk"].severity == "ok"
++    summary = {row.id: row for row in _rows(clean, "remote_backends")}
++    assert summary["backend.singularity.ready"].message == "singularity (selected): can run here"
++
++
++def test_singularity_missing_cli_is_an_error(clean: Scope) -> None:
++    _select(clean, "singularity")
++    rows = {row.id: row for row in _rows(clean, "backend")}
++    assert rows["backend.singularity"].severity == "error"
++    assert "Apptainer" in (rows["backend.singularity"].fix or "")
++
++
++def test_singularity_disk_warning(clean: Scope, bin_dir: Path, tmp_path: Path) -> None:
++    _fake_cli(bin_dir, "apptainer")
++    scratch = tmp_path / "scratch"
++    scratch.mkdir()
++    (scratch / "big.sif").write_bytes(b"x" * (2 * 1024 * 1024))
++    _select(clean, "singularity", scratch_dir=str(scratch), disk_warning_gb=0.001)
++    rows = {row.id: row for row in _rows(clean, "backend")}
++    assert rows["backend.singularity.disk"].severity == "warn"
++    assert "disk_warning_gb" in (rows["backend.singularity.disk"].fix or "")
++
++
++@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs POSIX modes, non-root")
++def test_unwritable_scratch_is_an_error(clean: Scope, bin_dir: Path, tmp_path: Path) -> None:
++    _fake_cli(bin_dir, "apptainer")
++    locked = tmp_path / "locked"
++    locked.mkdir()
++    locked.chmod(0o500)
++    try:
++        _select(clean, "singularity", scratch_dir=str(locked / "scratch"))
++        rows = {row.id: row for row in _rows(clean, "backend")}
++        assert rows["backend.singularity.scratch"].severity == "error"
++    finally:
++        locked.chmod(0o700)
++
++
++def test_writable_problem(tmp_path: Path) -> None:
++    assert rb.writable_problem(tmp_path) is None
++    assert rb.writable_problem(tmp_path / "a" / "b") is None  # created on first use
++    target = tmp_path / "file"
++    target.write_text("x")
++    assert "not a directory" in (rb.writable_problem(target) or "")
++
++
++def test_a_scratch_dir_that_cannot_be_written_is_an_error(
++    clean: Scope, bin_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    _fake_cli(bin_dir, "apptainer")
++    scratch = tmp_path / "scratch"
++    scratch.mkdir()
++    _select(clean, "singularity", scratch_dir=str(scratch))
++    real = os.access
++    monkeypatch.setattr(os, "access", lambda p, m: False if Path(p) == scratch else real(p, m))
++    rows = {row.id: row for row in rb.detail_findings(clean, "singularity")}
++    assert rows["backend.singularity.scratch"].severity == "error"
++    assert "not writable" in rows["backend.singularity.scratch"].message
+diff --git a/tests/unit/cli/setup/test_remote_backends.py b/tests/unit/cli/setup/test_remote_backends.py
+new file mode 100644
+index 0000000..7b52822
+--- /dev/null
++++ b/tests/unit/cli/setup/test_remote_backends.py
+@@ -0,0 +1,257 @@
++"""P21-13: the setup terminal step for the cloud backends (fake keychain, scripted answers)."""
++
++from __future__ import annotations
++
++import importlib.metadata
++from collections.abc import Callable, Iterator
++from typing import Any
++
++import pytest
++
++from indus.backends import remote_probes
++from indus.cli.args import CliState
++from indus.cli.prompts import Interactive
++from indus.cli.setup import remote_backends as rb
++from indus.cli.setup.wizard import SetupDeps, SetupOptions, run_setup
++from indus.foundation import config
++from indus.foundation.config import loader
++from indus.foundation.scope import EnvView, Scope
++from indus.foundation.secrets import INDEX_FILE, KeychainBackend, SecretStore
++from tests.fakes.prompts import ScriptedDriver, scripted
++from tests.unit.cli.commands._helpers_d import run, store_globals  # noqa: F401
++
++DAYTONA_KEY = "dk" + "-test-" + "0123456789"
++VERCEL_TOKEN = "vt" + "-test-" + "abcdef0123"
++MODAL_ID = "ak" + "-test-" + "id01"
++MODAL_SECRET = "as" + "-test-" + "secret01"
++
++
++class DictKeyring:
++    """A keychain that lives in a dict (never the OS keychain)."""
++
++    def __init__(self) -> None:
++        self.data: dict[tuple[str, str], str] = {}
++
++    def get_password(self, service: str, username: str, /) -> str | None:
++        return self.data.get((service, username))
++
++    def set_password(self, service: str, username: str, password: str, /) -> None:
++        self.data[(service, username)] = password
++
++    def delete_password(self, service: str, username: str, /) -> None:
++        del self.data[(service, username)]
++
++
++@pytest.fixture(autouse=True)
++def fresh_guards() -> Iterator[None]:
++    remote_probes.reset_guards()
++    yield
++    remote_probes.reset_guards()
++
++
++@pytest.fixture
++def keyring() -> DictKeyring:
++    return DictKeyring()
++
++
++def _make(scope: Scope, keyring: DictKeyring, env: dict[str, str] | None = None) -> Scope:
++    loader.reset()
++    store = SecretStore(KeychainBackend(keyring, scope.profile_id), scope.home / INDEX_FILE)
++    view = EnvView({"INDUS_HOME": str(scope.home), **(env or {})})
++    return scope.with_env(view).with_secrets(store)
++
++
++@pytest.fixture
++def clean(scope: Scope, keyring: DictKeyring) -> Scope:
++    return _make(scope, keyring)
++
++
++@pytest.fixture
++def sdks(monkeypatch: pytest.MonkeyPatch) -> Callable[[bool], None]:
++    real = importlib.metadata.distribution
++
++    def choose(present: bool) -> None:
++        def lookup(name: str) -> object:
++            if name in {"modal", "daytona", "vercel-sandbox"}:
++                if present:
++                    return object()
++                raise importlib.metadata.PackageNotFoundError(name)
++            return real(name)
++
++        monkeypatch.setattr(importlib.metadata, "distribution", lookup)
++
++    choose(True)
++    return choose
++
++
++def setup(
++    scope: Scope, *answers: object, lines: list[str] | None = None, **options: Any
++) -> tuple[int, ScriptedDriver]:
++    io = scripted(*answers, lines=lines)
++    state = CliState(scope=scope, stdin_isatty=lambda: True, stdout_isatty=lambda: True)
++    code = run_setup(state, SetupOptions(**options), deps=SetupDeps(io=io))
++    assert isinstance(io.driver, ScriptedDriver)
++    return code, io.driver
++
++
++def _key(scope: Scope, name: str) -> tuple[str, str]:
++    return ("indus", f"{scope.profile_id}:{name}")
++
++
++# -- the picker -----------------------------------------------------------------------------------
++
++
++def test_the_picker_describes_every_backend(clean: Scope, sdks: Callable[[bool], None]) -> None:
++    lines: list[str] = []
++    code, driver = setup(clean, "local", section="terminal", lines=lines)
++    assert code == 0
++    assert driver.answers == []
++    for name in ("singularity", "modal", "daytona", "vercel_sandbox"):
++        assert rb.label(name) == f"{name} — {rb.DESCRIPTIONS[name]}"
++    assert set(rb.DESCRIPTIONS) == {
++        "local",
++        "docker",
++        "ssh",
++        "singularity",
++        "modal",
++        "daytona",
++        "vercel_sandbox",
++    }
++    assert "terminal" not in config.load(clean).user_raw()
++
++
++# -- interactive ----------------------------------------------------------------------------------
++
++
++def test_daytona_key_goes_to_the_keychain_not_env(
++    clean: Scope, keyring: DictKeyring, sdks: Callable[[bool], None]
++) -> None:
++    lines: list[str] = []
++    code, driver = setup(clean, "daytona", DAYTONA_KEY, section="terminal", lines=lines)
++    assert code == 0, lines
++    assert driver.answers == []
++    assert keyring.data == {_key(clean, "DAYTONA_API_KEY"): DAYTONA_KEY}
++    assert config.load(clean).user_raw()["terminal"] == {"backend": "daytona"}
++    assert not (clean.home / ".env").exists()
++    assert DAYTONA_KEY not in "\n".join(lines)
++    assert DAYTONA_KEY not in config.config_path(clean).read_text(encoding="utf-8")
++    assert "DAYTONA_API_KEY: saved." in lines
++    assert "Daytona API key: " in driver.asked
++
++
++def test_a_stored_key_is_kept_unless_replaced(
++    clean: Scope, keyring: DictKeyring, sdks: Callable[[bool], None]
++) -> None:
++    store = clean.secrets
++    assert isinstance(store, SecretStore)
++    store.set("DAYTONA_API_KEY", DAYTONA_KEY)
++    code, driver = setup(clean, "daytona", "n", section="terminal")
++    assert code == 0
++    assert keyring.data[_key(clean, "DAYTONA_API_KEY")] == DAYTONA_KEY
++    assert not any(q.startswith("Daytona API key") for q in driver.asked)
++    fresh = DAYTONA_KEY + "x"
++    code, _driver = setup(clean, "daytona", "y", fresh, section="terminal")
++    assert code == 0
++    assert keyring.data[_key(clean, "DAYTONA_API_KEY")] == fresh
++
++
++def test_vercel_asks_the_token_and_both_ids(
++    clean: Scope, keyring: DictKeyring, sdks: Callable[[bool], None]
++) -> None:
++    lines: list[str] = []
++    code, driver = setup(
++        clean, "vercel_sandbox", VERCEL_TOKEN, "prj_1", "team_1", section="terminal", lines=lines
++    )
++    assert code == 0, lines
++    assert keyring.data == {
++        _key(clean, "VERCEL_TOKEN"): VERCEL_TOKEN,
++        _key(clean, "VERCEL_PROJECT_ID"): "prj_1",
++        _key(clean, "VERCEL_TEAM_ID"): "team_1",
++    }
++    assert VERCEL_TOKEN not in "\n".join(lines)
++    assert not any("OIDC" in q for q in driver.asked)
++
++
++def test_a_blank_answer_skips_and_a_missing_extra_is_named(
++    clean: Scope, keyring: DictKeyring, sdks: Callable[[bool], None]
++) -> None:
++    sdks(False)
++    lines: list[str] = []
++    code, _driver = setup(clean, "modal", "", "", section="terminal", lines=lines)
++    assert code == 0
++    assert keyring.data == {}
++    assert any("indus-agent[modal]" in line for line in lines)
++    assert "MODAL_TOKEN_ID: skipped." in lines
++
++
++def test_singularity_asks_nothing(clean: Scope, sdks: Callable[[bool], None]) -> None:
++    lines: list[str] = []
++    code, driver = setup(clean, "singularity", section="terminal", lines=lines)
++    assert code == 0 and driver.answers == []
++    assert len(driver.asked) == 1  # only the picker
++    assert any("Apptainer or Singularity not found" in line for line in lines)
++
++
++# -- non-interactive ------------------------------------------------------------------------------
++
++
++def test_non_interactive_with_env_credentials(
++    scope: Scope,
++    keyring: DictKeyring,
++    sdks: Callable[[bool], None],
++    capsys: pytest.CaptureFixture[str],
++) -> None:
++    env = {"MODAL_TOKEN_ID": MODAL_ID, "MODAL_TOKEN_SECRET": MODAL_SECRET}
++    ready = _make(scope, keyring, env)
++    io = Interactive(tty=False, driver=ScriptedDriver([]))
++    options = SetupOptions(non_interactive=True, terminal_backend="modal")
++    assert run_setup(CliState(scope=ready), options, deps=SetupDeps(io=io)) == 0
++    assert keyring.data == {
++        _key(ready, "MODAL_TOKEN_ID"): MODAL_ID,
++        _key(ready, "MODAL_TOKEN_SECRET"): MODAL_SECRET,
++    }
++    assert config.load(ready).user_raw()["terminal"] == {"backend": "modal"}
++    out = capsys.readouterr()
++    assert "Stored MODAL_TOKEN_ID from the environment in the OS keychain." in out.out
++    assert MODAL_SECRET not in out.out + out.err and MODAL_ID not in out.out + out.err
++    assert not (ready.home / ".env").exists()
++
++
++def test_non_interactive_through_the_command(
++    scope: Scope, keyring: DictKeyring, sdks: Callable[[bool], None]
++) -> None:
++    ready = _make(scope, keyring, {"DAYTONA_API_KEY": DAYTONA_KEY})
++    result = run(ready, "setup", "--non-interactive", "--terminal-backend", "daytona")
++    assert result.code == 0, result.err
++    assert keyring.data == {_key(ready, "DAYTONA_API_KEY"): DAYTONA_KEY}
++    assert "Commands run on: daytona." in result.out
++    assert DAYTONA_KEY not in result.out + result.err
++
++
++def test_non_interactive_missing_credentials_changes_nothing(
++    clean: Scope,
++    keyring: DictKeyring,
++    sdks: Callable[[bool], None],
++    capsys: pytest.CaptureFixture[str],
++) -> None:
++    options = SetupOptions(non_interactive=True, terminal_backend="vercel_sandbox")
++    code = run_setup(CliState(scope=clean), options, deps=SetupDeps(io=Interactive(tty=False)))
++    assert code == 1
++    err = capsys.readouterr().err
++    assert "VERCEL_TOKEN" in err and "unchanged" in err
++    assert "terminal" not in config.load(clean).user_raw()
++    assert keyring.data == {}
++
++
++def test_non_interactive_unknown_backend(clean: Scope, capsys: pytest.CaptureFixture[str]) -> None:
++    options = SetupOptions(non_interactive=True, terminal_backend="nimbus")
++    code = run_setup(CliState(scope=clean), options, deps=SetupDeps(io=Interactive(tty=False)))
++    assert code == 2
++    assert "no terminal backend called 'nimbus'" in capsys.readouterr().err
++
++
++def test_non_interactive_backend_without_credentials_to_ask(clean: Scope) -> None:
++    options = SetupOptions(non_interactive=True, terminal_backend="docker")
++    code = run_setup(CliState(scope=clean), options, deps=SetupDeps(io=Interactive(tty=False)))
++    assert code == 0
++    assert config.load(clean).user_raw()["terminal"] == {"backend": "docker"}
+diff --git a/tests/unit/research/test_worker.py b/tests/unit/research/test_worker.py
+index 92e5639..79a2407 100644
+--- a/tests/unit/research/test_worker.py
++++ b/tests/unit/research/test_worker.py
+@@ -226,18 +226,31 @@ def test_failed_pull_costs_zero_model_calls(real: Scope, run_dir: Path) -> None:
+     assert "pull denied" in lines[0] and len(lines[0]) < 700
+ 
+ 
+-def test_image_rows_are_refused_until_per_task_overrides_exist(real: Scope) -> None:
++def test_image_rows_register_a_per_task_override(real: Scope) -> None:
++    from indus.backends.task_overrides import TASK_OVERRIDES, TaskOverride
++
+     docker = real.with_config(DictConfig({"terminal": {"backend": "docker"}}))
+     present = FakeCommand((0, ""))
+-    problem = asyncio.run(ImagePrep(docker, command=present)(DatasetRow(0, "p", image="a:1"), "t"))
+-    assert problem == worker.NO_IMAGE_OVERRIDES
+-    assert len(present.calls) == 1  # found locally: no pull
+-
+-    local = FakeCommand()
+-    prep = ImagePrep(real, command=local)  # local backend: no docker check at all
+-    assert asyncio.run(prep(DatasetRow(0, "p", image="a:1"), "t")) == worker.NO_IMAGE_OVERRIDES
+-    assert asyncio.run(prep(DatasetRow(0, "p"), "t")) is None
+-    assert local.calls == []
++    try:
++        prep = ImagePrep(docker, command=present)
++        assert asyncio.run(prep(DatasetRow(0, "p", image="a:1"), "task_0")) is None
++        assert len(present.calls) == 1  # found locally: no pull
++        assert TASK_OVERRIDES.get(docker, "task_0") == TaskOverride(image="a:1")
++
++        local = FakeCommand()
++        prep = ImagePrep(real, command=local)  # local backend: no docker check at all
++        row = DatasetRow(1, "p", image="a:1", cwd="/work/w1")
++        assert asyncio.run(prep(row, "task_1")) is None
++        assert TASK_OVERRIDES.get(real, "task_1") == TaskOverride(image="a:1", cwd="/work/w1")
++        assert asyncio.run(prep(DatasetRow(2, "p"), "task_2")) is None
++        assert TASK_OVERRIDES.get(real, "task_2") is None
++        assert local.calls == []
++
++        refused = ImagePrep(real, command=local, register=worker.refuse_images)
++        row = DatasetRow(3, "p", image="a:1")
++        assert asyncio.run(refused(row, "task_3")) == worker.NO_IMAGE_OVERRIDES
++    finally:
++        TASK_OVERRIDES.reset()
+ 
+     seen: list[str] = []
+ 
+@@ -265,6 +278,36 @@ class Scripted:
+         return Conversation(messages, [], "completed", 1, "m")
+ 
+ 
++def test_an_image_row_runs_and_releases_its_own_task_environment(
++    real: Scope, run_dir: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from indus.backends.registry import EnvKey
++    from indus.backends.task_overrides import TASK_OVERRIDES
++    from indus.tools.builtin import terminal
++
++    server = FakeModelServer(load_script("research_tool_loop"))
++    settings = settings_for(run_dir)
++    environments = terminal.runtime().environments
++    released: list[EnvKey] = []
++    original = environments.release
++
++    async def spy(scope: Scope, **ids: Any) -> bool:
++        released.append(environments.key_for(scope, **ids))
++        return await original(scope, **ids)
++
++    monkeypatch.setattr(environments, "release", spy)
++    items = ((0, DatasetRow(0, "Is the file there?", image="img:1", cwd=str(run_dir))),)
++    try:
++        outcome = asyncio.run(
++            run_batch(real, settings, BatchJob(0, items), runner=runner_for(real, settings, server))
++        )
++    finally:
++        TASK_OVERRIDES.reset()
++    assert outcome.completed == [0]
++    assert [(k.kind, k.ident) for k in released] == [("task", "task_0")]
++    assert environments.key_for(real, task_id="task_0").kind == "session"  # cleared afterwards
++
++
+ def test_skips_known_indices_and_seeds_toolsets_per_prompt(run_dir: Path, real: Scope) -> None:
+     settings = settings_for(run_dir, distribution="balanced", seed=3)
+     first, second = Scripted(), Scripted()

@@ -14,4 +14,14 @@ Base for both: adbbe87. Apply with `git apply --3way` onto main, then run the fu
   `test_saver.py` resets the fence after each test.
 - Follow-up: `swe` has no per-backend `terminal.docker_image` flag (uses profile value unless `--image`).
 
-## w21-p21b3.patch: P21 rest (pending)
+## w21-p21b3.patch: P21-12 rest, P21-13, P21-14, P21-16 (probe guard, doctor/setup, task overrides, SDK contract suite)
+- Builder checks: ruff/pyright/lint-imports/tooling.checks ok; contract/backends 126 passed; broad runs green except two
+  load-only timing tests that passed alone (ssh test_home_detection_retried_no_sooner_than_30s; core test_long_session soak).
+- Touches research/worker.py and batch.py (P22): ImagePrep.register defaults to the task-override registrar.
+- Wiring at integration: R2's SWE runner uses `task_overrides.TASK_OVERRIDES.set(scope, task_id, TaskOverride(image=...))`
+  and `.bind(scope, session_id, task_id)`; delete R2's `tests/unit/research/_stubs_r2.py`.
+- Decisions: cwd-only override gets its own env key; pinned docker image still wins over override images; local/ssh/vercel
+  ignore image with one warning; probe guard sits under the registry's 60 s grace; "two failures 30 s apart" = streak
+  first..latest >= 30 s; setup never installs SDK extras nor stores the Vercel OIDC token; singularity offered on all OSes;
+  doctor summary row for selected backend is info; live lane needs INDUS_LIVE_<VENDOR>=1 plus credentials.
+- Follow-ups: live smoke with real credentials; ACC-D5-2 needs real Apptainer; delegation `bind` aliasing not wired.
