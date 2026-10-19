@@ -26,3 +26,26 @@
   replace; INDUS_GATEWAY_LOCK_DIR (absolute only).
 - Follow-ups: deleting a session leaves routes pointing at it (P15-11 treat as rotate, or
   state/deletion.py drops route rows); P15-24 liveness replaces token_locks' private start-time helper.
+
+## G1 — w18-p15g1.patch — DONE (P15-01..05 fake platform + contract suite, gateway/platform config, inbound events, send result/classifier/retry, adapter base)
+- New: gateway/config.py, gateway/core/{__init__,events,sent_index,send,send_slot}.py,
+  gateway/adapters/{__init__,base}.py; fakes tests/fakes/platform/{core,telegram_wire,discord_wire,
+  slack_wire}.py; tests/contract/gateway/* (10 named rules + no-network; register_case for adapters),
+  tests/unit/gateway/*, tests/unit/fakes/test_platform_wires.py; notes ×5 (API sections).
+- Shared: config PlatformsSection (telegram, discord, slack: PlatformSection), GatewaySection
+  (message_timestamps.enabled) — G2's rows go INTO this class; ConfigModel.platforms/gateway;
+  display.busy_ack, busy_text_quiet_s 0.35, busy_text_cap_s 1.0; test_schema pins;
+  tests/fakes/platform/__init__.py exports; traps R06.3/4/13/15/24/25; ACC-K4-1, K13-1, K29-1.
+  Package markers gateway/core/__init__.py, tests/unit/gateway{,/core}/__init__.py clash with G2 (keep one).
+- Wiring: G2's stand-ins map onto G1's Source / InboundEvent / Adapter / Capabilities (names final in
+  notes; G2 reads adapter flags via gateway/core/_shapes.py — reconcile names there); inbound metadata
+  conventions edited / button / mentioned; load_gateway_settings(scope, credentials=…) takes the
+  registry's required_env; doctor line legacy_reset_notice(tree) → cli doctor registry; adapters
+  (P15-33..35, P16) register_case + vendor_names, numeric ids for Telegram/Discord.
+- Decisions (need D-ids): plain-text fallback only for bad_format/unknown; timeouts never retried;
+  jitter clamped; send_notice_private and media sends refuse by default; enabled without credentials
+  does not start (problems list); config home channel beats env; SentIndex in memory only; bare `/`
+  is text; message_timestamps under gateway; busy-text key names; callback prefixes apv:/clr:; keys
+  under platforms.<name> merged into extra (explicit extra wins).
+- Follow-ups: plugin platform blocks log "unknown setting (kept)" until P16; Slack typing_status_text,
+  Discord link-to-id normalisation (P15-34/35); interactive_resume for P15-26; no hypothesis.
