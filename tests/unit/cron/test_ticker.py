@@ -257,6 +257,32 @@ def test_pool_size_one_serialises(real: Scope) -> None:
     assert len(report.outcomes) == 2 and agent.max_running == 1
 
 
+def test_serial_pool_plans_each_interval_job_from_its_own_run_end(
+    scope: Scope, fake_clock: FakeClock
+) -> None:
+    """Two 30-minute jobs due in one slot run in id order; each next run steps from the end of its
+    own run (drift kept, P14-02), so the one run second is due later than the first."""
+
+    def five_seconds(_request: AgentRunRequest) -> None:
+        fake_clock.advance(5)
+
+    agent = Agent(on_call=five_seconds)
+    world, ticker = setup(scope, agent, max_parallel_jobs=1)
+    slot = fake_clock.now()
+    later = world.add(id="b0000000000b", next_run_at=slot)
+    first = world.add(id="a0000000000a", next_run_at=slot)
+    report = asyncio.run(run_driven(ticker.tick(wait=True), fake_clock, step=0.5))
+    assert set(report.outcomes) == {first.id, later.id}
+    assert agent.calls == [first.id, later.id]
+    a, b = world.get(first.id), world.get(later.id)
+    assert a is not None and b is not None
+    for job in (a, b):
+        assert job.last_run_at is not None and job.next_run_at is not None
+        assert job.next_run_at - job.last_run_at == timedelta(minutes=30)
+    assert b.next_run_at is not None and a.next_run_at is not None
+    assert b.next_run_at - a.next_run_at >= timedelta(seconds=5)
+
+
 def test_unbounded_pool_runs_together(real: Scope) -> None:
     agent = Agent()
     world, ticker = setup(real, agent)

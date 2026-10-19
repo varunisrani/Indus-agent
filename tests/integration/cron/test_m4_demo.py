@@ -25,7 +25,7 @@ from indus.cli.args import CliState
 from indus.cli.commands import cron as cron_cli
 from indus.cli.slash.cron_cmds import cron_cmd as slash_cron
 from indus.core.persist import MemoryStore
-from indus.cron import delivery, ports, tool
+from indus.cron import delivery, ports, store, tool
 from indus.cron.context import CronContext
 from indus.cron.delivery import DeliveryReceipt, DeliveryRequest
 from indus.cron.incidents import IncidentLedger
@@ -138,7 +138,19 @@ def only(jobs: list[CronJob], pick: Callable[[CronJob], bool]) -> CronJob:
     return found
 
 
-def test_m4_cron_demo(demo: Demo) -> None:
+# Job ids are random and jobs due in the same slot dispatch in id order, so with
+# `max_parallel_jobs: 1` the draw decides whether the missing-key job runs before or after the
+# build check. Both orders are pinned (ids handed out in creation order: build, inbox, missing key).
+DISPATCH_ORDERS = {
+    "missing_key_first": ("b0000000000b", "c0000000000c", "a0000000000a"),
+    "missing_key_last": ("a0000000000a", "b0000000000b", "c0000000000c"),
+}
+
+
+@pytest.mark.parametrize("order", sorted(DISPATCH_ORDERS))
+def test_m4_cron_demo(demo: Demo, order: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    ids = iter(DISPATCH_ORDERS[order])
+    monkeypatch.setattr(store, "new_job_id", lambda: next(ids))
     scope, clock = demo.scope, demo.clock
     start = clock.now()
 
@@ -163,6 +175,7 @@ def test_m4_cron_demo(demo: Demo) -> None:
     build = only(jobs, lambda j: j.prompt == "check the build")
     inbox = only(jobs, lambda j: j.prompt == "summarise the inbox")
     nokey = only(jobs, lambda j: j.provider == "anthropic")
+    assert [build.id, inbox.id, nokey.id] == list(DISPATCH_ORDERS[order])
     assert build.recurring and build.deliver == "local" and build.repeat.times is None
     assert build.next_run_at == start + timedelta(minutes=30)
     assert inbox.deliver == "local" and inbox.next_run_at == start + timedelta(hours=1)
@@ -203,9 +216,13 @@ def test_m4_cron_demo(demo: Demo) -> None:
     assert alert.for_failure and "no usable credential" in alert.text
 
     # -- the hour: silence is not delivered; the hourly inbox job fires; no second block alert --
+    # An interval steps from the end of its own last run (drift kept, P14-02) and the pool is
+    # serial, so the two 30-minute jobs are next due a few seconds apart: tick once both are.
     second = demo.job(build.id).next_run_at
+    again = demo.job(nokey.id).next_run_at
     assert second is not None and second >= start + timedelta(hours=1)
-    demo.advance_to(second)
+    assert again is not None and abs(again - second) < timedelta(minutes=1)
+    demo.advance_to(max(second, again))
     report = demo.tick()
     assert report.outcomes[build.id].status == "silent"
     assert demo.attempts(build.id)[-1].delivery_status is None
