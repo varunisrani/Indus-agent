@@ -75,8 +75,10 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`; P14 in the commit that carries this text).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- P15 wave 1 (G1..G4, P15-01..18): integrated and rebased in verify2; full gate on the combined tree
-  running, lands next. Patches + README in `.agents/wip/p15w1/`.
+- KNOWN RED ON MAIN: tests/integration/cron/test_m4_demo.py fails ~5/10 runs (P14; a tick sometimes skips
+  the blocked missing-key job). Root-cause fix in progress (scratchpad wt-m4fix); lands before P15.
+- P15 wave 1 (G1..G4, P15-01..18): integrated and rebased in verify2; combined gate green except the
+  flaky M4 test above; lands right after the M4 fix. Patches + README in `.agents/wip/p15w1/`.
 - P21 B1 + B2 (P21-01..11, 15) and P22 R1 (P22-01..09): built (patches + READMEs in `.agents/wip/p21/`,
   `.agents/wip/p22/`), integrating in verify3.
 Next: P15-19..36 (delivery ledger, deliverers + `indus send`, cron in the daemon, approvals over chat,
