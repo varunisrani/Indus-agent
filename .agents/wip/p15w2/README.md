@@ -122,3 +122,23 @@
 - Follow-ups: CLI/TUI approval cards onto service/approval_copy.py; cache age cleanup in daemon
   housekeeping; Docker path translation for cached files; cron ledger attempt shows ok while the job
   shows silent.
+
+## w20-p15w5.patch: P15-30..32 (API server, runs/jobs API, webhooks), base d0f29d0
+- Builder checks: 3227 passed / 25 skipped on gateway/state/cli/config/contract-cli; ruff, pyright, lint-imports, tooling.checks ok.
+- New core deps fastapi==0.142.2 (+ annotated-doc 0.0.5) and uvicorn==0.54.0: re-lock (uv.lock excluded from the patch).
+- Most of the size is `tests/fixtures/gateway/openai_schema/` (trimmed openai/openai-openapi @ 33248a6, MIT, SOURCE.md).
+- Stand-in: `tests/unit/gateway/http/_stubs_w5.py` (daemon). Wiring:
+  - W3 daemon: `surfaces = await start_http_surfaces(HttpHost(scope, services=factory, store=handle))`; factory builds one
+    SessionService per SurfaceSpec (WEBHOOK_SURFACE untrusted: no MCP/plugin toolsets); `HttpHost.on_status` gets API counters
+    every 30 s; `surfaces.problems` lists failed surfaces; `await surfaces.aclose()` before closing services.
+  - W4: `gateway_group.add_command(api_key_group)` (indus.cli.commands.gateway_api_key).
+  - cli/app.py `webhook` row is also in W4 (P15-28 owns it): keep one copy.
+  - Swap `CompletionLog` (`<home>/gateway/api_completions.jsonl`) for W1's delivery ledger.
+- Decisions: config under gateway.api_server / gateway.webhook; auth on /health too and no key = refuse to start; no session
+  header = new session with system+history folded into first message; data-URL images cached under
+  `<home>/cache/api_server/images`; failures keep OpenAI finish_reason plus an `indus` error object; runs/idempotency/stored
+  responses in memory; webhook route secrets are secret-store names; generic headers X-Indus-Signature / -Timestamp /
+  -Signature-Ts; failed direct delivery forgets its delivery id; coalesced events dropped at shutdown; /api/cron/fire guarded
+  by the API key.
+- Follow-ups: reference routes with no phase row (/health/detailed, /v1/capabilities, /api/model/options, /v1/skills,
+  /v1/toolsets, session create/patch/delete/messages/fork/chat); background /api/jobs/{id}/run not cancelled at shutdown.
