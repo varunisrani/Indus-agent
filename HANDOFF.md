@@ -78,7 +78,7 @@ In flight:
 - P15 waves 2–3 building (Agent 1, from `d0f29d0`): W1 = P15-19, 20 (delivery ledger, deliverers, `indus
   send`); W2 = P15-21..23 (cron in the daemon, approvals/clarify over chat, media intake); W3 = P15-24..26
   (daemon, drain/restart, boot recovery); W4 = P15-27..29 (control socket, `indus gateway`, reconnect,
-  /platform, hooks); W5 = P15-30..32 (API server, runs/sessions/jobs, webhooks). W1, W4 DONE (patches in
+  /platform, hooks); W5 = P15-30..32 (API server, runs/sessions/jobs, webhooks). W1, W3, W4 DONE (patches in
   `.agents/wip/p15w2/`); if paused, the other patches go there too.
 - Last landings: P15-01..18 (`c0e0201`), M4 flake fix (`ec70724`), P21-01..11, 15 and
   P22-01..09 (`42a852e`). Done: P00–P14 complete; P15 18/36; P21 11/16; P22 9/15.

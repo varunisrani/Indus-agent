@@ -57,3 +57,40 @@
 - Cron tick guard (P15-21): cron cannot import service — pass a probe (gateway_control.identify(home)) from
   the CLI, or move the wire module down a layer.
 - Follow-ups: P17 session-ticket / describe via ControlServer.register; agent:step from post_tool_call.
+
+## W3 — w20-p15w3.patch — DONE (P15-24 daemon process, P15-25 drain/restart/shutdown/watchdogs, P15-26 boot recovery)
+- New: state/gateway_runtime.py (process identity pid+start time+pid ns, zombies gone; pid record;
+  RuntimeStatus writer/reader + 120 s stale; planned-stop record; exit codes 0/75/78;
+  INDUS_GATEWAY_SUPERVISED, _INDUS_GATEWAY); gateway/daemon/{__init__,parts (DaemonPart, Stage,
+  PART_FACTORIES),liveness (flock, claim_instance, --replace),status,process (GatewayDaemon,
+  DaemonOptions, AdapterConfig, build_service, run_daemon, run_command),command,lifecycle,drain,watchdogs,
+  recovery}.py; notes daemon-process (API), daemon-lifecycle, boot-recovery; tests (unit daemon ×3,
+  integration test_daemon_start / test_signals / test_boot_recovery, kits daemon_kit + spool, fixture
+  spool_plugin, _stubs_w3.py STAND-IN for `indus gateway run` — delete when W4 lands).
+- Shared: gateway/token_locks.py (helpers from state.gateway_runtime, re-exported); gateway/__init__.py
+  lazy exports; config gateway.connect_timeout_seconds 30, gateway.systemd_watchdog_seconds 0,
+  agent.restart_drain_timeout 0, agent.restart_after_turn_timeout 1800 (+test); traps R03.20/21,
+  R06.16–20; ACC-K1-1, K3-1, K31-1.
+- Plug-in points (API in docs/notes/P15/daemon-process.md): slices add "module:attr" factories to
+  PART_FACTORIES; in prepare: W2 sets pipeline.on_request / interceptors / enrich; W1 sets
+  daemon.sender_options[...] (ledger) and daemon.recovery.crash_reply_sink, registers P14 deliverers via
+  on_platform_up; stages CONTROL (W4 control socket, required, stops last), RECOVERY (W1 ledger sweep),
+  BACKGROUND (W2 cron ticker, W4 reconnect watcher, W1 channel directory).
+- W3/W4 MISMATCHES — LEAD RULINGS for integration: (1) one runtime-records module: KEEP
+  state/gateway_runtime.py (cron sits below service), fold W4's service/gateway_runtime.py into it;
+  (2) status file name gateway_state.json (already excluded by `indus import`); W4 reads that;
+  (3) W4's side_services.attach becomes a required CONTROL DaemonPart (attach in start; platform_failed
+  via on_platform_down; started once platforms up; stop in stop); (4) connect_platform returns
+  PlatformRuntime — adapt W4; (5) W4 builds control handlers from identity(), status_snapshot(),
+  request_stop / request_restart, lifecycle.set_draining / clear_draining, plugins;
+  (6) agent.cron_drain_timeout belongs to W2.
+- Decisions (need D-ids): status file doubles as unclean-death marker; `degraded` = parked fatal platform
+  or loop-watchdog exit (exit_reason distinguishes); exit 78 only when nothing connected, ≥1 connect-time
+  conflict, nothing retrying (missing library / unbuildable adapter parks but never forces 78); failed
+  required part or unexpected startup error exits 75; a crash-interrupted turn is paused, not resumed
+  (R06.19; reference resumes once); _INDUS_GATEWAY via scope env + child_env _INDUS_FORCE_; concurrency cap
+  read at start; adapter factories get AdapterConfig(name, settings, scope, clock, proxy) — P15-33..35
+  implement create_adapter(config).
+- Follow-ups: daemon does not yet feed StreamConsumer / ToolProgress / typing / heartbeat (replies go out
+  whole); chat sessions lack the learning loop (with_learning lives in cli/runtime.py — move to service/);
+  process tests to call `python -m indus gateway run` after W4 merges; ACC-K1-2..4, K34-1 rows missing.
