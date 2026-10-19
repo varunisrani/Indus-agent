@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 49,
-  "remaining_pct": 51,
+  "usage_pct": 53,
+  "remaining_pct": 47,
   "resets_at": "2026-10-19T11:00:00+00:00",
-  "last_check": "2026-10-19T08:20:56+00:00",
-  "current_step": "wave 8 (P12-06..26) merged, full gate running; wave 9 building: P12-27 app composition, P12-32 launcher; then P12-33 Demo 2",
-  "last_commit": "ee81798"
+  "last_check": "2026-10-19T08:42:09+00:00",
+  "current_step": "wave 8 landed (fa4fe5e); P12-27 + P12-32 merged, gate running; P12-33 Demo 2 building",
+  "last_commit": "ea8fcf9"
 }
