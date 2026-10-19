@@ -72,7 +72,7 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Builder rules: `docs/plan/phases/builder-rules.md`; landing notes: `docs/plan/phases/LEAD-NOTES.md`.
 Done: P00–P08 (P08 wave 2 landed in the commit that carries this text) and P11 (`3ae8089`).
 Landing notes for both are in LEAD-NOTES.
-Turn: AGENT_2 (PAUSED until Agent 2 picks it up). Agent 1 is out of usage until 02:00 UTC.
+Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up). Agent 1 is integrating P09 wave 1.
 Start here — P09 wave 1 is saved, not landed: `.agents/wip/p09w1/` holds three slice patches on base
 `29ddd7b` and a README with each slice's status and the integration list:
 - A (P09-01..04, P09-25 memory, pending-write gate, frozen block, session_search): done; host wiring
