@@ -22,6 +22,7 @@ from typing import Any, cast
 
 from pydantic import TypeAdapter
 
+from indus.protocol.bridge import BRIDGE_NOTIFICATIONS
 from indus.protocol.envelope import (
     ErrorDetail,
     ErrorObject,
@@ -105,6 +106,8 @@ def _named_roots() -> list[tuple[str, TypeAdapter[Any]]]:
         roots[spec.result.__name__] = spec.result
     for model in EVENTS.values():
         roots[model.__name__] = model
+    for model in BRIDGE_NOTIFICATIONS.values():
+        roots[model.__name__] = model
     for request, answer in SERVER_REQUEST_KINDS.values():
         roots[request.__name__] = request
         roots[answer.__name__] = answer
@@ -140,6 +143,7 @@ def _catalog_data() -> dict[str, Json]:
             for spec in METHODS.values()
         },
         "events": {name: model.__name__ for name, model in EVENTS.items()},
+        "notifications": {name: model.__name__ for name, model in BRIDGE_NOTIFICATIONS.items()},
         "server_request_method": SERVER_REQUEST_METHOD,
         "server_requests": {
             kind: {"request": req.__name__, "answer": ans.__name__}
@@ -321,6 +325,7 @@ def render_catalog(schema: Mapping[str, Json]) -> str:
     data = cast(dict[str, Json], schema["x-indus-catalog"])
     methods = cast(dict[str, dict[str, Json]], data["methods"])
     events = cast(dict[str, str], data["events"])
+    notifications = cast(dict[str, str], data["notifications"])
     kinds = cast(dict[str, dict[str, str]], data["server_requests"])
     parts = [
         'import type * as T from "./types.ts";',
@@ -347,6 +352,10 @@ def render_catalog(schema: Mapping[str, Json]) -> str:
         f"export const EVENTS = deepFreeze({_const(events)} as const);",
         "export type EventName = keyof typeof EVENTS;",
         _type_map("EventTypes", events),
+        "/** Other notification method → params type name (the stdio ready frame). */\n"
+        f"export const NOTIFICATIONS = deepFreeze({_const(notifications)} as const);",
+        "export type NotificationName = keyof typeof NOTIFICATIONS;",
+        _type_map("NotificationTypes", notifications),
         "/** The notification method that carries a server request. */\n"
         f"export const SERVER_REQUEST_METHOD = {_literal(data['server_request_method'])};",
         "/** Server-request kind → request and answer type names. */\n"

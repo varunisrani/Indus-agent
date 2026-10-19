@@ -6,7 +6,8 @@ The REPL (``indus.cli.repl``) builds one ``SlashContext`` per chat and passes it
 - they print through ``ctx.out`` (one call per line of plain text);
 - they reach the session service through ``ctx.port`` (a ``SessionPort``; ``port.HostPort`` adapts
   the in-process host) and the store through ``ctx.store``; the P10 session features (``/goal``,
-  ``/loop``, ``/heartbeat``, ``/btw``, ``/moa``) through ``ctx.automation`` when the host runs them;
+  ``/loop``, ``/heartbeat``, ``/btw``, ``/moa``) through ``ctx.automation`` when the host runs them,
+  and the REPL's voice mode (``/voice``) through ``ctx.voice``;
 - they answer with a ``SlashResult`` saying what the REPL must do next — leave, switch to another
   session, clear the screen, send a message as a turn, or put text back in the composer.
 
@@ -43,6 +44,7 @@ __all__ = [
     "SessionPort",
     "SlashContext",
     "SlashResult",
+    "VoiceControl",
 ]
 
 type Output = Callable[[str], None]
@@ -174,6 +176,16 @@ class AutomationPort(Protocol):
         ...
 
 
+class VoiceControl(Protocol):
+    """The REPL's voice mode (``indus.cli.voice.VoiceMode``) as ``/voice`` drives it (P10-19)."""
+
+    def turn_on(self) -> bool: ...
+
+    def turn_off(self) -> None: ...
+
+    def status_lines(self) -> list[str]: ...
+
+
 type Handler = Callable[["SlashContext", str], SlashResult]
 """A built-in command handler: ``(ctx, arguments)``; arguments keep their case."""
 
@@ -245,6 +257,7 @@ class SlashContext:
     catalogue: Mapping[str, str] | None = None
     busy_wait_s: float = 30.0
     automation: AutomationPort | None = None
+    voice: VoiceControl | None = None
 
     @property
     def time(self) -> Clock:

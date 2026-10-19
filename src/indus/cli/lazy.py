@@ -39,6 +39,7 @@ class LazyGroup(click.Group):
         self,
         *args: Any,
         registry: Sequence[tuple[str, str, str]] = (),
+        hidden: Sequence[tuple[str, str]] = (),
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -49,6 +50,11 @@ class LazyGroup(click.Group):
                 raise ValueError(f"command {name!r} registered twice")
             self._lazy[name] = target
             self._short[name] = short
+        # Hidden commands load lazily like the others but are never listed (help, completion).
+        for name, target in hidden:
+            if name in self._lazy:
+                raise ValueError(f"command {name!r} registered twice")
+            self._lazy[name] = target
         self._order: list[str] = [name for name, _, _ in registry]
 
     @property

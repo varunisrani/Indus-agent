@@ -10,12 +10,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import AfterValidator, Field, NonNegativeInt, ValidationError
-from pydantic_core import PydanticCustomError
+from pydantic import Field, NonNegativeInt, ValidationError
 
-from indus.protocol.base import ProtocolModel
+from indus.protocol.base import (
+    TEXT_EMPTY_ERROR,
+    MessageText,
+    ProtocolModel,
+    SessionId,
+)
+from indus.protocol.bridge import BRIDGE_METHODS, HistoryMessage
 from indus.protocol.errors import (
     ANSWER_KIND_MISMATCH,
     COMMON_ERRORS,
@@ -30,28 +35,13 @@ from indus.protocol.errors import (
     SESSION_REFUSED,
     STORE_FAILED,
     TEXT_EMPTY,
+    UNKNOWN_PARAM_KEY,
     ErrorCode,
 )
 from indus.protocol.server_requests import ServerRequest, ServerRequestAnswer
 
 PROTOCOL_VERSION = 1
 """Bumped when a change breaks existing clients."""
-
-TEXT_EMPTY_ERROR = "text_empty"
-"""The pydantic error type raised for blank message text."""
-
-
-def _not_blank(value: str) -> str:
-    if not value.strip():
-        raise PydanticCustomError(TEXT_EMPTY_ERROR, "text must not be empty")
-    return value
-
-
-type MessageText = Annotated[str, AfterValidator(_not_blank)]
-"""Message text: any string with at least one non-whitespace character."""
-
-type SessionId = Annotated[str, Field(min_length=1)]
-"""A session id."""
 
 
 class SessionCreateParams(ProtocolModel):
@@ -96,6 +86,28 @@ class SessionResumeResult(ProtocolModel):
     """The seq of the last event sent so far; events after it are still to come."""
     pending_requests: list[ServerRequest] = Field(default_factory=list[ServerRequest])
     """Server requests still waiting for an answer, re-delivered after a reconnect."""
+    title: str | None = None
+    """The session's title, when a surface asked for the display projection."""
+    messages: list[HistoryMessage] = Field(default_factory=list[HistoryMessage])
+    """The stored conversation for display, when a surface asked for it (empty otherwise)."""
+
+
+class BusyAction(StrEnum):
+    """What a submit does while the session is running a turn."""
+
+    REJECT = "reject"
+    QUEUE = "queue"
+    STEER = "steer"
+    REDIRECT = "redirect"
+
+
+class SubmitStatus(StrEnum):
+    """What happened to a submitted message."""
+
+    STREAMING = "streaming"
+    QUEUED = "queued"
+    STEERED = "steered"
+    REDIRECTED = "redirected"
 
 
 class PromptSubmitParams(ProtocolModel):
@@ -105,15 +117,19 @@ class PromptSubmitParams(ProtocolModel):
     """The session to run the turn in."""
     text: MessageText
     """The user's message."""
+    when_busy: BusyAction = BusyAction.REJECT
+    """While a turn runs: refuse (``SESSION_BUSY``), queue it, steer or redirect the turn."""
 
 
 class PromptSubmitResult(ProtocolModel):
     """The ticket for the started turn."""
 
     turn_id: str
-    """The turn's id; its events carry it."""
+    """The turn's id; its events carry it. For a queued or steered message: the running turn."""
     generation: NonNegativeInt
     """The turn's generation, for interrupts."""
+    status: SubmitStatus = SubmitStatus.STREAMING
+    """``streaming`` when this message started the turn."""
 
 
 class SessionInterruptParams(ProtocolModel):
@@ -208,8 +224,14 @@ class ClientCapabilitiesResult(ProtocolModel):
     """The enabled feature names."""
 
 
-KNOWN_CLIENT_FEATURES: frozenset[str] = frozenset()
-"""Features a client may turn on; none exist yet (D-16 §2.3)."""
+SERVER_REQUESTS_FEATURE = "server_requests"
+"""The client shows every kind of server request; ``server_requests.<kind>`` names one kind."""
+
+KNOWN_CLIENT_FEATURES: frozenset[str] = frozenset(
+    {SERVER_REQUESTS_FEATURE}
+    | {f"{SERVER_REQUESTS_FEATURE}.{kind}" for kind in ("approval", "clarify", "sudo", "secret")}
+)
+"""Features a client may turn on (D-16 §2.3)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +318,10 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
                 ANSWER_KIND_MISMATCH,
             ),
             _spec("client.capabilities", ClientCapabilitiesParams, ClientCapabilitiesResult),
+            *(
+                _spec(name, params, result, *errors)
+                for name, params, result, errors in BRIDGE_METHODS
+            ),
         )
     }
 )
@@ -316,7 +342,8 @@ def validate_params(method: str, params: Mapping[str, Any] | None) -> ProtocolMo
     """Validate ``params`` for ``method``.
 
     Raises ``ProtocolError`` with ``METHOD_NOT_FOUND`` for an undeclared method, ``TEXT_EMPTY``
-    for blank message text and ``INVALID_PARAMS`` (with the dotted key path) for anything else.
+    for blank message text, ``UNKNOWN_PARAM_KEY`` for a key the model does not declare and
+    ``INVALID_PARAMS`` for anything else; the last two carry the dotted key path.
     """
     spec = METHODS.get(method)
     if spec is None:
@@ -324,8 +351,14 @@ def validate_params(method: str, params: Mapping[str, Any] | None) -> ProtocolMo
     try:
         return spec.params.model_validate(dict(params or {}))
     except ValidationError as exc:
-        first = exc.errors()[0]
+        found = exc.errors()
+        unknown = [e for e in found if e["type"] == "extra_forbidden"]
+        first = unknown[0] if unknown else found[0]
         path = ".".join(str(part) for part in first["loc"]) or None
+        if unknown:
+            raise ProtocolError(
+                UNKNOWN_PARAM_KEY, f"unknown key: {path or 'params'}", path=path
+            ) from exc
         if first["type"] == TEXT_EMPTY_ERROR:
             raise ProtocolError(TEXT_EMPTY, path=path) from exc
         raise ProtocolError(

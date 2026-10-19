@@ -41,6 +41,7 @@ BUILTIN_MODULES: tuple[BuiltinModule, ...] = (
     BuiltinModule("indus.tools.builtin.delegate"),
     BuiltinModule("indus.tools.builtin.browser"),
     BuiltinModule("indus.tools.builtin.media"),
+    BuiltinModule("indus.tools.builtin.computer_use"),
 )
 
 

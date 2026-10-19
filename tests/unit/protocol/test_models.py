@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from indus.protocol import envelope, events, methods, server_requests
+from indus.protocol import bridge, envelope, events, methods, server_requests
 from indus.protocol.base import ProtocolModel
 from indus.protocol.envelope import (
     ErrorResponse,
@@ -20,7 +20,7 @@ from indus.protocol.envelope import (
     SuccessResponse,
     parse_frame,
 )
-from indus.protocol.errors import INVALID_PARAMS, METHOD_NOT_FOUND, TEXT_EMPTY
+from indus.protocol.errors import INVALID_PARAMS, METHOD_NOT_FOUND, TEXT_EMPTY, UNKNOWN_PARAM_KEY
 from indus.protocol.events import EVENTS, Event, ExitReason, TurnDone
 from indus.protocol.methods import (
     METHODS,
@@ -40,7 +40,7 @@ from indus.protocol.server_requests import (
 )
 from tests.unit.protocol._samples import SAMPLES
 
-MODULES = (envelope, events, methods, server_requests)
+MODULES = (envelope, events, methods, server_requests, bridge)
 ABSTRACT = {events.EventBase, server_requests.ServerRequestBase}
 
 
@@ -191,6 +191,34 @@ def test_catalogue_names() -> None:
         "session.redirect",
         "server_request.answer",
         "client.capabilities",
+        "session.list",
+        "session.most_recent",
+        "session.close",
+        "session.history",
+        "session.title",
+        "session.undo",
+        "session.compress",
+        "session.branch",
+        "session.usage",
+        "prompt.background",
+        "clarify.lock",
+        "server_request.decline",
+        "gateway.ping",
+        "complete.slash",
+        "complete.path",
+        "commands.catalog",
+        "slash.exec",
+        "command.dispatch",
+        "shell.exec",
+        "config.get",
+        "config.set",
+        "model.options",
+        "model.save_key",
+        "model.disconnect",
+        "reload.mcp",
+        "paste.collapse",
+        "image.attach",
+        "input.detect_drop",
     ]
     for spec in METHODS.values():
         assert spec.summary
@@ -211,8 +239,12 @@ def test_validate_params_unknown_method() -> None:
 def test_validate_params_unknown_key_names_its_path() -> None:
     with pytest.raises(ProtocolError) as info:
         validate_params("session.create", {"titel": "typo"})
-    assert info.value.error is INVALID_PARAMS
+    assert info.value.error is UNKNOWN_PARAM_KEY
     assert info.value.path == "titel"
+    with pytest.raises(ProtocolError) as info:
+        validate_params("session.list", {"limit": "many", "colour": 1})
+    assert info.value.error is UNKNOWN_PARAM_KEY, "an unknown key wins over other errors"
+    assert info.value.path == "colour"
     with pytest.raises(ProtocolError) as info:
         validate_params(
             "server_request.answer",
@@ -237,6 +269,8 @@ def test_blank_text_is_its_own_error(method: str, text: str) -> None:
 
 def test_capabilities_drop_unknown_features() -> None:
     assert negotiate_features(["anything", "else"]) == []
+    wanted = ["server_requests.secret", "server_requests", "nope"]
+    assert negotiate_features(wanted) == ["server_requests", "server_requests.secret"]
 
 
 # --- events --------------------------------------------------------------------------------------

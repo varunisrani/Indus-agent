@@ -1,8 +1,8 @@
 """The built-in ``indus doctor`` checks, in their run order (P07-19).
 
 python → packages → home → config → env → keychain → auth store → providers (``--live`` probes)
-→ session store → terminal backend → git and rg → tools. Each returns findings; with ``ctx.fix``
-the home, config and env checks repair what is safe and say so.
+→ session store → terminal backend → git and rg → tools → desktop control. Each returns findings;
+with ``ctx.fix`` the home, config and env checks repair what is safe and say so.
 """
 
 from __future__ import annotations
@@ -558,3 +558,11 @@ def check_tools(ctx: DoctorContext) -> list[Finding]:
             )
         )
     return found
+
+
+@register("computer_use", "Desktop control", order=125)
+def check_computer_use(ctx: DoctorContext) -> list[Finding]:
+    from indus.tools.builtin.computer_use.driver import doctor_rows
+
+    scoped = ctx.scope.with_config(config_mod.load(ctx.scope))
+    return [Finding(row.id, row.severity, row.message, fix=row.fix) for row in doctor_rows(scoped)]

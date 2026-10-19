@@ -123,6 +123,12 @@ def read_query(chat: ChatArgs) -> str | None:
     default=None,
     help="Tag stored with the session (default: cli; 'tool' hides it from session lists).",
 )
+@click.option(
+    "--voice",
+    is_flag=True,
+    default=False,
+    help="Start with voice mode on: hold the record key (Ctrl+Space) to talk.",
+)
 @with_global_options(repeated=True)
 @click.pass_context
 def chat_command(
@@ -133,6 +139,7 @@ def chat_command(
     quiet: bool,
     max_turns: int | None,
     source: str | None,
+    voice: bool,
     **values: Any,
 ) -> int:
     state = ctx.find_object(CliState)
@@ -146,6 +153,7 @@ def chat_command(
         quiet=quiet,
         max_turns=max_turns,
         source=source,
+        voice=voice,
     )
     return run_chat(state, args, chat)
 
@@ -396,6 +404,7 @@ class _ChatRun:
                 notices=tuple(self.notices),
                 store=spec.store,
                 no_restore_cwd=self.args.no_restore_cwd or self.args.in_dir is not None,
+                voice=self.chat.voice,
             )
             return entry(launch)
         finally:

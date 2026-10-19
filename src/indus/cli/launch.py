@@ -17,6 +17,8 @@ commands are wired).
   text, sent as typed once the prompt is up (no slash or ``!`` handling);
 - the P10 session features (``start_automation``): goals, loops, heartbeats, ``/btw`` and
   ``/moa`` run on the host's loop; the REPL's queued messages count as input waiting;
+- voice mode (``attach_voice_mode``, P10-19): the record key, read-aloud and ``/voice``; with
+  ``--voice`` it is turned on once the prompt is up;
 - the status bar's source: the attached agent's route, its usage ledger (``Agent.usage``, P08-08:
   last prompt size and cost, never a cost the ledger could not price) and its compaction count.
   It reads plain counters from the REPL thread without a loop hop; a failed read only falls back
@@ -40,6 +42,7 @@ if TYPE_CHECKING:
     from indus.foundation.scope import Scope
 
 __all__ = [
+    "attach_voice_mode",
     "build_context",
     "make_on_resume",
     "run_launch",
@@ -244,6 +247,17 @@ def start_automation(launch: ReplLaunch, ctx: SlashContext, link: dict[str, Repl
     ctx.automation = HostAutomation(host, automation)
 
 
+def attach_voice_mode(launch: ReplLaunch, ctx: SlashContext, repl: Repl) -> None:
+    """P10-19: the record key, read-aloud and ``/voice`` for this REPL; ``--voice`` turns voice
+    mode on once the prompt is up (it stays off, with one message, when it cannot work here)."""
+    try:
+        from indus.cli.voice import attach_voice, host_services
+
+        attach_voice(repl, ctx, host_services(launch.host, launch.scope), turn_on=launch.voice)
+    except Exception:
+        log.warning("voice mode is not available in this chat", exc_info=True)
+
+
 def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> int:
     """Run the classic REPL for ``launch``; returns the exit code (see the module notes)."""
     from indus.cli.repl.app import ReplOptions, run_repl
@@ -269,6 +283,7 @@ def run_launch(launch: ReplLaunch, *, run: Callable[..., int] | None = None) -> 
 
     def ready(repl: Repl) -> None:
         link["repl"] = repl
+        attach_voice_mode(launch, ctx, repl)
         seed = launch.seed
         if seed is not None and seed.strip():
             repl.post(lambda: repl.send(seed))

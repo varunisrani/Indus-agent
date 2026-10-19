@@ -35,6 +35,7 @@ from indus.cli.args import (
 from indus.cli.lazy import LazyGroup
 
 __all__ = [
+    "HIDDEN",
     "REGISTRY",
     "cli",
     "dispatch",
@@ -115,6 +116,11 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""
+
+HIDDEN: tuple[tuple[str, str], ...] = (
+    ("tui-bridge", "indus.tui_bridge.command:tui_bridge_command"),
+)
+"""Commands other programs start (never listed): ``(name, "module:attr")``."""
 
 _CONTINUE = ("-c", "--continue")
 _RESUME = ("-r", "--resume")
@@ -340,6 +346,7 @@ def _show_version(ctx: click.Context, _param: click.Parameter, value: bool) -> N
     cls=LazyGroup,
     name="indus",
     registry=REGISTRY,
+    hidden=HIDDEN,
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"], "max_content_width": 100},
     help="Indus Agent: a terminal agent that can run commands, edit files and search the web."

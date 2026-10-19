@@ -38,7 +38,7 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.input import Input
-from prompt_toolkit.key_binding import KeyPressEvent
+from prompt_toolkit.key_binding import KeyBindingsBase, KeyPressEvent, merge_key_bindings
 from prompt_toolkit.output import Output
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style, merge_styles
@@ -266,6 +266,10 @@ class Repl:
         self._exit_requested = False
         self.on_session_moved: Callable[[str], None] | None = None
         """Told the new id when the attached conversation continues in a child session."""
+        self.key_extras: list[KeyBindingsBase] = []
+        """More key bindings (voice mode's record key, P10-19); set before ``run``."""
+        self.observers: list[Callable[[object], None]] = []
+        """Called on the loop thread with every feed item after the REPL handled it."""
 
     def _redact(self, text: str) -> str:
         return redact_output(text, scope=self.scope)
@@ -279,7 +283,7 @@ class Repl:
         session: PromptSession[int] = PromptSession(
             message=self._message,
             bottom_toolbar=self._toolbar,
-            key_bindings=build_key_bindings(self),
+            key_bindings=merge_key_bindings([build_key_bindings(self), *self.key_extras]),
             history=history,
             input=self._input,
             output=self._output,
@@ -439,6 +443,11 @@ class Repl:
             self.renderer.handle(item)
             if isinstance(item, TurnDone) and self.turn_id in (item.turn_id, None):
                 self._turn_ended()
+        for observer in list(self.observers):
+            try:
+                observer(item)
+            except Exception:
+                log.warning("a feed observer failed", exc_info=True)
         self._invalidate()
 
     def _moved(self, session_id: str) -> None:

@@ -65,6 +65,7 @@ from indus.protocol.server_requests import (
     SudoAnswer,
     SudoRequest,
 )
+from tests.unit.protocol._bridge_samples import BRIDGE_SAMPLES
 
 SID = "sess-1"
 TID = "turn-1"
@@ -193,3 +194,5 @@ SAMPLES: list[ProtocolModel] = [
     SecretAnswer(),
     ClarifyQuestion(id="q", text="?", choices=["a", "b"], multi_select=True),
 ]
+
+SAMPLES += BRIDGE_SAMPLES

@@ -81,12 +81,30 @@ INTERNAL_ERROR = _row(
 TEXT_EMPTY = _row(
     1001, "TEXT_EMPTY", _G.INVALID_REQUEST, "the message text is empty or only whitespace"
 )
+UNKNOWN_PARAM_KEY = _row(
+    1002,
+    "UNKNOWN_PARAM_KEY",
+    _G.INVALID_REQUEST,
+    "the params carry a key the method does not declare (the path names it)",
+)
 SESSION_NOT_FOUND = _row(2001, "SESSION_NOT_FOUND", _G.NOT_FOUND, "no session has this id")
 SERVER_REQUEST_NOT_FOUND = _row(
     2002,
     "SERVER_REQUEST_NOT_FOUND",
     _G.NOT_FOUND,
     "no open server request has this id (never sent, already answered or withdrawn)",
+)
+SLASH_NOT_OWNED = _row(
+    2003,
+    "SLASH_NOT_OWNED",
+    _G.NOT_FOUND,
+    "the server does not run this slash command; the client handles it, or a later release does",
+)
+UNSUPPORTED_COMMAND = _row(
+    2004,
+    "UNSUPPORTED_COMMAND",
+    _G.NOT_FOUND,
+    "the name is not a built-in, quick or skill command",
 )
 SESSION_BUSY = _row(
     3001,
@@ -106,6 +124,12 @@ ANSWER_KIND_MISMATCH = _row(
     _G.CONFLICT,
     "the answer's kind differs from the kind of the server request it answers",
 )
+CONFIRM_REQUIRED = _row(
+    3004,
+    "CONFIRM_REQUIRED",
+    _G.CONFLICT,
+    "the change needs an explicit confirmation; repeat the call with confirm set",
+)
 SESSION_REFUSED = _row(
     4001,
     "SESSION_REFUSED",
@@ -118,6 +142,12 @@ SERVER_REQUEST_UNSUPPORTED = _row(
     _G.REFUSED,
     "the client cannot answer server requests of this kind",
 )
+SHELL_REFUSED = _row(
+    4003,
+    "SHELL_REFUSED",
+    _G.REFUSED,
+    "the shell command is blocked by the dangerous-command rules and was not run",
+)
 PROVIDER_UNAVAILABLE = _row(
     5001,
     "PROVIDER_UNAVAILABLE",
@@ -127,6 +157,18 @@ PROVIDER_UNAVAILABLE = _row(
 STORE_FAILED = _row(
     6001, "STORE_FAILED", _G.INTERNAL, "the session store could not read or write the session"
 )
+SHELL_TIMEOUT = _row(
+    6002,
+    "SHELL_TIMEOUT",
+    _G.INTERNAL,
+    "the shell command did not finish within its time limit and was stopped",
+)
+SLASH_WORKER_FAILED = _row(
+    6003,
+    "SLASH_WORKER_FAILED",
+    _G.INTERNAL,
+    "the slash command's handler failed or did not answer in time",
+)
 
 ERROR_TABLE: tuple[ErrorCode, ...] = (
     PARSE_ERROR,
@@ -135,15 +177,22 @@ ERROR_TABLE: tuple[ErrorCode, ...] = (
     INVALID_PARAMS,
     INTERNAL_ERROR,
     TEXT_EMPTY,
+    UNKNOWN_PARAM_KEY,
     SESSION_NOT_FOUND,
     SERVER_REQUEST_NOT_FOUND,
+    SLASH_NOT_OWNED,
+    UNSUPPORTED_COMMAND,
     SESSION_BUSY,
     IDEMPOTENCY_CONFLICT,
     ANSWER_KIND_MISMATCH,
+    CONFIRM_REQUIRED,
     SESSION_REFUSED,
     SERVER_REQUEST_UNSUPPORTED,
+    SHELL_REFUSED,
     PROVIDER_UNAVAILABLE,
     STORE_FAILED,
+    SHELL_TIMEOUT,
+    SLASH_WORKER_FAILED,
 )
 """Every code, in table order."""
 
@@ -157,6 +206,7 @@ COMMON_ERRORS: tuple[ErrorCode, ...] = (
     METHOD_NOT_FOUND,
     INVALID_PARAMS,
     INTERNAL_ERROR,
+    UNKNOWN_PARAM_KEY,
 )
 
 # Product error codes (``indus.foundation.errors.ERROR_CODES``) with a specific protocol code.

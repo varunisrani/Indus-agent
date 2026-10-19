@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from pydantic import Field, JsonValue, NonNegativeInt
 
 from indus.protocol.base import ProtocolModel
+from indus.protocol.bridge import UsageNumbers
 
 
 class ExitReason(StrEnum):
@@ -269,6 +270,84 @@ class HeartbeatFired(EventBase):
     """How many times it has fired, this one included."""
 
 
+class MessageComplete(EventBase):
+    """A turn's final reply, sent after ``turn.done`` so a client can settle its streamed text."""
+
+    type: Literal["message.complete"] = "message.complete"
+    """Event type."""
+    turn_id: str
+    """The turn that ended."""
+    text: str
+    """The whole final reply (empty when the turn produced none)."""
+    reason: ExitReason
+    """Why the turn ended."""
+
+
+class SessionInfo(EventBase):
+    """What a client shows about a session: model, folder, tools, whether a turn runs."""
+
+    type: Literal["session.info"] = "session.info"
+    """Event type."""
+    title: str | None = None
+    """The session's title."""
+    model: str
+    """The bound model."""
+    provider: str
+    """The bound provider."""
+    reasoning_effort: str | None = None
+    """The reasoning level in effect, when the model has one."""
+    cwd: str | None = None
+    """The folder tools start in."""
+    tools: list[str] = Field(default_factory=list[str])
+    """The tool names the model sees."""
+    running: bool = False
+    """True while a turn runs."""
+    tool_progress: Literal["off", "new", "all", "verbose"] = "all"
+    """How much tool activity this connection is sent."""
+
+
+class SessionUsage(EventBase):
+    """The session's counters after a turn or on request."""
+
+    type: Literal["session.usage"] = "session.usage"
+    """Event type."""
+    usage: UsageNumbers
+    """Totals for this attachment of the session."""
+
+
+class SessionTitle(EventBase):
+    """The session's title changed."""
+
+    type: Literal["session.title"] = "session.title"
+    """Event type."""
+    title: str | None = None
+    """The new title; absent when it was cleared."""
+
+
+class TodoItem(ProtocolModel):
+    """One entry of the session's task list."""
+
+    id: str
+    """The item's id."""
+    content: str
+    """What the task is."""
+    status: Literal["pending", "in_progress", "completed", "cancelled"]
+    """Where it stands."""
+    parent: str | None = None
+    """The id of the item this one is a subtask of."""
+
+
+class TodoUpdated(EventBase):
+    """The session's task list changed; the whole list is sent."""
+
+    type: Literal["todo.updated"] = "todo.updated"
+    """Event type."""
+    todos: list[TodoItem]
+    """Every item, in priority order."""
+    revision: NonNegativeInt
+    """Grows each time the list really changes."""
+
+
 type Event = Annotated[
     TurnStarted
     | MessageDelta
@@ -283,7 +362,12 @@ type Event = Annotated[
     | LearningReviewDone
     | GoalUpdate
     | LoopUpdate
-    | HeartbeatFired,
+    | HeartbeatFired
+    | MessageComplete
+    | SessionInfo
+    | SessionUsage
+    | SessionTitle
+    | TodoUpdated,
     Field(discriminator="type"),
 ]
 """Any event, told apart by ``type``."""
@@ -303,6 +387,11 @@ EVENT_MODELS: tuple[type[EventBase], ...] = (
     GoalUpdate,
     LoopUpdate,
     HeartbeatFired,
+    MessageComplete,
+    SessionInfo,
+    SessionUsage,
+    SessionTitle,
+    TodoUpdated,
 )
 
 

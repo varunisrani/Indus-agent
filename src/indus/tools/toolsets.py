@@ -66,9 +66,13 @@ CORE_TOOLS: tuple[str, ...] = (
     "vision_analyze",
     "image_generate",
     "text_to_speech",
+    "computer_use",
 )
 # Left out of the coding posture once those tools exist.
 NOT_FOR_CODING = frozenset({"image_generate", "text_to_speech", "cronjob_manage", "computer_use"})
+# Tools the tool-search bridge (C4, not built yet) keeps out of the model's array by default and
+# offers through search instead.
+DEFERRED_BY_DEFAULT = frozenset({"computer_use"})
 # Read-only research and a question back to the sender: the whole webhook floor.
 WEBHOOK_FLOOR: tuple[str, ...] = ("web_search", "web_extract", "vision_analyze", "clarify")
 
@@ -118,6 +122,10 @@ _NAMED: dict[str, Toolset] = {
     "code_execution": _set("Run Python that calls the file, web and shell tools", "execute_code"),
     "delegation": _set("Hand tasks to subagents and control them", "delegate_task"),
     "browser": _set("Drive a headless browser: open, read and operate web pages", *BROWSER_TOOLS),
+    "computer_use": _set(
+        "Look at and operate desktop apps in the background (needs a desktop driver)",
+        "computer_use",
+    ),
 }
 
 

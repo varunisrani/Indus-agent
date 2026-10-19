@@ -15,16 +15,214 @@ export const PROTOCOL_VERSION = 1;
 
 /** Method name → params type, result type and the error names it may return. */
 export const METHODS = deepFreeze({
+  "clarify.lock": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SERVER_REQUEST_NOT_FOUND"
+    ],
+    "params": "ClarifyLockParams",
+    "result": "ClarifyLockResult"
+  },
   "client.capabilities": {
     "errors": [
       "PARSE_ERROR",
       "INVALID_REQUEST",
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
-      "INTERNAL_ERROR"
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
     ],
     "params": "ClientCapabilitiesParams",
     "result": "ClientCapabilitiesResult"
+  },
+  "command.dispatch": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "UNSUPPORTED_COMMAND",
+      "SHELL_REFUSED",
+      "SHELL_TIMEOUT"
+    ],
+    "params": "CommandDispatchParams",
+    "result": "CommandDispatchResult"
+  },
+  "commands.catalog": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "CommandsCatalogParams",
+    "result": "CommandsCatalogResult"
+  },
+  "complete.path": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "CompletePathParams",
+    "result": "CompleteResult"
+  },
+  "complete.slash": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "CompleteSlashParams",
+    "result": "CompleteResult"
+  },
+  "config.get": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND"
+    ],
+    "params": "ConfigGetParams",
+    "result": "ConfigGetResult"
+  },
+  "config.set": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "CONFIRM_REQUIRED",
+      "PROVIDER_UNAVAILABLE"
+    ],
+    "params": "ConfigSetParams",
+    "result": "ConfigSetResult"
+  },
+  "gateway.ping": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GatewayPingParams",
+    "result": "GatewayPingResult"
+  },
+  "image.attach": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND"
+    ],
+    "params": "ImageAttachParams",
+    "result": "ImageAttachResult"
+  },
+  "input.detect_drop": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "InputDetectDropParams",
+    "result": "InputDetectDropResult"
+  },
+  "model.disconnect": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ModelDisconnectParams",
+    "result": "ModelDisconnectResult"
+  },
+  "model.options": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ModelOptionsParams",
+    "result": "ModelOptionsResult"
+  },
+  "model.save_key": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ModelSaveKeyParams",
+    "result": "ModelSaveKeyResult"
+  },
+  "paste.collapse": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "TEXT_EMPTY"
+    ],
+    "params": "PasteCollapseParams",
+    "result": "PasteCollapseResult"
+  },
+  "prompt.background": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED",
+      "TEXT_EMPTY",
+      "PROVIDER_UNAVAILABLE"
+    ],
+    "params": "PromptBackgroundParams",
+    "result": "PromptBackgroundResult"
   },
   "prompt.submit": {
     "errors": [
@@ -33,6 +231,7 @@ export const METHODS = deepFreeze({
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
       "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
       "SESSION_NOT_FOUND",
       "SESSION_REFUSED",
       "STORE_FAILED",
@@ -43,6 +242,18 @@ export const METHODS = deepFreeze({
     "params": "PromptSubmitParams",
     "result": "PromptSubmitResult"
   },
+  "reload.mcp": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ReloadMcpParams",
+    "result": "ReloadMcpResult"
+  },
   "server_request.answer": {
     "errors": [
       "PARSE_ERROR",
@@ -50,6 +261,7 @@ export const METHODS = deepFreeze({
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
       "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
       "SESSION_NOT_FOUND",
       "SERVER_REQUEST_NOT_FOUND",
       "SERVER_REQUEST_UNSUPPORTED",
@@ -58,6 +270,64 @@ export const METHODS = deepFreeze({
     "params": "ServerRequestAnswerParams",
     "result": "ServerRequestAnswerResult"
   },
+  "server_request.decline": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SERVER_REQUEST_NOT_FOUND"
+    ],
+    "params": "ServerRequestDeclineParams",
+    "result": "ServerRequestDeclineResult"
+  },
+  "session.branch": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED",
+      "SESSION_BUSY"
+    ],
+    "params": "SessionBranchParams",
+    "result": "SessionBranchResult"
+  },
+  "session.close": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "SessionCloseParams",
+    "result": "SessionCloseResult"
+  },
+  "session.compress": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED",
+      "SESSION_BUSY"
+    ],
+    "params": "SessionCompressParams",
+    "result": "SessionCompressResult"
+  },
   "session.create": {
     "errors": [
       "PARSE_ERROR",
@@ -65,12 +335,28 @@ export const METHODS = deepFreeze({
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
       "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
       "IDEMPOTENCY_CONFLICT",
       "PROVIDER_UNAVAILABLE",
       "STORE_FAILED"
     ],
     "params": "SessionCreateParams",
     "result": "SessionCreateResult"
+  },
+  "session.history": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED"
+    ],
+    "params": "SessionHistoryParams",
+    "result": "SessionHistoryResult"
   },
   "session.interrupt": {
     "errors": [
@@ -79,10 +365,37 @@ export const METHODS = deepFreeze({
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
       "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
       "SESSION_NOT_FOUND"
     ],
     "params": "SessionInterruptParams",
     "result": "SessionInterruptResult"
+  },
+  "session.list": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "STORE_FAILED"
+    ],
+    "params": "SessionListParams",
+    "result": "SessionListResult"
+  },
+  "session.most_recent": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "STORE_FAILED"
+    ],
+    "params": "SessionMostRecentParams",
+    "result": "SessionMostRecentResult"
   },
   "session.redirect": {
     "errors": [
@@ -91,6 +404,7 @@ export const METHODS = deepFreeze({
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
       "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
       "SESSION_NOT_FOUND",
       "TEXT_EMPTY"
     ],
@@ -104,6 +418,7 @@ export const METHODS = deepFreeze({
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
       "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
       "SESSION_NOT_FOUND",
       "SESSION_REFUSED",
       "STORE_FAILED",
@@ -119,25 +434,130 @@ export const METHODS = deepFreeze({
       "METHOD_NOT_FOUND",
       "INVALID_PARAMS",
       "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
       "SESSION_NOT_FOUND",
       "TEXT_EMPTY"
     ],
     "params": "SessionSteerParams",
     "result": "SessionSteerResult"
+  },
+  "session.title": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED"
+    ],
+    "params": "SessionTitleParams",
+    "result": "SessionTitleResult"
+  },
+  "session.undo": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED",
+      "SESSION_BUSY"
+    ],
+    "params": "SessionUndoParams",
+    "result": "SessionUndoResult"
+  },
+  "session.usage": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND"
+    ],
+    "params": "SessionUsageParams",
+    "result": "SessionUsageResult"
+  },
+  "shell.exec": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "TEXT_EMPTY",
+      "SHELL_REFUSED",
+      "SHELL_TIMEOUT"
+    ],
+    "params": "ShellExecParams",
+    "result": "ShellExecResult"
+  },
+  "slash.exec": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "TEXT_EMPTY",
+      "SESSION_BUSY",
+      "SLASH_NOT_OWNED",
+      "SLASH_WORKER_FAILED"
+    ],
+    "params": "SlashExecParams",
+    "result": "SlashExecResult"
   }
 } as const);
 
 export type MethodName = keyof typeof METHODS;
 
 export interface MethodTypes {
+  "clarify.lock": { params: T.ClarifyLockParams; result: T.ClarifyLockResult };
   "client.capabilities": { params: T.ClientCapabilitiesParams; result: T.ClientCapabilitiesResult };
+  "command.dispatch": { params: T.CommandDispatchParams; result: T.CommandDispatchResult };
+  "commands.catalog": { params: T.CommandsCatalogParams; result: T.CommandsCatalogResult };
+  "complete.path": { params: T.CompletePathParams; result: T.CompleteResult };
+  "complete.slash": { params: T.CompleteSlashParams; result: T.CompleteResult };
+  "config.get": { params: T.ConfigGetParams; result: T.ConfigGetResult };
+  "config.set": { params: T.ConfigSetParams; result: T.ConfigSetResult };
+  "gateway.ping": { params: T.GatewayPingParams; result: T.GatewayPingResult };
+  "image.attach": { params: T.ImageAttachParams; result: T.ImageAttachResult };
+  "input.detect_drop": { params: T.InputDetectDropParams; result: T.InputDetectDropResult };
+  "model.disconnect": { params: T.ModelDisconnectParams; result: T.ModelDisconnectResult };
+  "model.options": { params: T.ModelOptionsParams; result: T.ModelOptionsResult };
+  "model.save_key": { params: T.ModelSaveKeyParams; result: T.ModelSaveKeyResult };
+  "paste.collapse": { params: T.PasteCollapseParams; result: T.PasteCollapseResult };
+  "prompt.background": { params: T.PromptBackgroundParams; result: T.PromptBackgroundResult };
   "prompt.submit": { params: T.PromptSubmitParams; result: T.PromptSubmitResult };
+  "reload.mcp": { params: T.ReloadMcpParams; result: T.ReloadMcpResult };
   "server_request.answer": { params: T.ServerRequestAnswerParams; result: T.ServerRequestAnswerResult };
+  "server_request.decline": { params: T.ServerRequestDeclineParams; result: T.ServerRequestDeclineResult };
+  "session.branch": { params: T.SessionBranchParams; result: T.SessionBranchResult };
+  "session.close": { params: T.SessionCloseParams; result: T.SessionCloseResult };
+  "session.compress": { params: T.SessionCompressParams; result: T.SessionCompressResult };
   "session.create": { params: T.SessionCreateParams; result: T.SessionCreateResult };
+  "session.history": { params: T.SessionHistoryParams; result: T.SessionHistoryResult };
   "session.interrupt": { params: T.SessionInterruptParams; result: T.SessionInterruptResult };
+  "session.list": { params: T.SessionListParams; result: T.SessionListResult };
+  "session.most_recent": { params: T.SessionMostRecentParams; result: T.SessionMostRecentResult };
   "session.redirect": { params: T.SessionRedirectParams; result: T.SessionRedirectResult };
   "session.resume": { params: T.SessionResumeParams; result: T.SessionResumeResult };
   "session.steer": { params: T.SessionSteerParams; result: T.SessionSteerResult };
+  "session.title": { params: T.SessionTitleParams; result: T.SessionTitleResult };
+  "session.undo": { params: T.SessionUndoParams; result: T.SessionUndoResult };
+  "session.usage": { params: T.SessionUsageParams; result: T.SessionUsageResult };
+  "shell.exec": { params: T.ShellExecParams; result: T.ShellExecResult };
+  "slash.exec": { params: T.SlashExecParams; result: T.SlashExecResult };
 }
 
 /** Event type (also the notification method) → event type name. */
@@ -146,11 +566,16 @@ export const EVENTS = deepFreeze({
   "heartbeat.fired": "HeartbeatFired",
   "learning.review.done": "LearningReviewDone",
   "loop.update": "LoopUpdate",
+  "message.complete": "MessageComplete",
   "message.delta": "MessageDelta",
   "notice": "Notice",
   "reasoning.delta": "ReasoningDelta",
   "server_request.cancelled": "ServerRequestCancelled",
+  "session.info": "SessionInfo",
+  "session.title": "SessionTitle",
+  "session.usage": "SessionUsage",
   "status": "Status",
+  "todo.updated": "TodoUpdated",
   "tool.completed": "ToolCompleted",
   "tool.progress": "ToolProgress",
   "tool.started": "ToolStarted",
@@ -165,16 +590,32 @@ export interface EventTypes {
   "heartbeat.fired": T.HeartbeatFired;
   "learning.review.done": T.LearningReviewDone;
   "loop.update": T.LoopUpdate;
+  "message.complete": T.MessageComplete;
   "message.delta": T.MessageDelta;
   "notice": T.Notice;
   "reasoning.delta": T.ReasoningDelta;
   "server_request.cancelled": T.ServerRequestCancelled;
+  "session.info": T.SessionInfo;
+  "session.title": T.SessionTitle;
+  "session.usage": T.SessionUsage;
   "status": T.Status;
+  "todo.updated": T.TodoUpdated;
   "tool.completed": T.ToolCompleted;
   "tool.progress": T.ToolProgress;
   "tool.started": T.ToolStarted;
   "turn.done": T.TurnDone;
   "turn.started": T.TurnStarted;
+}
+
+/** Other notification method → params type name (the stdio ready frame). */
+export const NOTIFICATIONS = deepFreeze({
+  "gateway.ready": "BridgeReady"
+} as const);
+
+export type NotificationName = keyof typeof NOTIFICATIONS;
+
+export interface NotificationTypes {
+  "gateway.ready": T.BridgeReady;
 }
 
 /** The notification method that carries a server request. */
@@ -225,6 +666,12 @@ export const ERROR_CODES = deepFreeze({
     "code": 3003,
     "group": "conflict",
     "meaning": "the answer's kind differs from the kind of the server request it answers",
+    "status": 409
+  },
+  "CONFIRM_REQUIRED": {
+    "code": 3004,
+    "group": "conflict",
+    "meaning": "the change needs an explicit confirmation; repeat the call with confirm set",
     "status": 409
   },
   "IDEMPOTENCY_CONFLICT": {
@@ -299,6 +746,30 @@ export const ERROR_CODES = deepFreeze({
     "meaning": "the session cannot be used: it was deleted or continued in another session",
     "status": 403
   },
+  "SHELL_REFUSED": {
+    "code": 4003,
+    "group": "refused",
+    "meaning": "the shell command is blocked by the dangerous-command rules and was not run",
+    "status": 403
+  },
+  "SHELL_TIMEOUT": {
+    "code": 6002,
+    "group": "internal",
+    "meaning": "the shell command did not finish within its time limit and was stopped",
+    "status": 500
+  },
+  "SLASH_NOT_OWNED": {
+    "code": 2003,
+    "group": "not_found",
+    "meaning": "the server does not run this slash command; the client handles it, or a later release does",
+    "status": 404
+  },
+  "SLASH_WORKER_FAILED": {
+    "code": 6003,
+    "group": "internal",
+    "meaning": "the slash command's handler failed or did not answer in time",
+    "status": 500
+  },
   "STORE_FAILED": {
     "code": 6001,
     "group": "internal",
@@ -310,6 +781,18 @@ export const ERROR_CODES = deepFreeze({
     "group": "invalid_request",
     "meaning": "the message text is empty or only whitespace",
     "status": 400
+  },
+  "UNKNOWN_PARAM_KEY": {
+    "code": 1002,
+    "group": "invalid_request",
+    "meaning": "the params carry a key the method does not declare (the path names it)",
+    "status": 400
+  },
+  "UNSUPPORTED_COMMAND": {
+    "code": 2004,
+    "group": "not_found",
+    "meaning": "the name is not a built-in, quick or skill command",
+    "status": 404
   }
 } as const);
 

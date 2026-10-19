@@ -6,6 +6,7 @@ variable, so nothing a test does can reach a real home.
 
 from __future__ import annotations
 
+import gc
 import os
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
@@ -17,6 +18,19 @@ from indus.foundation.scope import EnvView, Scope, make_scope
 from indus.foundation.secrets import open_secret_store
 from tests.fakes.clock import FakeClock
 from tests.fakes.model import Script, load_script
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Before wall-clock (`perf`) tests, move the collected test objects out of the GC's reach.
+
+    Collecting the whole suite leaves ~300k objects behind; one full collection over them pauses
+    the interpreter for ~200 ms, which lands inside the D-04.1 heartbeat windows and fails them
+    for a reason that has nothing to do with the code under test.
+    """
+    if any(item.get_closest_marker("perf") for item in session.items):
+        gc.collect()
+        gc.freeze()
+
 
 FAKE_CLOCK_START = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
 # P02-21: the stress test's window in seconds. Read at import, before ``isolated_home`` drops

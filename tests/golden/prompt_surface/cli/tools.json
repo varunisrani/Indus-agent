@@ -240,6 +240,93 @@
   },
   {
     "function": {
+      "description": "Look at and operate desktop applications on this computer through a background desktop driver: the user's pointer and keyboard focus are left alone. Start with action='capture' (mode 'som' numbers every control on a screenshot), then act on a control by its number with `element`; use pixel `x`/`y` only when no number fits. Capture again after anything that changes the screen, and check the result before repeating an action. Every action except capture, list_apps and wait asks the user first. Screenshots are saved; share one as MEDIA:<path> only when the user wants to see it.",
+      "name": "computer_use",
+      "parameters": {
+        "properties": {
+          "action": {
+            "description": "What to do. capture, list_apps and wait only look or pause; the others change the screen and need approval. set_value fills a field or picks a list option directly, without opening menus.",
+            "enum": [
+              "capture",
+              "list_apps",
+              "wait",
+              "click",
+              "double_click",
+              "drag",
+              "scroll",
+              "type",
+              "key",
+              "set_value",
+              "focus_app"
+            ],
+            "type": "string"
+          },
+          "amount": {"description": "scroll: wheel steps, 1-50 (default 3).", "type": "integer"},
+          "app": {
+            "description": "capture: the app whose window to look at (name or bundle id; default the front window). focus_app: the app that should receive the next input.",
+            "type": "string"
+          },
+          "button": {
+            "description": "Mouse button for click, double_click and drag (default left).",
+            "enum": ["left", "right", "middle"],
+            "type": "string"
+          },
+          "direction": {
+            "description": "scroll: which way (default down).",
+            "enum": ["up", "down", "left", "right"],
+            "type": "string"
+          },
+          "element": {
+            "description": "Number of a control from the most recent som capture; the preferred target.",
+            "type": "integer"
+          },
+          "keys": {
+            "description": "key: a key or shortcut such as 'enter', 'tab' or 'ctrl+s'.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "capture only. som (default): screenshot with numbered marks plus the list of controls. vision: the screenshot alone. ax: the accessibility tree as text, no image (for models without vision).",
+            "enum": ["som", "vision", "ax"],
+            "type": "string"
+          },
+          "ms": {
+            "description": "wait: milliseconds to pause, up to 30000 (default 1000).",
+            "type": "integer"
+          },
+          "text": {"description": "type: the text to enter.", "type": "string"},
+          "to_element": {
+            "description": "drag: number of the control to drop on.",
+            "type": "integer"
+          },
+          "to_x": {
+            "description": "drag: horizontal pixel to drop at (use with to_y).",
+            "type": "integer"
+          },
+          "to_y": {
+            "description": "drag: vertical pixel to drop at (use with to_x).",
+            "type": "integer"
+          },
+          "value": {
+            "description": "set_value: the new value, or the visible label of the option.",
+            "type": "string"
+          },
+          "x": {
+            "description": "Horizontal pixel in the last screenshot (use with y).",
+            "type": "integer"
+          },
+          "y": {
+            "description": "Vertical pixel in the last screenshot (use with x).",
+            "type": "integer"
+          }
+        },
+        "required": ["action"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
       "description": "Hand tasks to subagents. Each subagent starts with an empty conversation, its own terminal session and a reduced tool set, works on its task alone and gives back only a final summary. Put every task in tasks; several tasks run side by side.\n\nOn an interactive surface the subagents run in the background: the call returns at once and their results arrive as a new message between your turns. Do what does not depend on them, say briefly what is running, and end your turn; do not poll or wait for them. In one-shot runs, scheduled jobs and inside another subagent the call waits and returns the results itself. Subagents live only as long as this process: work that has to survive a restart or the end of the session belongs in a scheduled job or a background process.\n\nGood uses: work that needs its own reasoning, work that would flood this conversation with output, and independent pieces that can run in parallel. Not for: a single tool call (make it yourself), mechanical scripted steps, or anything that needs the user's answers (subagents cannot ask questions).\n\nRules: subagents know nothing of this conversation, so the goal and context must carry everything. Their summaries are their own account, not checked facts: before telling the user that something was published, uploaded or written, ask the subagent for a handle (URL, id, absolute path) and check it yourself. Subagents cannot ask the user, keep memory or schedule jobs, and they cannot delegate further. They use your model unless delegation.model in the config names another.",
       "name": "delegate_task",
       "parameters": {

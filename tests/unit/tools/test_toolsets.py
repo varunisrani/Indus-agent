@@ -77,6 +77,7 @@ def test_core_list_is_the_p05_tool_set_plus_delegation() -> None:
         "vision_analyze",  # P10-15
         "image_generate",  # P10-16
         "text_to_speech",  # P10-17
+        "computer_use",  # P10-20
     }
     assert set(resolve(CORE)) == set(CORE_TOOLS)
 
@@ -95,6 +96,7 @@ def test_named_sets() -> None:
     assert resolve("image_gen") == ["image_generate"]
     assert resolve("video_gen") == ["video_edit", "video_extend", "video_generate"]
     assert resolve("tts") == ["text_to_speech"]
+    assert resolve("computer_use") == ["computer_use"]
     assert set(resolve("debugging")) == {
         "terminal",
         "process_manage",
@@ -112,11 +114,16 @@ def test_platform_bundles() -> None:
     core = set(CORE_TOOLS)
     assert set(resolve("indus-cli")) == core
     assert set(resolve("indus-cron")) == core
-    assert set(resolve("indus-acp")) == core - {"clarify", "image_generate", "text_to_speech"}
-    assert set(resolve("indus-api-server")) == core - {"clarify", "text_to_speech"}
+    assert set(resolve("indus-acp")) == core - {
+        "clarify",
+        "image_generate",
+        "text_to_speech",
+        "computer_use",
+    }
+    assert set(resolve("indus-api-server")) == core - {"clarify", "text_to_speech", "computer_use"}
     assert resolve("indus-webhook") == sorted(WEBHOOK_FLOOR)
     assert set(resolve("indus-gateway")) == core | set(WEBHOOK_FLOOR)
-    assert set(resolve("coding")) == core - {"image_generate", "text_to_speech"}
+    assert set(resolve("coding")) == core - {"image_generate", "text_to_speech", "computer_use"}
     assert TOOLSETS["coding"].posture
 
 

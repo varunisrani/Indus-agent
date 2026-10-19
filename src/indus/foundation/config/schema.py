@@ -420,6 +420,27 @@ class DisplaySection(_Section):
     )
 
 
+class TuiSection(_Section):
+    """The terminal UI (``indus --tui``, P12): presentation settings the bridge reads and writes."""
+
+    theme: str = Field(default="auto", description="colour theme; auto detects light or dark")
+    indicator: Literal["spinner", "dots", "none"] = Field(
+        default="spinner", description="what shows while a reply runs"
+    )
+    details: Literal["collapsed", "expanded"] = Field(
+        default="collapsed", description="tool and reasoning sections start collapsed or expanded"
+    )
+    statusbar: bool = Field(default=True, description="show the status rule under the composer")
+    mouse: bool = Field(default=False, description="let the terminal UI capture the mouse")
+    tool_progress: Literal["off", "new", "all", "verbose"] = Field(
+        default="all", description="tool activity shown: off, new (on a change), all or verbose"
+    )
+    confirm_models: list[str] = Field(
+        default_factory=list[str],
+        description="model ids that need a confirmation before the TUI switches to them",
+    )
+
+
 class OnboardingSeen(_Section):
     busy_input: bool = Field(
         default=False, description="the tip about typing while a reply runs was shown"
@@ -847,6 +868,19 @@ class TtsSection(_Section):
     piper_model: str = Field(default="", description="path to a Piper voice model (.onnx)")
 
 
+class ComputerUseSection(_Section):
+    """Desktop control, ``computer_use`` (P10-20)."""
+
+    driver: str = Field(default="stdio", description="desktop driver: stdio, or a plugin's name")
+    driver_cmd: str = Field(
+        default="",
+        description="the stdio driver program and its arguments; INDUS_CUA_DRIVER_CMD wins",
+    )
+    action_timeout_s: float = Field(
+        default=30.0, description="seconds one desktop action may take before the driver restarts"
+    )
+
+
 class SttSection(_Section):
     """Speech to text (P10-18)."""
 
@@ -863,6 +897,27 @@ class SttSection(_Section):
     max_file_mb: float = Field(
         default=25, description="largest file sent in one request when the provider sets no cap"
     )
+
+
+class VoiceSection(_Section):
+    """Voice mode of the classic CLI (P10-19)."""
+
+    record_key: str = Field(
+        default="ctrl+space",
+        description="push-to-talk key: ctrl+space, ctrl+<letter>, alt+<key>, f1-f12",
+    )
+    silence_threshold: float = Field(
+        default=300,
+        description="loudness (RMS of 16-bit samples) under which audio counts as quiet",
+    )
+    silence_seconds: float = Field(
+        default=2.0, description="quiet after speech that ends a recording"
+    )
+    wait_seconds: float = Field(
+        default=10.0, description="a recording with no speech for this long is dropped"
+    )
+    max_seconds: float = Field(default=120.0, description="longest recording")
+    read_aloud: bool = Field(default=False, description="speak each final answer while voice is on")
 
 
 class ConfigModel(BaseModel):
@@ -917,6 +972,7 @@ class ConfigModel(BaseModel):
         default_factory=BrowserSection, description="the agent's headless browser"
     )
     display: DisplaySection = Field(default_factory=DisplaySection, description="the interface")
+    tui: TuiSection = Field(default_factory=TuiSection, description="the terminal UI")
     session: SessionSection = Field(
         default_factory=SessionSection, description="how the CLI picks a session to continue"
     )
@@ -997,6 +1053,12 @@ class ConfigModel(BaseModel):
     media: MediaSection = Field(default_factory=MediaSection, description="video generation")
     tts: TtsSection = Field(default_factory=TtsSection, description="text to speech")
     stt: SttSection = Field(default_factory=SttSection, description="speech to text")
+    voice: VoiceSection = Field(
+        default_factory=VoiceSection, description="CLI voice mode (/voice, chat --voice)"
+    )
+    computer_use: ComputerUseSection = Field(
+        default_factory=ComputerUseSection, description="desktop control (computer_use)"
+    )
     moa: MoaSection = Field(default_factory=MoaSection, description="mixture of agents (/moa)")
     goals: GoalsSection = Field(default_factory=GoalsSection, description="standing goals (/goal)")
     loops: LoopsSection = Field(

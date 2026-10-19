@@ -67,10 +67,58 @@
       "required": ["request_id", "session_id", "command", "description"],
       "type": "object"
     },
+    "BridgeReady": {
+      "additionalProperties": false,
+      "description": "The first frame of a stdio connection: the server is ready for requests.",
+      "properties": {
+        "heartbeat": {
+          "default": false,
+          "description": "Whether the server answers pings; a stdio child does not need them.",
+          "type": "boolean"
+        },
+        "protocol_version": {
+          "description": "The protocol version the server speaks.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "theme": {
+          "description": "The configured theme name (``auto`` lets the client detect light or dark).",
+          "type": "string"
+        }
+      },
+      "required": ["theme", "protocol_version"],
+      "type": "object"
+    },
+    "BusyAction": {
+      "description": "What a submit does while the session is running a turn.",
+      "enum": ["reject", "queue", "steer", "redirect"],
+      "type": "string"
+    },
     "CancelReason": {
       "description": "Why an open server request was withdrawn.",
       "enum": ["interrupted", "turn_ended", "timed_out", "answered_elsewhere", "session_closed"],
       "type": "string"
+    },
+    "CatalogEntry": {
+      "additionalProperties": false,
+      "description": "One command the client can offer.",
+      "properties": {
+        "aliases": {"description": "Other names.", "items": {"type": "string"}, "type": "array"},
+        "args_hint": {"default": "", "description": "Argument summary.", "type": "string"},
+        "category": {
+          "description": "Group heading key (``session``, ``config``, ``tools``, ``info``, ``exit``, ``custom``).",
+          "type": "string"
+        },
+        "description": {"description": "One line.", "type": "string"},
+        "kind": {"$ref": "#/$defs/CommandKind", "description": "Where it comes from."},
+        "name": {"description": "Canonical name, without the slash.", "type": "string"},
+        "runs": {
+          "$ref": "#/$defs/CommandRunner",
+          "description": "Who runs it: the server (``slash.exec``), the client, or nobody yet."
+        }
+      },
+      "required": ["name", "description", "category", "kind", "runs"],
+      "type": "object"
     },
     "ClarifyAnswer": {
       "additionalProperties": false,
@@ -89,6 +137,39 @@
         }
       },
       "required": ["answers"],
+      "type": "object"
+    },
+    "ClarifyLockParams": {
+      "additionalProperties": false,
+      "description": "Lock one answer of a multi-question clarify request.",
+      "properties": {
+        "answer": {
+          "description": "Picked choices or typed text; empty means skipped.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "question_id": {
+          "description": "The question being answered.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "request_id": {"description": "The clarify request.", "minLength": 1, "type": "string"},
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session that asked."}
+      },
+      "required": ["session_id", "request_id", "question_id", "answer"],
+      "type": "object"
+    },
+    "ClarifyLockResult": {
+      "additionalProperties": false,
+      "description": "What is still open.",
+      "properties": {
+        "remaining": {
+          "description": "Question ids not locked yet; empty once the request was answered.",
+          "items": {"type": "string"},
+          "type": "array"
+        }
+      },
+      "required": ["remaining"],
       "type": "object"
     },
     "ClarifyQuestion": {
@@ -176,6 +257,233 @@
       "required": ["features"],
       "type": "object"
     },
+    "CommandDispatchParams": {
+      "additionalProperties": false,
+      "description": "Resolve a command word that is not a client command.",
+      "properties": {
+        "arg": {"default": "", "description": "Everything after the word.", "type": "string"},
+        "name": {
+          "description": "The command word, with or without the slash.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session it acts on."}
+      },
+      "required": ["session_id", "name"],
+      "type": "object"
+    },
+    "CommandDispatchResult": {
+      "additionalProperties": false,
+      "description": "The resolution.",
+      "properties": {
+        "kind": {"$ref": "#/$defs/DispatchKind", "description": "What to do next."},
+        "message": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For ``skill`` / ``send``: the prompt to submit; for ``prefill``: the composer text."
+        },
+        "output": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For ``exec``: the output to show."
+        },
+        "target": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For ``alias``: the command it stands for."
+        }
+      },
+      "required": ["kind"],
+      "type": "object"
+    },
+    "CommandKind": {
+      "description": "Where a slash command comes from.",
+      "enum": ["builtin", "quick", "skill"],
+      "type": "string"
+    },
+    "CommandRunner": {
+      "description": "Who runs a slash command.",
+      "enum": ["server", "client", "later"],
+      "type": "string"
+    },
+    "CommandsCatalogParams": {
+      "additionalProperties": false,
+      "description": "List every slash command the client can offer.",
+      "properties": {
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session whose skills count."
+        }
+      },
+      "type": "object"
+    },
+    "CommandsCatalogResult": {
+      "additionalProperties": false,
+      "description": "The catalogue.",
+      "properties": {
+        "commands": {
+          "description": "Built-ins in registry order, then quick commands, then skills.",
+          "items": {"$ref": "#/$defs/CatalogEntry"},
+          "type": "array"
+        }
+      },
+      "required": ["commands"],
+      "type": "object"
+    },
+    "CompletePathParams": {
+      "additionalProperties": false,
+      "description": "Complete a path or an ``@`` reference being typed.",
+      "properties": {
+        "cwd": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Folder to resolve relative paths in; absent uses the session's."
+        },
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session whose folder and terminal backend count."
+        },
+        "word": {"description": "The word under the cursor.", "type": "string"}
+      },
+      "required": ["word"],
+      "type": "object"
+    },
+    "CompleteResult": {
+      "additionalProperties": false,
+      "description": "Completion candidates.",
+      "properties": {
+        "items": {
+          "description": "Best first.",
+          "items": {"$ref": "#/$defs/CompletionItem"},
+          "type": "array"
+        }
+      },
+      "required": ["items"],
+      "type": "object"
+    },
+    "CompleteSlashParams": {
+      "additionalProperties": false,
+      "description": "Complete a slash command being typed.",
+      "properties": {
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session whose skills count."
+        },
+        "text": {"description": "The composer text so far (starts with ``/``).", "type": "string"}
+      },
+      "required": ["text"],
+      "type": "object"
+    },
+    "CompletionItem": {
+      "additionalProperties": false,
+      "description": "One completion candidate.",
+      "properties": {
+        "display": {"description": "What the list shows.", "type": "string"},
+        "meta": {"default": "", "description": "A short note beside it.", "type": "string"},
+        "text": {"description": "What replaces the typed word.", "type": "string"}
+      },
+      "required": ["text", "display"],
+      "type": "object"
+    },
+    "ConfigApplied": {
+      "description": "When a change takes effect.",
+      "enum": ["now", "deferred"],
+      "type": "string"
+    },
+    "ConfigGetParams": {
+      "additionalProperties": false,
+      "description": "Read settings: ``full`` (the client's settings), ``mtime`` (the file's change stamp) or one\nkey.",
+      "properties": {
+        "key": {
+          "description": "``full``, ``mtime`` or a setting key.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session whose live values count (model, reasoning, fast, yolo)."
+        }
+      },
+      "required": ["key"],
+      "type": "object"
+    },
+    "ConfigGetResult": {
+      "additionalProperties": false,
+      "description": "The value read.",
+      "properties": {
+        "key": {"description": "The key asked for.", "type": "string"},
+        "value": {
+          "$ref": "#/$defs/JsonValue",
+          "description": "The value; for ``full`` an object of every client setting; ``null`` when unset."
+        }
+      },
+      "required": ["key", "value"],
+      "type": "object"
+    },
+    "ConfigKey": {
+      "description": "Settings a client may change.",
+      "enum": [
+        "model",
+        "verbose",
+        "yolo",
+        "reasoning",
+        "fast",
+        "busy",
+        "theme",
+        "indicator",
+        "details",
+        "statusbar",
+        "mouse"
+      ],
+      "type": "string"
+    },
+    "ConfigSetParams": {
+      "additionalProperties": false,
+      "description": "Change one setting.",
+      "properties": {
+        "confirm": {
+          "default": false,
+          "description": "Confirms a change the server asked to confirm.",
+          "type": "boolean"
+        },
+        "key": {"$ref": "#/$defs/ConfigKey", "description": "Which setting."},
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For session switches (model, reasoning, fast, yolo, verbose): the session."
+        },
+        "value": {"$ref": "#/$defs/JsonValue", "description": "The new value."}
+      },
+      "required": ["key", "value"],
+      "type": "object"
+    },
+    "ConfigSetResult": {
+      "additionalProperties": false,
+      "description": "The change as applied.",
+      "properties": {
+        "applied": {
+          "$ref": "#/$defs/ConfigApplied",
+          "description": "``deferred`` when it waits for the running turn to end."
+        },
+        "key": {"$ref": "#/$defs/ConfigKey", "description": "The setting."},
+        "saved": {
+          "description": "True when it was written to the profile's settings file.",
+          "type": "boolean"
+        },
+        "value": {"$ref": "#/$defs/JsonValue", "description": "Its value now (or once deferred)."}
+      },
+      "required": ["key", "value", "applied", "saved"],
+      "type": "object"
+    },
+    "DispatchKind": {
+      "description": "What a dispatched command resolved to.",
+      "enum": ["exec", "alias", "skill", "send", "prefill", "plugin"],
+      "type": "string"
+    },
     "ErrorDetail": {
       "additionalProperties": false,
       "description": "What we put in ``error.data``: the symbolic name plus optional context.",
@@ -247,11 +555,16 @@
           "heartbeat.fired": "#/$defs/HeartbeatFired",
           "learning.review.done": "#/$defs/LearningReviewDone",
           "loop.update": "#/$defs/LoopUpdate",
+          "message.complete": "#/$defs/MessageComplete",
           "message.delta": "#/$defs/MessageDelta",
           "notice": "#/$defs/Notice",
           "reasoning.delta": "#/$defs/ReasoningDelta",
           "server_request.cancelled": "#/$defs/ServerRequestCancelled",
+          "session.info": "#/$defs/SessionInfo",
+          "session.title": "#/$defs/SessionTitle",
+          "session.usage": "#/$defs/SessionUsage",
           "status": "#/$defs/Status",
+          "todo.updated": "#/$defs/TodoUpdated",
           "tool.completed": "#/$defs/ToolCompleted",
           "tool.progress": "#/$defs/ToolProgress",
           "tool.started": "#/$defs/ToolStarted",
@@ -274,7 +587,12 @@
         {"$ref": "#/$defs/LearningReviewDone"},
         {"$ref": "#/$defs/GoalUpdate"},
         {"$ref": "#/$defs/LoopUpdate"},
-        {"$ref": "#/$defs/HeartbeatFired"}
+        {"$ref": "#/$defs/HeartbeatFired"},
+        {"$ref": "#/$defs/MessageComplete"},
+        {"$ref": "#/$defs/SessionInfo"},
+        {"$ref": "#/$defs/SessionUsage"},
+        {"$ref": "#/$defs/SessionTitle"},
+        {"$ref": "#/$defs/TodoUpdated"}
       ]
     },
     "ExitReason": {
@@ -292,6 +610,26 @@
         "guardrail_halt"
       ],
       "type": "string"
+    },
+    "GatewayPingParams": {
+      "additionalProperties": false,
+      "description": "Check that the server is alive (heartbeat).",
+      "properties": {},
+      "type": "object"
+    },
+    "GatewayPingResult": {
+      "additionalProperties": false,
+      "description": "The heartbeat answer.",
+      "properties": {
+        "pong": {"default": true, "description": "Always true.", "type": "boolean"},
+        "protocol_version": {
+          "description": "The protocol version the server speaks.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["protocol_version"],
+      "type": "object"
     },
     "GoalUpdate": {
       "additionalProperties": false,
@@ -363,6 +701,85 @@
         }
       },
       "required": ["session_id", "seq", "heartbeat_id", "prompt", "fire_count"],
+      "type": "object"
+    },
+    "HistoryMessage": {
+      "additionalProperties": false,
+      "description": "One stored row, flattened for display.",
+      "properties": {
+        "name": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For tool rows: the tool's name."
+        },
+        "role": {"$ref": "#/$defs/HistoryRole", "description": "Who wrote it."},
+        "row_id": {
+          "anyOf": [{"type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "The stored row's id (undo and branch points)."
+        },
+        "text": {"description": "The text; image parts show as ``[image]``.", "type": "string"}
+      },
+      "required": ["role", "text"],
+      "type": "object"
+    },
+    "HistoryRole": {
+      "description": "Who wrote a history row.",
+      "enum": ["user", "assistant", "tool"],
+      "type": "string"
+    },
+    "ImageAttachParams": {
+      "additionalProperties": false,
+      "description": "Attach an image file to the next prompt.",
+      "properties": {
+        "path": {"description": "The image file.", "minLength": 1, "type": "string"},
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session."}
+      },
+      "required": ["session_id", "path"],
+      "type": "object"
+    },
+    "ImageAttachResult": {
+      "additionalProperties": false,
+      "description": "The staged image.",
+      "properties": {
+        "attached": {
+          "description": "Images staged for the next prompt so far.",
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "name": {"description": "The file name.", "type": "string"},
+        "path": {"description": "The resolved path.", "type": "string"}
+      },
+      "required": ["name", "path", "attached"],
+      "type": "object"
+    },
+    "InputDetectDropParams": {
+      "additionalProperties": false,
+      "description": "Tell whether pasted text is one or more dropped file paths.",
+      "properties": {"text": {"description": "The pasted text.", "type": "string"}},
+      "required": ["text"],
+      "type": "object"
+    },
+    "InputDetectDropResult": {
+      "additionalProperties": false,
+      "description": "The detected files.",
+      "properties": {
+        "images": {
+          "description": "Those among them that are images.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "is_drop": {
+          "description": "True when every part names an existing file or folder.",
+          "type": "boolean"
+        },
+        "paths": {
+          "description": "The resolved paths.",
+          "items": {"type": "string"},
+          "type": "array"
+        }
+      },
+      "required": ["is_drop"],
       "type": "object"
     },
     "JsonValue": {},
@@ -442,6 +859,36 @@
       "required": ["session_id", "seq", "loop_id", "status", "prompt", "ticks"],
       "type": "object"
     },
+    "MessageComplete": {
+      "additionalProperties": false,
+      "description": "A turn's final reply, sent after ``turn.done`` so a client can settle its streamed text.",
+      "properties": {
+        "reason": {"$ref": "#/$defs/ExitReason", "description": "Why the turn ended."},
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "text": {
+          "description": "The whole final reply (empty when the turn produced none).",
+          "type": "string"
+        },
+        "turn_id": {"description": "The turn that ended.", "type": "string"},
+        "type": {
+          "const": "message.complete",
+          "default": "message.complete",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq", "turn_id", "text", "reason"],
+      "type": "object"
+    },
     "MessageDelta": {
       "additionalProperties": false,
       "description": "A piece of the assistant's visible reply.",
@@ -472,6 +919,68 @@
       "type": "object"
     },
     "MessageText": {"type": "string"},
+    "ModelDisconnectParams": {
+      "additionalProperties": false,
+      "description": "Remove a provider's stored keys.",
+      "properties": {"slug": {"description": "The provider.", "minLength": 1, "type": "string"}},
+      "required": ["slug"],
+      "type": "object"
+    },
+    "ModelDisconnectResult": {
+      "additionalProperties": false,
+      "description": "Whether anything was removed.",
+      "properties": {
+        "removed": {"description": "False when nothing was stored.", "type": "boolean"}
+      },
+      "required": ["removed"],
+      "type": "object"
+    },
+    "ModelOptionsParams": {
+      "additionalProperties": false,
+      "description": "List the providers and the current model.",
+      "properties": {
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session whose model is current."
+        }
+      },
+      "type": "object"
+    },
+    "ModelOptionsResult": {
+      "additionalProperties": false,
+      "description": "The picker's data.",
+      "properties": {
+        "model": {"description": "The current model.", "type": "string"},
+        "provider": {"description": "The current provider.", "type": "string"},
+        "providers": {
+          "description": "Every provider, in catalogue order.",
+          "items": {"$ref": "#/$defs/ProviderOption"},
+          "type": "array"
+        }
+      },
+      "required": ["provider", "model", "providers"],
+      "type": "object"
+    },
+    "ModelSaveKeyParams": {
+      "additionalProperties": false,
+      "description": "Store an API key for a provider.",
+      "properties": {
+        "api_key": {"description": "The key.", "minLength": 1, "type": "string"},
+        "slug": {"description": "The provider.", "minLength": 1, "type": "string"}
+      },
+      "required": ["slug", "api_key"],
+      "type": "object"
+    },
+    "ModelSaveKeyResult": {
+      "additionalProperties": false,
+      "description": "The provider after the change.",
+      "properties": {
+        "provider": {"$ref": "#/$defs/ProviderOption", "description": "Its refreshed row."}
+      },
+      "required": ["provider"],
+      "type": "object"
+    },
     "Notice": {
       "additionalProperties": false,
       "description": "A message for the user that is not part of the conversation.",
@@ -535,6 +1044,49 @@
       "required": ["method"],
       "type": "object"
     },
+    "PasteCollapseParams": {
+      "additionalProperties": false,
+      "description": "Keep a long paste in a file and get a short placeholder for the composer.",
+      "properties": {"text": {"$ref": "#/$defs/MessageText", "description": "The pasted text."}},
+      "required": ["text"],
+      "type": "object"
+    },
+    "PasteCollapseResult": {
+      "additionalProperties": false,
+      "description": "Where the paste went.",
+      "properties": {
+        "lines": {"description": "Lines in the paste.", "exclusiveMinimum": 0, "type": "integer"},
+        "path": {"description": "The file holding the full text.", "type": "string"},
+        "placeholder": {
+          "description": "What the composer shows instead of the paste.",
+          "type": "string"
+        }
+      },
+      "required": ["placeholder", "path", "lines"],
+      "type": "object"
+    },
+    "PromptBackgroundParams": {
+      "additionalProperties": false,
+      "description": "Run a prompt in a separate session; its reply arrives as a notice.",
+      "properties": {
+        "session_id": {
+          "$ref": "#/$defs/SessionId",
+          "description": "The session the reply is reported to."
+        },
+        "text": {"$ref": "#/$defs/MessageText", "description": "The prompt."}
+      },
+      "required": ["session_id", "text"],
+      "type": "object"
+    },
+    "PromptBackgroundResult": {
+      "additionalProperties": false,
+      "description": "The background task's handle.",
+      "properties": {
+        "task_id": {"description": "The id of the session running it.", "type": "string"}
+      },
+      "required": ["task_id"],
+      "type": "object"
+    },
     "PromptSubmitParams": {
       "additionalProperties": false,
       "description": "Send a user message and start a turn.",
@@ -543,7 +1095,12 @@
           "$ref": "#/$defs/SessionId",
           "description": "The session to run the turn in."
         },
-        "text": {"$ref": "#/$defs/MessageText", "description": "The user's message."}
+        "text": {"$ref": "#/$defs/MessageText", "description": "The user's message."},
+        "when_busy": {
+          "$ref": "#/$defs/BusyAction",
+          "default": "reject",
+          "description": "While a turn runs: refuse (``SESSION_BUSY``), queue it, steer or redirect the turn."
+        }
       },
       "required": ["session_id", "text"],
       "type": "object"
@@ -557,9 +1114,37 @@
           "minimum": 0,
           "type": "integer"
         },
-        "turn_id": {"description": "The turn's id; its events carry it.", "type": "string"}
+        "status": {
+          "$ref": "#/$defs/SubmitStatus",
+          "default": "streaming",
+          "description": "``streaming`` when this message started the turn."
+        },
+        "turn_id": {
+          "description": "The turn's id; its events carry it. For a queued or steered message: the running turn.",
+          "type": "string"
+        }
       },
       "required": ["turn_id", "generation"],
+      "type": "object"
+    },
+    "ProviderOption": {
+      "additionalProperties": false,
+      "description": "One provider the model picker offers.",
+      "properties": {
+        "auth_type": {
+          "description": "How it signs in (``api_key``, ``oauth``, …).",
+          "type": "string"
+        },
+        "authenticated": {"description": "Whether a key or sign-in is stored.", "type": "boolean"},
+        "current": {
+          "default": false,
+          "description": "The provider of the current model.",
+          "type": "boolean"
+        },
+        "name": {"description": "What people see.", "type": "string"},
+        "slug": {"description": "The provider's name.", "type": "string"}
+      },
+      "required": ["slug", "name", "auth_type", "authenticated"],
       "type": "object"
     },
     "ReasoningDelta": {
@@ -592,6 +1177,28 @@
       "description": "What a redirect did.",
       "enum": ["redirected", "steered", "rejected"],
       "type": "string"
+    },
+    "ReloadMcpParams": {
+      "additionalProperties": false,
+      "description": "Reconnect the MCP servers and refresh their tools.",
+      "properties": {
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session asking."
+        }
+      },
+      "type": "object"
+    },
+    "ReloadMcpResult": {
+      "additionalProperties": false,
+      "description": "How the reload went.",
+      "properties": {
+        "message": {"description": "A line to show.", "type": "string"},
+        "reloaded": {"description": "False when nothing could be reloaded.", "type": "boolean"}
+      },
+      "required": ["reloaded", "message"],
+      "type": "object"
     },
     "Request": {
       "additionalProperties": false,
@@ -769,6 +1376,118 @@
       "required": ["session_id", "seq", "request_id", "reason"],
       "type": "object"
     },
+    "ServerRequestDeclineParams": {
+      "additionalProperties": false,
+      "description": "Decline an open server request the client cannot show; the server answers it with that\nkind's refusal (approval denied, clarify questions skipped, no sudo password, no secret).",
+      "properties": {
+        "reason": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Why, in the client's words (passed to the model with an approval denial)."
+        },
+        "request_id": {
+          "description": "The request being declined.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session that asked."}
+      },
+      "required": ["session_id", "request_id"],
+      "type": "object"
+    },
+    "ServerRequestDeclineResult": {
+      "additionalProperties": false,
+      "description": "Confirmation that the refusal was delivered.",
+      "properties": {
+        "accepted": {
+          "description": "True when the waiting agent received the refusal.",
+          "type": "boolean"
+        }
+      },
+      "required": ["accepted"],
+      "type": "object"
+    },
+    "SessionBranchParams": {
+      "additionalProperties": false,
+      "description": "Copy the conversation into a new, independent session.",
+      "properties": {
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session to branch from."},
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The branch's title; absent takes the next lineage title."
+        }
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionBranchResult": {
+      "additionalProperties": false,
+      "description": "The new session.",
+      "properties": {
+        "session_id": {
+          "description": "The branch's id (not attached; resume it to use it).",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The branch's title."
+        }
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionCloseParams": {
+      "additionalProperties": false,
+      "description": "Detach a session: stop its runtime and keep its stored row.",
+      "properties": {
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session to close."}
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionCloseResult": {
+      "additionalProperties": false,
+      "description": "Whether a live session was closed.",
+      "properties": {
+        "closed": {"description": "False when the session was not attached.", "type": "boolean"}
+      },
+      "required": ["closed"],
+      "type": "object"
+    },
+    "SessionCompressParams": {
+      "additionalProperties": false,
+      "description": "Compress the conversation now (between turns).",
+      "properties": {
+        "focus": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "What the summary should keep in view."
+        },
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session."}
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionCompressResult": {
+      "additionalProperties": false,
+      "description": "How the compression went.",
+      "properties": {
+        "message": {"default": "", "description": "A line to show.", "type": "string"},
+        "session_id": {
+          "description": "The session's id afterwards (a rotating compaction continues in a new id).",
+          "type": "string"
+        },
+        "status": {
+          "description": "The engine's outcome.",
+          "enum": ["compressed", "nothing", "blocked", "aborted", "preview"],
+          "type": "string"
+        }
+      },
+      "required": ["status", "session_id"],
+      "type": "object"
+    },
     "SessionCreateParams": {
       "additionalProperties": false,
       "description": "Create a session.",
@@ -814,7 +1533,82 @@
       "required": ["session_id", "created"],
       "type": "object"
     },
+    "SessionHistoryParams": {
+      "additionalProperties": false,
+      "description": "Read a session's stored conversation for display.",
+      "properties": {
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session to read."}
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionHistoryResult": {
+      "additionalProperties": false,
+      "description": "The display projection of the conversation.",
+      "properties": {
+        "messages": {
+          "description": "Rows in order.",
+          "items": {"$ref": "#/$defs/HistoryMessage"},
+          "type": "array"
+        }
+      },
+      "required": ["messages"],
+      "type": "object"
+    },
     "SessionId": {"minLength": 1, "type": "string"},
+    "SessionInfo": {
+      "additionalProperties": false,
+      "description": "What a client shows about a session: model, folder, tools, whether a turn runs.",
+      "properties": {
+        "cwd": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The folder tools start in."
+        },
+        "model": {"description": "The bound model.", "type": "string"},
+        "provider": {"description": "The bound provider.", "type": "string"},
+        "reasoning_effort": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The reasoning level in effect, when the model has one."
+        },
+        "running": {"default": false, "description": "True while a turn runs.", "type": "boolean"},
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session's title."
+        },
+        "tool_progress": {
+          "default": "all",
+          "description": "How much tool activity this connection is sent.",
+          "enum": ["off", "new", "all", "verbose"],
+          "type": "string"
+        },
+        "tools": {
+          "description": "The tool names the model sees.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "type": {
+          "const": "session.info",
+          "default": "session.info",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq", "model", "provider"],
+      "type": "object"
+    },
     "SessionInterruptParams": {
       "additionalProperties": false,
       "description": "Stop the running turn.",
@@ -843,6 +1637,61 @@
         }
       },
       "required": ["interrupted"],
+      "type": "object"
+    },
+    "SessionListParams": {
+      "additionalProperties": false,
+      "description": "List stored conversations, newest first.",
+      "properties": {
+        "include_subagents": {
+          "default": false,
+          "description": "Also list delegate runs (hidden by default).",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 50,
+          "description": "How many rows at most.",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Only conversations whose title or text matches this."
+        }
+      },
+      "type": "object"
+    },
+    "SessionListResult": {
+      "additionalProperties": false,
+      "description": "The listing.",
+      "properties": {
+        "sessions": {
+          "description": "Rows, newest first.",
+          "items": {"$ref": "#/$defs/SessionRow"},
+          "type": "array"
+        }
+      },
+      "required": ["sessions"],
+      "type": "object"
+    },
+    "SessionMostRecentParams": {
+      "additionalProperties": false,
+      "description": "Find the newest conversation a person started.",
+      "properties": {},
+      "type": "object"
+    },
+    "SessionMostRecentResult": {
+      "additionalProperties": false,
+      "description": "The newest conversation, if any.",
+      "properties": {
+        "session": {
+          "anyOf": [{"$ref": "#/$defs/SessionRow"}, {"type": "null"}],
+          "default": null,
+          "description": "Absent when there is none."
+        }
+      },
       "type": "object"
     },
     "SessionRedirectParams": {
@@ -893,14 +1742,60 @@
           "minimum": 0,
           "type": "integer"
         },
+        "messages": {
+          "description": "The stored conversation for display, when a surface asked for it (empty otherwise).",
+          "items": {"$ref": "#/$defs/HistoryMessage"},
+          "type": "array"
+        },
         "pending_requests": {
           "description": "Server requests still waiting for an answer, re-delivered after a reconnect.",
           "items": {"$ref": "#/$defs/ServerRequest"},
           "type": "array"
         },
-        "session_id": {"description": "The resumed session's id.", "type": "string"}
+        "session_id": {"description": "The resumed session's id.", "type": "string"},
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session's title, when a surface asked for the display projection."
+        }
       },
       "required": ["session_id", "message_count", "last_seq"],
+      "type": "object"
+    },
+    "SessionRow": {
+      "additionalProperties": false,
+      "description": "One conversation in a session listing.",
+      "properties": {
+        "last_active": {
+          "anyOf": [{"type": "number"}, {"type": "null"}],
+          "default": null,
+          "description": "Newest activity, epoch seconds."
+        },
+        "message_count": {
+          "default": 0,
+          "description": "Stored messages.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "preview": {
+          "default": "",
+          "description": "The start of its first user message.",
+          "type": "string"
+        },
+        "session_id": {"description": "The conversation's current id.", "type": "string"},
+        "source": {
+          "default": "",
+          "description": "Where it was started (``cli``, ``tui``, a platform name).",
+          "type": "string"
+        },
+        "started_at": {"description": "Start time, epoch seconds.", "type": "number"},
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Its title, when it has one."
+        }
+      },
+      "required": ["session_id", "started_at"],
       "type": "object"
     },
     "SessionSteerParams": {
@@ -931,6 +1826,203 @@
         }
       },
       "required": ["queued"],
+      "type": "object"
+    },
+    "SessionTitle": {
+      "additionalProperties": false,
+      "description": "The session's title changed.",
+      "properties": {
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The new title; absent when it was cleared."
+        },
+        "type": {
+          "const": "session.title",
+          "default": "session.title",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq"],
+      "type": "object"
+    },
+    "SessionTitleParams": {
+      "additionalProperties": false,
+      "description": "Read a session's title, or set it.",
+      "properties": {
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session."},
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The new title; absent only reads."
+        }
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionTitleResult": {
+      "additionalProperties": false,
+      "description": "The session's title after the call.",
+      "properties": {
+        "pending": {
+          "default": false,
+          "description": "True when the title waits for the session's first stored row.",
+          "type": "boolean"
+        },
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Absent when the session has none."
+        }
+      },
+      "type": "object"
+    },
+    "SessionUndoParams": {
+      "additionalProperties": false,
+      "description": "Take back the newest user messages and the replies to them.",
+      "properties": {
+        "count": {
+          "default": 1,
+          "description": "How many user messages to take back.",
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session."}
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionUndoResult": {
+      "additionalProperties": false,
+      "description": "What the undo removed.",
+      "properties": {
+        "prefill": {
+          "default": "",
+          "description": "The oldest taken-back message, for the composer.",
+          "type": "string"
+        },
+        "removed": {"description": "Stored rows taken back.", "minimum": 0, "type": "integer"}
+      },
+      "required": ["removed"],
+      "type": "object"
+    },
+    "SessionUsage": {
+      "additionalProperties": false,
+      "description": "The session's counters after a turn or on request.",
+      "properties": {
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "session.usage",
+          "default": "session.usage",
+          "description": "Event type.",
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageNumbers",
+          "description": "Totals for this attachment of the session."
+        }
+      },
+      "required": ["session_id", "seq", "usage"],
+      "type": "object"
+    },
+    "SessionUsageParams": {
+      "additionalProperties": false,
+      "description": "Read the session's token and cost counters.",
+      "properties": {"session_id": {"$ref": "#/$defs/SessionId", "description": "The session."}},
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionUsageResult": {
+      "additionalProperties": false,
+      "description": "The counters.",
+      "properties": {
+        "usage": {
+          "$ref": "#/$defs/UsageNumbers",
+          "description": "Totals for this attachment of the session."
+        }
+      },
+      "required": ["usage"],
+      "type": "object"
+    },
+    "ShellExecParams": {
+      "additionalProperties": false,
+      "description": "Run a shell command on this machine (the composer's ``!``).",
+      "properties": {
+        "command": {"description": "The command line.", "type": "string"},
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The session whose folder it runs in."
+        }
+      },
+      "required": ["command"],
+      "type": "object"
+    },
+    "ShellExecResult": {
+      "additionalProperties": false,
+      "description": "How the command ended.",
+      "properties": {
+        "code": {"description": "Exit status.", "type": "integer"},
+        "stderr": {"description": "The redacted tail of its error output.", "type": "string"},
+        "stdout": {"description": "The redacted tail of its standard output.", "type": "string"}
+      },
+      "required": ["stdout", "stderr", "code"],
+      "type": "object"
+    },
+    "SlashExecParams": {
+      "additionalProperties": false,
+      "description": "Run a slash command on the server.",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/MessageText",
+          "description": "The whole command line, with or without the leading slash."
+        },
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session it acts on."}
+      },
+      "required": ["session_id", "command"],
+      "type": "object"
+    },
+    "SlashExecResult": {
+      "additionalProperties": false,
+      "description": "What the command produced.",
+      "properties": {
+        "output": {"default": "", "description": "Text to show.", "type": "string"},
+        "prefill": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Text to put back into the composer."
+        },
+        "submit": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Text the client should send as a prompt."
+        },
+        "switch_to": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A session the client should switch to."
+        }
+      },
       "type": "object"
     },
     "Status": {
@@ -966,6 +2058,11 @@
     "StatusKind": {
       "description": "What the session is doing, for a status line.",
       "enum": ["working", "waiting", "retrying", "compressing", "ready"],
+      "type": "string"
+    },
+    "SubmitStatus": {
+      "description": "What happened to a submitted message.",
+      "enum": ["streaming", "queued", "steered", "redirected"],
       "type": "string"
     },
     "SuccessResponse": {
@@ -1034,6 +2131,60 @@
         }
       },
       "required": ["request_id", "session_id", "reason"],
+      "type": "object"
+    },
+    "TodoItem": {
+      "additionalProperties": false,
+      "description": "One entry of the session's task list.",
+      "properties": {
+        "content": {"description": "What the task is.", "type": "string"},
+        "id": {"description": "The item's id.", "type": "string"},
+        "parent": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The id of the item this one is a subtask of."
+        },
+        "status": {
+          "description": "Where it stands.",
+          "enum": ["pending", "in_progress", "completed", "cancelled"],
+          "type": "string"
+        }
+      },
+      "required": ["id", "content", "status"],
+      "type": "object"
+    },
+    "TodoUpdated": {
+      "additionalProperties": false,
+      "description": "The session's task list changed; the whole list is sent.",
+      "properties": {
+        "revision": {
+          "description": "Grows each time the list really changes.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seq": {
+          "description": "Position in the session's event stream; strictly increasing.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "description": "The session the event belongs to.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "todos": {
+          "description": "Every item, in priority order.",
+          "items": {"$ref": "#/$defs/TodoItem"},
+          "type": "array"
+        },
+        "type": {
+          "const": "todo.updated",
+          "default": "todo.updated",
+          "description": "Event type.",
+          "type": "string"
+        }
+      },
+      "required": ["session_id", "seq", "todos", "revision"],
       "type": "object"
     },
     "ToolCompleted": {
@@ -1214,6 +2365,69 @@
       },
       "required": ["session_id", "seq", "turn_id", "generation"],
       "type": "object"
+    },
+    "UsageNumbers": {
+      "additionalProperties": false,
+      "description": "Token and cost counters of a session.",
+      "properties": {
+        "api_calls": {
+          "default": 0,
+          "description": "Model calls made.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cache_read_tokens": {
+          "default": 0,
+          "description": "Prompt tokens served from the cache.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cache_write_tokens": {
+          "default": 0,
+          "description": "Prompt tokens written to the cache.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "context_tokens": {
+          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "The last prompt's size, when known."
+        },
+        "context_window": {
+          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "The model's window, when known."
+        },
+        "cost_label": {
+          "default": "",
+          "description": "The cost as shown to people.",
+          "type": "string"
+        },
+        "cost_usd": {
+          "anyOf": [{"type": "number"}, {"type": "null"}],
+          "default": null,
+          "description": "Cost so far; absent when nothing could be priced."
+        },
+        "input_tokens": {
+          "default": 0,
+          "description": "Uncached prompt tokens.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "description": "Answer tokens (reasoning included).",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "description": "Reasoning tokens (part of the output).",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1232,6 +2446,12 @@
         "code": 3003,
         "group": "conflict",
         "meaning": "the answer's kind differs from the kind of the server request it answers",
+        "status": 409
+      },
+      "CONFIRM_REQUIRED": {
+        "code": 3004,
+        "group": "conflict",
+        "meaning": "the change needs an explicit confirmation; repeat the call with confirm set",
         "status": 409
       },
       "IDEMPOTENCY_CONFLICT": {
@@ -1306,6 +2526,30 @@
         "meaning": "the session cannot be used: it was deleted or continued in another session",
         "status": 403
       },
+      "SHELL_REFUSED": {
+        "code": 4003,
+        "group": "refused",
+        "meaning": "the shell command is blocked by the dangerous-command rules and was not run",
+        "status": 403
+      },
+      "SHELL_TIMEOUT": {
+        "code": 6002,
+        "group": "internal",
+        "meaning": "the shell command did not finish within its time limit and was stopped",
+        "status": 500
+      },
+      "SLASH_NOT_OWNED": {
+        "code": 2003,
+        "group": "not_found",
+        "meaning": "the server does not run this slash command; the client handles it, or a later release does",
+        "status": 404
+      },
+      "SLASH_WORKER_FAILED": {
+        "code": 6003,
+        "group": "internal",
+        "meaning": "the slash command's handler failed or did not answer in time",
+        "status": 500
+      },
       "STORE_FAILED": {
         "code": 6001,
         "group": "internal",
@@ -1317,6 +2561,18 @@
         "group": "invalid_request",
         "meaning": "the message text is empty or only whitespace",
         "status": 400
+      },
+      "UNKNOWN_PARAM_KEY": {
+        "code": 1002,
+        "group": "invalid_request",
+        "meaning": "the params carry a key the method does not declare (the path names it)",
+        "status": 400
+      },
+      "UNSUPPORTED_COMMAND": {
+        "code": 2004,
+        "group": "not_found",
+        "meaning": "the name is not a built-in, quick or skill command",
+        "status": 404
       }
     },
     "events": {
@@ -1324,11 +2580,16 @@
       "heartbeat.fired": "HeartbeatFired",
       "learning.review.done": "LearningReviewDone",
       "loop.update": "LoopUpdate",
+      "message.complete": "MessageComplete",
       "message.delta": "MessageDelta",
       "notice": "Notice",
       "reasoning.delta": "ReasoningDelta",
       "server_request.cancelled": "ServerRequestCancelled",
+      "session.info": "SessionInfo",
+      "session.title": "SessionTitle",
+      "session.usage": "SessionUsage",
       "status": "Status",
+      "todo.updated": "TodoUpdated",
       "tool.completed": "ToolCompleted",
       "tool.progress": "ToolProgress",
       "tool.started": "ToolStarted",
@@ -1336,16 +2597,214 @@
       "turn.started": "TurnStarted"
     },
     "methods": {
+      "clarify.lock": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SERVER_REQUEST_NOT_FOUND"
+        ],
+        "params": "ClarifyLockParams",
+        "result": "ClarifyLockResult"
+      },
       "client.capabilities": {
         "errors": [
           "PARSE_ERROR",
           "INVALID_REQUEST",
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
-          "INTERNAL_ERROR"
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
         ],
         "params": "ClientCapabilitiesParams",
         "result": "ClientCapabilitiesResult"
+      },
+      "command.dispatch": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "UNSUPPORTED_COMMAND",
+          "SHELL_REFUSED",
+          "SHELL_TIMEOUT"
+        ],
+        "params": "CommandDispatchParams",
+        "result": "CommandDispatchResult"
+      },
+      "commands.catalog": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "CommandsCatalogParams",
+        "result": "CommandsCatalogResult"
+      },
+      "complete.path": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "CompletePathParams",
+        "result": "CompleteResult"
+      },
+      "complete.slash": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "CompleteSlashParams",
+        "result": "CompleteResult"
+      },
+      "config.get": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND"
+        ],
+        "params": "ConfigGetParams",
+        "result": "ConfigGetResult"
+      },
+      "config.set": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "CONFIRM_REQUIRED",
+          "PROVIDER_UNAVAILABLE"
+        ],
+        "params": "ConfigSetParams",
+        "result": "ConfigSetResult"
+      },
+      "gateway.ping": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GatewayPingParams",
+        "result": "GatewayPingResult"
+      },
+      "image.attach": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND"
+        ],
+        "params": "ImageAttachParams",
+        "result": "ImageAttachResult"
+      },
+      "input.detect_drop": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "InputDetectDropParams",
+        "result": "InputDetectDropResult"
+      },
+      "model.disconnect": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ModelDisconnectParams",
+        "result": "ModelDisconnectResult"
+      },
+      "model.options": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ModelOptionsParams",
+        "result": "ModelOptionsResult"
+      },
+      "model.save_key": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ModelSaveKeyParams",
+        "result": "ModelSaveKeyResult"
+      },
+      "paste.collapse": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "TEXT_EMPTY"
+        ],
+        "params": "PasteCollapseParams",
+        "result": "PasteCollapseResult"
+      },
+      "prompt.background": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED",
+          "TEXT_EMPTY",
+          "PROVIDER_UNAVAILABLE"
+        ],
+        "params": "PromptBackgroundParams",
+        "result": "PromptBackgroundResult"
       },
       "prompt.submit": {
         "errors": [
@@ -1354,6 +2813,7 @@
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
           "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
           "SESSION_NOT_FOUND",
           "SESSION_REFUSED",
           "STORE_FAILED",
@@ -1364,6 +2824,18 @@
         "params": "PromptSubmitParams",
         "result": "PromptSubmitResult"
       },
+      "reload.mcp": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ReloadMcpParams",
+        "result": "ReloadMcpResult"
+      },
       "server_request.answer": {
         "errors": [
           "PARSE_ERROR",
@@ -1371,6 +2843,7 @@
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
           "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
           "SESSION_NOT_FOUND",
           "SERVER_REQUEST_NOT_FOUND",
           "SERVER_REQUEST_UNSUPPORTED",
@@ -1379,6 +2852,64 @@
         "params": "ServerRequestAnswerParams",
         "result": "ServerRequestAnswerResult"
       },
+      "server_request.decline": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SERVER_REQUEST_NOT_FOUND"
+        ],
+        "params": "ServerRequestDeclineParams",
+        "result": "ServerRequestDeclineResult"
+      },
+      "session.branch": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED",
+          "SESSION_BUSY"
+        ],
+        "params": "SessionBranchParams",
+        "result": "SessionBranchResult"
+      },
+      "session.close": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "SessionCloseParams",
+        "result": "SessionCloseResult"
+      },
+      "session.compress": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED",
+          "SESSION_BUSY"
+        ],
+        "params": "SessionCompressParams",
+        "result": "SessionCompressResult"
+      },
       "session.create": {
         "errors": [
           "PARSE_ERROR",
@@ -1386,12 +2917,28 @@
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
           "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
           "IDEMPOTENCY_CONFLICT",
           "PROVIDER_UNAVAILABLE",
           "STORE_FAILED"
         ],
         "params": "SessionCreateParams",
         "result": "SessionCreateResult"
+      },
+      "session.history": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED"
+        ],
+        "params": "SessionHistoryParams",
+        "result": "SessionHistoryResult"
       },
       "session.interrupt": {
         "errors": [
@@ -1400,10 +2947,37 @@
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
           "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
           "SESSION_NOT_FOUND"
         ],
         "params": "SessionInterruptParams",
         "result": "SessionInterruptResult"
+      },
+      "session.list": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "STORE_FAILED"
+        ],
+        "params": "SessionListParams",
+        "result": "SessionListResult"
+      },
+      "session.most_recent": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "STORE_FAILED"
+        ],
+        "params": "SessionMostRecentParams",
+        "result": "SessionMostRecentResult"
       },
       "session.redirect": {
         "errors": [
@@ -1412,6 +2986,7 @@
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
           "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
           "SESSION_NOT_FOUND",
           "TEXT_EMPTY"
         ],
@@ -1425,6 +3000,7 @@
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
           "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
           "SESSION_NOT_FOUND",
           "SESSION_REFUSED",
           "STORE_FAILED",
@@ -1440,13 +3016,91 @@
           "METHOD_NOT_FOUND",
           "INVALID_PARAMS",
           "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
           "SESSION_NOT_FOUND",
           "TEXT_EMPTY"
         ],
         "params": "SessionSteerParams",
         "result": "SessionSteerResult"
+      },
+      "session.title": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED"
+        ],
+        "params": "SessionTitleParams",
+        "result": "SessionTitleResult"
+      },
+      "session.undo": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED",
+          "SESSION_BUSY"
+        ],
+        "params": "SessionUndoParams",
+        "result": "SessionUndoResult"
+      },
+      "session.usage": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND"
+        ],
+        "params": "SessionUsageParams",
+        "result": "SessionUsageResult"
+      },
+      "shell.exec": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "TEXT_EMPTY",
+          "SHELL_REFUSED",
+          "SHELL_TIMEOUT"
+        ],
+        "params": "ShellExecParams",
+        "result": "ShellExecResult"
+      },
+      "slash.exec": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "TEXT_EMPTY",
+          "SESSION_BUSY",
+          "SLASH_NOT_OWNED",
+          "SLASH_WORKER_FAILED"
+        ],
+        "params": "SlashExecParams",
+        "result": "SlashExecResult"
       }
     },
+    "notifications": {"gateway.ready": "BridgeReady"},
     "server_request_method": "server_request",
     "server_requests": {
       "approval": {"answer": "ApprovalAnswer", "request": "ApprovalRequest"},

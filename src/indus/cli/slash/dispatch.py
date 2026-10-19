@@ -24,7 +24,7 @@ import difflib
 import logging
 from collections.abc import Mapping
 
-from indus.cli import quick_commands
+from indus.cli import quick_commands, voice
 from indus.cli.slash import (
     automation_cmds,
     browser_cmds,
@@ -60,6 +60,7 @@ HANDLERS: dict[str, Handler] = {
     **learning_cmds.HANDLERS,
     **browser_cmds.HANDLERS,
     **automation_cmds.HANDLERS,
+    **voice.HANDLERS,
 }
 """Canonical command name → the classic CLI's handler."""
 

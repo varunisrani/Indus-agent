@@ -33,8 +33,39 @@ export interface ApprovalRequest {
   choices?: ApprovalChoice[];
 }
 
+/** The first frame of a stdio connection: the server is ready for requests. */
+export interface BridgeReady {
+  /** The configured theme name (`auto` lets the client detect light or dark). */
+  theme: string;
+  /** Whether the server answers pings; a stdio child does not need them. */
+  heartbeat?: boolean;
+  /** The protocol version the server speaks. */
+  protocol_version: number;
+}
+
+/** What a submit does while the session is running a turn. */
+export type BusyAction = "reject" | "queue" | "steer" | "redirect";
+
 /** Why an open server request was withdrawn. */
 export type CancelReason = "interrupted" | "turn_ended" | "timed_out" | "answered_elsewhere" | "session_closed";
+
+/** One command the client can offer. */
+export interface CatalogEntry {
+  /** Canonical name, without the slash. */
+  name: string;
+  /** Other names. */
+  aliases?: string[];
+  /** One line. */
+  description: string;
+  /** Group heading key (`session`, `config`, `tools`, `info`, `exit`, `custom`). */
+  category: string;
+  /** Argument summary. */
+  args_hint?: string;
+  /** Where it comes from. */
+  kind: CommandKind;
+  /** Who runs it: the server (`slash.exec`), the client, or nobody yet. */
+  runs: CommandRunner;
+}
 
 /** The person's answers to a clarify request. */
 export interface ClarifyAnswer {
@@ -42,6 +73,24 @@ export interface ClarifyAnswer {
   kind: "clarify";
   /** Question id → picked choices or typed text; an empty list means the question was skipped. */
   answers: { [key: string]: string[] };
+}
+
+/** Lock one answer of a multi-question clarify request. */
+export interface ClarifyLockParams {
+  /** The session that asked. */
+  session_id: SessionId;
+  /** The clarify request. */
+  request_id: string;
+  /** The question being answered. */
+  question_id: string;
+  /** Picked choices or typed text; empty means skipped. */
+  answer: string[];
+}
+
+/** What is still open. */
+export interface ClarifyLockResult {
+  /** Question ids not locked yet; empty once the request was answered. */
+  remaining: string[];
 }
 
 /** One question inside a clarify request. */
@@ -84,6 +133,132 @@ export interface ClientCapabilitiesResult {
   features: string[];
 }
 
+/** Resolve a command word that is not a client command. */
+export interface CommandDispatchParams {
+  /** The session it acts on. */
+  session_id: SessionId;
+  /** The command word, with or without the slash. */
+  name: string;
+  /** Everything after the word. */
+  arg?: string;
+}
+
+/** The resolution. */
+export interface CommandDispatchResult {
+  /** What to do next. */
+  kind: DispatchKind;
+  /** For `exec`: the output to show. */
+  output?: string | null;
+  /** For `skill` / `send`: the prompt to submit; for `prefill`: the composer text. */
+  message?: string | null;
+  /** For `alias`: the command it stands for. */
+  target?: string | null;
+}
+
+/** Where a slash command comes from. */
+export type CommandKind = "builtin" | "quick" | "skill";
+
+/** Who runs a slash command. */
+export type CommandRunner = "server" | "client" | "later";
+
+/** List every slash command the client can offer. */
+export interface CommandsCatalogParams {
+  /** The session whose skills count. */
+  session_id?: string | null;
+}
+
+/** The catalogue. */
+export interface CommandsCatalogResult {
+  /** Built-ins in registry order, then quick commands, then skills. */
+  commands: CatalogEntry[];
+}
+
+/** Complete a path or an `@` reference being typed. */
+export interface CompletePathParams {
+  /** The word under the cursor. */
+  word: string;
+  /** The session whose folder and terminal backend count. */
+  session_id?: string | null;
+  /** Folder to resolve relative paths in; absent uses the session's. */
+  cwd?: string | null;
+}
+
+/** Completion candidates. */
+export interface CompleteResult {
+  /** Best first. */
+  items: CompletionItem[];
+}
+
+/** Complete a slash command being typed. */
+export interface CompleteSlashParams {
+  /** The composer text so far (starts with `/`). */
+  text: string;
+  /** The session whose skills count. */
+  session_id?: string | null;
+}
+
+/** One completion candidate. */
+export interface CompletionItem {
+  /** What replaces the typed word. */
+  text: string;
+  /** What the list shows. */
+  display: string;
+  /** A short note beside it. */
+  meta?: string;
+}
+
+/** When a change takes effect. */
+export type ConfigApplied = "now" | "deferred";
+
+/**
+ * Read settings: `full` (the client's settings), `mtime` (the file's change stamp) or one
+ * key.
+ */
+export interface ConfigGetParams {
+  /** `full`, `mtime` or a setting key. */
+  key: string;
+  /** The session whose live values count (model, reasoning, fast, yolo). */
+  session_id?: string | null;
+}
+
+/** The value read. */
+export interface ConfigGetResult {
+  /** The key asked for. */
+  key: string;
+  /** The value; for `full` an object of every client setting; `null` when unset. */
+  value: JsonValue;
+}
+
+/** Settings a client may change. */
+export type ConfigKey = "model" | "verbose" | "yolo" | "reasoning" | "fast" | "busy" | "theme" | "indicator" | "details" | "statusbar" | "mouse";
+
+/** Change one setting. */
+export interface ConfigSetParams {
+  /** Which setting. */
+  key: ConfigKey;
+  /** The new value. */
+  value: JsonValue;
+  /** For session switches (model, reasoning, fast, yolo, verbose): the session. */
+  session_id?: string | null;
+  /** Confirms a change the server asked to confirm. */
+  confirm?: boolean;
+}
+
+/** The change as applied. */
+export interface ConfigSetResult {
+  /** The setting. */
+  key: ConfigKey;
+  /** Its value now (or once deferred). */
+  value: JsonValue;
+  /** `deferred` when it waits for the running turn to end. */
+  applied: ConfigApplied;
+  /** True when it was written to the profile's settings file. */
+  saved: boolean;
+}
+
+/** What a dispatched command resolved to. */
+export type DispatchKind = "exec" | "alias" | "skill" | "send" | "prefill" | "plugin";
+
 /** What we put in `error.data`: the symbolic name plus optional context. */
 export interface ErrorDetail {
   /** The symbolic name of the code, e.g. `SESSION_NOT_FOUND`. */
@@ -116,10 +291,22 @@ export interface ErrorResponse {
   error: ErrorObject;
 }
 
-export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone | GoalUpdate | LoopUpdate | HeartbeatFired;
+export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone | GoalUpdate | LoopUpdate | HeartbeatFired | MessageComplete | SessionInfo | SessionUsage | SessionTitle | TodoUpdated;
 
 /** Why a turn ended. Closed set: every exit path of the turn loop maps to one value. */
 export type ExitReason = "completed" | "interrupted_by_user" | "interrupted_by_system" | "budget_exhausted" | "max_iterations" | "invalid_tool_strikes" | "persistence_failed" | "provider_failed" | "compression_exhausted" | "guardrail_halt";
+
+/** Check that the server is alive (heartbeat). */
+export interface GatewayPingParams {
+}
+
+/** The heartbeat answer. */
+export interface GatewayPingResult {
+  /** Always true. */
+  pong?: boolean;
+  /** The protocol version the server speaks. */
+  protocol_version: number;
+}
 
 /** The session's standing goal changed (set, judged, continued, paused, done, cleared). */
 export interface GoalUpdate {
@@ -155,6 +342,55 @@ export interface HeartbeatFired {
   prompt: string;
   /** How many times it has fired, this one included. */
   fire_count: number;
+}
+
+/** One stored row, flattened for display. */
+export interface HistoryMessage {
+  /** Who wrote it. */
+  role: HistoryRole;
+  /** The text; image parts show as `[image]`. */
+  text: string;
+  /** For tool rows: the tool's name. */
+  name?: string | null;
+  /** The stored row's id (undo and branch points). */
+  row_id?: number | null;
+}
+
+/** Who wrote a history row. */
+export type HistoryRole = "user" | "assistant" | "tool";
+
+/** Attach an image file to the next prompt. */
+export interface ImageAttachParams {
+  /** The session. */
+  session_id: SessionId;
+  /** The image file. */
+  path: string;
+}
+
+/** The staged image. */
+export interface ImageAttachResult {
+  /** The file name. */
+  name: string;
+  /** The resolved path. */
+  path: string;
+  /** Images staged for the next prompt so far. */
+  attached: number;
+}
+
+/** Tell whether pasted text is one or more dropped file paths. */
+export interface InputDetectDropParams {
+  /** The pasted text. */
+  text: string;
+}
+
+/** The detected files. */
+export interface InputDetectDropResult {
+  /** True when every part names an existing file or folder. */
+  is_drop: boolean;
+  /** The resolved paths. */
+  paths?: string[];
+  /** Those among them that are images. */
+  images?: string[];
 }
 
 /** Any JSON value. */
@@ -196,6 +432,22 @@ export interface LoopUpdate {
   reason?: string;
 }
 
+/** A turn's final reply, sent after `turn.done` so a client can settle its streamed text. */
+export interface MessageComplete {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "message.complete";
+  /** The turn that ended. */
+  turn_id: string;
+  /** The whole final reply (empty when the turn produced none). */
+  text: string;
+  /** Why the turn ended. */
+  reason: ExitReason;
+}
+
 /** A piece of the assistant's visible reply. */
 export interface MessageDelta {
   /** The session the event belongs to. */
@@ -211,6 +463,48 @@ export interface MessageDelta {
 }
 
 export type MessageText = string;
+
+/** Remove a provider's stored keys. */
+export interface ModelDisconnectParams {
+  /** The provider. */
+  slug: string;
+}
+
+/** Whether anything was removed. */
+export interface ModelDisconnectResult {
+  /** False when nothing was stored. */
+  removed: boolean;
+}
+
+/** List the providers and the current model. */
+export interface ModelOptionsParams {
+  /** The session whose model is current. */
+  session_id?: string | null;
+}
+
+/** The picker's data. */
+export interface ModelOptionsResult {
+  /** The current provider. */
+  provider: string;
+  /** The current model. */
+  model: string;
+  /** Every provider, in catalogue order. */
+  providers: ProviderOption[];
+}
+
+/** Store an API key for a provider. */
+export interface ModelSaveKeyParams {
+  /** The provider. */
+  slug: string;
+  /** The key. */
+  api_key: string;
+}
+
+/** The provider after the change. */
+export interface ModelSaveKeyResult {
+  /** Its refreshed row. */
+  provider: ProviderOption;
+}
 
 /** A message for the user that is not part of the conversation. */
 export interface Notice {
@@ -241,20 +535,68 @@ export interface Notification {
   params?: { [key: string]: JsonValue } | null;
 }
 
+/** Keep a long paste in a file and get a short placeholder for the composer. */
+export interface PasteCollapseParams {
+  /** The pasted text. */
+  text: MessageText;
+}
+
+/** Where the paste went. */
+export interface PasteCollapseResult {
+  /** What the composer shows instead of the paste. */
+  placeholder: string;
+  /** The file holding the full text. */
+  path: string;
+  /** Lines in the paste. */
+  lines: number;
+}
+
+/** Run a prompt in a separate session; its reply arrives as a notice. */
+export interface PromptBackgroundParams {
+  /** The session the reply is reported to. */
+  session_id: SessionId;
+  /** The prompt. */
+  text: MessageText;
+}
+
+/** The background task's handle. */
+export interface PromptBackgroundResult {
+  /** The id of the session running it. */
+  task_id: string;
+}
+
 /** Send a user message and start a turn. */
 export interface PromptSubmitParams {
   /** The session to run the turn in. */
   session_id: SessionId;
   /** The user's message. */
   text: MessageText;
+  /** While a turn runs: refuse (`SESSION_BUSY`), queue it, steer or redirect the turn. */
+  when_busy?: BusyAction;
 }
 
 /** The ticket for the started turn. */
 export interface PromptSubmitResult {
-  /** The turn's id; its events carry it. */
+  /** The turn's id; its events carry it. For a queued or steered message: the running turn. */
   turn_id: string;
   /** The turn's generation, for interrupts. */
   generation: number;
+  /** `streaming` when this message started the turn. */
+  status?: SubmitStatus;
+}
+
+/** One provider the model picker offers. */
+export interface ProviderOption {
+  /** The provider's name. */
+  slug: string;
+  /** What people see. */
+  name: string;
+  /** How it signs in (`api_key`, `oauth`, …). */
+  auth_type: string;
+  /** Whether a key or sign-in is stored. */
+  authenticated: boolean;
+  /** The provider of the current model. */
+  current?: boolean;
 }
 
 /** A piece of the model's reasoning, shown apart from the reply. */
@@ -273,6 +615,20 @@ export interface ReasoningDelta {
 
 /** What a redirect did. */
 export type RedirectOutcome = "redirected" | "steered" | "rejected";
+
+/** Reconnect the MCP servers and refresh their tools. */
+export interface ReloadMcpParams {
+  /** The session asking. */
+  session_id?: string | null;
+}
+
+/** How the reload went. */
+export interface ReloadMcpResult {
+  /** False when nothing could be reloaded. */
+  reloaded: boolean;
+  /** A line to show. */
+  message: string;
+}
 
 /** A call that expects a response. */
 export interface Request {
@@ -348,6 +704,71 @@ export interface ServerRequestCancelled {
   reason: CancelReason;
 }
 
+/**
+ * Decline an open server request the client cannot show; the server answers it with that
+ * kind's refusal (approval denied, clarify questions skipped, no sudo password, no secret).
+ */
+export interface ServerRequestDeclineParams {
+  /** The session that asked. */
+  session_id: SessionId;
+  /** The request being declined. */
+  request_id: string;
+  /** Why, in the client's words (passed to the model with an approval denial). */
+  reason?: string | null;
+}
+
+/** Confirmation that the refusal was delivered. */
+export interface ServerRequestDeclineResult {
+  /** True when the waiting agent received the refusal. */
+  accepted: boolean;
+}
+
+/** Copy the conversation into a new, independent session. */
+export interface SessionBranchParams {
+  /** The session to branch from. */
+  session_id: SessionId;
+  /** The branch's title; absent takes the next lineage title. */
+  title?: string | null;
+}
+
+/** The new session. */
+export interface SessionBranchResult {
+  /** The branch's id (not attached; resume it to use it). */
+  session_id: string;
+  /** The branch's title. */
+  title?: string | null;
+}
+
+/** Detach a session: stop its runtime and keep its stored row. */
+export interface SessionCloseParams {
+  /** The session to close. */
+  session_id: SessionId;
+}
+
+/** Whether a live session was closed. */
+export interface SessionCloseResult {
+  /** False when the session was not attached. */
+  closed: boolean;
+}
+
+/** Compress the conversation now (between turns). */
+export interface SessionCompressParams {
+  /** The session. */
+  session_id: SessionId;
+  /** What the summary should keep in view. */
+  focus?: string | null;
+}
+
+/** How the compression went. */
+export interface SessionCompressResult {
+  /** The engine's outcome. */
+  status: "compressed" | "nothing" | "blocked" | "aborted" | "preview";
+  /** A line to show. */
+  message?: string;
+  /** The session's id afterwards (a rotating compaction continues in a new id). */
+  session_id: string;
+}
+
 /** Create a session. */
 export interface SessionCreateParams {
   /** A title for the session; absent leaves it untitled. */
@@ -370,7 +791,45 @@ export interface SessionCreateResult {
   created: boolean;
 }
 
+/** Read a session's stored conversation for display. */
+export interface SessionHistoryParams {
+  /** The session to read. */
+  session_id: SessionId;
+}
+
+/** The display projection of the conversation. */
+export interface SessionHistoryResult {
+  /** Rows in order. */
+  messages: HistoryMessage[];
+}
+
 export type SessionId = string;
+
+/** What a client shows about a session: model, folder, tools, whether a turn runs. */
+export interface SessionInfo {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "session.info";
+  /** The session's title. */
+  title?: string | null;
+  /** The bound model. */
+  model: string;
+  /** The bound provider. */
+  provider: string;
+  /** The reasoning level in effect, when the model has one. */
+  reasoning_effort?: string | null;
+  /** The folder tools start in. */
+  cwd?: string | null;
+  /** The tool names the model sees. */
+  tools?: string[];
+  /** True while a turn runs. */
+  running?: boolean;
+  /** How much tool activity this connection is sent. */
+  tool_progress?: "off" | "new" | "all" | "verbose";
+}
 
 /** Stop the running turn. */
 export interface SessionInterruptParams {
@@ -386,6 +845,32 @@ export interface SessionInterruptParams {
 export interface SessionInterruptResult {
   /** False when no turn (or no turn of that generation) was running. */
   interrupted: boolean;
+}
+
+/** List stored conversations, newest first. */
+export interface SessionListParams {
+  /** How many rows at most. */
+  limit?: number;
+  /** Only conversations whose title or text matches this. */
+  query?: string | null;
+  /** Also list delegate runs (hidden by default). */
+  include_subagents?: boolean;
+}
+
+/** The listing. */
+export interface SessionListResult {
+  /** Rows, newest first. */
+  sessions: SessionRow[];
+}
+
+/** Find the newest conversation a person started. */
+export interface SessionMostRecentParams {
+}
+
+/** The newest conversation, if any. */
+export interface SessionMostRecentResult {
+  /** Absent when there is none. */
+  session?: SessionRow | null;
 }
 
 /** Correct the running turn: cancel the model call in flight and retry with this text. */
@@ -418,6 +903,28 @@ export interface SessionResumeResult {
   last_seq: number;
   /** Server requests still waiting for an answer, re-delivered after a reconnect. */
   pending_requests?: ServerRequest[];
+  /** The session's title, when a surface asked for the display projection. */
+  title?: string | null;
+  /** The stored conversation for display, when a surface asked for it (empty otherwise). */
+  messages?: HistoryMessage[];
+}
+
+/** One conversation in a session listing. */
+export interface SessionRow {
+  /** The conversation's current id. */
+  session_id: string;
+  /** Its title, when it has one. */
+  title?: string | null;
+  /** The start of its first user message. */
+  preview?: string;
+  /** Where it was started (`cli`, `tui`, a platform name). */
+  source?: string;
+  /** Start time, epoch seconds. */
+  started_at: number;
+  /** Newest activity, epoch seconds. */
+  last_active?: number | null;
+  /** Stored messages. */
+  message_count?: number;
 }
 
 /** Add guidance the running turn picks up after its current step. */
@@ -436,6 +943,112 @@ export interface SessionSteerResult {
   ticket?: string | null;
 }
 
+/** The session's title changed. */
+export interface SessionTitle {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "session.title";
+  /** The new title; absent when it was cleared. */
+  title?: string | null;
+}
+
+/** Read a session's title, or set it. */
+export interface SessionTitleParams {
+  /** The session. */
+  session_id: SessionId;
+  /** The new title; absent only reads. */
+  title?: string | null;
+}
+
+/** The session's title after the call. */
+export interface SessionTitleResult {
+  /** Absent when the session has none. */
+  title?: string | null;
+  /** True when the title waits for the session's first stored row. */
+  pending?: boolean;
+}
+
+/** Take back the newest user messages and the replies to them. */
+export interface SessionUndoParams {
+  /** The session. */
+  session_id: SessionId;
+  /** How many user messages to take back. */
+  count?: number;
+}
+
+/** What the undo removed. */
+export interface SessionUndoResult {
+  /** Stored rows taken back. */
+  removed: number;
+  /** The oldest taken-back message, for the composer. */
+  prefill?: string;
+}
+
+/** The session's counters after a turn or on request. */
+export interface SessionUsage {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "session.usage";
+  /** Totals for this attachment of the session. */
+  usage: UsageNumbers;
+}
+
+/** Read the session's token and cost counters. */
+export interface SessionUsageParams {
+  /** The session. */
+  session_id: SessionId;
+}
+
+/** The counters. */
+export interface SessionUsageResult {
+  /** Totals for this attachment of the session. */
+  usage: UsageNumbers;
+}
+
+/** Run a shell command on this machine (the composer's `!`). */
+export interface ShellExecParams {
+  /** The command line. */
+  command: string;
+  /** The session whose folder it runs in. */
+  session_id?: string | null;
+}
+
+/** How the command ended. */
+export interface ShellExecResult {
+  /** The redacted tail of its standard output. */
+  stdout: string;
+  /** The redacted tail of its error output. */
+  stderr: string;
+  /** Exit status. */
+  code: number;
+}
+
+/** Run a slash command on the server. */
+export interface SlashExecParams {
+  /** The session it acts on. */
+  session_id: SessionId;
+  /** The whole command line, with or without the leading slash. */
+  command: MessageText;
+}
+
+/** What the command produced. */
+export interface SlashExecResult {
+  /** Text to show. */
+  output?: string;
+  /** Text to put back into the composer. */
+  prefill?: string | null;
+  /** Text the client should send as a prompt. */
+  submit?: string | null;
+  /** A session the client should switch to. */
+  switch_to?: string | null;
+}
+
 /** The session's activity changed. */
 export interface Status {
   /** The session the event belongs to. */
@@ -452,6 +1065,9 @@ export interface Status {
 
 /** What the session is doing, for a status line. */
 export type StatusKind = "working" | "waiting" | "retrying" | "compressing" | "ready";
+
+/** What happened to a submitted message. */
+export type SubmitStatus = "streaming" | "queued" | "steered" | "redirected";
 
 /** The answer to a request that worked. */
 export interface SuccessResponse {
@@ -485,6 +1101,32 @@ export interface SudoRequest {
   kind: "sudo";
   /** What the password is for. */
   reason: string;
+}
+
+/** One entry of the session's task list. */
+export interface TodoItem {
+  /** The item's id. */
+  id: string;
+  /** What the task is. */
+  content: string;
+  /** Where it stands. */
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  /** The id of the item this one is a subtask of. */
+  parent?: string | null;
+}
+
+/** The session's task list changed; the whole list is sent. */
+export interface TodoUpdated {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "todo.updated";
+  /** Every item, in priority order. */
+  todos: TodoItem[];
+  /** Grows each time the list really changes. */
+  revision: number;
 }
 
 /** A tool call finished (successfully or not). */
@@ -583,4 +1225,28 @@ export interface TurnStarted {
   turn_id: string;
   /** The turn's generation; interrupts naming an older one are ignored. */
   generation: number;
+}
+
+/** Token and cost counters of a session. */
+export interface UsageNumbers {
+  /** Model calls made. */
+  api_calls?: number;
+  /** Uncached prompt tokens. */
+  input_tokens?: number;
+  /** Answer tokens (reasoning included). */
+  output_tokens?: number;
+  /** Prompt tokens served from the cache. */
+  cache_read_tokens?: number;
+  /** Prompt tokens written to the cache. */
+  cache_write_tokens?: number;
+  /** Reasoning tokens (part of the output). */
+  reasoning_tokens?: number;
+  /** The last prompt's size, when known. */
+  context_tokens?: number | null;
+  /** The model's window, when known. */
+  context_window?: number | null;
+  /** Cost so far; absent when nothing could be priced. */
+  cost_usd?: number | null;
+  /** The cost as shown to people. */
+  cost_label?: string;
 }

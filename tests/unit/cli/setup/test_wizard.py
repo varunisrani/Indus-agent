@@ -25,6 +25,7 @@ BUNDLE_TOOLS = [
     "browser —",
     "clarify —",
     "code_execution —",
+    "computer_use —",  # P10-20
     "delegation —",
     "file —",
     "image_gen —",  # P10-16

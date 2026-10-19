@@ -94,6 +94,7 @@ PyPI for packages of other platforms).
 | protobuf | 7.36.2 | BSD-3-Clause | extra `voice`, via onnxruntime | P10-18 |
 | numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 (Zlib is not on the allow-list; owner check open, see LEAD-NOTES) | extra `voice`, via ctranslate2 / onnxruntime | P10-18 |
 | tokenizers | 0.23.2 | Apache-2.0 | extra `voice`, via faster-whisper | P10-18 |
+| sounddevice | 0.5.6 | MIT (the macOS and Windows wheels bundle PortAudio, MIT) | extra `voice`: microphone and speaker for CLI voice mode; needs cffi | P10-19 |
 | prompt_toolkit | 3.0.53 | BSD-3-Clause | the classic REPL's prompt, keys and status bar | P06-04 |
 | wcwidth | 0.9.1 | MIT | via prompt_toolkit | P06-04 |
 | jsonschema | 4.26.0 | MIT | checks subagent answers against `output_schema` | P10-04 |

@@ -86,6 +86,7 @@ def test_check_order_is_stable() -> None:
         "backend",
         "external",
         "tools",
+        "computer_use",  # P10-20
     ]
 
 

@@ -84,6 +84,8 @@ def test_decided_defaults() -> None:
     }
     assert d["goals"] == {"max_turns": 20}
     assert d["loops"] == {"min_interval_seconds": 30, "max_ticks": 100}
+    # P10-20: desktop control
+    assert d["computer_use"] == {"driver": "stdio", "driver_cmd": "", "action_timeout_s": 30.0}
     assert d["prompt_caching"] == {"cache_ttl": "5m"}
     assert d["compression"] == {
         "enabled": True,
@@ -164,6 +166,14 @@ def test_decided_defaults() -> None:
         "local_device": "auto",
         "max_file_mb": 25.0,
     }
+    assert d["voice"] == {  # P10-19
+        "record_key": "ctrl+space",
+        "silence_threshold": 300.0,
+        "silence_seconds": 2.0,
+        "wait_seconds": 10.0,
+        "max_seconds": 120.0,
+        "read_aloud": False,
+    }
     assert d["context"] == {"engine": "builtin"}
     assert d["fallback"] == {"min_switch_reset_s": 0.0}  # P08-13: always switch
     assert d["approvals"] == {
@@ -230,6 +240,15 @@ def test_decided_defaults() -> None:
         "show_reasoning": False,
         "bell_on_prompt": True,
         "learning_notices": "on",  # P09-16
+    }
+    assert d["tui"] == {  # P12-31
+        "theme": "auto",
+        "indicator": "spinner",
+        "details": "collapsed",
+        "statusbar": True,
+        "mouse": False,
+        "tool_progress": "all",
+        "confirm_models": [],
     }
     assert d["onboarding"] == {"seen": {"busy_input": False}, "setup_completed": False}
     assert d["fallback_providers"] == []

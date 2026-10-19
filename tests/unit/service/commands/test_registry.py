@@ -47,8 +47,9 @@ def test_every_entry_has_a_cli_handler_or_a_later_owner() -> None:
     from indus.cli.slash.dispatch import HANDLERS
 
     landed = {"P06", "P08", "P09", "P11"}  # phases whose commands have classic CLI handlers
-    # commands of a phase landing in slices (P10: /browser; goals, loops, heartbeats, /btw, /moa)
-    landed_commands = {"browser", "btw", "goal", "subgoal", "loop", "heartbeat", "moa"}
+    # commands of a phase landing in slices (P10: /browser; goals, loops, heartbeats, /btw, /moa,
+    # /voice)
+    landed_commands = {"browser", "btw", "goal", "subgoal", "loop", "heartbeat", "moa", "voice"}
     for cmd in REGISTRY:
         assert PHASE.match(cmd.owner), cmd.name
         if cmd.owner in landed or cmd.name in landed_commands:
@@ -160,7 +161,7 @@ HELP_GROUPS = {
                 "save", "branch", "stop", "steer", "queue", "compress", "status", "context",
                 "btw", "goal", "subgoal", "loop", "heartbeat", "moa", "refine", "journey",
                 "rollback", "worktree"],
-    "config": ["model", "reasoning", "yolo", "approvals", "fast", "config"],
+    "config": ["model", "reasoning", "yolo", "approvals", "fast", "config", "voice"],
     "tools": ["tools", "skills", "reload-skills", "bundles", "memory", "learn", "curator",
               "browser", "checkpoints"],
     "info": ["help", "usage", "whoami", "version"],

@@ -47,6 +47,8 @@ class ReplLaunch:
     store: StoreHandle | None = None
     no_restore_cwd: bool = False
     """``--no-restore-cwd`` / ``--in``: a ``/resume`` in the REPL keeps the folder too."""
+    voice: bool = False
+    """``--voice``: voice mode is turned on once the prompt is up (P10-19)."""
 
 
 class ReplEntry(Protocol):

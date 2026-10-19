@@ -150,6 +150,7 @@ class ChatArgs:
     quiet: bool = False
     max_turns: int | None = None
     source: str | None = None
+    voice: bool = False
 
 
 @dataclass(frozen=True)

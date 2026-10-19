@@ -35,9 +35,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from indus.cli.args import HostOverrides
 
-__all__ = ["GUI_COMMANDS", "RECOVERY_COMMANDS", "find_flag", "main"]
+__all__ = ["GUI_COMMANDS", "RECOVERY_COMMANDS", "STDIO_COMMANDS", "find_flag", "main"]
 
 GUI_COMMANDS = frozenset({"dashboard", "serve", "gui", "desktop"})
+STDIO_COMMANDS = frozenset({"tui-bridge"})  # stdout carries protocol frames only
 RECOVERY_COMMANDS = frozenset({"profile", "doctor", "config"})
 _VERSION_FLAGS = ("-V", "--version")
 _PROFILE_FLAGS = ("-p", "--profile")
@@ -179,7 +180,7 @@ def main(
     from indus.foundation.errors import IndusError
 
     command = _first_command(_without_profile(args), value_flags)
-    mode = "gui" if command in GUI_COMMANDS else "cli"
+    mode = "gui" if command in GUI_COMMANDS else "stdio" if command in STDIO_COMMANDS else "cli"
     early = _EarlyRecords()
     try:
         with early:

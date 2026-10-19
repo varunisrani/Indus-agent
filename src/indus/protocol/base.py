@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic_core import PydanticCustomError
+
+TEXT_EMPTY_ERROR = "text_empty"
+"""The pydantic error type raised for blank message text."""
+
+
+def _not_blank(value: str) -> str:
+    if not value.strip():
+        raise PydanticCustomError(TEXT_EMPTY_ERROR, "text must not be empty")
+    return value
+
+
+type MessageText = Annotated[str, AfterValidator(_not_blank)]
+"""Message text: any string with at least one non-whitespace character."""
+
+type SessionId = Annotated[str, Field(min_length=1)]
+"""A session id."""
 
 
 class ProtocolModel(BaseModel):
