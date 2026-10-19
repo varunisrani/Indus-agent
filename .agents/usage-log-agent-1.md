@@ -78,3 +78,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 19:55 UTC | 56% | 44% | 22:00 UTC | P15 integrating; W5, B3, R2 building (all writing files) |
 | 2026-10-19 20:10 UTC | 63% | 37% | 22:00 UTC | P15 integrating; W5, B3, R2 building; no new agents |
 2026-10-19 20:21 UTC | 66% | 34% | 22:00 UTC | P15 w2-3 integrating (W1-W5); P21+P22 integrating; builders done; adapters held until P15 daemon lands
+2026-10-19 20:41 UTC | 71% | 29% | 22:00 UTC | both integrators in gate runs (verify2 149 files, verify3 66); no new agents
