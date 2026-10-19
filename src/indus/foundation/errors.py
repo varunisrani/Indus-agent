@@ -105,6 +105,9 @@ ERROR_CODES: dict[str, str] = {
     "mcp.connect_timeout": "an MCP server did not finish connecting within its connect timeout",
     "mcp.connect_failed": "an MCP server could not be started or reached",
     "mcp.unavailable": "the MCP server is not connected (reconnecting, parked or closed)",
+    "mcp.auth_required": "an MCP server needs a new OAuth sign-in (indus mcp login)",
+    "mcp.oauth_failed": "an MCP OAuth sign-in could not finish",
+    "mcp.malware_refused": "an MCP server package has a malware advisory, so it was not started",
 }
 
 

@@ -374,6 +374,7 @@ class _ChatRun:
                 _err(f"indus: {exc.message}")
                 return 1
             resume.write_breadcrumb(spec.scope, session_id, cwd)
+            notices = (*self.notices, *_mcp_notices(spec.scope))
             if self.worktree is not None:
                 from indus.backends import worktrees
 
@@ -390,7 +391,7 @@ class _ChatRun:
                 title=(row or {}).get("title"),
                 history=history,
                 seed=self.query,
-                notices=tuple(self.notices),
+                notices=notices,
                 store=spec.store,
                 no_restore_cwd=self.args.no_restore_cwd or self.args.in_dir is not None,
                 voice=self.chat.voice,
@@ -398,6 +399,17 @@ class _ChatRun:
             return entry(launch)
         finally:
             _stop_host(host, shutdown_terminal)
+
+
+def _mcp_notices(scope: Any) -> list[str]:
+    """The MCP startup summary when a server failed, is misconfigured or is cooling down."""
+    from indus.service import mcp_host
+
+    upkeep = mcp_host.upkeep_for(scope)
+    report = upkeep.report if upkeep is not None else None
+    if report is None or not (report.failed or report.problems or report.cooling_down):
+        return []
+    return [report.summary()]
 
 
 def _stop_host(host: Any, shutdown_terminal: Any) -> None:

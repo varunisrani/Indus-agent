@@ -3,8 +3,10 @@
 A lean version of the classic CLI's host wiring (the bridge may not import ``indus.cli``): the
 route resolved from the profile, the P02 store, the process terminal runtime shared by every
 agent (``SessionRuntime.environments``), ``interactive`` run context for the approval pipeline,
-one auxiliary client for titles and summaries, and the ``execute_code`` kernel upkeep. At bridge
-shutdown the terminal runtime is shut down after the service.
+one auxiliary client for titles and summaries, the ``execute_code`` kernel upkeep, and the
+profile's MCP servers (one shared tool registry, ``service.mcp_host.McpUpkeep`` with the config
+watcher; the bridge's ``reload.mcp`` reaches the same host). At bridge shutdown the terminal
+runtime is shut down after the service.
 """
 
 from __future__ import annotations
@@ -21,10 +23,12 @@ from indus.providers.auxiliary import AuxClient
 from indus.providers.route import resolve
 from indus.service import terminal_host
 from indus.service.code_host import KernelUpkeep
+from indus.service.mcp_host import McpUpkeep
 from indus.service.session_service import SessionService
 from indus.state import registry
 from indus.state.registry import StoreHandle
-from indus.tools.builtin import terminal
+from indus.tools.builtin import load_builtins, terminal
+from indus.tools.registry import ToolRegistry
 from indus.tui_bridge.bridge import Bridge
 
 __all__ = ["PLATFORM", "SOURCE", "make_service", "store_source"]
@@ -72,6 +76,11 @@ def make_service(bridge: Bridge) -> SessionService:
     store = StateStore(handle)
     cwd = Path.cwd()
     terminal_host.install(handle, terminal.runtime().processes)
+    # One registry for the bridge (the built-in tools, as each agent had before): every agent
+    # sees the MCP tools registered into it (P13-05).
+    tool_registry = ToolRegistry(clock=scope.clock)
+    load_builtins(tool_registry)
+    aux = AuxClient(scope, route)
     options = AgentOptions(
         platform=PLATFORM,
         source=SOURCE,
@@ -79,6 +88,7 @@ def make_service(bridge: Bridge) -> SessionService:
         loop=LoopOptions.from_scope(scope, platform=PLATFORM),
         session_fields={"cwd": str(cwd), "model": route.model},
         store=store,
+        registry=tool_registry,
     )
     service = SessionService(
         scope,
@@ -87,8 +97,9 @@ def make_service(bridge: Bridge) -> SessionService:
         store=store,
         owner=SOURCE,
         agent_factory=bridge.requests.agent_factory(route, store, seams=_seams),
-        aux=AuxClient(scope, route),
+        aux=aux,
         kernels=KernelUpkeep(scope, reaper=True),
+        mcp=McpUpkeep(scope, tool_registry, aux=aux, watch=True),
     )
 
     async def shut_terminal() -> None:

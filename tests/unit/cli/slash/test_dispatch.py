@@ -100,7 +100,7 @@ def test_prefix_ambiguity_lists(scope: Scope) -> None:
     assert result == SlashResult()
     assert ctx.lines[0] == (
         "/re could be several commands: "
-        "/reasoning, /refine, /reload-skills, /reset, /resume, /retry."
+        "/reasoning, /refine, /reload-mcp, /reload-skills, /reload_mcp, /reset, /resume, /retry."
     )
 
 
@@ -115,8 +115,8 @@ def test_unknown_command_suggests(scope: Scope) -> None:
 
 def test_planned_and_other_surface_commands_say_so(scope: Scope) -> None:
     ctx = make_ctx(scope)
-    dispatch("/mcp", ctx)
-    assert ctx.lines == ["/mcp is not built yet; it arrives with P13."]
+    dispatch("/agents", ctx)
+    assert ctx.lines == ["/agents is not built yet; it arrives with P10."]
     ctx.lines.clear()
     dispatch("/approve", ctx)
     assert ctx.lines == ["/approve is not available here; it works in: gateway."]

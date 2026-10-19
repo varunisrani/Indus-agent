@@ -341,7 +341,8 @@ def test_help_groups_and_filters(scope: Scope) -> None:
         "Also: !COMMAND runs a shell command here without asking the model.",
     ]
     assert "  /gs" in ctx.lines
-    assert not any("/mcp" in line for line in ctx.lines)  # not built yet: not offered
+    assert not any("/agents" in line for line in ctx.lines)  # not built yet: not offered
+    assert any(line.startswith("  /mcp ") for line in ctx.lines)  # P13 wave 2
     assert any(line.startswith("  /goal ") for line in ctx.lines)  # P10 slice K
     ctx.lines.clear()
     dispatch("/help undo", ctx)

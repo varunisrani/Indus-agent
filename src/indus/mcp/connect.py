@@ -514,20 +514,58 @@ def default_http_client(
 NotificationHandler = Callable[[str, types.ServerNotification], Awaitable[None]]
 
 
-class _WatchedReader:
-    """The transport's read stream, with ``ended`` set when the server side goes away."""
+def _note_raw_hints(item: object, hints: dict[str, object]) -> None:
+    """Keep each listed tool's ``annotations.readOnlyHint`` exactly as the server sent it.
 
-    def __init__(self, inner: Any, ended: asyncio.Event) -> None:
+    The SDK's models coerce ``"yes"`` or ``1`` to ``True``; the trust gate (P13-07) must see the
+    wire value, so every response whose result carries a ``tools`` list is read here first.
+    """
+    message = getattr(item, "message", None)
+    if not isinstance(message, types.JSONRPCResponse):
+        return
+    listed = message.result.get("tools")
+    if not isinstance(listed, list):
+        return
+    for raw in cast(list[object], listed):
+        if not isinstance(raw, dict):
+            continue
+        entry = cast(dict[str, object], raw)
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        notes = entry.get("annotations")
+        value = (
+            cast(dict[str, object], notes).get("readOnlyHint") if isinstance(notes, dict) else None
+        )
+        hints[name] = value
+
+
+class _WatchedReader:
+    """The transport's read stream, with ``ended`` set when the server side goes away and the raw
+    ``readOnlyHint`` of every listed tool noted in ``hints``."""
+
+    def __init__(
+        self, inner: Any, ended: asyncio.Event, hints: dict[str, object] | None = None
+    ) -> None:
         self._inner = inner
         self._ended = ended
+        self._hints = hints
 
     @property
     def last_context(self) -> Any:
         return getattr(self._inner, "last_context", None)
 
+    def _seen(self, item: SessionMessage | Exception) -> SessionMessage | Exception:
+        if self._hints is not None:
+            try:
+                _note_raw_hints(item, self._hints)
+            except Exception:  # never let bookkeeping break the stream
+                log.debug("could not read raw tool hints", exc_info=True)
+        return item
+
     async def receive(self) -> SessionMessage | Exception:
         try:
-            return await self._inner.receive()
+            return self._seen(await self._inner.receive())
         except BaseException as exc:
             if not isinstance(exc, asyncio.CancelledError):
                 self._ended.set()
@@ -541,7 +579,7 @@ class _WatchedReader:
 
     async def __anext__(self) -> SessionMessage | Exception:
         try:
-            return await self._inner.__anext__()
+            return self._seen(await self._inner.__anext__())
         except BaseException as exc:
             if not isinstance(exc, asyncio.CancelledError):
                 self._ended.set()
@@ -569,11 +607,14 @@ class LiveSession:
         kind: Literal["stdio", "http", "sse"],
         session: ClientSession,
         dropped: asyncio.Event | None = None,
+        raw_hints: dict[str, object] | None = None,
     ) -> None:
         self.name = name
         self.kind = kind
         self.raw = session
         self.dropped = dropped if dropped is not None else asyncio.Event()
+        # tool name -> ``readOnlyHint`` as sent on the wire (absent key: not seen).
+        self.raw_hints: dict[str, object] = raw_hints if raw_hints is not None else {}
 
     @property
     def capabilities(self) -> types.ServerCapabilities | None:
@@ -740,6 +781,7 @@ async def open_session(
     tap: StderrTap | None = None
     token = secrets.token_hex(12)
     dropped = asyncio.Event()
+    raw_hints: dict[str, object] = {}
     opened = False
     try:
         async with AsyncExitStack() as stack:
@@ -756,7 +798,7 @@ async def open_session(
                     assert endpoint is not None
                     read, write = await _enter_remote(stack, endpoint, scope, server, opts)
                 session = ClientSession(
-                    _WatchedReader(read, dropped),
+                    _WatchedReader(read, dropped, raw_hints),
                     write,
                     message_handler=_message_handler(name, opts.on_notification),
                     client_info=types.Implementation(name="indus", version=__version__),
@@ -766,7 +808,7 @@ async def open_session(
                 await _handshake(session)
             opened = True
             try:
-                yield LiveSession(name, kind, session, dropped)
+                yield LiveSession(name, kind, session, dropped, raw_hints)
             finally:
                 dropped.set()
     except BaseException as exc:

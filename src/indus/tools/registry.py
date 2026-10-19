@@ -2,7 +2,10 @@
 
 A tool is registered once with its name, the toolset it belongs to, a JSON schema and a handler.
 Plugin tools go into a per-profile overlay, so a plugin loaded for one profile is invisible to the
-others. Each change bumps ``generation``; the toolset resolver and the definitions memo key on it.
+others. A toolset alias (``set_toolset_alias``, global or per profile) makes one toolset name also
+answer for another's tools: an MCP server ``web`` registers ``web`` → ``mcp-web``, so selecting
+``web`` unions the built-in set with the server's tools (P13-05). Each change bumps ``generation``;
+the toolset resolver and the definitions memo key on it.
 
 Availability probes take the ``Scope`` they are asked for and read secrets only through it
 (``scope.secrets`` / ``scope.env``, R02.8). Their answers are cached per (probe, profile) for
@@ -236,6 +239,8 @@ class ToolRegistry:
     def __init__(self, *, clock: Clock | None = None) -> None:
         self._global: dict[str, ToolEntry] = {}
         self._overlays: dict[str, dict[str, ToolEntry]] = {}
+        # profile key (None = global) -> alias -> target toolsets
+        self._aliases: dict[str | None, dict[str, frozenset[str]]] = {}
         self._lock = threading.RLock()
         self._generation = 0
         self.probes = ProbeCache(clock if clock is not None else SystemClock())
@@ -331,6 +336,33 @@ class ToolRegistry:
             self._generation += 1
             return True
 
+    def set_toolset_alias(
+        self, alias: str, target: str, *, profile: str | None = None, present: bool = True
+    ) -> None:
+        """Let toolset ``alias`` also stand for ``target``'s tools (``present=False`` drops it)."""
+        with self._lock:
+            table = self._aliases.setdefault(profile, {})
+            before = table.get(alias, frozenset())
+            after = before | {target} if present else before - {target}
+            if after == before:
+                if not table:
+                    self._aliases.pop(profile, None)
+                return
+            if after:
+                table[alias] = after
+            else:
+                table.pop(alias, None)
+            if not table:
+                self._aliases.pop(profile, None)
+            self._generation += 1
+
+    def _alias_table(self, scope: Scope | None) -> dict[str, frozenset[str]]:
+        merged = dict(self._aliases.get(None, {}))
+        if scope is not None:
+            for alias, targets in self._aliases.get(scope_key(scope), {}).items():
+                merged[alias] = merged.get(alias, frozenset()) | targets
+        return merged
+
     # -- reads ----------------------------------------------------------------------------------
 
     def _merged(self, scope: Scope | None) -> dict[str, ToolEntry]:
@@ -358,10 +390,20 @@ class ToolRegistry:
         return [e.name for e in self.entries(scope)]
 
     def names_in_toolset(self, toolset: str, scope: Scope | None = None) -> list[str]:
-        return [e.name for e in self.entries(scope) if e.toolset == toolset]
+        """Tools registered into ``toolset`` or into a toolset it is an alias of."""
+        resolved = _resolve(scope)
+        with self._lock:
+            wanted = {toolset} | self._alias_table(resolved).get(toolset, frozenset())
+        return [e.name for e in self.entries(resolved) if e.toolset in wanted]
 
     def toolset_names(self, scope: Scope | None = None) -> list[str]:
-        return sorted({e.toolset for e in self.entries(scope)})
+        """Toolsets with registered tools, and aliases whose targets have some."""
+        resolved = _resolve(scope)
+        names = {e.toolset for e in self.entries(resolved)}
+        with self._lock:
+            aliases = self._alias_table(resolved)
+        names.update(alias for alias, targets in aliases.items() if targets & names)
+        return sorted(names)
 
     # -- availability ---------------------------------------------------------------------------
 

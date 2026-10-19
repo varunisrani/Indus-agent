@@ -372,6 +372,7 @@ class Agent:
         self._runtime: SessionRuntime | None = None
         self._registry: ToolRegistry | None = None
         self._selected: list[str] = []
+        self._tools_stale = False
         self._owned_clients: list[httpx.AsyncClient] = []
         self._closers: list[tuple[str, Any]] = []
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -559,6 +560,27 @@ class Agent:
         assert self._registry is not None
         return definitions(self._registry, self._selected, state.route, scope=self.scope)
 
+    def tools_changed(self, selection: Sequence[str] | None = None) -> None:
+        """The registry's tool surface changed (P13-08: MCP reload, ``list_changed``). The
+        stored tool array stays as it is until the next compaction rebuilds it (R01.1); a new
+        ``selection`` (when given) is used from then on."""
+        if selection is not None:
+            self.toolset_selection = list(selection)
+        self._tools_stale = True
+
+    def _refresh_tools(self) -> None:
+        """Compaction hook: rebuild the tool array if the tool surface changed meanwhile."""
+        runtime = self._runtime
+        if not self._tools_stale or runtime is None:
+            return
+        self._tools_stale = False
+        self._open_tools()
+        runtime.tools = self._tool_array(self.binding.state)
+        runtime.prompt_context = replace(
+            runtime.prompt_context,
+            tool_names=frozenset(self._selected) | frozenset(self.options.inline),
+        )
+
     def _open_session(self) -> None:
         options = self.options
         state = self.binding.state
@@ -635,6 +657,7 @@ class Agent:
             on_switch=caller.reset_streak,
         )
         self._runtime.fallback = self.fallback
+        self._runtime.on_compaction.append(self._refresh_tools)
         caller.eager = self.fallback.wants_eager
         self.binding.add_dependent(prompt_identity(lifecycle))
         self.binding.add_dependent(self._follow_route)

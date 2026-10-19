@@ -39,6 +39,7 @@ from indus.foundation.blocking import BlockingError, BlockingPool, DeadlineMisse
 from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope
 from indus.plugins.settings import bounded_seconds, plugins_setting
+from indus.safety.approvals.tool_gate import approve_tool_call
 from indus.tools.calls import ToolCall, ToolContext, ToolResult
 from indus.tools.hooks import BeforeVerdict
 
@@ -659,7 +660,10 @@ class PluginToolHooks:
     ``transform_tool_result``.
 
     ``ask_approval(tool_name, message, rule_key)`` is the human gate an ``approve`` directive goes
-    to; without one, a denial, or a gate that fails, the call is blocked.
+    to. Without one, the directive asks through the P05 per-tool gate
+    (``safety.approvals.tool_gate``) with the call's own profile, session, broker and run
+    context; nobody to ask means the context's unattended policy (deny by default). A denial or a
+    gate that fails blocks the call.
     """
 
     # Each callback has its own deadline; no extra backstop around the whole seam.
@@ -691,19 +695,32 @@ class PluginToolHooks:
         if directive.action == "block":
             return BeforeVerdict(block=directive.message)
         if directive.action == "approve":
-            refusal = await self._approve(call.name, directive)
+            refusal = await self._approve(call.name, directive, ctx)
             if refusal is not None:
                 return BeforeVerdict(block=refusal)
         if directive.args is not None:
             return BeforeVerdict(args=directive.args)
         return None
 
-    async def _approve(self, tool_name: str, directive: ToolDirective) -> str | None:
+    async def _approve(
+        self, tool_name: str, directive: ToolDirective, ctx: ToolContext
+    ) -> str | None:
         if self.ask_approval is None:
-            return (
-                f"Tool blocked: a plugin asked for approval of {tool_name} and no one can "
-                "approve here"
+            extras = ctx.extras
+            verdict = await approve_tool_call(
+                f"{tool_name} (a plugin asked for approval)",
+                directive.message or f"a plugin hook asked for approval of {tool_name}",
+                f"plugin:{directive.rule_key or tool_name}",
+                scope=ctx.scope,
+                session_id=ctx.session_id,
+                turn_id=ctx.turn_id,
+                broker=extras.get("broker"),
+                run_context=extras.get("run_context"),
+                judge=extras.get("approval_judge"),
             )
+            if verdict.approved:
+                return None
+            return verdict.message or f"Tool blocked: {tool_name} was not approved"
         try:
             approved = await self.ask_approval(
                 tool_name, directive.message or "", directive.rule_key or tool_name

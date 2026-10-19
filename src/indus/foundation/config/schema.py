@@ -196,6 +196,10 @@ class ApprovalsSection(_Section):
     smart_policy: str = Field(
         default="", description="smart mode: extra rules for the judge, in plain words"
     )
+    mcp_reload_confirm: bool = Field(
+        default=True,
+        description="ask before /reload-mcp (it changes the tools, so the prompt cache misses)",
+    )
 
 
 class CheckpointsSection(_Section):
@@ -969,6 +973,11 @@ class McpSection(_Section):
     )
     discovery_concurrency: int = Field(
         default=4, ge=0, description="servers connecting at once at startup and reload; 0 = all"
+    )
+    osv_preflight: bool = Field(
+        default=True,
+        description="check npx/uvx/pipx/bunx/pnpm dlx packages against OSV malware advisories "
+        "before starting them",
     )
 
 

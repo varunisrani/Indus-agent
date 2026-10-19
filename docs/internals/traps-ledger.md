@@ -632,6 +632,8 @@ Checked by `python -m tooling.checks traps`.
 - **R06.22** Media path policy is a security boundary
   - `tests/unit/tools/builtin/media/test_tts.py::test_output_path_refusals`
   - `tests/unit/tools/builtin/media/test_tts.py::test_output_path_symlink_into_ssh_refused`
+  - `tests/unit/mcp/test_calls.py::test_media_directives_in_server_text_are_neutralised`
+  - `tests/integration/service/test_mcp_host.py::test_cli_sessions_get_mcp_tools_and_reload_follows_the_config`
   - Review: tests cover the producing side only; the sender's delivery-side policy (safe roots, deny-list) comes with P15-18 (P15-18)
 - **R06.23** Empty or failed transcription must say so
   - `tests/unit/tools/builtin/media/test_stt.py::test_empty_is_inaudible`
@@ -705,13 +707,28 @@ Checked by `python -m tooling.checks traps`.
 - **R07.21** MCP tool name length
   - Review: not yet planned (P00-guards)
 - **R07.22** MCP stdio env leakage and spawn storms
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/mcp/test_discovery.py::test_never_more_than_four_servers_connect_at_once`
+  - `tests/unit/mcp/test_discovery.py::test_the_whole_pass_ends_at_300_s`
+  - `tests/unit/mcp/test_osv.py::test_malicious_package_is_refused_with_its_advisory_id`
+  - `tests/unit/mcp/test_osv.py::test_guarded_opener_refuses_before_spawning`
+  - Review: env leakage is pinned by its own task (P13-01)
 - **R07.23** MCP reload busts the prompt cache
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/mcp/test_reload.py::test_reload_keeps_the_stored_tool_array_and_announces_the_change`
+  - `tests/unit/mcp/test_reload.py::test_reload_asks_first`
+  - `tests/unit/core/test_agent_p08.py::test_a_tool_change_waits_for_the_next_compaction`
+  - `tests/integration/service/test_mcp_host.py::test_cli_sessions_get_mcp_tools_and_reload_follows_the_config`
 - **R07.24** Background OAuth must never open a browser
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/mcp/test_trust.py::test_background_401_parks_without_a_browser_and_new_sessions_leave_it`
+  - `tests/unit/mcp/test_trust.py::test_interactive_auth_is_off_unless_a_login_turns_it_on`
+  - `tests/unit/mcp/test_oauth.py::test_background_without_tokens_requires_login_and_never_registers`
+  - `tests/unit/mcp/test_oauth.py::test_a_refused_refresh_parks_instead_of_retrying`
+  - `tests/unit/mcp/test_oauth.py::test_two_concurrent_refreshes_send_one_request`
+  - `tests/unit/mcp/test_oauth.py::test_a_login_is_refused_outside_a_persons_own_sign_in`
+  - `tests/unit/mcp/test_trust.py::test_a_background_sign_in_refusal_parks_like_a_401`
 - **R07.25** Untrusted MCP servers
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/mcp/test_trust.py::test_untrusted_write_tool_asks_and_a_denial_sends_nothing`
+  - `tests/unit/mcp/test_discovery.py::test_read_only_hints_come_from_the_wire`
+  - `tests/contract/mcp/test_host_live.py::test_stdio_server_tools_are_prefixed_and_callable`
 - **R07.26** Project skills are an injection vector
   - Review: not yet planned (P00-guards)
 - **R07.27** Same-name skills

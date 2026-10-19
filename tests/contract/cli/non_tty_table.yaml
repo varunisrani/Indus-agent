@@ -141,6 +141,15 @@ commands:
   moa list: 0
   moa configure: 1        # no --reference and no terminal to pick models
   moa delete: 2
+  mcp: 2                  # a group with no default action prints its help
+  mcp list: 0
+  mcp add: 2
+  mcp test: 2
+  mcp remove: 2
+  mcp enable: 2
+  mcp disable: 2
+  mcp login: 2
+  mcp configure: 2
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one
@@ -155,3 +164,6 @@ with_arguments:
   curator rollback --list: 0
   journey delete ghost: 1          # needs -y without a terminal, then: no such node
   moa delete no-such-preset: 1
+  mcp test no-such-server: 1
+  mcp configure no-such-server: 1
+  mcp remove no-such-server: 1

@@ -459,7 +459,7 @@ BUILTIN: Final[tuple[CommandDef, ...]] = (
         subs=("on", "off", "status"),
         owner="P11",
     ),
-    _cmd("mcp", "Show connected MCP servers", "tools", owner="P13"),
+    _cmd("mcp", "Show connected MCP servers", "tools", busy="dispatch", owner="P13"),
     _cmd("reload-mcp", "Reconnect MCP servers from the config", "tools", "reload_mcp", owner="P13"),
     _cmd("plugins", "List installed plugins", "tools", surfaces=TERMINAL, owner="P13"),
     _cmd(

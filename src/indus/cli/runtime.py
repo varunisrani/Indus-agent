@@ -34,7 +34,13 @@ here (P05 wave 2 notes):
 - subagents (P10-02): ``AgentOptions.subagent_builder`` is the builder under the learning
   wrappers, so a child's prompt has no frozen memory, skills index or preloads; children never
   get a background review (``attach_review`` forces ``no_review`` for them) and never reach the
-  curator, which only this host's start and maintenance timer run.
+  curator, which only this host's start and maintenance timer run;
+- MCP servers (P13-05..12, ``service.mcp_host``): one tool registry per run (built-in and
+  learning tools, plus the MCP tools of the profile's overlay) is shared by every agent of the
+  service; ``McpUpkeep`` starts the profile's servers before the first agent (discovery once),
+  adds the ``mcp`` toolset to the platform bundle, samples through the run's auxiliary client and
+  closes the servers at exit; an interactive run also watches the config file for
+  ``mcp_servers`` edits.
 """
 
 from __future__ import annotations
@@ -66,6 +72,7 @@ from indus.service.broker import ServerRequestBroker
 from indus.service.code_host import KernelUpkeep
 from indus.service.host_inprocess import InProcessHost
 from indus.service.maintenance import MaintenanceTimer, learning_timer, profile_idle_s
+from indus.service.mcp_host import McpUpkeep
 from indus.service.session_service import AgentFactory, SessionService
 from indus.state.registry import StoreHandle
 from indus.tools import toolsets
@@ -303,6 +310,9 @@ def build_service(spec: ServiceSpec) -> SessionService:
         spec.route,
         client_factory=overrides.client_factory if overrides is not None else None,
     )
+    # One registry for the run: every agent sees the MCP tools registered into it (P13-05).
+    registry = learning_host.tool_registry(spec.scope.clock)
+    options = replace(options, registry=registry)
     return SessionService(
         spec.scope,
         spec.route,
@@ -321,6 +331,7 @@ def build_service(spec: ServiceSpec) -> SessionService:
         maintenance=_maintenance(spec, aux),
         # The CLI owns its process: kernels end at exit; an interactive run reaps idle ones.
         kernels=KernelUpkeep(spec.scope, reaper=spec.run_context == "interactive"),
+        mcp=McpUpkeep(spec.scope, registry, aux=aux, watch=spec.run_context == "interactive"),
     )
 
 

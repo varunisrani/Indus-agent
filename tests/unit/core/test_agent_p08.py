@@ -217,3 +217,41 @@ def test_provider_cancelled_response_ends_the_turn_interrupted(
     result = asyncio.run(kit.turn("hello", prepare=prepare))
     assert result.exit_reason is ExitReason.INTERRUPTED_BY_SYSTEM
     assert result.failure is None and result.api_calls == 1
+
+
+def test_a_tool_change_waits_for_the_next_compaction(scope: Scope, fake_clock: FakeClock) -> None:
+    from dataclasses import replace
+
+    from indus.tools.registry import ToolRegistry
+
+    server = server_for(fake_clock, usage_turn("## Goal\nnotes", 900))
+    store = MemoryStore()
+    tools = ToolRegistry(clock=fake_clock)
+    schema = {"name": "probe_tool", "description": "A probe.", "parameters": {"type": "object"}}
+
+    async def probe() -> str:
+        return "ok"
+
+    async def main() -> tuple[Agent, str, str, list[str]]:
+        options = replace(fake_options(server, store=store), registry=tools)
+        agent = await Agent.start(scope, fake_route(server), [], options)
+        seen: list[str] = []
+        # A hook added after the agent's own sees the rebuilt array (P13-08 order).
+        agent.runtime.on_compaction.append(
+            lambda: seen.extend(sorted(agent.runtime.prompt_context.tool_names))
+        )
+        before = repr(agent.runtime.tools)
+        tools.register("probe_tool", "extra", schema, probe, is_async=True)
+        agent.tools_changed(["extra"])
+        assert repr(agent.runtime.tools) == before and agent.tool_names == []
+        await store.ensure_session("s1", source="cli", system_prompt="p", fields={})
+        for row in history():
+            await store.append("s1", row)
+        outcome = await agent.compress()
+        assert outcome.status == "compressed", outcome
+        return agent, before, repr(agent.runtime.tools), seen
+
+    agent, before, after, seen = asyncio.run(run_driven(main(), fake_clock))
+    assert "probe_tool" not in before and "probe_tool" in after
+    assert agent.tool_names == ["probe_tool"] and "probe_tool" in seen
+    asyncio.run(agent.close())

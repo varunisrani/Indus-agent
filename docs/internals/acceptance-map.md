@@ -663,9 +663,22 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-G3-1** Hook catalogue: pre/post tool (pre blocks fail closed), pre/post LLM, session start/end → the full …
   - Review: not yet planned (phase TBD)
 - **ACC-G14-1** MCP client: stdio, Streamable HTTP and SSE servers; filtered environment; prefixed tool names …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/mcp/test_host_live.py::test_stdio_server_tools_are_prefixed_and_callable`
+  - `tests/contract/mcp/test_host_live.py::test_http_server_tools_through_the_host`
+  - `tests/unit/mcp/test_discovery.py::test_tools_register_under_the_server_toolset_with_an_alias`
+  - `tests/unit/mcp/test_calls.py::test_text_image_and_structured_content`
+  - `tests/unit/mcp/test_trust.py::test_breaker_opens_after_three_failures_then_probes`
+  - `tests/unit/mcp/test_reload.py::test_reconcile_adds_removes_restarts_and_keeps`
+  - `tests/unit/mcp/test_oauth.py::test_login_then_background_connect_over_streamable_http`
+  - `tests/integration/service/test_mcp_host.py::test_cli_sessions_get_mcp_tools_and_reload_follows_the_config`
+  - Review: SSE live contract (P13-03)
 - **ACC-G19-1** `indus mcp` add / list / test / remove → picker, catalogue install, configure checklist, login …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_mcp.py::test_add_probes_then_saves_keeping_comments`
+  - `tests/unit/cli/commands/test_mcp.py::test_configure_writes_include_for_a_partial_selection_and_removes_it_for_all`
+  - `tests/unit/cli/commands/test_mcp.py::test_test_against_http_500_prints_status_url_and_body_start`
+  - `tests/unit/cli/commands/test_mcp.py::test_login_runs_the_oauth_sign_in`
+  - `tests/integration/service/test_mcp_host.py::test_cli_sessions_get_mcp_tools_and_reload_follows_the_config`
+  - Review: picker and catalogue install are not in 1.0's `indus mcp` (P13-12 note)
 - **ACC-H1-1** Cron jobs stored per profile with locking; each run writes an output document
   - Review: not yet planned (phase TBD)
 - **ACC-H2-1** Schedule grammar: natural day/time phrases, `every <dur>`, cron expressions, ISO times, `in <dur>` …

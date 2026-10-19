@@ -49,6 +49,11 @@ attached session and stops at ``aclose``; its chores run off the event loop.
 session's kernels (its current id and every id it continued from). ``kernels``, when given, is
 the host's share: its idle reaper starts with the first attached session and ``aclose`` shuts both
 kernel pools down — pass it only from the host that owns the process.
+
+MCP servers (P13-05..12, ``service.mcp_host``): ``mcp``, when given, starts the profile's servers
+before the first agent is built (discovery runs once), adds the umbrella ``mcp`` toolset to each
+agent's selection, tells every attached agent when the tool surface changes (rebuilt at its next
+compaction) and closes the servers at ``aclose``.
 """
 
 from __future__ import annotations
@@ -105,6 +110,7 @@ from indus.service import code_host
 from indus.service.broker import ServerRequestBroker
 from indus.service.code_host import KernelUpkeep
 from indus.service.maintenance import MaintenanceTimer
+from indus.service.mcp_host import McpUpkeep
 from indus.state import sessions, titles
 from indus.state.session_lock import (
     LOCK_DIR_NAME,
@@ -228,6 +234,7 @@ class SessionService:
         aux: AuxClient | None = None,
         maintenance: MaintenanceTimer | None = None,
         kernels: KernelUpkeep | None = None,
+        mcp: McpUpkeep | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
@@ -250,6 +257,7 @@ class SessionService:
         self.maintenance = maintenance
         self._maintenance_task: asyncio.Task[None] | None = None
         self.kernels = kernels
+        self.mcp = mcp
         self._input_probe: Callable[[str], bool] | None = None
         self._turn_end: list[TurnEndListener] = []
         self._moved: list[Callable[[str, str], object]] = []
@@ -498,7 +506,12 @@ class SessionService:
                 clock=self.scope.clock,
                 answerable_kinds=self._answerable,
             )
+            if self.mcp is not None:
+                await self.mcp.start()
+                selection = self.mcp.selection(selection)
             agent = await self._factory(session_id, sink, broker, options, selection)
+            if self.mcp is not None:
+                self.mcp.attach(agent)
         except BaseException:
             taken.release()
             raise
@@ -841,6 +854,8 @@ class SessionService:
         await self._stop_maintenance()
         for session_id in list(self._attached):
             await self.close(session_id)
+        if self.mcp is not None:
+            await self.mcp.shutdown()
         if self.kernels is not None:
             await self.kernels.shutdown()
 

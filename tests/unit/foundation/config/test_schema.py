@@ -95,7 +95,11 @@ def test_decided_defaults() -> None:
     }
     # P13-01: the MCP client
     assert d["mcp_servers"] == {}
-    assert d["mcp"] == {"auto_reload_on_config_change": True, "discovery_concurrency": 4}
+    assert d["mcp"] == {
+        "auto_reload_on_config_change": True,
+        "discovery_concurrency": 4,
+        "osv_preflight": True,
+    }
     # P10-20: desktop control
     assert d["computer_use"] == {"driver": "stdio", "driver_cmd": "", "action_timeout_s": 30.0}
     assert d["prompt_caching"] == {"cache_ttl": "5m"}
@@ -199,6 +203,7 @@ def test_decided_defaults() -> None:
         "unattended_mode": "deny",
         "denial_breaker_threshold": 3,  # P08-14
         "smart_policy": "",  # P08-14
+        "mcp_reload_confirm": True,  # P13-08
     }
     assert d["command_allowlist"] == []
     assert d["file_read_max_chars"] == 100000

@@ -81,6 +81,7 @@ the staged notes are popped: ``(prompt text, build context, note channel)``. A h
 one-shot notes here (P09-07: the skills-index change note)."""
 type AfterTurn = Callable[["TurnState"], Awaitable[None] | None]
 type BeforeTurn = Callable[[], Awaitable[object] | object]
+type OnCompaction = Callable[[], object]
 
 
 class PersistFailed(Exception):
@@ -185,6 +186,11 @@ class SessionRuntime:
     aux: object = None
     # True in a delegated child (P10-02), offered to tools as ``subagent``.
     subagent: bool = False
+    # Called by the compression glue after a compaction dropped the system prompt and before it
+    # is rebuilt (P13-08: a host whose tool surface changed rebuilds the stored tool array
+    # here, the one point besides a new session where it may change, R01.1). A failing hook is
+    # logged; the compaction goes on.
+    on_compaction: list[OnCompaction] = field(default_factory=list[OnCompaction])
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

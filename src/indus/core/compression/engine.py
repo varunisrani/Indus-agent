@@ -23,7 +23,9 @@ Loop glue: ``run_gate(state, gate)`` and ``compress_now(state, request)`` work o
 they store pending rows, run the engine, write the result (in place: pre-compaction rows archived
 as compacted through P02; rotating: a continuation published through P02), rebuild the system
 prompt through ``PromptLifecycle.invalidate`` (the one sanctioned rebuild), reset the read
-tracker, and emit ``Status(compressing)`` and a ``Notice`` keyed ``session.compressed``.
+tracker, and emit ``Status(compressing)`` and a ``Notice`` keyed ``session.compressed``. The
+runtime's ``on_compaction`` hooks run between the drop and the rebuild (a host may refresh the
+stored tool array there, P13-08).
 """
 
 from __future__ import annotations
@@ -839,6 +841,11 @@ async def _apply(
     state.stored_at_start = 0
     runtime = state.runtime
     runtime.prompts.invalidate("compaction")
+    for hook in list(runtime.on_compaction):
+        try:
+            hook()
+        except Exception:
+            log.warning("a compaction hook of %s failed", state.session_id, exc_info=True)
     ctx = replace(runtime.prompt_context, session_id=state.session_id)
     state.system_prompt = await runtime.prompts.restore_or_build(
         ctx, history=[r.to_message() for r in rows]

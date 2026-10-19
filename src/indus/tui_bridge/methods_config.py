@@ -15,8 +15,9 @@ key (a client key, or a dotted ``display.*`` / ``tui.*`` path).
 
 ``model.options`` lists the bundled providers with whether a key is stored; ``model.save_key`` /
 ``model.disconnect`` write or remove a provider's key in the profile's secret store (the value is
-never logged). ``reload.mcp`` reports that there is nothing to reload until the MCP layer offers a
-reload entry point.
+never logged). ``reload.mcp`` reloads the profile's MCP servers through ``indus.mcp.reload.reload``
+(P13-08: the request is the confirmation; the running sessions keep their tool arrays until their
+next compaction); without running servers it says so and reports ``reloaded: false``.
 """
 
 from __future__ import annotations
@@ -68,7 +69,7 @@ __all__ = ["apply_deferred", "read_setting", "register", "session_settings", "tu
 log = logging.getLogger(__name__)
 
 BUSY_MODES = ("interrupt", "queue", "steer")
-MCP_RELOAD = "indus.mcp.startup:reload"
+MCP_RELOAD = "indus.mcp.reload:reload"
 _SAVED: dict[ConfigKey, str] = {
     ConfigKey.BUSY: "display.busy_input_mode",
     ConfigKey.THEME: "tui.theme",
@@ -409,8 +410,9 @@ async def reload_mcp(bridge: Bridge, params: ReloadMcpParams) -> ReloadMcpResult
     except (ImportError, AttributeError):
         return ReloadMcpResult(reloaded=False, message="No MCP servers are set up to reload yet.")
     outcome: Mapping[str, Any] | Any = await reload(bridge.scope)
+    reloaded = bool(getattr(outcome, "reloaded", True))
     message = str(getattr(outcome, "message", "") or "MCP servers reloaded.")
-    return ReloadMcpResult(reloaded=True, message=message)
+    return ReloadMcpResult(reloaded=reloaded, message=message)
 
 
 async def ping(bridge: Bridge, params: GatewayPingParams) -> GatewayPingResult:

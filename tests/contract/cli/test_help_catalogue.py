@@ -52,6 +52,7 @@ GOLDEN_ORDER = [
     "journey",
     "learning",
     "moa",
+    "mcp",
 ]
 
 SHARED_IMPORTS: dict[str, set[str]] = {

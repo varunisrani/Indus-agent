@@ -400,17 +400,22 @@ class AuxClient:
         timeout_s: float | None = None,
         reasoning_effort: str | None = None,
         record: UsageRecorder | None = None,
+        temperature: float | None = None,
+        tools: Sequence[Mapping[str, Any]] = (),
     ) -> AuxResult:
         """One answer for ``task`` from the given ``route`` (no candidate walk): a side task
-        that names its own model per call (P10-21 mixture-of-agents references). ``timeout_s``
-        None means no deadline. Usage goes to the recorder with the task tag, like ``call``."""
+        that names its own model per call (P10-21 mixture-of-agents references, P13-10 MCP
+        sampling). ``timeout_s`` None means no deadline. Usage goes to the recorder with the
+        task tag, like ``call``."""
         recorder = record if record is not None else self.record
         request = ChatRequest(
             model=route.model,
             messages=list(messages),
             max_tokens=max_tokens,
+            temperature=temperature,
             reasoning_effort=reasoning_effort or None,
             stream=False,
+            tools=list(tools),
         )
         info = {"provider": route.provider, "model": route.model, "origin": "explicit"}
         self._observe("before", task, info)

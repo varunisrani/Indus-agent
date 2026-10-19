@@ -138,6 +138,7 @@ class CallbackResult:
     error: str | None = None
     error_description: str | None = None
     rejected: int = 0
+    iss: str | None = None  # RFC 9207 issuer, when the server sends one
 
 
 # -- the loopback server -----------------------------------------------------------------------
@@ -171,7 +172,7 @@ class _Handler(BaseHTTPRequestHandler):
             owner.reject()
             self._reply(400, "The callback carried no authorization code.")
             return
-        owner.finish(code=code)
+        owner.finish(code=code, iss=params.get("iss"))
         self._reply(200, "Indus Agent received the sign-in. You can close this tab.")
 
     def _reply(self, status: int, text: str) -> None:
@@ -235,12 +236,18 @@ class LoopbackServer:
         return self._done.is_set()
 
     def finish(
-        self, *, code: str | None = None, error: str | None = None, description: str | None = None
+        self,
+        *,
+        code: str | None = None,
+        error: str | None = None,
+        description: str | None = None,
+        iss: str | None = None,
     ) -> None:
         with self._lock:
             if self._done.is_set():
                 return
             self.result.code = code
+            self.result.iss = iss
             self.result.error = error
             self.result.error_description = description
             self._done.set()
