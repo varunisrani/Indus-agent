@@ -82,7 +82,9 @@ classification), C3 = P14-13..16, 18, 19 (delivery, bookkeeping, incidents, moni
 paused, patches in `.agents/wip/p14/`. C1, C2, C3 DONE (patches there); integrating in verify3.
 Also building (Agent 1, from `8f99060`): P15 wave 1 — G1 = P15-01..05 (fake platform harness, gateway
 config, inbound events, send result/retry, adapter base), G2 = P15-06..10 (registry/locks, session keys,
-authorization, pairing, bot-loop/concurrency/admin tiers). If paused, patches in `.agents/wip/p15w1/`.
+authorization, pairing, bot-loop/concurrency/admin tiers) DONE (patch in wip); G3 = P15-14..18 (chunker,
+formatters, stream consumer, outbound sender, media path policy) building. If paused, patches in
+`.agents/wip/p15w1/`.
 Builder rules: `docs/plan/phases/builder-rules.md`; read LEAD-NOTES landing
 notes for waves 7–10 first (every seam and follow-up is there). Nothing in flight, `.agents/wip/` empty.
 Gate (CLAUDE.md): note CI installs **no optional extras** — keep optional imports pyright-ignored and
