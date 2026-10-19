@@ -30,3 +30,27 @@
   from reply/model/MCP text.
 - Follow-up: result-sink registration does not follow a rotating compaction's new session id (run
   falls back inline).
+
+## C1 — w17-p14c1.patch — DONE (P14-01..06, 17: grammar, next run, job model/store, ledger, store health, due/catch-up, notepad); uv.lock EXCLUDED
+- New: cron/{errors,zones,grammar,next_run,models,store,ledger,notepad,store_health,due,context}.py,
+  service/cron_refs.py (curator adapter — layer rule: cron may not import learning), tests/unit/cron/*,
+  tests/fakes/pids.py, tests/fixtures/cron/jobs_{valid,corrupt,legacy_list}.json, notes ×7.
+  The model/store API (and the ticker call order gate → reap → evaluate_all → patch repairs →
+  claim + patch(updates) → dispatch) is the first section of docs/notes/P14/cron-store.md.
+- Shared: pyproject croniter==6.2.4 (pulls python-dateutil, six; licence check passes) — RE-LOCK;
+  config CronSection with cron.catch_up_missed (UNION with C2/C3 rows) + test; traps R07.8–R07.13;
+  ACC-H1-1, H2-1, H2-2 (new, DST), H3-1, H13-1.
+- Wiring: register_cron_references(CronStore(scope)) from service/host_inprocess.py at host start;
+  add cron.* codes (cron/errors.CRON_ERROR_CODES) to foundation/errors.ERROR_CODES; C2's script-path
+  rule into CronStore(script_check=…) (CronContext.open passes it); C3's bookkeeping MUST call
+  plan_next after setting last_run_at (steps from last_dispatch.scheduled_for; following_slot) —
+  otherwise a late run in the repeated fall-back hour schedules 01:30 twice. C3's CronJob needs
+  `unreachable_retry` (C3 decision) — add to C1's model.
+- Decisions (need D-ids): every Nd at HH:MM — N=1 daily cron, N=7 weekly cron, else anchored interval
+  in UTC (wall clock shifts across DST); exactly five cron fields; canonical display strings that
+  parse back; spring-forward gap fires at gap end (03:00); one run per slot (any attempt state blocks;
+  retries kind="retry"); 500 finished attempts kept per job; reaper never touches own process, 2 h
+  floor with inactivity 0; unknown jobs.json shape refused and left on disk, dropped records in
+  jobs.rejected.json; scheduler fields schedule_error, last_dispatch; unknown keys preserved;
+  store-health notices per process; notepad keys no control chars; no hypothesis (seeded tables).
+- Note: this host's SQLite has the WAL-reset bug → executions.db opens in DELETE mode (P02 policy).
