@@ -26,3 +26,25 @@
   value, reference 250 ms); stale sync-back temp entries removed only when owner dead AND > 30 min
   (phase value).
 - Follow-ups: confirm Vercel SDK import sends no telemetry; R02.30 rows for deadline/guard tests (B1).
+
+## B1 — w19-p21b1.patch — DONE (P21-01 records store, P21-02 SDK call wrapper, P21-03 stdin staging, P21-04 Singularity/Apptainer, P21-11 vendor credentials/env hygiene, P21-15 fake SDKs + fake CLI)
+- New: backends/{sandbox_records,sdk_call,stdin_payload,singularity,vendor_env}.py; fakes
+  tests/fakes/backend/{sdk_kit,fake_modal,fake_daytona,fake_vercel,fake_apptainer}.py +
+  sdk_surfaces.json (scripts/dev/sdk_surfaces.py); golden tests/golden/backends/snapshot_script.sh; tests;
+  notes ×7 (sdk-versions, fake-sdks hold the vendor API shapes).
+- Shared: pyproject extras modal==1.6.1, daytona==0.220.0, vercel = vercel-sandbox==0.7.0 — RE-LOCK and
+  MANUAL LICENCE CHECK of new transitive packages (httpx2, vercel-internal-core, vercel-oidc,
+  grpc/protobuf under modal…; the licence guard only walks [project].dependencies); config
+  terminal.singularity_image, scratch_dir, disk_warning_gb; test_schema filter; safety/child_env.py
+  vendor floor + DAYTONA_JWT_TOKEN, MODAL_OAUTH_CLIENT_SECRET, MODAL_OAUTH_REFRESH_TOKEN (test pins floor ⊇
+  declarations); contract conftest singularity row; traps R02.1, 6, 7, 8, 16, 22, 30; ACC-D5-1, D5-2.
+- Wiring: register singularity_entry() in registry.default_entries (P21-12); call
+  vendor_env.register_vendor_names() at service start beside register_blocked_names("providers", …);
+  ERROR_CODES backend.deadline, backend.sandbox_records_busy, backend.singularity.build; B2's SdkSupport /
+  SandboxRecords adapter over sdk_call / stdin_payload / sandbox_records.
+- Decisions (need D-ids): records lock timeout raises (reference wrote unlocked); failed SIF build is an
+  error (no docker:// fallback); cgroup guess root or cgroup v2, one retry without limits; singularity
+  profile-scoped with container_persistent; vercel extra pins vercel-sandbox; GET/DELETE budgets 30 s /
+  15 s; child_env floor mirrors vendor declarations (layer rule).
+- Follow-ups: remote-only contract cases for singularity (P21-16); ACC-D5-2 overlay restart needs the
+  live lane; phase file mentions an `all` extra that pyproject does not have.
