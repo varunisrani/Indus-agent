@@ -75,6 +75,10 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`; P14 in the commit that carries this text).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
+- P15 wave 1: G1..G4 built (patches in `.agents/wip/p15w1/`), integrating together in verify2.
+- P21 (from `730cf11`): B1 = P21-01..04, 11, 15 (records, SDK wrapper, stdin staging, Singularity, vendor
+  creds, fakes); B2 = P21-05..10 (Modal, Daytona, Vercel, sync-back). P22: R1 = P22-01..09 (batch runner,
+  `indus research`). If paused, patches in `.agents/wip/p21/` and `.agents/wip/p22/`.
 Also building (Agent 1, from `8f99060`): P15 wave 1 — G1 = P15-01..05 DONE (fake platform harness, gateway
 config, inbound events, send result/retry, adapter base), G2 = P15-06..10 (registry/locks, session keys,
 authorization, pairing, bot-loop/concurrency/admin tiers) DONE (patch in wip); G3 = P15-14..18 (chunker,
