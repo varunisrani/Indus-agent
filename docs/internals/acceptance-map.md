@@ -406,9 +406,27 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-C34-1** `clarify`: 1–5 questions with choices and multi-select, answered on every surface
   - Review: not yet planned (phase TBD)
 - **ACC-C35-1** `execute_code`: Python that calls allow-listed tools over RPC, per-call → persistent session …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/code/test_runner.py::test_script_reads_a_file_through_rpc`
+  - `tests/unit/tools/builtin/code/test_runner.py::test_fifty_first_call_is_refused_inside_the_script`
+  - `tests/unit/tools/builtin/code/test_schema.py::test_session_without_web_tools_never_mentions_them`
+- **ACC-C35-2** `execute_code` session kernel: state kept between calls, reset, LRU cap, idle and timeout disposal
+  - `tests/unit/tools/builtin/code/test_kernel.py::test_state_survives_between_calls_and_loops`
+  - `tests/unit/tools/builtin/code/test_kernel.py::test_timeout_kills_the_kernel_and_the_next_call_starts_fresh`
+  - `tests/integration/core/test_subagent_host.py::test_new_closes_the_old_sessions_kernels_and_exit_closes_the_pools`
+- **ACC-C35-3** `execute_code` on remote backends: remote kernel over cell files, script fallback, request-file RPC
+  - `tests/unit/tools/builtin/code/test_remote.py::test_kernel_round_trips_cells_and_answers_request_files`
+  - `tests/unit/tools/builtin/code/test_remote.py::test_kernel_start_failure_falls_back_to_a_shipped_script`
+  - `tests/unit/tools/builtin/code/test_remote.py::test_docker_kernel_round_trip`
 - **ACC-C36-1** `delegate_task` subagents: synchronous batch → background children, list/steer/stop, output schema …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/core/test_delegate_batch.py::test_three_subagents_read_three_files`
+  - `tests/unit/core/subagents/test_background.py::test_spawn_returns_at_once_and_results_arrive_as_a_new_turn`
+  - `tests/unit/core/subagents/test_background.py::test_steer_reaches_the_child_after_its_next_tool_call`
+  - `tests/unit/core/subagents/test_background.py::test_stop_returns_the_partial_result_and_skips_delivery`
+  - `tests/unit/core/subagents/test_output_schema.py::test_invalid_then_corrected_after_one_retry`
+  - `tests/unit/core/subagents/test_output_schema.py::test_invalid_twice_keeps_the_raw_text`
+  - `tests/integration/core/test_subagent_host.py::test_subagent_prompt_has_no_memory_skills_or_preloads`
+  - `tests/integration/core/test_subagent_host.py::test_subagents_never_review_and_keep_out_of_the_learning_hooks`
+  - `tests/unit/core/subagents/test_worktree.py::test_delegated_children_report_their_worktrees`
 - **ACC-C41-1** Child-process environment scrubbing so provider keys never reach model-written commands, plus …
   - Review: not yet planned (phase TBD)
 - **ACC-C42-1** Sudo support: cached password, masked prompt on interactive surfaces, clear advice on headless ones
@@ -496,7 +514,9 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-E8-1** Approvals over chat: buttons where supported, `/approve`, `/approve all`, `/deny reason`, timeout …
   - Review: not yet planned (phase TBD)
 - **ACC-E9-1** Whole-script approval for `execute_code`
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/code/test_runner.py::test_manual_approval_denied_spawns_nothing`
+  - `tests/unit/tools/builtin/code/test_runner.py::test_session_approval_is_asked_once`
+  - `tests/unit/tools/builtin/code/test_runner.py::test_nobody_to_ask_blocks_by_default`
 - **ACC-E10-1** `indus approvals test`: dry verdict (allow / ask / deny) with the deciding rule and trace
   - `tests/unit/cli/commands/test_approvals.py::test_verdict_table`
   - `tests/unit/cli/commands/test_approvals.py::test_json_shape`

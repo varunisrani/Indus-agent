@@ -184,7 +184,27 @@ def test_decided_defaults() -> None:
     assert d["credential_pool_strategies"] == {}
     assert d["platform_toolsets"] == {}
     assert d["doctor"] == {"live_probe_timeout_s": 10.0}
+    assert d["delegation"] == {  # P10-01, D-16.24
+        "max_concurrent_children": 10,
+        "max_depth": 1,
+        "max_iterations": 250,
+        "max_async_children": 3,
+        "summary_max_chars": 24000,
+        "oneshot_max_children": 2,
+        "child_toolsets": ["terminal", "file", "web"],
+        "model": "",
+        "inherit_mcp_toolsets": True,
+        "worktree": False,
+    }
     assert d["session"] == {"terminal_continue": True}
+    assert d["code_execution"] == {  # P10-08, P10-10
+        "timeout": 300,
+        "max_tool_calls": 50,
+        "mode": "project",
+        "kernel": "auto",
+        "kernel_idle_timeout": 1800,
+        "max_session_kernels": 4,
+    }
     assert d["quick_commands"] == {}
     assert d["network"] == {"force_ipv4": False}
     assert d["timezone"] == ""

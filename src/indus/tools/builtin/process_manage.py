@@ -6,8 +6,9 @@ never uses up the completion message), ``log`` (lines without escape codes; no `
 the last ``limit`` lines, an explicit ``offset: 0`` the first; reading through the end of an
 ended job's log uses up its completion), ``wait`` (until it ends, the window passes or the turn is
 interrupted; default and maximum ``terminal.timeout``), ``kill`` (ordered kill), ``write`` (raw
-input), ``submit`` (input plus Enter), ``close`` (end of input) and ``handoff`` (reserved for
-subagents, P10).
+input), ``submit`` (input plus Enter), ``close`` (end of input) and ``handoff`` (P10-06: a
+subagent gives a running job to its parent — allowed only while the registry holds a handoff
+grant for this session, at most ``MAX_HANDOFFS`` times, with a one-sentence ``purpose``).
 
 Two ``wait``/``poll`` calls in a row on a running job that printed nothing new switch on
 notify-on-exit and tell the model to stop checking — only where this session can receive the
@@ -69,8 +70,16 @@ DETACHED_NOTE = (
 )
 RETAINED_NOTE = "The process has ended; this is its kept result (read-only)."
 HANDOFF_UNAVAILABLE = (
-    "handoff is only for subagents passing a process to their parent, and subagents are not "
-    "available in this version. Wait for the process, or kill it."
+    "handoff is only for subagents passing a process to their parent, and this conversation is "
+    "not a subagent. Wait for the process, or kill it."
+)
+HANDOFF_NEEDS_PURPOSE = (
+    "handoff needs purpose: one sentence telling the parent why it should keep this process "
+    "running."
+)
+HANDOFF_LIMIT = (
+    "This subagent has already handed off {limit} processes, the most allowed. Wait for this one "
+    "or kill it before you finish."
 )
 
 
@@ -120,7 +129,7 @@ class ProcessManageTool:
         if not ident:
             return _error(f"session_id (the process id from terminal) is required for {action}.")
         if action == "handoff":
-            return _error(HANDOFF_UNAVAILABLE)
+            return self._handoff(scope, session_id, ident, args)
         record = self.shared.processes.get(ident, str(scope.home))
         if record is None:
             receipt = process_receipts.find(scope.home, ident, session_id)
@@ -198,6 +207,42 @@ class ProcessManageTool:
         if cut > 0:
             body["output_cut"] = cut
         return body
+
+    def _handoff(
+        self, scope: Scope, session_id: str | None, ident: str, args: Mapping[str, Any]
+    ) -> str:
+        processes = self.shared.processes
+        home = str(scope.home)
+        grant = processes.handoff_grant(home, session_id)
+        if grant is None or session_id is None:
+            return _error(HANDOFF_UNAVAILABLE)
+        purpose = " ".join(str(args.get("purpose") or "").split())
+        if not purpose:
+            return _error(HANDOFF_NEEDS_PURPOSE)
+        if grant.used >= grant.limit:
+            return _error(HANDOFF_LIMIT.format(limit=grant.limit))
+        record = processes.get(ident, home)
+        if record is None or record.session_id != session_id:
+            return _dumps(
+                {"status": "not_found", "error": f"No background process with id {ident}."}
+            )
+        if record.exited:
+            return _error(f"{record.id} has already ended; there is nothing to hand off.")
+        if not processes.transfer_ownership(
+            record, from_session=session_id, to_session=grant.parent_session, note=purpose
+        ):
+            return _error(f"{record.id} could not be handed off; it stays yours.")
+        grant.used += 1
+        self._forget(record.id)
+        return _dumps(
+            {
+                "status": "handed_off",
+                "session_id": record.id,
+                "purpose": purpose,
+                "handoffs_left": grant.limit - grant.used,
+                "note": "The parent agent owns this process now; it is not stopped when you end.",
+            }
+        )
 
     def _list(self, scope: Scope, session_id: str | None) -> str:
         clock = self.shared.processes.clock
@@ -469,7 +514,8 @@ PROCESS_SCHEMA: dict[str, Any] = {
         "list: this conversation's processes. poll: status and recent output. log: the output in "
         "pages of lines. wait: block until it ends or the timeout passes (a timeout is not an "
         "error). kill: stop it. write sends text as it is; submit sends text plus Enter (use it "
-        "to answer prompts); close ends its input. handoff is for subagents only."
+        "to answer prompts); close ends its input. handoff (subagents only) gives the process to "
+        "the parent agent so it keeps running after you end; it needs purpose."
     ),
     "parameters": {
         "type": "object",
@@ -494,6 +540,11 @@ PROCESS_SCHEMA: dict[str, Any] = {
                 "lines.",
             },
             "limit": {"type": "integer", "minimum": 1, "description": "How many log lines."},
+            "purpose": {
+                "type": "string",
+                "description": "For handoff: one sentence on why the parent should keep this "
+                "process.",
+            },
         },
     },
 }

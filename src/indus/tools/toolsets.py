@@ -51,6 +51,8 @@ CORE_TOOLS: tuple[str, ...] = (
     "skills_list",
     "skill_view",
     "skill_manage",
+    "execute_code",
+    "delegate_task",
 )
 # Left out of the coding posture once those tools exist.
 NOT_FOR_CODING = frozenset({"image_generate", "text_to_speech", "cronjob_manage", "computer_use"})
@@ -92,6 +94,8 @@ _NAMED: dict[str, Toolset] = {
         "skill_view",
         "skill_manage",
     ),
+    "code_execution": _set("Run Python that calls the file, web and shell tools", "execute_code"),
+    "delegation": _set("Hand tasks to subagents and control them", "delegate_task"),
 }
 
 

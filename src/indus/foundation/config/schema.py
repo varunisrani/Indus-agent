@@ -236,6 +236,38 @@ class WorktreesSection(_Section):
     )
 
 
+class DelegationSection(_Section):
+    """Subagents started by ``delegate_task`` (P10-01..07, D-16.24)."""
+
+    max_concurrent_children: int = Field(
+        default=10, description="subagents one delegate_task call may run at once"
+    )
+    max_depth: int = Field(
+        default=1, description="how deep subagents may nest (1 = subagents cannot delegate)"
+    )
+    max_iterations: int = Field(default=250, description="model calls per subagent")
+    max_async_children: int = Field(
+        default=3, description="background subagents running at once per session"
+    )
+    summary_max_chars: int = Field(
+        default=24000, description="longest subagent summary returned (at least 2000)"
+    )
+    oneshot_max_children: int = Field(
+        default=2, description="subagents a one-shot run may start in total (0 = no limit)"
+    )
+    child_toolsets: list[str] = Field(
+        default_factory=lambda: ["terminal", "file", "web"],
+        description="toolsets a subagent may use (always within the parent's tools)",
+    )
+    model: str = Field(default="", description="model id for subagents; empty = the parent's")
+    inherit_mcp_toolsets: bool = Field(
+        default=True, description="subagents keep the parent's MCP toolsets"
+    )
+    worktree: bool = Field(
+        default=False, description="give each subagent its own git worktree (local backend)"
+    )
+
+
 class DatabaseSection(_Section):
     journal_mode: Literal["wal", "delete"] = Field(default="wal", description="SQLite journal mode")
     pragmas: dict[str, Any] = Field(default_factory=dict, description="extra SQLite pragmas")
@@ -663,6 +695,29 @@ class CuratorSection(_Section):
     )
 
 
+class CodeExecutionSection(_Section):
+    timeout: int = Field(default=300, description="seconds one execute_code call may run")
+    max_tool_calls: int = Field(
+        default=50, description="tool calls one execute_code call may make through indus_tools"
+    )
+    mode: Literal["project", "strict"] = Field(
+        default="project",
+        description="project: the session's directory and active venv; strict: a temp dir and "
+        "Indus's own Python",
+    )
+    kernel: Literal["auto", "off"] = Field(
+        default="auto",
+        description="auto: a persistent Python session per conversation where one can start; "
+        "off: a fresh process per call",
+    )
+    kernel_idle_timeout: int = Field(
+        default=1800, description="seconds an unused session kernel is kept"
+    )
+    max_session_kernels: int = Field(
+        default=4, description="session kernels kept at once (delegated children not counted)"
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -776,6 +831,12 @@ class ConfigModel(BaseModel):
     )
     learning: LearningSection = Field(
         default_factory=LearningSection, description="learning from finished conversations"
+    )
+    code_execution: CodeExecutionSection = Field(
+        default_factory=CodeExecutionSection, description="the execute_code tool"
+    )
+    delegation: DelegationSection = Field(
+        default_factory=DelegationSection, description="subagents (delegate_task)"
     )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 

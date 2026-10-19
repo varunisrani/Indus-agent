@@ -37,6 +37,86 @@
   },
   {
     "function": {
+      "description": "Hand tasks to subagents. Each subagent starts with an empty conversation, its own terminal session and a reduced tool set, works on its task alone and gives back only a final summary. Put every task in tasks; several tasks run side by side.\n\nOn an interactive surface the subagents run in the background: the call returns at once and their results arrive as a new message between your turns. Do what does not depend on them, say briefly what is running, and end your turn; do not poll or wait for them. In one-shot runs, scheduled jobs and inside another subagent the call waits and returns the results itself. Subagents live only as long as this process: work that has to survive a restart or the end of the session belongs in a scheduled job or a background process.\n\nGood uses: work that needs its own reasoning, work that would flood this conversation with output, and independent pieces that can run in parallel. Not for: a single tool call (make it yourself), mechanical scripted steps, or anything that needs the user's answers (subagents cannot ask questions).\n\nRules: subagents know nothing of this conversation, so the goal and context must carry everything. Their summaries are their own account, not checked facts: before telling the user that something was published, uploaded or written, ask the subagent for a handle (URL, id, absolute path) and check it yourself. Subagents cannot ask the user, keep memory or schedule jobs, and they cannot delegate further. They use your model unless delegation.model in the config names another.",
+      "name": "delegate_task",
+      "parameters": {
+        "properties": {
+          "action": {
+            "description": "spawn (the default) starts subagents. For subagents running in the background: list shows them, steer sends one a correction (subagent_id and message) without stopping it, stop ends one early (subagent_id) and returns what it has so far.",
+            "enum": ["spawn", "list", "steer", "stop"],
+            "type": "string"
+          },
+          "message": {
+            "description": "For steer: the correction, shown to the subagent after its next tool call. Be specific.",
+            "type": "string"
+          },
+          "subagent_id": {
+            "description": "The subagent to steer or stop (from the spawn result or list).",
+            "type": "string"
+          },
+          "tasks": {
+            "description": "The tasks, one subagent each: at most 10 per call (delegation.max_concurrent_children). A single task is a one-entry array. Required to spawn.",
+            "items": {
+              "properties": {
+                "context": {
+                  "description": "Everything this subagent needs to know: paths, error text, constraints, the language or style of the answer. Repeat shared background in every task.",
+                  "type": "string"
+                },
+                "goal": {
+                  "description": "What this subagent has to achieve. Make it complete on its own: the subagent has not seen this conversation.",
+                  "type": "string"
+                },
+                "group": {
+                  "description": "Optional label for related tasks; it does not order them.",
+                  "type": "string"
+                },
+                "images": {
+                  "description": "Optional images the subagent has to look at (at most 8): local paths or http(s) URLs. Put text files in context instead.",
+                  "items": {"type": "string"},
+                  "type": "array"
+                },
+                "output_schema": {
+                  "description": "Optional JSON Schema the subagent's final answer must match. It is told so up front; a wrong answer gets one correction round, and its text comes back either way with schema_valid. Require only the fields you will read.",
+                  "type": "object"
+                }
+              },
+              "required": ["goal"],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Run a Python script that calls Indus tools from code. Worth it when a job needs three or more tool calls with logic between them: looping over files or pages, filtering a large result down before it reaches the conversation, retrying on failure. For a single call, or anything that needs the user, call the tool directly. Only what the script prints comes back.\n\nFunctions available with `from indus_tools import read_file, terminal, ...`:\n  read_file(path, offset=1, limit=None) -> dict  # numbered lines from 1\n  write_file(path, content) -> dict  # replaces the whole file; read it first\n  patch(path, old_string, new_string, replace_all=False) -> dict\n  search_files(pattern, target=\"content\", path=\".\", file_glob=None, limit=50) -> dict  # target=\"files\" finds names\n  web_search(query, limit=5) -> dict  # title, url and snippet per result\n  web_extract(urls, char_limit=None) -> dict  # page text per address\n  terminal(command, timeout=None, workdir=None) -> dict  # foreground only: no background, pty or notify\nEach returns the tool's result as a dict; a failed call returns a dict with an 'error' key. A call Indus refuses (budget used up, bad arguments) raises ToolCallRefused.\n\nHelpers (import them too): json_parse, shell_quote, retry. json_parse(text) is a lenient json.loads, shell_quote(s) quotes a value for a shell command line, retry(fn, max_attempts=3, delay=2) retries with doubling waits.\n\nVariables, imports and loaded data stay in memory between calls in this conversation, so build on earlier results; reset=true starts over, and a call that times out or is interrupted loses that state.\n\nLimits: 5 minutes per call, 50 tool calls per call. Printed output over 50 kB shows its beginning and end; the full text is saved to a file named in the result.\n\nThe script starts in the session's working directory, under the project's active virtualenv or conda Python when there is one, otherwise under Indus's own Python (standard library plus Indus's dependencies; check an import before relying on it).",
+      "name": "execute_code",
+      "parameters": {
+        "properties": {
+          "code": {
+            "description": "Python source. Import tools with `from indus_tools import read_file, terminal` and print what you want back.",
+            "type": "string"
+          },
+          "reset": {
+            "default": false,
+            "description": "Throw away the kept interpreter state before running.",
+            "type": "boolean"
+          }
+        },
+        "required": ["code"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
       "description": "Edit a file by replacing old_string with new_string. Copy old_string from the file (without read_file's LINE| prefixes) with enough surrounding lines to be unique; small whitespace, indentation and quote differences are tolerated. It must match one place unless replace_all is true. The result shows a unified diff. Use this for edits; use write_file only for new files or complete rewrites.",
       "name": "patch",
       "parameters": {
@@ -63,7 +143,7 @@
   },
   {
     "function": {
-      "description": "Check on, wait for or stop background processes started with terminal(background=true). list: this conversation's processes. poll: status and recent output. log: the output in pages of lines. wait: block until it ends or the timeout passes (a timeout is not an error). kill: stop it. write sends text as it is; submit sends text plus Enter (use it to answer prompts); close ends its input. handoff is for subagents only.",
+      "description": "Check on, wait for or stop background processes started with terminal(background=true). list: this conversation's processes. poll: status and recent output. log: the output in pages of lines. wait: block until it ends or the timeout passes (a timeout is not an error). kill: stop it. write sends text as it is; submit sends text plus Enter (use it to answer prompts); close ends its input. handoff (subagents only) gives the process to the parent agent so it keeps running after you end; it needs purpose.",
       "name": "process_manage",
       "parameters": {
         "properties": {
@@ -77,6 +157,10 @@
             "description": "First log line to show (0 = the start); leave out for the last lines.",
             "minimum": 0,
             "type": "integer"
+          },
+          "purpose": {
+            "description": "For handoff: one sentence on why the parent should keep this process.",
+            "type": "string"
           },
           "session_id": {
             "description": "The process id from terminal's result (any unique start of it, e.g. '4dae' for proc_4dae56ca81f6). Needed by every action but list.",

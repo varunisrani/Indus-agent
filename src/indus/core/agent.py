@@ -112,6 +112,7 @@ from indus.state import usage as usage_rows
 from indus.state.usage import UsageDelta
 from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
+from indus.tools.builtin.delegate import TOOL_NAME as DELEGATE_TOOL
 from indus.tools.builtin.todo import TOOL_NAME as TODO_TOOL
 from indus.tools.builtin.todo import TodoWiring, todo_wiring
 from indus.tools.definitions import definitions
@@ -185,6 +186,14 @@ class AgentOptions:
     pools: PoolSet | None = None
     # Host note sources the prologue runs before the user message (P09-07 skills delta).
     note_sources: Sequence[NoteSource] = ()
+    # Subagents (P10-02): the exact tools a child may have (None: the selection decides) and the
+    # child's delegation depth (0 for a top-level agent).
+    only_tools: frozenset[str] | None = None
+    delegation_depth: int = 0
+    # The prompt builder this agent's subagents start from (P10-02). None: ``builder``. A host that
+    # wraps ``builder`` with session-level blocks (P09: frozen memory, skills index, preloads)
+    # passes the unwrapped one here, so children never carry them.
+    subagent_builder: Builder | None = None
 
 
 @dataclass
@@ -541,7 +550,10 @@ class Agent:
             scope=self.scope,
             platform=self.options.platform,
         )
-        self._selected = sorted(chosen.tools)
+        tools = chosen.tools
+        if self.options.only_tools is not None:
+            tools = tools & self.options.only_tools
+        self._selected = sorted(tools)
 
     def _tool_array(self, state: RouteState) -> list[dict[str, Any]]:
         assert self._registry is not None
@@ -563,6 +575,12 @@ class Agent:
             self.todo = todo_wiring()
             inline[TODO_TOOL] = self.todo.execute
             hydrators.setdefault("todo", self.todo.hydrate)
+        if DELEGATE_TOOL in self._selected and DELEGATE_TOOL not in inline:
+            # Subagents (P10-01..07): the loop runs delegate_task through the session's
+            # delegation; imported here because the subagents package builds agents itself.
+            from indus.core.subagents import attach_delegation
+
+            inline[DELEGATE_TOOL] = attach_delegation(self).execute
         context = BuildContext(
             scope=self.scope,
             model=state.model,

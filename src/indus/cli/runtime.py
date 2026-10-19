@@ -26,7 +26,15 @@ here (P05 wave 2 notes):
   client and the store's idle time;
 - ``learning_startup`` before a chat run: the shipped skills are seeded into a profile that was
   never seeded (P09-21, honouring the opt-out marker), and an interactive session start runs the
-  curator check on a daemon thread (it never blocks the chat and never raises).
+  curator check on a daemon thread (it never blocks the chat and never raises);
+- ``execute_code`` kernels (P10-10/11, ``service.code_host``): the service disposes a closed
+  session's kernels (``/new``, ``/clear``, switching, exit); its ``KernelUpkeep`` shuts both
+  kernel pools down at ``aclose`` (before the terminal runtime, so remote kernels still have
+  their environments) and, in an interactive run, reaps idle kernels;
+- subagents (P10-02): ``AgentOptions.subagent_builder`` is the builder under the learning
+  wrappers, so a child's prompt has no frozen memory, skills index or preloads; children never
+  get a background review (``attach_review`` forces ``no_review`` for them) and never reach the
+  curator, which only this host's start and maintenance timer run.
 """
 
 from __future__ import annotations
@@ -42,7 +50,8 @@ from indus.cli.session_select import LAUNCH_KEY, LaunchPolicy, workspace_key
 from indus.core.agent import Agent, AgentOptions
 from indus.core.events import EventSink
 from indus.core.persist import StateStore
-from indus.core.prompt.lifecycle import SessionPrompts
+from indus.core.prompt.builder import PromptBuilder
+from indus.core.prompt.lifecycle import Builder, SessionPrompts
 from indus.core.turn_state import LoopOptions
 from indus.foundation.config import schema
 from indus.foundation.config.loader import ConfigView, config_path
@@ -54,6 +63,7 @@ from indus.providers.profile import REASONING_LEVELS
 from indus.providers.route import RuntimeRoute, resolve
 from indus.service import terminal_host
 from indus.service.broker import ServerRequestBroker
+from indus.service.code_host import KernelUpkeep
 from indus.service.host_inprocess import InProcessHost
 from indus.service.maintenance import MaintenanceTimer, learning_timer, profile_idle_s
 from indus.service.session_service import AgentFactory, SessionService
@@ -171,10 +181,18 @@ def with_learning(
         registry=registry,
         prompt_store=prompt_store,
         builder=learning.builder,
+        # Subagents get the base builder: no frozen memory, skills index or preloads (P10-02).
+        subagent_builder=_base_builder(options),
         inline={**learning.inline, **options.inline},
         note_sources=(*options.note_sources, *learning.note_sources),
     )
     return wired, learning
+
+
+def _base_builder(options: AgentOptions) -> Builder:
+    if options.subagent_builder is not None:
+        return options.subagent_builder
+    return options.builder if options.builder is not None else PromptBuilder()
 
 
 def learning_startup(scope: Scope, store: StoreHandle | None, *, interactive: bool) -> None:
@@ -301,6 +319,8 @@ def build_service(spec: ServiceSpec) -> SessionService:
         ),
         aux=aux,
         maintenance=_maintenance(spec, aux),
+        # The CLI owns its process: kernels end at exit; an interactive run reaps idle ones.
+        kernels=KernelUpkeep(spec.scope, reaper=spec.run_context == "interactive"),
     )
 
 

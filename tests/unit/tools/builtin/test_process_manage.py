@@ -63,7 +63,7 @@ def test_unknown_and_malformed_calls(rig: Rig) -> None:
     assert "required for poll" in manage(rig, action="poll")["error"]
     assert "Unknown action" in manage(rig, action="explode", session_id="x")["error"]
     record = start(rig)
-    assert "not available" in manage(rig, action="handoff", session_id=record.id)["error"]
+    assert "not a subagent" in manage(rig, action="handoff", session_id=record.id)["error"]
     assert set(ACTIONS) >= {"list", "poll", "log", "wait", "kill", "write", "submit", "close"}
 
 

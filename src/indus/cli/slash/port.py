@@ -108,11 +108,13 @@ class HostPort:
     def stop_processes(self, session_id: str, *, all_jobs: bool) -> int:
         processes = terminal.runtime().processes
         home = str(self.scope.home)
+        service = self.host.service
 
         async def stop() -> int:
+            # /stop and /new also end the session's background subagents (P10-05).
+            stopped = await service.stop_subagents(session_id)
             if not all_jobs:
-                return await processes.release(home, session_id)
-            stopped = 0
+                return stopped + await processes.release(home, session_id)
             for record in processes.list(home, session_id):
                 if not record.exited:
                     await processes.kill(record, source="/stop")

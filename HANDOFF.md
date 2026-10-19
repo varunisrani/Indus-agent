@@ -74,12 +74,11 @@ Done: P00–P09 (P09 wave 2 landed in the commit that carries this text; M2 demo
 `tests/integration/learning/test_m2_demo.py`) and P11 (`3ae8089`). Landing notes in LEAD-NOTES.
 Turn: AGENT_1 (took it back at 02:07 UTC; Agent 2 had not picked it up).
 In flight (Agent 1):
-1. P10 wave 1: H = P10-08..11 execute_code and kernels DONE, patch saved in `.agents/wip/p10w1/` (base
-   `85cd8a9`; README has its wiring list). G = P10-01..07 delegation DONE too (same base; uv.lock excluded — re-lock for jsonschema).
+1. P10 G (delegation) + H (execute_code) landed in the commit that carries this text.
 2. P10 from `7faff19`: I = P10-12..14 browser DONE (patch in wip; SECURITY item in README), J = P10-15..18 vision, image/video, TTS, STT DONE (patch in wip);
-   K = P10-21..26 MoA, /btw, /goal, /loop, /heartbeat DONE (patch in wip). Integrate I, J, K after G+H.
-3. P10 G + H integration (verify2, from `f04f4e4`).
-Next: P10-19 voice mode, P10-20 computer_use, integrate I/J/K; then P12 (TUI), P13 (MCP/plugins),
+   K = P10-21..26 MoA, /btw, /goal, /loop, /heartbeat DONE (patch in wip).
+3. Integrate I, J, K from `.agents/wip/p10w1/` (README lists wiring, the browser SSRF fix, licence items).
+Next: P10-19 voice mode, P10-20 computer_use; then P12 (TUI), P13 (MCP/plugins),
 P14 (cron).
 
 ## Watch out for

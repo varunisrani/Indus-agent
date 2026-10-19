@@ -23,7 +23,9 @@ Handlers may ask for these context keywords beyond the ``ToolContext`` fields (`
 ``environments`` (``SessionRuntime.environments``, the terminal backends), ``run_context``
 (``SessionRuntime.run_context``: ``interactive``, ``single_query``, ``cron`` or ``unattended``, set
 by the host) and ``approval_judge`` (``SessionRuntime.approval_judge``, the smart approval judge,
-P08-14), each offered only when the turn has one.
+P08-14) and ``code_kernel_owner`` (``SessionRuntime.code_kernel_owner``, a subagent's kernel
+owner, P10-06), each offered only when the turn has one; always ``tool_registry``, ``tool_hooks``
+and ``enabled_tools`` (the session's registry, hooks and tool names, for ``execute_code``).
 """
 
 from __future__ import annotations
@@ -470,6 +472,12 @@ def handler_extras(state: TurnState) -> dict[str, Any]:
         extras["run_context"] = state.runtime.run_context
     if state.runtime.approval_judge is not None:
         extras["approval_judge"] = state.runtime.approval_judge
+    # execute_code (P10-08) dispatches in-script calls through the same registry and hooks.
+    extras["tool_registry"] = state.runtime.registry
+    extras["tool_hooks"] = state.runtime.hooks
+    extras["enabled_tools"] = state.runtime.tool_names()
+    if state.runtime.code_kernel_owner is not None:
+        extras["code_kernel_owner"] = state.runtime.code_kernel_owner
     return extras
 
 

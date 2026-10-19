@@ -1,0 +1,19 @@
+Run a Python script that calls Indus tools from code. Worth it when a job needs three or more tool calls with logic between them: looping over files or pages, filtering a large result down before it reaches the conversation, retrying on failure. For a single call, or anything that needs the user, call the tool directly. Only what the script prints comes back.
+
+Functions available with `from indus_tools import read_file, terminal, ...`:
+  read_file(path, offset=1, limit=None) -> dict  # numbered lines from 1
+  write_file(path, content) -> dict  # replaces the whole file; read it first
+  patch(path, old_string, new_string, replace_all=False) -> dict
+  search_files(pattern, target="content", path=".", file_glob=None, limit=50) -> dict  # target="files" finds names
+  web_search(query, limit=5) -> dict  # title, url and snippet per result
+  web_extract(urls, char_limit=None) -> dict  # page text per address
+  terminal(command, timeout=None, workdir=None) -> dict  # foreground only: no background, pty or notify
+Each returns the tool's result as a dict; a failed call returns a dict with an 'error' key. A call Indus refuses (budget used up, bad arguments) raises ToolCallRefused.
+
+Helpers (import them too): json_parse, shell_quote, retry. json_parse(text) is a lenient json.loads, shell_quote(s) quotes a value for a shell command line, retry(fn, max_attempts=3, delay=2) retries with doubling waits.
+
+Variables, imports and loaded data stay in memory between calls in this conversation, so build on earlier results; reset=true starts over, and a call that times out or is interrupted loses that state.
+
+Limits: 5 minutes per call, 50 tool calls per call. Printed output over 50 kB shows its beginning and end; the full text is saved to a file named in the result.
+
+The script starts in the session's working directory, under the project's active virtualenv or conda Python when there is one, otherwise under Indus's own Python (standard library plus Indus's dependencies; check an import before relying on it).

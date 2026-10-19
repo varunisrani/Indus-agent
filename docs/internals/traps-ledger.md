@@ -13,6 +13,7 @@ Checked by `python -m tooling.checks traps`.
   - Review: golden prompt and tool-array byte tests (P04-22)
 - **R01.2** Role alternation under every failure path
   - Review: not yet planned (P00-guards)
+  - `tests/unit/core/subagents/test_batch.py::test_parent_interrupt_reaches_every_child_and_transcripts_stay_valid`
 - **R01.3** Persist order
   - `tests/integration/core/test_persist_order.py::test_crash_at_each_write_point_then_restart`
   - `tests/e2e/test_demo1.py::test_kill_after_the_approval_runs_the_command_at_most_once`
@@ -26,6 +27,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/trials/async_core/test_real_transports.py::test_interrupt_closes_the_http_stream_within_200ms`
   - `tests/trials/async_core/test_sync_driver.py::test_sync_caller_interrupts_within_200ms`
   - `tests/e2e/test_demo1.py::test_ctrl_c_during_a_stream_seals_the_reply`
+  - `tests/unit/core/subagents/test_batch.py::test_parent_stop_interrupts_running_and_skips_queued`
+  - `tests/unit/core/subagents/test_batch.py::test_parent_interrupt_reaches_every_child_and_transcripts_stay_valid`
 - **R01.5** Streaming stale detection vs slow reasoning
   - `tests/unit/providers/test_timeouts.py::test_table`
   - `tests/unit/providers/test_timeouts.py::test_read_timeout_raised_never_lowered`
@@ -91,6 +94,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/test_scope.py::test_thread_with_scope_vs_bare_thread`
   - `tests/unit/foundation/test_scope.py::test_bind_scope_in_executor`
   - `tests/unit/foundation/test_scope.py::test_spawn_inherits_current`
+  - `tests/unit/core/subagents/test_batch.py::test_cap_is_respected_and_results_keep_task_order`
 - **R01.17** Empty and degenerate outputs
   - Review: not yet planned (P00-guards)
 - **R01.18** Exit-path completeness
@@ -103,6 +107,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/test_file_ops.py::test_three_megabyte_round_trip_is_byte_exact`
   - Review: bounded foreground capture side is pinned by P05-02 (wave 1)
   - `tests/unit/backends/test_remote_processes.py::test_poll_feeds_output_and_completion_fires_once`
+  - `tests/unit/tools/builtin/code/test_remote.py::test_two_megabyte_tool_result_arrives_whole`
   - `tests/unit/backends/test_remote_processes.py::test_large_log_read_intact_across_a_split_character`
 - **R02.3** Timeouts that never fire
   - `tests/contract/backends/test_execution_contract.py::test_deadline_gives_124_and_the_flag`
@@ -174,6 +179,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/test_terminal_plan.py::test_notify_kept_only_where_deliverable`
   - `tests/unit/tools/builtin/test_process_manage.py::test_auto_notify_not_where_undeliverable`
   - `tests/unit/backends/test_remote_processes.py::test_no_completion_where_nothing_can_receive_it`
+  - `tests/unit/core/subagents/test_child.py::test_child_background_terminal_result_has_no_notify_and_the_subagent_note`
+  - `tests/unit/core/subagents/test_teardown.py::test_handed_off_job_survives_and_reports_to_the_parent`
 - **R02.18** Watch-pattern floods
   - `tests/unit/backends/test_process_notify.py::test_watch_three_strike_windows_switch_it_off`
   - `tests/unit/backends/test_process_notify.py::test_watch_lifetime_cap_after_eight_notices`
@@ -191,10 +198,12 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/docker/test_args.py::test_storage_quota_only_when_probed`
   - `tests/unit/backends/docker/test_mounts.py::test_task_key_with_colons_is_sanitised`
 - **R02.21** Cross-reference hallucination in schemas
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/code/test_schema.py::test_session_without_web_tools_never_mentions_them`
+  - `tests/unit/tools/builtin/code/test_schema.py::test_empty_intersection_has_only_helpers`
 - **R02.22** Secrets in child processes
   - `tests/unit/backends/docker/test_env.py::test_blocked_name_never_forwarded`
   - `tests/unit/backends/docker/test_env.py::test_client_env_is_minimal_plus_client_controls`
+  - `tests/unit/tools/builtin/code/test_runner.py::test_child_env_has_no_credentials`
   - Review: other child processes (P00-guards)
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
@@ -226,7 +235,10 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/ssh/test_environment.py::test_open_pushes_skills_and_credential_files`
   - Review: the sync-back itself: hash diff, size cap, SIGINT, lock (P21-10)
 - **R02.32** Kernel cap starvation
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/builtin/code/test_kernel.py::test_child_kernels_are_pinned_and_outside_the_cap`
+  - `tests/unit/tools/builtin/code/test_kernel.py::test_pool_never_evicts_a_busy_or_pinned_kernel`
+  - `tests/unit/core/subagents/test_teardown.py::test_child_kernel_is_disposed_and_never_in_the_lru`
+  - `tests/integration/core/test_subagent_host.py::test_a_subagents_kernel_is_its_own_and_ends_with_it`
 - **R03.1** Never live-downgrade WAL
   - `tests/unit/state/test_journal.py::test_existing_wal_with_delete_config_stays_wal_and_logs_once`
   - `tests/unit/state/test_journal.py::test_unreadable_header_keeps_wal_and_switches_nothing`

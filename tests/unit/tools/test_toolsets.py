@@ -53,7 +53,7 @@ def extra_sets(monkeypatch: pytest.MonkeyPatch) -> dict[str, Toolset]:
     return table
 
 
-def test_core_list_is_the_p05_tool_set() -> None:
+def test_core_list_is_the_p05_tool_set_plus_delegation() -> None:
     assert set(CORE_TOOLS) == {
         "terminal",
         "process_manage",
@@ -70,6 +70,8 @@ def test_core_list_is_the_p05_tool_set() -> None:
         "skills_list",  # P09-08
         "skill_view",  # P09-08
         "skill_manage",  # P09-11
+        "execute_code",  # P10-08
+        "delegate_task",  # P10-01
     }
     assert set(resolve(CORE)) == set(CORE_TOOLS)
 
@@ -82,6 +84,7 @@ def test_named_sets() -> None:
     assert resolve("memory") == ["memory"]
     assert resolve("session_search") == ["session_search"]
     assert resolve("skills") == ["skill_manage", "skill_view", "skills_list"]
+    assert resolve("code_execution") == ["execute_code"]
     assert set(resolve("debugging")) == {
         "terminal",
         "process_manage",

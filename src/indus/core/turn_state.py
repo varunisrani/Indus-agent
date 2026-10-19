@@ -39,6 +39,7 @@ from indus.core.wire import ArgsMemo, HealLedger
 from indus.protocol.events import EventBase
 from indus.protocol.requests_port import ServerRequestPort
 from indus.tools.budget import Budget, budget_for_window
+from indus.tools.builtin.delegate import DelegationLimits
 from indus.tools.calls import ToolCall, ToolResult
 from indus.tools.hooks import NO_HOOKS, ToolHooks
 from indus.tools.registry import ToolRegistry
@@ -114,6 +115,9 @@ class LoopOptions:
                 values["max_iterations"] = max_iterations_from(scope.config.get("agent.max_turns"))
             except Exception:
                 log.debug("agent.max_turns unreadable; using the default", exc_info=True)
+        if scope is not None and "max_child_calls" not in values:
+            # P10-01: delegate_task calls per batch are capped at the concurrency cap.
+            values["max_child_calls"] = DelegationLimits.from_scope(scope).max_concurrent_children
         return cls(**values)
 
     def guard_config(self) -> GuardrailConfig:
@@ -169,6 +173,10 @@ class SessionRuntime:
     # Pre-turn hooks ``Agent.start_turn`` awaits before a live turn starts (P09-15: an in-flight
     # background review is cancelled). A failing hook is logged; the turn always goes ahead.
     before_turn: list[BeforeTurn] = field(default_factory=list[BeforeTurn])
+    # The owner a subagent's ``execute_code`` kernels are kept under (P10-06:
+    # ``<parent>::child::<child>``, pinned while the child lives, disposed at its teardown),
+    # offered to tools as ``code_kernel_owner``. None: the session id.
+    code_kernel_owner: str | None = None
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)

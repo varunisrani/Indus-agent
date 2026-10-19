@@ -28,10 +28,20 @@ every agent (``AgentOptions.aux``) for its compression summaries.
 conversation in a child session: the attached session moves to the child id, the old id keeps
 working as an alias for every call, and the session lock moves with it.
 
+Background subagents (P10-05): their results arrive through ``deliver_internal`` and enter the
+conversation between turns — at once when the session is idle, else when the running turn ends
+(after a steer follow-up, if one starts). ``stop_subagents`` (also run by a hard ``interrupt``
+and by ``close``) stops the session's detached children.
+
 Generations are counted per attached session, in process, until P17's turn lease carries them.
 
 A ``maintenance`` timer (P09-18, ``service.maintenance``), when given, starts with the first
 attached session and stops at ``aclose``; its chores run off the event loop.
+
+``execute_code`` kernels (P10-10/11, ``service.code_host``): ``close`` disposes the closed
+session's kernels (its current id and every id it continued from). ``kernels``, when given, is
+the host's share: its idle reaper starts with the first attached session and ``aclose`` shuts both
+kernel pools down — pass it only from the host that owns the process.
 """
 
 from __future__ import annotations
@@ -48,7 +58,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from indus.core import references
+from indus.core import references, subagents
 from indus.core.agent import Agent, AgentBusy, AgentOptions, RunningTurn
 from indus.core.compression.engine import Outcome
 from indus.core.events import EventListener, EventSink, RequestListener
@@ -83,7 +93,9 @@ from indus.protocol.requests_port import AnswerModel
 from indus.providers.auxiliary import AuxClient, auto_title, generate_title
 from indus.providers.route import RuntimeRoute
 from indus.providers.types import Usage
+from indus.service import code_host
 from indus.service.broker import ServerRequestBroker
+from indus.service.code_host import KernelUpkeep
 from indus.service.maintenance import MaintenanceTimer
 from indus.state import sessions, titles
 from indus.state.session_lock import (
@@ -182,6 +194,7 @@ class _Attached:
     results: OrderedDict[str, TurnResult] = field(default_factory=OrderedDict[str, TurnResult])
     steers: dict[str, str] = field(default_factory=dict[str, str])
     settled: set[str] = field(default_factory=set[str])
+    internal: list[str] = field(default_factory=list[str])  # waiting for the turn to end
 
     @property
     def running(self) -> RunningTurn | None:
@@ -206,6 +219,7 @@ class SessionService:
         agent_factory: AgentFactory | None = None,
         aux: AuxClient | None = None,
         maintenance: MaintenanceTimer | None = None,
+        kernels: KernelUpkeep | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
@@ -227,6 +241,7 @@ class SessionService:
         self._aliases: dict[str, str] = {}
         self.maintenance = maintenance
         self._maintenance_task: asyncio.Task[None] | None = None
+        self.kernels = kernels
 
     def _default_lock_dir(self) -> Path:
         if isinstance(self.store, StateStore):
@@ -378,6 +393,7 @@ class SessionService:
         attached = _Attached(session_id, agent, sink, broker, taken)
         self._attached[session_id] = attached
         agent.on_session_moved(lambda old, new: self._follow(attached, old, new))
+        subagents.set_delivery(agent, lambda text: self.deliver_internal(attached, text))
         return attached
 
     def _follow(self, attached: _Attached, old: str, new: str) -> None:
@@ -523,16 +539,20 @@ class SessionService:
         if result.pending_steer:
             left.append(result.pending_steer)
         attached.steers = {}
-        if not left or attached.agent.closed or self._closed:
+        if attached.agent.closed or self._closed:
             return
-        if result.exit_reason in _INTERRUPTED:
+        if left and result.exit_reason in _INTERRUPTED:
             log.info(
                 "turn %s was interrupted; %d undelivered steer text(s) dropped",
                 running.turn_id,
                 len(left),
             )
+            left = []
+        if left:
+            attached.agent.spawn(self._follow_up(attached, "\n".join(left)), name="steer follow-up")
             return
-        attached.agent.spawn(self._follow_up(attached, "\n".join(left)), name="steer follow-up")
+        if attached.internal:
+            attached.agent.spawn(self._internal_turn(attached), name="internal message")
 
     def _maybe_title(self, attached: _Attached, result: TurnResult) -> None:
         """Start auto-titling after the session's first completed exchange (P08-17)."""
@@ -583,6 +603,36 @@ class SessionService:
         except Exception:
             log.warning("could not start the steer follow-up turn", exc_info=True)
 
+    # -- internal messages (P10-05) ---------------------------------------------------------------
+
+    def deliver_internal(self, attached: _Attached, text: str) -> None:
+        """Queue ``text`` (background subagent results) for the conversation, between turns."""
+        if attached.agent.closed or self._closed:
+            log.info("internal message for %s dropped: the session is closed", attached.session_id)
+            return
+        attached.internal.append(text)
+        if attached.running is None:
+            attached.agent.spawn(self._internal_turn(attached), name="internal message")
+
+    async def _internal_turn(self, attached: _Attached) -> None:
+        if attached.running is not None or attached.agent.closed or not attached.internal:
+            return  # the running turn's end delivers it
+        text = "\n\n".join(attached.internal)
+        attached.internal.clear()
+        try:
+            await self._start(attached, text)
+        except Exception:
+            attached.internal.insert(0, text)
+            log.warning("could not start the turn for an internal message", exc_info=True)
+
+    async def stop_subagents(self, session_id: str) -> int:
+        """Stop every background subagent of the session; how many were still working."""
+        attached = self._attached.get(self.current_id(session_id))
+        if attached is None:
+            return 0
+        attached.internal.clear()
+        return await subagents.stop_detached(attached.agent)
+
     async def wait(self, session_id: str, turn_id: str | None = None) -> TurnResult:
         """The result of ``turn_id`` (default: the newest turn), waiting while it runs."""
         attached = self._get(session_id)
@@ -605,6 +655,8 @@ class SessionService:
         done = attached.agent.interrupt(generation, hard=hard)
         if done:
             attached.broker.cancel_all(CancelReason.INTERRUPTED)
+        if hard:  # a hard stop also ends the session's background subagents (P10-05)
+            attached.agent.spawn(self.stop_subagents(session_id), name="stop subagents")
         return SessionInterruptResult(interrupted=done)
 
     def steer(self, session_id: str, text: str) -> SessionSteerResult:
@@ -663,6 +715,7 @@ class SessionService:
         finally:
             attached.broker.close()
             attached.lock.release()
+            await code_host.end_session(session_id, *self._ids_leading_to(session_id))
 
     async def aclose(self) -> None:
         """Detach every session; the service accepts no more calls."""
@@ -670,8 +723,16 @@ class SessionService:
         await self._stop_maintenance()
         for session_id in list(self._attached):
             await self.close(session_id)
+        if self.kernels is not None:
+            await self.kernels.shutdown()
+
+    def _ids_leading_to(self, session_id: str) -> list[str]:
+        """The older ids that continue (after compression) as ``session_id``."""
+        return [old for old in self._aliases if self.current_id(old) == session_id]
 
     def _start_maintenance(self) -> None:
+        if self.kernels is not None and not self._closed:
+            self.kernels.start()  # the kernel reaper of a long-lived host (P10-10)
         if self.maintenance is None or self._maintenance_task is not None or self._closed:
             return
         self._maintenance_task = asyncio.get_running_loop().create_task(

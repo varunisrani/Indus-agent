@@ -79,6 +79,11 @@ PyPI for packages of other platforms).
 | primp | 2.0.1 | MIT | extra `web`, via ddgs | P05-23 |
 | prompt_toolkit | 3.0.53 | BSD-3-Clause | the classic REPL's prompt, keys and status bar | P06-04 |
 | wcwidth | 0.9.1 | MIT | via prompt_toolkit | P06-04 |
+| jsonschema | 4.26.0 | MIT | checks subagent answers against `output_schema` | P10-04 |
+| attrs | 26.1.0 | MIT | via jsonschema / referencing | P10-04 |
+| jsonschema-specifications | 2025.9.1 | MIT | via jsonschema (the bundled meta-schemas) | P10-04 |
+| referencing | 0.37.0 | MIT | via jsonschema | P10-04 |
+| rpds-py | 2026.6.3 | MIT | via jsonschema / referencing | P10-04 |
 | rich | 15.0.0 | MIT | the classic REPL's streamed output, banner and cards | P06-05 |
 | markdown-it-py | 4.2.0 | MIT | via rich | P06-05 |
 | mdurl | 0.1.2 | MIT | via markdown-it-py | P06-05 |

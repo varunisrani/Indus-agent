@@ -23,6 +23,8 @@ MODELS = "https://openrouter.ai/api/v1/models"
 # the cli bundle's rows (vision is offered but not in the bundle)
 BUNDLE_TOOLS = [
     "clarify —",
+    "code_execution —",
+    "delegation —",
     "file —",
     "memory —",
     "search —",

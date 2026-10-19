@@ -130,7 +130,12 @@ class SessionLearning:
             self.search.aux = aux
 
     def attach_review(self, agent: Agent, *, no_review: bool = False) -> ReviewRunner:
-        """Give ``agent`` its background review (see the module notes); returns the runner."""
+        """Give ``agent`` its background review (see the module notes); returns the runner.
+
+        A subagent (``delegation_depth > 0``) never reviews, whatever the host asks (P10-02).
+        """
+        if agent.options.delegation_depth > 0:
+            no_review = True
         runner = install_review(agent, no_review=no_review)
         agent.runtime.before_turn.append(runner.cancel_for_live_turn)
         _RUNNERS[agent] = runner

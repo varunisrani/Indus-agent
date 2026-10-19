@@ -47,6 +47,7 @@ import secrets
 import shlex
 import signal
 import subprocess
+import threading
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -84,8 +85,10 @@ from indus.safety.redaction import redact_output
 __all__ = [
     "FINISHED_TTL_S",
     "MAX_BUFFER_CHARS",
+    "MAX_HANDOFFS",
     "MAX_TRACKED",
     "MIN_PREFIX_HEX",
+    "HandoffGrant",
     "JobHandle",
     "LaunchSpec",
     "ProcessLimit",
@@ -102,6 +105,7 @@ log = logging.getLogger(__name__)
 
 MAX_BUFFER_CHARS = 200_000
 MAX_TRACKED = 64
+MAX_HANDOFFS = 3  # jobs one subagent may hand to its parent (P10-06)
 FINISHED_TTL_S = 30 * 60
 MIN_PREFIX_HEX = 4
 ID_PREFIX = "proc_"
@@ -452,6 +456,7 @@ class ProcessRecord:
     line_rest: str = field(default="", repr=False)
     pidfd: int | None = field(default=None, repr=False)
     poller: asyncio.Future[None] | None = field(default=None, repr=False)
+    handoff_note: str = ""  # why a subagent handed this job to its parent (P10-06)
 
     @property
     def status(self) -> Literal["running", "exited"]:
@@ -496,8 +501,25 @@ def job_argv(command: str, env: Mapping[str, str], snapshot: str | None) -> tupl
 # -- the registry ---------------------------------------------------------------------------------
 
 
+@dataclass
+class HandoffGrant:
+    """A subagent session may hand up to ``limit`` of its jobs to ``parent_session`` (P10-06)."""
+
+    home: str
+    child_session: str
+    parent_session: str
+    limit: int = MAX_HANDOFFS
+    used: int = 0
+
+
 class ProcessRegistry:
-    """Every background job of this process (see the module notes)."""
+    """Every background job of this process (see the module notes).
+
+    Ownership is the record's ``session_id``. ``transfer_ownership`` moves a running job to
+    another session under the registry's owner lock: a subagent hands a job to its parent
+    (P10-06) only while its ``HandoffGrant`` is registered; the completion then goes to the new
+    owner (notify on when that session can receive messages).
+    """
 
     def __init__(
         self,
@@ -525,6 +547,8 @@ class ProcessRegistry:
         self._ticker: asyncio.Future[None] | None = None
         self._recovered: set[str] = set()
         self._pollers: dict[int, remote_processes.RemotePoller] = {}
+        self._owner_lock = threading.Lock()
+        self._grants: dict[tuple[str, str], HandoffGrant] = {}
 
     def _write_receipt(self, record: ProcessRecord) -> None:
         process_receipts.write_receipt(record, now=self.clock.now())
@@ -1042,6 +1066,41 @@ class ProcessRegistry:
         if record.exited or record.handle is None:
             return "the process has already ended"
         return record.handle.close_input()
+
+    # -- ownership (P10-06) -----------------------------------------------------------------------
+
+    def grant_handoff(
+        self, home: str, child_session: str, parent_session: str, *, limit: int = MAX_HANDOFFS
+    ) -> HandoffGrant:
+        """Let ``child_session`` hand jobs to ``parent_session`` (a subagent while it runs)."""
+        grant = HandoffGrant(str(home), child_session, parent_session, limit)
+        with self._owner_lock:
+            self._grants[(grant.home, child_session)] = grant
+        return grant
+
+    def revoke_handoff(self, home: str, child_session: str) -> None:
+        with self._owner_lock:
+            self._grants.pop((str(home), child_session), None)
+
+    def handoff_grant(self, home: str, session_id: str | None) -> HandoffGrant | None:
+        if not session_id:
+            return None
+        with self._owner_lock:
+            return self._grants.get((str(home), session_id))
+
+    def transfer_ownership(
+        self, record: ProcessRecord, *, from_session: str, to_session: str, note: str = ""
+    ) -> bool:
+        """Move a running job from ``from_session`` to ``to_session``; False (nothing changed)
+        when it has ended or is not ``from_session``'s."""
+        with self._owner_lock:
+            if record.exited or record.session_id != from_session:
+                return False
+            record.session_id = to_session
+            record.handoff_note = note
+            record.notify_on_exit = self.deliveries.deliverable(record.home, to_session)
+        self._save_checkpoint(record.scope)
+        return True
 
     async def release(self, home: str, session_id: str | None) -> int:
         """Session end or ``/new``: stop the session's jobs except ``persist_on_release`` ones."""
