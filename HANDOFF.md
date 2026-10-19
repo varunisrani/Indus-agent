@@ -82,7 +82,7 @@ paused, patches in `.agents/wip/p14/`. C1, C2, C3 DONE (patches there); integrat
 Also building (Agent 1, from `8f99060`): P15 wave 1 — G1 = P15-01..05 DONE (fake platform harness, gateway
 config, inbound events, send result/retry, adapter base), G2 = P15-06..10 (registry/locks, session keys,
 authorization, pairing, bot-loop/concurrency/admin tiers) DONE (patch in wip); G3 = P15-14..18 (chunker,
-formatters, stream consumer, outbound sender, media path policy) and G4 = P15-11..13 (admission, busy guards,
+formatters, stream consumer, outbound sender, media path policy) DONE (patch in wip); G4 = P15-11..13 (admission, busy guards,
 chat slash commands; based on G1+G2 applied raw) building. If paused, patches in
 `.agents/wip/p15w1/`.
 Builder rules: `docs/plan/phases/builder-rules.md`; read LEAD-NOTES landing

@@ -49,3 +49,34 @@
   under platforms.<name> merged into extra (explicit extra wins).
 - Follow-ups: plugin platform blocks log "unknown setting (kept)" until P16; Slack typing_status_text,
   Discord link-to-id normalisation (P15-34/35); interactive_resume for P15-26; no hypothesis.
+
+## G3 — w18-p15g3.patch (base 8f99060) — DONE (P15-14..18 chunker, formatters, stream consumer + typing/progress, outbound sender + filters + dead targets, media tags + path policy)
+- New: gateway/outbound/{__init__,chunker,formatting,stream,progress,sender,filters,dead_targets,
+  media_policy,ports}.py (ports.py = only module calling an adapter), tests/unit/gateway/outbound/*
+  (_stubs_g3.py STAND-IN for G1's SendResult/adapter/sent index — delete), fixture
+  tests/fixtures/gateway/markdownv2_cases.json, notes ×5. Package marker tests/unit/gateway/__init__.py
+  also from G1/G2 (keep one).
+- Shared: traps R06.11–14, R06.22, R07.14; ACC-K25-1..K29-1. No schema rows added.
+- Security (tested): MEDIA: files only from trusted places (profile cache/{images,audio,video,documents},
+  operator allow-dirs, or — outside strict mode — files created in the last 600 s); symlinks resolved;
+  P05 read_denial/blocked_device + deny-list (credentials dirs, Indus secret/control/state files, other
+  profiles, /etc /proc /sys /dev /root /var/*) on written and resolved path; refused tags give a notice;
+  remote sandbox paths checked before/after; secrets masked before formatting/chunking and in stream
+  frames (text shown only up to last whitespace); only upper-case MEDIA:.
+- OWNER/LEAD DECISION: Linux has no birth time, so a file whose mtime the agent just bumped (touch)
+  outside the deny-list counts as recent. Options: default gateway.media_trust_recent=false, or strict
+  mode by default for public bots (pairing/unknown users). Recommend: trust_recent off by default.
+- Wiring: swap _stubs_g3 for G1 types in ports.py (chat_unreachable → G1's chat-level not-found helper;
+  capability markup → formatter_for(); media methods send_image/video/voice/document, audio →
+  send_file; busy per-chat slot returns ok with skipped=True); adapters strip interim/final metadata;
+  runner feeds StreamConsumer/ToolProgress via feed(event), runs TypingLoop/Heartbeat, calls
+  OutboundSender.deliver only when StreamOutcome.final_delivered is false or silenced; P15-19 ledger
+  stores DeliveryReport.undelivered.
+- Config rows to add (G1's GatewaySection): gateway.media_strict, media_allow_dirs,
+  media_trust_recent, media_trust_recent_seconds 600, display.ephemeral_system_ttl, per-platform
+  streaming, tool_progress (+ grouping), heartbeat interval.
+- Decisions (need D-ids): chat finals always force redaction; chunker cuts bare below 32 units; Slack
+  table limit 20,000 per phase row, one native table per message; approval placeholder only on native
+  streams; four English silence tokens.
+- Follow-ups: Slack raw_text cell shape vs pinned SDK (P15-35); Docker container-path translation for
+  media (P11 backend).
