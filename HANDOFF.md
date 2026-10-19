@@ -82,7 +82,7 @@ In flight (Agent 1):
 2. P10 wave 1: H = P10-08..11 execute_code and kernels DONE, patch saved in `.agents/wip/p10w1/` (base
    `85cd8a9`; README has its wiring list). G = P10-01..07 delegation DONE too (same base; uv.lock excluded — re-lock for jsonschema).
 3. P10 slices building from `7faff19`: I = P10-12..14 browser, J = P10-15..18 vision, image/video, TTS,
-   STT. If paused, in `.agents/wip/p10w1/` too.
+   STT; K = P10-21..26 MoA, /btw, /goal, /loop, /heartbeat. If paused, in `.agents/wip/p10w1/` too.
 Next: P10 waves 2+ (browser, media, voice, computer use, MoA, /btw, /goal, /loop, /heartbeat), P12
 (TUI), P13 (MCP/plugins), P14 (cron).
 
