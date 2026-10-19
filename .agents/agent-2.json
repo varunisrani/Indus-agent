@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 74,
-  "remaining_pct": 26,
+  "usage_pct": 77,
+  "remaining_pct": 23,
   "resets_at": "2026-10-19T11:00:00+00:00",
-  "last_check": "2026-10-19T09:36:15+00:00",
-  "current_step": "P12 done (b5aa7d7); P13 wave 1 builders finishing; no new builders; park + hand back at 85%",
+  "last_check": "2026-10-19T09:48:43+00:00",
+  "current_step": "P13 M2+M3 merged, full gate running; M1 (MCP core) building; no new builders",
   "last_commit": "ab1f0c4"
 }
