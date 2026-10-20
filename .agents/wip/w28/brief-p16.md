@@ -15,7 +15,7 @@ LINE "# STAND-IN: removed at integration", and state the interface you assumed):
   it for a D-id). Add its registry row / target rule / setup step as "Wiring for the lead" (do not edit registry.py).
 - E16 = P16-33 native draft streaming (Telegram drafts, Slack streams; off unless display.platforms.<p>.native_stream) +
   P16-34 Telegram DM topics and sticker descriptions. Stream consumer core change: if needed, STOP and propose it exactly.
-- E17 = P16-35 Discord voice channels (extra  with exact pins if a library is needed: discord.py voice deps,
+- E17 = P16-35 Discord voice channels (extra `discord-voice` with exact pins if a library is needed: discord.py voice deps,
   check licences; ffmpeg doctor check; fake voice stream + fake clock) + P16-36 adapter matrix gate and doctor gateway checks
   (contract matrix over every registered platform; doctor section). Photon is being built by E15 in parallel: allow-list it
   in the matrix test as pending with a comment the integrator removes.
