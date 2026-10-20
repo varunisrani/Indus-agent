@@ -34,6 +34,14 @@ LINE "# STAND-IN: removed at integration", and state the interface you assumed):
   QQ group:/channel:/dm:, Signal group.<id>, email addresses, ntfy topics, IRC targets, Feishu oc_/ou_/cmt_, etc.).
   This touches many adapter folders but only to add small parser/setup modules the rows name; do not change adapter
   behaviour. P16-31 secrets go to the SecretStore, never .env, never echoed.
+- E12 = P16-07 Matrix end-to-end encryption (plugs into the `EndToEnd` seam the plain Matrix adapter left; use an
+  allowed library — check licences: e.g. vodozemac bindings / matrix-nio / mautrix crypto — in an optional extra,
+  imported lazily; the device store lives under the profile home with 0600 files; `send_only` must not start E2EE
+  sync) + P16-19 Weixin adapter (iLink Bot; any media crypto via `cryptography`).
+- E13 = P16-02 WhatsApp Node bridge sidecar (apps/whatsapp-bridge, pnpm workspace; licence-check the WhatsApp Web
+  library — copyleft is not allowed; loopback-only local API with a per-install shared secret; auth state 0600 under the
+  profile home) + P16-03 WhatsApp bridge adapter (Python side, uses _identity's JID/LID helpers and mask_number).
+  Run the repo's pnpm/vitest/tsc checks for the TS side.
 No hand-written cryptography anywhere in src/ (use `cryptography`/allowed libraries; HMAC via stdlib `hmac`).
 Never pkill by a pattern that could hit other worktrees' processes.
 
