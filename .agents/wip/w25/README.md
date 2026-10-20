@@ -88,3 +88,29 @@
   armour at runtime (or generate a real throwaway key with cryptography) so no credential-shaped literal is in the tree.
 - Follow-ups: base drain-probe/ingress-gate seam; Google Chat native uploads (per-user OAuth); QQ webhook mode;
   commandId-only slash commands.
+
+## w25-e8.patch: P16-16 DingTalk + P16-17 WeCom smart robot + P16-18 WeCom callback — done
+- Builder checks: dingtalk/wecom/contract/schema 310 passed / 41 skipped; config/registry/adapters 560 passed; ruff,
+  pyright, lint-imports, tooling.checks ok. AES via `cryptography` Cipher (lead-checked); XML via stdlib expat with DTD,
+  entity declarations and external refs refused (lead-checked). Crypto vectors from openssl/coreutils (script + json,
+  re-run by a test). Own DingTalk Stream client (dingtalk-stream MIT but not used).
+- Extras: `dingtalk = ["httpx-ws==0.9.0"]`, `wecom = ["httpx-ws==0.9.0", "cryptography==50.0.2"]` (already locked) — re-lock
+  metadata; 00-layout §4 pin rows added. Note: cryptography 50.0.2 upload is 4 days before exclude-newer (pins check passes).
+- Shared: contract `lacks` shapes voice_media, document, caption; conftest 3 imports; schema rows platforms.dingtalk /
+  wecom / wecom_callback; traps R06.12.
+- Wiring (core): BUILTIN_NAMES += dingtalk, wecom, wecom_callback; registry rows
+  `_chat_entry("dingtalk", "DingTalk", sdk=("httpx_ws",), extra_name="dingtalk", required_env=("DINGTALK_CLIENT_ID",
+  "DINGTALK_CLIENT_SECRET"), max_len=20000, hint=…)`, `_chat_entry("wecom", "WeCom", sdk=("httpx_ws",), extra_name="wecom",
+  required_env=("WECOM_BOT_ID","WECOM_SECRET"), max_len=4000, hint=…)`, `replace(_chat_entry("wecom_callback", "WeCom
+  (callback app)", sdk=("cryptography",), extra_name="wecom", required_env=("WECOM_CALLBACK_CORP_ID",
+  "WECOM_CALLBACK_CORP_SECRET","WECOM_CALLBACK_AGENT_ID","WECOM_CALLBACK_TOKEN","WECOM_CALLBACK_ENCODING_AES_KEY"),
+  max_len=2048, hint=…), factory=_lazy_factory("indus.gateway.adapters.wecom:create_callback_adapter"))` (hints in the
+  builder notes); BUILTIN_CREDENTIALS dingtalk (CLIENT_ID, CLIENT_SECRET), wecom (BOT_ID, SECRET), wecom_callback (CORP_ID,
+  CORP_SECRET, TOKEN, ENCODING_AES_KEY); lock_env on stable ids (e.g. dingtalk CLIENT_ID, wecom BOT_ID, wecom_callback
+  CORP_ID + AGENT_ID). streaming_default("wecom") True once P16-33 lands.
+- Decisions: stdlib expat (hardened) instead of defusedxml (not locked); callback text cap 2,048 bytes; port 8645 clashes
+  with BlueBubbles default (doctor P16-36); constant-time signatures + ±300 s replay window; secrets added inside the
+  transport (never in logs/response.request); DingTalk REST fallback rules; WeCom message ids from req_id; takeover
+  reconnect once after 60 s, second within 10 min fatal (wecom_replaced); 30 msgs/min/chat window; dm_policy pairing.
+- Follow-ups: ACC-K11 rows missing; WeCom inbound media has no private-address guard (add one at integration if cheap);
+  split-message batching; P16-32 target parsers.
