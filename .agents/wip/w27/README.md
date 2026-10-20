@@ -1,6 +1,6 @@
 # Wave 27 — parked builder patches
 
-## w27-e11.patch: P16-31 setup wizard + P16-32 target parsers — being integrated by the lead (verify13)
+## (LANDED) w27-e11.patch: P16-31 setup wizard + P16-32 target parsers
 
 ## w27-k9.patch: P17-22 messaging on the shared host — done (base ac389c3)
 - Builder checks: unit/contract/integration/e2e gateway + service 2680 passed / 53 skipped (Demo 3 3x green, gateway_e2e
