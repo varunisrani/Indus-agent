@@ -119,3 +119,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 14:47 UTC | 77% | 23% | 18:00 UTC | parked W2, E16; >=75%: told W1, F1, A1 to wrap up; P17 integrator keeps running; P16 integrator waits for reset
 2026-10-20 14:59 UTC | 81% | 19% | 18:00 UTC | wave 29 all parked; only the P17-23..27 integrator (verify16) running
 2026-10-20 15:17 UTC | 82% | 18% | 18:00 UTC | P17-23..27 integrator (verify16) running alone
+2026-10-20 15:41 UTC | 83% | 17% | 18:00 UTC | P17-23..27 integrator (verify16) running alone
