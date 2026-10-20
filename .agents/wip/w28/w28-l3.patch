@@ -1,0 +1,3371 @@
+diff --git a/apps/tui/src/app/appRuntime.test.ts b/apps/tui/src/app/appRuntime.test.ts
+index 15ac735..8a5707f 100644
+--- a/apps/tui/src/app/appRuntime.test.ts
++++ b/apps/tui/src/app/appRuntime.test.ts
+@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
+ import { overlayStore } from "../state/overlayStore.ts";
+ import { transcriptStore } from "../state/transcriptStore.ts";
+ import { uiStore } from "../state/uiStore.ts";
+-import { RESTART_LINE } from "./recovery.ts";
++import { OUTCOME_UNKNOWN_LINE } from "./appRuntime.ts";
++import { ATTACH_RESTART_LINE, RESTART_LINE } from "./recovery.ts";
+ import { type RuntimeRig, resumeAnswer, runtimeRig, settle } from "./testRuntime.ts";
+ 
+ let rig: RuntimeRig | null = null;
+@@ -75,6 +76,37 @@ describe("crash recovery against the fake server", () => {
+     expect(lines().filter((l) => l === "user: first question")).toHaveLength(1);
+   });
+ 
++  it("attached: a link lost mid-reply says the outcome is unknown and sends nothing again", async () => {
++    const r = use(runtimeRig({ attached: true }));
++    await r.ready();
++    const sid = uiStore.getState().sid;
++    await send(r, "first question");
++    await startTurn(r, "t1");
++    await r.die();
++    expect(lines()).toContain(`system: ${ATTACH_RESTART_LINE}`);
++    expect(lines()).not.toContain(`system: ${RESTART_LINE}`);
++    await r.ready();
++    expect(r.calls("session.resume")).toEqual([{ session_id: sid }]);
++    // the line survives the reopen (which clears the transcript); the prompt is not sent again
++    expect(lines()).toContain(`system: ${OUTCOME_UNKNOWN_LINE}`);
++    expect(promptTexts(r)).toEqual(["first question"]);
++    // an idle link lost later says nothing about an outcome
++    await r.die();
++    await r.ready();
++    expect(lines().filter((l) => l === `system: ${OUTCOME_UNKNOWN_LINE}`)).toHaveLength(0);
++  });
++
++  it("the bridge child's restart keeps its own wording and no outcome line", async () => {
++    const r = use(runtimeRig());
++    await r.ready();
++    await send(r, "first question");
++    await startTurn(r, "t1");
++    await r.die();
++    expect(lines()).toContain(`system: ${RESTART_LINE}`);
++    await r.ready();
++    expect(lines()).not.toContain(`system: ${OUTCOME_UNKNOWN_LINE}`);
++  });
++
+   it("4th death in 60 s prints the error once; a later success still resumes the same id", async () => {
+     const r = use(runtimeRig());
+     await r.ready();
+diff --git a/apps/tui/src/app/appRuntime.ts b/apps/tui/src/app/appRuntime.ts
+index fe00c02..286e05f 100644
+--- a/apps/tui/src/app/appRuntime.ts
++++ b/apps/tui/src/app/appRuntime.ts
+@@ -43,7 +43,7 @@ import type { ExitReason } from "../terminal/lifecycle.ts";
+ import { attachFailureLines } from "../transport/attach.ts";
+ import { TurnController } from "../turn/controller.ts";
+ import type { Env } from "./launchOptions.ts";
+-import { type ExitInfo, Recovery } from "./recovery.ts";
++import { ATTACH_RESTART_LINE, type ExitInfo, Recovery } from "./recovery.ts";
+ import { type Rpc, rpcFromClient } from "./rpc.ts";
+ import { type OpenReason, SessionLifecycle } from "./sessionLifecycle.ts";
+ 
+@@ -78,10 +78,20 @@ export class LinkWatch {
+   }
+ }
+ 
++/**
++ * Said when the attach link to the daemon is lost while a reply runs (R09.11): the turn may have
++ * finished, failed or been lost with the daemon, and nothing here sends it again.
++ */
++export const OUTCOME_UNKNOWN_LINE =
++  "The connection to the gateway daemon was lost while a reply was running: its outcome is " +
++  "unknown and it was not sent again (do not resend it).";
++
+ export interface RuntimeOptions {
+   client: IndusClient;
+   links: LinkWatch;
+   env: Env;
++  /** The link is the daemon attach (P17-19), not the TUI's own bridge child. */
++  attached?: boolean;
+   clock?: Clock;
+   /** Leave the program (the entry's `Lifecycle.quit`). */
+   exit(code: number, reason: ExitReason): void;
+@@ -125,6 +135,8 @@ export class AppRuntime {
+   private lastExit: ExitInfo | null = null;
+   /** The session open when the link went down (undefined: not parked). */
+   private parked: string | null | undefined = undefined;
++  /** A reply was running when the link went down. */
++  private lostMidTurn = false;
+   private readonly cleanups: (() => void)[] = [];
+   private disposed = false;
+   private configStarted = false;
+@@ -217,6 +229,7 @@ export class AppRuntime {
+       },
+       say: system,
+       status: (text) => this.controller.setStatus(text),
++      ...(options.attached === true ? { restartLine: ATTACH_RESTART_LINE } : {}),
+     });
+ 
+     this.handle = createEventHandler({
+@@ -342,6 +355,7 @@ export class AppRuntime {
+     if (this.parked !== undefined) return;
+     const ui = uiStore.getState();
+     this.parked = ui.storedSid ?? ui.sid;
++    this.lostMidTurn = ui.busy;
+     ui.patch({
+       sid: null,
+       storedSid: null,
+@@ -366,11 +380,18 @@ export class AppRuntime {
+     this.controller.reset();
+     this.cards.settleAll();
+     overlayStore.getState().closeFlowCards();
++    // Attached, a reply that was running may finish in the daemon or be lost with it: say its
++    // outcome is unknown and never send it again (R09.11). The reopen clears the transcript, so
++    // the line is carried into the reopened session.
++    const unknown = this.options.attached === true && this.lostMidTurn;
++    this.lostMidTurn = false;
+     if (info?.terminal === true) {
+       this.recovery.stop();
+       this.controller.setStatus(DAEMON_UNAVAILABLE_STATUS);
++      if (unknown) this.system(OUTCOME_UNKNOWN_LINE);
+       return;
+     }
++    if (unknown) this.lifecycle.carry(OUTCOME_UNKNOWN_LINE);
+     this.recovery.lost(live, exit);
+   }
+ 
+diff --git a/apps/tui/src/app/recovery.ts b/apps/tui/src/app/recovery.ts
+index 8c53e84..c603174 100644
+--- a/apps/tui/src/app/recovery.ts
++++ b/apps/tui/src/app/recovery.ts
+@@ -10,6 +10,9 @@ export const RESTART_LIMIT = 3;
+ export const RESTART_WINDOW_MS = 60_000;
+ 
+ export const RESTART_LINE = "The agent process stopped; restarting and reopening your chat…";
++/** The same moment when the link is the daemon attach (P17-19): the daemon may still run. */
++export const ATTACH_RESTART_LINE =
++  "Lost the connection to the gateway daemon; reconnecting and reopening your chat…";
+ export const RESTART_STATUS = "restarting…";
+ export const GAVE_UP_STATUS = "agent stopped";
+ 
+@@ -60,6 +63,8 @@ export interface RecoveryOptions {
+   restart(): void;
+   /** A transcript line. */
+   say(text: string): void;
++  /** What a restart says (default `RESTART_LINE`; the attach link says `ATTACH_RESTART_LINE`). */
++  restartLine?: string;
+   /** The status text. */
+   status(text: string): void;
+   clock?: Clock;
+@@ -120,7 +125,7 @@ export class Recovery {
+       this.attempts = plan.attempts;
+       if (plan.granted) {
+         this.options.status(RESTART_STATUS);
+-        this.options.say(RESTART_LINE);
++        this.options.say(this.options.restartLine ?? RESTART_LINE);
+         this.options.restart();
+         return "restarted";
+       }
+diff --git a/apps/tui/src/app/testRuntime.ts b/apps/tui/src/app/testRuntime.ts
+index 7fd7aac..32fbe6c 100644
+--- a/apps/tui/src/app/testRuntime.ts
++++ b/apps/tui/src/app/testRuntime.ts
+@@ -26,6 +26,8 @@ export interface RuntimeRig {
+ 
+ export interface RigOptions {
+   env?: Env;
++  /** The runtime's link is the daemon attach (P17-19). */
++  attached?: boolean;
+   handlers?: Record<string, MethodHandler>;
+   timeoutMs?: number;
+ }
+@@ -71,6 +73,7 @@ export function runtimeRig(options: RigOptions = {}): RuntimeRig {
+     client,
+     links,
+     env: options.env ?? {},
++    ...(options.attached === undefined ? {} : { attached: options.attached }),
+     clock,
+     exit: (code) => exits.push(code),
+     history: { entries: () => entries, push: (text) => entries.push(text) },
+diff --git a/apps/tui/src/entry.tsx b/apps/tui/src/entry.tsx
+index c533806..ca316ac 100644
+--- a/apps/tui/src/entry.tsx
++++ b/apps/tui/src/entry.tsx
+@@ -152,6 +152,7 @@ const runtime = new AppRuntime({
+   client,
+   links,
+   env: process.env,
++  attached: plan.mode !== "local",
+   themePinned,
+   exit: (code, reason) => lifecycle.quit(code, reason),
+   redraw: () => redraw(),
+diff --git a/apps/tui/src/slash/localCommands.ts b/apps/tui/src/slash/localCommands.ts
+index b301319..90b544b 100644
+--- a/apps/tui/src/slash/localCommands.ts
++++ b/apps/tui/src/slash/localCommands.ts
+@@ -19,6 +19,7 @@ import type {
+ import type { ModelPickerPayload } from "../cards/payloads.ts";
+ import { errorText } from "../cards/rpcLike.ts";
+ import { applyModelChoice } from "../pickers/modelPickerState.ts";
++import { steerParams } from "../state/turnStore.ts";
+ import type { UiState } from "../state/uiStore.ts";
+ import type { LocalCommand, RunContext } from "./types.ts";
+ 
+@@ -346,10 +347,12 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
+       }
+       const sid = needSession(ctx, "steer");
+       if (sid === null) return;
+-      const result = await call<SessionSteerResult>(ctx, "steer", "session.steer", {
+-        session_id: sid,
+-        text: arg,
+-      });
++      const result = await call<SessionSteerResult>(
++        ctx,
++        "steer",
++        "session.steer",
++        steerParams(sid, arg),
++      );
+       if (result === null) return;
+       if (result.queued) ctx.systemLine("Steer note handed to the running reply.");
+       else {
+diff --git a/apps/tui/src/state/turnStore.ts b/apps/tui/src/state/turnStore.ts
+index d978b6f..820c5f1 100644
+--- a/apps/tui/src/state/turnStore.ts
++++ b/apps/tui/src/state/turnStore.ts
+@@ -112,3 +112,14 @@ export function useTurn<T>(sel: (s: TurnState) => T): T {
+ export function keepLast<T>(items: readonly T[], limit: number): T[] {
+   return items.length <= limit ? [...items] : items.slice(items.length - limit);
+ }
++
++/**
++ * `session.steer` params for the running turn: the daemon applies a control only to the turn it
++ * names (generation fences, P17-05), so the running turn's generation goes along when known.
++ */
++export function steerParams(sessionId: string, text: string): Record<string, unknown> {
++  const generation = turnStore.getState().generation;
++  return generation === null
++    ? { session_id: sessionId, text }
++    : { session_id: sessionId, text, generation };
++}
+diff --git a/apps/tui/src/submit/submission.test.ts b/apps/tui/src/submit/submission.test.ts
+index aa33b31..812c92f 100644
+--- a/apps/tui/src/submit/submission.test.ts
++++ b/apps/tui/src/submit/submission.test.ts
+@@ -2,6 +2,7 @@ import { errorNameFor } from "@indus/client";
+ import { FakeRpcError } from "@indus/client/testing";
+ import { beforeEach, describe, expect, it } from "vitest";
+ import { resetUi, type SubmitRig, settle, submitRig } from "../composer/testSupport.ts";
++import { turnStore } from "../state/turnStore.ts";
+ import { uiStore } from "../state/uiStore.ts";
+ import { DOUBLE_ENTER_MS } from "./submission.ts";
+ 
+@@ -186,6 +187,18 @@ describe("busy modes", () => {
+     expect(rig.queue.items.map((item) => item.text)).toEqual(["use the other file"]);
+   });
+ 
++  it("steer: names the running turn's generation (the daemon fences controls by it)", async () => {
++    resetUi({ busy: true, busyInputMode: "steer" });
++    turnStore.getState().patch({ turnId: "t7", generation: 7 });
++    const rig = submitRig({ "session.steer": () => ({ queued: true }) });
++    type(rig, "use the other file");
++    await settle();
++    expect(rig.bridge.calls("session.steer")).toEqual([
++      { session_id: "s1", text: "use the other file", generation: 7 },
++    ]);
++    turnStore.getState().reset();
++  });
++
+   it("steer: a failed steer is queued too; an accepted one shows the line", async () => {
+     resetUi({ busy: true, busyInputMode: "steer" });
+     const failing = submitRig({
+diff --git a/apps/tui/src/submit/submission.ts b/apps/tui/src/submit/submission.ts
+index d6c7d5d..75ceb74 100644
+--- a/apps/tui/src/submit/submission.ts
++++ b/apps/tui/src/submit/submission.ts
+@@ -12,6 +12,7 @@ import { completionOnEnter, isSlashCommandText } from "../composer/completion.ts
+ import type { Composer } from "../composer/composerStore.ts";
+ import { expandPastes, expandTokens } from "../composer/paste.ts";
+ import type { Destination } from "../state/destination.ts";
++import { steerParams } from "../state/turnStore.ts";
+ import type { UiState } from "../state/uiStore.ts";
+ import { hasInterpolation, interpolate, shellOutput } from "./interpolate.ts";
+ import type { PromptQueue, QueueItem } from "./queue.ts";
+@@ -209,7 +210,7 @@ export class Submitter {
+     const text = await this.expand(item.text, sid, dest);
+     if (text === null) return;
+     try {
+-      const reply = (await this.deps.rpc.call("session.steer", { session_id: sid, text })) as {
++      const reply = (await this.deps.rpc.call("session.steer", steerParams(sid, text))) as {
+         queued?: unknown;
+       };
+       if (reply?.queued === true) {
+diff --git a/apps/tui/src/test/hosts.test.tsx b/apps/tui/src/test/hosts.test.tsx
+new file mode 100644
+index 0000000..0250120
+--- /dev/null
++++ b/apps/tui/src/test/hosts.test.tsx
+@@ -0,0 +1,137 @@
++// P17-26: the TUI's integration flows against both hosts (`hosts.ts`): its own stdio bridge child
++// and the profile's daemon over the attach WebSocket. The renderer is the real one — `App` in
++// Ink's test renderer over the real `AppRuntime`, client and transports — and so are the agent
++// processes; the model is the scripted fake on a loopback port. What a person sees must be the
++// same on both hosts.
++
++import { afterEach, describe, expect, it } from "vitest";
++import { App } from "../app/App.tsx";
++import { KEY, type Mounted, mount } from "../cards/inkHarness.ts";
++import { overlayStore } from "../state/overlayStore.ts";
++import { transcriptStore } from "../state/transcriptStore.ts";
++import { uiStore } from "../state/uiStore.ts";
++import { HOST_KINDS, type HostRig, hostsMissing, type Step, startHost, until } from "./hosts.ts";
++
++const missing = hostsMissing();
++const SIZE = { columns: 100, rows: 30 };
++
++function said(role: string): string[] {
++  return transcriptStore
++    .getState()
++    .messages.filter((m) => m.role === role)
++    .map((m) => m.text);
++}
++
++describe.skipIf(missing !== null).each(HOST_KINDS)("the TUI on the %s host", (kind) => {
++  let rig: HostRig | null = null;
++  let screen: Mounted | null = null;
++
++  afterEach(async () => {
++    screen?.unmount();
++    screen = null;
++    await rig?.dispose();
++    rig = null;
++  }, 90_000);
++
++  async function open(turns: Step[][]): Promise<{ r: HostRig; s: Mounted }> {
++    const r = await startHost(kind, turns);
++    rig = r;
++    const s = await mount(<App runtime={r.runtime} size={SIZE} />, SIZE);
++    screen = s;
++    await until(
++      () => uiStore.getState().sid !== null && uiStore.getState().connected,
++      "an open session",
++      60_000,
++      () => s.lastFrame(),
++    );
++    return { r, s };
++  }
++
++  async function send(s: Mounted, text: string): Promise<void> {
++    await s.press(...text.split(""));
++    await s.press(KEY.enter);
++  }
++
++  it("a prompt streams, settles into the transcript and the usage shows", async () => {
++    const { r, s } = await open([
++      [{ text: ["Hello ", "from the agent"] }, { usage: { prompt: 12, completion: 4 } }],
++    ]);
++    await send(s, "hi");
++    await until(
++      () => said("assistant").includes("Hello from the agent") && !uiStore.getState().busy,
++      "the settled reply",
++      60_000,
++      () => s.lastFrame(),
++    );
++    await until(() => uiStore.getState().usage !== null, "the usage", 10_000);
++    expect(said("user")).toEqual(["hi"]);
++    expect(uiStore.getState().usage?.api_calls).toBe(1);
++    expect(r.model.turns).toBe(1);
++    await s.press("");
++    expect(s.lastFrame()).toContain("Hello from the agent");
++  }, 120_000);
++
++  it("/steer while a reply runs is handed to it", async () => {
++    const { s } = await open([
++      [
++        { text: ["Working"] },
++        { stall: 3 },
++        { tool_call: { name: "terminal", arguments: { command: "echo ok" }, id: "c1" } },
++      ],
++      [{ text: "Steered done." }],
++    ]);
++    await send(s, "start");
++    await until(
++      () => uiStore.getState().busy,
++      "the reply running",
++      60_000,
++      () => s.lastFrame(),
++    );
++    await send(s, "/steer use python");
++    await until(
++      () => said("system").includes("Steer note handed to the running reply."),
++      "the steer taken",
++      30_000,
++      () => s.lastFrame(),
++    );
++    await until(
++      () => said("assistant").includes("Steered done.") && !uiStore.getState().busy,
++      "the reply's end",
++      60_000,
++      () => s.lastFrame(),
++    );
++  }, 120_000);
++
++  it("an approval card is answered from the keyboard and the turn finishes", async () => {
++    const { r, s } = await open([
++      [
++        {
++          tool_call: {
++            name: "terminal",
++            arguments: { command: "find victim -delete" },
++            id: "c1",
++          },
++        },
++      ],
++      [{ text: "Cleaned up." }],
++    ]);
++    await send(s, "clean up");
++    await until(
++      () => overlayStore.getState().card !== null,
++      "the approval card",
++      60_000,
++      () => s.lastFrame(),
++    );
++    await s.press("");
++    expect(s.lastFrame()).toContain("find victim -delete");
++    await s.press(KEY.enter); // the first choice: allow once
++    await until(
++      () => said("assistant").includes("Cleaned up.") && !uiStore.getState().busy,
++      "the reply after the approval",
++      60_000,
++      () => s.lastFrame(),
++    );
++    expect(overlayStore.getState().card).toBeNull();
++    expect(r.model.turns).toBe(2);
++  }, 120_000);
++});
+diff --git a/apps/tui/src/test/hosts.ts b/apps/tui/src/test/hosts.ts
+new file mode 100644
+index 0000000..b5ff585
+--- /dev/null
++++ b/apps/tui/src/test/hosts.ts
+@@ -0,0 +1,306 @@
++// The TUI's dual-host setup (P17-26): the renderer's real runtime (`AppRuntime`: client, turn
++// controller, event handler, cards, stores) linked to either host an agent can run in —
++//
++// - `stdio`: the TUI's own `indus tui-bridge --stdio` child (`indus --tui --local`);
++// - `daemon`: the profile's gateway daemon over its loopback WebSocket, reached the way the entry
++//   does it by default: `indus gateway grant --json` (which starts the daemon when none runs)
++//   gives a single-use ticket, then the attach transport dials and waits for ready.
++//
++// Both run in a temporary profile (`INDUS_HOME`, `HOME` and the config folder are temp folders)
++// whose model is the scripted fake (P03) served on a loopback port by
++// `tests/fakes/model/http_serve.py`. A test is written once against `HostRig` and run for each
++// kind with `describe.each(HOST_KINDS)`; `hostsMissing()` says why the suite cannot run here (no
++// `.venv`, Windows). `HostRig.dispose()` stops the link, the daemon and any process still naming
++// the temp home — only those, so nothing outside the test is ever signalled.
++
++import { type ChildProcess, execFile, spawn } from "node:child_process";
++import {
++  existsSync,
++  mkdirSync,
++  mkdtempSync,
++  readdirSync,
++  readFileSync,
++  realpathSync,
++  rmSync,
++  writeFileSync,
++} from "node:fs";
++import { tmpdir } from "node:os";
++import { join, resolve } from "node:path";
++import { createInterface } from "node:readline";
++import { type ConnectHooks, IndusClient, type Transport } from "@indus/client";
++import { spawnStdioTransport } from "@indus/client/stdio";
++import { AppRuntime, LinkWatch } from "../app/appRuntime.ts";
++import { settle } from "../composer/testSupport.ts";
++import { resetStores } from "../testing/harness.ts";
++import { attachConnector, grantRunner } from "../transport/attach.ts";
++
++export type HostKind = "stdio" | "daemon";
++export const HOST_KINDS: readonly HostKind[] = ["stdio", "daemon"];
++
++export const ROOT = resolve(import.meta.dirname, "../../../..");
++const BIN = join(ROOT, ".venv", "bin");
++export const PYTHON = join(BIN, "python");
++export const INDUS = join(BIN, "indus");
++
++/** Why the dual-host suite cannot run here, or null when it can. */
++export function hostsMissing(): string | null {
++  if (process.platform === "win32") return "the daemon's control socket is POSIX only here";
++  if (!existsSync(INDUS) || !existsSync(PYTHON)) return `no ${INDUS} (run uv sync)`;
++  return null;
++}
++
++export function sleep(ms: number): Promise<void> {
++  return new Promise((done) => setTimeout(done, ms));
++}
++
++/** Poll `check` every 25 ms until it holds, else fail naming `what` (and `context()`). */
++export async function until(
++  check: () => boolean,
++  what: string,
++  ms = 30_000,
++  context: () => string = () => "",
++): Promise<void> {
++  const end = Date.now() + ms;
++  while (!check()) {
++    if (Date.now() > end) {
++      const extra = context();
++      throw new Error(`timed out after ${ms} ms waiting for ${what}${extra ? `\n${extra}` : ""}`);
++    }
++    await sleep(25);
++  }
++}
++
++// -- the fake model -------------------------------------------------------------------------------
++
++/** One fake-model script step (the P03 format, see tests/fakes/model/README.md). */
++export type Step = Record<string, unknown>;
++
++export interface ModelRequest {
++  kind: "model" | "title" | "models";
++  user: string;
++}
++
++/** The scripted model on a loopback port (`python -m tests.fakes.model.http_serve`). */
++export class FakeModel {
++  readonly requests: ModelRequest[] = [];
++  port = 0;
++  private readonly child: ChildProcess;
++
++  private constructor(child: ChildProcess) {
++    this.child = child;
++  }
++
++  static async start(turns: Step[][], dir: string): Promise<FakeModel> {
++    const source = join(dir, `script-${Date.now()}.json`);
++    writeFileSync(source, JSON.stringify({ turns: turns.map((steps) => ({ steps })) }));
++    const child = spawn(PYTHON, ["-m", "tests.fakes.model.http_serve", source], {
++      cwd: ROOT,
++      stdio: ["pipe", "pipe", "inherit"],
++      env: { ...cleanEnv(), PYTHONPATH: ROOT },
++    });
++    const model = new FakeModel(child);
++    const lines = createInterface({ input: child.stdout as NodeJS.ReadableStream });
++    lines.on("line", (line) => {
++      const data = JSON.parse(line) as { port?: number } & ModelRequest;
++      if (typeof data.port === "number") model.port = data.port;
++      else model.requests.push(data);
++    });
++    await until(() => model.port !== 0 || child.exitCode !== null, "the fake model to listen");
++    if (model.port === 0) throw new Error(`the fake model exited with ${child.exitCode}`);
++    return model;
++  }
++
++  /** Requests that used up a script turn (title and model-list calls are not counted). */
++  get turns(): number {
++    return this.requests.filter((r) => r.kind === "model").length;
++  }
++
++  stop(): void {
++    this.child.stdin?.end();
++    this.child.kill("SIGTERM");
++  }
++}
++
++// -- a temporary profile ----------------------------------------------------------------------------
++
++/** The process env minus anything that could leak a real key, profile or launch option in. */
++export function cleanEnv(): Record<string, string> {
++  const env: Record<string, string> = {};
++  for (const [name, value] of Object.entries(process.env)) {
++    if (value === undefined) continue;
++    if (/^INDUS_|_API_KEY$|^NODE_OPTIONS$|^NOTIFY_SOCKET$/.test(name)) continue;
++    env[name] = value;
++  }
++  return env;
++}
++
++export class HostHome {
++  readonly root: string;
++  readonly home: string;
++  readonly work: string;
++  private readonly userHome: string;
++
++  constructor(label: string) {
++    const base = existsSync("/tmp") ? "/tmp" : tmpdir();
++    this.root = realpathSync(mkdtempSync(join(base, `ihost-${label}-`)));
++    this.home = join(this.root, "home");
++    this.work = join(this.root, "work");
++    this.userHome = join(this.root, "user-home");
++    for (const dir of [this.home, this.work, this.userHome]) mkdirSync(dir, { mode: 0o700 });
++  }
++
++  configure(port: number): void {
++    writeFileSync(
++      join(this.home, "config.yaml"),
++      [
++        "model:",
++        "  default: fake-model",
++        "  provider: custom",
++        `  base_url: http://127.0.0.1:${port}/v1`,
++        "",
++      ].join("\n"),
++    );
++  }
++
++  /** What every process of this profile runs with. */
++  env(extra: Record<string, string> = {}): Record<string, string> {
++    return {
++      ...cleanEnv(),
++      INDUS_HOME: this.home,
++      HOME: this.userHome,
++      XDG_CONFIG_HOME: join(this.root, "config"),
++      INDUS_GATEWAY_LOCK_DIR: join(this.root, "token-locks"),
++      NO_PROXY: "127.0.0.1,localhost",
++      no_proxy: "127.0.0.1,localhost",
++      PATH: `${BIN}:/usr/bin:/bin`,
++      ...extra,
++    };
++  }
++
++  /** Pids (not ours) whose environment names this home: the daemon and anything it started. */
++  strays(): number[] {
++    if (!existsSync("/proc")) return [];
++    const marker = `INDUS_HOME=${this.home}`;
++    const found: number[] = [];
++    for (const name of readdirSync("/proc")) {
++      if (!/^\d+$/.test(name) || Number(name) === process.pid) continue;
++      try {
++        if (readFileSync(`/proc/${name}/environ`, "latin1").split("\0").includes(marker)) {
++          found.push(Number(name));
++        }
++      } catch {
++        // gone, or not ours to read
++      }
++    }
++    return found;
++  }
++
++  /** Stop the profile's daemon (`indus gateway stop`), then anything still naming the home. */
++  async stopAll(): Promise<void> {
++    await new Promise<void>((done) => {
++      execFile(
++        INDUS,
++        ["gateway", "stop"],
++        { env: this.env(), cwd: this.work, timeout: 60_000 },
++        () => done(),
++      );
++    });
++    const end = Date.now() + 20_000;
++    while (this.strays().length > 0 && Date.now() < end) await sleep(100);
++    for (const pid of this.strays()) {
++      try {
++        process.kill(pid, "SIGKILL");
++      } catch {
++        // already gone
++      }
++    }
++  }
++
++  remove(): void {
++    rmSync(this.root, { recursive: true, force: true });
++  }
++}
++
++// -- one host under test ----------------------------------------------------------------------------
++
++export interface HostRig {
++  readonly kind: HostKind;
++  readonly home: HostHome;
++  readonly model: FakeModel;
++  readonly client: IndusClient;
++  readonly runtime: AppRuntime;
++  /** Exit codes the runtime asked for (none while it runs). */
++  readonly exits: readonly number[];
++  dispose(): Promise<void>;
++}
++
++export interface HostOptions {
++  /** Extra renderer env (e.g. `INDUS_TUI_RESUME`). */
++  env?: Record<string, string>;
++}
++
++/** A started runtime linked to `kind`, serving `turns`; `dispose()` stops everything. */
++export async function startHost(
++  kind: HostKind,
++  turns: Step[][],
++  options: HostOptions = {},
++): Promise<HostRig> {
++  resetStores();
++  const home = new HostHome(kind);
++  const model = await FakeModel.start(turns, home.root);
++  home.configure(model.port);
++  const env = home.env(options.env ?? {});
++  const connect =
++    kind === "stdio"
++      ? (hooks: ConnectHooks): Transport =>
++          spawnStdioTransport({
++            command: INDUS,
++            cwd: home.work,
++            env,
++            startupTimeoutMs: 60_000,
++            ...(hooks.logs ? { logs: hooks.logs } : {}),
++            onEvent: hooks.onEvent,
++          })
++      : attachConnector({
++          plan: { mode: "daemon", command: INDUS, args: ["gateway", "grant", "--json"] },
++          runGrant: grantRunner({
++            command: INDUS,
++            args: ["gateway", "grant", "--json"],
++            env: home.env(),
++            timeoutMs: 90_000,
++          }),
++          local: null,
++          readyTimeoutMs: 60_000,
++        });
++  const links = new LinkWatch();
++  const client = new IndusClient({ connect: links.wrap(connect), replay: kind === "daemon" });
++  const exits: number[] = [];
++  const runtime = new AppRuntime({
++    client,
++    links,
++    env: options.env ?? {},
++    attached: kind === "daemon",
++    exit: (code) => exits.push(code),
++    history: { entries: () => [], push: () => undefined },
++  });
++  runtime.start();
++  let disposed = false;
++  return {
++    kind,
++    home,
++    model,
++    client,
++    runtime,
++    exits,
++    dispose: async () => {
++      if (disposed) return;
++      disposed = true;
++      runtime.dispose();
++      await client.close();
++      await settle(50);
++      await home.stopAll();
++      model.stop();
++      home.remove();
++    },
++  };
++}
+diff --git a/apps/tui/src/test/sharedBackendDriver.tsx b/apps/tui/src/test/sharedBackendDriver.tsx
+new file mode 100644
+index 0000000..484e067
+--- /dev/null
++++ b/apps/tui/src/test/sharedBackendDriver.tsx
+@@ -0,0 +1,87 @@
++// Test-only driver for the shared-backend demo (P17-27, `tests/e2e/service/test_shared_backend.py`):
++// the real TUI — `App` in Ink's test renderer over the real `AppRuntime`, `@indus/client` and the
++// attach transport — attached to the profile's daemon exactly as the entry attaches by default
++// (`indus gateway grant --json`, single-use ticket in the subprotocol). The Python test drives it:
++// one JSON command per stdin line, one JSON answer per stdout line.
++//
++//   {"op": "state"}                     → what the screen shows (session, busy, card, messages…)
++//   {"op": "type", "text": "hi"}        → keys typed into the composer, then Enter
++//   {"op": "press", "keys": ["\r"]}     → raw keys (a card's choice)
++//   {"op": "quit"}                      → unmount, close the link and exit 0
++//
++// Built with `vite build --ssr` into `apps/tui/node_modules/.shared-backend/` (Node resolves the
++// app's dependencies from there). The profile comes from the environment the test sets (temp
++// `INDUS_HOME` and `HOME`); `INDUS_E2E_INDUS` names the `indus` program for the grant helper.
++
++import { createInterface } from "node:readline";
++import { IndusClient } from "@indus/client";
++import { App } from "../app/App.tsx";
++import { AppRuntime, LinkWatch } from "../app/appRuntime.ts";
++import { mount } from "../cards/inkHarness.ts";
++import { overlayStore } from "../state/overlayStore.ts";
++import { transcriptStore } from "../state/transcriptStore.ts";
++import { uiStore } from "../state/uiStore.ts";
++import { attachConnector, grantRunner, helperEnv } from "../transport/attach.ts";
++
++const SIZE = { columns: 110, rows: 34 };
++const indus = process.env.INDUS_E2E_INDUS ?? "indus";
++const grantArgs = ["gateway", "grant", "--json"];
++const env = Object.fromEntries(
++  Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
++);
++
++const links = new LinkWatch();
++const connect = attachConnector({
++  plan: { mode: "daemon", command: indus, args: grantArgs },
++  runGrant: grantRunner({ command: indus, args: grantArgs, env: helperEnv(env) }),
++  local: null,
++});
++const client = new IndusClient({ connect: links.wrap(connect), replay: true });
++const exits: number[] = [];
++const runtime = new AppRuntime({
++  client,
++  links,
++  env,
++  attached: true,
++  exit: (code) => exits.push(code),
++  history: { entries: () => [], push: () => undefined },
++});
++runtime.start();
++const screen = await mount(<App runtime={runtime} size={SIZE} />, SIZE);
++
++function state(): Record<string, unknown> {
++  const ui = uiStore.getState();
++  const overlay = overlayStore.getState();
++  const card = overlay.card as Record<string, unknown> | null;
++  return {
++    sid: ui.sid,
++    busy: ui.busy,
++    connected: ui.connected,
++    status: ui.statusText,
++    usage: ui.usage,
++    card: card === null ? null : { kind: card.kind, requestId: card.requestId },
++    messages: transcriptStore.getState().messages.map((m) => ({ role: m.role, text: m.text })),
++    frame: screen.lastFrame(),
++    exits,
++  };
++}
++
++const lines = createInterface({ input: process.stdin });
++for await (const line of lines) {
++  if (!line.trim()) continue;
++  const command = JSON.parse(line) as { op: string; text?: string; keys?: string[] };
++  if (command.op === "type") {
++    await screen.press(...(command.text ?? "").split(""));
++    await screen.press("\r");
++  } else if (command.op === "press") {
++    await screen.press(...(command.keys ?? []));
++  } else if (command.op === "quit") {
++    screen.unmount();
++    runtime.dispose();
++    await client.close();
++    process.stdout.write(`${JSON.stringify({ quit: true })}\n`);
++    process.exit(0);
++  }
++  await screen.press("");
++  process.stdout.write(`${JSON.stringify(state())}\n`);
++}
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 1083a6d..f349eec 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1420,6 +1420,9 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/cli/test_attach.py::test_interactive_chat_runs_the_repl_over_the_daemon_and_only_detaches`
+   - `tests/unit/cli/test_attach_remote.py::test_chat_q_runs_its_turn_in_the_daemon_and_prints_the_reply`
+   - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
++  - `tests/integration/service/test_dual_host_matrix.py::test_z_prints_only_the_reply`
++  - `tests/integration/service/test_dual_host_matrix.py::test_resume_chain_with_z`
++  - `tests/e2e/service/test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
+ - **ACC-K51-2** TUI attach: grant verdicts (terminal shows the hint without retry, others back off), recover budget, TS client resumes from its cursor without duplicates
+   - `apps/tui/src/transport/attach.test.ts::a terminal verdict after attaching shows the hint once and is not retried`
+   - `apps/tui/src/transport/attach.test.ts::asks start first, then recover within the budget, then discover`
+@@ -1427,6 +1430,9 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/cli/commands/test_gateway_grant.py::test_ensure_verdicts_keep_their_terminal_flag`
+   - `tests/contract/client/test_ts_client_against_daemon.py::test_ts_client_attaches_answers_and_resumes_from_its_cursor`
+   - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
++  - `apps/tui/src/test/hosts.test.tsx::an approval card is answered from the keyboard and the turn finishes`
++  - `tests/integration/service/test_dual_host_matrix.py::test_bridge_demo_turn`
++  - `tests/e2e/service/test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
+ - **ACC-K51-3** Attach tickets are single-use, 30 s, purpose- and instance-bound, loopback and Origin checked, never in a URL or log
+   - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
+   - `tests/unit/service/test_ws_auth.py::test_expiry_at_thirty_seconds`
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index 4edf5cf..120add1 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -613,6 +613,8 @@ Checked by `python -m tooling.checks traps`.
+   - `apps/tui/src/transport/attach.test.ts::explicit URL first, then --local, else the grant helper`
+   - `apps/tui/src/transport/attach.test.ts::an explicit URL is only ever dialled: no helper, no daemon, no local child`
+   - `tests/unit/cli/test_tui_launch.py::test_attach_by_default_and_local_keeps_the_bridge_child`
++  - `tests/integration/service/test_dual_host_matrix.py::test_bridge_event_shape`
++  - `apps/tui/src/test/hosts.test.tsx::a prompt streams, settles into the transcript and the usage shows`
+ - **R05.2** Events arrive before the UI subscribes
+   - Review: not yet planned (P00-guards)
+ - **R05.3** Server requests must not stall the agent
+@@ -1091,6 +1093,8 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/cli/test_attach.py::test_transport_lost_mid_turn_is_outcome_unknown_and_never_resent`
+   - `tests/unit/cli/test_attach.py::test_an_unknown_turn_blocks_a_finite_query_with_exit_3`
+   - `tests/unit/cli/test_attach_remote.py::test_a_lost_wait_is_outcome_unknown_or_blocked_when_ours_still_waits`
++  - `tests/e2e/service/test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
++  - `apps/tui/src/app/appRuntime.test.ts::attached: a link lost mid-reply says the outcome is unknown and sends nothing again`
+   - Review: the ACP viewer half is P19 (P17-18 covers the CLI)
+ - **R09.12** "Allow for session" has no ACP kind
+   - Review: not yet planned (P00-guards)
+diff --git a/docs/notes/P17/dual-host-matrix.md b/docs/notes/P17/dual-host-matrix.md
+new file mode 100644
+index 0000000..2c4843e
+--- /dev/null
++++ b/docs/notes/P17/dual-host-matrix.md
+@@ -0,0 +1,144 @@
++# Task: Dual-host test matrix (P17-26) Phase: 17 Owner: wave-28 builder L3
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): none — the row's reference column is
++"— (our suites)": the matrix runs our own P06, P12 and P15 suites against our two hosts. Ours read:
++`tests/integration/cli/test_oneshot_exit_codes.py` (P06), `tests/integration/tui_bridge/
++test_bridge_child.py` (P12), `tests/e2e/gateway/test_demo3.py` (P15), `tests/integration/cli/
++test_attach_daemon.py` and `tests/integration/gateway/spool.py` (the daemon-in-a-subprocess pattern),
++`apps/tui/src/app/testRuntime.ts`, `apps/tui/e2e/harness.ts`, the P17 notes and LEAD-NOTES
++"P17-15..22 landing notes" (what P17-26 owes: REPL over the real remote host, TUI steer generation,
++attach-mode "restarting" wording).
++Evidence: none.
++
++What it does (own words): every surface can run its agent in two places — in its own process tree
++(`--local` CLI, the TUI's `tui-bridge --stdio` child) or in the profile's shared daemon (the default
++since P17-18/19). A person must not be able to tell which, so each surface suite runs against both.
++`session_host` is a pytest fixture parametrised over `inprocess` and `attached`; the attached rig
++starts a real `indus gateway run` subprocess in a temp profile whose model is the scripted fake on a
++loopback port. The CLI cases run the real `indus` (`--local` vs default attach); the TUI-protocol
++cases speak JSON-RPC to the bridge child over stdio or to the daemon over its WebSocket (fresh
++single-use ticket per dial). Every check goes through `HostRig.same(case, facet, got, want)`: the
++expected value is what a person sees in process today; a difference on either host fails unless
++`tests/fixtures/service/dual_host_allowlist.yaml` names it with a D-id, and an allow-listed facet
++that no longer differs fails as stale. The TUI half (`apps/tui/src/test/hosts.ts`) is the same idea
++in vitest: the real `App` + `AppRuntime` linked to the stdio child or to the daemon through the
++grant helper, `describe.each` over both.
++
++Inputs → outputs: `session_host` → `HostRig {kind, profile, model, daemon?}`; `rig.use(script)`;
++`rig.indus(*args)` → finished process; `rig.peer()` → `StdioPeer | WsPeer` (`call`, `wait_for`,
++`events`, `answer`, frames normalised: a daemon server request `{request, replayed, generation}`
++flattened); `rig.same(...)` → `MatrixDifference` on an unlisted difference. vitest:
++`startHost(kind, turns)` → `{runtime, client, model, home, dispose}`.
++
++Files: `tests/integration/service/conftest_hosts.py`, `tests/integration/service/
++test_dual_host_matrix.py`, `apps/tui/src/test/hosts.ts`, `apps/tui/src/test/hosts.test.tsx`,
++`tests/fakes/daemon.py`, `tests/fixtures/service/dual_host_allowlist.yaml`. Shared (fixes the matrix
++found, below): `src/indus/service/daemon_host.py`, `src/indus/service/session_service.py`,
++`tests/unit/service/test_daemon_host.py`, `apps/tui/src/app/appRuntime.ts`,
++`apps/tui/src/app/recovery.ts`, `apps/tui/src/app/testRuntime.ts`, `apps/tui/src/app/
++appRuntime.test.ts`, `apps/tui/src/entry.tsx`, `apps/tui/src/state/turnStore.ts`,
++`apps/tui/src/submit/submission.ts` (+ test), `apps/tui/src/slash/localCommands.ts`.
++
++Edge cases / failure modes:
++- a daemon that never mounts its endpoint, or exits → the rig fails with its log;
++- every process a rig starts is stopped at teardown; only processes whose environment names the
++  rig's own temp home are ever signalled (no pattern kill); a leftover fails the test;
++- daemon stream pieces are joined within 33 ms (D-16.367): stream text is compared joined;
++- the daemon answers `prompt.submit` with the admission id as `turn_id`: cases follow the turn by its
++  `turn.started`;
++- an allow-list entry without a D-id or reason, or listed twice, is refused at load.
++
++Our design differences / decisions:
++- Demo 3's messaging surface lives in the daemon either way: its `inprocess` runs chat turns
++  directly on the daemon's service (P15, `shared_host=False`), `attached` admits them into the
++  shared session host every attached surface uses (P17-22). The Demo 3 tests are re-run unchanged.
++- The P12 bridge suite is mirrored through the TUI's wire (the bridge child vs the daemon socket),
++  not through the in-process `Rig`, whose tests reach into the bridge's internals.
++- The seeded difference drops `session.usage` from the attached peer: the matrix fails on the
++  turn's event shape.
++
++Tests we will write: the P06 finite-run cases (stdout/stderr contract, exit codes 0/1/2/130, usage
++file, hardline and approvals under `-z`/`-q`, resume chain, `-c` miss), the P12 cases (Demo 2 turn,
++client lost mid-turn then resumed, settings read at start, the turn's event shape), Demo 3 (one agent
++on three platforms, approval by a Telegram button) under both; the seeded difference; allow-list
++validation; vitest: a prompt streams and settles with usage, an approval card answered from the
++keyboard — on the stdio child and on the daemon.
++
++## What the matrix found, and what was done
++
++Fixed (small, P17 code; each pinned by a test that fails without it):
++- **The daemon sent no `message.complete` / `session.usage`.** An attached TUI never settled a turn
++  (its controller goes idle on `message.complete`) and showed no usage. `DaemonSessionHost` now adds
++  the bridge's turn-end pair after `turn.done` through the event log (live and replayed), reason
++  from the turn's own `turn.done` (`test_daemon_host.py::test_a_turn_ends_with_its_final_message_and
++  _the_usage`, `::test_an_interrupted_turn_ends_with_the_interrupt_reason`; matrix
++  `bridge.event_shape`; vitest `hosts.test.tsx`).
++- **Sessions created through the daemon were stored with source `gateway`.** `indus -c` / `--resume
++  latest` after an attached run said "No earlier session to continue in this workspace" and
++  `sessions list` showed `gateway`. `SessionService.create(params, *, source=)` stores the creating
++  surface (`cli`, `tui`, `gui`, `acp`, `web`); the gateway's own sessions keep the service's source
++  (`test_daemon_host.py::test_a_surface_session_is_stored_under_that_surface`; matrix
++  `cli.z.resume`, `bridge.event_shape/stored source`).
++- **The TUI's steer named no generation** (owed to P17-26): the daemon fences every control by
++  the turn it names, so an attached TUI's `/steer` and busy-mode steer were refused
++  (`INVALID_PARAMS`) and fell back to queueing. Both now send the running turn's generation
++  (`turnStore.steerParams`; `submission.test.ts::steer: names the running turn's generation (the
++  daemon fences controls by it)`; vitest `hosts.test.tsx::/steer while a reply runs is handed to it`
++  fails on the daemon without it; matrix `bridge.steer`).
++- **TUI "restarting" wording in attach mode** (owed to P17-26): a lost attach link says "Lost the
++  connection to the gateway daemon; reconnecting and reopening your chat…", and a link lost while a
++  reply ran adds, carried into the reopened session, "…its outcome is unknown and it was not sent
++  again (do not resend it)" (`appRuntime.test.ts::attached: a link lost mid-reply says the outcome
++  is unknown and sends nothing again`). `RuntimeOptions.attached` set by the entry from the transport
++  plan.
++
++Allow-listed (D-ids for the lead; details in the YAML):
++- `cli.z.approvals/outcome` (D-16.490): attached `-z` sends no `unattended`, so a dangerous command
++  makes the finite run detach with exit 3 instead of being approved for the run.
++- `cli.q.denies/outcome` (D-16.487): a finite attached `chat -q` that meets a question detaches with
++  exit 3 instead of denying it.
++- `bridge.lost_mid_turn/lost turn finished` (D-16.10): closing an attached client only detaches; the
++  daemon finishes the turn.
++- `bridge.event_shape/session events` (D-?): no `session.info` after create/resume, no
++  `session.title` when the title lands.
++- `bridge.settings/settings` (D-?): `model.options`, `config.get`, `config.set` are not served by the
++  daemon (-32601).
++
++## Decisions for the lead
++- D-? (proposed): the daemon serves the session methods only; the TUI's settings/picker methods
++  (`model.options`, `config.*`, `commands.catalog`, `complete.*`, `session.list`, …) answer -32601
++  when attached. Proposed change: serve the read-only ones from the daemon over the same dispatcher
++  (`gateway/ws/methods.py`), or let the attached TUI read them from a local read-only helper.
++- D-? (proposed): no `session.info` / `session.title` from the daemon. Proposed change: the WS
++  `session.create`/`resume`/`subscribe` handlers send `session.info` for the session (the bridge's
++  `session_info` shape, from `DaemonSessionHost`), and the host emits `session.title` into the
++  session's event log when a title is stored (the same hook that feeds `session.updated`).
++- Not allow-listed because it does not show on the matrix's facets, but seen: the daemon's
++  `prompt.submit` answers `generation: 0` when the input is admitted while the session is idle and
++  the worker has not claimed it yet (`gateway/ws/methods.py::submit`); clients follow the turn by its
++  `turn.started`, so nothing breaks today. Proposed: answer the claimed generation (wait for the
++  claim when the queue was empty) or leave `generation` out when not yet known (P17-25 schema).
++- The attached `-z` gap (D-16.490): P17-25 should carry `unattended` on `prompt.submit` and the
++  daemon should apply the run-scoped auto-approve (floors still apply) so `-z` behaves the same on
++  both hosts; then remove the allow-list entry.
++- The matrix files are slow (real daemons): ~3.5 min for 39 cases; marked `slow`.
++
++Compare checklist (filled after the rewrite; no reference file — compared against our own suites):
++- [x] P06 suite under both (tests: `test_dual_host_matrix.py::test_z_prints_only_the_reply`, …,
++  `::test_continue_miss_exits_1`)
++- [x] P12 bridge suite under both (tests: `::test_bridge_demo_turn`, `::test_bridge_event_shape`,
++  `::test_bridge_client_lost_mid_turn_then_resumed`, `::test_bridge_steer_reaches_the_running_turn`,
++  `::test_bridge_settings_the_tui_reads_at_start`)
++- [x] P15 Demo 3 under both (tests: `::test_demo3_one_agent_on_three_platforms`,
++  `::test_demo3_approval_by_a_telegram_button`, `::test_demo3_cron_delivery_on_its_tick`,
++  `::test_demo3_chunker_busy_guards_and_default_deny`)
++- [x] seeded difference fails (test: `::test_a_seeded_difference_fails_the_matrix`)
++- [x] TUI under both (vitest: `apps/tui/src/test/hosts.test.tsx`)
++- Deliberate differences: the five allow-list entries above.
++- Not taken: the in-process P12 `Rig` contract tests (they assert bridge internals, not the wire);
++  Demo 3's SIGKILL-mid-send case (it runs its own daemon child, built without the option).
++
++## Status
++
++Done (2026-10-20). Python matrix 51 cases passed (both hosts; Demo 3 under both); vitest
++`hosts.test.tsx` 6 passed (stdio child and daemon); full `pnpm test` 908 passed.
+diff --git a/docs/notes/P17/shared-backend-demo.md b/docs/notes/P17/shared-backend-demo.md
+new file mode 100644
+index 0000000..7647cc8
+--- /dev/null
++++ b/docs/notes/P17/shared-backend-demo.md
+@@ -0,0 +1,86 @@
++# Task: Shared-backend demo suite (P17-27) Phase: 17 Owner: wave-28 builder L3
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): none — the row's reference column is
++"—": the demo is our own acceptance flow (M6, CLI + TUI half). Ours read: the P17 phase file "Done
++when" demo, `tests/e2e/test_demo1.py` and `tests/e2e/conftest.py` (the REPL in a pseudo-terminal),
++`apps/tui/src/cards/inkHarness.ts`, `apps/tui/src/app/App.test.tsx`, `apps/tui/src/entry.tsx`
++(how the renderer attaches by default), `src/indus/cli/attach.py` (what the attached REPL says about
++lost turns), `src/indus/service/remote/host.py`.
++Evidence: none.
++
++What it does (own words): one end-to-end run of the shared backend with real processes. A daemon
++(`indus gateway run`) serves a temp profile whose model is the scripted fake on loopback. The
++classic CLI (the real REPL in a pseudo-terminal) and the TUI (the real `App` in Ink's test renderer,
++over the real runtime, client and attach transport, driven over stdin/stdout) attach to one session.
++A prompt typed in the CLI streams in both; the approval it raises is answered in the TUI and the
++CLI's card closes ("question answered in another window"); the CLI's terminal closes while a turn
++runs and the turn still completes (the TUI shows it, the ledger says completed); the daemon is
++killed and started again while a TUI turn runs — both clients say its outcome is unknown, the CLI
++lists it with its `/discard` line, the ledger row is `unknown`, and the model is never asked again;
++finally, with the daemon stopped, `indus --local -z` answers in process and starts no daemon.
++
++Inputs → outputs: the fake model's script (6 turns) → CLI screen text, TUI state/frames, ledger
++rows, model request count, daemon presence.
++
++Files: `tests/e2e/service/test_shared_backend.py`, `tests/e2e/service/__init__.py`,
++`apps/tui/src/test/sharedBackendDriver.tsx` (test-only driver, built with `vite build --ssr` into
++`apps/tui/node_modules/.shared-backend/` by the test). Shared (fixes the demo needed):
++`src/indus/service/remote/host.py` + `tests/unit/service/remote/test_host.py`,
++`src/indus/cli/attach.py`, `src/indus/cli/attach_remote.py`; the P17-26 fixes (daemon turn-end
++events, session source, TUI attach wording) are listed in `dual-host-matrix.md`.
++
++Edge cases / failure modes:
++- the TUI's fresh session has no stored row until its first turn (D-16.426), so the CLI cannot
++  select it; the demo opens the session with one attached `chat -q` first and both resume it;
++- after the kill, either the test or a client's own recovery (`ensure` recover budget) may start the
++  next daemon; the test waits for whichever daemon answers with a new instance id;
++- the CLI renders another surface's streamed text at line ends, so the CLI's sight of the TUI's
++  stalled turn is its turn header (`◇ indus`);
++- every process is stopped at the end; none naming the temp home is left (checked).
++
++Our design differences / decisions:
++- "Ink test renderer": the driver mounts the app with the TUI's own `inkHarness.mount` (fake stdin/
++  stdout, frames ANSI-stripped) instead of a pseudo-terminal, so the test reads the stores and the
++  frame text directly; the link, runtime and components are the shipping ones.
++- The driver is built by the test (3 s) rather than shipped: it is test-only.
++
++Tests we will write: `test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
++(every step of the row).
++
++## What the demo found, and what was done
++
++- **The attached CLI's approval card stayed open after the TUI answered** (until its 300 s
++  deadline). `RemoteSessionService` dropped the offer on `request.settled` but told nobody; it now
++  passes an `answered` settlement on as `server_request.cancelled {answered_elsewhere}`, which the
++  REPL already closes with "question answered in another window" (`test_host.py::
++  test_an_approval_answered_by_another_viewer_closes_here`, fails without the change).
++- **After a daemon restart the attached CLI REPL said nothing** about the lost turn (the lost-turn
++  list was read only at start). The REPL now listens for the session's replay gap (a reconnect to a
++  restarted daemon) and lists the lost turns again with their `/discard` lines
++  (`attach._report_lost_turns`; `AttachedHost.on_gap`, `RemoteAttached.on_gap`; pinned by the e2e).
++- **The TUI said "The agent process stopped; restarting…" and nothing about the lost reply**: see
++  `dual-host-matrix.md` (attach wording and the carried outcome-unknown line).
++
++## Decisions for the lead
++- The TUI does not show the prompt another surface typed (no event carries a person's message to
++  other viewers); it shows the reply. Proposed: the daemon emits a `message.user`-style event (or
++  `turn.started` carries the input preview) — P17-25 protocol.
++- After a reconnect the attached TUI's transcript is empty: the daemon's `session.resume` carries no
++  stored messages (the bridge's does). Proposed (P17-25 / follow-up): `session.resume` over the
++  daemon returns the transcript rows the bridge returns, so the reopen shows the conversation.
++- The TUI cannot list or discard a lost (`unknown`) admission; it only says its own running reply's
++  outcome is unknown. Proposed: `admission.state` events (P17-25) and an `/discard` in the TUI.
++
++Compare checklist (filled after writing; no reference file — compared against the row's steps):
++- [x] daemon started; CLI and TUI attached to one session
++- [x] a prompt from the CLI streams in both
++- [x] an approval raised during it is answered from the TUI and the CLI card closes
++- [x] the CLI detached mid-turn; the turn completes
++- [x] daemon restarted mid-turn; both report the outcome as unknown and neither resends
++- [x] `--local` works with the daemon stopped (and starts none)
++- Deliberate differences: the session is opened by one finite attached run first (above).
++- Not taken: the dashboard half of M6 (P18).
++
++## Status
++
++Done (2026-10-20). The e2e passed 3 runs of 3 (~30 s each).
+diff --git a/src/indus/cli/attach.py b/src/indus/cli/attach.py
+index 7355bfb..75b9a96 100644
+--- a/src/indus/cli/attach.py
++++ b/src/indus/cli/attach.py
+@@ -27,7 +27,8 @@ Attach mode rules:
+   ``AttachedHost``. Slash subset: ``/help``, ``/quit`` (``/exit``, ``/detach``), ``/stop``,
+   ``/discard <admission_id>`` (resolves a lost turn; its generation is sent and checked). Every
+   other slash or ``!`` line is answered "not available while attached". Leaving only detaches: the
+-  daemon finishes accepted work.
++  daemon finishes accepted work. Lost turns are listed at start and again after any gap in the
++  session's events (a reconnect to a daemon that restarted mid-turn): outcome unknown, never resent.
+ 
+ ``AttachBackend`` / ``AttachedService`` are the calls this module needs from the shared-daemon
+ client; ``attach_remote.DaemonBackend`` is the real one (P17-15 ensure, P17-16 channel, P17-17
+@@ -447,6 +448,17 @@ class AttachedHost:
+         rows = self.invoke("pending", session_id) or []
+         return [PendingRow.of(row) for row in rows]
+ 
++    def on_gap(self, session_id: str, listener: Callable[[Mapping[str, Any]], object]) -> None:
++        """Call ``listener`` (on the attach loop) when the session's event stream has a gap — as
++        after a reconnect to a daemon that restarted. A service without gaps never calls it."""
++
++        async def register() -> None:
++            hook = getattr(self.service, "on_gap", None)
++            if callable(hook):
++                await _settle(hook(session_id, listener))
++
++        self.call(register())
++
+ 
+ # -- opening the session --------------------------------------------------------------------------
+ 
+@@ -922,6 +934,23 @@ def _pending_notes(rows: Sequence[PendingRow]) -> list[str]:
+     return notes
+ 
+ 
++def _report_lost_turns(host: AttachedHost, repl: Repl, session_id: str) -> None:
++    """After a gap (the daemon came back, or this terminal fell behind): read the session's lost
++    turns again and show each with its ``/discard`` line. Runs off the attach loop: the ledger
++    read waits on it."""
++
++    def report() -> None:
++        try:
++            notes = _pending_notes(host.pending(session_id))
++        except Exception:
++            log.debug("could not read the pending admissions after a gap", exc_info=True)
++            return
++        if notes:
++            repl.post(lambda: [repl.note(note) for note in notes])
++
++    threading.Thread(target=report, name="indus-attach-gap", daemon=True).start()
++
++
+ def attached_commands(host: AttachedHost) -> Callable[[Repl, str], bool]:
+     """The REPL's command hook in attach mode (see the module notes)."""
+ 
+@@ -1035,6 +1064,7 @@ def _interactive(
+         def ready(repl: Repl) -> None:
+             for note in notes:
+                 repl.note(note)
++            host.on_gap(sid, lambda _gap: _report_lost_turns(host, repl, sid))
+             if seed is not None and seed.strip():
+                 text = seed
+                 repl.post(lambda: repl.send(text))
+diff --git a/src/indus/cli/attach_remote.py b/src/indus/cli/attach_remote.py
+index f489375..13e2031 100644
+--- a/src/indus/cli/attach_remote.py
++++ b/src/indus/cli/attach_remote.py
+@@ -281,6 +281,12 @@ class RemoteAttached:
+     ) -> AdmissionDiscardResult:
+         return await self.service.discard_unknown(session_id, admission_id, generation)
+ 
++    def on_gap(
++        self, session_id: str, listener: Callable[[Mapping[str, Any]], object]
++    ) -> Callable[[], None]:
++        """``listener`` hears the session's replay gaps (a reconnect to a restarted daemon)."""
++        return self.service.on_gap(session_id, listener)
++
+     async def aclose(self) -> None:
+         await self.service.aclose()
+ 
+diff --git a/src/indus/service/daemon_host.py b/src/indus/service/daemon_host.py
+index e587bfd..f561e81 100644
+--- a/src/indus/service/daemon_host.py
++++ b/src/indus/service/daemon_host.py
+@@ -13,7 +13,10 @@ the same call shapes with the daemon's rules:
+ - **Events.** Every event of a session passes through the daemon's one ``EventLog`` (seq per
+   session, ``replay_epoch`` per daemon start) and is handed to each viewer of that session in log
+   order. ``events_since`` replays from a cursor (or reports a gap) and re-offers the still-open
+-  server requests to the asking viewer.
++  server requests to the asking viewer. After a turn's ``turn.done`` the host adds what the TUI's
++  own bridge sends at a turn's end: ``message.complete`` (the final reply and why the turn ended;
++  a client settles its streamed text on it) and ``session.usage`` (the session's counters), so an
++  attached client sees the same turn end as an in-process one (P17-26).
+ - **Input.** ``submit`` admits the text into the session's durable FIFO (``AdmissionService``) and
+   returns its receipt. When a turn runs and the caller names no busy mode, the submitting surface
+   decides (R05.18): the TUI queues, every other surface interrupts the running turn — after the new
+@@ -51,6 +54,7 @@ from dataclasses import dataclass, field
+ from typing import Any, Final
+ 
+ from indus.core.events import EventSink
++from indus.core.session_scheduler import TurnEnd
+ from indus.core.turn_state import TurnResult
+ from indus.foundation.blocking import run_blocking
+ from indus.protocol.errors import SESSION_NOT_FOUND, TEXT_EMPTY
+@@ -233,6 +237,7 @@ class DaemonSessionHost:
+         self._tasks: set[asyncio.Task[Any]] = set()
+         self._flusher: asyncio.Task[None] | None = None
+         self._undo: list[Callable[[], None]] = []
++        self._done: dict[str, tuple[str, str]] = {}
+         self._closed = False
+         service.broker_factory = self._make_broker
+         service.turn_door = self._door
+@@ -256,6 +261,7 @@ class DaemonSessionHost:
+         host = cls(service, store, event_log=event_log, offload=offload)
+         host._undo.append(host.event_log.add_listener(host._fan_out))
+         host._undo.append(service.on_session_moved(host._moved))
++        host._undo.append(service.on_turn_end(host._turn_ended))
+         host._flusher = asyncio.get_running_loop().create_task(
+             host.event_log.run_flusher(), name="event-log flusher"
+         )
+@@ -344,7 +350,11 @@ class DaemonSessionHost:
+         if policy is not None:
+             check_launch(policy)
+             params = _params_with(params, policy)
+-        result = await self.service.create(params)
++        # An attached surface's session is stored under that surface (``cli``, ``tui``, ...) as
++        # its in-process twin would be, so its own listings and ``-c`` find it; the gateway's own
++        # sessions keep the service's source.
++        row_source = source if source in CREATABLE_SOURCES else None
++        result = await self.service.create(params, source=row_source)
+         live = self._register(result.session_id, source=source)
+         if result.created and policy is not None:
+             live.policy = policy
+@@ -567,14 +577,45 @@ class DaemonSessionHost:
+         return result
+ 
+     def _on_event(self, key: str, event: EventBase | Mapping[str, Any]) -> None:
++        kind = _field(event, "type")
+         ticket = self._tickets.get(key)
+         if ticket is not None:
+-            kind: object = (
+-                getattr(event, "type", "") if isinstance(event, EventBase) else event.get("type")
+-            )
+-            ticket.touch(str(kind or ""))
++            ticket.touch(kind)
++        if kind == "turn.done":
++            self._done[key] = (_field(event, "turn_id"), _field(event, "reason"))
+         self.event_log.append(key, event)
+ 
++    def _turn_ended(self, ended: TurnEnd) -> None:
++        """The turn's end as a client settles it: ``message.complete`` then ``session.usage``,
++        after the ``turn.done`` the turn itself emitted (the bridge's turn-end pair)."""
++        key = self.key_of(ended.session_id)
++        if key is None:
++            return
++        turn_id, reason = self._done.pop(key, ("", ""))
++        if turn_id != ended.turn_id or not reason:
++            reason = (
++                ExitReason.COMPLETED.value
++                if ended.completed
++                else ExitReason.INTERRUPTED_BY_SYSTEM.value
++            )
++        current = ended.session_id
++        self._on_event(
++            key,
++            {
++                "type": "message.complete",
++                "session_id": current,
++                "turn_id": ended.turn_id,
++                "text": ended.final_text,
++                "reason": reason,
++            },
++        )
++        try:
++            usage = usage_numbers(self.service, current)
++        except Exception:
++            log.debug("no usage for %s", current, exc_info=True)
++            return
++        self._on_event(key, {"type": "session.usage", "session_id": current, "usage": usage})
++
+     def _fan_out(self, entry: LoggedEvent) -> None:
+         if self.viewers.count(entry.session_id):
+             self.viewers.deliver(entry.session_id, entry.to_wire())
+@@ -595,6 +636,7 @@ class DaemonSessionHost:
+                 with contextlib.suppress(Exception):
+                     undo()
+             self.fences.forget(key)
++            self._done.pop(key, None)
+             self.event_log.forget(key)
+             self.viewers.forget(key)
+             for name in [n for n, k in self._keys.items() if k == key]:
+@@ -799,6 +841,26 @@ class DaemonSessionHost:
+         task.add_done_callback(self._tasks.discard)
+ 
+ 
++def _field(event: EventBase | Mapping[str, Any], name: str) -> str:
++    value = event.get(name) if isinstance(event, Mapping) else getattr(event, name, "")
++    return str(value or "")
++
++
++def usage_numbers(service: SessionService, session_id: str) -> dict[str, Any]:
++    """The session's counters in ``UsageNumbers`` shape (``session.usage``): the turn's token
++    counters, the last prompt size as the context in use, and the model's window when known."""
++    agent = service.agent(session_id)
++    numbers: dict[str, Any] = dict(agent.usage.snapshot().as_dict())
++    for name in ("prompt_tokens", "total_tokens", "cost_status"):
++        numbers.pop(name, None)
++    numbers["context_tokens"] = agent.usage.last_prompt_tokens
++    try:
++        numbers["context_window"] = agent.binding.state.window.tokens
++    except Exception:
++        numbers["context_window"] = None
++    return numbers
++
++
+ def _params_with(params: SessionCreateParams, policy: CreationPolicy) -> SessionCreateParams:
+     """``params`` filled from the policy; a value given in both must agree."""
+     changes: dict[str, Any] = {}
+diff --git a/src/indus/service/remote/host.py b/src/indus/service/remote/host.py
+index ce70be1..de6f869 100644
+--- a/src/indus/service/remote/host.py
++++ b/src/indus/service/remote/host.py
+@@ -26,6 +26,9 @@ Rules:
+   session the restarted daemon does not host any more is resumed.
+ - Controls name the generation of the turn they target: the caller's, else the one of the last
+   ``turn.started`` seen; an answer names the generation its offer carried.
++- A server request another viewer answered (``request.settled`` with ``answered``) reaches the
++  session's listeners as ``server_request.cancelled`` (``answered_elsewhere``), so a card still
++  open here closes as it does for a withdrawn request (P17-27).
+ - ``discard_unknown`` resolves a turn the daemon lost in a restart (``admission.discard``, by
+   that turn's generation).
+ 
+@@ -63,8 +66,10 @@ from indus.protocol.errors import (
+ )
+ from indus.protocol.events import (
+     EVENTS,
++    CancelReason,
+     EventBase,
+     ExitReason,
++    ServerRequestCancelled,
+     TurnDone,
+     TurnFailure,
+     TurnStarted,
+@@ -106,6 +111,8 @@ log = logging.getLogger(__name__)
+ 
+ GAP_METHOD: Final = "session.replay_gap"
+ SETTLED_METHOD: Final = "request.settled"
++ANSWERED: Final = "answered"
++"""The ``request.settled`` outcome of a request some viewer answered."""
+ OUTCOME_UNKNOWN_CODE: Final = "runtime.outcome_unknown"
+ OUTCOME_UNKNOWN: Final = (
+     "The connection to the gateway was lost; the outcome is unknown. Do not resend it: resume "
+@@ -527,6 +534,14 @@ class RemoteSessionService:
+             request_id = params.get("request_id")
+             if isinstance(request_id, str):
+                 found.offers.pop(request_id, None)
++                if params.get("outcome") == ANSWERED:
++                    closed = ServerRequestCancelled(
++                        session_id=session_id,
++                        seq=seq,
++                        request_id=request_id,
++                        reason=CancelReason.ANSWERED_ELSEWHERE,
++                    )
++                    self._apply(found, closed)
+             return
+         model = EVENTS.get(method)
+         if model is None:
+diff --git a/src/indus/service/session_service.py b/src/indus/service/session_service.py
+index 91a6508..d04245b 100644
+--- a/src/indus/service/session_service.py
++++ b/src/indus/service/session_service.py
+@@ -434,8 +434,12 @@ class SessionService:
+ 
+     # -- create / resume --------------------------------------------------------------------------
+ 
+-    async def create(self, params: SessionCreateParams | None = None) -> SessionCreateResult:
+-        """Mint a session and attach it."""
++    async def create(
++        self, params: SessionCreateParams | None = None, *, source: str | None = None
++    ) -> SessionCreateResult:
++        """Mint a session and attach it. ``source`` names the surface the session is created for
++        when this service hosts several (the daemon: ``cli``, ``tui``, ...); its row is stored
++        under that source, as an in-process surface's would be."""
+         params = params or SessionCreateParams()
+         async with _mapped():
+             self._check_open()
+@@ -446,7 +450,7 @@ class SessionService:
+                     raise ProtocolError(IDEMPOTENCY_CONFLICT, path="idempotency_key")
+                 return SessionCreateResult(session_id=session_id, created=False)
+             session_id = new_session_id(self.scope.clock)
+-            options, selection = self._options_for(params)
++            options, selection = self._options_for(params, source)
+             await self._attach(session_id, options=options, selection=selection)
+             self._start_maintenance()
+             if params.title:
+@@ -505,8 +509,12 @@ class SessionService:
+         elif isinstance(store, MemoryStore):
+             store.sessions.setdefault(session_id, {})["title"] = title
+ 
+-    def _options_for(self, params: SessionCreateParams) -> tuple[AgentOptions, list[str] | None]:
++    def _options_for(
++        self, params: SessionCreateParams, source: str | None = None
++    ) -> tuple[AgentOptions, list[str] | None]:
+         options = self.options
++        if source:
++            options = replace(options, source=source)
+         fields = dict(options.session_fields)
+         if params.cwd:
+             options = replace(options, cwd=Path(params.cwd))
+diff --git a/tests/e2e/service/__init__.py b/tests/e2e/service/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/e2e/service/test_shared_backend.py b/tests/e2e/service/test_shared_backend.py
+new file mode 100644
+index 0000000..fd89c59
+--- /dev/null
++++ b/tests/e2e/service/test_shared_backend.py
+@@ -0,0 +1,372 @@
++"""P17-27: the shared-backend demo (M6, CLI + TUI half) — one daemon, two surfaces, one session.
++
++A real ``indus gateway run`` serves a temp profile (temp ``INDUS_HOME``, ``HOME`` and config
++folder) whose model is the scripted fake on a loopback port. On one session, attached together:
++
++- the **classic CLI**: the real ``indus -r <session>`` REPL in a pseudo-terminal (``pexpect``),
++  attached to the daemon by default;
++- the **TUI**: the real renderer — ``App`` in Ink's test renderer over the real ``AppRuntime``,
++  ``@indus/client`` and attach transport (``indus gateway grant --json``, ticket only in the
++  subprotocol) — built once from ``apps/tui/src/test/sharedBackendDriver.tsx`` and driven over its
++  stdin/stdout.
++
++The demo, step by step: a prompt sent from the CLI streams in both; the approval it raises is
++answered from the TUI and the CLI's card closes; the CLI's terminal closes mid-turn and the turn
++completes in the daemon (the TUI shows it); the daemon restarts while a turn runs and both clients
++say its outcome is unknown and send nothing again (the model is never asked twice); with the
++daemon stopped, ``indus --local`` still answers in process and starts nothing.
++
++Everything the test starts is stopped at the end, and no process naming the temp home is left.
++"""
++
++from __future__ import annotations
++
++import contextlib
++import io
++import json
++import os
++import re
++import shutil
++import signal
++import sqlite3
++import subprocess
++import sys
++from collections.abc import Callable, Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from tests.fakes.daemon import ROOT, ProfileHome, RunningDaemon, pause, until
++from tests.fakes.model.http_serve import serving
++from tests.integration.service.conftest_hosts import steps_script
++
++pexpect = pytest.importorskip("pexpect")
++
++pytestmark = [
++    pytest.mark.skipif(os.name != "posix", reason="POSIX pseudo-terminals, sockets and signals"),
++    pytest.mark.slow,
++    pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning"),
++]
++
++TIMEOUT = 90.0
++APP = ROOT / "apps" / "tui"
++DRIVER_SOURCE = "src/test/sharedBackendDriver.tsx"
++DRIVER_DIR = APP / "node_modules" / ".shared-backend"
++DRIVER = DRIVER_DIR / "sharedBackendDriver.js"
++INDUS = Path(sys.executable).parent / "indus"
++_ESCAPES = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|[@-Z\\-_])")
++
++OUTCOME_UNKNOWN_TUI = "its outcome is unknown and it was not sent again"
++OUTCOME_UNKNOWN_CLI = "its outcome is unknown and it was not run again"
++
++
++def plain(text: str) -> str:
++    return _ESCAPES.sub("", text).replace("\r", "")
++
++
++def node() -> str | None:
++    found = shutil.which("node")
++    if found is None:
++        return None
++    try:
++        version = subprocess.run(
++            [found, "--version"], capture_output=True, text=True, timeout=10, check=True
++        ).stdout.strip()
++    except (OSError, subprocess.SubprocessError):
++        return None
++    parts = re.match(r"v(\d+)\.(\d+)", version)
++    return found if parts is not None and (int(parts[1]), int(parts[2])) >= (22, 18) else None
++
++
++@pytest.fixture(scope="module")
++def driver() -> str:
++    """Build the TUI driver once (vite SSR, beside the app's own dependencies)."""
++    program = node()
++    if program is None:
++        pytest.skip("needs Node 22.18 or newer")
++    vites = [APP / "node_modules" / ".bin" / "vite", ROOT / "node_modules" / ".bin" / "vite"]
++    vite = next((v for v in vites if v.exists()), None)
++    if vite is None or not INDUS.exists():
++        pytest.skip("needs `pnpm install` and `uv sync`")
++    built = subprocess.run(
++        [
++            str(vite),
++            "build",
++            "--ssr",
++            DRIVER_SOURCE,
++            "--outDir",
++            str(DRIVER_DIR),
++            "--emptyOutDir",
++            "--logLevel",
++            "warn",
++        ],
++        cwd=APP,
++        capture_output=True,
++        text=True,
++        timeout=300,
++        check=False,
++    )
++    assert built.returncode == 0 and DRIVER.exists(), built.stdout + built.stderr
++    return program
++
++
++# -- the two surfaces ------------------------------------------------------------------------------
++
++
++class Tui:
++    """The TUI driver: one JSON command per line in, one JSON state per line out."""
++
++    def __init__(self, program: str, profile: ProfileHome, session_id: str) -> None:
++        self.err_path = profile.root / "tui.err"
++        self._err = self.err_path.open("w", encoding="utf-8")
++        self.proc = subprocess.Popen(
++            [program, str(DRIVER)],
++            stdin=subprocess.PIPE,
++            stdout=subprocess.PIPE,
++            stderr=self._err,
++            text=True,
++            cwd=APP,
++            env=profile.env(
++                INDUS_TUI_RESUME=session_id,
++                INDUS_E2E_INDUS=str(INDUS),
++                NODE_NO_WARNINGS="1",
++            ),
++        )
++        self.last: dict[str, Any] = {}
++
++    def ask(self, command: dict[str, Any]) -> dict[str, Any]:
++        assert self.proc.stdin is not None and self.proc.stdout is not None
++        self.proc.stdin.write(json.dumps(command) + "\n")
++        self.proc.stdin.flush()
++        line = self.proc.stdout.readline()
++        assert line, f"the TUI driver ended:\n{self.stderr()}"
++        self.last = json.loads(line)
++        return self.last
++
++    def state(self) -> dict[str, Any]:
++        return self.ask({"op": "state"})
++
++    def until(self, check: Callable[[dict[str, Any]], bool], what: str) -> dict[str, Any]:
++        def seen() -> dict[str, Any] | None:
++            state = self.state()
++            return state if check(state) else None
++
++        try:
++            found = until(seen, f"the TUI: {what}", TIMEOUT)
++        except AssertionError as failed:
++            raise AssertionError(f"{failed}\nlast TUI frame:\n{self.last.get('frame')}") from None
++        assert found is not None
++        return found
++
++    def texts(self, role: str) -> list[str]:
++        return [m["text"] for m in self.last.get("messages", []) if m["role"] == role]
++
++    def stderr(self) -> str:
++        self._err.flush()
++        return self.err_path.read_text(encoding="utf-8", errors="replace")[-3000:]
++
++    def close(self) -> None:
++        if self.proc.poll() is None:
++            with contextlib.suppress(Exception):
++                self.ask({"op": "quit"})
++            try:
++                self.proc.wait(15)
++            except subprocess.TimeoutExpired:
++                self.proc.kill()
++                self.proc.wait(5)
++        self._err.close()
++
++
++class Cli:
++    """The classic REPL attached to the daemon, in a pseudo-terminal."""
++
++    def __init__(self, profile: ProfileHome, session_id: str) -> None:
++        self.log = io.StringIO()
++        self.child = pexpect.spawn(
++            sys.executable,
++            ["-m", "indus", "-r", session_id],
++            cwd=str(profile.work),
++            env={**profile.env(), "TERM": "xterm-256color", "COLUMNS": "110", "LINES": "40"},
++            encoding="utf-8",
++            codec_errors="replace",
++            dimensions=(40, 110),
++            timeout=TIMEOUT,
++        )
++        self.child.logfile_read = self.log
++        self.expect("Attached to this profile's gateway daemon")
++        self.expect("› ")
++
++    @property
++    def screen(self) -> str:
++        return plain(self.log.getvalue())
++
++    def expect(self, pattern: str, timeout: float = TIMEOUT) -> None:
++        try:
++            self.child.expect(pattern, timeout=timeout)
++        except (pexpect.TIMEOUT, pexpect.EOF):
++            raise AssertionError(
++                f"the CLI never showed {pattern!r}:\n{self.screen[-3000:]}"
++            ) from None
++
++    def send(self, text: str) -> None:
++        self.child.send(text + "\r")
++
++    def close(self) -> None:
++        if self.child.isalive():
++            self.child.close(force=True)
++
++
++# -- helpers ---------------------------------------------------------------------------------------
++
++
++def admissions(profile: ProfileHome) -> list[tuple[str, str]]:
++    uri = f"file:{profile.home / 'state.db'}?mode=ro"
++    with contextlib.closing(sqlite3.connect(uri, uri=True)) as conn:
++        rows = conn.execute(
++            "SELECT state, coalesce(outcome, '') FROM runtime_admissions ORDER BY seq"
++        ).fetchall()
++    return [(str(a), str(b)) for a, b in rows]
++
++
++def described_instance(profile: ProfileHome) -> str | None:
++    found = profile.described()
++    return str(found["instance_id"]) if found and found.get("ws_url") else None
++
++
++@pytest.fixture
++def stack(tmp_path: Path) -> Iterator[list[Any]]:
++    """Everything started here, closed in reverse order (then the profile's processes)."""
++    started: list[Any] = []
++    try:
++        yield started
++    finally:
++        for item in reversed(started):
++            with contextlib.suppress(Exception):
++                if isinstance(item, ProfileHome):
++                    item.stop_all()
++                else:
++                    item.close()
++
++
++SCRIPT = steps_script(
++    [{"text": "Hello first."}],
++    [
++        {"text": ["Streaming ", "from the daemon. "]},
++        {
++            "tool_call": {
++                "name": "terminal",
++                "arguments": {"command": "find victim -delete"},
++                "id": "call_clean",
++            }
++        },
++        {"finish": "tool_calls"},
++    ],
++    [{"text": ["Cleaned ", "up."]}],
++    [{"text": ["Working slowly"]}, {"stall": 4}, {"text": " and finished."}],
++    [{"text": ["Half ", "way"]}, {"stall": 600}],
++    [{"text": "Local answer."}],
++)
++
++
++def test_cli_and_tui_share_one_session_on_one_daemon(
++    tmp_path: Path, driver: str, stack: list[Any]
++) -> None:
++    with serving(SCRIPT) as model:
++        profile = ProfileHome(tmp_path / "demo", model.port)
++        stack.append(profile)
++        (profile.work / "victim").mkdir()
++        daemon: RunningDaemon = profile.start_daemon()
++        first_instance = str(daemon.attachable()["instance_id"])
++
++        # The session: one finite attached run stores it (and its row) in the daemon.
++        opened = profile.indus("chat", "-q", "hello")
++        assert opened.returncode == 0, opened.stderr + daemon.log()
++        assert opened.stdout == "Hello first.\n"
++        found = re.search(r"session_id: (\S+)", opened.stderr)
++        assert found is not None
++        sid = found[1]
++
++        # The TUI and the CLI attach to it.
++        tui = Tui(driver, profile, sid)
++        stack.append(tui)
++        tui.until(lambda s: s["sid"] == sid and s["connected"], "the session open")
++        cli = Cli(profile, sid)
++        stack.append(cli)
++
++        # 1. A prompt sent from the CLI streams in both.
++        cli.send("please clean up")
++        cli.expect("Streaming from the daemon")
++        tui.until(
++            lambda s: (
++                "Streaming from the daemon" in s["frame"]
++                or any("Streaming from the daemon" in t for t in tui.texts("assistant"))
++            ),
++            "the CLI's prompt streaming",
++        )
++
++        # 2. The approval it raises is answered from the TUI; the CLI's card closes.
++        cli.expect("Approval needed")
++        cli.expect("find victim -delete")
++        tui.until(lambda s: s["card"] is not None and s["card"]["kind"] == "approval", "the card")
++        assert "find victim -delete" in tui.last["frame"]
++        tui.ask({"op": "press", "keys": ["\r"]})  # the first choice: allow once
++        cli.expect("question answered in another window")
++        cli.expect("Cleaned up.")
++        tui.until(lambda s: "Cleaned up." in tui.texts("assistant") and not s["busy"], "settled")
++        assert tui.last["card"] is None
++        assert not (profile.work / "victim").exists()  # approved once, ran once
++        assert model.model_turns == 3
++
++        # 3. The CLI's terminal closes mid-turn; the turn completes in the daemon.
++        cli.send("a slow one")
++        cli.expect("Working slowly")
++        cli.child.kill(signal.SIGHUP)
++        until(lambda: not cli.child.isalive(), "the CLI gone", 30)
++        tui.until(
++            lambda s: "Working slowly and finished." in tui.texts("assistant") and not s["busy"],
++            "the detached turn's end",
++        )
++        assert admissions(profile)[-1] == ("terminal", "completed")
++        assert model.model_turns == 4
++
++        # 4. The daemon restarts while a turn runs: both say the outcome is unknown, nothing
++        #    is sent again.
++        cli = Cli(profile, sid)
++        stack.append(cli)
++        tui.ask({"op": "type", "text": "one more"})
++        tui.until(lambda s: "Half way" in s["frame"] and s["busy"], "the turn streaming")
++        until(lambda: model.model_turns == 5, "the model asked", TIMEOUT)
++        cli.expect("◇ indus")  # the CLI watches the TUI's turn
++        daemon.kill()
++        replacement = profile.start_daemon()
++        # The clients' own recovery may start it first: wait for whichever daemon now serves.
++        until(
++            lambda: (described_instance(profile) or first_instance) != first_instance,
++            "a restarted daemon",
++            TIMEOUT,
++        )
++        if replacement.proc.poll() is None:
++            replacement.attachable()
++        tui.until(
++            lambda s: any(OUTCOME_UNKNOWN_TUI in t for t in tui.texts("system")) and s["connected"],
++            "the TUI's outcome-unknown line",
++        )
++        assert not tui.last["busy"]
++        cli.expect(OUTCOME_UNKNOWN_CLI)
++        cli.expect("/discard")
++        assert admissions(profile)[-1] == ("unknown", "")
++        pause(3.0)
++        assert model.model_turns == 5  # never resent by either client
++
++        # 5. With the daemon stopped, --local still answers in this process.
++        tui.close()
++        cli.close()
++        profile.stop_all()
++        assert profile.described() is None
++        local = profile.indus("--local", "-z", "local now")
++        assert local.returncode == 0, local.stderr
++        assert local.stdout == "Local answer.\n"
++        assert model.model_turns == 6
++        assert profile.described() is None  # --local started no daemon
++        assert profile.stray_processes() == []
+diff --git a/tests/fakes/daemon.py b/tests/fakes/daemon.py
+new file mode 100644
+index 0000000..7aa525b
+--- /dev/null
++++ b/tests/fakes/daemon.py
+@@ -0,0 +1,261 @@
++"""A real gateway daemon in a temp profile, for tests that attach to it (P17-15, P17-26, P17-27).
++
++``ProfileHome`` lays out a profile under a test's temp dir: ``home`` (``INDUS_HOME``, mode 0700),
++``user-home`` (``HOME``), ``config`` (``XDG_CONFIG_HOME``) and ``work`` (the working folder), with a
++``config.yaml`` that points a ``custom`` provider at the loopback fake model
++(``tests/fakes/model/http_serve.py``). No messaging platform is enabled: the daemon keeps running
++for its background parts and its session host.
++
++- ``env()`` is the environment every child gets: no inherited ``INDUS_*`` variable, temp ``HOME``
++  and config folder, loopback without a proxy.
++- ``indus(*args)`` runs the real CLI once (``python -m indus``) and returns the finished process.
++- ``start_daemon()`` runs ``indus gateway run`` as a child; ``RunningDaemon.attachable()`` waits
++  until it answers ``describe`` with a mounted WebSocket endpoint.
++- ``grant()`` is the short-lived ticket helper: a fresh single-use ticket for one dial, the way
++  ``indus gateway grant`` gets one (never printed, never in a URL).
++- ``stop_all()`` stops whatever serves the home (a child or a daemon a CLI started detached) and
++  any process still naming the home; ``stray_processes()`` lists those.
++
++Only pids that carry this home in their environment are ever signalled, so other tests' and other
++worktrees' daemons are never touched.
++"""
++
++from __future__ import annotations
++
++import contextlib
++import os
++import signal
++import subprocess
++import sys
++import threading
++import time
++from collections.abc import Callable, Mapping
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++
++from indus.service import gateway_control
++from indus.service.remote.channel import Grant, grant_for
++
++ROOT = Path(__file__).resolve().parents[2]
++TIMEOUT = 90.0
++
++_TICK = threading.Event()  # never set: a wall-clock pause between polls
++
++
++def pause(seconds: float) -> None:
++    """Wait ``seconds`` of wall-clock time (the child processes run on real time)."""
++    _TICK.wait(seconds)
++
++
++def until[T](check: Callable[[], T], what: str, limit: float = TIMEOUT) -> T:
++    """Poll ``check`` until it returns something truthy; fail naming ``what`` after ``limit``."""
++    end = time.monotonic() + limit
++    while True:
++        found = check()
++        if found:
++            return found
++        if time.monotonic() > end:
++            raise AssertionError(f"timed out waiting for {what}")
++        pause(0.05)
++
++
++def model_config(port: int, extra: str = "") -> str:
++    return (
++        "model:\n"
++        "  default: fake-model\n"
++        "  provider: custom\n"
++        f"  base_url: http://127.0.0.1:{port}/v1\n" + extra
++    )
++
++
++@dataclass
++class ProfileHome:
++    """A temp profile home whose model is the loopback fake on ``model_port``."""
++
++    root: Path
++    model_port: int
++    config_extra: str = ""
++    env_extra: dict[str, str] = field(default_factory=dict[str, str])
++
++    def __post_init__(self) -> None:
++        self.home = self.root / "home"
++        self.user_home = self.root / "user-home"
++        self.work = self.root / "work"
++        for folder in (self.home, self.user_home, self.work):
++            folder.mkdir(parents=True, exist_ok=True)
++        self.home.chmod(0o700)  # the control socket client refuses a home others can write
++        (self.home / "config.yaml").write_text(
++            model_config(self.model_port, self.config_extra), encoding="utf-8"
++        )
++        self.daemons: list[RunningDaemon] = []
++
++    def env(self, **extra: str) -> dict[str, str]:
++        env = {k: v for k, v in os.environ.items() if not k.startswith("INDUS_")}
++        for name in ("NOTIFY_SOCKET", "WATCHDOG_USEC", "TELEGRAM_BOT_TOKEN", "NODE_OPTIONS"):
++            env.pop(name, None)
++        env.update(
++            {
++                "INDUS_HOME": str(self.home),
++                "HOME": str(self.user_home),
++                "XDG_CONFIG_HOME": str(self.root / "config"),
++                "INDUS_GATEWAY_LOCK_DIR": str(self.root / "token-locks"),
++                "NO_PROXY": "127.0.0.1,localhost",
++                "no_proxy": "127.0.0.1,localhost",
++                "PYTHONPATH": str(ROOT),
++                "PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin",
++                **self.env_extra,
++                **extra,
++            }
++        )
++        return env
++
++    def argv(self, *args: str) -> list[str]:
++        return [sys.executable, "-m", "indus", *args]
++
++    def indus(
++        self,
++        *args: str,
++        stdin: str = "",
++        timeout: float = TIMEOUT,
++        env: Mapping[str, str] | None = None,
++    ) -> subprocess.CompletedProcess[str]:
++        """One real CLI run in the work folder."""
++        return subprocess.run(
++            self.argv(*args),
++            capture_output=True,
++            text=True,
++            input=stdin,
++            timeout=timeout,
++            cwd=self.work,
++            env=self.env(**(env or {})),
++            check=False,
++        )
++
++    def spawn(self, *args: str, env: Mapping[str, str] | None = None) -> subprocess.Popen[str]:
++        """A CLI run left running (pipes for stdin/stdout/stderr); the caller ends it."""
++        return subprocess.Popen(
++            self.argv(*args),
++            stdin=subprocess.PIPE,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True,
++            cwd=self.work,
++            env=self.env(**(env or {})),
++        )
++
++    def start_daemon(self, *args: str, **extra: str) -> RunningDaemon:
++        log = (self.root / f"daemon-{time.monotonic_ns()}.err").open("w", encoding="utf-8")
++        try:
++            proc = subprocess.Popen(
++                self.argv("gateway", "run", *args),
++                stdin=subprocess.DEVNULL,
++                stdout=log,
++                stderr=log,
++                cwd=self.work,
++                env=self.env(**extra),
++            )
++        finally:
++            log.close()
++        daemon = RunningDaemon(self, proc, Path(log.name))
++        self.daemons.append(daemon)
++        return daemon
++
++    def grant(self, timeout: float = 10.0) -> Grant:
++        """A fresh single-use ticket for one dial (through the owner-only control socket)."""
++        return grant_for(self.home, timeout=timeout)
++
++    def described(self, timeout: float = 2.0) -> dict[str, Any] | None:
++        return gateway_control.describe(self.home, timeout=timeout)
++
++    def logs(self) -> str:
++        folder = self.home / "logs"
++        if not folder.exists():
++            return ""
++        return "\n".join(p.read_text(errors="replace") for p in sorted(folder.glob("*.log")))
++
++    def stray_processes(self) -> list[int]:
++        """Pids (other than ours) whose environment names this home."""
++        marker = f"INDUS_HOME={self.home}".encode()
++        found: list[int] = []
++        for entry in Path("/proc").iterdir():
++            if not entry.name.isdigit() or int(entry.name) == os.getpid():
++                continue
++            try:
++                environ = (entry / "environ").read_bytes()
++            except OSError:
++                continue
++            if marker in environ.split(b"\0"):
++                found.append(int(entry.name))
++        return found
++
++    def stop_all(self, grace: float = 30.0) -> None:
++        """Stop every daemon of this home — our children and one a CLI started detached — and
++        any other process naming the home: SIGTERM, then SIGKILL after ``grace`` seconds."""
++
++        def targets() -> set[int]:
++            children = {d.proc.pid for d in self.daemons if d.proc.poll() is None}
++            return children | set(self.stray_processes())
++
++        pids = targets()
++        for pid in pids:
++            with contextlib.suppress(OSError):
++                os.kill(pid, signal.SIGTERM)
++        end = time.monotonic() + grace
++        while pids and time.monotonic() < end:
++            pause(0.1)
++            pids = targets()
++        for pid in targets():
++            with contextlib.suppress(OSError):
++                os.kill(pid, signal.SIGKILL)
++        for daemon in self.daemons:
++            with contextlib.suppress(subprocess.TimeoutExpired):
++                daemon.proc.wait(10)
++
++
++@dataclass
++class RunningDaemon:
++    """One ``indus gateway run`` child of the test."""
++
++    profile: ProfileHome
++    proc: subprocess.Popen[bytes]
++    log_path: Path
++
++    def log(self) -> str:
++        text = self.log_path.read_text(encoding="utf-8", errors="replace")
++        gateway_log = self.profile.home / "logs" / "gateway.log"
++        if gateway_log.exists():
++            text += "\n--- gateway.log ---\n" + gateway_log.read_text(errors="replace")[-8000:]
++        return text
++
++    def attachable(self, limit: float = TIMEOUT) -> dict[str, Any]:
++        """Wait until the daemon answers ``describe`` with its WebSocket endpoint mounted."""
++        end = time.monotonic() + limit
++        while True:
++            found = self.profile.described()
++            if found is not None and found.get("ws_url"):
++                answering = gateway_control.identify(self.profile.home, timeout=2.0)
++                if answering is not None and int(answering["pid"]) == self.proc.pid:
++                    return found
++            if self.proc.poll() is not None:
++                raise AssertionError(f"the daemon exited ({self.proc.returncode}):\n{self.log()}")
++            if time.monotonic() > end:
++                raise AssertionError(f"the daemon never mounted its endpoint:\n{self.log()}")
++            pause(0.1)
++
++    def stop(self, limit: float = 60.0) -> int:
++        if self.proc.poll() is None:
++            self.proc.send_signal(signal.SIGTERM)
++        try:
++            return self.proc.wait(limit)
++        except subprocess.TimeoutExpired:
++            self.proc.kill()
++            self.proc.wait(10)
++            raise AssertionError(
++                f"the daemon did not stop within {limit} s:\n{self.log()}"
++            ) from None
++
++    def kill(self) -> None:
++        if self.proc.poll() is None:
++            self.proc.kill()
++        self.proc.wait(10)
+diff --git a/tests/fixtures/service/dual_host_allowlist.yaml b/tests/fixtures/service/dual_host_allowlist.yaml
+new file mode 100644
+index 0000000..0e33d80
+--- /dev/null
++++ b/tests/fixtures/service/dual_host_allowlist.yaml
+@@ -0,0 +1,48 @@
++# Documented differences between the in-process and the attached session host (P17-26).
++#
++# The dual-host matrix (tests/integration/service/test_dual_host_matrix.py) runs every surface case
++# against both hosts. A facet that differs fails the matrix unless an entry below names it:
++#   case  — the matrix case (cli.*: classic CLI; bridge.*: the TUI protocol; demo3.*: messaging)
++#   facet — the checked value inside the case
++#   host  — the host that differs from what a person sees in process today
++#   d_id  — the intended difference (D-16.n), or "D-?" until the lead numbers it
++#   why   — one or two lines
++# An entry whose difference is gone fails the matrix as stale: remove it with the change.
++differences:
++  - case: cli.z.approvals
++    facet: outcome
++    host: attached
++    d_id: D-16.490
++    why: >-
++      Attached `-z` sends no `unattended` flag, so the daemon asks before a dangerous command and
++      the finite run detaches with exit 3 (input kept; nothing resent) instead of approving it for
++      the run. Floors still refuse hardline commands on both hosts.
++  - case: cli.q.denies
++    facet: outcome
++    host: attached
++    d_id: D-16.487
++    why: >-
++      A finite attached `chat -q` that meets a question nobody here can answer detaches with exit 3
++      (the turn waits in the daemon for another surface) instead of denying it in process.
++  - case: bridge.lost_mid_turn
++    facet: lost turn finished
++    host: attached
++    d_id: D-16.10
++    why: >-
++      Closing (or losing) an attached client only detaches it: the daemon finishes the running
++      turn and stores it. In process the turn dies with the child. Never resent on either host.
++  - case: bridge.event_shape
++    facet: session events
++    host: attached
++    d_id: D-?
++    why: >-
++      The daemon sends no `session.info` after `session.create`/`resume` and no `session.title`
++      when the automatic title lands (it is stored, and list watchers get `session.updated`), so
++      an attached TUI shows no model, folder or title for the session.
++  - case: bridge.settings
++    facet: settings
++    host: attached
++    d_id: D-?
++    why: >-
++      The daemon serves the session methods only; `model.options`, `config.get` and `config.set`
++      (what the TUI reads at start and its pickers use) answer -32601 over the attach socket.
+diff --git a/tests/integration/service/conftest_hosts.py b/tests/integration/service/conftest_hosts.py
+new file mode 100644
+index 0000000..3c81a3b
+--- /dev/null
++++ b/tests/integration/service/conftest_hosts.py
+@@ -0,0 +1,455 @@
++"""The dual-host fixture (P17-26): every surface test runs against both session hosts.
++
++``session_host`` is parametrised over the two places an agent can run for a surface:
++
++- ``inprocess`` — the agent runs in the surface's own process tree, as with ``--local``: the
++  classic CLI builds its own host (``indus --local …``) and the TUI's protocol is served by its own
++  ``indus tui-bridge --stdio`` child;
++- ``attached`` — the agent runs in the profile's gateway daemon (a real ``indus gateway run``
++  subprocess with the loopback fake model): the classic CLI attaches by default (``indus …``) and
++  the TUI's protocol is the daemon's loopback WebSocket, dialled with a single-use ticket.
++
++Both use one profile layout (``tests.fakes.daemon.ProfileHome``) and one scripted fake model on a
++loopback port, so a test is written once and says what a person sees; any behaviour difference
++between the hosts fails it unless the difference is listed, with a D-id, in
++``tests/fixtures/service/dual_host_allowlist.yaml`` (``HostRig.same``).
++
++The JSON-RPC peers (``StdioPeer`` for the bridge child, ``WsPeer`` for the daemon) give the same
++view of the wire: every frame the server sent, in order, plus ``call`` and ``wait_for``. A server
++request reaches both as the ``server_request`` frame, whether the server sent it as a notification
++(the bridge) or as a request with an ``srq-`` id (the daemon); ``answer`` uses each one's way.
++
++Every process a rig starts is stopped at teardown (``ProfileHome.stop_all`` signals only processes
++whose environment names the rig's own temp home).
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import json
++import queue
++import re
++import subprocess
++import threading
++import time
++from collections.abc import Callable, Coroutine, Iterator
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import IO, Any, Literal
++
++import pytest
++from ruamel.yaml import YAML
++
++from indus.protocol.server_requests import SERVER_REQUEST_METHOD
++from indus.service.remote.ws_client import TransportClosed, WsClientTransport
++from indus.service.remote.ws_client import connect as ws_connect
++from tests.fakes.daemon import ROOT, ProfileHome, RunningDaemon, pause
++from tests.fakes.model import Script, load_script, parse_script
++from tests.fakes.model.http_serve import HttpFakeModel, serving
++
++__all__ = [
++    "ALLOWLIST",
++    "HOSTS",
++    "Allowance",
++    "HostKind",
++    "HostRig",
++    "MatrixDifference",
++    "Peer",
++    "StdioPeer",
++    "WsPeer",
++    "load_allowlist",
++    "session_host",
++    "steps_script",
++]
++
++type HostKind = Literal["inprocess", "attached"]
++type Frame = dict[str, Any]
++
++HOSTS: tuple[HostKind, ...] = ("inprocess", "attached")
++ALLOWLIST = ROOT / "tests" / "fixtures" / "service" / "dual_host_allowlist.yaml"
++TIMEOUT = 60.0
++D_ID = re.compile(r"^D-(\d+\.\d+|\?)$")
++
++
++# -- the allow-list --------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class Allowance:
++    """One documented difference: in ``case``, ``facet`` differs on ``host`` (``d_id``, ``why``)."""
++
++    case: str
++    facet: str
++    host: HostKind
++    d_id: str
++    why: str
++
++
++class MatrixDifference(AssertionError):
++    """The hosts behave differently and the allow-list does not name it (or names it stale)."""
++
++
++def load_allowlist(path: Path = ALLOWLIST) -> list[Allowance]:
++    """The allow-list entries; a malformed entry (no D-id, no reason, unknown host) fails."""
++    data = YAML(typ="safe").load(path.read_text(encoding="utf-8")) or {}
++    entries = data.get("differences") or []
++    found: list[Allowance] = []
++    for index, entry in enumerate(entries):
++        where = f"{path.name} entry {index}"
++        if not isinstance(entry, dict):
++            raise ValueError(f"{where}: not a mapping")
++        missing = {"case", "facet", "host", "d_id", "why"} - set(entry)
++        if missing:
++            raise ValueError(f"{where}: missing {sorted(missing)}")
++        if entry["host"] not in HOSTS:
++            raise ValueError(f"{where}: host must be one of {HOSTS}")
++        if not D_ID.match(str(entry["d_id"])):
++            raise ValueError(f"{where}: d_id {entry['d_id']!r} is not a D-id")
++        if not str(entry["why"]).strip():
++            raise ValueError(f"{where}: no reason")
++        found.append(
++            Allowance(
++                str(entry["case"]),
++                str(entry["facet"]),
++                entry["host"],
++                str(entry["d_id"]),
++                str(entry["why"]).strip(),
++            )
++        )
++    keys = [(a.case, a.facet, a.host) for a in found]
++    if len(keys) != len(set(keys)):
++        raise ValueError(f"{path.name}: an entry is listed twice")
++    return found
++
++
++# -- fake-model scripts ----------------------------------------------------------------------------
++
++
++def steps_script(*turns: list[dict[str, Any]], name: str = "inline") -> Script:
++    """A script from turns written as P03 step lists (``[{"text": "hi"}]``, ...)."""
++    return parse_script({"turns": [{"steps": steps} for steps in turns]}, name)
++
++
++# -- JSON-RPC peers --------------------------------------------------------------------------------
++
++
++def _offer(frame: Frame) -> dict[str, Any]:
++    """A server request's fields, flat: the bridge sends them as the notification's params; the
++    daemon wraps them (``{request, replayed, generation}``) and may send them as a request."""
++    params = dict(frame.get("params") or {})
++    inner = params.pop("request", None)
++    if isinstance(inner, dict):
++        params = {**inner, **params}
++    if "id" in frame:
++        params["rpc_id"] = frame["id"]
++    return params
++
++
++class Peer:
++    """The frames one connection received, in order, and calls answered by id."""
++
++    kind: HostKind
++
++    def __init__(self) -> None:
++        self.frames: list[Frame] = []
++        self.dropped: Callable[[Frame], bool] = lambda frame: False
++        self._new: queue.Queue[Frame] = queue.Queue()
++        self._ids = 0
++        self._lock = threading.Lock()
++
++    def _received(self, frame: Frame) -> None:
++        if frame.get("method") == SERVER_REQUEST_METHOD:
++            frame = {"jsonrpc": "2.0", "method": SERVER_REQUEST_METHOD, "params": _offer(frame)}
++        if self.dropped(frame):
++            return
++        with self._lock:
++            self.frames.append(frame)
++        self._new.put(frame)
++
++    def _write(self, frame: Frame) -> None:
++        raise NotImplementedError
++
++    def send(self, method: str, **params: Any) -> int:
++        with self._lock:
++            self._ids += 1
++            rid = self._ids
++        self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
++        return rid
++
++    def wait_for(self, check: Callable[[Frame], bool], what: str, limit: float = TIMEOUT) -> Frame:
++        with self._lock:
++            seen = list(self.frames)
++        for frame in seen:
++            if check(frame):
++                return frame
++        end = time.monotonic() + limit
++        while True:
++            left = end - time.monotonic()
++            if left <= 0:
++                raise AssertionError(f"{self.kind}: no {what}; {self.context()}")
++            try:
++                frame = self._new.get(timeout=min(left, 0.5))
++            except queue.Empty:
++                continue
++            if check(frame):
++                return frame
++
++    def answer_of(self, rid: int, method: str, limit: float = TIMEOUT) -> Frame:
++        return self.wait_for(
++            lambda f: f.get("id") == rid and "method" not in f, f"answer to {method}", limit
++        )
++
++    def call(self, method: str, **params: Any) -> Any:
++        answer = self.answer_of(self.send(method, **params), method)
++        assert "result" in answer, f"{self.kind}: {method} → {answer}"
++        return answer["result"]
++
++    def notifications(self) -> list[Frame]:
++        with self._lock:
++            return [f for f in self.frames if "method" in f]
++
++    def events(self, method: str) -> list[dict[str, Any]]:
++        return [f["params"] for f in self.notifications() if f["method"] == method]
++
++    def methods(self) -> list[str]:
++        return [f["method"] for f in self.notifications()]
++
++    def answer(self, session_id: str, offer: dict[str, Any], answer: dict[str, Any]) -> Any:
++        """Answer a server request the way this host takes answers (the generation it named)."""
++        params: dict[str, Any] = {
++            "session_id": session_id,
++            "request_id": offer["request_id"],
++            "answer": answer,
++        }
++        if offer.get("generation") is not None:
++            params["generation"] = offer["generation"]
++        return self.call("server_request.answer", **params)
++
++    def context(self) -> str:
++        return f"frames: {[f.get('method', f.get('id')) for f in self.frames][-40:]}"
++
++    def close(self) -> None:
++        raise NotImplementedError
++
++
++class StdioPeer(Peer):
++    """``indus tui-bridge --stdio``: the TUI's own child (the in-process host)."""
++
++    kind: HostKind = "inprocess"
++
++    def __init__(self, profile: ProfileHome) -> None:
++        super().__init__()
++        self.stderr_path = profile.root / f"bridge-{time.monotonic_ns()}.err"
++        self._stderr = self.stderr_path.open("w", encoding="utf-8")
++        self.proc = subprocess.Popen(
++            profile.argv("tui-bridge", "--stdio"),
++            stdin=subprocess.PIPE,
++            stdout=subprocess.PIPE,
++            stderr=self._stderr,
++            cwd=profile.work,
++            env=profile.env(INDUS_PROTOCOL_STRICT="1"),
++            text=True,
++            encoding="utf-8",
++        )
++        self._reader = threading.Thread(target=self._read, daemon=True, name="stdio-peer")
++        self._reader.start()
++
++    def _read(self) -> None:
++        out: IO[str] | None = self.proc.stdout
++        assert out is not None
++        for line in out:
++            self._received(json.loads(line))
++
++    def _write(self, frame: Frame) -> None:
++        stdin = self.proc.stdin
++        assert stdin is not None
++        stdin.write(json.dumps(frame) + "\n")
++        stdin.flush()
++
++    def context(self) -> str:
++        self._stderr.flush()
++        tail = self.stderr_path.read_text(encoding="utf-8", errors="replace")[-3000:]
++        return f"{super().context()}\nstderr:\n{tail}"
++
++    def close(self) -> None:
++        if self.proc.poll() is None:
++            if self.proc.stdin is not None:
++                with contextlib.suppress(OSError):
++                    self.proc.stdin.close()
++            try:
++                self.proc.wait(15)
++            except subprocess.TimeoutExpired:
++                self.proc.kill()
++                self.proc.wait(5)
++        self._stderr.close()
++
++
++class WsPeer(Peer):
++    """The daemon's loopback WebSocket, dialled with a fresh single-use ticket (attached host)."""
++
++    kind: HostKind = "attached"
++
++    def __init__(self, profile: ProfileHome, daemon: RunningDaemon | None = None) -> None:
++        super().__init__()
++        self.profile = profile
++        self.daemon = daemon
++        self.closed: TransportClosed | None = None
++        self._loop = asyncio.new_event_loop()
++        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True, name="ws-peer")
++        self._thread.start()
++        grant = profile.grant()
++        self.profile_id = grant.profile_id
++        self.instance_id = grant.instance_id
++        self.transport: WsClientTransport = self._run(
++            ws_connect(grant.ws_url, grant.subprotocols())
++        )
++        self._reading = asyncio.run_coroutine_threadsafe(self._read(), self._loop)
++
++    def _run[T](self, coro: Coroutine[Any, Any, T], limit: float = 30.0) -> T:
++        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(limit)
++
++    async def _read(self) -> None:
++        try:
++            while True:
++                self._received(json.loads(await self.transport.recv()))
++        except TransportClosed as closed:
++            self.closed = closed
++
++    def _write(self, frame: Frame) -> None:
++        self._run(self.transport.send(json.dumps(frame)))
++
++    def context(self) -> str:
++        tail = self.daemon.log()[-3000:] if self.daemon is not None else ""
++        return f"{super().context()}\ndaemon:\n{tail}"
++
++    def drop(self) -> None:
++        """Lose the socket without a goodbye (as a killed client would)."""
++        writer = self.transport._writer  # pyright: ignore[reportPrivateUsage]
++        self._loop.call_soon_threadsafe(writer.transport.abort)
++
++    def close(self) -> None:
++        if not self._loop.is_closed():
++            with contextlib.suppress(Exception):
++                self._run(self.transport.close(), 5)
++            with contextlib.suppress(Exception):
++                self._reading.result(5)
++            self._loop.call_soon_threadsafe(self._loop.stop)
++            self._thread.join(5)
++            self._loop.close()
++
++
++# -- one host under test ---------------------------------------------------------------------------
++
++
++@dataclass
++class HostRig:
++    """A profile, the fake model and (attached) a running daemon; surfaces reach it the same way."""
++
++    kind: HostKind
++    root: Path
++    model: HttpFakeModel
++    allowances: list[Allowance]
++    profile: ProfileHome = field(init=False)
++    daemon: RunningDaemon | None = None
++    peers: list[Peer] = field(default_factory=list[Peer])
++
++    def __post_init__(self) -> None:
++        self.profile = ProfileHome(self.root, self.model.port)
++
++    # -- the model ------------------------------------------------------------------------------
++
++    def use(self, script: Script | str | Path) -> None:
++        """Answer from ``script`` from now on (a fresh scripted model on the same port)."""
++        loaded = script if isinstance(script, Script) else load_script(script)
++        fresh = HttpFakeModel(loaded)
++        self.model.model = fresh.model
++
++    # -- the host -------------------------------------------------------------------------------
++
++    def start(self) -> HostRig:
++        if self.kind == "attached":
++            self.daemon = self.profile.start_daemon()
++            self.daemon.attachable()
++        return self
++
++    def indus(self, *args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
++        """One classic-CLI run: ``--local`` in process, else attached to the daemon."""
++        argv = ("--local", *args) if self.kind == "inprocess" else args
++        return self.profile.indus(*argv, stdin=stdin)
++
++    def spawn(self, *args: str) -> subprocess.Popen[str]:
++        """A classic-CLI run left running (the caller ends it)."""
++        argv = ("--local", *args) if self.kind == "inprocess" else args
++        return self.profile.spawn(*argv)
++
++    def peer(self, *, features: tuple[str, ...] = ("server_requests",)) -> Peer:
++        """A JSON-RPC connection as the TUI makes one, after ``gateway.ready`` and capabilities."""
++        peer: Peer = (
++            StdioPeer(self.profile)
++            if self.kind == "inprocess"
++            else WsPeer(self.profile, self.daemon)
++        )
++        self.peers.append(peer)
++        ready = peer.wait_for(lambda f: True, "the first frame")
++        assert ready.get("method") == "gateway.ready", ready
++        peer.call("client.capabilities", features=list(features), surface="tui")
++        return peer
++
++    # -- the matrix -----------------------------------------------------------------------------
++
++    def allowed(self, case: str, facet: str) -> Allowance | None:
++        for entry in self.allowances:
++            if (entry.case, entry.facet, entry.host) == (case, facet, self.kind):
++                return entry
++        return None
++
++    def same(self, case: str, facet: str, got: object, want: object) -> None:
++        """``got`` must equal ``want`` on this host, unless the allow-list names the difference;
++        an allow-listed facet that no longer differs is stale and fails too."""
++        entry = self.allowed(case, facet)
++        if got == want:
++            if entry is not None:
++                raise MatrixDifference(
++                    f"{case}/{facet}: the {self.kind} host now behaves like the other one; "
++                    f"remove the allow-list entry ({entry.d_id})"
++                )
++            return
++        if entry is not None:
++            return
++        raise MatrixDifference(
++            f"{case}/{facet} differs on the {self.kind} host:\n  got:  {got!r}\n  want: {want!r}"
++        )
++
++    def stop(self) -> None:
++        for peer in self.peers:
++            with contextlib.suppress(Exception):
++                peer.close()
++        self.profile.stop_all()
++
++
++@contextlib.contextmanager
++def host_rig(
++    kind: HostKind, root: Path, script: Script | str | Path | None = None
++) -> Iterator[HostRig]:
++    """One rig for ``kind`` in ``root`` (its own fake model), stopped on the way out."""
++    with serving(script if script is not None else steps_script([{"text": "unused"}])) as model:
++        rig = HostRig(kind, root, model, load_allowlist())
++        try:
++            yield rig.start()
++        finally:
++            rig.stop()
++            leftover = rig.profile.stray_processes()
++            assert leftover == [], f"processes naming the home are still running: {leftover}"
++
++
++@pytest.fixture(params=HOSTS)
++def session_host(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[HostRig]:
++    """The rig for one host kind (``inprocess`` / ``attached``) in this test's temp dir."""
++    with host_rig(request.param, tmp_path / request.param) as rig:
++        yield rig
++
++
++def settle(seconds: float = 0.3) -> None:
++    """A short wall-clock pause for frames that may still be on their way."""
++    pause(seconds)
+diff --git a/tests/integration/service/test_dual_host_matrix.py b/tests/integration/service/test_dual_host_matrix.py
+new file mode 100644
+index 0000000..2d16d36
+--- /dev/null
++++ b/tests/integration/service/test_dual_host_matrix.py
+@@ -0,0 +1,606 @@
++"""P17-26: the dual-host matrix — surface suites run against the in-process and the attached host.
++
++Every test here takes ``session_host`` (``conftest_hosts.py``) and runs once per host kind: the
++agent in the surface's own process tree (``--local`` CLI, the TUI's ``tui-bridge --stdio`` child)
++and the agent in a real gateway daemon subprocess (the CLI attached by default, the TUI protocol
++over the daemon's WebSocket). Each check goes through ``HostRig.same(case, facet, got, want)``:
++the expected value is what a person sees today in process; a different value on either host fails
++unless ``tests/fixtures/service/dual_host_allowlist.yaml`` lists it with a D-id, and a listed
++difference that is gone fails as stale.
++
++Suites mirrored here (their cases, written once for both hosts):
++
++- **P06 CLI chat** (``tests/integration/cli/test_oneshot_exit_codes.py``): ``-z`` and finite
++  ``chat -q`` stdout/stderr contracts, exit codes, the usage file, Ctrl-C, approvals under ``-z``
++  and ``-q``, resume chains, ``-c`` misses;
++- **P12 bridge** (``tests/integration/tui_bridge/test_bridge_child.py``): the Demo 2 turn over the
++  TUI protocol (stream, two tools, an approval answered "once", the final message), a client lost
++  mid-turn and a new one resuming the session, the settings the TUI reads at start, and the turn's
++  event shape (start, stream, end, final message, usage, title);
++- **P15 Demo 3** (``tests/e2e/gateway/test_demo3.py``): run under ``messaging_host``, where
++  ``inprocess`` runs chat turns directly on the daemon's service (P15) and ``attached`` admits them
++  into the shared session host every attached surface uses (P17-22).
++
++``test_a_seeded_difference_fails_the_matrix`` drops the attached host's usage event and checks the
++matrix catches it.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import os
++import signal
++from collections.abc import Callable, Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from tests.fakes.daemon import pause, until
++from tests.fakes.turn import check_alternation
++from tests.integration.service.conftest_hosts import (
++    ALLOWLIST,
++    HOSTS,
++    HostKind,
++    HostRig,
++    MatrixDifference,
++    Peer,
++    StdioPeer,
++    WsPeer,
++    host_rig,
++    load_allowlist,
++    session_host,
++    settle,
++    steps_script,
++)
++
++__all__ = ["session_host"]
++
++pytestmark = [
++    pytest.mark.skipif(os.name != "posix", reason="POSIX sockets and signals"),
++    pytest.mark.slow,
++]
++
++TIMEOUT = 90.0
++
++
++def model_bodies(rig: HostRig) -> list[dict[str, Any]]:
++    """The request bodies the scripted model answered (title and model-list calls excluded)."""
++    return [r.body for r in rig.model.model.requests if r.turn is not None and r.method == "POST"]
++
++
++def tool_call(name: str, command: str, call_id: str) -> dict[str, Any]:
++    return {"tool_call": {"name": name, "arguments": {"command": command}, "id": call_id}}
++
++
++# == P06: the classic CLI's finite runs ===========================================================
++
++
++def test_z_prints_only_the_reply(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.z.completed"
++    rig.use(steps_script([{"text": "hello"}]))
++    out = rig.indus("-z", "say hello")
++    rig.same(case, "exit", out.returncode, 0)
++    rig.same(case, "stdout", out.stdout, "hello\n")
++    rig.same(case, "stderr", out.stderr, "")
++
++
++def test_z_empty_answers_are_a_failure(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.z.empty"
++    empty = [{"usage": {"prompt": 10, "completion": 0}}, {"finish": "stop"}]
++    rig.use(steps_script(*[empty] * 8))
++    out = rig.indus("-z", "say nothing")
++    rig.same(case, "exit", out.returncode, 2)
++
++
++def test_z_failure_exits_2_and_writes_the_usage_file(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.z.failed"
++    rig.use(steps_script([{"fail": {"status": 400, "body": '{"error": "bad request"}'}}]))
++    usage = rig.root / "usage" / "report.json"
++    out = rig.indus("-z", "anything", "--usage-file", str(usage))
++    rig.same(case, "exit", out.returncode, 2)
++    rig.same(case, "stderr prefix", out.stderr.startswith("indus -z: "), True)
++    report = json.loads(usage.read_text(encoding="utf-8")) if usage.exists() else {}
++    rig.same(
++        case,
++        "usage file",
++        {k: report.get(k) for k in ("failed", "completed", "cost_status", "exit_reason")},
++        {
++            "failed": True,
++            "completed": False,
++            "cost_status": "unknown",
++            "exit_reason": "provider_failed",
++        },
++    )
++
++
++def test_z_text_then_failure_is_partial(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.z.partial"
++    cut = [{"text": ["half an ans"]}, {"mid_stream_error": {"error": {"message": "boom"}}}]
++    rig.use(steps_script(*[cut] * 4))
++    usage = rig.root / "u.json"
++    out = rig.indus("-z", "go", "--usage-file", str(usage))
++    rig.same(case, "exit", out.returncode, 2)
++    report = json.loads(usage.read_text(encoding="utf-8")) if usage.exists() else {}
++    rig.same(case, "usage completed", report.get("completed"), False)
++    rig.same(case, "stdout", out.stdout, "")  # only a model reply ever goes to stdout
++    rig.same(case, "stderr says why", bool(out.stderr.strip()), True)
++
++
++def test_usage_errors_exit_2(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.usage_errors"
++    rig.use(steps_script([{"text": "never"}]))
++    out = rig.indus("-z", "x", "--provider", "openai")
++    rig.same(case, "provider without model", out.returncode, 2)
++    rig.same(case, "provider message", "--provider needs --model" in out.stderr, True)
++    rig.same(case, "reasoning", rig.indus("-z", "x", "--reasoning", "loud").returncode, 2)
++    rig.same(case, "bogus flag", rig.indus("--bogus-flag").returncode, 2)
++    rig.same(case, "model turns", len(model_bodies(rig)), 0)
++
++
++def test_ctrl_c_on_z_exits_130(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.z.interrupted"
++    rig.use(steps_script([{"text": ["thinking"]}, {"stall": 120}]))
++    proc = rig.spawn("-z", "think long")
++    try:
++        until(lambda: model_bodies(rig) or proc.poll() is not None, "the model asked", TIMEOUT)
++        pause(1.0)  # the first chunk is on its way to the reply
++        proc.send_signal(signal.SIGINT)
++        out, _err = proc.communicate(timeout=TIMEOUT)
++    finally:
++        if proc.poll() is None:
++            proc.kill()
++            proc.wait(10)
++    rig.same(case, "exit", proc.returncode, 130)
++    rig.same(case, "stdout", out in ("", "thinking\n"), True)  # at most the sealed reply
++
++
++def test_z_refuses_hardline_and_auto_approves_the_rest(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.z.approvals"
++    work = rig.profile.work
++    (work / "victim").mkdir()
++    rig.use(
++        steps_script(
++            [tool_call("terminal", "touch HARD_RAN; grep 'unterminated", "call_hard")],
++            [tool_call("terminal", "find victim -delete", "call_risky")],
++            [{"text": "done"}],
++        )
++    )
++    out = rig.indus("-z", "clean up")
++    bodies = model_bodies(rig)
++    hard = [
++        m
++        for body in bodies[1:2]
++        for m in body["messages"]
++        if m.get("role") == "tool" and m.get("tool_call_id") == "call_hard"
++    ]
++    rig.same(case, "hardline blocked", bool(hard) and "BLOCKED" in json.dumps(hard), True)
++    rig.same(case, "hardline did not run", (work / "HARD_RAN").exists(), False)
++    # -z approves the dangerous command for the run: it runs and the reply is printed.
++    outcome = (out.returncode, out.stdout, (work / "victim").exists())
++    rig.same(case, "outcome", outcome, (0, "done\n", False))
++
++
++def test_finite_chat_query_denies_risky_commands(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.q.denies"
++    work = rig.profile.work
++    (work / "victim").mkdir()
++    rig.use(
++        steps_script([tool_call("terminal", "find victim -delete", "call_risky")], [{"text": "no"}])
++    )
++    out = rig.indus("chat", "-q", "clean up")
++    # Nobody can answer in a finite run: the command is denied, the reply printed, then the
++    # session line.
++    outcome = (
++        out.returncode,
++        out.stdout,
++        (work / "victim").exists(),
++        out.stderr.startswith("session_id: "),
++    )
++    rig.same(case, "outcome", outcome, (0, "no\n", True, True))
++
++
++def test_finite_chat_codes(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.q.codes"
++    rig.use(steps_script([{"fail": {"status": 400, "body": "{}"}}]))
++    rig.same(case, "failed", rig.indus("chat", "-Q", "-q", "x").returncode, 1)
++    rig.use(steps_script([{"text": "hello"}]))
++    out = rig.indus("chat", "--query-file", "-", stdin="from stdin")
++    rig.same(case, "query file", (out.returncode, out.stdout), (0, "hello\n"))
++
++
++def test_resume_chain_with_z(session_host: HostRig) -> None:
++    rig, case = session_host, "cli.z.resume"
++    rig.use(steps_script([{"text": "one"}]))
++    rig.same(case, "first", rig.indus("-z", "first").returncode, 0)
++    rig.use(steps_script([{"text": "again"}]))
++    second = rig.indus("--resume", "latest", "-z", "second")
++    rig.same(case, "second", (second.returncode, second.stdout), (0, "again\n"))
++    sent = model_bodies(rig)[0]["messages"] if model_bodies(rig) else []
++    users = [m["content"] for m in sent if m["role"] == "user"]
++    rig.same(case, "history sent", users, ["first", "second"])
++
++
++@pytest.mark.parametrize("flag", ["-c", "--continue"])
++def test_continue_miss_exits_1(session_host: HostRig, flag: str) -> None:
++    rig, case = session_host, "cli.continue_miss"
++    rig.use(steps_script([{"text": "never"}]))
++    out = rig.indus(flag, "nothing", "here", "-z", "x")
++    rig.same(case, "exit", out.returncode, 1)
++    rig.same(case, "message", "No session found matching 'nothing here'." in out.stderr, True)
++
++
++# == P12: the TUI protocol =========================================================================
++
++
++def streamed(peer: Peer, turn_id: str) -> str:
++    return "".join(
++        str(e.get("text") or "") for e in peer.events("message.delta") if e["turn_id"] == turn_id
++    )
++
++
++def started_after(peer: Peer, count: int) -> dict[str, Any]:
++    """The ``count``-th ``turn.started`` (1-based)."""
++    frame = peer.wait_for(lambda f: len(peer.events("turn.started")) >= count, "a turn start")
++    del frame
++    return peer.events("turn.started")[count - 1]
++
++
++def stored_rows(rig: HostRig, session_id: str) -> list[Any]:
++    from indus.core.persist import StateStore
++    from indus.foundation.scope import make_scope
++    from indus.state import registry
++
++    with registry.open_unshared(make_scope(rig.profile.home)) as handle:
++        return list(asyncio.run(StateStore(handle).load(session_id)))
++
++
++def user_texts(rig: HostRig, session_id: str) -> list[str]:
++    return [str(r.content) for r in stored_rows(rig, session_id) if r.role == "user"]
++
++
++def stored_session(rig: HostRig, session_id: str) -> dict[str, Any]:
++    import sqlite3
++
++    uri = f"file:{rig.profile.home / 'state.db'}?mode=ro"
++    conn = sqlite3.connect(uri, uri=True)
++    try:
++        conn.row_factory = sqlite3.Row
++        row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
++    finally:
++        conn.close()
++    return dict(row) if row is not None else {}
++
++
++def test_bridge_demo_turn(session_host: HostRig) -> None:
++    """Stream, two tool calls, an approval answered "once", the final message (P12-33)."""
++    rig, case = session_host, "bridge.demo_turn"
++    rig.use("tui_demo2")
++    peer = rig.peer()
++    sid = peer.call("session.create", title="demo two")["session_id"]
++    peer.call("prompt.submit", session_id=sid, text="make a counter script and run it")
++    ask = peer.wait_for(
++        lambda f: f.get("method") == "server_request" and f["params"]["kind"] == "approval",
++        "the approval request",
++    )["params"]
++    rig.same(case, "approval command", ask["command"], "chmod +x count.sh && ./count.sh")
++    rig.same(case, "not run before the answer", (rig.profile.work / "runs.log").exists(), False)
++    rig.same(
++        case,
++        "answer",
++        peer.answer(sid, ask, {"kind": "approval", "choice": "once"}),
++        {"accepted": True},
++    )
++    done = peer.wait_for(lambda f: f.get("method") == "message.complete", "the final message")
++    rig.same(
++        case,
++        "final message",
++        (done["params"]["text"], done["params"]["reason"]),
++        ("All done: count.sh printed **counted**.", "completed"),
++    )
++    turn = started_after(peer, 1)["turn_id"]
++    rig.same(
++        case,
++        "stream",
++        streamed(peer, turn).startswith("Writing count.sh for you.Running it now."),
++        True,
++    )
++    tools = [(e["name"], e["ok"]) for e in peer.events("tool.completed")]
++    rig.same(case, "tools", tools, [("terminal", True), ("terminal", True)])
++    rig.same(
++        case, "ran once", (rig.profile.work / "runs.log").read_text(encoding="utf-8"), "once\n"
++    )
++    rig.same(case, "model turns", rig.model.model_turns, 3)
++    rows = stored_rows(rig, sid)
++    check_alternation(rows)
++    rig.same(case, "stored prompts", user_texts(rig, sid), ["make a counter script and run it"])
++
++
++# -- the event shape of a turn ---------------------------------------------------------------------
++
++TURN_EVENTS = (
++    "turn.started",
++    "message.delta",
++    "reasoning.delta",
++    "tool.started",
++    "tool.completed",
++    "server_request",
++    "turn.done",
++    "message.complete",
++    "session.usage",
++)
++"""Events a turn's lines on screen are built from (presence, settle notices, transport aside)."""
++SESSION_EVENTS = ("session.info", "session.title")
++"""Events the session header is built from (model, folder, tools, title)."""
++
++
++def shown(peer: Peer, kinds: tuple[str, ...]) -> list[str]:
++    """The event methods of ``kinds`` in order, consecutive stream pieces counted once (the
++    daemon joins pieces that arrive within 33 ms, D-16.367)."""
++    out: list[str] = []
++    for method in peer.methods():
++        if method not in kinds:
++            continue
++        if method.endswith(".delta") and out and out[-1] == method:
++            continue
++        out.append(method)
++    return out
++
++
++TURN_SHAPE = [
++    "turn.started",
++    "message.delta",
++    "turn.done",
++    "message.complete",
++    "session.usage",
++    "turn.started",
++    "tool.started",
++    "server_request",
++    "tool.completed",
++    "message.delta",
++    "turn.done",
++    "message.complete",
++    "session.usage",
++]
++
++
++def event_shape_case(rig: HostRig, *, drop: Callable[[dict[str, Any]], bool] | None = None) -> None:
++    case = "bridge.event_shape"
++    (rig.profile.work / "victim").mkdir(exist_ok=True)
++    rig.use(
++        steps_script(
++            [{"text": ["Hello ", "there"]}, {"usage": {"prompt": 10, "completion": 3}}],
++            [tool_call("terminal", "find victim -delete", "c1")],
++            [{"text": "done"}],
++        )
++    )
++    peer = rig.peer()
++    if drop is not None:
++        peer.dropped = drop
++    sid = peer.call("session.create")["session_id"]
++    peer.call("prompt.submit", session_id=sid, text="hi")
++    peer.wait_for(lambda f: f.get("method") == "turn.done", "the first turn's end")
++    settle(0.5)
++    peer.call("prompt.submit", session_id=sid, text="clean")
++    ask = peer.wait_for(lambda f: f.get("method") == "server_request", "the approval")["params"]
++    peer.answer(sid, ask, {"kind": "approval", "choice": "once"})
++    until(lambda: len(peer.events("turn.done")) >= 2, "the second turn's end")
++    until(lambda: rig_title(rig, sid), "the stored title", 20)
++    settle(1.5)  # the turn-end events and the title may still be on their way
++    rig.same(case, "turn events", shown(peer, TURN_EVENTS), TURN_SHAPE)
++    rig.same(case, "session events", shown(peer, SESSION_EVENTS), ["session.info", "session.title"])
++    finals = [(e["text"], e["reason"]) for e in peer.events("message.complete")]
++    rig.same(case, "finals", finals, [("Hello there", "completed"), ("done", "completed")])
++    usage = peer.events("session.usage")
++    rig.same(
++        case,
++        "usage",
++        [
++            {k: u["usage"].get(k) for k in ("api_calls", "input_tokens", "output_tokens")}
++            for u in usage
++        ],
++        [
++            {"api_calls": 1, "input_tokens": 10, "output_tokens": 3},
++            {"api_calls": 3, "input_tokens": 10, "output_tokens": 3},
++        ],
++    )
++    rig.same(case, "stored title", rig_title(rig, sid), "Chat: hi")
++    rig.same(case, "stored source", stored_session(rig, sid).get("source"), "tui")
++
++
++def rig_title(rig: HostRig, session_id: str) -> str | None:
++    found = stored_session(rig, session_id).get("title")
++    return str(found) if found else None
++
++
++def test_bridge_event_shape(session_host: HostRig) -> None:
++    event_shape_case(session_host)
++
++
++def test_a_seeded_difference_fails_the_matrix(tmp_path: Path) -> None:
++    """The attached host with its usage event dropped no longer matches: the matrix fails."""
++    dropped = MatrixDifference
++    with (
++        host_rig("attached", tmp_path / "seeded") as rig,
++        pytest.raises(dropped, match=r"bridge\.event_shape/turn events differs on the attached"),
++    ):
++        event_shape_case(rig, drop=lambda frame: frame.get("method") == "session.usage")
++
++
++# -- a client lost mid-turn ---------------------------------------------------------------------
++
++
++def test_bridge_client_lost_mid_turn_then_resumed(session_host: HostRig) -> None:
++    """The TUI's connection dies mid-turn; a new one resumes the session; nothing is sent again."""
++    rig, case = session_host, "bridge.lost_mid_turn"
++    rig.use(
++        steps_script(
++            [{"text": ["Long ", "partial"]}, {"stall": 4}, {"text": " end"}],
++            [{"text": "After the restart."}],
++        )
++    )
++    first = rig.peer()
++    sid = first.call("session.create")["session_id"]
++    first.call("prompt.submit", session_id=sid, text="start a long one")
++    first.wait_for(
++        lambda f: f.get("method") == "message.delta" and "partial" in str(f["params"].get("text")),
++        "the partial reply",
++    )
++    if isinstance(first, StdioPeer):
++        first.proc.send_signal(signal.SIGKILL)
++        first.proc.wait(10)
++    elif isinstance(first, WsPeer):
++        first.drop()
++    second = rig.peer()
++    resumed = second.call("session.resume", session_id=sid)
++    rig.same(case, "same session", resumed["session_id"], sid)
++    pause(6.0)  # longer than the stall: a turn still running would finish now
++    rig.same(case, "model turns after the loss", rig.model.model_turns, 1)  # never resent
++    finished = [str(r.content) for r in stored_rows(rig, sid) if r.role == "assistant"]
++    rig.same(case, "lost turn finished", finished, [])
++    rig.same(case, "stored prompts", user_texts(rig, sid), ["start a long one"])
++    seen = {e["turn_id"] for e in second.events("message.complete")}
++    second.call("prompt.submit", session_id=sid, text="and now?")
++    done = second.wait_for(
++        lambda f: f.get("method") == "message.complete" and f["params"]["turn_id"] not in seen,
++        "the reply",
++    )
++    rig.same(case, "reply", done["params"]["text"], "After the restart.")
++    rig.same(case, "model turns", rig.model.model_turns, 2)
++    rig.same(case, "prompts", user_texts(rig, sid), ["start a long one", "and now?"])
++
++
++# -- steering a running reply ---------------------------------------------------------------------
++
++
++def test_bridge_steer_reaches_the_running_turn(session_host: HostRig) -> None:
++    """``session.steer`` naming the running turn's generation (as the TUI sends it) is taken and
++    reaches the model with the turn's next request."""
++    rig, case = session_host, "bridge.steer"
++    rig.use(
++        steps_script(
++            [{"text": ["Working"]}, {"stall": 3}, tool_call("terminal", "echo ok", "c1")],
++            [{"text": "Steered done."}],
++        )
++    )
++    peer = rig.peer()
++    sid = peer.call("session.create")["session_id"]
++    peer.call("prompt.submit", session_id=sid, text="start")
++    started = started_after(peer, 1)
++    peer.wait_for(lambda f: f.get("method") == "message.delta", "the reply streaming")
++    steered = peer.call(
++        "session.steer", session_id=sid, text="use python", generation=started["generation"]
++    )
++    rig.same(case, "queued", steered.get("queued"), True)
++    done = peer.wait_for(lambda f: f.get("method") == "message.complete", "the reply's end")
++    rig.same(case, "reply", done["params"]["text"], "Steered done.")
++    later = json.dumps(model_bodies(rig)[1:])
++    rig.same(case, "steer reached the model", "use python" in later, True)
++
++
++# -- what the TUI reads at start -------------------------------------------------------------------
++
++
++def outcome_of(peer: Peer, method: str, **params: Any) -> Any:
++    answer = peer.answer_of(peer.send(method, **params), method)
++    if "error" in answer:
++        return {"error": answer["error"]["code"]}
++    return answer["result"]
++
++
++def test_bridge_settings_the_tui_reads_at_start(session_host: HostRig) -> None:
++    rig, case = session_host, "bridge.settings"
++    rig.use("tui_demo2")
++    peer = rig.peer()
++    options = outcome_of(peer, "model.options")
++    providers = options.get("providers", []) if isinstance(options, dict) else []
++    custom = next((p for p in providers if p.get("slug") == "custom"), {})
++    before = outcome_of(peer, "config.get", key="full")
++    outcome_of(peer, "config.set", key="busy", value="steer")
++    after = outcome_of(peer, "config.get", key="full")
++    seen = {
++        "custom provider usable": (custom.get("authenticated"), custom.get("current")),
++        "busy before": before.get("value", {}).get("busy", "missing"),
++        "busy after": after.get("value", {}).get("busy", "missing"),
++    }
++    want = {"custom provider usable": (True, True), "busy before": None, "busy after": "steer"}
++    rig.same(case, "settings", seen, want)
++    rig.same(case, "model turns", rig.model.model_turns, 0)
++
++
++# == P15 Demo 3 under both hosts ===================================================================
++
++
++@pytest.fixture(params=HOSTS)
++def messaging_host(
++    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
++) -> Iterator[HostKind]:
++    """``inprocess``: chat turns run on the daemon's service directly (P15). ``attached``: they are
++    admitted into the shared session host attached surfaces use (P17-22)."""
++    from tests.integration.gateway import three_platforms
++
++    shared = request.param == "attached"
++    plain = three_platforms.quick
++
++    def quick(**changes: Any) -> Any:
++        return plain(**{"shared_host": shared, **changes})
++
++    monkeypatch.setattr(three_platforms, "quick", quick)
++    assert three_platforms.quick().shared_host is shared  # what three_daemon builds with
++    yield request.param
++
++
++def test_demo3_one_agent_on_three_platforms(messaging_host: HostKind, tmp_path: Path) -> None:
++    from tests.e2e.gateway import test_demo3 as demo3
++
++    demo3.test_the_same_agent_answers_on_telegram_discord_and_slack(tmp_path)
++
++
++def test_demo3_approval_by_a_telegram_button(messaging_host: HostKind, tmp_path: Path) -> None:
++    from tests.e2e.gateway import test_demo3 as demo3
++
++    demo3.test_a_dangerous_command_is_approved_with_a_telegram_button(tmp_path)
++
++
++def test_demo3_cron_delivery_on_its_tick(
++    messaging_host: HostKind, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from tests.e2e.gateway import test_demo3 as demo3
++
++    demo3.test_a_cron_job_every_30m_reaches_the_telegram_chat_on_its_tick(tmp_path, monkeypatch)
++
++
++@pytest.mark.parametrize("name", ["telegram", "discord", "slack"])
++def test_demo3_chunker_busy_guards_and_default_deny(
++    messaging_host: HostKind, tmp_path: Path, name: str
++) -> None:
++    from tests.e2e.gateway import test_demo3 as demo3
++
++    demo3.test_chunker_busy_guards_and_default_deny(tmp_path, name)
++
++
++# == the allow-list itself =========================================================================
++
++
++def test_the_allow_list_is_well_formed() -> None:
++    entries = load_allowlist(ALLOWLIST)
++    for entry in entries:
++        assert entry.case.split(".")[0] in {"cli", "bridge", "demo3"}, entry
++    assert len({(e.case, e.facet, e.host) for e in entries}) == len(entries)
++
++
++def test_an_entry_without_a_d_id_is_refused(tmp_path: Path) -> None:
++    bad = tmp_path / "allow.yaml"
++    bad.write_text(
++        "differences:\n  - {case: x, facet: y, host: attached, d_id: none, why: because}\n",
++        encoding="utf-8",
++    )
++    with pytest.raises(ValueError, match="not a D-id"):
++        load_allowlist(bad)
++    bad.write_text(
++        "differences:\n  - {case: x, facet: y, host: attached, d_id: D-?, why: ''}\n",
++        encoding="utf-8",
++    )
++    with pytest.raises(ValueError, match="no reason"):
++        load_allowlist(bad)
+diff --git a/tests/unit/service/remote/test_host.py b/tests/unit/service/remote/test_host.py
+index 4aebfca..070e631 100644
+--- a/tests/unit/service/remote/test_host.py
++++ b/tests/unit/service/remote/test_host.py
+@@ -17,7 +17,14 @@ import pytest
+ 
+ from indus.foundation.scope import Scope
+ from indus.protocol.errors import SESSION_BUSY
+-from indus.protocol.events import EventBase, ExitReason, MessageDelta, TurnDone
++from indus.protocol.events import (
++    CancelReason,
++    EventBase,
++    ExitReason,
++    MessageDelta,
++    ServerRequestCancelled,
++    TurnDone,
++)
+ from indus.protocol.methods import ProtocolError, SessionCreateParams
+ from indus.protocol.server_requests import ApprovalRequest
+ from indus.service.admissions import LOST_TURN_NOTE
+@@ -241,6 +248,45 @@ async def test_an_approval_is_answered_with_its_offered_generation(
+     await r.close()
+ 
+ 
++@aio
++async def test_an_approval_answered_by_another_viewer_closes_here(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    """Two attached clients see one approval; the second answers; the first is told the question
++    was answered elsewhere (its card closes) and both see the turn finish."""
++    r = await rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("confirm", {})),
++        text_turn("cleaned"),
++        tools={"confirm": confirm},
++    )
++    cli, tui = await remote(r, scope), await remote(r, scope)
++    sid = (await cli.create()).session_id
++    await tui.resume(sid)
++    seen: list[object] = []
++    cli.subscribe(sid, seen.append)
++    asked_here: list[object] = []
++    asked_there: list[object] = []
++    cli.on_request(sid, asked_here.append)
++    tui.on_request(sid, asked_there.append)
++    submitted = await cli.submit(sid, "clean")
++    await eventually(lambda: asked_here and asked_there)
++    request = asked_there[0]
++    assert isinstance(request, ApprovalRequest)
++    answer = {"kind": "approval", "choice": "once"}
++    assert (await tui.answer_server_request(sid, request.request_id, answer)).accepted is True
++    await eventually(lambda: any(isinstance(e, ServerRequestCancelled) for e in seen))
++    (closed,) = [e for e in seen if isinstance(e, ServerRequestCancelled)]
++    assert closed.request_id == request.request_id
++    assert closed.reason is CancelReason.ANSWERED_ELSEWHERE
++    assert (await cli.wait(sid, submitted.turn_id)).reason is ExitReason.COMPLETED
++    await cli.aclose()
++    await tui.aclose()
++    await r.close()
++
++
+ @aio
+ async def test_controls_name_the_running_generation(
+     scope: Scope, store: StoreHandle, tmp_path: Path
+diff --git a/tests/unit/service/test_daemon_host.py b/tests/unit/service/test_daemon_host.py
+index 0f244dd..e03abd3 100644
+--- a/tests/unit/service/test_daemon_host.py
++++ b/tests/unit/service/test_daemon_host.py
+@@ -15,7 +15,7 @@ from indus.core.persist import StateStore
+ from indus.core.turn_state import TurnState
+ from indus.foundation.scope import Scope
+ from indus.protocol.errors import SESSION_NOT_FOUND
+-from indus.protocol.methods import ProtocolError
++from indus.protocol.methods import ProtocolError, SessionCreateParams
+ from indus.protocol.requests_port import RequestNotAnswered
+ from indus.protocol.server_requests import ApprovalAnswer
+ from indus.service.admissions import CANCELLED, TurnTicket
+@@ -319,6 +319,75 @@ async def test_tui_input_queues_and_cli_input_interrupts(
+     await host.aclose()
+ 
+ 
++# -- what an attached client sees at a turn's end (P17-26) ---------------------------------------
++
++
++@aio
++async def test_a_turn_ends_with_its_final_message_and_the_usage(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    """After ``turn.done``: ``message.complete`` (text and reason) then ``session.usage``, live and
++    in a replay, as the TUI's own bridge sends them."""
++    host = await open_host(scope, store, tmp_path, text_turn("Hel", "lo"))
++    tui = Watcher("t1", "tui")
++    sid = (await host.create(viewer=tui.viewer)).session_id
++    first = await host.submit(sid, "hi", principal="p", request_id="r1", connection_id="t1")
++    await host.wait(first.admission_id)
++    await eventually(lambda: "session.usage" in tui.types())
++    ends = [t for t in tui.types() if t in ("turn.done", "message.complete", "session.usage")]
++    assert ends == ["turn.done", "message.complete", "session.usage"]
++    (final,) = [e for e in tui.events if e["type"] == "message.complete"]
++    (done,) = [e for e in tui.events if e["type"] == "turn.done"]
++    assert (final["text"], final["reason"], final["turn_id"]) == (
++        "Hello",
++        "completed",
++        done["turn_id"],
++    )
++    (usage,) = [e for e in tui.events if e["type"] == "session.usage"]
++    assert usage["usage"]["api_calls"] == 1 and "context_window" in usage["usage"]
++    assert contiguous(tui.events)
++    replay = host.events_since(sid, host.replay_epoch, 0)
++    assert isinstance(replay, Replay)
++    assert [e["type"] for e in replay.events][-2:] == ["message.complete", "session.usage"]
++    await host.aclose()
++
++
++@aio
++async def test_an_interrupted_turn_ends_with_the_interrupt_reason(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    host = await open_host(scope, store, tmp_path, tool_batch(("hold", {})), tools={"hold": holder})
++    cli = Watcher("c1")
++    sid = (await host.create(viewer=cli.viewer)).session_id
++    receipt = await host.submit(sid, "go", principal="p", request_id="r1", connection_id="c1")
++    await eventually(lambda: holder.entered)
++    running = host.state(sid).running
++    assert running is not None
++    host.interrupt(sid, running)
++    await host.wait(receipt.admission_id)
++    await eventually(lambda: "message.complete" in cli.types())
++    (done,) = [e for e in cli.events if e["type"] == "turn.done"]
++    (final,) = [e for e in cli.events if e["type"] == "message.complete"]
++    assert final["reason"] == done["reason"] != "completed"
++    await host.aclose()
++
++
++@aio
++async def test_a_surface_session_is_stored_under_that_surface(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    """A session a TUI creates through the daemon is a ``tui`` session (its listings and ``-c``
++    find it); the gateway's own sessions keep the service's source."""
++    host = await open_host(scope, store, tmp_path)
++    tui = (await host.create(SessionCreateParams(title="mine"), source="tui")).session_id
++    chat = (await host.create(SessionCreateParams(title="chat"), source="messaging")).session_id
++    tui_row, chat_row = sessions.get(store, tui), sessions.get(store, chat)
++    assert tui_row is not None and tui_row["source"] == "tui"
++    assert chat_row is not None and chat_row["source"] not in ("tui", "messaging")
++    await host.aclose()
++
++
+ # -- fenced controls ------------------------------------------------------------------------------
+ 
+ 

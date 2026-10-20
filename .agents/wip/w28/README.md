@@ -69,3 +69,28 @@
   under /root, no lock change). /root/.npm/_logs/2026-10-20T14_05_* came from another worktree (L3) — owner item.
 - Follow-ups: owner decision on a Spectrum provider + live lane; processing tapbacks once the runner calls them; polls/
   effects, setup device login, E.164 redaction in session descriptions (core); sidecar packaging (P23/P25).
+
+## w28-l3.patch: P17-26 dual-host matrix + P17-27 shared-backend demo E2E — done (base 3d74df4)
+- Builder checks: integration service + e2e service + touched suites 163 passed; broad run 5000 passed / 2 load timeouts
+  (gateway start_status_stop, feishu media) that pass alone 2/2 — integrator: watch them in the full gate; e2e 3/3 (~30 s);
+  matrix ~3.5 min, marked slow; pnpm 908 passed; typecheck, biome, ruff, pyright, lint-imports, tooling.checks ok. No
+  stand-ins, no packages, no protocol/config changes.
+- New: tests/integration/service/conftest_hosts.py (session_host inprocess/attached, HostRig, allow-list loader),
+  test_dual_host_matrix.py (49 cases), tests/fakes/daemon.py, tests/fixtures/service/dual_host_allowlist.yaml,
+  apps/tui/src/test/hosts.ts + hosts.test.tsx, tests/e2e/service/test_shared_backend.py, apps/tui/src/test/
+  sharedBackendDriver.tsx (vite build --ssr into ignored node_modules/.shared-backend), notes dual-host-matrix.md,
+  shared-backend-demo.md.
+- Real P17 fixes (each with a failing-first test): (1) daemon emits message.complete + session.usage after turn.done (live
+  and replay); (2) SessionService.create(source=) stores the creating surface so -c/--resume latest works after attached
+  runs; (3) RemoteSessionService turns request.settled{answered} into server_request.cancelled(answered_elsewhere);
+  (4) TUI steerParams sends the running generation; (5) lost turns reported after a daemon restart (CLI lists /discard
+  lines after a replay gap; TUI reconnect + outcome-unknown line).
+- Shared: service/daemon_host.py, session_service.py, remote/host.py (L2 also edits), cli/attach.py, attach_remote.py,
+  unit tests; apps/tui appRuntime/recovery/testRuntime/entry/turnStore/submission/localCommands; traps R05.1, R09.11;
+  ACC-K51-1/2.
+- Allow-list decisions: cli.z.approvals (D-16.490), cli.q.denies (D-16.487), bridge.lost_mid_turn (D-16.10), proposed new:
+  daemon sends no session.info/session.title; daemon serves no model.options / config.get/set.
+- Follow-ups: unattended on prompt.submit + run-scoped auto-approve on the daemon; prompt.submit generation 0 when idle;
+  session.resume returns no stored messages; prompts typed on another surface not shown; admission.state for unknown
+  admissions in the TUI; usage_numbers duplicated (daemon_host vs tui_bridge/events); new session has no row until first
+  turn (D-16.426); Demo 3 SIGKILL-mid-send not under both hosts.
