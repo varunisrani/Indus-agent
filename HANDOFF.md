@@ -77,9 +77,11 @@ P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
 - Wave 28 builders (brief `.agents/wip/w28/brief.md`): L1 P17-23 idle exit (wt-w28l1), L2 P17-24 profile binding +
   P17-25 protocol additions/codegen (wt-w28l2), L3 P17-26 dual-host matrix + P17-27 shared-backend demo (wt-w28l3).
-  L1, L2 DONE, parked (w28-l1.patch, w28-l2.patch).
+  L1, L2, L3 DONE, parked; P17-23..27 integrator running in scratchpad verify16 (brief
+  `.agents/wip/w28/l-integrator-brief.md`, D-16.540..559).
 - Wave 28 P16 builders (brief `.agents/wip/w28/brief-p16.md`): E15 P16-25 Photon (wt-w28e15), E16 P16-33 native
   streams + P16-34 Telegram topics/stickers (wt-w28e16), E17 P16-35 Discord voice + P16-36 adapter matrix/doctor (wt-w28e17).
+  E15, E17 DONE, parked; E16 running. Next: one P16 integrator for E15+E16+E17 (D-16.560..579; re-lock for discord-voice).
   If paused, patches go in `.agents/wip/w28/`.
 - Wave 29 builders (brief `.agents/wip/w29/brief.md`, owner asked for more parallel agents): W1 P18-01..06 web server +
   auth (wt-w29w1), W2 P18-07..10 PTY + chat WS + profile scope (wt-w29w2), F1 P18-17..22 frontend prework (wt-w29f1),
