@@ -80,8 +80,8 @@ In flight:
     brief `.agents/wip/w24/integrator-brief.md` (adds a per-platform lock-key field; D-16.400..419). Patches in
     `.agents/wip/w24/`.
   - Builders K3 (P17-08 session host + 09 creation policy), K4 (P17-10 tickets/ws_auth + 11 attach verbs + 12 RPC
-    dispatcher), E6 (P16-11 Teams + 12 Graph receiver), E7 (P16-13 Google Chat + 20 QQ Bot) in scratchpad
-    wt-w25{k3,k4,e6,e7}. If paused, patches go in `.agents/wip/w25/`.
+    dispatcher), E6 (P16-11 Teams + 12 Graph receiver), E7 (P16-13 Google Chat + 20 QQ Bot), E8 (P16-16 DingTalk + 17/18 WeCom) in scratchpad
+    wt-w25{k3,e6,e7,e8}. K4 (P17-10/11/12) DONE, parked in `.agents/wip/w25/`. If paused, patches go in `.agents/wip/w25/`.
 - Last landings: P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
   fix), P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
   "P15 wave 22 + Demo 3 landing notes"), P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the

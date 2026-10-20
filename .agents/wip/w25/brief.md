@@ -21,6 +21,8 @@ Slices (each owns only its tasks' files):
   (secrets module), single use, short TTL, bound to purpose/profile; constant-time comparison; never logged.
 - E6 = P16-11 Microsoft Teams adapter + P16-12 Microsoft Graph change-notification receiver.
 - E7 = P16-13 Google Chat adapter + P16-20 QQ Bot adapter.
+- E8 = P16-16 DingTalk adapter + P16-17 WeCom smart-robot adapter + P16-18 WeCom callback adapter (crypto vectors in
+  tests/fixtures/gateway/crypto_vectors/, derived by you from the vendor specs with an independent tool, not our code).
 Callback-receiving adapters build on the P16-01 kit (signature/JWT checks in constant time on the raw body before
 parsing; loopback bind by default). P16 tasks never edit P15 core: put the exact registry rows and BUILTIN_CREDENTIALS
 rows you need in your report. Vendor JWT/OAuth validation (Teams Bot Framework, Google Chat bearer tokens): verify
