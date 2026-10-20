@@ -79,11 +79,13 @@ KNOWN_VERBS = (
     "session-ticket",
     "describe",
     "maintenance-run",
+    "stop",
 )
-"""Verbs P15 and P17 name; all but the first two answer ``unsupported`` until registered."""
-OWNER_ONLY_VERBS = frozenset({"session-ticket", "maintenance-run"})
-"""Verbs answered only to a peer the OS confirmed as this user (they hand out credentials, or
-bulk-change the profile's data: ``maintenance-run``, P17-21)."""
+"""Verbs P15, P17 and P18 name; all but the first two answer ``unsupported`` until registered."""
+OWNER_ONLY_VERBS = frozenset({"session-ticket", "maintenance-run", "stop"})
+"""Verbs answered only to a peer the OS confirmed as this user (they hand out credentials,
+bulk-change the profile's data: ``maintenance-run``, P17-21, or end the daemon: ``stop``, the
+dashboard's stop / restart buttons, P18-15)."""
 
 LAUNCHD_LABEL_PREFIX = "ai.indus.gateway"
 _SOCKET_NAME = "gw.sock"

@@ -4,8 +4,10 @@ Both gates — the loopback session-token gate and the gated-mode login gate —
 ``PUBLIC_API_PATHS`` from here and match it exactly, so the two lists can never drift apart (a
 test asserts both gates hold this very object). Every entry must be safe to show anyone who can
 reach the port: liveness, coarse status, the config defaults and schema, model metadata, the theme
-list, the dashboard plugin manifest list, and the cron fire webhook (which carries its own
-short-lived signed token, checked by its handler, P18-14). Widening this list needs a D-id.
+list, the dashboard plugin manifest list, the cron fire webhook (which carries its own
+short-lived signed token, checked by its handler, P18-14) and the MCP OAuth callback (the browser
+coming back from an IdP; ``state`` ties it to a sign-in a signed-in person started, P18-14).
+Widening this list needs a D-id.
 
 ``LOGIN_PUBLIC_PREFIXES`` are what gated mode additionally lets through before login: the login
 page and the auth round trip, the providers list the login page reads, and the static bundle files
@@ -19,7 +21,7 @@ from typing import Final
 __all__ = [
     "LOGIN_PUBLIC_PREFIXES",
     "PUBLIC_API_PATHS",
-    "QUERY_TOKEN_PATHS",
+    "TICKET_PATHS",
     "is_login_public",
     "is_public_api_path",
 ]
@@ -32,6 +34,7 @@ PUBLIC_API_PATHS: Final[frozenset[str]] = frozenset(
         "/api/dashboard/plugins",
         "/api/dashboard/themes",
         "/api/health",
+        "/api/mcp/oauth/callback",
         "/api/model/info",
         "/api/status",
     }
@@ -52,9 +55,12 @@ LOGIN_PUBLIC_PREFIXES: Final[tuple[str, ...]] = (
 )
 """Gated mode only: exact path, or a prefix when the entry ends with ``/``."""
 
-QUERY_TOKEN_PATHS: Final[frozenset[str]] = frozenset({"/api/files/download"})
-"""The only REST route that may carry the loopback token as ``?token=`` (a download opened in a
-new tab cannot set a header; P18-16)."""
+TICKET_PATHS: Final[frozenset[str]] = frozenset({"/api/files/download"})
+"""REST routes that authenticate by their own single-use, path-bound ticket in the query (a
+download opened in a new tab cannot set a header; ``auth.download_ticket``, P18-16). The loopback
+gate hands them to their handler, which refuses anything without a good ticket; the gated mode
+still wants the session cookie as well. No route takes the session token in the URL: ``?token=``
+is refused on every ``/api`` path."""
 
 
 def is_public_api_path(path: str) -> bool:

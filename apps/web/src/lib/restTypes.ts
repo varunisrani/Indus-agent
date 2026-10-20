@@ -12,6 +12,37 @@ export interface ProfilesResponse {
   active: string;
 }
 
+// -- status (public probe, P18-13) ------------------------------------------------------------
+
+export type Pressure = "ok" | "elevated" | "critical" | "unknown";
+export type ComponentHealth =
+  | "ok"
+  | "degraded"
+  | "down"
+  | "busy"
+  | "corrupt"
+  | "unavailable"
+  | "unknown";
+
+/** `GET /api/status`; a failed probe answers only `version`, `daemon.state` and `overall`. */
+export interface StatusResponse {
+  version: string;
+  daemon: { state: string; heartbeat_age_s?: number | null };
+  overall: "ok" | "degraded" | "unknown";
+  platforms?: { name: string; state: string }[];
+  active_sessions?: number | null;
+  recent_sessions?: number | null;
+  auth_required?: boolean;
+  auth_providers?: string[];
+  components?: {
+    store: { status: ComponentHealth };
+    daemon: { status: ComponentHealth; state: string };
+    platforms: { status: ComponentHealth; configured: number; connected: number };
+  };
+  memory?: { pressure: Pressure; available_percent?: number };
+  disk?: { pressure: Pressure; used_percent?: number; free_gb?: number };
+}
+
 // -- sessions ---------------------------------------------------------------------------------
 
 export interface SessionInfo {
@@ -219,6 +250,12 @@ export interface FileContent {
   truncated: boolean;
 }
 
+/** `POST /api/files/download-ticket`: good once, for that path, for `expires_in` seconds. */
+export interface DownloadTicket {
+  ticket: string;
+  expires_in: number;
+}
+
 // -- cron -------------------------------------------------------------------------------------
 
 export type CronState = "scheduled" | "paused" | "running" | "completed" | "error";
@@ -275,13 +312,17 @@ export interface HubResult {
   name: string;
   description: string;
   source: string;
-  verdict: ScanVerdict;
+  trust?: string;
+  /** Null in search results: a search downloads nothing, so nothing was scanned yet. */
+  verdict: ScanVerdict | null;
   installed: boolean;
   update_available: boolean;
 }
 
 export interface HubSearchResponse {
   results: HubResult[];
+  /** Hub sources that did not answer in time. */
+  timed_out?: string[];
 }
 
 export interface PluginInfo {

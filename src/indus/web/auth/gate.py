@@ -11,10 +11,12 @@ last-added first):
 
 1. ``ForwardedHeaders`` (``auth.proxy``) — client address and scheme from trusted proxies only;
 2. ``BearerSeam`` (``auth.service_bearer``) — opted-in bearer routes, nothing else;
-3. ``LoginGate`` — loopback: the session token on every ``/api`` path outside the shared public
-   list (``auth.public_paths``); gated: a verified session cookie (renewed through the provider's
-   refresh token when it expired), the session token refused even when presented, and an
-   unsafe-method ``Origin`` that is not ours refused (403);
+3. ``LoginGate`` — any ``/api`` request naming ``token`` in its query is refused (401
+   ``credential_in_url``: no credential ever rides in a URL); loopback: the session token in a
+   header on every ``/api`` path outside the shared public list (``auth.public_paths``), the
+   ticket routes (``TICKET_PATHS``) handed to their own ticket check; gated: a verified session
+   cookie (renewed through the provider's refresh token when it expired), the session token
+   refused even when presented, and an unsafe-method ``Origin`` that is not ours refused (403);
 4. ``PluginRouteGate`` — dashboard plugin API routes (``/api/ext/<name>/…``) only after auth, so
    an unauthenticated caller gets 401 and never a 404 that names installed plugins;
 5. ``HostGuard`` (``auth.host_guard``) — DNS rebinding;
@@ -55,7 +57,7 @@ from indus.web.auth.providers import (
 from indus.web.auth.proxy import PublicOrigin, client_ip, peer_is_trusted
 from indus.web.auth.public_paths import (
     PUBLIC_API_PATHS,
-    QUERY_TOKEN_PATHS,
+    TICKET_PATHS,
     is_login_public,
 )
 from indus.web.auth.service_bearer import PRINCIPAL_KEY
@@ -192,6 +194,15 @@ def _login_url(scope: Mapping[str, Any], prefix: str) -> str:
     return f"{prefix}/login"
 
 
+def _token_in_query(scope: Mapping[str, Any]) -> bool:
+    """The request names a ``token`` in its query string (refused: no credential in a URL)."""
+    raw: bytes = scope.get("query_string", b"") or b""
+    return any(
+        key.lower() == "token"
+        for key, _ in parse_qsl(raw.decode("latin-1"), keep_blank_values=True)
+    )
+
+
 def _state(scope: Scope) -> dict[str, Any]:
     return scope.setdefault("state", {})
 
@@ -215,6 +226,20 @@ class LoginGate:
         if PRINCIPAL_KEY in _state(scope):
             await self.app(scope, receive, send)
             return
+        if is_api_path(scope.get("path", "")) and _token_in_query(scope):
+            await _send_response(
+                JSONResponse(
+                    {
+                        "error": "credential_in_url",
+                        "detail": "Credentials never go in the URL; send them in a header.",
+                    },
+                    status_code=401,
+                ),
+                scope,
+                receive,
+                send,
+            )
+            return
         if self.ctx.gated:
             await self._gated(scope, receive, send)
         else:
@@ -228,7 +253,7 @@ class LoginGate:
             await self.app(scope, receive, send)
             return
         headers = scope_headers(scope)
-        if self.ctx.token.carried_by(headers) or self._query_token(scope, path):
+        if self.ctx.token.carried_by(headers) or path in TICKET_PATHS:
             await self.app(scope, receive, send)
             return
         await _send_response(
@@ -240,15 +265,6 @@ class LoginGate:
             receive,
             send,
         )
-
-    def _query_token(self, scope: Scope, path: str) -> bool:
-        if path not in QUERY_TOKEN_PATHS:
-            return False
-        raw: bytes = scope.get("query_string", b"") or b""
-        for key, value in parse_qsl(raw.decode("latin-1")):
-            if key == "token" and self.ctx.token.matches(value):
-                return True
-        return False
 
     # -- gated --
 

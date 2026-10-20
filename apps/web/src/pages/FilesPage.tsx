@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, type FormEvent, useState } from "react";
-import { api, fileDownloadUrl, joinPath } from "../lib/api.ts";
+import { api, downloadFile, joinPath } from "../lib/api.ts";
 import { formatBytes, relativeTime } from "../lib/format.ts";
 import type { FileEntry } from "../lib/restTypes.ts";
 import { HeaderActions } from "../shell/PageHeader.tsx";
@@ -10,8 +10,17 @@ import { errorText, useToast } from "../shell/Toasts.tsx";
 import { Button, Card, inputClass, QueryState } from "../ui/controls.tsx";
 import { ConfirmDialog, Modal } from "../ui/Dialog.tsx";
 
+/** Start a download; a refusal (gone, too large, secret) shows as a toast. */
+function useDownload(): (path: string) => void {
+  const toast = useToast();
+  return (path) => {
+    downloadFile(path).catch((error: unknown) => toast.show(errorText(error), "error"));
+  };
+}
+
 function Preview({ path, onClose }: { path: string; onClose: () => void }) {
   const file = useQuery({ queryKey: ["files", "read", path], queryFn: () => api.files.read(path) });
+  const download = useDownload();
   return (
     <Modal
       open
@@ -32,14 +41,7 @@ function Preview({ path, onClose }: { path: string; onClose: () => void }) {
         ) : null}
       </QueryState>
       <div className="mt-3 flex justify-end gap-2">
-        <a
-          className="rounded-md border border-line px-3 py-1.5 text-sm"
-          href={fileDownloadUrl(path)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Download
-        </a>
+        <Button onClick={() => download(path)}>Download</Button>
         <Button onClick={onClose}>Close</Button>
       </div>
     </Modal>
@@ -48,6 +50,7 @@ function Preview({ path, onClose }: { path: string; onClose: () => void }) {
 
 export function FilesPage() {
   const toast = useToast();
+  const download = useDownload();
   const client = useQueryClient();
   const [path, setPath] = useState<string | undefined>(undefined);
   const [folderName, setFolderName] = useState("");
@@ -198,15 +201,13 @@ export function FilesPage() {
                   </td>
                   <td className="flex justify-end gap-1 py-1">
                     {entry.is_directory ? null : (
-                      <a
-                        className="rounded-md px-2 py-1 text-xs text-accent underline"
-                        href={fileDownloadUrl(entry.path)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <Button
+                        tone="ghost"
+                        onClick={() => download(entry.path)}
                         aria-label={`Download ${entry.name}`}
                       >
                         Download
-                      </a>
+                      </Button>
                     )}
                     <Button
                       tone="ghost"

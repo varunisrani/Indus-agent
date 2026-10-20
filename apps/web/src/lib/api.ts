@@ -9,6 +9,7 @@ import type {
   CronJob,
   CronJobInput,
   DeliveryTarget,
+  DownloadTicket,
   EffectiveConfig,
   EnvKeys,
   EnvWriteResponse,
@@ -36,6 +37,7 @@ import type {
   SessionSearchResponse,
   SessionStats,
   SkillInfo,
+  StatusResponse,
   ToolsetInfo,
   UsageResponse,
 } from "./restTypes.ts";
@@ -52,6 +54,7 @@ export const TOKEN_RELOAD_KEY = "indus.tokenReload";
  * Files and profiles are machine-level and stay out.
  */
 export const PROFILE_SCOPED_FAMILIES = [
+  "/api/actions",
   "/api/analytics",
   "/api/config",
   "/api/credentials",
@@ -70,9 +73,21 @@ export const PROFILE_SCOPED_FAMILIES = [
   "/api/sessions",
   "/api/skills",
   "/api/status",
+  "/api/system",
   "/api/tools/toolsets",
   "/api/webhooks",
 ] as const;
+
+/**
+ * Routes inside a scoped family that are not per profile: the public config schema and defaults,
+ * the signed cron fire webhook and the MCP OAuth callback (the generated route list pins them).
+ */
+export const UNSCOPED_PATHS: ReadonlySet<string> = new Set([
+  "/api/config/defaults",
+  "/api/config/schema",
+  "/api/cron/fire",
+  "/api/mcp/oauth/callback",
+]);
 
 const UNREACHABLE_MESSAGE =
   "The dashboard backend is unreachable. Check that indus dashboard is running.";
@@ -147,9 +162,13 @@ function splitUrl(url: string): { path: string; query: string } {
   return at < 0 ? { path: url, query: "" } : { path: url.slice(0, at), query: url.slice(at + 1) };
 }
 
-/** True when `path` is one of the scoped families or below one (matched on whole segments). */
+/**
+ * True when `path` is one of the scoped families or below one (matched on whole segments), except
+ * the few unscoped routes inside them.
+ */
 export function isProfileScoped(path: string): boolean {
   const bare = splitUrl(path).path;
+  if (UNSCOPED_PATHS.has(bare)) return false;
   return PROFILE_SCOPED_FAMILIES.some((family) => bare === family || bare.startsWith(`${family}/`));
 }
 
@@ -391,10 +410,22 @@ export function identityFrom(snapshot: MutationSnapshot): MutationIdentity {
   return identity;
 }
 
-/** The download link for a host file; the only REST route that authenticates by `?token=`. */
-export function fileDownloadUrl(path: string): string {
-  const token = sessionToken();
-  return `${basePath()}${withQuery("/api/files/download", { path, token })}`;
+/**
+ * A download link for a host file. No credential ever rides in a URL: the link carries a ticket
+ * minted (with the usual header or cookie) for this one path, good once, for 30 seconds.
+ */
+export async function fileDownloadUrl(path: string): Promise<string> {
+  const minted = await request<DownloadTicket>("/api/files/download-ticket", { json: { path } });
+  return `${basePath()}${withQuery("/api/files/download", { path, ticket: minted.ticket })}`;
+}
+
+/** Download a host file: mint its ticket, then let the browser fetch the attachment. */
+export async function downloadFile(path: string): Promise<void> {
+  const link = document.createElement("a");
+  link.href = await fileDownloadUrl(path);
+  link.download = path.slice(path.lastIndexOf("/") + 1);
+  link.rel = "noopener";
+  link.click();
 }
 
 export interface SessionListQuery {
@@ -415,6 +446,7 @@ export interface LogsQuery {
 
 export const api = {
   profiles: () => request<ProfilesResponse>("/api/profiles"),
+  status: () => request<StatusResponse>("/api/status"),
 
   sessions: {
     list: (query: SessionListQuery = {}) =>

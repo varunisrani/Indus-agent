@@ -10,5 +10,21 @@ from __future__ import annotations
 ROUTERS: tuple[str, ...] = (
     "indus.web.routes.auth:router",
     "indus.web.routes.ws_ticket:router",
+    "indus.web.routes.sessions:router",
+    "indus.web.routes.config_env:router",
+    "indus.web.routes.status:router",
+    "indus.web.routes.logs:router",
+    "indus.web.routes.analytics:router",
+    "indus.web.routes.cron:router",
+    "indus.web.routes.skills:router",
+    "indus.web.routes.plugins:router",
+    "indus.web.routes.mcp:router",
+    "indus.web.routes.messaging:router",
+    "indus.web.routes.webhooks:router",
+    "indus.web.routes.daemon:router",
+    "indus.web.routes.profiles:router",
+    "indus.web.routes.models:router",
+    "indus.web.routes.files:router",
+    "indus.web.routes.system:router",
 )
 """``"module:attr"`` of every router ``create_app`` includes, in order."""

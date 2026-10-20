@@ -1566,6 +1566,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/web/auth/test_host_guard.py::test_middleware_answers_400_for_a_rebound_name`
   - `tests/unit/web/test_spa.py::test_unknown_api_path_is_a_json_404_for_every_method`
   - `apps/web/src/lib/api.test.ts::sends the session token header and the base path`
+  - `tests/unit/web/auth/test_gate.py::test_no_route_takes_the_token_in_the_query`
 - **ACC-L3-1** Sessions page: list, search with snippets, view as markdown, rename, export, prune, delete, resume …
   - Review: not yet planned (phase TBD)
   - `apps/web/src/pages/SessionsPage.test.tsx::renders search snippets with marks and scrolls the opened hit to its first match`
@@ -1573,6 +1574,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `apps/web/src/pages/SessionsPage.test.tsx::shows the dry-run count before pruning`
   - `apps/web/src/pages/SessionsPage.test.tsx::resumes a session in Chat with its id`
   - `apps/web/src/pages/SessionsPage.test.tsx::renames with the mutation identity`
+  - `tests/contract/web/test_sessions_routes.py::test_search_marks_matches`
+  - `tests/contract/web/test_sessions_routes.py::test_delete_fence_codes`
+  - `tests/contract/web/test_sessions_routes.py::test_prune_dry_run_then_real`
 - **ACC-L4-1** Chat tab embedding the real TUI over a PTY and xterm → keep-alive attach across tabs, live tool …
   - `tests/contract/web/test_pty_route.py::test_reattach_supersedes_replays_and_redraws`
   - `tests/contract/web/test_events_fanout.py::test_a_child_s_three_events_reach_both_subscribers`
@@ -1583,10 +1587,15 @@ Checked by `python -m tooling.checks acceptance`.
   - `apps/web/src/pages/ConfigPage.test.tsx::renders the right control for each schema type, grouped by category`
   - `apps/web/src/pages/ConfigPage.test.tsx::saves the edited values in one write`
   - `apps/web/src/pages/EnvPage.test.tsx::clears the input after save and shows only the redacted preview`
+  - `tests/contract/web/test_config_env_routes.py::test_schema_and_defaults_are_public`
+  - `tests/contract/web/test_config_env_routes.py::test_put_round_trips_comments_and_writes_only_changes`
+  - `tests/contract/web/test_config_env_routes.py::test_credential_goes_to_the_secret_store_and_is_never_echoed`
 - **ACC-L6-1** Logs page with file, level and component filters
   - Review: not yet planned (phase TBD)
   - `apps/web/src/pages/LogsPage.test.tsx::sends the chosen file, level, component and length`
   - `apps/web/src/pages/LogsPage.test.tsx::refreshes every 5 s, and not while the tab is hidden`
+  - `tests/contract/web/test_logs_analytics_routes.py::test_level_component_and_tail_filters`
+  - `tests/contract/web/test_logs_analytics_routes.py::test_log_lines_with_a_key_are_redacted`
 - **ACC-L20-1** Dashboard fonts and imagery are our own; the reference's brand fonts are not shipped (lead default)
   - Review: not yet planned (phase TBD)
   - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`

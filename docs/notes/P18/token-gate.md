@@ -83,3 +83,12 @@ Compare (integrator, 2026-10-20; reference reopened read-only, then closed): `he
 ## Status
 
 Done (2026-10-20), builder W1. Compare: done by the P18 integrator with the reference reopened (see the integrator Compare above).
+
+Integration (P18 REST integrator, 2026-10-20; lead decision 3, security): the files-download
+query-token exception is removed. `QUERY_TOKEN_PATHS` became `TICKET_PATHS`: the loopback gate
+hands `/api/files/download` to its handler, which wants a single-use, path-bound, 30-second ticket
+(`auth.download_ticket`, P18-16) and answers nothing about the disk without one; gated mode still
+wants the cookie too. Any `/api` request naming `token` in its query is now 401
+`credential_in_url`, beside a good header too (`tests/unit/web/auth/test_gate.py::
+test_no_route_takes_the_token_in_the_query`). The shared public list gained
+`/api/mcp/oauth/callback` (P18-14, D-16.599). D-16.596.

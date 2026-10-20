@@ -372,6 +372,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/commands/test_sessions.py::test_list_without_a_store_creates_nothing`
   - `tests/unit/service/test_maintenance_gate.py::test_read_only_commands_create_nothing_in_an_empty_home`
   - `tests/unit/cli/commands/test_status.py::test_status_without_any_provider`
+  - `tests/contract/web/test_sessions_routes.py::test_reads_never_write_the_store`
+  - `tests/contract/web/test_sessions_routes.py::test_a_missing_store_is_empty_and_never_created`
+  - `tests/contract/web/test_sessions_routes.py::test_an_uninitialised_store_is_503`
 - **R03.17** Descriptor exhaustion
   - `tests/unit/state/test_readpool.py::test_nine_concurrent_readers_use_eight_pooled_and_the_writer`
   - `tests/unit/state/test_readpool.py::test_process_cap_falls_back_to_the_writer`
@@ -406,6 +409,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_portability.py::test_tombstoned_id_is_refused`
   - `tests/unit/state/test_runtime_ledger.py::test_retired_id_stays_retired_after_an_exact_retry`
   - `tests/unit/state/test_runtime_ledger.py::test_deleted_session_refuses_new_input`
+  - `tests/contract/web/test_sessions_routes.py::test_delete_then_retry_is_idempotent`
 - **R03.23** Profile cross-talk
   - `tests/unit/foundation/test_scope.py::test_unresolved_raises`
   - `tests/unit/foundation/test_scope.py::test_child_env_pins_home`
@@ -518,6 +522,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/commands/test_config_write.py::test_denied_env_names_refused`
   - `tests/unit/cli/commands/test_config_write.py::test_denied_credential_shaped_name_refused`
   - `tests/unit/cli/commands/test_config_write.py::test_upper_snake_goes_to_env_file`
+  - `tests/contract/web/test_config_env_routes.py::test_denied_and_malformed_names_are_refused`
 - **R04.13** Redaction bridge timing
   - `tests/unit/foundation/test_redact.py::test_switch_read_per_call`
   - `tests/unit/foundation/test_redact.py::test_switch_off_in_config_leaves_text`
@@ -532,6 +537,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/commands/test_config_read.py::test_get_masking_table`
   - `tests/unit/cli/commands/test_config_read.py::test_show_masks_credentials`
   - `tests/unit/cli/commands/test_config_read.py::test_get_raw_and_json`
+  - `tests/contract/web/test_config_env_routes.py::test_credential_goes_to_the_secret_store_and_is_never_echoed`
+  - `tests/contract/web/test_config_env_routes.py::test_references_stay_references_and_credentials_stay_hidden`
 - **R04.16** Auth store read errors
   - `tests/unit/providers/auth/test_store.py::test_os_error_on_read_raises_any_platform`
   - `tests/unit/providers/auth/test_store.py::test_os_error_on_read_raises_and_leaves_the_file`
@@ -598,6 +605,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/foundation/test_log_routing.py::test_profile_deleted_while_logging_falls_back_without_recreating`
   - `tests/unit/cli/commands/test_profile.py::test_marker_less_dir_untouched`
   - `tests/unit/cli/commands/test_profile.py::test_delete_tombstones_and_profile_flag_refuses`
+  - `tests/contract/web/test_profiles_models_routes.py::test_create_delete_and_a_deleted_profile_is_never_recreated`
 - **R04.26** Clone must not share channels
   - `tests/unit/cli/commands/test_profile.py::test_clone_strips_channels`
   - `tests/unit/cli/commands/test_profile.py::test_clone_through_symlinked_env`
@@ -809,6 +817,7 @@ Checked by `python -m tooling.checks traps`.
 - **R06.15** Explicit `enabled: false` must beat credentials in env
   - `tests/unit/gateway/test_config.py::test_enablement_table`
   - `tests/unit/gateway/test_config.py::test_explicit_disable_warns_once_per_platform_names_not_values`
+  - `tests/contract/web/test_messaging_routes.py::test_explicit_disable_beats_an_env_credential`
 - **R06.16** Token locks: startup conflict is fatal, mid-run conflict is retryable
   - `tests/integration/gateway/test_daemon_start.py::test_a_token_collision_with_nothing_connected_exits_78`
   - `tests/unit/gateway/test_token_locks.py::test_startup_conflict_is_fatal_and_midrun_retryable`
@@ -825,6 +834,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/service/test_units.py::test_launchd_wrapper_maps_78_to_0`
 - **R06.18** Liveness is PID + start time, or a socket answer
   - `tests/integration/gateway/test_control_part.py::test_the_control_part_serves_reconnects_and_drains`
+  - `tests/integration/web/test_daemon_stop.py::test_the_dashboard_stop_ends_the_daemon_as_a_planned_stop`
   - `tests/unit/gateway/daemon/test_liveness.py::test_a_recycled_pid_with_another_start_time_is_not_alive`
   - `tests/unit/gateway/daemon/test_liveness.py::test_replace_never_signals_a_recycled_pid`
   - `tests/unit/gateway/daemon/test_liveness.py::test_the_lock_excludes_another_process_and_dies_with_it`
@@ -1108,6 +1118,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/web/test_chat_routes_gate.py::test_loopback_mode_credentials_per_route`
   - `tests/integration/web/test_chat_routes_gate.py::test_gated_mode_takes_one_ticket_per_socket`
   - `apps/web/src/lib/api.test.ts::uses the session token in loopback mode, in the subprotocols only`
+  - `tests/contract/web/test_files_system_routes.py::test_a_download_ticket_is_good_once_for_its_path`
+  - `tests/contract/web/test_files_system_routes.py::test_tickets_never_reach_a_log_or_the_audit_file`
+  - `apps/web/src/pages/FilesPage.test.tsx::downloads through a minted ticket, never the session token in the URL`
 - **R09.3** Non-loopback must fail closed
   - Review: not yet planned (P00-guards)
   - `tests/unit/web/auth/test_gate.py::test_gate_table`
@@ -1116,6 +1129,11 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
   - `tests/unit/web/auth/test_gate.py::test_the_allowlist_is_one_object_in_both_gates`
   - `tests/unit/web/auth/test_gate.py::test_unknown_plugin_route_is_401_before_404`
+  - `tests/contract/web/test_status_routes.py::test_status_is_public_in_gated_mode_too`
+  - `tests/contract/web/test_cron_skills_routes.py::test_fire_refuses_bad_tokens_with_one_answer`
+  - `tests/contract/web/test_plugins_mcp_routes.py::test_oauth_callback_is_public_and_matches_state`
+  - `tests/unit/web/auth/test_gate.py::test_no_route_takes_the_token_in_the_query`
+  - `tests/contract/web/test_files_system_routes.py::test_without_a_ticket_the_route_says_nothing_about_the_disk`
 - **R09.5** Token rotation vs open tabs
   - Review: not yet planned (P00-guards)
   - `tests/unit/web/test_spa.py::test_client_routes_get_the_index_with_no_store`
@@ -1196,6 +1214,13 @@ Checked by `python -m tooling.checks traps`.
   - `apps/web/src/lib/api.test.ts::leaves an explicit profile alone`
   - `apps/web/src/lib/api.test.ts::falls back to the backend's own profile when nothing is selected`
   - `apps/web/src/App.test.tsx::shows the switcher and banner for a non-default profile`
+  - `tests/contract/web/test_cron_skills_routes.py::test_writes_need_a_profile_on_a_multi_profile_host`
+  - `tests/contract/web/test_cron_skills_routes.py::test_every_write_depends_on_the_write_scope_except_the_fire_webhook`
+  - `tests/contract/web/test_plugins_mcp_routes.py::test_every_write_depends_on_the_write_scope`
+  - `tests/contract/web/test_messaging_routes.py::test_a_write_without_a_profile_is_refused_on_a_multi_profile_host`
+  - `tests/contract/web/test_route_list.py::test_every_other_write_route_needs_a_profile`
+  - `tests/contract/web/test_route_list.py::test_the_spa_route_list_is_generated`
+  - `apps/web/src/lib/api.test.ts::leaves the unscoped routes inside a scoped family alone`
   - Review: the SPA scoped family list (P18-18)
 - **R09.21** Gateway-owned data cannot be bulk-edited live
   - `tests/unit/service/test_maintenance_gate.py::test_prune_with_a_live_daemon_runs_inside_the_daemon`
@@ -1205,6 +1230,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/state/test_multiprocess_daemon.py::test_daemon_writer_and_readers_share_the_store`
   - `tests/unit/service/test_maintenance_gate.py::test_an_unverified_peer_cannot_run_maintenance`
   - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
+  - `tests/contract/web/test_sessions_routes.py::test_delete_fence_codes`
+  - `tests/contract/web/test_sessions_routes.py::test_bulk_maintenance_refuses_while_the_daemon_holds_the_lock`
+  - `tests/contract/web/test_sessions_routes.py::test_bulk_maintenance_refuses_while_a_daemon_answers`
 - **R09.22** Brand assets
   - Review: not yet planned (P00-guards)
   - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`

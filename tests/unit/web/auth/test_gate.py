@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
-from fastapi import APIRouter
 
 from indus.web.auth import gate as gate_module
 from indus.web.auth import public_paths
 from indus.web.auth.gate import AUTH_BODY_LIMIT, gate_required, safe_next
 from indus.web.auth.proxy import PublicOrigin
-from indus.web.auth.public_paths import PUBLIC_API_PATHS, is_login_public
+from indus.web.auth.public_paths import PUBLIC_API_PATHS, TICKET_PATHS, is_login_public
 from indus.web.auth.token import SESSION_TOKEN_ENV, SessionToken, SessionTokenError, bearer_of
 from tests.unit.web.conftest import Builder, basic_config
 
@@ -74,20 +75,21 @@ def test_public_paths_need_no_token(build: Builder) -> None:
     assert built.client.get("/api/health/extra").status_code == 401
 
 
-def test_query_token_only_on_the_download_route(build: Builder) -> None:
-    router = APIRouter()
-
-    @router.get("/api/files/download")
-    async def download() -> dict[str, bool]:
-        return {"ok": True}
-
-    @router.get("/api/files/list")
-    async def listing() -> dict[str, bool]:
-        return {"ok": True}
-
-    built = build(routers=[router])
-    assert built.client.get(f"/api/files/download?token={built.token}").status_code == 200
-    assert built.client.get(f"/api/files/list?token={built.token}").status_code == 401
+def test_no_route_takes_the_token_in_the_query(build: Builder, tmp_path: Path) -> None:
+    built = build()
+    for path in ("/api/files/download", "/api/files", "/api/sessions", "/api/health"):
+        refused = built.client.get(path, params={"token": built.token})
+        assert refused.status_code == 401, path
+        assert refused.json()["error"] == "credential_in_url"
+        # a good header does not excuse a credential in the URL
+        both = built.client.get(path, params={"token": built.token}, headers=built.auth())
+        assert both.status_code == 401, path
+    # the download route is reached without the token (a new tab cannot send it) but answers
+    # nothing about the file system without its own ticket (P18-16)
+    probe = built.client.get("/api/files/download", params={"path": str(tmp_path / "nothing")})
+    assert probe.status_code == 401
+    assert probe.json()["detail"]["code"] == "download_ticket_invalid"
+    assert PUBLIC_API_PATHS.isdisjoint(TICKET_PATHS)
 
 
 def test_session_token_is_rejected_in_gated_mode(build: Builder) -> None:
@@ -119,6 +121,7 @@ def test_the_allowlist_is_one_object_in_both_gates(build: Builder) -> None:
         "/api/dashboard/plugins",
         "/api/dashboard/themes",
         "/api/health",
+        "/api/mcp/oauth/callback",
         "/api/model/info",
         "/api/status",
     } == PUBLIC_API_PATHS

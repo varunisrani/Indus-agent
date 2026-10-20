@@ -549,6 +549,11 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
         return ok();
       },
     ],
+    [
+      "POST",
+      /^\/api\/files\/download-ticket$/,
+      (call) => ok({ ticket: `ticket-for-${text(asRecord(call.body).path)}`, expires_in: 30 }),
+    ],
     ["POST", /^\/api\/files\/upload$/, () => ok()],
     [
       "DELETE",

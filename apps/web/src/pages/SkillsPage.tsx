@@ -144,7 +144,11 @@ function HubRow({ hit }: { hit: HubResult }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex-1 text-sm font-medium">{hit.name}</span>
-        <Badge tone={VERDICT_TONE[hit.verdict]}>scan: {hit.verdict}</Badge>
+        {hit.verdict === null ? (
+          <Badge>scanned on install</Badge>
+        ) : (
+          <Badge tone={VERDICT_TONE[hit.verdict]}>scan: {hit.verdict}</Badge>
+        )}
         <Badge>{hit.source}</Badge>
       </div>
       <p className="text-xs text-muted">{hit.description}</p>

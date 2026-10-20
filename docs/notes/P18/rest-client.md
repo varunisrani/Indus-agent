@@ -23,7 +23,7 @@ Inputs → outputs: path + method + JSON body, window globals → parsed JSON or
 one reload, a full-page navigation, a toast event on network failure.
 
 Files: `apps/web/src/lib/{api.ts,wsUrl.ts,bootstrap.ts,restTypes.ts,api.test.ts}`,
-`apps/web/src/testing/mockApi.ts`, `apps/web/src/test/_stubs_f1.ts` (stand-in generated route list).
+`apps/web/src/testing/mockApi.ts`, `apps/web/src/test/routes.generated.ts` (generated route list; was the `_stubs_f1.ts` fixture).
 
 Edge cases / failure modes:
 - Family match is on path segments: `/api/model` must not capture `/api/models`.
@@ -75,3 +75,11 @@ query: `wsTarget(path, purpose, params)` returns the credential-free URL and the
 ## Status
 
 Done (2026-10-20). Generated route list and REST models owed by P18-11..16.
+
+Integration (P18 REST integrator, 2026-10-20): `src/test/_stubs_f1.ts` is deleted; `api.test.ts`
+reads `src/test/routes.generated.ts`, written and compared by `tests/contract/web/
+test_route_list.py` from the route modules' `ROUTE_LIST` constants (D-16.598). Against the real
+list the client gained `/api/actions` and `/api/system` as scoped families and `UNSCOPED_PATHS`
+(config schema / defaults, cron fire, MCP OAuth callback); `fileDownloadUrl` now mints a download
+ticket (no `?token=`, D-16.596); `StatusResponse` / `api.status()` and a nullable hub verdict were
+added to `restTypes.ts`.

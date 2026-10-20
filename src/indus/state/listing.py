@@ -27,6 +27,7 @@ import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal
 
 from indus.state import lineage, messages, sessions
 from indus.state.handoff import not_handoff_sql
@@ -38,7 +39,9 @@ __all__ = [
     "PREVIEW_HEAD",
     "PREVIEW_MAX",
     "ListFilters",
+    "ListOrder",
     "SessionSummary",
+    "count_by_source",
     "list_sessions",
     "recent",
     "shape_preview",
@@ -53,6 +56,9 @@ ACTIVITY_FLOOR = datetime(2020, 1, 1, tzinfo=UTC).timestamp()
 ACTIVITY_CEILING_SLACK = 86400.0
 CHUNK = 900
 RECENT_MIN_CANDIDATES = 128
+
+type ListOrder = Literal["started", "activity"]
+"""``started``: newest start first; ``activity``: newest activity stamp (else start) first."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,13 +422,24 @@ def _now(store: StoreHandle) -> float:
     return store.scope.clock.now().timestamp()
 
 
+_ORDER_SQL: dict[str, str] = {
+    "started": "ORDER BY s.started_at DESC, s.id DESC",
+    "activity": "ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC, s.id DESC",
+}
+
+
 def list_sessions(
     store: StoreHandle,
     filters: ListFilters | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    order: ListOrder = "started",
 ) -> list[SessionSummary]:
-    """One page of conversations, newest start first."""
+    """One page of conversations, newest start first (or newest activity with ``order``)."""
+    if order not in _ORDER_SQL:
+        raise ValueError(f"order must be started or activity, not {order!r}")
+    order_sql = _ORDER_SQL[order]
     flt = filters if filters is not None else ListFilters()
     clauses, params = _where(flt)
     where = " AND ".join(clauses)
@@ -436,18 +453,32 @@ def list_sessions(
             "JOIN sessions p ON p.id = chain.cur_id "
             f"JOIN sessions c ON c.parent_session_id = p.id WHERE {_CHAIN_STEP}) "
             f"SELECT s.*, {_KIND} AS kind FROM sessions s WHERE {where} AND {match} "
-            "ORDER BY s.started_at DESC, s.id DESC LIMIT ? OFFSET ?"
+            f"{order_sql} LIMIT ? OFFSET ?"
         )
         args: list[object] = [*params, *params, *match_params, max(limit, 0), max(offset, 0)]
     else:
         sql = (
             f"SELECT s.*, {_KIND} AS kind FROM sessions s WHERE {where} "
-            "ORDER BY s.started_at DESC, s.id DESC LIMIT ? OFFSET ?"
+            f"{order_sql} LIMIT ? OFFSET ?"
         )
         args = [*params, max(limit, 0), max(offset, 0)]
     with store.read() as conn:
         rows = conn.execute(sql, args).fetchall()
         return _summaries(conn, rows, _now(store))
+
+
+def count_by_source(store: StoreHandle, filters: ListFilters | None = None) -> dict[str, int]:
+    """How many rows a listing with ``filters`` holds, per source (``query`` is not supported)."""
+    flt = filters if filters is not None else ListFilters()
+    if (flt.query or "").strip():
+        raise ValueError("count_by_source does not take a query")
+    clauses, params = _where(flt)
+    sql = (
+        f"SELECT s.source, COUNT(*) FROM sessions s WHERE {' AND '.join(clauses)} "
+        "GROUP BY s.source ORDER BY s.source"
+    )
+    with store.read() as conn:
+        return {str(row[0]): int(row[1]) for row in conn.execute(sql, params)}
 
 
 def _candidates(conn: sqlite3.Connection, count: int) -> list[str]:

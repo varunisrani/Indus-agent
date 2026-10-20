@@ -13,7 +13,9 @@ verbs are built from the daemon's ``identity()``, ``status_snapshot()``, ``reque
 ``attach(daemon)`` wires, in order:
 
 1. the control socket (``identify``, ``status`` from ``daemon.runtime_status()``, plus the verbs
-   the daemon answers itself: ``drain``, ``reload-plugins``, ``pause-for-update``, and the attach
+   the daemon answers itself: ``drain``, ``reload-plugins``, ``pause-for-update``, the owner-only
+   ``stop`` (``{reason, restart}``: the planned-stop record ``indus gateway stop`` writes, then the
+   normal shutdown; P18-15's dashboard buttons), and the attach
    verbs ``describe`` / ``session-ticket`` of P17-11 over a ticket book made for this daemon start);
    a socket that cannot be bound raises ``ControlSocketError`` and the startup fails;
 2. the reconnect watcher, connecting through ``daemon.connect_platform(name)`` and reporting each
@@ -35,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from indus.foundation import config
+from indus.foundation.blocking import run_blocking
 from indus.foundation.scope import Scope, scope_or_none
 from indus.gateway.control_socket import ControlServer, Handler, identity_payload
 from indus.gateway.daemon.attach_verbs import AttachVerbs
@@ -43,7 +46,7 @@ from indus.gateway.daemon.reconnect import ConnectOutcome, PlatformHealth, Recon
 from indus.gateway.hooks import GatewayHooks, bridge
 from indus.service.maintenance_gate import MaintenanceVerb
 from indus.service.ws_auth import TicketBook
-from indus.state.gateway_runtime import PlatformStatus
+from indus.state.gateway_runtime import PlatformStatus, record_planned_stop
 
 if TYPE_CHECKING:
     from indus.gateway.adapters.base import Adapter
@@ -217,6 +220,13 @@ def outcome_of(row: PlatformRuntime) -> ConnectOutcome:
             return ConnectOutcome.retryable(error, code)
 
 
+def _label(value: object) -> str:
+    """A short plain label from a caller (letters, digits, ``-``/``_``; at most 32)."""
+    if not isinstance(value, str):
+        return ""
+    return "".join(c for c in value if c.isascii() and (c.isalnum() or c in "-_"))[:32]
+
+
 def _flag(params: Mapping[str, Any], key: str, default: bool) -> bool:
     value = params.get(key, default)
     return value if isinstance(value, bool) else default
@@ -290,6 +300,7 @@ class DaemonBridge:
             "drain": (self._drain, _DRAIN_S),
             "pause-for-update": (self._pause_for_update, _DRAIN_S),
             "reload-plugins": (self._reload_plugins, _DRAIN_S),
+            "stop": (self._stop, _DRAIN_S),  # owner-only by name
             **self.attach_verbs.handlers(),
             # P17-21: bulk session maintenance runs here, beside the live turns (R09.21).
             **MaintenanceVerb(self.daemon.scope).handlers(),
@@ -330,6 +341,30 @@ class DaemonBridge:
         """Stop new turns before an update (``{"resume": true}`` takes them again)."""
         self._set_drain(not _flag(params, "resume", False), "update")
         return self._drain_answer()
+
+    async def _stop(self, params: dict[str, Any]) -> Mapping[str, Any]:
+        """Stop the way ``indus gateway stop`` does: write the planned-stop record for this very
+        process (``restart: true`` labels it ``restart``, so the next attach starts the daemon
+        again; any other stop stays stopped), then the normal drain and shutdown. Answered before
+        the shutdown begins; a second call while stopping changes nothing."""
+        restart = _flag(params, "restart", False)
+        given = params.get("reason")
+        reason = "restart" if restart else _label(given) or "control"
+        daemon = self.daemon
+        if not daemon.lifecycle.stopping:
+            process = daemon.process
+            await run_blocking(
+                lambda: record_planned_stop(
+                    daemon.scope.home,
+                    process.pid,
+                    reason,
+                    start_time=process.start_time,
+                    by=_label(given) or "control",
+                ),
+                label="planned stop",
+            )
+            daemon.request_stop(f"control:{reason}")
+        return {"stopping": True, "restart": restart, "reason": reason}
 
     async def _reload_plugins(self, _params: dict[str, Any]) -> Mapping[str, Any]:
         """Reread the gateway hook folders now; plugin code itself is loaded once per process

@@ -47,3 +47,10 @@ Compare checklist (filled after the rewrite; reopened `LogsPage.tsx`, `FilesPage
 ## Status
 
 Done (2026-10-20).
+
+Integration (P18 REST integrator, 2026-10-20): downloads no longer put the session token in the
+URL (D-16.596). The Download buttons call `downloadFile(path)` (`lib/api.ts`): it mints a ticket
+with `POST /api/files/download-ticket {path}` (header or cookie) and lets the browser fetch
+`/api/files/download?path=…&ticket=…` (good once, for that path, 30 s); a refusal shows a toast.
+Tests: `FilesPage.test.tsx::downloads through a minted ticket, never the session token in the URL`,
+`::mints a ticket in gated mode too (the cookie alone is not enough)`.

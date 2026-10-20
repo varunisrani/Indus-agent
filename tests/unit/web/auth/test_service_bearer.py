@@ -4,34 +4,44 @@ from __future__ import annotations
 
 import math
 import secrets
+from pathlib import Path
+from typing import Any
 
 import pytest
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
+from indus.service.gateway_control import ControlReply
 from indus.web.auth.service_bearer import (
     DRAIN_ROUTE,
     DRAIN_SECRET_ENV,
     MIN_SECRET_BITS,
-    PRINCIPAL_KEY,
     SharedSecretProvider,
     secret_bits,
 )
-from tests.unit.web.conftest import Builder, basic_config
+from tests.unit.web.conftest import Builder, Built, basic_config
 
 
-def _drain_router() -> APIRouter:
+def _other_router() -> APIRouter:
     router = APIRouter()
-
-    @router.post(DRAIN_ROUTE)
-    async def drain(request: Request) -> dict[str, str]:
-        principal = request.scope["state"][PRINCIPAL_KEY]
-        return {"by": principal.principal}
 
     @router.get("/api/other")
     async def other() -> dict[str, bool]:
         return {"ok": True}
 
     return router
+
+
+def _fake_daemon(built: Built) -> list[tuple[str, dict[str, Any]]]:
+    """Answer the real drain route's control call (P18-15) and record every verb sent: a refused
+    request must never reach the daemon."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def query(_home: Path, verb: str, params: dict[str, Any] | None = None, **_: Any) -> Any:
+        calls.append((verb, dict(params or {})))
+        return ControlReply(ok=True, result={"draining": True, "active_turns": 0})
+
+    built.state.extras["daemon.query"] = query
+    return calls
 
 
 def test_secret_strength() -> None:
@@ -44,9 +54,11 @@ def test_secret_strength() -> None:
 
 def test_a_strong_secret_opens_only_its_route(build: Builder) -> None:
     secret = secrets.token_hex(32)
-    built = build(env={DRAIN_SECRET_ENV: secret}, routers=[_drain_router()])
+    built = build(env={DRAIN_SECRET_ENV: secret}, routers=[_other_router()])
+    calls = _fake_daemon(built)
     ok = built.client.post(DRAIN_ROUTE, headers={"Authorization": f"Bearer {secret}"})
-    assert ok.status_code == 200 and ok.json() == {"by": "drain"}
+    assert ok.status_code == 200 and ok.json()["draining"] is True
+    assert calls == [("drain", {"on": True})]
     assert built.client.post(DRAIN_ROUTE).status_code == 401
     wrong = built.client.post(DRAIN_ROUTE, headers={"Authorization": "Bearer " + "f" * 64})
     assert wrong.status_code == 401
@@ -54,6 +66,7 @@ def test_a_strong_secret_opens_only_its_route(build: Builder) -> None:
     assert built.client.post(DRAIN_ROUTE, headers=built.auth()).status_code == 401
     other = built.client.get("/api/other", headers={"Authorization": f"Bearer {secret}"})
     assert other.status_code == 401
+    assert len(calls) == 1  # no refused request reached the daemon
 
 
 def test_the_route_ignores_cookies(build: Builder) -> None:
@@ -62,21 +75,24 @@ def test_the_route_ignores_cookies(build: Builder) -> None:
         host="0.0.0.0",
         config=basic_config(),
         env={DRAIN_SECRET_ENV: secret},
-        routers=[_drain_router()],
+        routers=[_other_router()],
     )
+    calls = _fake_daemon(built)
     built.client.post(
         "/auth/password-login", json={"username": "admin", "password": "correct horse"}
     )
     assert built.client.get("/api/auth/me").status_code == 200
     assert built.client.post(DRAIN_ROUTE).status_code == 401
+    assert calls == []
     ok = built.client.post(DRAIN_ROUTE, headers={"Authorization": f"Bearer {secret}"})
     assert ok.status_code == 200
+    assert calls == [("drain", {"on": True})]
 
 
 def test_a_255_bit_class_secret_disables_the_route(build: Builder) -> None:
     weak = secrets.token_hex(32)[:63]  # 252 bits: just under the bar
     assert secret_bits(weak) < MIN_SECRET_BITS <= secret_bits(weak + "a")
-    built = build(env={DRAIN_SECRET_ENV: weak}, routers=[_drain_router()])
+    built = build(env={DRAIN_SECRET_ENV: weak}, routers=[_other_router()])
     refused = built.client.post(DRAIN_ROUTE, headers={"Authorization": f"Bearer {weak}"})
     assert refused.status_code == 404
     assert "drain" in built.state.auth.registry.reasons
@@ -85,5 +101,5 @@ def test_a_255_bit_class_secret_disables_the_route(build: Builder) -> None:
 
 
 def test_no_secret_leaves_the_route_to_the_normal_gate(build: Builder) -> None:
-    built = build(routers=[_drain_router()])
+    built = build(routers=[_other_router()])
     assert built.client.post(DRAIN_ROUTE).status_code == 401

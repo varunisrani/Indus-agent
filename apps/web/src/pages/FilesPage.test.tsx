@@ -40,23 +40,42 @@ afterEach(() => {
 });
 
 describe("files", () => {
-  it("puts the session token on the download link", async () => {
+  it("downloads through a minted ticket, never the session token in the URL", async () => {
     window.__INDUS_SESSION_TOKEN__ = fakeToken();
     window.__INDUS_BASE_PATH__ = "/indus";
+    const opened: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      opened.push(this.getAttribute("href") ?? "");
+    });
     renderPage(<FilesPage />, "/files");
-    const link = await screen.findByRole("link", { name: "Download notes.txt" });
-    const href = new URL(link.getAttribute("href") ?? "", "http://localhost");
+    fireEvent.click(await screen.findByRole("button", { name: "Download notes.txt" }));
+    await waitFor(() => expect(opened).toHaveLength(1));
+    const minted = mock.callsTo("POST", "/api/files/download-ticket");
+    expect(minted).toHaveLength(1);
+    expect(minted[0]?.body).toEqual({ path: "/home/user/notes.txt" });
+    const href = new URL(opened[0] ?? "", "http://localhost");
     expect(href.pathname).toBe("/indus/api/files/download");
     expect(href.searchParams.get("path")).toBe("/home/user/notes.txt");
-    expect(href.searchParams.get("token")).toBe(fakeToken());
-    expect(link.getAttribute("target")).toBe("_blank");
+    expect(href.searchParams.get("ticket")).toBe("ticket-for-/home/user/notes.txt");
+    expect(href.searchParams.has("token")).toBe(false);
+    expect(opened[0]).not.toContain(fakeToken());
   });
 
-  it("omits the token in gated mode (the cookie authenticates)", async () => {
+  it("mints a ticket in gated mode too (the cookie alone is not enough)", async () => {
     window.__INDUS_AUTH_REQUIRED__ = true;
+    const opened: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      opened.push(this.getAttribute("href") ?? "");
+    });
     renderPage(<FilesPage />, "/files");
-    const link = await screen.findByRole("link", { name: "Download notes.txt" });
-    expect(link.getAttribute("href")).not.toContain("token=");
+    fireEvent.click(await screen.findByRole("button", { name: "Download notes.txt" }));
+    await waitFor(() => expect(opened).toHaveLength(1));
+    expect(opened[0]).toContain("ticket=");
+    expect(opened[0]).not.toContain("token=");
   });
 
   it("asks before deleting", async () => {

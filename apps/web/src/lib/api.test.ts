@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import { GENERATED_ROUTES } from "../test/_stubs_f1.ts";
+import { GENERATED_ROUTES } from "../test/routes.generated.ts";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
 import {
   ApiError,
@@ -186,11 +186,19 @@ describe("profile scope", () => {
   it("raw requests carry the token and the profile", async () => {
     window.__INDUS_SESSION_TOKEN__ = fakeToken();
     setSelectedProfile("work");
-    const res = await rawRequest("/api/config/schema");
+    const res = await rawRequest("/api/config");
     expect(res.ok).toBe(true);
     const call = mock.calls.at(-1);
     expect(call?.headers.get(SESSION_HEADER)).toBe(fakeToken());
     expect(call?.query.get("profile")).toBe("work");
+  });
+
+  it("leaves the unscoped routes inside a scoped family alone", async () => {
+    setSelectedProfile("work");
+    await rawRequest("/api/config/schema");
+    expect(mock.calls.at(-1)?.query.has("profile")).toBe(false);
+    expect(isProfileScoped("/api/config/defaults")).toBe(false);
+    expect(isProfileScoped("/api/config/effective")).toBe(true);
   });
 });
 
