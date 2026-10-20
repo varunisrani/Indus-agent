@@ -75,7 +75,7 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- Nothing running. Parked for the next window: K5 = P17-13 WebSocket endpoint + P17-14 subscriptions
+- Lead integrating K5 in scratchpad verify12 (gate running). Parked: K5 = P17-13 WebSocket endpoint + P17-14 subscriptions
   (`.agents/wip/w25/w26-k5.patch`, README section has wiring owed to P17-22 and the lead ruling: wsproto==1.3.2 into
   base deps). Next: integrate K5; then P17-15..27 (ensure/discovery, attach channels, remote host, CLI/TUI attach by
   default, client WS transport, store ownership, messaging on the shared host incl. mounting the WS endpoint, idle exit,
