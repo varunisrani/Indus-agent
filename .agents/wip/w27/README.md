@@ -105,3 +105,30 @@
   0.3 s; provider from config/env; bridge script from config (source checkout default apps/whatsapp-bridge/src/main.ts).
 - Follow-ups: packaging the bridge for wheel installs (P23/P25); P16-31 pairing flow (INDUS_WA_MODE=pair); canonical
   participant alias folding (core); bridge proxy; doctor ports 3000/3001–3999; live lane; .nvmrc Node 24 vs sandbox 22.
+
+## w27-e12.patch: P16-07 Matrix end-to-end encryption + P16-19 Weixin (iLink Bot) — done (base 90209a7)
+- Builder checks: matrix + weixin + schema + contract 520 passed / 48 skipped; delivery 122 passed; extras lane (mautrix +
+  python-olm built from sdist) matrix 58 passed; ruff, pyright, lint-imports, tooling.checks ok. uv.lock not regenerated.
+- Extras: `matrix-e2ee` (Linux-only, exact pins: mautrix 0.21.1 MPL-2.0 unmodified; python-olm 3.2.16 Apache-2.0 bundling
+  libolm Apache-2.0; pycryptodome 3.23.0 BSD-2/public domain; unpaddedbase64 2.1.0 Apache-2.0; base58 2.1.1 MIT;
+  aiosqlite 0.22.1 MIT; asyncpg 0.31.0 Apache-2.0); `weixin = ["cryptography==50.0.2"]`. Re-lock; check licences from
+  dist-info; 00-layout pins.
+- OWNER NOTE: libolm is deprecated upstream with published timing side-channel advisories; the engine sits behind our own
+  Engine interface (move to vodozemac when mautrix supports it). python-olm has no cp313 wheel (sdist build, cmake + C++).
+- Shared: matrix/adapter.py (async is_encrypted, encrypted attachments, public scope, take_late_event, e2ee_trust, token
+  user/device adopted first), matrix/client.py (request(), joined_members), matrix_wire fake (keys API etc.), schema row
+  platforms.weixin, conftest weixin case, ACC-K10-1, ACC-K11-4, THIRD_PARTY_NOTICES rows.
+- Wiring (core): registry `_chat_entry("weixin", "Weixin / WeChat", sdk=("cryptography",), extra_name="weixin",
+  required_env=("WEIXIN_TOKEN","WEIXIN_ACCOUNT_ID"), max_len=2000, hint="You are talking through Weixin (WeChat). Markdown is
+  shown as typed, so keep formatting light and replies short.")` with lock_env=("WEIXIN_ACCOUNT_ID",); BUILTIN_CREDENTIALS
+  weixin (TOKEN, ACCOUNT_ID); BUILTIN_NAMES += weixin after wecom_callback; cron KNOWN_PLATFORMS += weixin; target rule
+  for weixin in gateway/adapters/targets.py; send test case; Matrix install hint mentions the matrix-e2ee extra.
+  MATRIX_RECOVERY_KEY only from the SecretStore.
+- Decisions: room keys only to verified devices of allowed users (owner cross-signing by default; e2ee_trust: verified);
+  rotation on allowed-member change; late keys wait 3 syncs; store 0700/0600 + flock (second gateway → retryable
+  e2ee_store_busy); `indus send` refused for encrypted rooms (never in clear); send-only does no sync/keys; mautrix HTTP via
+  our httpx; no automatic recovery-key bootstrap (P16-31); Weixin never sends without a context token (-14 drops it);
+  tokens/cursor 0600 under <home>/platforms/weixin/<account>/; dedupe 60 s text / 300 s ids; pacing 1.5 s + 30 s pause on
+  frequency limit; inbound media https Tencent hosts only; groups off by default; ECB vendor-mandated via cryptography.
+- Follow-ups: vodozemac engine; iLink names need a live check (P16-36); `indus send` into encrypted rooms via the daemon;
+  Weixin QR login (P16-31).
