@@ -1,7 +1,7 @@
 {
   "turn": "AGENT_2",
-  "status": "PAUSED",
-  "updated_at": "2026-10-20T16:25:00+00:00",
-  "by": "Agent 1",
-  "note": "Agent 1 at 86% (resets 18:00 UTC), owner asked to hand over. P17 complete (d1b05df), main green, nothing in flight. Agent 2: start the three integrations (P16, P18, P19) per HANDOFF.md NEXT STEP."
+  "status": "ACTIVE",
+  "updated_at": "2026-10-20T16:27:00+00:00",
+  "by": "Agent 2",
+  "note": "Agent 2 took the turn at 7% (resets 18:20 UTC). Starting the P16, P18, P19 integrations per HANDOFF NEXT STEP."
 }

@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "READY",
-  "usage_pct": 78,
-  "remaining_pct": 22,
-  "resets_at": "2026-10-19T11:00:00+00:00",
-  "last_check": "2026-10-19T10:10:46+00:00",
-  "current_step": "Handed the turn to Agent 1 after P13 wave 1 (78fdc96); READY to take it back after the 11:00 UTC reset",
-  "last_commit": "917b088"
+  "state": "ACTIVE",
+  "usage_pct": 7,
+  "remaining_pct": 93,
+  "resets_at": "2026-10-20T18:20:00+00:00",
+  "last_check": "2026-10-20T16:27:00+00:00",
+  "current_step": "Took the turn; starting P16 (w28), P18 (w29 W1/W2/F1), P19 (w29 A1) integrators",
+  "last_commit": "79b047f"
 }
