@@ -340,3 +340,28 @@
 - **Wiring owed.** P17-08 (daemon host): the runner binds `ticket.bind(interrupt=, steer=)` to `SessionService` and honours `ticket.stop_reason` set before it bound; reload the session when `HeldLease.waited`; hard interrupt also stops subagents (in the host's interrupt hook); one `EventLog` per daemon (`run_flusher` task; `gateway.ready.replay_epoch = EventLog.epoch`); per session `RequestBook(sid, emit=elog.append, generation=fences.running)` → `ServerRequestBroker(book=)`, `fences.bind_requests(sid, book, broker.answer)`, `fences.forget` / `elog.forget` on close; `book.session_id` must follow compaction child ids. P17-13/14: viewers → `RequestViewer.of(connection id, kinds, send, can_decline=)`, client errors → `book.refuse`, `events.since` → `book.reoffer`; per-actor authorisation before any fence call; clarify locks. P17-18: `--local` takes the durable lease (then retire the P02 file lock). P17-22: messaging through `admit`, drain `gate=`, `resolve_unknown(terminal_write=)` closes the lost turn in the transcript, `on_blocked` wording, `/retry` as the gate's rewrite. P17-25: `runtime.*` and `stale_generation` onto the protocol table (`StaleGeneration.to_data()` is the error data), `request.settled` / `session.replay_gap` / `events.since` models, `stalled` as an `ExitReason` or not, retire `server_request.cancelled` once every surface reads `request.settled`.
 - Follow-ups: backups still include the ledger tables (R03.21 says exclude); queued input is not rehomed on an automatic reset; a worker that meets a refusing gate exits (the drain-ender must kick it); redirect is not fenced; held delta text is outside the process cap; lease expiry trusts the acquirer's wall clock (a store shared across hosts on a network file system is out of scope); without `/proc/self/ns/pid` two containers with one hostname would share the `host:<name>` namespace id.
 - Gate (verify6, f15b020 + K1 + K2 + integration, `uv sync --locked`, no extras): ruff check / format, pyright (0 errors, 0 warnings), lint-imports (1 kept) clean; `INDUS_STRESS_SECONDS=10 pytest -m "not perf"` **12442 passed, 46 skipped, 11 deselected** in one run (the wave-22 and another integrator's full suites ran beside it; no failure); `pytest -m perf` alone 11 passed; `tooling.checks --require-ref` ok; `CI=true pnpm test --maxWorkers=1` 855 passed (58 files); `test_turn_lease_multiprocess.py` 5× 3 passed; the later-added `test_a_live_holder_cannot_be_declared_dead_without_proof` passed with its file (55 passed with `test_fences.py`). Diff has no credential-shaped literal (fake keys in the new tests are built by concatenation); no stray process from this worktree; one `/tmp/indus-exec-*.pid` appeared during the run while two other full suites were running too (backends tests; not attributable, not from P17 code).
+
+## P16-01 landing notes (lead) — inbound HTTP listener kit and identity helpers (slice E1)
+- Landed alone ahead of the rest of wave 23 so the callback adapters (WhatsApp bridge/Cloud, SMS, LINE, WeCom callback,
+  Buzz) can build on it. New files only (`gateway/adapters/_http.py`, `_identity.py`, `tests/fakes/platform/http_wire.py`,
+  a sample "Hook" callback adapter in `tests/unit/gateway/adapters/http_sample.py` that runs the whole contract suite and
+  is the template to copy) plus test references on trap R06.4.
+- How a callback adapter uses the kit: `docs/notes/P16/http-kit.md` ("How a callback adapter uses the kit").
+- No new packages (httpx, starlette, uvicorn already direct dependencies). Intended differences: D-16.350 … D-16.354.
+- Follow-up (P15 core): `core/send.py`'s text-based classifier reads an httpx `ConnectTimeout` passed as `exc=` as an
+  ambiguous never-retried timeout; adapters using the kit avoid it, but `SendResult.failure(exc=...)` callers with httpx
+  exceptions still hit it.
+- Fix landed with it (P08-13 cooldown, root cause of the intermittent `test_three_hundred_turns_over_two_hours` failure seen
+  in the B3 run and this gate): `FallbackChain._arm` treated a provider reset that had *already passed* as "no reset" and
+  armed a 60 s+ ladder step. Under load the fake-clock driver lets a few seconds pass between classification and arming, so
+  the soak's 10 s Retry-After expired and the turn after the 429 storm stayed on the backup. The documented rule is "the
+  provider's reset, else the ladder": a named reset now always wins (cooldown = max(reset − now, 0)); the notice says "retried
+  at the next turn" under 1 s. Reproduced deterministically (30 slow awaits before `fall_back`: main fails, fix passes);
+  new unit test `test_a_reset_that_already_passed_arms_no_ladder_step` fails without the fix.
+- Second fix landed with it (P05-03 local backend, R02.12; root cause of an intermittent
+  `test_grandchild_ignoring_sigterm_is_sigkilled` failure in the same gate): after the SIGKILL, `stop_tree` waited only for the
+  leader, so a killed descendant could still be running (the kill takes effect when the target is next scheduled) when cleanup
+  returned. It now waits, bounded by `REAP_WAIT_S`, until nothing of the tree is left (zombies excluded). Reproduced
+  deterministically by delivering the SIGKILL 50 ms late (main fails); new test `test_cleanup_waits_for_a_late_sigkill`
+  fails without the fix.
+

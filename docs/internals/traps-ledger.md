@@ -674,6 +674,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_send.py::test_partial_without_remainder_is_never_resent_whole`
   - `tests/contract/gateway/test_adapter_contract.py::test_misbehaving_adapters_fail_the_named_check`
   - Review: chunk offsets for the remainder come with the chunker (P15-14)
+  - `tests/unit/gateway/adapters/test_http.py::test_httpx_failures_are_classified_by_class`
+  - `tests/unit/gateway/adapters/test_http.py::test_a_read_timeout_is_attempted_once_and_a_connect_failure_retried`
 - **R06.5** Ledger states must distinguish "never started" from "maybe sent"
   - `tests/integration/gateway/test_ledger_recovery.py::test_kill_point_then_boot`
   - `tests/unit/gateway/delivery/test_ledger.py::test_boot_sweep_rules`

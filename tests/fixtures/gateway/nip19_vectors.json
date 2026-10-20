@@ -1,0 +1,28 @@
+{
+  "note": "Bech32 vectors for P16-01. nip19: the npub example pair in the NIP-19 spec (npub <-> hex public key). bip173_valid / bip173_invalid: strings from BIP-173's test vectors whose payload is whole bytes (valid) or that must be refused (invalid checksum, mixed case, no separator, empty hrp, character outside the charset).",
+  "nip19": [
+    {
+      "bech32": "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg",
+      "hrp": "npub",
+      "hex": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
+    }
+  ],
+  "bip173_valid": [
+    "A12UEL5L",
+    "a12uel5l",
+    "an83characterlonghumanreadablepartthatcontainsthenumber1andtheexcludedcharactersbio1tt5tgs",
+    "abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw",
+    "split1checkupstagehandshakeupstreamerranterredcaperred2y9e3w"
+  ],
+  "bip173_invalid": [
+    "pzry9x0s0muk",
+    "1pzry9x0s0muk",
+    "x1b4n0q5v",
+    "li1dgmt3",
+    "de1lg7wt",
+    "A1G7SGD8",
+    "10a06t8",
+    "1qzzfhee",
+    "A12uEL5L"
+  ]
+}
