@@ -13,19 +13,18 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 2** | At: 2026-10-19 10:15 UTC | Branch: `main` (pushed to origin)
-- Why now: Agent 2 at 78% of its window (resets 11:00 UTC); P13 wave 1 is landed and nothing is in
-  flight, so the next wave goes to Agent 1 (fresh since its 07:00 reset).
-- Last verified code commit: `78fdc96` (P13 wave 1: `pytest -m "not perf"` 9436 passed / 17 skipped;
-  `-m perf` alone 11 passed; pyright 0; lint-imports kept; tooling.checks --require-ref ok; pnpm green
-  at `b5aa7d7` with 854 JS tests and the TUI e2e lane 12 passed).
-- Agent 2's commits this turn: `6df7114` (CI gate without extras), `94d604e` (P10 done, P12-01..05,
-  28..31), `fa4fe5e` (P12-06..26), `c66c233` (P12-27, 32), `b5aa7d7` (P12-33, **P12 done**),
-  `78fdc96` (P13-01..04, 13..17, 20, 24).
+- By: **Agent 1** | At: 2026-10-20 16:25 UTC | Branch: `main` (pushed to origin)
+- Why now: Agent 1 at 86% of its window (resets 18:00 UTC); owner asked to hand over when usage is full. Nothing is
+  running (no builders, no integrators, no gate); every finished slice is parked as a patch in `.agents/wip/`.
+- Last verified code commit: `d1b05df` (P17-23..27, P17 COMPLETE: `pytest -m "not perf"` 14591 passed / 79 skipped;
+  `-m perf` alone 11 passed; pyright 0; lint-imports kept; codegen --check clean; tooling.checks --require-ref ok;
+  pnpm 944 passed; pnpm -r typecheck clean).
+- Agent 1's code landings this turn (since 2026-10-19 10:19): P13 wave 2, P14, P15, P16-01..24/26..32, P17 (all),
+  P21, P22 — see "Last landings" below.
 
 ## Usage at last stop
-📊 Agent 1 usage: fresh after its 07:00 UTC reset — READY
-📊 Agent 2 usage: 78% used, 22% left (reading 09:56 UTC) — resets 11:00 UTC — READY (handed back)
+📊 Agent 1 usage: 86% used, 14% left (reading 16:14 UTC) — resets 18:00 UTC — PAUSED (handed off)
+📊 Agent 2 usage: last recorded 2026-10-19 (78%, long since reset) — expected fresh — READY
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
@@ -33,6 +32,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 | 1 | Agent 1 → Agent 2 | 2026-10-18 14:23 | P00, P01, P03, P02-01..07 | Agent 1 at ~75% usage; wave 4 is a clean start |
 | 2 | Agent 2 → Agent 1 | 2026-10-18 17:45 | P02-08..23 (P02 done), P04 (done, D-04.1: asyncio kept), P05-01..07, 22..24 | Agent 2 at 71%; next wave would end near 90%; Agent 1 fresh |
 | 3 | Agent 2 → Agent 1 | 2026-10-19 10:15 | P10-19/20 (P10 done), P12 all (Demo 2), P13-01..04, 13..17, 20, 24; CI gate without extras | Agent 2 at 78%; wave boundary; Agent 1 fresh |
+| 4 | Agent 1 → Agent 2 | 2026-10-20 16:25 | P13 wave 2, P14, P15 (Demo 3), P16 31/36, P17 (M5), P21, P22; parked P16-25/33..36, P18-01..10/17..22, P19-01..07 | Agent 1 at 86%; owner asked to hand over; nothing in flight |
 
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
@@ -72,19 +72,33 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
-P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
-In flight:
-- Wave 28 P16 builders (brief `.agents/wip/w28/brief-p16.md`): E15 P16-25 Photon (wt-w28e15), E16 P16-33 native
-  streams + P16-34 Telegram topics/stickers (wt-w28e16), E17 P16-35 Discord voice + P16-36 adapter matrix/doctor (wt-w28e17).
-  E15, E16, E17 DONE, parked. Next (after the 18:00 reset): one P16 integrator for E15+E16+E17 (D-16.560..579; re-lock
-  for discord-voice; apply w28-e16-core-proposal.patch).
-  If paused, patches go in `.agents/wip/w28/`.
-- Wave 29 (brief `.agents/wip/w29/brief.md`): W1 P18-01..06, W2 P18-07..10, F1 P18-17..22, A1 P19-01..07 all DONE and
-  parked in `.agents/wip/w29/` (README lists wiring, decisions, and owed items: online re-lock for agent-client-protocol
-  0.12.1, F1's pnpm-lock + new npm packages, W1/W2 gate join, WS credentials in query vs subprotocol, tests/fakes/daemon.py
-  shared by w28-l3 and w29-a1). Next: one P18 integrator (W1+W2+F1) and one P19 integrator (A1).
-- Later: P18-11..16, 23..30; P19-08..18; P20, P23, P24, P25.
+Turn: AGENT_2 (handed over by Agent 1 at 16:25 UTC 2026-10-20). Main `d1b05df`+status commits, green.
+Done: P00–P15, P17, P21, P22 complete; P16 31/36. 476/648 tasks landed; 28 more built and parked.
+Nothing in flight. Three integrations are ready to start, independent of each other (run them in parallel, each in
+its own scratchpad worktree from main, full gate, then land one at a time, rebasing the next onto main):
+1. **P16 integrator** — `.agents/wip/w28/`: w28-e15.patch (P16-25 Photon, ships DISABLED), w28-e16.patch (P16-33 native
+   streams adapter side + P16-34 Telegram topics/stickers) + w28-e16-core-proposal.patch (the StreamConsumer native
+   branch — apply it, check script w28-e16-prop_check.py.txt), w28-e17.patch (P16-35 Discord voice + P16-36 adapter
+   matrix + doctor gateway checks). D-16.560..579. Online `uv lock` for the new `discord-voice` extra (davey 0.1.6,
+   pynacl 1.5.0; fill the 00-layout pin rows). Photon wiring per README (no BUILTIN_CREDENTIALS row while disabled);
+   remove photon from the matrix test's PENDING; E17 made contract cases auto-discovered, so E15's conftest import line is
+   redundant. Lands P16 COMPLETE (36/36).
+2. **P18 integrator** — `.agents/wip/w29/`: w29-w1.patch (P18-01..06 app factory + auth), w29-w2.patch (P18-07..10 PTY,
+   chat WS, profile scope; stand-in for W1's gate), w29-f1.patch (P18-17..22 frontend prework; includes pnpm-lock.yaml
+   with 13 new npm packages — verify with `pnpm install --frozen-lockfile`, licence + age-check them). Join W2's
+   chat_gate onto W1's `guarded_ws`; decide WS credentials in query (row) vs subprotocol (our "no tokens in URLs" rule —
+   prefer subprotocol, make F1's wsUrl.ts match); add a `dashboard` extra (ptyprocess, pywinpty on Windows). D-16.580..599.
+3. **P19 integrator** — `.agents/wip/w29/w29-a1.patch` (P19-01..07 ACP). Online `uv lock` for agent-client-protocol
+   0.12.1 (acp extra + dev group). Merge `tests/fakes/daemon.py` with the one P17 landed (L3's harness). Daemon methods the
+   attached host assumes (session.mutate, admission.cancel, config.set show_reasoning, acp.editor_policy) are owed —
+   record or add small. D-16.600..609.
+Then new builders: P18-11..16 (REST), 23..30 (remaining pages, chat host, login, build/serve, e2e M6); P19-08..18; then
+P20, P23, P24, P25. Briefs to copy from: `.agents/wip/w28/brief-p16.md`, `.agents/wip/w29/brief.md`.
+Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
+(--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**'), scan (credential regexes, /root or ~
+writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
+per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
+in docs/plan/phases/README.md and this file.
 - Last landings: P17-23..27 idle exit, profile binding, protocol additions, dual-host matrix, shared-backend demo
   (`d1b05df`; P17 COMPLETE; D-16.540..557; notes in LEAD-NOTES "P17-23..27 landing notes (integrator)"), P16-02/03/07/19/21/22/30 WhatsApp bridge (no Baileys mapping), Matrix E2EE, Weixin, Yuanbao + tools,
   Raft (`cfa6def`; D-16.524..539; notes in LEAD-NOTES "P16 wave 27 landing notes (integrator)"), P17-15..22 ensure/attach channel/remote session host, CLI + TUI attach by default, @indus/client WS
@@ -97,17 +111,18 @@ In flight:
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
   landing notes"), P15-01..18 (`c0e0201`), P21-01..11, 15 and P22-01..09 (`42a852e`).
   Done: P00–P15, P21, P22 complete; P16 31/36; P17 complete.
-Next: P15-33..36 — builders T/D/S (Telegram own Bot API client over httpx, no LGPL; Discord; Slack), each
-with `create_adapter(AdapterConfig)`, a send-only open for `indus send` and media fetchers; Demo 3 (P15-36)
-at integration. Builder brief: `.agents/wip/p15w4/brief.md`. Then P16, P17.
 Owner follow-ups from P21/P22: live vendor smoke tests, ACC-D5-2 on a real Apptainer; `research` extra
 licences to confirm: `regex` (CNRI-Python) and pyarrow's bundled zlib (Zlib) / Boost (BSL-1.0).
 Owner decisions pending (Agent 1, 2026-10-20): (1) WhatsApp bridge: Baileys pulls GPL-3.0 libsignal + LGPL sharp —
 allow an operator-installed copyleft provider, drop bindBaileys, or build on whatsapp-web.js (Apache-2.0, Chromium)?
-(E13 parked in `.agents/wip/w27/`, ships nothing copyleft either way.) (2) webhook `auth: auto` replay; (3) licences:
+(Landed in `cfa6def` without the Baileys mapping; Photon (P16-25) likewise ships disabled: Spectrum has a BlueOak-1.0.0
+transitive + a postinstall patch — same decision.) (2) webhook `auth: auto` replay; (3) licences:
 regex (CNRI-Python), pyarrow bundled zlib/Boost, coincurve (MIT OR Apache-2.0); (4) Matrix E2EE uses libolm (deprecated upstream, timing
 side-channel advisories) behind our Engine interface in an optional Linux-only extra — ship it until vodozemac? (5) stray
-/root/indus-backup-2026-01-01-090000.zip and two log lines a builder appended under /root/.indus (deletion blocked).
+/root/indus-backup-2026-01-01-090000.zip, log lines a builder appended under /root/.indus, one pnpm cache line in
+/root/.cache/pnpm/lockfile-verified.jsonl, npm debug logs /root/.npm/_logs/2026-10-20T14_05_* (deletion needs the owner's OK).
+(6) The owner also asked (2026-10-20) to update two Hindi videos (remove captions; on-screen English → Devanagari Hindi,
+same font/colour/position) — waiting for the files.
 Owner items: licences (Pillow MIT-CMU; voice extra av/numpy; Piper/eSpeak NG; new P21 vendor-extra
 transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm); webhook `auth: auto` accepts an
 untimestamped generic signature (replay after the 1 h delivery-id window) — decide whether to require the

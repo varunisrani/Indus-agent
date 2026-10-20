@@ -121,3 +121,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 15:17 UTC | 82% | 18% | 18:00 UTC | P17-23..27 integrator (verify16) running alone
 2026-10-20 15:41 UTC | 83% | 17% | 18:00 UTC | P17-23..27 integrator (verify16) running alone
 2026-10-20 16:14 UTC | 86% | 14% | 18:00 UTC | P17 landed (d1b05df); nothing running; waiting for reset (18:04 step scheduled)
+2026-10-20 16:25 UTC | 86% | 14% | 18:00 UTC | handed the turn to Agent 2 (owner request); nothing in flight

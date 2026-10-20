@@ -1,12 +1,12 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "ACTIVE",
+  "state": "PAUSED",
   "usage_pct": 86,
   "remaining_pct": 14,
   "resets_at": "2026-10-20T18:00:00+00:00",
-  "last_check": "2026-10-20T16:14:00+00:00",
-  "current_step": "P17 landed (d1b05df); nothing running; P16 E15-E17 + P18 W1 W2 F1 + P19 A1 parked; integrators after 18:00 reset",
+  "last_check": "2026-10-20T16:25:00+00:00",
+  "current_step": "Handed the turn to Agent 2 (owner request, 86%); P17 complete (d1b05df); P16/P18/P19 patches parked",
   "last_commit": "d1b05df",
-  "updated_at": "2026-10-20T16:10:00Z"
+  "updated_at": "2026-10-20T16:25:00Z"
 }
