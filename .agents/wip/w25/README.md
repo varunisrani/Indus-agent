@@ -84,5 +84,7 @@
   only, non-Google token_uri refused; listener 127.0.0.1:8647 /google-chat, 1 MiB; no typing/media upload (clean refusal);
   card clicks handed to core; QQ chat ids prefixed group:/channel:/dm:; passive-reply window 300 s; markdown off; heartbeat
   80 % with missing-ack socket replacement; AT_MESSAGE_CREATE handled.
+- LEAD RULING: a test sets `data["private_key"] = "-----BEGIN PRIVATE KEY-----\nAAAA..."` as a literal — build the PEM
+  armour at runtime (or generate a real throwaway key with cryptography) so no credential-shaped literal is in the tree.
 - Follow-ups: base drain-probe/ingress-gate seam; Google Chat native uploads (per-user OAuth); QQ webhook mode;
   commandId-only slash commands.
