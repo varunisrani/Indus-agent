@@ -41,3 +41,31 @@
 - Wiring owed: admission.state not emitted yet; daemon controls keep D-16.365 (no STALE_GENERATION raise); creation
   policy still not on the wire (D-16.490).
 - Follow-ups: emit admission.state; policy on the wire; retire server_request.cancelled; STALE_GENERATION decision.
+
+## w28-e15.patch: P16-25 Photon adapter and sidecar — done, ships DISABLED (base 97df302)
+- Builder checks: photon unit 65 passed, contract 11 checks; brief set 546 passed / 48 skipped; gateway/wizards/config/
+  integration gateway 2474 passed; pnpm 957 passed (photon-sidecar 22); pnpm -r typecheck, biome, ruff, pyright,
+  lint-imports, tooling.checks ok. No packages (Python or Node); both locks unchanged — integrator: confirm
+  `pnpm install --frozen-lockfile --offline` accepts the new workspace package without a lock change.
+- Licence: spectrum-ts not available offline; reference lock shows MIT for spectrum-ts but one transitive BlueOak-1.0.0
+  (not allow-listed) and a postinstall patch (refused). Sidecar built on our own provider interface (SpectrumLink), like the
+  WhatsApp bridge; operator-supplied provider. OWNER DECISION alongside Baileys.
+- New: apps/photon-sidecar (package.json @indus/photon-sidecar, src main/http/link/relay, fakeLink, tests),
+  gateway/adapters/photon (__init__, adapter, sidecar — imports PidRecord/Child/spawn_process/port_free from
+  whatsapp/sidecar.py), tests/fakes/platform/photon_wire.py, contract photon_case.py, unit tests, docs/notes/P16/photon.md.
+- Shared: contract conftest import; schema row platforms.photon + test; traps R02.22 refs; ACC-K12-2.
+- Wiring (core, proposed): BUILTIN_NAMES += photon after bluebubbles; PlatformEntry("photon", "iMessage (Photon)", lazy
+  indus.gateway.adapters.photon:create_adapter, check_fn=modules_installed("httpx"), required_env=("PHOTON_PROJECT_ID",
+  "PHOTON_PROJECT_SECRET"), INDUS_PHOTON_* policy env, max_len=8000, dm_is_private=True, platform_hint=photon.PLATFORM_HINT,
+  lock_env=("PHOTON_PROJECT_ID",), install_hint=<in report/note>); NO BUILTIN_CREDENTIALS row while disabled (a row would
+  enable from env alone); target rule (+<6–15 digits>, any;-;+<digits>, any;+;<id>, email handles); setup step (two
+  credentials to SecretStore + provider, enabled: true, connect as check); indus send case with FakeLauncher; doctor port
+  8789; remove photon from E17's matrix pending allow-list.
+- Decisions (D-ids): Spectrum not shipped / adapter disabled with operator provider; tapbacks only with
+  platforms.photon.reactions; no own typing cooldown; never reap a port held by another process (8789 unless
+  sidecar_port); lazy media; 502 on link send = maybe-delivered, no text resend; npm ci --ignore-scripts with no install
+  fallback; reply-quote memory in-memory only.
+- Slip: builder's pnpm fetched 85 packages from the network into its scratchpad store before being pinned offline (nothing
+  under /root, no lock change). /root/.npm/_logs/2026-10-20T14_05_* came from another worktree (L3) — owner item.
+- Follow-ups: owner decision on a Spectrum provider + live lane; processing tapbacks once the runner calls them; polls/
+  effects, setup device login, E.164 redaction in session descriptions (core); sidecar packaging (P23/P25).
