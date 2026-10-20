@@ -38,8 +38,11 @@ __all__ = [
     "BlockingError",
     "BlockingPool",
     "DeadlineMissed",
+    "OffLoopWait",
     "PoolClosed",
     "PoolFull",
+    "awaited_calls",
+    "awaiting_off_loop",
     "run_blocking",
 ]
 
@@ -55,6 +58,58 @@ POOL_SIZES: Mapping[str, int] = MappingProxyType({"io": 8, "tools": 8, "hooks": 
 # calls is not refused (and so blocked, R07.18) only because every hook worker is momentarily
 # busy; a hook that cannot start within its deadline still misses it.
 POOL_QUEUE_LIMITS: Mapping[str, int] = MappingProxyType({"io": 256, "tools": 256, "hooks": 32})
+
+
+# Off-loop calls whose caller is still awaiting them: pool calls (running or waiting for a worker)
+# and blocks under ``awaiting_off_loop``. Abandoned work is not counted. Read by ``awaited_calls``.
+_awaited = 0
+_awaited_lock = threading.Lock()
+
+
+def awaited_calls() -> int:
+    """How many off-loop calls in this process have a caller still awaiting them.
+
+    A pool call counts from the moment its pool accepts it until its caller stops waiting: it
+    returned or raised, missed its deadline, or the caller was cancelled. Work abandoned past that
+    point is not counted, though its thread may run on. Nothing in the product reads this; a test
+    driving a fake clock uses it to keep fake time still while real work runs off the loop.
+    """
+    return _awaited
+
+
+class OffLoopWait:
+    """One entry in ``awaited_calls`` while the caller awaits work off the loop that does not go
+    through a pool (an executor of its own, a thread). Counted from ``__enter__`` until
+    ``release`` or ``__exit__``, whichever comes first; ``release`` may be called from any thread,
+    so a worker can take itself off the count the moment its work is done."""
+
+    __slots__ = ("_counted",)
+
+    def __init__(self) -> None:
+        self._counted = False
+
+    def __enter__(self) -> OffLoopWait:
+        global _awaited
+        with _awaited_lock:
+            if not self._counted:
+                self._counted = True
+                _awaited += 1
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.release()
+
+    def release(self) -> None:
+        global _awaited
+        with _awaited_lock:
+            if self._counted:
+                self._counted = False
+                _awaited -= 1
+
+
+def awaiting_off_loop() -> OffLoopWait:
+    """``with awaiting_off_loop(): await <work off the loop>`` (see ``OffLoopWait``)."""
+    return OffLoopWait()
 
 
 class BlockingError(IndusError):
@@ -210,7 +265,8 @@ class BlockingPool:
         self._submit(job)
         what = label or _describe(fn)
         try:
-            finished = await _wait(future, deadline, clock)
+            with awaiting_off_loop():
+                finished = await _wait(future, deadline, clock)
         except asyncio.CancelledError:
             job.abandoned = True
             log.debug("%s abandoned in the %s pool: its caller was cancelled", what, self.name)

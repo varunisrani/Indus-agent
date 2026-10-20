@@ -25,6 +25,7 @@ from indus.core.prompt.builder import BuildContext, PromptParts
 from indus.core.prompt.lifecycle import PromptLifecycle
 from indus.core.transcript import TranscriptRow
 from indus.core.turn_state import LoopOptions, SessionRuntime, TurnResult, TurnState, new_turn_state
+from indus.foundation.blocking import awaited_calls
 from indus.foundation.scope import Scope
 from indus.protocol.events import EventBase
 from indus.tools.definitions import definitions
@@ -132,13 +133,42 @@ class TurnKit:
             return task.result()
 
 
+# Real seconds one uninterrupted hold may last before ``drive`` gives up on a stuck call.
+HOLD_LIMIT_S = 30.0
+
+
 async def drive(task: asyncio.Future[Any], clock: FakeClock, step: float = 1.0) -> None:
-    """Let ``task`` run; whenever it waits, move the fake clock by ``step``."""
-    for _ in range(200_000):
+    """Let ``task`` run; whenever it waits, move the fake clock by ``step``.
+
+    "Waits" means: it has not finished after half a real millisecond and no off-loop call is in
+    flight (``indus.foundation.blocking.awaited_calls``: blocking-pool calls and work under
+    ``awaiting_off_loop``). While such a call runs on another thread the loop only looks idle, so
+    the clock holds still until the call is back (a thread parked in ``FakeClock.sleep_sync`` does
+    not hold it); otherwise every deadline on the clock raced against that work would expire
+    within a fraction of a real second on a loaded machine. A hold longer than ``HOLD_LIMIT_S``
+    real seconds fails, so a stuck call cannot hang the run.
+    """
+    loop = asyncio.get_running_loop()
+    held_since: float | None = None
+    advances = 0
+    while advances < 200_000:
         done, _ = await asyncio.wait({task}, timeout=0.0005)
         if done:
             return
+        in_flight = awaited_calls()
+        if in_flight > clock.sync_sleepers:
+            now = loop.time()
+            if held_since is None:
+                held_since = now
+            elif now - held_since > HOLD_LIMIT_S:
+                raise AssertionError(
+                    f"{in_flight} off-loop call(s) kept the fake clock still for over "
+                    f"{HOLD_LIMIT_S:g} real seconds"
+                )
+            continue
+        held_since = None
         clock.advance(step)
+        advances += 1
     raise AssertionError("turn never finished")
 
 

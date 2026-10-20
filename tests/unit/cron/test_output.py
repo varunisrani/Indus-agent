@@ -102,13 +102,19 @@ def test_hung_cleanup_is_abandoned_at_ten_seconds(fake_clock: FakeClock) -> None
 
     async def main() -> tuple[bool, float]:
         start = fake_clock.monotonic()
-        ok = await bounded(
-            lambda: release.wait(30), seconds=10.0, clock=fake_clock, label="stuck finaliser"
+        work = asyncio.ensure_future(
+            bounded(
+                lambda: release.wait(30), seconds=10.0, clock=fake_clock, label="stuck finaliser"
+            )
         )
-        return ok, fake_clock.monotonic() - start
+        # Fake time passes while the step is stuck. ``run_driven`` would hold the clock for as
+        # long as the step runs (it is real work the caller awaits), so move it by hand.
+        while not work.done():
+            await fake_clock.advance_and_settle(0.5)
+        return work.result(), fake_clock.monotonic() - start
 
     try:
-        ok, waited = asyncio.run(run_driven(main(), fake_clock, step=0.5))
+        ok, waited = asyncio.run(main())
     finally:
         release.set()
     assert ok is False

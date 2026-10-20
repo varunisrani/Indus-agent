@@ -70,6 +70,12 @@ class FakeClock:
         with self._lock:
             return sum(1 for w in self._waiters if not w.removed)
 
+    @property
+    def sync_sleepers(self) -> int:
+        """Threads parked in ``sleep_sync`` right now."""
+        with self._lock:
+            return sum(1 for w in self._waiters if not w.removed and w.event is not None)
+
     # -- sleeping ------------------------------------------------------------------------------
 
     async def sleep(self, seconds: float) -> None:

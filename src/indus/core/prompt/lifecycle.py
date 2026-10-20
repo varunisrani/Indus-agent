@@ -27,6 +27,7 @@ from typing import Any, Literal, Protocol, cast
 from indus.core.notes import NoteChannel
 from indus.core.prompt import texts
 from indus.core.prompt.builder import BuildContext, PromptParts, configured_hints, platform_hint
+from indus.foundation.blocking import awaiting_off_loop
 from indus.state import sessions
 from indus.state.registry import StoreHandle
 
@@ -172,7 +173,8 @@ class SessionPrompts:
         self._store = store
 
     async def load(self, session_id: str) -> StoredPrompt:
-        row = await asyncio.to_thread(sessions.get, self._store, session_id)
+        with awaiting_off_loop():
+            row = await asyncio.to_thread(sessions.get, self._store, session_id)
         if row is None:
             return StoredPrompt("missing")
         started = row.get("started_at")

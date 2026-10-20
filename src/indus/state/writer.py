@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
+from indus.foundation.blocking import awaiting_off_loop
 from indus.foundation.clock import Clock
 from indus.foundation.errors import StoreLocked
 from indus.state.errors import is_disk_io_error, is_lock_error, is_no_more_rows
@@ -326,7 +327,8 @@ class Writer:
         def call() -> T:
             return ctx.run(self.write, fn, budget=budget)
 
-        return await loop.run_in_executor(self._get_executor(), call)
+        with awaiting_off_loop():
+            return await loop.run_in_executor(self._get_executor(), call)
 
     def _get_executor(self) -> ThreadPoolExecutor:
         with self._executor_lock:

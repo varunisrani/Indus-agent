@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from indus.cron.ports import job_output_dir
+from indus.foundation.blocking import awaiting_off_loop
 from indus.foundation.clock import Clock
 from indus.foundation.fsio import atomic_write_text
 from indus.foundation.home import secure_dir
@@ -215,6 +216,7 @@ async def bounded(fn: Callable[[], object], *, seconds: float, clock: Clock, lab
             return False
     done = threading.Event()
     failed: list[BaseException] = []
+    waiting = awaiting_off_loop()
 
     def run() -> None:
         try:
@@ -222,15 +224,17 @@ async def bounded(fn: Callable[[], object], *, seconds: float, clock: Clock, lab
         except BaseException as exc:
             failed.append(exc)
         finally:
+            waiting.release()
             done.set()
 
-    threading.Thread(target=run, name=f"cron cleanup: {label}", daemon=True).start()
-    deadline = clock.monotonic() + seconds
-    while not done.is_set():
-        if clock.monotonic() >= deadline:
-            log.error("cron cleanup %s took longer than %.0f s; left running", label, seconds)
-            return False
-        await clock.sleep(POLL_S)
+    with waiting:
+        threading.Thread(target=run, name=f"cron cleanup: {label}", daemon=True).start()
+        deadline = clock.monotonic() + seconds
+        while not done.is_set():
+            if clock.monotonic() >= deadline:
+                log.error("cron cleanup %s took longer than %.0f s; left running", label, seconds)
+                return False
+            await clock.sleep(POLL_S)
     if failed:
         log.warning("cron cleanup %s failed: %s", label, failed[0])
         return False
