@@ -2,7 +2,7 @@
 
 Worktree: /tmp/claude-0/-home-user/3c64a974-489c-5625-af4d-c59c9cfe7428/scratchpad/verify14 (from main c32b268). Do NOT
 commit. The lead commits and lands. Never write under the real ~ or /root — ALWAYS set INDUS_HOME (and HOME) to a temp dir
-before running any  command by hand. No network. Never pkill by pattern. Running in parallel: builders E12
+before running any `indus` command by hand. No network. Never pkill by pattern. Running in parallel: builders E12
 (gateway/adapters/matrix crypto, weixin) and E13 (apps/whatsapp-bridge, gateway/adapters/whatsapp) — do not touch them.
 
 Patches (scratchpad/patches/, all base ac389c3): apply in this order with `git apply --3way`: w27-k9.patch, w27-k6.patch,
