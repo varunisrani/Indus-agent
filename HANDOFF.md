@@ -78,8 +78,8 @@ In flight:
 - Wave 25 (from `d50d5d3`, started 03:08 UTC 2026-10-20; brief `.agents/wip/w25/brief.md`):
   - E6 (P16-11 Teams + 12 Graph) + E7 (P16-13 Google Chat + 20 QQ Bot) + E8 (P16-16 DingTalk + 17/18 WeCom): integrator in scratchpad verify10 (brief
     `.agents/wip/w25/e67-integrator-brief.md`, rulings in README, D-16.440..459).
-  - Builders running: E9 (P16-14 Feishu + 15 docs), E10 (P16-24 BlueBubbles + 28
-    SimpleX + 29 Buzz) in scratchpad wt-w25{e9,e10}. If paused, patches go in `.agents/wip/w25/`.
+  - E9 (P16-14 Feishu + 15 docs) and E10 (P16-24 BlueBubbles + 28 SimpleX + 29 Buzz) DONE, parked in
+    `.agents/wip/w25/` (README has rows; E10 adds coincurve) — integrate after verify10 lands (D-16.460..479). If paused, patches go in `.agents/wip/w25/`.
 - Last landings: P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
   test fixture that resets the process-exit fence), P16-04/10/23/26/27 WhatsApp Cloud/SMS/LINE/ntfy/IRC + per-platform lock keys (`4aa2c78`), P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
   fix), P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
