@@ -38,3 +38,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-20 20:11 UTC | Agent 2 | Account 2 | 47% (reading 20:11) | 53% | 23:20 UTC | combined main full run 15051/1 (fixed ca2860b); P16, REST, P19b integrators + drive fix running |
 | 2026-10-20 20:47 UTC | Agent 2 | Account 2 | 55% (reading 20:46) | 45% | 23:20 UTC | P16 complete aa696ad; REST + P19b integrators, drive fix, builder D1 (D-16.602) running |
 | 2026-10-20 21:19 UTC | Agent 2 | Account 2 | 65% (reading 21:14) | 35% | 23:20 UTC | REST + P19b integrators, drive fix, D1 running; next check 20 min (75% expected ~21:45) |
+| 2026-10-20 21:50 UTC | Agent 2 | Account 2 | 70% (reading 21:43) | 30% | 23:20 UTC | P18-11..16 + drive fix landed; only P19 integrator #2 running; no new agents |
