@@ -1490,6 +1490,16 @@ class DashboardSection(_Section):
         return _refuse_open_proxies(value)
 
 
+class AcpSection(_Section):
+    """The editor agent (``indus acp``, P19)."""
+
+    allow_local_fallback: bool = Field(
+        default=False,
+        description="with no gateway daemon running, run editor sessions in the `indus acp` "
+        "process instead of refusing them (D-16.83)",
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -1666,6 +1676,7 @@ class ConfigModel(BaseModel):
     dashboard: DashboardSection = Field(
         default_factory=DashboardSection, description="the web dashboard (indus dashboard)"
     )
+    acp: AcpSection = Field(default_factory=AcpSection, description="the editor agent (indus acp)")
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 

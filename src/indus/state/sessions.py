@@ -88,6 +88,8 @@ __all__ = [
     "set_pinned_in",
     "set_system_prompt",
     "set_system_prompt_in",
+    "set_cwd",
+    "set_cwd_in",
     "set_yolo",
     "status",
     "status_in",
@@ -464,6 +466,17 @@ def patch_model_config(store: StoreHandle, session_id: str, patch: Mapping[str, 
     if not patch:
         return get(store, session_id) is not None
     return store.write(lambda conn: patch_model_config_in(conn, session_id, patch))
+
+
+def set_cwd_in(conn: sqlite3.Connection, session_id: str, cwd: str) -> bool:
+    """Move the session to another working folder (P19-03 workspace move). False when no row.
+    The git root and branch recorded at start are kept as they are."""
+    cursor = conn.execute("UPDATE sessions SET cwd = ? WHERE id = ?", (cwd, session_id))
+    return cursor.rowcount > 0
+
+
+def set_cwd(store: StoreHandle, session_id: str, cwd: str) -> bool:
+    return store.write(lambda conn: set_cwd_in(conn, session_id, cwd))
 
 
 def set_yolo(store: StoreHandle, session_id: str, enabled: bool) -> bool:

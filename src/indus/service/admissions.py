@@ -419,6 +419,12 @@ class AdmissionService:
             if ticket is not None and ticket.admission.admission_id == admission_id:
                 ticket.interrupt(CANCELLED)
             return await self._receipt_for(row)
+        return await self.cancel_queued(admission_id)
+
+    async def cancel_queued(self, admission_id: str) -> Receipt:
+        """Drop a queued input. One claimed meanwhile is never touched here: the ledger refuses it
+        in the same transaction (``LedgerRefusal`` ``admission_started``), and its turn is stopped
+        only through its generation."""
         settled = await self._off(
             lambda: ledger.cancel(self.store, epoch=self.epoch, admission_id=admission_id)
         )

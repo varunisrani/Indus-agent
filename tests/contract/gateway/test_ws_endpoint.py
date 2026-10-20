@@ -27,8 +27,9 @@ from indus.gateway.ws.server import (
     WsLimits,
     loggable_url,
 )
-from indus.protocol.bridge import SessionUsageParams, SessionUsageResult
+from indus.protocol.bridge import SessionHistoryParams, SessionHistoryResult
 from indus.protocol.errors import (
+    ADMISSION_NOT_FOUND,
     INVALID_PARAMS,
     METHOD_NOT_FOUND,
     SESSION_BUSY,
@@ -386,6 +387,50 @@ async def test_submit_answers_real_generations_and_carries_unattended(
 
 
 @aio
+async def test_a_queued_input_is_cancelled_by_admission_and_a_started_one_is_not(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    holder = Holder()
+    r = await rig(
+        scope, store, tmp_path, tool_batch(("hold", {})), text_turn("done"), tools={"hold": holder}
+    )
+    client = await r.attached("acp")
+    other = await r.attached("tui")
+    sid = (await client.request("session.create", {}))["result"]["session_id"]
+    first = await client.request("prompt.submit", {"session_id": sid, "text": "work"})
+    running = first["result"]["turn_id"]
+    await eventually(lambda: holder.entered)
+    queued = await client.request(
+        "prompt.submit", {"session_id": sid, "text": "later", "when_busy": "queue"}
+    )
+    qid = queued["result"]["turn_id"]
+    foreign = await other.request("admission.cancel", {"session_id": sid, "admission_id": qid})
+    assert error_of(foreign) == SESSION_NOT_FOUND.code  # not a session this connection attached
+    unknown = await client.request("admission.cancel", {"session_id": sid, "admission_id": "nope"})
+    assert error_of(unknown) == ADMISSION_NOT_FOUND.code
+    started = await client.request("admission.cancel", {"session_id": sid, "admission_id": running})
+    assert started["result"] == {"cancelled": False, "state": "started", "generation": 1}
+    assert holder.entered == 1 and not holder.gate.is_set()  # the running turn is untouched
+    dropped = await client.request("admission.cancel", {"session_id": sid, "admission_id": qid})
+    assert dropped["result"]["cancelled"] is True and dropped["result"]["state"] == "terminal"
+    again = await client.request("admission.cancel", {"session_id": sid, "admission_id": qid})
+    assert again["result"]["cancelled"] is True and again["result"]["outcome"] == "cancelled"
+    row = ledger.get(store, qid)
+    assert row is not None and (row.state, row.outcome) == ("terminal", "cancelled")
+    holder.gate.set()
+    await client.until(done(sid))
+    assert (await r.host.wait(running)).outcome == "completed"
+    usage = await client.request("session.usage", {"session_id": sid})
+    numbers = usage["result"]["usage"]
+    assert numbers["api_calls"] >= 1 and numbers["output_tokens"] >= 0
+    foreign_usage = await other.request("session.usage", {"session_id": sid})
+    assert error_of(foreign_usage) == SESSION_NOT_FOUND.code
+    await client.close()
+    await other.close()
+    await r.close()
+
+
+@aio
 async def test_a_connection_reaches_only_sessions_it_attached(
     scope: Scope, store: StoreHandle, tmp_path: Path
 ) -> None:
@@ -474,19 +519,19 @@ async def test_the_257th_waiting_request_closes_the_socket_1013(
     gate = asyncio.Event()
     entered: list[int] = []
 
-    async def slow_usage(conn: object, params: SessionUsageParams) -> SessionUsageResult:
+    async def slow_history(conn: object, params: SessionHistoryParams) -> SessionHistoryResult:
         entered.append(1)
         await gate.wait()
         raise AssertionError("never answered")
 
-    r.endpoint.table.add("session.usage", slow_usage)  # a test-only slow handler
+    r.endpoint.table.add("session.history", slow_history)  # a test-only slow handler
     client = await r.attached()
     for n in range(256):
         await client.send_json(
             {
                 "jsonrpc": "2.0",
                 "id": 1000 + n,
-                "method": "session.usage",
+                "method": "session.history",
                 "params": {"session_id": "s"},
             }
         )
@@ -494,7 +539,7 @@ async def test_the_257th_waiting_request_closes_the_socket_1013(
     pong = await client.request("gateway.ping")  # the read loop still answers pings
     assert pong["result"]["pong"] is True
     await client.send_json(
-        {"jsonrpc": "2.0", "id": 9999, "method": "session.usage", "params": {"session_id": "s"}}
+        {"jsonrpc": "2.0", "id": 9999, "method": "session.history", "params": {"session_id": "s"}}
     )
     closed = await client.closed_with()
     assert closed.code == CLOSE_TRY_AGAIN

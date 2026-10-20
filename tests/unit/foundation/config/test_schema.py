@@ -631,3 +631,9 @@ def test_dashboard_refuses_proxies_that_trust_everyone(entry: str) -> None:
     warnings = schema.validate({"dashboard": {"trusted_proxies": ["10.0.0.1", entry]}})
     assert any("dashboard.trusted_proxies" in line for line in warnings)
     assert schema.validate({"dashboard": {"trusted_proxies": ["172.20.0.0/24"]}}) == []
+
+
+def test_acp_rows_validate() -> None:  # P19-03
+    assert schema.DEFAULTS["acp"] == {"allow_local_fallback": False}  # D-16.83
+    assert schema.validate({"acp": {"allow_local_fallback": True}}) == []
+    assert schema.validate({"acp": {"allow_local_fallback": "sometimes"}}) != []

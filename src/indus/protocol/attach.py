@@ -6,10 +6,12 @@ when they cannot be), then every new event of the session. ``events.since`` is t
 ``sessions.watch`` turns on ``session.updated`` notifications for list views.
 ``admission.discard`` resolves a turn the daemon lost in a restart (its outcome is unknown) so the
 session's queue moves on; it names the lost turn's generation. ``admission.receipt`` tells a
-client that lost an ack what became of its input. ``runtime.describe`` is the control socket's
-``describe`` over the WebSocket, and ``maintenance.run`` runs bulk store maintenance inside the
-daemon that owns the store (P17-21). These names are served only by the daemon
-(``DAEMON_ONLY_METHODS``); the stdio bridge answers them ``-32601``.
+client that lost an ack what became of its input; ``admission.cancel`` drops one that still waits
+in the queue (a started turn is stopped through its generation, never by admission id).
+``runtime.describe`` is the control socket's ``describe`` over the WebSocket, and
+``maintenance.run`` runs bulk store maintenance inside the daemon that owns the store (P17-21).
+These names are served only by the daemon (``DAEMON_ONLY_METHODS``); the stdio bridge answers them
+``-32601``.
 
 Frames the daemon sends outside a session's numbered stream are notifications
 (``ATTACH_NOTIFICATIONS``): ``session.replay_gap`` (this viewer cannot be caught up; reload a
@@ -18,7 +20,7 @@ snapshot), ``session.updated`` (list views) and ``sessions.resync`` (list update
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import Field, JsonValue, NonNegativeInt, PositiveInt
 
@@ -32,9 +34,12 @@ from indus.protocol.errors import (
 )
 
 __all__ = [
+    "ACP_EDITOR_POLICY",
     "ATTACH_METHODS",
     "ATTACH_NOTIFICATIONS",
     "DAEMON_ONLY_METHODS",
+    "AdmissionCancelParams",
+    "AdmissionCancelResult",
     "AdmissionDiscardParams",
     "AdmissionDiscardResult",
     "AdmissionOutcomeName",
@@ -224,6 +229,28 @@ class AdmissionReceiptResult(ProtocolModel):
     """True when the session was deleted; it takes no new input."""
 
 
+class AdmissionCancelParams(ProtocolModel):
+    """Drop an input that still waits in its session's queue."""
+
+    session_id: SessionId
+    """A session this connection watches."""
+    admission_id: str = Field(min_length=1, max_length=200)
+    """The queued input's admission (``turn_id`` in the submit answer)."""
+
+
+class AdmissionCancelResult(ProtocolModel):
+    """Whether the input was dropped, and where it stands now."""
+
+    cancelled: bool
+    """True when it is cancelled (now, or by an earlier call)."""
+    state: AdmissionStateName
+    """Its state after the call; ``started`` means it was claimed first and keeps running."""
+    generation: NonNegativeInt | None = None
+    """The turn that runs it, once claimed (stop that turn with ``session.interrupt``)."""
+    outcome: AdmissionOutcomeName | None = None
+    """How it ended, once terminal."""
+
+
 class RuntimeDescribeParams(ProtocolModel):
     """The daemon's attach descriptor: which profile and daemon start this is, what it offers."""
 
@@ -346,6 +373,12 @@ ATTACH_METHODS: tuple[_Row, ...] = (
         AdmissionReceiptResult,
         (SESSION_NOT_FOUND, ADMISSION_NOT_FOUND),
     ),
+    (
+        "admission.cancel",
+        AdmissionCancelParams,
+        AdmissionCancelResult,
+        (SESSION_NOT_FOUND, ADMISSION_NOT_FOUND),
+    ),
     ("runtime.describe", RuntimeDescribeParams, RuntimeDescribeResult, ()),
     ("maintenance.run", MaintenanceRunParams, MaintenanceRunResult, (STORE_FAILED,)),
 )
@@ -353,3 +386,8 @@ ATTACH_METHODS: tuple[_Row, ...] = (
 
 DAEMON_ONLY_METHODS: frozenset[str] = frozenset(row[0] for row in ATTACH_METHODS)
 """Declared names only the daemon's WebSocket serves (the stdio bridge answers ``-32601``)."""
+
+ACP_EDITOR_POLICY: Final = "acp.editor_policy"
+"""The capability a daemon advertises (``describe``) once it honours an ACP editor's policy on the
+sessions it creates: the editor's MCP servers and the ask-before-edits approval policy (P19-04).
+An ACP client refuses to create sessions on a daemon without it."""

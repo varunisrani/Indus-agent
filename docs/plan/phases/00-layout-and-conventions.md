@@ -338,7 +338,7 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | base58 | 2.1.1 | 2021-10-30 | MIT | extra `matrix-e2ee` (Linux only), via mautrix (recovery-key encoding) | P16-07 |
 | aiosqlite | 0.22.1 | 2025-12-23 | MIT | extra `matrix-e2ee` (Linux only): the device store's SQLite driver | P16-07 |
 | asyncpg | 0.31.0 | 2025-11-24 | Apache-2.0 | extra `matrix-e2ee` (Linux only): imported by mautrix's crypto-store module (no PostgreSQL is used) | P16-07 |
-| agent-client-protocol | 0.12.1 | 2026-08-16 | **no licence metadata on PyPI** — the P19 builder checks the source repo's LICENSE; if not on the allow-list, add a written exception or stop | runtime / extra `acp` | P19 |
+| agent-client-protocol | 0.12.1 | 2026-08-16 | Apache-2.0 (no licence metadata on PyPI; `LICENSE` read in the 0.12.1 sdist, sha256 `9963ccb5…0095`; needs pydantic only; schema v1.19.0, `PROTOCOL_VERSION` 1) | extra `acp` + dev (the ACP tests run in the gate without extras) | P19-01 |
 | Node | 24.21.0 LTS | 2026-09-07 | MIT | `.nvmrc` | P00-08 |
 | pnpm | 12.9.1 | 2026-10-03 | MIT | `packageManager` | P00-08 |
 | typescript | 6.0.3 | 2026-04-16 | Apache-2.0 | dev | P00-08 (7.x native compiler reconsidered at P12) |

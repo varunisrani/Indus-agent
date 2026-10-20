@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from indus.protocol.attach import (
+    AdmissionCancelParams,
+    AdmissionCancelResult,
     AdmissionDiscardParams,
     AdmissionDiscardResult,
     AdmissionReceiptParams,
@@ -56,6 +58,9 @@ ATTACH_SAMPLES: list[ProtocolModel] = [
     AdmissionReceiptResult(
         admission_id="adm-1", session_id=SID, state="queued", position=2, blocked_by="adm-0"
     ),
+    AdmissionCancelParams(session_id=SID, admission_id="adm-1"),
+    AdmissionCancelResult(cancelled=True, state="terminal", outcome="cancelled"),
+    AdmissionCancelResult(cancelled=False, state="started", generation=3),
     RuntimeDescribeParams(),
     RuntimeDescribeResult(
         profile_id="0" * 16,

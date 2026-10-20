@@ -157,6 +157,12 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "indus.cli.commands.research:research_group",
         "Batch runs, toolset distributions and trajectory tools.",
     ),
+    (
+        "acp",
+        # P19-01: lives with the adapter (layer rule, as `tui-bridge`), loaded by name
+        "indus.acp.command:acp_command",
+        "Run Indus Agent inside an editor (Agent Client Protocol).",
+    ),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""

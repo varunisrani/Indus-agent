@@ -1,4 +1,11 @@
-"""A real gateway daemon in a temp profile, for tests that attach to it (P17-15, P17-26, P17-27).
+"""Daemons for tests that attach to one (P17-15, P17-26, P17-27, P19-04).
+
+Two harnesses share this module:
+
+- ``ProfileHome`` / ``RunningDaemon``: a real ``indus gateway run`` child in a temp profile (the
+  P17 matrix, the shared-backend demo, the ACP attached host against a real daemon);
+- ``AcpDaemon`` / ``open_daemon``: the real ``DaemonSessionHost`` and WebSocket endpoint in the
+  test's own loop (the P17 ``Rig`` over the ASGI double), for the ACP handler suites (P19).
 
 ``ProfileHome`` lays out a profile under a test's temp dir: ``home`` (``INDUS_HOME``, mode 0700),
 ``user-home`` (``HOME``), ``config`` (``XDG_CONFIG_HOME``) and ``work`` (the working folder), with a
@@ -20,11 +27,21 @@ profiles never idles out mid-test (P17-23).
 
 Only pids that carry this home in their environment are ever signalled, so other tests' and other
 worktrees' daemons are never touched.
+
+``AcpDaemon`` answers ``runtime.describe`` and every method the daemon serves through the real
+endpoint. A test may change what it advertises (``capabilities``, which ``runtime.describe`` and
+the control socket's ``describe`` read from the host) and the profile it claims (``profile_id``: a
+dial checks it the way ``grant_for`` does, before any ticket). One method the ACP adapter calls
+is not served by the daemon yet: ``session.mutate`` (``editor_mcp``, ``branch``, ``workspace``,
+D-16.602). A shim in the transport answers it against the daemon's own store before the frame
+would reach the endpoint (which answers ``-32601``); ``shim = False`` turns it off. Every shimmed
+call is recorded in ``calls``. Nothing here is product code.
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import signal
 import subprocess
@@ -36,8 +53,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from indus.foundation.scope import Scope
+from indus.protocol.attach import ACP_EDITOR_POLICY
 from indus.service import gateway_control
-from indus.service.remote.channel import Grant, grant_for
+from indus.service.remote.channel import Dialed, DialRefused, Grant, grant_for
+from indus.service.ws_auth import stable_profile_id
+from indus.state import rewind, sessions
+from indus.state.registry import StoreHandle
+from tests.fakes.model import Turn
+from tests.unit.service.remote.wire import AsgiTransport, Rig, rig
 
 ROOT = Path(__file__).resolve().parents[2]
 TIMEOUT = 90.0
@@ -267,3 +291,97 @@ class RunningDaemon:
         if self.proc.poll() is None:
             self.proc.kill()
         self.proc.wait(10)
+
+
+# -- the in-loop daemon of the ACP handler suites (P19) --------------------------------------------
+
+SHIMMED = frozenset({"session.mutate"})
+"""Methods the ACP adapter calls that the daemon does not serve yet (D-16.602)."""
+
+
+class AcpDaemon:
+    """The real daemon host and endpoint of a ``Rig``, as the ACP attached host meets it."""
+
+    def __init__(self, inner: Rig, store: StoreHandle) -> None:
+        self.rig = inner
+        self.store = store
+        self.shim = True
+        self.profile_id = inner.book.profile_id
+        """The profile this daemon claims; a dial refuses one that is not the home's own."""
+        self.capabilities: list[str] = [*inner.host.capabilities(), ACP_EDITOR_POLICY]
+        """What the host advertises (``runtime.describe``, ``describe``)."""
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.editor_mcp: dict[str, list[dict[str, Any]]] = {}
+        advertised = self.capabilities
+        # The host instance reads this list, so a test's change shows in the next describe.
+        inner.host.capabilities = lambda: tuple(advertised)  # type: ignore[method-assign]
+
+    @property
+    def host(self) -> Any:
+        return self.rig.host
+
+    async def dial(self) -> Dialed:
+        if self.profile_id != stable_profile_id(self.store.scope.home):
+            # ``grant_for`` checks the control socket's ``describe`` before any ticket (P17-24).
+            raise DialRefused(
+                "profile_mismatch", "the daemon serves another profile", terminal=True
+            )
+        dialed = await self.rig.dial()
+        transport = dialed.transport
+        assert isinstance(transport, AsgiTransport)
+        original = transport.send
+
+        async def send(text: str) -> None:
+            frame = json.loads(text)
+            method = frame.get("method")
+            if self.shim and method in SHIMMED and "id" in frame and not transport.dead:
+                params = dict(frame.get("params") or {})
+                self.calls.append((str(method), params))
+                reply: dict[str, Any] = {"jsonrpc": "2.0", "id": frame["id"]}
+                try:
+                    reply["result"] = self._mutate(params)
+                except KeyError as exc:
+                    reply["error"] = {"code": 2001, "message": f"no session {exc}"}
+                transport.sent.append(frame)
+                await transport.client._from_app.put(  # pyright: ignore[reportPrivateUsage]
+                    {"type": "websocket.send", "text": json.dumps(reply)}
+                )
+                return
+            await original(text)
+
+        transport.send = send  # type: ignore[method-assign]
+        return dialed
+
+    def _mutate(self, params: dict[str, Any]) -> dict[str, Any]:
+        sid = str(params.get("session_id", ""))
+        operation = params.get("operation")
+        payload = dict(params.get("payload") or {})
+        if operation == "editor_mcp":
+            self.editor_mcp[sid] = list(payload.get("mcp_servers") or [])
+            return {"status": "applied"}
+        if operation == "branch":
+            if sessions.get(self.store, sid) is None:
+                raise KeyError(sid)
+            child = rewind.branch(self.store, sid)
+            servers = payload.get("mcp_servers")
+            self.editor_mcp[child] = (
+                list(servers) if servers else list(self.editor_mcp.get(sid, []))
+            )
+            return {"status": "applied", "session_id": child}
+        if operation == "workspace":
+            sessions.set_cwd(self.store, sid, str(payload.get("cwd")))
+            return {"status": "applied", "cwd": payload.get("cwd")}
+        return {"status": "refused", "reason": f"unknown operation {operation}"}
+
+    async def close(self) -> None:
+        await self.rig.close()
+
+
+async def open_daemon(
+    scope: Scope,
+    store: StoreHandle,
+    tmp_path: Path,
+    *turns: Turn,
+    tools: dict[str, Any] | None = None,
+) -> AcpDaemon:
+    return AcpDaemon(await rig(scope, store, tmp_path, *turns, tools=tools), store)

@@ -1131,7 +1131,8 @@ Checked by `python -m tooling.checks traps`.
 - **R09.8** Resume replay garbage
   - Review: not yet planned (P00-guards)
 - **R09.9** ACP history replay must finish before the load/resume response
-  - Review: not yet planned (P00-guards)
+  - `tests/contract/acp/test_session_load.py::test_the_whole_history_streams_before_the_response`
+  - `tests/contract/acp/test_session_new.py::test_the_response_frame_comes_before_the_post_attach_updates`
 - **R09.10** MCP approval tools are hollow
   - Review: not yet planned (P00-guards)
 - **R09.11** Never resend a turn with unknown outcome (ACP viewer)
@@ -1142,18 +1143,29 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_attach_remote.py::test_a_lost_wait_is_outcome_unknown_or_blocked_when_ours_still_waits`
   - `tests/e2e/service/test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
   - `apps/tui/src/app/appRuntime.test.ts::attached: a link lost mid-reply says the outcome is unknown and sends nothing again`
-  - Review: the ACP viewer half is P19 (P17-18 covers the CLI)
+  - `tests/contract/acp/test_attached_host.py::test_a_killed_transport_fails_the_waiter_and_the_reconnect_resumes_from_the_last_seq`
+  - `tests/contract/acp/test_attached_host.py::test_a_lost_turn_is_announced_once`
+  - Review: the ACP prompt half — refuse an `unknown` turn, own-admission cancel (P19-09)
 - **R09.12** "Allow for session" has no ACP kind
   - Review: not yet planned (P00-guards)
 - **R09.13** Two ACP implementations, one constructor
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/acp/test_local_host.py::test_no_daemon_and_no_fallback_answers_initialize_then_refuses_sessions`
+  - `tests/unit/acp/test_local_host.py::test_fallback_or_local_flag_runs_sessions_here`
+  - `tests/e2e/acp/test_acp_daemon.py::test_attached_refuses_new_sessions_without_the_editor_policy_and_local_creates_one`
+  - Review: one mode set on both hosts once the model and mode handlers land (P19-12)
 - **R09.14** Stdout purity and probe noise
   - `tests/unit/foundation/test_log.py::test_stdio_mode_keeps_stdout_empty`
   - `tests/unit/foundation/test_bootstrap.py::test_stdio_mode_bootstrap_keeps_stdout_clean`
+  - `tests/unit/acp/test_entry.py::test_stdout_carries_frames_only_and_probes_are_quiet`
+  - `tests/contract/acp/test_initialize.py::test_unknown_methods_and_probes_answer_method_not_found`
+  - Review: the `indus mcp serve` half (P19-14)
 - **R09.15** Windows import deadlock
   - Review: not yet planned (P00-guards)
 - **R09.16** Path normalisation for session lists
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/acp/test_listing.py::test_the_folder_filter_resolves_symlinked_spellings`
+  - `tests/unit/acp/test_listing.py::test_an_unknown_cursor_gives_an_empty_page_never_the_first`
+  - `tests/unit/acp/test_paths.py::test_drive_and_mount_spellings_compare_equal`
+  - `tests/unit/acp/test_paths.py::test_symlinked_spellings_compare_equal`
 - **R09.17** Platform facts must not trust env vars
   - `tests/unit/platform/test_facts.py::test_processor_architecture_env_is_ignored`
   - `tests/unit/platform/test_facts.py::test_cgroup2_host_is_not_container`

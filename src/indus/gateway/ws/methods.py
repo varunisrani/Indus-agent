@@ -25,7 +25,11 @@ settled undeliverable when none is left.
 its generation; the lost turn is closed in its transcript with a short note in the same
 transaction (``admissions.close_lost_turn``). Another session's admission reads as not found.
 ``admission.receipt`` reads one input of a watched session (``ADMISSION_NOT_FOUND`` for another
-session's). A refused submit answers the table code of its ledger reason (``ADMISSION_CONFLICT``,
+session's). ``admission.cancel`` drops a queued input of a watched session; one already claimed is
+answered ``cancelled: false, state: started`` with its generation (a turn is stopped only through
+``session.interrupt``), a lost one ``state: unknown``. ``session.usage`` reads a watched
+session's counters (``usage_numbers``, the shape the turn-end ``session.usage`` event carries).
+A refused submit answers the table code of its ledger reason (``ADMISSION_CONFLICT``,
 ``QUEUE_FULL``, ``SESSION_REFUSED`` for a deleted session, else ``SESSION_BUSY``); an exact retry
 of an input whose turn was lost in a restart answers ``OUTCOME_UNKNOWN`` (never "streaming": that
 turn never comes back).
@@ -37,11 +41,14 @@ turn never comes back).
 
 from __future__ import annotations
 
+import contextlib
 import secrets
 from typing import TYPE_CHECKING, Final
 
 from indus.gateway.control_socket import code_version
 from indus.protocol.attach import (
+    AdmissionCancelParams,
+    AdmissionCancelResult,
     AdmissionDiscardParams,
     AdmissionDiscardResult,
     AdmissionReceiptParams,
@@ -67,6 +74,9 @@ from indus.protocol.bridge import (
     ServerRequestDeclineResult,
     SessionCloseParams,
     SessionCloseResult,
+    SessionUsageParams,
+    SessionUsageResult,
+    UsageNumbers,
 )
 from indus.protocol.errors import (
     ADMISSION_NOT_FOUND,
@@ -104,6 +114,7 @@ from indus.service.fences import ControlApplied, ControlStatus, Responded, Stale
 from indus.service.maintenance_gate import MaintenanceVerb
 from indus.service.request_redelivery import NOT_SHOWN_CODE, UNRENDERABLE_CODE
 from indus.service.rpc import MethodSet, MethodTable
+from indus.service.session_service import usage_numbers
 from indus.service.viewers import DECLINE_CAPABILITY, BusyMode
 from indus.state.runtime_ledger import LedgerRefusal
 
@@ -399,6 +410,35 @@ async def receipt(conn: WsConnection, params: AdmissionReceiptParams) -> Admissi
     if found is None or found.session_id != key:
         raise ProtocolError(ADMISSION_NOT_FOUND, path="admission_id")  # or another session's
     return _receipt_result(found)
+
+
+@methods.method("admission.cancel")
+async def cancel(conn: WsConnection, params: AdmissionCancelParams) -> AdmissionCancelResult:
+    key = conn.subs.require(params.session_id)
+    try:
+        found = await conn.host.receipt(params.admission_id)
+    except LedgerRefusal:
+        found = None
+    if found is None or found.session_id != key:
+        raise ProtocolError(ADMISSION_NOT_FOUND, path="admission_id")  # or another session's
+    if found.state == "queued":
+        with contextlib.suppress(LedgerRefusal):  # claimed meanwhile: answered as it stands
+            found = await conn.host.admissions.cancel_queued(params.admission_id)
+        if found.state != "terminal":
+            found = await conn.host.receipt(params.admission_id)
+    return AdmissionCancelResult(
+        cancelled=found.state == "terminal" and found.outcome == "cancelled",
+        state=found.state,
+        generation=found.generation,
+        outcome=found.outcome,
+    )
+
+
+@methods.method("session.usage")
+async def usage(conn: WsConnection, params: SessionUsageParams) -> SessionUsageResult:
+    key = conn.subs.require(params.session_id)
+    numbers = usage_numbers(conn.host.service, conn.host.service.current_id(key))
+    return SessionUsageResult(usage=UsageNumbers.model_validate(numbers))
 
 
 @methods.method("maintenance.run")

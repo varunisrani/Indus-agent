@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 __all__ = ["GUI_COMMANDS", "RECOVERY_COMMANDS", "STDIO_COMMANDS", "find_flag", "main"]
 
 GUI_COMMANDS = frozenset({"dashboard", "serve", "gui", "desktop"})
-STDIO_COMMANDS = frozenset({"tui-bridge"})  # stdout carries protocol frames only
+STDIO_COMMANDS = frozenset({"tui-bridge", "acp"})  # stdout carries protocol frames only
 RECOVERY_COMMANDS = frozenset({"profile", "doctor", "config"})
 _VERSION_FLAGS = ("-V", "--version")
 _PROFILE_FLAGS = ("-p", "--profile")

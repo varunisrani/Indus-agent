@@ -1548,15 +1548,38 @@ Checked by `python -m tooling.checks acceptance`.
   - Review: not yet planned (phase TBD)
   - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`
 - **ACC-M1-1** `indus acp` stdio server with `initialize`, `authenticate` (including a terminal setup method) …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/acp/test_initialize.py::test_capabilities_are_exact_and_valid`
+  - `tests/contract/acp/test_initialize.py::test_without_credentials_only_setup_is_offered_and_it_fails_until_a_key_exists`
+  - `tests/unit/acp/test_entry.py::test_version_prints_and_exits`
+  - `tests/unit/acp/test_entry.py::test_setup_runs_indus_setup_as_a_child`
+  - Review: `--setup-browser` waits for `indus tools install browser` (P19-01 follow-up)
+- **ACC-M1-2** `indus acp --check` imports the SDK and the adapter and says OK; without the `acp` extra it exits 1 with a hint
+  - `tests/unit/acp/test_entry.py::test_check_imports_the_sdk_and_the_adapter`
+  - `tests/unit/acp/test_entry.py::test_check_without_the_sdk_exits_1_with_a_hint`
 - **ACC-M2-1** ACP sessions: new, load, resume (full history streamed before the reply), list with cwd filter and …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/acp/test_session_load.py::test_the_whole_history_streams_before_the_response`
+  - `tests/contract/acp/test_session_load.py::test_a_compressed_session_loaded_by_its_old_id_is_addressed_by_that_id`
+  - `tests/contract/acp/test_session_new.py::test_the_response_frame_comes_before_the_post_attach_updates`
+  - Review: `session/cancel` (P19-09)
+- **ACC-M2-2** ACP session list: ACP conversations only, 50 per page, the cursor is the last id, an unknown cursor is an empty page
+  - `tests/unit/acp/test_listing.py::test_pages_hold_fifty_and_the_cursor_is_the_last_id`
+  - `tests/unit/acp/test_listing.py::test_an_unknown_cursor_gives_an_empty_page_never_the_first`
+  - `tests/unit/acp/test_listing.py::test_only_acp_conversations_with_messages_are_listed`
+- **ACC-M2-3** ACP fork: the child gets the editor's MCP servers or a copy of the parent's
+  - `tests/contract/acp/test_session_load.py::test_fork_gets_the_parents_mcp_servers_or_the_editors_own`
 - **ACC-M3-1** ACP prompts with text, image and resource blocks; streamed message, thought, tool, plan, usage and …
   - Review: not yet planned (phase TBD)
 - **ACC-M4-1** ACP permission cards: allow once, for session, always, deny, deny always
   - Review: not yet planned (phase TBD)
 - **ACC-M8-1** ACP runs the agent in-process first. Changed (P1 decision); gateway-viewer mode with reattach and …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/acp/test_local_host.py::test_fallback_or_local_flag_runs_sessions_here`
+  - `tests/unit/acp/test_local_host.py::test_no_daemon_and_no_fallback_answers_initialize_then_refuses_sessions`
+  - `tests/e2e/acp/test_acp_daemon.py::test_attached_refuses_new_sessions_without_the_editor_policy_and_local_creates_one`
+- **ACC-M8-2** ACP attached mode reattaches after a lost link: waiters see outcome unknown, sessions resume from their last seq, an open card is offered once, editor MCP specs go back
+  - `tests/contract/acp/test_attached_host.py::test_a_killed_transport_fails_the_waiter_and_the_reconnect_resumes_from_the_last_seq`
+  - `tests/contract/acp/test_attached_host.py::test_reconnect_reattaches_editor_mcp`
+  - `tests/contract/acp/test_attached_host.py::test_a_lost_turn_is_announced_once`
+  - Review: against a real daemon once it serves `session.mutate` and advertises `acp.editor_policy` (P19-13, D-16.602)
 - **ACC-M9-1** Editor-provided MCP servers attached per session; curated editor toolset
   - Review: not yet planned (phase TBD)
 - **ACC-N31-1** Secrets at rest (desktop and CLI: provider keys, auth tokens, platform credentials) go to the OS …
@@ -1595,5 +1618,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/platform/test_lookup_ratchet.py::test_planted_dir_literal_is_caught`
 - **ACC-Q5-1** Linux and macOS as first-class hosts
   - Review: not yet planned (phase TBD)
+- **ACC-Q7-2** ACP under WSL: an editor's Windows drive and `\\wsl.localhost` folders become POSIX paths, and list filters compare them
+  - `tests/unit/acp/test_paths.py::test_drive_paths_become_mounts`
+  - `tests/unit/acp/test_paths.py::test_wsl_unc_paths_become_posix`
+  - `tests/contract/acp/test_session_new.py::test_a_windows_cwd_is_translated_under_wsl`
 - **ACC-Q9-1** Localisation: catalogue indirection everywhere with English → seventeen language catalogues with …
   - Review: not yet planned (phase TBD)
