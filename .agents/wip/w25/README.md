@@ -38,3 +38,30 @@
   launch fields refused; never-frozen field = default (naming it on resume conflicts); subscriptions keyed by connection id.
 - Follow-ups: per-actor authorisation + slow-viewer overflow (P17-13/14); alias resolution, refused-flag hints, close reasons
   (P17-18); policy_conflict protocol mapping (P17-25); unviewed ACP sessions unloaded not ended at shutdown.
+
+## w25-e6.patch: P16-11 Microsoft Teams + P16-12 Graph change-notification receiver — done
+- Builder checks: teams+msgraph 106 passed; contract+config 388 passed / 41 skipped; (pre-restart) unit/gateway+contract+
+  config 1747 passed; ruff, pyright, lint-imports, tooling.checks ok. No new packages.
+- New shared helper gateway/adapters/_entra.py (client-credentials tokens, cached, single-flight, secrets out of reprs).
+- Wiring (core): registry rows
+  `replace(_chat_entry("teams", "Microsoft Teams", sdk=("httpx",), extra_name="teams", required_env=("TEAMS_CLIENT_ID",
+  "TEAMS_CLIENT_SECRET", "TEAMS_TENANT_ID"), max_len=28000, hint="You are talking through Microsoft Teams. Markdown is
+  rendered (bold, italic, code, lists); avoid tables and raw HTML. Keep replies clear and professional."),
+  install_hint="pip install indus-agent (Teams needs no extra)")` and
+  `PlatformEntry(name="msgraph", label="Microsoft Graph change notifications", factory=_lazy_factory(
+  "indus.gateway.adapters.msgraph:create_adapter"), check_fn=modules_installed("httpx"),
+  required_env=("MSGRAPH_WEBHOOK_CLIENT_STATE",), install_hint="pip install indus-agent (no extra)", dm_is_private=False,
+  trusted_inbound=True)`; BUILTIN_NAMES += teams, msgraph; msgraph in send_command._NOT_TARGETS;
+  BUILTIN_CREDENTIALS teams: (CLIENT_ID, CLIENT_SECRET, TENANT_ID), msgraph: (MSGRAPH_WEBHOOK_CLIENT_STATE,).
+  Daemon: GraphReceiver.set_forward(...) + platforms.msgraph.deliver_to.
+- LEAD RULINGS for the integrator:
+  1. Replace the hand-rolled RS256 signature verification in teams/botauth.py with `cryptography`'s RSA PKCS#1 v1.5
+     verify (cryptography is a base dependency). Keep our own claim checks (RS256 only, iss, aud, exp/nbf skew, kid
+     cache/refresh, key size >= 2048, endorsements, serviceUrl). No custom crypto math in src/.
+  2. Graph replies with no forward configured must NOT be reported as delivered: return a typed non-delivered result
+     (e.g. not_configured / undeliverable) and log once.
+- Decisions: Bot Framework issuer only (any tenant); refs/subscriptions in 0600 JSON under <home>/gateway/; card presses go
+  to the core requester/admin rule; platform name msgraph; clientState 16–128 printable ASCII; Graph events internal and
+  allow_control False; service-URL allow-list refuses lookalikes/ports/http/userinfo/IPs; validation token echo capped 1,024.
+- Follow-ups: P16-32 teams target parser; allowed_tenants option; proactive DM to new users; non-image files (file
+  consent); E7 may reuse botauth/_entra; Teams meetings (K12, D-16.87); ACC-K12 rows missing.
