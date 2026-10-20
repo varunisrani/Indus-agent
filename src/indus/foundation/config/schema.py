@@ -1426,6 +1426,70 @@ class GatewaySection(_Section):
     )
 
 
+class DashboardBasicAuthSection(_Section):
+    """The dashboard's username/password sign-in (P18-03, D-16.44)."""
+
+    username: str = Field(default="", description="sign-in name; empty turns the provider off")
+    password_hash: str = Field(
+        default="",
+        description="argon2id hash of the password (`indus dashboard` on a terminal writes it); "
+        "never the password itself — INDUS_DASHBOARD_PASSWORD in the environment overrides it",
+    )
+
+
+class DashboardOidcSection(_Section):
+    """The dashboard's OpenID Connect sign-in (P18-04, D-16.44)."""
+
+    issuer: str = Field(default="", description="issuer URL (https; http only on loopback)")
+    client_id: str = Field(default="", description="public client id (PKCE, no client secret)")
+    scopes: str = Field(default="openid profile email", description="scopes asked for at sign-in")
+    id_token_leeway: float = Field(
+        default=60.0,
+        description="seconds of clock skew allowed on ID token times; 0 = strict, an invalid "
+        "value counts as 0",
+    )
+
+
+def _refuse_open_proxies(entries: list[str]) -> list[str]:
+    for entry in entries:
+        text = entry.strip()
+        if text == "*" or text.endswith("/0"):
+            raise ValueError(f"{text!r} would trust every client; list the proxy's address")
+    return entries
+
+
+class DashboardSection(_Section):
+    """The web dashboard and headless backend (`indus dashboard`, `indus serve`, P18)."""
+
+    public_url: str = Field(
+        default="",
+        description="the full address people reach the dashboard at behind a proxy; a "
+        "non-loopback host turns sign-in on",
+    )
+    trusted_proxies: list[str] = Field(
+        default_factory=list[str],
+        description="proxy addresses or bounded networks whose X-Forwarded-* headers are "
+        "believed (loopback always is; '*' and /0 are refused)",
+    )
+    basic_auth: DashboardBasicAuthSection = Field(
+        default_factory=DashboardBasicAuthSection, description="username/password sign-in"
+    )
+    oidc: DashboardOidcSection = Field(
+        default_factory=DashboardOidcSection, description="OpenID Connect sign-in"
+    )
+    theme: Literal["system", "light", "dark"] = Field(
+        default="system", description="dashboard colours: system, light or dark"
+    )
+    show_token_analytics: bool = Field(
+        default=False, description="show the token and cost analytics page"
+    )
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _no_open_proxy(cls, value: list[str]) -> list[str]:
+        return _refuse_open_proxies(value)
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -1598,6 +1662,9 @@ class ConfigModel(BaseModel):
     )
     gateway: GatewaySection = Field(
         default_factory=GatewaySection, description="the messaging gateway"
+    )
+    dashboard: DashboardSection = Field(
+        default_factory=DashboardSection, description="the web dashboard (indus dashboard)"
     )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 

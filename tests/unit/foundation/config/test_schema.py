@@ -605,3 +605,29 @@ def test_http_surface_rows_validate() -> None:  # P15-30..32
     assert schema.validate({"gateway": {"api_server": {"max_concurrent_runs": -1}}}) != []
     assert schema.validate({"gateway": {"webhook": {"rate_limit": 0}}}) != []
     assert schema.validate({"gateway": {"webhook": {"max_body_bytes": 0}}}) != []
+
+
+def test_dashboard_rows() -> None:
+    """P18-02..05: the dashboard settings and their defaults."""
+    assert schema.DEFAULTS["dashboard"] == {
+        "public_url": "",
+        "trusted_proxies": [],
+        "basic_auth": {"username": "", "password_hash": ""},
+        "oidc": {
+            "issuer": "",
+            "client_id": "",
+            "scopes": "openid profile email",
+            "id_token_leeway": 60.0,
+        },
+        "theme": "system",
+        "show_token_analytics": False,
+    }
+    assert schema.schema_for("dashboard.trusted_proxies") is list
+    assert schema.schema_for("dashboard.oidc.id_token_leeway") is float
+
+
+@pytest.mark.parametrize("entry", ["*", "0.0.0.0/0", "::/0"])
+def test_dashboard_refuses_proxies_that_trust_everyone(entry: str) -> None:
+    warnings = schema.validate({"dashboard": {"trusted_proxies": ["10.0.0.1", entry]}})
+    assert any("dashboard.trusted_proxies" in line for line in warnings)
+    assert schema.validate({"dashboard": {"trusted_proxies": ["172.20.0.0/24"]}}) == []

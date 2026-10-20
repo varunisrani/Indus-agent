@@ -32,6 +32,9 @@ web = ["ddgs==9.16.0"]
 docs = ["openpyxl==3.1.5", "pypdf==6.19.0", "python-docx==1.2.0"]
 # Pseudo-terminals for interactive background processes (P05-13; ISC, 00-layout section 4).
 pty = ["ptyprocess==0.7.0"]
+# The dashboard's Chat tab terminal (P18-07): ptyprocess on POSIX (ISC) and ConPTY through pywinpty
+# on Windows only (MIT); 00-layout section 4. Imported lazily by indus.web.pty.bridge.
+dashboard = ["ptyprocess==0.7.0", "pywinpty==3.0.5; sys_platform == 'win32'"]
 # Headless Chromium for the browser tools (P10-12; Apache-2.0, 00-layout section 4).
 browser = ["playwright==1.63.0"]
 # Local speech to text for the STT library (P10-18; MIT) and the microphone/speaker library for

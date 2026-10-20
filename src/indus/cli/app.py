@@ -143,6 +143,16 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "Add, list, remove and test webhook routes of the gateway.",
     ),
     (
+        "dashboard",
+        "indus.web.command:dashboard_command",
+        "Serve the web dashboard (127.0.0.1:9119 by default).",
+    ),
+    (
+        "serve",
+        "indus.web.command:serve_group",
+        "Run or find the headless backend (no web pages).",
+    ),
+    (
         "research",
         "indus.cli.commands.research:research_group",
         "Batch runs, toolset distributions and trajectory tools.",

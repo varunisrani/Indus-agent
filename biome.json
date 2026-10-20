@@ -11,8 +11,8 @@
       "!**/dist",
       "!**/node_modules",
       "!packages/protocol/src/generated",
-      "!tests/fixtures/captures",
-      "!tests/fixtures/web",
+      "!tests/fixtures",
+      "!tests/fakes/**/*.json",
       "!tests/golden",
       "!tooling"
     ]
@@ -39,6 +39,14 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["apps/web/src/**/*.css"],
+      "css": {
+        "parser": {
+          "tailwindDirectives": true
+        }
+      }
+    },
     {
       "includes": ["scripts/**"],
       "linter": {

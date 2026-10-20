@@ -74,7 +74,8 @@ PyPI for packages of other platforms).
 | pypdf | 6.19.0 | BSD-3-Clause | extra `docs`: PDF text layer for `read_file` | P05-17 |
 | python-docx | 1.2.0 | MIT | extra `docs`: `.docx` text for `read_file` | P05-17 |
 | lxml | 6.1.3 | BSD-3-Clause | extra `docs`, via python-docx; extra `web`, via ddgs | P05-17 |
-| ptyprocess | 0.7.0 | ISC | extra `pty`: pseudo-terminals for interactive background processes (also via pexpect, dev only) | P05-13 |
+| ptyprocess | 0.7.0 | ISC | extras `pty` and `dashboard`: pseudo-terminals for interactive background processes and the dashboard's Chat tab (also via pexpect, dev only) | P05-13, P18-07 |
+| pywinpty | 3.0.5 | MIT (PyPI classifier) | extra `dashboard`, Windows only: ConPTY for the dashboard's Chat tab | P18-07 |
 | ddgs | 9.16.0 | MIT | extra `web`: keyless web search | P05-23 |
 | primp | 2.0.1 | MIT | extra `web`, via ddgs | P05-23 |
 | playwright | 1.63.0 | Apache-2.0 | extra `browser`: drives Chromium for the browser tools (the wheel carries the Playwright driver and its Node.js runtime; Chromium itself is installed separately, never shipped) | P10-12 |

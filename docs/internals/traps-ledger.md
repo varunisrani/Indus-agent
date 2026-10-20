@@ -248,6 +248,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/test_vendor_env.py::test_every_vendor_token_is_out_of_every_child_env`
   - `tests/unit/gateway/adapters/whatsapp/test_adapter.py::test_create_adapter_builds_an_owner_with_a_minimal_child_env`
   - `tests/unit/gateway/adapters/whatsapp/test_sidecar.py::test_a_fresh_bridge_gets_a_private_token_through_its_env_only`
+  - `tests/contract/web/test_pty_route.py::test_child_env_comes_from_the_builder`
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
   - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
@@ -1083,22 +1084,50 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
 - **R09.1** Do not rebuild the chat in React
   - Review: not yet planned (P00-guards)
+  - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
+  - `apps/web/src/App.test.tsx::does not mount the chat host before the first visit`
 - **R09.2** WebSocket auth differs from REST auth
   - Review: not yet planned (P00-guards)
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_subprotocol_is_accepted_once`
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_url_is_never_used`
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_foreign_origin_or_peer_is_refused_4403`
   - `tests/contract/gateway/test_ws_endpoint.py::test_logs_carry_no_ticket_params_or_query`
+  - `tests/unit/web/ws/test_ws_auth.py::test_checks_run_in_order`
+  - `tests/unit/web/ws/test_ws_auth.py::test_gated_tickets_through_the_app`
+  - `tests/unit/web/ws/test_ws_auth.py::test_every_websocket_route_goes_through_the_helper`
+  - `tests/unit/web/ws/test_ws_auth.py::test_credentials_in_the_url_are_refused_and_spent`
+  - `tests/unit/web/ws/test_ws_auth.py::test_refusals_never_log_or_audit_the_credential`
+  - `tests/integration/web/test_chat_routes_gate.py::test_loopback_mode_credentials_per_route`
+  - `tests/integration/web/test_chat_routes_gate.py::test_gated_mode_takes_one_ticket_per_socket`
+  - `apps/web/src/lib/api.test.ts::uses the session token in loopback mode, in the subprotocols only`
 - **R09.3** Non-loopback must fail closed
   - Review: not yet planned (P00-guards)
+  - `tests/unit/web/auth/test_gate.py::test_gate_table`
+  - `tests/unit/web/test_app_modes.py::test_non_interactive_gated_start_without_provider_lists_reasons`
 - **R09.4** Middleware ordering leaks
   - Review: not yet planned (P00-guards)
+  - `tests/unit/web/auth/test_gate.py::test_the_allowlist_is_one_object_in_both_gates`
+  - `tests/unit/web/auth/test_gate.py::test_unknown_plugin_route_is_401_before_404`
 - **R09.5** Token rotation vs open tabs
   - Review: not yet planned (P00-guards)
+  - `tests/unit/web/test_spa.py::test_client_routes_get_the_index_with_no_store`
+  - `apps/web/src/lib/api.test.ts::reloads once on a loopback 401, then surfaces the error`
+  - `apps/web/src/lib/api.test.ts::re-arms the reload guard after a 2xx`
+  - `apps/web/src/lib/api.test.ts::never reloads in gated mode, and sends no token header`
 - **R09.6** PTY lifetime and supersession
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/web/pty/test_registry.py::test_second_attach_supersedes_and_replays_then_redraws`
+  - `tests/unit/web/pty/test_registry.py::test_child_exit_closes_the_viewer_4410`
+  - `tests/unit/web/pty/test_registry.py::test_seventeenth_pty_evicts_the_oldest_detached`
+  - `tests/unit/web/pty/test_registry.py::test_reaper_ends_a_pty_thirty_minutes_after_detach`
+  - `tests/unit/web/pty/test_registry.py::test_reaping_a_tui_leaves_the_daemon_turn_running`
+  - `tests/contract/web/test_pty_route.py::test_reattach_supersedes_replays_and_redraws`
+  - `tests/contract/web/test_pty_route.py::test_resize_frames_are_applied_never_written`
+  - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
+  - Review: the client half (hidden chat host, Web Lock, 20 s keepalive) (P18-26)
 - **R09.7** Resize escape is in-band
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/web/pty/test_resize.py::test_only_an_exact_frame_is_a_resize`
+  - `tests/unit/web/pty/test_resize.py::test_sizes_are_clamped`
+  - `tests/contract/web/test_pty_route.py::test_a_real_child_never_sees_the_resize_escape`
 - **R09.8** Resume replay garbage
   - Review: not yet planned (P00-guards)
 - **R09.9** ACP history replay must finish before the load/resume response
@@ -1137,9 +1166,17 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/platform/test_lookup_ratchet.py::test_src_is_clean`
   - `tests/unit/platform/test_lookup_ratchet.py::test_planted_which_is_caught`
 - **R09.19** Docs disagree about Windows chat
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/web/test_pty_bridge.py::test_windows_without_conpty_explains_wsl2`
+  - `tests/contract/web/test_pty_route.py::test_failures_show_red_text_and_close_1011`
 - **R09.20** Profile-scoped writes need an explicit profile
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/web/test_scope.py::test_two_profiles_write_needs_a_profile`
+  - `tests/unit/web/test_scope.py::test_every_write_route_depends_on_the_write_scope`
+  - `tests/contract/web/test_pty_route.py::test_the_ticket_s_profile_decides_the_chat_s_profile`
+  - `apps/web/src/lib/api.test.ts::covers every scoped route in the generated route list`
+  - `apps/web/src/lib/api.test.ts::leaves an explicit profile alone`
+  - `apps/web/src/lib/api.test.ts::falls back to the backend's own profile when nothing is selected`
+  - `apps/web/src/App.test.tsx::shows the switcher and banner for a non-default profile`
+  - Review: the SPA scoped family list (P18-18)
 - **R09.21** Gateway-owned data cannot be bulk-edited live
   - `tests/unit/service/test_maintenance_gate.py::test_prune_with_a_live_daemon_runs_inside_the_daemon`
   - `tests/unit/service/test_maintenance_gate.py::test_a_daemon_without_the_verb_refuses_and_nothing_is_deleted`
@@ -1150,8 +1187,12 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
 - **R09.22** Brand assets
   - Review: not yet planned (P00-guards)
+  - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`
+  - `apps/web/src/shell/assets.test.ts::loads no web fonts from stylesheets`
 - **R09.23** Reverse-proxy prefix
   - Review: not yet planned (P00-guards)
+  - `tests/unit/web/test_prefix.py::test_same_build_at_root_and_under_a_prefix`
+  - `tests/unit/web/test_prefix.py::test_callback_ignores_the_prefix_when_a_public_url_is_set`
 - **R10.1** Crash-durable batch results
   - `tests/unit/research/test_batch_io.py::test_fsync_happens_before_the_completion_callback`
   - `tests/unit/research/test_batch_io.py::test_a_crash_before_the_fsync_leaves_the_prompt_not_done`

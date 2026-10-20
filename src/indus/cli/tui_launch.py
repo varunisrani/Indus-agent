@@ -19,6 +19,10 @@ The renderer is found in this order: ``--dev`` runs the checkout's TypeScript th
 ``INDUS_TUI_DIR/dist/entry.js``; the bundle shipped in the package (``indus/_tui_dist``); the
 checkout's ``apps/tui/dist/entry.js``, rebuilt first when a source file is newer.
 
+Under the dashboard's Chat tab (P18-09) the PTY child names its channel's active-session file in
+``INDUS_TUI_DASHBOARD_SESSION_FILE``: when that is an absolute path to a regular file (not a
+link) of this user, the renderer writes into it instead of a temp file and the file is kept.
+
 The child runs in the foreground: Ctrl+C reaches it directly (this process ignores SIGINT while
 it waits so the renderer can restore the terminal), SIGTERM is passed on. Its exit code is
 returned (killed by signal n → 128+n). After a clean end or Ctrl+C the resume command is printed;
@@ -36,6 +40,7 @@ import json
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -91,6 +96,7 @@ SESSION_FILE_ENV = "INDUS_TUI_ACTIVE_SESSION_FILE"
 RESUME_ENV = "INDUS_TUI_RESUME"
 GRANT_ENV = "INDUS_TUI_GRANT_COMMAND"
 LOCAL_ENV = "INDUS_TUI_LOCAL"
+DASHBOARD_FILE_ENV = "INDUS_TUI_DASHBOARD_SESSION_FILE"
 CWD_ENVS = ("INDUS_TUI_CWD", "INDUS_LAUNCH_CWD")
 
 _VALUE_NAMES = {
@@ -115,6 +121,7 @@ _SWITCH_NAMES = {
 LAUNCH_NAMES: tuple[str, ...] = (
     RESUME_ENV,
     SESSION_FILE_ENV,
+    DASHBOARD_FILE_ENV,
     LOCAL_ENV,
     *_VALUE_NAMES.values(),
     *_SWITCH_NAMES.values(),
@@ -524,6 +531,22 @@ def _make_session_file(system: System) -> Path:
     return path
 
 
+def _dashboard_session_file(env: Mapping[str, str]) -> Path | None:
+    """The dashboard's channel file (see the module notes), or None to make our own."""
+    raw = (env.get(DASHBOARD_FILE_ENV) or "").strip()
+    if not raw or not Path(raw).is_absolute():
+        return None
+    path = Path(raw)
+    try:
+        info = path.lstat()
+    except OSError:
+        return None
+    getuid = getattr(os, "getuid", None)
+    if not stat.S_ISREG(info.st_mode) or (getuid is not None and info.st_uid != getuid()):
+        return None
+    return path
+
+
 def _session_in(path: Path) -> str | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig") or "{}")
@@ -686,7 +709,8 @@ def run(
         _err(*exc.lines())
         return exc.code
 
-    session_file = _make_session_file(machine)
+    given = _dashboard_session_file(base)
+    session_file = given if given is not None else _make_session_file(machine)
     code: int | None = None
     try:
         env = build_child_env(
@@ -715,8 +739,9 @@ def run(
         if worktree is not None:
             _finish_worktree(state, worktree, live)
     finally:
-        with contextlib.suppress(OSError):
-            session_file.unlink()
+        if given is None:
+            with contextlib.suppress(OSError):
+                session_file.unlink()
     if code == UPDATE_EXIT:
         return _run_update(base, machine)
     return code

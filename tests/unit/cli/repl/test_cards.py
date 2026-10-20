@@ -86,6 +86,7 @@ def test_four_denies_and_asks_for_a_reason(rig: Rig) -> None:
     assert answered(rig) == [
         ApprovalAnswer(choice=ApprovalChoice.DENY, reason="use the trash folder instead")
     ]
+    rig.settle()  # the note is printed after the host saw the answer (``_answer_card``)
     assert "denied: use the trash folder instead" in rig.text()
 
 
@@ -294,6 +295,9 @@ def test_sudo_entry_is_masked_and_sent(rig: Rig) -> None:
     assert rig.call(lambda: to_filter(session.is_password)()) is True
     rig.keys("pw-typed-here" + ENTER)
     assert answered(rig) == [SudoAnswer(password="pw-typed-here")]
+    # The host sees the answer before the REPL thread prints its note (``_answer_card``): let the
+    # loop finish that callback before reading the screen.
+    rig.settle()
     text = rig.text()
     assert "pw-typed-here" not in text
     assert "password sent" in text

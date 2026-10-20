@@ -382,6 +382,34 @@ def test_planted_link_at_the_session_file_is_not_followed(scope: Scope, rig: Rig
     assert victim.read_text(encoding="utf-8") == "keep me"
 
 
+def test_the_dashboard_channel_file_is_used_and_kept(scope: Scope, rig: Rig) -> None:
+    # P18-09: the Chat tab's PTY child names its channel's file; the renderer writes there.
+    channel_file = rig.root / "channel.json"
+    channel_file.write_text("", encoding="utf-8")
+    state = _state(
+        scope, rig, PRETEND_SESSION=SID, INDUS_TUI_DASHBOARD_SESSION_FILE=str(channel_file)
+    )
+    assert _launch(state, rig) == 0
+    env = rig.env_out()
+    assert env["INDUS_TUI_ACTIVE_SESSION_FILE"] == str(channel_file)
+    assert "INDUS_TUI_DASHBOARD_SESSION_FILE" not in env
+    assert SID in channel_file.read_text(encoding="utf-8")
+
+
+def test_a_linked_or_relative_dashboard_file_is_not_used(scope: Scope, rig: Rig) -> None:
+    victim = rig.root / "victim.txt"
+    victim.write_text("keep me", encoding="utf-8")
+    link = rig.root / "link.json"
+    link.symlink_to(victim)
+    for given in (str(link), "relative.json"):
+        state = _state(scope, rig, PRETEND_SESSION=SID, INDUS_TUI_DASHBOARD_SESSION_FILE=given)
+        assert _launch(state, rig) == 0
+        used = Path(rig.env_out()["INDUS_TUI_ACTIVE_SESSION_FILE"])
+        assert used.parent == rig.root / "tmp"
+        assert not used.exists()
+    assert victim.read_text(encoding="utf-8") == "keep me"
+
+
 # -- exit codes ------------------------------------------------------------------------------------
 
 

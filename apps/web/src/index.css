@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* Tailwind utilities read the @indus/ui tokens; the token values themselves are written per theme
+   by `ThemeStyles` (src/shell/ThemeSwitch.tsx) from `tokensToCss`. No font files are shipped: the
+   stacks fall back to system fonts (R09.22). */
+@theme {
+  --color-bg: var(--indus-color-bg);
+  --color-raised: var(--indus-color-bg-raised);
+  --color-fg: var(--indus-color-fg);
+  --color-muted: var(--indus-color-fg-muted);
+  --color-line: var(--indus-color-border);
+  --color-accent: var(--indus-color-accent);
+  --color-accent-fg: var(--indus-color-accent-fg);
+  --color-ok: var(--indus-color-success);
+  --color-warn: var(--indus-color-warning);
+  --color-danger: var(--indus-color-danger);
+  --color-code: var(--indus-color-code-bg);
+  --color-focus: var(--indus-color-focus-ring);
+  --font-sans: var(--indus-font-sans);
+  --font-mono: var(--indus-font-mono);
+}
+
+html,
+body,
+#indus-dashboard {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--indus-color-bg);
+  color: var(--indus-color-fg);
+  font-family: var(--indus-font-sans);
+  font-size: 14px;
+}
+
+::selection {
+  background: var(--indus-color-selection);
+}
+
+:focus-visible {
+  outline: 2px solid var(--indus-color-focus-ring);
+  outline-offset: 2px;
+}

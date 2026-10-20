@@ -60,10 +60,14 @@ GOLDEN_ORDER = [
     "pairing",  # P15-09
     "send",  # P15-20
     "webhook",  # P15-32
+    "dashboard",  # P18-01
+    "serve",  # P18-01
     "research",
 ]
 
 SHARED_IMPORTS: dict[str, set[str]] = {
+    "dashboard": {"serve"},  # one module, two commands (P18-01)
+    "serve": {"dashboard"},
     "dump": {"status"},
     "journey": {"learning"},  # one module, two names (P09-23 alias)
     "learning": {"journey"},

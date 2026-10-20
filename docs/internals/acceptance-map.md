@@ -1519,16 +1519,34 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/wizards/test_gateway_setup.py::test_the_command_is_wired_under_gateway`
 - **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …
   - Review: not yet planned (phase TBD)
+  - `tests/unit/web/auth/test_gate.py::test_token_is_needed_on_api_paths_in_loopback_mode`
+  - `tests/unit/web/auth/test_host_guard.py::test_middleware_answers_400_for_a_rebound_name`
+  - `tests/unit/web/test_spa.py::test_unknown_api_path_is_a_json_404_for_every_method`
+  - `apps/web/src/lib/api.test.ts::sends the session token header and the base path`
 - **ACC-L3-1** Sessions page: list, search with snippets, view as markdown, rename, export, prune, delete, resume …
   - Review: not yet planned (phase TBD)
+  - `apps/web/src/pages/SessionsPage.test.tsx::renders search snippets with marks and scrolls the opened hit to its first match`
+  - `apps/web/src/pages/SessionsPage.test.tsx::sends the snapshot identity and removes the row`
+  - `apps/web/src/pages/SessionsPage.test.tsx::shows the dry-run count before pruning`
+  - `apps/web/src/pages/SessionsPage.test.tsx::resumes a session in Chat with its id`
+  - `apps/web/src/pages/SessionsPage.test.tsx::renames with the mutation identity`
 - **ACC-L4-1** Chat tab embedding the real TUI over a PTY and xterm → keep-alive attach across tabs, live tool …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/web/test_pty_route.py::test_reattach_supersedes_replays_and_redraws`
+  - `tests/contract/web/test_events_fanout.py::test_a_child_s_three_events_reach_both_subscribers`
+  - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
+  - Review: the xterm host and the M6 browser run (P18-30)
 - **ACC-L5-1** Config page from a schema; Keys page with redacted previews
   - Review: not yet planned (phase TBD)
+  - `apps/web/src/pages/ConfigPage.test.tsx::renders the right control for each schema type, grouped by category`
+  - `apps/web/src/pages/ConfigPage.test.tsx::saves the edited values in one write`
+  - `apps/web/src/pages/EnvPage.test.tsx::clears the input after save and shows only the redacted preview`
 - **ACC-L6-1** Logs page with file, level and component filters
   - Review: not yet planned (phase TBD)
+  - `apps/web/src/pages/LogsPage.test.tsx::sends the chosen file, level, component and length`
+  - `apps/web/src/pages/LogsPage.test.tsx::refreshes every 5 s, and not while the tab is hidden`
 - **ACC-L20-1** Dashboard fonts and imagery are our own; the reference's brand fonts are not shipped (lead default)
   - Review: not yet planned (phase TBD)
+  - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`
 - **ACC-M1-1** `indus acp` stdio server with `initialize`, `authenticate` (including a terminal setup method) …
   - Review: not yet planned (phase TBD)
 - **ACC-M2-1** ACP sessions: new, load, resume (full history streamed before the reply), list with cwd filter and …

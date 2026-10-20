@@ -229,6 +229,8 @@ commands:
   webhook remove: 2
   webhook test: 2
 
+  serve discover: 1       # no headless backend runs (P18-01)
+
 # `long_running`: commands that run until they are stopped (a daemon loop). They cannot meet the
 # watchdog with no arguments, so the contract only checks that `--help` answers (exit 0) in time.
 long_running:
@@ -239,6 +241,9 @@ long_running:
   - gateway restart       # the same, after a stop
   - gateway install       # would register a real user service; --help only here
   - gateway grant         # ensures (may start) the daemon before it mints a ticket (P17-19)
+  - dashboard             # serves the dashboard until stopped (P18-01)
+  - serve                 # serves the headless backend until stopped (P18-01)
+  - serve ensure          # starts a headless backend when none runs and waits for it (P18-01)
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one

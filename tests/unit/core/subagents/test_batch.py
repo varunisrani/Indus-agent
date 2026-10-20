@@ -64,6 +64,7 @@ class FakeRun:
         self.stopped = asyncio.Event()
         self.started = False
         self.interrupts = 0
+        self.interrupted_at: float | None = None
         self.seen_scope: Scope | None = None
         self.ticks = 0
 
@@ -100,6 +101,8 @@ class FakeRun:
 
     def interrupt(self) -> None:
         self.interrupts += 1
+        if self.interrupted_at is None:
+            self.interrupted_at = self.clock.monotonic()
         self.stopped.set()
 
     def progress(self) -> Progress:
@@ -167,9 +170,11 @@ def test_quiet_child_goes_stale_after_450_s(fake_clock: FakeClock) -> None:
     assert outcomes[0].status == "stale"
     assert outcomes[0].summary == "partial"
     assert quiet.interrupts == 1
-    # Stopped at the 15th quiet check: 450 s after the child started.
-    assert len(beats) == STALE_IDLE_CYCLES
-    assert beats[-1] - start == STALE_IDLE_CYCLES * HEARTBEAT_S == 450
+    # Stopped at the 15th quiet check: 450 s after the child started. The driver keeps moving the
+    # fake clock while the runner winds down, so beats after the stop are not counted.
+    assert quiet.interrupted_at is not None
+    assert quiet.interrupted_at - start == STALE_IDLE_CYCLES * HEARTBEAT_S == 450
+    assert beats[STALE_IDLE_CYCLES - 1] - start == 450
 
 
 def test_a_child_inside_one_tool_gets_longer(fake_clock: FakeClock) -> None:

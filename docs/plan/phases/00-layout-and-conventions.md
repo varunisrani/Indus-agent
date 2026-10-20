@@ -321,6 +321,8 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | python-docx | 1.2.0 | 2025-06-16 | MIT | extra `docs` | P05-17 |
 | openpyxl | 3.1.5 | 2024-06-28 | MIT | extra `docs` | P05-17 |
 | ptyprocess | 0.7.0 | 2020-12-28 | ISC | extra `pty` | P05-13 |
+| ptyprocess | 0.7.0 | 2020-12-28 | ISC | extra `dashboard` (the Chat tab's PTY on POSIX) | P18-07 |
+| pywinpty | 3.0.5 | 2026-06-10 | MIT (PyPI classifier) | extra `dashboard`, Windows only (`sys_platform == 'win32'`): ConPTY for the Chat tab; 3.1.0 (2026-10-15) is inside the 14-day window | P18-07 |
 | discord.py | 2.7.1 | 2026-03-03 | MIT | extra `discord` | P15-34 |
 | audioop-lts | 0.2.2 | 2025-08-05 | PSF-2.0 | extra `discord` (via discord.py, Python 3.13+) | P15-34 |
 | slack-bolt | 1.30.0 | 2026-07-15 | MIT | extra `slack` | P15-35 |
@@ -344,6 +346,19 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | vitest | 5.0.3 | 2026-09-30 | MIT | dev | P00-08 |
 | @types/node | 24.19.1 | 2026-10-01 | MIT | dev | P00-08 |
 | @playwright/test | 1.63.0 | 2026-09-04 | Apache-2.0 | dev | P18 (pinned here for reference) |
+| react-dom | 19.3.0 | 2026-09-09 | MIT | `@indus/web` runtime | P18-17..22 |
+| react-router | 8.4.0 | 2026-09-15 | MIT | `@indus/web` runtime | P18-17..22 |
+| @tanstack/react-query | 5.104.1 | 2026-10-02 | MIT | `@indus/web` runtime | P18-17..22 |
+| @radix-ui/react-dialog | 1.1.23 | 2026-07-24 | MIT | `@indus/web` runtime | P18-17..22 |
+| @radix-ui/react-switch | 1.3.7 | 2026-07-24 | MIT | `@indus/web` runtime | P18-17..22 |
+| tailwindcss | 4.3.3 | 2026-07-16 | MIT | `@indus/web` dev | P18-17..22 |
+| @tailwindcss/vite | 4.3.3 | 2026-07-16 | MIT | `@indus/web` dev | P18-17..22 |
+| @testing-library/react | 16.3.3 | 2026-08-27 | MIT | `@indus/web` dev | P18-17..22 |
+| @testing-library/dom | 10.4.2 | 2026-09-13 | MIT | `@indus/web` dev | P18-17..22 |
+| @types/react | 19.3.0 | 2026-09-09 | MIT | `@indus/web` dev (already locked for `@indus/tui`) | P18-17..22 |
+| @types/react-dom | 19.3.0 | 2026-09-09 | MIT | `@indus/web` dev | P18-17..22 |
+| axe-core | 4.13.0 | 2026-08-05 | MPL-2.0 (unmodified) | `@indus/web` dev | P18-17..22 |
+| jsdom | 29.1.1 | 2026-04-30 | MIT (pulls dev-only MIT-0 `@csstools/*` and BlueOak-1.0.0 `lru-cache`; 30.x needs Node >= 22.22.2) | `@indus/web` dev | P18-17..22 |
 
 If a pin cannot be installed (yanked, platform wheel missing), the builder takes the newest
 version that is at least 14 days old, records the swap in the task note and in this table.
