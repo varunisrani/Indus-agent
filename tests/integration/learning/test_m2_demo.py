@@ -27,7 +27,7 @@ from indus.learning.host import tool_registry
 from indus.learning.memory.tool import memory_wiring
 from indus.learning.review.fork import install_review
 from indus.learning.skills.resolver import clear_scan_cache
-from tests.fakes.agent import any_window, fake_options, run_driven
+from tests.fakes.agent import any_window, fake_options
 from tests.fakes.clock import FakeClock, checkpoint
 from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn, tool_batch
 from tests.unit.cli.commands.cmdrun import run_cli
@@ -55,6 +55,9 @@ license: MIT
 ## Verification
 - Every line names a change a user can notice.
 """
+
+# A real-time bound that only turns a hung session into a failure.
+SESSION_LIMIT_S = 60.0
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +98,11 @@ def review_session(scope: Scope, clock: FakeClock) -> None:
         assert agent.runtime.prompts.prompt == prompt  # this session's prompt never changes
         await agent.close()
 
-    asyncio.run(run_driven(main(), clock))
+    # Nothing here waits on the fake clock (its sleepers are watchdogs and deadlines raced against
+    # the work), so it must stay still: driving it would move it about 1 s per idle half
+    # millisecond while skill_manage runs on a worker thread, and under load the tool's 420 s call
+    # deadline on this clock then expires within a fraction of a real second.
+    asyncio.run(asyncio.wait_for(main(), SESSION_LIMIT_S))
 
 
 def new_cli_session(scope: Scope) -> str:

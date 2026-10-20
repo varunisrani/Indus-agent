@@ -20,7 +20,7 @@ from indus.learning.skills.usage import SkillUsage
 from indus.learning.skills.view_tools import register_tools as register_skill_views
 from indus.protocol.events import EventBase, LearningReviewDone
 from indus.tools.registry import ToolRegistry
-from tests.fakes.agent import fake_options, run_driven
+from tests.fakes.agent import fake_options
 from tests.fakes.clock import FakeClock, checkpoint
 from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn, tool_batch
 from tests.unit.learning.review.helpers import skill_write_origins
@@ -46,6 +46,9 @@ license: MIT
 ## Verification
 - Every line names a change a user can notice.
 """
+
+# A real-time bound that only turns a hung session into a failure.
+SESSION_LIMIT_S = 60.0
 
 
 def test_review_writes_memory_and_a_skill_the_next_session_sees(
@@ -98,7 +101,10 @@ def test_review_writes_memory_and_a_skill_the_next_session_sees(
         await agent.close()
 
     with skill_write_origins() as origins:
-        asyncio.run(run_driven(main(), fake_clock))
+        # The fake clock stays still: driving it while skill_manage runs on a worker thread lets
+        # the tool's 420 s call deadline (on this clock) expire within a fraction of a real second
+        # under load. Nothing here waits on it but watchdogs and deadlines.
+        asyncio.run(asyncio.wait_for(main(), SESSION_LIMIT_S))
 
     assert MemoryStore.for_scope(scope).entries("memory") == ["Releases are tagged vX.Y."]
     assert origins == ["background_review"]
