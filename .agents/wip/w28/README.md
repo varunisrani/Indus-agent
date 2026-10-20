@@ -42,7 +42,7 @@
   policy still not on the wire (D-16.490).
 - Follow-ups: emit admission.state; policy on the wire; retire server_request.cancelled; STALE_GENERATION decision.
 
-## w28-e15.patch: P16-25 Photon adapter and sidecar — done, ships DISABLED (base 97df302)
+## w28-e15.patch: P16-25 Photon adapter and sidecar — done, ships DISABLED (base c84f1db)
 - Builder checks: photon unit 65 passed, contract 11 checks; brief set 546 passed / 48 skipped; gateway/wizards/config/
   integration gateway 2474 passed; pnpm 957 passed (photon-sidecar 22); pnpm -r typecheck, biome, ruff, pyright,
   lint-imports, tooling.checks ok. No packages (Python or Node); both locks unchanged — integrator: confirm
