@@ -30,3 +30,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-19 10:10 UTC | Agent 2 | Account 2 | 78% (reading 09:56) | 22% | 11:00 UTC | handed turn to Agent 1 after landing 78fdc96 |
 | 2026-10-20 16:27 UTC | Agent 2 | Account 2 | 7% (reading 16:26) | 93% | 18:20 UTC | took turn from Agent 1; starting P16/P18/P19 integrators |
 | 2026-10-20 17:00 UTC | Agent 2 | Account 2 | 24% (reading 16:59) | 76% | 18:20 UTC | integrators P16/P18/P19 + builder M1 (P19-14..17) running |
+| 2026-10-20 17:33 UTC | Agent 2 | Account 2 | 40% (reading 17:31) | 60% | 18:20 UTC | integrators P16/P18/P19 + builder R1 (P18-11/12) running; M1 parked |
