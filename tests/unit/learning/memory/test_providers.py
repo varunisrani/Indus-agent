@@ -24,7 +24,8 @@ from indus.learning.memory.providers import (
 from indus.learning.memory.store import MemoryStore
 from indus.learning.memory.tool import MemoryTool
 from indus.learning.pending import PendingStore
-from tests.fakes.clock import FakeClock, checkpoint
+from tests.fakes.agent import eventually
+from tests.fakes.clock import FakeClock
 from tests.unit.learning._helpers_a import with_config
 
 
@@ -434,9 +435,12 @@ def scope_with_clock(scope: Scope, clock: FakeClock) -> Scope:
 
 
 async def _wait_for_sleeper(clock: FakeClock) -> None:
-    """Yield until a task has parked on ``clock`` (its deadline timer is armed)."""
-    for _ in range(500):
-        await checkpoint()
-        if clock.pending >= 1:
-            return
-    raise AssertionError("no clock sleeper appeared")
+    """Wait until a task has parked on ``clock`` (its deadline timer is armed).
+
+    The timer is armed only after ``on_turn_start`` returns from a worker thread, so this waits on
+    real time (bounded), not on a number of loop turns a loaded machine can use up first.
+    """
+    try:
+        await eventually(lambda: clock.pending >= 1, limit=10.0)
+    except AssertionError:
+        raise AssertionError("no clock sleeper appeared") from None
