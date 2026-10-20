@@ -23,3 +23,24 @@
   register the MCP server as an approval viewer if MCP-only approval is wanted; tool list fixed at start (daemon started
   later needs a server restart); user doc for running as an MCP server owed.
 - Integrate after P16/P18/P19 land (touches daemon side services, control socket, entry.py).
+
+## w30-r1.patch: P18-11 REST sessions + P18-12 REST config / env keys / effective config — done (base: main 0ab0d95 + w29-w1 + w29-w2)
+- Apply AFTER the P18 integration (W1+W2+F1) lands; diff is against W1+W2 only.
+- Builder checks: tests/unit/web + contract/web + integration/web + state listing/browse + cli sessions 475 passed (38 new);
+  ruff, pyright 0, lint-imports, tooling.checks ok. Full suite not run. No packages.
+- New: web/routes/{sessions,sessions_store,config_env,config_view}.py, tests/contract/web/{test_sessions_routes,
+  test_config_env_routes,_rest_app}.py, tests/fixtures/store/build_dashboard.py, notes docs/notes/P18/rest-{sessions,config-env}.md.
+- Shared: web/routes/__init__.py ROUTERS (+2), state/listing.py (order="activity", count_by_source ~35 lines), traps R03.16,
+  R03.22, R04.12, R04.15, R09.21; ACC-L3-1, L5-1.
+- Wiring: create_app must call install(app, ProfileScopes(scope)) (else these routes 500; tests install it); test seam
+  DashboardState.extras["sessions.gate"]. ROUTE_LIST constant per module ({method, path, scoped}), pinned by a test —
+  replaces F1's _stubs_f1.ts entries (config/schema and defaults are unscoped).
+- Decisions (number at integration): revision = 31-bit CRC of visible row fields (0 = absent), generation = ledger counter,
+  `stale_revision` code; single delete via the maintenance gate's delete op (daemon-side fenced verb would close a small
+  race); prune older_than_days >= 1, 422 for bad bodies; dry-run prune needs ?profile= on multi-profile hosts; "recent"
+  order uses the row's own activity stamp; config GET never expands ${NAME}, masks credential-shaped literals, PUT restores
+  them; effective source `env` = from ${NAME} reference; keys signup url null, DELETE unset → 200 {removed:false};
+  credential-name rule restated in config_view.py (layer rule) — move to foundation/config/keys.py.
+- Bugs found in W2 (sent to the P18 integrator): scope.unscoped_write_routes misses included routers (FastAPI 0.142
+  _IncludedRouter); scope.py errors use {detail:{error,...}} but F1 reads detail.code.
+- Follow-ups: REST pydantic models in indus.protocol + generated packages/protocol types; generated route list.
