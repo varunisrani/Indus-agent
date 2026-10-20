@@ -74,7 +74,7 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 ## NEXT STEP (start here)
 Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `155ef32` (P16 complete aa696ad; P18-01..22 in 077ef96 + 9786b32; P19-01..07 in 3ade87c; drive-harness fix 155ef32).
 Done: P00–P17, P21, P22 complete; P18 22/30 (16 partly: prompt-size breakdown owed); P19 7/18. 495/648 tasks landed (the old "476" was a miscount: the
-phase table summed to 461 before P18). Built and parked: 25 more (see below).
+phase table summed to 461 before P18). Built and parked: 10 more P19 tasks + D-16.602 (see below).
 In flight (Agent 2):
 1. **P19 integrator #2** (scratchpad int-p19b) — w30-m1 (P19-14..17 mcp serve) + w30-a2 (P19-08..13) + w31-d1 (daemon
    session.mutate / acp.editor_policy, D-16.602 — attached `indus acp` against a real daemon) + its wiring patch, then builds
@@ -87,12 +87,8 @@ failed once ("cron cleanup output pruning took longer than 10 s", 1 call not 2) 
 per 0.5 ms and does not hold for off-loop work (tests/fakes/turn.drive does since 155ef32: copy its awaited_calls() check);
 not reproduced with writer/prune delays; (c) ~30 helpers with own clock loops (backends conftest, gateway adapters,
 providers, terminal rig) should read awaited_calls() the same way.
-Parked in `.agents/wip/w30/` (README per patch): w30-m1 (P19-14..17 `indus mcp serve`, base main), w30-r1 (P18-11/12),
-w30-r2 (P18-13/14), w30-r3 (P18-15/16; prompt-size breakdown not built) — the r* patches are diffs against main + W1 + W2,
-so they now apply on main. REST integration owes: merge the three _rest_app_r* builders; adjust the 1 + 3 W1 tests the
-real routes shadow (README lists them); replace the files `?token=` download with a short-lived single-use path-bound
-download ticket (no tokens in URLs, D-id); add the daemon's owner-only `stop` control verb; F1's _stubs_f1.ts fixture →
-the ROUTE_LISTs. P19-18 after A2 + M1 land.
+Parked: `.agents/wip/w30/` w30-m1 (P19-14..17), w30-a2 (P19-08..13); `.agents/wip/w31/` w31-d1 (D-16.602 daemon side) — all
+being integrated by P19 integrator #2 (above).
 Then: P18-23..30 (pages, chat host, login, build/serve, e2e M6), P20, P23, P24, P25. Briefs: `.agents/wip/w29/brief.md`,
 `.agents/wip/w30/README.md`.
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
