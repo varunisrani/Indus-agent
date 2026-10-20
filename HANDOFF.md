@@ -72,34 +72,31 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_2 (handed over by Agent 1 at 16:25 UTC 2026-10-20). Main `d1b05df`+status commits, green.
-Done: P00–P15, P17, P21, P22 complete; P16 31/36. 476/648 tasks landed; 28 more built and parked.
-Nothing in flight. Three integrations are ready to start, independent of each other (run them in parallel, each in
-its own scratchpad worktree from main, full gate, then land one at a time, rebasing the next onto main):
-1. **P16 integrator** — `.agents/wip/w28/`: w28-e15.patch (P16-25 Photon, ships DISABLED), w28-e16.patch (P16-33 native
-   streams adapter side + P16-34 Telegram topics/stickers) + w28-e16-core-proposal.patch (the StreamConsumer native
-   branch — apply it, check script w28-e16-prop_check.py.txt), w28-e17.patch (P16-35 Discord voice + P16-36 adapter
-   matrix + doctor gateway checks). D-16.560..579. Online `uv lock` for the new `discord-voice` extra (davey 0.1.6,
-   pynacl 1.5.0; fill the 00-layout pin rows). Photon wiring per README (no BUILTIN_CREDENTIALS row while disabled);
-   remove photon from the matrix test's PENDING; E17 made contract cases auto-discovered, so E15's conftest import line is
-   redundant. Lands P16 COMPLETE (36/36).
-2. **P18 integrator** — `.agents/wip/w29/`: w29-w1.patch (P18-01..06 app factory + auth), w29-w2.patch (P18-07..10 PTY,
-   chat WS, profile scope; stand-in for W1's gate), w29-f1.patch (P18-17..22 frontend prework; includes pnpm-lock.yaml
-   with 13 new npm packages — verify with `pnpm install --frozen-lockfile`, licence + age-check them). Join W2's
-   chat_gate onto W1's `guarded_ws`; decide WS credentials in query (row) vs subprotocol (our "no tokens in URLs" rule —
-   prefer subprotocol, make F1's wsUrl.ts match); add a `dashboard` extra (ptyprocess, pywinpty on Windows). D-16.580..599.
-3. **P19 integrator** — `.agents/wip/w29/w29-a1.patch` (P19-01..07 ACP). Online `uv lock` for agent-client-protocol
-   0.12.1 (acp extra + dev group). Merge `tests/fakes/daemon.py` with the one P17 landed (L3's harness). Daemon methods the
-   attached host assumes (session.mutate, admission.cancel, config.set show_reasoning, acp.editor_policy) are owed —
-   record or add small. D-16.600..609.
-Then new builders: P18-11..16 (REST), 23..30 (remaining pages, chat host, login, build/serve, e2e M6); P19-08..18; then
-P20, P23, P24, P25. Briefs to copy from: `.agents/wip/w28/brief-p16.md`, `.agents/wip/w29/brief.md`.
+Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `077ef96` (P18-01..10, 17..22 landed).
+Done: P00–P15, P17, P21, P22 complete; P16 31/36; P18 16/30. 477/648 tasks landed (the old "476" was a miscount: the
+phase table summed to 461 before P18). Built and parked: 25 more (see below).
+In flight (Agent 2):
+1. **P16 integrator** (scratchpad int-p16) — w28 E15/E16/E17 + core proposal; `discord-voice` extra re-lock. Lands P16
+   COMPLETE. D-16.560..579.
+2. **P19 integrator** (scratchpad int-p19) — w29-a1 (P19-01..07 ACP); agent-client-protocol 0.12.1; merged
+   tests/fakes/daemon.py. D-16.600..609.
+3. **Builder A2** (scratchpad w30-a2, base = main + the P19 integrator's snapshot) — P19-08..13.
+Parked in `.agents/wip/w30/` (README per patch): w30-m1 (P19-14..17 `indus mcp serve`, base main), w30-r1 (P18-11/12),
+w30-r2 (P18-13/14), w30-r3 (P18-15/16; prompt-size breakdown not built) — the r* patches are diffs against main + W1 + W2,
+so they now apply on main. REST integration owes: merge the three _rest_app_r* builders; adjust the 1 + 3 W1 tests the
+real routes shadow (README lists them); replace the files `?token=` download with a short-lived single-use path-bound
+download ticket (no tokens in URLs, D-id); add the daemon's owner-only `stop` control verb; F1's _stubs_f1.ts fixture →
+the ROUTE_LISTs. P19-18 after A2 + M1 land.
+Then: P18-23..30 (pages, chat host, login, build/serve, e2e M6), P20, P23, P24, P25. Briefs: `.agents/wip/w29/brief.md`,
+`.agents/wip/w30/README.md`.
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
 (--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**'), scan (credential regexes, /root or ~
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
 per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
 in docs/plan/phases/README.md and this file.
-- Last landings: P17-23..27 idle exit, profile binding, protocol additions, dual-host matrix, shared-backend demo
+- Last landings: P18-01..10, 17..22 web app factory + gates, gated login, OIDC, proxies, WS auth (subprotocol only), PTY
+  bridge, chat WS routes, profile scope, SPA shell and pages (`077ef96`; D-16.580..595; notes in LEAD-NOTES "P18-01..10, 17..22
+  landing notes (integrator)"), P17-23..27 idle exit, profile binding, protocol additions, dual-host matrix, shared-backend demo
   (`d1b05df`; P17 COMPLETE; D-16.540..557; notes in LEAD-NOTES "P17-23..27 landing notes (integrator)"), P16-02/03/07/19/21/22/30 WhatsApp bridge (no Baileys mapping), Matrix E2EE, Weixin, Yuanbao + tools,
   Raft (`cfa6def`; D-16.524..539; notes in LEAD-NOTES "P16 wave 27 landing notes (integrator)"), P17-15..22 ensure/attach channel/remote session host, CLI + TUI attach by default, @indus/client WS
   transport, store ownership across processes, messaging on the shared host (`090479b`; ssh home-retry test fix at landing), P16-31/32 gateway setup wizard + per-platform target parsers (`8708c50`), P17-13/14 WebSocket attach endpoint + subscriptions (`8e91087`; wsproto into base deps), P16-14/15/24/28/29 Feishu + doc tools, BlueBubbles, SimpleX, Buzz (`19e9a77`), P16-11/12/13/16/17/18/20 Teams, Graph, Google Chat, DingTalk, WeCom ×2, QQ Bot (`6cc32b0`), P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
