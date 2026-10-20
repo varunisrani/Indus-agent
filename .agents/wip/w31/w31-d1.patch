@@ -1,0 +1,3324 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 69bc05f..ab4fe71 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1617,7 +1617,8 @@ Checked by `python -m tooling.checks acceptance`.
+ - **ACC-M8-1** ACP runs the agent in-process first. Changed (P1 decision); gateway-viewer mode with reattach and …
+   - `tests/unit/acp/test_local_host.py::test_fallback_or_local_flag_runs_sessions_here`
+   - `tests/unit/acp/test_local_host.py::test_no_daemon_and_no_fallback_answers_initialize_then_refuses_sessions`
+-  - `tests/e2e/acp/test_acp_daemon.py::test_attached_refuses_new_sessions_without_the_editor_policy_and_local_creates_one`
++  - `tests/e2e/acp/test_acp_daemon.py::test_an_attached_editor_session_prompts_switches_model_and_forks_on_the_daemon`
++  - `tests/e2e/acp/test_acp_daemon.py::test_local_creates_a_session_in_process_and_leaves_the_daemon_alone`
+ - **ACC-M8-2** ACP attached mode reattaches after a lost link: waiters see outcome unknown, sessions resume from their last seq, an open card is offered once, editor MCP specs go back
+   - `tests/contract/acp/test_attached_host.py::test_a_killed_transport_fails_the_waiter_and_the_reconnect_resumes_from_the_last_seq`
+   - `tests/contract/acp/test_attached_host.py::test_reconnect_reattaches_editor_mcp`
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index 3e3f43a..e4ba125 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -1159,7 +1159,8 @@ Checked by `python -m tooling.checks traps`.
+ - **R09.13** Two ACP implementations, one constructor
+   - `tests/unit/acp/test_local_host.py::test_no_daemon_and_no_fallback_answers_initialize_then_refuses_sessions`
+   - `tests/unit/acp/test_local_host.py::test_fallback_or_local_flag_runs_sessions_here`
+-  - `tests/e2e/acp/test_acp_daemon.py::test_attached_refuses_new_sessions_without_the_editor_policy_and_local_creates_one`
++  - `tests/e2e/acp/test_acp_daemon.py::test_an_attached_editor_session_prompts_switches_model_and_forks_on_the_daemon`
++  - `tests/e2e/acp/test_acp_daemon.py::test_local_creates_a_session_in_process_and_leaves_the_daemon_alone`
+   - Review: one mode set on both hosts once the model and mode handlers land (P19-12)
+ - **R09.14** Stdout purity and probe noise
+   - `tests/unit/foundation/test_log.py::test_stdio_mode_keeps_stdout_empty`
+diff --git a/docs/notes/P19/acp-daemon-policy.md b/docs/notes/P19/acp-daemon-policy.md
+new file mode 100644
+index 0000000..9c0bd95
+--- /dev/null
++++ b/docs/notes/P19/acp-daemon-policy.md
+@@ -0,0 +1,186 @@
++# Task: ACP editor policy on the daemon — `session.mutate` and `acp.editor_policy` (daemon half of P19-04/05/06/12/13) Phase: 19 Owner: wave-31 builder D1
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `gateway/session_local_mcp.py` (editor
++MCP servers as gateway-owned session state: fingerprint, frozen manifest, per-session scope, fork,
++re-check at a turn boundary), `gateway/session_mutations.py` (the `session.mutate` writer: which
++operations need idle, the mutation lock, deferral of a model pick on a busy session, projections
++after a commit), `gateway/session_deferred_pick.py` (a pick made mid-turn lands at the next claim),
++`gateway/session_mutation_model.py` (first 60 lines: how a pick resolves its route),
++`gateway/session_policy.py` (first 200 lines and the `editor` mentions: the frozen launch policy
++holds an `editor_mcp_json` record only). Our side: `docs/plan/phases/P19-acp-mcp-serve.md` rows
++P19-03..06, 12, 13; `docs/plan/16-what-we-change.md` D-16.600..609; LEAD-NOTES "P19-01..07 landing
++notes"; `.agents/wip/w30/README.md` (w30-a2) and the a2 patch's `acp/{attached_host,backend,
++local_host,toolset,model_mode,commands}.py`; `src/indus/acp/{attached_host,local_host,backend,
++sessions,history}.py`; `tests/fakes/daemon.py` (`AcpDaemon` shim); `gateway/ws/methods.py`;
++`service/{daemon_host,session_service,mcp_host,creation_policy}.py`; `mcp/discovery.py`
++(`McpHost`); `tools/registry.py`; `tui_bridge/methods_session.py` (title/undo/branch);
++`protocol/attach.py` + codegen. Closed before writing.
++Evidence: none.
++
++What it does (own words): an editor attached to the profile's daemon (`indus acp`, the default
++mode) can now create sessions there. The daemon advertises `acp.editor_policy` and serves one new
++attach method, `session.mutate {session_id, operation, payload, request_id, generation?}`, for a
++session this connection attached. Operations:
++
++- `editor_mcp {mcp_servers, edit_approval_policy}` — the editor's own MCP servers for this session
++  only. Specs (command, args, env, headers, URL) stay in the daemon's memory; the session row keeps
++  a record (`model_config["editor_policy"]`): a fingerprint per server (env and header values
++  hashed first) and the tool schemas of the first listing. A server whose resent spec differs from
++  its record is refused (nothing changes); new names join the record. The servers connect through
++  the P13 client (`McpHost`) into a registry of that session alone (`SessionRegistry`: the shared
++  registry plus the session's own tools), named `editor-<name>`, toolset `mcp-editor-<name>`; no
++  other session — not even one that selects every toolset — sees them. Idle: the agent is rebuilt
++  now; a turn running: the change waits for the turn boundary (`deferred`).
++- `branch {mcp_servers?}` — fork: a stored copy of the session (idle only); the child's editor
++  servers are the ones named, else a copy of the parent's specs; its record is written at once and
++  the servers connect when the child is attached.
++- `workspace {cwd}` — move the session's folder (idle only): the row's cwd, and the agent rebuilt
++  in the new folder.
++- `model {model, provider?, confirm?}` — switch the session's route (never the profile default).
++  A target whose window is smaller than the context in use answers `confirm` (nothing changed)
++  until the call says `confirm: true`. A turn running: kept for the next turn boundary
++  (`deferred`); a pick that fails there is announced as a warning notice.
++- `rewind {count}` / `reset {}` — take back user turns / empty the conversation (idle only); the
++  agent is rebuilt from the store.
++- `rename {title}` — store the title (the row is written now if the first reply has not come yet)
++  and send `session.title`.
++- `compress {focus?}` — the manual compression between turns.
++- `command {name, arg}` — the information commands an editor may run (`tools`, `status`, `usage`,
++  `version`), answered as `text`.
++
++Fencing: every operation runs under the session's mutation gate; the daemon's turn runner waits at
++the same gate before it starts a claimed turn and applies deferred changes there, so an agent is
++never rebuilt under a running turn and a turn never starts on a half-made change. An operation that
++needs idle answers `SESSION_BUSY` while a turn is running or claimed. `generation` (optional) names
++the turn the client believes runs: another running turn answers `refused` / `stale_generation`.
++Idempotency: the same `request_id` for the same session and operation answers the first result
++(also while the first call is still running); reused for something else → `IDEMPOTENCY_CONFLICT`.
++
++ACP sessions on the daemon also get the editor toolset when the client names none
++(`platform_toolsets.acp` minus `no_mcp`, else `indus-acp`), and a resumed ACP session runs in its
++stored folder.
++
++Inputs → outputs: `session.mutate` params → `{status: applied|deferred|refused|confirm, …fields}`
++(`session_id`, `cwd`, `title`, `model`, `provider`, `message`, `reason`, `removed`, `text`,
++`servers`, `refused_servers`, `changed`, `outcome`); `runtime.describe`/`describe` capabilities gain
++`acp.editor_policy`.
++
++Files: new `src/indus/service/session_mutations.py`, `src/indus/service/editor_mcp.py`,
++`src/indus/tools/session_registry.py`, tests (`tests/unit/service/test_session_mutations.py`,
++`tests/unit/service/test_editor_mcp.py`, `tests/unit/tools/test_session_registry.py`,
++`tests/contract/gateway/test_ws_session_mutate.py`; `tests/e2e/acp/test_acp_daemon.py` rewritten).
++Shared: `protocol/attach.py` (+ models, row), generated protocol package, `gateway/ws/methods.py`
++(handler), `service/daemon_host.py` (gate, capability, close), `service/session_service.py`
++(`agent_shaper` seam), `service/rpc/dispatch.py` + `service/remote/channel.py` (deadlines),
++`tests/fakes/daemon.py` (shim removed), protocol samples/catalogue tests, the old e2e.
++
++Edge cases / failure modes:
++- a spec without a name, more than 16 servers, a payload of the wrong shape → `INVALID_PARAMS`
++  (the message never echoes a spec: argv and env may hold credentials);
++- the same server name twice in one list: the later one wins;
++- an editor server that fails to connect: its tools are absent, the others still come;
++- the daemon restarts: specs are gone, the record stays; the editor's reconnect resends them —
++  identical → connected again, changed → refused;
++- a session with a record but no specs yet (resumed by someone else): no editor tools until the
++  editor resends;
++- the session ends (last ACP viewer gone) or the daemon closes: its editor servers are closed;
++- a rotating compaction moves the session: the host key stays, so the gate and the servers follow;
++- `command` outside the four → `refused` / `unsupported_command`;
++- retry of a branch with the same `request_id` → the same child, never a second copy.
++
++Our design differences / decisions:
++- one isolated registry per editor session instead of per-session tags in the tool names;
++- deferral covers editor MCP changes too (not only model picks), applied at the same boundary;
++- the record is per server (fingerprint per name), so adding a server later is allowed and only a
++  changed spec is refused;
++- no durable deferred pick: it lives in the daemon's memory (a restart drops it);
++- no drift re-check of a live server's listing at each turn start: a changed listing is reported
++  (`changed`) when the editor reconnects the servers.
++
++Tests we will write:
++- unit, per operation over a real `DaemonSessionHost` on the fake model: editor_mcp (connect,
++  isolation from another session, changed spec refused, record has no secret, deferred while
++  running, closed with the session), branch (child + specs, busy refused, idempotent), workspace,
++  model (applied, confirm, deferred then applied at the boundary, refused at the boundary → notice),
++  rewind, reset, rename (before the first reply), compress, command, stale generation, request id
++  reuse;
++- unit: `SessionRegistry` (reads merge, writes stay, `all` of another registry never sees them),
++  fingerprints and record;
++- contract over the WS endpoint: method served, foreign connection → not found, shapes;
++- ACP contract suites run against the real method (shim removed);
++- e2e with a real `indus gateway run` in `tmp_path`: attached `indus acp` `session/new` + fork over
++  ACP frames, a prompt on the fake model and a model switch (through ACP once the adapter serves
++  `session/prompt`, else through the attached backend in process), the next request naming the new
++  model.
++
++## Decisions for the lead
++- The editor record is frozen by the first `editor_mcp` of a session, not by `session.create`
++  (create carries no specs; the attached host sends `editor_mcp` right after create).
++- A changed spec refuses the whole `editor_mcp` call (status `refused`, reason
++  `editor_mcp_changed`, `refused_servers`); servers not named in the record join it.
++- Editor tools live in a per-session `SessionRegistry` over the shared one (new
++  `tools/session_registry.py`), so they are invisible to every other session including ones that
++  select every toolset; the tool names match `--local` (`editor-<name>`).
++- `SessionService.agent_shaper` (new optional seam, `(session_id, options, selection) →
++  (options, selection)`, run before the factory in attach and reload) is how the daemon gives a
++  session its own registry, toolsets and folder.
++- Idle-only operations answer the protocol's `SESSION_BUSY` error (the attached host maps it to
++  `session_busy`; one small mapping added there, see Status).
++- `session.mutate` deadline 600 s on the daemon, 660 s in the client channel (compression is a
++  model call; editor servers may take a while to start).
++- ACP sessions created over the WebSocket without toolsets get `platform_toolsets.acp` (minus
++  `no_mcp`) or `indus-acp`; `no_mcp` itself is not honoured on the daemon yet.
++- The model pick is re-applied to the agent's binding before each turn when a rebuild (rewind,
++  workspace, a lease-waited reload) lost it; the row's `model` column is not updated.
++
++Compare checklist (filled after the rewrite; reopened `gateway/session_local_mcp.py`,
++`gateway/session_mutations.py`, `gateway/session_deferred_pick.py`):
++- [x] only fingerprints and schemas durable; specs in memory (test:
++  `tests/unit/service/test_session_mutations.py::test_editor_servers_reach_their_session_only_and_the_record_holds_no_secret`,
++  `tests/contract/acp/test_session_new.py::test_editor_mcp_env_is_never_written_to_the_store`)
++- [x] identical respec after a restart connects; changed respec refused (test:
++  `test_session_mutations.py::test_a_changed_spec_is_refused_and_the_same_one_after_a_restart_connects`)
++- [x] per-session isolation; a fork never shares the parent's connections (test:
++  `test_session_mutations.py::test_editor_servers_reach_their_session_only_and_the_record_holds_no_secret`,
++  `tests/unit/tools/test_session_registry.py::test_reads_see_both_sides_and_writes_stay_in_the_session`)
++- [x] fork: named servers or a copy of the parent's (test:
++  `test_session_mutations.py::test_branch_copies_the_session_with_the_parents_servers_or_the_named_ones`,
++  `tests/contract/acp/test_session_load.py::test_fork_gets_the_parents_mcp_servers_or_the_editors_own`)
++- [x] idle-only operations refuse while a turn runs; a model pick mid-turn waits for the boundary,
++  the running turn keeps its route (test: `test_session_mutations.py::test_idle_only_changes_are_refused_while_a_turn_runs`,
++  `::test_a_pick_made_mid_turn_lands_at_the_next_turn_and_survives_a_rewind`,
++  `tests/contract/gateway/test_ws_session_mutate.py::test_idle_only_changes_answer_busy_while_a_turn_runs`)
++- [x] servers closed when the session ends (its last ACP viewer left) (test:
++  `test_session_mutations.py::test_servers_sent_mid_turn_wait_for_the_next_turn_and_close_with_the_session`)
++- [x] exact retry returns the first result; a reused id for another change is refused (test:
++  `test_session_mutations.py::test_branch_copies_the_session_with_the_parents_servers_or_the_named_ones`,
++  `test_ws_session_mutate.py::test_the_daemon_advertises_the_editor_policy_and_serves_the_mutation`)
++- [x] gap: a server list larger than 64 KiB was accepted — fixed by `MAX_LIST_BYTES` in
++  `valid_specs`, pinned by `test_session_mutations.py::test_a_bad_server_list_is_invalid_and_names_no_spec_value`
++- [x] gap: editor servers could be set on a non-ACP session — now `INVALID_PARAMS` (same test)
++- [x] a stdio server runs in the session's folder; a move restarts it there (`EditorServers.connect`)
++- [x] real daemon end to end: attached `indus acp` new + prompt + model switch + fork + load (test:
++  `tests/e2e/acp/test_acp_daemon.py::test_an_attached_editor_session_prompts_switches_model_and_forks_on_the_daemon`;
++  run with the w30-a2 patch applied as well, where prompt and the model picker go through ACP)
++- Deliberate differences: the reference keys every editor connection by a per-session tag inside
++  one shared tool table; we give the session its own registry (same tool names as `--local`). The
++  reference keeps a deferred pick durable and re-checks a live server's listing at every turn
++  start; we keep the pick in memory and report a changed listing when the editor reconnects its
++  servers. The reference fingerprints the whole list; we fingerprint per server so a server can
++  be added later. A repeated server name keeps the later spec (the reference refuses the list).
++  Editor servers use the P13 connect / call timeouts, not shorter ones of their own.
++- Not taken: durable deferred picks; the per-turn schema drift re-check; `no_mcp` on the daemon;
++  writing a model switch into the row's `model` column.
++
++## Status
++
++Done (2026-10-20), wave-31 builder D1. Attached `indus acp` works against a real daemon:
++`session/new`, fork, load, workspace moves, editor MCP servers; with the w30-a2 ACP handlers also
++prompt, `/model` / the model picker, `/undo` `/retry` `/new` `/title` `/compress`. Shared files
++(minimal): `acp/attached_host.py` (docstring; `SESSION_BUSY` / `SESSION_NOT_FOUND` from
++`session.mutate` map to `session_busy` / `not_found`), `service/session_service.py`
++(`agent_shaper`), `service/daemon_host.py`, `gateway/ws/methods.py`, `protocol/attach.py`, deadlines
++in `service/rpc/dispatch.py` and `service/remote/channel.py`, `tests/fakes/daemon.py` (shim removed:
++`session.mutate` is real, frames recorded, scripted editor servers), traps/acceptance rows naming
++the rewritten e2e. Handed to the lead: the a2 wiring of `run_command` to `session.mutate command`
++and the a2 test line that pinned the old shim's refusal of `rename`.
+diff --git a/packages/protocol/src/generated/catalog.ts b/packages/protocol/src/generated/catalog.ts
+index 2549192..d4974b4 100644
+--- a/packages/protocol/src/generated/catalog.ts
++++ b/packages/protocol/src/generated/catalog.ts
+@@ -481,6 +481,23 @@ export const METHODS = deepFreeze({
+     "params": "SessionMostRecentParams",
+     "result": "SessionMostRecentResult"
+   },
++  "session.mutate": {
++    "errors": [
++      "PARSE_ERROR",
++      "INVALID_REQUEST",
++      "METHOD_NOT_FOUND",
++      "INVALID_PARAMS",
++      "INTERNAL_ERROR",
++      "UNKNOWN_PARAM_KEY",
++      "SESSION_NOT_FOUND",
++      "SESSION_REFUSED",
++      "STORE_FAILED",
++      "SESSION_BUSY",
++      "IDEMPOTENCY_CONFLICT"
++    ],
++    "params": "SessionMutateParams",
++    "result": "SessionMutateResult"
++  },
+   "session.redirect": {
+     "errors": [
+       "PARSE_ERROR",
+@@ -680,6 +697,7 @@ export interface MethodTypes {
+   "session.interrupt": { params: T.SessionInterruptParams; result: T.SessionInterruptResult };
+   "session.list": { params: T.SessionListParams; result: T.SessionListResult };
+   "session.most_recent": { params: T.SessionMostRecentParams; result: T.SessionMostRecentResult };
++  "session.mutate": { params: T.SessionMutateParams; result: T.SessionMutateResult };
+   "session.redirect": { params: T.SessionRedirectParams; result: T.SessionRedirectResult };
+   "session.resume": { params: T.SessionResumeParams; result: T.SessionResumeResult };
+   "session.steer": { params: T.SessionSteerParams; result: T.SessionSteerResult };
+diff --git a/packages/protocol/src/generated/schema.json b/packages/protocol/src/generated/schema.json
+index e12c61e..b6ac94e 100644
+--- a/packages/protocol/src/generated/schema.json
++++ b/packages/protocol/src/generated/schema.json
+@@ -2156,6 +2156,130 @@
+       },
+       "type": "object"
+     },
++    "SessionMutateParams": {
++      "additionalProperties": false,
++      "description": "Change a watched session (see ``SessionMutationName``).",
++      "properties": {
++        "generation": {
++          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
++          "default": null,
++          "description": "The turn the client believes runs; another running turn makes the change ``refused``\n(``stale_generation``)."
++        },
++        "operation": {"$ref": "#/$defs/SessionMutationName", "description": "What to change."},
++        "payload": {
++          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
++          "description": "The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``;\n``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``;\n``branch``: ``mcp_servers``; ``compress``: ``focus``; ``command``: ``name``, ``arg``).",
++          "type": "object"
++        },
++        "request_id": {
++          "description": "The client's id for this change: the same id again answers the first result.",
++          "maxLength": 200,
++          "minLength": 1,
++          "type": "string"
++        },
++        "session_id": {
++          "$ref": "#/$defs/SessionId",
++          "description": "A session this connection watches."
++        }
++      },
++      "required": ["session_id", "operation", "request_id"],
++      "type": "object"
++    },
++    "SessionMutateResult": {
++      "additionalProperties": false,
++      "description": "What the change did. Fields not used by the operation are absent.",
++      "properties": {
++        "changed": {
++          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
++          "default": null,
++          "description": "``editor_mcp``: servers whose tool listing differs from the frozen one."
++        },
++        "cwd": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "``workspace``: the session's folder now."
++        },
++        "message": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "Text for people (why ``confirm`` asks, or a refusal's detail)."
++        },
++        "model": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "``model``: the session's model (after the switch, or the one waiting)."
++        },
++        "outcome": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "``compress``: ``compressed``, ``nothing``, ``blocked`` or ``aborted``."
++        },
++        "provider": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "``model``: its provider."
++        },
++        "reason": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "Why it was refused (a short code such as ``stale_generation``, ``editor_mcp_changed``)."
++        },
++        "refused_servers": {
++          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
++          "default": null,
++          "description": "``editor_mcp``: servers whose spec differs from the one recorded for the session."
++        },
++        "removed": {
++          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
++          "default": null,
++          "description": "``rewind`` / ``reset``: stored messages removed."
++        },
++        "servers": {
++          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
++          "default": null,
++          "description": "``editor_mcp`` / ``branch``: the editor servers whose tools the session has."
++        },
++        "session_id": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "``branch``: the new session; ``compress``: the id the session runs under now."
++        },
++        "status": {
++          "$ref": "#/$defs/SessionMutationStatus",
++          "description": "``applied``, ``deferred``, ``refused`` or ``confirm``."
++        },
++        "text": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "``rewind``: the text of the oldest user message taken back; ``command``: the reply."
++        },
++        "title": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "``rename``: the stored title."
++        }
++      },
++      "required": ["status"],
++      "type": "object"
++    },
++    "SessionMutationName": {
++      "enum": [
++        "editor_mcp",
++        "branch",
++        "workspace",
++        "model",
++        "rewind",
++        "reset",
++        "rename",
++        "compress",
++        "command"
++      ],
++      "type": "string"
++    },
++    "SessionMutationStatus": {
++      "enum": ["applied", "deferred", "refused", "confirm"],
++      "type": "string"
++    },
+     "SessionRedirectParams": {
+       "additionalProperties": false,
+       "description": "Correct the running turn: cancel the model call in flight and retry with this text.",
+@@ -3806,6 +3930,23 @@
+         "params": "SessionMostRecentParams",
+         "result": "SessionMostRecentResult"
+       },
++      "session.mutate": {
++        "errors": [
++          "PARSE_ERROR",
++          "INVALID_REQUEST",
++          "METHOD_NOT_FOUND",
++          "INVALID_PARAMS",
++          "INTERNAL_ERROR",
++          "UNKNOWN_PARAM_KEY",
++          "SESSION_NOT_FOUND",
++          "SESSION_REFUSED",
++          "STORE_FAILED",
++          "SESSION_BUSY",
++          "IDEMPOTENCY_CONFLICT"
++        ],
++        "params": "SessionMutateParams",
++        "result": "SessionMutateResult"
++      },
+       "session.redirect": {
+         "errors": [
+           "PARSE_ERROR",
+diff --git a/packages/protocol/src/generated/types.ts b/packages/protocol/src/generated/types.ts
+index d0f2a9a..0e327e8 100644
+--- a/packages/protocol/src/generated/types.ts
++++ b/packages/protocol/src/generated/types.ts
+@@ -1116,6 +1116,63 @@ export interface SessionMostRecentResult {
+   session?: SessionRow | null;
+ }
+ 
++/** Change a watched session (see `SessionMutationName`). */
++export interface SessionMutateParams {
++  /** A session this connection watches. */
++  session_id: SessionId;
++  /** What to change. */
++  operation: SessionMutationName;
++  /**
++   * The operation's arguments (`editor_mcp`: `mcp_servers`; `workspace`: `cwd`;
++   * `model`: `model`, `provider`, `confirm`; `rewind`: `count`; `rename`: `title`;
++   * `branch`: `mcp_servers`; `compress`: `focus`; `command`: `name`, `arg`).
++   */
++  payload?: { [key: string]: JsonValue };
++  /** The client's id for this change: the same id again answers the first result. */
++  request_id: string;
++  /**
++   * The turn the client believes runs; another running turn makes the change `refused`
++   * (`stale_generation`).
++   */
++  generation?: number | null;
++}
++
++/** What the change did. Fields not used by the operation are absent. */
++export interface SessionMutateResult {
++  /** `applied`, `deferred`, `refused` or `confirm`. */
++  status: SessionMutationStatus;
++  /** Why it was refused (a short code such as `stale_generation`, `editor_mcp_changed`). */
++  reason?: string | null;
++  /** Text for people (why `confirm` asks, or a refusal's detail). */
++  message?: string | null;
++  /** `branch`: the new session; `compress`: the id the session runs under now. */
++  session_id?: string | null;
++  /** `workspace`: the session's folder now. */
++  cwd?: string | null;
++  /** `rename`: the stored title. */
++  title?: string | null;
++  /** `model`: the session's model (after the switch, or the one waiting). */
++  model?: string | null;
++  /** `model`: its provider. */
++  provider?: string | null;
++  /** `rewind` / `reset`: stored messages removed. */
++  removed?: number | null;
++  /** `rewind`: the text of the oldest user message taken back; `command`: the reply. */
++  text?: string | null;
++  /** `compress`: `compressed`, `nothing`, `blocked` or `aborted`. */
++  outcome?: string | null;
++  /** `editor_mcp` / `branch`: the editor servers whose tools the session has. */
++  servers?: string[] | null;
++  /** `editor_mcp`: servers whose spec differs from the one recorded for the session. */
++  refused_servers?: string[] | null;
++  /** `editor_mcp`: servers whose tool listing differs from the frozen one. */
++  changed?: string[] | null;
++}
++
++export type SessionMutationName = "editor_mcp" | "branch" | "workspace" | "model" | "rewind" | "reset" | "rename" | "compress" | "command";
++
++export type SessionMutationStatus = "applied" | "deferred" | "refused" | "confirm";
++
+ /** Correct the running turn: cancel the model call in flight and retry with this text. */
+ export interface SessionRedirectParams {
+   /** The session with the running turn. */
+diff --git a/src/indus/acp/attached_host.py b/src/indus/acp/attached_host.py
+index c323fc6..2e957b2 100644
+--- a/src/indus/acp/attached_host.py
++++ b/src/indus/acp/attached_host.py
+@@ -23,10 +23,11 @@ Creating a session needs the daemon to list ``acp`` among its creatable sources
+ (anything but cwd, model, toolsets) are refused with a pointer to ``--local`` (D-16.490).
+ 
+ ``session.usage`` reads the session's counters and ``admission.cancel`` drops a queued input (a
+-started one is stopped through its generation, ``session.interrupt``). ``session.mutate`` is not
+-served by the daemon yet (``-32601`` → ``mutation_unavailable``, D-16.602), and the daemon does
+-not advertise ``ACP_EDITOR_POLICY`` until it is. Reads of the transcript, the session row and the
+-runtime ledger go through read-only store connections (``store_view``).
++started one is stopped through its generation, ``session.interrupt``). ``session.mutate`` carries
++the editor's MCP servers, forks, folder moves and the other session changes; a daemon that does not
++serve it (``-32601``) answers ``mutation_unavailable`` and does not advertise ``ACP_EDITOR_POLICY``.
++Reads of the transcript, the session row and the runtime ledger go through read-only store
++connections (``store_view``).
+ """
+ 
+ from __future__ import annotations
+@@ -420,6 +421,10 @@ class AttachedHost:
+                     "mutation_unavailable",
+                     f"the gateway daemon cannot apply the {operation} change yet",
+                 ) from None
++            if error.code == SESSION_BUSY.code:
++                raise BackendError("session_busy", error.message) from None
++            if error.code == SESSION_NOT_FOUND.code:
++                raise BackendError("not_found", error.message) from None
+             raise _from_channel(error) from None
+         except BaseException as exc:
+             raise _from_channel(exc) from None
+diff --git a/src/indus/gateway/ws/methods.py b/src/indus/gateway/ws/methods.py
+index 0609c10..12d57cf 100644
+--- a/src/indus/gateway/ws/methods.py
++++ b/src/indus/gateway/ws/methods.py
+@@ -34,6 +34,10 @@ A refused submit answers the table code of its ledger reason (``ADMISSION_CONFLI
+ of an input whose turn was lost in a restart answers ``OUTCOME_UNKNOWN`` (never "streaming": that
+ turn never comes back).
+ 
++``session.mutate`` changes a watched session (the editor's MCP servers, fork, folder, model,
++title, history: ``service.session_mutations``), fenced against its running turn and idempotent by
++the client's ``request_id``.
++
+ ``runtime.describe`` answers what the control socket's ``describe`` does, plus the replay epoch.
+ ``maintenance.run`` runs one bulk store operation on the daemon's own store handle
+ (``service.maintenance_gate.MaintenanceVerb``); a refusal is the result's ``refused``.
+@@ -60,6 +64,8 @@ from indus.protocol.attach import (
+     ReplayGapInfo,
+     RuntimeDescribeParams,
+     RuntimeDescribeResult,
++    SessionMutateParams,
++    SessionMutateResult,
+     SessionSubscribeParams,
+     SessionSubscribeResult,
+     SessionsWatchParams,
+@@ -441,6 +447,12 @@ async def usage(conn: WsConnection, params: SessionUsageParams) -> SessionUsageR
+     return SessionUsageResult(usage=UsageNumbers.model_validate(numbers))
+ 
+ 
++@methods.method("session.mutate")
++async def mutate(conn: WsConnection, params: SessionMutateParams) -> SessionMutateResult:
++    key = conn.subs.require(params.session_id)
++    return await conn.host.mutations.mutate(key, params)
++
++
+ @methods.method("maintenance.run")
+ async def maintenance(conn: WsConnection, params: MaintenanceRunParams) -> MaintenanceRunResult:
+     store = conn.host.store
+diff --git a/src/indus/protocol/attach.py b/src/indus/protocol/attach.py
+index bd757b6..9e5ee16 100644
+--- a/src/indus/protocol/attach.py
++++ b/src/indus/protocol/attach.py
+@@ -8,6 +8,8 @@ when they cannot be), then every new event of the session. ``events.since`` is t
+ session's queue moves on; it names the lost turn's generation. ``admission.receipt`` tells a
+ client that lost an ack what became of its input; ``admission.cancel`` drops one that still waits
+ in the queue (a started turn is stopped through its generation, never by admission id).
++``session.mutate`` changes a watched session on the daemon (the editor's MCP servers, a fork, its
++folder, model, title, history), fenced against its running turn and idempotent by ``request_id``.
+ ``runtime.describe`` is the control socket's ``describe`` over the WebSocket, and
+ ``maintenance.run`` runs bulk store maintenance inside the daemon that owns the store (P17-21).
+ These names are served only by the daemon (``DAEMON_ONLY_METHODS``); the stdio bridge answers them
+@@ -27,6 +29,8 @@ from pydantic import Field, JsonValue, NonNegativeInt, PositiveInt
+ from indus.protocol.base import ProtocolModel, SessionId
+ from indus.protocol.errors import (
+     ADMISSION_NOT_FOUND,
++    IDEMPOTENCY_CONFLICT,
++    SESSION_BUSY,
+     SESSION_NOT_FOUND,
+     SESSION_REFUSED,
+     STORE_FAILED,
+@@ -54,6 +58,10 @@ __all__ = [
+     "RuntimeDescribeParams",
+     "RuntimeDescribeResult",
+     "SessionReplayGap",
++    "SessionMutateParams",
++    "SessionMutateResult",
++    "SessionMutationName",
++    "SessionMutationStatus",
+     "SessionUpdated",
+     "SessionsResync",
+     "SessionSubscribeParams",
+@@ -251,6 +259,76 @@ class AdmissionCancelResult(ProtocolModel):
+     """How it ended, once terminal."""
+ 
+ 
++type SessionMutationName = Literal[
++    "editor_mcp",
++    "branch",
++    "workspace",
++    "model",
++    "rewind",
++    "reset",
++    "rename",
++    "compress",
++    "command",
++]
++"""What ``session.mutate`` changes: the editor's MCP servers, a fork, the folder, the model, user
++turns taken back, the whole conversation, the title, a compression, or an information command."""
++
++type SessionMutationStatus = Literal["applied", "deferred", "refused", "confirm"]
++"""``applied`` now; ``deferred`` to the running turn's end; ``refused`` (``reason`` says why);
++``confirm``: nothing changed, the same call with ``payload.confirm`` true applies it."""
++
++
++class SessionMutateParams(ProtocolModel):
++    """Change a watched session (see ``SessionMutationName``)."""
++
++    session_id: SessionId
++    """A session this connection watches."""
++    operation: SessionMutationName
++    """What to change."""
++    payload: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
++    """The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``;
++    ``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``;
++    ``branch``: ``mcp_servers``; ``compress``: ``focus``; ``command``: ``name``, ``arg``)."""
++    request_id: str = Field(min_length=1, max_length=200)
++    """The client's id for this change: the same id again answers the first result."""
++    generation: NonNegativeInt | None = None
++    """The turn the client believes runs; another running turn makes the change ``refused``
++    (``stale_generation``)."""
++
++
++class SessionMutateResult(ProtocolModel):
++    """What the change did. Fields not used by the operation are absent."""
++
++    status: SessionMutationStatus
++    """``applied``, ``deferred``, ``refused`` or ``confirm``."""
++    reason: str | None = None
++    """Why it was refused (a short code such as ``stale_generation``, ``editor_mcp_changed``)."""
++    message: str | None = None
++    """Text for people (why ``confirm`` asks, or a refusal's detail)."""
++    session_id: str | None = None
++    """``branch``: the new session; ``compress``: the id the session runs under now."""
++    cwd: str | None = None
++    """``workspace``: the session's folder now."""
++    title: str | None = None
++    """``rename``: the stored title."""
++    model: str | None = None
++    """``model``: the session's model (after the switch, or the one waiting)."""
++    provider: str | None = None
++    """``model``: its provider."""
++    removed: NonNegativeInt | None = None
++    """``rewind`` / ``reset``: stored messages removed."""
++    text: str | None = None
++    """``rewind``: the text of the oldest user message taken back; ``command``: the reply."""
++    outcome: str | None = None
++    """``compress``: ``compressed``, ``nothing``, ``blocked`` or ``aborted``."""
++    servers: list[str] | None = None
++    """``editor_mcp`` / ``branch``: the editor servers whose tools the session has."""
++    refused_servers: list[str] | None = None
++    """``editor_mcp``: servers whose spec differs from the one recorded for the session."""
++    changed: list[str] | None = None
++    """``editor_mcp``: servers whose tool listing differs from the frozen one."""
++
++
+ class RuntimeDescribeParams(ProtocolModel):
+     """The daemon's attach descriptor: which profile and daemon start this is, what it offers."""
+ 
+@@ -379,6 +457,12 @@ ATTACH_METHODS: tuple[_Row, ...] = (
+         AdmissionCancelResult,
+         (SESSION_NOT_FOUND, ADMISSION_NOT_FOUND),
+     ),
++    (
++        "session.mutate",
++        SessionMutateParams,
++        SessionMutateResult,
++        (*_SESSION, SESSION_BUSY, IDEMPOTENCY_CONFLICT),
++    ),
+     ("runtime.describe", RuntimeDescribeParams, RuntimeDescribeResult, ()),
+     ("maintenance.run", MaintenanceRunParams, MaintenanceRunResult, (STORE_FAILED,)),
+ )
+@@ -389,5 +473,6 @@ DAEMON_ONLY_METHODS: frozenset[str] = frozenset(row[0] for row in ATTACH_METHODS
+ 
+ ACP_EDITOR_POLICY: Final = "acp.editor_policy"
+ """The capability a daemon advertises (``describe``) once it honours an ACP editor's policy on the
+-sessions it creates: the editor's MCP servers and the ask-before-edits approval policy (P19-04).
+-An ACP client refuses to create sessions on a daemon without it."""
++sessions it creates: the editor's MCP servers and the ask-before-edits approval policy, changed
++through ``session.mutate`` (P19-04). An ACP client refuses to create sessions on a daemon without
++it."""
+diff --git a/src/indus/service/daemon_host.py b/src/indus/service/daemon_host.py
+index 0ed1160..7b5060a 100644
+--- a/src/indus/service/daemon_host.py
++++ b/src/indus/service/daemon_host.py
+@@ -38,6 +38,12 @@ the same call shapes with the daemon's rules:
+   broker; ``refuse`` records a viewer's error answer.
+ - **Policy.** ``create`` freezes the launch policy (P17-09) into the session row; ``resume`` with a
+   policy that changes a frozen value is refused (``PolicyConflict``).
++- **Changes.** ``mutations`` (``service.session_mutations``) serves ``session.mutate``: an editor's
++  own MCP servers, fork, folder, model, title and history changes, under a per-session gate the
++  turn runner holds while it prepares and starts a claimed turn (deferred changes apply there,
++  ``before_turn``). It also shapes each
++  agent before it is built (the service's ``agent_shaper``), and a session's editor servers close
++  with it. The host advertises ``ACP_EDITOR_POLICY``.
+ 
+ Sessions are keyed by the id they were first attached under: the ledger, the fences, the event log
+ and the viewers stay addressed by it when a rotating compaction moves the session to a child id
+@@ -61,6 +67,7 @@ from indus.core.events import EventSink
+ from indus.core.session_scheduler import TurnEnd
+ from indus.core.turn_state import TurnResult
+ from indus.foundation.blocking import run_blocking
++from indus.protocol.attach import ACP_EDITOR_POLICY
+ from indus.protocol.errors import SESSION_NOT_FOUND, TEXT_EMPTY
+ from indus.protocol.events import EventBase, ExitReason
+ from indus.protocol.methods import (
+@@ -102,6 +109,7 @@ from indus.service.fences import (
+     StopResult,
+ )
+ from indus.service.request_redelivery import RequestBook
++from indus.service.session_mutations import SessionMutations
+ from indus.service.session_service import SessionService, usage_numbers
+ from indus.service.turn_lease import TurnLeases
+ from indus.service.turn_liveness import LivenessSettings
+@@ -147,9 +155,11 @@ HOST_CAPABILITIES: Final[tuple[str, ...]] = (
+     SERVER_REQUESTS_FEATURE,
+     *(f"{SERVER_REQUESTS_FEATURE}.{kind}" for kind in SERVER_REQUEST_KINDS),
+     DECLINE_CAPABILITY,
++    ACP_EDITOR_POLICY,
+ )
+ """What the host offers attached clients (``describe``): replay from a cursor, every kind of
+-server request (offered and re-offered to the viewers that render it), and the 4404 decline.
++server request (offered and re-offered to the viewers that render it), the 4404 decline, and the
++ACP editor policy (``session.mutate``).
+ Names reuse the client feature vocabulary (``indus.protocol.methods``); P17-25 owns the table."""
+ _INTERRUPTED_EXITS: Final = frozenset(
+     {ExitReason.INTERRUPTED_BY_USER, ExitReason.INTERRUPTED_BY_SYSTEM}
+@@ -249,8 +259,12 @@ class DaemonSessionHost:
+         self._auto: dict[str, set[str]] = {}
+         """Session ids whose auto-approve this host switched on for an unattended turn, by key."""
+         self._closed = False
++        self.mutations = SessionMutations(
++            service, store, running=self._running_generation, key_of=self._any_key
++        )
+         service.broker_factory = self._make_broker
+         service.turn_door = self._door
++        service.agent_shaper = self.mutations.shape
+ 
+     @classmethod
+     async def open(
+@@ -322,6 +336,28 @@ class DaemonSessionHost:
+         """Keys of the sessions the host holds."""
+         return list(self._live)
+ 
++    def _running_generation(self, key: str) -> int | None:
++        """The generation of the turn the session's agent runs now, or None (a claimed turn
++        that has not started waits at the mutation gate; a finished one is only settling)."""
++        if self._admissions is None:
++            return None
++        ticket = self._admissions.running(key)
++        if ticket is None:
++            return None
++        try:
++            agent = self.service.agent(self.service.current_id(key))
++        except ProtocolError:
++            return None
++        return ticket.generation if agent.current is not None else None
++
++    def _any_key(self, session_id: str) -> str:
++        """The host key of ``session_id``, also while it is being attached (else the id)."""
++        return (
++            self._keys.get(session_id)
++            or self._keys.get(self.service.current_id(session_id))
++            or session_id
++        )
++
+     def key_of(self, session_id: str) -> str | None:
+         """The host's key for ``session_id`` (any id it ran under), or None."""
+         key = self._keys.get(session_id)
+@@ -669,6 +705,8 @@ class DaemonSessionHost:
+         try:
+             await self.service.close(key)
+         finally:
++            with contextlib.suppress(Exception):
++                await self.mutations.forget(key)
+             self._live.pop(key, None)
+             for undo in live.undo:
+                 with contextlib.suppress(Exception):
+@@ -697,6 +735,8 @@ class DaemonSessionHost:
+         for task in list(self._tasks):
+             with contextlib.suppress(BaseException):
+                 await task
++        with contextlib.suppress(Exception):
++            await self.mutations.aclose()
+         await self.service.aclose()
+         await self._stop_flusher()
+         self.event_log.flush()
+@@ -720,17 +760,21 @@ class DaemonSessionHost:
+             return _not_started(ticket)
+         self._tickets[key] = ticket
+         try:
+-            if key not in self._live:
+-                await self.resume(key)
+-            if ticket.lease_waited:
+-                await self.service.reload(key)
+-            if ticket.stop_reason is not None:
+-                return _not_started(ticket)
+-            if ticket.admission.payload.get(UNATTENDED) is True:
+-                self._auto_approve(key, self.service.current_id(key))
+-            running = await self.service.start_admitted(
+-                key, ticket.text, generation=ticket.generation
+-            )
++            # The session's mutation gate is held until the turn runs: no change rebuilds the
++            # agent while it is prepared, and changes deferred to this boundary apply first.
++            async with self.mutations.gate(key):
++                if key not in self._live:
++                    await self.resume(key)
++                if ticket.lease_waited:
++                    await self.service.reload(key)
++                await self.mutations.before_turn(key)
++                if ticket.stop_reason is not None:
++                    return _not_started(ticket)
++                if ticket.admission.payload.get(UNATTENDED) is True:
++                    self._auto_approve(key, self.service.current_id(key))
++                running = await self.service.start_admitted(
++                    key, ticket.text, generation=ticket.generation
++                )
+             generation = ticket.generation
+             ticket.bind(
+                 interrupt=lambda reason: self._stop_turn(key, generation, reason),
+diff --git a/src/indus/service/editor_mcp.py b/src/indus/service/editor_mcp.py
+new file mode 100644
+index 0000000..c68a995
+--- /dev/null
++++ b/src/indus/service/editor_mcp.py
+@@ -0,0 +1,390 @@
++# pyright: strict
++"""An editor's own MCP servers on a daemon-hosted session (P19-13, the daemon half of D-16.602).
++
++An ACP editor names MCP servers for its session (stdio commands, or HTTP / SSE URLs). The daemon
++runs them for that session alone:
++
++- **Specs stay in memory.** Commands, arguments, env and headers are kept by ``EditorServers`` in
++  the daemon's memory only. Nothing of them is logged; a refusal never echoes one.
++- **The record is durable.** ``EditorRecord`` is what the session row keeps
++  (``model_config["editor_policy"]``): a fingerprint per server name — a hash of the spec with every
++  env and header value hashed first — and the tool schemas of the server's first listing. After a
++  daemon restart the editor must send the same specs again: a server whose fingerprint differs is
++  refused (``EditorRecord.refused``); a server not in the record joins it. A later listing that
++  differs from the frozen schemas is reported as changed; the frozen copy stays.
++- **One session only.** ``EditorServers`` connects through the P13 client (``McpHost``) into a
++  ``SessionRegistry`` of its own, as ``editor-<name>`` (toolset ``mcp-editor-<name>``). The agent of
++  that session gets this registry; every other session keeps reading the shared one, so the tools
++  never reach it — not even through a selection of every toolset. stdio servers run in the
++  session's folder; a move restarts them there.
++
++``acp_selection`` is the toolset choice of an ACP session the client gave none for:
++``platform_toolsets.acp`` (without its ``no_mcp`` marker) or the ``indus-acp`` bundle.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import logging
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, field
++from typing import TYPE_CHECKING, Any, Final, cast
++
++from indus.foundation.scope import Scope
++from indus.state import sessions
++from indus.state.registry import StoreHandle
++from indus.tools.registry import ToolRegistry
++from indus.tools.session_registry import SessionRegistry
++
++if TYPE_CHECKING:
++    from indus.mcp.config import McpServer
++    from indus.mcp.discovery import McpHost
++
++__all__ = [
++    "ACP_BUNDLE",
++    "EDITOR_PREFIX",
++    "MAX_LIST_BYTES",
++    "MAX_SERVERS",
++    "RECORD_KEY",
++    "EditorRecord",
++    "EditorServers",
++    "SpecError",
++    "acp_selection",
++    "editor_toolset",
++    "load_record",
++    "save_record",
++    "spec_fingerprint",
++    "valid_specs",
++]
++
++log = logging.getLogger(__name__)
++
++EDITOR_PREFIX: Final = "editor-"
++RECORD_KEY: Final = "editor_policy"
++"""The ``model_config`` key of a session's ``EditorRecord``."""
++MAX_SERVERS: Final = 16
++MAX_LIST_BYTES: Final = 65536
++"""The largest server list (as compact JSON) an editor may send."""
++ACP_BUNDLE: Final = "indus-acp"
++_NO_MCP: Final = "no_mcp"
++_KINDS: Final = frozenset({"stdio", "http", "sse"})
++
++
++class SpecError(ValueError):
++    """An editor's server list that cannot be used (the text names no spec value)."""
++
++
++def editor_toolset(name: str) -> str:
++    """The toolset of editor server ``name`` (``mcp-editor-<name>``)."""
++    return f"mcp-{EDITOR_PREFIX}{name}"
++
++
++def acp_selection(scope: Scope) -> list[str]:
++    """The toolsets of an ACP session the client named none for (see the module notes)."""
++    config = scope.config
++    try:
++        saved = config.get("platform_toolsets.acp") if config is not None else None
++    except Exception:
++        saved = None
++    if isinstance(saved, list):
++        names = [str(n).strip() for n in cast(list[object], saved)]
++        chosen = [n for n in names if n and n != _NO_MCP]
++        if chosen:
++            return chosen
++    return [ACP_BUNDLE]
++
++
++# -- specs -----------------------------------------------------------------------------------------
++
++
++def _pairs(raw: object) -> dict[str, str]:
++    """ACP ``[{name, value}]`` (env, headers), or a plain mapping, as a mapping."""
++    out: dict[str, str] = {}
++    if isinstance(raw, list):
++        for item in cast(list[object], raw):
++            if isinstance(item, Mapping):
++                entry = cast(Mapping[str, object], item)
++                name = entry.get("name")
++                if isinstance(name, str) and name:
++                    value = entry.get("value")
++                    out[name] = "" if value is None else str(value)
++    elif isinstance(raw, Mapping):
++        for key, value in cast(Mapping[object, object], raw).items():
++            out[str(key)] = "" if value is None else str(value)
++    return out
++
++
++def _kind(spec: Mapping[str, Any]) -> str:
++    kind = spec.get("type")
++    return str(kind) if isinstance(kind, str) and kind else "stdio"
++
++
++def valid_specs(raw: object) -> list[dict[str, Any]]:
++    """The editor's server list, checked: a list of at most ``MAX_SERVERS`` objects, each named,
++    stdio with a command or http / sse with a URL. A name given twice keeps the later spec."""
++    if raw is None:
++        return []
++    if not isinstance(raw, list):
++        raise SpecError("mcp_servers must be a list")
++    items = cast(list[object], raw)
++    if len(items) > MAX_SERVERS:
++        raise SpecError(f"at most {MAX_SERVERS} editor MCP servers")
++    try:
++        size = len(json.dumps(items, separators=(",", ":"), default=str))
++    except (TypeError, ValueError):
++        raise SpecError("mcp_servers must be plain JSON") from None
++    if size > MAX_LIST_BYTES:
++        raise SpecError(f"the server list is larger than {MAX_LIST_BYTES} bytes")
++    chosen: dict[str, dict[str, Any]] = {}
++    for index, item in enumerate(items):
++        if not isinstance(item, Mapping):
++            raise SpecError(f"server {index} is not an object")
++        spec = dict(cast(Mapping[str, Any], item))
++        name = spec.get("name")
++        if not isinstance(name, str) or not name.strip() or len(name) > 64:
++            raise SpecError(f"server {index} has no usable name")
++        kind = _kind(spec)
++        if kind not in _KINDS:
++            raise SpecError(f"server {name.strip()!r} has an unknown type")
++        target = spec.get("url") if kind in ("http", "sse") else spec.get("command")
++        if not isinstance(target, str) or not target.strip():
++            what = "a URL" if kind in ("http", "sse") else "a command"
++            raise SpecError(f"server {name.strip()!r} needs {what}")
++        spec["name"] = name.strip()
++        chosen.pop(spec["name"], None)
++        chosen[spec["name"]] = spec
++    return list(chosen.values())
++
++
++def _digest(text: str) -> str:
++    return hashlib.sha256(text.encode("utf-8")).hexdigest()
++
++
++def spec_fingerprint(spec: Mapping[str, Any]) -> str:
++    """A hash of the spec that holds no secret: env and header values are hashed first."""
++    args = spec.get("args")
++    canonical = {
++        "type": _kind(spec),
++        "command": str(spec.get("command") or ""),
++        "args": [str(a) for a in cast(list[object], args)] if isinstance(args, list) else [],
++        "url": str(spec.get("url") or ""),
++        "env": {k: _digest(v) for k, v in sorted(_pairs(spec.get("env")).items())},
++        "headers": {k: _digest(v) for k, v in sorted(_pairs(spec.get("headers")).items())},
++    }
++    return _digest(json.dumps(canonical, sort_keys=True, separators=(",", ":")))
++
++
++def server_config(spec: Mapping[str, Any], cwd: str | None) -> McpServer:
++    """An editor's spec as a P13 server config (stdio servers run in ``cwd``)."""
++    from indus.mcp.config import McpServer
++
++    kind = _kind(spec)
++    if kind in ("http", "sse"):
++        return McpServer.model_validate(
++            {"url": str(spec["url"]), "transport": kind, "headers": _pairs(spec.get("headers"))}
++        )
++    args = spec.get("args")
++    return McpServer.model_validate(
++        {
++            "command": str(spec["command"]),
++            "args": [str(a) for a in cast(list[object], args)] if isinstance(args, list) else [],
++            "env": _pairs(spec.get("env")),
++            "cwd": cwd or None,
++        }
++    )
++
++
++# -- the durable record ----------------------------------------------------------------------------
++
++
++@dataclass
++class EditorRecord:
++    """What a session row keeps of its editor's servers (see the module notes)."""
++
++    fingerprints: dict[str, str] = field(default_factory=dict[str, str])
++    schemas: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
++
++    def refused(self, specs: Sequence[Mapping[str, Any]]) -> list[str]:
++        """Names whose spec differs from the recorded one."""
++        out: list[str] = []
++        for spec in specs:
++            name = str(spec.get("name", ""))
++            known = self.fingerprints.get(name)
++            if known is not None and known != spec_fingerprint(spec):
++                out.append(name)
++        return out
++
++    def admit(self, specs: Sequence[Mapping[str, Any]]) -> bool:
++        """Record servers not seen before; True when the record changed."""
++        changed = False
++        for spec in specs:
++            name = str(spec.get("name", ""))
++            if name and name not in self.fingerprints:
++                self.fingerprints[name] = spec_fingerprint(spec)
++                changed = True
++        return changed
++
++    def freeze(self, name: str, tools: Mapping[str, Any]) -> tuple[bool, bool]:
++        """``(recorded now, differs)``: the first listing of ``name`` is kept; a later one that
++        differs is reported, the frozen copy stays."""
++        frozen = self.schemas.get(name)
++        if frozen is None:
++            self.schemas[name] = dict(tools)
++            return True, False
++        return False, frozen != dict(tools)
++
++    def to_record(self) -> dict[str, Any]:
++        return {"fingerprints": dict(self.fingerprints), "schemas": dict(self.schemas)}
++
++    @classmethod
++    def from_record(cls, raw: object) -> EditorRecord:
++        if not isinstance(raw, Mapping):
++            return cls()
++        record = cast(Mapping[str, object], raw)
++        prints = record.get("fingerprints")
++        schemas = record.get("schemas")
++        found = cls()
++        if isinstance(prints, Mapping):
++            for key, value in cast(Mapping[object, object], prints).items():
++                found.fingerprints[str(key)] = str(value)
++        if isinstance(schemas, Mapping):
++            for key, value in cast(Mapping[object, object], schemas).items():
++                if isinstance(value, Mapping):
++                    found.schemas[str(key)] = dict(cast(Mapping[str, Any], value))
++        return found
++
++
++def load_record(store: StoreHandle, session_id: str) -> EditorRecord | None:
++    """The session's record, or None when it has none (blocking)."""
++    row = sessions.get(store, session_id)
++    if row is None:
++        return None
++    raw = sessions.parse_model_config(row.get("model_config")).get(RECORD_KEY)
++    return EditorRecord.from_record(raw) if raw is not None else None
++
++
++def save_record(store: StoreHandle, session_id: str, record: EditorRecord, *, source: str) -> None:
++    """Write the record into the session row, creating the row when the first reply has not
++    (blocking)."""
++    now = store.scope.clock.now().timestamp()
++    profile = store.scope.profile_id
++    patch = {RECORD_KEY: record.to_record()}
++
++    def write(conn: Any) -> None:
++        sessions.create_in(conn, session_id, source, now=now, profile_id=profile)
++        sessions.patch_model_config_in(conn, session_id, patch)
++
++    store.write(write)
++
++
++# -- the servers of one session --------------------------------------------------------------------
++
++
++class EditorServers:
++    """One session's editor MCP servers (see the module notes)."""
++
++    def __init__(
++        self,
++        scope: Scope,
++        base: ToolRegistry | None,
++        specs: Sequence[Mapping[str, Any]],
++        *,
++        opener: Any = None,
++    ) -> None:
++        self.scope = scope
++        self.registry = SessionRegistry(base if base is not None else _builtin_registry(scope))
++        self.opener = opener
++        self.specs: dict[str, dict[str, Any]] = {}
++        self.listings: dict[str, dict[str, Any]] = {}
++        """The tool schemas of each connected server's latest listing, by editor name."""
++        self._host: McpHost | None = None
++        self._prints: dict[str, str] = {}
++        self._cwd: str | None = None
++        self.replace(specs)
++
++    @property
++    def names(self) -> list[str]:
++        return list(self.specs)
++
++    def spec_list(self) -> list[dict[str, Any]]:
++        return [dict(spec) for spec in self.specs.values()]
++
++    def same(self, specs: Sequence[Mapping[str, Any]]) -> bool:
++        """True when ``specs`` are exactly the servers held now."""
++        wanted = {str(s.get("name", "")): spec_fingerprint(s) for s in specs}
++        return wanted == {name: spec_fingerprint(s) for name, s in self.specs.items()}
++
++    def replace(self, specs: Sequence[Mapping[str, Any]]) -> None:
++        """Hold ``specs`` from now on (they connect at the next ``connect``)."""
++        self.specs = {str(s["name"]): dict(s) for s in specs}
++
++    def toolsets(self) -> list[str]:
++        """The toolsets of the servers whose tools arrived."""
++        return [editor_toolset(name) for name in self.connected()]
++
++    def connected(self) -> list[str]:
++        host = self._host
++        if host is None:
++            return []
++        out: list[str] = []
++        for name in self.specs:
++            handle = host.handles.get(EDITOR_PREFIX + name)
++            if handle is not None and handle.specs:
++                out.append(name)
++        return out
++
++    def _built(self) -> McpHost:
++        if self._host is None:
++            from indus.mcp import discovery, extras
++
++            opener = self.opener if self.opener is not None else extras.opener()
++            self._host = discovery.McpHost(self.scope, self.registry, opener=opener)
++        return self._host
++
++    async def connect(self, cwd: str | None) -> list[str]:
++        """Connect every held server not running yet (a changed spec or folder restarts it, a
++        dropped one is closed); the editor names whose tools arrived."""
++        from indus.mcp.config import ServerTable
++
++        if not self.specs and self._host is None:
++            return []
++        host = self._built()
++        moved = cwd != self._cwd
++        self._cwd = cwd
++        wanted: dict[str, McpServer] = {}
++        for name, spec in self.specs.items():
++            key = EDITOR_PREFIX + name
++            fingerprint = spec_fingerprint(spec)
++            if key in host.handles and (moved or self._prints.get(key) != fingerprint):
++                await host.remove(key)
++            self._prints[key] = fingerprint
++            wanted[key] = server_config(spec, cwd)
++        for key in [k for k in host.handles if k not in wanted]:
++            await host.remove(key)
++            self._prints.pop(key, None)
++        report = await host.discover(ServerTable(servers=wanted))
++        for key in report.failed:
++            log.warning("editor MCP server %s did not connect", key[len(EDITOR_PREFIX) :])
++        self.listings = {}
++        for name in self.connected():
++            handle = host.handles[EDITOR_PREFIX + name]
++            self.listings[name] = {n: dict(s) for n, s in sorted(handle.schemas.items())}
++        return self.connected()
++
++    async def aclose(self) -> None:
++        host, self._host = self._host, None
++        if host is not None:
++            try:
++                await host.close()
++            except Exception:
++                log.warning("editor MCP servers did not close cleanly", exc_info=True)
++
++
++def _builtin_registry(scope: Scope) -> ToolRegistry:
++    """The registry an agent without one builds itself (the built-in tools)."""
++    from indus.tools.builtin import load_builtins
++
++    registry = ToolRegistry(clock=scope.clock)
++    load_builtins(registry)
++    return registry
+diff --git a/src/indus/service/remote/channel.py b/src/indus/service/remote/channel.py
+index 4d5d3ef..a7751f8 100644
+--- a/src/indus/service/remote/channel.py
++++ b/src/indus/service/remote/channel.py
+@@ -294,6 +294,7 @@ class ChannelLimits:
+             "prompt.submit": 1800.0,
+             "server_request.answer": 330.0,
+             "session.compress": 660.0,
++            "session.mutate": 660.0,
+         }
+     )
+     ready_timeout: float = 15.0
+diff --git a/src/indus/service/rpc/dispatch.py b/src/indus/service/rpc/dispatch.py
+index 3a8ff43..55ce6c7 100644
+--- a/src/indus/service/rpc/dispatch.py
++++ b/src/indus/service/rpc/dispatch.py
+@@ -89,6 +89,8 @@ DEADLINES: Mapping[str, float] = MappingProxyType(
+         "prompt.background": 1800.0,
+         # Compression is a model call; the client gives up at 660 s.
+         "session.compress": 600.0,
++        # A change may compress or start an editor's MCP servers (session.mutate).
++        "session.mutate": 600.0,
+     }
+ )
+ """Per-method deadlines (seconds) that differ from ``DEFAULT_DEADLINE_S``."""
+diff --git a/src/indus/service/session_mutations.py b/src/indus/service/session_mutations.py
+new file mode 100644
+index 0000000..5284067
+--- /dev/null
++++ b/src/indus/service/session_mutations.py
+@@ -0,0 +1,671 @@
++# pyright: strict
++"""``session.mutate`` on the daemon: an attached client changes one of its sessions (P19-04/05/06/
++12/13, the daemon half of D-16.602).
++
++``SessionMutations`` belongs to the ``DaemonSessionHost``. Each call names a session this
++connection attached, an operation, its payload, the client's ``request_id`` and, optionally, the
++``generation`` of the turn the client believes runs:
++
++- ``editor_mcp`` — the editor's own MCP servers for this session (``service.editor_mcp``): checked
++  against the session's record (a changed spec is refused, nothing changes), connected, and the
++  agent rebuilt with them; while a turn runs the change waits for the turn's end (``deferred``).
++- ``branch`` — a stored copy of the session; the child gets the named servers or a copy of the
++  parent's, recorded at once, connected when the child is attached. Idle only.
++- ``workspace`` — the session's folder (row and agent). Idle only.
++- ``model`` — the session's route; ``confirm`` when the target window cannot hold the context in
++  use (until ``payload.confirm``); ``deferred`` while a turn runs.
++- ``rewind`` / ``reset`` — user turns taken back / the whole conversation emptied, the agent
++  rebuilt from the store. Idle only.
++- ``rename`` — the title (the row is written first when no reply came yet), and ``session.title``.
++- ``compress`` — the manual compression. Idle only.
++- ``command`` — ``tools``, ``status``, ``usage``, ``version`` answered as text.
++
++**Fencing.** Every operation runs under the session's gate. The host's turn runner holds the same
++gate while it prepares and starts a claimed turn, and calls ``before_turn`` there: deferred changes
++are applied, and a model pick a rebuild lost is bound again. So no agent is rebuilt under a running
++turn and no turn starts on a half-made change. "Idle only" means the session's agent runs no turn
++(``SESSION_BUSY`` otherwise; a claimed turn that has not started waits for the change). A
++``generation`` that is not the running turn's answers ``refused`` (``stale_generation``).
++
++**Idempotency.** The result of a ``request_id`` is kept (the newest 512): the same id for the same
++session and operation answers it again, also while the first call still runs; for anything else it
++is ``IDEMPOTENCY_CONFLICT``. A call that failed with an error is not kept.
++
++**Agents.** ``shape`` is the service's ``agent_shaper``: before a session's agent is built it gives
++an ACP session the editor toolset when the client chose none (``editor_mcp.acp_selection``), its
++stored folder, and — when it has editor servers — their registry and toolsets.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++from collections import OrderedDict
++from collections.abc import Callable, Mapping, Sequence
++from dataclasses import dataclass, field, replace
++from pathlib import Path
++from typing import Any, Final, cast
++
++from indus.core.agent import Agent, AgentOptions
++from indus.foundation.blocking import run_blocking
++from indus.foundation.errors import IndusError
++from indus.protocol.attach import SessionMutateParams, SessionMutateResult
++from indus.protocol.errors import (
++    IDEMPOTENCY_CONFLICT,
++    INVALID_PARAMS,
++    SESSION_BUSY,
++    SESSION_NOT_FOUND,
++)
++from indus.protocol.events import Notice, NoticeLevel, SessionTitle
++from indus.protocol.methods import ProtocolError
++from indus.providers.route import RuntimeRoute
++from indus.service import editor_mcp
++from indus.service.editor_mcp import EditorRecord, EditorServers, SpecError
++from indus.service.session_service import SessionService, usage_numbers
++from indus.state import rewind, sessions, titles
++from indus.state.registry import StoreHandle
++from indus.tools.session_registry import SessionRegistry
++
++__all__ = ["ACP_SOURCE", "COMMANDS", "SessionMutations", "window_guard"]
++
++log = logging.getLogger(__name__)
++
++ACP_SOURCE: Final = "acp"
++COMMANDS: Final = ("tools", "status", "usage", "version")
++"""The information commands ``command`` answers."""
++_KEPT: Final = 512
++_KEPT_SOURCES: Final = 4096
++_EDITOR_TOOLSET_PREFIX: Final = "mcp-" + editor_mcp.EDITOR_PREFIX
++
++type Result = SessionMutateResult
++
++
++def window_guard(used: int, window: int) -> str | None:
++    """Why to ask first when the context in use does not fit the target model's window."""
++    if window > 0 and used > window:
++        return (
++            f"This conversation uses about {used:,} tokens, more than the {window:,} the new "
++            "model takes; its next message is compressed first."
++        )
++    return None
++
++
++def _busy(what: str) -> ProtocolError:
++    return ProtocolError(SESSION_BUSY, f"a turn is running in this session; {what} when it ends")
++
++
++def _refused(reason: str, message: str | None = None, **fields: Any) -> Result:
++    return SessionMutateResult(status="refused", reason=reason, message=message, **fields)
++
++
++def _error_text(exc: BaseException) -> str:
++    if isinstance(exc, IndusError):
++        return exc.message
++    return type(exc).__name__
++
++
++@dataclass
++class _State:
++    """What the mutations hold for one session (by host key)."""
++
++    acp: bool = False
++    cwd: str | None = None
++    servers: EditorServers | None = None
++    record: EditorRecord | None = None
++    route: RuntimeRoute | None = None
++    deferred: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
++
++
++@dataclass
++class _Kept:
++    key: str
++    operation: str
++    result: asyncio.Future[Result]
++
++
++class SessionMutations:
++    """See the module notes."""
++
++    def __init__(
++        self,
++        service: SessionService,
++        store: StoreHandle,
++        *,
++        running: Callable[[str], int | None],
++        key_of: Callable[[str], str],
++    ) -> None:
++        self.service = service
++        self.store = store
++        self.scope = service.scope
++        self._running = running
++        self._key_of = key_of
++        self.opener: Any = None
++        """The MCP opener editor servers connect with (None: the OSV-guarded default)."""
++        self.resolve_route: Callable[[str, str | None], RuntimeRoute] = self._resolve
++        """``(model, provider) -> route`` for a model change (blocking)."""
++        self.model_guard: Callable[[int, int], str | None] = window_guard
++        self._states: dict[str, _State] = {}
++        self._gates: dict[str, asyncio.Lock] = {}
++        self._kept: OrderedDict[str, _Kept] = OrderedDict()
++        self._sources: dict[str, bool] = {}
++        self._closed = False
++
++    # -- views ------------------------------------------------------------------------------------
++
++    def servers(self, key: str) -> list[dict[str, Any]]:
++        """The editor specs held for a session (memory only; tests and diagnostics)."""
++        state = self._states.get(key)
++        if state is None or state.servers is None:
++            return []
++        return state.servers.spec_list()
++
++    def connected(self, key: str) -> list[str]:
++        state = self._states.get(key)
++        if state is None or state.servers is None:
++            return []
++        return state.servers.connected()
++
++    def _gate(self, key: str) -> asyncio.Lock:
++        gate = self._gates.get(key)
++        if gate is None:
++            gate = self._gates[key] = asyncio.Lock()
++        return gate
++
++    def _state(self, key: str) -> _State:
++        state = self._states.get(key)
++        if state is None:
++            state = self._states[key] = _State()
++        return state
++
++    # -- the call ---------------------------------------------------------------------------------
++
++    async def mutate(self, key: str, params: SessionMutateParams) -> Result:
++        """One ``session.mutate`` for the hosted session ``key`` (see the module notes)."""
++        if self._closed:
++            raise ProtocolError(SESSION_NOT_FOUND, "the daemon is closing", path="session_id")
++        kept = self._kept.get(params.request_id)
++        if kept is not None:
++            if (kept.key, kept.operation) != (key, params.operation):
++                raise ProtocolError(
++                    IDEMPOTENCY_CONFLICT,
++                    "this request_id was used for another change",
++                    path="request_id",
++                )
++            return await asyncio.shield(kept.result)
++        future: asyncio.Future[Result] = asyncio.get_running_loop().create_future()
++        self._kept[params.request_id] = _Kept(key, params.operation, future)
++        while len(self._kept) > _KEPT:
++            self._kept.popitem(last=False)
++        try:
++            async with self._gate(key):
++                result = await self._apply(key, params)
++        except BaseException as exc:
++            if self._kept.get(params.request_id) is not None:
++                del self._kept[params.request_id]
++            if isinstance(exc, asyncio.CancelledError):
++                future.cancel()
++            else:
++                future.set_exception(exc)
++                future.exception()  # retrieved: a lone caller must not leave it unobserved
++            raise
++        future.set_result(result)
++        return result
++
++    async def _apply(self, key: str, params: SessionMutateParams) -> Result:
++        sid = self.service.current_id(key)
++        running = self._running(key)
++        wanted = params.generation
++        if wanted is not None and running is not None and running != wanted:
++            return _refused("stale_generation", f"turn {running} runs now, not turn {wanted}")
++        payload = cast(dict[str, Any], dict(params.payload))
++        operation = params.operation
++        if operation == "editor_mcp":
++            return await self._editor_mcp(key, sid, payload, running)
++        if operation == "model":
++            return await self._model(key, sid, payload, running)
++        if operation == "rename":
++            return await self._rename(sid, payload)
++        if operation == "command":
++            return await self._command(key, sid, payload)
++        if running is not None:
++            raise _busy(f"run {operation}")
++        if operation == "branch":
++            return await self._branch(key, sid, payload)
++        if operation == "workspace":
++            return await self._workspace(key, sid, payload)
++        if operation == "rewind":
++            return await self._rewind(key, sid, payload)
++        if operation == "reset":
++            return await self._reset(key, sid)
++        return await self._compress(sid, payload)
++
++    # -- the turn boundary ------------------------------------------------------------------------
++
++    def gate(self, key: str) -> asyncio.Lock:
++        """The session's mutation gate; the host's turn runner holds it while it prepares and
++        starts a claimed turn."""
++        return self._gate(key)
++
++    async def before_turn(self, key: str) -> None:
++        """Called by the turn runner, holding the gate, right before a claimed turn starts:
++        deferred changes are applied, and a model pick a rebuild lost is bound again."""
++        state = self._states.get(key)
++        if state is None:
++            return
++        sid = self.service.current_id(key)
++        try:
++            specs = state.deferred.pop("editor_mcp", None)
++            if specs is not None:
++                await self._set_servers(key, sid, list(specs["servers"]))
++            pick = state.deferred.pop("model", None)
++            if pick is not None:
++                await self._apply_pick(key, sid, pick)
++            await self._repin(key, sid)
++        except Exception:
++            log.warning("a change waiting for the turn of %s failed", key, exc_info=True)
++
++    async def _apply_pick(self, key: str, sid: str, pick: Mapping[str, Any]) -> None:
++        model = str(pick.get("model") or "")
++        provider = pick.get("provider")
++        try:
++            done = await self._switch(
++                key,
++                sid,
++                model,
++                provider if isinstance(provider, str) else None,
++                confirmed=bool(pick.get("confirm")),
++            )
++        except ProtocolError as exc:
++            done = _refused("model_unavailable", exc.message)
++        if done.status == "applied":
++            return
++        why = done.message or done.reason or done.status
++        self.service.notify(
++            sid,
++            Notice,
++            level=NoticeLevel.WARNING,
++            text=f"The switch to {model} was not applied ({why}); the session keeps its model.",
++            key="model_switch_refused",
++        )
++
++    async def _repin(self, key: str, sid: str) -> None:
++        state = self._states.get(key)
++        if state is None or state.route is None:
++            return
++        try:
++            binding = self.service.agent(sid).binding
++            if binding.state.route == state.route:
++                return
++            await binding.apply(state.route)
++        except Exception:
++            log.warning("the model chosen for %s could not be bound again", key, exc_info=True)
++
++    # -- agents -----------------------------------------------------------------------------------
++
++    async def shape(
++        self, session_id: str, options: AgentOptions, selection: Sequence[str] | None
++    ) -> tuple[AgentOptions, list[str] | None]:
++        """The service's ``agent_shaper`` (see the module notes)."""
++        chosen = list(selection) if selection is not None else None
++        key = self._key_of(session_id)
++        state = self._states.get(key)
++        acp = options.source == ACP_SOURCE or (state is not None and state.acp)
++        row: dict[str, Any] | None = None
++        if not acp:
++            known = self._sources.get(session_id)
++            if known is None:
++                row = await self._row(session_id)
++                known = row is not None and row.get("source") == ACP_SOURCE
++                if len(self._sources) >= _KEPT_SOURCES:
++                    self._sources.clear()
++                self._sources[session_id] = known
++            acp = known
++        if not acp and state is None:
++            return options, chosen
++        state = self._state(key)
++        state.acp = state.acp or acp
++        if acp and chosen is None:
++            chosen = editor_mcp.acp_selection(self.scope)
++        cwd = state.cwd
++        if cwd is None and acp and options.source != ACP_SOURCE:
++            row = row if row is not None else await self._row(session_id)
++            stored = row.get("cwd") if row is not None else None
++            cwd = stored if isinstance(stored, str) and stored else None
++        if cwd:
++            fields = {**options.session_fields, "cwd": cwd}
++            options = replace(options, cwd=Path(cwd), session_fields=fields)
++        base = (
++            [n for n in chosen if not n.startswith(_EDITOR_TOOLSET_PREFIX)]
++            if chosen is not None
++            else None
++        )
++        registry = options.registry
++        if isinstance(registry, SessionRegistry):
++            registry = registry.base
++        servers = state.servers
++        if servers is None or not servers.specs:
++            return replace(options, registry=registry), base
++        if servers.registry.base is not registry and registry is not None:
++            servers.registry.base = registry
++        folder = str(options.cwd) if options.cwd is not None else None
++        try:
++            await servers.connect(folder)
++        except Exception:
++            log.warning("the editor MCP servers of %s could not be connected", key, exc_info=True)
++        self._freeze(state)
++        options = replace(options, registry=servers.registry)
++        if base is not None:
++            base = list(dict.fromkeys([*base, *servers.toolsets()]))
++        return options, base
++
++    def _freeze(self, state: _State) -> list[str]:
++        """Frozen schemas for first listings; the names whose listing differs."""
++        servers = state.servers
++        if servers is None:
++            return []
++        record = state.record if state.record is not None else EditorRecord()
++        state.record = record
++        changed: list[str] = []
++        for name, tools in servers.listings.items():
++            _first, differs = record.freeze(name, tools)
++            if differs:
++                changed.append(name)
++        return changed
++
++    async def _row(self, session_id: str) -> dict[str, Any] | None:
++        try:
++            return await run_blocking(sessions.get, self.store, session_id, label="session row")
++        except Exception:
++            log.debug("session row %s unreadable", session_id, exc_info=True)
++            return None
++
++    async def _reload(self, key: str, sid: str) -> None:
++        if sid not in self.service.attached():
++            return
++        await self.service.reload(sid)
++        await self._repin(key, sid)
++
++    # -- editor MCP -------------------------------------------------------------------------------
++
++    async def _record(self, key: str, sid: str) -> EditorRecord:
++        state = self._state(key)
++        if state.record is None:
++            found = await run_blocking(
++                editor_mcp.load_record, self.store, sid, label="editor record"
++            )
++            state.record = found if found is not None else EditorRecord()
++        return state.record
++
++    async def _save(self, key: str, sid: str) -> None:
++        state = self._state(key)
++        record = state.record
++        if record is None:
++            return
++        await run_blocking(
++            lambda: editor_mcp.save_record(self.store, sid, record, source=ACP_SOURCE),
++            label="editor record",
++        )
++
++    def _require_acp(self, key: str) -> None:
++        state = self._states.get(key)
++        if state is None or not state.acp:
++            raise ProtocolError(
++                INVALID_PARAMS, "editor MCP servers belong to ACP sessions", path="operation"
++            )
++
++    @staticmethod
++    def _specs(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
++        try:
++            return editor_mcp.valid_specs(payload.get("mcp_servers"))
++        except SpecError as exc:
++            raise ProtocolError(INVALID_PARAMS, str(exc), path="payload.mcp_servers") from None
++
++    async def _editor_mcp(
++        self, key: str, sid: str, payload: Mapping[str, Any], running: int | None
++    ) -> Result:
++        specs = self._specs(payload)
++        self._require_acp(key)
++        policy = payload.get("edit_approval_policy", "ask")
++        if policy not in (None, "ask"):
++            return _refused(
++                "edit_policy_unavailable", "editor sessions ask before every edit on this daemon"
++            )
++        record = await self._record(key, sid)
++        changed = record.refused(specs)
++        if changed:
++            return _refused(
++                "editor_mcp_changed",
++                "an MCP server differs from the one this session was started with; send the "
++                "same server settings, or start a new session",
++                refused_servers=changed,
++            )
++        state = self._state(key)
++        held = state.servers
++        if held is not None and held.same(specs):
++            return SessionMutateResult(status="applied", servers=held.connected(), changed=[])
++        if running is not None:
++            state.deferred["editor_mcp"] = {"servers": specs}
++            return SessionMutateResult(status="deferred", servers=[str(s["name"]) for s in specs])
++        changed_listing = await self._set_servers(key, sid, specs)
++        return SessionMutateResult(
++            status="applied", servers=self.connected(key), changed=changed_listing
++        )
++
++    async def _set_servers(self, key: str, sid: str, specs: list[dict[str, Any]]) -> list[str]:
++        """Hold ``specs`` for the session, record them, rebuild its agent with them."""
++        state = self._state(key)
++        record = await self._record(key, sid)
++        record.admit(specs)
++        if state.servers is None:
++            if specs:
++                base = self._base_registry(sid)
++                state.servers = EditorServers(self.scope, base, specs, opener=self.opener)
++        else:
++            state.servers.replace(specs)
++        await self._reload(key, sid)
++        changed = self._freeze(state)
++        if not specs and state.servers is not None:
++            servers, state.servers = state.servers, None
++            await servers.aclose()
++        await self._save(key, sid)
++        return changed
++
++    def _base_registry(self, sid: str) -> Any:
++        try:
++            registry = self.service.agent(sid).options.registry
++        except ProtocolError:
++            registry = self.service.options.registry
++        if isinstance(registry, SessionRegistry):
++            return registry.base
++        return registry if registry is not None else self.service.options.registry
++
++    # -- branch, workspace, history ---------------------------------------------------------------
++
++    async def _branch(self, key: str, sid: str, payload: Mapping[str, Any]) -> Result:
++        named = self._specs(payload)
++        if named:
++            self._require_acp(key)
++        state = self._states.get(key)
++        held = state.servers.spec_list() if state is not None and state.servers else []
++        specs = named or held
++        try:
++            child = await run_blocking(lambda: rewind.branch(self.store, sid), label="branch")
++        except rewind.BranchRefused as exc:
++            raise ProtocolError(SESSION_NOT_FOUND, str(exc), path="session_id") from None
++        if specs or (state is not None and state.acp):
++            fresh = self._state(child)
++            fresh.acp = state is not None and state.acp
++            fresh.cwd = state.cwd if state is not None else None
++            if specs:
++                fresh.record = EditorRecord()
++                fresh.record.admit(specs)
++                base = self._base_registry(sid)
++                fresh.servers = EditorServers(self.scope, base, specs, opener=self.opener)
++                await self._save(child, child)
++        return SessionMutateResult(
++            status="applied", session_id=child, servers=[str(s["name"]) for s in specs]
++        )
++
++    async def _workspace(self, key: str, sid: str, payload: Mapping[str, Any]) -> Result:
++        cwd = payload.get("cwd")
++        if not isinstance(cwd, str) or not cwd.strip():
++            return _refused("no_folder", "name the folder to move the session to")
++        folder = cwd.strip()
++        await run_blocking(lambda: sessions.set_cwd(self.store, sid, folder), label="workspace")
++        self._state(key).cwd = folder
++        await self._reload(key, sid)
++        return SessionMutateResult(status="applied", cwd=folder)
++
++    async def _rewind(self, key: str, sid: str, payload: Mapping[str, Any]) -> Result:
++        raw = payload.get("count", 1)
++        count = raw if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0 else 1
++        have = await run_blocking(
++            rewind.recent_user_messages, self.store, sid, count, label="rewind check"
++        )
++        if not have:
++            return SessionMutateResult(status="applied", removed=0, text="")
++        try:
++            taken = await run_blocking(
++                rewind.rewind, self.store, sid, -min(count, len(have)), None, label="rewind"
++            )
++        except rewind.RewindUnavailable:
++            return SessionMutateResult(status="applied", removed=0, text="")
++        await self._reload(key, sid)
++        return SessionMutateResult(status="applied", removed=taken.removed, text=taken.target_text)
++
++    async def _reset(self, key: str, sid: str) -> Result:
++        removed = await run_blocking(lambda: rewind.clear(self.store, sid), label="reset")
++        await self._reload(key, sid)
++        return SessionMutateResult(status="applied", removed=removed)
++
++    async def _compress(self, sid: str, payload: Mapping[str, Any]) -> Result:
++        focus = payload.get("focus")
++        outcome = await self.service.compress(sid, focus if isinstance(focus, str) else None)
++        return SessionMutateResult(
++            status="applied",
++            outcome=outcome.status,
++            session_id=self.service.current_id(sid),
++            message=outcome.reason or None,
++        )
++
++    # -- title ------------------------------------------------------------------------------------
++
++    async def _rename(self, sid: str, payload: Mapping[str, Any]) -> Result:
++        raw = payload.get("title")
++        clean = titles.sanitize(raw if isinstance(raw, str) else None)
++        if not clean:
++            return _refused("no_title", "name the title")
++        try:
++            written = await run_blocking(
++                lambda: titles.set_title(self.store, sid, clean), label="title"
++            )
++            if not written and sid in self.service.attached():
++                options = self.service.agent(sid).options
++                await self.service.store.ensure_session(
++                    sid,
++                    source=options.source or options.platform,
++                    system_prompt="",
++                    fields=options.session_fields,
++                )
++                written = await run_blocking(
++                    lambda: titles.set_title(self.store, sid, clean), label="title"
++                )
++        except titles.TitleTaken as exc:
++            return _refused("title_taken", str(exc))
++        if not written:
++            return _refused("no_session_row", "the session has no stored row to title")
++        self.service.notify(sid, SessionTitle, title=clean)
++        return SessionMutateResult(status="applied", title=clean)
++
++    # -- model ------------------------------------------------------------------------------------
++
++    def _resolve(self, model: str, provider: str | None) -> RuntimeRoute:
++        from indus.providers.route import resolve
++
++        return resolve(self.scope, model=model, provider=provider)
++
++    async def _model(
++        self, key: str, sid: str, payload: Mapping[str, Any], running: int | None
++    ) -> Result:
++        model = str(payload.get("model") or "").strip()
++        raw = payload.get("provider")
++        provider = (raw.strip() or None) if isinstance(raw, str) else None
++        if not model:
++            return _refused("no_model", "name the model")
++        if running is not None:
++            pick = {"model": model, "provider": provider, "confirm": bool(payload.get("confirm"))}
++            self._state(key).deferred["model"] = pick
++            return SessionMutateResult(status="deferred", model=model, provider=provider)
++        return await self._switch(key, sid, model, provider, confirmed=bool(payload.get("confirm")))
++
++    async def _switch(
++        self, key: str, sid: str, model: str, provider: str | None, *, confirmed: bool
++    ) -> Result:
++        agent: Agent = self.service.agent(sid)
++        try:
++            route = await run_blocking(
++                lambda: self.resolve_route(model, provider), label="model route"
++            )
++        except Exception as exc:
++            return _refused("model_unavailable", f"{model} cannot be used: {_error_text(exc)}")
++        binding = agent.binding
++        try:
++            after = await binding.apply(route)
++        except Exception as exc:
++            return _refused("model_unavailable", f"{model} cannot be used: {_error_text(exc)}")
++        used = max(int(agent.usage.last_prompt_tokens or 0), 0)
++        warning = None if confirmed else self.model_guard(used, after.window.tokens)
++        if warning is not None:
++            await binding.rollback()
++            return SessionMutateResult(
++                status="confirm", message=warning, model=after.model, provider=after.provider
++            )
++        self._state(key).route = after.route
++        fields = {**agent.options.session_fields, "model": after.model}
++        agent.options = replace(agent.options, session_fields=fields)
++        return SessionMutateResult(status="applied", model=after.model, provider=after.provider)
++
++    # -- commands ---------------------------------------------------------------------------------
++
++    async def _command(self, key: str, sid: str, payload: Mapping[str, Any]) -> Result:
++        name = str(payload.get("name") or "").strip().lstrip("/").lower()
++        if name not in COMMANDS:
++            return _refused("unsupported_command", f"/{name} is not available in this session")
++        agent = self.service.agent(sid)
++        if name == "tools":
++            names = sorted(agent.tool_names)
++            text = f"{len(names)} tools: " + ", ".join(names) if names else "No tools are on."
++        elif name == "status":
++            state = agent.binding.state
++            folder = agent.options.session_fields.get("cwd") or agent.options.cwd or "-"
++            busy = "A reply is running." if self._running(key) is not None else "Idle."
++            text = (
++                f"Session: {sid}\nModel: {state.model} ({state.provider})\nFolder: {folder}\n{busy}"
++            )
++        elif name == "usage":
++            n = usage_numbers(self.service, sid)
++            text = (
++                f"Model calls: {n.get('api_calls', 0)}\nTokens: {n.get('input_tokens', 0)} in, "
++                f"{n.get('output_tokens', 0)} out, {n.get('cache_read_tokens', 0)} from cache\n"
++                f"Cost: {n.get('cost_label') or 'unknown'}"
++            )
++        else:
++            from indus import __version__
++
++            text = f"Indus Agent {__version__}"
++        return SessionMutateResult(status="applied", text=text)
++
++    # -- closing ----------------------------------------------------------------------------------
++
++    async def forget(self, key: str) -> None:
++        """The session ended here: close its editor servers and drop what was held for it."""
++        state = self._states.pop(key, None)
++        self._gates.pop(key, None)
++        if state is not None and state.servers is not None:
++            await state.servers.aclose()
++
++    async def aclose(self) -> None:
++        self._closed = True
++        for key in list(self._states):
++            await self.forget(key)
++        self._kept.clear()
+diff --git a/src/indus/service/session_service.py b/src/indus/service/session_service.py
+index 34852e3..82a46e5 100644
+--- a/src/indus/service/session_service.py
++++ b/src/indus/service/session_service.py
+@@ -66,8 +66,11 @@ Daemon seams (P17-08, ``service.daemon_host``): ``broker_factory`` builds each s
+ would start on its own — host injections, background-subagent results, undelivered steer text —
+ is handed to the door (the daemon's admission ledger) instead; ``start_admitted`` starts a turn
+ the door admitted under the ledger's generation; ``reload`` rebuilds a session's agent from the
+-store (another process ran it meanwhile). ``events_since`` and ``receipt`` have trivial in-process
+-forms: one replay epoch per service over the kept events, and no admissions.
++store (another process ran it meanwhile); an ``agent_shaper``, when set, adjusts a session's
++options and toolset selection right before its agent is built, on attach and on reload (the daemon
++gives an editor session its own tool registry and folder there, ``service.session_mutations``).
++``events_since`` and ``receipt`` have trivial in-process forms: one replay epoch per service over
++the kept events, and no admissions.
+ """
+ 
+ from __future__ import annotations
+@@ -142,6 +145,7 @@ from indus.state.session_lock import (
+ __all__ = [
+     "BUSY_COPY",
+     "AgentFactory",
++    "AgentShaper",
+     "BrokerFactory",
+     "SessionService",
+     "TurnDoor",
+@@ -171,6 +175,13 @@ type AgentFactory = Callable[
+ ]
+ """Builds the agent of one session: ``(session_id, sink, broker, options, toolsets)``."""
+ 
++type AgentShaper = Callable[
++    [str, AgentOptions, Sequence[str] | None],
++    Awaitable[tuple[AgentOptions, list[str] | None]],
++]
++"""Adjusts one session's agent before it is built: ``(session_id, options, toolsets)`` → the
++options and toolsets to build it with."""
++
+ type BrokerFactory = Callable[[str, EventSink], ServerRequestBroker]
+ """Builds the server-request broker of one session: ``(session_id, sink)``."""
+ 
+@@ -296,6 +307,7 @@ class SessionService:
+         self._moved: list[Callable[[str, str], object]] = []
+         self.broker_factory = broker_factory
+         self.turn_door = turn_door
++        self.agent_shaper: AgentShaper | None = None
+         self.replay_epoch = new_replay_epoch()
+         """The in-process replay epoch (``events_since``); the daemon's event log has its own."""
+ 
+@@ -557,6 +569,8 @@ class SessionService:
+         try:
+             sink = EventSink(session_id)
+             broker = self._new_broker(session_id, sink)
++            if self.agent_shaper is not None:
++                options, selection = await self.agent_shaper(session_id, options, selection)
+             if self.mcp is not None:
+                 await self.mcp.start()
+                 selection = self.mcp.selection(selection)
+@@ -615,12 +629,13 @@ class SessionService:
+                 previous = attached.session_id
+                 attached.sink.session_id = tip
+                 self._follow(attached, previous, tip)
++            options, selection = old.options, old.toolset_selection
++            if self.agent_shaper is not None:
++                options, selection = await self.agent_shaper(
++                    attached.session_id, options, selection
++                )
+             agent = await self._factory(
+-                attached.session_id,
+-                attached.sink,
+-                attached.broker,
+-                old.options,
+-                old.toolset_selection,
++                attached.session_id, attached.sink, attached.broker, options, selection
+             )
+             if self.mcp is not None:
+                 self.mcp.attach(agent)
+diff --git a/src/indus/tools/session_registry.py b/src/indus/tools/session_registry.py
+new file mode 100644
+index 0000000..e005835
+--- /dev/null
++++ b/src/indus/tools/session_registry.py
+@@ -0,0 +1,60 @@
++"""One session's own tools over the shared registry (P19-13, the daemon's editor MCP servers).
++
++A ``SessionRegistry`` is handed to one agent instead of the process's shared ``ToolRegistry``. Every
++read sees both: the shared tools (built-ins, plugins, the profile's MCP servers) and the ones
++registered into this registry, which win on a name clash. Every write — ``register``,
++``deregister``, ``set_toolset_alias`` — lands here only, so tools an editor's MCP servers bring to
++one session never reach another session of the profile, not even one that selects every toolset.
++
++``generation`` moves when either side changes (the toolset resolver and the definitions memo key on
++it); availability probes and their cache are the shared registry's.
++"""
++
++from __future__ import annotations
++
++from typing import TYPE_CHECKING
++
++from indus.tools.registry import ToolEntry, ToolRegistry
++
++if TYPE_CHECKING:
++    from indus.foundation.scope import Scope
++
++__all__ = ["SessionRegistry"]
++
++
++class SessionRegistry(ToolRegistry):
++    """See the module notes."""
++
++    def __init__(self, base: ToolRegistry) -> None:
++        super().__init__()
++        self.base = base
++        self.probes = base.probes
++
++    @property
++    def generation(self) -> int:
++        return self.base.generation + self._generation
++
++    def own_names(self) -> list[str]:
++        """Tools registered into this registry (any overlay)."""
++        with self._lock:
++            names = set(self._global)
++            for overlay in self._overlays.values():
++                names.update(overlay)
++        return sorted(names)
++
++    def _merged(self, scope: Scope | None) -> dict[str, ToolEntry]:
++        with self.base._lock:
++            merged = self.base._merged(scope)
++        merged.update(super()._merged(scope))
++        return merged
++
++    def _alias_table(self, scope: Scope | None) -> dict[str, frozenset[str]]:
++        with self.base._lock:
++            merged = self.base._alias_table(scope)
++        for alias, targets in super()._alias_table(scope).items():
++            merged[alias] = merged.get(alias, frozenset()) | targets
++        return merged
++
++    def get(self, name: str, scope: Scope | None = None) -> ToolEntry | None:
++        found = super().get(name, scope)
++        return found if found is not None else self.base.get(name, scope)
+diff --git a/tests/contract/gateway/test_ws_session_mutate.py b/tests/contract/gateway/test_ws_session_mutate.py
+new file mode 100644
+index 0000000..53dc0ee
+--- /dev/null
++++ b/tests/contract/gateway/test_ws_session_mutate.py
+@@ -0,0 +1,119 @@
++"""``session.mutate`` and ``acp.editor_policy`` over the daemon's WebSocket (D-16.602).
++
++The endpoint runs over a real ``DaemonSessionHost`` on the fake model (``test_ws_endpoint.rig``);
++the editor MCP servers are scripted in-memory servers behind the real P13 client.
++"""
++
++from __future__ import annotations
++
++from collections.abc import Iterator
++from pathlib import Path
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.protocol.attach import ACP_EDITOR_POLICY
++from indus.protocol.errors import (
++    IDEMPOTENCY_CONFLICT,
++    INVALID_PARAMS,
++    SESSION_BUSY,
++    SESSION_NOT_FOUND,
++)
++from indus.state import registry, sessions
++from indus.state.registry import StoreHandle
++from tests.contract.gateway.test_ws_endpoint import done, error_of, rig
++from tests.fakes.agent import eventually
++from tests.fakes.mcp.scripted import FakeFleet
++from tests.fakes.model import text_turn, tool_batch
++from tests.fakes.session_host import Holder
++from tests.unit.backends._aio import aio
++
++DOCS = {"name": "docs", "command": "docs-server", "args": [], "env": []}
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++def mutate(sid: str, operation: str, request_id: str, **payload: object) -> dict[str, object]:
++    return {
++        "session_id": sid,
++        "operation": operation,
++        "payload": payload,
++        "request_id": request_id,
++    }
++
++
++@aio
++async def test_the_daemon_advertises_the_editor_policy_and_serves_the_mutation(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, text_turn("hello"))
++    r.host.mutations.opener = FakeFleet(scope.clock)  # pyright: ignore[reportArgumentType]
++    client = await r.attached("acp")
++    other = await r.attached("tui")
++    described = await client.request("runtime.describe")
++    assert ACP_EDITOR_POLICY in described["result"]["capabilities"]
++    assert "acp" in described["result"]["creatable_sources"]
++    sid = (await client.request("session.create", {"cwd": str(tmp_path)}))["result"]["session_id"]
++
++    added = await client.request(
++        "session.mutate", mutate(sid, "editor_mcp", "r-1", mcp_servers=[DOCS])
++    )
++    assert added["result"] == {"status": "applied", "servers": ["docs"], "changed": []}
++    foreign = await other.request("session.mutate", mutate(sid, "rename", "r-2", title="x"))
++    assert error_of(foreign) == SESSION_NOT_FOUND.code  # another connection's session
++    unknown = await client.request("session.mutate", mutate(sid, "teleport", "r-3"))
++    assert error_of(unknown) == INVALID_PARAMS.code
++    reused = await client.request("session.mutate", mutate(sid, "rename", "r-1", title="x"))
++    assert error_of(reused) == IDEMPOTENCY_CONFLICT.code
++    again = await client.request(
++        "session.mutate", mutate(sid, "editor_mcp", "r-1", mcp_servers=[DOCS])
++    )
++    assert again["result"] == added["result"]
++
++    await client.request("prompt.submit", {"session_id": sid, "text": "hi", "request_id": "p-1"})
++    await client.until(done(sid))
++    fork = await client.request("session.mutate", mutate(sid, "branch", "r-4"))
++    child = fork["result"]["session_id"]
++    assert fork["result"]["status"] == "applied" and fork["result"]["servers"] == ["docs"]
++    row = sessions.get(store, child)
++    assert row is not None and row["parent_session_id"] == sid
++    named = await client.request("session.mutate", mutate(sid, "rename", "r-5", title="Build"))
++    assert named["result"] == {"status": "applied", "title": "Build"}
++    await client.close()
++    await other.close()
++    await r.close()
++
++
++@aio
++async def test_idle_only_changes_answer_busy_while_a_turn_runs(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    r = await rig(
++        scope, store, tmp_path, tool_batch(("hold", {})), text_turn("done"), tools={"hold": holder}
++    )
++    client = await r.attached("acp")
++    sid = (await client.request("session.create", {}))["result"]["session_id"]
++    first = await client.request("prompt.submit", {"session_id": sid, "text": "work"})
++    generation = first["result"]["generation"]
++    await eventually(lambda: holder.entered == 1)
++    busy = await client.request("session.mutate", mutate(sid, "reset", "r-1"))
++    assert error_of(busy) == SESSION_BUSY.code
++    picked = await client.request(
++        "session.mutate", {**mutate(sid, "model", "r-2", model="later"), "generation": generation}
++    )
++    assert picked["result"] == {"status": "deferred", "model": "later"}
++    stale = await client.request(
++        "session.mutate", {**mutate(sid, "model", "r-3", model="x"), "generation": generation + 5}
++    )
++    assert stale["result"]["status"] == "refused"
++    assert stale["result"]["reason"] == "stale_generation"
++    holder.gate.set()
++    await client.until(done(sid))
++    await client.close()
++    await r.close()
+diff --git a/tests/e2e/acp/test_acp_daemon.py b/tests/e2e/acp/test_acp_daemon.py
+index cbc552c..075b10c 100644
+--- a/tests/e2e/acp/test_acp_daemon.py
++++ b/tests/e2e/acp/test_acp_daemon.py
+@@ -1,16 +1,17 @@
+-"""P19-03/04: ``indus acp`` as a real process beside a real ``indus gateway run`` daemon.
++"""P19-03/04/05/06: ``indus acp`` as a real process beside a real ``indus gateway run`` daemon.
+ 
+ The profile is a temp home (``tests.fakes.daemon.ProfileHome``) whose model is the loopback fake.
+ The editor side is this test, speaking ACP frames (one JSON object per line) to the child's stdin
+ and reading its stdout.
+ 
+ - Attached (the default): the adapter dials the daemon with a single-use ticket, reads
+-  ``runtime.describe``, and refuses ``session/new`` with ``acp_policy_unavailable`` because the
+-  daemon does not advertise the ACP editor policy yet (``session.mutate`` is not served, D-16.602).
++  ``runtime.describe`` (the daemon advertises ``acp.editor_policy``), creates a session on the
++  daemon, prompts it on the fake model, switches its model and forks it (``session.mutate``,
++  D-16.602). Prompting and the model picker are ACP handlers of their own (P19-09/12): where the
++  adapter does not serve them yet (``-32601``), the same daemon session is driven over the
++  daemon's WebSocket instead (``prompt.submit``, ``session.mutate model``), so the daemon side is
++  checked either way.
+ - ``--local``: the same profile, the same frames, a session is created in process.
+-
+-Prompting is P19-09 (``session/prompt``); until it lands, ``--local`` is the path that creates
+-sessions, and the attached path is pinned to its refusal against the real daemon.
+ """
+ 
+ from __future__ import annotations
+@@ -25,10 +26,11 @@ from typing import IO, Any
+ 
+ import pytest
+ 
++from indus.protocol.attach import ACP_EDITOR_POLICY
+ from indus.service.daemon_host import HOST_CAPABILITIES
+ from tests.fakes.daemon import ProfileHome, RunningDaemon
+ from tests.fakes.model.http_serve import serving
+-from tests.integration.service.conftest_hosts import steps_script
++from tests.integration.service.conftest_hosts import WsPeer, steps_script
+ 
+ pytestmark = [
+     pytest.mark.skipif(os.name != "posix", reason="POSIX sockets and signals"),
+@@ -36,10 +38,12 @@ pytestmark = [
+ ]
+ 
+ TIMEOUT = 60.0
++METHOD_NOT_FOUND = -32601
+ 
+ 
+ class Editor:
+-    """An ``indus acp`` child and the frames it wrote, read on a thread."""
++    """An ``indus acp`` child and the frames it wrote, read on a thread. Permission cards the
++    agent asks for are allowed once; ``updates`` keeps every ``session/update``."""
+ 
+     def __init__(self, profile: ProfileHome, *args: str) -> None:
+         self.err_path = profile.root / f"acp-{len(args)}.err"
+@@ -54,6 +58,7 @@ class Editor:
+             env=profile.env(),
+         )
+         self.lines: queue.Queue[str | None] = queue.Queue()
++        self.updates: list[dict[str, Any]] = []
+         self._next = 0
+         stdout = self.proc.stdout
+         assert stdout is not None
+@@ -64,14 +69,24 @@ class Editor:
+             self.lines.put(line)
+         self.lines.put(None)
+ 
+-    def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+-        self._next += 1
+-        ident = self._next
++    def _send(self, frame: dict[str, Any]) -> None:
+         stdin = self.proc.stdin
+         assert stdin is not None
+-        frame = {"jsonrpc": "2.0", "id": ident, "method": method, "params": params}
+         stdin.write(json.dumps(frame) + "\n")
+         stdin.flush()
++
++    def _answer(self, frame: dict[str, Any]) -> None:
++        if frame.get("method") == "session/request_permission":
++            outcome = {"outcome": {"outcome": "selected", "optionId": "allow_once"}}
++            self._send({"jsonrpc": "2.0", "id": frame["id"], "result": outcome})
++            return
++        error = {"code": METHOD_NOT_FOUND, "message": "not offered by this editor"}
++        self._send({"jsonrpc": "2.0", "id": frame["id"], "error": error})
++
++    def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
++        self._next += 1
++        ident = self._next
++        self._send({"jsonrpc": "2.0", "id": ident, "method": method, "params": params})
+         while True:
+             try:
+                 line = self.lines.get(timeout=TIMEOUT)
+@@ -79,10 +94,14 @@ class Editor:
+                 raise AssertionError(f"no answer to {method}:\n{self.stderr()}") from None
+             if line is None:
+                 raise AssertionError(f"the adapter exited before {method}:\n{self.stderr()}")
+-            answer = json.loads(line)  # stdout carries frames only (R09.14)
+-            assert answer.get("jsonrpc") == "2.0", answer
+-            if answer.get("id") == ident:
+-                return answer
++            frame = json.loads(line)  # stdout carries frames only (R09.14)
++            assert frame.get("jsonrpc") == "2.0", frame
++            if "method" in frame and "id" in frame:
++                self._answer(frame)
++            elif frame.get("method") == "session/update":
++                self.updates.append(frame["params"])
++            elif frame.get("id") == ident:
++                return frame
+ 
+     def stderr(self) -> str:
+         if not self._err.closed:
+@@ -106,26 +125,125 @@ class Editor:
+ INIT = {"protocolVersion": 1, "clientCapabilities": {}}
+ 
+ 
+-def test_attached_refuses_new_sessions_without_the_editor_policy_and_local_creates_one(
++class Viewer:
++    """The daemon's WebSocket, attached to the editor's session (the fallback driver)."""
++
++    def __init__(self, profile: ProfileHome, daemon: RunningDaemon, session_id: str) -> None:
++        self.peer = WsPeer(profile, daemon)
++        self.sid = session_id
++        self.peer.call("client.capabilities", features=["server_requests"], surface="acp")
++        self.peer.call("session.resume", session_id=session_id)
++
++    def prompt(self, text: str, request_id: str) -> None:
++        seen = len(self.peer.events("turn.done"))
++        self.peer.call("prompt.submit", session_id=self.sid, text=text, request_id=request_id)
++        self.peer.wait_for(
++            lambda f: f.get("method") == "turn.done" and len(self.peer.events("turn.done")) > seen,
++            "turn.done",
++        )
++
++    def switch(self, model: str) -> dict[str, Any]:
++        return self.peer.call(
++            "session.mutate",
++            session_id=self.sid,
++            operation="model",
++            payload={"model": model},
++            request_id="e2e-model-1",
++        )
++
++
++def _prompt(editor: Editor, viewer: list[Viewer], make: Any, sid: str, text: str, n: int) -> None:
++    answer = editor.call(
++        "session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": text}]}
++    )
++    if answer.get("error", {}).get("code") == METHOD_NOT_FOUND:
++        if not viewer:
++            viewer.append(make())
++        viewer[0].prompt(text, f"e2e-prompt-{n}")
++        return
++    assert answer.get("result", {}).get("stopReason") == "end_turn", answer
++
++
++def test_an_attached_editor_session_prompts_switches_model_and_forks_on_the_daemon(
+     tmp_path: Path,
+ ) -> None:
+-    with serving(steps_script([{"text": "unused"}])) as model:
++    script = steps_script([{"text": "hello from the daemon"}], [{"text": "after the switch"}])
++    with serving(script) as model:
++        seen: list[dict[str, Any]] = []
++        model.on_request = seen.append
+         profile = ProfileHome(tmp_path / "acp", model.port)
+         try:
+             daemon: RunningDaemon = profile.start_daemon()
+             described = daemon.attachable()
+             assert "acp" in described["creatable_sources"]
+             assert sorted(described["capabilities"]) == sorted(HOST_CAPABILITIES)
++            assert ACP_EDITOR_POLICY in described["capabilities"]
+ 
+-            attached = Editor(profile)
+-            ready = attached.call("initialize", INIT)
++            editor = Editor(profile)
++            ready = editor.call("initialize", INIT)
+             assert ready["result"]["agentInfo"]["name"] == "indus-agent"
+-            refused = attached.call("session/new", {"cwd": str(profile.work), "mcpServers": []})
+-            assert refused["error"]["data"]["reason"] == "acp_policy_unavailable", refused
+-            assert "--local" in json.dumps(refused["error"])
+-            assert attached.close() == 0, attached.stderr()
+-            assert "Traceback" not in attached.stderr()
++            created = editor.call("session/new", {"cwd": str(profile.work), "mcpServers": []})
++            assert "error" not in created, created
++            sid = created["result"]["sessionId"]
++            assert created["result"]["modes"]["currentModeId"] == "default"
++
++            viewer: list[Viewer] = []
++
++            def make() -> Viewer:
++                return Viewer(profile, daemon, sid)
+ 
++            _prompt(editor, viewer, make, sid, "say hello", 1)
++            asked = [r for r in seen if r.get("kind") == "model"]
++            assert asked and asked[-1]["model"] == "fake-model"
++
++            switched = editor.call(
++                "session/set_config_option",
++                {"sessionId": sid, "configId": "model", "value": "other-model"},
++            )
++            if switched.get("error", {}).get("code") == METHOD_NOT_FOUND:
++                if not viewer:
++                    viewer.append(make())
++                assert viewer[0].switch("other-model")["status"] == "applied"
++            else:
++                assert "error" not in switched, switched
++            _prompt(editor, viewer, make, sid, "and now", 2)
++            asked = [r for r in seen if r.get("kind") == "model"]
++            assert asked[-1]["model"] == "other-model"  # the daemon's session runs the new model
++
++            forked = editor.call(
++                "session/fork", {"sessionId": sid, "cwd": str(profile.work), "mcpServers": []}
++            )
++            assert "error" not in forked, forked
++            child = forked["result"]["sessionId"]
++            assert child != sid
++            loaded = editor.call(
++                "session/load", {"sessionId": child, "cwd": str(profile.work), "mcpServers": []}
++            )
++            assert "error" not in loaded, loaded
++            replayed = [
++                u["update"]["content"]["text"]
++                for u in editor.updates
++                if u.get("sessionId") == child
++                and u["update"].get("sessionUpdate") == "agent_message_chunk"
++            ]
++            assert "after the switch" in "".join(replayed)  # the fork holds the conversation
++
++            for each in viewer:
++                each.peer.close()
++            assert editor.close() == 0, editor.stderr()
++            assert "Traceback" not in editor.stderr()
++            assert daemon.proc.poll() is None
++        finally:
++            profile.stop_all()
++    assert profile.stray_processes() == []
++
++
++def test_local_creates_a_session_in_process_and_leaves_the_daemon_alone(tmp_path: Path) -> None:
++    with serving(steps_script([{"text": "unused"}])) as model:
++        profile = ProfileHome(tmp_path / "acp", model.port)
++        try:
++            daemon: RunningDaemon = profile.start_daemon()
++            daemon.attachable()
+             local = Editor(profile, "--local")
+             local.call("initialize", INIT)
+             created = local.call("session/new", {"cwd": str(profile.work), "mcpServers": []})
+diff --git a/tests/fakes/daemon.py b/tests/fakes/daemon.py
+index 349202e..8841e7e 100644
+--- a/tests/fakes/daemon.py
++++ b/tests/fakes/daemon.py
+@@ -28,14 +28,13 @@ profiles never idles out mid-test (P17-23).
+ Only pids that carry this home in their environment are ever signalled, so other tests' and other
+ worktrees' daemons are never touched.
+ 
+-``AcpDaemon`` answers ``runtime.describe`` and every method the daemon serves through the real
+-endpoint. A test may change what it advertises (``capabilities``, which ``runtime.describe`` and
+-the control socket's ``describe`` read from the host) and the profile it claims (``profile_id``: a
+-dial checks it the way ``grant_for`` does, before any ticket). One method the ACP adapter calls
+-is not served by the daemon yet: ``session.mutate`` (``editor_mcp``, ``branch``, ``workspace``,
+-D-16.602). A shim in the transport answers it against the daemon's own store before the frame
+-would reach the endpoint (which answers ``-32601``); ``shim = False`` turns it off. Every shimmed
+-call is recorded in ``calls``. Nothing here is product code.
++``AcpDaemon`` answers ``runtime.describe`` and every method the ACP adapter calls through the real
++endpoint, ``session.mutate`` included. A test may change what it advertises (``capabilities``,
++which ``runtime.describe`` and the control socket's ``describe`` read from the host) and the
++profile it claims (``profile_id``: a dial checks it the way ``grant_for`` does, before any
++ticket). Every ``session.mutate`` frame is recorded in ``calls``; the editor MCP servers the
++daemon connects are scripted in-memory servers (``fleet``), and ``editor_mcp`` shows the specs the
++daemon holds per session. Nothing here is product code.
+ """
+ 
+ from __future__ import annotations
+@@ -48,18 +47,17 @@ import subprocess
+ import sys
+ import threading
+ import time
+-from collections.abc import Callable, Mapping
++from collections.abc import Callable, Iterator, Mapping
+ from dataclasses import dataclass, field
+ from pathlib import Path
+ from typing import Any
+ 
+ from indus.foundation.scope import Scope
+-from indus.protocol.attach import ACP_EDITOR_POLICY
+ from indus.service import gateway_control
+ from indus.service.remote.channel import Dialed, DialRefused, Grant, grant_for
+ from indus.service.ws_auth import stable_profile_id
+-from indus.state import rewind, sessions
+ from indus.state.registry import StoreHandle
++from tests.fakes.mcp.scripted import FakeFleet
+ from tests.fakes.model import Turn
+ from tests.unit.service.remote.wire import AsgiTransport, Rig, rig
+ 
+@@ -295,8 +293,30 @@ class RunningDaemon:
+ 
+ # -- the in-loop daemon of the ACP handler suites (P19) --------------------------------------------
+ 
+-SHIMMED = frozenset({"session.mutate"})
+-"""Methods the ACP adapter calls that the daemon does not serve yet (D-16.602)."""
++RECORDED = frozenset({"session.mutate"})
++"""Methods whose frames the ACP daemon records (``AcpDaemon.calls``) on their way in."""
++
++
++class _EditorView(Mapping[str, list[dict[str, Any]]]):
++    """The editor MCP specs the daemon holds, by session id (memory only)."""
++
++    def __init__(self, host: Any) -> None:
++        self.host = host
++
++    def _key(self, session_id: str) -> str:
++        return self.host.key_of(session_id) or session_id
++
++    def __getitem__(self, session_id: str) -> list[dict[str, Any]]:
++        held = self.host.mutations.servers(self._key(session_id))
++        if not held:
++            raise KeyError(session_id)
++        return held
++
++    def __iter__(self) -> Iterator[str]:
++        return iter(self.host.mutations._states)  # pyright: ignore[reportPrivateUsage]
++
++    def __len__(self) -> int:
++        return len(self.host.mutations._states)  # pyright: ignore[reportPrivateUsage]
+ 
+ 
+ class AcpDaemon:
+@@ -305,13 +325,15 @@ class AcpDaemon:
+     def __init__(self, inner: Rig, store: StoreHandle) -> None:
+         self.rig = inner
+         self.store = store
+-        self.shim = True
+         self.profile_id = inner.book.profile_id
+         """The profile this daemon claims; a dial refuses one that is not the home's own."""
+-        self.capabilities: list[str] = [*inner.host.capabilities(), ACP_EDITOR_POLICY]
++        self.capabilities: list[str] = list(inner.host.capabilities())
+         """What the host advertises (``runtime.describe``, ``describe``)."""
+         self.calls: list[tuple[str, dict[str, Any]]] = []
+-        self.editor_mcp: dict[str, list[dict[str, Any]]] = {}
++        self.fleet = FakeFleet(store.scope.clock)  # pyright: ignore[reportArgumentType]
++        """The editor MCP servers: scripted in-memory servers (``tests.fakes.mcp.scripted``)."""
++        inner.host.mutations.opener = self.fleet
++        self.editor_mcp = _EditorView(inner.host)
+         advertised = self.capabilities
+         # The host instance reads this list, so a test's change shows in the next describe.
+         inner.host.capabilities = lambda: tuple(advertised)  # type: ignore[method-assign]
+@@ -334,45 +356,13 @@ class AcpDaemon:
+         async def send(text: str) -> None:
+             frame = json.loads(text)
+             method = frame.get("method")
+-            if self.shim and method in SHIMMED and "id" in frame and not transport.dead:
+-                params = dict(frame.get("params") or {})
+-                self.calls.append((str(method), params))
+-                reply: dict[str, Any] = {"jsonrpc": "2.0", "id": frame["id"]}
+-                try:
+-                    reply["result"] = self._mutate(params)
+-                except KeyError as exc:
+-                    reply["error"] = {"code": 2001, "message": f"no session {exc}"}
+-                transport.sent.append(frame)
+-                await transport.client._from_app.put(  # pyright: ignore[reportPrivateUsage]
+-                    {"type": "websocket.send", "text": json.dumps(reply)}
+-                )
+-                return
++            if method in RECORDED and "id" in frame and not transport.dead:
++                self.calls.append((str(method), dict(frame.get("params") or {})))
+             await original(text)
+ 
+         transport.send = send  # type: ignore[method-assign]
+         return dialed
+ 
+-    def _mutate(self, params: dict[str, Any]) -> dict[str, Any]:
+-        sid = str(params.get("session_id", ""))
+-        operation = params.get("operation")
+-        payload = dict(params.get("payload") or {})
+-        if operation == "editor_mcp":
+-            self.editor_mcp[sid] = list(payload.get("mcp_servers") or [])
+-            return {"status": "applied"}
+-        if operation == "branch":
+-            if sessions.get(self.store, sid) is None:
+-                raise KeyError(sid)
+-            child = rewind.branch(self.store, sid)
+-            servers = payload.get("mcp_servers")
+-            self.editor_mcp[child] = (
+-                list(servers) if servers else list(self.editor_mcp.get(sid, []))
+-            )
+-            return {"status": "applied", "session_id": child}
+-        if operation == "workspace":
+-            sessions.set_cwd(self.store, sid, str(payload.get("cwd")))
+-            return {"status": "applied", "cwd": payload.get("cwd")}
+-        return {"status": "refused", "reason": f"unknown operation {operation}"}
+-
+     async def close(self) -> None:
+         await self.rig.close()
+ 
+diff --git a/tests/unit/protocol/_attach_samples.py b/tests/unit/protocol/_attach_samples.py
+index ff2a44d..3e783f2 100644
+--- a/tests/unit/protocol/_attach_samples.py
++++ b/tests/unit/protocol/_attach_samples.py
+@@ -16,6 +16,8 @@ from indus.protocol.attach import (
+     ReplayGapInfo,
+     RuntimeDescribeParams,
+     RuntimeDescribeResult,
++    SessionMutateParams,
++    SessionMutateResult,
+     SessionReplayGap,
+     SessionsResync,
+     SessionSubscribeParams,
+@@ -61,6 +63,16 @@ ATTACH_SAMPLES: list[ProtocolModel] = [
+     AdmissionCancelParams(session_id=SID, admission_id="adm-1"),
+     AdmissionCancelResult(cancelled=True, state="terminal", outcome="cancelled"),
+     AdmissionCancelResult(cancelled=False, state="started", generation=3),
++    SessionMutateParams(
++        session_id=SID,
++        operation="editor_mcp",
++        payload={"mcp_servers": [{"name": "docs", "command": "docs-server", "args": []}]},
++        request_id="r-1",
++        generation=2,
++    ),
++    SessionMutateResult(status="applied", servers=["docs"], changed=[]),
++    SessionMutateResult(status="refused", reason="editor_mcp_changed", refused_servers=["docs"]),
++    SessionMutateResult(status="confirm", message="the window is small", model="m", provider="p"),
+     RuntimeDescribeParams(),
+     RuntimeDescribeResult(
+         profile_id="0" * 16,
+diff --git a/tests/unit/protocol/test_models.py b/tests/unit/protocol/test_models.py
+index 96ea4a8..fc12029 100644
+--- a/tests/unit/protocol/test_models.py
++++ b/tests/unit/protocol/test_models.py
+@@ -226,6 +226,7 @@ def test_catalogue_names() -> None:
+         "admission.discard",
+         "admission.receipt",
+         "admission.cancel",
++        "session.mutate",
+         "runtime.describe",
+         "maintenance.run",
+     ]
+diff --git a/tests/unit/service/test_editor_mcp.py b/tests/unit/service/test_editor_mcp.py
+new file mode 100644
+index 0000000..806bbf7
+--- /dev/null
++++ b/tests/unit/service/test_editor_mcp.py
+@@ -0,0 +1,90 @@
++"""The editor MCP record and spec checks of the daemon (P19-13, D-16.602)."""
++
++from __future__ import annotations
++
++import json
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.service.editor_mcp import (
++    ACP_BUNDLE,
++    EditorRecord,
++    SpecError,
++    acp_selection,
++    server_config,
++    spec_fingerprint,
++    valid_specs,
++)
++
++SPEC = {
++    "name": "docs",
++    "command": "docs-server",
++    "args": ["--serve"],
++    "env": [{"name": "DOCS_TOKEN", "value": "v" + "-1"}],
++}
++
++
++def test_the_fingerprint_hides_values_and_follows_every_part_of_the_spec() -> None:
++    base = spec_fingerprint(SPEC)
++    assert base == spec_fingerprint(dict(SPEC))
++    assert "v-1" not in base
++    for change in (
++        {"args": ["--other"]},
++        {"command": "other"},
++        {"env": [{"name": "DOCS_TOKEN", "value": "v-2"}]},
++        {"type": "http", "url": "http://127.0.0.1:1/mcp"},
++    ):
++        assert spec_fingerprint({**SPEC, **change}) != base, change
++    # env given as a mapping or as ACP pairs is the same spec
++    assert spec_fingerprint({**SPEC, "env": {"DOCS_TOKEN": "v-1"}}) == base
++
++
++def test_the_record_refuses_changed_servers_admits_new_ones_and_freezes_listings() -> None:
++    record = EditorRecord()
++    assert record.admit([SPEC]) is True
++    assert record.admit([SPEC]) is False
++    assert record.refused([SPEC]) == []
++    assert record.refused([{**SPEC, "args": []}]) == ["docs"]
++    assert record.refused([{**SPEC, "name": "new"}]) == []
++    assert record.freeze("docs", {"read": {"name": "read"}}) == (True, False)
++    assert record.freeze("docs", {"read": {"name": "read"}}) == (False, False)
++    assert record.freeze("docs", {"write": {"name": "write"}}) == (False, True)
++    assert record.schemas["docs"] == {"read": {"name": "read"}}  # the frozen copy stays
++    stored = json.loads(json.dumps(record.to_record()))
++    assert "v-1" not in json.dumps(stored)
++    again = EditorRecord.from_record(stored)
++    assert again == record
++    assert EditorRecord.from_record("junk") == EditorRecord()
++
++
++def test_server_lists_are_checked_without_echoing_a_value() -> None:
++    assert valid_specs(None) == []
++    kept = valid_specs([SPEC, {**SPEC, "args": ["--later"]}])
++    assert len(kept) == 1 and kept[0]["args"] == ["--later"]  # a repeated name keeps the later
++    for bad in (
++        "nope",
++        [1],
++        [{"command": "secret-arg"}],
++        [{"name": "x"}],
++        [{"name": "x", "type": "http"}],
++        [{"name": "x", "type": "ws", "url": "secret-arg"}],
++        [{**SPEC, "name": f"s{n}"} for n in range(17)],
++    ):
++        with pytest.raises(SpecError) as refused:
++            valid_specs(bad)
++        assert "secret-arg" not in str(refused.value)
++
++
++def test_specs_become_p13_server_configs() -> None:
++    stdio = server_config(SPEC, "/work/repo")
++    assert stdio.command == "docs-server" and stdio.args == ["--serve"]
++    assert stdio.env == {"DOCS_TOKEN": "v-1"} and stdio.cwd == "/work/repo"
++    http = server_config(
++        {"name": "web", "type": "sse", "url": "http://127.0.0.1:9/mcp", "headers": []}, None
++    )
++    assert http.url == "http://127.0.0.1:9/mcp" and http.transport == "sse"
++
++
++def test_the_acp_selection_is_the_saved_list_or_the_bundle(scope: Scope) -> None:
++    assert acp_selection(scope) == [ACP_BUNDLE]
+diff --git a/tests/unit/service/test_rpc_dispatch.py b/tests/unit/service/test_rpc_dispatch.py
+index cd20d2e..09dcd1e 100644
+--- a/tests/unit/service/test_rpc_dispatch.py
++++ b/tests/unit/service/test_rpc_dispatch.py
+@@ -230,6 +230,7 @@ def test_per_method_deadlines(scope: Scope) -> None:
+         "prompt.submit": 1800.0,
+         "prompt.background": 1800.0,
+         "session.compress": 600.0,
++        "session.mutate": 600.0,
+     }
+ 
+ 
+diff --git a/tests/unit/service/test_session_mutations.py b/tests/unit/service/test_session_mutations.py
+new file mode 100644
+index 0000000..0ddd49f
+--- /dev/null
++++ b/tests/unit/service/test_session_mutations.py
+@@ -0,0 +1,521 @@
++"""``session.mutate`` on the daemon host, one operation at a time (D-16.602, P19-04/05/06/12/13).
++
++Every test runs the real ``DaemonSessionHost`` over the fake model. Editor MCP servers are the
++scripted in-memory ones (``tests.fakes.mcp.scripted``), connected through the real P13 client.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import os
++from collections.abc import Callable, Iterator
++from dataclasses import dataclass, replace
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.core.persist import StateStore
++from indus.core.turn_state import TurnState
++from indus.foundation.scope import Scope
++from indus.mcp.naming import tool_name
++from indus.protocol.attach import SessionMutateParams, SessionMutateResult
++from indus.protocol.errors import IDEMPOTENCY_CONFLICT, INVALID_PARAMS, SESSION_BUSY
++from indus.protocol.methods import ProtocolError, SessionCreateParams
++from indus.service import editor_mcp
++from indus.service.daemon_host import DaemonSessionHost
++from indus.service.session_service import SessionService
++from indus.service.viewers import Viewer
++from indus.state import messages, registry, sessions
++from indus.state.registry import StoreHandle
++from indus.tools.calls import ToolCall, ToolResult
++from indus.tools.session_registry import SessionRegistry
++from tests.fakes.agent import eventually, fake_options
++from tests.fakes.mcp.scripted import FakeFleet
++from tests.fakes.model import FakeModelServer, Turn, fake_route, script_of, text_turn, tool_batch
++from tests.unit.backends._aio import aio
++
++CWD = os.path.abspath(os.sep + os.path.join("work", "repo"))
++OTHER = os.path.abspath(os.sep + os.path.join("work", "other"))
++DOCS = {"name": "docs", "command": "docs-server", "args": ["--serve"], "env": []}
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++class Holder:
++    """An inline tool that holds the turn until released (or the turn is interrupted)."""
++
++    def __init__(self) -> None:
++        self.gate = asyncio.Event()
++        self.entered = 0
++
++    async def __call__(self, call: ToolCall, state: TurnState) -> ToolResult:
++        self.entered += 1
++        waits = {
++            asyncio.ensure_future(self.gate.wait()),
++            asyncio.ensure_future(state.control.stop.wait()),
++        }
++        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
++        for task in waits:
++            task.cancel()
++        return ToolResult("held")
++
++
++async def inline[T](fn: Callable[[], T]) -> T:
++    return fn()
++
++
++@dataclass
++class Rig:
++    host: DaemonSessionHost
++    server: FakeModelServer
++    fleet: FakeFleet
++    events: list[dict[str, Any]]
++    calls: int = 0
++
++    @property
++    def service(self) -> SessionService:
++        return self.host.service
++
++    async def create(self, source: str = "acp", **params: Any) -> str:
++        viewer = Viewer.of(f"c-{len(self.host.hosted())}", source, send=self.events.append)
++        made = await self.host.create(
++            SessionCreateParams(cwd=CWD, **params), source=source, viewer=viewer
++        )
++        return made.session_id
++
++    async def mutate(self, sid: str, operation: str, **payload: Any) -> SessionMutateResult:
++        self.calls += 1
++        return await self.mutate_as(sid, operation, f"r-{self.calls}", payload)
++
++    async def mutate_as(
++        self,
++        sid: str,
++        operation: str,
++        request_id: str,
++        payload: dict[str, Any],
++        generation: int | None = None,
++    ) -> SessionMutateResult:
++        key = self.host.key_of(sid)
++        assert key is not None
++        params = SessionMutateParams.model_validate(
++            {
++                "session_id": sid,
++                "operation": operation,
++                "payload": payload,
++                "request_id": request_id,
++                "generation": generation,
++            }
++        )
++        return await self.host.mutations.mutate(key, params)
++
++    async def turn(self, sid: str, text: str, request_id: str) -> str:
++        receipt = await self.host.submit(
++            sid, text, principal="attach:acp", request_id=request_id, surface="acp"
++        )
++        return receipt.admission_id
++
++    def notices(self) -> list[str]:
++        return [str(e.get("text")) for e in self.events if e.get("type") == "notice"]
++
++    async def close(self) -> None:
++        await self.host.aclose()
++
++
++async def open_rig(
++    scope: Scope,
++    store: StoreHandle,
++    tmp_path: Path,
++    *turns: Turn,
++    tools: dict[str, Any] | None = None,
++    toolsets: list[str] | None = None,
++) -> Rig:
++    server = FakeModelServer(script_of(*turns), clock=scope.clock)
++    options = fake_options(server, session_id=None, inline=dict(tools or {}))
++    service = SessionService(
++        scope,
++        fake_route(server),
++        toolsets=toolsets,
++        options=options,
++        store=StateStore(store),
++        lock_dir=tmp_path / "locks",
++    )
++    host = await DaemonSessionHost.open(service, store, instance_id="daemon-1", offload=inline)
++    fleet = FakeFleet(scope.clock)  # pyright: ignore[reportArgumentType]
++    host.mutations.opener = fleet
++    base = fake_route(server)
++    host.mutations.resolve_route = lambda model, provider: replace(
++        base, model=model, provider=provider or base.provider
++    )
++    return Rig(host, server, fleet, [])
++
++
++def editor_tools(rig: Rig, sid: str) -> list[str]:
++    return [n for n in rig.service.agent(sid).tool_names if n.startswith("mcp__editor")]
++
++
++# -- editor MCP ------------------------------------------------------------------------------------
++
++
++@aio
++async def test_editor_servers_reach_their_session_only_and_the_record_holds_no_secret(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, toolsets=[])
++    secret = "editor" + "-value-" + "77aa11"
++    spec = {**DOCS, "env": [{"name": "DOCS_TOKEN", "value": secret}]}
++    sid = await rig.create()
++    other = await rig.create("tui", toolsets=None)
++    done = await rig.mutate(sid, "editor_mcp", mcp_servers=[spec])
++    assert done.status == "applied" and done.servers == ["docs"]
++    assert editor_tools(rig, sid) == [tool_name("editor-docs", "read")]
++    agent = rig.service.agent(sid)
++    assert isinstance(agent.options.registry, SessionRegistry)
++    # Another session — even one that selects every toolset — never sees them.
++    assert editor_tools(rig, other) == []
++    shared = rig.service.agent(other).options.registry
++    assert shared is not None and tool_name("editor-docs", "read") not in shared.names(scope)
++    row = sessions.get(store, sid)
++    assert row is not None
++    config = sessions.parse_model_config(row["model_config"])
++    record = config[editor_mcp.RECORD_KEY]
++    assert set(record["fingerprints"]) == {"docs"} and "docs" in record["schemas"]
++    assert secret not in json.dumps(config)
++    found = [p for p in scope.home.rglob("*") if p.is_file() and secret.encode() in p.read_bytes()]
++    assert found == []
++    await rig.close()
++
++
++@aio
++async def test_a_changed_spec_is_refused_and_the_same_one_after_a_restart_connects(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, toolsets=[])
++    sid = await rig.create()
++    await rig.mutate(sid, "editor_mcp", mcp_servers=[DOCS])
++    changed = {**DOCS, "args": ["--serve", "--other"]}
++    refused = await rig.mutate(sid, "editor_mcp", mcp_servers=[changed])
++    assert refused.status == "refused" and refused.reason == "editor_mcp_changed"
++    assert refused.refused_servers == ["docs"]
++    assert rig.host.mutations.servers(sid)[0]["args"] == ["--serve"]  # nothing changed
++    again = await rig.mutate(sid, "editor_mcp", mcp_servers=[DOCS])
++    assert again.status == "applied" and again.servers == ["docs"]
++    added = await rig.mutate(sid, "editor_mcp", mcp_servers=[DOCS, {**DOCS, "name": "tickets"}])
++    assert added.status == "applied" and sorted(added.servers or []) == ["docs", "tickets"]
++    assert rig.fleet.servers["editor-docs"].opens == 1  # an unchanged server is not restarted
++    # A daemon restart: specs are gone from memory, the record stays in the row.
++    await rig.close()
++    rig = await open_rig(scope, store, tmp_path, toolsets=[])
++    await rig.host.resume(sid, source="acp")
++    assert editor_tools(rig, sid) == []  # nothing until the editor sends its servers again
++    bad = await rig.mutate(sid, "editor_mcp", mcp_servers=[changed])
++    assert bad.status == "refused" and bad.refused_servers == ["docs"]
++    good = await rig.mutate(sid, "editor_mcp", mcp_servers=[DOCS])
++    assert good.status == "applied" and editor_tools(rig, sid) == [tool_name("editor-docs", "read")]
++    await rig.close()
++
++
++@aio
++async def test_a_bad_server_list_is_invalid_and_names_no_spec_value(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, toolsets=[])
++    sid = await rig.create()
++    secret = "argv" + "-secret-" + "5c5c"
++    for servers in ([{"command": secret}], [{"name": "x", "type": "ftp", "command": secret}]):
++        with pytest.raises(ProtocolError) as bad:
++            await rig.mutate(sid, "editor_mcp", mcp_servers=servers)
++        assert bad.value.error is INVALID_PARAMS and secret not in str(bad.value.message)
++    with pytest.raises(ProtocolError):
++        await rig.mutate(sid, "editor_mcp", mcp_servers=[DOCS] * 17)
++    huge = {**DOCS, "args": ["x" * 70000]}
++    with pytest.raises(ProtocolError):
++        await rig.mutate(sid, "editor_mcp", mcp_servers=[huge])
++    tui = await rig.create("tui")
++    with pytest.raises(ProtocolError) as not_acp:
++        await rig.mutate(tui, "editor_mcp", mcp_servers=[DOCS])
++    assert not_acp.value.error is INVALID_PARAMS  # editor servers belong to ACP sessions
++    await rig.close()
++
++
++@aio
++async def test_servers_sent_mid_turn_wait_for_the_next_turn_and_close_with_the_session(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    rig = await open_rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("hold", {})),
++        text_turn("one"),
++        text_turn("two"),
++        tools={"hold": holder},
++        toolsets=[],
++    )
++    sid = await rig.create()
++    first = await rig.turn(sid, "work", "t-1")
++    await eventually(lambda: holder.entered == 1)
++    waiting = await rig.mutate(sid, "editor_mcp", mcp_servers=[DOCS])
++    assert waiting.status == "deferred" and editor_tools(rig, sid) == []
++    holder.gate.set()
++    await rig.host.wait(first)
++    second = await rig.turn(sid, "more", "t-2")
++    await rig.host.wait(second)
++    assert editor_tools(rig, sid) == [tool_name("editor-docs", "read")]
++    live = rig.fleet.servers["editor-docs"].live
++    assert live is not None
++    await rig.host.close_session(sid)
++    assert rig.host.mutations.servers(sid) == []
++    await rig.close()
++
++
++# -- branch, workspace -----------------------------------------------------------------------------
++
++
++@aio
++async def test_branch_copies_the_session_with_the_parents_servers_or_the_named_ones(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, text_turn("hello"), toolsets=[])
++    sid = await rig.create()
++    await rig.mutate(sid, "editor_mcp", mcp_servers=[DOCS])
++    await rig.host.wait(await rig.turn(sid, "hi", "t-1"))
++    child = await rig.mutate_as(sid, "branch", "b-1", {})
++    assert child.status == "applied" and child.session_id and child.servers == ["docs"]
++    row = sessions.get(store, child.session_id)
++    assert row is not None and row["parent_session_id"] == sid
++    assert [m["content"] for m in messages.get(store, child.session_id)][-1] == "hello"
++    again = await rig.mutate_as(sid, "branch", "b-1", {})
++    assert again == child  # the same request id never makes a second copy
++    with pytest.raises(ProtocolError) as reused:
++        await rig.mutate_as(sid, "rename", "b-1", {"title": "x"})
++    assert reused.value.error is IDEMPOTENCY_CONFLICT
++    named = await rig.mutate(sid, "branch", mcp_servers=[{**DOCS, "name": "tickets"}])
++    assert named.servers == ["tickets"]
++    assert named.session_id is not None
++    await rig.host.resume(named.session_id, source="acp")
++    assert editor_tools(rig, named.session_id) == [tool_name("editor-tickets", "read")]
++    assert editor_mcp.load_record(store, named.session_id) is not None
++    await rig.close()
++
++
++@aio
++async def test_idle_only_changes_are_refused_while_a_turn_runs(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    rig = await open_rig(
++        scope, store, tmp_path, tool_batch(("hold", {})), text_turn("done"), tools={"hold": holder}
++    )
++    sid = await rig.create()
++    admission = await rig.turn(sid, "work", "t-1")
++    await eventually(lambda: holder.entered == 1)
++    for operation, payload in (
++        ("branch", {}),
++        ("workspace", {"cwd": OTHER}),
++        ("rewind", {"count": 1}),
++        ("reset", {}),
++        ("compress", {}),
++    ):
++        with pytest.raises(ProtocolError) as busy:
++            await rig.mutate(sid, operation, **payload)
++        assert busy.value.error is SESSION_BUSY, operation
++    stale = await rig.mutate_as(sid, "model", "m-1", {"model": "other"}, generation=99)
++    assert stale.status == "refused" and stale.reason == "stale_generation"
++    holder.gate.set()
++    await rig.host.wait(admission)
++    await rig.close()
++
++
++@aio
++async def test_workspace_moves_the_row_and_the_agent(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, text_turn("hello"), toolsets=[])
++    sid = await rig.create()
++    await rig.host.wait(await rig.turn(sid, "hi", "t-1"))
++    moved = await rig.mutate(sid, "workspace", cwd=OTHER)
++    assert moved.status == "applied" and moved.cwd == OTHER
++    row = sessions.get(store, sid)
++    assert row is not None and row["cwd"] == OTHER
++    assert str(rig.service.agent(sid).options.cwd) == OTHER
++    nothing = await rig.mutate(sid, "workspace", cwd=" ")
++    assert nothing.status == "refused" and nothing.reason == "no_folder"
++    await rig.close()
++
++
++# -- model -----------------------------------------------------------------------------------------
++
++
++@aio
++async def test_a_model_switch_applies_now_or_asks_first(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, text_turn("one"), toolsets=[])
++    sid = await rig.create()
++    rig.host.mutations.model_guard = lambda used, window: "too small for this conversation"
++    asked = await rig.mutate(sid, "model", model="small-model")
++    assert asked.status == "confirm" and asked.message == "too small for this conversation"
++    assert rig.service.agent(sid).binding.state.model != "small-model"  # nothing changed
++    done = await rig.mutate(sid, "model", model="small-model", confirm=True)
++    assert done.status == "applied" and done.model == "small-model"
++    await rig.host.wait(await rig.turn(sid, "hi", "t-1"))
++    assert rig.server.model_requests[-1].body["model"] == "small-model"
++    empty = await rig.mutate(sid, "model", model="")
++    assert empty.status == "refused" and empty.reason == "no_model"
++    await rig.close()
++
++
++@aio
++async def test_a_pick_made_mid_turn_lands_at_the_next_turn_and_survives_a_rewind(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    rig = await open_rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("hold", {})),
++        text_turn("one"),
++        text_turn("two"),
++        text_turn("three"),
++        tools={"hold": holder},
++        toolsets=[],
++    )
++    sid = await rig.create()
++    first = await rig.turn(sid, "work", "t-1")
++    await eventually(lambda: holder.entered == 1)
++    running = rig.host.state(sid).running
++    picked = await rig.mutate_as(sid, "model", "m-1", {"model": "next-model"}, generation=running)
++    assert picked.status == "deferred" and picked.model == "next-model"
++    holder.gate.set()
++    await rig.host.wait(first)
++    held_models = {r.body["model"] for r in rig.server.model_requests}
++    assert "next-model" not in held_models  # the running turn kept its route
++    await rig.host.wait(await rig.turn(sid, "again", "t-2"))
++    assert rig.server.model_requests[-1].body["model"] == "next-model"
++    taken = await rig.mutate(sid, "rewind", count=1)  # rebuilds the agent from the store
++    assert taken.status == "applied" and taken.removed and taken.text == "again"
++    await rig.host.wait(await rig.turn(sid, "once more", "t-3"))
++    assert rig.server.model_requests[-1].body["model"] == "next-model"
++    await rig.close()
++
++
++@aio
++async def test_a_deferred_pick_refused_at_the_boundary_is_announced(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    rig = await open_rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("hold", {})),
++        text_turn("one"),
++        text_turn("two"),
++        tools={"hold": holder},
++        toolsets=[],
++    )
++    sid = await rig.create()
++    first = await rig.turn(sid, "work", "t-1")
++    await eventually(lambda: holder.entered == 1)
++    assert (await rig.mutate(sid, "model", model="gone-model")).status == "deferred"
++
++    def unavailable(model: str, provider: str | None) -> Any:
++        raise RuntimeError("no such model")
++
++    rig.host.mutations.resolve_route = unavailable
++    holder.gate.set()
++    await rig.host.wait(first)
++    await rig.host.wait(await rig.turn(sid, "again", "t-2"))
++    assert any("gone-model was not applied" in text for text in rig.notices())
++    await rig.close()
++
++
++# -- history, title, commands ----------------------------------------------------------------------
++
++
++@aio
++async def test_rewind_and_reset_change_the_stored_conversation(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, text_turn("one"), text_turn("two"), toolsets=[])
++    sid = await rig.create()
++    await rig.host.wait(await rig.turn(sid, "first", "t-1"))
++    await rig.host.wait(await rig.turn(sid, "second", "t-2"))
++    taken = await rig.mutate(sid, "rewind", count=1)
++    assert taken.status == "applied" and taken.text == "second" and taken.removed == 2
++    assert [m["content"] for m in messages.get(store, sid)] == ["first", "one"]
++    cleared = await rig.mutate(sid, "reset")
++    assert cleared.status == "applied" and (cleared.removed or 0) >= 2
++    assert messages.get(store, sid) == []
++    nothing = await rig.mutate(sid, "rewind")
++    assert nothing.removed == 0
++    await rig.close()
++
++
++@aio
++async def test_rename_before_the_first_reply_writes_the_row_and_tells_the_viewers(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, toolsets=[])
++    sid = await rig.create()
++    assert sessions.get(store, sid) is None
++    named = await rig.mutate(sid, "rename", title="  Fix the build  ")
++    assert named.status == "applied" and named.title == "Fix the build"
++    row = sessions.get(store, sid)
++    assert row is not None and row["title"] == "Fix the build" and row["source"] == "acp"
++    await eventually(lambda: any(e.get("type") == "session.title" for e in rig.events))
++    blank = await rig.mutate(sid, "rename", title="")
++    assert blank.status == "refused"
++    await rig.close()
++
++
++@aio
++async def test_information_commands_answer_text_and_others_are_refused(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, toolsets=[])
++    sid = await rig.create()
++    status = await rig.mutate(sid, "command", name="status", arg="")
++    assert status.status == "applied" and status.text and "Idle." in status.text
++    assert sid in status.text
++    version = await rig.mutate(sid, "command", name="version")
++    assert version.text and version.text.startswith("Indus Agent ")
++    usage = await rig.mutate(sid, "command", name="usage")
++    assert usage.text and "Model calls:" in usage.text
++    tools = await rig.mutate(sid, "command", name="tools")
++    assert tools.status == "applied" and tools.text
++    other = await rig.mutate(sid, "command", name="quit")
++    assert other.status == "refused" and other.reason == "unsupported_command"
++    await rig.close()
++
++
++@aio
++async def test_compress_with_too_little_history_says_nothing(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, toolsets=[])
++    sid = await rig.create()
++    done = await rig.mutate(sid, "compress")
++    assert done.status == "applied" and done.outcome == "nothing" and done.session_id == sid
++    await rig.close()
++
++
++@aio
++async def test_an_acp_session_without_toolsets_gets_the_editor_bundle(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    rig = await open_rig(scope, store, tmp_path, toolsets=None)
++    sid = await rig.create()
++    other = await rig.create("tui")
++    assert rig.service.agent(sid).toolset_selection == [editor_mcp.ACP_BUNDLE]
++    assert rig.service.agent(other).toolset_selection is None
++    await rig.close()
+diff --git a/tests/unit/tools/test_session_registry.py b/tests/unit/tools/test_session_registry.py
+new file mode 100644
+index 0000000..0fb96e9
+--- /dev/null
++++ b/tests/unit/tools/test_session_registry.py
+@@ -0,0 +1,61 @@
++"""``SessionRegistry``: one session's tools over the shared registry (P19-13 on the daemon)."""
++
++from __future__ import annotations
++
++from typing import Any
++
++from indus.foundation.scope import Scope
++from indus.tools import toolsets
++from indus.tools.registry import ToolRegistry, scope_key
++from indus.tools.session_registry import SessionRegistry
++
++
++def _schema(name: str) -> dict[str, Any]:
++    return {"name": name, "description": name, "parameters": {"type": "object", "properties": {}}}
++
++
++def _handler(**_: Any) -> str:
++    return "ok"
++
++
++def test_reads_see_both_sides_and_writes_stay_in_the_session(scope: Scope) -> None:
++    shared = ToolRegistry()
++    shared.register("shared_tool", "files", _schema("shared_tool"), _handler)
++    own = SessionRegistry(shared)
++    profile = scope_key(scope)
++    own.register(
++        "mcp__editor_docs__read", "mcp-editor-docs", _schema("x"), _handler, profile=profile
++    )
++    own.set_toolset_alias("mcp", "mcp-editor-docs", profile=profile)
++    assert own.get("shared_tool", scope) is not None
++    assert own.get("mcp__editor_docs__read", scope) is not None
++    assert {"shared_tool", "mcp__editor_docs__read"} <= set(own.names(scope))
++    assert own.names_in_toolset("mcp", scope) == ["mcp__editor_docs__read"]
++    assert own.own_names() == ["mcp__editor_docs__read"]
++    # The shared registry, and so every other session, never sees the session's tool.
++    assert shared.get("mcp__editor_docs__read", scope) is None
++    assert "mcp-editor-docs" not in shared.toolset_names(scope)
++    assert "mcp__editor_docs__read" not in toolsets.resolve("all", shared, scope)
++    assert "mcp__editor_docs__read" in toolsets.resolve("all", own, scope)
++
++
++def test_the_generation_moves_with_either_side(scope: Scope) -> None:
++    shared = ToolRegistry()
++    own = SessionRegistry(shared)
++    start = own.generation
++    shared.register("a", "files", _schema("a"), _handler)
++    after_shared = own.generation
++    own.register("b", "mine", _schema("b"), _handler)
++    assert start < after_shared < own.generation
++    assert own.probes is shared.probes
++
++
++def test_a_session_tool_wins_over_a_shared_one_of_the_same_name(scope: Scope) -> None:
++    shared = ToolRegistry()
++    shared.register("same", "files", _schema("same"), _handler)
++    own = SessionRegistry(shared)
++    profile = scope_key(scope)
++    own.register("same", "mine", _schema("same"), _handler, profile=profile)
++    found = own.get("same", scope)
++    assert found is not None and found.toolset == "mine"
++    assert shared.get("same", scope) is not None and shared.get("same", scope).toolset == "files"  # pyright: ignore[reportOptionalMemberAccess]

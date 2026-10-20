@@ -1,0 +1,32 @@
+--- a/attached_host.py	2026-10-20 21:14:04.531335630 +0000
++++ b/attached_host.py	2026-10-20 21:14:04.534389123 +0000
+@@ -569,11 +569,11 @@
+         return done.queued
+ 
+     async def run_command(self, session_id: str, name: str, arg: str) -> CommandReply:
+-        raise BackendError(
+-            "mutation_unavailable",
+-            f"/{name} is not available while attached to the gateway yet; run "
+-            "`indus acp --local` to use it",
+-        )
++        done = await self.mutate(session_id, "command", {"name": name, "arg": arg})
++        if done.status != "applied":
++            message = done.data.get("message") or f"/{name} is not available in this session"
++            raise BackendError("unsupported_command", str(message))
++        return CommandReply(str(done.data.get("text") or ""))
+ 
+     async def answer(
+         self,
+--- a/test_commands.py	2026-10-20 21:14:04.532887652 +0000
++++ b/test_commands.py	2026-10-20 21:14:04.535907944 +0000
+@@ -139,8 +139,8 @@
+     async with open_harness("attached", scope, store, tmp_path) as h:
+         sid = await _new(h, tmp_path)
+         reply = await _say(h, sid, "/usage")
+-        assert "not available while attached" in reply and "--local" in reply
+-        assert "/title:" in await _say(h, sid, "/title Something")  # the daemon refused it
++        assert "Model calls:" in reply  # answered by the daemon (session.mutate command)
++        assert "Session title set: Something" in await _say(h, sid, "/title Something")
+ 
+ 
+ @aio
