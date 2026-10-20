@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 79,
-  "remaining_pct": 21,
-  "resets_at": "2026-10-20T23:20:00+00:00",
-  "last_check": "2026-10-20T23:02:00+00:00",
-  "current_step": "P19 complete eab425c; nothing in flight; 75% guard \u2014 next builders (P18-23..30) after the 23:20 reset",
-  "last_commit": "eab425c"
+  "usage_pct": 0,
+  "remaining_pct": 100,
+  "resets_at": "2026-10-21T04:20:00+00:00",
+  "last_check": "2026-10-20T23:24:00+00:00",
+  "current_step": "New window; starting wave 32: P18-23..25 pages, 26/27 chat host + rail, 28/29 login + build/serve, test-failure follow-ups",
+  "last_commit": "1aeda3e"
 }
