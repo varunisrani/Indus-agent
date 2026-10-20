@@ -42,6 +42,9 @@ LINE "# STAND-IN: removed at integration", and state the interface you assumed):
   library — copyleft is not allowed; loopback-only local API with a per-install shared secret; auth state 0600 under the
   profile home) + P16-03 WhatsApp bridge adapter (Python side, uses _identity's JID/LID helpers and mask_number).
   Run the repo's pnpm/vitest/tsc checks for the TS side.
+- E14 = P16-21 Yuanbao adapter + P16-22 Yuanbao platform tools (model tools: untrusted output, size caps) + P16-30 Raft
+  adapter (wake bridge). Main now also has P16-31/32: add a target rule for each new platform in
+  gateway/adapters/targets.py (your platforms only) and a setup entry if the wizard is registry-driven.
 No hand-written cryptography anywhere in src/ (use `cryptography`/allowed libraries; HMAC via stdlib `hmac`).
 Never pkill by a pattern that could hit other worktrees' processes.
 

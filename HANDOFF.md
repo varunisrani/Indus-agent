@@ -78,7 +78,7 @@ In flight:
 - P17-15..22 (K6 ensure/channel/remote host, K7 CLI attach + store ownership, K8 TUI attach + TS client, K9 messaging on
   the shared host) all built; one integrator in scratchpad verify14 merges them with end-to-end attach tests (brief
   `.agents/wip/w27/k-integrator-brief.md`, D-16.480..499). Patches + README in `.agents/wip/w27/`.
-- Builder E12 (P16-07 Matrix E2EE + 19 Weixin) in scratchpad wt-w27e12; E13 (P16-02/03 WhatsApp bridge) DONE,
+- Builders E12 (P16-07 Matrix E2EE + 19 Weixin, wt-w27e12) and E14 (P16-21/22 Yuanbao + 30 Raft, wt-w27e14); E13 (P16-02/03 WhatsApp bridge) DONE,
   parked pending the Baileys licence decision. If paused, patches go in `.agents/wip/w27/`.
 - Later: P17-23..27 (idle exit, profile binding, protocol additions + codegen, dual-host matrix, demo); P16-21/22
   (Yuanbao), 25 (Photon), 30 (Raft), 33–36.
