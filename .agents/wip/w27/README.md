@@ -22,3 +22,22 @@
 - NOT done (needs a landed-contract change, lead to decide): AdmissionService.discard_unknown(id, generation, *,
   terminal_write=None) so resolve_unknown can close the lost turn in its transcript.
 - Follow-ups: P17-23 idle exit ignores messaging viewers; P17-18/25 `deliver` field; abandon stop task at loop end.
+
+## w27-k6.patch: P17-15 ensure + P17-16 attach channel + P17-17 remote session host — done (base ac389c3)
+- Builder checks: remote/ensure/contract/protocol/tui_bridge/gateway CLI/ws 1282 passed / 47 skipped (remote suite 3x);
+  ruff, pyright, lint-imports, tooling.checks (incl. protocol_stale) ok. No stand-ins, no new deps.
+- New: service/gateway_ensure.py (NOT gateway/daemon/ensure.py — layer contract: CLI and service both need it),
+  cli/commands/gateway_ensure.py, service/remote/{channel,ws_client,host,journal}.py; tests + test doubles (wire.py);
+  notes ensure.md, remote-channel.md, remote-host.md ("Interface for other slices").
+- Shared: cli/commands/gateway.py lazy `ensure`; non_tty_table `gateway ensure` long_running; protocol PromptSubmitParams
+  .request_id (regenerated TS); gateway/ws/methods.py request_id → admission request id under principal attach:<surface>;
+  traps R05.9/R05.21/R06.18/R08.4/R09.11; ACC-K51-4.
+- Wiring for K7: home_dialer(home, env, budget=RecoverBudget()) + Channel(dial, surface="cli") +
+  RemoteSessionService(channel, Journal(home)).start(); RemoteHost(build) for the REPL; OutcomeUnknown → "do not resend";
+  RemoteHost.wait returns RemoteTurn. K8: ensure(...) + grant_for(home); Ensured.terminal. Works end to end once K9's
+  mounted WS endpoint lands.
+- Decisions: INDUS_GATEWAY_AUTOSTART=1 on ensure-started daemons (P17-23 seam); deliberate stop = planned_stop:<reason>
+  != restart; OutcomeUnknown → runtime.outcome_unknown until P17-25; principal attach:<surface>; admission↔turn matching by
+  generation / first later turn until P17-25 admission.state.
+- Follow-ups: gateway_control.query peer-uid check; compaction child ids only after resume/subscribe; redirect /
+  session.mutate / admission.receipt not served over WS; describe vs identify version source.
