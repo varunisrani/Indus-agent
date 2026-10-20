@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 9,
-  "remaining_pct": 91,
+  "usage_pct": 26,
+  "remaining_pct": 74,
   "resets_at": "2026-10-20T23:20:00+00:00",
-  "last_check": "2026-10-20T18:36:00+00:00",
+  "last_check": "2026-10-20T19:09:00+00:00",
   "current_step": "P18-01..10/17..22 landed 077ef96; P16 + P19 integrators and builder A2 (P19-08..13) running; w30 m1/r1/r2/r3 parked",
   "last_commit": "077ef96"
 }
