@@ -39,7 +39,7 @@
 - Follow-ups: per-actor authorisation + slow-viewer overflow (P17-13/14); alias resolution, refused-flag hints, close reasons
   (P17-18); policy_conflict protocol mapping (P17-25); unviewed ACP sessions unloaded not ended at shutdown.
 
-## w25-e6.patch: P16-11 Microsoft Teams + P16-12 Graph change-notification receiver — done
+## (LANDED) w25-e6.patch: P16-11 Microsoft Teams + P16-12 Graph change-notification receiver — done
 - Builder checks: teams+msgraph 106 passed; contract+config 388 passed / 41 skipped; (pre-restart) unit/gateway+contract+
   config 1747 passed; ruff, pyright, lint-imports, tooling.checks ok. No new packages.
 - New shared helper gateway/adapters/_entra.py (client-credentials tokens, cached, single-flight, secrets out of reprs).
@@ -66,7 +66,7 @@
 - Follow-ups: P16-32 teams target parser; allowed_tenants option; proactive DM to new users; non-image files (file
   consent); E7 may reuse botauth/_entra; Teams meetings (K12, D-16.87); ACC-K12 rows missing.
 
-## w25-e7.patch: P16-13 Google Chat + P16-20 QQ Bot — done
+## (LANDED) w25-e7.patch: P16-13 Google Chat + P16-20 QQ Bot — done
 - Builder checks: adapters+contract+schema+config 788 passed / 43 skipped; ruff, pyright, lint-imports, tooling.checks ok.
   RS256 via `cryptography` (lazy import); no hand-rolled crypto. Fixed while building: a 401 send read as "chat not found";
   media host check by suffix → exact Google host list.
@@ -89,7 +89,7 @@
 - Follow-ups: base drain-probe/ingress-gate seam; Google Chat native uploads (per-user OAuth); QQ webhook mode;
   commandId-only slash commands.
 
-## w25-e8.patch: P16-16 DingTalk + P16-17 WeCom smart robot + P16-18 WeCom callback — done
+## (LANDED) w25-e8.patch: P16-16 DingTalk + P16-17 WeCom smart robot + P16-18 WeCom callback — done
 - Builder checks: dingtalk/wecom/contract/schema 310 passed / 41 skipped; config/registry/adapters 560 passed; ruff,
   pyright, lint-imports, tooling.checks ok. AES via `cryptography` Cipher (lead-checked); XML via stdlib expat with DTD,
   entity declarations and external refs refused (lead-checked). Crypto vectors from openssl/coreutils (script + json,
