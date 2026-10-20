@@ -188,6 +188,12 @@ TOOLSETS: dict[str, Toolset] = {
     # Feishu sessions only, even in a session that selects every toolset (R02.25).
     "feishu": Toolset("Feishu / Lark documents and comments", platforms=frozenset({"feishu"})),
     "indus-feishu": Toolset("Feishu / Lark chats", includes=(CORE, "feishu")),
+    # P16-22: the Yuanbao group, DM and sticker tools (registered by the gateway daemon) belong to
+    # Yuanbao sessions only, even in a session that selects every toolset (R02.25).
+    "yuanbao": Toolset(
+        "Yuanbao groups, direct messages and stickers", platforms=frozenset({"yuanbao"})
+    ),
+    "indus-yuanbao": Toolset("Yuanbao chats", includes=(CORE, "yuanbao")),
     "indus-gateway": Toolset(
         "Messaging gateway: the union of the platform bundles it serves",
         includes=(
@@ -196,6 +202,7 @@ TOOLSETS: dict[str, Toolset] = {
             "indus-discord",
             "indus-slack",
             "indus-feishu",
+            "indus-yuanbao",
             "indus-webhook",
         ),
     ),

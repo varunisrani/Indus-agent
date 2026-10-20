@@ -184,6 +184,12 @@ STEPS: Mapping[str, PlatformSteps] = {
             _setting("smtp_host", "SMTP server (e.g. smtp.example.com)"),
         ),
     ),
+    "whatsapp": PlatformSteps(
+        elsewhere="WhatsApp runs through the local bridge (Node.js 24) with a WhatsApp Web "
+        "provider you supply: set platforms.whatsapp.provider to a module that exports "
+        "createWaSocket and platforms.whatsapp.enabled to true, then start the gateway. Pairing a "
+        "phone from this wizard is not built yet.",
+    ),
     "whatsapp_cloud": PlatformSteps(
         (
             "In Meta's developer console create a WhatsApp Business app; copy a permanent access "
@@ -288,6 +294,13 @@ STEPS: Mapping[str, PlatformSteps] = {
             _secret("WECOM_CALLBACK_ENCODING_AES_KEY", "EncodingAESKey (43 characters)"),
         ),
     ),
+    "weixin": PlatformSteps(
+        (
+            "Log the bot's Weixin account in to the iLink bot API and copy its bot token and "
+            "account id (logging in by QR code from this wizard is not built yet).",
+        ),
+        (_secret("WEIXIN_TOKEN", "Bot token"), _secret("WEIXIN_ACCOUNT_ID", "Bot account id")),
+    ),
     "feishu": PlatformSteps(
         ("Create a custom app with the bot feature in the Feishu / Lark developer console.",),
         (_secret("FEISHU_APP_ID", "App id"), _secret("FEISHU_APP_SECRET", "App secret")),
@@ -309,6 +322,23 @@ STEPS: Mapping[str, PlatformSteps] = {
             _setting("relay_url", "Relay URL (wss://…)"),
             _secret("BUZZ_PRIVATE_KEY", "Private key"),
         ),
+    ),
+    "yuanbao": PlatformSteps(
+        (
+            "In the Yuanbao app create a bot (PAI → My Bot) and copy its App ID and App Secret; "
+            "the gateway signs in over Yuanbao's bot socket.",
+        ),
+        (_secret("YUANBAO_APP_ID", "App ID"), _secret("YUANBAO_APP_SECRET", "App Secret")),
+    ),
+    "raft": PlatformSteps(
+        (
+            "Create the external agent in Raft and log the Raft CLI in as it (raft agent login). "
+            "The gateway listens on 127.0.0.1 and writes the wake URL and token to "
+            "platforms/raft/bridge.json in this profile's home; point `raft agent bridge` there.",
+        ),
+        (_public("RAFT_PROFILE", "Raft agent profile slug"),),
+        access=False,
+        home=False,
     ),
     "msgraph": PlatformSteps(
         (

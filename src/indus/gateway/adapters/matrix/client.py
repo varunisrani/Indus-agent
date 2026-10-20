@@ -52,6 +52,7 @@ ROUTES: Mapping[str, str] = {
     "resolve_alias": "GET /_matrix/client/v3/directory/room/{roomAlias}",
     "join": "POST /_matrix/client/v3/join/{roomIdOrAlias}",
     "room_state": "GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}",
+    "joined_members": "GET /_matrix/client/v3/rooms/{roomId}/joined_members",
     "upload": "POST /_matrix/media/v3/upload",
     "download": "GET /_matrix/client/v1/media/download/{serverName}/{mediaId}",
     "download_legacy": "GET /_matrix/media/v3/download/{serverName}/{mediaId}",
@@ -232,6 +233,22 @@ class MatrixClient:
             raise MatrixError("unexpected answer from the homeserver", status=response.status_code)
         return dict(data)  # pyright: ignore[reportUnknownArgumentType]
 
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Mapping[str, Any] | None = None,
+        params: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Any JSON call on this homeserver session (the end-to-end encryption layer, P16-07, sends
+        its key and to-device requests through here, so they share this client's token handling).
+        ``path`` is the full API path; it must start with ``/_matrix/``."""
+        if not path.startswith("/_matrix/") or ".." in path:
+            raise MatrixError("not a Matrix API path", detail=path[:80])
+        return await self._call(method.upper(), path, body=body, params=params, timeout=timeout)
+
     # -- account -----------------------------------------------------------------------------------
 
     async def whoami(self) -> WhoAmI:
@@ -316,6 +333,14 @@ class MatrixClient:
         return await self._call(
             "GET", f"{_C}/rooms/{_q(room_id)}/state/{_q(event_type)}/{_q(state_key)}"
         )
+
+    async def joined_members(self, room_id: str) -> list[str]:
+        """The user ids joined to ``room_id``."""
+        data = await self._call("GET", f"{_C}/rooms/{_q(room_id)}/joined_members")
+        joined = data.get("joined")
+        if not isinstance(joined, Mapping):
+            return []
+        return [str(user) for user in joined]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
 
     # -- media -------------------------------------------------------------------------------------
 

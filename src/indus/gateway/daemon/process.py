@@ -1151,15 +1151,18 @@ async def build_surface_service(daemon: GatewayDaemon, spec: SurfaceSpec) -> Ses
 
 def gateway_tool_registry(scope: Scope) -> ToolRegistry:
     """The tool registry of the daemon's sessions: the built-in tools plus the gateway-only ones,
-    today the Feishu document and comment tools (P16-15), which their toolset gates to Feishu
-    sessions and their probe to profiles with the Feishu app's credentials."""
+    today the Feishu document and comment tools (P16-15) and the Yuanbao group, DM and sticker
+    tools (P16-22), which their toolsets gate to their own platform's sessions and their probes to
+    profiles with that platform's credentials."""
     from indus.gateway.adapters.feishu import tools as feishu_tools
+    from indus.gateway.adapters.yuanbao import tools as yuanbao_tools
     from indus.tools.builtin import load_builtins
     from indus.tools.registry import ToolRegistry
 
     tools = ToolRegistry(clock=scope.clock)
     load_builtins(tools)
     feishu_tools.register_tools(tools)
+    yuanbao_tools.register_tools(tools)
     return tools
 
 

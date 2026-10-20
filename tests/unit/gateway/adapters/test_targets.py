@@ -49,6 +49,11 @@ VALID: list[tuple[str, str, str | None]] = [
     ("mattermost:town-square", "#town-square", None),  # a name goes to the directory
     ("mattermost:" + "a1" * 13, "a1" * 13, None),  # 26 lower-case characters: read as an id
     ("email:Ops@Example.com", "ops@example.com", None),
+    ("whatsapp:+1-555-123-4567", "15551234567", None),
+    ("whatsapp:15551234567@S.WhatsApp.net", "15551234567@s.whatsapp.net", None),
+    ("whatsapp:88800000999@lid", "88800000999@lid", None),
+    ("whatsapp:120363000000000300@g.us", "120363000000000300@g.us", None),
+    ("whatsapp:15551234567-1600000000@g.us", "15551234567-1600000000@g.us", None),
     ("whatsapp_cloud:+1-555-123-4567", "15551234567", None),
     ("whatsapp_cloud:15551234567", "15551234567", None),
     ("sms:+15551234567", "+15551234567", None),
@@ -83,6 +88,9 @@ VALID: list[tuple[str, str, str | None]] = [
     ("wecom:zhangsan", "zhangsan", None),
     ("wecom:wrkSFfCgAAxxxx", "wrkSFfCgAAxxxx", None),
     ("wecom_callback:zhangsan", "zhangsan", None),
+    ("weixin:wxid_ana01", "wxid_ana01", None),
+    ("weixin:o9cq800abc@im.wechat", "o9cq800abc@im.wechat", None),
+    ("weixin:5520001@chatroom", "5520001@chatroom", None),
     ("feishu:oc_abc123", "oc_abc123", None),
     ("feishu:oc_abc123:omt_1a2b", "oc_abc123", "omt_1a2b"),
     ("feishu:ou_abc123", "ou_abc123", None),
@@ -124,6 +132,13 @@ INVALID: list[tuple[str, str]] = [
     ("email:not-an-address", "email"),
     ("email:ops@example.com:1", "email"),
     ("email:Ops <ops@example.com>", "spaces"),
+    ("whatsapp:12", "whatsapp"),
+    ("whatsapp:status@broadcast", "whatsapp"),
+    ("whatsapp:120363000000000300@newsletter", "whatsapp"),
+    ("whatsapp:15551234567:4@s.whatsapp.net", "whatsapp"),
+    ("whatsapp:alice", "group JID"),
+    ("weixin:wxid_ana01:1", "weixin"),
+    ("weixin:a/b", "weixin"),
     ("whatsapp_cloud:12", "whatsapp_cloud"),
     ("whatsapp_cloud:alice", "whatsapp_cloud"),
     ("sms:5551234567", "E.164"),
@@ -189,7 +204,7 @@ def test_invalid_rows(installed: None, token: str, word: str) -> None:
 
 
 def test_every_chat_platform_has_a_rule() -> None:
-    not_targets = {"api_server", "webhook", "msgraph"}
+    not_targets = {"api_server", "webhook", "msgraph", "raft"}
     assert set(targets.RULES) == set(BUILTIN_NAMES) - not_targets
     for name, rule in targets.RULES.items():
         assert rule.platform == name and rule.forms and rule.examples

@@ -1,8 +1,9 @@
-"""``indus send`` to the P16 E6–E10 chat platforms through the real ``send_command.build_adapter``:
-the built-in registry row (its lazy factory and the package's own ``create_adapter``), the
-credentials read by the gateway's enablement pass, a send-only adapter that does no inbound work.
-Only the network is swapped: the package's ``create_adapter`` is wrapped to pass the wire fake's
-transport (and socket opener)."""
+"""``indus send`` to the P16 E6–E10 and E12–E14 chat platforms through the real
+``send_command.build_adapter``: the built-in registry row (its lazy factory and the package's own
+``create_adapter``), the credentials read by the gateway's enablement pass (WhatsApp: enabled in
+config), a send-only adapter that does no inbound work. Only the network is swapped: the package's
+``create_adapter`` is wrapped to pass the wire fake's transport (and socket opener; WhatsApp: the
+bridge launcher)."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from indus.foundation.config import loader
 from indus.foundation.scope import Scope
 from indus.gateway.adapters.base import Adapter
 from indus.gateway.config import PlatformSettings, load_gateway_settings
@@ -271,3 +273,96 @@ def test_indus_send_to_buzz(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> No
     assert _send(scope, adapter, GROUP, "deploy done").ok
     assert platform.texts(GROUP) == ["deploy done"]
     assert adapter.channels == {} and not [r for r in relay.requests if r.get("kinds") == [9]]
+
+
+def test_indus_send_to_whatsapp(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.gateway.adapters import whatsapp as package
+    from indus.gateway.adapters.whatsapp.adapter import WhatsAppAdapter
+    from tests.fakes.platform.whatsapp_wire import FakeBridge, FakeLauncher
+
+    # No credential: the bridge platform turns on in config (and is paired already).
+    (scope.home / "config.yaml").write_text(
+        "platforms:\n  whatsapp:\n    enabled: true\n", encoding="utf-8"
+    )
+    loader.reset()
+    settings = load_gateway_settings(scope).platforms["whatsapp"]
+    assert settings.enabled and settings.reason == "enabled in config"
+    clock: Any = scope.clock
+    bridge = FakeBridge()
+    bridge.platform.clock = clock
+    launcher = FakeLauncher(bridge)
+    built = _wrap(monkeypatch, package, launcher=launcher, transport=bridge.transport)
+    adapter = send_command.build_adapter(scope, "whatsapp", settings, _registry("whatsapp"))
+    assert isinstance(adapter, WhatsAppAdapter) and adapter is built[0] and adapter.send_only
+    chat = "15550000200@s.whatsapp.net"
+    assert _send(scope, adapter, chat, "deploy done").ok
+    sent = bridge.paths("/send")
+    assert [(c.body["chat"], c.body["text"]) for c in sent] == [(chat, "deploy done")]
+    # send-only: the running bridge is attached, never started, polled or stopped
+    assert (launcher.attaches, launcher.ensures, launcher.stops) == (1, 0, 0)
+    assert bridge.paths("/events") == []
+
+
+def test_indus_send_to_weixin(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+
+    from indus.gateway.adapters import weixin as package
+    from indus.gateway.adapters.weixin.adapter import WeixinAdapter, state_dir_for
+    from tests.fakes.platform.weixin_wire import BOT_ACCOUNT, WeixinWire
+
+    clock: Any = scope.clock
+    wire = WeixinWire(clock=clock)
+    secrets: Any = scope.secrets
+    secrets.set("WEIXIN_TOKEN", wire.token)
+    secrets.set("WEIXIN_ACCOUNT_ID", BOT_ACCOUNT)
+    chat = "wxid_ana01"
+    # The context token the gateway stored when Ana last wrote (no token: the send is refused).
+    state = state_dir_for(scope.home, BOT_ACCOUNT)
+    state.mkdir(parents=True)
+    (state / "context_tokens.json").write_text(json.dumps({chat: wire.token_for(chat)}))
+    built = _wrap(monkeypatch, package, transport=wire.transport())
+    # Text needs only httpx; the row's probe (cryptography, the media AES) is base-installed.
+    adapter = send_command.build_adapter(
+        scope, "weixin", _settings(scope, "weixin"), _registry("weixin", socket_extra=True)
+    )
+    assert isinstance(adapter, WeixinAdapter) and adapter is built[0] and adapter.send_only
+    assert _send(scope, adapter, chat, "deploy done").ok
+    assert wire.platform.texts(chat) == ["deploy done"]
+    assert not [p for _, p, _ in wire.requests if p.endswith("/getupdates")]
+
+
+def test_indus_send_to_yuanbao(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.gateway.adapters import yuanbao as package
+    from indus.gateway.adapters.yuanbao.adapter import YuanbaoAdapter
+    from tests.fakes.platform.yuanbao_wire import YuanbaoWire
+
+    clock: Any = scope.clock
+    platform = FakeChatPlatform("yuanbao", clock=clock)
+    wire = YuanbaoWire(platform)
+    secrets: Any = scope.secrets
+    secrets.set("YUANBAO_APP_ID", wire.app_id)
+    secrets.set("YUANBAO_APP_SECRET", wire.secret)
+    built = _wrap(monkeypatch, package, transport=wire.transport(), opener=wire.open)
+    # The bot socket is Yuanbao's only send path (its own send-only socket), so a real `indus
+    # send` needs the ``yuanbao`` extra; the fake socket stands in and only the probe is forced.
+    registry = _registry("yuanbao", socket_extra=True)
+    adapter = send_command.build_adapter(scope, "yuanbao", _settings(scope, "yuanbao"), registry)
+    assert isinstance(adapter, YuanbaoAdapter) and adapter is built[0] and adapter.send_only
+    assert _send(scope, adapter, "ana-01", "deploy done").ok
+    assert platform.texts("ana-01") == ["deploy done"]
+
+
+def test_indus_send_refuses_raft(scope: Scope) -> None:
+    secrets: Any = scope.secrets
+    secrets.set("RAFT_PROFILE", "agent-one")
+    settings = load_gateway_settings(scope)
+    assert settings.platforms["raft"].enabled
+    target = send_command._one_target("raft:anything")  # pyright: ignore[reportPrivateUsage]
+    assert not isinstance(target, str)
+    refused = send_command._platforms(target, settings)  # pyright: ignore[reportPrivateUsage]
+    assert refused == "raft cannot receive messages"
+    # nor is it offered when no platform is named
+    every = send_command._one_target("all")  # pyright: ignore[reportPrivateUsage]
+    if not isinstance(every, str):
+        names = send_command._platforms(every, settings)  # pyright: ignore[reportPrivateUsage]
+        assert isinstance(names, str) or "raft" not in names

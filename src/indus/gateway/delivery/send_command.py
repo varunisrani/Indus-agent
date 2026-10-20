@@ -44,7 +44,8 @@ if TYPE_CHECKING:
 __all__ = ["ADAPTER_BUILDER", "build_adapter", "send_command"]
 
 _SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 100}
-_NOT_TARGETS = frozenset({"api_server", "webhook", "msgraph"})
+# Raft replies go nowhere (the agent talks through the Raft CLI), so it is never a target.
+_NOT_TARGETS = frozenset({"api_server", "webhook", "msgraph", "raft"})
 _LABEL = "a message sent with `indus send`"
 
 OK, FAILED, USAGE = 0, 1, 2

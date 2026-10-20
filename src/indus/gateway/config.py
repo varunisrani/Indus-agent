@@ -67,9 +67,11 @@ BUILTIN_CREDENTIALS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "WECOM_CALLBACK_TOKEN",
             "WECOM_CALLBACK_ENCODING_AES_KEY",
         ),
+        "weixin": ("WEIXIN_TOKEN", "WEIXIN_ACCOUNT_ID"),
         "feishu": ("FEISHU_APP_ID", "FEISHU_APP_SECRET"),
         "bluebubbles": ("BLUEBUBBLES_PASSWORD",),
         "buzz": ("BUZZ_PRIVATE_KEY",),
+        "yuanbao": ("YUANBAO_APP_ID", "YUANBAO_APP_SECRET"),
     }
 )
 
@@ -82,6 +84,9 @@ BUILTIN_PUBLIC_ENV: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "irc": ("IRC_SERVER", "IRC_NICKNAME"),
         # The local simplex-chat daemon's address: the daemon has no credential of its own.
         "simplex": ("SIMPLEX_WS_URL",),
+        # The Raft CLI profile the external agent is logged in as (not a secret; the wake token
+        # lives in <home>/platforms/raft/bridge.json, 0600).
+        "raft": ("RAFT_PROFILE",),
     }
 )
 

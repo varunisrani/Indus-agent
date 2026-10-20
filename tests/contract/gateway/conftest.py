@@ -156,4 +156,7 @@ from tests.contract.gateway import teams_case as _teams_case  # noqa: E402, F401
 from tests.contract.gateway import telegram_case as _telegram_case  # noqa: E402, F401
 from tests.contract.gateway import wecom_callback_case as _wecom_callback_case  # noqa: E402, F401
 from tests.contract.gateway import wecom_case as _wecom_case  # noqa: E402, F401
+from tests.contract.gateway import weixin_case as _weixin_case  # noqa: E402, F401
+from tests.contract.gateway import whatsapp_case as _whatsapp_case  # noqa: E402, F401
 from tests.contract.gateway import whatsapp_cloud_case as _whatsapp_cloud_case  # noqa: E402, F401
+from tests.contract.gateway import yuanbao_case as _yuanbao_case  # noqa: E402, F401

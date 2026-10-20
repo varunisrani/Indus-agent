@@ -334,6 +334,7 @@ def test_decided_defaults() -> None:
         "matrix": platform,  # P16-06
         "mattermost": platform,  # P16-08
         "email": platform,  # P16-09
+        "whatsapp": platform,  # P16-03
         "whatsapp_cloud": platform,  # P16-04
         "sms": platform,  # P16-10
         "teams": platform,  # P16-11
@@ -347,6 +348,9 @@ def test_decided_defaults() -> None:
         "bluebubbles": platform,  # P16-24
         "simplex": platform,  # P16-28
         "buzz": platform,  # P16-29
+        "weixin": platform,  # P16-19
+        "yuanbao": platform,  # P16-21
+        "raft": platform,  # P16-30
     }
     assert d["gateway"] == {
         "message_timestamps": {"enabled": False},

@@ -1,0 +1,11 @@
+{
+  "key_hex": "5e1f0a9b37c4d2e8806f13a5c9b0e47d",
+  "key_b64_raw": "Xh8KmzfE0uiAbxOlybDkfQ==",
+  "key_b64_hex": "NWUxZjBhOWIzN2M0ZDJlODgwNmYxM2E1YzliMGU0N2Q=",
+  "cases": [
+    {"name": "empty", "plain_hex": "", "cipher_hex": "fb192ee73dfac849460bfd61e111b536"},
+    {"name": "short", "plain_hex": "68656c6c6f2077656978696e", "cipher_hex": "9a330d22ac3d7a32a9788f94bb844d4e"},
+    {"name": "one block", "plain_hex": "65786163746c79313662797465732121", "cipher_hex": "c783cb2c0d8ed2c16990a998f2e44065fb192ee73dfac849460bfd61e111b536"},
+    {"name": "three blocks", "plain_hex": "612070686f746f206f6620746865207768697465626f6172642c20706167652032206f662033", "cipher_hex": "c7b7fc264097a81643f41b9b448cd37e3434a82b81f182c0413764ead71b61240093be046b1e4a60c2ec19eb9aeeb90a"}
+  ]
+}

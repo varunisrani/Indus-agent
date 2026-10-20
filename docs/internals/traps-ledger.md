@@ -246,6 +246,8 @@ Checked by `python -m tooling.checks traps`.
   - Review: other child processes (P00-guards)
   - `tests/unit/cron/test_script.py::test_env_lacks_provider_keys_and_keeps_passthrough`
   - `tests/unit/backends/test_vendor_env.py::test_every_vendor_token_is_out_of_every_child_env`
+  - `tests/unit/gateway/adapters/whatsapp/test_adapter.py::test_create_adapter_builds_an_owner_with_a_minimal_child_env`
+  - `tests/unit/gateway/adapters/whatsapp/test_sidecar.py::test_a_fresh_bridge_gets_a_private_token_through_its_env_only`
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
   - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
@@ -262,9 +264,12 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/feishu/test_tools.py::test_the_tools_are_absent_from_every_other_bundle`
   - `tests/unit/gateway/adapters/feishu/test_tools.py::test_the_feishu_rows_are_in_the_toolset_table`
   - `tests/unit/gateway/adapters/feishu/test_tools.py::test_only_the_gateway_daemon_registers_the_tools`
-  - Review: the Yuanbao tools (P16-22)
+  - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_the_tools_are_absent_from_every_other_bundle`
 - **R02.26** Send-message is not a tool
   - `tests/unit/gateway/delivery/test_router.py::test_no_model_tool_wraps_the_router`
+  - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_a_dm_to_a_user_outside_the_group_is_refused`
+  - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_a_dm_asks_for_approval_and_a_denial_sends_nothing`
+  - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_a_recipient_the_gateway_would_not_accept_gets_nothing`
 - **R02.27** Untrusted-input sessions need a tool floor, not just approvals
   - `tests/unit/safety/approvals/test_policy.py::test_unattended_contexts_deny_instantly`
   - `tests/contract/gateway/test_webhook.py::test_a_webhook_session_has_exactly_the_untrusted_floor`
@@ -707,6 +712,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_an_attachment_rate_limit_is_retried_exactly_once_after_its_refill`
   - `tests/unit/gateway/adapters/line/test_adapter.py::test_a_long_server_wait_is_handed_back_and_the_monthly_quota_is_not_retried`
   - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_a_long_qq_rate_limit_is_handed_over_without_sleeping`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_a_long_stated_wait_is_handed_back_not_slept`
 - **R06.4** Retry ambiguity: timeouts are not retryable
   - `tests/unit/gateway/core/test_send.py::test_read_timeout_is_attempted_exactly_once`
   - `tests/unit/gateway/core/test_send.py::test_partial_split_resumes_only_the_remainder`
@@ -717,6 +723,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/test_http.py::test_httpx_failures_are_classified_by_class`
   - `tests/unit/gateway/adapters/test_http.py::test_a_read_timeout_is_attempted_once_and_a_connect_failure_retried`
   - `tests/unit/gateway/adapters/sms/test_adapter.py::test_a_failure_after_the_first_piece_resumes_with_the_rest_only`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_a_send_without_an_answer_is_maybe_delivered_and_never_retried`
 - **R06.5** Ledger states must distinguish "never started" from "maybe sent"
   - `tests/integration/gateway/test_ledger_recovery.py::test_kill_point_then_boot`
   - `tests/unit/gateway/delivery/test_ledger.py::test_boot_sweep_rules`
@@ -831,6 +838,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/outbound/test_media_policy.py::test_strict_mode_refuses_recent_but_accepts_allowed_dir`
   - `tests/unit/gateway/outbound/test_media_policy.py::test_recent_file_trust_window`
   - `tests/unit/gateway/outbound/test_media_policy.py::test_policy_reads_the_profiles_gateway_section`
+  - Review: the WhatsApp bridge also refuses relative paths, symlinks, non-files, files over 100 MiB and its own auth folder (apps/whatsapp-bridge/src/session.test.ts, P16-02)
 - **R06.23** Empty or failed transcription must say so
   - `tests/unit/tools/builtin/media/test_stt.py::test_empty_is_inaudible`
   - `tests/unit/tools/builtin/media/test_stt.py::test_provider_error_mapped_to_plain_message`
@@ -841,6 +849,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_authz.py::test_broadcast_dm_never_gets_a_code`
   - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_unknown_sender_on_ntfy_never_gets_a_pairing_code`
   - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_events_are_internal_never_commands_and_sanitised`
+  - `tests/unit/gateway/adapters/raft/test_adapter.py::test_raft_never_gets_pairing_codes`
 - **R06.25** Gateway config loader diverges from CLI defaults
   - `tests/unit/gateway/test_config.py::test_defaults_come_from_the_shared_table`
   - `tests/unit/gateway/test_config.py::test_settings_round_trip_through_the_writer`

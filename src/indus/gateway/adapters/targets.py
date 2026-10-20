@@ -163,6 +163,7 @@ _FEISHU_COMMENT_THREAD = re.compile(r"whole|[A-Za-z0-9_-]{1,64}")
 _BLUEBUBBLES_GUID = re.compile(r"[A-Za-z]{2,16};[-+];[^\s,:;]{1,200}")
 _BLUEBUBBLES_PHONE = re.compile(r"\+?[0-9][0-9().-]{5,}")
 _DIGITS = re.compile(r"[0-9]{1,20}")
+_WEIXIN_ID = re.compile(r"[A-Za-z0-9_.@-]{1,128}")
 
 
 def _slack_chat(text: str) -> str | None:
@@ -339,6 +340,49 @@ def _simplex_split(address: str) -> Address:
     raise _refuse("simplex", _SIMPLEX_FORMS, text)
 
 
+_WHATSAPP_FORMS = (
+    "a phone number with its country code, a user JID (<digits>@s.whatsapp.net or <digits>@lid) "
+    "or a group JID (…@g.us)"
+)
+_WHATSAPP_USER_JID = re.compile(r"[1-9][0-9]{4,19}@(?:s\.whatsapp\.net|lid|c\.us)")
+_WHATSAPP_GROUP_JID = re.compile(r"[0-9]{5,24}(?:-[0-9]{5,20})?@g\.us")
+
+
+def _whatsapp_bridge_split(address: str) -> Address:
+    """The bridge sends to JIDs as the bridge reported them (no device suffix, no thread); a bare
+    number reads as digits, which the adapter turns into a phone JID. Broadcast lists, status and
+    newsletters are never targets."""
+    text = _clean(address)
+    named = _directory(text, None)
+    if named is not None:
+        return named
+    if "@" in text:
+        local, _, domain = text.partition("@")
+        jid = f"{local}@{domain.lower()}"
+        if _WHATSAPP_USER_JID.fullmatch(jid) or _WHATSAPP_GROUP_JID.fullmatch(jid):
+            return jid, None
+    else:
+        digits = _whatsapp_chat(text)
+        if digits is not None:
+            return digits, None
+    raise _refuse("whatsapp", _WHATSAPP_FORMS, text)
+
+
+_YUANBAO_FORMS = "group:<group code> or direct:<account>"
+_YUANBAO_ID: Final = re.compile(r"[A-Za-z0-9_.@=+-]{1,128}")
+
+
+def _yuanbao_split(address: str) -> Address:
+    text = _clean(address)
+    named = _directory(text, None)
+    if named is not None:
+        return named
+    head, sep, rest = text.partition(":")
+    if sep and head in ("group", "direct") and _YUANBAO_ID.fullmatch(rest):
+        return text, None
+    raise _refuse("yuanbao", _YUANBAO_FORMS, text)
+
+
 _FEISHU_FORMS = "oc_/ou_/on_ ids with an optional :<thread id>, or cmt_<type>_<token>:<comment id>"
 
 
@@ -441,6 +485,16 @@ def _build() -> dict[str, TargetRule]:
             ("email:ops@example.com",),
             chat=_email_chat,
         ),
+        TargetRule(
+            "whatsapp",
+            _whatsapp_bridge_split,
+            _WHATSAPP_FORMS,
+            (
+                "whatsapp:15551234567",
+                "whatsapp:15551234567@s.whatsapp.net",
+                "whatsapp:120363000000000300@g.us",
+            ),
+        ),
         _rule(
             "whatsapp_cloud",
             "the customer's phone number with its country code",
@@ -495,6 +549,12 @@ def _build() -> dict[str, TargetRule]:
         _rule(
             "wecom_callback", "a member's user id", ("wecom_callback:zhangsan",), chat=_wecom_chat
         ),
+        _rule(
+            "weixin",
+            "a user id (wxid_… or …@im.wechat) or a group id (…@chatroom)",
+            ("weixin:wxid_ana01", "weixin:5520001@chatroom"),
+            chat=_matching(_WEIXIN_ID),
+        ),
         TargetRule(
             "feishu", _feishu_split, _FEISHU_FORMS, ("feishu:oc_abc123", "feishu:oc_abc123:omt_1")
         ),
@@ -510,6 +570,12 @@ def _build() -> dict[str, TargetRule]:
             _buzz_split,
             _BUZZ_FORMS,
             ("buzz:123e4567-e89b-12d3-a456-426614174000",),
+        ),
+        TargetRule(
+            "yuanbao",
+            _yuanbao_split,
+            _YUANBAO_FORMS,
+            ("yuanbao:group:328306697", "yuanbao:direct:ana-01"),
         ),
     ]
     return {rule.platform: rule for rule in rules}

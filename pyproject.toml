@@ -78,6 +78,27 @@ simplex = ["httpx-ws==0.9.0"]
 # wraps libsecp256k1, MIT; no runtime dependencies) and the relay socket through httpx-ws (MIT).
 # Imported lazily by the adapter only; docs/notes/P16/buzz.md.
 buzz = ["coincurve==21.0.0", "httpx-ws==0.9.0"]
+# Matrix end-to-end encryption (P16-07), Linux only: mautrix's crypto layer (MPL-2.0, used
+# unmodified) over python-olm (Apache-2.0; bundles libolm, Apache-2.0; no cp313 wheel, so it builds
+# from the sdist with cmake and a C++ compiler), with pycryptodome (BSD-2-Clause / public domain),
+# unpaddedbase64 (Apache-2.0), base58 (MIT), aiosqlite (MIT) for the SQLite device store and
+# asyncpg (Apache-2.0; mautrix's store module imports it). Imported lazily by
+# matrix/crypto.py only; docs/notes/P16/matrix-e2ee.md.
+matrix-e2ee = [
+    "mautrix==0.21.1; sys_platform == 'linux'",
+    "python-olm==3.2.16; sys_platform == 'linux'",
+    "pycryptodome==3.23.0; sys_platform == 'linux'",
+    "unpaddedbase64==2.1.0; sys_platform == 'linux'",
+    "base58==2.1.1; sys_platform == 'linux'",
+    "aiosqlite==0.22.1; sys_platform == 'linux'",
+    "asyncpg==0.31.0; sys_platform == 'linux'",
+]
+# Weixin (P16-19): AES-128-ECB for media, the iLink protocol's own scheme, through cryptography
+# (Apache-2.0 OR BSD-3-Clause, already locked). The iLink client runs on httpx. Imported lazily.
+weixin = ["cryptography==50.0.2"]
+# Yuanbao bot socket (P16-21; httpx-ws MIT, needs wsproto MIT; both already locked). Sign tokens,
+# uploads and media run on httpx; HMAC through the stdlib. Imported lazily by the adapter only.
+yuanbao = ["httpx-ws==0.9.0"]
 
 [project.scripts]
 indus = "indus.cli.entry:main"

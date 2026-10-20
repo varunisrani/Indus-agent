@@ -39,8 +39,8 @@ __all__ = ["REFRESH_SECONDS", "ChannelDirectory", "entries_from_routes", "stop"]
 log = logging.getLogger(__name__)
 
 REFRESH_SECONDS: Final = 300.0
-# Platforms whose chats are not send targets (HTTP surfaces).
-_NOT_TARGETS: Final = frozenset({"api_server", "webhook", "msgraph", "local"})
+# Platforms whose chats are not send targets (HTTP surfaces; Raft, whose replies go nowhere).
+_NOT_TARGETS: Final = frozenset({"api_server", "webhook", "msgraph", "raft", "local"})
 
 
 def _norm(name: str) -> str:

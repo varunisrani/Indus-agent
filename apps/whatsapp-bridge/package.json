@@ -1,0 +1,15 @@
+{
+  "name": "@indus/whatsapp-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Loopback HTTP bridge between the Indus Agent gateway and a WhatsApp Web session",
+  "bin": {
+    "indus-whatsapp-bridge": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  }
+}

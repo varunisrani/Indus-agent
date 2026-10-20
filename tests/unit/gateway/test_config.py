@@ -190,15 +190,18 @@ def test_policy_env_names_use_our_prefix() -> None:
             "WECOM_CALLBACK_TOKEN",
             "WECOM_CALLBACK_ENCODING_AES_KEY",
         ),
+        "weixin": ("WEIXIN_TOKEN", "WEIXIN_ACCOUNT_ID"),
         "feishu": ("FEISHU_APP_ID", "FEISHU_APP_SECRET"),
         "bluebubbles": ("BLUEBUBBLES_PASSWORD",),
         "buzz": ("BUZZ_PRIVATE_KEY",),
+        "yuanbao": ("YUANBAO_APP_ID", "YUANBAO_APP_SECRET"),
     }
     # Servers, nicks and topics turn their platform on but are not secrets (never masked).
     assert dict(BUILTIN_PUBLIC_ENV) == {
         "ntfy": ("NTFY_TOPIC",),
         "irc": ("IRC_SERVER", "IRC_NICKNAME"),
         "simplex": ("SIMPLEX_WS_URL",),
+        "raft": ("RAFT_PROFILE",),
     }
     assert not set(BUILTIN_PUBLIC_ENV) & set(BUILTIN_CREDENTIALS)
     # URLs and hosts are read by the adapters, never masked or lock-keyed as credentials.

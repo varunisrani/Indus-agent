@@ -19,6 +19,11 @@ subset, checked by the adapter tests), answering in the spec's JSON shapes over 
   ``M_NOT_FOUND`` ("Unknown room" / "Event not found"), ``M_FORBIDDEN``, ``M_BAD_JSON``,
   ``M_TOO_LARGE``; connect and read timeouts raise httpx's own exceptions.
 - A request without the right bearer token gets 401 ``M_UNKNOWN_TOKEN``.
+- End-to-end encryption (P16-07): ``room_encryption`` marks rooms encrypted (their
+  ``m.room.encryption`` state is served and sent in syncs), ``members`` lists joined members, and
+  ``keys`` (`KeyServer`) is the keys API (``KEY_ROUTES``: device and one-time keys, claims,
+  to-device messages, cross-signing keys and signatures). Other users act through their own tokens
+  (``add_device``); to-device messages for the bot's device arrive in its next sync.
 """
 
 from __future__ import annotations
@@ -65,9 +70,21 @@ ROUTES: dict[str, str] = {
     "resolve_alias": "GET /_matrix/client/v3/directory/room/{roomAlias}",
     "join": "POST /_matrix/client/v3/join/{roomIdOrAlias}",
     "room_state": "GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}",
+    "joined_members": "GET /_matrix/client/v3/rooms/{roomId}/joined_members",
     "upload": "POST /_matrix/media/v3/upload",
     "download": "GET /_matrix/client/v1/media/download/{serverName}/{mediaId}",
     "download_legacy": "GET /_matrix/media/v3/download/{serverName}/{mediaId}",
+}
+
+
+# The keys API the encryption layer calls through ``MatrixClient.request`` (P16-07).
+KEY_ROUTES: dict[str, str] = {
+    "keys_upload": "POST /_matrix/client/v3/keys/upload",
+    "keys_query": "POST /_matrix/client/v3/keys/query",
+    "keys_claim": "POST /_matrix/client/v3/keys/claim",
+    "send_to_device": "PUT /_matrix/client/v3/sendToDevice/{eventType}/{txnId}",
+    "device_signing_upload": "POST /_matrix/client/v3/keys/device_signing/upload",
+    "signatures_upload": "POST /_matrix/client/v3/keys/signatures/upload",
 }
 
 
@@ -111,8 +128,111 @@ def _failure(exc: FakePlatformError, request: httpx.Request) -> httpx.Response:
 
 def _pattern(template: str) -> re.Pattern[str]:
     method, _, path = template.partition(" ")
-    body = re.sub(r"\\\{[A-Za-z]+\\\}", "([^/]+)", re.escape(path))
+    # A state key may be empty (``/state/m.room.encryption/``); every other part may not.
+    body = re.escape(path).replace(r"\{stateKey\}", "([^/]*)")
+    body = re.sub(r"\\\{[A-Za-z]+\\\}", "([^/]+)", body)
     return re.compile(f"^{method} {body}$")
+
+
+class KeyServer:
+    """The keys half of the homeserver: what each user's devices published, one-time key claims,
+    to-device queues and cross-signing keys with their signatures. Signatures are stored, never
+    checked (the clients check them)."""
+
+    def __init__(self) -> None:
+        self.device_keys: dict[str, dict[str, dict[str, Any]]] = {}
+        self.one_time: dict[tuple[str, str], dict[str, Any]] = {}
+        self.fallback: dict[tuple[str, str], dict[str, Any]] = {}
+        self.cross_signing: dict[str, dict[str, dict[str, Any]]] = {}
+        self.to_device: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self.uploads: list[tuple[str, str]] = []
+        self.changed: set[str] = set()
+
+    def counts(self, user: str, device: str) -> dict[str, int]:
+        keys = self.one_time.get((user, device), {})
+        return {"signed_curve25519": sum(1 for k in keys if k.startswith("signed_curve25519:"))}
+
+    def upload(self, user: str, device: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        self.uploads.append((user, device))
+        published = body.get("device_keys")
+        if isinstance(published, Mapping):
+            self.device_keys.setdefault(user, {})[device] = json.loads(json.dumps(published))
+            self.changed.add(user)
+        for key_id, key in dict(body.get("one_time_keys") or {}).items():
+            self.one_time.setdefault((user, device), {})[str(key_id)] = key
+        for key_id, key in dict(body.get("fallback_keys") or {}).items():
+            self.fallback.setdefault((user, device), {})[str(key_id)] = key
+        return {"one_time_key_counts": self.counts(user, device)}
+
+    def query(self, asker: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        answer: dict[str, Any] = {
+            "device_keys": {},
+            "master_keys": {},
+            "self_signing_keys": {},
+            "user_signing_keys": {},
+            "failures": {},
+        }
+        for user, wanted in dict(body.get("device_keys") or {}).items():
+            devices = self.device_keys.get(user, {})
+            names = list(wanted) if wanted else list(devices)
+            answer["device_keys"][user] = {d: devices[d] for d in names if d in devices}
+            keys = self.cross_signing.get(user, {})
+            for usage, field_name in (
+                ("master", "master_keys"),
+                ("self_signing", "self_signing_keys"),
+                ("user_signing", "user_signing_keys"),
+            ):
+                if usage in keys and (usage != "user_signing" or user == asker):
+                    answer[field_name][user] = keys[usage]
+        return answer
+
+    def claim(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        claimed: dict[str, dict[str, dict[str, Any]]] = {}
+        for user, devices in dict(body.get("one_time_keys") or {}).items():
+            for device, algorithm in dict(devices).items():
+                pool = self.one_time.get((user, device), {})
+                key_id = next((k for k in pool if k.startswith(f"{algorithm}:")), None)
+                if key_id is not None:
+                    claimed.setdefault(user, {})[device] = {key_id: pool.pop(key_id)}
+                    continue
+                spare = self.fallback.get((user, device), {})
+                key_id = next((k for k in spare if k.startswith(f"{algorithm}:")), None)
+                if key_id is not None:
+                    claimed.setdefault(user, {})[device] = {key_id: spare[key_id]}
+        return {"one_time_keys": claimed, "failures": {}}
+
+    def send_to_device(self, sender: str, event_type: str, messages: Mapping[str, Any]) -> None:
+        for user, devices in messages.items():
+            for device, content in dict(devices).items():
+                targets = list(self.device_keys.get(user, {})) if device == "*" else [device]
+                for target in targets:
+                    self.to_device.setdefault((user, target), []).append(
+                        {"type": event_type, "sender": sender, "content": content}
+                    )
+
+    def take(self, user: str, device: str) -> list[dict[str, Any]]:
+        return self.to_device.pop((user, device), [])
+
+    def set_cross_signing(self, user: str, body: Mapping[str, Any]) -> None:
+        for usage in ("master", "self_signing", "user_signing"):
+            key = body.get(f"{usage}_key")
+            if isinstance(key, Mapping):
+                self.cross_signing.setdefault(user, {})[usage] = json.loads(json.dumps(key))
+        self.changed.add(user)
+
+    def add_signatures(self, body: Mapping[str, Any]) -> None:
+        for user, signed in body.items():
+            for key_id, obj in dict(signed).items():
+                target = self.device_keys.get(user, {}).get(key_id)
+                if target is None:
+                    for key in self.cross_signing.get(user, {}).values():
+                        if f"ed25519:{key_id}" in key.get("keys", {}):
+                            target = key
+                if target is None:
+                    continue
+                for signer, sigs in dict(obj.get("signatures") or {}).items():
+                    target.setdefault("signatures", {}).setdefault(signer, {}).update(sigs)
+                self.changed.add(user)
 
 
 @dataclass
@@ -154,6 +274,12 @@ class MatrixWire:
         self.bot_user = bot_user
         self.token = token or fake_token()
         self.device_id = "DEVICEONE"
+        # Token → (user, device) of other users' devices (``add_device``); ``token`` is the bot's.
+        self.identities: dict[str, tuple[str, str]] = {}
+        self.keys = KeyServer()
+        self.room_encryption: dict[str, dict[str, Any]] = {}
+        self.members: dict[str, list[str]] = {}
+        self.user_data: dict[tuple[str, str], dict[str, Any]] = {}
         self.requests: list[tuple[str, str]] = []
         self.sent: list[SentEvent] = []
         self.account_data: dict[str, dict[str, Any]] = {}
@@ -172,7 +298,7 @@ class MatrixWire:
         self._batches = itertools.count(1)
         self._routes: list[tuple[re.Pattern[str], str, Handler]] = [
             (_pattern(template), name, getattr(self, f"_route_{name}"))
-            for name, template in ROUTES.items()
+            for name, template in {**ROUTES, **KEY_ROUTES}.items()
         ]
 
     # -- wiring ------------------------------------------------------------------------------------
@@ -247,6 +373,19 @@ class MatrixWire:
         }
         self._raw_ready.set()
 
+    def add_device(self, user: str, device: str) -> str:
+        """Another user's device on this homeserver; its access token (built at run time)."""
+        token = "-".join(["mx", "fake", user.strip("@").split(":", 1)[0], device.lower()])
+        self.identities[token] = (user, device)
+        return token
+
+    def encrypt_room(self, room: str, **content: Any) -> None:
+        self.room_encryption[room] = {"algorithm": "m.megolm.v1.aes-sha2", **content}
+
+    def wake(self) -> None:
+        """Let a waiting sync answer (to-device traffic arrived)."""
+        self._raw_ready.set()
+
     def sync_paths(self) -> list[str]:
         return [path for method, path in self.requests if path.endswith("/sync")]
 
@@ -256,8 +395,14 @@ class MatrixWire:
         await request.aread()
         raw = request.url.raw_path.split(b"?", 1)[0].decode("ascii")
         self.requests.append((request.method, raw))
-        if request.headers.get("Authorization") != f"Bearer {self.token}":
+        header = request.headers.get("Authorization", "")
+        given = header[len("Bearer ") :] if header.startswith("Bearer ") else None
+        who = (self.bot_user, self.device_id) if given == self.token else None
+        if who is None and given is not None:
+            who = self.identities.get(given)
+        if who is None:
             return _matrix_error(401, "M_UNKNOWN_TOKEN", "Invalid access token passed.")
+        request.extensions["matrix_who"] = who
         line = f"{request.method} {raw}"
         for pattern, _name, handler in self._routes:
             found = pattern.match(line)
@@ -269,6 +414,10 @@ class MatrixWire:
     @staticmethod
     def _body(request: httpx.Request) -> dict[str, Any]:
         return json.loads(request.content or b"{}")
+
+    @staticmethod
+    def _who(request: httpx.Request) -> tuple[str, str]:
+        return request.extensions["matrix_who"]
 
     # -- routes ------------------------------------------------------------------------------------
 
@@ -296,7 +445,8 @@ class MatrixWire:
 
     async def _wait(self, timeout: float) -> list[FakeInbound]:
         first = self.platform.next_inbound()
-        if first is None and not self._raw and not self.invites:
+        pending = self.keys.to_device.get((self.bot_user, self.device_id))
+        if first is None and not self._raw and not self.invites and not pending:
             self._raw_ready.clear()
             getter = asyncio.ensure_future(self.platform.receive_inbound())
             raw = asyncio.ensure_future(self._raw_ready.wait())
@@ -348,7 +498,20 @@ class MatrixWire:
             room_entry(room, "dm" if room.startswith("!dm.") else "group")["timeline"][
                 "events"
             ].append(event)
+        for room, content in self.room_encryption.items():
+            if initial or room in join:
+                room_entry(room, "dm" if room.startswith("!dm.") else "group")["state"][
+                    "events"
+                ].append({"type": "m.room.encryption", "state_key": "", "content": content})
         body: dict[str, Any] = {"next_batch": f"s{next(self._batches)}", "rooms": {"join": join}}
+        to_device = self.keys.take(self.bot_user, self.device_id)
+        if to_device:
+            body["to_device"] = {"events": to_device}
+        if self.keys.uploads:
+            body["device_one_time_keys_count"] = self.keys.counts(self.bot_user, self.device_id)
+        if self.keys.changed:
+            body["device_lists"] = {"changed": sorted(self.keys.changed), "left": []}
+            self.keys.changed = set()
         if self.invites:
             body["rooms"]["invite"], self.invites = self.invites, {}
         if initial:
@@ -488,9 +651,12 @@ class MatrixWire:
 
     async def _route_account_data(self, request: httpx.Request, args: list[str]) -> httpx.Response:
         user, kind = args
-        if user != self.bot_user:
+        if user != self._who(request)[0]:
             return _matrix_error(403, "M_FORBIDDEN", "Cannot read another user's account data")
-        content = self.direct_map() if kind == "m.direct" else self.account_data.get(kind)
+        if user != self.bot_user:
+            content = self.user_data.get((user, kind))
+        else:
+            content = self.direct_map() if kind == "m.direct" else self.account_data.get(kind)
         if not content:
             return _matrix_error(404, "M_NOT_FOUND", "Account data not found")
         return _json(200, content)
@@ -499,9 +665,12 @@ class MatrixWire:
         self, request: httpx.Request, args: list[str]
     ) -> httpx.Response:
         user, kind = args
-        if user != self.bot_user:
+        if user != self._who(request)[0]:
             return _matrix_error(403, "M_FORBIDDEN", "Cannot write another user's account data")
-        self.account_data[kind] = self._body(request)
+        if user != self.bot_user:
+            self.user_data[(user, kind)] = self._body(request)
+        else:
+            self.account_data[kind] = self._body(request)
         return _json(200, {})
 
     async def _route_resolve_alias(self, request: httpx.Request, args: list[str]) -> httpx.Response:
@@ -519,6 +688,11 @@ class MatrixWire:
 
     async def _route_room_state(self, request: httpx.Request, args: list[str]) -> httpx.Response:
         room, event_type, _key = args
+        if event_type == "m.room.encryption":
+            found = self.room_encryption.get(room)
+            if found is None:
+                return _matrix_error(404, "M_NOT_FOUND", "Event not found")
+            return _json(200, found)
         try:
             chat = await self.platform.chat(self.chat_of(room))
         except FakePlatformError:
@@ -526,6 +700,49 @@ class MatrixWire:
         if event_type == "m.room.name" and chat.name and chat.name != chat.chat_id:
             return _json(200, {"name": chat.name})
         return _matrix_error(404, "M_NOT_FOUND", "Event not found")
+
+    async def _route_joined_members(
+        self, request: httpx.Request, args: list[str]
+    ) -> httpx.Response:
+        (room,) = args
+        users = self.members.get(room)
+        if users is None:
+            chat = self.chat_of(room)
+            users = [self.bot_user] + ([chat] if chat.startswith("@") else [])
+        return _json(200, {"joined": {user: {} for user in users}})
+
+    # -- the keys API (P16-07) --------------------------------------------------------------------
+
+    async def _route_keys_upload(self, request: httpx.Request, args: list[str]) -> httpx.Response:
+        user, device = self._who(request)
+        return _json(200, self.keys.upload(user, device, self._body(request)))
+
+    async def _route_keys_query(self, request: httpx.Request, args: list[str]) -> httpx.Response:
+        return _json(200, self.keys.query(self._who(request)[0], self._body(request)))
+
+    async def _route_keys_claim(self, request: httpx.Request, args: list[str]) -> httpx.Response:
+        return _json(200, self.keys.claim(self._body(request)))
+
+    async def _route_send_to_device(
+        self, request: httpx.Request, args: list[str]
+    ) -> httpx.Response:
+        event_type, _txn = args
+        messages = self._body(request).get("messages") or {}
+        self.keys.send_to_device(self._who(request)[0], event_type, messages)
+        self.wake()
+        return _json(200, {})
+
+    async def _route_device_signing_upload(
+        self, request: httpx.Request, args: list[str]
+    ) -> httpx.Response:
+        self.keys.set_cross_signing(self._who(request)[0], self._body(request))
+        return _json(200, {})
+
+    async def _route_signatures_upload(
+        self, request: httpx.Request, args: list[str]
+    ) -> httpx.Response:
+        self.keys.add_signatures(self._body(request))
+        return _json(200, {"failures": {}})
 
     async def _route_upload(self, request: httpx.Request, args: list[str]) -> httpx.Response:
         media_id = f"up{next(self._ids)}"
@@ -554,7 +771,9 @@ class MatrixWire:
 __all__ = [
     "BOT",
     "HOMESERVER",
+    "KEY_ROUTES",
     "ROUTES",
+    "KeyServer",
     "SERVER",
     "MatrixWire",
     "SentEvent",

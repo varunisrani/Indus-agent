@@ -1148,7 +1148,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_33_attachments_go_out_in_two_sends`
   - Review: live lane against a real signal-cli daemon (P16-36 doctor reachability check)
 - **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/whatsapp/test_real_bridge.py::test_the_adapter_runs_the_real_bridge`
+  - `tests/unit/gateway/adapters/whatsapp/test_sidecar.py::test_a_second_profile_cannot_adopt_or_stop_the_first_profiles_bridge`
+  - `tests/unit/gateway/adapters/whatsapp/test_adapter.py::test_a_crashed_bridge_restarts_with_a_capped_doubling_wait`
+  - `tests/unit/gateway/adapters/whatsapp/test_adapter.py::test_a_group_message_without_a_mention_is_ignored`
+  - `tests/unit/gateway/adapters/whatsapp/test_adapter.py::test_send_only_uses_the_running_bridge_and_never_polls`
+  - Review: live lane with a paired phone and an operator-installed WhatsApp Web library (owner; the library is not bundled, P16-02)
 - **ACC-K9-2** WhatsApp Business Cloud API (Graph sends, signed webhook, 24-hour window)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_a_duplicate_wamid_is_ignored`
@@ -1159,6 +1165,17 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_numbers_and_tokens_are_masked_in_errors_and_logs`
   - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_indus_send_builds_a_send_only_adapter`
   - Review: live lane against a real Meta test number (P16-36)
+- **ACC-K10-1** Matrix (any homeserver by access token; optional end-to-end encryption)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/matrix/test_adapter.py::test_backlog_event_at_startup_is_ignored`
+  - `tests/unit/gateway/adapters/matrix/test_adapter.py::test_a_46000_byte_reply_is_split_by_bytes_as_well_as_chars`
+  - `tests/unit/gateway/adapters/matrix/test_crypto.py::test_only_verified_devices_of_allowed_users_get_room_keys`
+  - `tests/unit/gateway/adapters/matrix/test_crypto.py::test_an_undecryptable_event_gives_one_notice_per_session_and_no_event`
+  - `tests/unit/gateway/adapters/matrix/test_crypto.py::test_without_the_extra_required_is_fatal_with_a_hint_and_optional_runs_plain`
+  - `tests/unit/gateway/adapters/matrix/test_crypto.py::test_the_recovery_key_comes_only_from_the_secret_store`
+  - `tests/unit/gateway/adapters/matrix/test_crypto.py::test_send_only_never_syncs_or_uploads_keys`
+  - `tests/unit/gateway/adapters/matrix/test_crypto_mautrix.py::test_end_to_end_over_the_fake_homeserver`
+  - Review: live lane against a real homeserver with Element (cross-signing, verified devices) (P16-36)
 - **ACC-K10-4** SMS through Twilio (signed webhook, REST send, 1,600-character pieces)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/sms/test_adapter.py::test_the_signature_covers_a_url_with_a_query_string`
@@ -1208,6 +1225,17 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/wecom/test_callback.py::test_replies_are_split_by_bytes_and_tokens_are_refreshed_once`
   - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_wecom`
   - Review: live lane against a real WeCom robot and app (P16-36)
+- **ACC-K11-4** Weixin (personal WeChat through the iLink bot API: long poll, context tokens, encrypted CDN media)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_a_reply_without_a_stored_context_token_is_refused_clearly`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_media_crypto_matches_the_known_answer_vectors`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_media_round_trip_through_the_cdn`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_the_cursor_is_saved_after_dispatch_and_resumed_after_a_restart`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_duplicates_own_messages_and_empty_messages_are_dropped`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_a_frequency_limit_pauses_sends_and_an_unready_session_is_final`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_tokens_never_reach_logs_errors_or_reprs`
+  - `tests/unit/gateway/adapters/weixin/test_adapter.py::test_send_only_never_polls_and_uses_the_stored_tokens`
+  - Review: live lane against a real iLink bot account (P16-36)
 - **ACC-K11-5** QQ Bot (API v2 gateway socket, passive replies, chunked media upload)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_resume_after_a_drop_keeps_the_sequence`
@@ -1219,6 +1247,19 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/qqbot/test_upload.py::test_the_daily_limit_is_never_retried`
   - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_qqbot`
   - Review: live lane against a real QQ bot (sandbox) (P16-36)
+- **ACC-K11-6** Yuanbao (HMAC-signed sign token, binary bot socket, reply heartbeats, COS uploads) and its group, DM and sticker tools
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_two_missed_pongs_open_a_new_socket`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_the_hundredth_failed_reconnect_is_fatal_and_no_101st_is_made`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_the_sign_token_is_an_hmac_over_the_documented_string`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_the_reply_heartbeat_runs_while_typing_and_finishes_after_delivery`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_media_goes_through_a_signed_cos_upload`
+  - `tests/unit/gateway/adapters/yuanbao/test_adapter.py::test_secrets_never_reach_logs_errors_or_reprs`
+  - `tests/unit/gateway/adapters/yuanbao/test_frames.py::test_a_ping_request_has_known_bytes`
+  - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_the_tools_are_absent_from_every_other_bundle`
+  - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_a_dm_to_a_user_outside_the_group_is_refused`
+  - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_a_dm_asks_for_approval_and_a_denial_sends_nothing`
+  - Review: live lane against a real Yuanbao bot (error codes, `auth-bind` instance id, `indus send` beside a running gateway) (P16-36 / owner)
 - **ACC-K12-1** BlueBubbles (iMessage) through a BlueBubbles server
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/bluebubbles/test_adapter.py::test_guid_cache_evicts_the_least_recently_used_address`
@@ -1301,6 +1342,14 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/buzz/test_crypto.py::test_bip340_vectors_verify_as_the_spec_says`
   - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_buzz`
   - Review: live lane against a real Buzz community relay (owner)
+- **ACC-K12-11** Raft (loopback wake endpoint for Raft's bridge; the agent talks through the Raft CLI)
+  - `tests/unit/gateway/adapters/raft/test_adapter.py::test_a_non_loopback_request_is_refused_before_anything_is_read`
+  - `tests/unit/gateway/adapters/raft/test_adapter.py::test_the_501st_queued_wake_drops_the_oldest_with_a_log_line`
+  - `tests/unit/gateway/adapters/raft/test_adapter.py::test_an_oversized_field_is_413`
+  - `tests/unit/gateway/adapters/raft/test_adapter.py::test_a_wake_becomes_one_internal_turn_with_our_prompt`
+  - `tests/unit/gateway/adapters/raft/test_adapter.py::test_the_port_file_is_owner_only_and_names_the_ephemeral_port`
+  - `tests/unit/gateway/adapters/raft/test_adapter.py::test_raft_never_gets_pairing_codes`
+  - Review: live lane with a real `raft agent bridge` (owner)
 - **ACC-K13-1** Inbound normalisation: command detection, burst text batching, per-platform dedupe, reply context …
   - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
   - `tests/unit/gateway/core/test_events.py::test_property_text_not_starting_with_slash_is_never_a_command`

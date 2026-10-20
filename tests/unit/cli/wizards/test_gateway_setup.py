@@ -207,7 +207,7 @@ def world_label(name: str) -> str:
     return entry.label
 
 
-@pytest.mark.parametrize("name", ["api_server", "webhook"])
+@pytest.mark.parametrize("name", ["api_server", "webhook", "whatsapp"])
 def test_http_surfaces_point_elsewhere(clean: Scope, world: World, name: str) -> None:
     run = setup(clean, world, name)
     assert run.code == 0

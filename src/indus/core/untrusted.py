@@ -23,7 +23,7 @@ __all__ = ["MIN_CHARS", "UNTRUSTED_NAMES", "UNTRUSTED_PREFIXES", "fence", "is_un
 
 MIN_CHARS = 32
 UNTRUSTED_NAMES = frozenset({"web_search", "web_extract"})
-UNTRUSTED_PREFIXES = ("browser_", MCP_PREFIX, "feishu_")
+UNTRUSTED_PREFIXES = ("browser_", MCP_PREFIX, "feishu_", "yuanbao_")
 
 _WORD = re.compile(re.escape(texts.FENCE_WORD), re.IGNORECASE)
 _SOURCE_UNSAFE = re.compile(r"[^A-Za-z0-9_.:-]")

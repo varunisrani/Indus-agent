@@ -714,7 +714,7 @@ def test_required_e2ee_without_the_module_is_fatal_with_a_hint() -> None:
         with pytest.raises(Exception) as failed:
             await drive(rig.clock, rig.adapter.connect())
         assert getattr(failed.value, "code", "") == "e2ee_unavailable"
-        assert "P16-07" in str(failed.value)
+        assert "matrix-e2ee" in str(failed.value)
         optional = Rig(listen=False, options=MatrixOptions(e2ee="optional"))
         await optional.connect()
         assert optional.adapter.connected

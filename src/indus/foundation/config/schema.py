@@ -1265,6 +1265,9 @@ class PlatformsSection(_Section):
     matrix: PlatformSection = Field(default_factory=PlatformSection, description="Matrix")
     mattermost: PlatformSection = Field(default_factory=PlatformSection, description="Mattermost")
     email: PlatformSection = Field(default_factory=PlatformSection, description="Email")
+    whatsapp: PlatformSection = Field(
+        default_factory=PlatformSection, description="WhatsApp (own bridge, WhatsApp Web)"
+    )
     whatsapp_cloud: PlatformSection = Field(
         default_factory=PlatformSection, description="WhatsApp Business (Cloud API)"
     )
@@ -1286,6 +1289,13 @@ class PlatformsSection(_Section):
     )
     simplex: PlatformSection = Field(default_factory=PlatformSection, description="SimpleX Chat")
     buzz: PlatformSection = Field(default_factory=PlatformSection, description="Buzz (Nostr)")
+    weixin: PlatformSection = Field(
+        default_factory=PlatformSection, description="Weixin / WeChat (iLink bot)"
+    )
+    yuanbao: PlatformSection = Field(default_factory=PlatformSection, description="Tencent Yuanbao")
+    raft: PlatformSection = Field(
+        default_factory=PlatformSection, description="Raft (wake bridge for the Raft CLI)"
+    )
 
 
 class MessageTimestampsSection(_Section):

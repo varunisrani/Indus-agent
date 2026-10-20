@@ -53,9 +53,9 @@ PyPI for packages of other platforms).
 | more-itertools | 11.1.0 | MIT | via jaraco.classes / jaraco.functools | P01-16 |
 | SecretStorage | 3.5.0 | BSD-3-Clause | via keyring (Linux) | P01-16 |
 | jeepney | 0.9.0 | MIT | via keyring / SecretStorage (Linux) | P01-16 |
-| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | via SecretStorage (Linux) and mcp's `pyjwt[crypto]` (the Teams bot-token RS256 check, P16-11); extras `google-chat` (RS256 for Google Chat's service-account assertion and callback tokens) and `wecom` (AES for the WeCom callback crypto and media) | P01-16, P16-11, P16-13, P16-18 |
-| cffi | 2.1.1 | MIT-0 (exception recorded in `tooling/checks/licenses_allow.json`) | via cryptography (also extras `google-chat`, `wecom`) | P01-16, P16-13, P16-18 |
-| pycparser | 3.0 | BSD-3-Clause | via cffi (also extras `google-chat`, `wecom`) | P01-16, P16-13, P16-18 |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | via SecretStorage (Linux) and mcp's `pyjwt[crypto]` (the Teams bot-token RS256 check, P16-11); extras `google-chat` (RS256 for Google Chat's service-account assertion and callback tokens), `wecom` (AES for the WeCom callback crypto and media) and `weixin` (AES-128-ECB for iLink media, the vendor's scheme) | P01-16, P16-11, P16-13, P16-18, P16-19 |
+| cffi | 2.1.1 | MIT-0 (exception recorded in `tooling/checks/licenses_allow.json`) | via cryptography (also extras `google-chat`, `wecom`, `weixin`); via python-olm (extra `matrix-e2ee`) | P01-16, P16-13, P16-18, P16-07, P16-19 |
+| pycparser | 3.0 | BSD-3-Clause | via cffi (also extras `google-chat`, `wecom`, `weixin`, `matrix-e2ee`) | P01-16, P16-13, P16-18, P16-07, P16-19 |
 | pywin32-ctypes | 0.2.3 | BSD-3-Clause | via keyring (Windows) | P01-16 |
 | pydantic | 2.13.5 | MIT | config schema and defaults | P01-09 |
 | pydantic-core | 2.46.5 | MIT | via pydantic | P01-09 |
@@ -98,7 +98,7 @@ PyPI for packages of other platforms).
 | prompt_toolkit | 3.0.53 | BSD-3-Clause | the classic REPL's prompt, keys and status bar | P06-04 |
 | wcwidth | 0.9.1 | MIT | via prompt_toolkit | P06-04 |
 | jsonschema | 4.26.0 | MIT | checks subagent answers against `output_schema` | P10-04 |
-| attrs | 26.1.0 | MIT | via jsonschema / referencing | P10-04 |
+| attrs | 26.1.0 | MIT | via jsonschema / referencing; also via mautrix (extra `matrix-e2ee`) | P10-04, P16-07 |
 | jsonschema-specifications | 2025.9.1 | MIT | via jsonschema (the bundled meta-schemas) | P10-04 |
 | referencing | 0.37.0 | MIT | via jsonschema | P10-04 |
 | rpds-py | 2026.6.3 | MIT | via jsonschema / referencing | P10-04 |
@@ -139,13 +139,13 @@ PyPI for packages of other platforms).
 | toml | 0.10.2 | MIT | extras `modal`, `daytona`, via modal / daytona | P21-05 |
 | types-certifi | 2021.10.8.3 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
 | types-toml | 0.10.8.20260518 | Apache-2.0 | extra `modal`, via modal (type stubs) | P21-05 |
-| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, `discord`, via modal / daytona / discord.py (HTTP client); extra `slack` names it directly (Bolt's async app and Socket Mode handler, P15-35) | P21-05, P15-34, P15-35 |
-| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
-| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
-| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
-| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp / yarl | P21-05 |
-| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp / yarl | P21-05 |
-| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, via aiohttp | P21-05 |
+| aiohttp | 3.14.3 | Apache-2.0 AND MIT | extras `modal`, `daytona`, `research`, `discord`, `matrix-e2ee`, via modal / daytona / discord.py / mautrix (HTTP client; mautrix's requests are routed through our httpx client, P16-07); extra `slack` names it directly (Bolt's async app and Socket Mode handler, P15-35) | P21-05, P15-34, P15-35, P16-07 |
+| aiohappyeyeballs | 2.7.1 | PSF-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, `matrix-e2ee`, via aiohttp | P21-05 |
+| aiosignal | 1.4.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, `matrix-e2ee`, via aiohttp | P21-05 |
+| frozenlist | 1.8.0 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, `matrix-e2ee`, via aiohttp | P21-05 |
+| multidict | 6.9.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, `matrix-e2ee`, via aiohttp / yarl | P21-05 |
+| propcache | 0.5.4 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, `matrix-e2ee`, via aiohttp / yarl | P21-05 |
+| yarl | 1.25.1 | Apache-2.0 | extras `modal`, `daytona`, `research`, `discord`, `slack`, `matrix-e2ee`, via aiohttp / mautrix | P21-05 |
 | daytona | 0.220.0 | Apache-2.0 | extra `daytona`: the Daytona sandbox SDK (terminal backend `daytona`) | P21-07 |
 | daytona-api-client | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona (generated API client) | P21-07 |
 | daytona-api-client-async | 0.220.0 | Apache-2.0 | extra `daytona`, via daytona | P21-07 |
@@ -159,9 +159,17 @@ PyPI for packages of other platforms).
 | deprecated | 1.3.1 | MIT | extra `daytona`, via daytona / opentelemetry | P21-07 |
 | wrapt | 2.5.0 | BSD-2-Clause | extra `daytona`, via deprecated / opentelemetry-instrumentation | P21-07 |
 | googleapis-common-protos | 1.75.5 | Apache-2.0 | extra `daytona`, via opentelemetry-exporter-otlp-proto-http | P21-07 |
-| httpx-ws | 0.9.0 | MIT | extras `daytona` (via daytona), `mattermost` (the Mattermost event socket), `dingtalk` (the Stream Mode socket), `wecom` (the smart-robot socket), `qqbot` (the QQ Bot gateway socket), `feishu` (the Feishu / Lark long connection), `simplex` (the SimpleX daemon socket) and `buzz` (the Nostr relay socket); WebSocket over httpx | P21-07, P16-08, P16-14, P16-16, P16-17, P16-20, P16-28, P16-29 |
-| wsproto | 1.3.2 | MIT | base: uvicorn's WebSocket support for the daemon attach endpoint; also via httpx-ws / simple-websocket in the extras | P17-13, P21-07, P16-08, P16-14, P16-16, P16-17, P16-20, P16-28, P16-29 |
+| httpx-ws | 0.9.0 | MIT | extras `daytona` (via daytona), `mattermost` (the Mattermost event socket), `dingtalk` (the Stream Mode socket), `wecom` (the smart-robot socket), `qqbot` (the QQ Bot gateway socket), `feishu` (the Feishu / Lark long connection), `simplex` (the SimpleX daemon socket), `buzz` (the Nostr relay socket) and `yuanbao` (the Yuanbao bot socket); WebSocket over httpx | P21-07, P16-08, P16-14, P16-16, P16-17, P16-20, P16-21, P16-28, P16-29 |
+| wsproto | 1.3.2 | MIT | base: uvicorn's WebSocket support for the daemon attach endpoint; also via httpx-ws / simple-websocket in the extras | P17-13, P21-07, P16-08, P16-14, P16-16, P16-17, P16-20, P16-21, P16-28, P16-29 |
 | coincurve | 21.0.0 | MIT OR Apache-2.0 (the wheels bundle libsecp256k1, MIT, and cffi's `_cffi_backend`, MIT) | extra `buzz`: BIP-340 Schnorr signing and verification of Nostr events | P16-29 |
+| mautrix | 0.21.1 | MPL-2.0 (used unmodified, never patched or vendored; source: github.com/mautrix/python) | extra `matrix-e2ee` (Linux): the Olm machine, cross-signing and SQLite crypto store behind Matrix end-to-end encryption | P16-07 |
+| python-olm | 3.2.16 | Apache-2.0 (the package builds and bundles libolm 3.2.16, Apache-2.0) | extra `matrix-e2ee` (Linux), via mautrix: the Olm and Megolm ratchets | P16-07 |
+| libolm | 3.2.16 | Apache-2.0 (deprecated upstream, with published timing side-channel advisories; used only behind our own Engine interface until a vodozemac-based engine replaces it) | extra `matrix-e2ee` (Linux): compiled into python-olm's `_libolm` extension, not a separate package | P16-07 |
+| pycryptodome | 3.23.0 | BSD-2-Clause and public domain (per its LICENSE.rst) | extra `matrix-e2ee`, via mautrix: attachment and secret-storage ciphers | P16-07 |
+| unpaddedbase64 | 2.1.0 | Apache-2.0 | extra `matrix-e2ee`, via mautrix | P16-07 |
+| base58 | 2.1.1 | MIT | extra `matrix-e2ee`, via mautrix: recovery-key encoding | P16-07 |
+| aiosqlite | 0.22.1 | MIT | extra `matrix-e2ee`: the device store's SQLite driver (mautrix's async database) | P16-07 |
+| asyncpg | 0.31.0 | Apache-2.0 | extra `matrix-e2ee`: imported by mautrix's crypto-store module (no PostgreSQL is used) | P16-07 |
 | obstore | 0.11.1 | MIT | extra `daytona`, via daytona (object storage client) | P21-07 |
 | opentelemetry-sdk | 1.45.0 | Apache-2.0 | extra `daytona`, via daytona (tracing; off unless DAYTONA_OTEL_ENABLED) | P21-07 |
 | opentelemetry-semantic-conventions | 0.66b0 | Apache-2.0 | extra `daytona`, via opentelemetry-sdk | P21-07 |

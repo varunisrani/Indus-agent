@@ -31,7 +31,10 @@ event content stays under 45,000 bytes, well inside the 65,536-byte event limit,
 message carries ``m.mentions`` so only the users the reply names are notified (never ``@room``
 unless ``allow_room_mentions``).
 
-End-to-end encryption is P16-07: it plugs in through the `EndToEnd` seam (``matrix.crypto``).
+End-to-end encryption (P16-07, ``platforms.matrix.e2ee: optional | required``) plugs in through
+the `EndToEnd` seam: ``matrix.crypto.create_end_to_end`` builds it at connect. With it, encrypted
+timeline events are decrypted before the rules above, events to encrypted rooms are encrypted, and
+attachments in encrypted rooms travel as encrypted files (``file`` instead of ``url``).
 """
 
 from __future__ import annotations
@@ -143,6 +146,8 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 type InviteMode = Literal["allowlisted", "all", "off"]
 type E2eeMode = Literal["off", "optional", "required"]
+# Which devices get room keys (P16-07): signed by their owner (default) or verified by us.
+type E2eeTrust = Literal["owner_signed", "verified"]
 
 
 def utf8_bytes(text: str) -> int:
@@ -161,12 +166,22 @@ class EndToEnd(Protocol):
         """The clear event for an ``m.room.encrypted`` one; None when it cannot be decrypted."""
         ...
 
-    def is_encrypted(self, room_id: str) -> bool: ...
+    async def is_encrypted(self, room_id: str) -> bool:
+        """Does the room have end-to-end encryption on (``m.room.encryption`` state)?"""
+        ...
 
     async def encrypt(
         self, room_id: str, event_type: str, content: Mapping[str, Any]
     ) -> tuple[str, dict[str, Any]]:
         """``(m.room.encrypted, ciphertext content)`` for an outbound event."""
+        ...
+
+    async def encrypt_attachment(self, data: bytes) -> tuple[bytes, dict[str, Any]]:
+        """``(ciphertext, file info without its url)`` for an attachment to an encrypted room."""
+        ...
+
+    async def decrypt_attachment(self, data: bytes, info: Mapping[str, Any]) -> bytes:
+        """The clear bytes of a downloaded encrypted attachment (``info`` is its ``file``)."""
         ...
 
     async def aclose(self) -> None: ...
@@ -204,6 +219,7 @@ class MatrixOptions:
     reactions: bool = True
     max_media_bytes: int = DEFAULT_MAX_MEDIA_BYTES
     e2ee: E2eeMode = "off"
+    e2ee_trust: E2eeTrust = "owner_signed"
     allow_room_mentions: bool = False
     thread_require_mention: bool = False
     # Who may pull the bot into a room (``invites: allowlisted``); read from the policy lists.
@@ -243,6 +259,11 @@ class MatrixOptions:
             reactions=_truthy(extra.get("reactions"), True),
             max_media_bytes=max(1, cap),
             e2ee=e2ee if e2ee in ("optional", "required") else "off",  # pyright: ignore[reportArgumentType]
+            e2ee_trust=(
+                "verified"
+                if str(extra.get("e2ee_trust") or "").strip().lower() == "verified"
+                else "owner_signed"
+            ),
             allow_room_mentions=_truthy(extra.get("allow_room_mentions"), False),
             thread_require_mention=_truthy(extra.get("thread_require_mention"), False),
             inviters=inviters,
@@ -329,6 +350,7 @@ class MatrixAdapter(Adapter):
             "room_state",
             "upload",
             "download",
+            "joined_members",
         ),
     }
 
@@ -364,6 +386,7 @@ class MatrixAdapter(Adapter):
         self._client: MatrixClient | None = None
         self._crypto: EndToEnd | None = None
         self._listener: asyncio.Task[None] | None = None
+        self._listen_started_ms = 0
         self._side_tasks: set[asyncio.Task[Any]] = set()
         self._seen: OrderedDict[str, None] = OrderedDict()
         self._direct_rooms: set[str] = set()
@@ -378,6 +401,13 @@ class MatrixAdapter(Adapter):
         self._invites_seen: set[str] = set()
         self._pending_reactions: dict[tuple[str, str], str] = {}
         self._our_threads: OrderedDict[str, None] = OrderedDict()
+        # Encrypted attachments seen inbound: mxc URI → its ``file`` block (key, iv, hash).
+        self._encrypted_media: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+    @property
+    def scope(self) -> Scope | None:
+        """The profile this adapter serves (the encryption layer keeps its store there)."""
+        return self._scope
 
     def __repr__(self) -> str:
         state = "connected" if self.connected else "disconnected"
@@ -408,6 +438,7 @@ class MatrixAdapter(Adapter):
             who = await client.whoami()
             if not who.user_id:
                 raise MatrixError("unexpected answer from the homeserver: no user id")
+            self._adopt_identity(who.user_id, who.device_id)
             crypto = await self._start_end_to_end(client)
         except MatrixError as exc:
             await client.aclose()
@@ -421,28 +452,31 @@ class MatrixAdapter(Adapter):
         except BaseException:
             await client.aclose()
             raise
-        if self._configured_user and self._configured_user.lower() != who.user_id.lower():
-            log.warning(
-                "matrix: the access token belongs to %s, not the configured %s; using the token's",
-                who.user_id,
-                self._configured_user,
-            )
-        if who.device_id and self.device_id and who.device_id != self.device_id:
-            # A token can only act for its own device (end-to-end keys depend on it).
-            log.warning(
-                "matrix: the access token belongs to device %s, not the configured %s; "
-                "using the token's",
-                who.device_id,
-                self.device_id,
-            )
-        if who.device_id:
-            self.device_id = who.device_id
-        self.user_id = who.user_id
         self._client = client
         self._crypto = crypto
         log.info("matrix: signed in as %s on %s", self.user_id, self._homeserver)
         if self._sink is not None:
             self._start_listening()
+
+    def _adopt_identity(self, user_id: str, device_id: str) -> None:
+        """The token's user and device win over configured ones (keys belong to the device)."""
+        if self._configured_user and self._configured_user.lower() != user_id.lower():
+            log.warning(
+                "matrix: the access token belongs to %s, not the configured %s; using the token's",
+                user_id,
+                self._configured_user,
+            )
+        if device_id and self.device_id and device_id != self.device_id:
+            # A token can only act for its own device (end-to-end keys depend on it).
+            log.warning(
+                "matrix: the access token belongs to device %s, not the configured %s; "
+                "using the token's",
+                device_id,
+                self.device_id,
+            )
+        if device_id:
+            self.device_id = device_id
+        self.user_id = user_id
 
     async def _start_end_to_end(self, client: MatrixClient) -> EndToEnd | None:
         mode = self.options.e2ee
@@ -450,8 +484,8 @@ class MatrixAdapter(Adapter):
             return None
         factory = self._end_to_end_factory
         hint = (
-            "end-to-end encryption is not available in this install "
-            "(the Matrix encryption extra, P16-07)"
+            "end-to-end encryption is not available in this install (install the "
+            "matrix-e2ee extra on Linux: pip install 'indus-agent[matrix-e2ee]')"
         )
         if factory is None:
             if mode == "required":
@@ -540,6 +574,7 @@ class MatrixAdapter(Adapter):
 
     async def _listen(self) -> None:
         started_ms = self._now_ms()
+        self._listen_started_ms = started_ms
         since: str | None = None
         delay = BACKOFF_FIRST_S
         while True:
@@ -653,13 +688,22 @@ class MatrixAdapter(Adapter):
         if normalised is not None:
             await self.emit(normalised)
 
+    async def take_late_event(self, room_id: str, event: Mapping[str, Any]) -> None:
+        """An encrypted event whose key arrived after it (decrypted by the encryption layer):
+        it goes through the same rules as any timeline event."""
+        if event.get("type") != "m.room.message":
+            return
+        normalised = self.normalise(room_id, event, self._listen_started_ms)
+        if normalised is not None:
+            await self.emit(normalised)
+
     async def _decrypt(self, room_id: str, event: Mapping[str, Any]) -> dict[str, Any] | None:
         if self._crypto is None:
             if room_id not in self._warned_encrypted:
                 self._warned_encrypted.add(room_id)
                 log.warning(
                     "matrix: room %s sends encrypted messages and end-to-end encryption is off; "
-                    "its messages are skipped (set platforms.matrix.e2ee, P16-07)",
+                    "its messages are skipped (set platforms.matrix.e2ee)",
                     room_id,
                 )
             return None
@@ -857,9 +901,14 @@ class MatrixAdapter(Adapter):
         self, room_id: str, event_id: str, msgtype: str, content: Mapping[str, Any]
     ) -> tuple[MessageKind, str, Attachment, float | None] | None:
         url = content.get("url")
+        encrypted: dict[str, Any] | None = None
+        sealed = content.get("file")
+        # An encrypted attachment carries ``file.url``: only the E2EE layer can read it.
+        if (not isinstance(url, str) or not url) and isinstance(sealed, Mapping) and self._crypto:
+            encrypted = dict(sealed)  # pyright: ignore[reportUnknownArgumentType]
+            url = encrypted.get("url")
         if not isinstance(url, str) or not url:
-            # An encrypted attachment carries ``file.url``: only the E2EE layer can read it.
-            log.info("matrix: attachment %s in %s has no plain URL; skipped", event_id, room_id)
+            log.info("matrix: attachment %s in %s has no readable URL; skipped", event_id, room_id)
             return None
         if parse_mxc(url) is None:
             log.warning("matrix: attachment %s has a non-mxc URL; refused", event_id)
@@ -886,6 +935,10 @@ class MatrixAdapter(Adapter):
         mime = str(info.get("mimetype") or "")
         duration = info.get("duration")
         seconds = float(duration) / 1000 if isinstance(duration, int | float) else None
+        if encrypted is not None:
+            self._encrypted_media[url] = encrypted
+            while len(self._encrypted_media) > SEEN_EVENTS:
+                self._encrypted_media.popitem(last=False)
         return kind, caption, Attachment(ref=url, mime=mime), seconds
 
     def _on_invite(self, room_id: str, invite: Mapping[str, Any]) -> None:
@@ -954,8 +1007,16 @@ class MatrixAdapter(Adapter):
     async def fetch_media(self, attachment: Attachment) -> AsyncIterator[bytes]:
         """The bytes of an inbound attachment (registered by `register_fetchers`)."""
         client = self._require_client()
-        async for chunk in client.download(attachment.ref, cap=self.options.max_media_bytes):
-            yield chunk
+        sealed = self._encrypted_media.get(attachment.ref)
+        if sealed is None:
+            async for chunk in client.download(attachment.ref, cap=self.options.max_media_bytes):
+                yield chunk
+            return
+        crypto = self._crypto
+        if crypto is None:
+            raise MatrixError("the attachment is encrypted and end-to-end encryption is off")
+        parts = [c async for c in client.download(attachment.ref, cap=self.options.max_media_bytes)]
+        yield await crypto.decrypt_attachment(b"".join(parts), sealed)
 
     def register_fetchers(self, seat: FetcherSeat) -> Callable[[], None] | None:
         """Register `fetch_media` with the media intake (P15-23); returns the undo."""
@@ -1026,7 +1087,7 @@ class MatrixAdapter(Adapter):
         self, room_id: str, content: dict[str, Any], event_type: str = "m.room.message"
     ) -> str:
         client = self._require_client()
-        if self._crypto is not None and self._crypto.is_encrypted(room_id):
+        if self._crypto is not None and await self._crypto.is_encrypted(room_id):
             event_type, content = await self._crypto.encrypt(room_id, event_type, content)
         event_id = await client.send_event(room_id, event_type, content)
         self._own_events[event_id] = None
@@ -1120,17 +1181,28 @@ class MatrixAdapter(Adapter):
         data = await run_blocking(file.read_bytes, label="matrix upload")
         name = file.name
         mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        size = len(data)
+        sealed: dict[str, Any] | None = None
+        upload_mime = mime
+        if self._crypto is not None and await self._crypto.is_encrypted(room):
+            # The event is encrypted; the file must be too, or the media store would serve it
+            # in clear to anyone holding the URI.
+            data, sealed = await self._crypto.encrypt_attachment(data)
+            upload_mime = "application/octet-stream"
         try:
-            uri = await self._require_client().upload(data, mime=mime, filename=name)
+            uri = await self._require_client().upload(data, mime=upload_mime, filename=name)
         except Exception as exc:
             return SendResult.failure(exc=exc, retry_after=getattr(exc, "retry_after", None))
         content: dict[str, Any] = {
             "msgtype": _OUT_TYPES[kind],
             "body": caption or name,
-            "url": uri,
-            "info": {"mimetype": mime, "size": len(data)},
+            "info": {"mimetype": mime, "size": size},
             "m.mentions": {},
         }
+        if sealed is not None:
+            content["file"] = {**sealed, "url": uri}
+        else:
+            content["url"] = uri
         if caption:
             content["filename"] = name
         if kind == "voice":

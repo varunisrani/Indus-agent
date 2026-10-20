@@ -51,6 +51,7 @@ BUILTIN_NAMES: tuple[str, ...] = (
     "matrix",
     "mattermost",
     "email",
+    "whatsapp",
     "whatsapp_cloud",
     "sms",
     "line",
@@ -62,10 +63,13 @@ BUILTIN_NAMES: tuple[str, ...] = (
     "dingtalk",
     "wecom",
     "wecom_callback",
+    "weixin",
     "feishu",
     "bluebubbles",
     "simplex",
     "buzz",
+    "yuanbao",
+    "raft",
     "api_server",
     "webhook",
     "msgraph",
@@ -230,14 +234,18 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             _chat_entry(
                 "matrix",
                 "Matrix",
-                # Our own Client-Server API client over httpx (end-to-end encryption is P16-07).
+                # Our own Client-Server API client over httpx (end-to-end encryption, P16-07, is
+                # the optional Linux-only ``matrix-e2ee`` extra).
                 sdk=("httpx",),
                 extra_name="matrix",
                 required_env=("MATRIX_ACCESS_TOKEN", "MATRIX_HOMESERVER"),
                 max_len=15000,
                 hint="You are talking through Matrix. Markdown is rendered as HTML for you.",
             ),
-            install_hint="pip install indus-agent (Matrix needs no extra)",
+            install_hint=(
+                "pip install indus-agent (Matrix needs no extra; end-to-end encryption: "
+                "pip install 'indus-agent[matrix-e2ee]' on Linux)"
+            ),
         ),
         _chat_entry(
             "mattermost",
@@ -271,6 +279,29 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             install_hint="pip install indus-agent (email needs no extra)",
             # One mailbox on one server belongs to one gateway; a new password is not a new box.
             lock_env=("EMAIL_ADDRESS", "EMAIL_IMAP_HOST"),
+        ),
+        PlatformEntry(
+            name="whatsapp",
+            label="WhatsApp",
+            # Our own Node bridge (apps/whatsapp-bridge) on loopback, driven over httpx; the
+            # WhatsApp Web provider is operator-supplied (none ships). No credential: the
+            # platform turns on with platforms.whatsapp.enabled: true.
+            factory=_lazy_factory("indus.gateway.adapters.whatsapp:create_adapter"),
+            check_fn=modules_installed("httpx"),
+            install_hint=(
+                "install Node.js 24 and a WhatsApp Web provider module (exports createWaSocket; "
+                "platforms.whatsapp.provider), then set platforms.whatsapp.enabled: true"
+            ),
+            allowlist_env=policy_env_name("whatsapp", "ALLOWED_USERS"),
+            allow_all_env=policy_env_name("whatsapp", "ALLOW_ALL_USERS"),
+            allow_bots_env=policy_env_name("whatsapp", "ALLOW_BOTS"),
+            home_env=policy_env_name("whatsapp", "HOME_CHANNEL"),
+            max_len=4096,
+            dm_is_private=True,
+            platform_hint=(
+                "You are talking through WhatsApp. Markdown is converted to WhatsApp formatting; "
+                "avoid tables."
+            ),
         ),
         replace(
             _chat_entry(
@@ -465,6 +496,24 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
         ),
         replace(
             _chat_entry(
+                "weixin",
+                "Weixin / WeChat",
+                # Our own iLink bot client over httpx; AES-128-ECB media through cryptography (the
+                # ``weixin`` extra).
+                sdk=("cryptography",),
+                extra_name="weixin",
+                required_env=("WEIXIN_TOKEN", "WEIXIN_ACCOUNT_ID"),
+                max_len=2000,
+                hint=(
+                    "You are talking through Weixin (WeChat). Markdown is shown as typed, so keep "
+                    "formatting light and replies short."
+                ),
+            ),
+            # The account is the bot; a new token for the same account is the same bot.
+            lock_env=("WEIXIN_ACCOUNT_ID",),
+        ),
+        replace(
+            _chat_entry(
                 "feishu",
                 "Feishu / Lark",
                 # Our own Open API client over httpx; the long connection needs httpx-ws (the
@@ -539,6 +588,45 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
                 "You are talking through Buzz, a Nostr community relay. Markdown renders in most "
                 "clients; to address someone, write @ and their name."
             ),
+        ),
+        replace(
+            _chat_entry(
+                "yuanbao",
+                "Yuanbao",
+                # HTTP on httpx; the bot socket needs httpx-ws (the ``yuanbao`` extra).
+                sdk=("httpx_ws",),
+                extra_name="yuanbao",
+                required_env=("YUANBAO_APP_ID", "YUANBAO_APP_SECRET"),
+                max_len=4000,
+                hint=(
+                    "You are talking through Tencent Yuanbao. Markdown renders (code blocks, "
+                    "tables, bold). To send a sticker, find one with yuanbao_search_sticker and "
+                    "send it with yuanbao_send_sticker; a plain emoji is not a sticker."
+                ),
+            ),
+            # One bot (App ID) answers in one gateway; a new App Secret is the same bot.
+            lock_env=("YUANBAO_APP_ID",),
+        ),
+        PlatformEntry(
+            name="raft",
+            label="Raft",
+            factory=_lazy_factory("indus.gateway.adapters.raft:create_adapter"),
+            # The wake endpoint runs on the P16-01 listener kit (uvicorn, a base dependency).
+            check_fn=modules_installed("uvicorn"),
+            required_env=("RAFT_PROFILE",),
+            install_hint=(
+                "pip install indus-agent (Raft needs no extra); install the Raft CLI and run "
+                "`raft agent bridge` against the URL in <profile home>/platforms/raft/bridge.json"
+            ),
+            # Every chat reads as a DM but is the bridge, never a person (R06.24).
+            dm_is_private=False,
+            platform_hint=(
+                "You are a Raft external agent. Wake notices only say that Raft messages may be "
+                "waiting: read and answer them with the raft command-line tool, passing --profile "
+                "with your Raft profile on every call. Your replies in this chat go nowhere."
+            ),
+            # One Raft agent profile is served by one gateway.
+            lock_env=("RAFT_PROFILE",),
         ),
         PlatformEntry(
             name="api_server",
