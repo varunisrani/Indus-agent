@@ -78,7 +78,7 @@ In flight:
 - P17-15..22 (K6 ensure/channel/remote host, K7 CLI attach + store ownership, K8 TUI attach + TS client, K9 messaging on
   the shared host) all built; one integrator in scratchpad verify14 merges them with end-to-end attach tests (brief
   `.agents/wip/w27/k-integrator-brief.md`, D-16.480..499). Patches + README in `.agents/wip/w27/`.
-- Builders E12 (P16-07 Matrix E2EE + 19 Weixin, wt-w27e12) and E14 (P16-21/22 Yuanbao + 30 Raft, wt-w27e14); E13 (P16-02/03 WhatsApp bridge) DONE,
+- E12 (P16-07 Matrix E2EE + 19 Weixin) DONE, parked. Builder E14 (P16-21/22 Yuanbao + 30 Raft, wt-w27e14); E13 (P16-02/03 WhatsApp bridge) DONE,
   parked pending the Baileys licence decision. If paused, patches go in `.agents/wip/w27/`.
 - Later: P17-23..27 (idle exit, profile binding, protocol additions + codegen, dual-host matrix, demo); P16-21/22
   (Yuanbao), 25 (Photon), 30 (Raft), 33–36.
@@ -99,7 +99,8 @@ licences to confirm: `regex` (CNRI-Python) and pyarrow's bundled zlib (Zlib) / B
 Owner decisions pending (Agent 1, 2026-10-20): (1) WhatsApp bridge: Baileys pulls GPL-3.0 libsignal + LGPL sharp —
 allow an operator-installed copyleft provider, drop bindBaileys, or build on whatsapp-web.js (Apache-2.0, Chromium)?
 (E13 parked in `.agents/wip/w27/`, ships nothing copyleft either way.) (2) webhook `auth: auto` replay; (3) licences:
-regex (CNRI-Python), pyarrow bundled zlib/Boost, coincurve (MIT OR Apache-2.0); (4) stray
+regex (CNRI-Python), pyarrow bundled zlib/Boost, coincurve (MIT OR Apache-2.0); (4) Matrix E2EE uses libolm (deprecated upstream, timing
+side-channel advisories) behind our Engine interface in an optional Linux-only extra — ship it until vodozemac? (5) stray
 /root/indus-backup-2026-01-01-090000.zip and two log lines a builder appended under /root/.indus (deletion blocked).
 Owner items: licences (Pillow MIT-CMU; voice extra av/numpy; Piper/eSpeak NG; new P21 vendor-extra
 transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm); webhook `auth: auto` accepts an
