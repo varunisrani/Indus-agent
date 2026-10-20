@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 0,
-  "remaining_pct": 100,
+  "usage_pct": 17,
+  "remaining_pct": 83,
   "resets_at": "2026-10-21T04:20:00+00:00",
-  "last_check": "2026-10-20T23:24:00+00:00",
-  "current_step": "New window; starting wave 32: P18-23..25 pages, 26/27 chat host + rail, 28/29 login + build/serve, test-failure follow-ups",
-  "last_commit": "1aeda3e"
+  "last_check": "2026-10-20T23:56:00+00:00",
+  "current_step": "wave 32: P18 integrator (p1+p2+p3, builds P18-30) and T1 test follow-ups running",
+  "last_commit": "55e39c4"
 }
