@@ -197,6 +197,48 @@ def test_grandchild_ignoring_sigterm_is_sigkilled(scope: Scope, tmp_path: Path) 
     assert _gone(_read_pid(pid_file))
 
 
+def test_cleanup_waits_for_a_late_sigkill(
+    scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A loaded machine: the SIGKILL takes effect 50 ms after it is sent. Cleanup still returns
+    only once the grandchild is gone, not as soon as the leader is."""
+    import threading
+
+    pid_file = tmp_path / "grandchild.pid"
+    command = (
+        f"bash -c 'trap \"\" TERM; echo $$ > {pid_file}; while :; do sleep 1; done' & "
+        f"while [ ! -s {pid_file} ]; do :; done; wait"
+    )
+    group = local_mod._signal_group  # pyright: ignore[reportPrivateUsage]
+    known = local_mod._signal_known  # pyright: ignore[reportPrivateUsage]
+
+    def late_group(pgid: int | None, leader_start: int | None, sig: int) -> None:
+        if sig == signal.SIGKILL:
+            threading.Timer(0.05, group, (pgid, leader_start, sig)).start()
+        else:
+            group(pgid, leader_start, sig)
+
+    def late_known(info: Any, sig: int) -> None:
+        if sig == signal.SIGKILL:
+            threading.Timer(0.05, known, (info, sig)).start()
+        else:
+            known(info, sig)
+
+    monkeypatch.setattr(local_mod, "_signal_group", late_group)
+    monkeypatch.setattr(local_mod, "_signal_known", late_known)
+
+    async def go() -> ExecResult:
+        env = await _started(_env(scope, tmp_path, term_grace_s=0.3))
+        try:
+            return await env.execute(command, timeout=1)
+        finally:
+            await env.cleanup()
+
+    result = asyncio.run(go())
+    assert result.timed_out
+    assert _gone(_read_pid(pid_file))
+
+
 def test_setsid_escapee_is_reached_through_the_snapshot(scope: Scope, tmp_path: Path) -> None:
     if shutil.which("setsid") is None:
         pytest.skip("setsid is not installed")

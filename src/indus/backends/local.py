@@ -337,8 +337,10 @@ async def stop_tree(proc: LocalProcess, *, clock: Clock, grace: float) -> None:
         await clock.sleep(KILL_POLL_S)
     if anything_left():
         force_kill_tree(proc, tree)
+        # SIGKILL takes effect when the target is next scheduled: wait (bounded) for the whole
+        # tree, not just the leader, so a caller never sees a killed descendant still running.
         until = clock.monotonic() + REAP_WAIT_S
-        while proc.poll() is None and clock.monotonic() < until:
+        while anything_left() and clock.monotonic() < until:
             await clock.sleep(KILL_POLL_S)
 
 
