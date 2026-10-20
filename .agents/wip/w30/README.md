@@ -44,3 +44,31 @@
 - Bugs found in W2 (sent to the P18 integrator): scope.unscoped_write_routes misses included routers (FastAPI 0.142
   _IncludedRouter); scope.py errors use {detail:{error,...}} but F1 reads detail.code.
 - Follow-ups: REST pydantic models in indus.protocol + generated packages/protocol types; generated route list.
+
+## w30-r2.patch: P18-13 REST status / logs / analytics + P18-14 REST cron / skills / plugins / MCP — done (base: main 0ab0d95 + w29-w1 + w29-w2)
+- Apply AFTER the P18 integration lands (diff against W1+W2 only), next to w30-r1.
+- Builder checks: unit/contract/integration web 456 passed, 1 failed = expected W1 pin: tests/unit/web/auth/test_gate.py
+  ::test_the_allowlist_is_one_object_in_both_gates — integrator adds "/api/mcp/oauth/callback" to its expected set (~line 115).
+  102 new tests; ruff, pyright 0, lint-imports, tooling.checks ok. Full suite not run. No packages.
+- New: web/routes/{status,logs,analytics,cron,skills,plugins,mcp,mcp_oauth}.py, tests/contract/web/{_rest_app_r2,
+  test_status_routes,test_logs_analytics_routes,test_cron_skills_routes,test_plugins_mcp_routes}.py, notes
+  docs/notes/P18/rest-{status-logs,cron-skills-mcp}.md.
+- Shared: web/routes/__init__.py ROUTERS (+7), web/auth/public_paths.py (+/api/mcp/oauth/callback), traps R09.4, R09.20;
+  ACC-L6-1 (no ACC-L7/L11/L12 rows exist).
+- Wiring: needs install(app, ProfileScopes(scope)) in create_app (like r1); test seams in DashboardState.extras (cron.backend,
+  cron.runner, skills.hub_sources, plugins.installer, mcp.oauth_connect, mcp.oauth_start, status.memory/disk/now); runtime
+  extras cron.fire_key (32 random bytes per process), mcp.oauth_flows; ROUTE_LIST per module. Only unscoped writes: POST
+  /api/cron/fire (signed token) and public GET /api/mcp/oauth/callback (flow by state). Merge _rest_app_r2.py with r1's
+  _rest_app.py at integration.
+- Decisions (number at integration): fire token = own HMAC-SHA256 over {profile, job_id, expires_at}, minted by
+  authenticated POST .../fire-token, TTL 300 s (max 3,600), per-process key (restart revokes), constant-time, never logged,
+  one 401 for every token problem, deleted job → 200 gone; trigger/fire run the job in a dashboard background thread (no
+  daemon "run job" verb; P15 API server precedent), 409 when running; status shape our own (see note), "recent 20" = active
+  count over the 20 most recent, binary MiB/GiB thresholds, dead daemon record → stopped; analytics days 1..365; hub search
+  verdict null; plugin install never enables, enable refused for plugins needing Python packages and memory providers; MCP
+  add refuses literal secrets (${NAME} only).
+- Follow-ups: public redirect-login function in P13 mcp/oauth.py (mcp_oauth.py uses its private helpers); status shape and
+  nullable hub verdict into F1 restTypes (P18-25); not taken: MCP bearer_token provisioning, cron run history, blueprint
+  instantiation, logs `search`.
+- Slip: one early `uv run python -c` ran before HOME/UV_CACHE_DIR were exported → may have written to /root/.cache/uv (the
+  default uv cache the main checkout already uses). Owner item; nothing deleted.

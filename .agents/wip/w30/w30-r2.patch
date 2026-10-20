@@ -1,0 +1,4219 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 37fbdcf..2d6608e 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1532,6 +1532,8 @@ Checked by `python -m tooling.checks acceptance`.
+   - Review: not yet planned (phase TBD)
+ - **ACC-L6-1** Logs page with file, level and component filters
+   - Review: not yet planned (phase TBD)
++  - `tests/contract/web/test_logs_analytics_routes.py::test_level_component_and_tail_filters`
++  - `tests/contract/web/test_logs_analytics_routes.py::test_log_lines_with_a_key_are_redacted`
+ - **ACC-L20-1** Dashboard fonts and imagery are our own; the reference's brand fonts are not shipped (lead default)
+   - Review: not yet planned (phase TBD)
+ - **ACC-M1-1** `indus acp` stdio server with `initialize`, `authenticate` (including a terminal setup method) …
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index 7865803..197a0de 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -1101,6 +1101,9 @@ Checked by `python -m tooling.checks traps`.
+   - Review: not yet planned (P00-guards)
+   - `tests/unit/web/auth/test_gate.py::test_the_allowlist_is_one_object_in_both_gates`
+   - `tests/unit/web/auth/test_gate.py::test_unknown_plugin_route_is_401_before_404`
++  - `tests/contract/web/test_status_routes.py::test_status_is_public_in_gated_mode_too`
++  - `tests/contract/web/test_cron_skills_routes.py::test_fire_refuses_bad_tokens_with_one_answer`
++  - `tests/contract/web/test_plugins_mcp_routes.py::test_oauth_callback_is_public_and_matches_state`
+ - **R09.5** Token rotation vs open tabs
+   - Review: not yet planned (P00-guards)
+   - `tests/unit/web/test_spa.py::test_client_routes_get_the_index_with_no_store`
+@@ -1160,6 +1163,9 @@ Checked by `python -m tooling.checks traps`.
+ - **R09.20** Profile-scoped writes need an explicit profile
+   - `tests/unit/web/test_scope.py::test_two_profiles_write_needs_a_profile`
+   - `tests/unit/web/test_scope.py::test_every_write_route_depends_on_the_write_scope`
++  - `tests/contract/web/test_cron_skills_routes.py::test_writes_need_a_profile_on_a_multi_profile_host`
++  - `tests/contract/web/test_cron_skills_routes.py::test_every_write_depends_on_the_write_scope_except_the_fire_webhook`
++  - `tests/contract/web/test_plugins_mcp_routes.py::test_every_write_depends_on_the_write_scope`
+   - Review: the SPA scoped family list (P18-18)
+ - **R09.21** Gateway-owned data cannot be bulk-edited live
+   - `tests/unit/service/test_maintenance_gate.py::test_prune_with_a_live_daemon_runs_inside_the_daemon`
+diff --git a/docs/notes/P18/rest-cron-skills-mcp.md b/docs/notes/P18/rest-cron-skills-mcp.md
+new file mode 100644
+index 0000000..dfa685f
+--- /dev/null
++++ b/docs/notes/P18/rest-cron-skills-mcp.md
+@@ -0,0 +1,152 @@
++# Task: REST: cron, skills, plugins, MCP (P18-14) Phase: 18 Owner: wave-30 builder R2
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `hermes_cli/web_routers/cron.py`
++(route list, the owner-profile lookup, trigger, the fire webhook's verify-then-forward contract and
++its 200 "gone" / 503 retry answers, blueprints, delivery targets), `hermes_cli/web_routers/skills.py`
++(list, toggle, hub search/install/uninstall/update), `hermes_cli/web_routers/mcp.py` (servers list,
++add with duplicate check, test with an OAuth-token check, enable, delete, the dashboard OAuth flow
++registry, its TTL/cap, the callback that matches `state` in constant time and answers small HTML),
++`hermes_cli/web_routers/tools.py` (the toolsets list). F1's client and notes from `w29-f1.patch`
++(`docs/notes/P18/{rest-client,page-cron-skills}.md`, `lib/{api,restTypes}.ts`,
++`testing/mockApi.ts`): paths and bodies are binding. Research 09 §3.4. Our `cron/{ports,targets,
++tool,models}.py`, `service/cron_host.py`, `gateway/http/admin_routes.py` (the API server's job
++routes: same backend, run in the background), `learning/skills/{resolver,hub/install,hub/sources}.py`,
++`plugins/{install,discovery,consent}.py`, `mcp/{config,connect,oauth,trust,osv}.py`, the CLI
++commands `cron`, `skills`, `skills_hub`, `plugins`, `mcp`, `tools` (rules only; `web` may not
++import `cli`), W1's `auth/public_paths.py`. Reference closed before writing. Evidence: none.
++
++What it does (own words): the backend of the Cron, Skills, Plugins and MCP pages. Every write goes
++through the owning P13/P14 library under the request's profile scope (`write_scope`: on a
++multi-profile host a write names its profile).
++
++- **Cron** (P14 backend `cron.ports.backend_for`): list, one, create `{name?, prompt, schedule,
++  deliver?, skills?, repeat?}` (schedule in our grammar or a cron line; prompt safety scan and
++  delivery-target grammar checked first, as `indus cron create` does), update (same fields, all
++  optional), pause, resume, delete, trigger (starts the run in the background and answers 202 with
++  the job; 409 while it already runs), delivery targets `{targets: [{id, label, kind: local |
++  platform | email, available}]}` (`local` plus each configured platform; available = it has a
++  home channel and is not switched off), blueprints (skills whose front matter carries a
++  `blueprint` block). Fire webhook: `POST /api/cron/fire` is on the shared public list; it is
++  authenticated by its own token, never by the session gate. A signed-in caller mints the token
++  with `POST /api/cron/jobs/{id}/fire-token` (`{token, expires_in}`); the token names the profile
++  and the job and expires (default 300 s, at most 3,600 s); it is an HMAC-SHA256 over its claims
++  with a random per-process key (so a restart ends every token), sent as `Authorization: Bearer`,
++  compared in constant time, and never logged or put in a URL. A good token starts the job in the
++  background (202); a job that no longer exists answers 200 `gone` (the caller should not retry);
++  anything wrong with the token is one generic 401.
++- **Skills**: list `{skills: [{name, description, category, enabled, source}]}`; toggle
++  `{name, enabled}` writes `skills.disabled` through the config writer; toolsets list (the plain
++  toolsets with their tools and whether the CLI selection offers them); hub search (catalogue and
++  taps, then the live fallbacks), inspect (fetch into quarantine, scan, report, discard), install
++  `{identifier, force?}` (P13-26 pipeline; a blocked verdict is 409 `scan_blocked` with the
++  verdict; `dangerous` is never installed, `force` only lifts `caution`), uninstall `{name}`,
++  update `{name?}`.
++- **Plugins**: installed list with state, version, source and pinned commit; install from git
++  `{url, sha}` (owner/repo or a git URL, never a local folder; `sha` must be a full 40-hex commit;
++  the P13-20 scan decides; a block is 409 `scan_blocked` with the verdict); enable / disable (an
++  enable that needs Python packages or is a memory provider is refused with a code: those need a
++  terminal; capabilities the plugin declares stay ungranted and are listed as waiting).
++- **MCP**: servers list (env values and URL credentials redacted; `${NAME}` references shown as
++  written); add `{name, command | url, args?, env?, auth?}` (secret-looking literal values refused:
++  store them on the Keys page and write `${NAME}`); test (connect, list tools, disconnect within
++  15 s; an `auth: oauth` server without a stored sign-in answers "sign-in needed" without
++  connecting); enable/disable; delete (also removes the stored sign-in); OAuth: start a sign-in
++  (`POST /api/mcp/servers/{name}/auth` → `{flow_id, status, authorization_url}`), poll and cancel
++  the flow, and the browser's callback `GET /api/mcp/oauth/callback?code&state` (public: the IdP
++  redirects a browser that carries no dashboard credential), which finds its flow by `state` in
++  constant time and answers a small HTML page that echoes nothing from the request.
++
++Inputs → outputs: JSON bodies → JSON; errors `{detail: {code, message, …}}`; reads `read_scope`,
++writes `write_scope` (the fire webhook and OAuth callback are the two public exceptions: they
++resolve their profile from the signed token / the flow).
++
++Files: `src/indus/web/routes/{cron,skills,plugins,mcp,mcp_oauth}.py`,
++`tests/contract/web/{test_cron_skills_routes,test_plugins_mcp_routes}.py`; shared: ROUTERS lines,
++`web/auth/public_paths.py` (the MCP OAuth callback), trap/ACC lines.
++
++Edge cases / failure modes:
++- Fire token: expired by one second, wrong signature, other job, other profile, minted by another
++  process, malformed, absent → 401 with one body; a deleted job → 200 `gone`; a running job → 409.
++- Trigger while running → 409 `job_running`; trigger of a paused job runs it once (the backend
++  decides).
++- Unknown job / skill / plugin / server → 404 with a code.
++- Hub network failure → 502 `hub_unavailable`; the quarantine copy is always removed (library).
++- Plugin install of a short or non-hex SHA → 422 before any git call; a local path → 400.
++- MCP add with both command and url, or neither → 422; duplicate name → 409; a broken entry in the
++  file is listed with its problem instead of failing the list.
++- MCP test of a server that hangs → error after 15 s, the process is gone.
++- OAuth: at most 8 flows in progress, one per server and profile; flows expire after 15 minutes;
++  a callback with an unknown or spent `state` → 404 page; an `error=` callback ends the flow.
++
++Our design differences / decisions:
++- Trigger and the fire webhook run the job in the dashboard process, in the background (like the
++  P15 API server's `/api/jobs/{id}/run`), because the daemon has no "run job" control verb yet;
++  the reference forwards to its gateway.
++- The fire token is ours (HMAC, per-process key, minted by an authenticated route) instead of a
++  JWT from an external scheduler (no hosted scheduler, L14).
++- Hub search results carry `verdict: null` (a search does not download); the verdict comes from
++  inspect or install.
++- No MCP catalogue, no replace-all route, no per-toolset configuration routes, no skill editor
++  routes (not on the 1.0 pages).
++
++Tests we will write: cron CRUD/pause/resume/trigger against the real store; bad schedule → 400;
++fire with a good token → 202 and the run starts; expired (injected clock) → 401; tampered,
++other-job and missing token → 401; deleted job → 200 gone; fire reachable without the session
++token; skills list/toggle round trip through `config.yaml`; hub install of a `dangerous` fixture
++→ 409 with the verdict and nothing installed; plugin install short SHA → 422, blocked scan → 409;
++enable/disable round trip; MCP add/list (env redacted)/enable/delete; MCP test against the fake
++stdio server lists its tools; OAuth callback is public, unknown state → 404, a matching state
++reaches its flow; every write route depends on `write_scope` (fire and callback excepted); route
++list pinned.
++
++## Decisions for the lead
++- Fire token route: `POST /api/cron/jobs/{id}/fire-token {ttl_s?}` → `{token, expires_in,
++  path: "/api/cron/fire"}`; webhook body `{job_id}` optional (must match the token when given).
++- Delivery targets read the profile config only (`platforms.<name>.home_channel`,
++  `platforms.<name>.enabled`); live daemon state is not consulted.
++- Blueprints: list only (`GET /api/cron/blueprints`); instantiating one is creating a job with its
++  schedule and prompt (the page can prefill the create form).
++- Skills toggle is `POST` (F1's client), the reference uses `PUT`.
++- Plugin install never enables; enabling is a second call (so dependency and capability consent
++  stay with a terminal or a later page).
++- MCP OAuth callback path is the exact `/api/mcp/oauth/callback` (the public list matches exact
++  paths; the server is found through `state`, not the path).
++- `POST /api/mcp/servers/{name}/test` uses `write_scope` (it starts a configured program).
++- The dashboard OAuth flow reuses `mcp.oauth`'s private helpers (`_settings`, `_store_for`,
++  `_client_metadata`, `_extra`, `_put_back`); a public `oauth.redirect_login(...)` in P13 would be
++  cleaner (follow-up).
++
++Compare checklist (filled after the rewrite; reopened `cron.py` (mutations, trigger, fire,
++targets, blueprints), `skills.py`, `mcp.py` (servers, test, OAuth flow and callback), `tools.py`
++(toolsets list), and the request models in `web_models.py`):
++- [x] fire: token checked before the body is read; one 401 for every token problem; gone job →
++  200 so the caller stops (tests: `tests/contract/web/test_cron_skills_routes.py::test_fire_for_a_deleted_job_is_gone`, `::test_fire_refuses_bad_tokens_with_one_answer`, `::test_fire_token_expires`)
++- [x] trigger: already running → 409 (test: `tests/contract/web/test_cron_skills_routes.py::test_trigger_runs_in_the_background_and_refuses_a_second`)
++- [x] CRUD, pause/resume, delete answers `{ok: true}`, unknown job 404 (test: `tests/contract/web/test_cron_skills_routes.py::test_cron_crud_pause_resume`)
++- [x] delivery targets: local plus configured platforms (test: `tests/contract/web/test_cron_skills_routes.py::test_delivery_targets_list_local_and_configured_platforms`)
++- [x] skills toggle writes the disabled list and answers `{ok, name, enabled}` (test: `tests/contract/web/test_cron_skills_routes.py::test_skill_toggle_round_trips_through_config`)
++- [x] hub: dangerous never installed, force or not (test: `tests/contract/web/test_cron_skills_routes.py::test_hub_install_of_a_dangerous_skill_is_409_with_the_verdict`); empty search → empty results (test: `::test_hub_search_marks_no_verdict`)
++- [x] MCP add refuses duplicates; enable keeps the entry; delete 404 when unknown (test: `tests/contract/web/test_plugins_mcp_routes.py::test_mcp_add_list_toggle_delete`)
++- [x] MCP test: lists tools; failure is `{ok: false, error}`; oauth server without a token → not
++  ok without connecting (tests: `tests/contract/web/test_plugins_mcp_routes.py::test_mcp_test_against_the_fake_stdio_server_lists_tools`, `::test_mcp_test_reports_a_failure_without_a_500`, `::test_mcp_test_of_an_oauth_server_without_sign_in`)
++- [x] OAuth: stdio and header servers refused; one flow per server (409), at most 8 (429), 15 min
++  TTL; callback matches `state` in constant time, answers fixed HTML, a second callback is
++  refused, `error=` ends the flow, cancel unblocks it (tests: `tests/contract/web/test_plugins_mcp_routes.py::test_oauth_callback_is_public_and_matches_state`, `::test_oauth_refusal_and_cancel_end_the_flow`, `::test_oauth_needs_a_remote_server`)
++- [x] toolsets list: name, label, description, enabled, tools (test: `tests/contract/web/test_cron_skills_routes.py::test_toolsets_list_plain_toolsets_with_tools`)
++- Deliberate differences: see above; the callback path carries no server name (exact public
++  path), the flow is found by `state` alone; the callback page says nothing about the reference
++  product; delete also removes the stored sign-in (as `indus mcp remove`).
++- Not taken: `bearer_token` provisioning on MCP add (the page sends `${NAME}` headers; the value
++  goes on the Keys page), a per-server `oauth.redirect_uri` override (our OAuth settings have
++  none), cron `paused` on create, cron runs history (`/runs`), cross-profile `profile=all` job
++  listing, blueprint instantiation and its form schema, official-catalogue / sources / preview /
++  scan hub routes, skill content editor routes, toolset configuration routes, terminal-backend and
++  computer-use routes, the MCP catalogue and whole-map replace.
++
++## Status
++
++Done (2026-10-20). New: `src/indus/web/routes/{cron,skills,plugins,mcp,mcp_oauth}.py`,
++`tests/contract/web/{test_cron_skills_routes,test_plugins_mcp_routes}.py`. Shared:
++`src/indus/web/routes/__init__.py` (ROUTERS lines), `src/indus/web/auth/public_paths.py` (the MCP
++OAuth callback path), trap R09.4 / R09.20 lines. W1's `tests/unit/web/auth/test_gate.py` pins the
++allowlist set and needs the new path added (not edited here: W1 file).
+diff --git a/docs/notes/P18/rest-status-logs.md b/docs/notes/P18/rest-status-logs.md
+new file mode 100644
+index 0000000..c79a222
+--- /dev/null
++++ b/docs/notes/P18/rest-status-logs.md
+@@ -0,0 +1,117 @@
++# Task: REST: status, logs, analytics (P18-13) Phase: 18 Owner: wave-30 builder R2
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `hermes_cli/web_routers/status.py`
++(the `/api/status` payload, the public-projection rules, component health, the advisory pressure
++blocks, the `/api/logs` handler at the end), `hermes_cli/web_routers/analytics.py` (route list,
++`/api/analytics/usage` day grouping and its `days` clamp). F1's client and notes from
++`w29-f1.patch` (`docs/notes/P18/{rest-client,page-logs-files}.md`, `lib/restTypes.ts`,
++`testing/mockApi.ts`). Research 09 §3.4 (Status shape). Our `foundation/{log,redact}.py`,
++`cli/commands/logs.py` (filter rules; not importable from `web`), `state/{browse,usage,schema,
++gateway_runtime}.py`, R1's REST conventions (`w30-r1.patch`). Reference closed before writing.
++Evidence: none.
++
++What it does (own words): three read-only routes for the status strip, the Logs page and the
++Analytics page.
++
++- `GET /api/status` is on the shared public list (anyone who can reach the port may call it), so
++  it carries only counts, enums and coarse numbers: the version; the daemon's state (its own word
++  from `gateway_state.json`; `stopped` when there is no record or its process is gone; `unknown`
++  when the heartbeat is older than 150 s, dated in the future or unreadable) and the heartbeat age
++  in whole seconds; the platforms the daemon reports as `{name, state}`; `active_sessions` (of the
++  20 most recently active sessions, the open ones active in the last 5 minutes) and
++  `recent_sessions` (how many that window held); `auth_required` and `auth_providers`; health
++  components (`store`, `daemon`, `platforms`) with an `overall` roll-up; memory and disk
++  pressure. Pressure: memory `critical` below 64 MiB or 5 % available, `elevated` below 128 MiB or
++  15 %; disk `critical` when free < 256 MiB or usage ≥ 95 % with < 1 GiB free, `elevated` when
++  free < 512 MiB or usage ≥ 85 % with < 4 GiB free; else `ok`. Every collector is fail-safe: an
++  error gives `{pressure: "unknown"}` (or the component's `unknown`), never a 500. The store is
++  opened read-only and never created. No paths, pids, hosts, session ids, titles or error texts.
++- `GET /api/logs?file=&lines=&level=&component=`: tail of `agent`, `errors` or `gateway` log of
++  the profile; `lines` one of 50/100/200/500 (default 100); `level` = minimum severity
++  (`DEBUG`..`ERROR`, `ALL`/absent = everything); `component` = logger prefix group (`agent`,
++  `tools`, `gateway`, `cli`, `cron`, `all`/absent). A continuation line (traceback) shares its
++  record's verdict. Every line goes through the profile's redactor (forced on) before it leaves.
++  A missing file is an empty list.
++- `GET /api/analytics/usage?days=` (default 30, 1..365; the page offers 7/30/90): per calendar
++  day (the clock's zone) input tokens, output tokens, cost (billed where known, else estimated)
++  and sessions started, for the days that have any; plus totals. Side calls (title, compression,
++  vision…) in `model_usage` count toward the day their session started. Read-only store; a
++  missing store is an empty answer; a busy or unreadable store is 503.
++
++Inputs → outputs: query params → JSON; reads `read_scope` only; errors `{detail: {code, message}}`.
++
++Files: `src/indus/web/routes/{status,logs,analytics}.py`, `tests/contract/web/test_status_routes.py`,
++`tests/contract/web/test_logs_analytics_routes.py`, `tests/contract/web/_rest_app_r2.py` (own copy of
++R1's test app builder); shared: ROUTERS lines, trap/ACC lines.
++
++Edge cases / failure modes:
++- Pressure exactly at a threshold (64 MiB, 5 %, 85 %/4 GiB, …): the comparison side is pinned by
++  table tests.
++- Status file: missing, unreadable JSON, unknown state word, `updated_at` 151 s old, 1 s in the
++  future, dead pid → each mapped as above.
++- Store missing (fresh install) → `active_sessions: 0`, store component `missing`, no file created.
++- A collector raising → that block `unknown`, the rest still answered.
++- Logs: bad `file`/`lines`/`level`/`component` → 400 with a code; huge file → only the last 8 MiB
++  read; non-UTF-8 bytes replaced.
++- Analytics: `days=0` / `400` → 422; sessions with NULL costs; archived and hidden sessions count
++  (they were spent).
++
++Our design differences / decisions:
++- One payload of our own shape (see "Decisions"), not the reference's long list of gateway
++  fields; no install id, curator, portal, profile topology or host paths (never public, even on
++  loopback: the dashboard has other routes for them).
++- Logs search (`search=`) not taken: the page has no search box.
++- Analytics: only the usage route; per-model analytics are not on a 1.0 page.
++
++Tests we will write: pressure table at every edge (memory and disk); collector raising →
++`unknown`; status without a token (loopback) and without a cookie (gated) answers 200 and its body
++has no path or pid; daemon state table (missing, stale 151 s, future-dated, running, stopped);
++active-session count; a fresh home stays without a store after a status call; log lines carrying
++a key are redacted; level/component/tail filters and continuation lines; bad params → 400;
++analytics sums match a store built through the P02 writers; route list pinned.
++
++## Decisions for the lead
++- Status shape: `{version, daemon: {state, heartbeat_age_s}, platforms: [{name, state}],
++  active_sessions, recent_sessions, auth_required, auth_providers, components: {store, daemon,
++  platforms}, overall, memory: {pressure, available_percent}, disk: {pressure, used_percent,
++  free_gb}}`. F1's restTypes has no status type yet; P18-25 should read this one.
++- "recent 20" read as: the active count is taken over the 20 most recently active sessions, and
++  that window's size is reported as `recent_sessions` (a count; the public probe never lists
++  sessions).
++- MB/GB in the thresholds are binary (MiB/GiB).
++- Daemon `stopped` (not `unknown`) when the status record names a process that is gone.
++- Memory is read from `/proc/meminfo` (`MemAvailable`/`MemTotal`); without it (macOS, Windows)
++  psutil is used when installed, else `unknown`. A cgroup limit is not consulted.
++- `/api/status` takes `?profile=` (unknown → 404) like every scoped route.
++- Analytics `days` accepts 1..365 (422 outside), the page sends 7/30/90; days are calendar days in
++  the clock's zone (the server's local zone in production).
++- Components: `daemon` is `ok` while running or draining, `down` when stopped, `degraded` while
++  starting/stopping/degraded, `unknown` when unknown; `platforms` leaves out paused ones; `store`
++  is `ok` (a missing store is fine), `busy`, `corrupt` or `unavailable`; `overall` is `ok` only
++  when all three are.
++
++Compare checklist (filled after the rewrite; reopened `status.py` (payload, component health,
++pressure, logs handler) and `analytics.py` (usage route)):
++- [x] public payload carries no paths, pids or host details (test: `tests/contract/web/test_status_routes.py::test_status_is_public_and_carries_no_paths_or_pids`)
++- [x] reachable without a credential in both gate modes (test: `tests/contract/web/test_status_routes.py::test_status_is_public_in_gated_mode_too`)
++- [x] collectors fail-safe (test: `tests/contract/web/test_status_routes.py::test_a_raising_collector_reads_unknown`)
++- [x] active sessions: open and active within 5 min (test: `tests/contract/web/test_status_routes.py::test_active_sessions_counts_open_recent_sessions`)
++- [x] status never creates the store (test: `tests/contract/web/test_status_routes.py::test_status_on_a_fresh_home_creates_no_store`)
++- [x] gap closed: a draining daemon is healthy, a deliberately paused platform never degrades
++  the roll-up, a damaged store reads `corrupt` (test: `tests/contract/web/test_status_routes.py::test_components_roll_up`)
++- [x] logs: unknown file / component → 400; ALL means no filter; missing file → empty (tests:
++  `tests/contract/web/test_logs_analytics_routes.py::test_bad_parameters_are_400`,
++  `::test_level_component_and_tail_filters`, `::test_other_files_and_a_missing_file`)
++- [x] analytics: day grouping, totals, `days` 1..365 (tests: `tests/contract/web/test_logs_analytics_routes.py::test_usage_sums_match_the_store`, `::test_usage_days_out_of_range_is_422`)
++- Deliberate differences: our payload shape (above); thresholds and heartbeat limit from the row;
++  side calls folded into their session's day instead of separate per-model/per-task tables; logs
++  are redacted line by line on the way out (the reference relies on redaction at write time).
++- Not taken: the gateway multiplexer topology, install id, update/config-version fields, curator,
++  portal, learning graph, ops and system-stats routes of the same module (other rows or dropped),
++  the logs `search` parameter, `/api/analytics/models`, FTS rebuild progress.
++
++## Status
++
++Done (2026-10-20). New: `src/indus/web/routes/{status,logs,analytics}.py`,
++`tests/contract/web/{test_status_routes,test_logs_analytics_routes,_rest_app_r2}.py`. Shared:
++`src/indus/web/routes/__init__.py` (ROUTERS lines), trap R09.4 lines, ACC-L6-1 lines.
+diff --git a/src/indus/web/auth/public_paths.py b/src/indus/web/auth/public_paths.py
+index 4d6da8e..87e3832 100644
+--- a/src/indus/web/auth/public_paths.py
++++ b/src/indus/web/auth/public_paths.py
+@@ -4,8 +4,10 @@ Both gates — the loopback session-token gate and the gated-mode login gate —
+ ``PUBLIC_API_PATHS`` from here and match it exactly, so the two lists can never drift apart (a
+ test asserts both gates hold this very object). Every entry must be safe to show anyone who can
+ reach the port: liveness, coarse status, the config defaults and schema, model metadata, the theme
+-list, the dashboard plugin manifest list, and the cron fire webhook (which carries its own
+-short-lived signed token, checked by its handler, P18-14). Widening this list needs a D-id.
++list, the dashboard plugin manifest list, the cron fire webhook (which carries its own
++short-lived signed token, checked by its handler, P18-14) and the MCP OAuth callback (the browser
++coming back from an IdP; ``state`` ties it to a sign-in a signed-in person started, P18-14).
++Widening this list needs a D-id.
+ 
+ ``LOGIN_PUBLIC_PREFIXES`` are what gated mode additionally lets through before login: the login
+ page and the auth round trip, the providers list the login page reads, and the static bundle files
+@@ -32,6 +34,7 @@ PUBLIC_API_PATHS: Final[frozenset[str]] = frozenset(
+         "/api/dashboard/plugins",
+         "/api/dashboard/themes",
+         "/api/health",
++        "/api/mcp/oauth/callback",
+         "/api/model/info",
+         "/api/status",
+     }
+diff --git a/src/indus/web/routes/__init__.py b/src/indus/web/routes/__init__.py
+index 6f526b2..d7cb646 100644
+--- a/src/indus/web/routes/__init__.py
++++ b/src/indus/web/routes/__init__.py
+@@ -10,5 +10,12 @@ from __future__ import annotations
+ ROUTERS: tuple[str, ...] = (
+     "indus.web.routes.auth:router",
+     "indus.web.routes.ws_ticket:router",
++    "indus.web.routes.status:router",
++    "indus.web.routes.logs:router",
++    "indus.web.routes.analytics:router",
++    "indus.web.routes.cron:router",
++    "indus.web.routes.skills:router",
++    "indus.web.routes.plugins:router",
++    "indus.web.routes.mcp:router",
+ )
+ """``"module:attr"`` of every router ``create_app`` includes, in order."""
+diff --git a/src/indus/web/routes/analytics.py b/src/indus/web/routes/analytics.py
+new file mode 100644
+index 0000000..471936c
+--- /dev/null
++++ b/src/indus/web/routes/analytics.py
+@@ -0,0 +1,126 @@
++"""``GET /api/analytics/usage``: tokens, cost and sessions per day (P18-13).
++
++``days`` (default 30, 1..365; the page offers 7, 30 and 90) counts calendar days back from today in
++the clock's zone, today included. Each session's main-loop counters land on the day it started;
++side calls (title, compression, vision… rows of ``model_usage`` with a task) land on their
++session's day too, so nothing is counted twice. Cost is the billed figure where known, else the
++estimate, row by row (``state.usage``'s rule). Only days with a session appear in ``daily``;
++``totals`` sums them.
++
++The store is opened read-only (``state.browse``): a missing store is an empty answer, a store that
++cannot be read right now is 503 with a code; nothing is ever created or migrated.
++"""
++
++from __future__ import annotations
++
++import sqlite3
++from datetime import date, datetime, time, timedelta, tzinfo
++from typing import Annotated, Any, Final
++
++from fastapi import APIRouter, Depends, HTTPException, Query
++
++from indus.foundation.errors import StoreUnavailable
++from indus.foundation.scope import Scope
++from indus.state import browse
++from indus.state.errors import Bucket, classify
++from indus.web.scope import read_scope
++
++__all__ = ["ROUTE_LIST", "router", "usage_by_day"]
++
++router = APIRouter()
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (("GET", "/api/analytics/usage", True),)
++"""``(method, path, scoped)`` of every route here."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++
++_COST: Final = "COALESCE(actual_cost_usd, estimated_cost_usd, 0)"
++_MAIN_SQL: Final = (
++    "SELECT id, started_at, input_tokens, output_tokens, "
++    f"{_COST} AS cost FROM sessions WHERE started_at >= ?"
++)
++_SIDE_SQL: Final = (
++    "SELECT s.started_at AS started_at, "
++    "COALESCE(SUM(u.input_tokens), 0) AS input_tokens, "
++    "COALESCE(SUM(u.output_tokens), 0) AS output_tokens, "
++    "COALESCE(SUM(COALESCE(u.actual_cost_usd, u.estimated_cost_usd, 0)), 0) AS cost "
++    "FROM model_usage u JOIN sessions s ON s.id = u.session_id "
++    "WHERE u.task <> '' AND s.started_at >= ? GROUP BY u.session_id"
++)
++_FIELDS: Final = ("input_tokens", "output_tokens", "cost", "sessions")
++
++
++def _store_error(exc: BaseException) -> HTTPException:
++    if isinstance(exc, StoreUnavailable):
++        return HTTPException(
++            status_code=503,
++            detail={"code": "store_unavailable", "message": "The session history cannot be read."},
++        )
++    if classify(exc) is Bucket.CORRUPT:
++        code, message = "store_corrupt", "The session history is damaged; run `indus doctor`."
++    else:
++        code, message = "store_busy", "The session history is busy right now; try again."
++    return HTTPException(status_code=503, detail={"code": code, "message": message})
++
++
++def _day_of(started_at: float, zone: tzinfo | None) -> str:
++    return datetime.fromtimestamp(started_at, tz=zone).date().isoformat()
++
++
++def _first_day(today: date, days: int, zone: tzinfo | None) -> float:
++    start = datetime.combine(today - timedelta(days=days - 1), time.min, tzinfo=zone)
++    return start.timestamp()
++
++
++def usage_by_day(conn: sqlite3.Connection, since: float, zone: tzinfo | None) -> dict[str, Any]:
++    """``{day: {input_tokens, output_tokens, cost, sessions}}`` for sessions started at/after
++    ``since`` (epoch seconds), days in ``zone``."""
++    daily: dict[str, dict[str, Any]] = {}
++
++    def bucket(day: str) -> dict[str, Any]:
++        return daily.setdefault(
++            day, {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "sessions": 0}
++        )
++
++    for row in conn.execute(_MAIN_SQL, (since,)):
++        into = bucket(_day_of(float(row["started_at"]), zone))
++        into["input_tokens"] += int(row["input_tokens"] or 0)
++        into["output_tokens"] += int(row["output_tokens"] or 0)
++        into["cost"] += float(row["cost"] or 0.0)
++        into["sessions"] += 1
++    for row in conn.execute(_SIDE_SQL, (since,)):
++        into = bucket(_day_of(float(row["started_at"]), zone))
++        into["input_tokens"] += int(row["input_tokens"] or 0)
++        into["output_tokens"] += int(row["output_tokens"] or 0)
++        into["cost"] += float(row["cost"] or 0.0)
++    return daily
++
++
++@router.get("/api/analytics/usage")
++def get_usage(scope: ReadScope, days: Annotated[int, Query(ge=1, le=365)] = 30) -> dict[str, Any]:
++    now = scope.clock.now()
++    zone = now.tzinfo
++    since = _first_day(now.date(), days, zone)
++    daily: dict[str, dict[str, Any]] = {}
++    try:
++        store = browse.open_readonly(scope)
++    except StoreUnavailable as exc:
++        if exc.kind != "missing":
++            raise _store_error(exc) from None
++        store = None
++    except (sqlite3.Error, OSError) as exc:
++        raise _store_error(exc) from None
++    if store is not None:
++        try:
++            with store.read() as conn:
++                daily = usage_by_day(conn, since, zone)
++        except sqlite3.Error as exc:
++            raise _store_error(exc) from None
++        finally:
++            store.close()
++    rows = [{"day": day, **values} for day, values in sorted(daily.items())]
++    for row in rows:
++        row["cost"] = round(row["cost"], 6)
++    totals: dict[str, Any] = {name: sum(row[name] for row in rows) for name in _FIELDS}
++    totals["cost"] = round(totals["cost"], 6)
++    return {"days": days, "daily": rows, "totals": totals}
+diff --git a/src/indus/web/routes/cron.py b/src/indus/web/routes/cron.py
+new file mode 100644
+index 0000000..545085c
+--- /dev/null
++++ b/src/indus/web/routes/cron.py
+@@ -0,0 +1,498 @@
++"""``/api/cron``: the Cron page's backend and the public fire webhook (P18-14).
++
++Jobs go through the P14 backend (``cron.ports.backend_for``; ``service.cron_host`` registers the
++real one) under the request's profile scope: list, one, create, update, pause, resume, delete,
++trigger, delivery targets and blueprints. Create and update check the prompt (safety scan) and the
++delivery value (target grammar) the way ``indus cron create`` does before the store sees them; the
++store then checks the schedule (our grammar or a cron line). Answers carry a job view: the fields
++the page shows, times as ISO-8601, the last error redacted.
++
++**Runs.** Trigger and the fire webhook start the job in a background thread of this process (the
++daemon has no "run this job" verb yet) and answer 202 at once; a job that is already running is
++409 ``job_running``.
++
++**Fire webhook.** ``POST /api/cron/fire`` is on the shared public list: an external scheduler calls
++it without a dashboard credential. It is authenticated by its own token instead, minted by a
++signed-in caller with ``POST /api/cron/jobs/{id}/fire-token``. A token names the profile and the
++job and carries an expiry (default ``FIRE_TTL_S``, at most ``FIRE_TTL_MAX_S``); it is signed with
++HMAC-SHA256 under a random key this process made, so a restart ends every token. It travels as
++``Authorization: Bearer <token>``, is compared in constant time, and is never logged or echoed.
++Every token problem (absent, malformed, wrong signature, expired, another job) is the same 401.
++A good token for a job that no longer exists answers 200 ``gone``, so the caller stops retrying.
++
++Seams for tests (``DashboardState.extras``): ``cron.backend`` (``Scope -> CronBackend``) and
++``cron.runner`` (``(backend, job_id) -> None``, how a run is started).
++"""
++
++from __future__ import annotations
++
++import asyncio
++import base64
++import hashlib
++import hmac
++import json
++import logging
++import secrets
++import threading
++from collections.abc import Callable, Mapping
++from datetime import datetime
++from typing import Annotated, Any, Final, NoReturn
++
++from fastapi import APIRouter, Depends, HTTPException, Request
++from fastapi.responses import JSONResponse
++from pydantic import BaseModel, ConfigDict, Field
++from starlette.concurrency import run_in_threadpool
++
++from indus.cron import ports, targets
++from indus.cron import tool as checks
++from indus.cron.errors import CronStoreBusy
++from indus.cron.ports import CronBackend
++from indus.foundation import config as config_module
++from indus.foundation.redact import Redactor
++from indus.foundation.scope import Scope
++from indus.learning.skills.resolver import load_catalog
++from indus.web.scope import ProfileUnknown, read_scope, scopes_of, write_scope
++from indus.web.state import DashboardState, dashboard_state
++
++__all__ = [
++    "FIRE_PATH",
++    "FIRE_TTL_MAX_S",
++    "FIRE_TTL_S",
++    "ROUTE_LIST",
++    "FireClaims",
++    "mint_fire_token",
++    "read_fire_token",
++    "router",
++]
++
++log = logging.getLogger(__name__)
++
++router = APIRouter()
++
++FIRE_PATH: Final = "/api/cron/fire"
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
++    ("GET", "/api/cron/jobs", True),
++    ("POST", "/api/cron/jobs", True),
++    ("GET", "/api/cron/jobs/{job_id}", True),
++    ("PUT", "/api/cron/jobs/{job_id}", True),
++    ("DELETE", "/api/cron/jobs/{job_id}", True),
++    ("POST", "/api/cron/jobs/{job_id}/pause", True),
++    ("POST", "/api/cron/jobs/{job_id}/resume", True),
++    ("POST", "/api/cron/jobs/{job_id}/trigger", True),
++    ("POST", "/api/cron/jobs/{job_id}/fire-token", True),
++    ("GET", "/api/cron/delivery-targets", True),
++    ("GET", "/api/cron/blueprints", True),
++    ("POST", FIRE_PATH, False),
++)
++"""``(method, path, scoped)`` of every route here. The fire webhook takes its profile from the
++signed token, never from ``?profile=``."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++WriteScope = Annotated[Scope, Depends(write_scope)]
++
++FIRE_TTL_S: Final = 300
++FIRE_TTL_MAX_S: Final = 3600
++FIRE_BODY_LIMIT: Final = 4096
++_FIRE_KEY: Final = "cron.fire_key"
++_FIRE_LABEL: Final = b"indus-cron-fire.v1."
++
++
++def _fail(status: int, code: str, message: str, **extra: Any) -> NoReturn:
++    raise HTTPException(status_code=status, detail={"code": code, "message": message, **extra})
++
++
++# -- the backend -----------------------------------------------------------------------------------
++
++
++def _backend(state: DashboardState, scope: Scope) -> CronBackend:
++    factory: object = state.extras.get("cron.backend")
++    if callable(factory):
++        return factory(scope)  # pyright: ignore[reportReturnType]
++    from indus.service import cron_host
++
++    cron_host.install()
++    return ports.backend_for(scope)
++
++
++def _call[T](state: DashboardState, scope: Scope, work: Callable[[CronBackend], T]) -> T:
++    try:
++        return work(_backend(state, scope))
++    except ports.StoreUnavailable as exc:
++        _fail(503, "cron_unavailable", str(exc))
++    except CronStoreBusy:
++        _fail(503, "cron_busy", "The job store is busy right now; try again.")
++    except LookupError:
++        _fail(404, "job_not_found", "No job has this id.")
++    except ValueError as exc:
++        _fail(400, "invalid_job", Redactor(scope).redact(str(exc), force=True))
++
++
++def _iso(value: object) -> str | None:
++    if isinstance(value, datetime):
++        return ports.iso(value)
++    return str(value) if value else None
++
++
++def job_out(job: Any, scope: Scope) -> dict[str, Any]:
++    """The page's view of one job."""
++    times, done = ports.repeat_of(job)
++    display = str(ports.field(job, "schedule_display") or ports.schedule_kind(job) or "")
++    error = ports.field(job, "last_error")
++    redactor = Redactor(scope)
++    return {
++        "id": ports.field(job, "id"),
++        "name": ports.field(job, "name") or "",
++        "prompt": ports.field(job, "prompt") or "",
++        "schedule": display,
++        "schedule_display": display,
++        "deliver": ports.field(job, "deliver") or targets.LOCAL,
++        "skills": list(ports.field(job, "skills") or []),
++        "repeat": {"times": times, "completed": done},
++        "state": ports.field(job, "state") or "scheduled",
++        "enabled": bool(ports.field(job, "enabled", True)),
++        "paused_reason": ports.field(job, "paused_reason"),
++        "last_run_at": _iso(ports.field(job, "last_run_at")),
++        "next_run_at": _iso(ports.field(job, "next_run_at")),
++        "last_status": ports.field(job, "last_status"),
++        "last_error": redactor.redact(str(error), force=True) if error else None,
++    }
++
++
++# -- bodies ----------------------------------------------------------------------------------------
++
++
++class JobCreate(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    name: str | None = Field(default=None, max_length=200)
++    prompt: str = Field(min_length=1, max_length=5000)
++    schedule: str = Field(min_length=1, max_length=500)
++    deliver: str | None = Field(default=None, max_length=500)
++    skills: list[str] | None = Field(default=None, max_length=50)
++    repeat: int | None = Field(default=None, ge=1)
++
++
++class JobUpdate(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    name: str | None = Field(default=None, max_length=200)
++    prompt: str | None = Field(default=None, min_length=1, max_length=5000)
++    schedule: str | None = Field(default=None, min_length=1, max_length=500)
++    deliver: str | None = Field(default=None, max_length=500)
++    skills: list[str] | None = Field(default=None, max_length=50)
++    repeat: int | None = Field(default=None, ge=1)
++
++
++def _checked(fields: dict[str, Any]) -> dict[str, Any]:
++    """The prompt and delivery checks of ``indus cron create``; empty name means none."""
++    if "name" in fields and not (fields["name"] or "").strip():
++        fields["name"] = None
++    problem = checks.prompt_problem(fields.get("prompt"))
++    if problem is not None:
++        _fail(400, "prompt_refused", problem)
++    if fields.get("deliver") is not None:
++        value = targets.join_tokens(targets.split_tokens(fields["deliver"])) or targets.LOCAL
++        problem = checks.deliver_problem(value)
++        if problem is not None:
++            _fail(400, "invalid_deliver", problem)
++        fields["deliver"] = value
++    return fields
++
++
++# -- jobs ------------------------------------------------------------------------------------------
++
++
++@router.get("/api/cron/jobs")
++def list_jobs(request: Request, scope: ReadScope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    jobs = _call(state, scope, lambda b: b.list_jobs(include_disabled=True))
++    return {"jobs": [job_out(job, scope) for job in jobs]}
++
++
++@router.post("/api/cron/jobs", status_code=201)
++def create_job(request: Request, body: JobCreate, scope: WriteScope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    fields = _checked(body.model_dump(exclude_none=True))
++    fields.setdefault("deliver", targets.LOCAL)
++    if not fields.get("skills"):
++        fields.pop("skills", None)
++    job = _call(state, scope, lambda b: b.create(fields))
++    return job_out(job, scope)
++
++
++def _job(state: DashboardState, scope: Scope, job_id: str) -> Any:
++    found = _call(state, scope, lambda b: b.get(job_id))
++    if found is None:
++        _fail(404, "job_not_found", "No job has this id.")
++    return found
++
++
++@router.get("/api/cron/jobs/{job_id}")
++def get_job(request: Request, job_id: str, scope: ReadScope) -> dict[str, Any]:
++    return job_out(_job(dashboard_state(request.app), scope, job_id), scope)
++
++
++@router.put("/api/cron/jobs/{job_id}")
++def update_job(request: Request, job_id: str, body: JobUpdate, scope: WriteScope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    changes = _checked(body.model_dump(exclude_unset=True))
++    if not changes:
++        _fail(400, "no_changes", "Nothing to change.")
++    _job(state, scope, job_id)
++    job = _call(state, scope, lambda b: b.update(job_id, changes))
++    return job_out(job, scope)
++
++
++@router.delete("/api/cron/jobs/{job_id}")
++def delete_job(request: Request, job_id: str, scope: WriteScope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    _job(state, scope, job_id)
++    if not _call(state, scope, lambda b: b.remove(job_id)):
++        _fail(404, "job_not_found", "No job has this id.")
++    return {"ok": True}
++
++
++@router.post("/api/cron/jobs/{job_id}/pause")
++def pause_job(request: Request, job_id: str, scope: WriteScope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    _job(state, scope, job_id)
++    job = _call(state, scope, lambda b: b.pause(job_id, "paused from the dashboard"))
++    return job_out(job, scope)
++
++
++@router.post("/api/cron/jobs/{job_id}/resume")
++def resume_job(request: Request, job_id: str, scope: WriteScope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    _job(state, scope, job_id)
++    job = _call(state, scope, lambda b: b.resume(job_id))
++    return job_out(job, scope)
++
++
++# -- runs ------------------------------------------------------------------------------------------
++
++
++def _run_in_thread(backend: CronBackend, job_id: str) -> None:
++    def work() -> None:
++        try:
++            report = asyncio.run(backend.run_now(job_id))
++            log.info("dashboard-started run of job %s: %s", job_id, report.status)
++        except Exception:
++            log.warning("dashboard-started run of job %s failed", job_id, exc_info=True)
++
++    thread = threading.Thread(target=work, name=f"indus-cron-run-{job_id}", daemon=True)
++    thread.start()
++
++
++def _start_run(state: DashboardState, scope: Scope, job_id: str) -> None:
++    """Start ``job_id`` in the background; 409 while it already runs."""
++    backend = _backend(state, scope)
++    if _call(state, scope, lambda b: b.is_running(job_id)):
++        _fail(409, "job_running", "The job is running already.")
++    runner: object = state.extras.get("cron.runner")
++    if callable(runner):
++        runner(backend, job_id)
++    else:
++        _run_in_thread(backend, job_id)
++
++
++@router.post("/api/cron/jobs/{job_id}/trigger", status_code=202)
++def trigger_job(request: Request, job_id: str, scope: WriteScope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    job = _job(state, scope, job_id)
++    _start_run(state, scope, str(ports.field(job, "id")))
++    return job_out(job, scope)
++
++
++# -- fire tokens -----------------------------------------------------------------------------------
++
++
++class FireClaims(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    profile: str
++    job_id: str
++    expires_at: float
++
++
++def _b64(data: bytes) -> str:
++    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
++
++
++def _unb64(text: str) -> bytes:
++    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
++
++
++def _fire_key(state: DashboardState) -> bytes:
++    key: object = state.extras.setdefault(_FIRE_KEY, secrets.token_bytes(32))
++    if not isinstance(key, bytes) or len(key) < 32:
++        raise RuntimeError("the fire-token key is not usable")
++    return key
++
++
++def _signature(key: bytes, payload: str) -> bytes:
++    return hmac.new(key, _FIRE_LABEL + payload.encode("ascii"), hashlib.sha256).digest()
++
++
++def mint_fire_token(key: bytes, claims: FireClaims) -> str:
++    payload = _b64(json.dumps(claims.model_dump(), separators=(",", ":")).encode("utf-8"))
++    return f"{payload}.{_b64(_signature(key, payload))}"
++
++
++def read_fire_token(key: bytes, token: str, now: float) -> FireClaims | None:
++    """The claims of a token this key signed that has not expired; None otherwise."""
++    payload, dot, signature = token.partition(".")
++    if not dot or not payload or not signature or len(token) > 1024:
++        return None
++    try:
++        given = _unb64(signature)
++        expected = _signature(key, payload)
++        if not hmac.compare_digest(given, expected):
++            return None
++        claims = FireClaims.model_validate_json(_unb64(payload))
++    except (ValueError, UnicodeError):
++        return None
++    return claims if now < claims.expires_at else None
++
++
++class FireTokenRequest(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    ttl_s: int = Field(default=FIRE_TTL_S, ge=1, le=FIRE_TTL_MAX_S)
++
++
++@router.post("/api/cron/jobs/{job_id}/fire-token")
++def fire_token(
++    request: Request, job_id: str, scope: WriteScope, body: FireTokenRequest | None = None
++) -> JSONResponse:
++    state = dashboard_state(request.app)
++    job = _job(state, scope, job_id)
++    ttl = (body or FireTokenRequest()).ttl_s
++    claims = FireClaims(
++        profile=scope.profile_id,
++        job_id=str(ports.field(job, "id")),
++        expires_at=scope.clock.now().timestamp() + ttl,
++    )
++    token = mint_fire_token(_fire_key(state), claims)
++    return JSONResponse(
++        {"token": token, "expires_in": ttl, "path": FIRE_PATH},
++        headers={"cache-control": "no-store"},
++    )
++
++
++def _bearer(request: Request) -> str:
++    raw = request.headers.get("authorization", "")
++    scheme, _, value = raw.partition(" ")
++    return value.strip() if scheme.lower() == "bearer" else ""
++
++
++async def _small_json(request: Request) -> Mapping[str, Any]:
++    data = b""
++    async for chunk in request.stream():
++        data += chunk
++        if len(data) > FIRE_BODY_LIMIT:
++            _fail(413, "body_too_large", "The request body is too large.")
++    if not data.strip():
++        return {}
++    try:
++        parsed: object = json.loads(data)
++    except ValueError:
++        _fail(400, "invalid_body", "The body must be JSON.")
++    if not isinstance(parsed, dict):
++        _fail(400, "invalid_body", "The body must be a JSON object.")
++    return {str(k): v for k, v in parsed.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
++
++
++def _denied() -> NoReturn:
++    _fail(401, "invalid_fire_token", "The fire token is not valid.")
++
++
++def _fire_job(state: DashboardState, scope: Scope, job_id: str) -> JSONResponse:
++    found = _call(state, scope, lambda b: b.get(job_id))
++    if found is None:
++        return JSONResponse({"status": "gone", "job_id": job_id})
++    _start_run(state, scope, job_id)
++    return JSONResponse({"status": "accepted", "job_id": job_id}, status_code=202)
++
++
++@router.post(FIRE_PATH, status_code=202)
++async def fire(request: Request) -> JSONResponse:
++    state = dashboard_state(request.app)
++    scopes = scopes_of(request)
++    now = scopes.base.clock.now().timestamp()
++    claims = read_fire_token(_fire_key(state), _bearer(request), now)
++    if claims is None:
++        _denied()
++    body = await _small_json(request)
++    named = body.get("job_id")
++    if named is not None and named != claims.job_id:
++        _denied()
++    try:
++        scope = scopes.resolve(claims.profile)
++    except ProfileUnknown:
++        return JSONResponse({"status": "gone", "job_id": claims.job_id})
++    return await run_in_threadpool(_fire_job, state, scope, claims.job_id)
++
++
++# -- targets and blueprints ------------------------------------------------------------------------
++
++
++def _platform_rows(scope: Scope) -> list[dict[str, Any]]:
++    view = config_module.load(scope)
++    section: object = view.get("platforms", {})
++    if not isinstance(section, Mapping):
++        return []
++    rows: list[dict[str, Any]] = []
++    for name, raw in sorted(section.items()):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
++        if not isinstance(raw, Mapping) or not isinstance(name, str):
++            continue
++        settings: Mapping[str, Any] = raw  # pyright: ignore[reportUnknownVariableType]
++        home: object = settings.get("home_channel")
++        chat = home.get("chat_id") if isinstance(home, Mapping) else None  # pyright: ignore[reportUnknownMemberType]
++        enabled = settings.get("enabled")
++        if enabled is None and not chat:
++            continue  # never set up: not offered
++        rows.append(
++            {
++                "id": name,
++                "label": name.replace("_", " ").title(),
++                "kind": "email" if name == "email" else "platform",
++                "available": bool(chat) and enabled is not False,
++            }
++        )
++    return rows
++
++
++@router.get("/api/cron/delivery-targets")
++def delivery_targets(scope: ReadScope) -> dict[str, Any]:
++    local = {"id": targets.LOCAL, "label": "Save locally", "kind": "local", "available": True}
++    try:
++        platforms = _platform_rows(scope)
++    except Exception as exc:  # the dropdown keeps "local" whatever the config says
++        log.warning("delivery targets unavailable: %s", type(exc).__name__)
++        platforms = []
++    return {"targets": [local, *platforms]}
++
++
++@router.get("/api/cron/blueprints")
++def blueprints(scope: ReadScope) -> dict[str, Any]:
++    """Skills whose front matter carries a ``blueprint`` block (a suggested job)."""
++    catalog = load_catalog(scope.with_config(config_module.load(scope)))
++    rows: list[dict[str, Any]] = []
++    for record in catalog.loadable():
++        if record.disabled or record.frontmatter is None:
++            continue
++        blueprint: object = record.frontmatter.indus.blueprint
++        if not isinstance(blueprint, Mapping):
++            continue
++        plan: Mapping[str, Any] = blueprint  # pyright: ignore[reportUnknownVariableType]
++        schedule = plan.get("schedule")
++        rows.append(
++            {
++                "skill": record.load_name or record.name,
++                "description": record.description,
++                "schedule": str(schedule) if schedule else None,
++                "prompt": str(plan.get("prompt") or "") or None,
++            }
++        )
++    return {"blueprints": rows}
+diff --git a/src/indus/web/routes/logs.py b/src/indus/web/routes/logs.py
+new file mode 100644
+index 0000000..4c55fbf
+--- /dev/null
++++ b/src/indus/web/routes/logs.py
+@@ -0,0 +1,146 @@
++"""``GET /api/logs``: the tail of one of the profile's log files, filtered and redacted (P18-13).
++
++Query: ``file`` (``agent``, ``errors``, ``gateway``; default ``agent``), ``lines`` (50, 100, 200 or
++500; default 100), ``level`` (the lowest severity shown: ``DEBUG``, ``INFO``, ``WARNING``,
++``ERROR``; ``ALL`` or absent shows everything) and ``component`` (``agent``, ``tools``,
++``gateway``, ``cli``, ``cron``; ``all`` or absent shows everything). Lines follow P01's format
++(``YYYY-MM-DD HH:MM:SS LEVEL logger [tags]: message``); a line without that head (a traceback
++frame, the rest of a long message) belongs to the record above it and shares its verdict.
++
++Only the last ``TAIL_BYTES`` of a file are read. Every line that leaves goes through the profile's
++redactor with redaction forced on, so a key that reached a log line never reaches the page. A
++file that does not exist yet is an empty list. The filter rules restate ``indus logs``'s (the CLI
++layer is not importable from here).
++"""
++
++from __future__ import annotations
++
++import re
++from collections.abc import Iterable
++from pathlib import Path
++from typing import Annotated, Any, Final, NoReturn
++
++from fastapi import APIRouter, Depends, HTTPException
++
++from indus.foundation.log import logs_dir
++from indus.foundation.redact import Redactor
++from indus.foundation.scope import Scope
++from indus.web.scope import read_scope
++
++__all__ = ["COMPONENTS", "LEVELS", "LOG_FILES", "ROUTE_LIST", "TAILS", "filter_lines", "router"]
++
++router = APIRouter()
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (("GET", "/api/logs", True),)
++"""``(method, path, scoped)`` of every route here."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++
++LOG_FILES: Final[dict[str, str]] = {
++    "agent": "agent.log",
++    "errors": "errors.log",
++    "gateway": "gateway.log",
++}
++LEVELS: Final[dict[str, int]] = {
++    "DEBUG": 10,
++    "INFO": 20,
++    "WARNING": 30,
++    "ERROR": 40,
++    "CRITICAL": 50,
++}
++COMPONENTS: Final[dict[str, tuple[str, ...]]] = {
++    "agent": ("indus.core", "indus.providers", "indus.learning"),
++    "tools": ("indus.tools", "indus.backends", "indus.safety"),
++    "gateway": ("indus.gateway",),
++    "cli": ("indus.cli", "indus.service"),
++    "cron": ("indus.cron",),
++}
++TAILS: Final = (50, 100, 200, 500)
++TAIL_BYTES: Final = 8 * 1024 * 1024
++_EVERYTHING: Final = frozenset({"", "all"})
++_RECORD_HEAD: Final = re.compile(
++    r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\S*\s+"
++    r"(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+(?P<name>[^\s:\[]+)"
++)
++
++
++def _fail(code: str, message: str) -> NoReturn:
++    raise HTTPException(status_code=400, detail={"code": code, "message": message})
++
++
++def _record_passes(
++    level: int, name: str, min_level: int | None, prefixes: tuple[str, ...] | None
++) -> bool:
++    if min_level is not None and level < min_level:
++        return False
++    if prefixes is not None:
++        return any(name == p or name.startswith(p + ".") for p in prefixes)
++    return True
++
++
++def filter_lines(
++    lines: Iterable[str], min_level: int | None, prefixes: tuple[str, ...] | None
++) -> list[str]:
++    """The lines whose record passes; continuation lines follow their record. Lines before the
++    first record head pass only when nothing filters."""
++    kept: list[str] = []
++    verdict: bool | None = None
++    unfiltered = min_level is None and prefixes is None
++    for line in lines:
++        head = _RECORD_HEAD.match(line)
++        if head is not None:
++            verdict = _record_passes(
++                LEVELS[head.group("level")], head.group("name"), min_level, prefixes
++            )
++        if verdict if verdict is not None else unfiltered:
++            kept.append(line)
++    return kept
++
++
++def _read_tail(path: Path) -> list[str]:
++    try:
++        with path.open("rb") as handle:
++            size = handle.seek(0, 2)
++            if size > TAIL_BYTES:
++                handle.seek(size - TAIL_BYTES)
++                handle.readline()  # the first line is cut; drop it
++            else:
++                handle.seek(0)
++            data = handle.read()
++    except FileNotFoundError:
++        return []
++    return data.decode("utf-8", errors="replace").splitlines()
++
++
++def _choice(value: str | None, allowed: Iterable[str], code: str, what: str) -> str:
++    text = (value or "").strip()
++    if text.lower() in _EVERYTHING:
++        return ""
++    for option in allowed:
++        if text.lower() == option.lower():
++            return option
++    _fail(code, f"{what} must be one of: {', '.join(allowed)} (or all).")
++
++
++@router.get("/api/logs")
++def get_logs(
++    scope: ReadScope,
++    file: str = "agent",
++    lines: int = 100,
++    level: str | None = None,
++    component: str | None = None,
++) -> dict[str, Any]:
++    if file not in LOG_FILES:
++        _fail("invalid_file", f"file must be one of: {', '.join(LOG_FILES)}.")
++    if lines not in TAILS:
++        _fail("invalid_lines", f"lines must be one of: {', '.join(str(t) for t in TAILS)}.")
++    chosen_level = _choice(level, LEVELS, "invalid_level", "level")
++    chosen_component = _choice(component, COMPONENTS, "invalid_component", "component")
++    min_level = LEVELS[chosen_level] if chosen_level else None
++    prefixes = COMPONENTS[chosen_component] if chosen_component else None
++    found = _read_tail(logs_dir(scope.home) / LOG_FILES[file])
++    if min_level is not None or prefixes is not None:
++        found = filter_lines(found, min_level, prefixes)
++    tail = found[-lines:]
++    redactor = Redactor(scope)
++    return {"file": file, "lines": [redactor.redact(line, force=True) for line in tail]}
+diff --git a/src/indus/web/routes/mcp.py b/src/indus/web/routes/mcp.py
+new file mode 100644
+index 0000000..ada8f28
+--- /dev/null
++++ b/src/indus/web/routes/mcp.py
+@@ -0,0 +1,410 @@
++"""``/api/mcp``: the MCP page's backend (P18-14, over P13's ``indus.mcp``).
++
++- ``GET /api/mcp/servers``: every ``mcp_servers`` entry with its transport, command and args, env,
++  URL and sign-in kind. Env values are redacted (a ``${NAME}`` reference is shown as written; any
++  other value is masked), URLs and args pass through the redactor, header values are never
++  shown. A broken entry is listed with its problem.
++- ``POST /api/mcp/servers {name, command | url, args?, env?, auth?}``: validated as
++  ``indus mcp add`` does (P13's model; a secret-looking literal is refused: store the value on the
++  Keys page and write ``${NAME}``), a duplicate name is 409, saved through the config writer.
++- ``POST /api/mcp/servers/{name}/test``: connect once, list the tools, disconnect, all within
++  ``TEST_DEADLINE_S``; an ``auth: oauth`` server without a stored sign-in answers "sign-in needed"
++  without connecting. Failures are ``{ok: false, error}`` (redacted), never a 500.
++- ``PUT /api/mcp/servers/{name}/enabled {enabled}``, ``DELETE /api/mcp/servers/{name}`` (also
++  drops the stored sign-in).
++- OAuth (``routes.mcp_oauth``): ``POST /api/mcp/servers/{name}/auth`` starts a sign-in and answers
++  the authorization URL; ``GET|DELETE /api/mcp/oauth/flows/{id}`` polls or cancels it;
++  ``GET /api/mcp/oauth/callback`` is the browser's way back (public, fixed HTML).
++
++Seams for tests (``DashboardState.extras``): ``mcp.oauth_connect`` (the flow's connector) and
++``mcp.oauth_start`` (``(flow, name, server, scope, redirect_uri) -> None``, how a flow is run).
++"""
++
++from __future__ import annotations
++
++import asyncio
++import re
++from collections.abc import Mapping
++from typing import Annotated, Any, Final, Literal, NoReturn
++
++from fastapi import APIRouter, Depends, HTTPException, Request
++from fastapi.responses import HTMLResponse
++from pydantic import BaseModel, ConfigDict, Field, model_validator
++
++from indus.foundation import config as config_module
++from indus.foundation.clock import SystemClock
++from indus.foundation.errors import ConfigError
++from indus.foundation.redact import mask, redact_text
++from indus.foundation.scope import Scope
++from indus.mcp import oauth, osv
++from indus.mcp.config import McpServer, parse_server, stdio_launch
++from indus.mcp.connect import Connection, ConnectOptions, first_cause
++from indus.web.auth.gate import request_prefix
++from indus.web.routes import mcp_oauth
++from indus.web.routes.mcp_oauth import CALLBACK_PATH, FlowBusy, OAuthFlows
++from indus.web.scope import read_scope, write_scope
++from indus.web.state import DashboardState, dashboard_state
++
++__all__ = ["ROUTE_LIST", "TEST_DEADLINE_S", "router"]
++
++router = APIRouter()
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
++    ("GET", "/api/mcp/servers", True),
++    ("POST", "/api/mcp/servers", True),
++    ("POST", "/api/mcp/servers/{name}/test", True),
++    ("PUT", "/api/mcp/servers/{name}/enabled", True),
++    ("DELETE", "/api/mcp/servers/{name}", True),
++    ("POST", "/api/mcp/servers/{name}/auth", True),
++    ("GET", "/api/mcp/oauth/flows/{flow_id}", True),
++    ("DELETE", "/api/mcp/oauth/flows/{flow_id}", True),
++    ("GET", CALLBACK_PATH, False),
++)
++"""``(method, path, scoped)`` of every route here. A flow answers only to the profile it was
++started for; the callback finds its flow through ``state`` and takes no ``?profile=``."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++WriteScope = Annotated[Scope, Depends(write_scope)]
++
++TEST_DEADLINE_S: Final = 15.0
++_NAME: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
++_REFERENCE: Final = re.compile(r"^\$\{[^{}]+\}$")
++_FLOWS: Final = "mcp.oauth_flows"
++
++
++def _fail(status: int, code: str, message: str, **extra: Any) -> NoReturn:
++    raise HTTPException(status_code=status, detail={"code": code, "message": message, **extra})
++
++
++def _configured(scope: Scope) -> Scope:
++    view = config_module.load(scope)
++    if view.error is not None:
++        _fail(500, "config_unreadable", "config.yaml cannot be read right now; fix it first.")
++    return scope.with_config(view)
++
++
++def _servers_raw(scope: Scope) -> dict[str, Any]:
++    raw: object = config_module.load(scope).get("mcp_servers")
++    if not isinstance(raw, Mapping):
++        return {}
++    return {str(k): v for k, v in raw.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
++
++
++def _server(scope: Scope, name: str) -> McpServer:
++    raw = _servers_raw(scope)
++    if name not in raw:
++        _fail(404, "server_not_found", "No MCP server has this name.")
++    server, _warnings, problem = parse_server(name, raw[name])
++    if server is None:
++        _fail(409, "server_invalid", redact_text(problem or "the entry is not valid"))
++    return server
++
++
++def _save(scope: Scope, change: Any) -> None:
++    view = config_module.load(scope)
++    if view.error is not None:
++        _fail(500, "config_unreadable", "config.yaml cannot be read right now; fix it first.")
++    raw = view.user_raw()
++    change(raw)
++    try:
++        config_module.save(scope, raw, replace=True)
++    except ConfigError as exc:
++        _fail(500, "config_unwritable", f"{exc.message}. Nothing was changed.")
++
++
++# -- list ------------------------------------------------------------------------------------------
++
++
++def _shown_env(value: str) -> str:
++    return value if _REFERENCE.match(value.strip()) else mask(value) if value else ""
++
++
++def _auth_kind(entry: Mapping[str, Any]) -> str:
++    if entry.get("auth") == "oauth":
++        return "oauth"
++    return "header" if entry.get("headers") else "none"
++
++
++def server_row(name: str, entry: object) -> dict[str, Any]:
++    """The page's view of one entry (secrets redacted)."""
++    server, _warnings, problem = parse_server(name, entry)
++    data: Mapping[str, Any] = entry if isinstance(entry, Mapping) else {}  # pyright: ignore[reportUnknownVariableType]
++    if server is None:
++        return {
++            "name": name,
++            "enabled": False,
++            "transport": "http" if data.get("url") else "stdio",
++            "command": None,
++            "args": [],
++            "env": {},
++            "url": None,
++            "auth": "none",
++            "problem": redact_text(problem or "the entry is not valid"),
++        }
++    return {
++        "name": name,
++        "enabled": server.enabled,
++        "transport": "stdio" if server.kind == "stdio" else "http",
++        "command": redact_text(server.command) if server.command else None,
++        "args": [redact_text(arg) for arg in server.args],
++        "env": {key: _shown_env(value) for key, value in sorted(server.env.items())},
++        "url": redact_text(server.url) if server.url else None,
++        "auth": _auth_kind(data),
++        "problem": None,
++    }
++
++
++@router.get("/api/mcp/servers")
++def list_servers(scope: ReadScope) -> dict[str, Any]:
++    raw = _servers_raw(scope)
++    return {"servers": [server_row(name, raw[name]) for name in sorted(raw)]}
++
++
++# -- add -------------------------------------------------------------------------------------------
++
++
++class ServerCreate(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    name: str = Field(min_length=1, max_length=64)
++    command: str | None = Field(default=None, max_length=1024)
++    args: list[str] = Field(default_factory=list[str], max_length=100)
++    env: dict[str, str] = Field(default_factory=dict[str, str], max_length=100)
++    url: str | None = Field(default=None, max_length=2048)
++    headers: dict[str, str] = Field(default_factory=dict[str, str], max_length=50)
++    auth: Literal["none", "oauth", "header"] = "none"
++
++    @model_validator(mode="after")
++    def _one_transport(self) -> ServerCreate:
++        if bool(self.command) == bool(self.url):
++            raise ValueError("give a command (stdio) or a url (http), not both and not neither")
++        if self.env and self.url:
++            raise ValueError("env applies to stdio servers only")
++        if self.headers and self.command:
++            raise ValueError("headers apply to http servers only")
++        return self
++
++
++def _no_literal_secrets(values: Mapping[str, str], what: str) -> None:
++    for key, value in values.items():
++        if redact_text(value) != value or redact_text(f"{key}={value}") != f"{key}={value}":
++            _fail(
++                400,
++                "secret_value",
++                f"The {what} value of {key} looks like a secret: store it on the Keys page and "
++                f"write ${{{key}}} here instead.",
++            )
++
++
++@router.post("/api/mcp/servers", status_code=201)
++def add_server(body: ServerCreate, scope: WriteScope) -> dict[str, Any]:
++    if not _NAME.match(body.name):
++        _fail(400, "invalid_name", "Server names are letters, digits, '.', '_' and '-'.")
++    _no_literal_secrets(body.env, "env")
++    _no_literal_secrets(body.headers, "header")
++    if body.url is not None and redact_text(body.url) != body.url:
++        _fail(400, "secret_value", "The URL carries a credential; use a header with ${NAME}.")
++    entry: dict[str, Any] = {}
++    if body.command:
++        entry["command"] = body.command
++        if body.args:
++            entry["args"] = list(body.args)
++        if body.env:
++            entry["env"] = dict(body.env)
++    else:
++        entry["url"] = body.url
++        if body.headers:
++            entry["headers"] = dict(body.headers)
++        if body.auth == "oauth":
++            entry["auth"] = "oauth"
++    server, _warnings, problem = parse_server(body.name, entry)
++    if server is None:
++        _fail(400, "invalid_server", redact_text(problem or "the entry is not valid"))
++    if body.name in _servers_raw(scope):
++        _fail(409, "server_exists", "An MCP server with this name exists already.")
++
++    def change(raw: dict[str, Any]) -> None:
++        table: object = raw.get("mcp_servers")
++        servers = dict(table) if isinstance(table, Mapping) else {}  # pyright: ignore[reportUnknownArgumentType]
++        servers[body.name] = entry
++        raw["mcp_servers"] = servers
++
++    _save(scope, change)
++    return server_row(body.name, entry)
++
++
++# -- test ------------------------------------------------------------------------------------------
++
++
++async def _probe(name: str, server: McpServer, scope: Scope) -> list[dict[str, str]]:
++    if server.kind == "stdio" and osv.preflight_enabled(scope):
++        launch = stdio_launch(name, server, scope)
++        await osv.checker_for(scope).preflight(name, launch.command, launch.args)
++    auth = oauth.auth_for(name, server, scope) if server.auth == "oauth" else None
++    options = ConnectOptions(auth=auth)
++    async with Connection(name, server, scope, clock=SystemClock(), options=options) as live:
++        tools = await live.list_tools()
++    return [{"name": t.name, "description": " ".join((t.description or "").split())} for t in tools]
++
++
++def _signed_in(name: str, scope: Scope) -> bool:
++    store = oauth.OAuthStore(oauth.secrets_for(scope), name, clock=scope.clock, home=scope.home)
++    return store.has_tokens()
++
++
++@router.post("/api/mcp/servers/{name}/test")
++def test_server(name: str, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    server = _server(live, name)
++    if server.auth == "oauth" and server.is_remote and not _signed_in(name, live):
++        return {"ok": False, "error": "This server needs a sign-in first.", "tools": []}
++    bounded = server.model_copy(
++        update={"connect_timeout": min(server.connect_timeout, TEST_DEADLINE_S)}
++    )
++
++    async def bounded_probe() -> list[dict[str, str]]:
++        return await asyncio.wait_for(_probe(name, bounded, live), TEST_DEADLINE_S)
++
++    try:
++        tools = asyncio.run(bounded_probe())
++    except TimeoutError:
++        return {"ok": False, "error": f"No answer within {TEST_DEADLINE_S:g} s.", "tools": []}
++    except Exception as exc:
++        root = first_cause(exc)
++        reason = getattr(root, "message", None) or str(root) or type(root).__name__
++        return {"ok": False, "error": redact_text(str(reason)), "tools": []}
++    return {"ok": True, "tools": tools}
++
++
++# -- enable, delete --------------------------------------------------------------------------------
++
++
++class EnabledToggle(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    enabled: bool
++
++
++@router.put("/api/mcp/servers/{name}/enabled")
++def set_enabled(name: str, body: EnabledToggle, scope: WriteScope) -> dict[str, Any]:
++    raw = _servers_raw(scope)
++    if name not in raw or not isinstance(raw[name], Mapping):
++        _fail(404, "server_not_found", "No MCP server has this name.")
++
++    def change(tree: dict[str, Any]) -> None:
++        servers = dict(tree["mcp_servers"])
++        entry = dict(servers[name])
++        entry["enabled"] = body.enabled
++        servers[name] = entry
++        tree["mcp_servers"] = servers
++
++    _save(scope, change)
++    return {"ok": True, "name": name, "enabled": body.enabled}
++
++
++@router.delete("/api/mcp/servers/{name}")
++def delete_server(name: str, scope: WriteScope) -> dict[str, Any]:
++    if name not in _servers_raw(scope):
++        _fail(404, "server_not_found", "No MCP server has this name.")
++
++    def change(tree: dict[str, Any]) -> None:
++        servers = dict(tree.get("mcp_servers") or {})
++        servers.pop(name, None)
++        tree["mcp_servers"] = servers
++
++    _save(scope, change)
++    removed = 0
++    try:
++        removed = oauth.logout(name, scope)
++    except Exception as exc:
++        return {"ok": True, "signin_removed": False, "warning": type(exc).__name__}
++    return {"ok": True, "signin_removed": bool(removed)}
++
++
++# -- OAuth -----------------------------------------------------------------------------------------
++
++
++def _flows(state: DashboardState) -> OAuthFlows:
++    found: object = state.extras.get(_FLOWS)
++    if isinstance(found, OAuthFlows):
++        return found
++    return state.extras.setdefault(_FLOWS, OAuthFlows())  # pyright: ignore[reportReturnType]
++
++
++def _redirect_uri(request: Request) -> str:
++    state = dashboard_state(request.app)
++    if state.public is not None:
++        return state.public.url.rstrip("/") + CALLBACK_PATH
++    base = str(request.base_url).rstrip("/")
++    return f"{base}{request_prefix(request.scope)}{CALLBACK_PATH}"
++
++
++@router.post("/api/mcp/servers/{name}/auth")
++def start_auth(request: Request, name: str, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    server = _server(live, name)
++    if not server.is_remote:
++        _fail(400, "oauth_not_applicable", "stdio servers sign in with env values, not OAuth.")
++    if server.headers and server.auth != "oauth":
++        _fail(400, "oauth_not_applicable", "This server signs in with a header, not OAuth.")
++    state = dashboard_state(request.app)
++    try:
++        flow = _flows(state).start(name, str(live.home))
++    except FlowBusy as exc:
++        _fail(429 if exc.code == "too_many_flows" else 409, exc.code, str(exc))
++    target = server.model_copy(update={"auth": "oauth"})
++    redirect_uri = _redirect_uri(request)
++    starter: object = state.extras.get("mcp.oauth_start")
++    if callable(starter):
++        starter(flow, name, target, live, redirect_uri)
++    else:
++        connect: object = state.extras.get("mcp.oauth_connect")
++        extra: dict[str, Any] = {"connect": connect} if callable(connect) else {}
++        mcp_oauth.start_thread(flow, name, target, live, redirect_uri, **extra)
++    flow.url_ready.wait(mcp_oauth.URL_WAIT_S)
++    return flow.snapshot()
++
++
++def _flow(request: Request, flow_id: str, scope: Scope) -> mcp_oauth.OAuthFlow | None:
++    flow = _flows(dashboard_state(request.app)).get(flow_id)
++    return flow if flow is not None and flow.home == str(scope.home) else None
++
++
++@router.get("/api/mcp/oauth/flows/{flow_id}")
++def flow_status(request: Request, flow_id: str, scope: ReadScope) -> dict[str, Any]:
++    flow = _flow(request, flow_id, scope)
++    if flow is None:
++        _fail(404, "flow_not_found", "This sign-in is not known or has expired.")
++    return flow.snapshot()
++
++
++@router.delete("/api/mcp/oauth/flows/{flow_id}")
++def cancel_flow(request: Request, flow_id: str, scope: WriteScope) -> dict[str, Any]:
++    flow = _flow(request, flow_id, scope)
++    if flow is None:
++        return {"ok": True, "status": "expired"}
++    flow.fail("cancelled from the dashboard", cancelled=True)
++    return {"ok": True, "status": flow.snapshot()["status"]}
++
++
++@router.get(CALLBACK_PATH, response_class=HTMLResponse)
++def oauth_callback(
++    request: Request,
++    state: str = "",
++    code: str | None = None,
++    error: str | None = None,
++    iss: str | None = None,
++) -> HTMLResponse:
++    flow = _flows(dashboard_state(request.app)).by_state(state)
++    if flow is None:
++        kind = "unknown"
++    elif not flow.deliver(code=code, state=state, iss=iss, error=error):
++        kind = "repeated"
++    else:
++        kind = "refused" if error else "received"
++    status, html = mcp_oauth.callback_page(kind)
++    return HTMLResponse(
++        html,
++        status_code=status,
++        headers={"cache-control": "no-store", "referrer-policy": "no-referrer"},
++    )
+diff --git a/src/indus/web/routes/mcp_oauth.py b/src/indus/web/routes/mcp_oauth.py
+new file mode 100644
+index 0000000..0c6d29b
+--- /dev/null
++++ b/src/indus/web/routes/mcp_oauth.py
+@@ -0,0 +1,319 @@
++"""MCP OAuth sign-ins started from the dashboard (P18-14), and their browser callback.
++
++``indus mcp login`` waits for the IdP's redirect on a loopback port of the machine it runs on; a
++browser using the dashboard from another machine cannot reach that port. So a sign-in started from
++the dashboard asks the IdP to redirect to the dashboard itself: ``CALLBACK_PATH`` under the declared
++public URL, else under the address the request came in on (with the trusted path prefix).
++
++``OAuthFlows`` (one per app, in ``DashboardState.extras``) holds the sign-ins in progress: at most
++``MAX_FLOWS`` at once and one per server and profile; a flow is forgotten ``FLOW_TTL_S`` after it
++started. Each flow runs on its own thread and event loop: P13's OAuth provider (``mcp.oauth``) does
++discovery, registration, PKCE and the code exchange; our redirect handler records the
++authorization URL and its ``state``; our callback handler waits for the browser's callback, which
++``deliver`` hands over after matching ``state`` in constant time. The stored sign-in is set aside
++for the flow and put back when the flow does not end with new tokens (a failed, refused or
++cancelled sign-in keeps the previous one), as ``oauth.login`` does.
++
++The callback page is fixed text: nothing from the request is echoed. The callback path is on the
++shared public list (the browser coming back from the IdP carries no dashboard credential); the
++``state`` value is what ties it to a flow a signed-in person started.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import hmac
++import logging
++import secrets
++import threading
++import time
++from collections.abc import Awaitable, Callable
++from dataclasses import dataclass, field
++from typing import Any, Final, Literal
++from urllib.parse import parse_qs, urlsplit
++
++import anyio.to_thread
++from mcp.shared.auth import AuthorizationCodeResult
++
++from indus.foundation.clock import SystemClock
++from indus.foundation.redact import redact_text
++from indus.foundation.scope import Scope
++from indus.mcp import oauth
++from indus.mcp.config import McpServer, remote_endpoint
++from indus.mcp.oauth import IndusOAuthProvider, McpOAuthFailed
++
++__all__ = [
++    "CALLBACK_PATH",
++    "FLOW_TTL_S",
++    "MAX_FLOWS",
++    "Connector",
++    "FlowBusy",
++    "OAuthFlow",
++    "OAuthFlows",
++    "callback_page",
++    "run_flow",
++]
++
++log = logging.getLogger(__name__)
++
++CALLBACK_PATH: Final = "/api/mcp/oauth/callback"
++FLOW_TTL_S: Final = 15 * 60.0
++MAX_FLOWS: Final = 8
++URL_WAIT_S: Final = 30.0
++
++type FlowStatus = Literal[
++    "starting", "authorization_required", "authorizing", "done", "error", "cancelled"
++]
++_SETTLED: Final = frozenset({"done", "error", "cancelled"})
++
++Connector = Callable[[str, McpServer, Scope, IndusOAuthProvider], Awaitable[list[str]]]
++"""Connects once with the given auth handler and returns the server's tool names."""
++
++
++class FlowBusy(Exception):
++    """No new flow now: too many in progress, or one already runs for this server."""
++
++    def __init__(self, code: str, message: str) -> None:
++        super().__init__(message)
++        self.code = code
++
++
++@dataclass
++class _Callback:
++    code: str | None
++    state: str | None
++    iss: str | None
++    error: str | None
++
++
++@dataclass
++class OAuthFlow:
++    flow_id: str
++    server: str
++    home: str
++    started: float
++    status: FlowStatus = "starting"
++    authorization_url: str | None = None
++    expected_state: str | None = None
++    error: str | None = None
++    tools: list[str] = field(default_factory=list[str])
++    url_ready: threading.Event = field(default_factory=threading.Event, repr=False)
++    _arrived: threading.Event = field(default_factory=threading.Event, repr=False)
++    _callback: _Callback | None = field(default=None, repr=False)
++    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
++
++    @property
++    def settled(self) -> bool:
++        return self.status in _SETTLED
++
++    def snapshot(self) -> dict[str, Any]:
++        with self._lock:
++            out: dict[str, Any] = {
++                "flow_id": self.flow_id,
++                "server": self.server,
++                "status": self.status,
++                "error": self.error,
++            }
++            if self.status == "authorization_required":
++                out["authorization_url"] = self.authorization_url
++            if self.status == "done":
++                out["tools"] = list(self.tools)
++            return out
++
++    def authorize_at(self, url: str, state: str) -> None:
++        with self._lock:
++            self.authorization_url = url
++            self.expected_state = state or None
++            if not self.settled:
++                self.status = "authorization_required"
++        self.url_ready.set()
++
++    def matches(self, state: str) -> bool:
++        expected = self.expected_state
++        if expected is None or self.status != "authorization_required":
++            return False
++        return hmac.compare_digest(expected.encode("utf-8"), state.encode("utf-8"))
++
++    def deliver(self, *, code: str | None, state: str, iss: str | None, error: str | None) -> bool:
++        """Hand the browser's callback to the waiting flow; False when it is not waiting."""
++        with self._lock:
++            if self.status != "authorization_required" or self._callback is not None:
++                return False
++            self._callback = _Callback(code, state, iss, error)
++            self.status = "authorizing"
++        self._arrived.set()
++        return True
++
++    def wait_callback(self, timeout: float) -> _Callback:
++        if not self._arrived.wait(timeout):
++            raise McpOAuthFailed(f"MCP server {self.server!r}: no sign-in arrived in time")
++        with self._lock:
++            found = self._callback
++        if found is None:  # cancelled
++            raise McpOAuthFailed(f"MCP server {self.server!r}: the sign-in was cancelled")
++        return found
++
++    def finish(self, tools: list[str]) -> None:
++        with self._lock:
++            if not self.settled:
++                self.status = "done"
++                self.tools = list(tools)
++        self.url_ready.set()
++
++    def fail(self, message: str, *, cancelled: bool = False) -> None:
++        with self._lock:
++            if not self.settled:
++                self.status = "cancelled" if cancelled else "error"
++                self.error = message
++        self.url_ready.set()
++        self._arrived.set()
++
++
++class OAuthFlows:
++    """The sign-ins in progress of one dashboard (see the module notes)."""
++
++    def __init__(self, *, monotonic: Callable[[], float] = time.monotonic) -> None:
++        self._monotonic = monotonic
++        self._lock = threading.Lock()
++        self._flows: dict[str, OAuthFlow] = {}
++
++    def _gc_locked(self) -> None:
++        cutoff = self._monotonic() - FLOW_TTL_S
++        for flow_id in [k for k, f in self._flows.items() if f.started < cutoff]:
++            stale = self._flows.pop(flow_id)
++            stale.fail("the sign-in expired", cancelled=True)
++
++    def start(self, server: str, home: str) -> OAuthFlow:
++        with self._lock:
++            self._gc_locked()
++            live = [f for f in self._flows.values() if not f.settled]
++            if any(f.server == server and f.home == home for f in live):
++                raise FlowBusy("flow_in_progress", f"A sign-in to {server!r} is already running.")
++            if len(live) >= MAX_FLOWS:
++                raise FlowBusy("too_many_flows", "Too many sign-ins are in progress.")
++            flow = OAuthFlow(secrets.token_urlsafe(24), server, home, self._monotonic())
++            self._flows[flow.flow_id] = flow
++            return flow
++
++    def get(self, flow_id: str) -> OAuthFlow | None:
++        with self._lock:
++            self._gc_locked()
++            return self._flows.get(flow_id)
++
++    def by_state(self, state: str) -> OAuthFlow | None:
++        """The flow waiting for this ``state`` (constant-time compare against each)."""
++        if not state:
++            return None
++        with self._lock:
++            self._gc_locked()
++            candidates = list(self._flows.values())
++        found: OAuthFlow | None = None
++        for flow in candidates:
++            if flow.matches(state):
++                found = flow
++        return found
++
++
++async def _connect_and_list(
++    name: str, server: McpServer, scope: Scope, auth: IndusOAuthProvider
++) -> list[str]:
++    from indus.mcp.connect import Connection, ConnectOptions
++
++    async with Connection(
++        name, server, scope, clock=auth.clock, options=ConnectOptions(auth=auth)
++    ) as live:
++        return [tool.name for tool in await live.list_tools()]
++
++
++def run_flow(
++    flow: OAuthFlow,
++    name: str,
++    server: McpServer,
++    scope: Scope,
++    redirect_uri: str,
++    *,
++    connect: Connector = _connect_and_list,
++) -> None:
++    """Run one sign-in to its end on this thread (start it on a thread of its own)."""
++    clock = SystemClock()
++    settings = oauth._settings(server)  # pyright: ignore[reportPrivateUsage]
++
++    async def main() -> list[str]:
++        writer = oauth.secrets_for(scope)
++        store = oauth._store_for(name, server, scope, writer, clock, redirect_uri)  # pyright: ignore[reportPrivateUsage]
++        saved = store.snapshot()
++        store.clear_tokens()
++        held = store.load_client()
++
++        async def announce(url: str) -> None:
++            state = parse_qs(urlsplit(url).query).get("state", [""])[0]
++            flow.authorize_at(url, state)
++
++        async def wait_for_code() -> AuthorizationCodeResult:
++            got = await anyio.to_thread.run_sync(flow.wait_callback, settings.timeout)
++            if got.error:
++                raise McpOAuthFailed(f"MCP server {name!r}: the sign-in was refused ({got.error})")
++            return AuthorizationCodeResult(
++                code=got.code or "", state=flow.expected_state or "", iss=got.iss
++            )
++
++        provider = IndusOAuthProvider(
++            server_name=name,
++            server_url=remote_endpoint(name, server, scope).url,
++            client_metadata=oauth._client_metadata(  # pyright: ignore[reportPrivateUsage]
++                settings, redirect_uri, bool(held is not None and held.client_secret)
++            ),
++            store=store,
++            clock=clock,
++            interactive=True,
++            redirect_handler=announce,
++            callback_handler=wait_for_code,
++            client_metadata_url=oauth._extra(settings, "client_metadata_url"),  # pyright: ignore[reportPrivateUsage]
++        )
++        bounded = server.model_copy(update={"connect_timeout": oauth.login_timeout(server)})
++        try:
++            tools = await connect(name, bounded, scope, provider)
++        except BaseException:
++            oauth._put_back(store, saved)  # pyright: ignore[reportPrivateUsage]
++            raise
++        if not store.has_tokens():
++            oauth._put_back(store, saved)  # pyright: ignore[reportPrivateUsage]
++            raise McpOAuthFailed(f"MCP server {name!r}: the sign-in did not store a token")
++        return tools
++
++    try:
++        flow.finish(asyncio.run(main()))
++    except Exception as exc:
++        reason = getattr(exc, "message", None) or str(exc) or type(exc).__name__
++        log.info("MCP sign-in to %r ended without tokens: %s", name, type(exc).__name__)
++        flow.fail(redact_text(str(reason)))
++
++
++def start_thread(flow: OAuthFlow, *args: Any, **kwargs: Any) -> threading.Thread:
++    thread = threading.Thread(
++        target=run_flow,
++        args=(flow, *args),
++        kwargs=kwargs,
++        name=f"indus-mcp-oauth-{flow.server}",
++        daemon=True,
++    )
++    thread.start()
++    return thread
++
++
++_PAGES: Final[dict[str, tuple[int, str, str]]] = {
++    "received": (200, "Sign-in received", "You can close this tab and go back to the dashboard."),
++    "refused": (400, "Sign-in refused", "Go back to the dashboard for the details."),
++    "unknown": (404, "Sign-in expired", "This sign-in is no longer waiting. Start it again."),
++    "repeated": (409, "Sign-in already received", "Go back to the dashboard."),
++}
++
++
++def callback_page(kind: str) -> tuple[int, str]:
++    """``(status, html)`` of the fixed callback page ``kind``."""
++    status, title, line = _PAGES[kind]
++    html = (
++        "<!doctype html><html><head><meta charset=utf-8>"
++        f"<title>{title}</title></head><body><h1>{title}</h1><p>{line}</p></body></html>"
++    )
++    return status, html
+diff --git a/src/indus/web/routes/plugins.py b/src/indus/web/routes/plugins.py
+new file mode 100644
+index 0000000..c13088e
+--- /dev/null
++++ b/src/indus/web/routes/plugins.py
+@@ -0,0 +1,202 @@
++"""``/api/plugins``: the Plugins page's backend (P18-14, over P13's plugin library).
++
++- ``GET /api/plugins``: every plugin the profile can see (bundled, user, entry points; project
++  plugins are a session matter) with its state, version, description, where it came from and the
++  commit it is pinned to.
++- ``POST /api/plugins/install {url, sha}``: a git install (``owner/repo[/sub]`` or a git URL;
++  never a local folder or ``file://``) pinned to a full 40-character commit SHA, checked before any
++  git command runs. The P13-20 scan decides: a block (``dangerous`` always, ``caution`` unless
++  ``force``) is 409 ``scan_blocked`` with the verdict. An install never enables the plugin.
++- ``POST /api/plugins/{name}/enable|disable``: through ``plugins.discovery.set_enabled`` and the
++  config writer. An enable that needs Python packages or a memory provider (those need a terminal
++  to consent or are chosen elsewhere) is refused with a code; capabilities the plugin declares and
++  the person has not granted stay ungranted and are listed as ``capabilities_waiting``.
++
++Seam for tests (``DashboardState.extras``): ``plugins.installer`` (``Scope -> Installer``-like:
++``install(identifier, ref=, force=, confirm=)`` and ``records()``).
++"""
++
++from __future__ import annotations
++
++import re
++from typing import Annotated, Any, Final, NoReturn
++
++from fastapi import APIRouter, Depends, HTTPException, Request
++from pydantic import BaseModel, ConfigDict, Field
++
++from indus.foundation import config as config_module
++from indus.foundation.errors import ConfigError
++from indus.foundation.redact import redact_text
++from indus.foundation.scope import Scope
++from indus.plugins import consent
++from indus.plugins.discovery import PluginRecord, discover, set_enabled
++from indus.plugins.install import InstallBlocked, Installer, InstallError
++from indus.web.scope import read_scope, write_scope
++from indus.web.state import dashboard_state
++
++__all__ = ["ROUTE_LIST", "router"]
++
++router = APIRouter()
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
++    ("GET", "/api/plugins", True),
++    ("POST", "/api/plugins/install", True),
++    ("POST", "/api/plugins/{name}/enable", True),
++    ("POST", "/api/plugins/{name}/disable", True),
++)
++"""``(method, path, scoped)`` of every route here."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++WriteScope = Annotated[Scope, Depends(write_scope)]
++
++_FULL_SHA: Final = re.compile(r"^[0-9a-fA-F]{40}$")
++_GIT_URL: Final = re.compile(r"^(?:https?|ssh|git)://[^\s]+$")
++_SCP_LIKE: Final = re.compile(r"^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s]+$")
++_OWNER_REPO: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]+(?:/[^/\s]+)*/?$")
++
++
++def _fail(status: int, code: str, message: str, **extra: Any) -> NoReturn:
++    raise HTTPException(status_code=status, detail={"code": code, "message": message, **extra})
++
++
++def _configured(scope: Scope) -> Scope:
++    view = config_module.load(scope)
++    if view.error is not None:
++        _fail(500, "config_unreadable", "config.yaml cannot be read right now; fix it first.")
++    return scope.with_config(view)
++
++
++def _installer(request: Request, scope: Scope) -> Any:
++    factory: object = dashboard_state(request.app).extras.get("plugins.installer")
++    if callable(factory):
++        return factory(scope)
++    return Installer(scope)
++
++
++def _records(scope: Scope) -> list[PluginRecord]:
++    found = discover(scope, project_root=scope.home / ".no-project")
++    return [record for _key, record in sorted(found.records.items())]
++
++
++@router.get("/api/plugins")
++def list_plugins(request: Request, scope: ReadScope) -> dict[str, Any]:
++    live = _configured(scope)
++    try:
++        installed: dict[str, dict[str, Any]] = _installer(request, live).records()
++    except InstallError:
++        installed = {}
++    rows: list[dict[str, Any]] = []
++    for record in _records(live):
++        manifest = record.manifest
++        meta = installed.get(record.name, {})
++        revision = str(meta.get("revision") or "") or None
++        rows.append(
++            {
++                "name": record.name,
++                "key": record.key,
++                "version": (manifest.version or None) if manifest is not None else None,
++                "description": manifest.description if manifest is not None else "",
++                "enabled": record.state == "enabled",
++                "state": record.state,
++                "kind": record.kind,
++                "source": redact_text(str(meta.get("source") or "")) or record.source,
++                "sha": revision,
++                "pinned": meta.get("pinned") is True,
++            }
++        )
++    return {"plugins": rows}
++
++
++class PluginInstall(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    url: str = Field(min_length=1, max_length=2048)
++    sha: str = Field(min_length=1, max_length=64)
++    force: bool = False
++
++
++def _git_source(text: str) -> str:
++    value = text.strip()
++    if _GIT_URL.match(value) or _SCP_LIKE.match(value) or _OWNER_REPO.match(value):
++        return value
++    _fail(
++        400,
++        "invalid_source",
++        "Give owner/repo or a git URL (https://, ssh://, git@host:path); local folders are "
++        "installed from a terminal.",
++    )
++
++
++@router.post("/api/plugins/install")
++def install_plugin(request: Request, body: PluginInstall, scope: WriteScope) -> dict[str, Any]:
++    if not _FULL_SHA.match(body.sha.strip()):
++        _fail(422, "invalid_sha", "A full 40-character commit SHA is required.")
++    source = _git_source(body.url)
++    live = _configured(scope)
++    try:
++        result = _installer(request, live).install(
++            source, ref=body.sha.strip().lower(), force=body.force, confirm=None
++        )
++    except InstallBlocked as exc:
++        verdict = exc.report.verdict if exc.report is not None else None
++        _fail(409, "scan_blocked", redact_text(str(exc)), verdict=verdict)
++    except InstallError as exc:
++        hint = f" ({exc.hint})" if exc.hint else ""
++        _fail(400, "install_failed", redact_text(f"{exc}{hint}"))
++    return {
++        "ok": True,
++        "name": result.name,
++        "sha": str(result.record.get("revision") or "") or None,
++        "verdict": result.report.verdict,
++        "enabled": False,
++    }
++
++
++def _find(scope: Scope, name: str) -> PluginRecord:
++    for record in _records(scope):
++        if name in (record.key, record.name):
++            return record
++    _fail(404, "plugin_not_found", "No plugin has this name.")
++
++
++def _save(scope: Scope, raw: dict[str, Any]) -> None:
++    try:
++        config_module.save(scope, raw, replace=True)
++    except ConfigError as exc:
++        _fail(500, "config_unwritable", f"{exc.message}. Nothing was changed.")
++
++
++@router.post("/api/plugins/{name}/enable")
++def enable_plugin(name: str, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    record = _find(live, name)
++    manifest = record.manifest
++    if manifest is None:
++        _fail(409, "plugin_broken", "The plugin's manifest is missing or broken.")
++    if record.handler == "memory":
++        _fail(409, "memory_provider", "This is a memory provider; choose it as memory.provider.")
++    if manifest.python_dependencies:
++        _fail(
++            409,
++            "dependencies_required",
++            "This plugin needs Python packages; enable it with `indus plugins enable` on a "
++            "terminal, which asks before installing them.",
++        )
++    raw = config_module.load(live).user_raw()
++    set_enabled(raw, record.key, True)
++    waiting = consent.consent_capabilities(raw, manifest, ask=None).waiting
++    _save(live, raw)
++    return {"ok": True, "name": record.name, "enabled": True, "capabilities_waiting": waiting}
++
++
++@router.post("/api/plugins/{name}/disable")
++def disable_plugin(name: str, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    record = _find(live, name)
++    raw = config_module.load(live).user_raw()
++    set_enabled(raw, record.key, False)
++    memory: object = raw.get("memory")
++    if isinstance(memory, dict) and memory.get("provider") == record.name:  # pyright: ignore[reportUnknownMemberType]
++        memory["provider"] = ""
++    _save(live, raw)
++    return {"ok": True, "name": record.name, "enabled": False}
+diff --git a/src/indus/web/routes/skills.py b/src/indus/web/routes/skills.py
+new file mode 100644
+index 0000000..e1e5d9a
+--- /dev/null
++++ b/src/indus/web/routes/skills.py
+@@ -0,0 +1,323 @@
++"""``/api/skills`` and ``/api/tools/toolsets``: the Skills page's backend (P18-14).
++
++- ``GET /api/skills``: every loadable skill of the profile (plugin skills left out) with its
++  category, source (``local``, ``bundled``, ``hub``, ``external``…) and whether it is enabled.
++- ``POST /api/skills/toggle {name, enabled}``: writes ``skills.disabled`` through the config
++  writer (P01); an unknown name is 404.
++- ``GET /api/tools/toolsets``: the plain toolsets (no bundles, postures or ``core``) with their
++  tools, and whether the CLI's tool selection (``platform_toolsets.cli``, else its bundle) offers
++  every one of them.
++- Hub (P13-26/27): ``GET /api/skills/hub/search?q=`` (catalogue and taps, then the live fallbacks;
++  a search downloads nothing, so ``verdict`` is null), ``GET /api/skills/hub/inspect?identifier=``
++  (fetch into quarantine, scan, report, discard), ``POST /api/skills/hub/install
++  {identifier, force?}``, ``POST /api/skills/hub/uninstall {name}``, ``POST /api/skills/hub/update
++  {name?}``. An install the policy blocks is 409 ``scan_blocked`` with the verdict: ``dangerous``
++  is never installed, ``force`` lifts ``caution`` only. Network trouble is 502 ``hub_unavailable``.
++
++Hub work runs on its own event loop in the worker thread FastAPI gives a sync route. Seam for
++tests (``DashboardState.extras``): ``skills.hub_sources`` (``Scope -> SourceSet``).
++"""
++
++from __future__ import annotations
++
++import asyncio
++from collections.abc import Callable, Coroutine, Mapping
++from typing import Annotated, Any, Final, NoReturn
++
++from fastapi import APIRouter, Depends, HTTPException, Request
++from pydantic import BaseModel, ConfigDict, Field
++
++from indus.foundation import config as config_module
++from indus.foundation.errors import ConfigError
++from indus.foundation.redact import redact_text
++from indus.foundation.scope import Scope
++from indus.learning.skills import bundled_sync
++from indus.learning.skills.hub import install as hub
++from indus.learning.skills.hub.lock import HubLock
++from indus.learning.skills.hub.sources import HubError, SourceSet
++from indus.learning.skills.resolver import TIER_LOCAL, SkillRecord, load_catalog
++from indus.learning.skills.usage import hub_names
++from indus.tools import toolsets
++from indus.web.scope import read_scope, write_scope
++from indus.web.state import DashboardState, dashboard_state
++
++__all__ = ["ROUTE_LIST", "router"]
++
++router = APIRouter()
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
++    ("GET", "/api/skills", True),
++    ("POST", "/api/skills/toggle", True),
++    ("GET", "/api/tools/toolsets", True),
++    ("GET", "/api/skills/hub/search", True),
++    ("GET", "/api/skills/hub/inspect", True),
++    ("POST", "/api/skills/hub/install", True),
++    ("POST", "/api/skills/hub/uninstall", True),
++    ("POST", "/api/skills/hub/update", True),
++)
++"""``(method, path, scoped)`` of every route here."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++WriteScope = Annotated[Scope, Depends(write_scope)]
++
++SEARCH_LIMIT: Final = 50
++TOOLSET_PLATFORM: Final = "cli"
++
++
++def _fail(status: int, code: str, message: str, **extra: Any) -> NoReturn:
++    raise HTTPException(status_code=status, detail={"code": code, "message": message, **extra})
++
++
++def _configured(scope: Scope) -> Scope:
++    """``scope`` carrying the settings as they are on disk now."""
++    view = config_module.load(scope)
++    if view.error is not None:
++        _fail(500, "config_unreadable", "config.yaml cannot be read right now; fix it first.")
++    return scope.with_config(view)
++
++
++# -- installed skills ------------------------------------------------------------------------------
++
++
++def _source(record: SkillRecord, shipped: set[str], from_hub: set[str]) -> str:
++    if record.tier == TIER_LOCAL and record.name in from_hub:
++        return "hub"
++    if record.tier == TIER_LOCAL and record.name in shipped:
++        return "bundled"
++    return record.tier_name
++
++
++def _skills(scope: Scope) -> list[SkillRecord]:
++    return [r for r in load_catalog(scope).loadable() if r.plugin is None]
++
++
++@router.get("/api/skills")
++def list_skills(scope: ReadScope) -> dict[str, Any]:
++    live = _configured(scope)
++    shipped = set(bundled_sync.read_manifest(live.home))
++    from_hub = hub_names(hub.skills_root(live))
++    rows = [
++        {
++            "name": record.load_name or record.name,
++            "description": record.description,
++            "category": record.category or "",
++            "enabled": not record.disabled,
++            "source": _source(record, shipped, from_hub),
++        }
++        for record in _skills(live)
++    ]
++    return {"skills": rows}
++
++
++class SkillToggle(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    name: str = Field(min_length=1, max_length=200)
++    enabled: bool
++
++
++def _disabled_list(scope: Scope) -> list[str]:
++    raw: object = config_module.load(scope).get("skills.disabled", [])
++    if not isinstance(raw, list):
++        return []
++    return [str(item) for item in raw]  # pyright: ignore[reportUnknownVariableType]
++
++
++@router.post("/api/skills/toggle")
++def toggle_skill(body: SkillToggle, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    names = {r.load_name or r.name for r in _skills(live)} | {r.name for r in _skills(live)}
++    if body.name not in names:
++        _fail(404, "skill_not_found", "No skill has this name.")
++    current = _disabled_list(live)
++    wanted = [n for n in current if n != body.name]
++    if not body.enabled:
++        wanted.append(body.name)
++    if wanted != current:
++        try:
++            config_module.save(live, {"skills": {"disabled": wanted}})
++        except ConfigError as exc:
++            _fail(500, "config_unwritable", f"{exc.message}. Nothing was changed.")
++    return {"ok": True, "name": body.name, "enabled": body.enabled}
++
++
++# -- toolsets --------------------------------------------------------------------------------------
++
++
++def _plain_toolsets() -> list[str]:
++    rows: list[str] = []
++    for name, entry in sorted(toolsets.TOOLSETS.items()):
++        if entry.includes or entry.posture or name == toolsets.CORE:
++            continue
++        if name.startswith(toolsets.BUNDLE_PREFIX):
++            continue
++        rows.append(name)
++    return rows
++
++
++def _cli_selection(scope: Scope) -> list[str]:
++    saved: object = config_module.load(scope).user_raw().get("platform_toolsets")
++    if isinstance(saved, Mapping):
++        chosen: object = saved.get(TOOLSET_PLATFORM)  # pyright: ignore[reportUnknownMemberType]
++        if isinstance(chosen, list):
++            return [str(n) for n in chosen]  # pyright: ignore[reportUnknownVariableType]
++    return [f"{toolsets.BUNDLE_PREFIX}{TOOLSET_PLATFORM}"]
++
++
++@router.get("/api/tools/toolsets")
++def list_toolsets(scope: ReadScope) -> dict[str, Any]:
++    offered = toolsets.select(_cli_selection(scope), scope=scope, platform=TOOLSET_PLATFORM).tools
++    rows: list[dict[str, Any]] = []
++    for name in _plain_toolsets():
++        entry = toolsets.TOOLSETS[name]
++        tools = sorted(toolsets.resolve(name, None, scope))
++        rows.append(
++            {
++                "name": name,
++                "label": name.replace("_", " ").replace("-", " ").title(),
++                "description": entry.description,
++                "enabled": bool(tools) and set(tools) <= offered,
++                "tools": tools,
++            }
++        )
++    return {"toolsets": rows}
++
++
++# -- hub -------------------------------------------------------------------------------------------
++
++
++def _hub[T](
++    state: DashboardState, scope: Scope, work: Callable[[SourceSet], Coroutine[Any, Any, T]]
++) -> T:
++    """Run ``work`` with fresh hub sources on its own loop (this is a worker thread)."""
++    factory: object = state.extras.get("skills.hub_sources")
++
++    async def main() -> T:
++        if callable(factory):
++            sources: SourceSet = factory(scope)  # pyright: ignore[reportAssignmentType]
++        else:
++            from indus.learning.skills.hub.sources import build_sources
++
++            sources = build_sources(scope)
++        try:
++            return await work(sources)
++        finally:
++            await sources.aclose()
++
++    try:
++        return asyncio.run(main())
++    except HubError as exc:
++        _fail(502, "hub_unavailable", redact_text(str(exc)))
++
++
++def _installed(scope: Scope) -> tuple[set[str], set[str]]:
++    entries = HubLock(hub.skills_root(scope)).installed()
++    identifiers = {str(e.get("identifier", "")) for e in entries.values()}
++    return set(entries), identifiers
++
++
++@router.get("/api/skills/hub/search")
++def hub_search(request: Request, scope: ReadScope, q: str = "") -> dict[str, Any]:
++    query = q.strip()
++    if not query:
++        return {"results": []}
++    from indus.learning.skills.hub.sources import search_sources
++
++    live = _configured(scope)
++    state = dashboard_state(request.app)
++    outcome = _hub(state, live, lambda s: search_sources(s, query, limit=SEARCH_LIMIT))
++    names, identifiers = _installed(live)
++    results = [
++        {
++            "identifier": row.identifier,
++            "name": row.name,
++            "description": row.description,
++            "source": row.source,
++            "trust": row.trust,
++            "verdict": None,
++            "installed": row.identifier in identifiers or row.name in names,
++            "update_available": False,
++        }
++        for row in outcome.rows
++    ]
++    return {"results": results, "timed_out": list(outcome.timed_out)}
++
++
++@router.get("/api/skills/hub/inspect")
++def hub_inspect(request: Request, scope: ReadScope, identifier: str) -> dict[str, Any]:
++    live = _configured(scope)
++    state = dashboard_state(request.app)
++    preview = _hub(state, live, lambda s: hub.inspect(live, s, identifier))
++    return {
++        "identifier": preview.bundle.identifier,
++        "name": preview.name,
++        "source": preview.bundle.source,
++        "trust": preview.bundle.trust,
++        "verdict": preview.report.verdict,
++        "findings": len(preview.report.findings),
++        "categories": list(preview.report.categories),
++        "allowed": preview.allowed,
++        "reason": preview.reason,
++    }
++
++
++class HubInstall(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    identifier: str = Field(min_length=1, max_length=2048)
++    force: bool = False
++
++
++@router.post("/api/skills/hub/install")
++def hub_install(request: Request, body: HubInstall, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    state = dashboard_state(request.app)
++    options = hub.InstallOptions(force=body.force)
++    result = _hub(state, live, lambda s: hub.install(live, s, body.identifier, options))
++    verdict = result.preview.report.verdict if result.preview is not None else None
++    message = redact_text(result.message)
++    if result.status == "blocked":
++        _fail(409, "scan_blocked", message, verdict=verdict)
++    if result.status == "exists":
++        _fail(409, "already_installed", message, verdict=verdict)
++    if not result.ok:
++        _fail(400, "install_failed", message or "The skill could not be installed.")
++    return {"ok": True, "name": result.name, "verdict": verdict}
++
++
++class HubName(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    name: str = Field(min_length=1, max_length=200)
++
++
++@router.post("/api/skills/hub/uninstall")
++def hub_uninstall(body: HubName, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    try:
++        message = hub.uninstall(live, body.name)
++    except HubError as exc:
++        _fail(404, "not_a_hub_skill", redact_text(str(exc)))
++    return {"ok": True, "message": message}
++
++
++class HubUpdate(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    name: str | None = Field(default=None, min_length=1, max_length=200)
++
++
++@router.post("/api/skills/hub/update")
++def hub_update(
++    request: Request, scope: WriteScope, body: HubUpdate | None = None
++) -> dict[str, Any]:
++    live = _configured(scope)
++    state = dashboard_state(request.app)
++    name = body.name if body is not None else None
++    report = _hub(state, live, lambda s: hub.update(live, s, name))
++    return {
++        "ok": not report.failed,
++        "updated": report.updated,
++        "kept_local": report.kept_local,
++        "failed": [{"name": n, "message": redact_text(m)} for n, m in report.failed],
++    }
+diff --git a/src/indus/web/routes/status.py b/src/indus/web/routes/status.py
+new file mode 100644
+index 0000000..ac1e734
+--- /dev/null
++++ b/src/indus/web/routes/status.py
+@@ -0,0 +1,400 @@
++"""``GET /api/status``: the public status probe of the dashboard (P18-13).
++
++The path is on the shared public list (``auth.public_paths``), so whoever can reach the port reads
++it. It therefore carries only counts, enums and coarse numbers: never a path, pid, host name,
++session id, title or error text.
++
++What it reports:
++
++- ``version`` and ``daemon {state, heartbeat_age_s}``: the daemon's own word from its runtime record
++  (``state.gateway_runtime``); ``stopped`` when there is no record or the process it names is gone;
++  ``unknown`` when the heartbeat is older than ``HEARTBEAT_LIMIT_S``, dated in the future, or the
++  record cannot be read;
++- ``platforms``: ``[{name, state}]`` as the daemon reports them (only while it runs);
++- ``active_sessions`` / ``recent_sessions``: of the ``RECENT_WINDOW`` most recently active sessions,
++  how many are open and were active in the last ``ACTIVE_WINDOW_S``, and how many the window held
++  (store opened read-only; a missing store is never created);
++- ``auth_required`` / ``auth_providers`` (``auth.gate.describe_mode``);
++- ``components {store, daemon, platforms}`` and ``overall``;
++- ``memory`` / ``disk``: pressure (``ok`` / ``elevated`` / ``critical``), one coarse number each.
++
++Every collector is fail-safe: an error makes its block ``unknown`` and the rest is still answered.
++Tests replace collectors through ``DashboardState.extras`` (``status.memory``, ``status.disk``,
++``status.now``).
++"""
++
++from __future__ import annotations
++
++import json
++import logging
++import shutil
++import sqlite3
++from collections.abc import Callable, Mapping
++from dataclasses import dataclass
++from datetime import datetime
++from pathlib import Path
++from typing import Annotated, Any, Final, Literal
++
++from fastapi import APIRouter, Depends, Request
++from fastapi.responses import JSONResponse
++
++import indus
++from indus.foundation.errors import StoreUnavailable
++from indus.foundation.scope import Scope
++from indus.state import browse
++from indus.state import gateway_runtime as runtime
++from indus.state.errors import Bucket, classify, is_lock_error
++from indus.web.auth.gate import describe_mode
++from indus.web.scope import read_scope
++from indus.web.state import dashboard_state
++
++__all__ = [
++    "ACTIVE_WINDOW_S",
++    "HEARTBEAT_LIMIT_S",
++    "RECENT_WINDOW",
++    "ROUTE_LIST",
++    "Pressure",
++    "daemon_view",
++    "disk_pressure",
++    "memory_pressure",
++    "router",
++]
++
++log = logging.getLogger(__name__)
++
++router = APIRouter()
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (("GET", "/api/status", True),)
++"""``(method, path, scoped)`` of every route here (the SPA's generated route list)."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++
++type Pressure = Literal["ok", "elevated", "critical", "unknown"]
++
++MIB: Final = 1024 * 1024
++GIB: Final = 1024 * MIB
++HEARTBEAT_LIMIT_S: Final = 150.0
++ACTIVE_WINDOW_S: Final = 300.0
++RECENT_WINDOW: Final = 20
++
++MEMORY_CRITICAL: Final = (64 * MIB, 5.0)
++"""(bytes available, percent available) under either of which memory is critical."""
++MEMORY_ELEVATED: Final = (128 * MIB, 15.0)
++DISK_CRITICAL: Final = (256 * MIB, 95.0, 1 * GIB)
++"""(free bytes floor, used percent, headroom): critical below the floor, or at/over the percent
++with less than the headroom left."""
++DISK_ELEVATED: Final = (512 * MIB, 85.0, 4 * GIB)
++
++_LIVE_DAEMON: Final = frozenset({"starting", "running", "draining", "stopping", "degraded"})
++_DOWN_DAEMON: Final = frozenset({"stopped", "startup_failed"})
++_HEALTHY_PLATFORM: Final = "connected"
++_PAUSED_PLATFORM: Final = "paused"
++"""Paused on purpose: shown, but never a degraded verdict."""
++_SERVING_DAEMON: Final = frozenset({"running", "draining"})
++
++
++# -- pressure --------------------------------------------------------------------------------------
++
++
++def memory_pressure(available: int, total: int) -> Pressure:
++    """Pressure for ``available`` of ``total`` bytes of memory."""
++    if total <= 0 or available < 0:
++        return "unknown"
++    percent = available * 100.0 / total
++    if available < MEMORY_CRITICAL[0] or percent < MEMORY_CRITICAL[1]:
++        return "critical"
++    if available < MEMORY_ELEVATED[0] or percent < MEMORY_ELEVATED[1]:
++        return "elevated"
++    return "ok"
++
++
++def disk_pressure(free: int, total: int) -> Pressure:
++    """Pressure for ``free`` of ``total`` bytes on the home's file system."""
++    if total <= 0 or free < 0:
++        return "unknown"
++    used = (total - free) * 100.0 / total
++
++    def under(rule: tuple[int, float, int]) -> bool:
++        floor, percent, headroom = rule
++        return free < floor or (used >= percent and free < headroom)
++
++    if under(DISK_CRITICAL):
++        return "critical"
++    if under(DISK_ELEVATED):
++        return "elevated"
++    return "ok"
++
++
++@dataclass(frozen=True)
++class Amount:
++    """``available``/``free`` and ``total`` bytes from a collector."""
++
++    left: int
++    total: int
++
++
++def _meminfo() -> Amount:
++    fields: dict[str, int] = {}
++    with open("/proc/meminfo", encoding="ascii") as handle:
++        for line in handle:
++            name, _, rest = line.partition(":")
++            parts = rest.split()
++            if parts and parts[0].isdigit():
++                fields[name.strip()] = int(parts[0]) * 1024
++    return Amount(fields["MemAvailable"], fields["MemTotal"])
++
++
++def read_memory() -> Amount:
++    """Available and total memory: ``/proc/meminfo``, else psutil when installed."""
++    try:
++        return _meminfo()
++    except (OSError, KeyError, ValueError):
++        pass
++    import psutil  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
++
++    found: Any = psutil.virtual_memory()  # pyright: ignore[reportUnknownMemberType]
++    return Amount(int(found.available), int(found.total))
++
++
++def disk_reader(home: Path) -> Callable[[], Amount]:
++    def read() -> Amount:
++        usage = shutil.disk_usage(home)
++        return Amount(int(usage.free), int(usage.total))
++
++    return read
++
++
++def _memory_block(read: Callable[[], Amount]) -> dict[str, Any]:
++    try:
++        amount = read()
++        pressure = memory_pressure(amount.left, amount.total)
++        if pressure == "unknown":
++            return {"pressure": "unknown"}
++        return {"pressure": pressure, "available_percent": int(amount.left * 100 / amount.total)}
++    except Exception as exc:
++        log.debug("memory pressure unavailable: %s", type(exc).__name__)
++        return {"pressure": "unknown"}
++
++
++def _disk_block(read: Callable[[], Amount]) -> dict[str, Any]:
++    try:
++        amount = read()
++        pressure = disk_pressure(amount.left, amount.total)
++        if pressure == "unknown":
++            return {"pressure": "unknown"}
++        used = (amount.total - amount.left) * 100 / amount.total
++        return {
++            "pressure": pressure,
++            "used_percent": int(used),
++            "free_gb": int(amount.left // GIB),
++        }
++    except Exception as exc:
++        log.debug("disk pressure unavailable: %s", type(exc).__name__)
++        return {"pressure": "unknown"}
++
++
++# -- daemon ----------------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class DaemonView:
++    state: str
++    heartbeat_age_s: int | None = None
++    platforms: tuple[tuple[str, str], ...] = ()
++
++
++def _when(value: object) -> datetime | None:
++    if isinstance(value, bool):
++        return None
++    if isinstance(value, int | float):
++        return datetime.fromtimestamp(float(value)).astimezone()
++    if not isinstance(value, str) or not value:
++        return None
++    try:
++        parsed = datetime.fromisoformat(value)
++    except ValueError:
++        return None
++    return parsed if parsed.tzinfo is not None else parsed.astimezone()
++
++
++def _platform_rows(data: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
++    raw: object = data.get("platforms")
++    if not isinstance(raw, dict):
++        return ()
++    rows: list[tuple[str, str]] = []
++    for name, row in raw.items():  # pyright: ignore[reportUnknownVariableType]
++        parsed = runtime.PlatformStatus.from_json(row)
++        if parsed is not None and isinstance(name, str):
++            rows.append((name, parsed.state))
++    return tuple(sorted(rows))
++
++
++def daemon_view(
++    home: Path,
++    now: datetime,
++    *,
++    alive: Callable[[runtime.ProcessIdentity], bool] | None = None,
++) -> DaemonView:
++    """The daemon's state for the public probe (see the module notes)."""
++    path = runtime.status_path(home)
++    try:
++        text = path.read_text(encoding="utf-8")
++    except FileNotFoundError:
++        return DaemonView("stopped")
++    except OSError:
++        return DaemonView("unknown")
++    try:
++        data: object = json.loads(text)
++    except ValueError:
++        return DaemonView("unknown")
++    if not isinstance(data, dict):
++        return DaemonView("unknown")
++    record: dict[str, Any] = {str(k): v for k, v in data.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
++    status = runtime.RuntimeStatus.from_json(record)
++    if status is None:
++        return DaemonView("unknown")
++    if status.state in _DOWN_DAEMON:
++        return DaemonView(status.state)
++    stamped = _when(record.get("updated_at"))
++    if stamped is None:
++        return DaemonView("unknown")
++    age = (now - stamped).total_seconds()
++    if age < 0 or age > HEARTBEAT_LIMIT_S:
++        return DaemonView("unknown")
++    check = alive if alive is not None else _process_alive
++    if not check(status.process):
++        return DaemonView("stopped")
++    state = status.state if status.state in _LIVE_DAEMON else "unknown"
++    return DaemonView(state, int(age), _platform_rows(record))
++
++
++def _process_alive(identity: runtime.ProcessIdentity) -> bool:
++    return identity.is_alive()
++
++
++def _daemon_component(view: DaemonView) -> str:
++    if view.state in _SERVING_DAEMON:
++        return "ok"
++    if view.state == "unknown":
++        return "unknown"
++    if view.state in _DOWN_DAEMON:
++        return "down"
++    return "degraded"
++
++
++# -- sessions --------------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class SessionCounts:
++    store: str
++    active: int = 0
++    recent: int = 0
++
++
++_RECENT_SQL: Final = (
++    "SELECT ended_at, COALESCE(last_activity_at, started_at) AS seen FROM sessions "
++    "WHERE hidden = 0 ORDER BY seen DESC LIMIT ?"
++)
++
++
++def _store_problem(exc: BaseException) -> str:
++    if is_lock_error(exc):
++        return "busy"
++    return "corrupt" if classify(exc) is Bucket.CORRUPT else "unavailable"
++
++
++def session_counts(scope: Scope, now: float) -> SessionCounts:
++    """Active and recent counts from the read-only store (never created)."""
++    try:
++        store = browse.open_readonly(scope)
++    except StoreUnavailable as exc:
++        return SessionCounts("missing" if exc.kind == "missing" else "unavailable")
++    except (sqlite3.Error, OSError) as exc:
++        return SessionCounts(_store_problem(exc))
++    try:
++        with store.read() as conn:
++            rows = conn.execute(_RECENT_SQL, (RECENT_WINDOW,)).fetchall()
++    except sqlite3.Error as exc:
++        return SessionCounts(_store_problem(exc))
++    finally:
++        store.close()
++    active = sum(
++        1
++        for row in rows
++        if row["ended_at"] is None
++        and row["seen"] is not None
++        and now - row["seen"] < ACTIVE_WINDOW_S
++    )
++    return SessionCounts("ok", active, len(rows))
++
++
++# -- the route -------------------------------------------------------------------------------------
++
++
++def _now(request: Request, scope: Scope) -> datetime:
++    override: object = dashboard_state(request.app).extras.get("status.now")
++    if callable(override):
++        found: object = override()
++        if isinstance(found, datetime):
++            return found
++    return scope.clock.now()
++
++
++def _collector(request: Request, key: str, default: Callable[[], Amount]) -> Callable[[], Amount]:
++    override: object = dashboard_state(request.app).extras.get(key)
++    if callable(override):
++        return override  # pyright: ignore[reportReturnType]
++    return default
++
++
++def build_status(request: Request, scope: Scope) -> dict[str, Any]:
++    state = dashboard_state(request.app)
++    now = _now(request, scope)
++    try:
++        daemon = daemon_view(scope.home, now)
++    except Exception as exc:
++        log.debug("daemon state unavailable: %s", type(exc).__name__)
++        daemon = DaemonView("unknown")
++    try:
++        sessions = session_counts(scope, now.timestamp())
++    except Exception as exc:
++        log.debug("session counts unavailable: %s", type(exc).__name__)
++        sessions = SessionCounts("unknown")
++    counted = [row for _name, row in daemon.platforms if row != _PAUSED_PLATFORM]
++    connected = sum(1 for row in counted if row == _HEALTHY_PLATFORM)
++    platform_status = "ok" if connected == len(counted) else "degraded"
++    components: dict[str, dict[str, Any]] = {
++        "store": {"status": "ok" if sessions.store in ("ok", "missing") else sessions.store},
++        "daemon": {"status": _daemon_component(daemon), "state": daemon.state},
++        "platforms": {
++            "status": platform_status,
++            "configured": len(counted),
++            "connected": connected,
++        },
++    }
++    overall = "ok" if all(c["status"] == "ok" for c in components.values()) else "degraded"
++    memory = _memory_block(_collector(request, "status.memory", read_memory))
++    disk = _disk_block(_collector(request, "status.disk", disk_reader(scope.home)))
++    return {
++        "version": indus.__version__,
++        "daemon": {"state": daemon.state, "heartbeat_age_s": daemon.heartbeat_age_s},
++        "platforms": [{"name": name, "state": row} for name, row in daemon.platforms],
++        "active_sessions": sessions.active,
++        "recent_sessions": sessions.recent,
++        **describe_mode(state.auth),
++        "components": components,
++        "overall": overall,
++        "memory": memory,
++        "disk": disk,
++    }
++
++
++@router.get("/api/status")
++def get_status(request: Request, scope: ReadScope) -> JSONResponse:
++    try:
++        body = build_status(request, scope)
++    except Exception as exc:  # the probe answers even when something above is broken
++        log.warning("the status probe failed: %s", type(exc).__name__)
++        body = {"version": indus.__version__, "daemon": {"state": "unknown"}, "overall": "unknown"}
++    return JSONResponse(body, headers={"cache-control": "no-store"})
+diff --git a/tests/contract/web/_rest_app_r2.py b/tests/contract/web/_rest_app_r2.py
+new file mode 100644
+index 0000000..f492620
+--- /dev/null
++++ b/tests/contract/web/_rest_app_r2.py
+@@ -0,0 +1,114 @@
++"""A dashboard app for the P18-13 / P18-14 REST route tests.
++
++Builds the real app (``create_app`` in headless serve mode: no SPA bundle needed) for a profile
++scope, installs the per-request profile resolver (P18-10) the way the app factory will once it is
++wired, puts test seams into ``DashboardState.extras`` and returns a ``TestClient`` that sends the
++loopback session token on every call (``anonymous()`` gives one that sends nothing).
++
++Same approach as the P18-11/12 builder, kept as its own copy so the two slices land independently.
++"""
++
++from __future__ import annotations
++
++from collections.abc import Iterable, Iterator, Mapping
++from dataclasses import dataclass, field
++from typing import Any
++
++from fastapi import APIRouter, FastAPI
++from fastapi.routing import APIRoute
++from starlette.routing import BaseRoute
++from starlette.testclient import TestClient
++
++from indus.foundation.scope import Scope
++from indus.web.app import AppOptions, create_app
++from indus.web.scope import ProfileScopes, install, read_scope, write_scope
++from indus.web.state import DashboardState
++
++SESSION_HEADER = "X-Indus-Session-Token"
++BASE_URL = "http://127.0.0.1:9119"
++
++
++@dataclass
++class RestApp:
++    app: FastAPI
++    client: TestClient
++    state: DashboardState
++    _extra_clients: list[TestClient] = field(default_factory=list[TestClient])
++
++    def anonymous(self) -> TestClient:
++        """A client that carries no credential at all."""
++        client = TestClient(self.app, base_url=BASE_URL, follow_redirects=False)
++        self._extra_clients.append(client)
++        return client
++
++    def close(self) -> None:
++        for client in [self.client, *self._extra_clients]:
++            client.close()
++
++
++def build_rest_app(
++    scope: Scope,
++    *,
++    extras: Mapping[str, Any] | None = None,
++    options: AppOptions | None = None,
++) -> RestApp:
++    app = create_app(scope, "serve", options=options or AppOptions(config={}))
++    install(app, ProfileScopes(scope))
++    state: DashboardState = app.state.indus
++    state.extras.update(extras or {})
++    client = TestClient(app, base_url=BASE_URL, follow_redirects=False)
++    client.headers[SESSION_HEADER] = state.auth.token.value
++    return RestApp(app, client, state)
++
++
++def _depends_on(dependant: Any, target: object, seen: set[int]) -> bool:
++    if id(dependant) in seen:
++        return False
++    seen.add(id(dependant))
++    if getattr(dependant, "call", None) is target:
++        return True
++    return any(_depends_on(c, target, seen) for c in getattr(dependant, "dependencies", ()) or ())
++
++
++def api_routes(routes: Iterable[BaseRoute]) -> Iterator[APIRoute]:
++    """Every ``APIRoute``, including those of included routers (FastAPI keeps those wrapped, so
++    ``app.routes`` alone does not list them)."""
++    for route in routes:
++        if isinstance(route, APIRoute):
++            yield route
++            continue
++        inner: object = getattr(route, "original_router", None)
++        if isinstance(inner, APIRouter):
++            yield from api_routes(inner.routes)
++
++
++def _under(path: str, prefixes: tuple[str, ...]) -> bool:
++    return any(path == p or path.startswith(p.rstrip("/") + "/") for p in prefixes)
++
++
++def route_table(app: FastAPI, prefixes: tuple[str, ...]) -> set[tuple[str, str, bool]]:
++    """``(method, path, scoped)`` of the app's routes under ``prefixes`` (whole segments);
++    ``scoped`` = the route resolves a profile scope (``read_scope`` or ``write_scope``)."""
++    found: set[tuple[str, str, bool]] = set()
++    for route in api_routes(app.routes):
++        if not _under(route.path, prefixes):
++            continue
++        scoped = _depends_on(route.dependant, read_scope, set()) or _depends_on(
++            route.dependant, write_scope, set()
++        )
++        for method in route.methods or ():
++            if method != "HEAD":
++                found.add((method, route.path, scoped))
++    return found
++
++
++def unscoped_writes(app: FastAPI, prefixes: tuple[str, ...]) -> list[str]:
++    """Write routes under ``prefixes`` that do not depend on ``write_scope`` (R09.20)."""
++    missing: list[str] = []
++    for route in api_routes(app.routes):
++        writes = sorted({"POST", "PUT", "PATCH", "DELETE"} & set(route.methods or ()))
++        if not _under(route.path, prefixes) or not writes:
++            continue
++        if not _depends_on(route.dependant, write_scope, set()):
++            missing.extend(f"{method} {route.path}" for method in writes)
++    return missing
+diff --git a/tests/contract/web/test_cron_skills_routes.py b/tests/contract/web/test_cron_skills_routes.py
+new file mode 100644
+index 0000000..8e5bfed
+--- /dev/null
++++ b/tests/contract/web/test_cron_skills_routes.py
+@@ -0,0 +1,388 @@
++"""P18-14: the Cron and Skills REST routes, the public fire webhook and its signed token."""
++
++from __future__ import annotations
++
++import logging
++from collections.abc import Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.cron.ports import CronBackend
++from indus.foundation.config import loader as config_loader
++from indus.foundation.scope import Scope
++from indus.learning.skills.hub.lock import HubLock
++from indus.learning.skills.resolver import clear_scan_cache
++from indus.service import cron_host
++from indus.web.routes import cron, skills
++from indus.web.routes.cron import FireClaims, mint_fire_token, read_fire_token
++from tests.contract.web._rest_app_r2 import (
++    SESSION_HEADER,
++    RestApp,
++    build_rest_app,
++    route_table,
++    unscoped_writes,
++)
++from tests.fakes.clock import FakeClock
++from tests.unit.learning.skills.hub._web import FakeWeb
++
++WRITE = {"profile": "work"}
++# Built at runtime so no scanner-bait text sits in the repo as one line.
++DANGEROUS_LINE = "rm -rf " + "/"
++HUB = "https://skills.example.com"
++
++
++class Runs:
++    """The ``cron.runner`` seam: records the runs a route started; ``busy`` ids read as running."""
++
++    def __init__(self) -> None:
++        self.started: list[str] = []
++        self.busy: set[str] = set()
++
++    def __call__(self, _backend: CronBackend, job_id: str) -> None:
++        self.started.append(job_id)
++
++
++class BusyAware:
++    """The real backend, except that ``is_running`` answers from ``Runs.busy``."""
++
++    def __init__(self, inner: CronBackend, runs: Runs) -> None:
++        self._inner = inner
++        self._runs = runs
++
++    def is_running(self, job_id: str) -> bool:
++        return job_id in self._runs.busy
++
++    def __getattr__(self, name: str) -> Any:
++        return getattr(self._inner, name)
++
++
++@pytest.fixture
++def runs() -> Runs:
++    return Runs()
++
++
++@pytest.fixture
++def web() -> FakeWeb:
++    return FakeWeb()
++
++
++@pytest.fixture
++def rest(scope: Scope, runs: Runs, web: FakeWeb) -> Iterator[RestApp]:
++    config_loader.reset()
++    clear_scan_cache()
++
++    def backend(used: Scope) -> Any:
++        cron_host.install()
++        return BusyAware(cron_host.CronHost(used), runs)
++
++    built = build_rest_app(
++        scope,
++        extras={
++            "cron.backend": backend,
++            "cron.runner": runs,
++            "skills.hub_sources": web.sources,
++        },
++    )
++    built.client.params = WRITE  # the test root holds two profiles: writes must name one
++    yield built
++    built.close()
++    config_loader.reset()
++    clear_scan_cache()
++
++
++def _code(answer: Any) -> str:
++    return answer.json()["detail"]["code"]
++
++
++def _new_job(rest: RestApp, **fields: Any) -> dict[str, Any]:
++    body = {"name": "digest", "prompt": "Summarise the news.", "schedule": "every 30m", **fields}
++    answer = rest.client.post("/api/cron/jobs", json=body)
++    assert answer.status_code == 201, answer.text
++    return answer.json()
++
++
++# -- cron jobs -------------------------------------------------------------------------------------
++
++
++def test_cron_crud_pause_resume(rest: RestApp) -> None:
++    job = _new_job(rest)
++    job_id = job["id"]
++    assert job["schedule"] and job["deliver"] == "local" and job["enabled"] is True
++    listed = rest.client.get("/api/cron/jobs").json()["jobs"]
++    assert [j["id"] for j in listed] == [job_id]
++    assert rest.client.get(f"/api/cron/jobs/{job_id}").json()["name"] == "digest"
++
++    changed = rest.client.put(f"/api/cron/jobs/{job_id}", json={"schedule": "every 2h"})
++    assert changed.status_code == 200, changed.text
++    assert "2" in changed.json()["schedule"]
++
++    paused = rest.client.post(f"/api/cron/jobs/{job_id}/pause").json()
++    assert paused["state"] == "paused" and paused["paused_reason"]
++    resumed = rest.client.post(f"/api/cron/jobs/{job_id}/resume").json()
++    assert resumed["state"] == "scheduled" and resumed["enabled"] is True
++
++    assert rest.client.delete(f"/api/cron/jobs/{job_id}").json() == {"ok": True}
++    gone = rest.client.get(f"/api/cron/jobs/{job_id}")
++    assert gone.status_code == 404 and _code(gone) == "job_not_found"
++
++
++def test_bad_schedule_deliver_and_body_are_refused(rest: RestApp) -> None:
++    bad = rest.client.post("/api/cron/jobs", json={"prompt": "x", "schedule": "whenever you like"})
++    assert bad.status_code == 400 and _code(bad) == "invalid_job"
++    target = rest.client.post(
++        "/api/cron/jobs", json={"prompt": "x", "schedule": "every 1h", "deliver": "pigeon:42"}
++    )
++    assert target.status_code == 400 and _code(target) == "invalid_deliver"
++    assert rest.client.post("/api/cron/jobs", json={"schedule": "every 1h"}).status_code == 422
++    assert rest.client.put("/api/cron/jobs/nope", json={"name": "x"}).status_code == 404
++
++
++def test_trigger_runs_in_the_background_and_refuses_a_second(rest: RestApp, runs: Runs) -> None:
++    job_id = _new_job(rest)["id"]
++    first = rest.client.post(f"/api/cron/jobs/{job_id}/trigger")
++    assert first.status_code == 202 and first.json()["id"] == job_id
++    assert runs.started == [job_id]
++    runs.busy.add(job_id)
++    second = rest.client.post(f"/api/cron/jobs/{job_id}/trigger")
++    assert second.status_code == 409 and _code(second) == "job_running"
++    assert runs.started == [job_id]
++
++
++def test_delivery_targets_list_local_and_configured_platforms(rest: RestApp, scope: Scope) -> None:
++    (scope.home / "config.yaml").write_text(
++        "platforms:\n"
++        "  telegram:\n"
++        "    home_channel:\n"
++        "      chat_id: '12345'\n"
++        "  discord:\n"
++        "    enabled: false\n"
++        "    home_channel:\n"
++        "      chat_id: '678'\n"
++        "  email:\n"
++        "    enabled: true\n",
++        encoding="utf-8",
++    )
++    rows = rest.client.get("/api/cron/delivery-targets").json()["targets"]
++    assert rows[0] == {"id": "local", "label": "Save locally", "kind": "local", "available": True}
++    by_id = {row["id"]: row for row in rows[1:]}
++    assert by_id["telegram"]["available"] is True and by_id["telegram"]["kind"] == "platform"
++    assert by_id["discord"]["available"] is False
++    assert by_id["email"] == {"id": "email", "label": "Email", "kind": "email", "available": False}
++    assert "slack" not in by_id  # never set up
++
++
++def test_blueprints_come_from_skill_front_matter(rest: RestApp, scope: Scope) -> None:
++    _skill(
++        scope,
++        "morning-brief",
++        "Daily brief.",
++        extra="metadata:\n  indus:\n    blueprint:\n      schedule: daily at 8am\n"
++        "      prompt: Write my brief.\n",
++    )
++    _skill(scope, "plain", "No blueprint.")
++    rows = rest.client.get("/api/cron/blueprints").json()["blueprints"]
++    assert rows == [
++        {
++            "skill": "morning-brief",
++            "description": "Daily brief.",
++            "schedule": "daily at 8am",
++            "prompt": "Write my brief.",
++        }
++    ]
++
++
++# -- the fire webhook ------------------------------------------------------------------------------
++
++
++def _token(rest: RestApp, job_id: str, **body: Any) -> str:
++    answer = rest.client.post(f"/api/cron/jobs/{job_id}/fire-token", json=body or None)
++    assert answer.status_code == 200, answer.text
++    assert answer.json()["path"] == "/api/cron/fire"
++    assert answer.headers["cache-control"] == "no-store"
++    return answer.json()["token"]
++
++
++def _fire(rest: RestApp, token: str | None, body: Any = None) -> Any:
++    headers = {"authorization": f"Bearer {token}"} if token is not None else {}
++    return rest.anonymous().post("/api/cron/fire", json=body, headers=headers)
++
++
++def test_fire_with_a_good_token_starts_the_job_without_the_session_token(
++    rest: RestApp, runs: Runs, caplog: pytest.LogCaptureFixture
++) -> None:
++    caplog.set_level(logging.DEBUG)
++    job_id = _new_job(rest)["id"]
++    token = _token(rest, job_id)
++    answer = _fire(rest, token, {"job_id": job_id})
++    assert answer.status_code == 202
++    assert answer.json() == {"status": "accepted", "job_id": job_id}
++    assert runs.started == [job_id]
++    assert token not in caplog.text and token.split(".")[1] not in caplog.text
++
++
++def test_fire_token_expires(rest: RestApp, runs: Runs, fake_clock: FakeClock) -> None:
++    job_id = _new_job(rest)["id"]
++    token = _token(rest, job_id, ttl_s=60)
++    fake_clock.advance(59)
++    assert _fire(rest, token).status_code == 202
++    fake_clock.advance(1)  # exactly at the expiry: no longer valid
++    late = _fire(rest, token)
++    assert late.status_code == 401 and _code(late) == "invalid_fire_token"
++    assert runs.started == [job_id]
++
++
++def test_fire_refuses_bad_tokens_with_one_answer(rest: RestApp, runs: Runs, scope: Scope) -> None:
++    job_id = _new_job(rest)["id"]
++    other_id = _new_job(rest, name="other")["id"]
++    token = _token(rest, job_id)
++    payload, _, signature = token.partition(".")
++    flipped = ("A" if signature[0] != "A" else "B") + signature[1:]
++    foreign = mint_fire_token(
++        b"k" * 32, FireClaims(profile="work", job_id=job_id, expires_at=4_000_000_000)
++    )
++    answers = [
++        _fire(rest, None),
++        _fire(rest, ""),
++        _fire(rest, "not-a-token"),
++        _fire(rest, f"{payload}.{flipped}"),
++        _fire(rest, foreign),
++        _fire(rest, token, {"job_id": other_id}),
++    ]
++    bodies = {a.text for a in answers}
++    assert [a.status_code for a in answers] == [401] * 6 and len(bodies) == 1
++    assert runs.started == []
++    assert (
++        rest.client.post(f"/api/cron/jobs/{job_id}/fire-token", json={"ttl_s": 7200}).status_code
++        == 422
++    )
++
++
++def test_fire_for_a_deleted_job_is_gone(rest: RestApp, runs: Runs) -> None:
++    job_id = _new_job(rest)["id"]
++    token = _token(rest, job_id)
++    rest.client.delete(f"/api/cron/jobs/{job_id}")
++    answer = _fire(rest, token)
++    assert answer.status_code == 200 and answer.json() == {"status": "gone", "job_id": job_id}
++    assert runs.started == []
++
++
++def test_fire_token_helpers_round_trip() -> None:
++    key = b"s" * 32
++    claims = FireClaims(profile="work", job_id="abc", expires_at=100.0)
++    token = mint_fire_token(key, claims)
++    assert read_fire_token(key, token, 99.9) == claims
++    assert read_fire_token(key, token, 100.0) is None
++    assert read_fire_token(b"t" * 32, token, 1.0) is None
++
++
++# -- skills ----------------------------------------------------------------------------------------
++
++
++def _skill(scope: Scope, name: str, description: str, *, extra: str = "", body: str = "") -> Path:
++    folder = scope.home / "skills" / name
++    folder.mkdir(parents=True, exist_ok=True)
++    text = f"---\nname: {name}\ndescription: {description}\n{extra}---\n\n# {name}\n\n{body}\n"
++    (folder / "SKILL.md").write_text(text, encoding="utf-8")
++    return folder
++
++
++def test_skill_toggle_round_trips_through_config(rest: RestApp, scope: Scope) -> None:
++    _skill(scope, "alpha", "First.")
++    _skill(scope, "beta", "Second.")
++    rows = {r["name"]: r for r in rest.client.get("/api/skills").json()["skills"]}
++    assert rows["alpha"]["enabled"] is True and rows["alpha"]["source"] == "local"
++    off = rest.client.post("/api/skills/toggle", json={"name": "alpha", "enabled": False})
++    assert off.json() == {"ok": True, "name": "alpha", "enabled": False}
++    assert "alpha" in (scope.home / "config.yaml").read_text(encoding="utf-8")
++    rows = {r["name"]: r for r in rest.client.get("/api/skills").json()["skills"]}
++    assert rows["alpha"]["enabled"] is False and rows["beta"]["enabled"] is True
++    rest.client.post("/api/skills/toggle", json={"name": "alpha", "enabled": True})
++    rows = {r["name"]: r for r in rest.client.get("/api/skills").json()["skills"]}
++    assert rows["alpha"]["enabled"] is True
++    missing = rest.client.post("/api/skills/toggle", json={"name": "nope", "enabled": False})
++    assert missing.status_code == 404 and _code(missing) == "skill_not_found"
++
++
++def test_toolsets_list_plain_toolsets_with_tools(rest: RestApp) -> None:
++    rows = rest.client.get("/api/tools/toolsets").json()["toolsets"]
++    assert rows and all(
++        set(r) == {"name", "label", "description", "enabled", "tools"} for r in rows
++    )
++    assert not any(r["name"].startswith("indus-") or r["name"] == "core" for r in rows)
++    assert any(r["enabled"] for r in rows)
++
++
++def _hub_skill(web: FakeWeb, name: str, body: str) -> str:
++    text = f"---\nname: {name}\ndescription: The {name} skill.\n---\n\n# {name}\n\n{body}\n"
++    url = f"{HUB}/{name}/SKILL.md"
++    web.add(url, text)
++    return url
++
++
++def test_hub_install_of_a_dangerous_skill_is_409_with_the_verdict(
++    rest: RestApp, scope: Scope, web: FakeWeb
++) -> None:
++    evil = _hub_skill(web, "evil", f"    {DANGEROUS_LINE}\n")
++    for force in (False, True):
++        answer = rest.client.post(
++            "/api/skills/hub/install", json={"identifier": evil, "force": force}
++        )
++        assert answer.status_code == 409
++        assert answer.json()["detail"]["code"] == "scan_blocked"
++        assert answer.json()["detail"]["verdict"] == "dangerous"
++    assert not (scope.home / "skills" / "evil").exists()
++    assert HubLock(scope.home / "skills").get("evil") is None
++
++
++def test_hub_install_inspect_and_uninstall_a_safe_skill(
++    rest: RestApp, scope: Scope, web: FakeWeb
++) -> None:
++    plain = _hub_skill(web, "plain", "Do the thing.")
++    seen = rest.client.get("/api/skills/hub/inspect", params={"identifier": plain}).json()
++    assert seen["verdict"] == "safe" and seen["allowed"] is True
++    assert not (scope.home / "skills" / "plain").exists()
++    done = rest.client.post("/api/skills/hub/install", json={"identifier": plain})
++    assert done.status_code == 200 and done.json() == {
++        "ok": True,
++        "name": "plain",
++        "verdict": "safe",
++    }
++    again = rest.client.post("/api/skills/hub/install", json={"identifier": plain})
++    assert again.status_code == 409 and _code(again) == "already_installed"
++    rows = {r["name"]: r for r in rest.client.get("/api/skills").json()["skills"]}
++    assert rows["plain"]["source"] == "hub"
++    gone = rest.client.post("/api/skills/hub/uninstall", json={"name": "plain"})
++    assert gone.json()["ok"] is True and not (scope.home / "skills" / "plain").exists()
++    missing = rest.client.post("/api/skills/hub/uninstall", json={"name": "plain"})
++    assert missing.status_code == 404 and _code(missing) == "not_a_hub_skill"
++
++
++def test_hub_search_marks_no_verdict(rest: RestApp) -> None:
++    assert rest.client.get("/api/skills/hub/search", params={"q": " "}).json() == {"results": []}
++
++
++# -- scope rules and the route list ----------------------------------------------------------------
++
++
++def test_writes_need_a_profile_on_a_multi_profile_host(rest: RestApp, scope: Scope) -> None:
++    unnamed = rest.anonymous()
++    unnamed.headers[SESSION_HEADER] = rest.state.auth.token.value
++    refused = unnamed.post("/api/cron/jobs", json={"prompt": "x", "schedule": "every 1h"})
++    assert refused.status_code == 400
++    named = rest.client.post("/api/cron/jobs", json={"prompt": "x", "schedule": "every 1h"})
++    assert named.status_code == 201
++    toggle = unnamed.post("/api/skills/toggle", json={"name": "x", "enabled": True})
++    assert toggle.status_code == 400
++    assert unnamed.get("/api/cron/jobs").status_code == 200  # reads default to the backend's
++
++
++def test_every_write_depends_on_the_write_scope_except_the_fire_webhook(rest: RestApp) -> None:
++    prefixes = ("/api/cron", "/api/skills", "/api/tools")
++    assert unscoped_writes(rest.app, prefixes) == ["POST /api/cron/fire"]
++
++
++def test_route_lists_match_the_app(rest: RestApp) -> None:
++    assert route_table(rest.app, ("/api/cron",)) == set(cron.ROUTE_LIST)
++    assert route_table(rest.app, ("/api/skills", "/api/tools")) == set(skills.ROUTE_LIST)
+diff --git a/tests/contract/web/test_logs_analytics_routes.py b/tests/contract/web/test_logs_analytics_routes.py
+new file mode 100644
+index 0000000..6d063c8
+--- /dev/null
++++ b/tests/contract/web/test_logs_analytics_routes.py
+@@ -0,0 +1,209 @@
++"""P18-13: the Logs and Analytics REST routes."""
++
++from __future__ import annotations
++
++import sqlite3
++from collections.abc import Iterator
++from datetime import timedelta
++from typing import Any
++
++import pytest
++
++from indus.foundation.log import logs_dir
++from indus.foundation.scope import Scope
++from indus.state import registry, sessions, usage
++from indus.state.usage import UsageDelta
++from indus.web.routes import analytics, logs
++from tests.contract.web._rest_app_r2 import RestApp, build_rest_app, route_table
++from tests.fakes.clock import FakeClock
++
++SECRET = "kv-" + "".join(["p4Wd"] * 8)
++"""A fake credential built at runtime (no vendor shape)."""
++DAY = 86400.0
++
++
++@pytest.fixture
++def rest(scope: Scope) -> Iterator[RestApp]:
++    built = build_rest_app(scope)
++    yield built
++    built.close()
++
++
++def _code(answer: Any) -> str:
++    return answer.json()["detail"]["code"]
++
++
++# -- logs ------------------------------------------------------------------------------------------
++
++AGENT_LOG = [
++    "2026-01-01 08:00:00 DEBUG indus.core.agent: thinking",
++    "2026-01-01 08:00:01 INFO indus.tools.terminal: ran ls",
++    "2026-01-01 08:00:02 WARNING indus.gateway.daemon [s1:t1]: slow platform",
++    "2026-01-01 08:00:03 ERROR indus.core.agent: model call failed",
++    "Traceback (most recent call last):",
++    '  File "x.py", line 1, in <module>',
++    "2026-01-01 08:00:04 INFO indus.cron.ticker: tick",
++    f"2026-01-01 08:00:05 INFO indus.providers.http: Authorization: Bearer {SECRET}",
++    f"2026-01-01 08:00:06 INFO indus.core.agent: OPENAI_API_KEY={SECRET}",
++    "2026-01-01 08:00:07 INFO indusx.other: not ours",
++]
++
++
++def _write_log(scope: Scope, name: str, lines: list[str]) -> None:
++    folder = logs_dir(scope.home)
++    folder.mkdir(parents=True, exist_ok=True)
++    (folder / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
++
++
++def test_log_lines_with_a_key_are_redacted(rest: RestApp, scope: Scope) -> None:
++    _write_log(scope, "agent.log", AGENT_LOG)
++    answer = rest.client.get("/api/logs")
++    assert answer.status_code == 200
++    body = answer.json()
++    assert body["file"] == "agent" and len(body["lines"]) == len(AGENT_LOG)
++    assert SECRET not in answer.text
++    assert body["lines"][0] == AGENT_LOG[0]
++
++
++def test_level_component_and_tail_filters(rest: RestApp, scope: Scope) -> None:
++    _write_log(scope, "agent.log", AGENT_LOG)
++
++    def lines(**params: Any) -> list[str]:
++        return rest.client.get("/api/logs", params=params).json()["lines"]
++
++    errors = lines(level="ERROR")
++    assert errors == AGENT_LOG[3:6]  # the traceback travels with its record
++    assert lines(level="WARNING") == AGENT_LOG[2:6]
++    assert lines(level="ALL") == lines()
++    agent = lines(component="agent")
++    assert AGENT_LOG[0] in agent and AGENT_LOG[4] in agent and AGENT_LOG[1] not in agent
++    assert all("indusx" not in line for line in agent)
++    assert lines(component="cron") == [AGENT_LOG[6]]
++    assert lines(component="gateway", level="INFO") == [AGENT_LOG[2]]
++    assert lines(component="all", level="all") == lines()
++
++    many = [f"2026-01-01 09:00:00 INFO indus.core.agent: line {i}" for i in range(600)]
++    _write_log(scope, "agent.log", many)
++    assert lines(lines=50) == many[-50:]
++    assert len(lines()) == 100 and len(lines(lines=500)) == 500
++
++
++def test_other_files_and_a_missing_file(rest: RestApp, scope: Scope) -> None:
++    assert rest.client.get("/api/logs", params={"file": "errors"}).json() == {
++        "file": "errors",
++        "lines": [],
++    }
++    _write_log(scope, "gateway.log", ["2026-01-01 08:00:00 INFO indus.gateway.x: up"])
++    gateway = rest.client.get("/api/logs", params={"file": "gateway"}).json()
++    assert gateway["lines"] == ["2026-01-01 08:00:00 INFO indus.gateway.x: up"]
++
++
++@pytest.mark.parametrize(
++    ("params", "code"),
++    [
++        ({"file": "secrets"}, "invalid_file"),
++        ({"file": "../config"}, "invalid_file"),
++        ({"lines": 42}, "invalid_lines"),
++        ({"level": "LOUD"}, "invalid_level"),
++        ({"component": "kernel"}, "invalid_component"),
++    ],
++)
++def test_bad_parameters_are_400(rest: RestApp, params: dict[str, Any], code: str) -> None:
++    answer = rest.client.get("/api/logs", params=params)
++    assert answer.status_code == 400 and _code(answer) == code
++
++
++def test_logs_need_the_session_token(rest: RestApp) -> None:
++    assert rest.anonymous().get("/api/logs").status_code == 401
++
++
++# -- analytics -------------------------------------------------------------------------------------
++
++
++def _usage_store(scope: Scope, clock: FakeClock) -> float:
++    """Sessions over three days plus one outside a 7-day window; returns today's midnight."""
++    now = clock.now()
++    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
++    store = registry.open_unshared(scope)
++    try:
++        rows = [
++            ("today-a", midnight + 3600, 100, 50, 0.25, None),
++            ("today-b", midnight + 7200, 10, 5, 0.05, 0.04),
++            ("yesterday", midnight - DAY + 60, 1000, 400, 1.0, None),
++            ("last-week", midnight - 6 * DAY + 60, 7, 3, None, None),
++            ("too-old", midnight - 7 * DAY - 60, 5000, 5000, 9.0, None),
++        ]
++        for sid, started, tokens_in, tokens_out, estimate, actual in rows:
++            sessions.create(store, sid, "cli", started_at=started)
++
++            def stamp(
++                conn: sqlite3.Connection,
++                sid: str = sid,
++                values: tuple[Any, ...] = (tokens_in, tokens_out, estimate, actual),
++            ) -> None:
++                conn.execute(
++                    "UPDATE sessions SET input_tokens = ?, output_tokens = ?, "
++                    "estimated_cost_usd = ?, actual_cost_usd = ? WHERE id = ?",
++                    (*values, sid),
++                )
++
++            store.write(stamp)
++        side = UsageDelta(input_tokens=20, output_tokens=2, estimated_cost_usd=0.01, model="m")
++        assert usage.record(store, "yesterday", side, task="title")
++    finally:
++        store.close()
++    return midnight
++
++
++def test_usage_sums_match_the_store(rest: RestApp, scope: Scope, fake_clock: FakeClock) -> None:
++    fake_clock.advance(12 * 3600)
++    midnight = _usage_store(scope, fake_clock)
++    week = rest.client.get("/api/analytics/usage", params={"days": 7}).json()
++    today = fake_clock.now().date()
++    days = {row["day"]: row for row in week["daily"]}
++    assert sorted(days) == [
++        (today - timedelta(days=6)).isoformat(),
++        (today - timedelta(days=1)).isoformat(),
++        today.isoformat(),
++    ]
++    assert days[today.isoformat()] == {
++        "day": today.isoformat(),
++        "input_tokens": 110,
++        "output_tokens": 55,
++        "cost": 0.29,  # the billed 0.04 replaces the 0.05 estimate
++        "sessions": 2,
++    }
++    yesterday = days[(today - timedelta(days=1)).isoformat()]
++    assert yesterday["input_tokens"] == 1020 and yesterday["output_tokens"] == 402
++    assert yesterday["cost"] == pytest.approx(1.01) and yesterday["sessions"] == 1
++    assert week["totals"] == {
++        "input_tokens": 110 + 1020 + 7,
++        "output_tokens": 55 + 402 + 3,
++        "cost": pytest.approx(1.30),
++        "sessions": 4,
++    }
++    assert week["days"] == 7
++    month = rest.client.get("/api/analytics/usage").json()
++    assert month["days"] == 30 and month["totals"]["sessions"] == 5
++    assert midnight > 0
++
++
++def test_usage_without_a_store_is_empty_and_creates_nothing(rest: RestApp, scope: Scope) -> None:
++    before = sorted(p.name for p in scope.home.iterdir())
++    body = rest.client.get("/api/analytics/usage", params={"days": 90}).json()
++    assert body == {
++        "days": 90,
++        "daily": [],
++        "totals": {"input_tokens": 0, "output_tokens": 0, "cost": 0, "sessions": 0},
++    }
++    assert sorted(p.name for p in scope.home.iterdir()) == before
++
++
++@pytest.mark.parametrize("days", [0, -1, 366, "many"])
++def test_usage_days_out_of_range_is_422(rest: RestApp, days: Any) -> None:
++    assert rest.client.get("/api/analytics/usage", params={"days": days}).status_code == 422
++
++
++def test_route_lists_match_the_app(rest: RestApp) -> None:
++    assert route_table(rest.app, ("/api/logs",)) == set(logs.ROUTE_LIST)
++    assert route_table(rest.app, ("/api/analytics",)) == set(analytics.ROUTE_LIST)
+diff --git a/tests/contract/web/test_plugins_mcp_routes.py b/tests/contract/web/test_plugins_mcp_routes.py
+new file mode 100644
+index 0000000..4812aa0
+--- /dev/null
++++ b/tests/contract/web/test_plugins_mcp_routes.py
+@@ -0,0 +1,386 @@
++"""P18-14: the Plugins and MCP REST routes, the dashboard MCP sign-in and its public callback."""
++
++from __future__ import annotations
++
++import json
++import sys
++import threading
++from collections.abc import Iterator, Mapping
++from pathlib import Path
++from typing import Any
++from urllib.parse import parse_qs, urlencode, urlsplit
++
++import pytest
++from mcp.shared.auth import OAuthToken
++
++from indus.foundation.config import loader as config_loader
++from indus.foundation.scope import Scope
++from indus.mcp.config import McpServer
++from indus.mcp.oauth import IndusOAuthProvider, OAuthStore, secrets_for
++from indus.plugins.install import InstallBlocked, InstallError, InstallResult
++from indus.safety.content_scan import ScanReport
++from indus.web.routes import mcp, mcp_oauth, plugins
++from indus.web.routes.mcp_oauth import OAuthFlow
++from tests.contract.web._rest_app_r2 import RestApp, build_rest_app, route_table, unscoped_writes
++
++WRITE = {"profile": "work"}
++FAKE_SERVER = Path(__file__).resolve().parents[2] / "fakes" / "mcp" / "stdio_server.py"
++REMOTE = "https://mcp.example.test/mcp"
++SHA = "0123456789abcdef" * 2 + "01234567"
++
++
++class FakeInstaller:
++    """The ``plugins.installer`` seam: records installs; ``outcome`` is returned or raised."""
++
++    def __init__(self) -> None:
++        self.calls: list[tuple[str, str | None, bool]] = []
++        self.outcome: Any = None
++        self.installed: dict[str, dict[str, Any]] = {}
++
++    def __call__(self, _scope: Scope) -> FakeInstaller:
++        return self
++
++    def install(
++        self, identifier: str, *, ref: str | None = None, force: bool = False, confirm: Any = None
++    ) -> InstallResult:
++        self.calls.append((identifier, ref, force))
++        if isinstance(self.outcome, Exception):
++            raise self.outcome
++        return self.outcome
++
++    def records(self) -> dict[str, dict[str, Any]]:
++        return self.installed
++
++
++class OAuthPlay:
++    """The ``mcp.oauth_connect`` seam: plays the IdP and the server for a dashboard sign-in."""
++
++    def __init__(self) -> None:
++        self.codes: list[str] = []
++
++    async def __call__(
++        self, name: str, server: McpServer, scope: Scope, auth: IndusOAuthProvider
++    ) -> list[str]:
++        query = urlencode({"client_id": "dashboard", "state": "st-" + "x" * 20})
++        redirect = auth.context.redirect_handler
++        callback = auth.context.callback_handler
++        assert redirect is not None and callback is not None
++        await redirect(f"https://auth.example.test/authorize?{query}")
++        result = await callback()
++        self.codes.append(result.code)
++        access = "at-" + "q" * 24
++        await auth.store.set_tokens(OAuthToken(access_token=access, token_type="Bearer"))
++        return ["search", "fetch"]
++
++
++class Flows:
++    """The ``mcp.oauth_start`` seam: runs each flow on a thread the test can join."""
++
++    def __init__(self, play: OAuthPlay) -> None:
++        self.play = play
++        self.by_id: dict[str, threading.Thread] = {}
++
++    def __call__(self, flow: OAuthFlow, *args: Any) -> None:
++        self.by_id[flow.flow_id] = mcp_oauth.start_thread(flow, *args, connect=self.play)
++
++
++@pytest.fixture
++def installer() -> FakeInstaller:
++    return FakeInstaller()
++
++
++@pytest.fixture
++def play() -> OAuthPlay:
++    return OAuthPlay()
++
++
++@pytest.fixture
++def threads(play: OAuthPlay) -> Flows:
++    return Flows(play)
++
++
++@pytest.fixture
++def rest(scope: Scope, installer: FakeInstaller, threads: Flows) -> Iterator[RestApp]:
++    config_loader.reset()
++    built = build_rest_app(
++        scope, extras={"plugins.installer": installer, "mcp.oauth_start": threads}
++    )
++    built.client.params = WRITE  # the test root holds two profiles: writes must name one
++    yield built
++    built.close()
++    config_loader.reset()
++
++
++def _code(answer: Any) -> str:
++    return answer.json()["detail"]["code"]
++
++
++def _config(scope: Scope) -> str:
++    return (scope.home / "config.yaml").read_text(encoding="utf-8")
++
++
++# -- plugins ---------------------------------------------------------------------------------------
++
++
++def _plugin(scope: Scope, name: str, **manifest: Any) -> Path:
++    folder = scope.home / "plugins" / name
++    folder.mkdir(parents=True, exist_ok=True)
++    data = {"name": name, "version": "1.2.0", "description": f"The {name} plugin.", **manifest}
++    lines = [f"{k}: {json.dumps(v)}" for k, v in data.items()]
++    (folder / "plugin.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
++    (folder / "__init__.py").write_text("def register(ctx):\n    pass\n", encoding="utf-8")
++    return folder
++
++
++def test_plugins_list_enable_disable(rest: RestApp, scope: Scope, installer: FakeInstaller) -> None:
++    _plugin(scope, "weather")
++    installer.installed = {
++        "weather": {"revision": SHA, "pinned": True, "source": "https://h/x.git"}
++    }
++    rows = {r["name"]: r for r in rest.client.get("/api/plugins").json()["plugins"]}
++    row = rows["weather"]
++    assert row["enabled"] is False and row["version"] == "1.2.0" and row["sha"] == SHA
++    assert row["pinned"] is True and row["description"] == "The weather plugin."
++
++    on = rest.client.post("/api/plugins/weather/enable")
++    assert on.status_code == 200 and on.json()["enabled"] is True
++    assert "weather" in _config(scope)
++    assert {r["name"]: r for r in rest.client.get("/api/plugins").json()["plugins"]}["weather"][
++        "enabled"
++    ]
++    off = rest.client.post("/api/plugins/weather/disable")
++    assert off.json() == {"ok": True, "name": "weather", "enabled": False}
++    rows = {r["name"]: r for r in rest.client.get("/api/plugins").json()["plugins"]}
++    assert rows["weather"]["state"] == "disabled"
++    missing = rest.client.post("/api/plugins/nope/enable")
++    assert missing.status_code == 404 and _code(missing) == "plugin_not_found"
++
++
++def test_enabling_a_plugin_that_needs_packages_needs_a_terminal(
++    rest: RestApp, scope: Scope
++) -> None:
++    _plugin(scope, "heavy", python_dependencies=["requests==2.32.3"])
++    answer = rest.client.post("/api/plugins/heavy/enable")
++    assert answer.status_code == 409 and _code(answer) == "dependencies_required"
++    assert not (scope.home / "config.yaml").exists() or "heavy" not in _config(scope)
++
++
++@pytest.mark.parametrize("sha", ["abc123", "g" * 40, SHA[:39], ""])
++def test_plugin_install_refuses_a_short_or_bad_sha(
++    rest: RestApp, installer: FakeInstaller, sha: str
++) -> None:
++    answer = rest.client.post("/api/plugins/install", json={"url": "acme/tool", "sha": sha})
++    assert answer.status_code == 422
++    assert installer.calls == []
++
++
++@pytest.mark.parametrize("url", ["/srv/plugins/x", "./x", "~/x", "file:///srv/x", "x y"])
++def test_plugin_install_refuses_local_sources(
++    rest: RestApp, installer: FakeInstaller, url: str
++) -> None:
++    answer = rest.client.post("/api/plugins/install", json={"url": url, "sha": SHA})
++    assert answer.status_code == 400 and _code(answer) == "invalid_source"
++    assert installer.calls == []
++
++
++def test_plugin_install_blocked_by_the_scan_is_409(rest: RestApp, installer: FakeInstaller) -> None:
++    report = ScanReport(target="evil", kind="plugin", verdict="dangerous")
++    installer.outcome = InstallBlocked("install of evil blocked: dangerous content", report)
++    answer = rest.client.post(
++        "/api/plugins/install", json={"url": "https://git.example.test/evil.git", "sha": SHA}
++    )
++    assert answer.status_code == 409
++    assert answer.json()["detail"]["code"] == "scan_blocked"
++    assert answer.json()["detail"]["verdict"] == "dangerous"
++    assert installer.calls == [("https://git.example.test/evil.git", SHA, False)]
++
++
++def test_plugin_install_success_does_not_enable(
++    rest: RestApp, installer: FakeInstaller, tmp_path: Path
++) -> None:
++    report = ScanReport(target="tool", kind="plugin", verdict="safe")
++    record = {"revision": SHA, "pinned": True}
++    installer.outcome = InstallResult("tool", tmp_path / "tool", record, report, None)
++    answer = rest.client.post("/api/plugins/install", json={"url": "acme/tool", "sha": SHA.upper()})
++    assert answer.status_code == 200
++    assert answer.json() == {
++        "ok": True,
++        "name": "tool",
++        "sha": SHA,
++        "verdict": "safe",
++        "enabled": False,
++    }
++    assert installer.calls == [("acme/tool", SHA, False)]
++    installer.outcome = InstallError("plugin tool is already installed")
++    again = rest.client.post("/api/plugins/install", json={"url": "acme/tool", "sha": SHA})
++    assert again.status_code == 400 and _code(again) == "install_failed"
++
++
++# -- MCP servers -----------------------------------------------------------------------------------
++
++
++def _servers(rest: RestApp) -> dict[str, dict[str, Any]]:
++    return {s["name"]: s for s in rest.client.get("/api/mcp/servers").json()["servers"]}
++
++
++def _add_fake(rest: RestApp, name: str = "fake", **extra: Any) -> Any:
++    body = {"name": name, "command": sys.executable, "args": [str(FAKE_SERVER)], **extra}
++    return rest.client.post("/api/mcp/servers", json=body)
++
++
++def test_mcp_add_list_toggle_delete(rest: RestApp, scope: Scope) -> None:
++    plain = "hello-" + "world" * 3
++    added = _add_fake(rest, env={"GREETING": plain, "TOKEN": "${MY_TOKEN}"})
++    assert added.status_code == 201, added.text
++    assert _add_fake(rest).status_code == 409
++    row = _servers(rest)["fake"]
++    assert row["transport"] == "stdio" and row["enabled"] is True and row["auth"] == "none"
++    assert row["env"]["TOKEN"] == "${MY_TOKEN}"
++    assert row["env"]["GREETING"] != plain and plain not in rest.client.get("/api/mcp/servers").text
++    assert plain in _config(scope)  # stored as written; only the answer is redacted
++
++    off = rest.client.put("/api/mcp/servers/fake/enabled", json={"enabled": False})
++    assert off.json() == {"ok": True, "name": "fake", "enabled": False}
++    assert _servers(rest)["fake"]["enabled"] is False
++    assert rest.client.delete("/api/mcp/servers/fake").json()["ok"] is True
++    assert "fake" not in _servers(rest)
++    assert rest.client.delete("/api/mcp/servers/fake").status_code == 404
++
++
++def test_mcp_add_refuses_bad_shapes_and_literal_secrets(rest: RestApp) -> None:
++    secret = "kv-" + "Zq7r" * 8
++    both = {"name": "x", "command": "a", "url": REMOTE}
++    assert rest.client.post("/api/mcp/servers", json=both).status_code == 422
++    assert rest.client.post("/api/mcp/servers", json={"name": "x"}).status_code == 422
++    leaked = _add_fake(rest, "leaky", env={"API_KEY": secret})
++    assert leaked.status_code == 400 and _code(leaked) == "secret_value"
++    assert secret not in leaked.text
++    bad_name = _add_fake(rest, "../etc")
++    assert bad_name.status_code == 400 and _code(bad_name) == "invalid_name"
++
++
++def test_mcp_lists_a_broken_entry_with_its_problem(rest: RestApp, scope: Scope) -> None:
++    (scope.home / "config.yaml").write_text(
++        "mcp_servers:\n  broken:\n    args: [x]\n", encoding="utf-8"
++    )
++    row = _servers(rest)["broken"]
++    assert row["enabled"] is False and row["problem"]
++
++
++def test_mcp_test_against_the_fake_stdio_server_lists_tools(rest: RestApp) -> None:
++    assert _add_fake(rest).status_code == 201
++    answer = rest.client.post("/api/mcp/servers/fake/test")
++    assert answer.status_code == 200
++    body = answer.json()
++    assert body["ok"] is True, body
++    names = {tool["name"] for tool in body["tools"]}
++    assert {"echo", "add"} <= names
++    assert rest.client.post("/api/mcp/servers/nope/test").status_code == 404
++
++
++def test_mcp_test_reports_a_failure_without_a_500(rest: RestApp) -> None:
++    added = rest.client.post(
++        "/api/mcp/servers",
++        json={
++            "name": "crashy",
++            "command": sys.executable,
++            "args": [str(FAKE_SERVER), "--crash-on-start"],
++        },
++    )
++    assert added.status_code == 201
++    body = rest.client.post("/api/mcp/servers/crashy/test").json()
++    assert body["ok"] is False and body["error"] and body["tools"] == []
++
++
++def test_mcp_test_of_an_oauth_server_without_sign_in(rest: RestApp) -> None:
++    added = rest.client.post(
++        "/api/mcp/servers", json={"name": "remote", "url": REMOTE, "auth": "oauth"}
++    )
++    assert added.status_code == 201 and added.json()["auth"] == "oauth"
++    body = rest.client.post("/api/mcp/servers/remote/test").json()
++    assert body == {"ok": False, "error": "This server needs a sign-in first.", "tools": []}
++
++
++# -- MCP sign-in from the dashboard ----------------------------------------------------------------
++
++
++def _settled(rest: RestApp, threads: Flows, flow_id: str) -> dict[str, Any]:
++    """The flow's snapshot once its thread has ended."""
++    threads.by_id[flow_id].join(10)
++    return rest.client.get(f"/api/mcp/oauth/flows/{flow_id}").json()
++
++
++def _start_sign_in(rest: RestApp) -> dict[str, Any]:
++    assert rest.client.post(
++        "/api/mcp/servers", json={"name": "remote", "url": REMOTE, "auth": "oauth"}
++    ).status_code in (201, 409)
++    started = rest.client.post("/api/mcp/servers/remote/auth")
++    assert started.status_code == 200, started.text
++    return started.json()
++
++
++def _state_of(snapshot: Mapping[str, Any]) -> str:
++    return parse_qs(urlsplit(snapshot["authorization_url"]).query)["state"][0]
++
++
++def test_oauth_callback_is_public_and_matches_state(
++    rest: RestApp, scope: Scope, play: OAuthPlay, threads: Flows
++) -> None:
++    started = _start_sign_in(rest)
++    assert started["status"] == "authorization_required"
++    state = _state_of(started)
++
++    anon = rest.anonymous()
++    stranger = anon.get("/api/mcp/oauth/callback", params={"state": "nope<b>", "code": "c1"})
++    assert stranger.status_code == 404 and "nope" not in stranger.text
++    assert stranger.headers["content-type"].startswith("text/html")
++
++    back = anon.get("/api/mcp/oauth/callback", params={"state": state, "code": "code-1"})
++    assert back.status_code == 200 and "code-1" not in back.text
++    done = _settled(rest, threads, started["flow_id"])
++    assert done["status"] == "done" and done["tools"] == ["search", "fetch"]
++    assert play.codes == ["code-1"]
++    store = OAuthStore(secrets_for(scope), "remote", clock=scope.clock, home=scope.home)
++    assert store.has_tokens()
++
++    replay = anon.get("/api/mcp/oauth/callback", params={"state": state, "code": "code-2"})
++    assert replay.status_code == 404
++    assert play.codes == ["code-1"]
++
++
++def test_oauth_refusal_and_cancel_end_the_flow(rest: RestApp, scope: Scope, threads: Flows) -> None:
++    started = _start_sign_in(rest)
++    refused = rest.anonymous().get(
++        "/api/mcp/oauth/callback", params={"state": _state_of(started), "error": "access_denied"}
++    )
++    assert refused.status_code == 400
++    ended = _settled(rest, threads, started["flow_id"])
++    assert ended["status"] == "error" and "refused" in ended["error"]
++    store = OAuthStore(secrets_for(scope), "remote", clock=scope.clock, home=scope.home)
++    assert not store.has_tokens()
++
++    second = _start_sign_in(rest)
++    busy = rest.client.post("/api/mcp/servers/remote/auth")
++    assert busy.status_code == 409 and _code(busy) == "flow_in_progress"
++    cancelled = rest.client.delete(f"/api/mcp/oauth/flows/{second['flow_id']}")
++    assert cancelled.json() == {"ok": True, "status": "cancelled"}
++    assert _settled(rest, threads, second["flow_id"])["status"] == "cancelled"
++    assert rest.client.get("/api/mcp/oauth/flows/unknown").status_code == 404
++
++
++def test_oauth_needs_a_remote_server(rest: RestApp) -> None:
++    assert _add_fake(rest).status_code == 201
++    answer = rest.client.post("/api/mcp/servers/fake/auth")
++    assert answer.status_code == 400 and _code(answer) == "oauth_not_applicable"
++
++
++# -- scope rules and the route list ----------------------------------------------------------------
++
++
++def test_every_write_depends_on_the_write_scope(rest: RestApp) -> None:
++    assert unscoped_writes(rest.app, ("/api/plugins", "/api/mcp")) == []
++
++
++def test_route_lists_match_the_app(rest: RestApp) -> None:
++    assert route_table(rest.app, ("/api/plugins",)) == set(plugins.ROUTE_LIST)
++    assert route_table(rest.app, ("/api/mcp",)) == set(mcp.ROUTE_LIST)
+diff --git a/tests/contract/web/test_status_routes.py b/tests/contract/web/test_status_routes.py
+new file mode 100644
+index 0000000..6066017
+--- /dev/null
++++ b/tests/contract/web/test_status_routes.py
+@@ -0,0 +1,260 @@
++"""P18-13: the public status probe (pressure thresholds, daemon state, fail-safe collectors)."""
++
++from __future__ import annotations
++
++import os
++import sqlite3
++from collections.abc import Iterator
++from datetime import timedelta
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.state import gateway_runtime as runtime
++from indus.state import registry, sessions
++from indus.web.app import AppOptions
++from indus.web.auth.basic import hash_password
++from indus.web.routes import status
++from indus.web.routes.status import GIB, MIB, Amount, daemon_view, disk_pressure, memory_pressure
++from tests.contract.web._rest_app_r2 import RestApp, build_rest_app, route_table
++from tests.fakes.clock import FakeClock
++
++
++@pytest.fixture
++def rest(scope: Scope) -> Iterator[RestApp]:
++    built = build_rest_app(scope)
++    yield built
++    built.close()
++
++
++# -- pressure tables -------------------------------------------------------------------------------
++
++
++@pytest.mark.parametrize(
++    ("available", "total", "expected"),
++    [
++        (64 * MIB, 1 * GIB, "elevated"),  # at the critical floor (not under it), under 128 MiB
++        (64 * MIB - 1, 1 * GIB, "critical"),
++        (128 * MIB, 512 * MIB, "ok"),  # at the elevated floor, 25 % available
++        (128 * MIB - 1, 512 * MIB, "elevated"),
++        (5 * GIB, 100 * GIB, "elevated"),  # exactly 5 %
++        (5 * GIB - 1, 100 * GIB, "critical"),
++        (15 * GIB, 100 * GIB, "ok"),  # exactly 15 %
++        (15 * GIB - 1, 100 * GIB, "elevated"),
++        (10 * GIB, 16 * GIB, "ok"),
++        (1, 0, "unknown"),
++    ],
++)
++def test_memory_pressure_table(available: int, total: int, expected: str) -> None:
++    assert memory_pressure(available, total) == expected
++
++
++@pytest.mark.parametrize(
++    ("free", "total", "expected"),
++    [
++        (256 * MIB, 4 * GIB, "elevated"),  # at the critical floor, 93.75 % used
++        (256 * MIB - 1, 4 * GIB, "critical"),
++        (512 * MIB, 2 * GIB, "ok"),  # at the elevated floor, 75 % used
++        (512 * MIB - 1, 2 * GIB, "elevated"),
++        (512 * MIB, 10 * GIB, "critical"),  # exactly 95 % used with < 1 GiB free
++        (512 * MIB + 1, 10 * GIB, "elevated"),  # just under 95 %
++        (1 * GIB, 20 * GIB, "elevated"),  # 95 % used with exactly 1 GiB: headroom is enough
++        (1 * GIB - 1, 20 * GIB, "critical"),
++        (3 * GIB, 20 * GIB, "elevated"),  # exactly 85 % used with < 4 GiB free
++        (3 * GIB + 1, 20 * GIB, "ok"),  # just under 85 %
++        (4 * GIB, 100 * GIB, "ok"),  # 96 % used with exactly 4 GiB: headroom is enough
++        (4 * GIB - 1, 100 * GIB, "elevated"),
++        (50 * GIB, 100 * GIB, "ok"),
++        (0, 0, "unknown"),
++    ],
++)
++def test_disk_pressure_table(free: int, total: int, expected: str) -> None:
++    assert disk_pressure(free, total) == expected
++
++
++# -- the probe -------------------------------------------------------------------------------------
++
++
++def test_status_is_public_and_carries_no_paths_or_pids(rest: RestApp, scope: Scope) -> None:
++    _write_status(scope, "running", age_s=10)
++    answer = rest.anonymous().get("/api/status")
++    assert answer.status_code == 200
++    assert answer.headers["cache-control"] == "no-store"
++    body = answer.json()
++    assert body["daemon"] == {"state": "running", "heartbeat_age_s": 10}
++    assert body["auth_required"] is False and isinstance(body["auth_providers"], list)
++    assert body["platforms"] == [{"name": "telegram", "state": "connected"}]
++    text = answer.text
++    assert str(scope.home) not in text and str(os.getpid()) not in text
++    assert "pid" not in text and "path" not in text and "host" not in text
++    assert set(body) == {
++        "version",
++        "daemon",
++        "platforms",
++        "active_sessions",
++        "recent_sessions",
++        "auth_required",
++        "auth_providers",
++        "components",
++        "overall",
++        "memory",
++        "disk",
++    }
++
++
++def test_status_is_public_in_gated_mode_too(scope: Scope) -> None:
++    password_hash = hash_password("correct horse", memory_kib=1024, iterations=1, lanes=1)
++    config = {"dashboard": {"basic_auth": {"username": "admin", "password_hash": password_hash}}}
++    built = build_rest_app(scope, options=AppOptions(host="0.0.0.0", config=config))
++    try:
++        anon = built.anonymous()
++        answer = anon.get("/api/status")
++        assert answer.status_code == 200
++        assert answer.json()["auth_required"] is True
++        assert answer.json()["auth_providers"] == ["basic"]
++        assert anon.get("/api/logs").status_code == 401  # the neighbours stay gated
++    finally:
++        built.close()
++
++
++def test_a_raising_collector_reads_unknown(scope: Scope) -> None:
++    def broken() -> Amount:
++        raise OSError("no meminfo here")
++
++    built = build_rest_app(scope, extras={"status.memory": broken, "status.disk": broken})
++    try:
++        body = built.client.get("/api/status").json()
++        assert body["memory"] == {"pressure": "unknown"}
++        assert body["disk"] == {"pressure": "unknown"}
++        assert "daemon" in body and body["version"]
++    finally:
++        built.close()
++
++
++def test_collectors_report_pressure_and_coarse_numbers(scope: Scope) -> None:
++    extras = {
++        "status.memory": lambda: Amount(100 * MIB, 1 * GIB),
++        "status.disk": lambda: Amount(3 * GIB, 20 * GIB),
++    }
++    built = build_rest_app(scope, extras=extras)
++    try:
++        body = built.client.get("/api/status").json()
++        assert body["memory"] == {"pressure": "elevated", "available_percent": 9}
++        assert body["disk"] == {"pressure": "elevated", "used_percent": 85, "free_gb": 3}
++    finally:
++        built.close()
++
++
++def test_status_on_a_fresh_home_creates_no_store(rest: RestApp, scope: Scope) -> None:
++    before = sorted(p.name for p in scope.home.iterdir())
++    body = rest.client.get("/api/status").json()
++    assert body["active_sessions"] == 0 and body["recent_sessions"] == 0
++    assert body["components"]["store"] == {"status": "ok"}
++    assert body["daemon"]["state"] == "stopped"
++    assert sorted(p.name for p in scope.home.iterdir()) == before
++
++
++def test_active_sessions_counts_open_recent_sessions(
++    rest: RestApp, scope: Scope, fake_clock: FakeClock
++) -> None:
++    now = fake_clock.now().timestamp()
++    store = registry.open_unshared(scope)
++    try:
++        for index in range(25):  # 25 old ended sessions, outside the recent window
++            sessions.create(store, f"old-{index}", "cli", started_at=now - 90_000 - index)
++            sessions.end(store, f"old-{index}", "user_exit")
++        sessions.create(store, "open-fresh", "cli", started_at=now - 60)
++        sessions.create(store, "open-quiet", "cli", started_at=now - 600)
++        sessions.create(store, "ended-fresh", "cli", started_at=now - 30)
++        sessions.end(store, "ended-fresh", "user_exit")
++
++        def stamp(conn: sqlite3.Connection) -> None:
++            conn.execute("UPDATE sessions SET last_activity_at = started_at")
++
++        store.write(stamp)
++    finally:
++        store.close()
++    body = rest.client.get("/api/status").json()
++    assert body["active_sessions"] == 1
++    assert body["recent_sessions"] == 20
++
++
++def test_components_roll_up(rest: RestApp, scope: Scope) -> None:
++    rows = {
++        "telegram": runtime.PlatformStatus("connected"),
++        "slack": runtime.PlatformStatus("paused"),
++    }
++    _write_status(scope, "draining", age_s=2, platforms=rows)
++    body = rest.client.get("/api/status").json()
++    assert body["components"]["daemon"] == {"status": "ok", "state": "draining"}
++    assert body["components"]["platforms"] == {"status": "ok", "configured": 1, "connected": 1}
++    rows["discord"] = runtime.PlatformStatus("fatal", error="bad token")
++    _write_status(scope, "running", age_s=2, platforms=rows)
++    body = rest.client.get("/api/status").json()
++    assert body["components"]["platforms"]["status"] == "degraded"
++    assert body["overall"] == "degraded" and "bad token" not in str(body)
++
++
++def test_route_list_matches_the_app(rest: RestApp) -> None:
++    assert route_table(rest.app, ("/api/status",)) == set(status.ROUTE_LIST)
++
++
++# -- daemon state ----------------------------------------------------------------------------------
++
++
++def _write_status(
++    scope: Scope,
++    state: str,
++    *,
++    age_s: float,
++    identity: runtime.ProcessIdentity | None = None,
++    platforms: dict[str, runtime.PlatformStatus] | None = None,
++) -> None:
++    stamped = scope.clock.now() - timedelta(seconds=age_s)
++    record = runtime.RuntimeStatus(
++        state,  # pyright: ignore[reportArgumentType]
++        stamped.isoformat(),
++        identity or runtime.ProcessIdentity.current(),
++        platforms=platforms
++        if platforms is not None
++        else {"telegram": runtime.PlatformStatus("connected", error="secret detail")},
++    )
++    runtime.write_status(scope.home, record)
++
++
++@pytest.mark.parametrize(
++    ("state", "age_s", "expected"),
++    [
++        ("running", 0, "running"),
++        ("running", 150, "running"),
++        ("running", 151, "unknown"),  # heartbeat too old
++        ("running", -1, "unknown"),  # dated in the future
++        ("draining", 5, "draining"),
++        ("stopped", 9999, "stopped"),
++        ("startup_failed", 3, "startup_failed"),
++    ],
++)
++def test_daemon_state_table(scope: Scope, state: str, age_s: float, expected: str) -> None:
++    _write_status(scope, state, age_s=age_s)
++    assert daemon_view(scope.home, scope.clock.now()).state == expected
++
++
++def test_daemon_with_a_dead_process_reads_stopped(scope: Scope) -> None:
++    gone = runtime.ProcessIdentity(2**22 + 12345, 1, runtime.pid_namespace(), "")
++    _write_status(scope, "running", age_s=1, identity=gone)
++    assert daemon_view(scope.home, scope.clock.now()).state == "stopped"
++
++
++@pytest.mark.parametrize("content", ["{not json", '["a list"]', '{"state": "flying", "pid": 3}'])
++def test_unreadable_daemon_record_reads_unknown(scope: Scope, content: str) -> None:
++    runtime.status_path(scope.home).write_text(content, encoding="utf-8")
++    assert daemon_view(scope.home, scope.clock.now()).state == "unknown"
++
++
++def test_missing_daemon_record_reads_stopped(scope: Scope) -> None:
++    path: Path = runtime.status_path(scope.home)
++    assert not path.exists()
++    view: Any = daemon_view(scope.home, scope.clock.now())
++    assert view.state == "stopped" and view.heartbeat_age_s is None
