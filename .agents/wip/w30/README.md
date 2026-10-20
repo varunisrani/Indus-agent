@@ -72,3 +72,33 @@
   instantiation, logs `search`.
 - Slip: one early `uv run python -c` ran before HOME/UV_CACHE_DIR were exported → may have written to /root/.cache/uv (the
   default uv cache the main checkout already uses). Owner item; nothing deleted.
+
+## w30-r3.patch: P18-15 REST channels / webhooks / pairing / daemon control (done) + P18-16 REST profiles / models / files / system (partly: prompt-size breakdown not built) — base: main 0ab0d95 + w29-w1 + w29-w2
+- Apply AFTER the P18 integration lands, with w30-r1 and w30-r2.
+- Builder checks: unit/contract/integration web 410 passed, 3 failed = W1 tests whose stand-in routes the real routes now
+  shadow (ROUTERS before options.routers): test_gate.py::test_query_token_only_on_the_download_route (real download needs
+  `path` → 422), test_service_bearer.py::test_a_strong_secret_opens_only_its_route and ::test_the_route_ignores_cookies
+  (real drain route needs the profile resolver; with no daemon → 409 daemon_not_running) — integrator adjusts them to assert
+  "not 401" or installs a fake control seam. 58 new tests; ruff, pyright 0, lint-imports, tooling.checks ok (one similarity
+  hit rewritten). Full suite not run. No packages. No environment slip.
+- New: web/routes/{messaging,webhooks,daemon,profiles,models,files,system}.py, web/actions.py (background actions), tests
+  contract/web/{test_messaging_routes,test_files_system_routes,test_profiles_models_routes,_rest_app_r3,_fake_control_r3}.py,
+  notes docs/notes/P18/rest-{channels,profiles-system}.md.
+- Shared: web/routes/__init__.py ROUTERS (+7), traps R04.25, R06.15, R09.20.
+- Wiring: install(app, ProfileScopes(scope)) in create_app (as r1/r2); seams in extras (actions.command, daemon.query,
+  daemon.ensure, profiles.run, system.install_info, system.git_behind, providers.device_flows, providers.http_client);
+  runtime extras actions, providers.login_sessions; ROUTE_LIST per module. Deliberately unscoped writes: POST
+  /api/daemon/drain (own profile unless ?profile=), profile writes (profile in path), files writes (machine-level).
+  Merge _rest_app_r{,2,3}.py into one builder at integration.
+- LEAD DECISION FOR INTEGRATION (security): the files download takes the session token as `?token=` (W1's gate allows the
+  query token on that one route). Our rule is no tokens in URLs: replace it with a short-lived (≤ 60 s), single-use,
+  path-bound download ticket minted by an authenticated POST (like the WS ticket), and refuse `?token=` everywhere. Record a D-id.
+- Decisions (number at integration): daemon stop/restart send a new owner-only control verb `stop` {reason, restart} the
+  daemon does not register yet → fails with a message naming `indus gateway stop`, never signals a pid (ADD THE DAEMON VERB
+  at integration: planned stop record then normal shutdown); gateway registry/settings and cli.version loaded by module name
+  (layer rule); profile create/rename/delete run `indus profile …` as a child process (layer rule), no alias script unless
+  alias: true; profile export/import = our own zip, settings only (no history/logs/secrets/.env); pairing routes in
+  messaging.py; webhook create allowed while the receiver is off; GET /api/daemon state route added; secret-holding names
+  refused for file writes/deletes too; ~ read against the backend scope's HOME; no sudo case (per-user service units).
+- Follow-ups: prompt-size breakdown helper below cli (P04) then the route; move profile ops into service; cli/version.py →
+  foundation; REST models into indus.protocol.
