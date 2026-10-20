@@ -1,0 +1,4359 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 51789e3..3be3d40 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1369,6 +1369,12 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/service/test_ws_auth.py::test_ticket_absent_from_logs`
+   - `tests/unit/foundation/test_redact.py::test_ws_tickets_are_masked_whole`
+   - `tests/unit/service/test_ws_auth.py::test_mint_and_burn_cannot_grow_the_book_without_bound`
++- **ACC-K51-4** Replay since cursor: a reattaching viewer gets the missed events once, in order, or a gap and a snapshot
++  - `tests/unit/service/test_subscriptions.py::test_subscribe_from_a_cursor_replays_once_then_continues_live`
++  - `tests/unit/service/test_subscriptions.py::test_another_epoch_or_an_evicted_cursor_gives_a_gap_then_live_events`
++  - `tests/unit/service/test_subscriptions.py::test_an_overflowing_viewer_drops_to_a_gap_and_recovers_by_subscribing_again`
++  - `tests/unit/service/test_subscriptions.py::test_an_open_approval_is_offered_again_on_subscribe`
++  - `tests/contract/gateway/test_ws_endpoint.py::test_a_connection_reaches_only_sessions_it_attached`
+ - **ACC-K52-1** `indus gateway setup` and per-platform setup helpers (WhatsApp pairing, Slack app)
+   - Review: not yet planned (phase TBD)
+ - **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index fdc0a97..4a1b215 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -1035,6 +1035,10 @@ Checked by `python -m tooling.checks traps`.
+   - Review: not yet planned (P00-guards)
+ - **R09.2** WebSocket auth differs from REST auth
+   - Review: not yet planned (P00-guards)
++  - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_subprotocol_is_accepted_once`
++  - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_url_is_never_used`
++  - `tests/contract/gateway/test_ws_endpoint.py::test_a_foreign_origin_or_peer_is_refused_4403`
++  - `tests/contract/gateway/test_ws_endpoint.py::test_logs_carry_no_ticket_params_or_query`
+ - **R09.3** Non-loopback must fail closed
+   - Review: not yet planned (P00-guards)
+ - **R09.4** Middleware ordering leaks
+diff --git a/docs/notes/P17/subscriptions.md b/docs/notes/P17/subscriptions.md
+new file mode 100644
+index 0000000..5b84631
+--- /dev/null
++++ b/docs/notes/P17/subscriptions.md
+@@ -0,0 +1,114 @@
++# Task: Subscriptions and cross-surface events (P17-14) Phase: 17 Owner: wave-26 builder K5
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `gateway/local_viewer_events.py` (all:
++which turn callbacks become viewer events), `gateway/session_events.py` (all: per-session ordering,
++overflow retirement and the gap frame, `since`). Research 05 §3.2 (shared channel: subscribed flag,
++replay cursors) and §3.3. Our P17-06 `service/event_log.py`, P17-07 `request_redelivery.py`,
++P17-08 `daemon_host.py` / `viewers.py`. Closed before writing.
++Evidence: none.
++
++What it does (own words): one client connection may watch several sessions. `session.subscribe
++{session_id, epoch?, cursor?}` makes the connection a viewer of the session (resuming it in the host
++if needed): the events after the client's cursor are sent first, in seq order, as ordinary event
++notifications (or one `session.replay_gap` when they cannot be — another daemon run, evicted, ahead
++— and the client reloads a snapshot), every open server request it can render is offered again with
++`replayed: true`, and from then on every new event of the session reaches it in the event log's
++order. `session.unsubscribe` stops that. `events.since {session_id, epoch, cursor}` is the pull form
++(events in the result). `sessions.watch` turns on `session.updated` notifications for list views:
++title, running state and last activity of every hosted session (and archived / pinned when a later
++task reports them), whatever surface caused the change. Presence: whenever the set of viewers of a
++session changes, a `session.viewers` event goes through the session's log with the surface kinds
++and counts, so a surface can show "also open in the TUI".
++
++A connection only sees, controls and replays sessions it attached (created, resumed or
++subscribed); any other session id reads as unknown (`SESSION_NOT_FOUND`). Watching the list is
++open to every attached connection (the same rows `session.list` shows; no transcript content).
++
++A slow viewer never blocks the others: each connection has its own outbox, and each of its
++viewers may hold at most 1,024 queued events (and 4 MiB). When a viewer would exceed that, its
++queued events are dropped, it is detached from that session and it receives one
++`session.replay_gap {reason: "overflow", last_seq}`; it recovers by subscribing again (replay from
++its cursor if the log still has it, else a snapshot). List updates are merged per session while
++queued (the newest values win), so they cannot pile up.
++
++Inputs → outputs:
++- `Outbox(limits=…)`: `put_event(session_key, frame)`, `put(frame)`, `get()`; overflow → the gap
++  frame and the `on_overflow(session_key)` hook; `oldest_wait()` for the send deadline.
++- `Subscriptions(host, connection_id, outbox, watch_hub, surface=, capabilities=)`:
++  `subscribe(session_id, epoch, cursor)`, `unsubscribe(session_id)`, `since(session_id, epoch,
++  cursor)`, `adopt(session_id)` (after create/resume), `require(session_id)` (authorisation),
++  `watch(on)`, `close()` (socket closed: detach everything).
++- `SessionWatch(host)`: listens to the host's event log; `session.updated {session_id, title?,
++  running, last_activity, archived?, pinned?}`; `report(session_id, **fields)` for changes that do
++  not travel as events.
++- `presence(host, key)`: `session.viewers {viewers: [{surface, count}], count}` into the log.
++
++Files: `src/indus/service/subscriptions.py`, `tests/unit/service/test_subscriptions.py`.
++
++Edge cases / failure modes:
++- subscribe twice from one connection → one viewer (replaced), the replay starts from the new cursor;
++- subscribe with no cursor → no replay, live from now on (`last_seq` in the result is the cursor);
++- a stale epoch / evicted cursor → `session.replay_gap` first, live events after it;
++- events numbered between attach and replay cannot be lost or doubled: attach, the replay read and
++  the queueing happen in one step on the daemon loop;
++- overflow of one viewer leaves the connection's other sessions and the other viewers untouched;
++- a session closed by the host (ACP end, daemon stop) drops its viewers; later calls answer unknown;
++- unsubscribe of the last viewer of an ACP session follows the host's close rule.
++
++Our design differences / decisions:
++- Our names; subscriptions keyed by connection id (one per connection and session, as P17-08).
++- The overflow gap reuses `session.replay_gap` with reason `overflow` (the log's own reasons are
++  `epoch_changed`, `evicted`, `ahead`) and the viewer is detached, not left looking subscribed.
++- Presence travels as a numbered event of the session (ordered with its turns, replayable).
++- `session.updated` is sent for running-state and title changes (not for every delta).
++
++Tests we will write (`tests/unit/service/test_subscriptions.py`):
++- viewer A submits, viewer B (subscribed) receives every delta in seq order, same as A;
++- subscribe with a cursor replays the missing events once, then live, no duplicates;
++- epoch change / evicted cursor → `session.replay_gap` then live;
++- overflowing viewer gets `replay_gap{overflow}`, is detached, the other viewer keeps everything;
++  resubscribing recovers (snapshot via history / replay);
++- a title change and a turn's running state reach a list watcher (`session.updated`), merged;
++- presence: `session.viewers` counts surfaces as viewers come and go;
++- per-connection authorisation: unknown to a connection that did not attach;
++- an open approval is re-offered on subscribe with `replayed: true` and the same id.
++
++## Decisions for the lead
++- `session.updated` / `session.viewers` / `session.replay_gap` stay plain notifications until
++  P17-25 declares their models (shapes above). `sessions.watch {enabled}` turns the list feed on
++  and off; nothing replays for it (list views reload with `session.list` on reconnect).
++- Per-viewer caps: 1,024 events and 4 MiB queued; per connection 16 MiB queued in all and at most
++  64 subscribed sessions (the 65th subscribe is refused `INVALID_PARAMS`).
++
++- List updates that pile past 1,024 distinct sessions are dropped and one `sessions.resync
++  {reason: "overflow"}` notification is sent instead (reload with `session.list`).
++- Presence is announced by subscriptions (subscribe, unsubscribe, overflow, socket close); a viewer
++  attached through `DaemonSessionHost.create/resume(viewer=)` directly (not through a connection's
++  subscriptions) is counted but does not trigger an announcement.
++- Recovery after an overflow: the replay itself can be large; with the default caps (log keeps at
++  most 512 events per session, a lane holds 1,024) a full replay always fits a fresh lane.
++
++Compare checklist (filled after the rewrite; reopened `gateway/session_events.py`,
++`gateway/local_viewer_events.py`):
++- [x] overflow retires the viewer's subscription and sends a gap with the latest seq (test:
++  `test_subscriptions.py::test_an_overflowing_viewer_drops_to_a_gap_and_recovers_by_subscribing_again`)
++- [x] since: epoch mismatch, cursor ahead, truncated → snapshot required (test:
++  `test_subscriptions.py::test_another_epoch_or_an_evicted_cursor_gives_a_gap_then_live_events`)
++- [x] ordering: events reach every viewer in publication order (test:
++  `test_subscriptions.py::test_a_subscriber_sees_every_delta_of_another_surfaces_turn_in_order`)
++- [x] replay then live without loss or duplicates (test:
++  `test_subscriptions.py::test_subscribe_from_a_cursor_replays_once_then_continues_live`)
++- Deliberate differences: the reference keeps a private lifetime key per session event stream and
++  rotates the epoch when its shared cache evicts a session; ours has one daemon epoch and the
++  event log's "evicted through" watermark gives the gap instead (P17-06). The reference's gap
++  payload says `latest_seq`; ours `last_seq` with a reason.
++- Not taken: `local_viewer_events.py` projects agent callbacks (tool-generating lines, printed
++  status, kawaii thinking text, reactions, MoA progress, desktop UI bridges, edit diffs) into
++  viewer events; our viewers receive the core's own event stream (P04/P12 events), and those
++  extra projections belong to the surfaces that render them (P18/P20), not to the subscription
++  layer.
++
++## Status
++
++Done (2026-10-20). New: `src/indus/service/subscriptions.py`, `tests/unit/service/test_subscriptions.py`,
++`tests/fakes/session_host.py`. Served over the WebSocket by P17-13 (`gateway/ws/methods.py`).
+diff --git a/docs/notes/P17/ws-endpoint.md b/docs/notes/P17/ws-endpoint.md
+new file mode 100644
+index 0000000..ffc83d8
+--- /dev/null
++++ b/docs/notes/P17/ws-endpoint.md
+@@ -0,0 +1,188 @@
++# Task: WebSocket endpoint (P17-13) Phase: 17 Owner: wave-26 builder K5
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tui_gateway/ws.py` (all: connection
++limits, write timeout and send deadline, dispatch queue, token coalescing, ready frame, teardown).
++Research 05 §3.2 (mode B/C and the shared channel), research 09 R09.2. Our P17-10 `service/ws_auth.py`,
++P17-12 `service/rpc/dispatch.py`, P17-08 `service/daemon_host.py`, P12 `tui_bridge/stdio_server.py`
++(the stdio transport the WS loop mirrors). Closed before writing.
++Evidence: none.
++
++What it does (own words): the daemon listens for WebSocket clients on a loopback port it picks
++itself (127.0.0.1, port 0; the real port is known once bound). A client (classic CLI, TUI, later the
++desktop and ACP) gets a single-use ticket from the owner-only control socket and opens the socket
++offering two subprotocols: `indus-gateway-v1` and `indus-gateway-ticket.<ticket>`. The endpoint asks
++`service.ws_auth.authenticate_upgrade` and nothing else: a refusal is closed with the helper's code
++(4401 for a bad, used or expired ticket, 4403 for a non-loopback peer or an Origin not on the
++allow-list); a ticket in the URL is never used. On success the server echoes only
++`indus-gateway-v1` and the first frame is the `gateway.ready` notification: replay epoch, heartbeat
++on, profile id, instance id, capabilities, protocol version.
++
++Then the connection speaks the same newline-free JSON-RPC 2.0 frames as stdio: each text message is
++one frame; `decode_request` turns it into a request, an error answer or nothing; requests go to the
++shared `Dispatcher` over the daemon's method table; every event or notification leaving the socket
++is checked with `check_event` (strict under tests). `gateway.ping` is answered at once by the read
++loop so the heartbeat measures the transport, not a busy handler.
++
++Limits per connection: a frame may take at most 10 s on the socket (write timeout) and must leave
++within 30 s of being queued (send deadline) — past either the connection is closed (1011) without
++holding up any other connection, because each connection has its own writer task and its own
++bounded outbox; at most 256 requests may be waiting or running (the 257th closes the socket with
++1013, "try again later"); one inbound message is at most 1 MiB (1009) and binary messages are
++refused (1003). Closing the socket only detaches its viewers: turns keep running. Close reasons are
++fixed short texts (never an echo of client input, ≤ 123 bytes). Logs never carry params, tickets
++or the request URL's query / user-info.
++
++Inputs → outputs:
++- `WsEndpoint(host, book, scope=, origins=(), limits=WsLimits(), theme="auto")`; `app` (Starlette,
++  one WebSocket route at `/ws`); `await start(bind="127.0.0.1", port=0) -> ws_url`;
++  `ws_url`, `status_row()` (for `StatusWriter.set_surface("ws", …)`), `await stop()`.
++- Per connection: `gateway.ready` first; responses for requests; event notifications
++  (`method` = event type, `params` = the numbered event with `seq` and `replay_epoch`);
++  `server_request` notifications (`{request, replayed, generation}`).
++- Served methods (the daemon's table, `gateway/ws/methods.py`): `gateway.ping`,
++  `client.capabilities`, `session.create`, `session.resume`, `session.close`, `prompt.submit`,
++  `session.interrupt`, `session.steer`, `server_request.answer`, `server_request.decline`, and
++  P17-14's `session.subscribe`, `session.unsubscribe`, `sessions.watch`, `events.since`. Any other
++  declared method answers `-32601` "not served here" until a later task adds a handler.
++
++Files: `src/indus/gateway/ws/__init__.py`, `src/indus/gateway/ws/server.py`,
++`src/indus/gateway/ws/methods.py`, `tests/contract/gateway/test_ws_endpoint.py`,
++`tests/fakes/asgi_ws.py` (test-only in-loop ASGI WebSocket client),
++`tests/integration/gateway/test_ws_listener.py` (real loopback listener). Shared:
++`src/indus/gateway/http/serving.py` (`HttpServer(ws=…)` uvicorn WebSocket options),
++`src/indus/protocol/bridge.py` (`BridgeReady` daemon fields), `src/indus/protocol/methods.py`
++(attach methods, `generation` on steer / answer, `surface` on capabilities),
++`packages/protocol/src/generated/*` (regenerated), `tests/unit/protocol/test_models.py`,
++`tests/unit/tui_bridge/test_dispatch.py` (daemon-only names).
++
++Edge cases / failure modes:
++- the same ticket twice → the first upgrade succeeds, the second is closed 4401;
++- ticket only in the query string → 4401 (and the query ticket is spent, never logged);
++- `Origin: http://evil` → 4403; a non-loopback peer → 4403;
++- a client that stops reading: its writer blocks; after 10 s on one frame (or 30 s queued) the
++  socket is closed; other connections keep receiving events in order;
++- 257 requests waiting → 1013 and the socket closes; everything it watched is detached;
++- a handler that crashes → `-32603` answered, the loop goes on (the dispatcher's rule);
++- a frame that is a response to a server request (`id` = `srq-…`) with an error → recorded as that
++  viewer's refusal (`-32601` cannot render, `4404` not shown here) so the request goes to another
++  viewer or is settled undeliverable at once; any other response from the client is dropped;
++- daemon stop → every connection is closed 1001 ("going away") and detached.
++
++Our design differences / decisions:
++- Our names (`WsEndpoint`, `WsConnection`, `WsLimits`), the `/ws` path.
++- Requests run as tasks (as on stdio) rather than one at a time: an interrupt or an approval answer
++  is never stuck behind a long submit on the same socket; the 256 cap bounds them.
++- No token-coalescing in the transport: the event log (P17-06) already joins deltas in 33 ms windows
++  before numbering, so every viewer sees the same numbered events.
++- A refused upgrade is accepted (echoing `indus-gateway-v1` only when it was offered) and closed
++  at once with the code, so browser clients can read 4401/4403; nothing is read from it.
++- Generation fences on the wire: `session.interrupt`, `session.steer` and `server_request.answer`
++  must name `generation` on the daemon (missing → `INVALID_PARAMS` with the path); a stale one is
++  answered with the method's "nothing happened" result (`interrupted: false`, `queued: false`,
++  `accepted: false`), never applied to another turn. P17-25 may turn it into `stale_generation`.
++
++Tests we will write (`tests/contract/gateway/test_ws_endpoint.py`):
++- ticket in the subprotocol accepted once and `gateway.ready` first; reused → 4401; URL ticket → 4401;
++  `Origin: http://evil` → 4403; non-loopback peer → 4403; echo is only `indus-gateway-v1`;
++- slow reader closed at the write timeout while another viewer of the same session keeps receiving;
++- 257 requests waiting → 1013; ping answered while the queue is full of slow work;
++- a full turn over the socket: create, submit, deltas in order, `turn.done`; an approval answered
++  over the socket with its generation; a stale-generation interrupt does nothing;
++- per-connection authorisation: a second connection cannot submit to, interrupt or replay a session
++  it did not attach (`SESSION_NOT_FOUND`);
++- closing the socket mid-turn only detaches (the turn completes and is stored);
++- logs: no ticket, no params, no query string;
++- with a WebSocket implementation installed (`wsproto`): a real uvicorn listener on 127.0.0.1:0,
++  `ws_url` / status row, ready frame over TCP (skipped otherwise).
++
++## Decisions for the lead
++- **Dependency**: uvicorn serves WebSockets only with `wsproto` or `websockets` installed; neither is
++  a base dependency (wsproto 1.3.2, MIT, is locked through the httpx-ws extras). `WsEndpoint.start`
++  refuses with a clear error when no implementation is importable, and the real-socket test skips.
++  Proposed: add `wsproto==1.3.2` to the base dependencies (no new lock entry). Not done here (lead
++  owns dependencies and the lock).
++- `HttpServer` gained a `ws=` mapping (uvicorn WebSocket settings: implementation, `ws_max_size`,
++  `ws_per_message_deflate=False`, protocol pings off — our own `gateway.ping` is the heartbeat).
++- `gateway.ready` reuses `BridgeReady` with optional daemon fields (`replay_epoch`, `profile_id`,
++  `instance_id`, `capabilities`); `theme` is `auto` from the daemon (the renderer's own config
++  decides; P17-19 reads the skin through `runtime.describe`).
++- `prompt.submit` on the daemon: the busy mode is the surface default (TUI queue, others interrupt)
++  unless the client set `when_busy` explicitly: `queue` queues, `reject` answers `SESSION_BUSY`
++  while a turn runs, `steer` / `redirect` are refused (`INVALID_PARAMS`: steer names its generation
++  through `session.steer`). `turn_id` is the admission id; `generation` the started turn's, else the
++  running turn's, else 0 (not yet assigned; `turn.started` carries it); `status` `streaming` or
++  `queued`. Each submit is a fresh admission request id until P17-17 adds client request ids.
++- The connection's surface kind comes from `client.capabilities {surface}` (default `cli`); the
++  viewer's renderable request kinds from its features (`server_requests` = all kinds,
++  `server_requests.<kind>` = one), `request.decline` turns on the 4404 decline.
++- Limits: inbound message 1 MiB; queued outbound bytes per connection 16 MiB (past it the socket is
++  closed 1013 — the client reconnects and replays); inbound waiting bytes 16 MiB.
++
++- Protocol (P17-25 territory, done here because the dispatcher only serves declared names):
++  `indus.protocol.attach` declares `session.subscribe`, `session.unsubscribe`, `sessions.watch`,
++  `events.since` (`DAEMON_ONLY_METHODS`: the stdio bridge answers them `-32601`; its completeness
++  test excludes them); optional `generation` on `SessionSteerParams` / `ServerRequestAnswerParams`,
++  optional `surface` on `ClientCapabilitiesParams`, optional daemon fields on `BridgeReady`;
++  `packages/protocol` regenerated. No new error code: stale generations answer the "nothing
++  happened" result, admission refusals answer `SESSION_BUSY` with the ledger reason. P17-25 still
++  owns `runtime.describe`, `admission.*`, `maintenance.run`, the event models (`session.replay_gap`,
++  `session.updated`, `session.viewers`, `request.settled`) and the new error codes.
++- Server requests on the WebSocket are `server_request` notifications whose params are P17-07's
++  `Offer.to_wire()` (`{request, replayed, generation}`), so a viewer can name the generation in its
++  answer. `server_request.decline` on the daemon is the viewer's refusal (P17-07: `4404` with the
++  decline capability, else `-32601`), not a denial for everyone: the request goes to the other
++  viewers and is settled undeliverable when none is left. A client may also answer a server request
++  with a JSON-RPC error frame whose id is the `srq-…` id (same effect).
++- `session.close` from a client only detaches that connection (other viewers and turns carry on);
++  `session.resume` answers `last_seq` from the daemon's event log (the cursor for `events.since`).
++- An idle limit was added in the compare step (below): no inbound frame for 120 s closes 1001.
++
++Compare checklist (filled after the rewrite; reopened `tui_gateway/ws.py`):
++- [x] write timeout / send deadline close a stalled peer without blocking others (test:
++  `test_ws_endpoint.py::test_a_slow_reader_is_closed_without_stalling_other_viewers`)
++- [x] dispatch queue bound and ping answered by the read loop (test:
++  `test_ws_endpoint.py::test_the_257th_waiting_request_closes_the_socket_1013`)
++- [x] ready frame first, carries the replay epoch and heartbeat (test:
++  `test_ws_endpoint.py::test_a_ticket_in_the_subprotocol_is_accepted_once`; real socket:
++  `tests/integration/gateway/test_ws_listener.py::test_a_real_listener_on_loopback_serves_an_attach`)
++- [x] teardown detaches, never ends sessions (test:
++  `test_ws_endpoint.py::test_closing_the_socket_mid_turn_only_detaches`)
++- [x] lone surrogates in a frame do not kill the socket (test:
++  `test_subscriptions.py::test_outbox_wait_and_lone_surrogates`)
++- [x] gap found: the reference turns on TCP keepalive so a silently dropped peer does not stay
++  half-open for ever — we cannot reach the raw socket through ASGI, so the endpoint closes a
++  connection with no inbound frame for `idle_timeout` (120 s; clients ping every 15 s), pinned by
++  `test_ws_endpoint.py::test_a_silent_client_is_closed_after_the_idle_limit`.
++- Deliberate differences: the reference parks the reader when its dispatch queue is full; the plan
++  says close 1013, which we do. The reference dispatches one request at a time; ours run as tasks
++  (as stdio) under the 256 cap. The reference logs a preview of an unparsable frame; we never log
++  frame contents. The reference's ready frame carries skin and change-event flags; ours carries
++  the theme name, profile/instance ids and capabilities.
++- Not taken: TCP_NODELAY (uvicorn's transport is not reachable from the app; frames are small and
++  the event log already batches deltas), the dashboard-client liveness marker (P17-23 idle exit
++  reads attached viewers instead), legacy-dispatch fallback, browser-controller and wake-word
++  teardown (no such features here).
++
++## Wiring owed (P17-22, with the daemon host)
++
++The daemon cannot build its `DaemonSessionHost` yet (LEAD-NOTES, P17 wave 2), so nothing mounts
++the endpoint in the daemon. When P17-22 builds the host:
++1. In the daemon (a part after the control part, or `ControlPart.start`): `endpoint =
++   WsEndpoint(daemon_host, bridge.attach_verbs.book, scope=daemon.scope, origins=<config allow-list,
++   default empty>)`; `url = await endpoint.start()` (127.0.0.1, port 0); on `WsUnavailable` log it
++   and leave `ws_url` null (`session-ticket` keeps answering `ws_unavailable`).
++2. `AttachVerbs(home, book, host=daemon_host, ws_url=lambda: endpoint.ws_url)` — the same book the
++   endpoint redeems from (today `DaemonBridge` builds `AttachVerbs` without a host or URL).
++3. Runtime status: `daemon.status.set_surface("ws", endpoint.status_row())` after start and on
++   stop (`set_surface("ws", None)`).
++4. Stop order: `await endpoint.stop()` (closes sockets 1001, detaches viewers) before
++   `daemon_host.aclose()`, and before the control part revokes the ticket book.
++5. Dependency: add `wsproto==1.3.2` to the base dependencies (lead).
++
++## Status
++
++Done (2026-10-20), except the daemon mount (wiring owed above, needs P17-22's host). Shared edits:
++`gateway/http/serving.py` (`HttpServer(ws=)`), `protocol/bridge.py`, `protocol/methods.py`,
++`protocol/attach.py` (new), `packages/protocol/src/generated/*` (regenerated),
++`tests/unit/protocol/test_models.py`, `tests/unit/tui_bridge/test_dispatch.py`,
++`docs/internals/traps-ledger.md` (R09.2), `docs/internals/acceptance-map.md` (ACC-K51-4).
+diff --git a/packages/protocol/src/generated/catalog.ts b/packages/protocol/src/generated/catalog.ts
+index edce1e7..2981606 100644
+--- a/packages/protocol/src/generated/catalog.ts
++++ b/packages/protocol/src/generated/catalog.ts
+@@ -121,6 +121,19 @@ export const METHODS = deepFreeze({
+     "params": "ConfigSetParams",
+     "result": "ConfigSetResult"
+   },
++  "events.since": {
++    "errors": [
++      "PARSE_ERROR",
++      "INVALID_REQUEST",
++      "METHOD_NOT_FOUND",
++      "INVALID_PARAMS",
++      "INTERNAL_ERROR",
++      "UNKNOWN_PARAM_KEY",
++      "SESSION_NOT_FOUND"
++    ],
++    "params": "EventsSinceParams",
++    "result": "EventsSinceResult"
++  },
+   "gateway.ping": {
+     "errors": [
+       "PARSE_ERROR",
+@@ -441,6 +454,21 @@ export const METHODS = deepFreeze({
+     "params": "SessionSteerParams",
+     "result": "SessionSteerResult"
+   },
++  "session.subscribe": {
++    "errors": [
++      "PARSE_ERROR",
++      "INVALID_REQUEST",
++      "METHOD_NOT_FOUND",
++      "INVALID_PARAMS",
++      "INTERNAL_ERROR",
++      "UNKNOWN_PARAM_KEY",
++      "SESSION_NOT_FOUND",
++      "SESSION_REFUSED",
++      "STORE_FAILED"
++    ],
++    "params": "SessionSubscribeParams",
++    "result": "SessionSubscribeResult"
++  },
+   "session.title": {
+     "errors": [
+       "PARSE_ERROR",
+@@ -472,6 +500,18 @@ export const METHODS = deepFreeze({
+     "params": "SessionUndoParams",
+     "result": "SessionUndoResult"
+   },
++  "session.unsubscribe": {
++    "errors": [
++      "PARSE_ERROR",
++      "INVALID_REQUEST",
++      "METHOD_NOT_FOUND",
++      "INVALID_PARAMS",
++      "INTERNAL_ERROR",
++      "UNKNOWN_PARAM_KEY"
++    ],
++    "params": "SessionUnsubscribeParams",
++    "result": "SessionUnsubscribeResult"
++  },
+   "session.usage": {
+     "errors": [
+       "PARSE_ERROR",
+@@ -485,6 +525,18 @@ export const METHODS = deepFreeze({
+     "params": "SessionUsageParams",
+     "result": "SessionUsageResult"
+   },
++  "sessions.watch": {
++    "errors": [
++      "PARSE_ERROR",
++      "INVALID_REQUEST",
++      "METHOD_NOT_FOUND",
++      "INVALID_PARAMS",
++      "INTERNAL_ERROR",
++      "UNKNOWN_PARAM_KEY"
++    ],
++    "params": "SessionsWatchParams",
++    "result": "SessionsWatchResult"
++  },
+   "shell.exec": {
+     "errors": [
+       "PARSE_ERROR",
+@@ -530,6 +582,7 @@ export interface MethodTypes {
+   "complete.slash": { params: T.CompleteSlashParams; result: T.CompleteResult };
+   "config.get": { params: T.ConfigGetParams; result: T.ConfigGetResult };
+   "config.set": { params: T.ConfigSetParams; result: T.ConfigSetResult };
++  "events.since": { params: T.EventsSinceParams; result: T.EventsSinceResult };
+   "gateway.ping": { params: T.GatewayPingParams; result: T.GatewayPingResult };
+   "image.attach": { params: T.ImageAttachParams; result: T.ImageAttachResult };
+   "input.detect_drop": { params: T.InputDetectDropParams; result: T.InputDetectDropResult };
+@@ -553,9 +606,12 @@ export interface MethodTypes {
+   "session.redirect": { params: T.SessionRedirectParams; result: T.SessionRedirectResult };
+   "session.resume": { params: T.SessionResumeParams; result: T.SessionResumeResult };
+   "session.steer": { params: T.SessionSteerParams; result: T.SessionSteerResult };
++  "session.subscribe": { params: T.SessionSubscribeParams; result: T.SessionSubscribeResult };
+   "session.title": { params: T.SessionTitleParams; result: T.SessionTitleResult };
+   "session.undo": { params: T.SessionUndoParams; result: T.SessionUndoResult };
++  "session.unsubscribe": { params: T.SessionUnsubscribeParams; result: T.SessionUnsubscribeResult };
+   "session.usage": { params: T.SessionUsageParams; result: T.SessionUsageResult };
++  "sessions.watch": { params: T.SessionsWatchParams; result: T.SessionsWatchResult };
+   "shell.exec": { params: T.ShellExecParams; result: T.ShellExecResult };
+   "slash.exec": { params: T.SlashExecParams; result: T.SlashExecResult };
+ }
+diff --git a/packages/protocol/src/generated/schema.json b/packages/protocol/src/generated/schema.json
+index 7f4d998..8df8765 100644
+--- a/packages/protocol/src/generated/schema.json
++++ b/packages/protocol/src/generated/schema.json
+@@ -69,18 +69,38 @@
+     },
+     "BridgeReady": {
+       "additionalProperties": false,
+-      "description": "The first frame of a stdio connection: the server is ready for requests.",
++      "description": "The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for\nrequests.",
+       "properties": {
++        "capabilities": {
++          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
++          "default": null,
++          "description": "What the daemon offers attached clients (WebSocket attach), as ``describe`` lists it."
++        },
+         "heartbeat": {
+           "default": false,
+           "description": "Whether the server answers pings; a stdio child does not need them.",
+           "type": "boolean"
+         },
++        "instance_id": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "This daemon start (WebSocket attach); it changes on every restart."
++        },
++        "profile_id": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "The profile the daemon serves (WebSocket attach); a client refuses a mismatch."
++        },
+         "protocol_version": {
+           "description": "The protocol version the server speaks.",
+           "minimum": 0,
+           "type": "integer"
+         },
++        "replay_epoch": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "The daemon's replay epoch (WebSocket attach): event cursors are only valid within it."
++        },
+         "theme": {
+           "description": "The configured theme name (``auto`` lets the client detect light or dark).",
+           "type": "string"
+@@ -240,6 +260,14 @@
+           "description": "Feature names; names the server does not know are ignored.",
+           "items": {"type": "string"},
+           "type": "array"
++        },
++        "surface": {
++          "anyOf": [
++            {"enum": ["cli", "tui", "gui", "acp", "web"], "type": "string"},
++            {"type": "null"}
++          ],
++          "default": null,
++          "description": "The kind of client attaching to the daemon (decides the busy default and presence)."
+         }
+       },
+       "type": "object"
+@@ -595,6 +623,59 @@
+         {"$ref": "#/$defs/TodoUpdated"}
+       ]
+     },
++    "EventsSinceParams": {
++      "additionalProperties": false,
++      "description": "The events of a watched session after a cursor.",
++      "properties": {
++        "cursor": {
++          "description": "The last seq the client applied.",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "epoch": {
++          "anyOf": [{"minLength": 1, "type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "The replay epoch the cursor belongs to."
++        },
++        "session_id": {
++          "$ref": "#/$defs/SessionId",
++          "description": "A session this connection watches."
++        }
++      },
++      "required": ["session_id", "cursor"],
++      "type": "object"
++    },
++    "EventsSinceResult": {
++      "additionalProperties": false,
++      "description": "The missing events, oldest first, or a gap.",
++      "properties": {
++        "events": {
++          "description": "The events after the cursor (each with ``seq`` and ``replay_epoch``); empty on a gap.",
++          "items": {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
++          "type": "array"
++        },
++        "gap": {
++          "anyOf": [{"$ref": "#/$defs/ReplayGapInfo"}, {"type": "null"}],
++          "default": null,
++          "description": "Set when the events cannot be replayed (reload a snapshot)."
++        },
++        "last_seq": {
++          "description": "The newest seq of the session (the cursor to hold afterwards).",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "reoffered": {
++          "default": 0,
++          "description": "Open server requests offered again to this connection.",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "replay_epoch": {"description": "The daemon's replay epoch.", "type": "string"},
++        "session_id": {"description": "The id the session runs under now.", "type": "string"}
++      },
++      "required": ["session_id", "replay_epoch", "last_seq"],
++      "type": "object"
++    },
+     "ExitReason": {
+       "description": "Why a turn ended. Closed set: every exit path of the turn loop maps to one value.",
+       "enum": [
+@@ -1200,6 +1281,25 @@
+       "required": ["reloaded", "message"],
+       "type": "object"
+     },
++    "ReplayGapInfo": {
++      "additionalProperties": false,
++      "description": "Why the events after a cursor cannot be sent; the client reloads a snapshot.",
++      "properties": {
++        "last_seq": {
++          "description": "The newest seq of the session: the cursor to hold after the snapshot.",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "reason": {
++          "description": "Another daemon run, dropped from memory, a cursor past the end, or the viewer fell behind.",
++          "enum": ["epoch_changed", "evicted", "ahead", "overflow"],
++          "type": "string"
++        },
++        "replay_epoch": {"description": "The daemon's current replay epoch.", "type": "string"}
++      },
++      "required": ["reason", "replay_epoch", "last_seq"],
++      "type": "object"
++    },
+     "Request": {
+       "additionalProperties": false,
+       "description": "A call that expects a response.",
+@@ -1328,6 +1428,11 @@
+           "$ref": "#/$defs/ServerRequestAnswer",
+           "description": "The answer; its kind must match the request's."
+         },
++        "generation": {
++          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
++          "default": null,
++          "description": "The turn that asked (as offered); the daemon requires it and refuses another turn's."
++        },
+         "request_id": {
+           "description": "The request being answered.",
+           "minLength": 1,
+@@ -1802,6 +1907,11 @@
+       "additionalProperties": false,
+       "description": "Add guidance the running turn picks up after its current step.",
+       "properties": {
++        "generation": {
++          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
++          "default": null,
++          "description": "The turn the guidance is for; the daemon requires it and ignores another turn's steer."
++        },
+         "session_id": {
+           "$ref": "#/$defs/SessionId",
+           "description": "The session with the running turn."
+@@ -1828,6 +1938,56 @@
+       "required": ["queued"],
+       "type": "object"
+     },
++    "SessionSubscribeParams": {
++      "additionalProperties": false,
++      "description": "Watch a session from this connection: replay since a cursor, then live events.",
++      "properties": {
++        "cursor": {
++          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
++          "default": null,
++          "description": "The last seq the client applied; absent means no replay (live from now on)."
++        },
++        "epoch": {
++          "anyOf": [{"minLength": 1, "type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "The replay epoch the cursor belongs to; absent with a cursor counts as another run."
++        },
++        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session to watch."}
++      },
++      "required": ["session_id"],
++      "type": "object"
++    },
++    "SessionSubscribeResult": {
++      "additionalProperties": false,
++      "description": "Where the subscription starts.",
++      "properties": {
++        "gap": {
++          "anyOf": [{"$ref": "#/$defs/ReplayGapInfo"}, {"type": "null"}],
++          "default": null,
++          "description": "Set when the events after the cursor could not be replayed (reload a snapshot)."
++        },
++        "last_seq": {
++          "description": "The newest seq when the subscription began (after the replayed events).",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "reoffered": {
++          "default": 0,
++          "description": "Open server requests offered again to this connection.",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "replay_epoch": {"description": "The daemon's replay epoch.", "type": "string"},
++        "replayed": {
++          "description": "Events sent ahead of this answer to catch up from the cursor.",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "session_id": {"description": "The id the session runs under now.", "type": "string"}
++      },
++      "required": ["session_id", "replay_epoch", "last_seq", "replayed"],
++      "type": "object"
++    },
+     "SessionTitle": {
+       "additionalProperties": false,
+       "description": "The session's title changed.",
+@@ -1917,6 +2077,27 @@
+       "required": ["removed"],
+       "type": "object"
+     },
++    "SessionUnsubscribeParams": {
++      "additionalProperties": false,
++      "description": "Stop watching a session from this connection (its turns keep running).",
++      "properties": {
++        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session to stop watching."}
++      },
++      "required": ["session_id"],
++      "type": "object"
++    },
++    "SessionUnsubscribeResult": {
++      "additionalProperties": false,
++      "description": "Whether this connection was watching.",
++      "properties": {
++        "unsubscribed": {
++          "description": "False when the connection was not a viewer of the session.",
++          "type": "boolean"
++        }
++      },
++      "required": ["unsubscribed"],
++      "type": "object"
++    },
+     "SessionUsage": {
+       "additionalProperties": false,
+       "description": "The session's counters after a turn or on request.",
+@@ -1964,6 +2145,21 @@
+       "required": ["usage"],
+       "type": "object"
+     },
++    "SessionsWatchParams": {
++      "additionalProperties": false,
++      "description": "Receive ``session.updated`` for list views (title, running state, last activity).",
++      "properties": {
++        "enabled": {"default": true, "description": "False stops the updates.", "type": "boolean"}
++      },
++      "type": "object"
++    },
++    "SessionsWatchResult": {
++      "additionalProperties": false,
++      "description": "Whether list updates are on for this connection.",
++      "properties": {"watching": {"description": "The state after the call.", "type": "boolean"}},
++      "required": ["watching"],
++      "type": "object"
++    },
+     "ShellExecParams": {
+       "additionalProperties": false,
+       "description": "Run a shell command on this machine (the composer's ``!``).",
+@@ -2703,6 +2899,19 @@
+         "params": "ConfigSetParams",
+         "result": "ConfigSetResult"
+       },
++      "events.since": {
++        "errors": [
++          "PARSE_ERROR",
++          "INVALID_REQUEST",
++          "METHOD_NOT_FOUND",
++          "INVALID_PARAMS",
++          "INTERNAL_ERROR",
++          "UNKNOWN_PARAM_KEY",
++          "SESSION_NOT_FOUND"
++        ],
++        "params": "EventsSinceParams",
++        "result": "EventsSinceResult"
++      },
+       "gateway.ping": {
+         "errors": [
+           "PARSE_ERROR",
+@@ -3023,6 +3232,21 @@
+         "params": "SessionSteerParams",
+         "result": "SessionSteerResult"
+       },
++      "session.subscribe": {
++        "errors": [
++          "PARSE_ERROR",
++          "INVALID_REQUEST",
++          "METHOD_NOT_FOUND",
++          "INVALID_PARAMS",
++          "INTERNAL_ERROR",
++          "UNKNOWN_PARAM_KEY",
++          "SESSION_NOT_FOUND",
++          "SESSION_REFUSED",
++          "STORE_FAILED"
++        ],
++        "params": "SessionSubscribeParams",
++        "result": "SessionSubscribeResult"
++      },
+       "session.title": {
+         "errors": [
+           "PARSE_ERROR",
+@@ -3054,6 +3278,18 @@
+         "params": "SessionUndoParams",
+         "result": "SessionUndoResult"
+       },
++      "session.unsubscribe": {
++        "errors": [
++          "PARSE_ERROR",
++          "INVALID_REQUEST",
++          "METHOD_NOT_FOUND",
++          "INVALID_PARAMS",
++          "INTERNAL_ERROR",
++          "UNKNOWN_PARAM_KEY"
++        ],
++        "params": "SessionUnsubscribeParams",
++        "result": "SessionUnsubscribeResult"
++      },
+       "session.usage": {
+         "errors": [
+           "PARSE_ERROR",
+@@ -3067,6 +3303,18 @@
+         "params": "SessionUsageParams",
+         "result": "SessionUsageResult"
+       },
++      "sessions.watch": {
++        "errors": [
++          "PARSE_ERROR",
++          "INVALID_REQUEST",
++          "METHOD_NOT_FOUND",
++          "INVALID_PARAMS",
++          "INTERNAL_ERROR",
++          "UNKNOWN_PARAM_KEY"
++        ],
++        "params": "SessionsWatchParams",
++        "result": "SessionsWatchResult"
++      },
+       "shell.exec": {
+         "errors": [
+           "PARSE_ERROR",
+diff --git a/packages/protocol/src/generated/types.ts b/packages/protocol/src/generated/types.ts
+index c6411d0..702e98b 100644
+--- a/packages/protocol/src/generated/types.ts
++++ b/packages/protocol/src/generated/types.ts
+@@ -33,7 +33,10 @@ export interface ApprovalRequest {
+   choices?: ApprovalChoice[];
+ }
+ 
+-/** The first frame of a stdio connection: the server is ready for requests. */
++/**
++ * The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for
++ * requests.
++ */
+ export interface BridgeReady {
+   /** The configured theme name (`auto` lets the client detect light or dark). */
+   theme: string;
+@@ -41,6 +44,14 @@ export interface BridgeReady {
+   heartbeat?: boolean;
+   /** The protocol version the server speaks. */
+   protocol_version: number;
++  /** The daemon's replay epoch (WebSocket attach): event cursors are only valid within it. */
++  replay_epoch?: string | null;
++  /** The profile the daemon serves (WebSocket attach); a client refuses a mismatch. */
++  profile_id?: string | null;
++  /** This daemon start (WebSocket attach); it changes on every restart. */
++  instance_id?: string | null;
++  /** What the daemon offers attached clients (WebSocket attach), as `describe` lists it. */
++  capabilities?: string[] | null;
+ }
+ 
+ /** What a submit does while the session is running a turn. */
+@@ -125,6 +136,8 @@ export interface ClarifyRequest {
+ export interface ClientCapabilitiesParams {
+   /** Feature names; names the server does not know are ignored. */
+   features?: string[];
++  /** The kind of client attaching to the daemon (decides the busy default and presence). */
++  surface?: "cli" | "tui" | "gui" | "acp" | "web" | null;
+ }
+ 
+ /** The features both sides support (none are defined yet). */
+@@ -293,6 +306,32 @@ export interface ErrorResponse {
+ 
+ export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone | GoalUpdate | LoopUpdate | HeartbeatFired | MessageComplete | SessionInfo | SessionUsage | SessionTitle | TodoUpdated;
+ 
++/** The events of a watched session after a cursor. */
++export interface EventsSinceParams {
++  /** A session this connection watches. */
++  session_id: SessionId;
++  /** The replay epoch the cursor belongs to. */
++  epoch?: string | null;
++  /** The last seq the client applied. */
++  cursor: number;
++}
++
++/** The missing events, oldest first, or a gap. */
++export interface EventsSinceResult {
++  /** The id the session runs under now. */
++  session_id: string;
++  /** The daemon's replay epoch. */
++  replay_epoch: string;
++  /** The newest seq of the session (the cursor to hold afterwards). */
++  last_seq: number;
++  /** The events after the cursor (each with `seq` and `replay_epoch`); empty on a gap. */
++  events?: { [key: string]: JsonValue }[];
++  /** Set when the events cannot be replayed (reload a snapshot). */
++  gap?: ReplayGapInfo | null;
++  /** Open server requests offered again to this connection. */
++  reoffered?: number;
++}
++
+ /** Why a turn ended. Closed set: every exit path of the turn loop maps to one value. */
+ export type ExitReason = "completed" | "interrupted_by_user" | "interrupted_by_system" | "budget_exhausted" | "max_iterations" | "invalid_tool_strikes" | "persistence_failed" | "provider_failed" | "compression_exhausted" | "guardrail_halt";
+ 
+@@ -630,6 +669,16 @@ export interface ReloadMcpResult {
+   message: string;
+ }
+ 
++/** Why the events after a cursor cannot be sent; the client reloads a snapshot. */
++export interface ReplayGapInfo {
++  /** Another daemon run, dropped from memory, a cursor past the end, or the viewer fell behind. */
++  reason: "epoch_changed" | "evicted" | "ahead" | "overflow";
++  /** The daemon's current replay epoch. */
++  replay_epoch: string;
++  /** The newest seq of the session: the cursor to hold after the snapshot. */
++  last_seq: number;
++}
++
+ /** A call that expects a response. */
+ export interface Request {
+   /** Always the string `2.0`. */
+@@ -682,6 +731,8 @@ export interface ServerRequestAnswerParams {
+   request_id: string;
+   /** The answer; its kind must match the request's. */
+   answer: ServerRequestAnswer;
++  /** The turn that asked (as offered); the daemon requires it and refuses another turn's. */
++  generation?: number | null;
+ }
+ 
+ /** Confirmation that the answer was delivered. */
+@@ -933,6 +984,8 @@ export interface SessionSteerParams {
+   session_id: SessionId;
+   /** The guidance. */
+   text: MessageText;
++  /** The turn the guidance is for; the daemon requires it and ignores another turn's steer. */
++  generation?: number | null;
+ }
+ 
+ /** Whether the guidance was queued for the running turn. */
+@@ -943,6 +996,32 @@ export interface SessionSteerResult {
+   ticket?: string | null;
+ }
+ 
++/** Watch a session from this connection: replay since a cursor, then live events. */
++export interface SessionSubscribeParams {
++  /** The session to watch. */
++  session_id: SessionId;
++  /** The replay epoch the cursor belongs to; absent with a cursor counts as another run. */
++  epoch?: string | null;
++  /** The last seq the client applied; absent means no replay (live from now on). */
++  cursor?: number | null;
++}
++
++/** Where the subscription starts. */
++export interface SessionSubscribeResult {
++  /** The id the session runs under now. */
++  session_id: string;
++  /** The daemon's replay epoch. */
++  replay_epoch: string;
++  /** The newest seq when the subscription began (after the replayed events). */
++  last_seq: number;
++  /** Events sent ahead of this answer to catch up from the cursor. */
++  replayed: number;
++  /** Set when the events after the cursor could not be replayed (reload a snapshot). */
++  gap?: ReplayGapInfo | null;
++  /** Open server requests offered again to this connection. */
++  reoffered?: number;
++}
++
+ /** The session's title changed. */
+ export interface SessionTitle {
+   /** The session the event belongs to. */
+@@ -987,6 +1066,18 @@ export interface SessionUndoResult {
+   prefill?: string;
+ }
+ 
++/** Stop watching a session from this connection (its turns keep running). */
++export interface SessionUnsubscribeParams {
++  /** The session to stop watching. */
++  session_id: SessionId;
++}
++
++/** Whether this connection was watching. */
++export interface SessionUnsubscribeResult {
++  /** False when the connection was not a viewer of the session. */
++  unsubscribed: boolean;
++}
++
+ /** The session's counters after a turn or on request. */
+ export interface SessionUsage {
+   /** The session the event belongs to. */
+@@ -1011,6 +1102,18 @@ export interface SessionUsageResult {
+   usage: UsageNumbers;
+ }
+ 
++/** Receive `session.updated` for list views (title, running state, last activity). */
++export interface SessionsWatchParams {
++  /** False stops the updates. */
++  enabled?: boolean;
++}
++
++/** Whether list updates are on for this connection. */
++export interface SessionsWatchResult {
++  /** The state after the call. */
++  watching: boolean;
++}
++
+ /** Run a shell command on this machine (the composer's `!`). */
+ export interface ShellExecParams {
+   /** The command line. */
+diff --git a/src/indus/gateway/http/serving.py b/src/indus/gateway/http/serving.py
+index 8b81237..e61b97d 100644
+--- a/src/indus/gateway/http/serving.py
++++ b/src/indus/gateway/http/serving.py
+@@ -5,7 +5,9 @@ and the real port is known), retrying ``EADDRINUSE`` ``BIND_ATTEMPTS`` times ``B
+ apart on the injected clock while a restarting predecessor lets go of the port.
+ ``HttpServer`` runs uvicorn on that socket inside the caller's event loop without installing
+ signal handlers (the daemon owns signals); ``stop()`` closes the listener and waits a few
+-seconds for open connections.
++seconds for open connections. WebSockets are off unless ``ws=`` names uvicorn's WebSocket
++settings (the daemon's attach endpoint, P17-13: implementation, message size cap, no
++compression).
+ 
+ The ASGI layers, outermost first, as ``api_server`` stacks them:
+ 
+@@ -29,7 +31,7 @@ import errno
+ import json
+ import logging
+ import socket
+-from collections.abc import Awaitable, Callable, Iterable, MutableMapping
++from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping
+ from typing import Any
+ 
+ from starlette.requests import Request
+@@ -118,10 +120,18 @@ async def bind_listener(
+ class HttpServer:
+     """One ASGI app served by uvicorn on a socket we bound (see the module notes)."""
+ 
+-    def __init__(self, app: Asgi, sock: socket.socket, *, name: str) -> None:
++    def __init__(
++        self,
++        app: Asgi,
++        sock: socket.socket,
++        *,
++        name: str,
++        ws: Mapping[str, Any] | None = None,
++    ) -> None:
+         self.app = app
+         self.sock = sock
+         self.name = name
++        self.ws: dict[str, Any] = dict(ws) if ws is not None else {"ws": "none"}
+         self._server: Any = None
+         self._task: asyncio.Task[None] | None = None
+ 
+@@ -140,8 +150,8 @@ class HttpServer:
+             access_log=False,
+             server_header=False,
+             proxy_headers=False,
+-            ws="none",
+             timeout_graceful_shutdown=int(SHUTDOWN_GRACE_S),
++            **self.ws,
+         )
+         config.load()
+         server = uvicorn.Server(config)
+diff --git a/src/indus/gateway/ws/__init__.py b/src/indus/gateway/ws/__init__.py
+new file mode 100644
+index 0000000..2180f2f
+--- /dev/null
++++ b/src/indus/gateway/ws/__init__.py
+@@ -0,0 +1 @@
++"""The daemon's loopback WebSocket endpoint for attached clients (P17-13)."""
+diff --git a/src/indus/gateway/ws/methods.py b/src/indus/gateway/ws/methods.py
+new file mode 100644
+index 0000000..5f58d93
+--- /dev/null
++++ b/src/indus/gateway/ws/methods.py
+@@ -0,0 +1,280 @@
++"""The methods the daemon's WebSocket serves (P17-13/14), over the daemon session host.
++
++Every session-addressed call first checks that this connection attached the session
++(``Subscriptions.require``): another connection's session reads as unknown. Controls name the
++turn they target: ``session.interrupt``, ``session.steer`` and ``server_request.answer`` need
++``generation`` here, and a stale one changes nothing (the method's "nothing happened" answer).
++
++``prompt.submit`` admits the text into the session's durable queue. With ``when_busy`` left out
++the submitting surface decides what happens while a turn runs (TUI queues, others interrupt);
++``queue`` queues; ``reject`` answers ``SESSION_BUSY`` while a turn runs; ``steer`` / ``redirect``
++are refused — a steer names its generation through ``session.steer``. ``turn_id`` is the
++admission id.
++
++``session.close`` only detaches this connection (other viewers and running turns carry on).
++``server_request.decline`` records this viewer's refusal (``4404`` "not shown here" when it
++advertised ``request.decline``, else ``-32601``): the request stays with the other viewers and is
++settled undeliverable when none is left.
++"""
++
++from __future__ import annotations
++
++import secrets
++from typing import TYPE_CHECKING
++
++from indus.protocol.attach import (
++    EventsSinceParams,
++    EventsSinceResult,
++    ReplayGapInfo,
++    SessionSubscribeParams,
++    SessionSubscribeResult,
++    SessionsWatchParams,
++    SessionsWatchResult,
++    SessionUnsubscribeParams,
++    SessionUnsubscribeResult,
++)
++from indus.protocol.bridge import (
++    GatewayPingParams,
++    GatewayPingResult,
++    ServerRequestDeclineParams,
++    ServerRequestDeclineResult,
++    SessionCloseParams,
++    SessionCloseResult,
++)
++from indus.protocol.errors import INVALID_PARAMS, SESSION_BUSY
++from indus.protocol.methods import (
++    PROTOCOL_VERSION,
++    BusyAction,
++    ClientCapabilitiesParams,
++    ClientCapabilitiesResult,
++    PromptSubmitParams,
++    PromptSubmitResult,
++    ProtocolError,
++    ServerRequestAnswerParams,
++    ServerRequestAnswerResult,
++    SessionCreateParams,
++    SessionCreateResult,
++    SessionInterruptParams,
++    SessionInterruptResult,
++    SessionResumeParams,
++    SessionResumeResult,
++    SessionSteerParams,
++    SessionSteerResult,
++    SubmitStatus,
++    negotiate_features,
++)
++from indus.service.event_log import ReplayGap
++from indus.service.fences import ControlApplied, ControlStatus, Responded, StaleGeneration
++from indus.service.request_redelivery import NOT_SHOWN_CODE, UNRENDERABLE_CODE
++from indus.service.rpc import MethodSet, MethodTable
++from indus.service.viewers import DECLINE_CAPABILITY, BusyMode
++from indus.state.runtime_ledger import LedgerRefusal
++
++if TYPE_CHECKING:
++    from indus.gateway.ws.server import WsConnection
++
++__all__ = ["methods", "served", "table"]
++
++methods = MethodSet["WsConnection"]()
++
++
++def _generation(value: int | None) -> int:
++    if value is None:
++        raise ProtocolError(
++            INVALID_PARAMS, "the daemon needs the generation of the turn", path="generation"
++        )
++    return value
++
++
++def _took(result: ControlApplied | StaleGeneration) -> bool:
++    """A control reached its turn (or waits for it); False for a stale or refused one."""
++    return isinstance(result, ControlApplied) and result.status is not ControlStatus.REJECTED
++
++
++def _gap(gap: ReplayGap | None) -> ReplayGapInfo | None:
++    if gap is None:
++        return None
++    return ReplayGapInfo(reason=gap.reason, replay_epoch=gap.replay_epoch, last_seq=gap.last_seq)
++
++
++# -- connection -----------------------------------------------------------------------------------
++
++
++@methods.method("gateway.ping")
++async def ping(conn: WsConnection, params: GatewayPingParams) -> GatewayPingResult:
++    del conn, params
++    return GatewayPingResult(protocol_version=PROTOCOL_VERSION)
++
++
++@methods.method("client.capabilities")
++async def capabilities(
++    conn: WsConnection, params: ClientCapabilitiesParams
++) -> ClientCapabilitiesResult:
++    conn.subs.configure(surface=params.surface, features=params.features)
++    enabled = set(negotiate_features(params.features))
++    if DECLINE_CAPABILITY in params.features:
++        enabled.add(DECLINE_CAPABILITY)
++    return ClientCapabilitiesResult(features=sorted(enabled))
++
++
++# -- sessions -------------------------------------------------------------------------------------
++
++
++@methods.method("session.create")
++async def create(conn: WsConnection, params: SessionCreateParams) -> SessionCreateResult:
++    result = await conn.host.create(params, source=conn.subs.surface)
++    conn.subs.adopt(result.session_id, cursor=0)
++    return result
++
++
++@methods.method("session.resume")
++async def resume(conn: WsConnection, params: SessionResumeParams) -> SessionResumeResult:
++    result = await conn.host.resume(params.session_id, source=conn.subs.surface)
++    attached = conn.subs.adopt(result.session_id)
++    return result.model_copy(update={"last_seq": attached.last_seq})
++
++
++@methods.method("session.close")
++async def close(conn: WsConnection, params: SessionCloseParams) -> SessionCloseResult:
++    return SessionCloseResult(closed=await conn.subs.unsubscribe(params.session_id))
++
++
++@methods.method("session.subscribe")
++async def subscribe(conn: WsConnection, params: SessionSubscribeParams) -> SessionSubscribeResult:
++    found = await conn.subs.subscribe(params.session_id, params.epoch, params.cursor)
++    return SessionSubscribeResult(
++        session_id=found.session_id,
++        replay_epoch=found.replay_epoch,
++        last_seq=found.last_seq,
++        replayed=found.replayed,
++        gap=_gap(found.gap),
++        reoffered=found.reoffered,
++    )
++
++
++@methods.method("session.unsubscribe")
++async def unsubscribe(
++    conn: WsConnection, params: SessionUnsubscribeParams
++) -> SessionUnsubscribeResult:
++    return SessionUnsubscribeResult(unsubscribed=await conn.subs.unsubscribe(params.session_id))
++
++
++@methods.method("sessions.watch")
++async def watch(conn: WsConnection, params: SessionsWatchParams) -> SessionsWatchResult:
++    return SessionsWatchResult(watching=conn.subs.watch(params.enabled))
++
++
++@methods.method("events.since")
++async def events_since(conn: WsConnection, params: EventsSinceParams) -> EventsSinceResult:
++    found = conn.subs.since(params.session_id, params.epoch, params.cursor)
++    return EventsSinceResult(
++        session_id=found.session_id,
++        replay_epoch=found.replay_epoch,
++        last_seq=found.last_seq,
++        events=list(found.events),
++        gap=_gap(found.gap),
++        reoffered=found.reoffered,
++    )
++
++
++# -- input and controls ---------------------------------------------------------------------------
++
++
++def _busy_mode(conn: WsConnection, key: str, params: PromptSubmitParams) -> BusyMode | None:
++    if "when_busy" not in params.model_fields_set:
++        return None  # the surface decides (R05.18)
++    action = params.when_busy
++    if action is BusyAction.QUEUE:
++        return "queue"
++    if action is BusyAction.REJECT:
++        if conn.host.admissions.running(key) is not None:
++            raise ProtocolError(SESSION_BUSY, "a turn is running in this session")
++        return "queue"
++    raise ProtocolError(
++        INVALID_PARAMS,
++        "steer the running turn with session.steer and its generation",
++        path="when_busy",
++    )
++
++
++@methods.method("prompt.submit")
++async def submit(conn: WsConnection, params: PromptSubmitParams) -> PromptSubmitResult:
++    key = conn.subs.require(params.session_id)
++    busy = _busy_mode(conn, key, params)
++    was_running = conn.host.admissions.running(key)
++    try:
++        receipt = await conn.host.submit(
++            key,
++            params.text,
++            principal=f"{conn.subs.surface}:{conn.connection_id}",
++            request_id=f"ws-{secrets.token_hex(8)}",
++            connection_id=conn.connection_id,
++            surface=conn.subs.surface,
++            busy=busy,
++        )
++    except LedgerRefusal as refusal:
++        raise ProtocolError(SESSION_BUSY, f"the input was not admitted: {refusal.reason}") from None
++    running = conn.host.admissions.running(key)
++    generation = receipt.generation
++    if generation is None and running is not None:
++        generation = running.generation
++    starts_now = (
++        receipt.state == "started"
++        or (was_running is None and receipt.blocked_by is None and receipt.position in (None, 1))
++    ) and receipt.state != "terminal"
++    return PromptSubmitResult(
++        turn_id=receipt.admission_id,
++        generation=generation or 0,
++        status=SubmitStatus.STREAMING if starts_now else SubmitStatus.QUEUED,
++    )
++
++
++@methods.method("session.interrupt")
++async def interrupt(conn: WsConnection, params: SessionInterruptParams) -> SessionInterruptResult:
++    key = conn.subs.require(params.session_id)
++    result = conn.host.interrupt(key, _generation(params.generation), hard=params.hard)
++    return SessionInterruptResult(
++        interrupted=isinstance(result, ControlApplied)
++        and result.status is not ControlStatus.REJECTED
++    )
++
++
++@methods.method("session.steer")
++async def steer(conn: WsConnection, params: SessionSteerParams) -> SessionSteerResult:
++    key = conn.subs.require(params.session_id)
++    result = conn.host.steer(key, _generation(params.generation), params.text)
++    return SessionSteerResult(queued=_took(result))
++
++
++@methods.method("server_request.answer")
++async def answer(
++    conn: WsConnection, params: ServerRequestAnswerParams
++) -> ServerRequestAnswerResult:
++    key = conn.subs.require(params.session_id)
++    result = conn.host.respond(
++        key, params.request_id, _generation(params.generation), params.answer
++    )
++    return ServerRequestAnswerResult(accepted=isinstance(result, Responded) and result.accepted)
++
++
++@methods.method("server_request.decline")
++async def decline(
++    conn: WsConnection, params: ServerRequestDeclineParams
++) -> ServerRequestDeclineResult:
++    key = conn.subs.require(params.session_id)
++    code = NOT_SHOWN_CODE if DECLINE_CAPABILITY in conn.subs.capabilities else UNRENDERABLE_CODE
++    return ServerRequestDeclineResult(
++        accepted=conn.host.refuse(key, conn.connection_id, params.request_id, code)
++    )
++
++
++def served() -> list[str]:
++    """Method names the daemon's WebSocket serves."""
++    return methods.names()
++
++
++def table() -> MethodTable[WsConnection]:
++    """A fresh table with every handler of this module."""
++    built = MethodTable["WsConnection"]()
++    methods.register(built)
++    return built
+diff --git a/src/indus/gateway/ws/server.py b/src/indus/gateway/ws/server.py
+new file mode 100644
+index 0000000..77d7c03
+--- /dev/null
++++ b/src/indus/gateway/ws/server.py
+@@ -0,0 +1,564 @@
++"""The daemon's loopback WebSocket endpoint (P17-13).
++
++``WsEndpoint`` serves one Starlette WebSocket route (``/ws``) on 127.0.0.1 and a port the OS picks
++(``start`` returns the ``ws_url``; ``status_row`` is what the runtime status records). Clients reach
++it with a single-use ticket from the owner-only control socket (P17-11).
++
++Upgrade: ``service.ws_auth.authenticate_upgrade`` decides, and nothing else. A refusal is accepted
++(echoing ``indus-gateway-v1`` only when offered, so a browser can read the code) and closed at once
++with the helper's code: 4401 for a missing, used, expired or wrong ticket, 4403 for a peer that is
++not loopback or an Origin not on the allow-list. A ticket in the URL is never used. On success the
++server echoes only ``indus-gateway-v1`` and sends ``gateway.ready`` first: replay epoch, heartbeat,
++profile id, instance id, capabilities and protocol version.
++
++Per connection (``WsConnection``): each text message is one JSON-RPC frame. ``decode_request`` →
++the shared ``Dispatcher`` over the daemon's method table (``gateway.ws.methods``); requests run as
++their own tasks so a long submit never holds up an interrupt; ``gateway.ping`` is answered by the
++read loop itself. Every outgoing frame goes through the connection's ``Outbox`` (P17-14) and one
++writer task, so a slow client only ever stalls itself:
++
++- one frame may take at most ``write_timeout`` (10 s) on the socket, and a frame may wait at most
++  ``send_deadline`` (30 s) before it is sent; past either the socket is closed 1011;
++- at most ``dispatch_queue`` (256) requests may be waiting or running; the next one closes the
++  socket 1013 ("try again later"), as does an outbox past its byte cap;
++- an inbound message larger than ``max_message_bytes`` closes 1009; a binary message 1003;
++- no inbound frame for ``idle_timeout`` (120 s; clients ping every 15 s) closes 1001, so a peer
++  that vanished without a close does not keep its viewers attached.
++
++A response frame from the client whose id is a server-request id (``srq-…``) with an error records
++that viewer's refusal (``-32601`` / ``4404``). Closing the socket only detaches its viewers; turns
++keep running. Close reasons are fixed short texts. Logs never carry params, tickets, or a URL's
++query or user-info.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import importlib.util
++import json
++import logging
++import secrets
++from collections.abc import Callable, Iterable, Mapping
++from dataclasses import dataclass, field
++from typing import Any, Final, cast
++from urllib.parse import urlsplit, urlunsplit
++
++from starlette.applications import Starlette
++from starlette.routing import WebSocketRoute
++from starlette.websockets import WebSocket
++
++from indus.foundation.scope import Scope
++from indus.gateway.http.serving import HttpServer, bind_listener
++from indus.gateway.ws import methods as ws_methods
++from indus.protocol.bridge import READY_METHOD, BridgeReady
++from indus.protocol.envelope import Request
++from indus.protocol.errors import INTERNAL_ERROR
++from indus.protocol.methods import PROTOCOL_VERSION, ProtocolError
++from indus.service.daemon_host import DaemonSessionHost
++from indus.service.request_redelivery import REQUEST_ID_PREFIX
++from indus.service.rpc import ContractViolation, Dispatcher, decode_request, error_frame
++from indus.service.rpc.dispatch import check_payload, strict_from
++from indus.service.subscriptions import (
++    Outbox,
++    OutboxLimits,
++    SessionWatch,
++    Subscriptions,
++    notification,
++)
++from indus.service.ws_auth import (
++    SUBPROTOCOL,
++    WS_INTERACTIVE,
++    TicketBook,
++    UpgradeRefused,
++    authenticate_upgrade,
++    is_loopback_host,
++)
++
++__all__ = [
++    "CLOSE_GOING_AWAY",
++    "CLOSE_SEND_DEADLINE",
++    "CLOSE_TOO_BIG",
++    "CLOSE_TRY_AGAIN",
++    "CLOSE_UNSUPPORTED",
++    "WS_PATH",
++    "WsConnection",
++    "WsEndpoint",
++    "WsLimits",
++    "WsUnavailable",
++    "loggable_url",
++]
++
++log = logging.getLogger(__name__)
++
++WS_PATH: Final = "/ws"
++CLOSE_NORMAL: Final = 1000
++CLOSE_GOING_AWAY: Final = 1001
++CLOSE_UNSUPPORTED: Final = 1003
++CLOSE_TOO_BIG: Final = 1009
++CLOSE_SEND_DEADLINE: Final = 1011
++CLOSE_TRY_AGAIN: Final = 1013
++MAX_CLOSE_REASON: Final = 123
++"""Bytes a WebSocket close reason may hold."""
++_CLOSE_WAIT_S: Final = 2.0
++_MIB = 1024 * 1024
++
++
++class WsUnavailable(RuntimeError):
++    """No WebSocket implementation is installed for the server (``wsproto`` or ``websockets``)."""
++
++
++@dataclass(frozen=True, slots=True)
++class WsLimits:
++    """Per-connection limits (see the module notes)."""
++
++    write_timeout: float = 10.0
++    send_deadline: float = 30.0
++    dispatch_queue: int = 256
++    max_message_bytes: int = 1 * _MIB
++    inbound_bytes: int = 16 * _MIB
++    max_connections: int = 64
++    idle_timeout: float = 120.0
++    """Seconds without any inbound frame before the socket is closed (clients ping every 15 s);
++    a peer that vanished without a close never holds its viewers for ever."""
++    drain_s: float = 2.0
++    outbox: OutboxLimits = field(default_factory=OutboxLimits)
++
++
++def loggable_url(url: str) -> str:
++    """``url`` without user-info, query or fragment (safe for a log line)."""
++    try:
++        parts = urlsplit(url)
++        host = parts.hostname or ""
++        port = parts.port
++    except ValueError:
++        return "<unparsable url>"
++    if ":" in host:
++        host = f"[{host}]"
++    netloc = f"{host}:{port}" if port is not None else host
++    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
++
++
++def _clamp(reason: str) -> str:
++    data = reason.encode("utf-8")[:MAX_CLOSE_REASON]
++    return data.decode("utf-8", errors="ignore")
++
++
++def _implementation() -> str:
++    for name in ("wsproto", "websockets"):
++        if importlib.util.find_spec(name) is not None:
++            return name
++    raise WsUnavailable(
++        "the WebSocket endpoint needs the wsproto (or websockets) package; it is not installed"
++    )
++
++
++def _peer(scope: Mapping[str, Any]) -> str:
++    client = scope.get("client")
++    if isinstance(client, list | tuple) and len(cast(tuple[object, ...], client)) >= 2:
++        host, port = cast(tuple[object, ...], client)[:2]
++        return f"{host}:{port}"
++    return "unknown"
++
++
++# -- the socket seam ------------------------------------------------------------------------------
++
++
++class _Socket:
++    """What a connection needs from its socket (Starlette's ``WebSocket`` underneath)."""
++
++    def __init__(self, websocket: WebSocket) -> None:
++        self.websocket = websocket
++
++    async def receive(self) -> Mapping[str, Any]:
++        return await self.websocket.receive()
++
++    async def send_text(self, text: str) -> None:
++        await self.websocket.send_text(text)
++
++    async def close(self, code: int, reason: str) -> None:
++        await self.websocket.close(code=code, reason=_clamp(reason))
++
++
++# -- one connection -------------------------------------------------------------------------------
++
++
++class _Stop(Exception):
++    """End the read loop and close with ``code``."""
++
++    def __init__(self, code: int, reason: str) -> None:
++        super().__init__(reason)
++        self.code = code
++        self.reason = reason
++
++
++class WsConnection:
++    """One accepted client (see the module notes); the dispatcher's ``RpcContext``."""
++
++    def __init__(self, endpoint: WsEndpoint, socket: _Socket, *, peer: str) -> None:
++        self.endpoint = endpoint
++        self.host = endpoint.host
++        self.socket = socket
++        self.peer = peer
++        self.connection_id = f"ws-{secrets.token_hex(6)}"
++        self.limits = endpoint.limits
++        self.outbox = Outbox(self.limits.outbox)
++        self.subs = Subscriptions(
++            endpoint.host,
++            self.connection_id,
++            self.outbox,
++            watch=endpoint.watch,
++            strict=endpoint.strict,
++        )
++        self.dispatcher = Dispatcher(self, endpoint.table)
++        self.violations: list[ContractViolation] = []
++        self._inflight: dict[asyncio.Task[None], int] = {}
++        self._inbound_bytes = 0
++        self._closing = asyncio.Event()
++        self._close_code: int | None = None
++        self._close_reason = ""
++        self.requests = 0
++
++    # -- RpcContext -------------------------------------------------------------------------------
++
++    @property
++    def scope(self) -> Scope:
++        return self.endpoint.scope
++
++    @property
++    def strict(self) -> bool:
++        return self.endpoint.strict
++
++    @property
++    def inflight(self) -> int:
++        return len(self._inflight)
++
++    # -- lifetime ---------------------------------------------------------------------------------
++
++    async def run(self) -> None:
++        """Serve until the client goes, a limit is hit or the endpoint stops."""
++        writer = asyncio.ensure_future(self._write_loop())
++        try:
++            self._send_ready()
++            await self._read_loop()
++        except _Stop as stop:
++            self._mark_close(stop.code, stop.reason)
++        finally:
++            self._closing.set()
++            await self._teardown(writer)
++
++    def _send_ready(self) -> None:
++        host = self.host
++        book = self.endpoint.book
++        ready = BridgeReady(
++            theme=self.endpoint.theme,
++            heartbeat=True,
++            protocol_version=PROTOCOL_VERSION,
++            replay_epoch=host.replay_epoch,
++            profile_id=book.profile_id,
++            instance_id=book.instance_id,
++            capabilities=list(host.capabilities()),
++        )
++        params = ready.to_wire()
++        check_payload(BridgeReady, params, strict=self.strict)
++        self.outbox.put(notification(READY_METHOD, params))
++
++    def close_soon(self, code: int, reason: str) -> None:
++        """Ask the connection to close (from any task on the loop)."""
++        self._mark_close(code, reason)
++        self._closing.set()
++
++    def _mark_close(self, code: int, reason: str) -> None:
++        if self._close_code is None:
++            self._close_code = code
++            self._close_reason = reason
++
++    async def _next_message(self) -> Mapping[str, Any] | None:
++        """The next inbound message; None when closing. ``_Stop`` after ``idle_timeout``."""
++        receive = asyncio.ensure_future(self.socket.receive())
++        closing = asyncio.ensure_future(self._closing.wait())
++        try:
++            await asyncio.wait(
++                {receive, closing},
++                timeout=self.limits.idle_timeout,
++                return_when=asyncio.FIRST_COMPLETED,
++            )
++        finally:
++            closing.cancel()
++        if receive.done() and not receive.cancelled() and receive.exception() is None:
++            return receive.result()
++        receive.cancel()
++        with contextlib.suppress(BaseException):
++            await receive
++        if not self._closing.is_set():
++            raise _Stop(CLOSE_GOING_AWAY, "idle")
++        return None
++
++    async def _read_loop(self) -> None:
++        while not self._closing.is_set():
++            message = await self._next_message()
++            if message is None or message.get("type") == "websocket.disconnect":
++                self._mark_close(CLOSE_NORMAL, "client closed")
++                return
++            text = message.get("text")
++            if not isinstance(text, str):
++                raise _Stop(CLOSE_UNSUPPORTED, "only text frames are accepted")
++            if self._too_big(text):
++                raise _Stop(CLOSE_TOO_BIG, "message too big")
++            await self._take(text)
++
++    def _too_big(self, text: str) -> bool:
++        cap = self.limits.max_message_bytes
++        if len(text) > cap:
++            return True
++        return len(text) * 4 > cap and len(text.encode("utf-8", errors="replace")) > cap
++
++    async def _take(self, text: str) -> None:
++        if REQUEST_ID_PREFIX in text and self._refusal(text):
++            return
++        frame = decode_request(text)
++        if frame is None:
++            return
++        if not isinstance(frame, Request):
++            self._put(frame)  # an error answer for a frame that is no request
++            return
++        self.requests += 1
++        if frame.method == "gateway.ping":
++            self._put(await self._handle(frame))
++            return
++        if len(self._inflight) >= self.limits.dispatch_queue:
++            raise _Stop(CLOSE_TRY_AGAIN, "too many requests waiting")
++        size = len(text)
++        if self._inbound_bytes + size > self.limits.inbound_bytes:
++            raise _Stop(CLOSE_TRY_AGAIN, "too many request bytes waiting")
++        self._inbound_bytes += size
++        task = asyncio.ensure_future(self._answer(frame))
++        self._inflight[task] = size
++        task.add_done_callback(self._finished)
++
++    def _finished(self, task: asyncio.Task[None]) -> None:
++        self._inbound_bytes -= self._inflight.pop(task, 0)
++
++    def _refusal(self, text: str) -> bool:
++        """A client's error answer to a server request: that viewer refuses it."""
++        try:
++            value: object = json.loads(text)
++        except ValueError:
++            return False
++        if not isinstance(value, dict) or "method" in value:
++            return False
++        frame = cast(dict[str, object], value)
++        request_id, error = frame.get("id"), frame.get("error")
++        if not isinstance(request_id, str) or not request_id.startswith(REQUEST_ID_PREFIX):
++            return False
++        if isinstance(error, dict):
++            code = cast(dict[str, object], error).get("code")
++            if isinstance(code, int) and not isinstance(code, bool):
++                self.subs.refuse(request_id, code)
++        return True
++
++    async def _handle(self, request: Request) -> dict[str, Any]:
++        try:
++            return await self.dispatcher.handle(request)
++        except ContractViolation as exc:
++            self.violations.append(exc)
++            log.error("contract violation in %s: %s", request.method, exc)
++            return error_frame(request.id, ProtocolError(INTERNAL_ERROR, str(exc)))
++
++    async def _answer(self, request: Request) -> None:
++        self._put(await self._handle(request))
++
++    def _put(self, frame: Mapping[str, Any]) -> None:
++        if not self.outbox.put(frame) and self.outbox.overloaded:
++            self.close_soon(CLOSE_TRY_AGAIN, "too much to send")
++
++    async def _write_loop(self) -> None:
++        outbox = self.outbox
++        while True:
++            if outbox.oldest_wait() > self.limits.send_deadline:
++                self.close_soon(CLOSE_SEND_DEADLINE, "send deadline")
++                return
++            text = await outbox.get()
++            if text is None:
++                if outbox.overloaded:
++                    self.close_soon(CLOSE_TRY_AGAIN, "too much to send")
++                return
++            try:
++                async with asyncio.timeout(self.limits.write_timeout):
++                    await self.socket.send_text(text)
++            except TimeoutError:
++                log.warning("WebSocket client %s stopped reading; closing it", self.peer)
++                self.close_soon(CLOSE_SEND_DEADLINE, "send deadline")
++                return
++            except Exception as exc:
++                log.info("WebSocket send to %s failed: %s", self.peer, type(exc).__name__)
++                self.close_soon(CLOSE_NORMAL, "client gone")
++                return
++
++    async def _teardown(self, writer: asyncio.Future[None]) -> None:
++        tasks = set(self._inflight)
++        if tasks:
++            _done, pending = await asyncio.wait(tasks, timeout=self.limits.drain_s)
++            for task in pending:
++                task.cancel()
++            if pending:
++                await asyncio.wait(pending, timeout=self.limits.drain_s)
++        detached = await self.subs.close()
++        writer.cancel()
++        with contextlib.suppress(BaseException):
++            await writer
++        code = self._close_code if self._close_code is not None else CLOSE_NORMAL
++        with contextlib.suppress(Exception):
++            async with asyncio.timeout(_CLOSE_WAIT_S):
++                await self.socket.close(code, self._close_reason or "closed")
++        self.violations.extend(self.subs.violations)
++        self.endpoint.violations.extend(self.violations)
++        log.info(
++            "WebSocket client %s closed (%d %s): %d requests, %d sessions detached",
++            self.peer,
++            code,
++            self._close_reason or "closed",
++            self.requests,
++            len(detached),
++        )
++
++
++# -- the endpoint ---------------------------------------------------------------------------------
++
++
++class WsEndpoint:
++    """The daemon's WebSocket endpoint over ``host`` (see the module notes)."""
++
++    def __init__(
++        self,
++        host: DaemonSessionHost,
++        book: TicketBook,
++        *,
++        scope: Scope,
++        origins: Callable[[], Iterable[str]] | Iterable[str] = (),
++        limits: WsLimits | None = None,
++        theme: str = "auto",
++        strict: bool | None = None,
++    ) -> None:
++        self.host = host
++        self.book = book
++        self.scope = scope
++        self.limits = limits or WsLimits()
++        self.theme = theme
++        self.strict = strict_from(scope) if strict is None else strict
++        self._origins = origins
++        self.table = ws_methods.table()
++        self.watch = SessionWatch(host)
++        self.connections: dict[str, WsConnection] = {}
++        self.violations: list[ContractViolation] = []
++        """Contract problems seen on closed connections (strict mode keeps them here)."""
++        self._tasks: set[asyncio.Task[None]] = set()
++        self._server: HttpServer | None = None
++        self._url: str | None = None
++        self._stopping = False
++        self.app = Starlette(routes=[WebSocketRoute(WS_PATH, self._serve)])
++
++    # -- reading ----------------------------------------------------------------------------------
++
++    def origins(self) -> list[str]:
++        source = self._origins
++        values = source() if callable(source) else source
++        return [str(item) for item in values]
++
++    @property
++    def ws_url(self) -> str | None:
++        """``ws://127.0.0.1:<port>/ws`` while serving, else None."""
++        return self._url
++
++    def status_row(self) -> dict[str, Any]:
++        """The runtime-status row (``StatusWriter.set_surface("ws", …)``)."""
++        if self._server is None or self._url is None:
++            return {"state": "stopped"}
++        bound, port = self._server.address
++        return {
++            "state": "listening",
++            "url": self._url,
++            "host": bound,
++            "port": port,
++            "connections": len(self.connections),
++        }
++
++    # -- serving ----------------------------------------------------------------------------------
++
++    async def start(self, *, bind: str = "127.0.0.1", port: int = 0) -> str:
++        """Listen on ``bind:port`` (loopback only; port 0 picks one) and return the ``ws_url``."""
++        if not is_loopback_host(bind):
++            raise ValueError("the gateway WebSocket listens on a loopback address only")
++        if self._server is not None and self._url is not None:
++            return self._url
++        implementation = _implementation()
++        sock = await bind_listener(bind, port, self.scope.clock)
++        server = HttpServer(
++            self.app,
++            sock,
++            name="gateway WebSocket",
++            ws={
++                "ws": implementation,
++                "ws_max_size": self.limits.max_message_bytes,
++                "ws_per_message_deflate": False,
++            },
++        )
++        await server.start()
++        host, bound_port = server.address
++        shown = f"[{host}]" if ":" in host else host
++        self._server = server
++        self._stopping = False
++        self._url = f"ws://{shown}:{bound_port}{WS_PATH}"
++        self.watch.start()
++        log.info("gateway WebSocket listening on %s", loggable_url(self._url))
++        return self._url
++
++    async def stop(self) -> None:
++        """Close every connection (1001) and stop listening."""
++        self._stopping = True
++        for connection in list(self.connections.values()):
++            connection.close_soon(CLOSE_GOING_AWAY, "daemon stopping")
++        if self._tasks:
++            await asyncio.wait(set(self._tasks), timeout=self.limits.drain_s + _CLOSE_WAIT_S)
++        server, self._server = self._server, None
++        self._url = None
++        if server is not None:
++            await server.stop()
++        self.watch.stop()
++
++    async def _serve(self, websocket: WebSocket) -> None:
++        scope = websocket.scope
++        peer = _peer(scope)
++        verdict = authenticate_upgrade(
++            scope, WS_INTERACTIVE, book=self.book, origins=self.origins()
++        )
++        offered = [str(p) for p in cast(list[object], scope.get("subprotocols") or [])]
++        if isinstance(verdict, UpgradeRefused):
++            await self._refuse(websocket, offered, verdict.close_code, verdict.reason)
++            return
++        if self._stopping:
++            await self._refuse(websocket, offered, CLOSE_GOING_AWAY, "daemon stopping")
++            return
++        if len(self.connections) >= self.limits.max_connections:
++            await self._refuse(websocket, offered, CLOSE_TRY_AGAIN, "too many connections")
++            return
++        await websocket.accept(subprotocol=verdict.subprotocol)
++        connection = WsConnection(self, _Socket(websocket), peer=peer)
++        self.connections[connection.connection_id] = connection
++        task = asyncio.current_task()
++        if task is not None:
++            self._tasks.add(task)
++        log.info("WebSocket client %s attached (path %s)", peer, scope.get("path", WS_PATH))
++        try:
++            await connection.run()
++        finally:
++            self.connections.pop(connection.connection_id, None)
++            if task is not None:
++                self._tasks.discard(task)
++
++    async def _refuse(
++        self, websocket: WebSocket, offered: list[str], code: int, reason: str
++    ) -> None:
++        await websocket.accept(subprotocol=SUBPROTOCOL if SUBPROTOCOL in offered else None)
++        with contextlib.suppress(Exception):
++            await websocket.close(code=code, reason=_clamp(reason))
+diff --git a/src/indus/protocol/attach.py b/src/indus/protocol/attach.py
+new file mode 100644
+index 0000000..13d837b
+--- /dev/null
++++ b/src/indus/protocol/attach.py
+@@ -0,0 +1,142 @@
++"""Methods a client attached to the daemon's WebSocket uses to follow sessions (P17-13/14).
++
++A connection to the per-profile daemon may watch several sessions. ``session.subscribe`` makes it
++a viewer of one session: the events after its cursor are sent first (or a ``session.replay_gap``
++when they cannot be), then every new event of the session. ``events.since`` is the pull form.
++``sessions.watch`` turns on ``session.updated`` notifications for list views. These names are
++served only by the daemon (``DAEMON_ONLY_METHODS``); the stdio bridge answers them ``-32601``.
++"""
++
++from __future__ import annotations
++
++from typing import Literal
++
++from pydantic import Field, JsonValue, NonNegativeInt
++
++from indus.protocol.base import ProtocolModel, SessionId
++from indus.protocol.errors import SESSION_NOT_FOUND, SESSION_REFUSED, STORE_FAILED, ErrorCode
++
++__all__ = [
++    "ATTACH_METHODS",
++    "DAEMON_ONLY_METHODS",
++    "EventsSinceParams",
++    "EventsSinceResult",
++    "ReplayGapInfo",
++    "SessionSubscribeParams",
++    "SessionSubscribeResult",
++    "SessionUnsubscribeParams",
++    "SessionUnsubscribeResult",
++    "SessionsWatchParams",
++    "SessionsWatchResult",
++]
++
++
++class ReplayGapInfo(ProtocolModel):
++    """Why the events after a cursor cannot be sent; the client reloads a snapshot."""
++
++    reason: Literal["epoch_changed", "evicted", "ahead", "overflow"]
++    """Another daemon run, dropped from memory, a cursor past the end, or the viewer fell behind."""
++    replay_epoch: str
++    """The daemon's current replay epoch."""
++    last_seq: NonNegativeInt
++    """The newest seq of the session: the cursor to hold after the snapshot."""
++
++
++class SessionSubscribeParams(ProtocolModel):
++    """Watch a session from this connection: replay since a cursor, then live events."""
++
++    session_id: SessionId
++    """The session to watch."""
++    epoch: str | None = Field(default=None, min_length=1)
++    """The replay epoch the cursor belongs to; absent with a cursor counts as another run."""
++    cursor: NonNegativeInt | None = None
++    """The last seq the client applied; absent means no replay (live from now on)."""
++
++
++class SessionSubscribeResult(ProtocolModel):
++    """Where the subscription starts."""
++
++    session_id: str
++    """The id the session runs under now."""
++    replay_epoch: str
++    """The daemon's replay epoch."""
++    last_seq: NonNegativeInt
++    """The newest seq when the subscription began (after the replayed events)."""
++    replayed: NonNegativeInt
++    """Events sent ahead of this answer to catch up from the cursor."""
++    gap: ReplayGapInfo | None = None
++    """Set when the events after the cursor could not be replayed (reload a snapshot)."""
++    reoffered: NonNegativeInt = 0
++    """Open server requests offered again to this connection."""
++
++
++class SessionUnsubscribeParams(ProtocolModel):
++    """Stop watching a session from this connection (its turns keep running)."""
++
++    session_id: SessionId
++    """The session to stop watching."""
++
++
++class SessionUnsubscribeResult(ProtocolModel):
++    """Whether this connection was watching."""
++
++    unsubscribed: bool
++    """False when the connection was not a viewer of the session."""
++
++
++class SessionsWatchParams(ProtocolModel):
++    """Receive ``session.updated`` for list views (title, running state, last activity)."""
++
++    enabled: bool = True
++    """False stops the updates."""
++
++
++class SessionsWatchResult(ProtocolModel):
++    """Whether list updates are on for this connection."""
++
++    watching: bool
++    """The state after the call."""
++
++
++class EventsSinceParams(ProtocolModel):
++    """The events of a watched session after a cursor."""
++
++    session_id: SessionId
++    """A session this connection watches."""
++    epoch: str | None = Field(default=None, min_length=1)
++    """The replay epoch the cursor belongs to."""
++    cursor: NonNegativeInt
++    """The last seq the client applied."""
++
++
++class EventsSinceResult(ProtocolModel):
++    """The missing events, oldest first, or a gap."""
++
++    session_id: str
++    """The id the session runs under now."""
++    replay_epoch: str
++    """The daemon's replay epoch."""
++    last_seq: NonNegativeInt
++    """The newest seq of the session (the cursor to hold afterwards)."""
++    events: list[dict[str, JsonValue]] = Field(default_factory=list[dict[str, JsonValue]])
++    """The events after the cursor (each with ``seq`` and ``replay_epoch``); empty on a gap."""
++    gap: ReplayGapInfo | None = None
++    """Set when the events cannot be replayed (reload a snapshot)."""
++    reoffered: NonNegativeInt = 0
++    """Open server requests offered again to this connection."""
++
++
++type _Row = tuple[str, type[ProtocolModel], type[ProtocolModel], tuple[ErrorCode, ...]]
++
++_SESSION = (SESSION_NOT_FOUND, SESSION_REFUSED, STORE_FAILED)
++
++ATTACH_METHODS: tuple[_Row, ...] = (
++    ("session.subscribe", SessionSubscribeParams, SessionSubscribeResult, _SESSION),
++    ("session.unsubscribe", SessionUnsubscribeParams, SessionUnsubscribeResult, ()),
++    ("sessions.watch", SessionsWatchParams, SessionsWatchResult, ()),
++    ("events.since", EventsSinceParams, EventsSinceResult, (SESSION_NOT_FOUND,)),
++)
++"""``(name, params, result, extra errors)`` for the attach methods, in declaration order."""
++
++DAEMON_ONLY_METHODS: frozenset[str] = frozenset(row[0] for row in ATTACH_METHODS)
++"""Declared names only the daemon's WebSocket serves (the stdio bridge answers ``-32601``)."""
+diff --git a/src/indus/protocol/bridge.py b/src/indus/protocol/bridge.py
+index 67adf26..8d6872d 100644
+--- a/src/indus/protocol/bridge.py
++++ b/src/indus/protocol/bridge.py
+@@ -37,7 +37,8 @@ READY_METHOD = "gateway.ready"
+ 
+ 
+ class BridgeReady(ProtocolModel):
+-    """The first frame of a stdio connection: the server is ready for requests."""
++    """The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for
++    requests."""
+ 
+     theme: str
+     """The configured theme name (``auto`` lets the client detect light or dark)."""
+@@ -45,6 +46,14 @@ class BridgeReady(ProtocolModel):
+     """Whether the server answers pings; a stdio child does not need them."""
+     protocol_version: NonNegativeInt
+     """The protocol version the server speaks."""
++    replay_epoch: str | None = None
++    """The daemon's replay epoch (WebSocket attach): event cursors are only valid within it."""
++    profile_id: str | None = None
++    """The profile the daemon serves (WebSocket attach); a client refuses a mismatch."""
++    instance_id: str | None = None
++    """This daemon start (WebSocket attach); it changes on every restart."""
++    capabilities: list[str] | None = None
++    """What the daemon offers attached clients (WebSocket attach), as ``describe`` lists it."""
+ 
+ 
+ # --- history and sessions ------------------------------------------------------------------------
+diff --git a/src/indus/protocol/methods.py b/src/indus/protocol/methods.py
+index 19a2579..56cb7f7 100644
+--- a/src/indus/protocol/methods.py
++++ b/src/indus/protocol/methods.py
+@@ -10,10 +10,11 @@ from collections.abc import Mapping
+ from dataclasses import dataclass
+ from enum import StrEnum
+ from types import MappingProxyType
+-from typing import Any
++from typing import Any, Literal
+ 
+ from pydantic import Field, NonNegativeInt, ValidationError
+ 
++from indus.protocol.attach import ATTACH_METHODS
+ from indus.protocol.base import (
+     TEXT_EMPTY_ERROR,
+     MessageText,
+@@ -157,6 +158,8 @@ class SessionSteerParams(ProtocolModel):
+     """The session with the running turn."""
+     text: MessageText
+     """The guidance."""
++    generation: NonNegativeInt | None = None
++    """The turn the guidance is for; the daemon requires it and ignores another turn's steer."""
+ 
+ 
+ class SessionSteerResult(ProtocolModel):
+@@ -201,6 +204,8 @@ class ServerRequestAnswerParams(ProtocolModel):
+     """The request being answered."""
+     answer: ServerRequestAnswer
+     """The answer; its kind must match the request's."""
++    generation: NonNegativeInt | None = None
++    """The turn that asked (as offered); the daemon requires it and refuses another turn's."""
+ 
+ 
+ class ServerRequestAnswerResult(ProtocolModel):
+@@ -215,6 +220,8 @@ class ClientCapabilitiesParams(ProtocolModel):
+ 
+     features: list[str] = Field(default_factory=list[str])
+     """Feature names; names the server does not know are ignored."""
++    surface: Literal["cli", "tui", "gui", "acp", "web"] | None = None
++    """The kind of client attaching to the daemon (decides the busy default and presence)."""
+ 
+ 
+ class ClientCapabilitiesResult(ProtocolModel):
+@@ -322,6 +329,10 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
+                 _spec(name, params, result, *errors)
+                 for name, params, result, errors in BRIDGE_METHODS
+             ),
++            *(
++                _spec(name, params, result, *errors)
++                for name, params, result, errors in ATTACH_METHODS
++            ),
+         )
+     }
+ )
+diff --git a/src/indus/service/subscriptions.py b/src/indus/service/subscriptions.py
+new file mode 100644
+index 0000000..8ed605d
+--- /dev/null
++++ b/src/indus/service/subscriptions.py
+@@ -0,0 +1,765 @@
++"""Subscriptions of one client connection to daemon-hosted sessions (P17-14).
++
++A connection to the daemon (the WebSocket endpoint, P17-13) may watch several sessions. This module
++holds what the transport needs for that, on top of the ``DaemonSessionHost`` (P17-08):
++
++- ``Outbox``: the frames waiting for one connection's writer, in order. Each session the
++  connection watches is a *lane*: a lane may hold at most ``viewer_events`` events and
++  ``viewer_bytes`` bytes. A lane that would go past either is dropped: its queued frames are
++  removed and ``on_overflow(lane)`` is told; it detaches the viewer and returns the
++  ``session.replay_gap {reason: "overflow"}`` frame queued in their place. Later frames of a dropped
++  lane are refused until the lane is opened again by a new subscribe. Frames outside lanes
++  (answers, list updates) only count toward the connection's ``total_bytes``; past it the outbox is
++  *overloaded* and the transport closes the connection. ``session.updated`` frames still waiting
++  are merged per session (the newest values win). Nothing here waits on a socket, so one slow
++  connection never holds up another.
++- ``Subscriptions``: the sessions one connection attached (created, resumed or subscribed). Only
++  those may be controlled, replayed or unsubscribed from this connection; any other id reads as an
++  unknown session (``SESSION_NOT_FOUND``). ``subscribe`` replays the events after the client's
++  cursor (or queues a ``session.replay_gap``), then makes the connection a viewer, which offers
++  every open server request it can render again; all of it happens in one step on the daemon loop
++  so no event is lost or doubled between the replay and the live stream.
++- ``SessionWatch``: ``session.updated`` for list views (running state, title, last activity) from
++  the host's event log, plus ``report`` for changes that do not travel as events.
++- Presence: ``announce_viewers`` puts a ``session.viewers`` event (surface kinds and counts) into
++  the session's log whenever a subscription changes its viewers.
++
++Every method runs on the daemon's event loop. Event frames are checked against their declared
++models (``check_event``); in strict mode a mismatch is kept in ``violations``.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import json
++import logging
++import re
++import time
++from collections import Counter, deque
++from collections.abc import Callable, Iterable, Mapping
++from dataclasses import dataclass, field
++from typing import Any, Final
++
++from indus.protocol.errors import INVALID_PARAMS, SESSION_NOT_FOUND
++from indus.protocol.methods import SERVER_REQUESTS_FEATURE, ProtocolError
++from indus.protocol.server_requests import SERVER_REQUEST_KINDS, SERVER_REQUEST_METHOD
++from indus.service.daemon_host import DaemonSessionHost
++from indus.service.event_log import LoggedEvent, Replay, ReplayGap
++from indus.service.request_redelivery import Offer
++from indus.service.rpc.dispatch import ContractViolation, check_event
++from indus.service.viewers import DECLINE_CAPABILITY, SURFACES, Viewer
++
++__all__ = [
++    "GAP_EVENT",
++    "MAX_SUBSCRIPTIONS",
++    "RESYNC_METHOD",
++    "UPDATED_EVENT",
++    "VIEWERS_EVENT",
++    "Outbox",
++    "OutboxLimits",
++    "SessionWatch",
++    "Subscribed",
++    "Subscriptions",
++    "announce_viewers",
++    "capabilities_from",
++    "event_frame",
++    "notification",
++]
++
++log = logging.getLogger(__name__)
++
++_MIB = 1024 * 1024
++GAP_EVENT: Final = "session.replay_gap"
++UPDATED_EVENT: Final = "session.updated"
++VIEWERS_EVENT: Final = "session.viewers"
++RESYNC_METHOD: Final = "sessions.resync"
++"""Sent once when list updates piled past the cap: reload the list (``session.list``)."""
++MAX_SUBSCRIPTIONS: Final = 64
++"""Sessions one connection may watch at once."""
++_WATCHED_TYPES: Final = frozenset({"turn.started", "turn.done", "session.title"})
++_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
++
++
++def notification(method: str, params: Mapping[str, Any]) -> dict[str, Any]:
++    """A JSON-RPC notification frame."""
++    return {"jsonrpc": "2.0", "method": method, "params": dict(params)}
++
++
++def event_frame(event: Mapping[str, Any]) -> dict[str, Any]:
++    """The notification carrying one numbered event (``method`` = its type)."""
++    return notification(str(event.get("type", "")), event)
++
++
++def serialize(frame: Mapping[str, Any]) -> str:
++    """One frame as the text a WebSocket message carries. A lone surrogate (text the model or a
++    tool produced from undecodable bytes) becomes U+FFFD instead of failing the send."""
++    text = json.dumps(frame, ensure_ascii=False, separators=(",", ":"))
++    return _LONE_SURROGATE.sub("�", text)
++
++
++def capabilities_from(features: Iterable[str]) -> frozenset[str]:
++    """Viewer capabilities from a client's ``client.capabilities`` features: ``server_requests``
++    renders every kind, ``server_requests.<kind>`` one kind, ``request.decline`` allows 4404."""
++    found: set[str] = set()
++    for name in features:
++        if name == SERVER_REQUESTS_FEATURE:
++            found.update(SERVER_REQUEST_KINDS)
++        elif name.startswith(SERVER_REQUESTS_FEATURE + "."):
++            kind = name[len(SERVER_REQUESTS_FEATURE) + 1 :]
++            if kind in SERVER_REQUEST_KINDS:
++                found.add(kind)
++        elif name == DECLINE_CAPABILITY:
++            found.add(name)
++    return frozenset(found)
++
++
++# -- the outbox -----------------------------------------------------------------------------------
++
++
++@dataclass(frozen=True, slots=True)
++class OutboxLimits:
++    """How much one connection may have waiting for its writer."""
++
++    viewer_events: int = 1024
++    viewer_bytes: int = 4 * _MIB
++    total_bytes: int = 16 * _MIB
++    pending_updates: int = 1024
++
++    def __post_init__(self) -> None:
++        for name in ("viewer_events", "viewer_bytes", "total_bytes", "pending_updates"):
++            if getattr(self, name) < 1:
++                raise ValueError(f"{name} must be at least 1")
++
++
++@dataclass(slots=True)
++class _Item:
++    text: str
++    lane: str | None
++    queued_at: float
++    update_for: str | None = None
++    params: dict[str, Any] | None = None
++    resync: bool = False
++
++    @property
++    def size(self) -> int:
++        return len(self.text)
++
++
++@dataclass(slots=True)
++class _Lane:
++    events: int = 0
++    bytes: int = 0
++    dropped: bool = False
++
++
++class Outbox:
++    """Frames waiting for one connection's writer (see the module notes)."""
++
++    def __init__(
++        self,
++        limits: OutboxLimits | None = None,
++        *,
++        monotonic: Callable[[], float] = time.monotonic,
++        on_overflow: Callable[[str], Mapping[str, Any] | None] | None = None,
++    ) -> None:
++        self.limits = limits or OutboxLimits()
++        self.on_overflow = on_overflow
++        self._now = monotonic
++        self._queue: deque[_Item] = deque()
++        self._lanes: dict[str, _Lane] = {}
++        self._updates: dict[str, _Item] = {}
++        self._bytes = 0
++        self._ready = asyncio.Event()
++        self._closed = False
++        self.overloaded = False
++        self.resync_pending = False
++
++    # -- reading state --------------------------------------------------------------------------
++
++    @property
++    def closed(self) -> bool:
++        return self._closed
++
++    @property
++    def queued_bytes(self) -> int:
++        return self._bytes
++
++    def __len__(self) -> int:
++        return len(self._queue)
++
++    def lane_events(self, lane: str) -> int:
++        state = self._lanes.get(lane)
++        return state.events if state is not None else 0
++
++    def dropped(self, lane: str) -> bool:
++        state = self._lanes.get(lane)
++        return state is not None and state.dropped
++
++    def oldest_wait(self) -> float:
++        """Seconds the oldest waiting frame has waited (0 when nothing waits)."""
++        if not self._queue:
++            return 0.0
++        return max(0.0, self._now() - self._queue[0].queued_at)
++
++    # -- putting --------------------------------------------------------------------------------
++
++    def _push(self, item: _Item) -> bool:
++        if self._bytes + item.size > self.limits.total_bytes:
++            if not self.overloaded:
++                log.warning("a connection's outbox passed %d bytes", self.limits.total_bytes)
++            self.overloaded = True
++            self._ready.set()
++            return False
++        self._queue.append(item)
++        self._bytes += item.size
++        self._ready.set()
++        return True
++
++    def put(self, frame: Mapping[str, Any]) -> bool:
++        """Queue a frame outside any lane (an answer, a notification). False when closed or the
++        connection is over its byte cap (``overloaded``)."""
++        if self._closed or self.overloaded:
++            return False
++        return self._push(_Item(serialize(frame), None, self._now()))
++
++    def put_event(self, lane: str, frame: Mapping[str, Any]) -> bool:
++        """Queue a frame of ``lane`` (a watched session). Past the lane's caps the lane drops to a
++        gap; False when the frame was not queued."""
++        if self._closed or self.overloaded:
++            return False
++        state = self._lanes.setdefault(lane, _Lane())
++        if state.dropped:
++            return False
++        text = serialize(frame)
++        if (
++            state.events + 1 > self.limits.viewer_events
++            or state.bytes + len(text) > self.limits.viewer_bytes
++        ):
++            self._overflow(lane, state)
++            return False
++        if not self._push(_Item(text, lane, self._now())):
++            return False
++        state.events += 1
++        state.bytes += len(text)
++        return True
++
++    def _overflow(self, lane: str, state: _Lane) -> None:
++        dropped = self.drop_lane(lane)
++        state.dropped = True
++        log.info("a viewer of session %s fell %d frames behind; dropped to a gap", lane, dropped)
++        gap: Mapping[str, Any] | None = None
++        if self.on_overflow is not None:
++            try:
++                gap = self.on_overflow(lane)
++            except Exception:
++                log.warning("the overflow hook failed for session %s", lane, exc_info=True)
++        if gap is not None:
++            self._push(_Item(serialize(gap), None, self._now()))
++
++    def put_update(self, session_id: str, fields: Mapping[str, Any]) -> bool:
++        """Queue (or merge into a waiting) ``session.updated`` for ``session_id``."""
++        if self._closed or self.overloaded:
++            return False
++        waiting = self._updates.get(session_id)
++        if waiting is not None and waiting.params is not None:
++            waiting.params.update(fields)
++            old = waiting.size
++            waiting.text = serialize(notification(UPDATED_EVENT, waiting.params))
++            self._bytes += waiting.size - old
++            return True
++        if len(self._updates) >= self.limits.pending_updates:
++            self._drop_updates()
++            if not self.resync_pending:
++                self.resync_pending = True
++                frame = notification(RESYNC_METHOD, {"reason": "overflow"})
++                self._push(_Item(serialize(frame), None, self._now(), resync=True))
++            return False
++        params = {"type": UPDATED_EVENT, "session_id": session_id, **fields}
++        item = _Item(
++            serialize(notification(UPDATED_EVENT, params)),
++            None,
++            self._now(),
++            update_for=session_id,
++            params=params,
++        )
++        if not self._push(item):
++            return False
++        self._updates[session_id] = item
++        return True
++
++    def _drop_updates(self) -> None:
++        kept: deque[_Item] = deque()
++        for item in self._queue:
++            if item.update_for is not None:
++                self._bytes -= item.size
++            else:
++                kept.append(item)
++        self._queue = kept
++        self._updates.clear()
++
++    def drop_lane(self, lane: str) -> int:
++        """Remove every waiting frame of ``lane``; how many were removed."""
++        state = self._lanes.get(lane)
++        if state is None or state.events == 0:
++            return 0
++        kept: deque[_Item] = deque()
++        removed = 0
++        for item in self._queue:
++            if item.lane == lane:
++                self._bytes -= item.size
++                removed += 1
++            else:
++                kept.append(item)
++        self._queue = kept
++        state.events = 0
++        state.bytes = 0
++        return removed
++
++    def open_lane(self, lane: str) -> None:
++        """Start ``lane`` afresh (a new subscription): nothing waiting, not dropped."""
++        self.drop_lane(lane)
++        self._lanes[lane] = _Lane()
++
++    def close_lane(self, lane: str) -> None:
++        """Forget ``lane`` (unsubscribed): its waiting frames go too."""
++        self.drop_lane(lane)
++        self._lanes.pop(lane, None)
++
++    # -- taking ---------------------------------------------------------------------------------
++
++    def take(self) -> str | None:
++        """The next frame's text without waiting, or None when nothing waits."""
++        if not self._queue:
++            return None
++        item = self._queue.popleft()
++        self._bytes -= item.size
++        if item.lane is not None:
++            state = self._lanes.get(item.lane)
++            if state is not None:
++                state.events -= 1
++                state.bytes -= item.size
++        if item.update_for is not None and self._updates.get(item.update_for) is item:
++            del self._updates[item.update_for]
++        if item.resync:
++            self.resync_pending = False
++        return item.text
++
++    async def get(self) -> str | None:
++        """The next frame's text; None once the outbox is closed (or overloaded)."""
++        while True:
++            if self.overloaded:
++                return None
++            text = self.take()
++            if text is not None:
++                return text
++            if self._closed:
++                return None
++            self._ready.clear()
++            await self._ready.wait()
++
++    def close(self) -> None:
++        """Stop taking frames; the writer ends after what is already queued."""
++        self._closed = True
++        self._ready.set()
++
++
++# -- presence and list updates --------------------------------------------------------------------
++
++
++def announce_viewers(host: DaemonSessionHost, key: str) -> None:
++    """Put a ``session.viewers`` event (surface kinds and counts) into the session's log."""
++    if host.key_of(key) is None:
++        return
++    counts = Counter(viewer.surface for viewer in host.viewers.viewers(key))
++    host.event_log.append(
++        key,
++        {
++            "type": VIEWERS_EVENT,
++            "session_id": host.state(key).session_id,
++            "viewers": [{"surface": s, "count": n} for s, n in sorted(counts.items())],
++            "count": sum(counts.values()),
++        },
++    )
++
++
++type UpdateSink = Callable[[str, Mapping[str, Any]], object]
++
++
++class SessionWatch:
++    """``session.updated`` for every list watcher of the daemon (see the module notes)."""
++
++    def __init__(self, host: DaemonSessionHost) -> None:
++        self.host = host
++        self._sinks: dict[int, UpdateSink] = {}
++        self._next = 0
++        self._undo: Callable[[], None] | None = None
++
++    def start(self) -> None:
++        if self._undo is None:
++            self._undo = self.host.event_log.add_listener(self._on_event)
++
++    def stop(self) -> None:
++        undo, self._undo = self._undo, None
++        if undo is not None:
++            undo()
++        self._sinks.clear()
++
++    def add(self, sink: UpdateSink) -> Callable[[], None]:
++        """Send updates to ``sink(session_id, fields)``; the returned callable stops them."""
++        self.start()
++        token = self._next
++        self._next += 1
++        self._sinks[token] = sink
++
++        def remove() -> None:
++            self._sinks.pop(token, None)
++
++        return remove
++
++    @property
++    def watchers(self) -> int:
++        return len(self._sinks)
++
++    def report(self, session_id: str, **fields: Any) -> None:
++        """A change that does not travel as an event (archived, pinned, a title set elsewhere)."""
++        self._tell(session_id, {**fields, "last_activity": self._now()})
++
++    def _now(self) -> float:
++        return self.host.store.scope.clock.now().timestamp()
++
++    def _on_event(self, entry: LoggedEvent) -> None:
++        if not self._sinks:
++            return
++        event = entry.to_wire()
++        kind = event.get("type")
++        if kind not in _WATCHED_TYPES:
++            return
++        session_id = str(event.get("session_id") or entry.session_id)
++        fields: dict[str, Any] = {"last_activity": self._now()}
++        if kind == "turn.started":
++            fields["running"] = True
++        elif kind == "turn.done":
++            fields["running"] = False
++        else:
++            fields["title"] = event.get("title")
++        self._tell(session_id, fields)
++
++    def _tell(self, session_id: str, fields: Mapping[str, Any]) -> None:
++        for sink in list(self._sinks.values()):
++            try:
++                sink(session_id, fields)
++            except Exception:
++                log.warning("a list watcher could not take an update", exc_info=True)
++
++
++# -- one connection's subscriptions ---------------------------------------------------------------
++
++
++@dataclass(frozen=True, slots=True)
++class Subscribed:
++    """Where a subscription (or a catch-up read) starts."""
++
++    session_id: str
++    key: str
++    replay_epoch: str
++    last_seq: int
++    replayed: int
++    gap: ReplayGap | None
++    reoffered: int
++    events: tuple[dict[str, Any], ...] = ()
++
++
++@dataclass(slots=True)
++class _Counts:
++    offers: int = 0
++
++
++@dataclass(slots=True)
++class _State:
++    attached: set[str] = field(default_factory=set[str])
++
++
++class Subscriptions:
++    """The sessions one connection attached and its viewers of them (see the module notes)."""
++
++    def __init__(
++        self,
++        host: DaemonSessionHost,
++        connection_id: str,
++        outbox: Outbox,
++        *,
++        watch: SessionWatch | None = None,
++        surface: str = "cli",
++        capabilities: Iterable[str] = (),
++        strict: bool = False,
++        max_sessions: int = MAX_SUBSCRIPTIONS,
++    ) -> None:
++        if surface not in SURFACES:
++            raise ValueError(f"unknown surface kind {surface!r}")
++        self.host = host
++        self.connection_id = connection_id
++        self.outbox = outbox
++        self.watch_hub = watch
++        self.surface = surface
++        self.capabilities: frozenset[str] = frozenset(capabilities)
++        self.strict = strict
++        self.max_sessions = max_sessions
++        self.violations: list[ContractViolation] = []
++        self._state = _State()
++        self._counts = _Counts()
++        self._unwatch: Callable[[], None] | None = None
++        self._tasks: set[asyncio.Task[Any]] = set()
++        self._closed = False
++        if outbox.on_overflow is None:
++            outbox.on_overflow = self._overflowed
++
++    # -- reading --------------------------------------------------------------------------------
++
++    @property
++    def attached(self) -> frozenset[str]:
++        """Host keys of the sessions this connection attached."""
++        return frozenset(self._state.attached)
++
++    @property
++    def watching(self) -> bool:
++        return self._unwatch is not None
++
++    def require(self, session_id: str) -> str:
++        """The host key of ``session_id`` when this connection attached it; ``SESSION_NOT_FOUND``
++        for anything else (another connection's session reads as unknown)."""
++        key = self.host.key_of(session_id)
++        if key is None or key not in self._state.attached:
++            raise ProtocolError(
++                SESSION_NOT_FOUND, f"session {session_id} is not attached here", path="session_id"
++            )
++        return key
++
++    def is_viewer(self, key: str) -> bool:
++        return self.host.viewers.find(key, self.connection_id) is not None
++
++    # -- configuration --------------------------------------------------------------------------
++
++    def configure(self, *, surface: str | None = None, features: Iterable[str] = ()) -> None:
++        """Apply the client's ``client.capabilities``; sessions already watched get the new viewer
++        (open requests it can now render are offered)."""
++        if surface is not None:
++            if surface not in SURFACES or surface == "messaging":
++                raise ProtocolError(INVALID_PARAMS, "unknown surface kind", path="surface")
++            self.surface = surface
++        self.capabilities = capabilities_from(features)
++        for key in sorted(self._state.attached):
++            if self.is_viewer(key) and self.host.key_of(key) is not None:
++                self.host.attach(key, self._viewer(key))
++
++    # -- the viewer -----------------------------------------------------------------------------
++
++    def _viewer(self, key: str) -> Viewer:
++        return Viewer.of(
++            self.connection_id,
++            self.surface,
++            self.capabilities,
++            send=lambda event: self._deliver(key, event),
++            offer=lambda offer: self._offer(key, offer),
++        )
++
++    def _deliver(self, key: str, event: dict[str, Any]) -> None:
++        method = str(event.get("type", ""))
++        checked = {k: v for k, v in event.items() if k != "replay_epoch"}
++        try:
++            check_event(method, checked, strict=self.strict)
++        except ContractViolation as exc:
++            self.violations.append(exc)
++            log.error("event %s does not match its model: %s", method, exc)
++        self.outbox.put_event(key, event_frame(event))
++
++    def _offer(self, key: str, offer: Offer) -> None:
++        self._counts.offers += 1
++        self.outbox.put_event(key, notification(SERVER_REQUEST_METHOD, offer.to_wire()))
++
++    def _overflowed(self, key: str) -> dict[str, Any] | None:
++        """A lane dropped to a gap: the viewer is detached (it subscribes again to recover) and
++        the gap frame tells the client where the session stands."""
++        if self._closed or self.host.key_of(key) is None:
++            return None
++        self._spawn(self._detach(key))
++        gap = {
++            "type": GAP_EVENT,
++            "session_id": self.host.state(key).session_id,
++            "replay_epoch": self.host.replay_epoch,
++            "last_seq": self.host.event_log.last_seq(key),
++            "reason": "overflow",
++        }
++        return notification(GAP_EVENT, gap)
++
++    async def _detach(self, key: str) -> None:
++        if self.host.key_of(key) is None:
++            return
++        if await self.host.detach(key, self.connection_id):
++            announce_viewers(self.host, key)
++
++    # -- attaching ------------------------------------------------------------------------------
++
++    def _check_room(self, key: str | None) -> None:
++        if key in self._state.attached:
++            return
++        if len(self._state.attached) >= self.max_sessions:
++            raise ProtocolError(
++                INVALID_PARAMS,
++                f"a connection may watch at most {self.max_sessions} sessions",
++                path="session_id",
++            )
++
++    async def subscribe(
++        self, session_id: str, epoch: str | None = None, cursor: int | None = None
++    ) -> Subscribed:
++        """Watch ``session_id``: replay after ``cursor`` (or a gap), then live events."""
++        self._check_open()
++        self._check_room(self.host.key_of(session_id))
++        if self.host.key_of(session_id) is None:
++            await self.host.resume(session_id, source=self.surface)
++        key = self.host.key_of(session_id)
++        if key is None:  # closed again while resuming
++            raise ProtocolError(SESSION_NOT_FOUND, path="session_id")
++        self._check_room(key)
++        return self._attach(key, epoch, cursor)
++
++    def adopt(self, session_id: str, *, cursor: int | None = None) -> Subscribed:
++        """Attach a session this connection just created or resumed (``cursor`` 0 sends what the
++        session numbered since it was created)."""
++        self._check_open()
++        key = self.host.key_of(session_id)
++        if key is None:
++            raise ProtocolError(SESSION_NOT_FOUND, path="session_id")
++        self._check_room(key)
++        return self._attach(key, self.host.replay_epoch if cursor is not None else None, cursor)
++
++    def _attach(self, key: str, epoch: str | None, cursor: int | None) -> Subscribed:
++        # One synchronous step: nothing can be numbered between the replay read and the attach.
++        log_ = self.host.event_log
++        self.outbox.open_lane(key)
++        gap: ReplayGap | None = None
++        replayed = 0
++        if cursor is not None:
++            found = log_.since(key, epoch, cursor)
++            if isinstance(found, ReplayGap):
++                gap = found
++                self.outbox.put_event(key, notification(GAP_EVENT, _gap_wire(self.host, found)))
++            else:
++                for event in found.events:
++                    self._deliver(key, event)
++                    replayed += 1
++        before = self._counts.offers
++        attachment = self.host.attach(key, self._viewer(key))
++        reoffered = self._counts.offers - before
++        self._state.attached.add(key)
++        announce_viewers(self.host, key)
++        return Subscribed(
++            session_id=attachment.session_id,
++            key=key,
++            replay_epoch=attachment.replay_epoch,
++            last_seq=attachment.last_seq,
++            replayed=replayed,
++            gap=gap,
++            reoffered=reoffered,
++        )
++
++    async def unsubscribe(self, session_id: str) -> bool:
++        """Stop watching; the session and any running turn carry on."""
++        key = self.host.key_of(session_id)
++        if key is None or key not in self._state.attached:
++            return False
++        self._state.attached.discard(key)
++        self.outbox.close_lane(key)
++        removed = await self.host.detach(key, self.connection_id)
++        if removed:
++            announce_viewers(self.host, key)
++        return removed
++
++    def since(self, session_id: str, epoch: str | None, cursor: int) -> Subscribed:
++        """The events after ``cursor`` in the answer (or a gap); open requests offered again."""
++        key = self.require(session_id)
++        before = self._counts.offers
++        found = self.host.events_since(key, epoch, cursor, connection_id=self.connection_id)
++        reoffered = self._counts.offers - before
++        if isinstance(found, Replay):
++            return Subscribed(
++                found.session_id,
++                key,
++                found.replay_epoch,
++                found.last_seq,
++                len(found.events),
++                None,
++                reoffered,
++                found.events,
++            )
++        return Subscribed(
++            self.host.state(key).session_id,
++            key,
++            found.replay_epoch,
++            found.last_seq,
++            0,
++            found,
++            reoffered,
++        )
++
++    def forget(self, key: str) -> None:
++        """The host closed the session (``session.close``): drop it here too."""
++        self._state.attached.discard(key)
++        self.outbox.close_lane(key)
++
++    # -- refusals -------------------------------------------------------------------------------
++
++    def refuse(self, request_id: str, code: int) -> bool:
++        """This connection answered a server request with an error (``-32601`` cannot render,
++        ``4404`` not shown here): recorded on whichever attached session holds the request."""
++        for key in sorted(self._state.attached):
++            if self.host.key_of(key) is None:
++                continue
++            with contextlib.suppress(ProtocolError):
++                if self.host.refuse(key, self.connection_id, request_id, code):
++                    return True
++        return False
++
++    # -- list updates ---------------------------------------------------------------------------
++
++    def watch(self, enabled: bool) -> bool:
++        """Turn ``session.updated`` on or off for this connection; the state after the call."""
++        if enabled and self._unwatch is None and self.watch_hub is not None and not self._closed:
++            self._unwatch = self.watch_hub.add(self.outbox.put_update)
++        elif not enabled and self._unwatch is not None:
++            self._unwatch()
++            self._unwatch = None
++        return self._unwatch is not None
++
++    # -- closing --------------------------------------------------------------------------------
++
++    async def close(self) -> list[str]:
++        """The connection ended: stop list updates, detach every viewer (turns keep running)."""
++        if self._closed:
++            return []
++        self._closed = True
++        self.watch(False)
++        self.outbox.close()
++        for task in list(self._tasks):
++            task.cancel()
++        keys = await self.host.detach_connection(self.connection_id)
++        for key in keys:
++            announce_viewers(self.host, key)
++        self._state.attached.clear()
++        return keys
++
++    def _check_open(self) -> None:
++        if self._closed:
++            raise ProtocolError(SESSION_NOT_FOUND, "the connection is closing")
++
++    def _spawn(self, coro: Any) -> None:
++        task: asyncio.Task[Any] = asyncio.ensure_future(coro)
++        self._tasks.add(task)
++        task.add_done_callback(self._tasks.discard)
++
++
++def _gap_wire(host: DaemonSessionHost, gap: ReplayGap) -> dict[str, Any]:
++    wire = gap.to_wire()
++    wire["session_id"] = host.state(gap.session_id).session_id
++    return wire
+diff --git a/tests/contract/gateway/test_ws_endpoint.py b/tests/contract/gateway/test_ws_endpoint.py
+new file mode 100644
+index 0000000..38bbdd3
+--- /dev/null
++++ b/tests/contract/gateway/test_ws_endpoint.py
+@@ -0,0 +1,554 @@
++"""P17-13: the daemon's WebSocket endpoint — upgrade auth, the ready frame, limits, the RPC loop.
++
++The endpoint runs over a real ``DaemonSessionHost`` on the fake model; clients are the in-loop
++ASGI double (``tests.fakes.asgi_ws``), so no socket is opened (the directory's socket guard stays
++on). The real listener (uvicorn on 127.0.0.1) is covered in
++``tests/integration/gateway/test_ws_listener.py``.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++from collections.abc import Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.gateway.ws.server import (
++    CLOSE_GOING_AWAY,
++    CLOSE_SEND_DEADLINE,
++    CLOSE_TOO_BIG,
++    CLOSE_TRY_AGAIN,
++    CLOSE_UNSUPPORTED,
++    WsEndpoint,
++    WsLimits,
++    loggable_url,
++)
++from indus.protocol.bridge import SessionUsageParams, SessionUsageResult
++from indus.protocol.errors import (
++    INVALID_PARAMS,
++    METHOD_NOT_FOUND,
++    SESSION_BUSY,
++    SESSION_NOT_FOUND,
++)
++from indus.protocol.methods import PROTOCOL_VERSION
++from indus.service.daemon_host import DaemonSessionHost
++from indus.service.ws_auth import (
++    CLOSE_BAD_TICKET,
++    CLOSE_FORBIDDEN,
++    SUBPROTOCOL,
++    TICKET_PROTOCOL_PREFIX,
++    WS_INTERACTIVE,
++    TicketBook,
++)
++from indus.state import registry
++from indus.state.registry import StoreHandle
++from tests.fakes.agent import eventually
++from tests.fakes.asgi_ws import AsgiWsClient, WsClosed
++from tests.fakes.model import Turn, text_turn, tool_batch
++from tests.fakes.session_host import Holder, confirm, open_host
++from tests.unit.backends._aio import aio
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++class Rig:
++    """A host, a ticket book and the endpoint over them."""
++
++    def __init__(self, host: DaemonSessionHost, endpoint: WsEndpoint, book: TicketBook) -> None:
++        self.host = host
++        self.endpoint = endpoint
++        self.book = book
++
++    def ticket(self) -> str:
++        return self.book.mint(WS_INTERACTIVE).ticket
++
++    def client(
++        self,
++        ticket: str | None = None,
++        *,
++        offer_ticket: bool = True,
++        query: bytes = b"",
++        headers: tuple[tuple[str, str], ...] = (),
++        peer: tuple[str, int] = ("127.0.0.1", 50123),
++    ) -> AsgiWsClient:
++        value = ticket if ticket is not None else self.ticket()
++        protocols = [SUBPROTOCOL]
++        if offer_ticket:
++            protocols.append(TICKET_PROTOCOL_PREFIX + value)
++        return AsgiWsClient(
++            self.endpoint.app, subprotocols=protocols, query=query, headers=headers, peer=peer
++        )
++
++    async def attached(self, surface: str = "cli", **kwargs: Any) -> AsgiWsClient:
++        """An open client past ``gateway.ready`` that declared its surface and request kinds."""
++        client = self.client(**kwargs)
++        assert await client.open() == SUBPROTOCOL
++        ready = await client.recv()
++        assert ready["method"] == "gateway.ready"
++        answer = await client.request(
++            "client.capabilities", {"features": ["server_requests"], "surface": surface}
++        )
++        assert answer["result"]["features"] == ["server_requests"]
++        return client
++
++    async def close(self) -> None:
++        await self.endpoint.stop()
++        assert self.endpoint.violations == []
++        await self.host.aclose()
++
++
++async def rig(
++    scope: Scope,
++    store: StoreHandle,
++    tmp_path: Path,
++    *turns: Turn,
++    tools: dict[str, Any] | None = None,
++    limits: WsLimits | None = None,
++    origins: tuple[str, ...] = (),
++) -> Rig:
++    host = await open_host(scope, store, tmp_path, *turns, tools=tools)
++    book = TicketBook.for_home(scope.home)
++    endpoint = WsEndpoint(host, book, scope=scope, origins=origins, limits=limits, strict=True)
++    return Rig(host, endpoint, book)
++
++
++async def real_pause(seconds: float) -> None:
++    """Let real time pass (the endpoint's socket limits run on the loop's own clock)."""
++    idle = asyncio.get_running_loop().create_future()
++    await asyncio.wait({idle}, timeout=seconds)
++    idle.cancel()
++
++
++def error_of(frame: dict[str, Any]) -> int:
++    assert "error" in frame, frame
++    return int(frame["error"]["code"])
++
++
++def events_of(client: AsgiWsClient, session_id: str) -> list[dict[str, Any]]:
++    return [
++        n["params"]
++        for n in client.notes
++        if "seq" in n.get("params", {}) and n["params"].get("session_id") == session_id
++    ]
++
++
++def done(session_id: str):  # noqa: ANN201 - a frame predicate
++    return lambda f: f.get("method") == "turn.done" and f["params"]["session_id"] == session_id
++
++
++# -- the upgrade ----------------------------------------------------------------------------------
++
++
++@aio
++async def test_a_ticket_in_the_subprotocol_is_accepted_once(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path)
++    ticket = r.ticket()
++    first = r.client(ticket)
++    assert await first.open() == SUBPROTOCOL  # only the protocol, never the ticket, is echoed
++    ready = await first.recv()
++    assert ready["method"] == "gateway.ready"
++    params = ready["params"]
++    assert params["replay_epoch"] == r.host.replay_epoch and params["heartbeat"] is True
++    assert params["profile_id"] == r.book.profile_id
++    assert params["instance_id"] == r.book.instance_id
++    assert params["capabilities"] == list(r.host.capabilities())
++    assert params["protocol_version"] == PROTOCOL_VERSION
++    pong = await first.request("gateway.ping")
++    assert pong["result"]["pong"] is True
++
++    second = r.client(ticket)
++    await second.open()
++    closed = await second.closed_with()
++    assert closed.code == CLOSE_BAD_TICKET and second.notes == []
++    await first.close()
++    await r.close()
++
++
++@aio
++async def test_a_ticket_in_the_url_is_never_used(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path)
++    ticket = r.ticket()
++    in_url = r.client(ticket, offer_ticket=False, query=b"ticket=" + ticket.encode())
++    await in_url.open()
++    assert (await in_url.closed_with()).code == CLOSE_BAD_TICKET
++    later = r.client(ticket)  # seen in a URL: spent, useless now
++    await later.open()
++    assert (await later.closed_with()).code == CLOSE_BAD_TICKET
++    await r.close()
++
++
++@aio
++async def test_a_foreign_origin_or_peer_is_refused_4403(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, origins=("http://127.0.0.1:5173",))
++    evil = r.client(headers=(("Origin", "http://evil"),))
++    await evil.open()
++    closed = await evil.closed_with()
++    assert closed.code == CLOSE_FORBIDDEN and "evil" not in closed.reason
++    remote = r.client(peer=("10.0.0.5", 40000))
++    await remote.open()
++    assert (await remote.closed_with()).code == CLOSE_FORBIDDEN
++    allowed = r.client(headers=(("Origin", "http://127.0.0.1:5173"),))
++    assert await allowed.open() == SUBPROTOCOL
++    assert (await allowed.recv())["method"] == "gateway.ready"
++    await allowed.close()
++    await r.close()
++
++
++# -- the RPC loop ---------------------------------------------------------------------------------
++
++
++@aio
++async def test_a_turn_streams_over_the_socket_in_order(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, text_turn("Hel", "lo", " there"))
++    client = await r.attached()
++    created = await client.request("session.create", {})
++    sid = created["result"]["session_id"]
++    submitted = await client.request("prompt.submit", {"session_id": sid, "text": "hi"})
++    result = submitted["result"]
++    assert result["status"] == "streaming" and result["turn_id"]
++    await client.until(done(sid))
++    events = events_of(client, sid)
++    numbers = [int(e["seq"]) for e in events]
++    assert numbers == list(range(numbers[0], numbers[0] + len(numbers)))
++    text = "".join(e["text"] for e in events if e["type"] == "message.delta")
++    assert text == "Hello there"
++    assert (await r.host.wait(result["turn_id"])).outcome == "completed"
++    unserved = await client.request("session.history", {"session_id": sid})
++    assert error_of(unserved) == METHOD_NOT_FOUND.code
++    await client.close()
++    await r.close()
++
++
++@aio
++async def test_an_approval_is_answered_from_another_surface_with_its_generation(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("confirm", {})),
++        text_turn("cleaned"),
++        tools={"confirm": confirm},
++    )
++    cli = await r.attached("cli")
++    tui = await r.attached("tui")
++    sid = (await cli.request("session.create", {}))["result"]["session_id"]
++    subscribed = await tui.request("session.subscribe", {"session_id": sid})
++    assert "gap" not in subscribed["result"] and subscribed["result"]["replayed"] == 0
++    await cli.request("prompt.submit", {"session_id": sid, "text": "clean"})
++    offer = (await tui.until(lambda f: f.get("method") == "server_request"))["params"]
++    await cli.until(lambda f: f.get("method") == "server_request")
++    request_id, generation = offer["request"]["request_id"], offer["generation"]
++    answer = {"kind": "approval", "choice": "once"}
++    missing = await tui.request(
++        "server_request.answer", {"session_id": sid, "request_id": request_id, "answer": answer}
++    )
++    assert error_of(missing) == INVALID_PARAMS.code
++    assert missing["error"]["data"]["path"] == "generation"
++    base = {"session_id": sid, "request_id": request_id, "answer": answer}
++    stale = await tui.request("server_request.answer", {**base, "generation": generation - 1})
++    assert stale["result"]["accepted"] is False
++    taken = await tui.request("server_request.answer", {**base, "generation": generation})
++    assert taken["result"]["accepted"] is True
++    settled = await cli.until(lambda f: f.get("method") == "request.settled")
++    assert settled["params"]["request_id"] == request_id
++    assert settled["params"]["outcome"] == "answered"
++    await cli.until(done(sid))
++    await tui.until(done(sid))
++    await cli.close()
++    await tui.close()
++    await r.close()
++
++
++@aio
++async def test_an_unrenderable_request_refused_by_its_only_viewer_settles_at_once(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("confirm", {})),
++        text_turn("skipped"),
++        tools={"confirm": confirm},
++    )
++    cli = await r.attached()
++    sid = (await cli.request("session.create", {}))["result"]["session_id"]
++    await cli.request("prompt.submit", {"session_id": sid, "text": "clean"})
++    offer = (await cli.until(lambda f: f.get("method") == "server_request"))["params"]
++    request_id = offer["request"]["request_id"]
++    await cli.send_json(
++        {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "no card"}}
++    )
++    settled = await cli.until(lambda f: f.get("method") == "request.settled")
++    assert settled["params"]["outcome"] == "undeliverable"
++    await cli.until(done(sid))
++    await cli.close()
++    await r.close()
++
++
++@aio
++async def test_interrupt_and_steer_name_their_generation(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    r = await rig(scope, store, tmp_path, tool_batch(("hold", {})), tools={"hold": holder})
++    client = await r.attached()
++    sid = (await client.request("session.create", {}))["result"]["session_id"]
++    await client.request("prompt.submit", {"session_id": sid, "text": "work"})
++    await eventually(lambda: holder.entered)
++    missing = await client.request("session.interrupt", {"session_id": sid})
++    assert error_of(missing) == INVALID_PARAMS.code
++    stale = await client.request("session.interrupt", {"session_id": sid, "generation": 0})
++    assert stale["result"]["interrupted"] is False and holder.entered == 1
++    steer = await client.request(
++        "session.steer", {"session_id": sid, "text": "faster", "generation": 0}
++    )
++    assert steer["result"]["queued"] is False
++    busy = await client.request(
++        "prompt.submit", {"session_id": sid, "text": "more", "when_busy": "reject"}
++    )
++    assert error_of(busy) == SESSION_BUSY.code
++    hit = await client.request("session.interrupt", {"session_id": sid, "generation": 1})
++    assert hit["result"]["interrupted"] is True
++    await client.until(done(sid))
++    await client.close()
++    await r.close()
++
++
++@aio
++async def test_a_connection_reaches_only_sessions_it_attached(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, text_turn("ok"))
++    owner = await r.attached()
++    other = await r.attached("tui")
++    sid = (await owner.request("session.create", {}))["result"]["session_id"]
++    calls: list[tuple[str, dict[str, Any]]] = [
++        ("prompt.submit", {"session_id": sid, "text": "hi"}),
++        ("session.interrupt", {"session_id": sid, "generation": 1}),
++        ("events.since", {"session_id": sid, "cursor": 0}),
++        ("server_request.decline", {"session_id": sid, "request_id": "srq-000000000000"}),
++    ]
++    for method, params in calls:
++        assert error_of(await other.request(method, params)) == SESSION_NOT_FOUND.code, method
++    joined = await other.request("session.subscribe", {"session_id": sid})
++    assert joined["result"]["session_id"] == sid
++    caught = await other.request(
++        "events.since", {"session_id": sid, "epoch": r.host.replay_epoch, "cursor": 0}
++    )
++    assert caught["result"]["last_seq"] == len(caught["result"]["events"])
++    await owner.close()
++    await other.close()
++    await r.close()
++
++
++@aio
++async def test_closing_the_socket_mid_turn_only_detaches(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    r = await rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("hold", {})),
++        text_turn("finished"),
++        tools={"hold": holder},
++    )
++    client = await r.attached()
++    sid = (await client.request("session.create", {}))["result"]["session_id"]
++    turn = (await client.request("prompt.submit", {"session_id": sid, "text": "go"}))["result"]
++    await eventually(lambda: holder.entered)
++    await client.close()
++    assert r.host.state(sid).viewers == () and r.endpoint.connections == {}
++    holder.gate.set()
++    finished = await r.host.wait(turn["turn_id"])
++    assert finished.outcome == "completed"
++    await r.close()
++
++
++# -- limits ---------------------------------------------------------------------------------------
++
++
++@aio
++async def test_a_slow_reader_is_closed_without_stalling_other_viewers(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    limits = WsLimits(write_timeout=0.2)
++    r = await rig(scope, store, tmp_path, text_turn("a", "b", "c"), text_turn("d"), limits=limits)
++    slow = await r.attached("tui")
++    fast = await r.attached("cli")
++    sid = (await fast.request("session.create", {}))["result"]["session_id"]
++    await slow.request("session.subscribe", {"session_id": sid})
++    slow.pause()
++    turn = (await fast.request("prompt.submit", {"session_id": sid, "text": "go"}))["result"]
++    await fast.until(done(sid))
++    assert (await r.host.wait(turn["turn_id"])).outcome == "completed"
++    closed = await slow.closed_with()
++    assert closed.code == CLOSE_SEND_DEADLINE
++    await slow.wait_done()
++    assert r.host.state(sid).viewers == tuple(r.endpoint.connections)  # only the fast one
++    assert len(r.endpoint.connections) == 1
++    again = await fast.request("prompt.submit", {"session_id": sid, "text": "again"})
++    await fast.until(done(sid))
++    assert again["result"]["turn_id"]
++    await fast.close()
++    await r.close()
++
++
++@aio
++async def test_the_257th_waiting_request_closes_the_socket_1013(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path)
++    gate = asyncio.Event()
++    entered: list[int] = []
++
++    async def slow_usage(conn: object, params: SessionUsageParams) -> SessionUsageResult:
++        entered.append(1)
++        await gate.wait()
++        raise AssertionError("never answered")
++
++    r.endpoint.table.add("session.usage", slow_usage)  # a test-only slow handler
++    client = await r.attached()
++    for n in range(256):
++        await client.send_json(
++            {
++                "jsonrpc": "2.0",
++                "id": 1000 + n,
++                "method": "session.usage",
++                "params": {"session_id": "s"},
++            }
++        )
++    await eventually(lambda: len(entered) == 256)
++    pong = await client.request("gateway.ping")  # the read loop still answers pings
++    assert pong["result"]["pong"] is True
++    await client.send_json(
++        {"jsonrpc": "2.0", "id": 9999, "method": "session.usage", "params": {"session_id": "s"}}
++    )
++    closed = await client.closed_with()
++    assert closed.code == CLOSE_TRY_AGAIN
++    await client.wait_done()
++    assert r.endpoint.connections == {}
++    await r.close()
++
++
++@aio
++async def test_binary_and_oversized_messages_close_the_socket(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, limits=WsLimits(max_message_bytes=1000))
++    big = await r.attached()
++    await big.send_text('{"jsonrpc":"2.0","id":1,"method":"gateway.ping","pad":"' + "x" * 2000)
++    assert (await big.closed_with()).code == CLOSE_TOO_BIG
++    binary = await r.attached()
++    await binary.send_bytes(b"\x00\x01")
++    assert (await binary.closed_with()).code == CLOSE_UNSUPPORTED
++    broken = await r.attached()
++    await broken.send_text("{not json")
++    answer = await broken.recv()
++    assert answer["id"] is None and answer["error"]["code"] == -32700
++    await broken.close()
++    await r.close()
++
++
++@aio
++async def test_a_silent_client_is_closed_after_the_idle_limit(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, limits=WsLimits(idle_timeout=0.5))
++    talker = await r.attached()
++    silent = await r.attached("tui")
++    for _ in range(8):
++        await real_pause(0.1)
++        assert (await talker.request("gateway.ping"))["result"]["pong"] is True
++    assert (await silent.closed_with()).code == CLOSE_GOING_AWAY
++    assert len(r.endpoint.connections) == 1  # pings count as activity
++    await talker.close()
++    await r.close()
++
++
++@aio
++async def test_stopping_the_endpoint_closes_every_socket_1001(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path)
++    one, two = await r.attached(), await r.attached("tui")
++    await r.endpoint.stop()
++    for client in (one, two):
++        assert (await client.closed_with()).code == CLOSE_GOING_AWAY
++    late = r.client()
++    await late.open()
++    assert (await late.closed_with()).code == CLOSE_GOING_AWAY
++    await r.host.aclose()
++
++
++@aio
++async def test_logs_carry_no_ticket_params_or_query(
++    scope: Scope, store: StoreHandle, tmp_path: Path, caplog: pytest.LogCaptureFixture
++) -> None:
++    caplog.set_level(logging.DEBUG)
++    r = await rig(scope, store, tmp_path, text_turn("ok"))
++    ticket = r.ticket()
++    client = await r.attached(ticket=ticket, query=b"token=" + r.ticket().encode())
++    sid = (await client.request("session.create", {}))["result"]["session_id"]
++    words = "pass" + "phrase-" + "4417"
++    await client.request("prompt.submit", {"session_id": sid, "text": words})
++    await client.until(done(sid))
++    await client.close()
++    await r.close()
++    assert ticket not in caplog.text and words not in caplog.text
++    assert "token=" not in caplog.text
++    assert loggable_url("ws://me:pw@127.0.0.1:9/ws?ticket=x#f") == "ws://127.0.0.1:9/ws"
++
++
++@aio
++async def test_resume_answers_the_daemon_cursor(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, text_turn("one"))
++    first = await r.attached()
++    sid = (await first.request("session.create", {}))["result"]["session_id"]
++    await first.request("prompt.submit", {"session_id": sid, "text": "hi"})
++    await first.until(done(sid))
++    second = await r.attached("tui")
++    resumed = await second.request("session.resume", {"session_id": sid})
++    assert resumed["result"]["last_seq"] == r.host.event_log.last_seq(sid) - 1  # then presence
++    closed = await second.request("session.close", {"session_id": sid})
++    assert closed["result"]["closed"] is True
++    assert sid in r.host.hosted()  # closing from a client only detaches
++    await first.close()
++    await second.close()
++    await r.close()
++
++
++def test_the_endpoint_serves_the_attach_methods() -> None:
++    from indus.gateway.ws.methods import served
++
++    assert {"session.subscribe", "session.unsubscribe", "sessions.watch", "events.since"} <= set(
++        served()
++    )
++    assert "gateway.ping" in served() and "prompt.submit" in served()
++
++
++def test_ws_closed_double_has_a_code() -> None:
++    assert WsClosed(4401, "x").code == 4401
+diff --git a/tests/fakes/asgi_ws.py b/tests/fakes/asgi_ws.py
+new file mode 100644
+index 0000000..aa68bd4
+--- /dev/null
++++ b/tests/fakes/asgi_ws.py
+@@ -0,0 +1,192 @@
++"""TEST DOUBLE: a WebSocket client that drives an ASGI app in the test's own event loop.
++
++The daemon's endpoint (P17-13) is an ASGI app over the daemon session host, and the host must run
++on the loop that built it; Starlette's ``TestClient`` runs the app on a loop of its own thread, so
++the tests talk ASGI directly instead. ``AsgiWsClient`` builds the upgrade scope (peer address,
++headers, offered subprotocols, query string), feeds ``websocket.connect`` / ``receive`` /
++``disconnect`` messages and collects what the app sends. ``pause()`` makes the app's sends wait,
++as a client that stopped reading would (the kernel buffer is full).
++
++No network is involved; nothing here is product code.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import json
++from collections.abc import Awaitable, Callable, Iterable, MutableMapping
++from typing import Any
++
++type Asgi = Callable[
++    [
++        MutableMapping[str, Any],
++        Callable[[], Awaitable[MutableMapping[str, Any]]],
++        Callable[[MutableMapping[str, Any]], Awaitable[None]],
++    ],
++    Awaitable[None],
++]
++
++
++class WsClosed(Exception):
++    """The app closed the socket."""
++
++    def __init__(self, code: int, reason: str) -> None:
++        super().__init__(f"closed {code}: {reason}")
++        self.code = code
++        self.reason = reason
++
++
++class AsgiWsClient:
++    """One WebSocket connection to ``app`` (see the module notes)."""
++
++    def __init__(
++        self,
++        app: Asgi,
++        *,
++        subprotocols: Iterable[str] = (),
++        path: str = "/ws",
++        query: bytes = b"",
++        headers: Iterable[tuple[str, str]] = (),
++        peer: tuple[str, int] = ("127.0.0.1", 50123),
++    ) -> None:
++        self.app = app
++        self.scope: dict[str, Any] = {
++            "type": "websocket",
++            "asgi": {"version": "3.0"},
++            "scheme": "ws",
++            "http_version": "1.1",
++            "path": path,
++            "raw_path": path.encode(),
++            "root_path": "",
++            "query_string": query,
++            "headers": [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in headers],
++            "client": peer,
++            "server": ("127.0.0.1", 8765),
++            "subprotocols": list(subprotocols),
++            "state": {},
++        }
++        self._to_app: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
++        self._from_app: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
++        self._reading = asyncio.Event()
++        self._reading.set()
++        self._task: asyncio.Task[None] | None = None
++        self.accepted: str | None = None
++        self.closed: WsClosed | None = None
++        self.notes: list[dict[str, Any]] = []
++        self.sent_frames = 0
++        self._next_id = 0
++
++    # -- the ASGI side --------------------------------------------------------------------------
++
++    async def _receive(self) -> MutableMapping[str, Any]:
++        return await self._to_app.get()
++
++    async def _send(self, message: MutableMapping[str, Any]) -> None:
++        if message["type"] == "websocket.send":
++            await self._reading.wait()
++            self.sent_frames += 1
++        await self._from_app.put(dict(message))
++        if message["type"] == "websocket.close":
++            # The socket is gone for the app: anything it reads next is the disconnect.
++            await self._to_app.put({"type": "websocket.disconnect", "code": message.get("code")})
++
++    # -- client calls ---------------------------------------------------------------------------
++
++    async def open(self, timeout: float = 5.0) -> str | None:
++        """Connect; the subprotocol the app echoed. ``WsClosed`` when it closed at once after
++        accepting (a refused upgrade) or before accepting."""
++        self._task = asyncio.ensure_future(self.app(self.scope, self._receive, self._send))
++        await self._to_app.put({"type": "websocket.connect"})
++        message = await asyncio.wait_for(self._from_app.get(), timeout)
++        if message["type"] == "websocket.close":
++            self.closed = WsClosed(int(message.get("code", 1000)), str(message.get("reason", "")))
++            raise self.closed
++        assert message["type"] == "websocket.accept", message
++        self.accepted = message.get("subprotocol")
++        return self.accepted
++
++    async def send_text(self, text: str) -> None:
++        await self._to_app.put({"type": "websocket.receive", "text": text})
++
++    async def send_bytes(self, data: bytes) -> None:
++        await self._to_app.put({"type": "websocket.receive", "bytes": data})
++
++    async def send_json(self, value: object) -> None:
++        await self.send_text(json.dumps(value))
++
++    async def recv(self, timeout: float = 5.0) -> dict[str, Any]:
++        """The next frame the app sent (parsed); ``WsClosed`` once it closed."""
++        if self.closed is not None and self._from_app.empty():
++            raise self.closed
++        message = await asyncio.wait_for(self._from_app.get(), timeout)
++        if message["type"] == "websocket.close":
++            self.closed = WsClosed(int(message.get("code", 1000)), str(message.get("reason", "")))
++            raise self.closed
++        assert message["type"] == "websocket.send", message
++        value = json.loads(message["text"])
++        assert isinstance(value, dict)
++        return value  # pyright: ignore[reportUnknownVariableType]
++
++    async def request(
++        self, method: str, params: dict[str, Any] | None = None, *, timeout: float = 5.0
++    ) -> dict[str, Any]:
++        """Send a request and read until its response; notifications on the way go to
++        ``notes``."""
++        self._next_id += 1
++        rid = self._next_id
++        frame: dict[str, Any] = {"jsonrpc": "2.0", "id": rid, "method": method}
++        if params is not None:
++            frame["params"] = params
++        await self.send_json(frame)
++        return await self.response(rid, timeout=timeout)
++
++    async def response(self, rid: int, *, timeout: float = 5.0) -> dict[str, Any]:
++        loop = asyncio.get_running_loop()
++        end = loop.time() + timeout
++        while True:
++            frame = await self.recv(max(0.01, end - loop.time()))
++            if frame.get("id") == rid and "method" not in frame:
++                return frame
++            self.notes.append(frame)
++
++    async def until(
++        self, check: Callable[[dict[str, Any]], bool], *, timeout: float = 5.0
++    ) -> dict[str, Any]:
++        """Read (keeping notifications in ``notes``) until a frame passes ``check``."""
++        loop = asyncio.get_running_loop()
++        end = loop.time() + timeout
++        while True:
++            frame = await self.recv(max(0.01, end - loop.time()))
++            if "method" in frame:
++                self.notes.append(frame)
++            if check(frame):
++                return frame
++
++    async def closed_with(self, timeout: float = 5.0) -> WsClosed:
++        """Read until the app closes; the close."""
++        try:
++            while True:
++                frame = await self.recv(timeout)
++                if "method" in frame:
++                    self.notes.append(frame)
++        except WsClosed as closed:
++            return closed
++
++    def pause(self) -> None:
++        """Stop reading: the app's next send waits."""
++        self._reading.clear()
++
++    def resume(self) -> None:
++        self._reading.set()
++
++    async def close(self, code: int = 1000) -> None:
++        """The client goes away; waits for the app to finish its teardown."""
++        self._reading.set()
++        await self._to_app.put({"type": "websocket.disconnect", "code": code})
++        await self.wait_done()
++
++    async def wait_done(self, timeout: float = 10.0) -> None:
++        if self._task is not None:
++            with contextlib.suppress(Exception):
++                await asyncio.wait_for(asyncio.shield(self._task), timeout)
+diff --git a/tests/fakes/session_host.py b/tests/fakes/session_host.py
+new file mode 100644
+index 0000000..afc2f7c
+--- /dev/null
++++ b/tests/fakes/session_host.py
+@@ -0,0 +1,87 @@
++"""A real ``DaemonSessionHost`` over the fake model, for transport tests (P17-13/14).
++
++``open_host`` builds the P04 ``SessionService`` on a scripted fake model server and opens the
++daemon host over it (store writes run inline). ``Holder`` is an inline tool that parks the turn
++until released or interrupted; ``confirm`` asks for an approval and reports the answer.
++"""
++
++from __future__ import annotations
++
++import asyncio
++from collections.abc import Callable, Mapping
++from pathlib import Path
++from typing import Any
++
++from indus.core.persist import StateStore
++from indus.core.turn_state import TurnState
++from indus.foundation.scope import Scope
++from indus.protocol.requests_port import RequestNotAnswered
++from indus.protocol.server_requests import ApprovalAnswer
++from indus.service.daemon_host import DaemonSessionHost
++from indus.service.event_log import EventLog
++from indus.service.session_service import SessionService
++from indus.state.registry import StoreHandle
++from indus.tools.calls import ToolCall, ToolResult
++from tests.fakes.agent import fake_options
++from tests.fakes.model import FakeModelServer, Turn, fake_route, script_of
++
++
++class Holder:
++    """An inline tool that holds the turn until released (or the turn is interrupted)."""
++
++    def __init__(self) -> None:
++        self.gate = asyncio.Event()
++        self.entered = 0
++
++    async def __call__(self, call: ToolCall, state: TurnState) -> ToolResult:
++        self.entered += 1
++        waits = {
++            asyncio.ensure_future(self.gate.wait()),
++            asyncio.ensure_future(state.control.stop.wait()),
++        }
++        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
++        for task in waits:
++            task.cancel()
++        return ToolResult("held")
++
++
++async def confirm(call: ToolCall, state: TurnState) -> ToolResult:
++    """Ask for approval of a fixed command; the answer becomes the tool result."""
++    broker = state.control.broker
++    assert broker is not None
++    try:
++        answer = await broker.ask(
++            "approval", {"command": "rm -r build", "description": "clean up"}, turn_id=state.turn_id
++        )
++    except RequestNotAnswered as exc:
++        return ToolResult(f"not approved: {exc}", is_error=True)
++    assert isinstance(answer, ApprovalAnswer)
++    return ToolResult(f"approved: {answer.choice.value}")
++
++
++async def inline[T](fn: Callable[[], T]) -> T:
++    return fn()
++
++
++async def open_host(
++    scope: Scope,
++    store: StoreHandle,
++    tmp_path: Path,
++    *turns: Turn,
++    tools: Mapping[str, Any] | None = None,
++    event_log: EventLog | None = None,
++) -> DaemonSessionHost:
++    """An open daemon host whose model answers ``turns`` in order."""
++    server = FakeModelServer(script_of(*turns), clock=scope.clock)
++    options = fake_options(server, session_id=None, inline=dict(tools or {}))
++    service = SessionService(
++        scope,
++        fake_route(server),
++        toolsets=[],
++        options=options,
++        store=StateStore(store),
++        lock_dir=tmp_path / "locks",
++    )
++    return await DaemonSessionHost.open(
++        service, store, instance_id="daemon-1", offload=inline, event_log=event_log
++    )
+diff --git a/tests/integration/gateway/test_ws_listener.py b/tests/integration/gateway/test_ws_listener.py
+new file mode 100644
+index 0000000..62f0418
+--- /dev/null
++++ b/tests/integration/gateway/test_ws_listener.py
+@@ -0,0 +1,169 @@
++"""P17-13: the WebSocket endpoint on a real loopback listener (uvicorn + wsproto).
++
++Runs only where a WebSocket implementation for uvicorn is installed (``wsproto`` or
++``websockets``; see the endpoint's dependency note). The client is a few lines of RFC 6455 over a
++raw loopback socket, so no client library is needed. The ticket comes from the real attach verb
++(``session-ticket``) with the endpoint's ``ws_url``.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import base64
++import importlib.util
++import json
++import os
++import struct
++from collections.abc import Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.foundation.scope import Scope
++from indus.gateway.daemon.attach_verbs import AttachVerbs
++from indus.gateway.ws import server as ws_server
++from indus.gateway.ws.server import WsEndpoint, WsUnavailable
++from indus.service.gateway_control import ws_url_is_safe
++from indus.service.ws_auth import (
++    CLOSE_BAD_TICKET,
++    SUBPROTOCOL,
++    TICKET_PROTOCOL_PREFIX,
++    WS_INTERACTIVE,
++    TicketBook,
++)
++from indus.state import registry
++from indus.state.registry import StoreHandle
++from tests.fakes.session_host import open_host
++from tests.unit.backends._aio import aio
++
++HAS_WS = any(importlib.util.find_spec(name) for name in ("wsproto", "websockets"))
++needs_ws = pytest.mark.skipif(not HAS_WS, reason="no WebSocket implementation installed")
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++class RawClient:
++    """The client half of RFC 6455, just enough for these tests."""
++
++    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
++        self.reader = reader
++        self.writer = writer
++
++    @classmethod
++    async def dial(cls, url: str, protocols: list[str]) -> tuple[RawClient, str]:
++        rest = url.removeprefix("ws://")
++        address, _, path = rest.partition("/")
++        host, _, port = address.rpartition(":")
++        reader, writer = await asyncio.open_connection(host, int(port))
++        key = base64.b64encode(os.urandom(16)).decode()
++        request = (
++            f"GET /{path} HTTP/1.1\r\nHost: {address}\r\nUpgrade: websocket\r\n"
++            f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
++            f"Sec-WebSocket-Protocol: {', '.join(protocols)}\r\n\r\n"
++        )
++        writer.write(request.encode())
++        await writer.drain()
++        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
++        return cls(reader, writer), head.decode("latin-1")
++
++    async def frame(self) -> tuple[int, bytes]:
++        first, second = await asyncio.wait_for(self.reader.readexactly(2), 5)
++        size = second & 0x7F
++        if size == 126:
++            (size,) = struct.unpack("!H", await self.reader.readexactly(2))
++        elif size == 127:
++            (size,) = struct.unpack("!Q", await self.reader.readexactly(8))
++        return first & 0x0F, await self.reader.readexactly(size)
++
++    async def recv(self) -> dict[str, Any]:
++        opcode, payload = await self.frame()
++        assert opcode == 1, (opcode, payload)
++        value = json.loads(payload)
++        assert isinstance(value, dict)
++        return value  # pyright: ignore[reportUnknownVariableType]
++
++    async def send(self, value: object, opcode: int = 1) -> None:
++        data = json.dumps(value).encode() if opcode == 1 else bytes(value)  # type: ignore[arg-type]
++        mask = os.urandom(4)
++        header = bytes([0x80 | opcode])
++        if len(data) < 126:
++            header += bytes([0x80 | len(data)])
++        else:
++            header += bytes([0x80 | 126]) + struct.pack("!H", len(data))
++        body = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
++        self.writer.write(header + mask + body)
++        await self.writer.drain()
++
++    async def close(self) -> None:
++        with_code = struct.pack("!H", 1000)
++        await self.send(list(with_code), opcode=8)
++        self.writer.close()
++
++
++async def listening(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> tuple[WsEndpoint, AttachVerbs, Any]:
++    host = await open_host(scope, store, tmp_path)
++    book = TicketBook.for_home(scope.home)
++    endpoint = WsEndpoint(host, book, scope=scope, strict=True)
++    verbs = AttachVerbs(scope.home, book, host=host, ws_url=lambda: endpoint.ws_url)
++    return endpoint, verbs, host
++
++
++@needs_ws
++@aio
++async def test_a_real_listener_on_loopback_serves_an_attach(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    endpoint, verbs, host = await listening(scope, store, tmp_path)
++    url = await endpoint.start()
++    try:
++        assert ws_url_is_safe(url) and url.startswith("ws://127.0.0.1:") and url.endswith("/ws")
++        row = endpoint.status_row()
++        assert row["state"] == "listening" and row["url"] == url and row["port"] > 0
++        described = await verbs.describe({})
++        assert described["ws_url"] == url and described["capabilities"]
++        minted = await verbs.session_ticket({"purpose": WS_INTERACTIVE})
++        ticket = str(minted["ticket"])
++        client, head = await RawClient.dial(url, [SUBPROTOCOL, TICKET_PROTOCOL_PREFIX + ticket])
++        assert head.startswith("HTTP/1.1 101")
++        assert f"sec-websocket-protocol: {SUBPROTOCOL}" in head.lower()
++        assert ticket not in head
++        ready = await client.recv()
++        assert ready["method"] == "gateway.ready"
++        assert ready["params"]["instance_id"] == minted["instance_id"]
++        await client.send({"jsonrpc": "2.0", "id": 1, "method": "gateway.ping"})
++        pong = await client.recv()
++        assert pong["id"] == 1 and pong["result"]["pong"] is True
++        await client.close()
++
++        again, _head = await RawClient.dial(url, [SUBPROTOCOL, TICKET_PROTOCOL_PREFIX + ticket])
++        opcode, payload = await again.frame()
++        assert opcode == 8 and struct.unpack("!H", payload[:2])[0] == CLOSE_BAD_TICKET
++        again.writer.close()
++    finally:
++        await endpoint.stop()
++        await host.aclose()
++    assert endpoint.ws_url is None and endpoint.status_row() == {"state": "stopped"}
++
++
++@aio
++async def test_the_endpoint_listens_on_loopback_only_and_needs_an_implementation(
++    scope: Scope, store: StoreHandle, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    endpoint, _verbs, host = await listening(scope, store, tmp_path)
++    try:
++        with pytest.raises(ValueError, match="loopback"):
++            await endpoint.start(bind="0.0.0.0")
++        monkeypatch.setattr(ws_server.importlib.util, "find_spec", lambda name: None)
++        with pytest.raises(WsUnavailable, match="wsproto"):
++            await endpoint.start()
++        assert endpoint.ws_url is None
++    finally:
++        await host.aclose()
+diff --git a/tests/unit/protocol/test_models.py b/tests/unit/protocol/test_models.py
+index d9d91b4..73900f4 100644
+--- a/tests/unit/protocol/test_models.py
++++ b/tests/unit/protocol/test_models.py
+@@ -219,6 +219,10 @@ def test_catalogue_names() -> None:
+         "paste.collapse",
+         "image.attach",
+         "input.detect_drop",
++        "session.subscribe",
++        "session.unsubscribe",
++        "sessions.watch",
++        "events.since",
+     ]
+     for spec in METHODS.values():
+         assert spec.summary
+diff --git a/tests/unit/service/test_subscriptions.py b/tests/unit/service/test_subscriptions.py
+new file mode 100644
+index 0000000..92a1a78
+--- /dev/null
++++ b/tests/unit/service/test_subscriptions.py
+@@ -0,0 +1,385 @@
++"""P17-14: subscriptions, cross-surface events, presence, list updates and slow-viewer overflow."""
++
++from __future__ import annotations
++
++import json
++from collections.abc import Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.core.persist import StateStore
++from indus.foundation.scope import Scope
++from indus.protocol.errors import INVALID_PARAMS, SESSION_NOT_FOUND
++from indus.protocol.methods import ProtocolError
++from indus.service.daemon_host import DaemonSessionHost
++from indus.service.event_log import EventLog, ReplayLimits
++from indus.service.fences import Responded
++from indus.service.subscriptions import (
++    GAP_EVENT,
++    RESYNC_METHOD,
++    UPDATED_EVENT,
++    VIEWERS_EVENT,
++    Outbox,
++    OutboxLimits,
++    SessionWatch,
++    Subscriptions,
++    capabilities_from,
++    serialize,
++)
++from indus.state import registry
++from indus.state.registry import StoreHandle
++from tests.fakes.agent import eventually
++from tests.fakes.model import text_turn, tool_batch
++from tests.fakes.session_host import Holder, confirm, open_host
++from tests.unit.backends._aio import aio
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++class Conn:
++    """One client connection: an outbox and its subscriptions (nothing drains it by itself)."""
++
++    def __init__(
++        self,
++        host: DaemonSessionHost,
++        cid: str,
++        surface: str = "cli",
++        *,
++        limits: OutboxLimits | None = None,
++        watch: SessionWatch | None = None,
++        features: tuple[str, ...] = ("server_requests",),
++    ) -> None:
++        self.outbox = Outbox(limits)
++        self.subs = Subscriptions(
++            host,
++            cid,
++            self.outbox,
++            watch=watch,
++            surface=surface,
++            capabilities=capabilities_from(features),
++            strict=True,
++        )
++        self.frames: list[dict[str, Any]] = []
++
++    def drain(self) -> list[dict[str, Any]]:
++        while (text := self.outbox.take()) is not None:
++            self.frames.append(json.loads(text))
++        return self.frames
++
++    def events(self, *types: str) -> list[dict[str, Any]]:
++        found = [f["params"] for f in self.drain() if "method" in f and "seq" in f["params"]]
++        return [e for e in found if not types or e["type"] in types]
++
++    def methods(self) -> list[str]:
++        return [str(f["method"]) for f in self.drain() if "method" in f]
++
++
++def text_of(events: list[dict[str, Any]]) -> str:
++    return "".join(str(e["text"]) for e in events if e["type"] == "message.delta")
++
++
++def seqs(events: list[dict[str, Any]]) -> list[int]:
++    return [int(e["seq"]) for e in events]
++
++
++async def run_turn(host: DaemonSessionHost, sid: str, text: str, rid: str) -> None:
++    receipt = await host.submit(sid, text, principal="cli:a", request_id=rid)
++    done = await host.wait(receipt.admission_id)
++    assert done.outcome == "completed", done
++    host.event_log.flush()
++
++
++# -- fan-out across surfaces ----------------------------------------------------------------------
++
++
++@aio
++async def test_a_subscriber_sees_every_delta_of_another_surfaces_turn_in_order(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("Hel", "lo", " there"))
++    a, b = Conn(host, "c-a"), Conn(host, "t-b", "tui")
++    sid = (await host.create(source="cli")).session_id
++    a.subs.adopt(sid, cursor=0)
++    started = await b.subs.subscribe(sid)
++    assert started.gap is None and started.replayed == 0
++    await run_turn(host, sid, "hi", "r1")
++    a_events, b_events = a.events(), b.events()
++    assert text_of(b_events) == text_of(a_events) == "Hello there"
++    assert seqs(b_events) == list(range(started.last_seq + 1, seqs(b_events)[-1] + 1))
++    tail = [e for e in a_events if e["seq"] > started.last_seq]
++    assert tail == b_events  # the same numbered events, in the same order
++    assert all(e["replay_epoch"] == host.replay_epoch for e in b_events)
++    assert a.subs.violations == [] and b.subs.violations == []
++    await host.aclose()
++
++
++@aio
++async def test_subscribe_from_a_cursor_replays_once_then_continues_live(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("one"), text_turn("two"))
++    sid = (await host.create()).session_id
++    await run_turn(host, sid, "first", "r1")
++    cursor = host.event_log.last_seq(sid) - 2
++    late = Conn(host, "c-late")
++    found = await late.subs.subscribe(sid, host.replay_epoch, cursor)
++    assert found.replayed >= 2 and found.gap is None
++    await run_turn(host, sid, "second", "r2")
++    events = late.events()
++    numbers = seqs(events)
++    assert numbers == list(range(cursor + 1, numbers[-1] + 1))  # no gap, no duplicate
++    assert numbers[-1] == host.event_log.last_seq(sid)
++    assert text_of(events).endswith("two")
++    await host.aclose()
++
++
++@aio
++async def test_another_epoch_or_an_evicted_cursor_gives_a_gap_then_live_events(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    small = EventLog(clock=scope.clock, limits=ReplayLimits(events_per_session=3))
++    host = await open_host(
++        scope, store, tmp_path, text_turn("one"), text_turn("two"), event_log=small
++    )
++    sid = (await host.create()).session_id
++    await run_turn(host, sid, "first", "r1")
++    old = Conn(host, "c-old")
++    found = await old.subs.subscribe(sid, "an-earlier-run", 4)
++    assert found.gap is not None and found.gap.reason == "epoch_changed"
++    evicted = Conn(host, "c-evicted")
++    found = await evicted.subs.subscribe(sid, host.replay_epoch, 0)
++    assert found.gap is not None and found.gap.reason == "evicted"
++    first = evicted.drain()[0]
++    assert first["method"] == GAP_EVENT and first["params"]["last_seq"] == found.last_seq
++    await run_turn(host, sid, "second", "r2")
++    assert text_of(evicted.events()) == "two"
++    await host.aclose()
++
++
++# -- slow viewers ---------------------------------------------------------------------------------
++
++
++@aio
++async def test_an_overflowing_viewer_drops_to_a_gap_and_recovers_by_subscribing_again(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("a", "b", "c"), text_turn("again"))
++    fast = Conn(host, "c-fast")
++    slow = Conn(host, "t-slow", "tui", limits=OutboxLimits(viewer_events=2))
++    sid = (await host.create()).session_id
++    fast.subs.adopt(sid, cursor=0)
++    await slow.subs.subscribe(sid)
++    await run_turn(host, sid, "go", "r1")
++    await eventually(lambda: not slow.subs.is_viewer(sid))
++    frames = slow.drain()
++    gaps = [f for f in frames if f.get("method") == GAP_EVENT]
++    assert len(gaps) == 1 and gaps[0]["params"]["reason"] == "overflow"
++    assert slow.outbox.dropped(sid)
++    assert text_of(fast.events()) == "abc"  # the other viewer lost nothing
++    # Recover: reload a snapshot (the stored transcript), then subscribe live from there.
++    stored = await StateStore(store).load(sid)
++    assert stored[-1].content == "abc"
++    slow.outbox.limits = OutboxLimits()  # it keeps up from now on
++    again = await slow.subs.subscribe(sid)
++    assert again.gap is None and again.replayed == 0
++    assert not slow.outbox.dropped(sid) and slow.subs.is_viewer(sid)
++    await run_turn(host, sid, "more", "r2")
++    assert text_of(slow.events()) == "again"
++    await host.aclose()
++
++
++def test_outbox_overflow_keeps_other_lanes_and_counts_bytes() -> None:
++    told: list[str] = []
++    outbox = Outbox(
++        OutboxLimits(viewer_events=2),
++        on_overflow=lambda lane: told.append(lane) or {"jsonrpc": "2.0", "method": GAP_EVENT},
++    )
++    for n in range(2):
++        assert outbox.put_event("s1", {"method": "message.delta", "params": {"seq": n}})
++        assert outbox.put_event("s2", {"method": "message.delta", "params": {"seq": n}})
++    assert not outbox.put_event("s1", {"method": "message.delta", "params": {"seq": 3}})
++    assert told == ["s1"] and outbox.dropped("s1") and not outbox.dropped("s2")
++    assert not outbox.put_event("s1", {"method": "x", "params": {}})  # dropped until reopened
++    texts = [json.loads(t) for t in iter(outbox.take, None)]
++    assert [t["method"] for t in texts] == ["message.delta", "message.delta", GAP_EVENT]
++    assert outbox.queued_bytes == 0 and outbox.lane_events("s2") == 0
++
++
++def test_outbox_total_cap_marks_it_overloaded() -> None:
++    outbox = Outbox(OutboxLimits(total_bytes=200))
++    assert outbox.put({"id": 1, "result": "x" * 50})
++    assert not outbox.put({"id": 2, "result": "x" * 200})
++    assert outbox.overloaded and not outbox.put({"id": 3})
++
++
++def test_outbox_merges_waiting_list_updates_and_resyncs_past_the_cap() -> None:
++    outbox = Outbox(OutboxLimits(pending_updates=2))
++    assert outbox.put_update("s1", {"running": True})
++    assert outbox.put_update("s1", {"running": False, "title": "Plan"})
++    assert len(outbox) == 1
++    assert outbox.put_update("s2", {"running": True})
++    assert not outbox.put_update("s3", {"running": True})
++    frames = [json.loads(t) for t in iter(outbox.take, None)]
++    assert [f["method"] for f in frames] == [RESYNC_METHOD]
++    assert outbox.put_update("s1", {"running": True})
++
++
++def test_outbox_wait_and_lone_surrogates() -> None:
++    now = [100.0]
++    outbox = Outbox(monotonic=lambda: now[0])
++    assert outbox.oldest_wait() == 0.0
++    outbox.put({"text": "bad \ud800 byte"})
++    now[0] = 112.5
++    assert outbox.oldest_wait() == 12.5
++    text = outbox.take()
++    assert text is not None and "�" in text
++    text.encode("utf-8")  # sendable
++    assert "\ud800" not in serialize({"t": "\udfff"})
++
++
++# -- requests, presence, list updates, authorisation ----------------------------------------------
++
++
++@aio
++async def test_an_open_approval_is_offered_again_on_subscribe(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("confirm", {})),
++        text_turn("cleaned"),
++        tools={"confirm": confirm},
++    )
++    cli = Conn(host, "c-1")
++    sid = (await host.create()).session_id
++    cli.subs.adopt(sid, cursor=0)
++    receipt = await host.submit(sid, "clean", principal="cli:a", request_id="r1")
++    await eventually(lambda: "server_request" in cli.methods())
++    first = next(f for f in cli.frames if f.get("method") == "server_request")["params"]
++    assert first["replayed"] is False and first["generation"] == 1
++    tui = Conn(host, "t-1", "tui")
++    found = await tui.subs.subscribe(sid, host.replay_epoch, 0)
++    assert found.reoffered == 1
++    again = next(f for f in tui.drain() if f.get("method") == "server_request")["params"]
++    assert again["replayed"] is True
++    assert again["request"]["request_id"] == first["request"]["request_id"]
++    request_id = str(again["request"]["request_id"])
++    answered = host.respond(sid, request_id, 1, {"choice": "once"})
++    assert answered == Responded(request_id, True)
++    assert (await host.wait(receipt.admission_id)).outcome == "completed"
++    host.event_log.flush()
++    for conn in (cli, tui):
++        settled = conn.events("request.settled")
++        assert [(e["request_id"], e["outcome"]) for e in settled] == [(request_id, "answered")]
++    await host.aclose()
++
++
++@aio
++async def test_presence_counts_surfaces_as_viewers_come_and_go(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path)
++    cli, tui = Conn(host, "c-1"), Conn(host, "t-1", "tui")
++    sid = (await host.create()).session_id
++    cli.subs.adopt(sid, cursor=0)
++    await tui.subs.subscribe(sid)
++    host.event_log.flush()
++    latest = cli.events(VIEWERS_EVENT)[-1]
++    assert latest["viewers"] == [{"surface": "cli", "count": 1}, {"surface": "tui", "count": 1}]
++    assert latest["count"] == 2
++    assert await tui.subs.unsubscribe(sid) is True
++    assert await tui.subs.unsubscribe(sid) is False
++    latest = cli.events(VIEWERS_EVENT)[-1]
++    assert latest["viewers"] == [{"surface": "cli", "count": 1}] and latest["count"] == 1
++    assert await cli.subs.close() == [sid]
++    assert host.state(sid).viewers == ()
++    await host.aclose()
++
++
++@aio
++async def test_a_list_watcher_sees_running_state_and_titles(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    host = await open_host(
++        scope, store, tmp_path, tool_batch(("hold", {})), text_turn("done"), tools={"hold": holder}
++    )
++    hub = SessionWatch(host)
++    lister = Conn(host, "w-1", "web", watch=hub)
++    assert lister.subs.watch(True) is True and hub.watchers == 1
++    sid = (await host.create()).session_id  # never attached by the lister
++    receipt = await host.submit(sid, "go", principal="cli:a", request_id="r1")
++    await eventually(lambda: holder.entered)
++    host.event_log.flush()
++    updates = [f["params"] for f in lister.drain() if f.get("method") == UPDATED_EVENT]
++    assert updates and updates[-1]["session_id"] == sid and updates[-1]["running"] is True
++    host.event_log.append(sid, {"type": "session.title", "title": "Plan the trip"})
++    holder.gate.set()
++    await host.wait(receipt.admission_id)
++    host.event_log.flush()
++    merged = [f["params"] for f in lister.drain()[len(lister.frames) - 1 :]]
++    last = merged[-1]
++    assert last["type"] == UPDATED_EVENT and last["running"] is False
++    assert last["title"] == "Plan the trip" and isinstance(last["last_activity"], float)
++    hub.report(sid, archived=True)
++    assert lister.drain()[-1]["params"]["archived"] is True
++    assert lister.subs.watch(False) is False and hub.watchers == 0
++    hub.report(sid, pinned=True)
++    assert lister.outbox.take() is None
++    await host.aclose()
++
++
++@aio
++async def test_a_connection_only_reaches_sessions_it_attached(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path)
++    owner, other = Conn(host, "c-own"), Conn(host, "c-other")
++    sid = (await host.create()).session_id
++    owner.subs.adopt(sid, cursor=0)
++    assert owner.subs.require(sid) == sid
++    for call in (
++        lambda: other.subs.require(sid),
++        lambda: other.subs.since(sid, host.replay_epoch, 0),
++    ):
++        with pytest.raises(ProtocolError) as refused:
++            call()
++        assert refused.value.error is SESSION_NOT_FOUND
++    assert await other.subs.unsubscribe(sid) is False
++    assert other.subs.refuse("srq-000000000000", -32601) is False
++    with pytest.raises(ProtocolError) as unknown:
++        await other.subs.subscribe("no-such-session")
++    assert unknown.value.error is SESSION_NOT_FOUND
++    await host.aclose()
++
++
++@aio
++async def test_a_connection_watches_at_most_its_cap_of_sessions(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path)
++    conn = Conn(host, "c-1")
++    conn.subs.max_sessions = 2
++    ids = [(await host.create()).session_id for _ in range(3)]
++    await conn.subs.subscribe(ids[0])
++    await conn.subs.subscribe(ids[1])
++    await conn.subs.subscribe(ids[1])  # again: still two
++    with pytest.raises(ProtocolError) as full:
++        await conn.subs.subscribe(ids[2])
++    assert full.value.error is INVALID_PARAMS
++    await host.aclose()
++
++
++def test_capabilities_from_features() -> None:
++    assert capabilities_from(["server_requests"]) == {"approval", "clarify", "sudo", "secret"}
++    assert capabilities_from(["server_requests.sudo", "server_requests.nope"]) == {"sudo"}
++    assert capabilities_from(["request.decline", "other"]) == {"request.decline"}
+diff --git a/tests/unit/tui_bridge/test_dispatch.py b/tests/unit/tui_bridge/test_dispatch.py
+index 089c758..eb0585b 100644
+--- a/tests/unit/tui_bridge/test_dispatch.py
++++ b/tests/unit/tui_bridge/test_dispatch.py
+@@ -11,6 +11,7 @@ import pytest
+ 
+ from indus.foundation.errors import IndusError
+ from indus.foundation.scope import Scope, current_scope
++from indus.protocol.attach import DAEMON_ONLY_METHODS
+ from indus.protocol.base import ProtocolModel
+ from indus.protocol.bridge import ConfigGetResult
+ from indus.protocol.envelope import Request
+@@ -48,7 +49,7 @@ def handle(d: Dispatcher, method: str, params: dict[str, Any] | None = None) ->
+ 
+ def test_table_serves_every_declared_method_and_nothing_else() -> None:
+     table = build_table()
+-    assert sorted(table.names()) == sorted(METHODS)
++    assert sorted(table.names()) == sorted(set(METHODS) - DAEMON_ONLY_METHODS)
+     assert len(HANDLER_MODULES) == 8
+     with pytest.raises(ValueError, match="not declared"):
+         table.add("session.explode", lambda bridge, params: None)  # type: ignore[arg-type, return-value]
