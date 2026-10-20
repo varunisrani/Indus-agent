@@ -129,7 +129,7 @@ async def test_usage_and_queued_cancel_are_served_by_the_daemon(
         assert usage is not None and usage.size == numbers
         sent = {f.get("method") for f in daemon.rig.last.sent}
         assert {"admission.cancel", "session.usage"} <= sent
-        assert {m for m, _ in daemon.calls} <= {"session.mutate"}  # nothing else is shimmed
+        assert {m for m, _ in daemon.calls} <= {"session.mutate"}  # the only recorded method
 
 
 async def _start_turn_waiting_on_approval(h: Any, tmp_path: Path) -> tuple[AttachedHost, str]:

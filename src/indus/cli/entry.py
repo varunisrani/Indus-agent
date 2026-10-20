@@ -35,10 +35,18 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from indus.cli.args import HostOverrides
 
-__all__ = ["GUI_COMMANDS", "RECOVERY_COMMANDS", "STDIO_COMMANDS", "find_flag", "main"]
+__all__ = [
+    "GUI_COMMANDS",
+    "RECOVERY_COMMANDS",
+    "STDIO_COMMANDS",
+    "STDIO_SUBCOMMANDS",
+    "find_flag",
+    "main",
+]
 
 GUI_COMMANDS = frozenset({"dashboard", "serve", "gui", "desktop"})
 STDIO_COMMANDS = frozenset({"tui-bridge", "acp"})  # stdout carries protocol frames only
+STDIO_SUBCOMMANDS = frozenset({("mcp", "serve")})  # the same, for a group's subcommand
 RECOVERY_COMMANDS = frozenset({"profile", "doctor", "config"})
 _VERSION_FLAGS = ("-V", "--version")
 _PROFILE_FLAGS = ("-p", "--profile")
@@ -95,6 +103,24 @@ def _first_command(argv: Sequence[str], value_flags: Collection[str]) -> str | N
             return token
         i += 2 if token in value_flags else 1
     return None
+
+
+def _is_stdio(argv: Sequence[str], value_flags: Collection[str]) -> bool:
+    """Whether the command line runs a stdio protocol server (stdout carries frames only)."""
+    words: list[str] = []
+    i = 0
+    while i < len(argv) and len(words) < 2:
+        token = argv[i]
+        if token == "--":
+            break
+        if token.startswith("-"):
+            i += 2 if token in value_flags else 1
+            continue
+        words.append(token)
+        i += 1
+    if not words:
+        return False
+    return words[0] in STDIO_COMMANDS or tuple(words) in STDIO_SUBCOMMANDS
 
 
 def _value_flags() -> frozenset[str]:
@@ -180,7 +206,8 @@ def main(
     from indus.foundation.errors import IndusError
 
     command = _first_command(_without_profile(args), value_flags)
-    mode = "gui" if command in GUI_COMMANDS else "stdio" if command in STDIO_COMMANDS else "cli"
+    stdio = _is_stdio(_without_profile(args), value_flags)
+    mode = "gui" if command in GUI_COMMANDS else "stdio" if stdio else "cli"
     early = _EarlyRecords()
     try:
         with early:

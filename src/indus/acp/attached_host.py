@@ -23,10 +23,11 @@ Creating a session needs the daemon to list ``acp`` among its creatable sources 
 (anything but cwd, model, toolsets) are refused with a pointer to ``--local`` (D-16.490).
 
 ``session.usage`` reads the session's counters and ``admission.cancel`` drops a queued input (a
-started one is stopped through its generation, ``session.interrupt``). ``session.mutate`` is not
-served by the daemon yet (``-32601`` → ``mutation_unavailable``, D-16.602), and the daemon does
-not advertise ``ACP_EDITOR_POLICY`` until it is. Reads of the transcript, the session row and the
-runtime ledger go through read-only store connections (``store_view``).
+started one is stopped through its generation, ``session.interrupt``). ``session.mutate`` carries
+the editor's MCP servers, forks, folder moves and the other session changes; a daemon that does not
+serve it (``-32601``) answers ``mutation_unavailable`` and does not advertise ``ACP_EDITOR_POLICY``.
+Reads of the transcript, the session row and the runtime ledger go through read-only store
+connections (``store_view``).
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from indus.acp.backend import (
     Admission,
     BackendError,
     CancelOutcome,
+    CommandReply,
     CreateRequest,
     EditorPolicy,
     EventSink,
@@ -54,12 +56,14 @@ from indus.acp.backend import (
     MutationResult,
     PendingPrompt,
     SessionSnapshot,
+    Settled,
     UsageInfo,
 )
 from indus.foundation.blocking import run_blocking
 from indus.foundation.scope import Scope
 from indus.protocol.attach import ACP_EDITOR_POLICY, AdmissionCancelResult, RuntimeDescribeResult
 from indus.protocol.errors import METHOD_NOT_FOUND, SESSION_BUSY, SESSION_NOT_FOUND
+from indus.protocol.events import ExitReason
 from indus.protocol.methods import ProtocolError, SessionCreateParams, SubmitStatus
 from indus.service.remote.channel import Channel, DialRefused, NotSent, RpcError, TransportLost
 from indus.service.remote.host import OUTCOME_UNKNOWN, OutcomeUnknown, RemoteSessionService
@@ -132,6 +136,14 @@ def _request_id(input_id: str) -> str:
     return "sub-" + hashlib.sha256(input_id.encode("utf-8")).hexdigest()[:32]
 
 
+def _outcome(reason: ExitReason) -> str:
+    if reason is ExitReason.COMPLETED:
+        return "completed"
+    if reason in (ExitReason.INTERRUPTED_BY_USER, ExitReason.INTERRUPTED_BY_SYSTEM):
+        return "cancelled"
+    return "failed"
+
+
 def _from_protocol(error: ProtocolError) -> BackendError:
     if error.error.code == SESSION_NOT_FOUND.code:
         return BackendError("not_found", error.message or "no such session")
@@ -164,9 +176,18 @@ def _refused(error: DialRefused) -> BackendError:
 class AttachedHost:
     """``AcpBackend`` over the profile's daemon (see the module notes)."""
 
-    def __init__(self, scope: Scope, *, connect: Connect | None = None) -> None:
+    def __init__(
+        self,
+        scope: Scope,
+        *,
+        connect: Connect | None = None,
+        route: Callable[[], tuple[str | None, str | None]] | None = None,
+    ) -> None:
         self.scope = scope
         self._connect = connect or default_connect(scope)
+        self._route = route or (lambda: _profile_route(scope))
+        """The profile's default ``(model, provider)`` (blocking; the daemon serves the same
+        profile, so a new session runs on it unless the launch named a model)."""
         self._service: RemoteSessionService | None = None
         self._lock = asyncio.Lock()
         self.described: Mapping[str, Any] = {}
@@ -318,9 +339,7 @@ class AttachedHost:
         if request.editor.mcp_servers:
             await self.mutate(sid, "editor_mcp", request.editor.wire())
         epoch = service.channel.ready_params.get("replay_epoch")
-        route_model, route_provider = await run_blocking(
-            lambda: _profile_route(self.scope), label="acp route"
-        )
+        route_model, route_provider = await run_blocking(self._route, label="acp route")
         return SessionSnapshot(
             session_id=sid,
             cwd=request.cwd or None,
@@ -361,18 +380,32 @@ class AttachedHost:
         cwd = row.get("cwd") if row else None
         title = resumed.title or (row.get("title") if row else None)
         model = row.get("model") if row else None
+        model = model if isinstance(model, str) and model else None
+        provider = await self._provider_of(row, model)
         epoch = service.channel.ready_params.get("replay_epoch")
         return SessionSnapshot(
             session_id=key,
             cwd=cwd if isinstance(cwd, str) and cwd else None,
             title=title if isinstance(title, str) else None,
-            model=model if isinstance(model, str) and model else None,
+            model=model,
+            provider=provider,
             history=tuple(rows),
             pending=tuple(PendingPrompt(r) for r in resumed.pending_requests),
             lost=tuple(lost),
             replay_epoch=epoch if isinstance(epoch, str) else None,
             last_seq=resumed.last_seq,
         )
+
+    async def _provider_of(self, row: Mapping[str, Any] | None, model: str | None) -> str | None:
+        """The provider of a stored session: the row's, else the profile's when the row runs the
+        profile's model (so the model picker shows ``provider:model`` as on the local host)."""
+        stored = row.get("billing_provider") if row else None
+        if isinstance(stored, str) and stored:
+            return stored
+        if model is None:
+            return None
+        route_model, route_provider = await run_blocking(self._route, label="acp route")
+        return route_provider if route_model == model else None
 
     def editor_policy(self, session_id: str) -> EditorPolicy | None:
         return self._editors.get(self._key(session_id))
@@ -420,11 +453,15 @@ class AttachedHost:
                     "mutation_unavailable",
                     f"the gateway daemon cannot apply the {operation} change yet",
                 ) from None
+            if error.code == SESSION_BUSY.code:
+                raise BackendError("session_busy", error.message) from None
+            if error.code == SESSION_NOT_FOUND.code:
+                raise BackendError("not_found", error.message) from None
             raise _from_channel(error) from None
         except BaseException as exc:
             raise _from_channel(exc) from None
         status = answer.get("status", "applied")
-        if status not in ("applied", "deferred", "cancelled", "refused"):
+        if status not in ("applied", "deferred", "cancelled", "refused", "confirm"):
             status = "refused"
         if operation == "editor_mcp" and status == "applied":
             servers = payload.get("mcp_servers")
@@ -524,6 +561,41 @@ class AttachedHost:
             outcome=row.outcome,
             final_text=row.final_text,
         )
+
+    async def wait(self, session_id: str, admission_id: str) -> Settled:
+        service = await self._client()
+        try:
+            turn = await service.wait(session_id, admission_id)
+        except BaseException as exc:
+            raise _from_channel(exc) from None
+        failure = turn.failure.reason if turn.failure is not None else None
+        return Settled(turn.turn_id, _outcome(turn.reason), failure)
+
+    async def lost(self, session_id: str) -> list[LostTurn]:
+        ids = {self._key(session_id), self.current_id(session_id), session_id}
+        return await run_blocking(
+            lambda: store_view.lost_turns(self.scope, ids), label="acp ledger"
+        )
+
+    async def steer(self, session_id: str, text: str, *, admission_id: str | None) -> bool:
+        if not admission_id:
+            return False
+        service = await self._client()
+        row = await run_blocking(store_view.admission, self.scope, admission_id, label="ledger")
+        if row is None or row.state != "started" or row.generation is None:
+            return False  # only this editor's own running turn is steered
+        try:
+            done = await service.steer(session_id, text, generation=row.generation)
+        except (ProtocolError, RpcError, TransportLost, NotSent):
+            return False
+        return done.queued
+
+    async def run_command(self, session_id: str, name: str, arg: str) -> CommandReply:
+        done = await self.mutate(session_id, "command", {"name": name, "arg": arg})
+        if done.status != "applied":
+            message = done.data.get("message") or f"/{name} is not available in this session"
+            raise BackendError("unsupported_command", str(message))
+        return CommandReply(str(done.data.get("text") or ""))
 
     async def answer(
         self,

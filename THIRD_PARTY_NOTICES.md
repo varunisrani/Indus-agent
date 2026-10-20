@@ -213,3 +213,11 @@ PyPI for packages of other platforms).
 | colorama | 0.4.6 | BSD-3-Clause (PyPI metadata) | Windows only: extras `voice`, `research`, via tqdm / typer (row added at the P22 R2 landing) | P22-11 |
 | slack-bolt | 1.30.0 | MIT | extra `slack`: the Slack adapter's Bolt app and Socket Mode handler | P15-35 |
 | slack-sdk | 3.44.1 | MIT | extra `slack`: the Slack Web API client, via slack-bolt and directly | P15-35 |
+
+## Test fixtures
+
+Vendor files kept verbatim as test fixtures (never shipped in the package).
+
+| Files | Source | Licence | Why | Added by |
+|---|---|---|---|---|
+| `tests/fixtures/acp/schema-v1.19.0.json`, `schema-v1.19.0.unstable.json`, `meta-v1.19.0.json`, `meta-v1.19.0.unstable.json` | Agent Client Protocol specification, <https://github.com/agentclientprotocol/agent-client-protocol>, tag `schema-v1.19.0` (commit `a213df5`), `schema/v1/` — the schema `agent-client-protocol` 0.12.1 was generated from | Apache-2.0, Copyright 2025 Zed Industries, Inc. and contributors (the repository's `LICENSE` at that tag, copied beside them as `tests/fixtures/acp/LICENSE-schema`) | ACP schema snapshot for the drift and conformance tests (P19-18) | P19-18 |

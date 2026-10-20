@@ -210,14 +210,20 @@ class DeliveryRouter:
         files: Sequence[MediaItem] = (),
         label: str = "a scheduled delivery",
         output_path: Path | None = None,
+        session_key: str | None = None,
+        message_ref: str | None = None,
     ) -> DeliveryReceipt:
-        """Deliver ``text`` (and cleared ``files``) to one target; ``all`` fans out."""
+        """Deliver ``text`` (and cleared ``files``) to one target; ``all`` fans out. With
+        ``session_key`` and ``message_ref`` (one chat only) the sender records a delivery-ledger
+        row before the platform send (P19-16)."""
         if target.is_broadcast:
             return await self._broadcast(text, files, label, output_path)
         where = self.resolve(target)
         if isinstance(where, str):
             return DeliveryReceipt(ok=False, error=where)
-        return await self._send_to(where, text, files, label, output_path)
+        return await self._send_to(
+            where, text, files, label, output_path, ledger=(session_key, message_ref)
+        )
 
     async def _send_to(
         self,
@@ -226,6 +232,8 @@ class DeliveryRouter:
         files: Sequence[MediaItem],
         label: str,
         output_path: Path | None,
+        *,
+        ledger: tuple[str | None, str | None] = (None, None),
     ) -> DeliveryReceipt:
         sender = self.sender_for(where.platform)
         if sender is None:
@@ -242,6 +250,8 @@ class DeliveryRouter:
             reply_expected=False,
             allow_media=False,
             files=tuple(files),
+            session_key=ledger[0],
+            message_ref=ledger[1],
         )
         try:
             report = await sender.deliver(where.chat_id, reply)

@@ -481,6 +481,23 @@ export const METHODS = deepFreeze({
     "params": "SessionMostRecentParams",
     "result": "SessionMostRecentResult"
   },
+  "session.mutate": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED",
+      "SESSION_BUSY",
+      "IDEMPOTENCY_CONFLICT"
+    ],
+    "params": "SessionMutateParams",
+    "result": "SessionMutateResult"
+  },
   "session.redirect": {
     "errors": [
       "PARSE_ERROR",
@@ -680,6 +697,7 @@ export interface MethodTypes {
   "session.interrupt": { params: T.SessionInterruptParams; result: T.SessionInterruptResult };
   "session.list": { params: T.SessionListParams; result: T.SessionListResult };
   "session.most_recent": { params: T.SessionMostRecentParams; result: T.SessionMostRecentResult };
+  "session.mutate": { params: T.SessionMutateParams; result: T.SessionMutateResult };
   "session.redirect": { params: T.SessionRedirectParams; result: T.SessionRedirectResult };
   "session.resume": { params: T.SessionResumeParams; result: T.SessionResumeResult };
   "session.steer": { params: T.SessionSteerParams; result: T.SessionSteerResult };

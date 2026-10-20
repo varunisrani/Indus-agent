@@ -294,6 +294,7 @@ class ChannelLimits:
             "prompt.submit": 1800.0,
             "server_request.answer": 330.0,
             "session.compress": 660.0,
+            "session.mutate": 660.0,
         }
     )
     ready_timeout: float = 15.0

@@ -89,6 +89,8 @@ DEADLINES: Mapping[str, float] = MappingProxyType(
         "prompt.background": 1800.0,
         # Compression is a model call; the client gives up at 660 s.
         "session.compress": 600.0,
+        # A change may compress or start an editor's MCP servers (session.mutate).
+        "session.mutate": 600.0,
     }
 )
 """Per-method deadlines (seconds) that differ from ``DEFAULT_DEADLINE_S``."""

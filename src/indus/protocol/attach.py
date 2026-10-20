@@ -8,6 +8,8 @@ when they cannot be), then every new event of the session. ``events.since`` is t
 session's queue moves on; it names the lost turn's generation. ``admission.receipt`` tells a
 client that lost an ack what became of its input; ``admission.cancel`` drops one that still waits
 in the queue (a started turn is stopped through its generation, never by admission id).
+``session.mutate`` changes a watched session on the daemon (the editor's MCP servers, a fork, its
+folder, model, title, history), fenced against its running turn and idempotent by ``request_id``.
 ``runtime.describe`` is the control socket's ``describe`` over the WebSocket, and
 ``maintenance.run`` runs bulk store maintenance inside the daemon that owns the store (P17-21).
 These names are served only by the daemon (``DAEMON_ONLY_METHODS``); the stdio bridge answers them
@@ -27,6 +29,8 @@ from pydantic import Field, JsonValue, NonNegativeInt, PositiveInt
 from indus.protocol.base import ProtocolModel, SessionId
 from indus.protocol.errors import (
     ADMISSION_NOT_FOUND,
+    IDEMPOTENCY_CONFLICT,
+    SESSION_BUSY,
     SESSION_NOT_FOUND,
     SESSION_REFUSED,
     STORE_FAILED,
@@ -54,6 +58,10 @@ __all__ = [
     "RuntimeDescribeParams",
     "RuntimeDescribeResult",
     "SessionReplayGap",
+    "SessionMutateParams",
+    "SessionMutateResult",
+    "SessionMutationName",
+    "SessionMutationStatus",
     "SessionUpdated",
     "SessionsResync",
     "SessionSubscribeParams",
@@ -251,6 +259,76 @@ class AdmissionCancelResult(ProtocolModel):
     """How it ended, once terminal."""
 
 
+type SessionMutationName = Literal[
+    "editor_mcp",
+    "branch",
+    "workspace",
+    "model",
+    "rewind",
+    "reset",
+    "rename",
+    "compress",
+    "command",
+]
+"""What ``session.mutate`` changes: the editor's MCP servers, a fork, the folder, the model, user
+turns taken back, the whole conversation, the title, a compression, or an information command."""
+
+type SessionMutationStatus = Literal["applied", "deferred", "refused", "confirm"]
+"""``applied`` now; ``deferred`` to the running turn's end; ``refused`` (``reason`` says why);
+``confirm``: nothing changed, the same call with ``payload.confirm`` true applies it."""
+
+
+class SessionMutateParams(ProtocolModel):
+    """Change a watched session (see ``SessionMutationName``)."""
+
+    session_id: SessionId
+    """A session this connection watches."""
+    operation: SessionMutationName
+    """What to change."""
+    payload: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
+    """The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``;
+    ``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``;
+    ``branch``: ``mcp_servers``; ``compress``: ``focus``; ``command``: ``name``, ``arg``)."""
+    request_id: str = Field(min_length=1, max_length=200)
+    """The client's id for this change: the same id again answers the first result."""
+    generation: NonNegativeInt | None = None
+    """The turn the client believes runs; another running turn makes the change ``refused``
+    (``stale_generation``)."""
+
+
+class SessionMutateResult(ProtocolModel):
+    """What the change did. Fields not used by the operation are absent."""
+
+    status: SessionMutationStatus
+    """``applied``, ``deferred``, ``refused`` or ``confirm``."""
+    reason: str | None = None
+    """Why it was refused (a short code such as ``stale_generation``, ``editor_mcp_changed``)."""
+    message: str | None = None
+    """Text for people (why ``confirm`` asks, or a refusal's detail)."""
+    session_id: str | None = None
+    """``branch``: the new session; ``compress``: the id the session runs under now."""
+    cwd: str | None = None
+    """``workspace``: the session's folder now."""
+    title: str | None = None
+    """``rename``: the stored title."""
+    model: str | None = None
+    """``model``: the session's model (after the switch, or the one waiting)."""
+    provider: str | None = None
+    """``model``: its provider."""
+    removed: NonNegativeInt | None = None
+    """``rewind`` / ``reset``: stored messages removed."""
+    text: str | None = None
+    """``rewind``: the text of the oldest user message taken back; ``command``: the reply."""
+    outcome: str | None = None
+    """``compress``: ``compressed``, ``nothing``, ``blocked`` or ``aborted``."""
+    servers: list[str] | None = None
+    """``editor_mcp`` / ``branch``: the editor servers whose tools the session has."""
+    refused_servers: list[str] | None = None
+    """``editor_mcp``: servers whose spec differs from the one recorded for the session."""
+    changed: list[str] | None = None
+    """``editor_mcp``: servers whose tool listing differs from the frozen one."""
+
+
 class RuntimeDescribeParams(ProtocolModel):
     """The daemon's attach descriptor: which profile and daemon start this is, what it offers."""
 
@@ -379,6 +457,12 @@ ATTACH_METHODS: tuple[_Row, ...] = (
         AdmissionCancelResult,
         (SESSION_NOT_FOUND, ADMISSION_NOT_FOUND),
     ),
+    (
+        "session.mutate",
+        SessionMutateParams,
+        SessionMutateResult,
+        (*_SESSION, SESSION_BUSY, IDEMPOTENCY_CONFLICT),
+    ),
     ("runtime.describe", RuntimeDescribeParams, RuntimeDescribeResult, ()),
     ("maintenance.run", MaintenanceRunParams, MaintenanceRunResult, (STORE_FAILED,)),
 )
@@ -389,5 +473,6 @@ DAEMON_ONLY_METHODS: frozenset[str] = frozenset(row[0] for row in ATTACH_METHODS
 
 ACP_EDITOR_POLICY: Final = "acp.editor_policy"
 """The capability a daemon advertises (``describe``) once it honours an ACP editor's policy on the
-sessions it creates: the editor's MCP servers and the ask-before-edits approval policy (P19-04).
-An ACP client refuses to create sessions on a daemon without it."""
+sessions it creates: the editor's MCP servers and the ask-before-edits approval policy, changed
+through ``session.mutate`` (P19-04). An ACP client refuses to create sessions on a daemon without
+it."""

@@ -2156,6 +2156,130 @@
       },
       "type": "object"
     },
+    "SessionMutateParams": {
+      "additionalProperties": false,
+      "description": "Change a watched session (see ``SessionMutationName``).",
+      "properties": {
+        "generation": {
+          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "The turn the client believes runs; another running turn makes the change ``refused``\n(``stale_generation``)."
+        },
+        "operation": {"$ref": "#/$defs/SessionMutationName", "description": "What to change."},
+        "payload": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``;\n``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``;\n``branch``: ``mcp_servers``; ``compress``: ``focus``; ``command``: ``name``, ``arg``).",
+          "type": "object"
+        },
+        "request_id": {
+          "description": "The client's id for this change: the same id again answers the first result.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {
+          "$ref": "#/$defs/SessionId",
+          "description": "A session this connection watches."
+        }
+      },
+      "required": ["session_id", "operation", "request_id"],
+      "type": "object"
+    },
+    "SessionMutateResult": {
+      "additionalProperties": false,
+      "description": "What the change did. Fields not used by the operation are absent.",
+      "properties": {
+        "changed": {
+          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+          "default": null,
+          "description": "``editor_mcp``: servers whose tool listing differs from the frozen one."
+        },
+        "cwd": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "``workspace``: the session's folder now."
+        },
+        "message": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Text for people (why ``confirm`` asks, or a refusal's detail)."
+        },
+        "model": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "``model``: the session's model (after the switch, or the one waiting)."
+        },
+        "outcome": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "``compress``: ``compressed``, ``nothing``, ``blocked`` or ``aborted``."
+        },
+        "provider": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "``model``: its provider."
+        },
+        "reason": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Why it was refused (a short code such as ``stale_generation``, ``editor_mcp_changed``)."
+        },
+        "refused_servers": {
+          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+          "default": null,
+          "description": "``editor_mcp``: servers whose spec differs from the one recorded for the session."
+        },
+        "removed": {
+          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "``rewind`` / ``reset``: stored messages removed."
+        },
+        "servers": {
+          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+          "default": null,
+          "description": "``editor_mcp`` / ``branch``: the editor servers whose tools the session has."
+        },
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "``branch``: the new session; ``compress``: the id the session runs under now."
+        },
+        "status": {
+          "$ref": "#/$defs/SessionMutationStatus",
+          "description": "``applied``, ``deferred``, ``refused`` or ``confirm``."
+        },
+        "text": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "``rewind``: the text of the oldest user message taken back; ``command``: the reply."
+        },
+        "title": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "``rename``: the stored title."
+        }
+      },
+      "required": ["status"],
+      "type": "object"
+    },
+    "SessionMutationName": {
+      "enum": [
+        "editor_mcp",
+        "branch",
+        "workspace",
+        "model",
+        "rewind",
+        "reset",
+        "rename",
+        "compress",
+        "command"
+      ],
+      "type": "string"
+    },
+    "SessionMutationStatus": {
+      "enum": ["applied", "deferred", "refused", "confirm"],
+      "type": "string"
+    },
     "SessionRedirectParams": {
       "additionalProperties": false,
       "description": "Correct the running turn: cancel the model call in flight and retry with this text.",
@@ -3805,6 +3929,23 @@
         ],
         "params": "SessionMostRecentParams",
         "result": "SessionMostRecentResult"
+      },
+      "session.mutate": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED",
+          "SESSION_BUSY",
+          "IDEMPOTENCY_CONFLICT"
+        ],
+        "params": "SessionMutateParams",
+        "result": "SessionMutateResult"
       },
       "session.redirect": {
         "errors": [

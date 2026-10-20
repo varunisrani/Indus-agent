@@ -66,8 +66,11 @@ Daemon seams (P17-08, ``service.daemon_host``): ``broker_factory`` builds each s
 would start on its own — host injections, background-subagent results, undelivered steer text —
 is handed to the door (the daemon's admission ledger) instead; ``start_admitted`` starts a turn
 the door admitted under the ledger's generation; ``reload`` rebuilds a session's agent from the
-store (another process ran it meanwhile). ``events_since`` and ``receipt`` have trivial in-process
-forms: one replay epoch per service over the kept events, and no admissions.
+store (another process ran it meanwhile); an ``agent_shaper``, when set, adjusts a session's
+options and toolset selection right before its agent is built, on attach and on reload (the daemon
+gives an editor session its own tool registry and folder there, ``service.session_mutations``).
+``events_since`` and ``receipt`` have trivial in-process forms: one replay epoch per service over
+the kept events, and no admissions.
 """
 
 from __future__ import annotations
@@ -142,6 +145,7 @@ from indus.state.session_lock import (
 __all__ = [
     "BUSY_COPY",
     "AgentFactory",
+    "AgentShaper",
     "BrokerFactory",
     "SessionService",
     "TurnDoor",
@@ -170,6 +174,13 @@ type AgentFactory = Callable[
     [str, EventSink, ServerRequestBroker, AgentOptions, Sequence[str] | None], Awaitable[Agent]
 ]
 """Builds the agent of one session: ``(session_id, sink, broker, options, toolsets)``."""
+
+type AgentShaper = Callable[
+    [str, AgentOptions, Sequence[str] | None],
+    Awaitable[tuple[AgentOptions, list[str] | None]],
+]
+"""Adjusts one session's agent before it is built: ``(session_id, options, toolsets)`` → the
+options and toolsets to build it with."""
 
 type BrokerFactory = Callable[[str, EventSink], ServerRequestBroker]
 """Builds the server-request broker of one session: ``(session_id, sink)``."""
@@ -296,6 +307,7 @@ class SessionService:
         self._moved: list[Callable[[str, str], object]] = []
         self.broker_factory = broker_factory
         self.turn_door = turn_door
+        self.agent_shaper: AgentShaper | None = None
         self.replay_epoch = new_replay_epoch()
         """The in-process replay epoch (``events_since``); the daemon's event log has its own."""
 
@@ -557,6 +569,8 @@ class SessionService:
         try:
             sink = EventSink(session_id)
             broker = self._new_broker(session_id, sink)
+            if self.agent_shaper is not None:
+                options, selection = await self.agent_shaper(session_id, options, selection)
             if self.mcp is not None:
                 await self.mcp.start()
                 selection = self.mcp.selection(selection)
@@ -615,12 +629,13 @@ class SessionService:
                 previous = attached.session_id
                 attached.sink.session_id = tip
                 self._follow(attached, previous, tip)
+            options, selection = old.options, old.toolset_selection
+            if self.agent_shaper is not None:
+                options, selection = await self.agent_shaper(
+                    attached.session_id, options, selection
+                )
             agent = await self._factory(
-                attached.session_id,
-                attached.sink,
-                attached.broker,
-                old.options,
-                old.toolset_selection,
+                attached.session_id, attached.sink, attached.broker, options, selection
             )
             if self.mcp is not None:
                 self.mcp.attach(agent)

@@ -34,6 +34,10 @@ A refused submit answers the table code of its ledger reason (``ADMISSION_CONFLI
 of an input whose turn was lost in a restart answers ``OUTCOME_UNKNOWN`` (never "streaming": that
 turn never comes back).
 
+``session.mutate`` changes a watched session (the editor's MCP servers, fork, folder, model,
+title, history: ``service.session_mutations``), fenced against its running turn and idempotent by
+the client's ``request_id``.
+
 ``runtime.describe`` answers what the control socket's ``describe`` does, plus the replay epoch.
 ``maintenance.run`` runs one bulk store operation on the daemon's own store handle
 (``service.maintenance_gate.MaintenanceVerb``); a refusal is the result's ``refused``.
@@ -60,6 +64,8 @@ from indus.protocol.attach import (
     ReplayGapInfo,
     RuntimeDescribeParams,
     RuntimeDescribeResult,
+    SessionMutateParams,
+    SessionMutateResult,
     SessionSubscribeParams,
     SessionSubscribeResult,
     SessionsWatchParams,
@@ -439,6 +445,12 @@ async def usage(conn: WsConnection, params: SessionUsageParams) -> SessionUsageR
     key = conn.subs.require(params.session_id)
     numbers = usage_numbers(conn.host.service, conn.host.service.current_id(key))
     return SessionUsageResult(usage=UsageNumbers.model_validate(numbers))
+
+
+@methods.method("session.mutate")
+async def mutate(conn: WsConnection, params: SessionMutateParams) -> SessionMutateResult:
+    key = conn.subs.require(params.session_id)
+    return await conn.host.mutations.mutate(key, params)
 
 
 @methods.method("maintenance.run")

@@ -172,3 +172,44 @@ def test_the_stray_writer_drops_text_and_reports_its_length(
     assert writer.write("secret-ish words") == 16
     assert writer.dropped == 16
     assert "16 characters" in caplog.text and "secret-ish" not in caplog.text
+
+
+def test_windows_warms_native_modules_on_the_main_thread_before_serving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R09.15: the keyring backend and the memory providers are imported (and the keyring backend
+    chosen) by the main thread before the protocol loop and its stdin reader start."""
+    import builtins
+    import threading
+
+    import keyring
+
+    import indus.learning.memory.providers  # noqa: F401  (imported for real before the spy)
+    from indus.acp import stdout_guard
+
+    order: list[str] = []
+    seen: list[tuple[str, bool]] = []
+    real_import = builtins.__import__
+
+    def spy(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name in ("keyring", "indus.learning.memory.providers"):
+            seen.append((name, threading.current_thread() is threading.main_thread()))
+            order.append(f"import {name}")
+        return real_import(name, *args, **kwargs)
+
+    def fake_run(coro: Any) -> int:
+        coro.close()
+        order.append("serve loop")
+        return 0
+
+    monkeypatch.setattr(keyring, "get_keyring", lambda: order.append("keyring backend"))
+    monkeypatch.setattr(stdout_guard, "claim", lambda: object())
+    monkeypatch.setattr(entry.asyncio, "run", fake_run)
+    monkeypatch.setattr(entry.sys, "platform", "win32")
+    monkeypatch.setattr(builtins, "__import__", spy)
+    assert entry.serve(object(), local=True) == 0  # type: ignore[arg-type]
+    monkeypatch.undo()
+    assert ("keyring", True) in seen
+    assert ("indus.learning.memory.providers", True) in seen
+    assert order.index("keyring backend") < order.index("serve loop")
+    assert max(order.index(f"import {n}") for n, _ in seen) < order.index("serve loop")

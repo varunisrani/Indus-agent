@@ -226,6 +226,7 @@ def test_catalogue_names() -> None:
         "admission.discard",
         "admission.receipt",
         "admission.cancel",
+        "session.mutate",
         "runtime.describe",
         "maintenance.run",
     ]

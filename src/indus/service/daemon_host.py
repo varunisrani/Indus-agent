@@ -38,6 +38,12 @@ the same call shapes with the daemon's rules:
   broker; ``refuse`` records a viewer's error answer.
 - **Policy.** ``create`` freezes the launch policy (P17-09) into the session row; ``resume`` with a
   policy that changes a frozen value is refused (``PolicyConflict``).
+- **Changes.** ``mutations`` (``service.session_mutations``) serves ``session.mutate``: an editor's
+  own MCP servers, fork, folder, model, title and history changes, under a per-session gate the
+  turn runner holds while it prepares and starts a claimed turn (deferred changes apply there,
+  ``before_turn``). It also shapes each
+  agent before it is built (the service's ``agent_shaper``), and a session's editor servers close
+  with it. The host advertises ``ACP_EDITOR_POLICY``.
 
 Sessions are keyed by the id they were first attached under: the ledger, the fences, the event log
 and the viewers stay addressed by it when a rotating compaction moves the session to a child id
@@ -61,6 +67,7 @@ from indus.core.events import EventSink
 from indus.core.session_scheduler import TurnEnd
 from indus.core.turn_state import TurnResult
 from indus.foundation.blocking import run_blocking
+from indus.protocol.attach import ACP_EDITOR_POLICY
 from indus.protocol.errors import SESSION_NOT_FOUND, TEXT_EMPTY
 from indus.protocol.events import EventBase, ExitReason
 from indus.protocol.methods import (
@@ -101,7 +108,8 @@ from indus.service.fences import (
     StaleGeneration,
     StopResult,
 )
-from indus.service.request_redelivery import RequestBook
+from indus.service.request_redelivery import OpenRequest, RequestBook
+from indus.service.session_mutations import SessionMutations
 from indus.service.session_service import SessionService, usage_numbers
 from indus.service.turn_lease import TurnLeases
 from indus.service.turn_liveness import LivenessSettings
@@ -147,9 +155,11 @@ HOST_CAPABILITIES: Final[tuple[str, ...]] = (
     SERVER_REQUESTS_FEATURE,
     *(f"{SERVER_REQUESTS_FEATURE}.{kind}" for kind in SERVER_REQUEST_KINDS),
     DECLINE_CAPABILITY,
+    ACP_EDITOR_POLICY,
 )
 """What the host offers attached clients (``describe``): replay from a cursor, every kind of
-server request (offered and re-offered to the viewers that render it), and the 4404 decline.
+server request (offered and re-offered to the viewers that render it), the 4404 decline, and the
+ACP editor policy (``session.mutate``).
 Names reuse the client feature vocabulary (``indus.protocol.methods``); P17-25 owns the table."""
 _INTERRUPTED_EXITS: Final = frozenset(
     {ExitReason.INTERRUPTED_BY_USER, ExitReason.INTERRUPTED_BY_SYSTEM}
@@ -249,8 +259,12 @@ class DaemonSessionHost:
         self._auto: dict[str, set[str]] = {}
         """Session ids whose auto-approve this host switched on for an unattended turn, by key."""
         self._closed = False
+        self.mutations = SessionMutations(
+            service, store, running=self._running_generation, key_of=self._any_key
+        )
         service.broker_factory = self._make_broker
         service.turn_door = self._door
+        service.agent_shaper = self.mutations.shape
 
     @classmethod
     async def open(
@@ -322,6 +336,28 @@ class DaemonSessionHost:
         """Keys of the sessions the host holds."""
         return list(self._live)
 
+    def _running_generation(self, key: str) -> int | None:
+        """The generation of the turn the session's agent runs now, or None (a claimed turn
+        that has not started waits at the mutation gate; a finished one is only settling)."""
+        if self._admissions is None:
+            return None
+        ticket = self._admissions.running(key)
+        if ticket is None:
+            return None
+        try:
+            agent = self.service.agent(self.service.current_id(key))
+        except ProtocolError:
+            return None
+        return ticket.generation if agent.current is not None else None
+
+    def _any_key(self, session_id: str) -> str:
+        """The host key of ``session_id``, also while it is being attached (else the id)."""
+        return (
+            self._keys.get(session_id)
+            or self._keys.get(self.service.current_id(session_id))
+            or session_id
+        )
+
     def key_of(self, session_id: str) -> str | None:
         """The host's key for ``session_id`` (any id it ran under), or None."""
         key = self._keys.get(session_id)
@@ -344,6 +380,11 @@ class DaemonSessionHost:
             open_requests=tuple(r.request_id for r in live.book.open_requests()),
             close_pending=live.close_pending,
         )
+
+    def open_requests(self, session_id: str) -> list[OpenRequest]:
+        """The session's server requests still waiting for an answer, oldest first (a plain
+        read; the MCP bridge's approval queue lists them, P19-17)."""
+        return self._require(session_id).book.open_requests()
 
     # -- create / resume / attach -----------------------------------------------------------------
 
@@ -669,6 +710,8 @@ class DaemonSessionHost:
         try:
             await self.service.close(key)
         finally:
+            with contextlib.suppress(Exception):
+                await self.mutations.forget(key)
             self._live.pop(key, None)
             for undo in live.undo:
                 with contextlib.suppress(Exception):
@@ -697,6 +740,8 @@ class DaemonSessionHost:
         for task in list(self._tasks):
             with contextlib.suppress(BaseException):
                 await task
+        with contextlib.suppress(Exception):
+            await self.mutations.aclose()
         await self.service.aclose()
         await self._stop_flusher()
         self.event_log.flush()
@@ -720,17 +765,21 @@ class DaemonSessionHost:
             return _not_started(ticket)
         self._tickets[key] = ticket
         try:
-            if key not in self._live:
-                await self.resume(key)
-            if ticket.lease_waited:
-                await self.service.reload(key)
-            if ticket.stop_reason is not None:
-                return _not_started(ticket)
-            if ticket.admission.payload.get(UNATTENDED) is True:
-                self._auto_approve(key, self.service.current_id(key))
-            running = await self.service.start_admitted(
-                key, ticket.text, generation=ticket.generation
-            )
+            # The session's mutation gate is held until the turn runs: no change rebuilds the
+            # agent while it is prepared, and changes deferred to this boundary apply first.
+            async with self.mutations.gate(key):
+                if key not in self._live:
+                    await self.resume(key)
+                if ticket.lease_waited:
+                    await self.service.reload(key)
+                await self.mutations.before_turn(key)
+                if ticket.stop_reason is not None:
+                    return _not_started(ticket)
+                if ticket.admission.payload.get(UNATTENDED) is True:
+                    self._auto_approve(key, self.service.current_id(key))
+                running = await self.service.start_admitted(
+                    key, ticket.text, generation=ticket.generation
+                )
             generation = ticket.generation
             ticket.bind(
                 interrupt=lambda reason: self._stop_turn(key, generation, reason),

@@ -1605,6 +1605,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/acp/test_entry.py::test_version_prints_and_exits`
   - `tests/unit/acp/test_entry.py::test_setup_runs_indus_setup_as_a_child`
   - Review: `--setup-browser` waits for `indus tools install browser` (P19-01 follow-up)
+  - `tests/contract/acp/test_schema_drift.py::test_every_name_the_adapter_uses_is_in_the_schema_with_its_tier`
 - **ACC-M1-2** `indus acp --check` imports the SDK and the adapter and says OK; without the `acp` extra it exits 1 with a hint
   - `tests/unit/acp/test_entry.py::test_check_imports_the_sdk_and_the_adapter`
   - `tests/unit/acp/test_entry.py::test_check_without_the_sdk_exits_1_with_a_hint`
@@ -1612,7 +1613,8 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/acp/test_session_load.py::test_the_whole_history_streams_before_the_response`
   - `tests/contract/acp/test_session_load.py::test_a_compressed_session_loaded_by_its_old_id_is_addressed_by_that_id`
   - `tests/contract/acp/test_session_new.py::test_the_response_frame_comes_before_the_post_attach_updates`
-  - Review: `session/cancel` (P19-09)
+  - `tests/contract/acp/test_prompt.py::test_cancel_stops_this_editors_running_turn`
+  - `tests/contract/acp/test_transcript_replay.py::test_the_transcript_gives_the_golden_frames_on_both_hosts`
 - **ACC-M2-2** ACP session list: ACP conversations only, 50 per page, the cursor is the last id, an unknown cursor is an empty page
   - `tests/unit/acp/test_listing.py::test_pages_hold_fifty_and_the_cursor_is_the_last_id`
   - `tests/unit/acp/test_listing.py::test_an_unknown_cursor_gives_an_empty_page_never_the_first`
@@ -1620,20 +1622,75 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-M2-3** ACP fork: the child gets the editor's MCP servers or a copy of the parent's
   - `tests/contract/acp/test_session_load.py::test_fork_gets_the_parents_mcp_servers_or_the_editors_own`
 - **ACC-M3-1** ACP prompts with text, image and resource blocks; streamed message, thought, tool, plan, usage and …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/acp/test_content.py::test_large_text_file_is_cut_with_a_note`
+  - `tests/unit/acp/test_content.py::test_image_links_are_staged_under_the_home`
+  - `tests/unit/acp/test_content.py::test_private_image_url_is_refused_by_the_policy`
+  - `tests/unit/acp/test_projection.py::test_a_replayed_turn_projects_to_the_golden_updates`
+  - `tests/contract/acp/test_prompt.py::test_a_prompt_streams_its_reply_before_the_answer`
+  - `tests/contract/acp/test_transcript_replay.py::test_the_transcript_gives_the_golden_frames_on_both_hosts`
+  - `tests/contract/acp/test_transcript_replay.py::test_every_frame_of_the_session_matches_the_vendor_schema`
+- **ACC-M3-2** ACP file edits show as diffs (tool starts and edit permission cards)
+  - `tests/unit/acp/test_tool_kinds.py::test_edits_start_as_diffs`
+  - `tests/contract/acp/test_permissions.py::test_a_file_write_card_shows_the_diff`
 - **ACC-M4-1** ACP permission cards: allow once, for session, always, deny, deny always
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/acp/test_permissions.py::test_options_follow_the_choices_and_map_by_id`
+  - `tests/contract/acp/test_permissions.py::test_the_answer_is_mapped_by_option_id`
+- **ACC-M4-2** An ACP permission card nobody answers times out as "timeout", never as a denial
+  - `tests/contract/acp/test_permissions.py::test_a_timed_out_card_reports_timeout_not_deny`
+- **ACC-M5-1** ACP clarify questions arrive as form elicitations, or as cards with one option per choice plus Skip
+  - `tests/contract/acp/test_elicitation.py::test_form_elicitation_answers_single_and_multi_select`
+  - `tests/contract/acp/test_elicitation.py::test_without_forms_each_question_is_a_card_with_skip`
+- **ACC-M6-1** ACP slash commands: advertised to the editor, answered in place, refusals are replies, unknown words are prompt text
+  - `tests/contract/acp/test_commands.py::test_branch_is_refused_and_unknown_words_are_prompt_text`
+  - `tests/contract/acp/test_commands.py::test_title_help_tools_and_steer_in_local_mode`
+  - `tests/contract/acp/test_commands.py::test_the_commands_update_follows_session_new`
+- **ACC-M7-1** ACP model picker switches the session only (guarded picks ask, mid-turn picks wait); one ask-before-edits mode
+  - `tests/contract/acp/test_model_mode.py::test_a_declined_guarded_pick_changes_nothing`
+  - `tests/contract/acp/test_model_mode.py::test_a_pick_during_a_turn_waits_for_the_next_one`
+  - `tests/contract/acp/test_model_mode.py::test_only_the_ask_mode_exists`
 - **ACC-M8-1** ACP runs the agent in-process first. Changed (P1 decision); gateway-viewer mode with reattach and …
   - `tests/unit/acp/test_local_host.py::test_fallback_or_local_flag_runs_sessions_here`
   - `tests/unit/acp/test_local_host.py::test_no_daemon_and_no_fallback_answers_initialize_then_refuses_sessions`
-  - `tests/e2e/acp/test_acp_daemon.py::test_attached_refuses_new_sessions_without_the_editor_policy_and_local_creates_one`
+  - `tests/e2e/acp/test_acp_daemon.py::test_an_attached_editor_session_prompts_switches_model_and_forks_on_the_daemon`
+  - `tests/e2e/acp/test_acp_daemon.py::test_local_creates_a_session_in_process_and_leaves_the_daemon_alone`
 - **ACC-M8-2** ACP attached mode reattaches after a lost link: waiters see outcome unknown, sessions resume from their last seq, an open card is offered once, editor MCP specs go back
   - `tests/contract/acp/test_attached_host.py::test_a_killed_transport_fails_the_waiter_and_the_reconnect_resumes_from_the_last_seq`
   - `tests/contract/acp/test_attached_host.py::test_reconnect_reattaches_editor_mcp`
   - `tests/contract/acp/test_attached_host.py::test_a_lost_turn_is_announced_once`
-  - Review: against a real daemon once it serves `session.mutate` and advertises `acp.editor_policy` (P19-13, D-16.602)
+  - Review: a reattach test against a real `indus gateway run` process (the daemon serves `session.mutate` and `acp.editor_policy` since D-16.638; only the in-loop endpoint is tested)
+- **ACC-M8-3** ACP refuses a prompt while a turn of the session is lost (outcome unknown) and never resends it
+  - `tests/contract/acp/test_prompt.py::test_a_lost_turn_refuses_the_prompt_without_sending_it`
+  - `tests/contract/acp/test_prompt.py::test_a_lost_ack_and_the_same_prompt_reuse_one_admission`
 - **ACC-M9-1** Editor-provided MCP servers attached per session; curated editor toolset
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/acp/test_toolset.py::test_the_default_bundle_resolves_to_the_golden_tool_list`
+  - `tests/unit/acp/test_toolset.py::test_each_session_sees_only_its_own_editor_servers`
+  - `tests/unit/acp/test_toolset.py::test_editor_servers_connect_through_the_p13_client`
+  - `tests/unit/acp/test_toolset.py::test_a_changed_spec_after_a_restart_is_refused`
+- **ACC-M10-1** `indus mcp serve` read tools: conversations, one conversation, messages, attachments (media path policy), channels; JSON `error` answers, clamped integers, stdout frames only
+  - `tests/contract/mcp_serve/test_read_tools.py::test_tool_list_order_is_exact_and_approval_tools_are_absent_without_a_daemon`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_conversations_are_listed_newest_first_with_filters`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_messages_read_shows_user_and_assistant_text_in_id_order`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_attachments_follow_the_media_path_policy`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_channels_come_from_the_directory_else_from_the_routes`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_stdout_carries_only_mcp_frames`
+  - `tests/e2e/mcp_serve/test_mcp_serve_daemon.py::test_mcp_serve_reads_the_store_and_sends_only_through_a_running_daemon`
+  - `tests/contract/mcp_serve/test_tool_list.py::test_the_tool_list_matches_the_snapshot`
+- **ACC-M10-2** `indus mcp serve` events: no history replay, change-counter gate, capped queue with `dropped`, `events_wait` long poll to its timeout
+  - `tests/contract/mcp_serve/test_event_bridge.py::test_history_is_not_replayed_and_one_new_message_is_one_event`
+  - `tests/contract/mcp_serve/test_event_bridge.py::test_an_unchanged_store_is_not_read_and_one_commit_is_one_reload`
+  - `tests/contract/mcp_serve/test_event_bridge.py::test_the_queue_keeps_the_latest_1000_and_reports_what_was_dropped`
+  - `tests/contract/mcp_serve/test_event_bridge.py::test_events_wait_answers_at_its_timeout_exactly`
+  - `tests/contract/mcp_serve/test_event_bridge.py::test_events_wait_wakes_on_a_new_event_and_honours_the_filter`
+- **ACC-M10-3** `messages_send` through the daemon: one ledger-backed send, friendly names, error without a daemon
+  - `tests/contract/mcp_serve/test_send.py::test_one_send_is_one_ledger_backed_platform_send`
+  - `tests/contract/mcp_serve/test_send.py::test_friendly_names_resolve_through_the_directory`
+  - `tests/contract/mcp_serve/test_send.py::test_without_a_daemon_or_arguments_the_answer_is_an_error`
+  - `tests/e2e/mcp_serve/test_mcp_serve_daemon.py::test_mcp_serve_reads_the_store_and_sends_only_through_a_running_daemon`
+- **ACC-M11-1** MCP approval tools wired to the daemon's approval queue: absent without it; list (redacted), answer through the generation fences, first answer wins, events
+  - `tests/contract/mcp_serve/test_approvals.py::test_without_a_daemon_the_approval_tools_are_not_listed`
+  - `tests/contract/mcp_serve/test_approvals.py::test_an_open_prompt_is_listed_answered_once_and_announced`
+  - `tests/contract/mcp_serve/test_approvals.py::test_a_prompt_answered_elsewhere_first_is_settled_here`
+  - `tests/e2e/mcp_serve/test_mcp_serve_daemon.py::test_mcp_serve_reads_the_store_and_sends_only_through_a_running_daemon`
 - **ACC-N31-1** Secrets at rest (desktop and CLI: provider keys, auth tokens, platform credentials) go to the OS …
   - `tests/contract/foundation/test_secret_store_contract.py::test_round_trip`
   - `tests/contract/foundation/test_secret_store_contract.py::test_profile_isolation`

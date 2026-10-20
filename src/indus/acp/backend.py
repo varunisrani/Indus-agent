@@ -34,6 +34,7 @@ __all__ = [
     "Admission",
     "BackendError",
     "CancelOutcome",
+    "CommandReply",
     "CreateRequest",
     "EditorPolicy",
     "EventSink",
@@ -45,6 +46,7 @@ __all__ = [
     "MutationResult",
     "PendingPrompt",
     "SessionSnapshot",
+    "Settled",
     "UsageInfo",
 ]
 
@@ -77,6 +79,7 @@ CODES: Final[frozenset[str]] = frozenset(
         "session_busy",
         "outcome_unknown",
         "unknown_execution",
+        "unsupported_command",
         "backend_failed",
     }
 )
@@ -204,8 +207,29 @@ type CancelOutcome = Literal["cancelled", "interrupted", "settled", "not_found",
 
 @dataclass(frozen=True)
 class MutationResult:
-    status: Literal["applied", "deferred", "cancelled", "refused"]
+    """``confirm``: nothing changed; the change needs the person's yes first (``data.message``
+    says why; the same call with ``payload.confirm`` true applies it)."""
+
+    status: Literal["applied", "deferred", "cancelled", "refused", "confirm"]
     data: Mapping[str, Any] = field(default_factory=dict[str, Any])
+
+
+@dataclass(frozen=True)
+class Settled:
+    """How an admission's turn ended: ``outcome`` is ``completed``, ``cancelled`` or ``failed``
+    (``failure`` says why); ``turn_id`` names the turn in the session's events."""
+
+    turn_id: str
+    outcome: str
+    failure: str | None = None
+
+
+@dataclass(frozen=True)
+class CommandReply:
+    """A slash command's answer: ``text`` to show, and/or ``submit`` to run as the prompt."""
+
+    text: str | None = None
+    submit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -255,6 +279,24 @@ class AcpBackend(Protocol):
     async def cancel(self, session_id: str, admission_id: str) -> CancelOutcome: ...
 
     async def receipt(self, session_id: str, admission_id: str) -> Admission: ...
+
+    async def wait(self, session_id: str, admission_id: str) -> Settled:
+        """How the admission's turn ended; ``BackendError("outcome_unknown")`` when the
+        transport went first (never resend), ``unknown_execution`` when it was lost."""
+        ...
+
+    async def lost(self, session_id: str) -> list[LostTurn]:
+        """The session's turns lost in a daemon restart (state ``unknown``), oldest first."""
+        ...
+
+    async def steer(self, session_id: str, text: str, *, admission_id: str | None) -> bool:
+        """Guidance for the running turn of ``admission_id`` only; False when it is not
+        running (nothing was sent)."""
+        ...
+
+    async def run_command(self, session_id: str, name: str, arg: str) -> CommandReply:
+        """Run a registry slash command for the session (``BackendError`` when refused)."""
+        ...
 
     async def answer(
         self,

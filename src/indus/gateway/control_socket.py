@@ -80,12 +80,25 @@ KNOWN_VERBS = (
     "describe",
     "maintenance-run",
     "stop",
+    "deliver-message",
+    "approvals-open",
+    "approvals-respond",
 )
-"""Verbs P15, P17 and P18 name; all but the first two answer ``unsupported`` until registered."""
-OWNER_ONLY_VERBS = frozenset({"session-ticket", "maintenance-run", "stop"})
+"""Verbs P15 and P17-P19 name; all but the first two answer ``unsupported`` until registered."""
+OWNER_ONLY_VERBS = frozenset(
+    {
+        "session-ticket",
+        "maintenance-run",
+        "stop",
+        "deliver-message",
+        "approvals-open",
+        "approvals-respond",
+    }
+)
 """Verbs answered only to a peer the OS confirmed as this user (they hand out credentials,
-bulk-change the profile's data: ``maintenance-run``, P17-21, or end the daemon: ``stop``, the
-dashboard's stop / restart buttons, P18-15)."""
+bulk-change the profile's data: ``maintenance-run``, P17-21, end the daemon: ``stop``, the
+dashboard's stop / restart buttons, P18-15, or send and approve as the profile: the messaging
+bridge's verbs, P19-16/17)."""
 
 LAUNCHD_LABEL_PREFIX = "ai.indus.gateway"
 _SOCKET_NAME = "gw.sock"

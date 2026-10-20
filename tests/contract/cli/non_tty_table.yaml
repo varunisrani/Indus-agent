@@ -236,6 +236,7 @@ commands:
 long_running:
   - acp                   # an editor agent over stdio until the editor closes it (P19-01)
   - cron daemon
+  - mcp serve             # an MCP server over stdio until its client closes it (P19-14)
   - gateway run           # the gateway itself
   - gateway ensure        # starts a gateway when none runs and waits for it (P17-15)
   - gateway start         # starts a gateway (or its service) and waits for it

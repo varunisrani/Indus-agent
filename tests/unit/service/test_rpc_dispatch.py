@@ -230,6 +230,7 @@ def test_per_method_deadlines(scope: Scope) -> None:
         "prompt.submit": 1800.0,
         "prompt.background": 1800.0,
         "session.compress": 600.0,
+        "session.mutate": 600.0,
     }
 
 

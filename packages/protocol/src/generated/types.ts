@@ -1116,6 +1116,63 @@ export interface SessionMostRecentResult {
   session?: SessionRow | null;
 }
 
+/** Change a watched session (see `SessionMutationName`). */
+export interface SessionMutateParams {
+  /** A session this connection watches. */
+  session_id: SessionId;
+  /** What to change. */
+  operation: SessionMutationName;
+  /**
+   * The operation's arguments (`editor_mcp`: `mcp_servers`; `workspace`: `cwd`;
+   * `model`: `model`, `provider`, `confirm`; `rewind`: `count`; `rename`: `title`;
+   * `branch`: `mcp_servers`; `compress`: `focus`; `command`: `name`, `arg`).
+   */
+  payload?: { [key: string]: JsonValue };
+  /** The client's id for this change: the same id again answers the first result. */
+  request_id: string;
+  /**
+   * The turn the client believes runs; another running turn makes the change `refused`
+   * (`stale_generation`).
+   */
+  generation?: number | null;
+}
+
+/** What the change did. Fields not used by the operation are absent. */
+export interface SessionMutateResult {
+  /** `applied`, `deferred`, `refused` or `confirm`. */
+  status: SessionMutationStatus;
+  /** Why it was refused (a short code such as `stale_generation`, `editor_mcp_changed`). */
+  reason?: string | null;
+  /** Text for people (why `confirm` asks, or a refusal's detail). */
+  message?: string | null;
+  /** `branch`: the new session; `compress`: the id the session runs under now. */
+  session_id?: string | null;
+  /** `workspace`: the session's folder now. */
+  cwd?: string | null;
+  /** `rename`: the stored title. */
+  title?: string | null;
+  /** `model`: the session's model (after the switch, or the one waiting). */
+  model?: string | null;
+  /** `model`: its provider. */
+  provider?: string | null;
+  /** `rewind` / `reset`: stored messages removed. */
+  removed?: number | null;
+  /** `rewind`: the text of the oldest user message taken back; `command`: the reply. */
+  text?: string | null;
+  /** `compress`: `compressed`, `nothing`, `blocked` or `aborted`. */
+  outcome?: string | null;
+  /** `editor_mcp` / `branch`: the editor servers whose tools the session has. */
+  servers?: string[] | null;
+  /** `editor_mcp`: servers whose spec differs from the one recorded for the session. */
+  refused_servers?: string[] | null;
+  /** `editor_mcp`: servers whose tool listing differs from the frozen one. */
+  changed?: string[] | null;
+}
+
+export type SessionMutationName = "editor_mcp" | "branch" | "workspace" | "model" | "rewind" | "reset" | "rename" | "compress" | "command";
+
+export type SessionMutationStatus = "applied" | "deferred" | "refused" | "confirm";
+
 /** Correct the running turn: cancel the model call in flight and retry with this text. */
 export interface SessionRedirectParams {
   /** The session with the running turn. */

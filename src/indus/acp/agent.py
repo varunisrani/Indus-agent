@@ -25,7 +25,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from pydantic import ValidationError
 
@@ -35,6 +35,11 @@ from indus.acp.backend import AcpBackend, BackendError, HostSelector, LostTurn
 from indus.foundation.scope import Scope
 from indus.protocol.events import EventBase
 from indus.protocol.server_requests import ServerRequest
+
+if TYPE_CHECKING:
+    from indus.acp.permissions import PermissionBridge
+    from indus.acp.projection import Projection
+    from indus.acp.prompts import PromptBook
 
 __all__ = [
     "AGENT_NAME",
@@ -120,6 +125,8 @@ class HeldSession:
     cwd: str | None = None
     unsubscribe: Callable[[], None] | None = None
     title: str | None = None
+    model: str | None = None
+    provider: str | None = None
     offered: list[tuple[ServerRequest, int | None]] = field(
         default_factory=list[tuple[ServerRequest, int | None]]
     )
@@ -168,14 +175,17 @@ class SessionTable:
 
 
 class EditorSink:
-    """Backend traffic of held sessions, handed to the projection (P19-10) and the permission
-    bridge (P19-11) once those are wired; until then requests and lost turns are kept on the
-    held session and events go to the optional ``on_event`` hook."""
+    """Backend traffic of held sessions: events go to the projection (P19-10) and the permission
+    bridge (it closes cards of withdrawn requests), requests to the permission bridge (P19-11),
+    gaps and lost turns to the projection and the waiting prompts (P19-09). The optional
+    ``on_backend_event`` / ``on_server_request`` hooks see the same traffic (tests)."""
 
     def __init__(self, agent: AcpAgent) -> None:
         self.agent = agent
 
     def on_event(self, session_id: str, event: EventBase) -> None:
+        self.agent.projection.on_event(session_id, event)
+        self.agent.permissions.on_event(session_id, event)
         hook = self.agent.on_backend_event
         if hook is not None:
             hook(session_id, event)
@@ -187,18 +197,21 @@ class EditorSink:
             if any(str(seen.request_id) == ident for seen, _ in held.offered):
                 return  # already offered (a load's snapshot and the subscription both carry it)
             held.offered.append((request, generation))
+        self.agent.permissions.offer(session_id, request, generation)
         hook = self.agent.on_server_request
         if hook is not None:
             hook(session_id, request, generation)
 
     def on_gap(self, session_id: str, info: Mapping[str, Any]) -> None:
         log.info("session %s skipped events after a reconnect (%s)", session_id, info.get("reason"))
+        self.agent.projection.on_gap(session_id, info)
 
     def on_lost(self, session_id: str, lost: LostTurn) -> None:
         held = self.agent.sessions.get(session_id)
         if held is None:
             return
         held.lost.append(lost)
+        self.agent.prompts.lost(session_id)
         from indus.acp.history import announce_lost
 
         self.agent.spawn(announce_lost(self.agent, held, [lost]))
@@ -227,6 +240,16 @@ class AcpAgent:
         self.form_elicitation = False
         self.client_info: Mapping[str, Any] = {}
         self.sessions = SessionTable()
+        from indus.acp.permissions import PermissionBridge
+        from indus.acp.projection import Projection
+        from indus.acp.prompts import PromptBook
+        from indus.acp.tool_kinds import kind_of
+
+        self.projection: Projection = Projection(self)
+        self.permissions: PermissionBridge = PermissionBridge(self)
+        self.prompts: PromptBook = PromptBook()
+        self.tool_kinds: Callable[[str], str] = kind_of
+        """Tool name → ACP kind (also used by the history replay)."""
         self.sink = EditorSink(self)
         self.on_backend_event: Callable[[str, EventBase], None] | None = None
         self.on_server_request: Callable[[str, ServerRequest, int | None], None] | None = None
@@ -291,6 +314,7 @@ class AcpAgent:
 
     async def aclose(self) -> None:
         """Cancel pending notices, detach held sessions, close the backend (loop still alive)."""
+        await self.permissions.aclose()
         tasks = list(self._background)
         for task in tasks:
             task.cancel()
@@ -322,7 +346,13 @@ def _rpc(error: AcpError) -> Exception:
 
 
 def default_handlers() -> dict[str, Handler]:
-    from indus.acp import history, listing, sessions  # noqa: F401  (they register handlers)
+    from indus.acp import (  # noqa: F401  (they register handlers)
+        history,
+        listing,
+        model_mode,
+        prompts,
+        sessions,
+    )
 
     return dict(HANDLERS)
 

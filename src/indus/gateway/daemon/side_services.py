@@ -41,6 +41,7 @@ from indus.foundation.blocking import run_blocking
 from indus.foundation.scope import Scope, scope_or_none
 from indus.gateway.control_socket import ControlServer, Handler, identity_payload
 from indus.gateway.daemon.attach_verbs import AttachVerbs
+from indus.gateway.daemon.bridge_verbs import BridgeVerbs
 from indus.gateway.daemon.parts import DaemonPart, Stage
 from indus.gateway.daemon.reconnect import ConnectOutcome, PlatformHealth, ReconnectWatcher
 from indus.gateway.hooks import GatewayHooks, bridge
@@ -304,6 +305,8 @@ class DaemonBridge:
             **self.attach_verbs.handlers(),
             # P17-21: bulk session maintenance runs here, beside the live turns (R09.21).
             **MaintenanceVerb(self.daemon.scope).handlers(),
+            # P19-16/17: `indus mcp serve` sends and answers approvals through the daemon.
+            **BridgeVerbs(self.daemon).handlers(),
         }
 
     # -- verbs (async: they run on the daemon's loop) -------------------------------------------

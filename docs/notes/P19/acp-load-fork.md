@@ -23,8 +23,9 @@ What it does (own words): the editor reopens a conversation it knows by id.
   chunks, and for each tool call a `tool_call` start plus a `tool_call_update` with the result.
 - Pending approval/clarify prompts are offered again (through the subscription sink); lost turns
   are announced; the response carries modes, config options and provenance `_meta`.
-- `session/resume` is the same as load (the vendor marks it unstable; the editor gets the same
-  replay).
+- `session/resume` is the same as load (the editor gets the same replay). Tier: stable in the
+  vendor schema v1.19.0 (the SDK 0.12.1 router still flags it unstable; we do not use that
+  router), checked by `tests/contract/acp/test_schema_drift.py` (P19-18).
 - Fork: a `branch` mutation on the parent (the editor's MCP servers for the child, or a copy of
   the parent's), a workspace move on the child when the cwd differs, subscribe, respond with the
   child id (no history replay: the editor shows the fork as a new thread).
@@ -34,8 +35,8 @@ Inputs → outputs: `session/load|resume {sessionId, cwd, mcpServers}` → N not
 
 Files: `src/indus/acp/history.py`, `tests/contract/acp/test_session_load.py`.
 
-Vendor names used (0.12.1 / v1.19.0): `session/load` (stable), `session/resume`, `session/fork`
-(unstable tier in the SDK router); `user_message_chunk`, `agent_message_chunk`,
+Vendor names used (0.12.1 / v1.19.0): `session/load`, `session/resume` (stable in the schema),
+`session/fork` (unstable tier); `user_message_chunk`, `agent_message_chunk`,
 `agent_thought_chunk`, `tool_call{toolCallId,title,kind,status,rawInput,content}`,
 `tool_call_update{toolCallId,status,content,rawOutput}`; `LoadSessionResponse`,
 `ResumeSessionResponse`, `ForkSessionResponse{sessionId,…}`.

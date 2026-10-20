@@ -361,6 +361,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_lineage.py::test_inherited_marker_naming_another_id_still_continues`
 - **R03.14** Order transcripts by id, never timestamp
   - `tests/unit/state/test_messages.py::test_decreasing_timestamps_still_read_in_id_order`
+  - `tests/contract/mcp_serve/test_event_bridge.py::test_order_is_the_row_id_when_timestamps_go_backwards`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_messages_read_shows_user_and_assistant_text_in_id_order`
 - **R03.15** Long migrations hold the write lock
   - `tests/unit/state/test_schema.py::test_chunked_migration_is_time_boxed_and_resumes`
 - **R03.16** Read-only means read-only for browsing
@@ -375,12 +377,15 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/web/test_sessions_routes.py::test_reads_never_write_the_store`
   - `tests/contract/web/test_sessions_routes.py::test_a_missing_store_is_empty_and_never_created`
   - `tests/contract/web/test_sessions_routes.py::test_an_uninitialised_store_is_503`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_the_store_is_opened_read_only`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_a_missing_store_is_an_error_answer_and_is_never_created`
 - **R03.17** Descriptor exhaustion
   - `tests/unit/state/test_readpool.py::test_nine_concurrent_readers_use_eight_pooled_and_the_writer`
   - `tests/unit/state/test_readpool.py::test_process_cap_falls_back_to_the_writer`
   - `tests/unit/state/test_readpool.py::test_low_descriptor_headroom_refuses_new_connections`
   - `tests/unit/state/test_readpool.py::test_failed_open_backs_off_for_sixty_seconds`
   - `tests/unit/state/test_readpool.py::test_close_during_a_read_closes_that_connection`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_the_store_is_opened_read_only`
 - **R03.18** SQL variable limit
   - `tests/unit/state/test_deletion.py::test_delete_many_five_thousand_ids`
 - **R03.19** Surrogates and reserved prefixes
@@ -394,6 +399,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/service/test_turn_lease_multiprocess.py::test_a_holder_from_another_namespace_is_reclaimed_only_after_expiry`
   - `tests/unit/service/test_turn_lease.py::test_a_live_holder_cannot_be_declared_dead_without_proof`
 - **R03.21** Never replay started work
+  - `tests/contract/acp/test_prompt.py::test_a_lost_turn_refuses_the_prompt_without_sending_it`
   - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
   - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_turn_lost_with_its_daemon_pauses_the_chat_once_and_never_runs_again`
   - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_lost_host_turn_whose_reply_was_stored_is_owed_once_not_paused`
@@ -844,6 +850,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/gateway/test_ensure.py::test_cold_start_then_warm_ensure_does_not_spawn`
   - `tests/integration/gateway/test_ensure.py::test_a_starting_daemon_is_waited_for_not_doubled`
 - **R06.19** Unknown turns after a crash must pause, not replay
+  - `tests/contract/acp/test_prompt.py::test_a_lost_turn_refuses_the_prompt_without_sending_it`
   - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
   - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_turn_lost_with_its_daemon_pauses_the_chat_once_and_never_runs_again`
   - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_marker_whose_admission_never_started_runs_it_once`
@@ -868,6 +875,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/outbound/test_media_policy.py::test_strict_mode_refuses_recent_but_accepts_allowed_dir`
   - `tests/unit/gateway/outbound/test_media_policy.py::test_recent_file_trust_window`
   - `tests/unit/gateway/outbound/test_media_policy.py::test_policy_reads_the_profiles_gateway_section`
+  - `tests/contract/mcp_serve/test_read_tools.py::test_attachments_follow_the_media_path_policy`
   - Review: the WhatsApp bridge also refuses relative paths, symlinks, non-files, files over 100 MiB and its own auth folder (apps/whatsapp-bridge/src/session.test.ts, P16-02)
 - **R06.23** Empty or failed transcription must say so
   - `tests/unit/tools/builtin/media/test_stt.py::test_empty_is_inaudible`
@@ -1159,8 +1167,13 @@ Checked by `python -m tooling.checks traps`.
 - **R09.9** ACP history replay must finish before the load/resume response
   - `tests/contract/acp/test_session_load.py::test_the_whole_history_streams_before_the_response`
   - `tests/contract/acp/test_session_new.py::test_the_response_frame_comes_before_the_post_attach_updates`
+  - `tests/contract/acp/test_transcript_replay.py::test_the_transcript_gives_the_golden_frames_on_both_hosts`
 - **R09.10** MCP approval tools are hollow
-  - Review: not yet planned (P00-guards)
+  - `tests/contract/mcp_serve/test_approvals.py::test_without_a_daemon_the_approval_tools_are_not_listed`
+  - `tests/contract/mcp_serve/test_approvals.py::test_a_daemon_without_a_session_host_offers_no_queue`
+  - `tests/contract/mcp_serve/test_approvals.py::test_an_open_prompt_is_listed_answered_once_and_announced`
+  - `tests/contract/mcp_serve/test_approvals.py::test_a_prompt_answered_elsewhere_first_is_settled_here`
+  - `tests/e2e/mcp_serve/test_mcp_serve_daemon.py::test_mcp_serve_reads_the_store_and_sends_only_through_a_running_daemon`
 - **R09.11** Never resend a turn with unknown outcome (ACP viewer)
   - `tests/unit/service/remote/test_host.py::test_a_socket_lost_after_admission_is_outcome_unknown`
   - `tests/unit/service/remote/test_host.py::test_a_reconnect_replays_missed_deltas_exactly_once`
@@ -1171,22 +1184,32 @@ Checked by `python -m tooling.checks traps`.
   - `apps/tui/src/app/appRuntime.test.ts::attached: a link lost mid-reply says the outcome is unknown and sends nothing again`
   - `tests/contract/acp/test_attached_host.py::test_a_killed_transport_fails_the_waiter_and_the_reconnect_resumes_from_the_last_seq`
   - `tests/contract/acp/test_attached_host.py::test_a_lost_turn_is_announced_once`
-  - Review: the ACP prompt half — refuse an `unknown` turn, own-admission cancel (P19-09)
+  - `tests/contract/acp/test_prompt.py::test_a_lost_ack_and_the_same_prompt_reuse_one_admission`
+  - `tests/contract/acp/test_prompt.py::test_a_different_prompt_retires_the_retained_identity`
+  - `tests/contract/acp/test_prompt.py::test_a_lost_turn_refuses_the_prompt_without_sending_it`
+  - `tests/contract/acp/test_prompt.py::test_cancel_never_interrupts_a_successor_turn_from_another_surface`
 - **R09.12** "Allow for session" has no ACP kind
-  - Review: not yet planned (P00-guards)
+  - `tests/contract/acp/test_permissions.py::test_options_follow_the_choices_and_map_by_id`
+  - `tests/contract/acp/test_permissions.py::test_the_answer_is_mapped_by_option_id`
+  - `tests/contract/acp/test_permissions.py::test_a_timed_out_card_reports_timeout_not_deny`
+  - `tests/contract/acp/test_permissions.py::test_a_dismissed_card_is_not_a_denial_when_attached`
+  - `tests/contract/acp/test_permissions.py::test_an_unknown_option_is_no_answer_when_attached`
 - **R09.13** Two ACP implementations, one constructor
   - `tests/unit/acp/test_local_host.py::test_no_daemon_and_no_fallback_answers_initialize_then_refuses_sessions`
   - `tests/unit/acp/test_local_host.py::test_fallback_or_local_flag_runs_sessions_here`
-  - `tests/e2e/acp/test_acp_daemon.py::test_attached_refuses_new_sessions_without_the_editor_policy_and_local_creates_one`
-  - Review: one mode set on both hosts once the model and mode handlers land (P19-12)
+  - `tests/e2e/acp/test_acp_daemon.py::test_an_attached_editor_session_prompts_switches_model_and_forks_on_the_daemon`
+  - `tests/e2e/acp/test_acp_daemon.py::test_local_creates_a_session_in_process_and_leaves_the_daemon_alone`
+  - `tests/contract/acp/test_model_mode.py::test_only_the_ask_mode_exists`
+  - `tests/contract/acp/test_transcript_replay.py::test_the_transcript_gives_the_golden_frames_on_both_hosts`
 - **R09.14** Stdout purity and probe noise
   - `tests/unit/foundation/test_log.py::test_stdio_mode_keeps_stdout_empty`
   - `tests/unit/foundation/test_bootstrap.py::test_stdio_mode_bootstrap_keeps_stdout_clean`
   - `tests/unit/acp/test_entry.py::test_stdout_carries_frames_only_and_probes_are_quiet`
   - `tests/contract/acp/test_initialize.py::test_unknown_methods_and_probes_answer_method_not_found`
-  - Review: the `indus mcp serve` half (P19-14)
+  - `tests/contract/mcp_serve/test_read_tools.py::test_stdout_carries_only_mcp_frames`
+  - `tests/e2e/mcp_serve/test_mcp_serve_daemon.py::test_mcp_serve_reads_the_store_and_sends_only_through_a_running_daemon`
 - **R09.15** Windows import deadlock
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/acp/test_entry.py::test_windows_warms_native_modules_on_the_main_thread_before_serving`
 - **R09.16** Path normalisation for session lists
   - `tests/unit/acp/test_listing.py::test_the_folder_filter_resolves_symlinked_spellings`
   - `tests/unit/acp/test_listing.py::test_an_unknown_cursor_gives_an_empty_page_never_the_first`

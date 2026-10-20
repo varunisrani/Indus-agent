@@ -138,7 +138,7 @@ async def test_a_workspace_move_rebuilds_the_agent_in_the_new_folder(
         row = sessions.get(store, "s-w")
         assert row is not None and row["cwd"] == str(new)
         with pytest.raises(BackendError) as unavailable:
-            await local.mutate("s-w", "model", {"model": "x"})
+            await local.mutate("s-w", "teleport", {})  # model/rewind/reset arrived with P19-12
         assert unavailable.value.code == "mutation_unavailable"
     finally:
         await local.aclose()

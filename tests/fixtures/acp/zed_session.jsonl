@@ -1,0 +1,11 @@
+{"step": "request", "method": "initialize", "params": {"protocolVersion": 1, "clientCapabilities": {"fs": {"readTextFile": true, "writeTextFile": true}, "terminal": true}, "clientInfo": {"name": "zed", "title": "Zed", "version": "0.200.0"}}}
+{"step": "request", "method": "session/new", "params": {"cwd": "$CWD", "mcpServers": []}, "keep": "sessionId"}
+{"step": "answer", "method": "session/request_permission", "result": {"outcome": {"outcome": "selected", "optionId": "allow_once"}}}
+{"step": "request", "method": "session/prompt", "params": {"sessionId": "$SESSION", "prompt": [{"type": "text", "text": "Clean up the build folder."}]}}
+{"step": "request", "method": "session/load", "params": {"sessionId": "$SESSION", "cwd": "$CWD", "mcpServers": []}}
+{"step": "request", "method": "session/list", "params": {"cwd": "$CWD"}}
+{"step": "answer", "method": "session/request_permission", "result": "hold"}
+{"step": "start", "method": "session/prompt", "params": {"sessionId": "$SESSION", "prompt": [{"type": "text", "text": "Do it again."}]}}
+{"step": "await_request", "method": "session/request_permission", "count": 2}
+{"step": "notify", "method": "session/cancel", "params": {"sessionId": "$SESSION"}}
+{"step": "finish"}

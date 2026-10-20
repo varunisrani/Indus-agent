@@ -45,7 +45,10 @@ Files: `src/indus/acp/backend.py`, `src/indus/acp/local_host.py`, `src/indus/acp
 Edge cases / failure modes:
 - Unknown session id → `not_found`.
 - Workspace move while a turn runs → `session_busy`.
-- `model`/`rewind`/`reset` mutations → `mutation_unavailable` here until P19-12 implements them.
+- `model`/`rewind`/`reset` mutations: served here since P19-12 (`model` rebinds the session's
+  agent when idle, or waits for the turn boundary; `rewind` takes user turns back; `reset`
+  empties the conversation; both rebuild the agent from the store). Any other unknown
+  operation → `mutation_unavailable`.
 - Building the service fails (no provider): the error text reaches `session/new`.
 - Close: detaches the sessions this process holds; nothing is ended.
 
@@ -61,8 +64,9 @@ Tests we will write:
   move refused.
 
 ## Decisions for the lead
-- Mutations `model`, `rewind`, `reset` are declared but answered `mutation_unavailable` by the
-  local host until P19-12 (commands/model) fills them.
+- Mutations `model`, `rewind`, `reset` were declared here and answered `mutation_unavailable`
+  until P19-12; P19-12 (`docs/notes/P19/acp-commands-model.md`) now serves all three on the
+  local host (corrected at the P19-08..18 integration).
 - `state/sessions.set_cwd` added (shared): updates `cwd` only (git root/branch kept).
 
 Compare checklist (filled after the rewrite; reopened `server.py`, `session.py`):

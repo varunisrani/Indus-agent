@@ -39,7 +39,7 @@ acceptance, done when. Paths and conventions come from
 | P16 | [P16-more-platforms.md](P16-more-platforms.md) | 3 | 36 | 136 | 6 | 4 | 36 | — | done (`cfa6def`; 25, 33–36 in this commit; Photon ships disabled) |
 | P17 | [P17-daemon-shared-backend.md](P17-daemon-shared-backend.md) | 2.5 | 27 | 65 | 17 | 2 | 27 | M5 | done (`d1b05df`; M5 dual-host matrix + shared-backend demo) |
 | P18 | [P18-web-dashboard.md](P18-web-dashboard.md) | 2.5 | 30 | 148 | 11 | 6 | 30 | — | in progress (01–22 landed; 16's prompt-size breakdown owed; 23–30 left) |
-| P19 | [P19-acp-mcp-serve.md](P19-acp-mcp-serve.md) | 1.5 | 18 | 54 | 10 | 4 | 18 | M6 | in progress (01–07 landed; 14–17 parked in .agents/wip/w30; 08–13 building; 18 left) |
+| P19 | [P19-acp-mcp-serve.md](P19-acp-mcp-serve.md) | 1.5 | 18 | 54 | 10 | 4 | 18 | M6 | done (01–07 `3ade87c`; 08–18 + D-16.602 daemon side in this commit; live Zed lane skips) |
 | P20 | [P20-desktop-demo4.md](P20-desktop-demo4.md) | 3.5 | 40 | 183 | 8 | 5 | 40 | **Demo 4** (M7) | planned |
 | P21 | [P21-remaining-backends.md](P21-remaining-backends.md) | 1.5 | 16 | 40 | 7 | 3 | 17 | — | done (`6f04798`; live vendor smoke + ACC-D5-2 need real credentials/Apptainer) |
 | P22 | [P22-research-tooling.md](P22-research-tooling.md) | 1 | 15 | 36 | 6 | 4 | 15 | — | done (`6f04798`) |

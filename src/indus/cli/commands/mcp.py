@@ -35,6 +35,7 @@ import httpx2
 from indus.cli import prompts
 from indus.cli.cmdkit import cli_state, err, group
 from indus.cli.commands._support import fresh_view
+from indus.cli.commands.mcp_serve import serve_command
 from indus.foundation.config import writer
 from indus.foundation.errors import IndusError
 from indus.foundation.redact import redact_text
@@ -651,3 +652,8 @@ def configure_command(name: str, include: tuple[str, ...], all_tools: bool) -> N
     path = _edit_entry(scope, name, edit)
     summary = "all tools" if chosen is None else f"{len(chosen)} tool(s): {', '.join(chosen)}"
     click.echo(f"{name!r} now uses {summary} ({path}). Open sessions: /reload-mcp.")
+
+
+# P19-14: `indus mcp serve` runs Indus as an MCP server (its code is loaded by name from
+# indus.mcp_serve when the command runs).
+mcp_group.add_command(serve_command)

@@ -38,7 +38,6 @@ from indus.foundation.blocking import run_blocking
 from indus.service.creation_policy import launch_flags_from_env
 
 __all__ = [
-    "ADVERTISED_COMMANDS",
     "DEFAULT_MODE",
     "MODEL_OPTION_ID",
     "attach",
@@ -53,22 +52,6 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MODE: Final = "default"
 MODEL_OPTION_ID: Final = "model"
-ADVERTISED_COMMANDS: Final[tuple[str, ...]] = (
-    "help",
-    "model",
-    "tools",
-    "compress",
-    "title",
-    "undo",
-    "retry",
-    "steer",
-    "queue",
-    "new",
-    "clear",
-    "usage",
-)
-"""Registry commands an editor is offered until P19-12 owns the list."""
-
 BYPASS_REFUSED: Final = (
     "Safe mode and ignore-user-config read no profile defaults, so this launch must name both a "
     "model and a provider, e.g. `INDUS_MODEL=<model> INDUS_PROVIDER=<provider> indus acp` with "
@@ -181,20 +164,11 @@ async def session_fields(
     return fields
 
 
-def available_commands() -> list[dict[str, Any]]:
-    """``availableCommands`` from the shared slash registry (the editor subset)."""
-    from indus.service.commands.registry import REGISTRY
+def available_commands(scope: Any = None) -> list[dict[str, Any]]:
+    """``availableCommands``: the editor's commands (``commands.advertised``, P19-12)."""
+    from indus.acp.commands import advertised
 
-    out: list[dict[str, Any]] = []
-    for name in ADVERTISED_COMMANDS:
-        found = REGISTRY.resolve(name)
-        if found is None or found.name != name:
-            continue
-        entry: dict[str, Any] = {"name": name, "description": found.description}
-        if found.args_hint:
-            entry["input"] = {"hint": found.args_hint}
-        out.append(entry)
-    return out
+    return advertised(scope)
 
 
 async def notices_after_attach(agent: AcpAgent, held: HeldSession) -> None:
@@ -204,7 +178,7 @@ async def notices_after_attach(agent: AcpAgent, held: HeldSession) -> None:
             held.editor_id,
             {
                 "sessionUpdate": "available_commands_update",
-                "availableCommands": available_commands(),
+                "availableCommands": available_commands(agent.scope),
             },
         )
         backend = await agent.backend()
@@ -225,7 +199,13 @@ async def attach(
     held = agent.sessions.hold(snapshot.session_id, editor_id)
     held.cwd = snapshot.cwd
     held.title = snapshot.title
+    held.model = snapshot.model or held.model
+    held.provider = snapshot.provider or held.provider
+    agent.projection.known_title(held.key, snapshot.title)
     if held.unsubscribe is None:
+        # An attached subscription may replay what the snapshot already holds (P19-10).
+        floor = snapshot.last_seq if backend.mode == "attached" else -1
+        agent.projection.track(held.key, floor, snapshot.replay_epoch)
         held.unsubscribe = backend.subscribe(snapshot.session_id, agent.sink)
     return held
 
