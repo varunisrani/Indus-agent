@@ -45,6 +45,7 @@ from indus.service.ws_auth import (
     TicketBook,
 )
 from indus.state import registry
+from indus.state import runtime_ledger as ledger
 from indus.state.registry import StoreHandle
 from tests.fakes.agent import eventually
 from tests.fakes.asgi_ws import AsgiWsClient, WsClosed
@@ -222,7 +223,8 @@ async def test_a_turn_streams_over_the_socket_in_order(
     sid = created["result"]["session_id"]
     submitted = await client.request("prompt.submit", {"session_id": sid, "text": "hi"})
     result = submitted["result"]
-    assert result["status"] == "streaming" and result["turn_id"]
+    # An input into an idle session is answered once claimed: its turn's generation, never 0.
+    assert result["status"] == "streaming" and result["turn_id"] and result["generation"] == 1
     await client.until(done(sid))
     events = events_of(client, sid)
     numbers = [int(e["seq"]) for e in events]
@@ -330,6 +332,55 @@ async def test_interrupt_and_steer_name_their_generation(
     hit = await client.request("session.interrupt", {"session_id": sid, "generation": 1})
     assert hit["result"]["interrupted"] is True
     await client.until(done(sid))
+    await client.close()
+    await r.close()
+
+
+@aio
+async def test_submit_answers_real_generations_and_carries_unattended(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    holder = Holder()
+    r = await rig(
+        scope,
+        store,
+        tmp_path,
+        tool_batch(("hold", {})),
+        text_turn("done"),
+        text_turn("next"),
+        tools={"hold": holder},
+    )
+    client = await r.attached()
+    sid = (await client.request("session.create", {}))["result"]["session_id"]
+    first = await client.request(
+        "prompt.submit", {"session_id": sid, "text": "work", "unattended": True}
+    )
+    assert first["result"]["status"] == "streaming" and first["result"]["generation"] == 1
+    row = ledger.get(store, first["result"]["turn_id"])
+    assert row is not None and row.payload.get("unattended") is True
+    await eventually(lambda: holder.entered)
+    queued = await client.request(
+        "prompt.submit", {"session_id": sid, "text": "later", "when_busy": "queue"}
+    )
+    # queued behind the running turn: that turn's generation (the documented "running turn")
+    assert queued["result"]["status"] == "queued" and queued["result"]["generation"] == 1
+    later = ledger.get(store, queued["result"]["turn_id"])
+    assert later is not None and "unattended" not in later.payload
+    holder.gate.set()
+    qid = queued["result"]["turn_id"]
+    await client.until(
+        lambda f: (
+            f.get("method") == "admission.state"
+            and f["params"]["admission_id"] == qid
+            and f["params"]["state"] == "terminal"
+        )
+    )
+    moves = [e for e in events_of(client, sid) if e["type"] == "admission.state"]
+    assert [m["state"] for m in moves if m["admission_id"] == qid] == [
+        "queued",
+        "started",
+        "terminal",
+    ]
     await client.close()
     await r.close()
 

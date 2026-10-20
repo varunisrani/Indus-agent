@@ -65,6 +65,7 @@ from indus.protocol.server_requests import (
     SudoAnswer,
     SudoRequest,
 )
+from tests.unit.protocol._attach_samples import ATTACH_SAMPLES
 from tests.unit.protocol._bridge_samples import BRIDGE_SAMPLES
 
 SID = "sess-1"
@@ -196,3 +197,4 @@ SAMPLES: list[ProtocolModel] = [
 ]
 
 SAMPLES += BRIDGE_SAMPLES
+SAMPLES += ATTACH_SAMPLES

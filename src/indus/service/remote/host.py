@@ -16,7 +16,8 @@ Rules:
   retired. Transport lost after it left → kept as ``unknown`` and ``OutcomeUnknown`` raised: it is
   never resent on its own (R09.11). ``retry(request_id)`` resends it with the same id when the
   person asks (the daemon's ledger answers an exact retry with the first admission); ``discard``
-  drops it.
+  drops it. A daemon answer ``OUTCOME_UNKNOWN`` (the retried input's turn was lost in a restart)
+  keeps the entry as ``unknown`` too and raises ``OutcomeUnknown`` (P17-25).
 - **A running turn whose transport is lost**: every ``wait`` on that connection's turns fails
   ``OutcomeUnknown`` at once; nothing is resubmitted.
 - **Reconnect**: before callers' requests flow again, each open session is subscribed again with
@@ -26,8 +27,13 @@ Rules:
   session the restarted daemon does not host any more is resumed.
 - Controls name the generation of the turn they target: the caller's, else the one of the last
   ``turn.started`` seen; an answer names the generation its offer carried.
+- A server request another viewer answered (``request.settled`` with ``answered``) reaches the
+  session's listeners as ``server_request.cancelled`` (``answered_elsewhere``), so a card still
+  open here closes as it does for a withdrawn request (P17-27).
 - ``discard_unknown`` resolves a turn the daemon lost in a restart (``admission.discard``, by
   that turn's generation).
+- Presence and queue events (``session.viewers``, ``admission.state``) advance the cursor but are
+  not handed to the session's renderer.
 
 ``RemoteHost`` is the blocking facade the classic REPL uses: the same method names as
 ``InProcessHost`` (``create``, ``resume``, ``submit``, ``wait``, ``interrupt``, ``steer``,
@@ -55,16 +61,14 @@ from indus.core.events import EventListener, RequestListener
 from indus.foundation.blocking import run_blocking
 from indus.protocol.attach import AdmissionDiscardResult
 from indus.protocol.base import ProtocolModel
-from indus.protocol.errors import (
-    ERROR_TABLE,
-    INTERNAL_ERROR,
-    SESSION_NOT_FOUND,
-    ErrorCode,
-)
+from indus.protocol.errors import ERROR_TABLE, INTERNAL_ERROR, SESSION_NOT_FOUND, ErrorCode
+from indus.protocol.errors import OUTCOME_UNKNOWN as PROTOCOL_OUTCOME_UNKNOWN
 from indus.protocol.events import (
     EVENTS,
+    CancelReason,
     EventBase,
     ExitReason,
+    ServerRequestCancelled,
     TurnDone,
     TurnFailure,
     TurnStarted,
@@ -106,7 +110,11 @@ log = logging.getLogger(__name__)
 
 GAP_METHOD: Final = "session.replay_gap"
 SETTLED_METHOD: Final = "request.settled"
+ANSWERED: Final = "answered"
+"""The ``request.settled`` outcome of a request some viewer answered."""
 OUTCOME_UNKNOWN_CODE: Final = "runtime.outcome_unknown"
+PRESENCE_METHODS: Final = frozenset({"session.viewers", "admission.state"})
+"""Numbered events that are not for the session renderer (presence and queue bookkeeping)."""
 OUTCOME_UNKNOWN: Final = (
     "The connection to the gateway was lost; the outcome is unknown. Do not resend it: resume "
     "the session to see whether it completed."
@@ -316,10 +324,16 @@ class RemoteSessionService:
 
     # -- turns ------------------------------------------------------------------------------------
 
-    async def submit(self, session_id: str, text: str) -> PromptSubmitResult:
-        """Admit ``text`` (see the module notes for the journal and ``OutcomeUnknown``)."""
+    async def submit(
+        self, session_id: str, text: str, *, unattended: bool = False
+    ) -> PromptSubmitResult:
+        """Admit ``text`` (see the module notes for the journal and ``OutcomeUnknown``).
+        ``unattended``: a finite run nobody watches (``-z``); the daemon auto-approves its turn."""
         found = self._session(session_id)
-        entry = await run_blocking(self.journal.prepare, found.current, text, label="journal")
+        entry = await run_blocking(
+            lambda: self.journal.prepare(found.current, text, unattended=unattended),
+            label="journal",
+        )
         return await self._send(found, entry)
 
     async def retry(self, request_id: str) -> PromptSubmitResult:
@@ -337,11 +351,22 @@ class RemoteSessionService:
         return await run_blocking(self.journal.pending, session_id, label="journal")
 
     async def _send(self, found: _Session, entry: Prepared) -> PromptSubmitResult:
-        params = {"session_id": found.current, "text": entry.text, "request_id": entry.request_id}
+        params: dict[str, Any] = {
+            "session_id": found.current,
+            "text": entry.text,
+            "request_id": entry.request_id,
+        }
+        if entry.unattended:  # kept with the entry, so an explicit retry is an exact retry
+            params["unattended"] = True
         floor = max(found.by_generation, default=0)
         try:
             answer = await self.channel.request("prompt.submit", params)
         except RpcError as error:
+            if error.code == PROTOCOL_OUTCOME_UNKNOWN.code:
+                # An exact retry of an input the daemon lost in a restart: never run again, so
+                # the entry stays as unknown for an explicit user decision.
+                await run_blocking(self.journal.mark_unknown, entry.request_id, label="journal")
+                raise OutcomeUnknown(found.current, request_id=entry.request_id) from None
             await run_blocking(self.journal.retire, entry.request_id, label="journal")
             raise protocol_error(error) from None
         except NotSent:
@@ -357,10 +382,11 @@ class RemoteSessionService:
 
     def _track(self, found: _Session, result: PromptSubmitResult, floor: int) -> None:
         """Remember which turn an admission becomes (see ``wait``)."""
-        exact = result.status is SubmitStatus.STREAMING and result.generation > 0
+        answered = result.generation or 0  # left out while the daemon has not claimed it
+        exact = result.status is SubmitStatus.STREAMING and answered > 0
         if exact:
-            found.generation = result.generation
-            turn = found.by_generation.get(result.generation)
+            found.generation = answered
+            turn = found.by_generation.get(answered)
             if turn is not None:
                 found.admissions[result.turn_id] = turn
                 return
@@ -368,14 +394,14 @@ class RemoteSessionService:
             # The turn may have started before this answer arrived: the first later generation
             # that no other admission of ours took.
             taken = set(found.admissions.values())
-            bound = max(floor, result.generation)
+            bound = max(floor, answered)
             later = sorted(g for g in found.by_generation if g > bound)
             for generation in later:
                 turn = found.by_generation[generation]
                 if turn not in taken:
                     found.admissions[result.turn_id] = turn
                     return
-        found.unassigned.append((result.turn_id, max(floor, result.generation), exact))
+        found.unassigned.append((result.turn_id, max(floor, answered), exact))
 
     def _assign(self, found: _Session, started: TurnStarted) -> None:
         found.by_generation[started.generation] = started.turn_id
@@ -527,9 +553,17 @@ class RemoteSessionService:
             request_id = params.get("request_id")
             if isinstance(request_id, str):
                 found.offers.pop(request_id, None)
+                if params.get("outcome") == ANSWERED:
+                    closed = ServerRequestCancelled(
+                        session_id=session_id,
+                        seq=seq,
+                        request_id=request_id,
+                        reason=CancelReason.ANSWERED_ELSEWHERE,
+                    )
+                    self._apply(found, closed)
             return
         model = EVENTS.get(method)
-        if model is None:
+        if model is None or method in PRESENCE_METHODS:
             return  # presence and list updates: not for the session renderer
         try:
             event = model.model_validate({k: v for k, v in params.items() if k != "replay_epoch"})
@@ -771,8 +805,8 @@ class RemoteHost:
     def resume(self, session_id: str) -> SessionResumeResult:
         return self.call(self.service.resume(session_id))
 
-    def submit(self, session_id: str, text: str) -> PromptSubmitResult:
-        return self.call(self.service.submit(session_id, text), timeout=None)
+    def submit(self, session_id: str, text: str, *, unattended: bool = False) -> PromptSubmitResult:
+        return self.call(self.service.submit(session_id, text, unattended=unattended), timeout=None)
 
     def wait(
         self, session_id: str, turn_id: str | None = None, *, timeout: float | None = -1.0

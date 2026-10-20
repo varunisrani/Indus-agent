@@ -112,3 +112,14 @@ export function useTurn<T>(sel: (s: TurnState) => T): T {
 export function keepLast<T>(items: readonly T[], limit: number): T[] {
   return items.length <= limit ? [...items] : items.slice(items.length - limit);
 }
+
+/**
+ * `session.steer` params for the running turn: the daemon applies a control only to the turn it
+ * names (generation fences, P17-05), so the running turn's generation goes along when known.
+ */
+export function steerParams(sessionId: string, text: string): Record<string, unknown> {
+  const generation = turnStore.getState().generation;
+  return generation === null
+    ? { session_id: sessionId, text }
+    : { session_id: sessionId, text, generation };
+}

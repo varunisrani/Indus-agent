@@ -25,6 +25,9 @@ writer task, so a slow client only ever stalls itself:
 - no inbound frame for ``idle_timeout`` (120 s; clients ping every 15 s) closes 1001, so a peer
   that vanished without a close does not keep its viewers attached.
 
+Every request runs under the endpoint's scope, which must belong to the profile its ticket book
+serves (``profile_guard.bind_daemon_scope``; the endpoint refuses to exist otherwise).
+
 A response frame from the client whose id is a server-request id (``srq-…``) with an error records
 that viewer's refusal (``-32601`` / ``4404``). Closing the socket only detaches its viewers; turns
 keep running. Close reasons are fixed short texts. Logs never carry params, tickets, or a URL's
@@ -56,6 +59,7 @@ from indus.protocol.envelope import Request
 from indus.protocol.errors import INTERNAL_ERROR
 from indus.protocol.methods import PROTOCOL_VERSION, ProtocolError
 from indus.service.daemon_host import DaemonSessionHost
+from indus.service.remote.profile_guard import bind_daemon_scope
 from indus.service.request_redelivery import REQUEST_ID_PREFIX
 from indus.service.rpc import ContractViolation, Dispatcher, decode_request, error_frame
 from indus.service.rpc.dispatch import check_payload, strict_from
@@ -442,7 +446,9 @@ class WsEndpoint:
     ) -> None:
         self.host = host
         self.book = book
-        self.scope = scope
+        # Every RPC runs under this one scope (the dispatcher's ``use_scope``): it must be the
+        # profile the ticket book serves, with that profile's secrets (P17-24, R05.14).
+        self.scope = bind_daemon_scope(scope, book.profile_id)
         self.limits = limits or WsLimits()
         self.theme = theme
         self.strict = strict_from(scope) if strict is None else strict

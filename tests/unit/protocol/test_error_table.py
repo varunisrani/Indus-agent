@@ -78,7 +78,10 @@ def test_our_codes_sit_in_their_group_band() -> None:
 
 def test_every_code_is_declared_by_a_method() -> None:
     declared = {e for spec in METHODS.values() for e in spec.errors}
-    assert declared == set(ERROR_TABLE)
+    out_of_band = set(errors.OUT_OF_BAND_ERRORS)
+    assert declared | out_of_band == set(ERROR_TABLE)
+    assert not declared & out_of_band  # a code either answers a method or travels elsewhere
+    assert all(where for where in errors.OUT_OF_BAND_ERRORS.values())
 
 
 def test_every_method_declares_the_common_codes_once() -> None:
@@ -94,7 +97,13 @@ def test_every_method_declares_the_common_codes_once() -> None:
         ("store.tombstoned", errors.SESSION_REFUSED),
         ("store.compression_closed", errors.SESSION_REFUSED),
         ("store.session_guarded", errors.SESSION_BUSY),
-        ("store.turn_lease_lost", errors.SESSION_BUSY),
+        ("store.turn_lease_lost", errors.LEASE_LOST),
+        ("runtime.stale_generation", errors.STALE_GENERATION),
+        ("runtime.admission_conflict", errors.ADMISSION_CONFLICT),
+        ("runtime.queue_full", errors.QUEUE_FULL),
+        ("runtime.unknown_execution", errors.OUTCOME_UNKNOWN),
+        ("runtime.policy_conflict", errors.POLICY_CONFLICT),
+        ("runtime.not_found", errors.ADMISSION_NOT_FOUND),
         ("store.locked", errors.STORE_FAILED),
         ("provider.no_usable", errors.PROVIDER_UNAVAILABLE),
         ("config.error", errors.INTERNAL_ERROR),

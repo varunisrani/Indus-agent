@@ -17,7 +17,14 @@ import pytest
 
 from indus.foundation.scope import Scope
 from indus.protocol.errors import SESSION_BUSY
-from indus.protocol.events import EventBase, ExitReason, MessageDelta, TurnDone
+from indus.protocol.events import (
+    CancelReason,
+    EventBase,
+    ExitReason,
+    MessageDelta,
+    ServerRequestCancelled,
+    TurnDone,
+)
 from indus.protocol.methods import ProtocolError, SessionCreateParams
 from indus.protocol.server_requests import ApprovalRequest
 from indus.service.admissions import LOST_TURN_NOTE
@@ -125,12 +132,15 @@ async def test_an_accepted_submit_retires_its_entry(
     )
     svc = await remote(r, scope)
     sid = (await svc.create()).session_id
-    first = await svc.submit(sid, "work")
+    first = await svc.submit(sid, "work", unattended=True)
     assert first.status.value == "streaming" and svc.journal.pending() == []
+    assert first.generation == 1  # the claimed turn's, never a 0 placeholder
+    sent = [f for t in r.transports for f in t.sent if f.get("method") == "prompt.submit"]
+    assert sent[-1]["params"]["unattended"] is True  # -z: the daemon auto-approves the turn
     await eventually(lambda: holder.entered)
     holder.gate.set()
     turn = await svc.wait(sid, first.turn_id)
-    assert turn.reason is ExitReason.COMPLETED and turn.generation is not None
+    assert turn.reason is ExitReason.COMPLETED and turn.generation == 1
     assert svc.journal.pending() == []
     await svc.aclose()
     await r.close()
@@ -242,6 +252,45 @@ async def test_an_approval_is_answered_with_its_offered_generation(
 
 
 @aio
+async def test_an_approval_answered_by_another_viewer_closes_here(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    """Two attached clients see one approval; the second answers; the first is told the question
+    was answered elsewhere (its card closes) and both see the turn finish."""
+    r = await rig(
+        scope,
+        store,
+        tmp_path,
+        tool_batch(("confirm", {})),
+        text_turn("cleaned"),
+        tools={"confirm": confirm},
+    )
+    cli, tui = await remote(r, scope), await remote(r, scope)
+    sid = (await cli.create()).session_id
+    await tui.resume(sid)
+    seen: list[object] = []
+    cli.subscribe(sid, seen.append)
+    asked_here: list[object] = []
+    asked_there: list[object] = []
+    cli.on_request(sid, asked_here.append)
+    tui.on_request(sid, asked_there.append)
+    submitted = await cli.submit(sid, "clean")
+    await eventually(lambda: asked_here and asked_there)
+    request = asked_there[0]
+    assert isinstance(request, ApprovalRequest)
+    answer = {"kind": "approval", "choice": "once"}
+    assert (await tui.answer_server_request(sid, request.request_id, answer)).accepted is True
+    await eventually(lambda: any(isinstance(e, ServerRequestCancelled) for e in seen))
+    (closed,) = [e for e in seen if isinstance(e, ServerRequestCancelled)]
+    assert closed.request_id == request.request_id
+    assert closed.reason is CancelReason.ANSWERED_ELSEWHERE
+    assert (await cli.wait(sid, submitted.turn_id)).reason is ExitReason.COMPLETED
+    await cli.aclose()
+    await tui.aclose()
+    await r.close()
+
+
+@aio
 async def test_controls_name_the_running_generation(
     scope: Scope, store: StoreHandle, tmp_path: Path
 ) -> None:
@@ -274,7 +323,7 @@ async def test_controls_name_the_running_generation(
 
 
 def test_the_journal_is_private_and_retires_entries(scope: Scope) -> None:
-    journal = Journal(scope.home, wall=iter([1.0, 2.0, 3.0]).__next__)
+    journal = Journal(scope.home, wall=iter([1.0, 2.0, 3.0, 4.0]).__next__)
     first = journal.prepare("s1", "one")
     second = journal.prepare("s2", "two")
     folder = journal_dir(scope.home)
@@ -294,6 +343,11 @@ def test_the_journal_is_private_and_retires_entries(scope: Scope) -> None:
     os.chmod(loose, 0o644)
     third = journal.prepare("s3", "three")
     assert [e.request_id for e in journal.pending()] == [second.request_id, third.request_id]
+    # A -z input keeps its flag, so a retry the person asks for is an exact retry.
+    lone = journal.prepare("s4", "four", unattended=True)
+    kept = journal.mark_unknown(lone.request_id)
+    assert kept is not None and kept.unattended and journal.get(lone.request_id) == kept
+    assert not second.unattended and "unattended" not in second.to_json()
 
 
 # -- the blocking facade --------------------------------------------------------------------------

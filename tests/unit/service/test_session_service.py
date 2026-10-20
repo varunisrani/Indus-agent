@@ -265,7 +265,7 @@ def test_interrupt_checks_the_generation(
         sid = (await svc.create()).session_id
         ticket = await svc.submit(sid, "go")
         await first_event(svc, sid, MessageDelta)
-        assert svc.interrupt(sid, ticket.generation + 1).interrupted is False
+        assert svc.interrupt(sid, ticket.require_generation() + 1).interrupted is False
         assert svc.interrupt(sid, ticket.generation).interrupted is True
         result = await svc.wait(sid)
         assert result.exit_reason is ExitReason.INTERRUPTED_BY_USER

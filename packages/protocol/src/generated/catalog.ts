@@ -28,6 +28,20 @@ export const METHODS = deepFreeze({
     "params": "AdmissionDiscardParams",
     "result": "AdmissionDiscardResult"
   },
+  "admission.receipt": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "ADMISSION_NOT_FOUND"
+    ],
+    "params": "AdmissionReceiptParams",
+    "result": "AdmissionReceiptResult"
+  },
   "clarify.lock": {
     "errors": [
       "PARSE_ERROR",
@@ -184,6 +198,19 @@ export const METHODS = deepFreeze({
     "params": "InputDetectDropParams",
     "result": "InputDetectDropResult"
   },
+  "maintenance.run": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "STORE_FAILED"
+    ],
+    "params": "MaintenanceRunParams",
+    "result": "MaintenanceRunResult"
+  },
   "model.disconnect": {
     "errors": [
       "PARSE_ERROR",
@@ -263,7 +290,11 @@ export const METHODS = deepFreeze({
       "STORE_FAILED",
       "TEXT_EMPTY",
       "SESSION_BUSY",
-      "PROVIDER_UNAVAILABLE"
+      "PROVIDER_UNAVAILABLE",
+      "ADMISSION_CONFLICT",
+      "QUEUE_FULL",
+      "OUTCOME_UNKNOWN",
+      "LEASE_LOST"
     ],
     "params": "PromptSubmitParams",
     "result": "PromptSubmitResult"
@@ -279,6 +310,18 @@ export const METHODS = deepFreeze({
     ],
     "params": "ReloadMcpParams",
     "result": "ReloadMcpResult"
+  },
+  "runtime.describe": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "RuntimeDescribeParams",
+    "result": "RuntimeDescribeResult"
   },
   "server_request.answer": {
     "errors": [
@@ -364,7 +407,8 @@ export const METHODS = deepFreeze({
       "UNKNOWN_PARAM_KEY",
       "IDEMPOTENCY_CONFLICT",
       "PROVIDER_UNAVAILABLE",
-      "STORE_FAILED"
+      "STORE_FAILED",
+      "POLICY_CONFLICT"
     ],
     "params": "SessionCreateParams",
     "result": "SessionCreateResult"
@@ -448,7 +492,8 @@ export const METHODS = deepFreeze({
       "SESSION_NOT_FOUND",
       "SESSION_REFUSED",
       "STORE_FAILED",
-      "SESSION_BUSY"
+      "SESSION_BUSY",
+      "POLICY_CONFLICT"
     ],
     "params": "SessionResumeParams",
     "result": "SessionResumeResult"
@@ -588,6 +633,7 @@ export type MethodName = keyof typeof METHODS;
 
 export interface MethodTypes {
   "admission.discard": { params: T.AdmissionDiscardParams; result: T.AdmissionDiscardResult };
+  "admission.receipt": { params: T.AdmissionReceiptParams; result: T.AdmissionReceiptResult };
   "clarify.lock": { params: T.ClarifyLockParams; result: T.ClarifyLockResult };
   "client.capabilities": { params: T.ClientCapabilitiesParams; result: T.ClientCapabilitiesResult };
   "command.dispatch": { params: T.CommandDispatchParams; result: T.CommandDispatchResult };
@@ -600,6 +646,7 @@ export interface MethodTypes {
   "gateway.ping": { params: T.GatewayPingParams; result: T.GatewayPingResult };
   "image.attach": { params: T.ImageAttachParams; result: T.ImageAttachResult };
   "input.detect_drop": { params: T.InputDetectDropParams; result: T.InputDetectDropResult };
+  "maintenance.run": { params: T.MaintenanceRunParams; result: T.MaintenanceRunResult };
   "model.disconnect": { params: T.ModelDisconnectParams; result: T.ModelDisconnectResult };
   "model.options": { params: T.ModelOptionsParams; result: T.ModelOptionsResult };
   "model.save_key": { params: T.ModelSaveKeyParams; result: T.ModelSaveKeyResult };
@@ -607,6 +654,7 @@ export interface MethodTypes {
   "prompt.background": { params: T.PromptBackgroundParams; result: T.PromptBackgroundResult };
   "prompt.submit": { params: T.PromptSubmitParams; result: T.PromptSubmitResult };
   "reload.mcp": { params: T.ReloadMcpParams; result: T.ReloadMcpResult };
+  "runtime.describe": { params: T.RuntimeDescribeParams; result: T.RuntimeDescribeResult };
   "server_request.answer": { params: T.ServerRequestAnswerParams; result: T.ServerRequestAnswerResult };
   "server_request.decline": { params: T.ServerRequestDeclineParams; result: T.ServerRequestDeclineResult };
   "session.branch": { params: T.SessionBranchParams; result: T.SessionBranchResult };
@@ -632,6 +680,7 @@ export interface MethodTypes {
 
 /** Event type (also the notification method) → event type name. */
 export const EVENTS = deepFreeze({
+  "admission.state": "AdmissionStateChanged",
   "goal.update": "GoalUpdate",
   "heartbeat.fired": "HeartbeatFired",
   "learning.review.done": "LearningReviewDone",
@@ -640,10 +689,12 @@ export const EVENTS = deepFreeze({
   "message.delta": "MessageDelta",
   "notice": "Notice",
   "reasoning.delta": "ReasoningDelta",
+  "request.settled": "RequestSettled",
   "server_request.cancelled": "ServerRequestCancelled",
   "session.info": "SessionInfo",
   "session.title": "SessionTitle",
   "session.usage": "SessionUsage",
+  "session.viewers": "SessionViewers",
   "status": "Status",
   "todo.updated": "TodoUpdated",
   "tool.completed": "ToolCompleted",
@@ -656,6 +707,7 @@ export const EVENTS = deepFreeze({
 export type EventName = keyof typeof EVENTS;
 
 export interface EventTypes {
+  "admission.state": T.AdmissionStateChanged;
   "goal.update": T.GoalUpdate;
   "heartbeat.fired": T.HeartbeatFired;
   "learning.review.done": T.LearningReviewDone;
@@ -664,10 +716,12 @@ export interface EventTypes {
   "message.delta": T.MessageDelta;
   "notice": T.Notice;
   "reasoning.delta": T.ReasoningDelta;
+  "request.settled": T.RequestSettled;
   "server_request.cancelled": T.ServerRequestCancelled;
   "session.info": T.SessionInfo;
   "session.title": T.SessionTitle;
   "session.usage": T.SessionUsage;
+  "session.viewers": T.SessionViewers;
   "status": T.Status;
   "todo.updated": T.TodoUpdated;
   "tool.completed": T.ToolCompleted;
@@ -679,13 +733,19 @@ export interface EventTypes {
 
 /** Other notification method → params type name (the stdio ready frame). */
 export const NOTIFICATIONS = deepFreeze({
-  "gateway.ready": "BridgeReady"
+  "gateway.ready": "BridgeReady",
+  "session.replay_gap": "SessionReplayGap",
+  "session.updated": "SessionUpdated",
+  "sessions.resync": "SessionsResync"
 } as const);
 
 export type NotificationName = keyof typeof NOTIFICATIONS;
 
 export interface NotificationTypes {
   "gateway.ready": T.BridgeReady;
+  "session.replay_gap": T.SessionReplayGap;
+  "session.updated": T.SessionUpdated;
+  "sessions.resync": T.SessionsResync;
 }
 
 /** The notification method that carries a server request. */
@@ -732,6 +792,18 @@ export const ERROR_GROUPS = deepFreeze({
 
 /** The single error-code table: one meaning per code. */
 export const ERROR_CODES = deepFreeze({
+  "ADMISSION_CONFLICT": {
+    "code": 3006,
+    "group": "conflict",
+    "meaning": "the input's request id was already used with a different input",
+    "status": 409
+  },
+  "ADMISSION_NOT_FOUND": {
+    "code": 2005,
+    "group": "not_found",
+    "meaning": "no input of this session has this admission id",
+    "status": 404
+  },
   "ANSWER_KIND_MISMATCH": {
     "code": 3003,
     "group": "conflict",
@@ -768,11 +840,29 @@ export const ERROR_CODES = deepFreeze({
     "meaning": "the JSON value is not a valid request frame",
     "status": 400
   },
+  "LEASE_LOST": {
+    "code": 3010,
+    "group": "conflict",
+    "meaning": "another process took over the session's turn lease; the turn was stopped",
+    "status": 409
+  },
   "METHOD_NOT_FOUND": {
     "code": -32601,
     "group": "not_found",
     "meaning": "no method with this name is declared",
     "status": 404
+  },
+  "NOT_SHOWN": {
+    "code": 4404,
+    "group": "refused",
+    "meaning": "a viewer does not show this server request here; the other viewers may still answer it",
+    "status": 403
+  },
+  "OUTCOME_UNKNOWN": {
+    "code": 3008,
+    "group": "conflict",
+    "meaning": "the turn's outcome is unknown (its daemon stopped or the connection dropped while it ran); it is never run again: do not resend, resolve it with admission.discard",
+    "status": 409
   },
   "PARSE_ERROR": {
     "code": -32700,
@@ -780,11 +870,29 @@ export const ERROR_CODES = deepFreeze({
     "meaning": "the frame is not valid JSON",
     "status": 400
   },
+  "POLICY_CONFLICT": {
+    "code": 3009,
+    "group": "conflict",
+    "meaning": "the launch settings differ from the ones frozen into the session (the fields are named)",
+    "status": 409
+  },
+  "PROFILE_MISMATCH": {
+    "code": 4005,
+    "group": "refused",
+    "meaning": "the daemon that answered serves another profile; the client stops before sending anything",
+    "status": 403
+  },
   "PROVIDER_UNAVAILABLE": {
     "code": 5001,
     "group": "provider",
     "meaning": "no usable model provider could be resolved for the session",
     "status": 502
+  },
+  "QUEUE_FULL": {
+    "code": 3007,
+    "group": "conflict",
+    "meaning": "the session already holds as many queued inputs as it takes; send again once it drains",
+    "status": 409
   },
   "SERVER_REQUEST_NOT_FOUND": {
     "code": 2002,
@@ -840,6 +948,12 @@ export const ERROR_CODES = deepFreeze({
     "meaning": "the slash command's handler failed or did not answer in time",
     "status": 500
   },
+  "STALE_GENERATION": {
+    "code": 3005,
+    "group": "conflict",
+    "meaning": "the call names a turn generation that is not the one it targets now; nothing changed",
+    "status": 409
+  },
   "STORE_FAILED": {
     "code": 6001,
     "group": "internal",
@@ -851,6 +965,12 @@ export const ERROR_CODES = deepFreeze({
     "group": "invalid_request",
     "meaning": "the message text is empty or only whitespace",
     "status": 400
+  },
+  "TICKET_INVALID": {
+    "code": 4401,
+    "group": "refused",
+    "meaning": "the attach ticket is missing, malformed, already used, expired or bound to another purpose",
+    "status": 403
   },
   "UNKNOWN_PARAM_KEY": {
     "code": 1002,

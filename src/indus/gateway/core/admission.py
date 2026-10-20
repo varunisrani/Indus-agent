@@ -1342,8 +1342,8 @@ class AdmissionPipeline:
                     self.pending.push_front(key, event)  # runs when the running turn ends
                     return
                 raise
-            claim.turn_generation = ticket.generation
-            self._anchor(sid, ticket.generation, event.message_id)
+            claim.turn_generation = ticket.require_generation()
+            self._anchor(sid, claim.turn_generation, event.message_id)
             result = await self.service.wait(sid, ticket.turn_id)
             ended = claim.finished = True
             if result.exit_reason is not ExitReason.COMPLETED and result.exit_reason not in (

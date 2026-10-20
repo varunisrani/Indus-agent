@@ -1462,6 +1462,15 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/gateway/test_webhook.py::test_coalescing_runs_the_newest_event_once_after_the_quiet_window`
   - `tests/contract/gateway/test_webhook.py::test_events_filters_and_direct_delivery`
   - `tests/unit/cli/commands/test_webhook.py::test_test_signs_and_posts_to_the_local_receiver`
+- **ACC-K47-1** Idle exit: a daemon `ensure` started (not a supervised or hand-started one) exits after `gateway.idle_exit_seconds` (600 s) with no client and no work, recorded as `idle_exit`, and the next `ensure` starts a new one
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_exits_at_600_s_of_idle`
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_busy_poll_restarts_the_window`
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_every_quick_reason`
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_an_auto_started_daemon_stops_itself_as_idle_exit`
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_supervised_daemon_never_idles_out`
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_due_cron_job_keeps_the_daemon`
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_ensure_waits_out_an_idle_exiting_daemon`
+  - `tests/e2e/service/test_shared_backend.py::test_an_auto_started_daemon_idles_out_and_the_next_chat_restarts_it_silently`
 - **ACC-K51-1** CLI attach: `indus`, `chat`, `-q` and `-z` ensure the daemon and run their turns there by default; leaving only detaches
   - `tests/unit/cli/test_attach.py::test_chat_q_attaches_by_default`
   - `tests/unit/cli/test_attach.py::test_z_attaches_by_default_and_prints_only_the_reply`
@@ -1469,6 +1478,10 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/test_attach.py::test_interactive_chat_runs_the_repl_over_the_daemon_and_only_detaches`
   - `tests/unit/cli/test_attach_remote.py::test_chat_q_runs_its_turn_in_the_daemon_and_prints_the_reply`
   - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
+  - `tests/integration/service/test_dual_host_matrix.py::test_z_prints_only_the_reply`
+  - `tests/integration/service/test_dual_host_matrix.py::test_resume_chain_with_z`
+  - `tests/integration/service/test_dual_host_matrix.py::test_z_refuses_hardline_and_auto_approves_the_rest`
+  - `tests/e2e/service/test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
 - **ACC-K51-2** TUI attach: grant verdicts (terminal shows the hint without retry, others back off), recover budget, TS client resumes from its cursor without duplicates
   - `apps/tui/src/transport/attach.test.ts::a terminal verdict after attaching shows the hint once and is not retried`
   - `apps/tui/src/transport/attach.test.ts::asks start first, then recover within the budget, then discover`
@@ -1476,6 +1489,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/commands/test_gateway_grant.py::test_ensure_verdicts_keep_their_terminal_flag`
   - `tests/contract/client/test_ts_client_against_daemon.py::test_ts_client_attaches_answers_and_resumes_from_its_cursor`
   - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
+  - `apps/tui/src/test/hosts.test.tsx::an approval card is answered from the keyboard and the turn finishes`
+  - `tests/integration/service/test_dual_host_matrix.py::test_bridge_demo_turn`
+  - `tests/e2e/service/test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
 - **ACC-K51-3** Attach tickets are single-use, 30 s, purpose- and instance-bound, loopback and Origin checked, never in a URL or log
   - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
   - `tests/unit/service/test_ws_auth.py::test_expiry_at_thirty_seconds`

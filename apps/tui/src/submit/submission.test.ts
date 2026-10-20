@@ -2,6 +2,7 @@ import { errorNameFor } from "@indus/client";
 import { FakeRpcError } from "@indus/client/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetUi, type SubmitRig, settle, submitRig } from "../composer/testSupport.ts";
+import { turnStore } from "../state/turnStore.ts";
 import { uiStore } from "../state/uiStore.ts";
 import { DOUBLE_ENTER_MS } from "./submission.ts";
 
@@ -184,6 +185,18 @@ describe("busy modes", () => {
       { session_id: "s1", text: "use the other file" },
     ]);
     expect(rig.queue.items.map((item) => item.text)).toEqual(["use the other file"]);
+  });
+
+  it("steer: names the running turn's generation (the daemon fences controls by it)", async () => {
+    resetUi({ busy: true, busyInputMode: "steer" });
+    turnStore.getState().patch({ turnId: "t7", generation: 7 });
+    const rig = submitRig({ "session.steer": () => ({ queued: true }) });
+    type(rig, "use the other file");
+    await settle();
+    expect(rig.bridge.calls("session.steer")).toEqual([
+      { session_id: "s1", text: "use the other file", generation: 7 },
+    ]);
+    turnStore.getState().reset();
   });
 
   it("steer: a failed steer is queued too; an accepted one shows the line", async () => {

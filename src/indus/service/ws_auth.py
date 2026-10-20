@@ -42,6 +42,8 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import parse_qsl
 
+from indus.protocol.errors import TICKET_INVALID
+
 __all__ = [
     "CLOSE_BAD_TICKET",
     "CLOSE_FORBIDDEN",
@@ -84,7 +86,8 @@ MAX_LIVE_TICKETS = 1024
 SPENT_MARKERS_PER_SLOT = 4
 """Spent tickets leave a digest marker until they expire; at most this many markers per live
 slot are kept, so minting and burning tickets in a loop cannot grow the book without bound."""
-CLOSE_BAD_TICKET = 4401
+CLOSE_BAD_TICKET = TICKET_INVALID.code
+"""4401: the protocol table's ``TICKET_INVALID``."""
 CLOSE_FORBIDDEN = 4403
 
 _TICKET_SHAPE = re.compile(r"^[A-Za-z0-9_-]{43}$")

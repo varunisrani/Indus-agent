@@ -207,9 +207,10 @@ class RemoteAttached:
     ) -> PromptSubmitResult:
         from indus.service.remote.host import OutcomeUnknown
 
-        del unattended  # a finite run detaches on any question (exit 3)
+        # ``unattended`` (``-z``): the daemon auto-approves this input's turn, as the in-process
+        # run does; any other question still detaches the finite run (exit 3).
         try:
-            return await self.service.submit(session_id, text)
+            return await self.service.submit(session_id, text, unattended=unattended)
         except OutcomeUnknown as lost:
             raise RemoteRefusal("outcome_unknown", lost.args[0] if lost.args else "") from None
 
@@ -280,6 +281,12 @@ class RemoteAttached:
         self, session_id: str, admission_id: str, generation: int
     ) -> AdmissionDiscardResult:
         return await self.service.discard_unknown(session_id, admission_id, generation)
+
+    def on_gap(
+        self, session_id: str, listener: Callable[[Mapping[str, Any]], object]
+    ) -> Callable[[], None]:
+        """``listener`` hears the session's replay gaps (a reconnect to a restarted daemon)."""
+        return self.service.on_gap(session_id, listener)
 
     async def aclose(self) -> None:
         await self.service.aclose()

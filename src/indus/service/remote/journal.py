@@ -65,15 +65,20 @@ class Prepared:
     text: str = field(repr=False)
     state: EntryState = "prepared"
     created_at: float = 0.0
+    unattended: bool = False
+    """Sent as a finite unattended run's input (``-z``); a retry sends it the same way."""
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "request_id": self.request_id,
             "session_id": self.session_id,
             "text": self.text,
             "state": self.state,
             "created_at": self.created_at,
         }
+        if self.unattended:
+            out["unattended"] = True
+        return out
 
     @classmethod
     def from_json(cls, data: object) -> Prepared | None:
@@ -97,7 +102,7 @@ class Prepared:
             if isinstance(created, int | float) and not isinstance(created, bool)
             else 0.0
         )
-        return cls(request_id, session_id, text, state, when)
+        return cls(request_id, session_id, text, state, when, body.get("unattended") is True)
 
 
 class Journal:
@@ -122,9 +127,23 @@ class Journal:
         self._ensure_dir()
         fsio.atomic_write_json(self._file(entry.request_id), entry.to_json(), mode=0o600)
 
-    def prepare(self, session_id: str, text: str, *, request_id: str | None = None) -> Prepared:
+    def prepare(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        request_id: str | None = None,
+        unattended: bool = False,
+    ) -> Prepared:
         """Write a new entry before the submit is sent."""
-        entry = Prepared(request_id or new_request_id(), session_id, text, "prepared", self._wall())
+        entry = Prepared(
+            request_id or new_request_id(),
+            session_id,
+            text,
+            "prepared",
+            self._wall(),
+            unattended,
+        )
         self._write(entry)
         return entry
 

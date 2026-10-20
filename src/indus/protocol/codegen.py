@@ -22,7 +22,6 @@ from typing import Any, cast
 
 from pydantic import TypeAdapter
 
-from indus.protocol.bridge import BRIDGE_NOTIFICATIONS
 from indus.protocol.envelope import (
     ErrorDetail,
     ErrorObject,
@@ -33,7 +32,7 @@ from indus.protocol.envelope import (
 )
 from indus.protocol.errors import ERROR_TABLE, GROUP_STATUS
 from indus.protocol.events import EVENTS, Event, TurnFailure
-from indus.protocol.methods import METHODS, PROTOCOL_VERSION
+from indus.protocol.methods import METHODS, NOTIFICATIONS, PROTOCOL_VERSION
 from indus.protocol.server_requests import (
     SERVER_REQUEST_KINDS,
     SERVER_REQUEST_METHOD,
@@ -106,7 +105,7 @@ def _named_roots() -> list[tuple[str, TypeAdapter[Any]]]:
         roots[spec.result.__name__] = spec.result
     for model in EVENTS.values():
         roots[model.__name__] = model
-    for model in BRIDGE_NOTIFICATIONS.values():
+    for model in NOTIFICATIONS.values():
         roots[model.__name__] = model
     for request, answer in SERVER_REQUEST_KINDS.values():
         roots[request.__name__] = request
@@ -143,7 +142,7 @@ def _catalog_data() -> dict[str, Json]:
             for spec in METHODS.values()
         },
         "events": {name: model.__name__ for name, model in EVENTS.items()},
-        "notifications": {name: model.__name__ for name, model in BRIDGE_NOTIFICATIONS.items()},
+        "notifications": {name: model.__name__ for name, model in NOTIFICATIONS.items()},
         "server_request_method": SERVER_REQUEST_METHOD,
         "server_requests": {
             kind: {"request": req.__name__, "answer": ans.__name__}

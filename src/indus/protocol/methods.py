@@ -14,21 +14,26 @@ from typing import Any, Literal
 
 from pydantic import Field, NonNegativeInt, ValidationError
 
-from indus.protocol.attach import ATTACH_METHODS
+from indus.protocol.attach import ATTACH_METHODS, ATTACH_NOTIFICATIONS
 from indus.protocol.base import (
     TEXT_EMPTY_ERROR,
     MessageText,
     ProtocolModel,
     SessionId,
 )
-from indus.protocol.bridge import BRIDGE_METHODS, HistoryMessage
+from indus.protocol.bridge import BRIDGE_METHODS, BRIDGE_NOTIFICATIONS, HistoryMessage
 from indus.protocol.errors import (
+    ADMISSION_CONFLICT,
     ANSWER_KIND_MISMATCH,
     COMMON_ERRORS,
     IDEMPOTENCY_CONFLICT,
     INVALID_PARAMS,
+    LEASE_LOST,
     METHOD_NOT_FOUND,
+    OUTCOME_UNKNOWN,
+    POLICY_CONFLICT,
     PROVIDER_UNAVAILABLE,
+    QUEUE_FULL,
     SERVER_REQUEST_NOT_FOUND,
     SERVER_REQUEST_UNSUPPORTED,
     SESSION_BUSY,
@@ -123,15 +128,30 @@ class PromptSubmitParams(ProtocolModel):
     request_id: str | None = Field(default=None, min_length=1, max_length=200)
     """The client's id for this input (daemon): sending it again returns the first admission
     instead of running the text twice."""
+    unattended: bool = False
+    """A finite run nobody watches (``indus -z``; daemon): this input's turn auto-approves risky
+    commands as the in-process run does (the hard floors still refuse). In-process hosts take the
+    run's approval policy from its launch and ignore it."""
 
 
 class PromptSubmitResult(ProtocolModel):
     """The ticket for the started turn."""
 
     turn_id: str
-    """The turn's id; its events carry it. For a queued or steered message: the running turn."""
-    generation: NonNegativeInt
-    """The turn's generation, for interrupts."""
+    """The turn's id; its events carry it. For a queued or steered message: the running turn.
+    From the daemon: the input's admission id."""
+    generation: NonNegativeInt | None = None
+    """The turn's generation, for interrupts. Left out only by the daemon for an input it has not
+    claimed yet (``queued`` with no turn running): follow it by ``turn.started`` or
+    ``admission.state``."""
+
+    def require_generation(self) -> int:
+        """The generation an in-process host always answers; ``ValueError`` when it is left out
+        (only the daemon does that, for an input it has not claimed yet)."""
+        if self.generation is None:
+            raise ValueError("the submit answer names no generation")
+        return self.generation
+
     status: SubmitStatus = SubmitStatus.STREAMING
     """``streaming`` when this message started the turn."""
 
@@ -281,6 +301,7 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
                 IDEMPOTENCY_CONFLICT,
                 PROVIDER_UNAVAILABLE,
                 STORE_FAILED,
+                POLICY_CONFLICT,
             ),
             _spec(
                 "session.resume",
@@ -288,6 +309,7 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
                 SessionResumeResult,
                 *_SESSION_ERRORS,
                 SESSION_BUSY,
+                POLICY_CONFLICT,
             ),
             _spec(
                 "prompt.submit",
@@ -297,6 +319,10 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
                 TEXT_EMPTY,
                 SESSION_BUSY,
                 PROVIDER_UNAVAILABLE,
+                ADMISSION_CONFLICT,
+                QUEUE_FULL,
+                OUTCOME_UNKNOWN,
+                LEASE_LOST,
             ),
             _spec(
                 "session.interrupt",
@@ -340,6 +366,13 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
     }
 )
 """Method name → spec, in declaration order."""
+
+
+NOTIFICATIONS: Mapping[str, type[ProtocolModel]] = MappingProxyType(
+    {**BRIDGE_NOTIFICATIONS, **ATTACH_NOTIFICATIONS}
+)
+"""Notifications that are neither events nor server requests (``gateway.ready`` and the daemon's
+unnumbered frames): method → params model."""
 
 
 class ProtocolError(Exception):

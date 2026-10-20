@@ -5,6 +5,11 @@ status taken from its group. The five codes the JSON-RPC 2.0 specification defin
 numbers; our own codes use one positive band per group (1xxx invalid request, 2xxx not found,
 3xxx conflict, 4xxx refused, 5xxx provider, 6xxx internal) so the group can be read from the
 number. Codes are never renumbered or reused; a retired code stays in the table.
+
+Two refused-band codes keep the number of the wire value they stand for: ``TICKET_INVALID`` (4401)
+is also the WebSocket close code of a refused upgrade, ``NOT_SHOWN`` (4404) the code a viewer
+answers a server request it does not show. Codes that never travel as a method's error answer are
+listed in ``OUT_OF_BAND_ERRORS`` with where they travel instead.
 """
 
 from __future__ import annotations
@@ -106,6 +111,12 @@ UNSUPPORTED_COMMAND = _row(
     _G.NOT_FOUND,
     "the name is not a built-in, quick or skill command",
 )
+ADMISSION_NOT_FOUND = _row(
+    2005,
+    "ADMISSION_NOT_FOUND",
+    _G.NOT_FOUND,
+    "no input of this session has this admission id",
+)
 SESSION_BUSY = _row(
     3001,
     "SESSION_BUSY",
@@ -130,6 +141,43 @@ CONFIRM_REQUIRED = _row(
     _G.CONFLICT,
     "the change needs an explicit confirmation; repeat the call with confirm set",
 )
+STALE_GENERATION = _row(
+    3005,
+    "STALE_GENERATION",
+    _G.CONFLICT,
+    "the call names a turn generation that is not the one it targets now; nothing changed",
+)
+ADMISSION_CONFLICT = _row(
+    3006,
+    "ADMISSION_CONFLICT",
+    _G.CONFLICT,
+    "the input's request id was already used with a different input",
+)
+QUEUE_FULL = _row(
+    3007,
+    "QUEUE_FULL",
+    _G.CONFLICT,
+    "the session already holds as many queued inputs as it takes; send again once it drains",
+)
+OUTCOME_UNKNOWN = _row(
+    3008,
+    "OUTCOME_UNKNOWN",
+    _G.CONFLICT,
+    "the turn's outcome is unknown (its daemon stopped or the connection dropped while it ran); "
+    "it is never run again: do not resend, resolve it with admission.discard",
+)
+POLICY_CONFLICT = _row(
+    3009,
+    "POLICY_CONFLICT",
+    _G.CONFLICT,
+    "the launch settings differ from the ones frozen into the session (the fields are named)",
+)
+LEASE_LOST = _row(
+    3010,
+    "LEASE_LOST",
+    _G.CONFLICT,
+    "another process took over the session's turn lease; the turn was stopped",
+)
 SESSION_REFUSED = _row(
     4001,
     "SESSION_REFUSED",
@@ -147,6 +195,24 @@ SHELL_REFUSED = _row(
     "SHELL_REFUSED",
     _G.REFUSED,
     "the shell command is blocked by the dangerous-command rules and was not run",
+)
+PROFILE_MISMATCH = _row(
+    4005,
+    "PROFILE_MISMATCH",
+    _G.REFUSED,
+    "the daemon that answered serves another profile; the client stops before sending anything",
+)
+TICKET_INVALID = _row(
+    4401,
+    "TICKET_INVALID",
+    _G.REFUSED,
+    "the attach ticket is missing, malformed, already used, expired or bound to another purpose",
+)
+NOT_SHOWN = _row(
+    4404,
+    "NOT_SHOWN",
+    _G.REFUSED,
+    "a viewer does not show this server request here; the other viewers may still answer it",
 )
 PROVIDER_UNAVAILABLE = _row(
     5001,
@@ -182,13 +248,23 @@ ERROR_TABLE: tuple[ErrorCode, ...] = (
     SERVER_REQUEST_NOT_FOUND,
     SLASH_NOT_OWNED,
     UNSUPPORTED_COMMAND,
+    ADMISSION_NOT_FOUND,
     SESSION_BUSY,
     IDEMPOTENCY_CONFLICT,
     ANSWER_KIND_MISMATCH,
     CONFIRM_REQUIRED,
+    STALE_GENERATION,
+    ADMISSION_CONFLICT,
+    QUEUE_FULL,
+    OUTCOME_UNKNOWN,
+    POLICY_CONFLICT,
+    LEASE_LOST,
     SESSION_REFUSED,
     SERVER_REQUEST_UNSUPPORTED,
     SHELL_REFUSED,
+    PROFILE_MISMATCH,
+    TICKET_INVALID,
+    NOT_SHOWN,
     PROVIDER_UNAVAILABLE,
     STORE_FAILED,
     SHELL_TIMEOUT,
@@ -209,6 +285,20 @@ COMMON_ERRORS: tuple[ErrorCode, ...] = (
     UNKNOWN_PARAM_KEY,
 )
 
+OUT_OF_BAND_ERRORS: MappingProxyType[ErrorCode, str] = MappingProxyType(
+    {
+        STALE_GENERATION: "a control's answer that nothing changed (the daemon's controls), the "
+        "reason in admission.discard's result, and product code runtime.stale_generation",
+        PROFILE_MISMATCH: "the client's own refusal of a describe or gateway.ready naming another "
+        "profile (the WebSocket close code it leaves with), and the control socket's refusal",
+        TICKET_INVALID: "the WebSocket close code of a refused upgrade (missing, used, expired or "
+        "wrong-purpose ticket)",
+        NOT_SHOWN: "a viewer's error answer to a server request it does not show (only from a "
+        "viewer that advertised request.decline)",
+    }
+)
+"""Codes that travel outside a method's error answer, with where each one travels."""
+
 # Product error codes (``indus.foundation.errors.ERROR_CODES``) with a specific protocol code.
 _INDUS_EXACT: MappingProxyType[str, ErrorCode] = MappingProxyType(
     {
@@ -216,8 +306,19 @@ _INDUS_EXACT: MappingProxyType[str, ErrorCode] = MappingProxyType(
         "store.tombstoned": SESSION_REFUSED,
         "store.compression_closed": SESSION_REFUSED,
         "store.session_guarded": SESSION_BUSY,
-        "store.turn_lease_lost": SESSION_BUSY,
+        "store.turn_lease_lost": LEASE_LOST,
         "session.busy": SESSION_BUSY,
+        "runtime.stale_generation": STALE_GENERATION,
+        "runtime.admission_conflict": ADMISSION_CONFLICT,
+        "runtime.queue_full": QUEUE_FULL,
+        "runtime.unknown_execution": OUTCOME_UNKNOWN,
+        "runtime.policy_conflict": POLICY_CONFLICT,
+        "runtime.policy_refused": INVALID_PARAMS,
+        "runtime.invalid_params": INVALID_PARAMS,
+        "runtime.retired": SESSION_REFUSED,
+        "runtime.not_found": ADMISSION_NOT_FOUND,
+        "runtime.admission_started": SESSION_BUSY,
+        "runtime.stale_epoch": SESSION_BUSY,
     }
 )
 # Fallbacks by code family (the part before the first dot).

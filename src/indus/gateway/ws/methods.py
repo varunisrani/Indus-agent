@@ -10,7 +10,11 @@ the submitting surface decides what happens while a turn runs (TUI queues, other
 ``queue`` queues; ``reject`` answers ``SESSION_BUSY`` while a turn runs; ``steer`` / ``redirect``
 are refused — a steer names its generation through ``session.steer``. ``turn_id`` is the
 admission id. A ``request_id`` from the client is the admission request id (under one principal
-per surface), so sending the same input again returns its first admission.
+per surface), so sending the same input again returns its first admission. ``unattended`` (a
+finite ``-z`` run) makes the input's turn auto-approve (``DaemonSessionHost``). An input that
+would start at once (idle session, nothing queued) is answered once the worker has claimed it
+(at most ``CLAIM_WAIT_S``), so ``generation`` names its turn; an input still unclaimed after that
+is answered ``queued`` with the running turn's generation, or none when no turn runs.
 
 ``session.close`` only detaches this connection (other viewers and running turns carry on).
 ``server_request.decline`` records this viewer's refusal (``4404`` "not shown here" when it
@@ -20,19 +24,35 @@ settled undeliverable when none is left.
 ``admission.discard`` resolves a lost (``unknown``) turn of a session this connection watches, by
 its generation; the lost turn is closed in its transcript with a short note in the same
 transaction (``admissions.close_lost_turn``). Another session's admission reads as not found.
+``admission.receipt`` reads one input of a watched session (``ADMISSION_NOT_FOUND`` for another
+session's). A refused submit answers the table code of its ledger reason (``ADMISSION_CONFLICT``,
+``QUEUE_FULL``, ``SESSION_REFUSED`` for a deleted session, else ``SESSION_BUSY``); an exact retry
+of an input whose turn was lost in a restart answers ``OUTCOME_UNKNOWN`` (never "streaming": that
+turn never comes back).
+
+``runtime.describe`` answers what the control socket's ``describe`` does, plus the replay epoch.
+``maintenance.run`` runs one bulk store operation on the daemon's own store handle
+(``service.maintenance_gate.MaintenanceVerb``); a refusal is the result's ``refused``.
 """
 
 from __future__ import annotations
 
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
+from indus.gateway.control_socket import code_version
 from indus.protocol.attach import (
     AdmissionDiscardParams,
     AdmissionDiscardResult,
+    AdmissionReceiptParams,
+    AdmissionReceiptResult,
     EventsSinceParams,
     EventsSinceResult,
+    MaintenanceRunParams,
+    MaintenanceRunResult,
     ReplayGapInfo,
+    RuntimeDescribeParams,
+    RuntimeDescribeResult,
     SessionSubscribeParams,
     SessionSubscribeResult,
     SessionsWatchParams,
@@ -48,7 +68,15 @@ from indus.protocol.bridge import (
     SessionCloseParams,
     SessionCloseResult,
 )
-from indus.protocol.errors import INVALID_PARAMS, SESSION_BUSY
+from indus.protocol.errors import (
+    ADMISSION_NOT_FOUND,
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    OUTCOME_UNKNOWN,
+    SESSION_BUSY,
+    ErrorCode,
+    error_for_indus_code,
+)
 from indus.protocol.methods import (
     PROTOCOL_VERSION,
     BusyAction,
@@ -70,9 +98,10 @@ from indus.protocol.methods import (
     SubmitStatus,
     negotiate_features,
 )
-from indus.service.admissions import close_lost_turn
+from indus.service.admissions import Receipt, close_lost_turn
 from indus.service.event_log import ReplayGap
 from indus.service.fences import ControlApplied, ControlStatus, Responded, StaleGeneration
+from indus.service.maintenance_gate import MaintenanceVerb
 from indus.service.request_redelivery import NOT_SHOWN_CODE, UNRENDERABLE_CODE
 from indus.service.rpc import MethodSet, MethodTable
 from indus.service.viewers import DECLINE_CAPABILITY, BusyMode
@@ -112,6 +141,22 @@ def _gap(gap: ReplayGap | None) -> ReplayGapInfo | None:
 async def ping(conn: WsConnection, params: GatewayPingParams) -> GatewayPingResult:
     del conn, params
     return GatewayPingResult(protocol_version=PROTOCOL_VERSION)
+
+
+@methods.method("runtime.describe")
+async def describe(conn: WsConnection, params: RuntimeDescribeParams) -> RuntimeDescribeResult:
+    del params
+    book = conn.endpoint.book
+    return RuntimeDescribeResult(
+        profile_id=book.profile_id,
+        instance_id=book.instance_id,
+        code_version=code_version(),
+        protocol_version=PROTOCOL_VERSION,
+        replay_epoch=conn.host.replay_epoch,
+        ws_url=conn.endpoint.ws_url,
+        creatable_sources=list(conn.host.creatable_sources()),
+        capabilities=list(conn.host.capabilities()),
+    )
 
 
 @methods.method("client.capabilities")
@@ -205,6 +250,16 @@ def _busy_mode(conn: WsConnection, key: str, params: PromptSubmitParams) -> Busy
     )
 
 
+def _refusal_code(reason: str) -> ErrorCode:
+    """The table code of a ledger refusal on submit (``SESSION_BUSY`` when it has none)."""
+    found = error_for_indus_code(f"runtime.{reason}")
+    return SESSION_BUSY if found is INTERNAL_ERROR else found
+
+
+CLAIM_WAIT_S: Final = 5.0
+"""How long ``prompt.submit`` waits for the claim of an input that starts at once."""
+
+
 @methods.method("prompt.submit")
 async def submit(conn: WsConnection, params: PromptSubmitParams) -> PromptSubmitResult:
     key = conn.subs.require(params.session_id)
@@ -226,20 +281,36 @@ async def submit(conn: WsConnection, params: PromptSubmitParams) -> PromptSubmit
             connection_id=conn.connection_id,
             surface=conn.subs.surface,
             busy=busy,
+            unattended=params.unattended,
         )
     except LedgerRefusal as refusal:
-        raise ProtocolError(SESSION_BUSY, f"the input was not admitted: {refusal.reason}") from None
-    running = conn.host.admissions.running(key)
-    generation = receipt.generation
-    if generation is None and running is not None:
-        generation = running.generation
+        raise ProtocolError(
+            _refusal_code(refusal.reason), f"the input was not admitted: {refusal.reason}"
+        ) from None
+    if receipt.state == "unknown":
+        raise ProtocolError(
+            OUTCOME_UNKNOWN, "this input's turn was lost in a restart; it is never run again"
+        )
     starts_now = (
         receipt.state == "started"
         or (was_running is None and receipt.blocked_by is None and receipt.position in (None, 1))
     ) and receipt.state != "terminal"
+    if starts_now and receipt.state == "queued":
+        # Idle session: the worker claims it at once. Answer with that turn's generation, never
+        # a placeholder (a client's controls name it).
+        receipt = await conn.host.claimed(receipt.admission_id, CLAIM_WAIT_S)
+        if receipt.state == "unknown":
+            raise ProtocolError(
+                OUTCOME_UNKNOWN, "this input's turn was lost in a restart; it is never run again"
+            )
+    generation = receipt.generation
+    if receipt.state == "queued":
+        starts_now = False
+        running = conn.host.admissions.running(key)
+        generation = running.generation if running is not None else None
     return PromptSubmitResult(
         turn_id=receipt.admission_id,
-        generation=generation or 0,
+        generation=generation,
         status=SubmitStatus.STREAMING if starts_now else SubmitStatus.QUEUED,
     )
 
@@ -303,6 +374,45 @@ async def discard(conn: WsConnection, params: AdmissionDiscardParams) -> Admissi
         reason = "stale_generation" if refusal.reason == "stale_generation" else "not_found"
         return AdmissionDiscardResult(discarded=False, reason=reason)
     return AdmissionDiscardResult(discarded=True)
+
+
+def _receipt_result(receipt: Receipt) -> AdmissionReceiptResult:
+    return AdmissionReceiptResult(
+        admission_id=receipt.admission_id,
+        session_id=receipt.session_id,
+        state=receipt.state,
+        generation=receipt.generation,
+        position=receipt.position,
+        outcome=receipt.outcome,
+        blocked_by=receipt.blocked_by,
+        retired=receipt.retired,
+    )
+
+
+@methods.method("admission.receipt")
+async def receipt(conn: WsConnection, params: AdmissionReceiptParams) -> AdmissionReceiptResult:
+    key = conn.subs.require(params.session_id)
+    try:
+        found = await conn.host.receipt(params.admission_id)
+    except LedgerRefusal:
+        found = None
+    if found is None or found.session_id != key:
+        raise ProtocolError(ADMISSION_NOT_FOUND, path="admission_id")  # or another session's
+    return _receipt_result(found)
+
+
+@methods.method("maintenance.run")
+async def maintenance(conn: WsConnection, params: MaintenanceRunParams) -> MaintenanceRunResult:
+    store = conn.host.store
+    verb = MaintenanceVerb(conn.scope, store=lambda: store, release=lambda _store: None)
+    answer = dict(await verb.handle(params.model_dump(exclude_none=True)))
+    refused, detail = answer.pop("refused", None), answer.pop("detail", None)
+    return MaintenanceRunResult(
+        op=params.op,
+        refused=str(refused) if refused is not None else None,
+        detail=str(detail) if detail is not None else None,
+        report=answer,
+    )
 
 
 def served() -> list[str]:

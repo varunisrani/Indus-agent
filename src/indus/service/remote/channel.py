@@ -7,8 +7,12 @@ then opens the loopback ``ws_url`` that came with it, offering ``indus-gateway-v
 ``indus-gateway-ticket.<ticket>``. A ticket is never reused (R08.4) and never shown: not in a URL,
 an argv, a log line or a ``repr``.
 
+Profile binding (P17-24, ``profile_guard``): ``describe`` must name this home's own profile id
+before any ticket is asked for, else the dial fails ``profile_mismatch`` (terminal).
+
 After the upgrade the server must echo exactly ``indus-gateway-v1`` and send ``gateway.ready``
-first (within ``ready_timeout``), for the profile the grant named; the channel then tells it the
+first (within ``ready_timeout``), for the profile the grant named — otherwise the socket is closed
+4005 before anything is sent (``profile_mismatch``); the channel then tells it the
 surface and features (``client.capabilities``) and runs the ``on_ready`` hooks (the remote host
 re-subscribes its sessions there) before callers' requests flow again.
 
@@ -46,6 +50,7 @@ from indus.protocol.bridge import READY_METHOD
 from indus.protocol.errors import METHOD_NOT_FOUND
 from indus.service import gateway_control
 from indus.service.gateway_ensure import RecoverBudget, ensure
+from indus.service.remote import profile_guard
 from indus.service.ws_auth import SUBPROTOCOL, TICKET_PROTOCOL_PREFIX, WS_INTERACTIVE
 
 __all__ = [
@@ -214,6 +219,12 @@ def grant_for(home: Path, *, purpose: str = WS_INTERACTIVE, timeout: float = 5.0
     described = gateway_control.describe(home, timeout=timeout)
     if described is None:
         raise DialRefused("no_daemon", "no gateway answers for this profile")
+    try:
+        # Our own home's id, not the one the daemon reported: a socket in this home that leads
+        # to another profile's daemon gets no ticket request at all (P17-24).
+        profile_guard.check_described(home, described)
+    except profile_guard.ProfileMismatch as mismatch:
+        raise DialRefused(mismatch.code, str(mismatch), terminal=True) from None
     reply = gateway_control.session_ticket(
         home,
         purpose,
@@ -431,6 +442,15 @@ class Channel:
             raise NotSent()
         try:
             ready = await self._handshake(transport, dialed.profile_id)
+        except DialRefused as refused:
+            code = (
+                profile_guard.CLOSE_PROFILE_MISMATCH
+                if refused.reason == profile_guard.MISMATCH_CODE
+                else 1002
+            )
+            with contextlib.suppress(Exception):
+                await transport.close(code, "handshake failed")
+            raise
         except BaseException:
             with contextlib.suppress(Exception):
                 await transport.close(1002, "handshake failed")
@@ -475,11 +495,10 @@ class Channel:
             raise DialRefused("no_ready", "the first frame was not gateway.ready")
         params = frame.get("params")
         ready = cast(dict[str, Any], params) if isinstance(params, dict) else {}
-        got = ready.get("profile_id")
-        if profile_id is not None and got != profile_id:
-            raise DialRefused(
-                "profile_mismatch", "the daemon serves another profile", terminal=True
-            )
+        try:
+            profile_guard.check_ready(profile_id, ready)  # before any request is sent
+        except profile_guard.ProfileMismatch as mismatch:
+            raise DialRefused(mismatch.code, str(mismatch), terminal=True) from None
         return ready
 
     async def _timed[T](self, awaitable: Awaitable[T], seconds: float) -> T | None:

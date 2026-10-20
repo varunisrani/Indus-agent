@@ -15,7 +15,7 @@ from indus.core.persist import StateStore
 from indus.core.turn_state import TurnState
 from indus.foundation.scope import Scope
 from indus.protocol.errors import SESSION_NOT_FOUND
-from indus.protocol.methods import ProtocolError
+from indus.protocol.methods import ProtocolError, SessionCreateParams
 from indus.protocol.requests_port import RequestNotAnswered
 from indus.protocol.server_requests import ApprovalAnswer
 from indus.service.admissions import CANCELLED, TurnTicket
@@ -319,6 +319,76 @@ async def test_tui_input_queues_and_cli_input_interrupts(
     await host.aclose()
 
 
+# -- what an attached client sees at a turn's end (P17-26) ---------------------------------------
+
+
+@aio
+async def test_a_turn_ends_with_its_final_message_and_the_usage(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    """After ``turn.done``: ``message.complete`` (text and reason) then ``session.usage``, live and
+    in a replay, as the TUI's own bridge sends them."""
+    host = await open_host(scope, store, tmp_path, text_turn("Hel", "lo"))
+    tui = Watcher("t1", "tui")
+    sid = (await host.create(viewer=tui.viewer)).session_id
+    first = await host.submit(sid, "hi", principal="p", request_id="r1", connection_id="t1")
+    await host.wait(first.admission_id)
+    await eventually(lambda: "session.usage" in tui.types())
+    ends = [t for t in tui.types() if t in ("turn.done", "message.complete", "session.usage")]
+    assert ends == ["turn.done", "message.complete", "session.usage"]
+    (final,) = [e for e in tui.events if e["type"] == "message.complete"]
+    (done,) = [e for e in tui.events if e["type"] == "turn.done"]
+    assert (final["text"], final["reason"], final["turn_id"]) == (
+        "Hello",
+        "completed",
+        done["turn_id"],
+    )
+    (usage,) = [e for e in tui.events if e["type"] == "session.usage"]
+    assert usage["usage"]["api_calls"] == 1 and "context_window" in usage["usage"]
+    assert contiguous(tui.events)
+    replay = host.events_since(sid, host.replay_epoch, 0)
+    assert isinstance(replay, Replay)
+    turn_end = [e["type"] for e in replay.events if e["type"] != "admission.state"]
+    assert turn_end[-2:] == ["message.complete", "session.usage"]
+    await host.aclose()
+
+
+@aio
+async def test_an_interrupted_turn_ends_with_the_interrupt_reason(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    holder = Holder()
+    host = await open_host(scope, store, tmp_path, tool_batch(("hold", {})), tools={"hold": holder})
+    cli = Watcher("c1")
+    sid = (await host.create(viewer=cli.viewer)).session_id
+    receipt = await host.submit(sid, "go", principal="p", request_id="r1", connection_id="c1")
+    await eventually(lambda: holder.entered)
+    running = host.state(sid).running
+    assert running is not None
+    host.interrupt(sid, running)
+    await host.wait(receipt.admission_id)
+    await eventually(lambda: "message.complete" in cli.types())
+    (done,) = [e for e in cli.events if e["type"] == "turn.done"]
+    (final,) = [e for e in cli.events if e["type"] == "message.complete"]
+    assert final["reason"] == done["reason"] != "completed"
+    await host.aclose()
+
+
+@aio
+async def test_a_surface_session_is_stored_under_that_surface(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    """A session a TUI creates through the daemon is a ``tui`` session (its listings and ``-c``
+    find it); the gateway's own sessions keep the service's source."""
+    host = await open_host(scope, store, tmp_path)
+    tui = (await host.create(SessionCreateParams(title="mine"), source="tui")).session_id
+    chat = (await host.create(SessionCreateParams(title="chat"), source="messaging")).session_id
+    tui_row, chat_row = sessions.get(store, tui), sessions.get(store, chat)
+    assert tui_row is not None and tui_row["source"] == "tui"
+    assert chat_row is not None and chat_row["source"] not in ("tui", "messaging")
+    await host.aclose()
+
+
 # -- fenced controls ------------------------------------------------------------------------------
 
 
@@ -572,3 +642,105 @@ async def test_in_process_service_answers_replay_and_receipt_trivially(
         await service.receipt("adm-anything")
     assert info.value.reason == "not_found"
     await service.aclose()
+
+
+# -- admission.state and unattended inputs (P17-25 wiring, integration) ---------------------------
+
+
+@aio
+async def test_every_move_of_an_input_reaches_the_viewers_as_admission_state(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    from indus.protocol.events import AdmissionStateChanged
+
+    holder = Holder()
+    host = await open_host(
+        scope,
+        store,
+        tmp_path,
+        tool_batch(("hold", {})),
+        text_turn("first done"),
+        text_turn("second done"),
+        tools={"hold": holder},
+    )
+    tui = Watcher("t1", "tui")
+    sid = (await host.create(viewer=tui.viewer)).session_id
+    first = await host.submit(sid, "one", principal="p", request_id="r1", connection_id="t1")
+    await eventually(lambda: holder.entered)
+    second = await host.submit(sid, "two", principal="p", request_id="r2", connection_id="t1")
+    holder.gate.set()
+    await host.wait(second.admission_id)
+    await eventually(
+        lambda: any(
+            e.get("admission_id") == second.admission_id and e.get("state") == "terminal"
+            for e in tui.events
+        )
+    )
+    moves = [e for e in tui.events if e["type"] == "admission.state"]
+    for event in moves:
+        # the declared shape, seq included (the wire's replay epoch is the frame's, not the model's)
+        AdmissionStateChanged.model_validate(
+            {k: v for k, v in event.items() if k != "replay_epoch"}
+        )
+    seen = [
+        (e["admission_id"], e["state"], e.get("generation"), e.get("position"), e.get("outcome"))
+        for e in moves
+    ]
+    a, b = first.admission_id, second.admission_id
+    assert seen == [
+        (a, "queued", None, 1, None),
+        (a, "started", 1, None, None),
+        (b, "queued", None, 1, None),
+        (a, "terminal", 1, None, "completed"),
+        (b, "started", 2, None, None),
+        (b, "terminal", 2, None, "completed"),
+    ]
+    assert contiguous(tui.events)
+    await host.aclose()
+
+
+@aio
+async def test_an_unattended_input_auto_approves_only_its_own_turn(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    from indus.safety.approvals.decision import APPROVALS, session_key
+
+    seen: list[bool] = []
+    session: list[str] = []
+
+    async def probe(call: ToolCall, state: TurnState) -> ToolResult:
+        seen.append(APPROVALS.auto_approve(session_key(scope, session[0])))
+        return ToolResult("looked")
+
+    host = await open_host(
+        scope,
+        store,
+        tmp_path,
+        tool_batch(("probe", {})),
+        text_turn("ran unattended"),
+        tool_batch(("probe", {})),
+        text_turn("ran attended"),
+        tool_batch(("probe", {})),
+        text_turn("ran with yolo"),
+        tools={"probe": probe},
+    )
+    cli = Watcher("c1")
+    sid = (await host.create(viewer=cli.viewer)).session_id
+    session.append(sid)
+    key = session_key(scope, sid)
+    try:
+        lone = await host.submit(sid, "z run", principal="p", request_id="r1", unattended=True)
+        assert (await host.wait(lone.admission_id)).outcome == "completed"
+        assert seen == [True] and not APPROVALS.auto_approve(key)  # for that turn only
+        row = ledger.get(store, lone.admission_id)
+        assert row is not None and row.payload == {"text": "z run", "unattended": True}
+        plain = await host.submit(sid, "chat", principal="p", request_id="r2")
+        await host.wait(plain.admission_id)
+        assert seen == [True, False]
+        APPROVALS.set_auto_approve(key, True)  # a person's /yolo is left as it was
+        more = await host.submit(sid, "z again", principal="p", request_id="r3", unattended=True)
+        await host.wait(more.admission_id)
+        assert seen == [True, False, True] and APPROVALS.auto_approve(key)
+    finally:
+        APPROVALS.set_auto_approve(key, False)
+        await host.aclose()

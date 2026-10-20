@@ -1403,6 +1403,12 @@ class GatewaySection(_Section):
     systemd_watchdog_seconds: float = Field(
         default=0.0, ge=0, description="systemd watchdog interval; 0 turns the pings off"
     )
+    idle_exit_seconds: float = Field(
+        default=600.0,
+        ge=0,
+        description="a gateway a client started on its own exits after this many seconds with no "
+        "client and no work; 0 keeps it running",
+    )
     delivery_ledger: bool = Field(
         default=True,
         description="record each chat reply before sending it, so a crash or restart cannot "

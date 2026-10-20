@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from indus.protocol import bridge, envelope, events, methods, server_requests
+from indus.protocol import attach, bridge, envelope, events, methods, server_requests
 from indus.protocol.base import ProtocolModel
 from indus.protocol.envelope import (
     ErrorResponse,
@@ -40,7 +40,7 @@ from indus.protocol.server_requests import (
 )
 from tests.unit.protocol._samples import SAMPLES
 
-MODULES = (envelope, events, methods, server_requests, bridge)
+MODULES = (envelope, events, methods, server_requests, bridge, attach)
 ABSTRACT = {events.EventBase, server_requests.ServerRequestBase}
 
 
@@ -224,6 +224,9 @@ def test_catalogue_names() -> None:
         "sessions.watch",
         "events.since",
         "admission.discard",
+        "admission.receipt",
+        "runtime.describe",
+        "maintenance.run",
     ]
     for spec in METHODS.values():
         assert spec.summary

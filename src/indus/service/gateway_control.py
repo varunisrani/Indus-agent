@@ -18,7 +18,9 @@ Requests are at most 64 KiB, answers at most 512 KiB.
 
 Safety: a client refuses a home other people can write to — world-writable always, group-writable
 unless the group is the user's own private group — because whoever can write there can swap the
-socket or the pointer for their own.
+socket or the pointer for their own. Before sending, the client also checks who listens: a socket
+the OS reports as served by another user is answered ``foreign_listener`` and gets nothing
+(P17-24, ``remote.profile_guard.listener_is_ours``).
 
 Attach verbs (P17-11): ``session_ticket`` asks for a single-use WebSocket ticket and checks the
 answer (ticket shape, a credential-free loopback ``ws_url``, the profile and instance the caller
@@ -40,6 +42,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from indus.service.remote.profile_guard import FOREIGN_LISTENER, listener_is_ours
 from indus.service.ws_auth import is_loopback_host, looks_like_ticket
 
 __all__ = [
@@ -199,6 +202,11 @@ def _exchange(path: Path, request: bytes, timeout: float) -> ControlReply:
         sock.settimeout(timeout)
         try:
             sock.connect(str(path))
+            if not listener_is_ours(sock):
+                # Another user's process listens on our profile's socket: say nothing to it.
+                return ControlReply(
+                    False, error=FOREIGN_LISTENER, detail="another user listens on the socket"
+                )
             sock.sendall(request)
             chunks: list[bytes] = []
             size = 0

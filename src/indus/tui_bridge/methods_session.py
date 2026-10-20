@@ -57,11 +57,10 @@ from indus.protocol.methods import (
     SessionResumeParams,
     SessionResumeResult,
 )
-from indus.service.session_service import SessionService
+from indus.service.session_service import SessionService, usage_numbers
 from indus.state import listing, rewind, titles
 from indus.state.registry import StoreHandle
 from indus.tui_bridge.bridge import SessionView
-from indus.tui_bridge.events import usage_numbers
 
 if TYPE_CHECKING:
     from indus.tui_bridge.bridge import Bridge

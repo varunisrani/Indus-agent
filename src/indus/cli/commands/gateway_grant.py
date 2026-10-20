@@ -41,15 +41,10 @@ from indus.cli.commands._support import state_of
 from indus.foundation.scope import EnvView, Scope
 from indus.service import gateway_control
 from indus.service.creation_policy import LAUNCH_ENV, LAUNCH_ONLY_ENV
-from indus.service.creation_policy import scrub_launch_env as scrub_policy_env
+from indus.service.remote import profile_guard
 from indus.service.remote.channel import DialRefused, grant_for
 from indus.service.remote.channel import Grant as ChannelGrant
-from indus.service.ws_auth import (
-    SUBPROTOCOL,
-    TICKET_PROTOCOL_PREFIX,
-    WS_INTERACTIVE,
-    stable_profile_id,
-)
+from indus.service.ws_auth import SUBPROTOCOL, TICKET_PROTOCOL_PREFIX, WS_INTERACTIVE
 
 __all__ = [
     "EXIT_OK",
@@ -159,9 +154,9 @@ class GrantRefused(Exception):
 
 
 def scrub_launch_env(env: Mapping[str, str]) -> dict[str, str]:
-    """``env`` without the launch options of one run (``creation_policy.scrub_launch_env``, the
+    """``env`` without the launch options of one run (``profile_guard.launch_free_env``, the
     same scrub ``ensure`` applies to a daemon it starts)."""
-    return scrub_policy_env(env)
+    return profile_guard.launch_free_env(env)
 
 
 # -- reaching the daemon --------------------------------------------------------------------------
@@ -230,8 +225,14 @@ def obtain_grant(
     profile_id, instance_id = found.get("profile_id"), found.get("instance_id")
     if not isinstance(profile_id, str) or not isinstance(instance_id, str):
         raise GrantRefused("bad_response", "the daemon did not name its profile and instance")
-    if profile_id != stable_profile_id(scope.home):
-        raise GrantRefused("profile_mismatch", "the daemon that answered serves another profile")
+    try:
+        profile_guard.check_profile(
+            profile_guard.expected_profile_id(scope.home), profile_id, where="endpoint"
+        )
+    except profile_guard.ProfileMismatch:
+        raise GrantRefused(
+            profile_guard.MISMATCH_CODE, "the daemon that answered serves another profile"
+        ) from None
     if not found.get("ws_url"):
         raise GrantRefused("ws_unavailable", "the daemon has no attach endpoint")
     try:

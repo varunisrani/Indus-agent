@@ -50,7 +50,7 @@ from indus.protocol.events import (
 )
 from indus.protocol.server_requests import SERVER_REQUEST_KINDS, SERVER_REQUEST_METHOD
 from indus.safety.redaction import redact_output
-from indus.service.session_service import SessionService
+from indus.service.session_service import SessionService, usage_numbers
 from indus.tui_bridge.bridge import ContractViolation, SessionView
 
 if TYPE_CHECKING:
@@ -123,21 +123,6 @@ def _cap(value: Any, limit: int) -> Any:
 
 
 # -- payload helpers -------------------------------------------------------------------------------
-
-
-def usage_numbers(service: SessionService, session_id: str) -> dict[str, Any]:
-    """The session's counters in ``UsageNumbers`` shape."""
-    agent = service.agent(session_id)
-    numbers: dict[str, Any] = dict(agent.usage.snapshot().as_dict())
-    numbers.pop("prompt_tokens", None)
-    numbers.pop("total_tokens", None)
-    numbers.pop("cost_status", None)
-    numbers["context_tokens"] = agent.usage.last_prompt_tokens
-    try:
-        numbers["context_window"] = agent.binding.state.window.tokens
-    except Exception:
-        numbers["context_window"] = None
-    return numbers
 
 
 def session_info(service: SessionService, view: SessionView) -> dict[str, Any]:

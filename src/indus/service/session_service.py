@@ -146,6 +146,7 @@ __all__ = [
     "SessionService",
     "TurnDoor",
     "protocol_error_for",
+    "usage_numbers",
 ]
 
 log = logging.getLogger(__name__)
@@ -434,8 +435,12 @@ class SessionService:
 
     # -- create / resume --------------------------------------------------------------------------
 
-    async def create(self, params: SessionCreateParams | None = None) -> SessionCreateResult:
-        """Mint a session and attach it."""
+    async def create(
+        self, params: SessionCreateParams | None = None, *, source: str | None = None
+    ) -> SessionCreateResult:
+        """Mint a session and attach it. ``source`` names the surface the session is created for
+        when this service hosts several (the daemon: ``cli``, ``tui``, ...); its row is stored
+        under that source, as an in-process surface's would be."""
         params = params or SessionCreateParams()
         async with _mapped():
             self._check_open()
@@ -446,7 +451,7 @@ class SessionService:
                     raise ProtocolError(IDEMPOTENCY_CONFLICT, path="idempotency_key")
                 return SessionCreateResult(session_id=session_id, created=False)
             session_id = new_session_id(self.scope.clock)
-            options, selection = self._options_for(params)
+            options, selection = self._options_for(params, source)
             await self._attach(session_id, options=options, selection=selection)
             self._start_maintenance()
             if params.title:
@@ -505,8 +510,12 @@ class SessionService:
         elif isinstance(store, MemoryStore):
             store.sessions.setdefault(session_id, {})["title"] = title
 
-    def _options_for(self, params: SessionCreateParams) -> tuple[AgentOptions, list[str] | None]:
+    def _options_for(
+        self, params: SessionCreateParams, source: str | None = None
+    ) -> tuple[AgentOptions, list[str] | None]:
         options = self.options
+        if source:
+            options = replace(options, source=source)
         fields = dict(options.session_fields)
         if params.cwd:
             options = replace(options, cwd=Path(params.cwd))
@@ -1082,3 +1091,19 @@ class SessionService:
                 SESSION_NOT_FOUND, f"session {session_id} is not attached", path="session_id"
             )
         return attached
+
+
+def usage_numbers(service: SessionService, session_id: str) -> dict[str, Any]:
+    """The session's counters in ``UsageNumbers`` shape (``session.usage``), the one definition
+    the in-process bridge and the daemon host both send: the token counters, the last prompt size
+    as the context in use, and the model's window when known."""
+    agent = service.agent(session_id)
+    numbers: dict[str, Any] = dict(agent.usage.snapshot().as_dict())
+    for name in ("prompt_tokens", "total_tokens", "cost_status"):
+        numbers.pop(name, None)
+    numbers["context_tokens"] = agent.usage.last_prompt_tokens
+    try:
+        numbers["context_window"] = agent.binding.state.window.tokens
+    except Exception:
+        numbers["context_window"] = None
+    return numbers

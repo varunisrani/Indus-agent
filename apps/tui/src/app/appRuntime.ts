@@ -43,7 +43,7 @@ import type { ExitReason } from "../terminal/lifecycle.ts";
 import { attachFailureLines } from "../transport/attach.ts";
 import { TurnController } from "../turn/controller.ts";
 import type { Env } from "./launchOptions.ts";
-import { type ExitInfo, Recovery } from "./recovery.ts";
+import { ATTACH_RESTART_LINE, type ExitInfo, Recovery } from "./recovery.ts";
 import { type Rpc, rpcFromClient } from "./rpc.ts";
 import { type OpenReason, SessionLifecycle } from "./sessionLifecycle.ts";
 
@@ -78,10 +78,20 @@ export class LinkWatch {
   }
 }
 
+/**
+ * Said when the attach link to the daemon is lost while a reply runs (R09.11): the turn may have
+ * finished, failed or been lost with the daemon, and nothing here sends it again.
+ */
+export const OUTCOME_UNKNOWN_LINE =
+  "The connection to the gateway daemon was lost while a reply was running: its outcome is " +
+  "unknown and it was not sent again (do not resend it).";
+
 export interface RuntimeOptions {
   client: IndusClient;
   links: LinkWatch;
   env: Env;
+  /** The link is the daemon attach (P17-19), not the TUI's own bridge child. */
+  attached?: boolean;
   clock?: Clock;
   /** Leave the program (the entry's `Lifecycle.quit`). */
   exit(code: number, reason: ExitReason): void;
@@ -125,6 +135,8 @@ export class AppRuntime {
   private lastExit: ExitInfo | null = null;
   /** The session open when the link went down (undefined: not parked). */
   private parked: string | null | undefined = undefined;
+  /** A reply was running when the link went down. */
+  private lostMidTurn = false;
   private readonly cleanups: (() => void)[] = [];
   private disposed = false;
   private configStarted = false;
@@ -217,6 +229,7 @@ export class AppRuntime {
       },
       say: system,
       status: (text) => this.controller.setStatus(text),
+      ...(options.attached === true ? { restartLine: ATTACH_RESTART_LINE } : {}),
     });
 
     this.handle = createEventHandler({
@@ -342,6 +355,7 @@ export class AppRuntime {
     if (this.parked !== undefined) return;
     const ui = uiStore.getState();
     this.parked = ui.storedSid ?? ui.sid;
+    this.lostMidTurn = ui.busy;
     ui.patch({
       sid: null,
       storedSid: null,
@@ -366,11 +380,18 @@ export class AppRuntime {
     this.controller.reset();
     this.cards.settleAll();
     overlayStore.getState().closeFlowCards();
+    // Attached, a reply that was running may finish in the daemon or be lost with it: say its
+    // outcome is unknown and never send it again (R09.11). The reopen clears the transcript, so
+    // the line is carried into the reopened session.
+    const unknown = this.options.attached === true && this.lostMidTurn;
+    this.lostMidTurn = false;
     if (info?.terminal === true) {
       this.recovery.stop();
       this.controller.setStatus(DAEMON_UNAVAILABLE_STATUS);
+      if (unknown) this.system(OUTCOME_UNKNOWN_LINE);
       return;
     }
+    if (unknown) this.lifecycle.carry(OUTCOME_UNKNOWN_LINE);
     this.recovery.lost(live, exit);
   }
 

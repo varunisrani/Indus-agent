@@ -27,7 +27,8 @@ Attach mode rules:
   ``AttachedHost``. Slash subset: ``/help``, ``/quit`` (``/exit``, ``/detach``), ``/stop``,
   ``/discard <admission_id>`` (resolves a lost turn; its generation is sent and checked). Every
   other slash or ``!`` line is answered "not available while attached". Leaving only detaches: the
-  daemon finishes accepted work.
+  daemon finishes accepted work. Lost turns are listed at start and again after any gap in the
+  session's events (a reconnect to a daemon that restarted mid-turn): outcome unknown, never resent.
 
 ``AttachBackend`` / ``AttachedService`` are the calls this module needs from the shared-daemon
 client; ``attach_remote.DaemonBackend`` is the real one (P17-15 ensure, P17-16 channel, P17-17
@@ -447,6 +448,17 @@ class AttachedHost:
         rows = self.invoke("pending", session_id) or []
         return [PendingRow.of(row) for row in rows]
 
+    def on_gap(self, session_id: str, listener: Callable[[Mapping[str, Any]], object]) -> None:
+        """Call ``listener`` (on the attach loop) when the session's event stream has a gap — as
+        after a reconnect to a daemon that restarted. A service without gaps never calls it."""
+
+        async def register() -> None:
+            hook = getattr(self.service, "on_gap", None)
+            if callable(hook):
+                await _settle(hook(session_id, listener))
+
+        self.call(register())
+
 
 # -- opening the session --------------------------------------------------------------------------
 
@@ -636,7 +648,7 @@ def _own_generation(host: AttachedHost, session_id: str, ticket: PromptSubmitRes
     """The generation of the turn our input started (Ctrl-C stops that turn, never one another
     surface started): the submit's own when it started at once, else the one its turn started
     with since, or None while it is still queued."""
-    if ticket.status is SubmitStatus.STREAMING and ticket.generation > 0:
+    if ticket.status is SubmitStatus.STREAMING and ticket.generation:
         return ticket.generation
     try:
         return host.invoke("own_generation", session_id, ticket.turn_id)
@@ -922,6 +934,23 @@ def _pending_notes(rows: Sequence[PendingRow]) -> list[str]:
     return notes
 
 
+def _report_lost_turns(host: AttachedHost, repl: Repl, session_id: str) -> None:
+    """After a gap (the daemon came back, or this terminal fell behind): read the session's lost
+    turns again and show each with its ``/discard`` line. Runs off the attach loop: the ledger
+    read waits on it."""
+
+    def report() -> None:
+        try:
+            notes = _pending_notes(host.pending(session_id))
+        except Exception:
+            log.debug("could not read the pending admissions after a gap", exc_info=True)
+            return
+        if notes:
+            repl.post(lambda: [repl.note(note) for note in notes])
+
+    threading.Thread(target=report, name="indus-attach-gap", daemon=True).start()
+
+
 def attached_commands(host: AttachedHost) -> Callable[[Repl, str], bool]:
     """The REPL's command hook in attach mode (see the module notes)."""
 
@@ -1035,6 +1064,7 @@ def _interactive(
         def ready(repl: Repl) -> None:
             for note in notes:
                 repl.note(note)
+            host.on_gap(sid, lambda _gap: _report_lost_turns(host, repl, sid))
             if seed is not None and seed.strip():
                 text = seed
                 repl.post(lambda: repl.send(text))

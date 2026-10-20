@@ -311,7 +311,7 @@ class SessionDesk:
             turn._finish(TurnOutcome(sid, "", 0, "", None, "not started"))  # pyright: ignore[reportPrivateUsage]
             self._schedule_close(sid)
             raise
-        turn._bind(ticket.turn_id, ticket.generation)  # pyright: ignore[reportPrivateUsage]
+        turn._bind(ticket.turn_id, ticket.require_generation())  # pyright: ignore[reportPrivateUsage]
         self._started.add(ticket.turn_id)
         self._running[sid] = turn
         self._spawn(self._wait(turn, before))

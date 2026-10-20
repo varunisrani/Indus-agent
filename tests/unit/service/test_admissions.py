@@ -567,3 +567,105 @@ async def test_stopping_a_turn_that_waits_for_the_lease_ends_the_wait(store: Sto
     await service.aclose()  # returns at once: the wait is ended, not sat out
     row = ledger.get(store, second.admission_id)
     assert row is not None and row.outcome == "interrupted" and row.detail == SHUTDOWN
+
+
+# -- transitions and claims (P17-25 ``admission.state``; integration) ------------------------------
+
+
+type Move = tuple[str, str, int | None, int | None, str | None]
+
+
+def recorder() -> tuple[list[Move], Callable[[str, Receipt], None]]:
+    moves: list[Move] = []
+
+    def heard(session_id: str, receipt: Receipt) -> None:
+        assert session_id == receipt.session_id
+        moves.append(
+            (
+                receipt.admission_id,
+                receipt.state,
+                receipt.generation,
+                receipt.position,
+                receipt.outcome,
+            )
+        )
+
+    return moves, heard
+
+
+@aio
+async def test_every_move_of_an_input_is_told(store: StoreHandle) -> None:
+    moves, heard = recorder()
+    model = Model(hold=True)
+    service = await opened(store, model, on_state=heard)
+    first = await admit(service, "r1", "long job")
+    second = await admit(service, "r2", "next")
+    third = await admit(service, "r3", "dropped")
+    await clock_of(store).run_until_idle()
+    await service.cancel(third.admission_id)
+    model.release("long job")
+    model.release("next")
+    assert (await service.wait(second.admission_id)).outcome == "completed"
+    a, b, c = first.admission_id, second.admission_id, third.admission_id
+    assert moves == [
+        (a, "queued", None, 1, None),
+        (b, "queued", None, 2, None),
+        (c, "queued", None, 3, None),
+        (a, "started", 1, None, None),
+        (c, "terminal", None, None, "cancelled"),
+        (a, "terminal", 1, None, "completed"),
+        (b, "started", 2, None, None),
+        (b, "terminal", 2, None, "completed"),
+    ]
+    again = await admit(service, "r1", "long job")  # an exact retry is no move
+    assert again.replayed and len(moves) == 8
+    await service.aclose()
+
+
+@aio
+async def test_a_lost_turn_is_told_unknown_once_and_its_discard_terminal(
+    store: StoreHandle,
+) -> None:
+    lost, later = await _lost_turn(store)
+    moves, heard = recorder()
+    second = await opened(store, Model(), on_state=heard)
+    await clock_of(store).run_until_idle()
+    await admit(second, "more", "and this")
+    await clock_of(store).run_until_idle()
+    assert [m for m in moves if m[1] == "unknown"] == [
+        (lost.admission_id, "unknown", 1, None, None)
+    ]
+    await second.discard_unknown(lost.admission_id, expected_generation=1)
+    assert (await second.wait(later.admission_id)).outcome == "completed"
+    assert (lost.admission_id, "terminal", 1, None, "discarded") in moves
+    await second.aclose()
+
+
+@aio
+async def test_a_failing_state_listener_never_stops_the_queue(store: StoreHandle) -> None:
+    def broken(session_id: str, receipt: Receipt) -> None:
+        raise RuntimeError("listener down")
+
+    service = await opened(store, Model(), on_state=broken)
+    receipt = await admit(service, "r1", "hello")
+    assert (await service.wait(receipt.admission_id)).outcome == "completed"
+    await service.aclose()
+
+
+@aio
+async def test_claimed_answers_once_the_worker_claims_the_input(store: StoreHandle) -> None:
+    model = Model(hold=True)
+    service = await opened(store, model)
+    first = await admit(service, "r1", "long job")
+    assert first.state == "queued" and first.generation is None
+    claimed = await service.claimed(first.admission_id, 5.0)
+    assert claimed.state == "started" and claimed.generation == 1
+    behind = await admit(service, "r2", "next")
+    waited = await service.claimed(behind.admission_id, 0.01)
+    assert waited.state == "queued" and waited.generation is None and waited.position == 1
+    model.release("long job")
+    model.release("next")
+    assert (await service.claimed(behind.admission_id, 5.0)).generation == 2
+    await service.wait(behind.admission_id)
+    assert (await service.claimed(first.admission_id, 0.01)).state == "terminal"
+    await service.aclose()

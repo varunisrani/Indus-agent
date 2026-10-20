@@ -11,8 +11,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import Field, JsonValue, NonNegativeInt
+from pydantic import Field, JsonValue, NonNegativeInt, PositiveInt
 
+from indus.protocol.attach import AdmissionOutcomeName, AdmissionStateName
 from indus.protocol.base import ProtocolModel
 from indus.protocol.bridge import UsageNumbers
 
@@ -348,6 +349,61 @@ class TodoUpdated(EventBase):
     """Grows each time the list really changes."""
 
 
+class ViewerCount(ProtocolModel):
+    """How many viewers of one surface kind watch a session."""
+
+    surface: Literal["cli", "tui", "gui", "acp", "web", "messaging"]
+    """The kind of client."""
+    count: PositiveInt
+    """How many of them are attached."""
+
+
+class SessionViewers(EventBase):
+    """Who watches the session now (sent whenever a viewer attaches or leaves), so a surface can
+    show "also open in the TUI"."""
+
+    type: Literal["session.viewers"] = "session.viewers"
+    """Event type."""
+    viewers: list[ViewerCount] = Field(default_factory=list[ViewerCount])
+    """Attached viewers per surface kind, sorted by surface."""
+    count: NonNegativeInt
+    """All attached viewers."""
+
+
+class RequestSettled(EventBase):
+    """An open server request ended; every viewer closes its card. Sent once per request."""
+
+    type: Literal["request.settled"] = "request.settled"
+    """Event type."""
+    request_id: str
+    """The request that ended."""
+    kind: Literal["approval", "clarify", "sudo", "secret"]
+    """The request's kind."""
+    outcome: Literal["answered", "withdrawn", "undeliverable"]
+    """Answered (the first answer won), withdrawn (its turn moved on), or undeliverable (no
+    viewer could show it; distinct from a timeout or a deny)."""
+    reason: str | None = None
+    """Why it was withdrawn (``interrupted``, ``turn_ended``, ``timed_out`` ...) or undeliverable
+    (``not_shown``, ``unsupported``)."""
+
+
+class AdmissionStateChanged(EventBase):
+    """An input of the session moved in its queue: queued, started, finished, or lost."""
+
+    type: Literal["admission.state"] = "admission.state"
+    """Event type."""
+    admission_id: str
+    """The input's admission (``turn_id`` in the submit answer)."""
+    state: AdmissionStateName
+    """Where it stands now."""
+    generation: NonNegativeInt | None = None
+    """The turn that runs (or ran) it, once claimed."""
+    position: PositiveInt | None = None
+    """1-based place in the queue while queued."""
+    outcome: AdmissionOutcomeName | None = None
+    """How it ended, once terminal."""
+
+
 type Event = Annotated[
     TurnStarted
     | MessageDelta
@@ -367,7 +423,10 @@ type Event = Annotated[
     | SessionInfo
     | SessionUsage
     | SessionTitle
-    | TodoUpdated,
+    | TodoUpdated
+    | SessionViewers
+    | RequestSettled
+    | AdmissionStateChanged,
     Field(discriminator="type"),
 ]
 """Any event, told apart by ``type``."""
@@ -392,6 +451,9 @@ EVENT_MODELS: tuple[type[EventBase], ...] = (
     SessionUsage,
     SessionTitle,
     TodoUpdated,
+    SessionViewers,
+    RequestSettled,
+    AdmissionStateChanged,
 )
 
 

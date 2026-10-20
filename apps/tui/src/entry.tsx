@@ -152,6 +152,7 @@ const runtime = new AppRuntime({
   client,
   links,
   env: process.env,
+  attached: plan.mode !== "local",
   themePinned,
   exit: (code, reason) => lifecycle.quit(code, reason),
   redraw: () => redraw(),

@@ -1,0 +1,40 @@
+# Documented differences between the in-process and the attached session host (P17-26).
+#
+# The dual-host matrix (tests/integration/service/test_dual_host_matrix.py) runs every surface case
+# against both hosts. A facet that differs fails the matrix unless an entry below names it:
+#   case  — the matrix case (cli.*: classic CLI; bridge.*: the TUI protocol; demo3.*: messaging)
+#   facet — the checked value inside the case
+#   host  — the host that differs from what a person sees in process today
+#   d_id  — the intended difference (D-16.n)
+#   why   — one or two lines
+# An entry whose difference is gone fails the matrix as stale: remove it with the change.
+differences:
+  - case: cli.q.denies
+    facet: outcome
+    host: attached
+    d_id: D-16.487
+    why: >-
+      A finite attached `chat -q` that meets a question nobody here can answer detaches with exit 3
+      (the turn waits in the daemon for another surface) instead of denying it in process.
+  - case: bridge.lost_mid_turn
+    facet: lost turn finished
+    host: attached
+    d_id: D-16.10
+    why: >-
+      Closing (or losing) an attached client only detaches it: the daemon finishes the running
+      turn and stores it. In process the turn dies with the child. Never resent on either host.
+  - case: bridge.event_shape
+    facet: session events
+    host: attached
+    d_id: D-16.550
+    why: >-
+      The daemon sends no `session.info` after `session.create`/`resume` and no `session.title`
+      when the automatic title lands (it is stored, and list watchers get `session.updated`), so
+      an attached TUI shows no model, folder or title for the session.
+  - case: bridge.settings
+    facet: settings
+    host: attached
+    d_id: D-16.549
+    why: >-
+      The daemon serves the session methods only; `model.options`, `config.get` and `config.set`
+      (what the TUI reads at start and its pickers use) answer -32601 over the attach socket.

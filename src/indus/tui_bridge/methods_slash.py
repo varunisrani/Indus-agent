@@ -50,9 +50,8 @@ from indus.protocol.errors import (
 )
 from indus.protocol.methods import ProtocolError
 from indus.service.commands.registry import REGISTRY, CommandDef, command_word
-from indus.service.session_service import SessionService
+from indus.service.session_service import SessionService, usage_numbers
 from indus.tui_bridge import methods_config, methods_session
-from indus.tui_bridge.events import usage_numbers
 
 if TYPE_CHECKING:
     from indus.learning.skills.invoke import CommandTable

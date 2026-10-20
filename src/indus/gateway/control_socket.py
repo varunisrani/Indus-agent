@@ -37,7 +37,6 @@ import os
 import shutil
 import socket
 import stat
-import struct
 import sys
 import tempfile
 import time
@@ -53,6 +52,7 @@ from indus.foundation.fsio import atomic_write_text
 from indus.foundation.profiles import profile_id_of
 from indus.foundation.scope import EnvView
 from indus.service import gateway_control as wire
+from indus.service.remote.profile_guard import socket_peer_uid
 from indus.state.gateway_runtime import process_start_time
 
 __all__ = [
@@ -151,24 +151,11 @@ def identity_payload(home: Path, env: Mapping[str, str]) -> dict[str, Any]:
 
 # -- peer credentials -----------------------------------------------------------------------------
 
-_LOCAL_PEERCRED = 0x001  # macOS <sys/un.h>, at level SOL_LOCAL (0)
-_XUCRED_SIZE = 76
-
 
 def peer_uid(sock: socket.socket) -> int | None:
-    """The connecting process's uid, or None when this OS does not say."""
-    try:
-        if sys.platform.startswith("linux"):
-            raw = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-            _pid, uid, _gid = struct.unpack("3i", raw)
-            return uid
-        if sys.platform == "darwin":
-            raw = sock.getsockopt(0, _LOCAL_PEERCRED, _XUCRED_SIZE)
-            _version, uid = struct.unpack_from("=II", raw)
-            return uid
-    except (OSError, struct.error):
-        return None
-    return None
+    """The connecting process's uid, or None when this OS does not say (the one reader both
+    sides use: ``service.remote.profile_guard.socket_peer_uid``)."""
+    return socket_peer_uid(sock)
 
 
 # -- the server -----------------------------------------------------------------------------------

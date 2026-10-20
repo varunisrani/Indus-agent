@@ -36,7 +36,12 @@ from enum import StrEnum
 from typing import Any
 
 from indus.protocol.envelope import ErrorObject
-from indus.protocol.errors import METHOD_NOT_FOUND, SERVER_REQUEST_UNSUPPORTED, make_error
+from indus.protocol.errors import (
+    METHOD_NOT_FOUND,
+    NOT_SHOWN,
+    SERVER_REQUEST_UNSUPPORTED,
+    make_error,
+)
 from indus.protocol.server_requests import (
     SERVER_REQUEST_KINDS,
     ApprovalRequest,
@@ -61,8 +66,8 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 REQUEST_ID_PREFIX = "srq-"
-NOT_SHOWN_CODE = 4404
-"""A viewer's "this request is not shown here" answer (only with the decline capability)."""
+NOT_SHOWN_CODE = NOT_SHOWN.code
+"""A viewer's "this request is not shown here" answer, 4404 (only with the decline capability)."""
 UNRENDERABLE_CODE = METHOD_NOT_FOUND.code
 """A viewer's "I cannot render this kind" answer (JSON-RPC method not found, -32601)."""
 SETTLED_EVENT = "request.settled"

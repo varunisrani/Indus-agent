@@ -226,6 +226,11 @@ class SecretStore:
         return self._backend.name
 
     @property
+    def index_path(self) -> Path:
+        """Where this store keeps its name index (inside the profile home it belongs to)."""
+        return self._index_path
+
+    @property
     def generation(self) -> int:
         """Bumped on every change; lets callers cache derived data (redaction patterns)."""
         return self._generation

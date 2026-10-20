@@ -410,6 +410,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/e2e/test_doctor_minimal.py::test_profile_flag_targets_the_work_profile`
   - `tests/integration/foundation/test_log_routing.py::test_threads_with_different_scopes_write_to_their_own_profile`
   - `tests/unit/state/test_connection.py::test_default_store_path_comes_from_the_scope`
+  - `tests/unit/service/remote/test_profile_guard.py::test_client_for_a_refuses_b_socket_before_any_ticket`
+  - `tests/unit/service/remote/test_profile_guard.py::test_ready_naming_another_or_no_profile_is_refused_before_sending`
 - **R03.24** Test runs touching the live store
   - `tests/unit/state/test_connection.py::test_guard_refuses_real_root_and_named_profiles`
   - `tests/unit/state/test_connection.py::test_guard_runs_before_anything_touches_disk`
@@ -618,6 +620,8 @@ Checked by `python -m tooling.checks traps`.
   - `apps/tui/src/transport/attach.test.ts::explicit URL first, then --local, else the grant helper`
   - `apps/tui/src/transport/attach.test.ts::an explicit URL is only ever dialled: no helper, no daemon, no local child`
   - `tests/unit/cli/test_tui_launch.py::test_attach_by_default_and_local_keeps_the_bridge_child`
+  - `tests/integration/service/test_dual_host_matrix.py::test_bridge_event_shape`
+  - `apps/tui/src/test/hosts.test.tsx::a prompt streams, settles into the transcript and the usage shows`
 - **R05.2** Events arrive before the UI subscribes
   - Review: not yet planned (P00-guards)
 - **R05.3** Server requests must not stall the agent
@@ -660,9 +664,16 @@ Checked by `python -m tooling.checks traps`.
 - **R05.13** Path completion on remote backends
   - Review: not yet planned (P00-guards)
 - **R05.14** Profile scoping in the backend
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/service/remote/test_profile_guard.py::test_every_daemon_rpc_runs_under_the_daemon_scope`
+  - `tests/unit/service/remote/test_profile_guard.py::test_bind_daemon_scope_keeps_one_profile_together`
+  - `tests/unit/service/remote/test_profile_guard.py::test_ws_endpoint_refuses_a_scope_of_another_profile`
+  - `tests/unit/service/remote/test_profile_guard.py::test_client_for_a_refuses_b_socket_before_any_ticket`
+  - `tests/unit/service/remote/test_profile_guard.py::test_launch_env_never_reaches_a_daemon_the_grant_starts`
 - **R05.15** Error codes are not stable
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/protocol/test_attach_contract.py::test_each_error_code_appears_once_with_one_meaning`
+  - `tests/unit/protocol/test_attach_contract.py::test_codes_outside_method_answers_say_where_they_travel`
+  - `tests/unit/protocol/test_attach_contract.py::test_product_codes_reach_their_one_row`
+  - `tests/unit/protocol/test_error_table.py::test_codes_and_names_are_unique`
 - **R05.16** Resize storms
   - Review: not yet planned (P00-guards)
 - **R05.17** Synchronized output inside tmux
@@ -1100,6 +1111,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_attach.py::test_transport_lost_mid_turn_is_outcome_unknown_and_never_resent`
   - `tests/unit/cli/test_attach.py::test_an_unknown_turn_blocks_a_finite_query_with_exit_3`
   - `tests/unit/cli/test_attach_remote.py::test_a_lost_wait_is_outcome_unknown_or_blocked_when_ours_still_waits`
+  - `tests/e2e/service/test_shared_backend.py::test_cli_and_tui_share_one_session_on_one_daemon`
+  - `apps/tui/src/app/appRuntime.test.ts::attached: a link lost mid-reply says the outcome is unknown and sends nothing again`
   - Review: the ACP viewer half is P19 (P17-18 covers the CLI)
 - **R09.12** "Allow for session" has no ACP kind
   - Review: not yet planned (P00-guards)

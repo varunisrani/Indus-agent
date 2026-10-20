@@ -24,6 +24,58 @@ export interface AdmissionDiscardResult {
   reason?: "stale_generation" | "not_found" | null;
 }
 
+export type AdmissionOutcomeName = "completed" | "failed" | "cancelled" | "interrupted" | "steering" | "steered" | "discarded" | "replaced";
+
+/** What became of an input (for a client that lost the answer to its submit). */
+export interface AdmissionReceiptParams {
+  /** A session this connection watches. */
+  session_id: SessionId;
+  /** The input's admission (`turn_id` in the submit answer). */
+  admission_id: string;
+}
+
+/** The input's place in the session's queue, or how it ended. */
+export interface AdmissionReceiptResult {
+  /** The admission asked about. */
+  admission_id: string;
+  /** The session it belongs to. */
+  session_id: string;
+  /** `queued`, `started`, `terminal` or `unknown` (lost in a restart: never re-run). */
+  state: AdmissionStateName;
+  /** The turn that runs (or ran) it, once claimed. */
+  generation?: number | null;
+  /** 1-based place in the queue while queued. */
+  position?: number | null;
+  /** How it ended, once terminal. */
+  outcome?: AdmissionOutcomeName | null;
+  /** The lost (`unknown`) admission the session's queue waits behind, if any. */
+  blocked_by?: string | null;
+  /** True when the session was deleted; it takes no new input. */
+  retired?: boolean;
+}
+
+/** An input of the session moved in its queue: queued, started, finished, or lost. */
+export interface AdmissionStateChanged {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "admission.state";
+  /** The input's admission (`turn_id` in the submit answer). */
+  admission_id: string;
+  /** Where it stands now. */
+  state: AdmissionStateName;
+  /** The turn that runs (or ran) it, once claimed. */
+  generation?: number | null;
+  /** 1-based place in the queue while queued. */
+  position?: number | null;
+  /** How it ended, once terminal. */
+  outcome?: AdmissionOutcomeName | null;
+}
+
+export type AdmissionStateName = "queued" | "started" | "terminal" | "unknown";
+
 /** The person's decision on an approval request. */
 export interface ApprovalAnswer {
   /** Answer kind. */
@@ -328,7 +380,7 @@ export interface ErrorResponse {
   error: ErrorObject;
 }
 
-export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone | GoalUpdate | LoopUpdate | HeartbeatFired | MessageComplete | SessionInfo | SessionUsage | SessionTitle | TodoUpdated;
+export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone | GoalUpdate | LoopUpdate | HeartbeatFired | MessageComplete | SessionInfo | SessionUsage | SessionTitle | TodoUpdated | SessionViewers | RequestSettled | AdmissionStateChanged;
 
 /** The events of a watched session after a cursor. */
 export interface EventsSinceParams {
@@ -495,6 +547,36 @@ export interface LoopUpdate {
   reason?: string;
 }
 
+/**
+ * Run one bulk store operation inside the daemon that owns the store (serialised with live
+ * turns).
+ */
+export interface MaintenanceRunParams {
+  /**
+   * `prune` deletes `ids`; `delete` one session's whole chain; `repair` rebuilds the
+   * search index; `import` reads a JSONL export from `path`.
+   */
+  op: "prune" | "delete" | "repair" | "import";
+  /** Sessions to delete (`prune`). */
+  ids?: string[] | null;
+  /** The session to delete (`delete`). */
+  session_id?: string | null;
+  /** The absolute path of the export to import (`import`). */
+  path?: string | null;
+}
+
+/** What the operation did, or why it did nothing. */
+export interface MaintenanceRunResult {
+  /** The operation asked for. */
+  op: string;
+  /** Why nothing was done: `bad_op`, `bad_params`, `guarded` or `store_error`. */
+  refused?: string | null;
+  /** A short explanation of the refusal. */
+  detail?: string | null;
+  /** The operation's counts (`deleted`, `removed`, `rebuilt`, `imported` ...). */
+  report?: { [key: string]: JsonValue };
+}
+
 /** A turn's final reply, sent after `turn.done` so a client can settle its streamed text. */
 export interface MessageComplete {
   /** The session the event belongs to. */
@@ -641,14 +723,27 @@ export interface PromptSubmitParams {
    * instead of running the text twice.
    */
   request_id?: string | null;
+  /**
+   * A finite run nobody watches (`indus -z`; daemon): this input's turn auto-approves risky
+   * commands as the in-process run does (the hard floors still refuse). In-process hosts take the
+   * run's approval policy from its launch and ignore it.
+   */
+  unattended?: boolean;
 }
 
 /** The ticket for the started turn. */
 export interface PromptSubmitResult {
-  /** The turn's id; its events carry it. For a queued or steered message: the running turn. */
+  /**
+   * The turn's id; its events carry it. For a queued or steered message: the running turn.
+   * From the daemon: the input's admission id.
+   */
   turn_id: string;
-  /** The turn's generation, for interrupts. */
-  generation: number;
+  /**
+   * The turn's generation, for interrupts. Left out only by the daemon for an input it has not
+   * claimed yet (`queued` with no turn running): follow it by `turn.started` or
+   * `admission.state`.
+   */
+  generation?: number | null;
   /** `streaming` when this message started the turn. */
   status?: SubmitStatus;
 }
@@ -721,6 +816,54 @@ export interface Request {
 }
 
 export type RequestId = number | string;
+
+/** An open server request ended; every viewer closes its card. Sent once per request. */
+export interface RequestSettled {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "request.settled";
+  /** The request that ended. */
+  request_id: string;
+  /** The request's kind. */
+  kind: "approval" | "clarify" | "sudo" | "secret";
+  /**
+   * Answered (the first answer won), withdrawn (its turn moved on), or undeliverable (no
+   * viewer could show it; distinct from a timeout or a deny).
+   */
+  outcome: "answered" | "withdrawn" | "undeliverable";
+  /**
+   * Why it was withdrawn (`interrupted`, `turn_ended`, `timed_out` ...) or undeliverable
+   * (`not_shown`, `unsupported`).
+   */
+  reason?: string | null;
+}
+
+/** The daemon's attach descriptor: which profile and daemon start this is, what it offers. */
+export interface RuntimeDescribeParams {
+}
+
+/** What the control socket's `describe` answers, plus the replay epoch. */
+export interface RuntimeDescribeResult {
+  /** The profile the daemon serves (a hash of its home); a client refuses another one. */
+  profile_id: string;
+  /** This daemon start; it changes on every restart. */
+  instance_id: string;
+  /** The daemon's code version. */
+  code_version: string;
+  /** The protocol version the daemon speaks. */
+  protocol_version: number;
+  /** Event cursors are only valid within this epoch. */
+  replay_epoch: string;
+  /** The loopback WebSocket URL (no credentials ride in it). */
+  ws_url?: string | null;
+  /** Surface kinds a client may create sessions as (`cli`, `tui`, ...). */
+  creatable_sources?: string[];
+  /** What the daemon offers attached clients (`events.since`, `server_requests`, ...). */
+  capabilities?: string[];
+}
 
 /** The secret value, or nothing when the person skipped it. */
 export interface SecretAnswer {
@@ -967,6 +1110,23 @@ export interface SessionRedirectResult {
   outcome: RedirectOutcome;
 }
 
+/** The events after this viewer's cursor cannot be sent; reload a snapshot of the session. */
+export interface SessionReplayGap {
+  /** Notification type. */
+  type: "session.replay_gap";
+  /** The session the viewer watches. */
+  session_id: string;
+  /** The daemon's current replay epoch. */
+  replay_epoch: string;
+  /** The newest seq of the session: the cursor to hold after the snapshot. */
+  last_seq: number;
+  /**
+   * Another daemon run, dropped from memory, a cursor past the end, or the viewer fell behind
+   * (it is detached and subscribes again).
+   */
+  reason: "epoch_changed" | "evicted" | "ahead" | "overflow";
+}
+
 /** Attach to an existing session. */
 export interface SessionResumeParams {
   /** The session to resume. */
@@ -1107,6 +1267,24 @@ export interface SessionUnsubscribeResult {
   unsubscribed: boolean;
 }
 
+/** A session changed in a way list views show (sent to `sessions.watch` watchers). */
+export interface SessionUpdated {
+  /** Notification type. */
+  type: "session.updated";
+  /** The session that changed. */
+  session_id: string;
+  /** When it last changed (seconds since the epoch). */
+  last_activity?: number | null;
+  /** Whether a turn runs in it now. */
+  running?: boolean | null;
+  /** Its title (absent or null when it has none). */
+  title?: string | null;
+  /** Whether it is archived. */
+  archived?: boolean | null;
+  /** Whether it is pinned. */
+  pinned?: boolean | null;
+}
+
 /** The session's counters after a turn or on request. */
 export interface SessionUsage {
   /** The session the event belongs to. */
@@ -1129,6 +1307,29 @@ export interface SessionUsageParams {
 export interface SessionUsageResult {
   /** Totals for this attachment of the session. */
   usage: UsageNumbers;
+}
+
+/**
+ * Who watches the session now (sent whenever a viewer attaches or leaves), so a surface can
+ * show "also open in the TUI".
+ */
+export interface SessionViewers {
+  /** The session the event belongs to. */
+  session_id: string;
+  /** Position in the session's event stream; strictly increasing. */
+  seq: number;
+  /** Event type. */
+  type: "session.viewers";
+  /** Attached viewers per surface kind, sorted by surface. */
+  viewers?: ViewerCount[];
+  /** All attached viewers. */
+  count: number;
+}
+
+/** List updates for this connection were dropped; reload the list (`session.list`). */
+export interface SessionsResync {
+  /** Too many updates piled up for the connection. */
+  reason: "overflow";
 }
 
 /** Receive `session.updated` for list views (title, running state, last activity). */
@@ -1381,4 +1582,12 @@ export interface UsageNumbers {
   cost_usd?: number | null;
   /** The cost as shown to people. */
   cost_label?: string;
+}
+
+/** How many viewers of one surface kind watch a session. */
+export interface ViewerCount {
+  /** The kind of client. */
+  surface: "cli" | "tui" | "gui" | "acp" | "web" | "messaging";
+  /** How many of them are attached. */
+  count: number;
 }

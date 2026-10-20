@@ -19,6 +19,7 @@ import type {
 import type { ModelPickerPayload } from "../cards/payloads.ts";
 import { errorText } from "../cards/rpcLike.ts";
 import { applyModelChoice } from "../pickers/modelPickerState.ts";
+import { steerParams } from "../state/turnStore.ts";
 import type { UiState } from "../state/uiStore.ts";
 import type { LocalCommand, RunContext } from "./types.ts";
 
@@ -346,10 +347,12 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
       }
       const sid = needSession(ctx, "steer");
       if (sid === null) return;
-      const result = await call<SessionSteerResult>(ctx, "steer", "session.steer", {
-        session_id: sid,
-        text: arg,
-      });
+      const result = await call<SessionSteerResult>(
+        ctx,
+        "steer",
+        "session.steer",
+        steerParams(sid, arg),
+      );
       if (result === null) return;
       if (result.queued) ctx.systemLine("Steer note handed to the running reply.");
       else {

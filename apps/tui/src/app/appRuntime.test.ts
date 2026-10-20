@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { overlayStore } from "../state/overlayStore.ts";
 import { transcriptStore } from "../state/transcriptStore.ts";
 import { uiStore } from "../state/uiStore.ts";
-import { RESTART_LINE } from "./recovery.ts";
+import { OUTCOME_UNKNOWN_LINE } from "./appRuntime.ts";
+import { ATTACH_RESTART_LINE, RESTART_LINE } from "./recovery.ts";
 import { type RuntimeRig, resumeAnswer, runtimeRig, settle } from "./testRuntime.ts";
 
 let rig: RuntimeRig | null = null;
@@ -73,6 +74,37 @@ describe("crash recovery against the fake server", () => {
     // the in-flight prompt is not replayed; the never-sent queued one goes now, once
     expect(promptTexts(r)).toEqual(["first question", "typed while busy"]);
     expect(lines().filter((l) => l === "user: first question")).toHaveLength(1);
+  });
+
+  it("attached: a link lost mid-reply says the outcome is unknown and sends nothing again", async () => {
+    const r = use(runtimeRig({ attached: true }));
+    await r.ready();
+    const sid = uiStore.getState().sid;
+    await send(r, "first question");
+    await startTurn(r, "t1");
+    await r.die();
+    expect(lines()).toContain(`system: ${ATTACH_RESTART_LINE}`);
+    expect(lines()).not.toContain(`system: ${RESTART_LINE}`);
+    await r.ready();
+    expect(r.calls("session.resume")).toEqual([{ session_id: sid }]);
+    // the line survives the reopen (which clears the transcript); the prompt is not sent again
+    expect(lines()).toContain(`system: ${OUTCOME_UNKNOWN_LINE}`);
+    expect(promptTexts(r)).toEqual(["first question"]);
+    // an idle link lost later says nothing about an outcome
+    await r.die();
+    await r.ready();
+    expect(lines().filter((l) => l === `system: ${OUTCOME_UNKNOWN_LINE}`)).toHaveLength(0);
+  });
+
+  it("the bridge child's restart keeps its own wording and no outcome line", async () => {
+    const r = use(runtimeRig());
+    await r.ready();
+    await send(r, "first question");
+    await startTurn(r, "t1");
+    await r.die();
+    expect(lines()).toContain(`system: ${RESTART_LINE}`);
+    await r.ready();
+    expect(lines()).not.toContain(`system: ${OUTCOME_UNKNOWN_LINE}`);
   });
 
   it("4th death in 60 s prints the error once; a later success still resumes the same id", async () => {

@@ -13,7 +13,12 @@ turn's outcome and final text. Then it takes the next input.
   (``replayed``): the client shows it once and nothing runs again. Another input under the same
   request id is refused (``admission_conflict``).
 - **Lost acks.** ``receipt(admission_id)`` answers for a client that lost its ack; ``wait`` waits
-  for an admission to leave ``queued`` / ``started``.
+  for an admission to leave ``queued`` / ``started``; ``claimed(id, timeout)`` waits (bounded) for
+  a queued one to be claimed, so a submit into an idle session can answer its turn's generation.
+- **Transitions.** ``on_state(session_id, receipt)``, when given, hears every move of an input:
+  admitted (``queued`` / ``started``), claimed (``started`` with its generation), settled,
+  cancelled, steered or discarded (``terminal`` with its outcome) and found lost behind a restart
+  (``unknown``, once per pause). The daemon host turns these into ``admission.state`` events.
 - **Controls.** ``cancel`` drops a queued input or stops the running turn (it settles
   ``cancelled`` or as the runner reports); ``steer(id, text)`` gives the running turn more text;
   ``steer_queued(id)`` hands a queued input to the running turn (the ledger's steer transfer:
@@ -289,6 +294,7 @@ class AdmissionService:
         offload: Offload | None = None,
         gate: Callable[[sqlite3.Connection], None] | None = None,
         fences: GenerationFences | None = None,
+        on_state: Callable[[str, Receipt], object] | None = None,
     ) -> None:
         self.store = store
         self.epoch = epoch
@@ -306,6 +312,8 @@ class AdmissionService:
         self._running: dict[str, TurnTicket] = {}
         self._told: set[str] = set()
         self._settled: dict[str, asyncio.Event] = {}
+        self._claims: dict[str, asyncio.Event] = {}
+        self._on_state = on_state
         self._closing = False
 
     @classmethod
@@ -363,7 +371,12 @@ class AdmissionService:
         if not result.created and row.terminal:
             return self._terminal_receipt(row, replayed=True)
         self._kick(session_id)
-        return await self._receipt_for(row)
+        receipt = await self._receipt_for(row)
+        running = self._running.get(session_id)
+        claimed = running is not None and running.admission.admission_id == row.admission_id
+        if result.created and receipt.state == "queued" and not claimed:
+            self._tell_state(receipt)  # a claim that came first already told ``started``
+        return receipt
 
     async def receipt(self, admission_id: str) -> Receipt:
         row = await self._row(admission_id)
@@ -380,6 +393,21 @@ class AdmissionService:
             event = self._settled.setdefault(admission_id, asyncio.Event())
             await event.wait()
 
+    async def claimed(self, admission_id: str, timeout: float) -> Receipt:
+        """The receipt once a queued admission has been claimed (or has ended), waiting at most
+        ``timeout`` seconds; after that, the receipt as it stands."""
+        event = self._claims.setdefault(admission_id, asyncio.Event())
+        try:
+            receipt = await self.receipt(admission_id)
+            if receipt.state != "queued":
+                return receipt
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(event.wait(), timeout)
+            return await self.receipt(admission_id)
+        finally:
+            if self._claims.get(admission_id) is event and not event.is_set():
+                del self._claims[admission_id]
+
     def running(self, session_id: str) -> TurnTicket | None:
         return self._running.get(session_id)
 
@@ -395,7 +423,9 @@ class AdmissionService:
             lambda: ledger.cancel(self.store, epoch=self.epoch, admission_id=admission_id)
         )
         self._mark_settled(admission_id)
-        return self._terminal_receipt(settled, replayed=False)
+        receipt = self._terminal_receipt(settled, replayed=False)
+        self._tell_state(receipt)
+        return receipt
 
     async def steer(self, admission_id: str, text: str) -> bool:
         """Give the running turn of ``admission_id`` more text; False when it is not running."""
@@ -430,7 +460,10 @@ class AdmissionService:
                     )
                 )
                 self._kick(row.session_id)
-        return await self.receipt(admission_id)
+        receipt = await self.receipt(admission_id)
+        if committed and receipt.state != "queued":
+            self._tell_state(receipt)
+        return receipt
 
     async def discard_unknown(
         self,
@@ -455,7 +488,9 @@ class AdmissionService:
         self._told.discard(admission_id)
         self._mark_settled(admission_id)
         self._kick(settled.session_id)
-        return self._terminal_receipt(settled, replayed=False)
+        receipt = self._terminal_receipt(settled, replayed=False)
+        self._tell_state(receipt)
+        return receipt
 
     async def aclose(self) -> None:
         """Stop taking input, interrupt running turns, wait for the workers."""
@@ -506,6 +541,21 @@ class AdmissionService:
         event = self._settled.pop(admission_id, None)
         if event is not None:
             event.set()
+        self._mark_claimed(admission_id)
+
+    def _mark_claimed(self, admission_id: str) -> None:
+        event = self._claims.pop(admission_id, None)
+        if event is not None:
+            event.set()
+
+    def _tell_state(self, receipt: Receipt) -> None:
+        """Hand one transition to ``on_state`` (a failing listener never stops the queue)."""
+        if self._on_state is None:
+            return
+        try:
+            self._on_state(receipt.session_id, receipt)
+        except Exception:
+            log.warning("the admission-state listener failed", exc_info=True)
 
     # -- workers ----------------------------------------------------------------------------------
 
@@ -559,6 +609,14 @@ class AdmissionService:
             session_id,
             row.admission_id,
         )
+        self._tell_state(
+            Receipt(
+                admission_id=row.admission_id,
+                state="unknown",
+                session_id=row.session_id,
+                generation=row.generation,
+            )
+        )
         if self._on_blocked is not None:
             try:
                 self._on_blocked(session_id, row)
@@ -570,6 +628,15 @@ class AdmissionService:
         ticket = TurnTicket(row, meter)
         session_id = row.session_id
         self._running[session_id] = ticket
+        self._mark_claimed(row.admission_id)
+        self._tell_state(
+            Receipt(
+                admission_id=row.admission_id,
+                state="started",
+                session_id=session_id,
+                generation=ticket.generation,
+            )
+        )
         lease: HeldLease | None = None
         outcome = TurnOutcome("failed", detail="not run")
         watchdog: LivenessWatchdog | None = None
@@ -667,7 +734,7 @@ class AdmissionService:
         transfers = dict(ticket.transfers)
         detail = self._detail(outcome.detail)
         try:
-            await self._off(
+            settled = await self._off(
                 lambda: ledger.settle(
                     self.store,
                     epoch=self.epoch,
@@ -687,3 +754,5 @@ class AdmissionService:
                 ticket.session_id,
                 exc_info=True,
             )
+            return
+        self._tell_state(self._terminal_receipt(settled, replayed=False))

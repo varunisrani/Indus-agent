@@ -26,6 +26,8 @@ export interface RuntimeRig {
 
 export interface RigOptions {
   env?: Env;
+  /** The runtime's link is the daemon attach (P17-19). */
+  attached?: boolean;
   handlers?: Record<string, MethodHandler>;
   timeoutMs?: number;
 }
@@ -71,6 +73,7 @@ export function runtimeRig(options: RigOptions = {}): RuntimeRig {
     client,
     links,
     env: options.env ?? {},
+    ...(options.attached === undefined ? {} : { attached: options.attached }),
     clock,
     exit: (code) => exits.push(code),
     history: { entries: () => entries, push: (text) => entries.push(text) },

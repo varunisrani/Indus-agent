@@ -371,6 +371,7 @@ def test_decided_defaults() -> None:
         "media_trust_recent_seconds": 600.0,
         "connect_timeout_seconds": 30.0,  # P15-24
         "systemd_watchdog_seconds": 0.0,
+        "idle_exit_seconds": 600.0,  # P17-23
         "delivery_ledger": True,  # P15-19
         "stt_enabled": True,  # P15-23
         "api_server": {  # P15-30, P15-31
@@ -517,6 +518,7 @@ def test_model_shorthand_validates() -> None:
         ("gateway.media_trust_recent", bool),
         ("agent.restart_drain_timeout", float),
         ("gateway.systemd_watchdog_seconds", float),
+        ("gateway.idle_exit_seconds", float),
         ("gateway.delivery_ledger", bool),
         ("gateway.api_server.port", int),
         ("gateway.api_server.cors_origins", list),
@@ -586,6 +588,12 @@ def test_gateway_daemon_rows_validate() -> None:  # P15-24, P15-25
     assert schema.validate({"gateway": {"connect_timeout_seconds": 0}}) != []
     assert schema.validate({"agent": {"restart_drain_timeout": -1}}) != []
     assert schema.validate({"agent": {"cron_drain_timeout": -1}}) != []  # P15-21
+
+
+def test_idle_exit_row_validates() -> None:  # P17-23
+    assert schema.validate({"gateway": {"idle_exit_seconds": 0}}) == []
+    assert schema.validate({"gateway": {"idle_exit_seconds": 120.5}}) == []
+    assert schema.validate({"gateway": {"idle_exit_seconds": -1}}) != []
 
 
 def test_http_surface_rows_validate() -> None:  # P15-30..32

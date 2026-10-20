@@ -12,6 +12,7 @@ import { completionOnEnter, isSlashCommandText } from "../composer/completion.ts
 import type { Composer } from "../composer/composerStore.ts";
 import { expandPastes, expandTokens } from "../composer/paste.ts";
 import type { Destination } from "../state/destination.ts";
+import { steerParams } from "../state/turnStore.ts";
 import type { UiState } from "../state/uiStore.ts";
 import { hasInterpolation, interpolate, shellOutput } from "./interpolate.ts";
 import type { PromptQueue, QueueItem } from "./queue.ts";
@@ -209,7 +210,7 @@ export class Submitter {
     const text = await this.expand(item.text, sid, dest);
     if (text === null) return;
     try {
-      const reply = (await this.deps.rpc.call("session.steer", { session_id: sid, text })) as {
+      const reply = (await this.deps.rpc.call("session.steer", steerParams(sid, text))) as {
         queued?: unknown;
       };
       if (reply?.queued === true) {

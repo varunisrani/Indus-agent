@@ -19,7 +19,9 @@
    replayed;
 7. the ``BACKGROUND`` parts; the loopback WebSocket endpoint over the host (P17-13; its URL
    feeds ``describe`` / ``session-ticket``, its row the status surface ``ws``); housekeeping
-   (status heartbeat, drain marker), the loop watchdog, systemd ``READY=1``, status ``running``.
+   (status heartbeat, drain marker), the loop watchdog, systemd ``READY=1``, status ``running``;
+   for a daemon ``ensure`` started (and no supervisor), the idle-exit watch (P17-23,
+   ``idle_exit``: stop reason ``idle_exit`` after ``gateway.idle_exit_seconds`` with nothing to do).
 
 Then it waits for a stop or restart (``lifecycle``) and shuts down in reverse: the WebSocket
 endpoint first (clients detached), the parts and platforms, the intake, then the host (running
@@ -58,7 +60,7 @@ from indus.gateway.core.admission import AdmissionPipeline, ModelChoice
 from indus.gateway.core.authz import Authorizer, UnauthorizedHandler
 from indus.gateway.core.bot_loop import BotLoopGuard, ConcurrencyCap, settings_reader
 from indus.gateway.core.sent_index import SentIndex
-from indus.gateway.daemon import liveness
+from indus.gateway.daemon import idle_exit, liveness
 from indus.gateway.daemon.command import run_command  # the CLI's "module:attr" target
 from indus.gateway.daemon.drain import drain_verdict, machine_epoch
 from indus.gateway.daemon.lifecycle import Lifecycle, drain_turns, wait_for_turns
@@ -79,6 +81,7 @@ from indus.gateway.outbound.sender import OutboundSender
 from indus.gateway.registry import PlatformRegistry, proxy_for
 from indus.gateway.token_locks import TokenLocks, default_lock_dir
 from indus.safety.child_env import FORCE_PREFIX
+from indus.service.gateway_ensure import AUTOSTART_ENV
 from indus.service.ws_auth import TicketBook, new_instance_id
 from indus.state import registry as store_registry
 from indus.state.gateway_runtime import (
@@ -101,6 +104,7 @@ from indus.state.pairing import PairingStore
 from indus.state.registry import StoreHandle
 
 if TYPE_CHECKING:
+    from indus.backends.processes import ProcessRegistry
     from indus.gateway.core.shared_host import MessagingHost
     from indus.gateway.http import SurfaceSpec
     from indus.gateway.ws.server import WsEndpoint
@@ -177,6 +181,9 @@ class DaemonOptions:
     attach_ws: bool = True
     """Serve the loopback WebSocket attach endpoint over the session host (P17-13)."""
     export_guard_env: bool = True
+    idle_exit_seconds: float | None = None
+    """The idle-exit window of an auto-started daemon (P17-23); None reads
+    ``gateway.idle_exit_seconds`` (600 s; 0 disables) every poll."""
     hard_exit: Callable[[int], object] = _hard_exit
 
 
@@ -294,6 +301,11 @@ class GatewayDaemon:
         self.host: DaemonSessionHost | None = None
         self.shared: MessagingHost | None = None
         self.ws: WsEndpoint | None = None
+        self.autostarted = False
+        """Started by a client's ``ensure`` (its marker was in the environment; P17-23)."""
+        self.idle_watch: idle_exit.IdleWatch | None = None
+        self.terminal_processes: ProcessRegistry | None = None
+        """The terminal tool's background processes of the chat service (the idle probe)."""
         self._up: list[UpListener] = []
         self._down: list[DownListener] = []
         self._ready: list[ReadyListener] = []
@@ -513,6 +525,10 @@ class GatewayDaemon:
         home = self.scope.home
         loop = asyncio.get_running_loop()
         self._loop = loop
+        self.autostarted = idle_exit.autostarted(self.scope.env)
+        if self.autostarted:
+            # Read once; processes this daemon starts must not look auto-started themselves.
+            self.scope = self.scope.with_env(self.scope.env.with_overlay({AUTOSTART_ENV: None}))
         if self.options.export_guard_env:
             # Children (the agent's own terminal) carry the marker through child_env's force
             # entry, so `indus gateway stop/restart` run from inside this gateway can refuse.
@@ -591,6 +607,8 @@ class GatewayDaemon:
             )
             self._loop_watchdog.start()
         self.systemd.ready("running")
+        chosen = self.options.idle_exit_seconds
+        self.idle_watch = idle_exit.arm(self, window=None if chosen is None else lambda: chosen)
         log.info(
             "gateway running: %s",
             ", ".join(sorted(self.adapters)) or "no messaging platform connected",
@@ -667,8 +685,8 @@ class GatewayDaemon:
             return
         from indus.gateway.ws.server import WsEndpoint
 
-        endpoint = WsEndpoint(host, self.tickets, scope=self.scope)
         try:
+            endpoint = WsEndpoint(host, self.tickets, scope=self.scope)
             await endpoint.start()
         except Exception as exc:
             log.warning("the attach WebSocket is not available: %s", exc)
@@ -1222,6 +1240,7 @@ async def _session_service(
 
     if chat:
         terminal_host.install(handle, terminal.runtime().processes)
+        daemon.terminal_processes = terminal.runtime().processes
 
         async def shut_terminal() -> None:
             await terminal.runtime().shutdown()

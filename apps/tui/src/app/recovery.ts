@@ -10,6 +10,9 @@ export const RESTART_LIMIT = 3;
 export const RESTART_WINDOW_MS = 60_000;
 
 export const RESTART_LINE = "The agent process stopped; restarting and reopening your chat…";
+/** The same moment when the link is the daemon attach (P17-19): the daemon may still run. */
+export const ATTACH_RESTART_LINE =
+  "Lost the connection to the gateway daemon; reconnecting and reopening your chat…";
 export const RESTART_STATUS = "restarting…";
 export const GAVE_UP_STATUS = "agent stopped";
 
@@ -60,6 +63,8 @@ export interface RecoveryOptions {
   restart(): void;
   /** A transcript line. */
   say(text: string): void;
+  /** What a restart says (default `RESTART_LINE`; the attach link says `ATTACH_RESTART_LINE`). */
+  restartLine?: string;
   /** The status text. */
   status(text: string): void;
   clock?: Clock;
@@ -120,7 +125,7 @@ export class Recovery {
       this.attempts = plan.attempts;
       if (plan.granted) {
         this.options.status(RESTART_STATUS);
-        this.options.say(RESTART_LINE);
+        this.options.say(this.options.restartLine ?? RESTART_LINE);
         this.options.restart();
         return "restarted";
       }

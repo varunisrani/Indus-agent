@@ -15,6 +15,11 @@ Modes:
   writes) is not, and at most ``RECOVER_LIMIT`` recoveries may happen per ``RECOVER_WINDOW_S``
   (the caller's ``RecoverBudget``); past it the verdict is ``refused/recover_budget``.
 
+A daemon that is exiting because it sat idle (P17-23: its status says ``draining``/``stopping``
+with the exit reason ``idle_exit``) is not attachable even while it still answers: ``start`` and
+``recover`` wait for that process to be gone and then start a new one; ``discover`` answers
+``absent``/``idle_exit``. An idle exit is never a planned stop.
+
 In ``start`` mode a daemon whose ``code_version`` differs from ``version`` (the caller's own,
 ``indus.__version__`` by default) is asked to restart gracefully (SIGUSR1: it refuses new turns and
 lets running ones finish), once per call; a fresh one that still differs is accepted with ``skew``
@@ -56,6 +61,7 @@ __all__ = [
     "DEFAULT_TIMEOUT_S",
     "RECOVER_LIMIT",
     "RECOVER_WINDOW_S",
+    "IDLE_EXIT_REASON",
     "Endpoint",
     "Ensured",
     "Mode",
@@ -82,6 +88,9 @@ _TAIL_BYTES: Final = 64 * 1024
 _LAUNCH_WAIT_S: Final = 10.0
 _NOT_DELIBERATE: Final = frozenset({"restart"})
 """Planned-stop reasons that are part of a restart, not a person stopping the daemon."""
+IDLE_EXIT_REASON: Final = "idle_exit"
+"""The exit reason of a daemon that stopped itself after idling (P17-23's ``idle_exit``)."""
+_LEAVING: Final = frozenset({"draining", "stopping"})
 
 # The intermediate of the double fork: starts the daemon in a new session with its output on
 # our stderr (the stdio log), prints its pid and exits, so the daemon is re-parented away.
@@ -193,6 +202,28 @@ def planned_stop_reason(home: Path) -> str | None:
     return None if reason in _NOT_DELIBERATE else reason
 
 
+def _idle_exiting(home: Path) -> tuple[int, int | None] | None:
+    """(pid, start time) of a live daemon that is on its way out after an idle exit, else None."""
+    view = gateway_runtime.runtime_view(home)
+    if view.liveness != "running" or view.state not in _LEAVING or view.pid is None:
+        return None
+    if (view.data or {}).get("exit_reason") != IDLE_EXIT_REASON:
+        return None
+    return view.pid, view.start_time
+
+
+def _await_gone(run: _Run, pid: int, start_time: int | None) -> Ensured | None:
+    """Wait (within the deadline) for an idle-exiting daemon to be gone; None once it is."""
+    log.info("gateway pid %d is exiting after being idle: waiting to start a new one", pid)
+    while gateway_runtime.alive(pid, start_time):
+        if run.left() <= 0:
+            return Ensured(
+                "starting", "timeout", f"the idle gateway (pid {pid}) is still shutting down"
+            )
+        run.pause(_POLL_S)
+    return None
+
+
 def _wait(seconds: float) -> None:
     threading.Event().wait(max(0.0, seconds))
 
@@ -246,6 +277,14 @@ def ensure(
         list(argv) if argv is not None else daemon_argv(),
     )
     found = gateway_control.identify(home)
+    leaving = _idle_exiting(home)
+    if leaving is not None and (found is None or found.get("pid") == leaving[0]):
+        if mode == "discover":
+            return Ensured("absent", IDLE_EXIT_REASON, "the gateway is exiting after being idle")
+        waited = _await_gone(run, *leaving)
+        if waited is not None:
+            return waited
+        found = gateway_control.identify(home)  # another client may have started one meanwhile
     if found is not None:
         return _with_live(run, found, mode, service)
     if _starting(home):
