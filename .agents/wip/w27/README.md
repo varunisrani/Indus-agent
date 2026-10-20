@@ -41,3 +41,23 @@
   generation / first later turn until P17-25 admission.state.
 - Follow-ups: gateway_control.query peer-uid check; compaction child ids only after resume/subscribe; redirect /
   session.mutate / admission.receipt not served over WS; describe vs identify version source.
+
+## w27-k8.patch: P17-19 TUI attaches by default + P17-20 @indus/client WS transport — done (base ac389c3)
+- Builder checks: pnpm 899 passed (61 files), typecheck clean (protocol/ui/client/tui), biome clean; pytest grant/gateway/
+  launcher + contract client/cli/gateway 936 passed / 47 skipped; cross-language contract test 4x green; ruff, pyright,
+  lint-imports, tooling.checks ok. TUI e2e lane not run (node-pty cannot build here). No new deps.
+- Stand-in: tests/unit/cli/commands/_stubs_k8.py for K6's ensure. K8 ASSUMED `indus.cli.commands.gateway_ensure
+  .ensure_endpoint(scope, *, start, timeout)` → mapping {ws_url, profile_id, instance_id, code_version}, raising an error with
+  `code` and `terminal`. K6 ACTUALLY built `indus.service.gateway_ensure.ensure(home, env, mode=...)` + `grant_for(home)` with
+  `Ensured.terminal` — adapt `_ensure_from_p17_15` / `_from_ensure_error` in gateway_grant.py to K6's API and delete the stub.
+- Shared: cli/commands/gateway.py `grant` row; cli/tui_launch.py exports INDUS_TUI_GRANT_COMMAND and INDUS_TUI_LOCAL (reads
+  args.local via getattr — K7 adds `local` to GlobalArgs); non_tty_table `gateway grant` long_running; packages/client
+  channel/client/index/localEvents; apps/tui entry.tsx, appRuntime.ts, sessionLifecycle.ts(+test), rpc.ts, e2e harness
+  (Demo 2 with INDUS_TUI_LOCAL=1); traps R05.1/R05.3/R05.9; ACC-J2-2, ACC-K51-2, ACC-K51-4.
+- Decisions: terminal verdicts list; terminal verdict at startup runs the local stdio child with a visible line; explicit
+  INDUS_TUI_GATEWAY_URL only dialled (no helper/start/fallback, offers indus-gateway-v1 without ticket); reconnect via
+  session.subscribe with cursor; ready without epoch clears cursors; profile_mismatch refused.
+- Follow-ups: TUI session.steer sends no generation (P17-26); "agent process stopped; restarting…" wording in attach mode;
+  bridge-only methods over the daemon (dual-host matrix); runtime.describe declared/served by P17-25.
+- Incident: one `indus gateway grant` run without INDUS_HOME appended a keychain warning line to /root/.indus/logs/agent.log
+  and errors.log and touched /root/.indus/cache/scratch/.last_prune (files pre-existed). Owner item.
