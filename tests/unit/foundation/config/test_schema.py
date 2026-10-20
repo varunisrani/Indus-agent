@@ -343,6 +343,10 @@ def test_decided_defaults() -> None:
         "dingtalk": platform,  # P16-16
         "wecom": platform,  # P16-17
         "wecom_callback": platform,  # P16-18
+        "feishu": platform,  # P16-14
+        "bluebubbles": platform,  # P16-24
+        "simplex": platform,  # P16-28
+        "buzz": platform,  # P16-29
     }
     assert d["gateway"] == {
         "message_timestamps": {"enabled": False},

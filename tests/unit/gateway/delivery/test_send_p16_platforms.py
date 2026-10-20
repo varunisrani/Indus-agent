@@ -1,4 +1,4 @@
-"""``indus send`` to the P16 E6–E8 chat platforms through the real ``send_command.build_adapter``:
+"""``indus send`` to the P16 E6–E10 chat platforms through the real ``send_command.build_adapter``:
 the built-in registry row (its lazy factory and the package's own ``create_adapter``), the
 credentials read by the gateway's enablement pass, a send-only adapter that does no inbound work.
 Only the network is swapped: the package's ``create_adapter`` is wrapped to pass the wire fake's
@@ -179,3 +179,95 @@ def test_indus_send_to_wecom(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> N
     assert isinstance(adapter, WeComAdapter) and adapter is built[0] and adapter.send_only
     assert _send(scope, adapter, "wrGroup01", "deploy done").ok
     assert wire.platform.texts("wrGroup01") == ["deploy done"]
+
+
+def test_indus_send_to_feishu(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.gateway.adapters import feishu as package
+    from indus.gateway.adapters.feishu.adapter import FeishuAdapter
+    from tests.fakes.platform.feishu_wire import FeishuWire
+
+    clock: Any = scope.clock
+    wire = FeishuWire(clock=clock)
+    secrets: Any = scope.secrets
+    secrets.set("FEISHU_APP_ID", wire.app_id)
+    secrets.set("FEISHU_APP_SECRET", wire.app_secret)
+    built = _wrap(monkeypatch, package, transport=wire.transport(), opener=wire.open)
+    # The row's probe is httpx: sending needs no extra.
+    adapter = send_command.build_adapter(
+        scope, "feishu", _settings(scope, "feishu"), _registry("feishu")
+    )
+    assert isinstance(adapter, FeishuAdapter) and adapter is built[0] and adapter.send_only
+    assert _send(scope, adapter, "oc_group1", "deploy done").ok
+    assert wire.platform.texts("oc_group1") == ["deploy done"]
+    assert wire.socket_urls == [] and not wire.calls_to("POST", "/callback/ws/endpoint")
+
+
+def test_indus_send_to_bluebubbles(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.gateway.adapters import bluebubbles as package
+    from indus.gateway.adapters.bluebubbles.adapter import BlueBubblesAdapter
+    from tests.fakes.platform.bluebubbles_wire import (
+        MAX_LEN,
+        PASSWORD,
+        SERVER_URL,
+        BlueBubblesWire,
+    )
+
+    clock: Any = scope.clock
+    platform = FakeChatPlatform("bluebubbles", clock=clock, max_len=MAX_LEN)
+    wire = BlueBubblesWire(platform)
+    secrets: Any = scope.secrets
+    secrets.set("BLUEBUBBLES_SERVER_URL", SERVER_URL)
+    secrets.set("BLUEBUBBLES_PASSWORD", PASSWORD)
+    built = _wrap(monkeypatch, package, transport=wire.transport())
+    adapter = send_command.build_adapter(
+        scope, "bluebubbles", _settings(scope, "bluebubbles"), _registry("bluebubbles")
+    )
+    assert isinstance(adapter, BlueBubblesAdapter) and adapter is built[0] and adapter.send_only
+    assert _send(scope, adapter, "iMessage;+;chat300", "deploy done").ok
+    assert platform.texts("iMessage;+;chat300") == ["deploy done"]
+    assert wire.webhooks == [] and not adapter.listener.accepting
+
+
+def test_indus_send_to_simplex(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.gateway.adapters import simplex as package
+    from indus.gateway.adapters.simplex.adapter import SimplexAdapter
+    from tests.fakes.platform.simplex_wire import MAX_LEN, URL, SimplexWire
+
+    clock: Any = scope.clock
+    platform = FakeChatPlatform("simplex", clock=clock, max_len=MAX_LEN)
+    wire = SimplexWire(platform)
+    secrets: Any = scope.secrets
+    secrets.set("SIMPLEX_WS_URL", URL)
+    built = _wrap(monkeypatch, package, opener=wire.open)
+    # The daemon socket is SimpleX's only transport, so a send needs the ``simplex`` extra too;
+    # only the probe is forced here (the gate installs no extra).
+    registry = _registry("simplex", socket_extra=True)
+    adapter = send_command.build_adapter(scope, "simplex", _settings(scope, "simplex"), registry)
+    assert isinstance(adapter, SimplexAdapter) and adapter is built[0] and adapter.send_only
+    assert adapter.ws_url == URL
+    assert _send(scope, adapter, "12", "deploy done").ok
+    assert wire.commands[-1].startswith("/_send @12 json ") and wire.accepted == []
+
+
+def test_indus_send_to_buzz(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.gateway.adapters import buzz as package
+    from indus.gateway.adapters.buzz.adapter import BuzzAdapter
+    from tests.contract.gateway.buzz_case import GROUP
+    from tests.fakes.platform.buzz_wire import BOT_KEY, MAX_LEN, RELAY_URL, BuzzRelay
+
+    clock: Any = scope.clock
+    platform = FakeChatPlatform("buzz", clock=clock, max_len=MAX_LEN)
+    platform.add_chat(GROUP, "group", "general")
+    relay = BuzzRelay(platform)
+    secrets: Any = scope.secrets
+    secrets.set("BUZZ_RELAY_URL", RELAY_URL)
+    secrets.set("BUZZ_PRIVATE_KEY", BOT_KEY)
+    built = _wrap(monkeypatch, package, crypto=relay.crypto, opener=relay.open)
+    # Signing (coincurve) and the relay socket (httpx-ws) are both the ``buzz`` extra; the fake
+    # signer and relay stand in, so only the probe is forced.
+    registry = _registry("buzz", socket_extra=True)
+    adapter = send_command.build_adapter(scope, "buzz", _settings(scope, "buzz"), registry)
+    assert isinstance(adapter, BuzzAdapter) and adapter is built[0] and adapter.send_only
+    assert _send(scope, adapter, GROUP, "deploy done").ok
+    assert platform.texts(GROUP) == ["deploy done"]
+    assert adapter.channels == {} and not [r for r in relay.requests if r.get("kinds") == [9]]

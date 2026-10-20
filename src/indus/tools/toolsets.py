@@ -184,9 +184,20 @@ TOOLSETS: dict[str, Toolset] = {
     "indus-telegram": Toolset("Telegram chats", includes=(CORE,)),
     "indus-discord": Toolset("Discord chats", includes=(CORE,)),
     "indus-slack": Toolset("Slack chats", includes=(CORE,)),
+    # P16-15: the Feishu document and comment tools (registered by the gateway daemon) belong to
+    # Feishu sessions only, even in a session that selects every toolset (R02.25).
+    "feishu": Toolset("Feishu / Lark documents and comments", platforms=frozenset({"feishu"})),
+    "indus-feishu": Toolset("Feishu / Lark chats", includes=(CORE, "feishu")),
     "indus-gateway": Toolset(
         "Messaging gateway: the union of the platform bundles it serves",
-        includes=(CORE, "indus-telegram", "indus-discord", "indus-slack", "indus-webhook"),
+        includes=(
+            CORE,
+            "indus-telegram",
+            "indus-discord",
+            "indus-slack",
+            "indus-feishu",
+            "indus-webhook",
+        ),
     ),
 }
 

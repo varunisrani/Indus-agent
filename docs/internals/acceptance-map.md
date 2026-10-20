@@ -1162,6 +1162,22 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/dingtalk/test_adapter.py::test_secrets_never_reach_logs_errors_or_the_logged_url`
   - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_dingtalk`
   - Review: live lane against a real DingTalk robot (P16-36)
+- **ACC-K11-2** Feishu / Lark (long connection or signed and encrypted webhook, batching, document tools and comment intake)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/feishu/test_adapter.py::test_nine_rapid_messages_make_two_batches`
+  - `tests/unit/gateway/adapters/feishu/test_adapter.py::test_webhook_mode_decrypts_and_checks_every_layer`
+  - `tests/unit/gateway/adapters/feishu/test_adapter.py::test_the_url_challenge_is_echoed_only_with_the_token`
+  - `tests/unit/gateway/adapters/feishu/test_adapter.py::test_the_lark_domain_is_selected_by_config`
+  - `tests/unit/gateway/adapters/feishu/test_adapter.py::test_refused_credentials_are_fatal_at_connect_and_while_running`
+  - `tests/unit/gateway/adapters/feishu/test_adapter.py::test_secrets_never_show_in_logs_errors_or_repr`
+  - `tests/unit/gateway/adapters/feishu/test_frames.py::test_the_vendor_example_decrypts`
+  - `tests/unit/gateway/adapters/feishu/test_frames.py::test_the_signature_matches_openssl_and_compares_safely`
+  - `tests/unit/gateway/adapters/feishu/test_tools.py::test_the_tools_are_absent_from_every_other_bundle`
+  - `tests/unit/gateway/adapters/feishu/test_tools.py::test_only_the_gateway_daemon_registers_the_tools`
+  - `tests/unit/gateway/adapters/feishu/test_tools.py::test_doc_read_is_fenced_and_budgeted`
+  - `tests/unit/gateway/adapters/feishu/test_tools.py::test_a_comment_mention_creates_one_event_keyed_per_document_thread`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_feishu`
+  - Review: live lane against a real Feishu and a real Lark app (tenant-token refusal codes, long-connection fields) (P16-36)
 - **ACC-K11-3** WeCom: smart robot (socket, native streams) and callback app (signed, AES-encrypted XML)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_every_stream_frame_is_a_prefix_of_the_next`
@@ -1187,6 +1203,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/qqbot/test_upload.py::test_the_daily_limit_is_never_retried`
   - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_qqbot`
   - Review: live lane against a real QQ bot (sandbox) (P16-36)
+- **ACC-K12-1** BlueBubbles (iMessage) through a BlueBubbles server
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/bluebubbles/test_adapter.py::test_guid_cache_evicts_the_least_recently_used_address`
+  - `tests/unit/gateway/adapters/bluebubbles/test_adapter.py::test_a_replayed_webhook_is_ignored`
+  - `tests/unit/gateway/adapters/bluebubbles/test_adapter.py::test_callback_without_the_right_token_is_refused_before_parsing`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_bluebubbles`
+  - Review: live lane against a real BlueBubbles server on a Mac (owner)
 - **ACC-K12-3** Microsoft Teams (Bot Framework activities, RS256 token check, Adaptive Cards)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/teams/test_adapter.py::test_a_token_for_another_app_is_refused_with_401_and_nothing_is_parsed`
@@ -1248,6 +1271,20 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/irc/test_adapter.py::test_the_token_lock_key_is_server_and_nick`
   - `tests/unit/gateway/adapters/irc/test_adapter.py::test_indus_send_uses_its_own_nick_and_joins_only_the_target`
   - `tests/integration/gateway/test_daemon_start.py::test_the_lock_key_is_the_entrys_lock_env_when_it_names_one`
+- **ACC-K12-9** SimpleX Chat through a user-run simplex-chat daemon
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/simplex/test_adapter.py::test_a_contact_request_is_not_auto_accepted_by_default`
+  - `tests/unit/gateway/adapters/simplex/test_adapter.py::test_a_dropped_socket_reopens_after_2_4_8_doubling_to_60_seconds`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_simplex`
+  - Review: live lane against a real simplex-chat CLI (owner)
+- **ACC-K12-10** Buzz (Nostr community relay)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/buzz/test_adapter.py::test_an_npub_allowlist_entry_authorises_the_matching_hex_pubkey`
+  - `tests/unit/gateway/adapters/buzz/test_adapter.py::test_non_chat_kinds_and_our_own_events_are_ignored`
+  - `tests/unit/gateway/adapters/buzz/test_adapter.py::test_signatures_are_verified_on_inbound_events`
+  - `tests/unit/gateway/adapters/buzz/test_crypto.py::test_bip340_vectors_verify_as_the_spec_says`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_buzz`
+  - Review: live lane against a real Buzz community relay (owner)
 - **ACC-K13-1** Inbound normalisation: command detection, burst text batching, per-platform dedupe, reply context …
   - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
   - `tests/unit/gateway/core/test_events.py::test_property_text_not_starting_with_slash_is_never_a_command`

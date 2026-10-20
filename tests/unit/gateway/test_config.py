@@ -190,11 +190,15 @@ def test_policy_env_names_use_our_prefix() -> None:
             "WECOM_CALLBACK_TOKEN",
             "WECOM_CALLBACK_ENCODING_AES_KEY",
         ),
+        "feishu": ("FEISHU_APP_ID", "FEISHU_APP_SECRET"),
+        "bluebubbles": ("BLUEBUBBLES_PASSWORD",),
+        "buzz": ("BUZZ_PRIVATE_KEY",),
     }
     # Servers, nicks and topics turn their platform on but are not secrets (never masked).
     assert dict(BUILTIN_PUBLIC_ENV) == {
         "ntfy": ("NTFY_TOPIC",),
         "irc": ("IRC_SERVER", "IRC_NICKNAME"),
+        "simplex": ("SIMPLEX_WS_URL",),
     }
     assert not set(BUILTIN_PUBLIC_ENV) & set(BUILTIN_CREDENTIALS)
     # URLs and hosts are read by the adapters, never masked or lock-keyed as credentials.
@@ -362,6 +366,45 @@ def test_p16_e6_to_e8_lock_keys_are_the_stable_ids_never_the_secrets(scope: Scop
         assert entry is not None and entry.lock_env == ()
     state = _fake_token("graph-client-state")
     assert key("msgraph", MSGRAPH_WEBHOOK_CLIENT_STATE=state) == state
+
+
+def test_p16_e9_e10_lock_keys(scope: Scope) -> None:
+    from indus.gateway.registry import PlatformRegistry
+
+    registry = PlatformRegistry()
+
+    def key(platform: str, **env: str) -> str:
+        entry = registry.get(platform)
+        assert entry is not None
+        local = _with_env(scope, **env)
+        settings = load_gateway_settings(local).platforms[platform]
+        assert settings.enabled, settings.reason
+        return lock_key(local, settings, entry.lock_env)
+
+    # Feishu: the app id; a new app secret is the same bot.
+    first = key("feishu", FEISHU_APP_ID="cli_a1", FEISHU_APP_SECRET=_fake_token("f1"))
+    assert first == "cli_a1"
+    assert key("feishu", FEISHU_APP_ID="cli_a1", FEISHU_APP_SECRET=_fake_token("f2")) == first
+    # BlueBubbles: the server; a new password is the same Mac. A server URL set only in config
+    # (``platforms.bluebubbles.server_url``) is not readable here, so the password keys it then.
+    server = {"BLUEBUBBLES_SERVER_URL": "http://mac.example.test:1234"}
+    bb = key("bluebubbles", BLUEBUBBLES_PASSWORD=_fake_token("b1"), **server)
+    assert bb == "http://mac.example.test:1234"
+    assert key("bluebubbles", BLUEBUBBLES_PASSWORD=_fake_token("b2"), **server) == bb
+    assert key("bluebubbles", BLUEBUBBLES_PASSWORD=_fake_token("b1")) == _fake_token("b1")
+    # SimpleX: the daemon's address turns it on and keys the lock, never masked.
+    url = "ws://127.0.0.1:5225"
+    assert key("simplex", SIMPLEX_WS_URL=url) == url
+    simplex = load_gateway_settings(_with_env(scope, SIMPLEX_WS_URL=url)).platforms["simplex"]
+    assert dict(simplex.credentials) == {}
+    # Buzz: the private key is the identity (one key, one npub), so the credential keys the lock;
+    # another relay with the same key is the same identity.
+    nsec = _fake_token("nostr")
+    relay = {"BUZZ_RELAY_URL": "https://relay.example.test"}
+    entry = registry.get("buzz")
+    assert entry is not None and entry.lock_env == ()
+    assert key("buzz", BUZZ_PRIVATE_KEY=nsec, **relay) == nsec
+    assert key("buzz", BUZZ_PRIVATE_KEY=nsec, BUZZ_RELAY_URL="https://other.example.test") == nsec
 
 
 def test_custom_credential_table(scope: Scope) -> None:

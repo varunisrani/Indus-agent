@@ -1,0 +1,21 @@
+{
+  "about": "Feishu / Lark webhook vectors (P16-14). 'vendor' is the decryption example from the Feishu Open Platform event-encryption documentation; 'url_verification' and 'signature' were made with the openssl command line (AES-256-CBC with key = SHA-256 of the encrypt key, IV = the first 16 bytes of the cipher text; signature = SHA-256 hex of timestamp + nonce + encrypt key + raw body), not with our code.",
+  "vendor": {
+    "encrypt_key": "test key",
+    "encrypt": "P37w+VZImNgPEO1RBhJ6RtKl7n6zymIbEG1pReEzghk=",
+    "plain": "hello world"
+  },
+  "url_verification": {
+    "encrypt_key": "indus-vector-key",
+    "verification_token": "vt-vector",
+    "encrypt": "AAECAwQFBgcICQoLDA0ODywA+ZHX5l0DuhtsEWcirRpj/O4N7p5lsp4AP2kNfRCJnU7uMueGrvMddey5kwP6+QHE7oQvxSELs7WV/05jHiock74jkE5dwxJM+4sNft/4",
+    "plain": "{\"challenge\":\"c-1f2e3d\",\"token\":\"vt-vector\",\"type\":\"url_verification\"}"
+  },
+  "signature": {
+    "encrypt_key": "indus-vector-key",
+    "timestamp": "1700000000",
+    "nonce": "nonce-42",
+    "body": "{\"encrypt\":\"AAECAwQFBgcICQoLDA0ODywA+ZHX5l0DuhtsEWcirRpj/O4N7p5lsp4AP2kNfRCJnU7uMueGrvMddey5kwP6+QHE7oQvxSELs7WV/05jHiock74jkE5dwxJM+4sNft/4\"}",
+    "signature": "190f8b1ca96a4b71ca7a91d35c318e0221151970c1637884887d0b0f773c58c7"
+  }
+}

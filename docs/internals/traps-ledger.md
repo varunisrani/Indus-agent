@@ -258,7 +258,10 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/approvals/test_smart.py::test_operator_policy_goes_only_into_the_system_message`
   - `tests/unit/safety/approvals/test_smart.py::test_hardline_never_reaches_the_judge`
 - **R02.25** Toolset membership vs registration
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/adapters/feishu/test_tools.py::test_the_tools_are_absent_from_every_other_bundle`
+  - `tests/unit/gateway/adapters/feishu/test_tools.py::test_the_feishu_rows_are_in_the_toolset_table`
+  - `tests/unit/gateway/adapters/feishu/test_tools.py::test_only_the_gateway_daemon_registers_the_tools`
+  - Review: the Yuanbao tools (P16-22)
 - **R02.26** Send-message is not a tool
   - `tests/unit/gateway/delivery/test_router.py::test_no_model_tool_wraps_the_router`
 - **R02.27** Untrusted-input sessions need a tool floor, not just approvals
@@ -765,6 +768,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/irc/test_adapter.py::test_the_token_lock_key_is_server_and_nick`
   - `tests/integration/gateway/test_daemon_start.py::test_the_lock_key_is_the_entrys_lock_env_when_it_names_one`
   - `tests/unit/gateway/test_config.py::test_lock_keys_follow_the_registry_entry`
+  - `tests/unit/gateway/test_config.py::test_p16_e9_e10_lock_keys`
 - **R06.17** Exit code semantics with supervisors
   - `tests/integration/gateway/test_daemon_start.py::test_a_second_daemon_for_the_same_profile_refuses`
   - `tests/integration/gateway/test_daemon_start.py::test_the_daemon_process_serves_refuses_a_second_and_drains_on_sigterm`

@@ -67,6 +67,9 @@ BUILTIN_CREDENTIALS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "WECOM_CALLBACK_TOKEN",
             "WECOM_CALLBACK_ENCODING_AES_KEY",
         ),
+        "feishu": ("FEISHU_APP_ID", "FEISHU_APP_SECRET"),
+        "bluebubbles": ("BLUEBUBBLES_PASSWORD",),
+        "buzz": ("BUZZ_PRIVATE_KEY",),
     }
 )
 
@@ -77,6 +80,8 @@ BUILTIN_PUBLIC_ENV: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
         "ntfy": ("NTFY_TOPIC",),
         "irc": ("IRC_SERVER", "IRC_NICKNAME"),
+        # The local simplex-chat daemon's address: the daemon has no credential of its own.
+        "simplex": ("SIMPLEX_WS_URL",),
     }
 )
 
@@ -381,11 +386,14 @@ def lock_key(scope: Scope, settings: PlatformSettings, lock_env: tuple[str, ...]
     """What the daemon's token lock is keyed on (R06.16; the lock file name holds only a hash).
 
     With ``lock_env`` (the registry entry's): those values, read like credentials, joined in that
-    order. Without: the platform's credential values joined in name order. Empty: no lock.
+    order. Without, or when none of them is in the environment or secret store (a value the
+    adapter also takes from config, such as BlueBubbles' server URL): the platform's credential
+    values joined in name order. Empty: no lock.
     """
     if lock_env:
         values = [read_secret(scope, n) or "" for n in lock_env]
-        return "\n".join(values) if any(values) else ""
+        if any(values):
+            return "\n".join(values)
     return "\n".join(settings.credentials[k] for k in sorted(settings.credentials))
 
 

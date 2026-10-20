@@ -159,8 +159,9 @@ PyPI for packages of other platforms).
 | deprecated | 1.3.1 | MIT | extra `daytona`, via daytona / opentelemetry | P21-07 |
 | wrapt | 2.5.0 | BSD-2-Clause | extra `daytona`, via deprecated / opentelemetry-instrumentation | P21-07 |
 | googleapis-common-protos | 1.75.5 | Apache-2.0 | extra `daytona`, via opentelemetry-exporter-otlp-proto-http | P21-07 |
-| httpx-ws | 0.9.0 | MIT | extras `daytona` (via daytona), `mattermost` (the Mattermost event socket), `dingtalk` (the Stream Mode socket), `wecom` (the smart-robot socket) and `qqbot` (the QQ Bot gateway socket); WebSocket over httpx | P21-07, P16-08, P16-16, P16-17, P16-20 |
-| wsproto | 1.3.2 | MIT | extras `daytona`, `mattermost`, `dingtalk`, `wecom` and `qqbot`, via httpx-ws / simple-websocket | P21-07, P16-08, P16-16, P16-17, P16-20 |
+| httpx-ws | 0.9.0 | MIT | extras `daytona` (via daytona), `mattermost` (the Mattermost event socket), `dingtalk` (the Stream Mode socket), `wecom` (the smart-robot socket), `qqbot` (the QQ Bot gateway socket), `feishu` (the Feishu / Lark long connection), `simplex` (the SimpleX daemon socket) and `buzz` (the Nostr relay socket); WebSocket over httpx | P21-07, P16-08, P16-14, P16-16, P16-17, P16-20, P16-28, P16-29 |
+| wsproto | 1.3.2 | MIT | extras `daytona`, `mattermost`, `dingtalk`, `wecom`, `qqbot`, `feishu`, `simplex` and `buzz`, via httpx-ws / simple-websocket | P21-07, P16-08, P16-14, P16-16, P16-17, P16-20, P16-28, P16-29 |
+| coincurve | 21.0.0 | MIT OR Apache-2.0 (the wheels bundle libsecp256k1, MIT, and cffi's `_cffi_backend`, MIT) | extra `buzz`: BIP-340 Schnorr signing and verification of Nostr events | P16-29 |
 | obstore | 0.11.1 | MIT | extra `daytona`, via daytona (object storage client) | P21-07 |
 | opentelemetry-sdk | 1.45.0 | Apache-2.0 | extra `daytona`, via daytona (tracing; off unless DAYTONA_OTEL_ENABLED) | P21-07 |
 | opentelemetry-semantic-conventions | 0.66b0 | Apache-2.0 | extra `daytona`, via opentelemetry-sdk | P21-07 |

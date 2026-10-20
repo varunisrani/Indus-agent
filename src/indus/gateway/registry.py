@@ -4,9 +4,10 @@ Each ``PlatformEntry`` says how to build the platform's adapter, how to tell whe
 installed without importing it, which env names carry its credential and its access lists, its
 message cap, whether its DMs are really private (R06.24) and an optional cron target parser.
 Telegram, Discord, Slack, Signal, Matrix, Mattermost, Email, WhatsApp (Cloud API), SMS, LINE, ntfy,
-IRC, Microsoft Teams, Google Chat, QQ Bot, DingTalk, WeCom (smart robot and callback app), the API
-server, the webhook receiver and the Microsoft Graph change-notification receiver are built in;
-plugins add entries through the P13 provider registry (``load_plugin_entries``).
+IRC, Microsoft Teams, Google Chat, QQ Bot, DingTalk, WeCom (smart robot and callback app), Feishu /
+Lark, BlueBubbles (iMessage), SimpleX Chat, Buzz, the API server, the webhook receiver and the
+Microsoft Graph change-notification receiver are built in; plugins add entries through the P13
+provider registry (``load_plugin_entries``).
 
 A platform's SDK is imported in exactly one place, ``PlatformRegistry.create_adapter``, which the
 gateway calls only for enabled platforms: importing this module, listing entries or probing
@@ -61,6 +62,10 @@ BUILTIN_NAMES: tuple[str, ...] = (
     "dingtalk",
     "wecom",
     "wecom_callback",
+    "feishu",
+    "bluebubbles",
+    "simplex",
+    "buzz",
     "api_server",
     "webhook",
     "msgraph",
@@ -457,6 +462,83 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             factory=_lazy_factory("indus.gateway.adapters.wecom:create_callback_adapter"),
             # One app (agent) of one company answers in one gateway; secrets may rotate.
             lock_env=("WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_AGENT_ID"),
+        ),
+        replace(
+            _chat_entry(
+                "feishu",
+                "Feishu / Lark",
+                # Our own Open API client over httpx; the long connection needs httpx-ws (the
+                # ``feishu`` extra), webhook mode runs on the P16-01 kit, AES via cryptography.
+                sdk=("httpx",),
+                extra_name="feishu",
+                required_env=("FEISHU_APP_ID", "FEISHU_APP_SECRET"),
+                max_len=8000,
+                hint=(
+                    "You are talking through Feishu / Lark. Markdown is sent as rich text; images "
+                    "and files can be sent."
+                ),
+            ),
+            install_hint=(
+                "pip install 'indus-agent[feishu]' (the long connection; webhook mode and sending "
+                "need no extra)"
+            ),
+            # The app id is the bot; a new app secret is the same bot.
+            lock_env=("FEISHU_APP_ID",),
+        ),
+        replace(
+            _chat_entry(
+                "bluebubbles",
+                "BlueBubbles (iMessage)",
+                # Our own client for a BlueBubbles server the user runs on a Mac, over httpx; the
+                # webhook runs on the P16-01 kit.
+                sdk=("httpx",),
+                extra_name="bluebubbles",
+                required_env=("BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD"),
+                max_len=4000,
+                hint=(
+                    "You are talking through iMessage. Formatting is not rendered, so write plain "
+                    "text; separate paragraphs arrive as separate bubbles."
+                ),
+            ),
+            install_hint=(
+                "pip install indus-agent (BlueBubbles needs no extra); run BlueBubbles Server on "
+                "a Mac"
+            ),
+            # One BlueBubbles server is one iMessage account; a new password is the same server.
+            lock_env=("BLUEBUBBLES_SERVER_URL",),
+        ),
+        replace(
+            _chat_entry(
+                "simplex",
+                "SimpleX Chat",
+                # A simplex-chat daemon the user runs (AGPL-3.0, never bundled); its WebSocket
+                # needs httpx-ws (the ``simplex`` extra).
+                sdk=("httpx_ws",),
+                extra_name="simplex",
+                required_env=("SIMPLEX_WS_URL",),
+                max_len=8000,
+                hint=(
+                    "You are talking through SimpleX Chat. Bold, italic, code and links render; "
+                    "headings and tables do not."
+                ),
+            ),
+            install_hint="pip install 'indus-agent[simplex]' and run `simplex-chat -p 5225`",
+            group_chats_env=policy_env_name("simplex", "GROUP_ALLOWED_CHATS"),
+            # One daemon (one SimpleX profile) answers in one gateway; the URL is not a secret.
+            lock_env=("SIMPLEX_WS_URL",),
+        ),
+        _chat_entry(
+            "buzz",
+            "Buzz",
+            # Nostr over httpx-ws, BIP-340 signatures through coincurve (both the ``buzz`` extra).
+            sdk=("coincurve", "httpx_ws"),
+            extra_name="buzz",
+            required_env=("BUZZ_RELAY_URL", "BUZZ_PRIVATE_KEY"),
+            max_len=16000,
+            hint=(
+                "You are talking through Buzz, a Nostr community relay. Markdown renders in most "
+                "clients; to address someone, write @ and their name."
+            ),
         ),
         PlatformEntry(
             name="api_server",

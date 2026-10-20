@@ -1,6 +1,7 @@
 """Fencing tool output that an outsider controls (indirect prompt injection, A31).
 
-Web, browser and MCP tools return text written by whoever runs the page or server. Such a result
+Web, browser and MCP tools return text written by whoever runs the page or server, and the Feishu
+document and comment tools (P16-15) text written by whoever edits the document. Such a result
 (at least ``MIN_CHARS`` long) is wrapped in a fence that tells the model it is data. Every
 occurrence of the fence word inside the content is defused first, in any letter case, so the
 content cannot close the fence early or forge one. There is deliberately no "already fenced"
@@ -22,7 +23,7 @@ __all__ = ["MIN_CHARS", "UNTRUSTED_NAMES", "UNTRUSTED_PREFIXES", "fence", "is_un
 
 MIN_CHARS = 32
 UNTRUSTED_NAMES = frozenset({"web_search", "web_extract"})
-UNTRUSTED_PREFIXES = ("browser_", MCP_PREFIX)
+UNTRUSTED_PREFIXES = ("browser_", MCP_PREFIX, "feishu_")
 
 _WORD = re.compile(re.escape(texts.FENCE_WORD), re.IGNORECASE)
 _SOURCE_UNSAFE = re.compile(r"[^A-Za-z0-9_.:-]")

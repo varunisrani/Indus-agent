@@ -1280,6 +1280,12 @@ class PlatformsSection(_Section):
     wecom_callback: PlatformSection = Field(
         default_factory=PlatformSection, description="WeCom callback app"
     )
+    feishu: PlatformSection = Field(default_factory=PlatformSection, description="Feishu / Lark")
+    bluebubbles: PlatformSection = Field(
+        default_factory=PlatformSection, description="BlueBubbles (iMessage)"
+    )
+    simplex: PlatformSection = Field(default_factory=PlatformSection, description="SimpleX Chat")
+    buzz: PlatformSection = Field(default_factory=PlatformSection, description="Buzz (Nostr)")
 
 
 class MessageTimestampsSection(_Section):

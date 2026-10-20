@@ -135,9 +135,12 @@ def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[SocketGuard]:
 
 # -- platform cases ------------------------------------------------------------------------------
 # Each module registers its case on import (``register_case`` is defined above).
+from tests.contract.gateway import bluebubbles_case as _bluebubbles_case  # noqa: E402, F401
+from tests.contract.gateway import buzz_case as _buzz_case  # noqa: E402, F401
 from tests.contract.gateway import dingtalk_case as _dingtalk_case  # noqa: E402, F401
 from tests.contract.gateway import discord_case as _discord_case  # noqa: E402, F401
 from tests.contract.gateway import email_case as _email_case  # noqa: E402, F401
+from tests.contract.gateway import feishu_case as _feishu_case  # noqa: E402, F401
 from tests.contract.gateway import google_chat_case as _google_chat_case  # noqa: E402, F401
 from tests.contract.gateway import irc_case as _irc_case  # noqa: E402, F401
 from tests.contract.gateway import line_case as _line_case  # noqa: E402, F401
@@ -146,6 +149,7 @@ from tests.contract.gateway import mattermost_case as _mattermost_case  # noqa: 
 from tests.contract.gateway import ntfy_case as _ntfy_case  # noqa: E402, F401
 from tests.contract.gateway import qqbot_case as _qqbot_case  # noqa: E402, F401
 from tests.contract.gateway import signal_case as _signal_case  # noqa: E402, F401
+from tests.contract.gateway import simplex_case as _simplex_case  # noqa: E402, F401
 from tests.contract.gateway import slack_case as _slack_case  # noqa: E402, F401
 from tests.contract.gateway import sms_case as _sms_case  # noqa: E402, F401
 from tests.contract.gateway import teams_case as _teams_case  # noqa: E402, F401

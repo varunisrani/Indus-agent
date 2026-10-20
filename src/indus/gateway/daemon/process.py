@@ -99,6 +99,7 @@ if TYPE_CHECKING:
     from indus.service.mcp_host import McpUpkeep
     from indus.service.plugin_host import PluginUpkeep
     from indus.service.session_service import SessionService
+    from indus.tools.registry import ToolRegistry
 
 __all__ = [
     "AdapterConfig",
@@ -109,6 +110,7 @@ __all__ = [
     "StartupFailed",
     "build_service",
     "build_surface_service",
+    "gateway_tool_registry",
     "run_command",
     "run_daemon",
 ]
@@ -1047,6 +1049,20 @@ async def build_surface_service(daemon: GatewayDaemon, spec: SurfaceSpec) -> Ses
     )
 
 
+def gateway_tool_registry(scope: Scope) -> ToolRegistry:
+    """The tool registry of the daemon's sessions: the built-in tools plus the gateway-only ones,
+    today the Feishu document and comment tools (P16-15), which their toolset gates to Feishu
+    sessions and their probe to profiles with the Feishu app's credentials."""
+    from indus.gateway.adapters.feishu import tools as feishu_tools
+    from indus.tools.builtin import load_builtins
+    from indus.tools.registry import ToolRegistry
+
+    tools = ToolRegistry(clock=scope.clock)
+    load_builtins(tools)
+    feishu_tools.register_tools(tools)
+    return tools
+
+
 async def _session_service(
     daemon: GatewayDaemon,
     *,
@@ -1069,15 +1085,13 @@ async def _session_service(
     from indus.service.mcp_host import McpUpkeep
     from indus.service.plugin_host import PluginUpkeep
     from indus.service.session_service import SessionService
-    from indus.tools.builtin import load_builtins, terminal
-    from indus.tools.registry import ToolRegistry
+    from indus.tools.builtin import terminal
 
     scope = daemon.scope
     handle = daemon.store
     route = await run_blocking(resolve, scope, label="model route")
     store = StateStore(handle)
-    tools = ToolRegistry(clock=scope.clock)
-    load_builtins(tools)
+    tools = gateway_tool_registry(scope)
     aux = AuxClient(scope, route)
     cwd = Path.cwd()
     options = AgentOptions(

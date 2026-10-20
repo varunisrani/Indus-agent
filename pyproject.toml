@@ -66,6 +66,16 @@ dingtalk = ["httpx-ws==0.9.0"]
 # (P16-18; cryptography Apache-2.0 OR BSD-3-Clause, already locked via keyring/SecretStorage on
 # Linux). Both imported lazily.
 wecom = ["httpx-ws==0.9.0", "cryptography==50.0.2"]
+# The Feishu / Lark long connection (P16-14; MIT, needs wsproto MIT; both already locked). REST,
+# webhook mode and the document tools use httpx only; lark-oapi is not used (docs/notes/P16/feishu.md).
+feishu = ["httpx-ws==0.9.0"]
+# SimpleX daemon socket (P16-28; httpx-ws MIT, already locked). The SimpleX CLI itself (AGPL-3.0)
+# is never a dependency: the user runs it. Imported lazily by the adapter only.
+simplex = ["httpx-ws==0.9.0"]
+# Buzz Nostr relay (P16-29): BIP-340 signing and verification through coincurve (MIT OR Apache-2.0,
+# wraps libsecp256k1, MIT; no runtime dependencies) and the relay socket through httpx-ws (MIT).
+# Imported lazily by the adapter only; docs/notes/P16/buzz.md.
+buzz = ["coincurve==21.0.0", "httpx-ws==0.9.0"]
 
 [project.scripts]
 indus = "indus.cli.entry:main"
