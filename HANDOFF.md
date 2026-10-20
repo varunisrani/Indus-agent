@@ -75,9 +75,12 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- Wave 23 (from `78be7b3`, brief `.agents/wip/w23/brief.md`): E1 = P16-01 kit LANDED (`e3b3aa1`, D-16.350..354); K1 + K2 = P17-01..07 LANDED (`ff7bbe3`, D-16.360..369); E2 (P16-06 Matrix + 08 Mattermost) and E3 (P16-05 Signal +
-  09 Email) DONE, parked — integrate after wave 22 lands (registry/credential/send-only seams overlap). E1 landing
-  carries a P08-13 fix (expired provider reset no longer arms the 60 s ladder; soak-test flake root cause). Patches + README in `.agents/wip/w23/`.
+- Wave 23/24 (from `0a106d2`, started 00:40 UTC):
+  - Integrator for parked E2 + E3 (P16-05 Signal, 06 Matrix, 08 Mattermost, 09 Email) in scratchpad verify7, brief
+    `.agents/wip/w23/e-integrator-brief.md` (onto main's adapter seams; registry rows; D-16.380..399). Patches in
+    `.agents/wip/w23/`.
+  - Builders E4 (P16-04 WhatsApp Cloud + 10 SMS) and E5 (P16-23 LINE + 26 ntfy + 27 IRC) in scratchpad wt-w24e4 /
+    wt-w24e5, brief `.agents/wip/w24/brief.md`. If paused, patches go in `.agents/wip/w24/`.
 - Last landings: P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
   "P15 wave 22 + Demo 3 landing notes"), P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the
   cooldown ladder, P05-03 local stop_tree waits for the whole tree after SIGKILL; P17-01..07 (`ff7bbe3`; notes in LEAD-NOTES "P17 wave 1 landing notes"), P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
