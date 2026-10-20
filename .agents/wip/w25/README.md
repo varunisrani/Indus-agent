@@ -114,3 +114,28 @@
   reconnect once after 60 s, second within 10 min fatal (wecom_replaced); 30 msgs/min/chat window; dm_policy pairing.
 - Follow-ups: ACC-K11 rows missing; WeCom inbound media has no private-address guard (add one at integration if cheap);
   split-message batching; P16-32 target parsers.
+
+## w25-e9.patch: P16-14 Feishu/Lark adapter (done) + P16-15 Feishu doc tools and comment intake (done except core wiring)
+- Builder checks: feishu + contract + schema + config 331 passed / 41 skipped; with httpx-ws the real-opener test and feishu
+  vendor rows pass; toolsets/admission 123 passed; ruff, pyright, lint-imports, tooling.checks ok. No lark-oapi (MIT but heavy
+  deps + own threads); own REST client, httpx-ws long connection, own 9-field protobuf frame codec, AES via `cryptography`.
+- Extra `feishu = ["httpx-ws==0.9.0"]` (already locked) — re-lock metadata; 00-layout pin row.
+- Wiring (core):
+  1. registry `replace(_chat_entry("feishu", "Feishu / Lark", sdk=("httpx",), extra_name="feishu", required_env=("FEISHU_APP_ID",
+     "FEISHU_APP_SECRET"), max_len=8000, hint="You are talking through Feishu / Lark. Markdown is sent as rich text; images and
+     files can be sent."), install_hint="pip install 'indus-agent[feishu]' (the long connection; webhook mode and sending need
+     no extra)")`; BUILTIN_NAMES += feishu (after email); BUILTIN_CREDENTIALS feishu: (FEISHU_APP_ID, FEISHU_APP_SECRET) (+ pin in
+     test_config.py); lock_env on FEISHU_APP_ID.
+  2. toolsets: `"feishu": Toolset("Feishu / Lark documents and comments", platforms=frozenset({"feishu"}))`,
+     `"indus-feishu": Toolset("Feishu / Lark chats", includes=(CORE, "feishu"))`, "indus-feishu" into indus-gateway includes
+     (R02.25); remove the test's temporary patch of these rows.
+  3. call `indus.gateway.adapters.feishu.tools.register_tools(tools)` in daemon/process.py after load_builtins.
+  4. optional: "feishu_" in core/untrusted.UNTRUSTED_PREFIXES.
+- Decisions: webhook signature on raw body constant-time before parse, then decrypt, then verification token constant-time;
+  challenge echoed only after the token check; encrypted mode refuses plaintext; ±300 s; event-id dedupe; JSON only;
+  webhook mode requires the verification token; secrets only in bodies/headers, socket ticket added inside the transport;
+  no re-send after timeouts (R06.4); access policy left to the core; comments → chat cmt_<type>_<token>, thread = comment id;
+  doc tools: 30,000-char windows, 2 MiB read cap, 40,000 registered cap, fenced output, links parsed for tokens only on
+  Feishu/Lark hosts and never opened.
+- Follow-ups: live check of tenant-token refusal codes and long-connection fields; processing reactions; P16-32 target
+  parsers; voice transcoding; continuation delay; per-IP webhook rate limit.
