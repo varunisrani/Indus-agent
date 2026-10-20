@@ -115,7 +115,7 @@
 - Follow-ups: ACC-K11 rows missing; WeCom inbound media has no private-address guard (add one at integration if cheap);
   split-message batching; P16-32 target parsers.
 
-## w25-e9.patch: P16-14 Feishu/Lark adapter (done) + P16-15 Feishu doc tools and comment intake (done except core wiring)
+## (LANDED) w25-e9.patch: P16-14 Feishu/Lark adapter (done) + P16-15 Feishu doc tools and comment intake (done except core wiring)
 - Builder checks: feishu + contract + schema + config 331 passed / 41 skipped; with httpx-ws the real-opener test and feishu
   vendor rows pass; toolsets/admission 123 passed; ruff, pyright, lint-imports, tooling.checks ok. No lark-oapi (MIT but heavy
   deps + own threads); own REST client, httpx-ws long connection, own 9-field protobuf frame codec, AES via `cryptography`.
@@ -140,7 +140,7 @@
 - Follow-ups: live check of tenant-token refusal codes and long-connection fields; processing reactions; P16-32 target
   parsers; voice transcoding; continuation delay; per-IP webhook rate limit.
 
-## w25-e10.patch: P16-24 BlueBubbles + P16-28 SimpleX + P16-29 Buzz — done
+## (LANDED) w25-e10.patch: P16-24 BlueBubbles + P16-28 SimpleX + P16-29 Buzz — done
 - Builder checks: own + contract + schema 327 passed / 38 skipped; unit+integration gateway 1407 passed; ruff, pyright,
   lint-imports, tooling.checks ok. No EC maths in src/ (lead-checked): Buzz uses coincurve for BIP-340 sign/verify (lazy,
   `buzz` extra), tested against the BIP-340 vectors.
