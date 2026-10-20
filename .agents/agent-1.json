@@ -5,8 +5,8 @@
   "usage_pct": 79,
   "remaining_pct": 21,
   "resets_at": "2026-10-20T13:00:00+00:00",
-  "last_check": "2026-10-20T11:02:00+00:00",
+  "last_check": "2026-10-20T11:31:00+00:00",
   "current_step": "P17-15..22 landed (090479b); E12/E13/E14 parked; P16 integrator + P17-23..27 builders after 13:00 reset",
   "last_commit": "090479b",
-  "updated_at": "2026-10-20T11:30:00Z"
+  "updated_at": "2026-10-20T11:31:00Z"
 }

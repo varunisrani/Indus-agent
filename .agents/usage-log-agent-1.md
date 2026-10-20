@@ -108,3 +108,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 10:12 UTC | 69% | 31% | 13:00 UTC | verify14 (P17-15..22) + E14 running; E12, E13 parked; no new agents
 2026-10-20 10:36 UTC | 75% | 25% | 13:00 UTC | verify14 gating (quiet since 10:13), E14 finishing; no new agents until reset
 2026-10-20 11:02 UTC | 79% | 21% | 13:00 UTC | E14 parked (5e3fbed); verify14 (P17-15..22) full gate running after lead ssh-test fix; no new agents until reset
+2026-10-20 11:31 UTC | 79% | 21% | 13:00 UTC | P17-15..22 landed (090479b); nothing running; E12/E13/E14 parked; next step 13:04 post-reset
