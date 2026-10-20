@@ -116,3 +116,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 14:00 UTC | 27% | 73% | 18:00 UTC | L2 parked; owner asked for more agents: started W1/W2/F1 (P18) + A1 (P19); 8 builders running
 2026-10-20 14:21 UTC | 56% | 44% | 18:00 UTC | 8 builders running; ~1.2%/min, 85% expected ~14:45
 2026-10-20 14:35 UTC | 69% | 31% | 18:00 UTC | parked L3, E15, E17; P17-23..27 integrator (verify16) started 14:30; running E16, W1, W2, F1, A1
+2026-10-20 14:47 UTC | 77% | 23% | 18:00 UTC | parked W2, E16; >=75%: told W1, F1, A1 to wrap up; P17 integrator keeps running; P16 integrator waits for reset

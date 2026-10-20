@@ -2,11 +2,11 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 69,
-  "remaining_pct": 31,
+  "usage_pct": 77,
+  "remaining_pct": 23,
   "resets_at": "2026-10-20T18:00:00+00:00",
-  "last_check": "2026-10-20T14:35:00+00:00",
-  "current_step": "P17-23..27 integrator (verify16); builders E16, W1, W2, F1, A1; parked L1-L3, E15, E17",
+  "last_check": "2026-10-20T14:47:00+00:00",
+  "current_step": "P17-23..27 integrator (verify16); W1, F1, A1 wrapping up; parked L1-L3, E15-E17, W2; P16 integrator after 18:00 reset",
   "last_commit": "cfa6def",
-  "updated_at": "2026-10-20T14:35:00Z"
+  "updated_at": "2026-10-20T14:47:00Z"
 }

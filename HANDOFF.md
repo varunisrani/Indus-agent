@@ -81,11 +81,13 @@ In flight:
   `.agents/wip/w28/l-integrator-brief.md`, D-16.540..559).
 - Wave 28 P16 builders (brief `.agents/wip/w28/brief-p16.md`): E15 P16-25 Photon (wt-w28e15), E16 P16-33 native
   streams + P16-34 Telegram topics/stickers (wt-w28e16), E17 P16-35 Discord voice + P16-36 adapter matrix/doctor (wt-w28e17).
-  E15, E17 DONE, parked; E16 running. Next: one P16 integrator for E15+E16+E17 (D-16.560..579; re-lock for discord-voice).
+  E15, E16, E17 DONE, parked. Next (after the 18:00 reset): one P16 integrator for E15+E16+E17 (D-16.560..579; re-lock
+  for discord-voice; apply w28-e16-core-proposal.patch).
   If paused, patches go in `.agents/wip/w28/`.
 - Wave 29 builders (brief `.agents/wip/w29/brief.md`, owner asked for more parallel agents): W1 P18-01..06 web server +
   auth (wt-w29w1), W2 P18-07..10 PTY + chat WS + profile scope (wt-w29w2), F1 P18-17..22 frontend prework (wt-w29f1),
-  A1 P19-01..07 ACP (wt-w29a1). If paused, patches go in `.agents/wip/w29/`.
+  A1 P19-01..07 ACP (wt-w29a1). W2 DONE, parked; W1, F1, A1 told to wrap up at 77%. If paused, patches go in
+  `.agents/wip/w29/`.
 - Later: P18-11..16, 23..30; P19-08..18; P20, P23, P24, P25.
 - Last landings: P16-02/03/07/19/21/22/30 WhatsApp bridge (no Baileys mapping), Matrix E2EE, Weixin, Yuanbao + tools,
   Raft (`cfa6def`; D-16.524..539; notes in LEAD-NOTES "P16 wave 27 landing notes (integrator)"), P17-15..22 ensure/attach channel/remote session host, CLI + TUI attach by default, @indus/client WS

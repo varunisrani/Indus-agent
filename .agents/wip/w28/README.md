@@ -118,3 +118,35 @@
   block (no schema row); contract cases discovered; four non-chat surfaces (api_server, webhook, msgraph, raft) outside
   the chat suite; doctor reachability probes run on every `indus doctor`.
 - Follow-ups: live voice lane; speak the final edit once the runner streams replies; live vendor lanes (owner).
+
+## w28-e16.patch: P16-33 native draft streaming (adapter side) + P16-34 Telegram DM topics and stickers — done (base c84f1db)
+- Builder checks: native streams 26 + topics 18 new tests; gateway adapters + contract + config 1894 passed / 58 skipped
+  (earlier wider gateway unit/integration/contract 2821 passed); ruff, pyright, lint-imports, tooling.checks ok. No packages.
+  Slack vendor-name rows skipped without the slack extra (stream calls checked by hand in slack-sdk 3.44.1).
+- New: gateway/adapters/_native.py (NativeStream push/finish/abandon, flood back-off, display flag reader),
+  telegram/drafts.py, slack/streams.py, telegram/topics.py, telegram/stickers.py, tests test_native_streams.py,
+  telegram/test_topics.py, fixtures native_stream_frames/{telegram_drafts,slack_stream}.json, notes native-streams.md,
+  telegram-topics.md.
+- Shared: telegram/adapter.py (open_stream, drafts_unavailable, topics, sticker notes, register_fetchers, /topic menu, options
+  dm_topics off / sticker_descriptions on / native_stream), telegram/__init__.py, telegram/bot_api.py (send_message_draft,
+  create_forum_topic, ForumTopic, User.has_topics_enabled, sticker FileRef fields), slack/adapter.py (open_stream,
+  vendor_names, native_stream); schema DisplaySection.platforms: dict[str, DisplayPlatformSection(native_stream=False)] +
+  test; telegram/slack wire fakes; test_vendor_names (sendMessageDraft, createForumTopic); traps R06.12, R06.13; ACC-K24-3,
+  ACC-K28-2, ACC-K46-1.
+- CORE CHANGE OWED (P16-33 does nothing until applied): `w28-e16-core-proposal.patch` (297 lines; check script
+  w28-e16-prop_check.py.txt; builder applied it, 213 tests + 2 e2e checks green, then reverted): Adapter.open_stream(chat_id,
+  *, reply_to=None, meta=None) -> NativeStream | None (default None); ports.open_native_stream; StreamConsumer native branch
+  (open on first interim, push raw redacted text to last whitespace; tool call finishes the segment unless the stream is the
+  whole reply (Slack, WeCom); approval seals; final via stream.finish; failure falls back to edits; cancel abandons); WeCom
+  open_stream(meta), WeComStream.one_message_per_turn = True + abandon(); ALSO make WeComStream.push return True for a
+  non-extending frame. Runner still must feed the consumer (open since P15 wave 22); revisit streaming_default("wecom").
+- Proposed core seams: sticker descriptions after authorization (intake hook, e.g. register_sticker_notes from enrich;
+  today bounded: private chats / addressed group messages only, 10 fresh per sender per hour, cached); `/topic` as a
+  registry command routed to adapter open_topic after authorization (today adapter-handled, DM only with dm_topics, 1 per
+  10 s per chat, not behind the core auth chain).
+- Decisions (D-ids): switch at display.platforms.<p>.native_stream (WeCom keeps platforms.wecom.native_stream); Telegram
+  drafts plain text, final MarkdownV2 with plain fallback; Slack over 39,000 chars seals with what fits, remainder as thread
+  messages (reference resends whole final); final after seal edits the sealed message; drafts off inside topics only if a
+  topic refuses; no DM topic tables/renames/restore/reminder; sticker cache LRU 2,000.
+- Follow-ups: live check of sendMessageDraft / has_topics_enabled / createForumTopic and Slack recipient fields; Slack
+  vendor-name check with the extra; the two core seams.
