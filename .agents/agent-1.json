@@ -2,11 +2,11 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 84,
-  "remaining_pct": 16,
-  "resets_at": "2026-10-20T13:00:00+00:00",
-  "last_check": "2026-10-20T12:46:00+00:00",
-  "current_step": "P16 w27 integrator (E12+E13+E14) in verify15; P17-23..27 after 13:00 reset",
+  "usage_pct": 2,
+  "remaining_pct": 98,
+  "resets_at": "2026-10-20T18:00:00+00:00",
+  "last_check": "2026-10-20T13:10:00+00:00",
+  "current_step": "P16 w27 integration gating in verify15; wave 28 builders L1/L2/L3 (P17-23..27) running",
   "last_commit": "e1995b6",
-  "updated_at": "2026-10-20T12:46:00Z"
+  "updated_at": "2026-10-20T13:10:00Z"
 }
