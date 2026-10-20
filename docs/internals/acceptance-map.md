@@ -1127,7 +1127,10 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/slack/test_adapter.py::test_every_piece_card_and_status_of_a_channel_reply_goes_into_the_thread`
   - Review: the owner's live run with real bots, `tests/e2e/gateway/live_demo3.py` (P15-36)
 - **ACC-K8-1** Signal through signal-cli
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/signal/test_adapter.py::test_a_dropped_stream_reopens_after_2_4_8_doubling_to_60_seconds`
+  - `tests/unit/gateway/adapters/signal/test_adapter.py::test_33_attachments_go_out_in_two_sends`
+  - Review: live lane against a real signal-cli daemon (P16-36 doctor reachability check)
 - **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
   - Review: not yet planned (phase TBD)
 - **ACC-K13-1** Inbound normalisation: command detection, burst text batching, per-platform dedupe, reply context …

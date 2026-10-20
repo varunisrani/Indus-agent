@@ -159,8 +159,8 @@ PyPI for packages of other platforms).
 | deprecated | 1.3.1 | MIT | extra `daytona`, via daytona / opentelemetry | P21-07 |
 | wrapt | 2.5.0 | BSD-2-Clause | extra `daytona`, via deprecated / opentelemetry-instrumentation | P21-07 |
 | googleapis-common-protos | 1.75.5 | Apache-2.0 | extra `daytona`, via opentelemetry-exporter-otlp-proto-http | P21-07 |
-| httpx-ws | 0.9.0 | MIT | extra `daytona`, via daytona (WebSocket over httpx) | P21-07 |
-| wsproto | 1.3.2 | MIT | extra `daytona`, via httpx-ws / simple-websocket | P21-07 |
+| httpx-ws | 0.9.0 | MIT | extras `daytona` (via daytona) and `mattermost` (the Mattermost event socket); WebSocket over httpx | P21-07, P16-08 |
+| wsproto | 1.3.2 | MIT | extras `daytona` and `mattermost`, via httpx-ws / simple-websocket | P21-07, P16-08 |
 | obstore | 0.11.1 | MIT | extra `daytona`, via daytona (object storage client) | P21-07 |
 | opentelemetry-sdk | 1.45.0 | Apache-2.0 | extra `daytona`, via daytona (tracing; off unless DAYTONA_OTEL_ENABLED) | P21-07 |
 | opentelemetry-semantic-conventions | 0.66b0 | Apache-2.0 | extra `daytona`, via opentelemetry-sdk | P21-07 |

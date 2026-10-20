@@ -39,11 +39,18 @@ from indus.foundation.scope import Scope
 log = logging.getLogger(__name__)
 
 # Vendor credential names (kept as the vendors spell them, D-16.22). Every name must be present.
+# Their values are masked in every log line and error text (``Adapter.scrub``) and joined they key
+# the token lock, so only secrets and identities belong here: server URLs and hosts are read by the
+# adapter itself (Signal's account number, a person's phone number, is masked too).
 BUILTIN_CREDENTIALS: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
         "telegram": ("TELEGRAM_BOT_TOKEN",),
         "discord": ("DISCORD_BOT_TOKEN",),
         "slack": ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"),
+        "signal": ("SIGNAL_ACCOUNT",),
+        "matrix": ("MATRIX_ACCESS_TOKEN",),
+        "mattermost": ("MATTERMOST_TOKEN",),
+        "email": ("EMAIL_ADDRESS", "EMAIL_PASSWORD"),
     }
 )
 

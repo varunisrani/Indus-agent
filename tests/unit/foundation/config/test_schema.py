@@ -326,7 +326,15 @@ def test_decided_defaults() -> None:
         "channel_overrides": {},
         "extra": {},
     }
-    assert d["platforms"] == {"telegram": platform, "discord": platform, "slack": platform}
+    assert d["platforms"] == {
+        "telegram": platform,
+        "discord": platform,
+        "slack": platform,
+        "signal": platform,  # P16-05
+        "matrix": platform,  # P16-06
+        "mattermost": platform,  # P16-08
+        "email": platform,  # P16-09
+    }
     assert d["gateway"] == {
         "message_timestamps": {"enabled": False},
         "trust_env": True,  # P15-06

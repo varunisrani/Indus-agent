@@ -265,11 +265,15 @@ _INDICATOR = re.compile(r"^\\?\(\d+/\d+\\?\)$")
 
 
 def _long_text(caps: Capabilities) -> str:
+    # Lengths add up word by word (code points and UTF-16 units both do): linear, not quadratic.
     words: list[str] = []
+    size = 0
     n = 0
-    while caps.len_fn(" ".join(words)) < caps.max_len * 3.5:
+    while size < caps.max_len * 3.5:
         n += 1
-        words.append(f"w{n:05d}" if n % 7 else f"w{n:05d}😀")
+        word = f"w{n:05d}" if n % 7 else f"w{n:05d}😀"
+        size += caps.len_fn(word) + (1 if words else 0)
+        words.append(word)
     return " ".join(words)
 
 
@@ -400,8 +404,12 @@ async def check_inbound(case: AdapterCase, env: CaseEnv, adapter: Adapter) -> No
     adapter.set_sink(sink)
     await settle(env, adapter.connect())
     p = env.platform
+    lacks = case.lacks
     dm = p.dm(case.user_id, "hello there", user_name="Ana")
-    p.group(case.group_id, case.user_id, "/help", mention=True)
+    if "group" in lacks:
+        p.dm(case.user_id, "/help")
+    else:
+        p.group(case.group_id, case.user_id, "/help", mention=True)
     p.thread(case.group_id, case.thread_id, case.user_id, "in a thread")
     p.bot_message(case.group_id, case.bot_id, "beep")
     p.voice(case.user_id, case.user_id)
@@ -419,27 +427,41 @@ async def check_inbound(case: AdapterCase, env: CaseEnv, adapter: Adapter) -> No
 
     for event in events:
         expect(event.source.platform == adapter.platform, "inbound", "wrong source.platform")
+
+    def absent(shape: str, text: str) -> None:
+        found = [e for e in events if e.text == text]
+        expect(not found, "inbound", f"the platform lacks {shape}s but one became an event")
+
     first = find("the DM", lambda e: e.text == "hello there")
     expect(first.source.chat_type == "dm", "inbound", f"DM typed {first.source.chat_type}")
     expect(first.user_id == case.user_id, "inbound", "DM sender id lost")
     expect(first.message_id, "inbound", "DM without a message id")
     expect(not first.source.is_bot, "inbound", "a person marked as a bot")
     command = find("the group command", lambda e: e.command == "help")
-    expect(command.source.chat_type in ("group", "channel"), "inbound", "group chat type")
-    expect(command.source.chat_id == case.group_id, "inbound", "group chat id lost")
-    thread = find("the thread message", lambda e: e.text == "in a thread")
-    expect(
-        thread.source.chat_type in ("thread", "forum")
-        and case.thread_id in (thread.source.thread_id, thread.source.chat_id),
-        "inbound",
-        f"thread not normalised: {thread.source}",
-    )
-    bot = find("the bot message", lambda e: e.text == "beep")
-    expect(bot.source.is_bot, "inbound", "a bot-authored message not marked is_bot")
+    if "group" not in lacks:
+        expect(command.source.chat_type in ("group", "channel"), "inbound", "group chat type")
+        expect(command.source.chat_id == case.group_id, "inbound", "group chat id lost")
+    if "thread" in lacks:
+        absent("thread", "in a thread")
+    else:
+        thread = find("the thread message", lambda e: e.text == "in a thread")
+        expect(
+            thread.source.chat_type in ("thread", "forum")
+            and case.thread_id in (thread.source.thread_id, thread.source.chat_id),
+            "inbound",
+            f"thread not normalised: {thread.source}",
+        )
+    if "bot" in lacks:
+        absent("bot message", "beep")
+    else:
+        bot = find("the bot message", lambda e: e.text == "beep")
+        expect(bot.source.is_bot, "inbound", "a bot-authored message not marked is_bot")
     voice = find("the voice note", lambda e: e.kind is MessageKind.VOICE)
     expect(len(voice.media) == 1, "inbound", "voice note without its attachment")
     find("the photo", lambda e: e.kind is MessageKind.PHOTO and "look" in e.text)
     find("the document", lambda e: e.kind is MessageKind.DOCUMENT)
+    if "edit" in lacks:
+        absent("edit", "hello again")
     for edit in [e for e in events if e.text == "hello again"]:
         expect(edit.metadata.get("edited") is True, "inbound", "an edit not marked as edited")
     if adapter.capabilities.supports_buttons:

@@ -1261,6 +1261,10 @@ class PlatformsSection(_Section):
     telegram: PlatformSection = Field(default_factory=PlatformSection, description="Telegram")
     discord: PlatformSection = Field(default_factory=PlatformSection, description="Discord")
     slack: PlatformSection = Field(default_factory=PlatformSection, description="Slack")
+    signal: PlatformSection = Field(default_factory=PlatformSection, description="Signal")
+    matrix: PlatformSection = Field(default_factory=PlatformSection, description="Matrix")
+    mattermost: PlatformSection = Field(default_factory=PlatformSection, description="Mattermost")
+    email: PlatformSection = Field(default_factory=PlatformSection, description="Email")
 
 
 class MessageTimestampsSection(_Section):

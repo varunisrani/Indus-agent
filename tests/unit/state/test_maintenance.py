@@ -414,3 +414,39 @@ def test_stats_on_a_busy_store_do_not_block(store: StoreHandle) -> None:
     finally:
         other.execute("ROLLBACK")
         other.close()
+
+
+def test_vacuum_waits_out_another_connections_write_lock(
+    store: StoreHandle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sibling holding the write lock past the connection's 1 s busy timeout when the VACUUM
+    starts delays it instead of failing it (R03.8: patience is a deadline; root cause of the
+    intermittent ``test_store_survives_the_stress[host]`` failure under load)."""
+    import threading
+
+    held, release = threading.Event(), threading.Event()
+
+    def sibling() -> None:
+        conn = sqlite3.connect(str(store.path), timeout=5.0, isolation_level=None)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            held.set()
+            release.wait(1.5)
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+    thread = threading.Thread(target=sibling)
+
+    def merge_then_lock(_store: StoreHandle) -> None:  # the sibling takes the lock right after
+        thread.start()
+        assert held.wait(5.0)
+
+    monkeypatch.setattr(fts, "merge", merge_then_lock)
+    try:
+        report = maintenance.vacuum(store, force=True)
+    finally:
+        release.set()
+        thread.join()
+    assert report.size_after is not None
+    assert meta_value(store, maintenance.LAST_VACUUM) == repr(now_of(store))

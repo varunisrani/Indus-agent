@@ -3,8 +3,9 @@
 Each ``PlatformEntry`` says how to build the platform's adapter, how to tell whether its library is
 installed without importing it, which env names carry its credential and its access lists, its
 message cap, whether its DMs are really private (R06.24) and an optional cron target parser.
-Telegram, Discord, Slack, the API server and the webhook receiver are built in; plugins add
-entries through the P13 provider registry (``load_plugin_entries``).
+Telegram, Discord, Slack, Signal, Matrix, Mattermost, Email, the API server and the webhook
+receiver are built in; plugins add entries through the P13 provider registry
+(``load_plugin_entries``).
 
 A platform's SDK is imported in exactly one place, ``PlatformRegistry.create_adapter``, which the
 gateway calls only for enabled platforms: importing this module, listing entries or probing
@@ -40,7 +41,17 @@ log = logging.getLogger(__name__)
 type TargetParser = Callable[[str], tuple[str, str | None] | None]
 type AdapterFactory = Callable[[Any], Any]
 
-BUILTIN_NAMES: tuple[str, ...] = ("telegram", "discord", "slack", "api_server", "webhook")
+BUILTIN_NAMES: tuple[str, ...] = (
+    "telegram",
+    "discord",
+    "slack",
+    "signal",
+    "matrix",
+    "mattermost",
+    "email",
+    "api_server",
+    "webhook",
+)
 
 
 def policy_env_name(platform: str, suffix: str) -> str:
@@ -171,6 +182,70 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             required_env=("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"),
             max_len=39000,
             hint="You are talking through Slack. Formatting is converted to Slack's markup.",
+        ),
+        replace(
+            _chat_entry(
+                "signal",
+                "Signal",
+                # Our own client for a signal-cli daemon the user runs (GPL-3.0, never bundled).
+                sdk=("httpx",),
+                extra_name="signal",
+                required_env=("SIGNAL_HTTP_URL", "SIGNAL_ACCOUNT"),
+                max_len=8000,
+                hint=(
+                    "You are talking through Signal. Formatting is not rendered, so write plain "
+                    "text."
+                ),
+            ),
+            install_hint=(
+                "install signal-cli and run `signal-cli --account <number> daemon --http "
+                "127.0.0.1:8080` (no Python extra)"
+            ),
+            group_chats_env=policy_env_name("signal", "GROUP_ALLOWED_CHATS"),
+        ),
+        replace(
+            _chat_entry(
+                "matrix",
+                "Matrix",
+                # Our own Client-Server API client over httpx (end-to-end encryption is P16-07).
+                sdk=("httpx",),
+                extra_name="matrix",
+                required_env=("MATRIX_ACCESS_TOKEN", "MATRIX_HOMESERVER"),
+                max_len=15000,
+                hint="You are talking through Matrix. Markdown is rendered as HTML for you.",
+            ),
+            install_hint="pip install indus-agent (Matrix needs no extra)",
+        ),
+        _chat_entry(
+            "mattermost",
+            "Mattermost",
+            # REST runs on httpx; the event socket needs httpx-ws (the ``mattermost`` extra).
+            sdk=("httpx_ws",),
+            extra_name="mattermost",
+            required_env=("MATTERMOST_TOKEN", "MATTERMOST_URL"),
+            max_len=4000,
+            hint="You are talking through Mattermost. Standard Markdown renders natively.",
+        ),
+        replace(
+            _chat_entry(
+                "email",
+                "Email",
+                # IMAP and SMTP from the standard library.
+                sdk=("imaplib", "smtplib"),
+                extra_name="email",
+                required_env=(
+                    "EMAIL_ADDRESS",
+                    "EMAIL_PASSWORD",
+                    "EMAIL_IMAP_HOST",
+                    "EMAIL_SMTP_HOST",
+                ),
+                max_len=50000,
+                hint=(
+                    "You are answering email. Write a complete, self-contained reply in plain "
+                    "text; formatting is not rendered."
+                ),
+            ),
+            install_hint="pip install indus-agent (email needs no extra)",
         ),
         PlatformEntry(
             name="api_server",

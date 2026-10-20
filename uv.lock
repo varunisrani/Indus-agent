@@ -1245,6 +1245,9 @@ docs = [
     { name = "pypdf" },
     { name = "python-docx" },
 ]
+mattermost = [
+    { name = "httpx-ws" },
+]
 modal = [
     { name = "modal" },
 ]
@@ -1294,6 +1297,7 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.142.2" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = "==1.2.1" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "httpx-ws", marker = "extra == 'mattermost'", specifier = "==0.9.0" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "keyring", specifier = "==25.7.0" },
     { name = "mcp", specifier = "==2.3.0" },
@@ -1314,7 +1318,7 @@ requires-dist = [
     { name = "uvicorn", specifier = "==0.54.0" },
     { name = "vercel-sandbox", marker = "extra == 'vercel'", specifier = "==0.7.0" },
 ]
-provides-extras = ["web", "docs", "pty", "browser", "voice", "modal", "daytona", "vercel", "research", "discord", "slack"]
+provides-extras = ["web", "docs", "pty", "browser", "voice", "modal", "daytona", "vercel", "research", "discord", "slack", "mattermost"]
 
 [package.metadata.requires-dev]
 dev = [

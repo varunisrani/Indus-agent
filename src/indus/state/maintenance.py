@@ -17,8 +17,9 @@ resumable), and VACUUM when the gates allow. It never raises; problems become sk
 ``vacuum`` refuses on a damaged or replaced handle, and — unless forced — while another
 in-process generation of the path is open or another process holds the store or a sidecar
 (Linux: a scan of ``/proc/*/fd``; a failed scan is an unknown holder). It merges FTS segments
-first, checkpoints PASSIVE, runs VACUUM, checkpoints TRUNCATE and re-records the file identity
-so the guard does not mistake our own rewrite for a replaced file.
+first, checkpoints PASSIVE, runs VACUUM (waiting out another process's write lock within the
+routine write budget, like a write), checkpoints TRUNCATE and re-records the file identity so the
+guard does not mistake our own rewrite for a replaced file.
 """
 
 from __future__ import annotations
@@ -416,7 +417,8 @@ def vacuum(store: StoreHandle, *, force: bool = False) -> VacuumReport:
         store.guard.before_write()
         before = _logical_size(conn)
         _checkpoint(conn, "PASSIVE")
-        conn.execute("VACUUM")
+        # A sibling process may hold the write lock past the busy timeout: wait like a write.
+        store.writer.patiently(conn, lambda c: c.execute("VACUUM"), budget=ROUTINE)
         _checkpoint(conn, "TRUNCATE")
         after = _logical_size(conn)
         store.guard.rerecord(

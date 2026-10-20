@@ -48,6 +48,10 @@ class AdapterCase:
     bot_id: str = "500"
     # Deliver queued inbound traffic to the adapter; the default advances the clock a little.
     pump: Callable[[CaseEnv, Adapter], Awaitable[None]] | None = None
+    # Inbound shapes the platform has no way to express (``group``, ``thread``, ``bot``,
+    # ``edit``): its wire fake has no form for them (or one the adapter must drop), and the
+    # inbound check then expects no event for them instead of a normalised one (P16).
+    lacks: frozenset[str] = frozenset()
 
 
 # P15-33..35 and P16 append their cases (``register_case``); the echo case lives in the suite.
@@ -130,5 +134,9 @@ def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[SocketGuard]:
 # -- platform cases ------------------------------------------------------------------------------
 # Each module registers its case on import (``register_case`` is defined above).
 from tests.contract.gateway import discord_case as _discord_case  # noqa: E402, F401
+from tests.contract.gateway import email_case as _email_case  # noqa: E402, F401
+from tests.contract.gateway import matrix_case as _matrix_case  # noqa: E402, F401
+from tests.contract.gateway import mattermost_case as _mattermost_case  # noqa: E402, F401
+from tests.contract.gateway import signal_case as _signal_case  # noqa: E402, F401
 from tests.contract.gateway import slack_case as _slack_case  # noqa: E402, F401
 from tests.contract.gateway import telegram_case as _telegram_case  # noqa: E402, F401

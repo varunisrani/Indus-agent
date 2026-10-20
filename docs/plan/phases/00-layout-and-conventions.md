@@ -325,6 +325,7 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | slack-bolt | 1.30.0 | 2026-07-15 | MIT | extra `slack` | P15-35 |
 | slack-sdk | 3.44.1 | 2026-09-03 | MIT | extra `slack` | P15-35 |
 | aiohttp | 3.14.3 | (already locked via modal / daytona) | Apache-2.0 AND MIT | extra `slack` (named: Bolt's async app and Socket Mode handler) | P15-35 |
+| httpx-ws | 0.9.0 | (already locked via daytona) | MIT | extra `mattermost` (the event socket; brings wsproto 1.3.2, MIT, also already locked) | P16-08 |
 | agent-client-protocol | 0.12.1 | 2026-08-16 | **no licence metadata on PyPI** — the P19 builder checks the source repo's LICENSE; if not on the allow-list, add a written exception or stop | runtime / extra `acp` | P19 |
 | Node | 24.21.0 LTS | 2026-09-07 | MIT | `.nvmrc` | P00-08 |
 | pnpm | 12.9.1 | 2026-10-03 | MIT | `packageManager` | P00-08 |

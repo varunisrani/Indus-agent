@@ -327,6 +327,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_writer.py::test_callback_error_rolls_back`
   - `tests/unit/state/test_writer.py::test_begin_io_error_once_is_retried`
   - `tests/unit/state/test_writer.py::test_io_error_after_the_callback_ran_is_not_retried`
+  - `tests/unit/state/test_writer.py::test_patiently_waits_out_a_lock_then_gives_up_at_the_deadline`
+  - `tests/unit/state/test_maintenance.py::test_vacuum_waits_out_another_connections_write_lock`
 - **R03.9** Opening must wait out locks too
   - `tests/unit/state/test_schema.py::test_init_waits_out_a_three_second_lock`
   - `tests/unit/state/test_schema.py::test_init_gives_up_after_the_patience`
@@ -669,6 +671,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_send.py::test_rate_limit_exhausted_sends_nothing_more`
   - `tests/unit/gateway/adapters/test_base.py::test_send_with_retry_uses_the_adapters_cap`
   - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_97_minute_flood_wait_comes_back_typed_without_sleeping`
+  - `tests/unit/gateway/adapters/signal/test_adapter.py::test_a_long_attachment_wait_is_handed_over_without_sleeping`
+  - `tests/unit/gateway/adapters/signal/test_adapter.py::test_an_attachment_rate_limit_is_retried_exactly_once_after_its_refill`
 - **R06.4** Retry ambiguity: timeouts are not retryable
   - `tests/unit/gateway/core/test_send.py::test_read_timeout_is_attempted_exactly_once`
   - `tests/unit/gateway/core/test_send.py::test_partial_split_resumes_only_the_remainder`
@@ -699,6 +703,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_authz.py::test_unknown_dm_mode`
   - `tests/unit/gateway/core/test_authz.py::test_explain_names_the_mode`
   - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
+  - `tests/unit/gateway/adapters/email/test_adapter.py::test_unknown_senders_are_ignored_by_default_without_a_body_fetch`
+  - `tests/unit/gateway/adapters/email/test_adapter.py::test_unknown_senders_reach_the_gateway_when_pairing_is_opted_in`
 - **R06.9** Pairing directory must resolve per call
   - `tests/unit/state/test_pairing.py::test_directory_resolves_per_call`
   - `tests/unit/state/test_pairing.py::test_spaced_lower_case_code_approves`
@@ -716,6 +722,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/outbound/test_formatting.py::test_escaping_can_push_a_reply_into_two_pieces`
   - `tests/unit/gateway/outbound/test_formatting.py::test_chunks_of_markdownv2_output_parse`
   - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
+  - `tests/unit/gateway/adapters/matrix/test_adapter.py::test_a_46000_byte_reply_is_split_by_bytes_as_well_as_chars`
+  - `tests/unit/gateway/adapters/matrix/test_adapter.py::test_html_that_would_burst_the_event_is_left_out`
 - **R06.12** Streaming frames must be prefix-stable on native-stream platforms
   - `tests/unit/gateway/outbound/test_stream.py::test_every_non_final_send_is_marked_interim`
   - `tests/unit/gateway/outbound/test_stream.py::test_final_edits_the_stream_message_instead_of_sending_again`

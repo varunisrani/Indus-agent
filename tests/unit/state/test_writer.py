@@ -114,6 +114,39 @@ def test_lock_held_forever_raises_store_locked_at_the_deadline(
     assert _rows(fake) == []
 
 
+def test_patiently_waits_out_a_lock_then_gives_up_at_the_deadline(
+    fake: FakeConnection, fake_clock: AutoClock
+) -> None:
+    """``patiently`` (the VACUUM path, outside a transaction) waits like a write."""
+    writer = _writer(fake, fake_clock)
+    start = fake_clock.monotonic()
+    calls: list[float] = []
+
+    def busy_for_three_seconds(conn: sqlite3.Connection) -> str:
+        calls.append(fake_clock.monotonic() - start)
+        if fake_clock.monotonic() - start < 3.0:
+            raise locked_error()
+        return "done"
+
+    assert writer.patiently(fake.real, busy_for_three_seconds, budget=ROUTINE) == "done"
+    assert len(calls) > 1 and 3.0 <= calls[-1] < 4.0
+    _check_bands(fake_clock.sleeps, ROUTINE.seconds)
+
+    def always_busy(conn: sqlite3.Connection) -> str:
+        raise locked_error()
+
+    begun = fake_clock.monotonic()
+    with pytest.raises(StoreLocked):
+        writer.patiently(fake.real, always_busy, budget=OBSERVATION)
+    assert fake_clock.monotonic() - begun == pytest.approx(OBSERVATION.seconds)
+
+    def broken(conn: sqlite3.Connection) -> str:
+        raise sqlite3.OperationalError("no such table: nowhere")
+
+    with pytest.raises(sqlite3.OperationalError):
+        writer.patiently(fake.real, broken, budget=ROUTINE)
+
+
 def test_callback_error_rolls_back(fake: FakeConnection, fake_clock: AutoClock) -> None:
     writer = _writer(fake, fake_clock)
 

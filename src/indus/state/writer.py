@@ -274,6 +274,27 @@ class Writer:
                 except Exception:  # periodic housekeeping must never fail a write
                     log.warning("periodic store task failed for %s", self.path, exc_info=True)
 
+    def patiently[T](
+        self, conn: sqlite3.Connection, fn: Callable[[sqlite3.Connection], T], *, budget: Budget
+    ) -> T:
+        """``fn(conn)`` outside a transaction (VACUUM cannot run inside one) on a connection the
+        caller borrowed, a lock error retried with the write path's pauses until ``budget`` runs
+        out (then `StoreLocked`). The connection's own busy timeout (1 s) alone is no deadline."""
+        started = self._clock.monotonic()
+        deadline = started + budget.seconds
+        while True:
+            try:
+                return fn(conn)
+            except sqlite3.OperationalError as exc:
+                if not is_lock_error(exc):
+                    raise
+                pause = jitter_pause(
+                    now=self._clock.monotonic(), started=started, deadline=deadline, rng=self._rng
+                )
+                if pause is None:
+                    raise self._locked_error(budget) from exc
+                self._sleep(pause)
+
     # -- other access ----------------------------------------------------------------------------
 
     def checkpoint_passive(self) -> None:

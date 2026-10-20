@@ -169,7 +169,14 @@ def test_policy_env_names_use_our_prefix() -> None:
         "telegram": ("TELEGRAM_BOT_TOKEN",),
         "discord": ("DISCORD_BOT_TOKEN",),
         "slack": ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"),
+        "signal": ("SIGNAL_ACCOUNT",),
+        "matrix": ("MATRIX_ACCESS_TOKEN",),
+        "mattermost": ("MATTERMOST_TOKEN",),
+        "email": ("EMAIL_ADDRESS", "EMAIL_PASSWORD"),
     }
+    # URLs and hosts are read by the adapters, never masked or lock-keyed as credentials.
+    for names in BUILTIN_CREDENTIALS.values():
+        assert not any(n.endswith(("_URL", "_HOST", "_HOMESERVER")) for n in names)
 
 
 def test_defaults_come_from_the_shared_table(scope: Scope) -> None:
@@ -242,9 +249,10 @@ def test_plugin_platform_without_credentials_runs_on_config(scope: Scope) -> Non
 
 
 def test_custom_credential_table(scope: Scope) -> None:
-    scope = _with_env(scope, MATRIX_ACCESS_TOKEN=_fake_token("mx"))
-    table = {**BUILTIN_CREDENTIALS, "matrix": ("MATRIX_ACCESS_TOKEN",)}
-    assert load_gateway_settings(scope, credentials=table).platforms["matrix"].enabled
+    scope = _with_env(scope, FAKECHAT_TOKEN=_fake_token("fc"))
+    assert "fakechat" not in load_gateway_settings(scope).platforms
+    table = {**BUILTIN_CREDENTIALS, "fakechat": ("FAKECHAT_TOKEN",)}
+    assert load_gateway_settings(scope, credentials=table).platforms["fakechat"].enabled
 
 
 @pytest.mark.parametrize(

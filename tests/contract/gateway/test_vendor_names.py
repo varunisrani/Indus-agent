@@ -23,13 +23,15 @@ from tests.contract.gateway.conftest import CLOCK_START
 from tests.contract.gateway.test_adapter_contract import CASES
 from tests.fakes.clock import FakeClock
 from tests.fakes.platform.discord_wire import DiscordWire
+from tests.fakes.platform.email_wire import EmailWire
 from tests.fakes.platform.slack_wire import SlackWire
 from tests.fakes.platform.telegram_wire import TelegramWire
 
-WIRES: dict[str, type[TelegramWire] | type[DiscordWire] | type[SlackWire]] = {
+WIRES: dict[str, type[TelegramWire] | type[DiscordWire] | type[SlackWire] | type[EmailWire]] = {
     "telegram": TelegramWire,
     "discord": DiscordWire,
     "slack": SlackWire,
+    "email": EmailWire,
 }
 
 
