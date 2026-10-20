@@ -1,6 +1,6 @@
 # Wave 25 (P17 K3/K4, P16 E6/E7) — parked builder patches, base d50d5d3
 
-## w25-k4.patch: P17-10 tickets + ws_auth, P17-11 attach verbs, P17-12 shared RPC dispatcher — done
+## (LANDED) w25-k4.patch: P17-10 tickets + ws_auth, P17-11 attach verbs, P17-12 shared RPC dispatcher — done
 - Builder checks: service/daemon/control/tui_bridge/redact/contract 772 passed / 39 skipped; neighbours 175 passed; ruff,
   pyright, lint-imports, tooling.checks ok. No new deps.
 - Stand-in: tests/unit/gateway/daemon/_stubs_k4.py (K3 host). Assumed `AttachHost`: `creatable_sources() -> Sequence[str]`,
@@ -19,7 +19,7 @@
   allowed; dispatcher deadlines 120 s default, prompt.submit/background 1,800 s, session.compress 600 s.
 - Lead note for the integrator: make the redaction of `indus-gateway-ticket.<t>` a FULL mask (today keeps first/last 4).
 
-## w25-k3.patch: P17-08 daemon session host + P17-09 frozen creation policy — done
+## (LANDED) w25-k3.patch: P17-08 daemon session host + P17-09 frozen creation policy — done
 - Builder checks: service/contract-gateway/layers/foundation 1123 passed / 41 skipped; test_daemon_host 5x green; wider
   1821 passed with 5 load-only failures in tests/integration/core/test_d04_1_terminal_*backstop.py (pass alone) — ROOT-CAUSE
   at integration; ruff, pyright, lint-imports, tooling.checks ok. No new deps.

@@ -76,20 +76,19 @@ Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`,
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
 - Wave 25 (from `d50d5d3`, started 03:08 UTC 2026-10-20; brief `.agents/wip/w25/brief.md`):
-  - K3 (P17-08/09) + K4 (P17-10/11/12) DONE; P17 wave-2 integrator in scratchpad verify9 (brief
-    `.agents/wip/w25/k-integrator-brief.md`, D-16.420..439).
   - E6 (P16-11 Teams + 12 Graph) + E7 (P16-13 Google Chat + 20 QQ Bot) + E8 (P16-16 DingTalk + 17/18 WeCom): integrator in scratchpad verify10 (brief
     `.agents/wip/w25/e67-integrator-brief.md`, rulings in README, D-16.440..459).
   - Builders running: E9 (P16-14 Feishu + 15 docs), E10 (P16-24 BlueBubbles + 28
     SimpleX + 29 Buzz) in scratchpad wt-w25{e9,e10}. If paused, patches go in `.agents/wip/w25/`.
-- Last landings: P16-04/10/23/26/27 WhatsApp Cloud/SMS/LINE/ntfy/IRC + per-platform lock keys (`4aa2c78`), P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
+- Last landings: P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
+  test fixture that resets the process-exit fence), P16-04/10/23/26/27 WhatsApp Cloud/SMS/LINE/ntfy/IRC + per-platform lock keys (`4aa2c78`), P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
   fix), P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
   "P15 wave 22 + Demo 3 landing notes"), P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the
   cooldown ladder, P05-03 local stop_tree waits for the whole tree after SIGKILL; P17-01..07 (`ff7bbe3`; notes in LEAD-NOTES "P17 wave 1 landing notes"), P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
   landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
   landing notes"), P15-01..18 (`c0e0201`), P21-01..11, 15 and P22-01..09 (`42a852e`).
-  Done: P00–P15, P21, P22 complete; P16 10/36 (+4 built, parked); P17 7/27.
+  Done: P00–P15, P21, P22 complete; P16 10/36 (+4 built, parked); P17 12/27.
 Next: P15-33..36 — builders T/D/S (Telegram own Bot API client over httpx, no LGPL; Discord; Slack), each
 with `create_adapter(AdapterConfig)`, a send-only open for `indus send` and media fetchers; Demo 3 (P15-36)
 at integration. Builder brief: `.agents/wip/p15w4/brief.md`. Then P16, P17.
