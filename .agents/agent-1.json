@@ -2,11 +2,11 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 2,
-  "remaining_pct": 98,
+  "usage_pct": 13,
+  "remaining_pct": 87,
   "resets_at": "2026-10-20T18:00:00+00:00",
   "last_check": "2026-10-20T13:10:00+00:00",
-  "current_step": "P16 w27 landed; wave 28 L2 (P17-24/25) + L3 (P17-26/27) building; L1 parked",
+  "current_step": "P17 L2/L3 + P16 E15/E16/E17 building; L1 parked",
   "last_commit": "cfa6def",
-  "updated_at": "2026-10-20T14:00:00Z"
+  "updated_at": "2026-10-20T13:50:00Z"
 }
