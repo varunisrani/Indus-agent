@@ -1,0 +1,2871 @@
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index c0eceef..7dc41ec 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -420,6 +420,10 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/cli/test_chat_select.py::test_resume_restores_cwd_history_and_refuses_changed_flags`
+   - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_survives_resume`
+   - Review: classic chat as gateway client (refused flags, reduced slash set, exit 3) arrives with P17 (P06-03)
++  - `tests/unit/service/test_creation_policy.py::test_resume_with_a_different_model_is_a_policy_conflict`
++  - `tests/unit/service/test_creation_policy.py::test_a_bypass_launch_must_name_model_and_provider`
++  - `tests/unit/service/test_creation_policy.py::test_api_key_is_never_stored`
++  - `tests/unit/service/test_daemon_host.py::test_create_freezes_the_policy_and_resume_checks_it`
+ - **R04.2** Profile must be resolved before any import
+   - `tests/unit/foundation/test_preparse.py::test_fresh_interpreter_imports_nothing_else`
+   - `tests/unit/foundation/test_preparse.py::test_short_flag`
+@@ -635,7 +639,8 @@ Checked by `python -m tooling.checks traps`.
+ - **R05.17** Synchronized output inside tmux
+   - Review: not yet planned (P00-guards)
+ - **R05.18** Busy-mode default differs by surface
+-  - Review: not yet planned (P00-guards)
++  - `tests/unit/service/test_daemon_host.py::test_busy_default_per_surface`
++  - `tests/unit/service/test_daemon_host.py::test_tui_input_queues_and_cli_input_interrupts`
+ - **R05.19** Paste-to-attachment heuristics
+   - Review: not yet planned (P00-guards)
+ - **R05.20** Child stdin hijack (stdio mode)
+diff --git a/docs/notes/P17/creation-policy.md b/docs/notes/P17/creation-policy.md
+new file mode 100644
+index 0000000..9e09017
+--- /dev/null
++++ b/docs/notes/P17/creation-policy.md
+@@ -0,0 +1,94 @@
++# Task: Frozen creation policy (P17-09) Phase: 17 Owner: wave-25 builder K3
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `hermes_cli/gateway_chat.py` (the
++frozen-field list, the refused-flag table, the env launch flags, the bypass-launch rule, the resume
++policy check and its message). Research 04 §3.4.6 and trap R04.1. Closed before writing.
++Evidence: none.
++
++What it does (own words): when the daemon creates a session it writes down, once, how that session
++was launched: working directory, model, provider, reasoning effort, toolsets, the turn cap,
++preloaded skills, checkpoints, auto-approve (yolo), accepting hooks, ignoring rules files, the base
++URL and *which* key to use (a reference such as an env var or secret name — never the key), safe
++mode, ignoring user config and passing the session id to the model. Those values belong to the session, not to the daemon, and do not
++change for the session's life. A later resume may repeat any of them with the same value (scripts
++re-run one command line), but a different value is refused with `policy_conflict` naming the field
++(R04.1). A launch that ignores the user's config (safe mode or ignore-user-config) reads no profile
++defaults, so it must name both the model and the provider. The launch flags that a person can also
++set through environment variables (`INDUS_YOLO_MODE`, `INDUS_IGNORE_RULES`, `INDUS_SAFE_MODE`,
++`INDUS_IGNORE_USER_CONFIG`, `INDUS_ACCEPT_HOOKS`) are read on the client side into the session's
++creation request and cleared from the environment used to reach or start the daemon, so they never
++leak into the daemon (and so into every other session).
++
++Inputs → outputs:
++- `CreationPolicy.from_launch(mapping)` → a validated policy (types checked, lists normalised and
++  de-duplicated, an `api_key` dropped, a credential-shaped key reference or a base URL with user
++  info refused `policy_refused`); `record()` / `from_record()` round trip the JSON kept in the
++  session's `model_config["launch"]` (the same key the in-process CLI uses).
++- `check_launch(policy)` → raises `PolicyRefused` (`bypass_needs_route`, naming the missing field).
++- `check_resume(frozen, requested)` → None, or `PolicyConflict(fields)` (raised by `require_same`):
++  each field the resume names whose value differs from the frozen one.
++- `launch_flags_from_env(env)` → `{field: True}` for each truthy launch env var;
++  `scrub_launch_env(env)` → a copy without them.
++- `stored_policy(row)` / `policy_patch(policy)` → read / write helpers over `model_config`.
++
++Files: `src/indus/service/creation_policy.py`, `tests/unit/service/test_creation_policy.py`;
++shared: `src/indus/foundation/errors.py` (two `runtime.policy_*` codes),
++`src/indus/service/daemon_host.py` (checks on create / resume).
++
++Edge cases / failure modes:
++- `max_turns=0` is a value, not "absent"; `False` for a switch means "not asked for";
++- toolsets / skills given as a comma string or a list, with blanks and duplicates;
++- cwd compared after resolving (`/a/./b` equals `/a/b`); a relative cwd is refused;
++- a resume naming nothing → accepted; naming a field the session never froze → conflict (the
++  explicit value differs from "the configured default");
++- an API key in the launch mapping is never stored nor compared; a key reference that looks like a
++  credential, or a base URL carrying `user:pass@`, is refused before anything is stored;
++- unknown fields in a launch mapping are refused (`invalid_field`) so a typo is not frozen silently;
++  unknown fields in a stored record are ignored (forward compatible).
++
++Our design differences / decisions:
++- One frozen record shared with the in-process CLI (`model_config["launch"]`), so a session
++  created by `indus --local` and resumed through the daemon is checked against the same values.
++- `key_ref` instead of an API key; worktree stays CLI-only (P17-18 refuses it in attach mode).
++- The bypass rule needs model **and** provider (the reference only asks for the model).
++- Model aliases are compared as typed; resolving an alias to the frozen id is left to the CLI
++  attach task (P17-18) which knows the alias table.
++
++Tests we will write:
++- resume with the same model OK; a different model → `policy_conflict{field: model}`; several
++  differing fields listed in order; cwd normalised; lists compared as sets;
++- ignore-config / safe-mode launch without provider (or model) refused;
++- secrets: an `api_key` never appears in `record()` or the stored JSON; a credential-shaped
++  `key_ref` and a base URL with user info refused; the refusal text does not echo the value;
++- env: truthy launch vars become flags; scrub removes exactly them; other vars kept;
++- record round trip; unknown launch field refused; unknown record field ignored.
++
++## Decisions for the lead
++- Error codes `runtime.policy_conflict` and `runtime.policy_refused` added to `ERROR_CODES`
++  (P17-25 maps `policy_conflict` onto the protocol table).
++- The protocol's `SessionCreateParams` is not extended here (P17-25); the host takes the policy
++  as a Python argument and the RPC layer (P17-13/17) builds it.
++
++Compare checklist (filled after the rewrite; reopened `hermes_cli/gateway_chat.py`):
++- [x] every frozen field is handled (test: `test_creation_policy.py::test_every_frozen_field_conflicts`)
++- [x] gap found: `pass_session_id` is frozen in the reference — added to `FROZEN_FIELDS`, pinned
++  by the test above and `test_the_cli_launch_record_reads_as_a_policy`
++- [x] repeated values on resume are accepted (test: `test_creation_policy.py::test_resume_with_same_values_is_accepted`)
++- [x] `max_turns=0` is a value (test: `test_creation_policy.py::test_max_turns_zero_is_a_value`)
++- [x] API key never durable nor compared (test: `test_creation_policy.py::test_api_key_is_never_stored`)
++- [x] env launch flags ride the creation request and are cleared (tests: `test_launch_env_vars_become_creation_flags`, `test_scrub_removes_only_launch_vars`)
++- [x] bypass launch must name the route (test: `test_a_bypass_launch_must_name_model_and_provider`)
++- Deliberate differences: bypass needs model **and** provider; unknown launch fields are refused;
++  credential-shaped key references and base URLs with user info are refused; a field never
++  frozen counts as "default", so an explicit value on resume conflicts (the reference compares
++  against an empty record the same way).
++- Not taken: alias resolution of `-m <alias>` against the frozen resolved id (P17-18); the
++  refused-flag table and hints (P17-18); `client_env` forwarding (P17-18/24); freezing `source`
++  (the host keeps the source in memory; a resume names its surface).
++
++## Status
++
++Done (2026-10-20). Shared edits: `foundation/errors.py` (`runtime.policy_conflict`,
++`runtime.policy_refused`), `docs/internals/traps-ledger.md` (R04.1 rows). The host checks the
++policy on create and resume (P17-08). Applying the frozen fields beyond cwd / model / toolsets to
++the agent is the daemon's agent factory's job (it receives the record in the session row).
+diff --git a/docs/notes/P17/daemon-host.md b/docs/notes/P17/daemon-host.md
+new file mode 100644
+index 0000000..3773038
+--- /dev/null
++++ b/docs/notes/P17/daemon-host.md
+@@ -0,0 +1,185 @@
++# Task: Daemon session host with many viewers (P17-08) Phase: 17 Owner: wave-25 builder K3
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `gateway/session_authority.py`
++(viewer attach / detach and ownership only: the live-session record, `attach`, `detach`, the
++retire-on-overflow hook, the pending-close map), `tui_gateway/session_registry.py` (skim: how a
++live session is looked up, built and torn down). Research 05 §3.2 mode C and the shared channel,
++trap R05.18; research 08 §3.9 (skim). Closed before writing.
++Evidence: none.
++
++What it does (own words): inside the per-profile daemon one object hosts every session for every
++surface. A surface (classic CLI, TUI, desktop, ACP client, web dashboard, a messaging chat) creates
++or resumes a session and then *watches* it as a viewer: a connection id, the kind of surface and
++what it can render. A session can have any number of viewers, including none. Closing a client only
++removes its viewer; whatever turn is running keeps running, finishes and is stored, and the
++admitted queue keeps draining. Every event of a session is numbered once by the daemon's event log
++and handed to every viewer of that session in that order, so two viewers see the same stream. A
++session opened by an ACP client is the exception that ends: when its last viewer leaves and nothing
++is running or queued it is closed; if work is still running it is closed when that work drains,
++unless a viewer came back meanwhile. Every session is closed when the daemon stops. When a
++surface sends input while a turn runs and does not say what it wants, the TUI's input is queued
++behind the turn and every other surface's input interrupts it (R05.18); either way the new input
++is admitted durably first, so it is never lost.
++
++The host is where the P17 wave-1 pieces meet (the wiring owed to P17-08):
++- each input goes through the admission service (P17-02); the host is its turn runner: it binds
++  the ticket's interrupt and steer hooks to the session, honours a stop that arrived before the
++  hooks were bound (the turn is not started), reloads the session when the lease was only won
++  after waiting for another process (`HeldLease.waited`), starts the agent's turn with the ledger's
++  generation, feeds the liveness meter from the session's events and maps the turn's exit to the
++  ledger outcome;
++- a hard interrupt (and a fenced `stop`) also stops the session's background subagents;
++- one `EventLog` per daemon: its flusher task runs while the host is open and its epoch is the
++  `replay_epoch` a `gateway.ready` frame will carry;
++- one `RequestBook` per session (`emit` into the event log, `generation` = the fence's running
++  generation) handed to the session's broker (`ServerRequestBroker(book=)`), and
++  `fences.bind_requests(session, book, broker.answer)`; `fences.forget` / `log.forget` on close;
++- the book's `session_id` follows a rotating compaction to the child id.
++
++Inputs → outputs:
++- `DaemonSessionHost.open(service, store, instance_id=…, leases=, liveness=, gate=, on_blocked=,
++  event_log=)` → an open host (owner epoch begun, flusher running). `aclose()` closes everything.
++- `create(params, source=, policy=, viewer=)` → `SessionCreateResult`; `resume(session_id,
++  policy=, viewer=)` → `SessionResumeResult`.
++- `attach(session_id, viewer)` → `Attachment(session_id, replay_epoch, last_seq, reoffered)`;
++  `detach(session_id, connection_id)`; `detach_connection(connection_id)` (a socket closed).
++- `submit(session_id, text, principal=, request_id=, connection_id=, surface=, busy=)` → the
++  admission `Receipt`; `receipt`, `wait`, `stop`, `discard_unknown`.
++- `interrupt(session_id, generation, hard=)` / `steer(session_id, generation, text)` /
++  `respond(session_id, request_id, generation, answer)` → the fence's result values
++  (`ControlApplied` / `Responded` / `RequestNotOpen` / `StaleGeneration`); `refuse(session_id,
++  connection_id, request_id, code)` for a viewer's error answer.
++- `events_since(session_id, epoch, cursor, connection_id=)` → `Replay` or `ReplayGap` (and the
++  still-open requests are offered again to that viewer).
++- Viewers receive `send(wire_event_dict)` for every numbered event and `offer(Offer)` for server
++  requests they can render.
++
++Files: `src/indus/service/daemon_host.py`, `src/indus/service/viewers.py`,
++`tests/unit/service/test_daemon_host.py`; shared: `src/indus/service/session_service.py` (seams:
++broker factory, turn door, `start_admitted`, `reload`, `interrupt(by_system=)`, `events_since` /
++`receipt` trivial in-process forms), `src/indus/service/admissions.py` (`TurnTicket.lease_waited`).
++
++Edge cases / failure modes:
++- viewer detaches mid-turn → the turn completes, its rows are stored, later viewers replay it;
++- the same connection attaches twice → replaced, not duplicated; a viewer of another session
++  never receives this session's events;
++- a send that raises → logged, that viewer skipped, the others still get the event in order;
++- stop before the runner bound its hooks → the turn never starts; settled as the stop reason says;
++- a runner with no attached session (daemon restarted, queued input) → the session is resumed
++  without a viewer first; a session that cannot be found settles `failed` with a clean detail;
++- ACP last detach while running or queued → closed only after the queue drains; a viewer that
++  attaches again in between cancels the close;
++- a rotating compaction moves the session id: the host keeps its key (ledger, fences, log, viewers
++  stay addressed by the first id), the book and broker carry the new id on their events;
++- steer text a turn never consumed, background-subagent results and host injections (goals, loops)
++  are admitted through the ledger as new inputs instead of starting turns behind its back.
++
++Our design differences / decisions:
++- Our names (`DaemonSessionHost`, `ViewerRegistry`, `Viewer`, `Attachment`). The host composes the
++  P04 `SessionService` (agent building, transcript, titles, compaction aliases, plugins, MCP) and
++  adds the daemon's door, fences, log and books; it exposes the service's call shapes with the
++  daemon's controls (generation-checked) instead of subclassing it.
++- Busy modes are `queue` and `interrupt`; an explicit mode wins; otherwise the submitting viewer's
++  surface decides (TUI queue, all others interrupt).
++- The session's per-session file lock (P02) is kept while the daemon has a session attached, beside
++  the durable lease, until P17-18 moves `--local` onto the lease (then it can be retired).
++- Reload after a contended lease rebuilds the session's agent from the store (and follows the
++  lineage tip if the other process compacted it).
++
++Tests we will write:
++- detach mid-turn: the turn completes and is persisted; a later replay shows it;
++- two viewers receive every event of the turn in the same seq order; a third viewer of another
++  session receives none; a raising viewer does not stop the others;
++- ACP session: ends after the last detach when idle; stays while a turn runs and ends when it
++  drains; a reattach cancels the pending close; a CLI session is never ended by detach;
++- busy defaults: TUI queues behind a running turn, CLI interrupts it (both inputs admitted);
++- fenced controls: interrupt with an old generation is stale; hard interrupt stops subagents;
++- approval offered to both viewers, answered by one, `request.settled` reaches both;
++- stop before bind never starts the agent; lease waited → reload called;
++- steer leftovers and injected turns go through the admission ledger.
++
++## Decisions for the lead
++- The host's key for a session is the id it was first attached under; ledger rows, fences, the
++  event log and viewers stay keyed by it across rotating compactions (cursors stay valid). The
++  events themselves carry the current id. Change by re-keying on `on_session_moved`.
++- A session's frozen creation policy (P17-09) is checked on create/resume; applying fields the
++  P04 service does not apply yet (provider, reasoning, max turns, skills, safety switches) is the
++  agent factory's job: the record rides `session_fields["model_config"]["launch"]`.
++- Server-request kinds an attached viewer can render are its capabilities that name request kinds;
++  `request.decline` advertises the 4404 decline.
++- With no viewer attached a new server request is unsupported at once (P17-07's book rule).
++- Reload after a contended lease (`HeldLease.waited`) rebuilds the agent with the same options
++  and closes the old one, which runs the session's task cleanups (background processes of that
++  session end); plugins' `session_started` is not run again. Alternative: a lighter agent-level
++  refresh (prompt, context meter, todo) once the core offers one.
++- The P02 per-session file lock stays held while the daemon has a session attached (beside the
++  durable lease) until P17-18 moves `--local` onto the lease.
++- `create` writes the session row at once only when a policy is given (to freeze it); otherwise
++  the first turn writes it, as in-process. The session's source is kept in memory.
++- The host owns the service once opened: `aclose` also closes the service.
++- A busy-mode interrupt is soft and only targets the turn running when the input was admitted.
++
++## Published interface (for P17-10..14 and later surfaces)
++
++`indus.service.daemon_host.DaemonSessionHost` (service layer; gateway and cli import it, never the
++reverse). Every method runs on the daemon loop.
++
++```python
++host = await DaemonSessionHost.open(service, store, instance_id=..., leases=None, liveness=None,
++                                    gate=None, on_blocked=None, event_log=None, offload=None)
++host.replay_epoch -> str                     # gateway.ready.replay_epoch
++host.event_log / host.fences / host.viewers / host.admissions / host.service
++await host.create(params=None, *, source="cli", policy=None, viewer=None) -> SessionCreateResult
++await host.resume(session_id, *, policy=None, source=None, viewer=None) -> SessionResumeResult
++host.attach(session_id, viewer) -> Attachment(session_id, key, replay_epoch, last_seq, reoffered)
++await host.detach(session_id, connection_id) -> bool
++await host.detach_connection(connection_id) -> list[str]           # socket closed
++await host.submit(session_id, text, *, principal, request_id, connection_id=None, surface=None,
++                  busy=None) -> Receipt                             # LedgerRefusal on refusal
++await host.receipt(admission_id) / host.wait(admission_id) -> Receipt
++await host.discard_unknown(admission_id, expected_generation) -> Receipt
++host.interrupt(session_id, generation, *, hard=False) -> ControlApplied | StaleGeneration
++host.steer(session_id, generation, text) -> ControlApplied | StaleGeneration
++host.respond(session_id, request_id, generation, answer) -> Responded | RequestNotOpen | StaleGeneration
++host.refuse(session_id, connection_id, request_id, code) -> bool    # -32601 / 4404 answers
++await host.stop(session_id, admission_id) -> StopResult
++host.events_since(session_id, epoch, cursor, *, connection_id=None) -> Replay | ReplayGap
++host.state(session_id) -> SessionState(key, session_id, source, replay_epoch, last_seq, running,
++                                        viewers, open_requests, close_pending)
++host.key_of(session_id) -> str | None; host.hosted() -> list[str]
++await host.close_session(session_id); await host.aclose()          # aclose also closes the service
++```
++
++`indus.service.viewers.Viewer.of(connection_id, surface, capabilities=(), *, send, offer=None)`:
++`surface` ∈ `cli tui gui acp web messaging`; capabilities naming request kinds (`approval`,
++`clarify`, `sudo`, `secret`) are what it renders (only with an `offer` hook); `request.decline`
++allows 4404. `send(dict)` gets each numbered event's wire form (`seq`, `replay_epoch` included);
++`offer(Offer)` gets server requests (`Offer.to_wire()`). Unknown session ids raise
++`ProtocolError(SESSION_NOT_FOUND)`; a resume that changes a frozen value raises
++`creation_policy.PolicyConflict` (`.to_data()` is the error data); a bad launch raises
++`PolicyRefused`.
++
++Compare checklist (filled after the rewrite; reopened `gateway/session_authority.py` attach /
++detach and the ACP close it calls, `tui_gateway/session_registry.py`):
++- [x] viewer attach is idempotent per connection (test: `test_daemon_host.py::test_reattach_same_connection_is_one_viewer`)
++- [x] attach re-offers open requests to the viewer (test: `test_daemon_host.py::test_an_approval_reaches_both_viewers_and_settles_once`)
++- [x] detach of the last viewer of an ACP session ends it only when idle (test: `test_daemon_host.py::test_acp_session_ends_after_last_detach_only_when_idle`)
++- [x] a reattach cancels a pending close (test: `test_daemon_host.py::test_reattach_cancels_pending_acp_close`)
++- [x] detach never stops a turn (test: `test_daemon_host.py::test_detach_mid_turn_completes_and_persists`)
++- [x] gap found: the reference ends the ACP session's stored row, not only its live entry — fixed:
++  the row is ended `acp_close`, pinned by the ACP test above.
++- Deliberate differences: subscriptions are keyed by connection id (one per connection and
++  session), not by a minted subscription id; see the decisions above.
++- Not taken: per-actor authorisation (`authorize(actor, ref, capability)`; P17-13/14 check the
++  actor before any host call), a viewer-supplied end reason on the last detach (CLI/TUI close
++  reasons; P17-18/19), overflow retirement of a slow viewer (P17-14), editor MCP release on last
++  detach (P19/P20), ending unviewed ACP sessions found only in the store at shutdown (they are
++  unloaded, not ended).
++
++## Status
++
++Done (2026-10-20). Shared edits: `service/session_service.py` (daemon seams, in-process
++`events_since` / `receipt`), `service/admissions.py` (`TurnTicket.lease_waited`),
++`docs/internals/traps-ledger.md` (R05.18 rows). Handed on: P17-13/14 build viewers from WS
++connections and call the host; P17-22 routes messaging through `submit`; P17-25 declares the new
++events and error codes.
+diff --git a/src/indus/foundation/errors.py b/src/indus/foundation/errors.py
+index d6c9b27..106c4eb 100644
+--- a/src/indus/foundation/errors.py
++++ b/src/indus/foundation/errors.py
+@@ -71,6 +71,8 @@ ERROR_CODES: dict[str, str] = {
+     "runtime.admission_started": "the input has already started or been handed to a running turn",
+     "runtime.session_idle": "no turn is running in this session",
+     "runtime.retired": "the session was deleted; it takes no new input",
++    "runtime.policy_conflict": "a resume named launch settings that differ from the session's",
++    "runtime.policy_refused": "launch settings that cannot be frozen into a session as given",
+     "provider.error": "model provider problem",
+     "provider.invalid_profile": "a provider profile has a missing or invalid field",
+     "provider.invalid_base_url": "a provider base URL is not a usable http(s) URL",
+diff --git a/src/indus/service/admissions.py b/src/indus/service/admissions.py
+index 10a94c0..16131a4 100644
+--- a/src/indus/service/admissions.py
++++ b/src/indus/service/admissions.py
+@@ -151,6 +151,9 @@ class TurnTicket:
+         self._steer: Callable[[str], bool] | None = None
+         self.lease_wait = WaitInterrupt()
+         """Ends this turn's wait for the session lease when the turn is stopped first."""
++        self.lease_waited = False
++        """True when the lease was won only after another holder was seen: that holder may have
++        changed the session, so the runner reloads it before running (P17-08)."""
+ 
+     @property
+     def session_id(self) -> str:
+@@ -528,6 +531,7 @@ class AdmissionService:
+                     outcome = self._not_run(ticket, got)
+                 else:
+                     lease = got
++                    ticket.lease_waited = got.waited
+                     lease.start(on_lost=ticket.interrupt)
+             if lease is not None or self.leases is None:
+                 meter.begin(ticket.generation)
+diff --git a/src/indus/service/creation_policy.py b/src/indus/service/creation_policy.py
+new file mode 100644
+index 0000000..f07fdfc
+--- /dev/null
++++ b/src/indus/service/creation_policy.py
+@@ -0,0 +1,369 @@
++"""The frozen creation policy: how a daemon-hosted session was launched, fixed for life (P17-09).
++
++When the daemon creates a session it records the launch choices that belong to that session and
++not to the daemon: working directory, model, provider, reasoning effort, toolsets, turn cap,
++preloaded skills, checkpoints, the safety switches (yolo, accept-hooks, ignore-rules, safe mode,
++ignore-user-config), passing the session id to the model, the base URL and a *reference* to the
++key to use. A resume may name the same
++values again; naming a different one is refused with ``policy_conflict`` and the field (R04.1).
++
++- **Secrets never freeze.** An ``api_key`` handed in with the launch is dropped (never stored, never
++  compared). ``key_ref`` names where the key lives (an env var or secret name); a value that looks
++  like a credential is refused, as is a base URL carrying user info.
++- **Bypass launches.** Safe mode and ignore-user-config read no profile defaults, so such a launch
++  must name both the model and the provider (``check_launch``).
++- **Launch env vars** (``INDUS_YOLO_MODE`` and friends) are turned into creation fields on the
++  client side (``launch_flags_from_env``) and removed from the environment used to reach or start
++  the daemon (``scrub_launch_env``): they belong to one session, not to the daemon.
++
++The record lives in the session row's ``model_config["launch"]``, the key the in-process CLI uses
++for the same purpose, so both hosts check one record. ``None`` (or an empty list) means "the
++configured default"; ``False`` for a switch means it was not asked for; ``max_turns=0`` is a value.
++"""
++
++from __future__ import annotations
++
++import os
++import re
++from collections.abc import Iterable, Mapping
++from dataclasses import dataclass, fields
++from typing import Any, ClassVar, Final, Literal, cast
++from urllib.parse import urlsplit
++
++from indus.foundation.errors import IndusError
++from indus.foundation.redact import redact_text
++from indus.state import sessions
++
++__all__ = [
++    "BYPASS_FIELDS",
++    "FROZEN_FIELDS",
++    "LAUNCH_ENV",
++    "LAUNCH_KEY",
++    "CreationPolicy",
++    "PolicyConflict",
++    "PolicyRefused",
++    "check_launch",
++    "check_resume",
++    "launch_flags_from_env",
++    "policy_patch",
++    "require_same",
++    "scrub_launch_env",
++    "stored_policy",
++]
++
++LAUNCH_KEY: Final = "launch"
++"""The ``model_config`` key holding the record (shared with ``cli.session_select``)."""
++
++FROZEN_FIELDS: Final[tuple[str, ...]] = (
++    "cwd",
++    "model",
++    "provider",
++    "reasoning",
++    "toolsets",
++    "max_turns",
++    "skills",
++    "checkpoints",
++    "yolo",
++    "accept_hooks",
++    "ignore_rules",
++    "base_url",
++    "key_ref",
++    "safe_mode",
++    "ignore_user_config",
++    "pass_session_id",
++)
++
++BYPASS_FIELDS: Final[tuple[str, ...]] = ("safe_mode", "ignore_user_config")
++"""Switches under which the launch reads no profile defaults."""
++
++LAUNCH_ENV: Final[Mapping[str, str]] = {
++    "INDUS_YOLO_MODE": "yolo",
++    "INDUS_IGNORE_RULES": "ignore_rules",
++    "INDUS_SAFE_MODE": "safe_mode",
++    "INDUS_IGNORE_USER_CONFIG": "ignore_user_config",
++    "INDUS_ACCEPT_HOOKS": "accept_hooks",
++}
++"""Launch-option env vars and the creation field each one sets."""
++
++_DROPPED: Final = frozenset({"api_key"})
++_SWITCHES: Final = frozenset(
++    {
++        "checkpoints",
++        "yolo",
++        "accept_hooks",
++        "ignore_rules",
++        "safe_mode",
++        "ignore_user_config",
++        "pass_session_id",
++    }
++)
++_TEXTS: Final = frozenset({"cwd", "model", "provider", "reasoning", "base_url", "key_ref"})
++_LISTS: Final = frozenset({"toolsets", "skills"})
++_TRUTHY: Final = frozenset({"1", "true", "yes", "on"})
++_REF: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_.:/-]{0,127}")
++_MAX_TEXT: Final = 4096
++
++type RefusalReason = Literal[
++    "invalid_field", "invalid_value", "secret_in_policy", "bypass_needs_route"
++]
++
++
++class PolicyRefused(IndusError):
++    """A launch policy that cannot be frozen as given (``reason`` names why, ``field`` where)."""
++
++    default_code = "runtime.policy_refused"
++
++    def __init__(self, reason: RefusalReason, field: str) -> None:
++        self.reason: RefusalReason = reason
++        self.field = field
++        super().__init__(self.default_code, f"{reason} ({field})")
++
++
++class PolicyConflict(IndusError):
++    """A resume named launch values that differ from the session's frozen ones."""
++
++    default_code = "runtime.policy_conflict"
++    code_name: ClassVar[str] = "policy_conflict"
++
++    def __init__(self, conflicts: Iterable[str]) -> None:
++        self.fields: tuple[str, ...] = tuple(conflicts)
++        if not self.fields:
++            raise ValueError("a policy conflict names at least one field")
++        names = ", ".join(self.fields)
++        super().__init__(
++            self.default_code,
++            f"this session was created with other launch settings ({names}); resume without "
++            "them, or start a new session",
++        )
++
++    @property
++    def field(self) -> str:
++        """The first differing field."""
++        return self.fields[0]
++
++    def to_data(self) -> dict[str, Any]:
++        """The ``error.data`` of the protocol refusal."""
++        return {"reason": self.code_name, "field": self.field, "fields": list(self.fields)}
++
++
++def _text(name: str, value: object) -> str:
++    if not isinstance(value, str) or not value.strip() or len(value) > _MAX_TEXT:
++        raise PolicyRefused("invalid_value", name)
++    return value.strip()
++
++
++def _names(name: str, value: object) -> tuple[str, ...]:
++    """A list given as a comma string or a sequence: stripped, blanks and repeats dropped."""
++    if isinstance(value, str):
++        raw: list[object] = list(value.split(","))
++    elif isinstance(value, list | tuple):
++        raw = []
++        for item in value:  # pyright: ignore[reportUnknownVariableType]
++            if not isinstance(item, str):
++                raise PolicyRefused("invalid_value", name)
++            raw.extend(item.split(","))
++    else:
++        raise PolicyRefused("invalid_value", name)
++    names = [str(part).strip() for part in raw]
++    return tuple(dict.fromkeys(n for n in names if n))
++
++
++def _looks_secret(value: str) -> bool:
++    return redact_text(value) != value
++
++
++def _check_cwd(value: str) -> str:
++    if not os.path.isabs(value):
++        raise PolicyRefused("invalid_value", "cwd")
++    return os.path.normpath(value)
++
++
++def _check_base_url(value: str) -> str:
++    try:
++        parts = urlsplit(value)
++    except ValueError:
++        raise PolicyRefused("invalid_value", "base_url") from None
++    if parts.scheme not in ("http", "https") or not parts.hostname:
++        raise PolicyRefused("invalid_value", "base_url")
++    if parts.username is not None or parts.password is not None or _looks_secret(value):
++        raise PolicyRefused("secret_in_policy", "base_url")
++    return value
++
++
++def _check_key_ref(value: str) -> str:
++    if _looks_secret(value) or not _REF.fullmatch(value):
++        raise PolicyRefused("secret_in_policy", "key_ref")
++    return value
++
++
++@dataclass(frozen=True, slots=True)
++class CreationPolicy:
++    """A session's launch choices (see the module notes)."""
++
++    cwd: str | None = None
++    model: str | None = None
++    provider: str | None = None
++    reasoning: str | None = None
++    toolsets: tuple[str, ...] | None = None
++    max_turns: int | None = None
++    skills: tuple[str, ...] = ()
++    checkpoints: bool = False
++    yolo: bool = False
++    accept_hooks: bool = False
++    ignore_rules: bool = False
++    base_url: str | None = None
++    key_ref: str | None = None
++    """Where the key lives (an env var or secret name), never the key itself."""
++    safe_mode: bool = False
++    ignore_user_config: bool = False
++    pass_session_id: bool = False
++
++    @property
++    def bypass(self) -> bool:
++        """True when the launch reads no profile defaults (safe mode, ignore-user-config)."""
++        return self.safe_mode or self.ignore_user_config
++
++    @classmethod
++    def from_launch(cls, launch: Mapping[str, Any]) -> CreationPolicy:
++        """Validate and normalise the fields a launch names (unknown names are refused)."""
++        return cls(**_parse(launch, strict=True))
++
++    @classmethod
++    def from_record(cls, record: Mapping[str, Any]) -> CreationPolicy:
++        """A stored record; unknown or malformed entries are ignored."""
++        values: dict[str, Any] = {}
++        for name in FROZEN_FIELDS:
++            if name not in record:
++                continue
++            try:
++                values.update(_parse({name: record[name]}, strict=False))
++            except PolicyRefused:
++                continue
++        return cls(**values)
++
++    def given(self) -> dict[str, Any]:
++        """The fields that differ from "configured default / not asked for"."""
++        out: dict[str, Any] = {}
++        for name in FROZEN_FIELDS:
++            value = getattr(self, name)
++            if value is None or value is False or (value == () and name != "toolsets"):
++                continue  # an empty toolset selection is a choice; no skills is the default
++            out[name] = value
++        return out
++
++    def record(self) -> dict[str, Any]:
++        """The JSON record kept in ``model_config["launch"]`` (every field, lists as lists)."""
++        out: dict[str, Any] = {}
++        for item in fields(self):
++            value: object = getattr(self, item.name)
++            if isinstance(value, tuple):
++                value = list(cast(tuple[str, ...], value))
++            out[item.name] = value
++        return out
++
++
++def _parse(launch: Mapping[str, Any], *, strict: bool) -> dict[str, Any]:
++    values: dict[str, Any] = {}
++    for name, value in launch.items():
++        if name in _DROPPED:
++            continue  # a key is never frozen, compared or stored
++        if name not in FROZEN_FIELDS:
++            if strict:
++                raise PolicyRefused("invalid_field", name if len(name) <= 64 else name[:64])
++            continue
++        if value is None:
++            continue
++        if name in _SWITCHES:
++            if not isinstance(value, bool):
++                raise PolicyRefused("invalid_value", name)
++            values[name] = value
++        elif name in _LISTS:
++            names = _names(name, value)
++            if name == "toolsets" or names:  # an empty toolset selection is a choice
++                values[name] = names
++        elif name == "max_turns":
++            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
++                raise PolicyRefused("invalid_value", name)
++            values[name] = value
++        else:
++            assert name in _TEXTS
++            text = _text(name, value)
++            if name == "cwd":
++                text = _check_cwd(text)
++            elif name == "base_url":
++                text = _check_base_url(text)
++            elif name == "key_ref":
++                text = _check_key_ref(text)
++            values[name] = text
++    return values
++
++
++def check_launch(policy: CreationPolicy) -> None:
++    """A bypass launch must name both the model and the provider (it reads no defaults)."""
++    if not policy.bypass:
++        return
++    for name in ("model", "provider"):
++        if not getattr(policy, name):
++            raise PolicyRefused("bypass_needs_route", name)
++
++
++def _same(name: str, frozen: object, requested: object) -> bool:
++    if name in _LISTS:
++        return sorted(frozen or ()) == sorted(requested or ())  # pyright: ignore[reportUnknownArgumentType, reportArgumentType]
++    return frozen == requested
++
++
++def check_resume(frozen: CreationPolicy, requested: CreationPolicy) -> PolicyConflict | None:
++    """Each field ``requested`` names whose value is not the frozen one, as a conflict."""
++    differs = [
++        name
++        for name, value in requested.given().items()
++        if not _same(name, getattr(frozen, name), value)
++    ]
++    return PolicyConflict(differs) if differs else None
++
++
++def require_same(frozen: CreationPolicy | None, requested: CreationPolicy | None) -> None:
++    """Raise ``PolicyConflict`` when a resume changes a frozen value (nothing frozen counts as
++    "the configured default", so any explicit value differs)."""
++    if requested is None:
++        return
++    conflict = check_resume(frozen or CreationPolicy(), requested)
++    if conflict is not None:
++        raise conflict
++
++
++# -- environment ----------------------------------------------------------------------------------
++
++
++def launch_flags_from_env(env: Mapping[str, str]) -> dict[str, bool]:
++    """``{field: True}`` for each launch env var set to a truthy value."""
++    return {
++        field: True
++        for name, field in LAUNCH_ENV.items()
++        if env.get(name, "").strip().lower() in _TRUTHY
++    }
++
++
++def scrub_launch_env(env: Mapping[str, str]) -> dict[str, str]:
++    """A copy of ``env`` without the launch-option vars (they belong to one session)."""
++    return {name: value for name, value in env.items() if name not in LAUNCH_ENV}
++
++
++# -- storage --------------------------------------------------------------------------------------
++
++
++def stored_policy(row: Mapping[str, Any] | None) -> CreationPolicy | None:
++    """The frozen policy of a session row (``sessions.get``), or None when none was recorded."""
++    if row is None:
++        return None
++    config = sessions.parse_model_config(row.get("model_config"))
++    record = config.get(LAUNCH_KEY)
++    if not isinstance(record, Mapping):
++        return None
++    return CreationPolicy.from_record(record)  # pyright: ignore[reportUnknownArgumentType]
++
++
++def policy_patch(policy: CreationPolicy) -> dict[str, Any]:
++    """The ``model_config`` patch that records ``policy``."""
++    return {LAUNCH_KEY: policy.record()}
+diff --git a/src/indus/service/daemon_host.py b/src/indus/service/daemon_host.py
+new file mode 100644
+index 0000000..5b6d215
+--- /dev/null
++++ b/src/indus/service/daemon_host.py
+@@ -0,0 +1,791 @@
++"""The daemon session host: every session of the profile, for every surface, in one place (P17-08).
++
++``DaemonSessionHost`` runs inside the per-profile daemon. It composes the P04 ``SessionService``
++(agents, transcripts, titles, compaction, plugins, MCP) with the P17 runtime pieces, and exposes
++the same call shapes with the daemon's rules:
++
++- **Viewers.** A surface creates or resumes a session and attaches as a viewer (``Viewer``:
++  connection id, surface kind, capabilities). A session has zero or more viewers. Closing a client
++  only detaches it (``detach`` / ``detach_connection``): a running turn finishes and is stored, the
++  queue keeps draining. A session whose source is ``acp`` ends when its last viewer leaves and
++  nothing runs or waits in its queue (its row is ended ``acp_close``); with work left it ends
++  when the queue drains, unless a viewer comes back first. ``aclose`` unloads every session.
++- **Events.** Every event of a session passes through the daemon's one ``EventLog`` (seq per
++  session, ``replay_epoch`` per daemon start) and is handed to each viewer of that session in log
++  order. ``events_since`` replays from a cursor (or reports a gap) and re-offers the still-open
++  server requests to the asking viewer.
++- **Input.** ``submit`` admits the text into the session's durable FIFO (``AdmissionService``) and
++  returns its receipt. When a turn runs and the caller names no busy mode, the submitting surface
++  decides (R05.18): the TUI queues, every other surface interrupts the running turn — after the new
++  input is admitted, so it is never lost. Turns the service would start on its own (host
++  injections, background-subagent results, undelivered steer text) are admitted the same way.
++- **Turns.** The host is the admission service's runner: it starts the agent's turn under the
++  ledger's generation, binds the ticket's interrupt and steer hooks (a stop that came first means
++  the turn never starts), reloads the session when the lease was won only after waiting for
++  another process, feeds the liveness meter from the session's events and maps the turn's exit
++  onto the ledger outcome. A hard interrupt (and a fenced ``stop``) also stops the session's
++  background subagents.
++- **Controls.** ``interrupt`` / ``steer`` / ``respond`` / ``stop`` go through the generation fences
++  (P17-05) and return their result values (``StaleGeneration`` for a control aimed at another
++  turn). Server requests live in one ``RequestBook`` per session (P17-07), handed to the session's
++  broker; ``refuse`` records a viewer's error answer.
++- **Policy.** ``create`` freezes the launch policy (P17-09) into the session row; ``resume`` with a
++  policy that changes a frozen value is refused (``PolicyConflict``).
++
++Sessions are keyed by the id they were first attached under: the ledger, the fences, the event log
++and the viewers stay addressed by it when a rotating compaction moves the session to a child id
++(the old id keeps working for every call, and events carry the current id).
++
++Every method runs on the daemon's event loop.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import logging
++import secrets
++import sqlite3
++from collections.abc import Awaitable, Callable, Mapping
++from dataclasses import dataclass, field
++from typing import Any, Final
++
++from indus.core.events import EventSink
++from indus.core.turn_state import TurnResult
++from indus.foundation.blocking import run_blocking
++from indus.protocol.errors import SESSION_NOT_FOUND, TEXT_EMPTY
++from indus.protocol.events import EventBase, ExitReason
++from indus.protocol.methods import (
++    ProtocolError,
++    SessionCreateParams,
++    SessionCreateResult,
++    SessionResumeResult,
++)
++from indus.protocol.requests_port import AnswerModel
++from indus.service.admissions import (
++    CANCELLED,
++    INTERRUPTED,
++    AdmissionService,
++    Offload,
++    Receipt,
++    TurnOutcome,
++    TurnTicket,
++)
++from indus.service.broker import ServerRequestBroker
++from indus.service.creation_policy import (
++    CreationPolicy,
++    PolicyRefused,
++    check_launch,
++    policy_patch,
++    require_same,
++    stored_policy,
++)
++from indus.service.event_log import EventLog, LoggedEvent, Replay, ReplayGap
++from indus.service.fences import (
++    ControlApplied,
++    GenerationFences,
++    RequestNotOpen,
++    Responded,
++    StaleGeneration,
++    StopResult,
++)
++from indus.service.request_redelivery import RequestBook
++from indus.service.session_service import SessionService
++from indus.service.turn_lease import TurnLeases
++from indus.service.turn_liveness import LivenessSettings
++from indus.service.viewers import BUSY_MODES, BusyMode, Viewer, ViewerRegistry, busy_default
++from indus.state import runtime_ledger as ledger
++from indus.state import sessions
++from indus.state.registry import StoreHandle
++from indus.state.runtime_ledger import AdmissionRow, LedgerRefusal
++
++__all__ = [
++    "ACP_END_REASON",
++    "ACP_SOURCE",
++    "INTERNAL_PRINCIPAL",
++    "Attachment",
++    "DaemonSessionHost",
++    "SessionState",
++]
++
++log = logging.getLogger(__name__)
++
++ACP_SOURCE: Final = "acp"
++"""Sessions of this source end when their last viewer leaves an idle queue."""
++ACP_END_REASON: Final = "acp_close"
++"""The end reason stamped on the row of an ACP session ended that way."""
++INTERNAL_PRINCIPAL: Final = "internal"
++"""Principal prefix of inputs the host admits on its own (``internal:<origin>``)."""
++_INTERRUPTED_EXITS: Final = frozenset(
++    {ExitReason.INTERRUPTED_BY_USER, ExitReason.INTERRUPTED_BY_SYSTEM}
++)
++_PERSON_STOPS: Final = frozenset({CANCELLED, INTERRUPTED})
++
++
++async def _io_pool[T](fn: Callable[[], T]) -> T:
++    return await run_blocking(fn, label="daemon host")
++
++
++@dataclass(frozen=True, slots=True)
++class Attachment:
++    """What a viewer learns when it attaches."""
++
++    session_id: str
++    """The id the session runs under now."""
++    key: str
++    """The host's key for the session (stable across compactions; the replay cursor's scope)."""
++    replay_epoch: str
++    last_seq: int
++    """The newest seq numbered for the session: replay from here on."""
++    reoffered: int
++    """Open server requests offered to this viewer again."""
++
++
++@dataclass(frozen=True, slots=True)
++class SessionState:
++    """A session as the host holds it (for snapshots and presence)."""
++
++    key: str
++    session_id: str
++    source: str
++    replay_epoch: str
++    last_seq: int
++    running: int | None
++    """The generation running now, or None."""
++    viewers: tuple[str, ...]
++    """Connection ids watching it, in attach order."""
++    open_requests: tuple[str, ...]
++    close_pending: bool
++
++
++@dataclass(slots=True)
++class _Fresh:
++    """What the broker factory built for a session the service is attaching."""
++
++    book: RequestBook
++    broker: ServerRequestBroker
++    undo: list[Callable[[], None]]
++
++
++@dataclass(slots=True)
++class _Live:
++    key: str
++    source: str
++    book: RequestBook
++    broker: ServerRequestBroker
++    policy: CreationPolicy | None = None
++    undo: list[Callable[[], None]] = field(default_factory=list[Callable[[], None]])
++    close_pending: bool = False
++
++
++class DaemonSessionHost:
++    """Sessions of one profile hosted by its daemon (see the module notes)."""
++
++    def __init__(
++        self,
++        service: SessionService,
++        store: StoreHandle,
++        *,
++        event_log: EventLog | None = None,
++        fences: GenerationFences | None = None,
++        viewers: ViewerRegistry | None = None,
++        offload: Offload | None = None,
++    ) -> None:
++        if service.attached():
++            raise ValueError("the daemon host must own its session service from the start")
++        self.service = service
++        self.store = store
++        self.event_log = event_log if event_log is not None else EventLog(clock=store.scope.clock)
++        self.fences = fences if fences is not None else GenerationFences()
++        self.viewers = viewers if viewers is not None else ViewerRegistry()
++        self._off: Offload = offload if offload is not None else _io_pool
++        self._admissions: AdmissionService | None = None
++        self._live: dict[str, _Live] = {}
++        self._keys: dict[str, str] = {}
++        self._fresh: dict[str, _Fresh] = {}
++        self._tickets: dict[str, TurnTicket] = {}
++        self._tasks: set[asyncio.Task[Any]] = set()
++        self._flusher: asyncio.Task[None] | None = None
++        self._undo: list[Callable[[], None]] = []
++        self._closed = False
++        service.broker_factory = self._make_broker
++        service.turn_door = self._door
++
++    @classmethod
++    async def open(
++        cls,
++        service: SessionService,
++        store: StoreHandle,
++        *,
++        instance_id: str,
++        leases: TurnLeases | None = None,
++        liveness: LivenessSettings | None = None,
++        gate: Callable[[sqlite3.Connection], None] | None = None,
++        on_blocked: Callable[[str, AdmissionRow], object] | None = None,
++        event_log: EventLog | None = None,
++        offload: Offload | None = None,
++    ) -> DaemonSessionHost:
++        """Build the host, begin the owner epoch (the caller holds the profile ownership lock),
++        start the event-log flusher and restart the queues left by the previous daemon."""
++        host = cls(service, store, event_log=event_log, offload=offload)
++        host._undo.append(host.event_log.add_listener(host._fan_out))
++        host._undo.append(service.on_session_moved(host._moved))
++        host._flusher = asyncio.get_running_loop().create_task(
++            host.event_log.run_flusher(), name="event-log flusher"
++        )
++        try:
++            admissions = await AdmissionService.open(
++                store,
++                instance_id=instance_id,
++                runner=host._run_turn,
++                offload=offload,
++                leases=leases,
++                liveness=liveness,
++                waiting=host._waiting,
++                on_blocked=on_blocked,
++                gate=gate,
++                fences=host.fences,
++            )
++        except BaseException:
++            await host._stop_flusher()
++            raise
++        host._admissions = admissions
++        host.fences.bind_admissions(admissions)
++        return host
++
++    # -- views ------------------------------------------------------------------------------------
++
++    @property
++    def admissions(self) -> AdmissionService:
++        if self._admissions is None:
++            raise RuntimeError("the daemon host is not open")
++        return self._admissions
++
++    @property
++    def replay_epoch(self) -> str:
++        """The daemon's replay epoch (``gateway.ready.replay_epoch``)."""
++        return self.event_log.epoch
++
++    def hosted(self) -> list[str]:
++        """Keys of the sessions the host holds."""
++        return list(self._live)
++
++    def key_of(self, session_id: str) -> str | None:
++        """The host's key for ``session_id`` (any id it ran under), or None."""
++        key = self._keys.get(session_id)
++        if key is None:
++            key = self._keys.get(self.service.current_id(session_id))
++        return key if key in self._live else None
++
++    def state(self, session_id: str) -> SessionState:
++        """The session as the host holds it (a snapshot's running state and presence)."""
++        live = self._require(session_id)
++        key = live.key
++        return SessionState(
++            key=key,
++            session_id=self.service.current_id(key),
++            source=live.source,
++            replay_epoch=self.event_log.epoch,
++            last_seq=self.event_log.last_seq(key),
++            running=self.fences.running(key),
++            viewers=tuple(v.connection_id for v in self.viewers.viewers(key)),
++            open_requests=tuple(r.request_id for r in live.book.open_requests()),
++            close_pending=live.close_pending,
++        )
++
++    # -- create / resume / attach -----------------------------------------------------------------
++
++    async def create(
++        self,
++        params: SessionCreateParams | None = None,
++        *,
++        source: str = "cli",
++        policy: CreationPolicy | None = None,
++        viewer: Viewer | None = None,
++    ) -> SessionCreateResult:
++        """Create a session (``policy`` frozen into it) and attach ``viewer`` when given."""
++        self._check_open()
++        params = params or SessionCreateParams()
++        if policy is not None:
++            check_launch(policy)
++            params = _params_with(params, policy)
++        result = await self.service.create(params)
++        live = self._register(result.session_id, source=source)
++        if result.created and policy is not None:
++            live.policy = policy
++            await self._freeze(result.session_id, source, policy)
++        if viewer is not None:
++            self.attach(result.session_id, viewer)
++        return result
++
++    async def resume(
++        self,
++        session_id: str,
++        *,
++        policy: CreationPolicy | None = None,
++        source: str | None = None,
++        viewer: Viewer | None = None,
++    ) -> SessionResumeResult:
++        """Attach an existing session (a hosted one is described again). A ``policy`` may repeat
++        the frozen launch values; a different value raises ``PolicyConflict``."""
++        self._check_open()
++        if policy is not None:
++            require_same(await self._frozen(session_id), policy)
++        result = await self.service.resume(session_id)
++        origin = source or (viewer.surface if viewer is not None else "unknown")
++        self._register(result.session_id, source=origin)
++        if viewer is not None:
++            self.attach(result.session_id, viewer)
++        return result
++
++    def attach(self, session_id: str, viewer: Viewer) -> Attachment:
++        """Add ``viewer`` to a hosted session (the same connection again replaces itself); every
++        open server request it can render is offered to it again."""
++        live = self._require(session_id)
++        key = live.key
++        self.viewers.attach(key, viewer)
++        live.close_pending = False
++        reoffered = live.book.attach(viewer.request_viewer())
++        return Attachment(
++            session_id=self.service.current_id(key),
++            key=key,
++            replay_epoch=self.event_log.epoch,
++            last_seq=self.event_log.last_seq(key),
++            reoffered=reoffered,
++        )
++
++    async def detach(self, session_id: str, connection_id: str) -> bool:
++        """Remove one viewer; the session and any running turn carry on."""
++        key = self.key_of(session_id)
++        if key is None:
++            return False
++        removed = self.viewers.detach(key, connection_id) is not None
++        self._live[key].book.detach(connection_id)
++        if removed:
++            await self._after_detach(key)
++        return removed
++
++    async def detach_connection(self, connection_id: str) -> list[str]:
++        """A client connection closed: detach it from every session it watched (their keys)."""
++        keys = self.viewers.detach_connection(connection_id)
++        for key in keys:
++            live = self._live.get(key)
++            if live is None:
++                continue
++            live.book.detach(connection_id)
++            await self._after_detach(key)
++        return keys
++
++    async def _after_detach(self, key: str) -> None:
++        live = self._live.get(key)
++        if live is None or live.source != ACP_SOURCE or self.viewers.count(key):
++            return
++        await self._close_when_idle(key)
++
++    async def _close_when_idle(self, key: str) -> None:
++        live = self._live.get(key)
++        if live is None:
++            return
++        if await self._idle(key):
++            if self.viewers.count(key) == 0 and self._live.get(key) is live:
++                log.info("session %s ends: its last viewer left and nothing is queued", key)
++                current = self.service.current_id(key)
++                await self.close_session(key)
++                await self._off(lambda: sessions.end(self.store, current, ACP_END_REASON))
++            return
++        live.close_pending = True
++
++    async def _idle(self, key: str) -> bool:
++        if self.admissions.running(key) is not None or key in self._tickets:
++            return False
++        rows = await self._off(lambda: ledger.pending(self.store, key))
++        return not any(row.state in ("queued", "started") for row in rows)
++
++    # -- input ------------------------------------------------------------------------------------
++
++    async def submit(
++        self,
++        session_id: str,
++        text: str,
++        *,
++        principal: str,
++        request_id: str,
++        connection_id: str | None = None,
++        surface: str | None = None,
++        busy: BusyMode | None = None,
++    ) -> Receipt:
++        """Admit ``text`` into the session's queue; the receipt says where it stands. Refusals
++        leave as ``LedgerRefusal``."""
++        self._check_open()
++        if not text or not text.strip():
++            raise ProtocolError(TEXT_EMPTY, path="text")
++        if busy is not None and busy not in BUSY_MODES:
++            raise ValueError(f"unknown busy mode {busy!r}")
++        live = self._live.get(self.key_of(session_id) or "")
++        if live is None:
++            await self.resume(session_id, source=surface)
++            live = self._require(session_id)
++        key = live.key
++        mode = busy or self._busy_mode(key, connection_id, surface, live)
++        running = self.admissions.running(key)
++        receipt = await self.admissions.admit(principal, key, request_id, {"text": text})
++        if mode == "interrupt" and running is not None and receipt.state == "queued":
++            applied = self.fences.interrupt(key, running.generation)
++            log.info("input for %s interrupts turn %s: %s", key, running.generation, applied)
++        return receipt
++
++    def _busy_mode(
++        self, key: str, connection_id: str | None, surface: str | None, live: _Live
++    ) -> BusyMode:
++        if surface is not None:
++            return busy_default(surface)
++        if connection_id is not None:
++            viewer = self.viewers.find(key, connection_id)
++            if viewer is not None:
++                return viewer.busy_default
++        return busy_default(live.source)
++
++    async def receipt(self, admission_id: str) -> Receipt:
++        return await self.admissions.receipt(admission_id)
++
++    async def wait(self, admission_id: str) -> Receipt:
++        return await self.admissions.wait(admission_id)
++
++    async def discard_unknown(self, admission_id: str, expected_generation: int) -> Receipt:
++        return await self.admissions.discard_unknown(admission_id, expected_generation)
++
++    async def _door(self, session_id: str, text: str, origin: str) -> bool:
++        """Turns the service would start itself enter the queue like any other input."""
++        key = self.key_of(session_id)
++        if key is None or self._closed:
++            return False
++        slug = "-".join(origin.split()) or "host"
++        try:
++            await self.admissions.admit(
++                f"{INTERNAL_PRINCIPAL}:{slug}",
++                key,
++                f"{slug}-{secrets.token_hex(8)}",
++                {"text": text, "origin": origin},
++            )
++        except (LedgerRefusal, RuntimeError) as exc:
++            log.warning("a %s message for %s was not admitted: %s", origin, key, exc)
++            return False
++        return True
++
++    # -- controls ---------------------------------------------------------------------------------
++
++    def interrupt(
++        self, session_id: str, generation: int, *, hard: bool = False
++    ) -> ControlApplied | StaleGeneration:
++        """Stop turn ``generation`` of the session, and only that turn."""
++        return self.fences.interrupt(self._require(session_id).key, generation, hard=hard)
++
++    def steer(
++        self, session_id: str, generation: int, text: str
++    ) -> ControlApplied | StaleGeneration:
++        if not text.strip():
++            raise ProtocolError(TEXT_EMPTY, path="text")
++        return self.fences.steer(self._require(session_id).key, generation, text)
++
++    def respond(
++        self,
++        session_id: str,
++        request_id: str,
++        generation: int,
++        answer: Mapping[str, Any] | AnswerModel,
++    ) -> Responded | RequestNotOpen | StaleGeneration:
++        """Answer a server request asked by turn ``generation`` (the first answer wins)."""
++        return self.fences.respond(self._require(session_id).key, request_id, generation, answer)
++
++    def refuse(self, session_id: str, connection_id: str, request_id: str, code: int) -> bool:
++        """A viewer answered a server request with an error (``-32601``, ``4404`` …)."""
++        return self._require(session_id).book.refuse(connection_id, request_id, code)
++
++    async def stop(self, session_id: str, admission_id: str) -> StopResult:
++        """Cancel a queued admission or stop exactly its running turn."""
++        return await self.fences.stop(self._require(session_id).key, admission_id)
++
++    # -- events -----------------------------------------------------------------------------------
++
++    def events_since(
++        self, session_id: str, epoch: str | None, cursor: int, *, connection_id: str | None = None
++    ) -> Replay | ReplayGap:
++        """The session's events after ``cursor`` (or a gap: reload a snapshot); the asking
++        viewer is offered the still-open server requests again."""
++        live = self._require(session_id)
++        result = self.event_log.since(live.key, epoch, cursor)
++        if connection_id is not None:
++            live.book.reoffer(connection_id)
++        return result
++
++    def _on_event(self, key: str, event: EventBase | Mapping[str, Any]) -> None:
++        ticket = self._tickets.get(key)
++        if ticket is not None:
++            kind: object = (
++                getattr(event, "type", "") if isinstance(event, EventBase) else event.get("type")
++            )
++            ticket.touch(str(kind or ""))
++        self.event_log.append(key, event)
++
++    def _fan_out(self, entry: LoggedEvent) -> None:
++        if self.viewers.count(entry.session_id):
++            self.viewers.deliver(entry.session_id, entry.to_wire())
++
++    # -- closing ----------------------------------------------------------------------------------
++
++    async def close_session(self, session_id: str) -> None:
++        """End a session now: its turn is stopped, its requests withdrawn, its viewers dropped."""
++        key = self.key_of(session_id)
++        if key is None:
++            return
++        live = self._live[key]
++        try:
++            await self.service.close(key)
++        finally:
++            self._live.pop(key, None)
++            for undo in live.undo:
++                with contextlib.suppress(Exception):
++                    undo()
++            self.fences.forget(key)
++            self.event_log.forget(key)
++            self.viewers.forget(key)
++            for name in [n for n, k in self._keys.items() if k == key]:
++                del self._keys[name]
++
++    async def aclose(self) -> None:
++        """Stop taking input, stop running turns, end every session and the service."""
++        if self._closed:
++            return
++        self._closed = True
++        if self._admissions is not None:
++            await self._admissions.aclose()
++        for key in list(self._live):
++            try:
++                await self.close_session(key)
++            except Exception:
++                log.warning("closing session %s failed", key, exc_info=True)
++        for task in list(self._tasks):
++            task.cancel()
++        for task in list(self._tasks):
++            with contextlib.suppress(BaseException):
++                await task
++        await self.service.aclose()
++        await self._stop_flusher()
++        self.event_log.flush()
++        for undo in self._undo:
++            undo()
++        self._undo.clear()
++
++    async def _stop_flusher(self) -> None:
++        task, self._flusher = self._flusher, None
++        if task is None:
++            return
++        task.cancel()
++        with contextlib.suppress(asyncio.CancelledError, Exception):
++            await task
++
++    # -- the turn runner --------------------------------------------------------------------------
++
++    async def _run_turn(self, ticket: TurnTicket) -> TurnOutcome:
++        key = ticket.session_id
++        if ticket.stop_reason is not None:
++            return _not_started(ticket)
++        self._tickets[key] = ticket
++        try:
++            if key not in self._live:
++                await self.resume(key)
++            if ticket.lease_waited:
++                await self.service.reload(key)
++            if ticket.stop_reason is not None:
++                return _not_started(ticket)
++            running = await self.service.start_admitted(
++                key, ticket.text, generation=ticket.generation
++            )
++            generation = ticket.generation
++            ticket.bind(
++                interrupt=lambda reason: self._stop_turn(key, generation, reason),
++                steer=lambda text: self._steer_turn(key, text),
++            )
++            if ticket.stop_reason is not None:  # stopped between the start and the bind
++                self._stop_turn(key, generation, ticket.stop_reason)
++            try:
++                result = await asyncio.shield(running.task)
++            except asyncio.CancelledError:
++                task = asyncio.current_task()
++                if task is not None and task.cancelling():
++                    raise
++                return TurnOutcome("interrupted", detail=ticket.stop_reason or "cancelled")
++            return _outcome(ticket, result)
++        finally:
++            if self._tickets.get(key) is ticket:
++                del self._tickets[key]
++            self._spawn(self._after_turn(key, ticket.admission.admission_id))
++
++    def _stop_turn(self, key: str, generation: int, reason: str) -> None:
++        """The ticket's interrupt hook: soft for a person's interrupt, hard (subagents too) for a
++        cancel or stop, by the system for the watchdog, a lost lease or shutdown."""
++        try:
++            self.service.interrupt(
++                key,
++                generation,
++                hard=reason == CANCELLED,
++                by_system=reason not in _PERSON_STOPS,
++            )
++        except ProtocolError:
++            log.info("turn %s of %s was gone before its interrupt (%s)", generation, key, reason)
++
++    def _steer_turn(self, key: str, text: str) -> bool:
++        try:
++            return self.service.steer(key, text).queued
++        except ProtocolError:
++            return False
++
++    async def _after_turn(self, key: str, admission_id: str) -> None:
++        """Once the turn's admission is settled, end an ACP session waiting for an idle queue."""
++        live = self._live.get(key)
++        if live is None or not live.close_pending:
++            return
++        with contextlib.suppress(LedgerRefusal):
++            await self.admissions.wait(admission_id)
++        live = self._live.get(key)
++        if live is None or not live.close_pending or self.viewers.count(key):
++            return
++        await self._close_when_idle(key)
++
++    def _waiting(self, key: str) -> bool:
++        live = self._live.get(key)
++        return live is not None and live.broker.waiting
++
++    # -- wiring -----------------------------------------------------------------------------------
++
++    def _make_broker(self, session_id: str, sink: EventSink) -> ServerRequestBroker:
++        """The service's broker factory: one request book per session, events into the log."""
++        key = session_id
++        fences = self.fences
++        book = RequestBook(
++            session_id,
++            emit=lambda event: self._on_event(key, event),
++            generation=lambda: fences.running(key),
++        )
++        broker = ServerRequestBroker(
++            session_id=session_id,
++            deliver=sink.request,
++            emit=sink.emit,
++            next_seq=sink.next_seq,
++            clock=self.store.scope.clock,
++            book=book,
++        )
++        fences.bind_requests(key, book, broker.answer)
++        undo = sink.subscribe(lambda event: self._on_event(key, event))
++        self._fresh[key] = _Fresh(book, broker, [undo])
++        self._keys[key] = key
++        return broker
++
++    def _register(self, session_id: str, *, source: str) -> _Live:
++        key = self._keys.get(session_id) or self._keys.get(self.service.current_id(session_id))
++        if key is not None and key in self._live:
++            return self._live[key]
++        key = key or session_id
++        fresh = self._fresh.pop(key, None)
++        if fresh is None:
++            raise RuntimeError(f"session {session_id} was attached without the daemon's broker")
++        live = _Live(key, source, fresh.book, fresh.broker, undo=fresh.undo)
++        self._live[key] = live
++        return live
++
++    def _moved(self, old: str, new: str) -> None:
++        """A rotating compaction moved a session: its key stays, its book names the child."""
++        key = self._keys.get(old)
++        if key is None:
++            return
++        self._keys[new] = key
++        live = self._live.get(key)
++        book = live.book if live is not None else None
++        if book is None and key in self._fresh:
++            book = self._fresh[key].book
++        if book is not None:
++            book.session_id = new
++
++    async def _frozen(self, session_id: str) -> CreationPolicy | None:
++        key = self.key_of(session_id)
++        if key is not None and self._live[key].policy is not None:
++            return self._live[key].policy
++        target = self.service.current_id(session_id)
++        row = await self._off(lambda: sessions.get(self.store, target))
++        return stored_policy(row)
++
++    async def _freeze(self, session_id: str, source: str, policy: CreationPolicy) -> None:
++        """Write the policy into the session row now (the row is created when missing)."""
++        patch = policy_patch(policy)
++        now = self.store.scope.clock.now().timestamp()
++        profile = self.store.scope.profile_id
++
++        def write() -> None:
++            def apply(conn: sqlite3.Connection) -> None:
++                sessions.create_in(conn, session_id, source, now=now, profile_id=profile)
++                sessions.patch_model_config_in(conn, session_id, patch)
++
++            self.store.write(apply)
++
++        await self._off(write)
++
++    def _require(self, session_id: str) -> _Live:
++        key = self.key_of(session_id)
++        if key is None:
++            raise ProtocolError(
++                SESSION_NOT_FOUND, f"session {session_id} is not hosted", path="session_id"
++            )
++        return self._live[key]
++
++    def _check_open(self) -> None:
++        if self._closed:
++            raise RuntimeError("the daemon host is closed")
++
++    def _spawn(self, coro: Awaitable[None]) -> None:
++        if self._closed:
++            if asyncio.iscoroutine(coro):
++                coro.close()
++            return
++        task: asyncio.Task[None] = asyncio.ensure_future(coro)
++        self._tasks.add(task)
++        task.add_done_callback(self._tasks.discard)
++
++
++def _params_with(params: SessionCreateParams, policy: CreationPolicy) -> SessionCreateParams:
++    """``params`` filled from the policy; a value given in both must agree."""
++    changes: dict[str, Any] = {}
++    pairs: tuple[tuple[str, object], ...] = (
++        ("cwd", policy.cwd),
++        ("model", policy.model),
++        ("toolsets", list(policy.toolsets) if policy.toolsets is not None else None),
++    )
++    for name, value in pairs:
++        if value is None:
++            continue
++        given = getattr(params, name)
++        if given is None:
++            changes[name] = value
++        elif given != value:
++            raise PolicyRefused("invalid_value", name)
++    return params.model_copy(update=changes) if changes else params
++
++
++def _not_started(ticket: TurnTicket) -> TurnOutcome:
++    reason = ticket.stop_reason or INTERRUPTED
++    if reason == CANCELLED:
++        return TurnOutcome("cancelled", detail=CANCELLED)
++    return TurnOutcome("interrupted", detail=reason)
++
++
++def _outcome(ticket: TurnTicket, result: TurnResult) -> TurnOutcome:
++    """The ledger outcome of a finished turn."""
++    reason = result.exit_reason
++    text = result.final_text
++    if reason is ExitReason.COMPLETED:
++        return TurnOutcome("completed", text)
++    if reason in _INTERRUPTED_EXITS:
++        stop = ticket.stop_reason
++        if stop == CANCELLED:
++            return TurnOutcome("cancelled", text, CANCELLED)
++        return TurnOutcome("interrupted", text, stop or reason.value)
++    return TurnOutcome("failed", text, result.failure_reason or reason.value)
+diff --git a/src/indus/service/session_service.py b/src/indus/service/session_service.py
+index f6b6070..91a6508 100644
+--- a/src/indus/service/session_service.py
++++ b/src/indus/service/session_service.py
+@@ -60,6 +60,14 @@ profile's allowed plugins and the agreed shell hooks before the first agent is b
+ plugins' toolsets to each selection, gives each top-level agent the hooks-bus seams and the frozen
+ plugin prompt sections, runs ``on_session_start`` after a session is attached and
+ ``on_session_end`` before it is closed, and takes every registration back at ``aclose``.
++
++Daemon seams (P17-08, ``service.daemon_host``): ``broker_factory`` builds each session's broker
++(the daemon hands it the session's ``RequestBook``); with a ``turn_door`` every turn the service
++would start on its own — host injections, background-subagent results, undelivered steer text —
++is handed to the door (the daemon's admission ledger) instead; ``start_admitted`` starts a turn
++the door admitted under the ledger's generation; ``reload`` rebuilds a session's agent from the
++store (another process ran it meanwhile). ``events_since`` and ``receipt`` have trivial in-process
++forms: one replay epoch per service over the kept events, and no admissions.
+ """
+ 
+ from __future__ import annotations
+@@ -114,12 +122,15 @@ from indus.providers.auxiliary import AuxClient, auto_title, generate_title
+ from indus.providers.route import RuntimeRoute
+ from indus.providers.types import Usage
+ from indus.service import code_host
++from indus.service.admissions import Receipt
+ from indus.service.broker import ServerRequestBroker
+ from indus.service.code_host import KernelUpkeep
++from indus.service.event_log import Replay, ReplayGap, new_replay_epoch
+ from indus.service.maintenance import MaintenanceTimer
+ from indus.service.mcp_host import McpUpkeep
+ from indus.service.plugin_host import PluginUpkeep
+-from indus.state import sessions, titles
++from indus.state import lineage, sessions, titles
++from indus.state.runtime_ledger import LedgerRefusal
+ from indus.state.session_lock import (
+     LOCK_DIR_NAME,
+     LockBusy,
+@@ -131,7 +142,9 @@ from indus.state.session_lock import (
+ __all__ = [
+     "BUSY_COPY",
+     "AgentFactory",
++    "BrokerFactory",
+     "SessionService",
++    "TurnDoor",
+     "protocol_error_for",
+ ]
+ 
+@@ -157,6 +170,12 @@ type AgentFactory = Callable[
+ ]
+ """Builds the agent of one session: ``(session_id, sink, broker, options, toolsets)``."""
+ 
++type BrokerFactory = Callable[[str, EventSink], ServerRequestBroker]
++"""Builds the server-request broker of one session: ``(session_id, sink)``."""
++
++type TurnDoor = Callable[[str, str, str], Awaitable[bool]]
++"""Takes a turn the service would start itself: ``(session_id, text, origin)`` → accepted."""
++
+ 
+ def protocol_error_for(exc: BaseException) -> ProtocolError:
+     """``exc`` as a ``ProtocolError``: itself, a mapped product error, or an internal error."""
+@@ -245,6 +264,8 @@ class SessionService:
+         kernels: KernelUpkeep | None = None,
+         mcp: McpUpkeep | None = None,
+         plugins: PluginUpkeep | None = None,
++        broker_factory: BrokerFactory | None = None,
++        turn_door: TurnDoor | None = None,
+     ) -> None:
+         self.scope = scope
+         self.route = route
+@@ -272,6 +293,10 @@ class SessionService:
+         self._input_probe: Callable[[str], bool] | None = None
+         self._turn_end: list[TurnEndListener] = []
+         self._moved: list[Callable[[str, str], object]] = []
++        self.broker_factory = broker_factory
++        self.turn_door = turn_door
++        self.replay_epoch = new_replay_epoch()
++        """The in-process replay epoch (``events_since``); the daemon's event log has its own."""
+ 
+     def _default_lock_dir(self) -> Path:
+         if isinstance(self.store, StateStore):
+@@ -347,6 +372,8 @@ class SessionService:
+             return False
+         if if_generation is not None and attached.agent.generation != if_generation:
+             return False
++        if self.turn_door is not None:
++            return await self._through_door(attached, text, origin)
+         try:
+             await self._start(attached, text)
+         except ProtocolError as exc:
+@@ -450,6 +477,17 @@ class SessionService:
+                 pending_requests=list(attached.broker.pending_requests()),
+             )
+ 
++    async def _through_door(self, attached: _Attached, text: str, origin: str) -> bool:
++        assert self.turn_door is not None
++        try:
++            accepted = await self.turn_door(attached.session_id, text, origin)
++        except Exception:
++            log.warning("the turn door refused a %s message", origin, exc_info=True)
++            return False
++        if accepted:
++            log.info("handed a %s turn of session %s to the door", origin, attached.session_id)
++        return accepted
++
+     async def _store_title(self, session_id: str, title: str, options: AgentOptions) -> None:
+         """A title given at create: the row is written now (otherwise the first turn writes it)
+         and titled with the user's authority, so automatic titling never replaces it."""
+@@ -509,14 +547,7 @@ class SessionService:
+             )
+         try:
+             sink = EventSink(session_id)
+-            broker = ServerRequestBroker(
+-                session_id=session_id,
+-                deliver=sink.request,
+-                emit=sink.emit,
+-                next_seq=sink.next_seq,
+-                clock=self.scope.clock,
+-                answerable_kinds=self._answerable,
+-            )
++            broker = self._new_broker(session_id, sink)
+             if self.mcp is not None:
+                 await self.mcp.start()
+                 selection = self.mcp.selection(selection)
+@@ -532,8 +563,7 @@ class SessionService:
+             raise
+         attached = _Attached(session_id, agent, sink, broker, taken)
+         self._attached[session_id] = attached
+-        agent.on_session_moved(lambda old, new: self._follow(attached, old, new))
+-        subagents.set_delivery(agent, lambda text: self.deliver_internal(attached, text))
++        self._wire_agent(attached)
+         if self.plugins is not None:
+             await self.plugins.session_started(session_id, options)
+         # `cronjob_manage run` results (P14-18) arrive the same way as background subagents'.
+@@ -544,6 +574,72 @@ class SessionService:
+         )
+         return attached
+ 
++    def _new_broker(self, session_id: str, sink: EventSink) -> ServerRequestBroker:
++        if self.broker_factory is not None:
++            return self.broker_factory(session_id, sink)
++        return ServerRequestBroker(
++            session_id=session_id,
++            deliver=sink.request,
++            emit=sink.emit,
++            next_seq=sink.next_seq,
++            clock=self.scope.clock,
++            answerable_kinds=self._answerable,
++        )
++
++    def _wire_agent(self, attached: _Attached) -> None:
++        agent = attached.agent
++        agent.on_session_moved(lambda old, new: self._follow(attached, old, new))
++        subagents.set_delivery(agent, lambda text: self.deliver_internal(attached, text))
++
++    async def reload(self, session_id: str) -> str:
++        """Rebuild the session's agent from the store (another process ran the session while
++        this one waited for its lease); follows the lineage tip when that process compacted it.
++        Busy while a turn runs. Returns the id the session is attached under now."""
++        async with _mapped():
++            self._check_open()
++            attached = self._get(session_id)
++            if attached.running is not None:
++                raise _busy(f"session {attached.session_id} is running a turn")
++            old = attached.agent
++            tip = await self._lineage_tip(attached.session_id)
++            if tip != attached.session_id:
++                previous = attached.session_id
++                attached.sink.session_id = tip
++                self._follow(attached, previous, tip)
++            agent = await self._factory(
++                attached.session_id,
++                attached.sink,
++                attached.broker,
++                old.options,
++                old.toolset_selection,
++            )
++            if self.mcp is not None:
++                self.mcp.attach(agent)
++            attached.agent = agent
++            attached.turn = None
++            self._wire_agent(attached)
++            try:
++                await old.close()
++            except Exception:
++                log.warning("closing the replaced agent of %s failed", session_id, exc_info=True)
++            log.info("session %s reloaded from the store", attached.session_id)
++            return attached.session_id
++
++    async def _lineage_tip(self, session_id: str) -> str:
++        store = self.store
++        if not isinstance(store, StateStore):
++            return session_id
++
++        def tip() -> str:
++            with store.handle.read() as conn:
++                return lineage.tip_in(conn, session_id)
++
++        try:
++            return await run_blocking(tip, label="session lineage")
++        except Exception:
++            log.warning("could not follow the lineage of %s; keeping it", session_id, exc_info=True)
++            return session_id
++
+     def _follow(self, attached: _Attached, old: str, new: str) -> None:
+         """A rotating compaction moved ``attached`` from ``old`` to ``new`` (see the module notes).
+         The lock moves when the child's can be taken; else the parent's stays held."""
+@@ -599,6 +695,20 @@ class SessionService:
+             running = await self._start(attached, text, message=message)
+             return PromptSubmitResult(turn_id=running.turn_id, generation=running.generation)
+ 
++    async def start_admitted(self, session_id: str, text: str, *, generation: int) -> RunningTurn:
++        """Start a turn the daemon's ledger admitted, under the ledger's ``generation``; attaches a
++        stored session first. Busy while a turn runs."""
++        async with _mapped():
++            self._check_open()
++            _check_text(text)
++            attached = self._attached.get(self.current_id(session_id))
++            if attached is None:
++                attached = await self._attach_existing(session_id)
++            if attached.running is not None:
++                raise _busy(f"session {attached.session_id} is running a turn")
++            message = await self._expand(attached, text)
++            return await self._start(attached, text, message=message, generation=generation)
++
+     async def _expand(self, attached: _Attached, text: str) -> str:
+         """``text`` with its ``@`` references expanded (P08-19); refusals become a notice. A
+         failure here never blocks the message: it is sent as typed."""
+@@ -649,15 +759,22 @@ class SessionService:
+                 raise _busy(str(exc)) from exc
+ 
+     async def _start(
+-        self, attached: _Attached, text: str, *, message: str | None = None
++        self,
++        attached: _Attached,
++        text: str,
++        *,
++        message: str | None = None,
++        generation: int | None = None,
+     ) -> RunningTurn:
+         if attached.running is not None:
+             raise _busy(f"session {attached.session_id} is running a turn")
+         try:
+             if message is not None and message != text:
+-                running = await attached.agent.start_turn(message, persist_text=text)
++                running = await attached.agent.start_turn(
++                    message, persist_text=text, generation=generation
++                )
+             else:
+-                running = await attached.agent.start_turn(text)
++                running = await attached.agent.start_turn(text, generation=generation)
+         except AgentBusy as exc:
+             raise _busy(str(exc)) from exc
+         attached.turn = running
+@@ -750,6 +867,10 @@ class SessionService:
+             log.info("no automatic title for session %s: %s", attached.session_id, exc)
+ 
+     async def _follow_up(self, attached: _Attached, text: str) -> None:
++        if self.turn_door is not None:
++            if not attached.agent.closed:
++                await self._through_door(attached, text, "steer follow-up")
++            return
+         if attached.running is not None or attached.agent.closed:
+             return
+         try:
+@@ -806,11 +927,16 @@ class SessionService:
+     # -- control of the running turn ---------------------------------------------------------------
+ 
+     def interrupt(
+-        self, session_id: str, generation: int | None = None, *, hard: bool = False
++        self,
++        session_id: str,
++        generation: int | None = None,
++        *,
++        hard: bool = False,
++        by_system: bool = False,
+     ) -> SessionInterruptResult:
+         """Stop the running turn (only ``generation`` when given; a stale one is a no-op)."""
+         attached = self._get(session_id)
+-        done = attached.agent.interrupt(generation, hard=hard)
++        done = attached.agent.interrupt(generation, hard=hard, by_system=by_system)
+         if done:
+             attached.broker.cancel_all(CancelReason.INTERRUPTED)
+         if hard:  # a hard stop also ends the session's background subagents (P10-05)
+@@ -849,6 +975,34 @@ class SessionService:
+         """Kept events of the session with a seq above ``since`` (all kept ones for None)."""
+         return self._get(session_id).sink.since(since)
+ 
++    def events_since(self, session_id: str, epoch: str | None, cursor: int) -> Replay | ReplayGap:
++        """The kept events after ``cursor`` in the in-process form of the daemon's replay: a gap
++        when ``epoch`` is not this service's, the cursor is ahead, or events after it are gone.
++        In-process seqs start at 0, so a client that saw nothing yet passes -1."""
++        if cursor < -1:
++            raise ValueError("cursor must be >= -1")
++        sink = self._get(session_id).sink
++        last = sink.last_seq
++        if epoch != self.replay_epoch:
++            return ReplayGap(session_id, self.replay_epoch, last, "epoch_changed")
++        if cursor > last:
++            return ReplayGap(session_id, self.replay_epoch, last, "ahead")
++        kept = sink.since(None)
++        if cursor < last and (not kept or kept[0].seq > cursor + 1):
++            return ReplayGap(session_id, self.replay_epoch, last, "evicted")
++        wire: list[dict[str, Any]] = []
++        for event in kept:
++            if event.seq > cursor:
++                data = event.to_wire()
++                data["replay_epoch"] = self.replay_epoch
++                wire.append(data)
++        return Replay(session_id, self.replay_epoch, tuple(wire), last)
++
++    async def receipt(self, admission_id: str) -> Receipt:
++        """In-process turns have no admissions: every id is unknown here (the daemon host
++        answers from its ledger)."""
++        raise LedgerRefusal("not_found", field="admission_id")
++
+     def subscribe(self, session_id: str, listener: EventListener) -> Callable[[], None]:
+         """Live events (called on the service loop); returns the unsubscribe callable."""
+         return self._get(session_id).sink.subscribe(listener)
+diff --git a/src/indus/service/viewers.py b/src/indus/service/viewers.py
+new file mode 100644
+index 0000000..a68050b
+--- /dev/null
++++ b/src/indus/service/viewers.py
+@@ -0,0 +1,191 @@
++"""Viewers of daemon-hosted sessions: who watches which session, and from what surface (P17-08).
++
++A viewer is one client connection watching one session: its connection id, the kind of surface
++(``cli``, ``tui``, ``gui``, ``acp``, ``web``, ``messaging``) and its capabilities. Capabilities that
++name a server-request kind (``approval``, ``clarify``, ``sudo``, ``secret``) say which requests the
++viewer can render; ``request.decline`` says it may answer 4404 ("not shown here"). One connection
++can watch several sessions, and a session any number of viewers, including none.
++
++``ViewerRegistry.deliver`` hands one numbered event to every viewer of its session in attach
++order; a viewer whose ``send`` raises is logged and skipped, the others still get the event. The
++registry is called from the daemon loop; a lock keeps it consistent if a listener runs elsewhere.
++
++When a surface sends input while a turn runs without saying what it wants, the surface decides
++(R05.18): the TUI queues it behind the turn, every other surface interrupts the turn.
++"""
++
++from __future__ import annotations
++
++import logging
++import threading
++from collections.abc import Callable, Iterable, Mapping
++from dataclasses import dataclass
++from typing import Any, Final, Literal, cast
++
++from indus.protocol.server_requests import SERVER_REQUEST_KINDS
++from indus.service.request_redelivery import Offer, RequestViewer
++
++__all__ = [
++    "BUSY_MODES",
++    "DECLINE_CAPABILITY",
++    "SURFACES",
++    "BusyMode",
++    "SurfaceKind",
++    "Viewer",
++    "ViewerRegistry",
++    "busy_default",
++]
++
++log = logging.getLogger(__name__)
++
++type SurfaceKind = Literal["cli", "tui", "gui", "acp", "web", "messaging"]
++type BusyMode = Literal["queue", "interrupt"]
++
++SURFACES: Final[frozenset[str]] = frozenset({"cli", "tui", "gui", "acp", "web", "messaging"})
++BUSY_MODES: Final[frozenset[str]] = frozenset({"queue", "interrupt"})
++DECLINE_CAPABILITY: Final = "request.decline"
++"""The capability a viewer advertises to answer a server request with 4404 (not shown here)."""
++
++
++def busy_default(surface: str) -> BusyMode:
++    """What input sent during a running turn does when the surface did not say (R05.18)."""
++    return "queue" if surface == "tui" else "interrupt"
++
++
++def _drop(offer: Offer) -> None:
++    del offer
++
++
++@dataclass(frozen=True, slots=True)
++class Viewer:
++    """One connection watching one session."""
++
++    connection_id: str
++    surface: SurfaceKind
++    capabilities: frozenset[str]
++    send: Callable[[dict[str, Any]], object]
++    """Receives every numbered event of the session (its wire form, a fresh dict per call)."""
++    offer: Callable[[Offer], object] | None = None
++    """Receives the server requests it can render (first offers and re-offers)."""
++
++    @classmethod
++    def of(
++        cls,
++        connection_id: str,
++        surface: str,
++        capabilities: Iterable[str] = (),
++        *,
++        send: Callable[[dict[str, Any]], object],
++        offer: Callable[[Offer], object] | None = None,
++    ) -> Viewer:
++        if not connection_id:
++            raise ValueError("a viewer needs a connection id")
++        if surface not in SURFACES:
++            raise ValueError(f"unknown surface kind {surface!r}")
++        return cls(connection_id, cast(SurfaceKind, surface), frozenset(capabilities), send, offer)
++
++    @property
++    def request_kinds(self) -> frozenset[str]:
++        """The server-request kinds this viewer can render (none without an ``offer`` hook)."""
++        if self.offer is None:
++            return frozenset()
++        return frozenset(k for k in self.capabilities if k in SERVER_REQUEST_KINDS)
++
++    @property
++    def can_decline(self) -> bool:
++        return DECLINE_CAPABILITY in self.capabilities
++
++    @property
++    def busy_default(self) -> BusyMode:
++        return busy_default(self.surface)
++
++    def request_viewer(self) -> RequestViewer:
++        """This viewer as the session's ``RequestBook`` sees it."""
++        return RequestViewer.of(
++            self.connection_id,
++            self.request_kinds,
++            self.offer or _drop,
++            can_decline=self.can_decline,
++        )
++
++
++class ViewerRegistry:
++    """Viewers per session (keyed by the host's session key)."""
++
++    def __init__(self) -> None:
++        self._lock = threading.Lock()
++        self._sessions: dict[str, dict[str, Viewer]] = {}
++
++    def attach(self, session_key: str, viewer: Viewer) -> bool:
++        """Add ``viewer`` (a viewer of the same connection is replaced); True when it is new."""
++        with self._lock:
++            members = self._sessions.setdefault(session_key, {})
++            new = viewer.connection_id not in members
++            members[viewer.connection_id] = viewer
++            return new
++
++    def detach(self, session_key: str, connection_id: str) -> Viewer | None:
++        """Remove one viewer; the removed viewer, or None when it was not attached."""
++        with self._lock:
++            members = self._sessions.get(session_key)
++            if members is None:
++                return None
++            viewer = members.pop(connection_id, None)
++            if not members:
++                del self._sessions[session_key]
++            return viewer
++
++    def detach_connection(self, connection_id: str) -> list[str]:
++        """Remove the connection from every session it watched; those session keys."""
++        with self._lock:
++            keys = [k for k, members in self._sessions.items() if connection_id in members]
++            for key in keys:
++                members = self._sessions[key]
++                del members[connection_id]
++                if not members:
++                    del self._sessions[key]
++            return keys
++
++    def forget(self, session_key: str) -> list[Viewer]:
++        """Drop every viewer of a closed session."""
++        with self._lock:
++            return list(self._sessions.pop(session_key, {}).values())
++
++    def viewers(self, session_key: str) -> list[Viewer]:
++        with self._lock:
++            return list(self._sessions.get(session_key, {}).values())
++
++    def find(self, session_key: str, connection_id: str) -> Viewer | None:
++        with self._lock:
++            return self._sessions.get(session_key, {}).get(connection_id)
++
++    def count(self, session_key: str) -> int:
++        with self._lock:
++            return len(self._sessions.get(session_key, {}))
++
++    def sessions(self) -> list[str]:
++        """Session keys with at least one viewer."""
++        with self._lock:
++            return list(self._sessions)
++
++    def sessions_of(self, connection_id: str) -> list[str]:
++        with self._lock:
++            return [k for k, members in self._sessions.items() if connection_id in members]
++
++    def deliver(self, session_key: str, event: Mapping[str, Any]) -> int:
++        """Send ``event`` to every viewer of the session in attach order; how many took it."""
++        delivered = 0
++        for viewer in self.viewers(session_key):
++            try:
++                viewer.send(dict(event))
++            except Exception:
++                log.warning(
++                    "viewer %s (%s) could not take an event of session %s",
++                    viewer.connection_id,
++                    viewer.surface,
++                    session_key,
++                    exc_info=True,
++                )
++                continue
++            delivered += 1
++        return delivered
+diff --git a/tests/unit/service/test_creation_policy.py b/tests/unit/service/test_creation_policy.py
+new file mode 100644
+index 0000000..40ae038
+--- /dev/null
++++ b/tests/unit/service/test_creation_policy.py
+@@ -0,0 +1,267 @@
++"""P17-09: the frozen creation policy (freeze, resume checks, bypass rule, secrets, env)."""
++
++from __future__ import annotations
++
++import json
++import os
++from collections.abc import Iterator
++from typing import Any
++
++import pytest
++
++from indus.foundation.errors import ERROR_CODES
++from indus.foundation.scope import Scope
++from indus.service.creation_policy import (
++    FROZEN_FIELDS,
++    LAUNCH_ENV,
++    LAUNCH_KEY,
++    CreationPolicy,
++    PolicyConflict,
++    PolicyRefused,
++    check_launch,
++    check_resume,
++    launch_flags_from_env,
++    policy_patch,
++    require_same,
++    scrub_launch_env,
++    stored_policy,
++)
++from indus.state import registry, sessions
++from indus.state.registry import StoreHandle
++
++CWD = os.path.abspath(os.sep + os.path.join("work", "repo"))
++
++
++def launch(**values: Any) -> CreationPolicy:
++    return CreationPolicy.from_launch(values)
++
++
++def fake_key() -> str:
++    return "sk-" + "q" * 30  # built at runtime: no credential literal in the tree
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++# -- resume checks --------------------------------------------------------------------------------
++
++
++def test_resume_with_same_values_is_accepted() -> None:
++    frozen = launch(cwd=CWD, model="m1", provider="p1", toolsets="web,files", max_turns=0)
++    assert check_resume(frozen, launch(model="m1")) is None
++    assert check_resume(frozen, launch(toolsets=["files", "web"], max_turns=0)) is None
++    assert check_resume(frozen, launch(cwd=CWD + os.sep + "." + os.sep)) is None
++    assert check_resume(frozen, CreationPolicy()) is None  # naming nothing is always fine
++    require_same(frozen, None)
++
++
++def test_resume_with_a_different_model_is_a_policy_conflict() -> None:
++    frozen = launch(model="m1", provider="p1")
++    conflict = check_resume(frozen, launch(model="m2"))
++    assert isinstance(conflict, PolicyConflict)
++    assert conflict.field == "model" and conflict.fields == ("model",)
++    assert conflict.code == "runtime.policy_conflict" and conflict.code in ERROR_CODES
++    assert conflict.to_data() == {
++        "reason": "policy_conflict",
++        "field": "model",
++        "fields": ["model"],
++    }
++    with pytest.raises(PolicyConflict) as info:
++        require_same(frozen, launch(model="m2", provider="p2", yolo=True))
++    assert info.value.fields == ("model", "provider", "yolo")
++
++
++def test_every_frozen_field_conflicts() -> None:
++    frozen = CreationPolicy()
++    other: dict[str, Any] = {
++        "cwd": CWD,
++        "model": "m",
++        "provider": "p",
++        "reasoning": "high",
++        "toolsets": ["web"],
++        "max_turns": 3,
++        "skills": ["plan"],
++        "checkpoints": True,
++        "yolo": True,
++        "accept_hooks": True,
++        "ignore_rules": True,
++        "base_url": "https://models.example.test/v1",
++        "key_ref": "EXAMPLE_API_KEY",
++        "safe_mode": True,
++        "ignore_user_config": True,
++        "pass_session_id": True,
++    }
++    assert set(other) == set(FROZEN_FIELDS)
++    for name, value in other.items():
++        conflict = check_resume(frozen, launch(**{name: value}))
++        assert conflict is not None and conflict.fields == (name,), name
++
++
++def test_nothing_frozen_means_defaults_so_an_explicit_value_differs() -> None:
++    with pytest.raises(PolicyConflict):
++        require_same(None, launch(model="m1"))
++    require_same(None, CreationPolicy())
++
++
++def test_an_empty_toolset_selection_is_a_value() -> None:
++    frozen = launch(toolsets=[])
++    assert frozen.toolsets == ()
++    assert check_resume(frozen, launch(toolsets="")) is None
++    conflict = check_resume(launch(toolsets=["web"]), launch(toolsets=[]))
++    assert conflict is not None and conflict.field == "toolsets"
++
++
++def test_lists_are_split_stripped_and_deduplicated() -> None:
++    policy = launch(toolsets=" web , files,web,", skills=["a,b", " a ", ""])
++    assert policy.toolsets == ("web", "files")
++    assert policy.skills == ("a", "b")
++
++
++# -- launch validation ----------------------------------------------------------------------------
++
++
++@pytest.mark.parametrize("missing", ["model", "provider"])
++@pytest.mark.parametrize("switch", ["safe_mode", "ignore_user_config"])
++def test_a_bypass_launch_must_name_model_and_provider(missing: str, switch: str) -> None:
++    values: dict[str, Any] = {"model": "m1", "provider": "p1", switch: True}
++    del values[missing]
++    policy = launch(**values)
++    assert policy.bypass
++    with pytest.raises(PolicyRefused) as info:
++        check_launch(policy)
++    assert info.value.reason == "bypass_needs_route" and info.value.field == missing
++    assert info.value.code == "runtime.policy_refused" and info.value.code in ERROR_CODES
++    check_launch(launch(model="m1", provider="p1", **{switch: True}))
++    check_launch(launch())  # an ordinary launch reads the profile's defaults
++
++
++@pytest.mark.parametrize(
++    ("name", "value"),
++    [
++        ("max_turns", -1),
++        ("max_turns", True),
++        ("yolo", "yes"),
++        ("model", ""),
++        ("model", 3),
++        ("cwd", "relative/dir"),
++        ("base_url", "ftp://models.example.test"),
++        ("toolsets", [1, 2]),
++    ],
++)
++def test_malformed_values_are_refused(name: str, value: object) -> None:
++    with pytest.raises(PolicyRefused) as info:
++        launch(**{name: value})
++    assert info.value.field == name and info.value.reason == "invalid_value"
++
++
++def test_an_unknown_launch_field_is_refused_but_a_stored_one_is_ignored() -> None:
++    with pytest.raises(PolicyRefused) as info:
++        launch(modle="m1")
++    assert info.value.reason == "invalid_field" and info.value.field == "modle"
++    stored = CreationPolicy.from_record({"model": "m1", "worktree": "/x", "max_turns": "bad"})
++    assert stored == CreationPolicy(model="m1")
++
++
++def test_max_turns_zero_is_a_value() -> None:
++    policy = launch(max_turns=0)
++    assert policy.max_turns == 0 and policy.given() == {"max_turns": 0}
++    conflict = check_resume(policy, launch(max_turns=5))
++    assert conflict is not None and conflict.field == "max_turns"
++
++
++# -- secrets --------------------------------------------------------------------------------------
++
++
++def test_api_key_is_never_stored() -> None:
++    key = fake_key()
++    policy = launch(model="m1", api_key=key, key_ref="EXAMPLE_API_KEY")
++    record = policy.record()
++    assert "api_key" not in record and key not in json.dumps(record)
++    assert record["key_ref"] == "EXAMPLE_API_KEY"
++    # A repeated key on resume is not a policy change (it is never compared).
++    assert check_resume(policy, launch(api_key=fake_key() + "x")) is None
++
++
++def test_a_credential_shaped_key_reference_is_refused_without_echoing_it() -> None:
++    key = fake_key()
++    with pytest.raises(PolicyRefused) as info:
++        launch(key_ref=key)
++    assert info.value.reason == "secret_in_policy" and info.value.field == "key_ref"
++    assert key not in str(info.value) and key not in repr(info.value)
++
++
++def test_a_base_url_with_user_info_is_refused() -> None:
++    secret = "pw" + "-" + "x" * 12
++    with pytest.raises(PolicyRefused) as info:
++        launch(base_url=f"https://user:{secret}@models.example.test/v1")
++    assert info.value.reason == "secret_in_policy" and secret not in str(info.value)
++    assert launch(base_url="https://models.example.test/v1").base_url is not None
++
++
++# -- environment ----------------------------------------------------------------------------------
++
++
++def test_launch_env_vars_become_creation_flags() -> None:
++    env = {
++        "INDUS_YOLO_MODE": "1",
++        "INDUS_SAFE_MODE": "true",
++        "INDUS_IGNORE_RULES": "0",
++        "INDUS_ACCEPT_HOOKS": "",
++        "PATH": "/bin",
++    }
++    assert launch_flags_from_env(env) == {"yolo": True, "safe_mode": True}
++    assert set(LAUNCH_ENV.values()) <= set(FROZEN_FIELDS)
++
++
++def test_scrub_removes_only_launch_vars() -> None:
++    env = {name: "1" for name in LAUNCH_ENV} | {"PATH": "/bin", "INDUS_HOME": "/h"}
++    scrubbed = scrub_launch_env(env)
++    assert scrubbed == {"PATH": "/bin", "INDUS_HOME": "/h"}
++    assert len(env) == len(LAUNCH_ENV) + 2  # the input is not changed
++
++
++# -- storage --------------------------------------------------------------------------------------
++
++
++def test_record_round_trips_through_the_session_row(store: StoreHandle) -> None:
++    policy = launch(
++        cwd=CWD, model="m1", provider="p1", toolsets=["web"], skills=["plan"], max_turns=0
++    )
++    store.write(
++        lambda conn: sessions.create_in(
++            conn, "s1", "cli", now=1.0, model_config=policy_patch(policy)
++        )
++    )
++    row = sessions.get(store, "s1")
++    assert stored_policy(row) == policy
++    assert stored_policy(None) is None
++    config = sessions.parse_model_config(row["model_config"] if row else None)
++    assert set(config) == {LAUNCH_KEY}
++    store.write(lambda conn: sessions.create_in(conn, "s2", "cli", now=1.0))
++    assert stored_policy(sessions.get(store, "s2")) is None
++
++
++def test_the_cli_launch_record_reads_as_a_policy() -> None:
++    """The in-process CLI stores its record under the same key (extra fields are ignored)."""
++    cli_record = {
++        "cwd": CWD,
++        "model": "m1",
++        "provider": None,
++        "reasoning": None,
++        "toolsets": None,
++        "max_turns": None,
++        "skills": [],
++        "yolo": True,
++        "pass_session_id": False,
++        "ignore_rules": False,
++        "ignore_user_config": False,
++        "safe_mode": False,
++        "worktree": None,
++    }
++    policy = CreationPolicy.from_record(cli_record)
++    assert policy == CreationPolicy(cwd=CWD, model="m1", yolo=True)
++    assert CreationPolicy.from_record({**cli_record, "pass_session_id": True}).pass_session_id
+diff --git a/tests/unit/service/test_daemon_host.py b/tests/unit/service/test_daemon_host.py
+new file mode 100644
+index 0000000..de6e6f5
+--- /dev/null
++++ b/tests/unit/service/test_daemon_host.py
+@@ -0,0 +1,555 @@
++"""P17-08: the daemon session host (viewers, detach, fan-out, ACP lifetime, busy modes, wiring)."""
++
++from __future__ import annotations
++
++import asyncio
++import os
++import time
++from collections.abc import Callable, Iterator, Mapping
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.core.persist import StateStore
++from indus.core.turn_state import TurnState
++from indus.foundation.scope import Scope
++from indus.protocol.requests_port import RequestNotAnswered
++from indus.protocol.server_requests import ApprovalAnswer
++from indus.service.admissions import CANCELLED, TurnTicket
++from indus.service.creation_policy import CreationPolicy, PolicyConflict, PolicyRefused
++from indus.service.daemon_host import ACP_END_REASON, DaemonSessionHost
++from indus.service.event_log import Replay, ReplayGap
++from indus.service.fences import (
++    ControlApplied,
++    ControlStatus,
++    RequestNotOpen,
++    Responded,
++    StaleGeneration,
++    StopOutcome,
++)
++from indus.service.request_redelivery import Offer
++from indus.service.session_service import SessionService
++from indus.service.turn_liveness import ActivityMeter
++from indus.service.viewers import Viewer, busy_default
++from indus.state import registry, sessions
++from indus.state import runtime_ledger as ledger
++from indus.state.registry import StoreHandle
++from indus.state.runtime_ledger import LedgerRefusal
++from indus.tools.calls import ToolCall, ToolResult
++from tests.fakes.agent import eventually, fake_options
++from tests.fakes.model import FakeModelServer, Turn, fake_route, script_of, text_turn, tool_batch
++from tests.unit.backends._aio import aio
++
++CWD = os.path.abspath(os.sep + os.path.join("work", "repo"))
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++class Holder:
++    """An inline tool that holds the turn until released (or the turn is interrupted)."""
++
++    def __init__(self) -> None:
++        self.gate = asyncio.Event()
++        self.entered = 0
++
++    async def __call__(self, call: ToolCall, state: TurnState) -> ToolResult:
++        self.entered += 1
++        waits = {
++            asyncio.ensure_future(self.gate.wait()),
++            asyncio.ensure_future(state.control.stop.wait()),
++        }
++        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
++        for task in waits:
++            task.cancel()
++        return ToolResult("held")
++
++
++async def confirm(call: ToolCall, state: TurnState) -> ToolResult:
++    broker = state.control.broker
++    assert broker is not None
++    try:
++        answer = await broker.ask(
++            "approval", {"command": "rm -r build", "description": "clean up"}, turn_id=state.turn_id
++        )
++    except RequestNotAnswered as exc:
++        return ToolResult(f"not approved: {exc}", is_error=True)
++    assert isinstance(answer, ApprovalAnswer)
++    return ToolResult(f"approved: {answer.choice.value}")
++
++
++class Watcher:
++    """A recording viewer."""
++
++    def __init__(self, cid: str, surface: str = "cli", kinds: tuple[str, ...] = ("approval",)):
++        self.events: list[dict[str, Any]] = []
++        self.offers: list[Offer] = []
++        self.viewer = Viewer.of(
++            cid, surface, kinds, send=self.events.append, offer=self.offers.append
++        )
++
++    def types(self) -> list[str]:
++        return [str(e["type"]) for e in self.events]
++
++
++async def inline[T](fn: Callable[[], T]) -> T:
++    return fn()
++
++
++async def open_host(
++    scope: Scope,
++    store: StoreHandle,
++    tmp_path: Path,
++    *turns: Turn,
++    tools: Mapping[str, Any] | None = None,
++) -> DaemonSessionHost:
++    server = FakeModelServer(script_of(*turns), clock=scope.clock)
++    options = fake_options(server, session_id=None, inline=dict(tools or {}))
++    service = SessionService(
++        scope,
++        fake_route(server),
++        toolsets=[],
++        options=options,
++        store=StateStore(store),
++        lock_dir=tmp_path / "locks",
++    )
++    return await DaemonSessionHost.open(service, store, instance_id="daemon-1", offload=inline)
++
++
++def contiguous(events: list[dict[str, Any]]) -> bool:
++    seqs = [int(e["seq"]) for e in events]
++    return seqs == list(range(seqs[0], seqs[0] + len(seqs))) if seqs else True
++
++
++# -- detach and fan-out ---------------------------------------------------------------------------
++
++
++@aio
++async def test_detach_mid_turn_completes_and_persists(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    host = await open_host(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("hold", {})),
++        text_turn("all done"),
++        tools={"hold": holder},
++    )
++    cli = Watcher("c1")
++    sid = (await host.create(viewer=cli.viewer)).session_id
++    receipt = await host.submit(
++        sid, "do it", principal="cli:me", request_id="r1", connection_id="c1"
++    )
++    await eventually(lambda: holder.entered)
++    assert await host.detach(sid, "c1") is True
++    seen = len(cli.events)
++    holder.gate.set()
++    done = await host.wait(receipt.admission_id)
++    assert done.state == "terminal" and done.outcome == "completed"
++    row = ledger.get(store, receipt.admission_id)
++    assert row is not None and row.final_text == "all done"
++    stored = await StateStore(store).load(sid)
++    assert [r.role for r in stored][0] == "user" and stored[-1].content == "all done"
++    assert len(cli.events) == seen  # nothing reaches a detached viewer
++    replay = host.events_since(sid, host.replay_epoch, 0)
++    assert isinstance(replay, Replay) and "turn.done" in [e["type"] for e in replay.events]
++    assert sid in host.hosted()  # a CLI session outlives its viewers
++    await host.aclose()
++
++
++@aio
++async def test_two_viewers_receive_every_event_in_order(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("Hel", "lo", " there"))
++    cli, tui, stranger = Watcher("c1"), Watcher("c2", "tui"), Watcher("c3")
++    sid = (await host.create(viewer=cli.viewer)).session_id
++    attached = host.attach(sid, tui.viewer)
++    assert attached.replay_epoch == host.replay_epoch and attached.key == sid
++    other = (await host.create(viewer=stranger.viewer)).session_id
++    assert other != sid
++    receipt = await host.submit(sid, "hi", principal="cli:me", request_id="r1")
++    await host.wait(receipt.admission_id)
++    await eventually(lambda: "turn.done" in tui.types())
++    assert cli.events == tui.events and contiguous(cli.events)
++    assert all(e["replay_epoch"] == host.replay_epoch for e in cli.events)
++    assert "".join(str(e["text"]) for e in cli.events if e["type"] == "message.delta") == (
++        "Hello there"
++    )
++    assert stranger.events == []
++    assert host.state(sid).viewers == ("c1", "c2")
++    await host.aclose()
++
++
++@aio
++async def test_a_failing_viewer_does_not_stop_the_others(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    def broken(event: dict[str, Any]) -> None:
++        raise RuntimeError("socket gone")
++
++    host = await open_host(scope, store, tmp_path, text_turn("ok"))
++    good = Watcher("c2")
++    sid = (await host.create(viewer=Viewer.of("c1", "web", send=broken))).session_id
++    host.attach(sid, good.viewer)
++    await host.wait((await host.submit(sid, "hi", principal="p", request_id="r1")).admission_id)
++    await eventually(lambda: "turn.done" in good.types())
++    await host.aclose()
++
++
++@aio
++async def test_reattach_same_connection_is_one_viewer(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("ok"))
++    first, again = Watcher("c1"), Watcher("c1")
++    sid = (await host.create(viewer=first.viewer)).session_id
++    host.attach(sid, again.viewer)
++    assert host.state(sid).viewers == ("c1",)
++    await host.wait((await host.submit(sid, "hi", principal="p", request_id="r1")).admission_id)
++    await eventually(lambda: "turn.done" in again.types())
++    assert first.events == []  # replaced by the second attach
++    assert await host.detach_connection("c1") == [sid]
++    assert host.state(sid).viewers == ()
++    await host.aclose()
++
++
++# -- ACP lifetime ---------------------------------------------------------------------------------
++
++
++@aio
++async def test_acp_session_ends_after_last_detach_only_when_idle(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    host = await open_host(
++        scope, store, tmp_path, tool_batch(("hold", {})), text_turn("done"), tools={"hold": holder}
++    )
++    idle_acp = (await host.create(source="acp", viewer=Watcher("a0", "acp").viewer)).session_id
++    await host.detach(idle_acp, "a0")
++    assert idle_acp not in host.hosted() and host.key_of(idle_acp) is None
++
++    busy_acp = (await host.create(source="acp", viewer=Watcher("a1", "acp").viewer)).session_id
++    receipt = await host.submit(busy_acp, "work", principal="acp:x", request_id="r1")
++    await eventually(lambda: holder.entered)
++    await host.detach(busy_acp, "a1")
++    assert busy_acp in host.hosted() and host.state(busy_acp).close_pending
++    holder.gate.set()
++    done = await host.wait(receipt.admission_id)
++    assert done.outcome == "completed"
++    await eventually(lambda: busy_acp not in host.hosted())
++    row = sessions.get(store, busy_acp)
++    assert row is not None and row["end_reason"] == ACP_END_REASON and row["ended_at"]
++    await host.aclose()
++
++
++@aio
++async def test_reattach_cancels_pending_acp_close(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    host = await open_host(
++        scope, store, tmp_path, tool_batch(("hold", {})), text_turn("done"), tools={"hold": holder}
++    )
++    sid = (await host.create(source="acp", viewer=Watcher("a1", "acp").viewer)).session_id
++    receipt = await host.submit(sid, "work", principal="acp:x", request_id="r1")
++    await eventually(lambda: holder.entered)
++    await host.detach(sid, "a1")
++    assert host.state(sid).close_pending
++    host.attach(sid, Watcher("a2", "acp").viewer)
++    assert not host.state(sid).close_pending
++    holder.gate.set()
++    await host.wait(receipt.admission_id)
++    await eventually(lambda: not host._tasks)  # pyright: ignore[reportPrivateUsage]
++    assert sid in host.hosted()
++    await host.aclose()
++    assert host.hosted() == []  # the daemon stop ends every session
++
++
++# -- busy modes -----------------------------------------------------------------------------------
++
++
++def test_busy_default_per_surface() -> None:
++    assert busy_default("tui") == "queue"
++    for surface in ("cli", "gui", "acp", "web", "messaging"):
++        assert busy_default(surface) == "interrupt"
++
++
++@aio
++async def test_tui_input_queues_and_cli_input_interrupts(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    host = await open_host(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("hold", {})),
++        text_turn("second"),
++        text_turn("third"),
++        tools={"hold": holder},
++    )
++    cli, tui = Watcher("c1"), Watcher("t1", "tui")
++    sid = (await host.create(viewer=cli.viewer)).session_id
++    host.attach(sid, tui.viewer)
++    first = await host.submit(sid, "one", principal="p", request_id="r1", connection_id="c1")
++    await eventually(lambda: holder.entered)
++    second = await host.submit(sid, "two", principal="p", request_id="r2", connection_id="t1")
++    assert second.state == "queued" and second.position == 1
++    assert (await host.receipt(first.admission_id)).state == "started"  # the TUI queued
++    third = await host.submit(sid, "three", principal="p", request_id="r3", connection_id="c1")
++    assert third.state == "queued"
++    done = await host.wait(first.admission_id)
++    assert done.outcome == "interrupted"  # the CLI interrupted it
++    assert (await host.wait(second.admission_id)).outcome == "completed"
++    assert (await host.wait(third.admission_id)).outcome == "completed"
++    texts = [
++        r.final_text for r in (ledger.get(store, a.admission_id) for a in (second, third)) if r
++    ]
++    assert texts == ["second", "third"]
++    await host.aclose()
++
++
++# -- fenced controls ------------------------------------------------------------------------------
++
++
++@aio
++async def test_interrupt_names_its_generation(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    holder = Holder()
++    host = await open_host(scope, store, tmp_path, tool_batch(("hold", {})), tools={"hold": holder})
++    sid = (await host.create()).session_id
++    receipt = await host.submit(sid, "one", principal="p", request_id="r1")
++    await eventually(lambda: holder.entered)
++    running = await host.receipt(receipt.admission_id)
++    assert running.generation == 1
++    stale = host.interrupt(sid, 0)
++    assert isinstance(stale, StaleGeneration) and stale.current == 1
++    assert holder.entered == 1 and (await host.receipt(receipt.admission_id)).state == "started"
++    applied = host.interrupt(sid, 1)
++    assert isinstance(applied, ControlApplied) and applied.status is ControlStatus.DELIVERED
++    assert (await host.wait(receipt.admission_id)).outcome == "interrupted"
++    await host.aclose()
++
++
++@aio
++async def test_stop_is_hard_and_stops_subagents(
++    scope: Scope, store: StoreHandle, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    holder = Holder()
++    host = await open_host(scope, store, tmp_path, tool_batch(("hold", {})), tools={"hold": holder})
++    stopped: list[str] = []
++
++    async def stop_subagents(session_id: str) -> int:
++        stopped.append(session_id)
++        return 0
++
++    monkeypatch.setattr(host.service, "stop_subagents", stop_subagents)
++    sid = (await host.create()).session_id
++    receipt = await host.submit(sid, "one", principal="p", request_id="r1")
++    await eventually(lambda: holder.entered)
++    result = await host.stop(sid, receipt.admission_id)
++    assert result.outcome is StopOutcome.INTERRUPTED
++    assert (await host.wait(receipt.admission_id)).outcome == "cancelled"
++    await eventually(lambda: stopped == [sid])
++    await host.aclose()
++
++
++@aio
++async def test_an_approval_reaches_both_viewers_and_settles_once(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("confirm", {})),
++        text_turn("cleaned"),
++        tools={"confirm": confirm},
++    )
++    cli, tui, blind = Watcher("c1"), Watcher("t1", "tui"), Watcher("w1", "web", kinds=())
++    sid = (await host.create(viewer=cli.viewer)).session_id
++    host.attach(sid, tui.viewer)
++    host.attach(sid, blind.viewer)
++    receipt = await host.submit(sid, "clean", principal="p", request_id="r1")
++    await eventually(lambda: cli.offers and tui.offers)
++    offer = cli.offers[0]
++    assert tui.offers[0].request.request_id == offer.request.request_id and not offer.replayed
++    assert offer.generation == 1 and blind.offers == []
++    request_id = offer.request.request_id
++    assert host.state(sid).open_requests == (request_id,)
++    stale = host.respond(sid, request_id, 0, {"choice": "once"})
++    assert isinstance(stale, StaleGeneration)
++    replay = host.events_since(sid, host.replay_epoch, 0, connection_id="t1")
++    assert isinstance(replay, Replay) and tui.offers[-1].replayed
++    answered = host.respond(sid, request_id, 1, {"choice": "once"})
++    assert answered == Responded(request_id, True)
++    assert isinstance(host.respond(sid, request_id, 1, {"choice": "once"}), RequestNotOpen)
++    assert (await host.wait(receipt.admission_id)).outcome == "completed"
++    await eventually(lambda: "turn.done" in tui.types())
++    for watcher in (cli, tui, blind):
++        settled = [e for e in watcher.events if e["type"] == "request.settled"]
++        assert [(e["request_id"], e["outcome"]) for e in settled] == [(request_id, "answered")]
++    await host.aclose()
++
++
++@aio
++async def test_events_since_reports_a_gap_for_another_epoch(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("ok"))
++    sid = (await host.create()).session_id
++    await host.wait((await host.submit(sid, "hi", principal="p", request_id="r1")).admission_id)
++    gap = host.events_since(sid, "old-epoch", 0)
++    assert isinstance(gap, ReplayGap) and gap.reason == "epoch_changed"
++    await host.aclose()
++
++
++# -- the turn runner ------------------------------------------------------------------------------
++
++
++def _ticket(store: StoreHandle, session_id: str, text: str) -> TurnTicket:
++    now = time.time()
++    row = ledger.AdmissionRow(
++        admission_id="adm-direct",
++        seq=1,
++        principal_id="p",
++        session_id=session_id,
++        request_id="r-direct",
++        payload={"text": text},
++        digest="d",
++        state="started",
++        outcome=None,
++        owner_epoch=1,
++        generation=7,
++        replaces=None,
++        final_text=None,
++        detail=None,
++        created_at=now,
++        updated_at=now,
++    )
++    return TurnTicket(row, ActivityMeter(store.scope.clock))
++
++
++@aio
++async def test_a_stop_before_the_hooks_are_bound_never_starts_the_turn(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path)  # an empty script: any model call fails
++    sid = (await host.create()).session_id
++    ticket = _ticket(store, sid, "never")
++    ticket.interrupt(CANCELLED)
++    outcome = await host._run_turn(ticket)  # pyright: ignore[reportPrivateUsage]
++    assert outcome.outcome == "cancelled"
++    assert host.service.agent(sid).generation == 0
++    await host.aclose()
++
++
++@aio
++async def test_a_lease_won_after_waiting_reloads_the_session(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("fresh"))
++    sid = (await host.create()).session_id
++    before = host.service.agent(sid)
++    ticket = _ticket(store, sid, "after the wait")
++    ticket.lease_waited = True
++    outcome = await host._run_turn(ticket)  # pyright: ignore[reportPrivateUsage]
++    assert outcome.outcome == "completed" and outcome.final_text == "fresh"
++    after = host.service.agent(sid)
++    assert after is not before and before.closed and after.generation == 7
++    await host.aclose()
++
++
++@aio
++async def test_host_injections_and_steer_leftovers_enter_the_ledger(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path, text_turn("ticked"))
++    sid = (await host.create()).session_id
++    assert await host.service.inject(sid, "loop tick", origin="loop tick") is True
++    rows = [r for r in ledger.pending(store, sid)] or []
++    assert rows and rows[0].principal_id == "internal:loop-tick"
++    receipt = await host.wait(rows[0].admission_id)
++    assert receipt.outcome == "completed"
++    await host.aclose()
++
++
++# -- compaction and policy ------------------------------------------------------------------------
++
++
++@aio
++async def test_the_key_and_book_follow_a_compaction(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path)
++    sid = (await host.create()).session_id
++    agent = host.service.agent(sid)
++    agent._continued(sid, "child-1")  # pyright: ignore[reportPrivateUsage]
++    assert host.key_of("child-1") == sid and host.key_of(sid) == sid
++    state = host.state("child-1")
++    assert state.key == sid and state.session_id == "child-1"
++    book = host._live[sid].book  # pyright: ignore[reportPrivateUsage]
++    assert book.session_id == "child-1"
++    await host.aclose()
++
++
++@aio
++async def test_create_freezes_the_policy_and_resume_checks_it(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    host = await open_host(scope, store, tmp_path)
++    policy = CreationPolicy.from_launch({"cwd": CWD, "model": "m1", "provider": "p1"})
++    sid = (await host.create(policy=policy)).session_id
++    row = sessions.get(store, sid)
++    assert row is not None and "launch" in sessions.parse_model_config(row["model_config"])
++    same = CreationPolicy.from_launch({"model": "m1"})
++    assert (await host.resume(sid, policy=same)).session_id == sid
++    with pytest.raises(PolicyConflict) as info:
++        await host.resume(sid, policy=CreationPolicy.from_launch({"model": "m2"}))
++    assert info.value.field == "model"
++    with pytest.raises(PolicyRefused):
++        await host.create(policy=CreationPolicy.from_launch({"safe_mode": True, "model": "m1"}))
++    await host.aclose()
++
++
++# -- the in-process forms of the shared interface -------------------------------------------------
++
++
++@aio
++async def test_in_process_service_answers_replay_and_receipt_trivially(
++    scope: Scope, tmp_path: Path
++) -> None:
++    server = FakeModelServer(script_of(text_turn("ok")), clock=scope.clock)
++    service = SessionService(
++        scope,
++        fake_route(server),
++        toolsets=[],
++        options=fake_options(server, session_id=None),
++        lock_dir=tmp_path / "locks",
++    )
++    sid = (await service.create()).session_id
++    await service.submit(sid, "hi")
++    await service.wait(sid)
++    replay = service.events_since(sid, service.replay_epoch, -1)
++    assert isinstance(replay, Replay)
++    assert [e["seq"] for e in replay.events] == [e.seq for e in service.events(sid)]
++    assert replay.last_seq == replay.events[-1]["seq"]
++    later = service.events_since(sid, service.replay_epoch, replay.last_seq)
++    assert isinstance(later, Replay) and later.events == ()
++    gap = service.events_since(sid, "another-epoch", 0)
++    assert isinstance(gap, ReplayGap) and gap.reason == "epoch_changed"
++    ahead = service.events_since(sid, service.replay_epoch, replay.last_seq + 5)
++    assert isinstance(ahead, ReplayGap) and ahead.reason == "ahead"
++    with pytest.raises(LedgerRefusal) as info:
++        await service.receipt("adm-anything")
++    assert info.value.reason == "not_found"
++    await service.aclose()
