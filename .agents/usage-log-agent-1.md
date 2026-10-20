@@ -103,3 +103,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 08:08 UTC | 0% | 100% | 13:00 UTC | window reset; P17-13/14 landed (8e91087); started wave 27: K6, K7, K8, K9, E11
 2026-10-20 08:31 UTC | 22% | 78% | 13:00 UTC | wave 27 building: K6 19, K7 17, K8 17, K9 10, E11 11 files
 2026-10-20 08:57 UTC | 36% | 64% | 13:00 UTC | K6, K9 done (parked); E11 lead gate; K7, K8, E12, E13 building
+2026-10-20 09:21 UTC | 49% | 51% | 13:00 UTC | P16-31/32 landed (8708c50); P17-15..22 integrator (verify14), E12, E13 running
