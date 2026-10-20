@@ -65,3 +65,24 @@
   allow_control False; service-URL allow-list refuses lookalikes/ports/http/userinfo/IPs; validation token echo capped 1,024.
 - Follow-ups: P16-32 teams target parser; allowed_tenants option; proactive DM to new users; non-image files (file
   consent); E7 may reuse botauth/_entra; Teams meetings (K12, D-16.87); ACC-K12 rows missing.
+
+## w25-e7.patch: P16-13 Google Chat + P16-20 QQ Bot — done
+- Builder checks: adapters+contract+schema+config 788 passed / 43 skipped; ruff, pyright, lint-imports, tooling.checks ok.
+  RS256 via `cryptography` (lazy import); no hand-rolled crypto. Fixed while building: a 401 send read as "chat not found";
+  media host check by suffix → exact Google host list.
+- Extras: `google-chat = ["cryptography==50.0.2"]`, `qqbot = ["httpx-ws==0.9.0"]` (both already locked) — re-lock metadata.
+- Wiring (core): registry rows `_chat_entry("google_chat", "Google Chat", sdk=("cryptography",), extra_name="google-chat",
+  required_env=("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",), max_len=4000, hint="You are talking through Google Chat. *bold*,
+  _italic_, ~strike~ and code render; headings and tables do not.")` and `_chat_entry("qqbot", "QQ Bot", sdk=("httpx_ws",),
+  extra_name="qqbot", required_env=("QQ_APP_ID", "QQ_CLIENT_SECRET"), max_len=4000, hint="You are talking through QQ.
+  Formatting is not rendered, so write plain text.")`; BUILTIN_NAMES += google_chat (+ google_chat_pubsub case?), qqbot;
+  BUILTIN_CREDENTIALS google_chat: (GOOGLE_CHAT_SERVICE_ACCOUNT_JSON,), qqbot: (QQ_APP_ID, QQ_CLIENT_SECRET).
+  Drain probe: daemon calls adapter.set_drain_probe(daemon.lifecycle.notice) on platform up (better: a base Adapter seam).
+  `indus send` tested via send-only connect only — add the send_command test once registry rows exist.
+- Decisions: own clients (no Google/QQ SDK); RS256 only, keys via injectable fetcher (300 s cache, 1 forced refetch/min),
+  both audience flavours (project number / endpoint URL + verified email); service account inline JSON from SecretStore
+  only, non-Google token_uri refused; listener 127.0.0.1:8647 /google-chat, 1 MiB; no typing/media upload (clean refusal);
+  card clicks handed to core; QQ chat ids prefixed group:/channel:/dm:; passive-reply window 300 s; markdown off; heartbeat
+  80 % with missing-ack socket replacement; AT_MESSAGE_CREATE handled.
+- Follow-ups: base drain-probe/ingress-gate seam; Google Chat native uploads (per-user OAuth); QQ webhook mode;
+  commandId-only slash commands.
