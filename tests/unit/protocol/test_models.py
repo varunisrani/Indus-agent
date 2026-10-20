@@ -219,6 +219,10 @@ def test_catalogue_names() -> None:
         "paste.collapse",
         "image.attach",
         "input.detect_drop",
+        "session.subscribe",
+        "session.unsubscribe",
+        "sessions.watch",
+        "events.since",
     ]
     for spec in METHODS.values():
         assert spec.summary

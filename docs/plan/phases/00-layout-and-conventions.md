@@ -310,6 +310,7 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | croniter | 6.2.4 | 2026-07-10 | MIT | runtime | P14 |
 | fastapi | 0.142.2 | 2026-09-30 | MIT | runtime | P15-30 (gateway API server, webhooks) |
 | uvicorn | 0.54.0 | 2026-09-25 | BSD-3-Clause | runtime (already locked via mcp) | P15-30 |
+| wsproto | 1.3.2 | (already locked via httpx-ws) | MIT | runtime: uvicorn's WebSocket protocol for the daemon attach endpoint | P17-13 |
 | mcp (MCP Python SDK) | 2.3.0 | 2026-10-02 | MIT | runtime | P13 (client), P19 (server) |
 | jsonschema | 4.26.0 | 2026-01-07 | MIT | runtime | P04/P13 (whichever lands first) |
 | playwright | 1.63.0 | 2026-09-15 | Apache-2.0 | extra `browser` | P10 |

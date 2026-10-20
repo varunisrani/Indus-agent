@@ -434,3 +434,15 @@
 - Intended differences recorded: D-16.460 … D-16.479, §2.7 (+ §3.1 row).
 - Open seams / follow-ups: Feishu streaming byte cap for API answers; Buzz control-character serialisation (NIP-01 exact escaping), cursor persistence, edits/reactions/files/NIP-OA, the 16,000 cap and DM detection need a live check; Feishu live check of token refusal codes and long-connection fields, processing reactions not called by the runner, voice transcoding, continuation delay, per-IP webhook rate limit; SimpleX thumbnails; BlueBubbles' kit listener is loopback by default, so a server on another Mac needs `webhook_host` + source CIDRs (doc for P16-31 setup); P16-31 setup wizards, P16-32 target parsers, P16-36 doctor ports above; `whatsapp_cloud` still missing from `cron.targets.KNOWN_PLATFORMS` (E4; feishu/bluebubbles/simplex/buzz were already there).
 - Gate (verify11, 9093b78 + E9 + E10 + integration, no extras installed, `uv sync --locked`): ruff check/format, pyright (0 errors), lint-imports (1 kept) clean; `INDUS_STRESS_SECONDS=10 pytest -m "not perf"`: **13842 passed, 76 skipped, 11 deselected** (first run, no failures); `pytest -m perf` alone 11 passed; `tooling.checks --require-ref` ok; `CI=true pnpm test --maxWorkers=1` 855 passed (58 files); with `--extra buzz --extra feishu --extra simplex` (separate scratch venv, `uv sync --locked --offline`) the four adapters' tests, the contract suite and the send tests 531 passed / 38 skipped (only discord/slack vendor-name rows), including `buzz/test_crypto.py::test_bip340_vectors_verify_as_the_spec_says`, `::test_bip340_signatures_round_trip_and_events_verify` and Feishu's `test_the_real_opener_speaks_to_an_asgi_server` (skipped without the extras); no `# STAND-IN` file; no conflict markers; the staged diff has no credential-shaped literal (PEM armour, `eyJ…eyJ`, `nsec1` + key, `ghp_`, `sk-`, `xox*`, `AKIA`, `glpat-`, Meta `EAA…`, Twilio `AC`/`SK` + 32 hex, `AIza`; bare 64-hex only in uv.lock hashes, the BIP-340 vector fixture and Feishu signature vectors); no stray processes.
+
+## P17-13/14 landing notes (lead) — WebSocket endpoint and subscriptions (slice K5)
+- Single slice, integrated by the lead (no integrator): patch applied cleanly on main 91ea367.
+- Lead ruling: `wsproto==1.3.2` (MIT, already locked through the httpx-ws extras) moves into the base dependencies so
+  uvicorn can serve the attach WebSocket; re-lock added only the base requirement; pin row in 00-layout §4.
+- The endpoint (gateway/ws) and subscriptions (service/subscriptions.py) are built and tested against a real
+  DaemonSessionHost over the fake model, but NOT mounted in the daemon yet — owed to P17-22 (see docs/notes/P17/
+  ws-endpoint.md: build WsEndpoint on the attach ticket book, AttachVerbs ws_url, status surface, stop order).
+- Builder decisions (no new error codes; prompt.submit when_busy semantics; per-viewer queue 1,024 events / 4 MiB then
+  replay_gap{overflow}; limits 1 MiB/message, 64 connections, 120 s idle) are recorded in the two task notes; protocol
+  additions (attach methods, BridgeReady fields, generation on steer/answer) regenerated into packages/protocol.
+

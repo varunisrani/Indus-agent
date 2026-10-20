@@ -1406,6 +1406,12 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/service/test_ws_auth.py::test_ticket_absent_from_logs`
   - `tests/unit/foundation/test_redact.py::test_ws_tickets_are_masked_whole`
   - `tests/unit/service/test_ws_auth.py::test_mint_and_burn_cannot_grow_the_book_without_bound`
+- **ACC-K51-4** Replay since cursor: a reattaching viewer gets the missed events once, in order, or a gap and a snapshot
+  - `tests/unit/service/test_subscriptions.py::test_subscribe_from_a_cursor_replays_once_then_continues_live`
+  - `tests/unit/service/test_subscriptions.py::test_another_epoch_or_an_evicted_cursor_gives_a_gap_then_live_events`
+  - `tests/unit/service/test_subscriptions.py::test_an_overflowing_viewer_drops_to_a_gap_and_recovers_by_subscribing_again`
+  - `tests/unit/service/test_subscriptions.py::test_an_open_approval_is_offered_again_on_subscribe`
+  - `tests/contract/gateway/test_ws_endpoint.py::test_a_connection_reaches_only_sessions_it_attached`
 - **ACC-K52-1** `indus gateway setup` and per-platform setup helpers (WhatsApp pairing, Slack app)
   - Review: not yet planned (phase TBD)
 - **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …

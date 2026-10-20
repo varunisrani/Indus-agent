@@ -37,7 +37,8 @@ READY_METHOD = "gateway.ready"
 
 
 class BridgeReady(ProtocolModel):
-    """The first frame of a stdio connection: the server is ready for requests."""
+    """The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for
+    requests."""
 
     theme: str
     """The configured theme name (``auto`` lets the client detect light or dark)."""
@@ -45,6 +46,14 @@ class BridgeReady(ProtocolModel):
     """Whether the server answers pings; a stdio child does not need them."""
     protocol_version: NonNegativeInt
     """The protocol version the server speaks."""
+    replay_epoch: str | None = None
+    """The daemon's replay epoch (WebSocket attach): event cursors are only valid within it."""
+    profile_id: str | None = None
+    """The profile the daemon serves (WebSocket attach); a client refuses a mismatch."""
+    instance_id: str | None = None
+    """This daemon start (WebSocket attach); it changes on every restart."""
+    capabilities: list[str] | None = None
+    """What the daemon offers attached clients (WebSocket attach), as ``describe`` lists it."""
 
 
 # --- history and sessions ------------------------------------------------------------------------

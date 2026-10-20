@@ -121,6 +121,19 @@ export const METHODS = deepFreeze({
     "params": "ConfigSetParams",
     "result": "ConfigSetResult"
   },
+  "events.since": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND"
+    ],
+    "params": "EventsSinceParams",
+    "result": "EventsSinceResult"
+  },
   "gateway.ping": {
     "errors": [
       "PARSE_ERROR",
@@ -441,6 +454,21 @@ export const METHODS = deepFreeze({
     "params": "SessionSteerParams",
     "result": "SessionSteerResult"
   },
+  "session.subscribe": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND",
+      "SESSION_REFUSED",
+      "STORE_FAILED"
+    ],
+    "params": "SessionSubscribeParams",
+    "result": "SessionSubscribeResult"
+  },
   "session.title": {
     "errors": [
       "PARSE_ERROR",
@@ -472,6 +500,18 @@ export const METHODS = deepFreeze({
     "params": "SessionUndoParams",
     "result": "SessionUndoResult"
   },
+  "session.unsubscribe": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "SessionUnsubscribeParams",
+    "result": "SessionUnsubscribeResult"
+  },
   "session.usage": {
     "errors": [
       "PARSE_ERROR",
@@ -484,6 +524,18 @@ export const METHODS = deepFreeze({
     ],
     "params": "SessionUsageParams",
     "result": "SessionUsageResult"
+  },
+  "sessions.watch": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "SessionsWatchParams",
+    "result": "SessionsWatchResult"
   },
   "shell.exec": {
     "errors": [
@@ -530,6 +582,7 @@ export interface MethodTypes {
   "complete.slash": { params: T.CompleteSlashParams; result: T.CompleteResult };
   "config.get": { params: T.ConfigGetParams; result: T.ConfigGetResult };
   "config.set": { params: T.ConfigSetParams; result: T.ConfigSetResult };
+  "events.since": { params: T.EventsSinceParams; result: T.EventsSinceResult };
   "gateway.ping": { params: T.GatewayPingParams; result: T.GatewayPingResult };
   "image.attach": { params: T.ImageAttachParams; result: T.ImageAttachResult };
   "input.detect_drop": { params: T.InputDetectDropParams; result: T.InputDetectDropResult };
@@ -553,9 +606,12 @@ export interface MethodTypes {
   "session.redirect": { params: T.SessionRedirectParams; result: T.SessionRedirectResult };
   "session.resume": { params: T.SessionResumeParams; result: T.SessionResumeResult };
   "session.steer": { params: T.SessionSteerParams; result: T.SessionSteerResult };
+  "session.subscribe": { params: T.SessionSubscribeParams; result: T.SessionSubscribeResult };
   "session.title": { params: T.SessionTitleParams; result: T.SessionTitleResult };
   "session.undo": { params: T.SessionUndoParams; result: T.SessionUndoResult };
+  "session.unsubscribe": { params: T.SessionUnsubscribeParams; result: T.SessionUnsubscribeResult };
   "session.usage": { params: T.SessionUsageParams; result: T.SessionUsageResult };
+  "sessions.watch": { params: T.SessionsWatchParams; result: T.SessionsWatchResult };
   "shell.exec": { params: T.ShellExecParams; result: T.ShellExecResult };
   "slash.exec": { params: T.SlashExecParams; result: T.SlashExecResult };
 }

@@ -33,7 +33,10 @@ export interface ApprovalRequest {
   choices?: ApprovalChoice[];
 }
 
-/** The first frame of a stdio connection: the server is ready for requests. */
+/**
+ * The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for
+ * requests.
+ */
 export interface BridgeReady {
   /** The configured theme name (`auto` lets the client detect light or dark). */
   theme: string;
@@ -41,6 +44,14 @@ export interface BridgeReady {
   heartbeat?: boolean;
   /** The protocol version the server speaks. */
   protocol_version: number;
+  /** The daemon's replay epoch (WebSocket attach): event cursors are only valid within it. */
+  replay_epoch?: string | null;
+  /** The profile the daemon serves (WebSocket attach); a client refuses a mismatch. */
+  profile_id?: string | null;
+  /** This daemon start (WebSocket attach); it changes on every restart. */
+  instance_id?: string | null;
+  /** What the daemon offers attached clients (WebSocket attach), as `describe` lists it. */
+  capabilities?: string[] | null;
 }
 
 /** What a submit does while the session is running a turn. */
@@ -125,6 +136,8 @@ export interface ClarifyRequest {
 export interface ClientCapabilitiesParams {
   /** Feature names; names the server does not know are ignored. */
   features?: string[];
+  /** The kind of client attaching to the daemon (decides the busy default and presence). */
+  surface?: "cli" | "tui" | "gui" | "acp" | "web" | null;
 }
 
 /** The features both sides support (none are defined yet). */
@@ -292,6 +305,32 @@ export interface ErrorResponse {
 }
 
 export type Event = TurnStarted | MessageDelta | ReasoningDelta | ToolStarted | ToolProgress | ToolCompleted | Status | Notice | ServerRequestCancelled | TurnDone | LearningReviewDone | GoalUpdate | LoopUpdate | HeartbeatFired | MessageComplete | SessionInfo | SessionUsage | SessionTitle | TodoUpdated;
+
+/** The events of a watched session after a cursor. */
+export interface EventsSinceParams {
+  /** A session this connection watches. */
+  session_id: SessionId;
+  /** The replay epoch the cursor belongs to. */
+  epoch?: string | null;
+  /** The last seq the client applied. */
+  cursor: number;
+}
+
+/** The missing events, oldest first, or a gap. */
+export interface EventsSinceResult {
+  /** The id the session runs under now. */
+  session_id: string;
+  /** The daemon's replay epoch. */
+  replay_epoch: string;
+  /** The newest seq of the session (the cursor to hold afterwards). */
+  last_seq: number;
+  /** The events after the cursor (each with `seq` and `replay_epoch`); empty on a gap. */
+  events?: { [key: string]: JsonValue }[];
+  /** Set when the events cannot be replayed (reload a snapshot). */
+  gap?: ReplayGapInfo | null;
+  /** Open server requests offered again to this connection. */
+  reoffered?: number;
+}
 
 /** Why a turn ended. Closed set: every exit path of the turn loop maps to one value. */
 export type ExitReason = "completed" | "interrupted_by_user" | "interrupted_by_system" | "budget_exhausted" | "max_iterations" | "invalid_tool_strikes" | "persistence_failed" | "provider_failed" | "compression_exhausted" | "guardrail_halt";
@@ -630,6 +669,16 @@ export interface ReloadMcpResult {
   message: string;
 }
 
+/** Why the events after a cursor cannot be sent; the client reloads a snapshot. */
+export interface ReplayGapInfo {
+  /** Another daemon run, dropped from memory, a cursor past the end, or the viewer fell behind. */
+  reason: "epoch_changed" | "evicted" | "ahead" | "overflow";
+  /** The daemon's current replay epoch. */
+  replay_epoch: string;
+  /** The newest seq of the session: the cursor to hold after the snapshot. */
+  last_seq: number;
+}
+
 /** A call that expects a response. */
 export interface Request {
   /** Always the string `2.0`. */
@@ -682,6 +731,8 @@ export interface ServerRequestAnswerParams {
   request_id: string;
   /** The answer; its kind must match the request's. */
   answer: ServerRequestAnswer;
+  /** The turn that asked (as offered); the daemon requires it and refuses another turn's. */
+  generation?: number | null;
 }
 
 /** Confirmation that the answer was delivered. */
@@ -933,6 +984,8 @@ export interface SessionSteerParams {
   session_id: SessionId;
   /** The guidance. */
   text: MessageText;
+  /** The turn the guidance is for; the daemon requires it and ignores another turn's steer. */
+  generation?: number | null;
 }
 
 /** Whether the guidance was queued for the running turn. */
@@ -941,6 +994,32 @@ export interface SessionSteerResult {
   queued: boolean;
   /** Identifies the queued text so it can be withdrawn. */
   ticket?: string | null;
+}
+
+/** Watch a session from this connection: replay since a cursor, then live events. */
+export interface SessionSubscribeParams {
+  /** The session to watch. */
+  session_id: SessionId;
+  /** The replay epoch the cursor belongs to; absent with a cursor counts as another run. */
+  epoch?: string | null;
+  /** The last seq the client applied; absent means no replay (live from now on). */
+  cursor?: number | null;
+}
+
+/** Where the subscription starts. */
+export interface SessionSubscribeResult {
+  /** The id the session runs under now. */
+  session_id: string;
+  /** The daemon's replay epoch. */
+  replay_epoch: string;
+  /** The newest seq when the subscription began (after the replayed events). */
+  last_seq: number;
+  /** Events sent ahead of this answer to catch up from the cursor. */
+  replayed: number;
+  /** Set when the events after the cursor could not be replayed (reload a snapshot). */
+  gap?: ReplayGapInfo | null;
+  /** Open server requests offered again to this connection. */
+  reoffered?: number;
 }
 
 /** The session's title changed. */
@@ -987,6 +1066,18 @@ export interface SessionUndoResult {
   prefill?: string;
 }
 
+/** Stop watching a session from this connection (its turns keep running). */
+export interface SessionUnsubscribeParams {
+  /** The session to stop watching. */
+  session_id: SessionId;
+}
+
+/** Whether this connection was watching. */
+export interface SessionUnsubscribeResult {
+  /** False when the connection was not a viewer of the session. */
+  unsubscribed: boolean;
+}
+
 /** The session's counters after a turn or on request. */
 export interface SessionUsage {
   /** The session the event belongs to. */
@@ -1009,6 +1100,18 @@ export interface SessionUsageParams {
 export interface SessionUsageResult {
   /** Totals for this attachment of the session. */
   usage: UsageNumbers;
+}
+
+/** Receive `session.updated` for list views (title, running state, last activity). */
+export interface SessionsWatchParams {
+  /** False stops the updates. */
+  enabled?: boolean;
+}
+
+/** Whether list updates are on for this connection. */
+export interface SessionsWatchResult {
+  /** The state after the call. */
+  watching: boolean;
 }
 
 /** Run a shell command on this machine (the composer's `!`). */

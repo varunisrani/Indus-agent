@@ -1039,6 +1039,10 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
 - **R09.2** WebSocket auth differs from REST auth
   - Review: not yet planned (P00-guards)
+  - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_subprotocol_is_accepted_once`
+  - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_url_is_never_used`
+  - `tests/contract/gateway/test_ws_endpoint.py::test_a_foreign_origin_or_peer_is_refused_4403`
+  - `tests/contract/gateway/test_ws_endpoint.py::test_logs_carry_no_ticket_params_or_query`
 - **R09.3** Non-loopback must fail closed
   - Review: not yet planned (P00-guards)
 - **R09.4** Middleware ordering leaks

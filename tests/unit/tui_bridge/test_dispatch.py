@@ -11,6 +11,7 @@ import pytest
 
 from indus.foundation.errors import IndusError
 from indus.foundation.scope import Scope, current_scope
+from indus.protocol.attach import DAEMON_ONLY_METHODS
 from indus.protocol.base import ProtocolModel
 from indus.protocol.bridge import ConfigGetResult
 from indus.protocol.envelope import Request
@@ -48,7 +49,7 @@ def handle(d: Dispatcher, method: str, params: dict[str, Any] | None = None) -> 
 
 def test_table_serves_every_declared_method_and_nothing_else() -> None:
     table = build_table()
-    assert sorted(table.names()) == sorted(METHODS)
+    assert sorted(table.names()) == sorted(set(METHODS) - DAEMON_ONLY_METHODS)
     assert len(HANDLER_MODULES) == 8
     with pytest.raises(ValueError, match="not declared"):
         table.add("session.explode", lambda bridge, params: None)  # type: ignore[arg-type, return-value]

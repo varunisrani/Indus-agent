@@ -69,17 +69,37 @@
     },
     "BridgeReady": {
       "additionalProperties": false,
-      "description": "The first frame of a stdio connection: the server is ready for requests.",
+      "description": "The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for\nrequests.",
       "properties": {
+        "capabilities": {
+          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+          "default": null,
+          "description": "What the daemon offers attached clients (WebSocket attach), as ``describe`` lists it."
+        },
         "heartbeat": {
           "default": false,
           "description": "Whether the server answers pings; a stdio child does not need them.",
           "type": "boolean"
         },
+        "instance_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "This daemon start (WebSocket attach); it changes on every restart."
+        },
+        "profile_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The profile the daemon serves (WebSocket attach); a client refuses a mismatch."
+        },
         "protocol_version": {
           "description": "The protocol version the server speaks.",
           "minimum": 0,
           "type": "integer"
+        },
+        "replay_epoch": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The daemon's replay epoch (WebSocket attach): event cursors are only valid within it."
         },
         "theme": {
           "description": "The configured theme name (``auto`` lets the client detect light or dark).",
@@ -240,6 +260,14 @@
           "description": "Feature names; names the server does not know are ignored.",
           "items": {"type": "string"},
           "type": "array"
+        },
+        "surface": {
+          "anyOf": [
+            {"enum": ["cli", "tui", "gui", "acp", "web"], "type": "string"},
+            {"type": "null"}
+          ],
+          "default": null,
+          "description": "The kind of client attaching to the daemon (decides the busy default and presence)."
         }
       },
       "type": "object"
@@ -594,6 +622,59 @@
         {"$ref": "#/$defs/SessionTitle"},
         {"$ref": "#/$defs/TodoUpdated"}
       ]
+    },
+    "EventsSinceParams": {
+      "additionalProperties": false,
+      "description": "The events of a watched session after a cursor.",
+      "properties": {
+        "cursor": {
+          "description": "The last seq the client applied.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "epoch": {
+          "anyOf": [{"minLength": 1, "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The replay epoch the cursor belongs to."
+        },
+        "session_id": {
+          "$ref": "#/$defs/SessionId",
+          "description": "A session this connection watches."
+        }
+      },
+      "required": ["session_id", "cursor"],
+      "type": "object"
+    },
+    "EventsSinceResult": {
+      "additionalProperties": false,
+      "description": "The missing events, oldest first, or a gap.",
+      "properties": {
+        "events": {
+          "description": "The events after the cursor (each with ``seq`` and ``replay_epoch``); empty on a gap.",
+          "items": {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
+          "type": "array"
+        },
+        "gap": {
+          "anyOf": [{"$ref": "#/$defs/ReplayGapInfo"}, {"type": "null"}],
+          "default": null,
+          "description": "Set when the events cannot be replayed (reload a snapshot)."
+        },
+        "last_seq": {
+          "description": "The newest seq of the session (the cursor to hold afterwards).",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reoffered": {
+          "default": 0,
+          "description": "Open server requests offered again to this connection.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replay_epoch": {"description": "The daemon's replay epoch.", "type": "string"},
+        "session_id": {"description": "The id the session runs under now.", "type": "string"}
+      },
+      "required": ["session_id", "replay_epoch", "last_seq"],
+      "type": "object"
     },
     "ExitReason": {
       "description": "Why a turn ended. Closed set: every exit path of the turn loop maps to one value.",
@@ -1200,6 +1281,25 @@
       "required": ["reloaded", "message"],
       "type": "object"
     },
+    "ReplayGapInfo": {
+      "additionalProperties": false,
+      "description": "Why the events after a cursor cannot be sent; the client reloads a snapshot.",
+      "properties": {
+        "last_seq": {
+          "description": "The newest seq of the session: the cursor to hold after the snapshot.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Another daemon run, dropped from memory, a cursor past the end, or the viewer fell behind.",
+          "enum": ["epoch_changed", "evicted", "ahead", "overflow"],
+          "type": "string"
+        },
+        "replay_epoch": {"description": "The daemon's current replay epoch.", "type": "string"}
+      },
+      "required": ["reason", "replay_epoch", "last_seq"],
+      "type": "object"
+    },
     "Request": {
       "additionalProperties": false,
       "description": "A call that expects a response.",
@@ -1327,6 +1427,11 @@
         "answer": {
           "$ref": "#/$defs/ServerRequestAnswer",
           "description": "The answer; its kind must match the request's."
+        },
+        "generation": {
+          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "The turn that asked (as offered); the daemon requires it and refuses another turn's."
         },
         "request_id": {
           "description": "The request being answered.",
@@ -1802,6 +1907,11 @@
       "additionalProperties": false,
       "description": "Add guidance the running turn picks up after its current step.",
       "properties": {
+        "generation": {
+          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "The turn the guidance is for; the daemon requires it and ignores another turn's steer."
+        },
         "session_id": {
           "$ref": "#/$defs/SessionId",
           "description": "The session with the running turn."
@@ -1826,6 +1936,56 @@
         }
       },
       "required": ["queued"],
+      "type": "object"
+    },
+    "SessionSubscribeParams": {
+      "additionalProperties": false,
+      "description": "Watch a session from this connection: replay since a cursor, then live events.",
+      "properties": {
+        "cursor": {
+          "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "The last seq the client applied; absent means no replay (live from now on)."
+        },
+        "epoch": {
+          "anyOf": [{"minLength": 1, "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The replay epoch the cursor belongs to; absent with a cursor counts as another run."
+        },
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session to watch."}
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionSubscribeResult": {
+      "additionalProperties": false,
+      "description": "Where the subscription starts.",
+      "properties": {
+        "gap": {
+          "anyOf": [{"$ref": "#/$defs/ReplayGapInfo"}, {"type": "null"}],
+          "default": null,
+          "description": "Set when the events after the cursor could not be replayed (reload a snapshot)."
+        },
+        "last_seq": {
+          "description": "The newest seq when the subscription began (after the replayed events).",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reoffered": {
+          "default": 0,
+          "description": "Open server requests offered again to this connection.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replay_epoch": {"description": "The daemon's replay epoch.", "type": "string"},
+        "replayed": {
+          "description": "Events sent ahead of this answer to catch up from the cursor.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {"description": "The id the session runs under now.", "type": "string"}
+      },
+      "required": ["session_id", "replay_epoch", "last_seq", "replayed"],
       "type": "object"
     },
     "SessionTitle": {
@@ -1917,6 +2077,27 @@
       "required": ["removed"],
       "type": "object"
     },
+    "SessionUnsubscribeParams": {
+      "additionalProperties": false,
+      "description": "Stop watching a session from this connection (its turns keep running).",
+      "properties": {
+        "session_id": {"$ref": "#/$defs/SessionId", "description": "The session to stop watching."}
+      },
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "SessionUnsubscribeResult": {
+      "additionalProperties": false,
+      "description": "Whether this connection was watching.",
+      "properties": {
+        "unsubscribed": {
+          "description": "False when the connection was not a viewer of the session.",
+          "type": "boolean"
+        }
+      },
+      "required": ["unsubscribed"],
+      "type": "object"
+    },
     "SessionUsage": {
       "additionalProperties": false,
       "description": "The session's counters after a turn or on request.",
@@ -1962,6 +2143,21 @@
         }
       },
       "required": ["usage"],
+      "type": "object"
+    },
+    "SessionsWatchParams": {
+      "additionalProperties": false,
+      "description": "Receive ``session.updated`` for list views (title, running state, last activity).",
+      "properties": {
+        "enabled": {"default": true, "description": "False stops the updates.", "type": "boolean"}
+      },
+      "type": "object"
+    },
+    "SessionsWatchResult": {
+      "additionalProperties": false,
+      "description": "Whether list updates are on for this connection.",
+      "properties": {"watching": {"description": "The state after the call.", "type": "boolean"}},
+      "required": ["watching"],
       "type": "object"
     },
     "ShellExecParams": {
@@ -2703,6 +2899,19 @@
         "params": "ConfigSetParams",
         "result": "ConfigSetResult"
       },
+      "events.since": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND"
+        ],
+        "params": "EventsSinceParams",
+        "result": "EventsSinceResult"
+      },
       "gateway.ping": {
         "errors": [
           "PARSE_ERROR",
@@ -3023,6 +3232,21 @@
         "params": "SessionSteerParams",
         "result": "SessionSteerResult"
       },
+      "session.subscribe": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "SESSION_NOT_FOUND",
+          "SESSION_REFUSED",
+          "STORE_FAILED"
+        ],
+        "params": "SessionSubscribeParams",
+        "result": "SessionSubscribeResult"
+      },
       "session.title": {
         "errors": [
           "PARSE_ERROR",
@@ -3054,6 +3278,18 @@
         "params": "SessionUndoParams",
         "result": "SessionUndoResult"
       },
+      "session.unsubscribe": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "SessionUnsubscribeParams",
+        "result": "SessionUnsubscribeResult"
+      },
       "session.usage": {
         "errors": [
           "PARSE_ERROR",
@@ -3066,6 +3302,18 @@
         ],
         "params": "SessionUsageParams",
         "result": "SessionUsageResult"
+      },
+      "sessions.watch": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "SessionsWatchParams",
+        "result": "SessionsWatchResult"
       },
       "shell.exec": {
         "errors": [

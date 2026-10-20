@@ -5,7 +5,9 @@ and the real port is known), retrying ``EADDRINUSE`` ``BIND_ATTEMPTS`` times ``B
 apart on the injected clock while a restarting predecessor lets go of the port.
 ``HttpServer`` runs uvicorn on that socket inside the caller's event loop without installing
 signal handlers (the daemon owns signals); ``stop()`` closes the listener and waits a few
-seconds for open connections.
+seconds for open connections. WebSockets are off unless ``ws=`` names uvicorn's WebSocket
+settings (the daemon's attach endpoint, P17-13: implementation, message size cap, no
+compression).
 
 The ASGI layers, outermost first, as ``api_server`` stacks them:
 
@@ -29,7 +31,7 @@ import errno
 import json
 import logging
 import socket
-from collections.abc import Awaitable, Callable, Iterable, MutableMapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping
 from typing import Any
 
 from starlette.requests import Request
@@ -118,10 +120,18 @@ async def bind_listener(
 class HttpServer:
     """One ASGI app served by uvicorn on a socket we bound (see the module notes)."""
 
-    def __init__(self, app: Asgi, sock: socket.socket, *, name: str) -> None:
+    def __init__(
+        self,
+        app: Asgi,
+        sock: socket.socket,
+        *,
+        name: str,
+        ws: Mapping[str, Any] | None = None,
+    ) -> None:
         self.app = app
         self.sock = sock
         self.name = name
+        self.ws: dict[str, Any] = dict(ws) if ws is not None else {"ws": "none"}
         self._server: Any = None
         self._task: asyncio.Task[None] | None = None
 
@@ -140,8 +150,8 @@ class HttpServer:
             access_log=False,
             server_header=False,
             proxy_headers=False,
-            ws="none",
             timeout_graceful_shutdown=int(SHUTDOWN_GRACE_S),
+            **self.ws,
         )
         config.load()
         server = uvicorn.Server(config)

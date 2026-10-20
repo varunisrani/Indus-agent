@@ -10,10 +10,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, NonNegativeInt, ValidationError
 
+from indus.protocol.attach import ATTACH_METHODS
 from indus.protocol.base import (
     TEXT_EMPTY_ERROR,
     MessageText,
@@ -157,6 +158,8 @@ class SessionSteerParams(ProtocolModel):
     """The session with the running turn."""
     text: MessageText
     """The guidance."""
+    generation: NonNegativeInt | None = None
+    """The turn the guidance is for; the daemon requires it and ignores another turn's steer."""
 
 
 class SessionSteerResult(ProtocolModel):
@@ -201,6 +204,8 @@ class ServerRequestAnswerParams(ProtocolModel):
     """The request being answered."""
     answer: ServerRequestAnswer
     """The answer; its kind must match the request's."""
+    generation: NonNegativeInt | None = None
+    """The turn that asked (as offered); the daemon requires it and refuses another turn's."""
 
 
 class ServerRequestAnswerResult(ProtocolModel):
@@ -215,6 +220,8 @@ class ClientCapabilitiesParams(ProtocolModel):
 
     features: list[str] = Field(default_factory=list[str])
     """Feature names; names the server does not know are ignored."""
+    surface: Literal["cli", "tui", "gui", "acp", "web"] | None = None
+    """The kind of client attaching to the daemon (decides the busy default and presence)."""
 
 
 class ClientCapabilitiesResult(ProtocolModel):
@@ -321,6 +328,10 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
             *(
                 _spec(name, params, result, *errors)
                 for name, params, result, errors in BRIDGE_METHODS
+            ),
+            *(
+                _spec(name, params, result, *errors)
+                for name, params, result, errors in ATTACH_METHODS
             ),
         )
     }
