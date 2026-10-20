@@ -139,3 +139,25 @@
   Feishu/Lark hosts and never opened.
 - Follow-ups: live check of tenant-token refusal codes and long-connection fields; processing reactions; P16-32 target
   parsers; voice transcoding; continuation delay; per-IP webhook rate limit.
+
+## w25-e10.patch: P16-24 BlueBubbles + P16-28 SimpleX + P16-29 Buzz — done
+- Builder checks: own + contract + schema 327 passed / 38 skipped; unit+integration gateway 1407 passed; ruff, pyright,
+  lint-imports, tooling.checks ok. No EC maths in src/ (lead-checked): Buzz uses coincurve for BIP-340 sign/verify (lazy,
+  `buzz` extra), tested against the BIP-340 vectors.
+- NEW PACKAGE: coincurve 21.0.0 (MIT OR Apache-2.0; bundled libsecp256k1 MIT; uploaded 2025-03-08; no runtime deps) in extra
+  `buzz = ["coincurve==21.0.0", "httpx-ws==0.9.0"]`; `simplex = ["httpx-ws==0.9.0"]`. Re-lock (adds coincurve), check its
+  licence from dist-info, 00-layout pin rows. THIRD_PARTY_NOTICES coincurve row added by the builder.
+- Shared: conftest 3 imports; schema rows platforms.bluebubbles / simplex / buzz; ACC-K12-1, K12-9, K12-10.
+- Wiring (core): registry rows (after email) bluebubbles "BlueBubbles (iMessage)" probe httpx, required_env
+  BLUEBUBBLES_SERVER_URL + BLUEBUBBLES_PASSWORD, max_len 4000, install hint "no extra; run BlueBubbles Server on a Mac";
+  simplex "SimpleX Chat" probe httpx_ws, extra simplex, required_env SIMPLEX_WS_URL, max_len 8000, group_chats_env
+  INDUS_SIMPLEX_GROUP_ALLOWED_CHATS; buzz "Buzz" probe coincurve + httpx_ws, extra buzz, required_env BUZZ_RELAY_URL +
+  BUZZ_PRIVATE_KEY, max_len 16000. BUILTIN_CREDENTIALS bluebubbles (PASSWORD), simplex (SIMPLEX_WS_URL), buzz
+  (BUZZ_PRIVATE_KEY). lock_env: bluebubbles SERVER_URL; simplex WS_URL; buzz the derived pubkey or RELAY_URL (decide; never
+  the private key in clear — lock names are hashed anyway).
+- Decisions: BlueBubbles webhook auth via derived ?token= (HMAC of the password), password added inside the transport;
+  group gating via core require_mention; updated-message only as edits; tapbacks for processing state; SimpleX loopback only
+  unless allow_remote, auto_accept off, files only inside files_folder; Buzz event id + signature checked, NIP-42 AUTH,
+  npub allowlist via resolved_allowlist_ids; Buzz cap 16,000 and DM detection need a live check.
+- Follow-ups: Buzz cursor persistence; Buzz edits/reactions/files/NIP-OA; SimpleX thumbnails; P16-31 setup, P16-32 targets;
+  live lanes (owner).
