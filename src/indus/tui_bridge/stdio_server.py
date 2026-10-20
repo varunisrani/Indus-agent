@@ -42,11 +42,17 @@ from typing import Any, BinaryIO
 
 from indus.foundation.scope import Scope
 from indus.protocol.bridge import READY_METHOD, BridgeReady
-from indus.protocol.envelope import FrameError, Request, parse_frame
-from indus.protocol.errors import INTERNAL_ERROR, INVALID_REQUEST, PARSE_ERROR
+from indus.protocol.envelope import Request
+from indus.protocol.errors import INTERNAL_ERROR
 from indus.protocol.methods import PROTOCOL_VERSION, ProtocolError
-from indus.tui_bridge.bridge import Bridge, ContractViolation, ServiceFactory
-from indus.tui_bridge.dispatch import Dispatcher, error_frame
+from indus.service.rpc.dispatch import (
+    ContractViolation,
+    decode_request,
+    error_frame,
+    strict_from,
+)
+from indus.tui_bridge.bridge import Bridge, ServiceFactory
+from indus.tui_bridge.dispatch import Dispatcher
 
 __all__ = [
     "MAX_RECOVERIES",
@@ -64,7 +70,6 @@ MAX_RECOVERIES = 10
 RECOVERY_WINDOW_S = 60.0
 READ_CHUNK = 65536
 DRAIN_S = 2.0
-STRICT_ENV = "INDUS_PROTOCOL_STRICT"
 MCP_STARTER = "indus.mcp.startup:start_background_discovery"
 
 
@@ -325,24 +330,11 @@ class StdioServer:
         return 1 if self.writer.broken else 0
 
     def _take(self, line: bytes) -> None:
-        text = line.strip()
-        if not text:
-            return
-        try:
-            value = json.loads(text)
-        except ValueError:
-            self.writer.write(error_frame(None, ProtocolError(PARSE_ERROR, "parse error")))
-            return
-        try:
-            frame = parse_frame(value)
-        except FrameError as exc:
-            request_id = value.get("id") if isinstance(value, dict) else None
-            if not isinstance(request_id, str | int) or isinstance(request_id, bool):
-                request_id = None
-            self.writer.write(error_frame(request_id, ProtocolError(INVALID_REQUEST, str(exc))))
+        frame = decode_request(line)
+        if frame is None:
             return
         if not isinstance(frame, Request):
-            log.debug("dropped a %s frame from the client", type(frame).__name__)
+            self.writer.write(frame)  # an error frame for a line that is no request
             return
         task = asyncio.get_running_loop().create_task(
             self._answer(frame), name=f"rpc {frame.method}"
@@ -367,11 +359,6 @@ class StdioServer:
             if pending:
                 await asyncio.wait(pending, timeout=self.drain_s)
         await self.bridge.aclose()
-
-
-def strict_from(scope: Scope) -> bool:
-    """Contract checks raise when ``INDUS_PROTOCOL_STRICT`` is set (the test flag)."""
-    return scope.env.get(STRICT_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def run(scope: Scope, *, make_service: ServiceFactory | None = None) -> int:

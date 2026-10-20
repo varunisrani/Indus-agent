@@ -21,6 +21,7 @@ from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope
 from indus.protocol.errors import INTERNAL_ERROR, PROVIDER_UNAVAILABLE
 from indus.protocol.methods import ProtocolError
+from indus.service.rpc.dispatch import ContractViolation
 from indus.service.session_service import SessionService, protocol_error_for
 from indus.state.registry import StoreHandle
 
@@ -38,10 +39,6 @@ log = logging.getLogger(__name__)
 
 type ToolMode = Literal["off", "new", "all", "verbose"]
 TOOL_MODES: tuple[ToolMode, ...] = ("off", "new", "all", "verbose")
-
-
-class ContractViolation(AssertionError):
-    """A result or event that does not match its declared model (raised in strict mode only)."""
 
 
 class Emitter(Protocol):

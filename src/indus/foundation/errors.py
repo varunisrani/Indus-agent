@@ -71,6 +71,8 @@ ERROR_CODES: dict[str, str] = {
     "runtime.admission_started": "the input has already started or been handed to a running turn",
     "runtime.session_idle": "no turn is running in this session",
     "runtime.retired": "the session was deleted; it takes no new input",
+    "runtime.policy_conflict": "a resume named launch settings that differ from the session's",
+    "runtime.policy_refused": "launch settings that cannot be frozen into a session as given",
     "provider.error": "model provider problem",
     "provider.invalid_profile": "a provider profile has a missing or invalid field",
     "provider.invalid_base_url": "a provider base URL is not a usable http(s) URL",

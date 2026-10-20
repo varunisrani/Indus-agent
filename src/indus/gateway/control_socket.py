@@ -10,11 +10,16 @@ One exchange per connection: read one JSON line (at most 64 KiB, 2 s to arrive),
 ``protocol``/``verb``/``id`` and optionally ``params``; anything else is ``bad_request``.
 
 Verbs: ``identify`` and ``status`` are built in and answered on the loop (they only copy what the
-daemon already holds, so they answer while turns run). ``drain``, ``reload-plugins`` and
-``pause-for-update`` are known but answered ``unsupported`` until the daemon registers handlers
-for them (``register``); P17 registers ``session-ticket`` and ``describe`` the same way. A handler
-takes the request's ``params`` dict and returns a dict; a synchronous one runs on the ``io``
-blocking pool (D-04.1) within its time budget.
+daemon already holds, so they answer while turns run). ``drain``, ``reload-plugins``,
+``pause-for-update``, ``session-ticket`` and ``describe`` are known but answered ``unsupported``
+until the daemon registers handlers for them (``register``; the attach verbs come from
+``gateway.daemon.attach_verbs``, P17-11). A handler takes the request's ``params`` dict and
+returns a dict; a synchronous one runs on the ``io`` blocking pool (D-04.1) within its time
+budget. A handler refuses with ``VerbRefused(code, detail)``: the answer carries that code.
+
+Owner-only verbs (``session-ticket``, and any verb registered with ``owner_only=True``) are
+answered only when the OS confirmed the peer is this user; where it cannot say, they answer
+``forbidden`` (the other verbs still answer: the socket file itself is 0600).
 
 ``start`` fails (``ControlSocketError``) when the socket cannot be bound — the daemon treats that
 as a failed startup (P15-24). A leftover socket from a crash is replaced only when it is ours and
@@ -55,6 +60,9 @@ __all__ = [
     "ControlServer",
     "ControlSocketError",
     "Handler",
+    "OWNER_ONLY_VERBS",
+    "VerbRefused",
+    "code_version",
     "identity_payload",
     "peer_uid",
     "supervisor_kind",
@@ -62,8 +70,18 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-KNOWN_VERBS = ("identify", "status", "drain", "reload-plugins", "pause-for-update")
-"""Verbs P15 names; the last three answer ``unsupported`` until the daemon registers them."""
+KNOWN_VERBS = (
+    "identify",
+    "status",
+    "drain",
+    "reload-plugins",
+    "pause-for-update",
+    "session-ticket",
+    "describe",
+)
+"""Verbs P15 and P17 name; all but the first two answer ``unsupported`` until registered."""
+OWNER_ONLY_VERBS = frozenset({"session-ticket"})
+"""Verbs answered only to a peer the OS confirmed as this user (they hand out credentials)."""
 
 LAUNCHD_LABEL_PREFIX = "ai.indus.gateway"
 _SOCKET_NAME = "gw.sock"
@@ -76,11 +94,22 @@ class ControlSocketError(IndusError):
     default_code = "gateway.control_socket"
 
 
+class VerbRefused(Exception):
+    """A handler's refusal: answered ``{"ok": false, "error": code, "detail": detail}``. The
+    detail must never carry a secret."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        super().__init__(detail or code)
+        self.code = code
+        self.detail = detail
+
+
 @dataclass
 class _Verb:
     handler: Handler
     timeout: float
     inline: bool = False
+    owner_only: bool = False
 
 
 # -- identity -------------------------------------------------------------------------------------
@@ -97,7 +126,8 @@ def supervisor_kind(env: Mapping[str, str]) -> str:
     return "manual"
 
 
-def _code_version() -> str:
+def code_version() -> str:
+    """The installed ``indus`` version (``unknown`` from a bare source tree)."""
     try:
         return metadata.version("indus")
     except metadata.PackageNotFoundError:
@@ -113,7 +143,7 @@ def identity_payload(home: Path, env: Mapping[str, str]) -> dict[str, Any]:
         "home": str(home),
         "profile": profile_id_of(home),
         "supervisor": supervisor_kind(env),
-        "code_version": _code_version(),
+        "code_version": code_version(),
     }
 
 
@@ -202,11 +232,23 @@ class ControlServer:
     def verbs(self) -> list[str]:
         return sorted(self._verbs)
 
-    def register(self, verb: str, handler: Handler, *, timeout: float | None = None) -> None:
-        """Answer ``verb`` with ``handler`` (replaces an earlier one)."""
+    def register(
+        self,
+        verb: str,
+        handler: Handler,
+        *,
+        timeout: float | None = None,
+        owner_only: bool = False,
+    ) -> None:
+        """Answer ``verb`` with ``handler`` (replaces an earlier one). ``owner_only`` (always on
+        for ``OWNER_ONLY_VERBS``) answers only a peer the OS confirmed as this user."""
         if not verb or not isinstance(verb, str):
             raise ValueError("a verb needs a name")
-        self._verbs[verb] = _Verb(handler, self.handler_timeout if timeout is None else timeout)
+        self._verbs[verb] = _Verb(
+            handler,
+            self.handler_timeout if timeout is None else timeout,
+            owner_only=owner_only or verb in OWNER_ONLY_VERBS,
+        )
 
     def _status_answer(self, _params: dict[str, Any]) -> dict[str, Any]:
         return {**dict(self._status()), "answering_pid": os.getpid(), "answered_at": time.time()}
@@ -345,7 +387,7 @@ class ControlServer:
             elif isinstance(got, str):
                 answer = _encode({"ok": False, "protocol": wire.PROTOCOL, "error": got})
             else:
-                answer = await self.handle_line(got)
+                answer = await self.handle_line(got, peer_verified=uid == os.getuid())
             writer.write(answer)
             async with asyncio.timeout(self.read_timeout):
                 await writer.drain()
@@ -358,8 +400,10 @@ class ControlServer:
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
 
-    async def handle_line(self, raw: bytes) -> bytes:
-        """One request line → one answer line (with its newline). Never raises."""
+    async def handle_line(self, raw: bytes, *, peer_verified: bool = False) -> bytes:
+        """One request line → one answer line (with its newline). Never raises.
+
+        ``peer_verified``: the OS confirmed the peer is this user (owner-only verbs need it)."""
         request_id: str | int | None = None
         try:
             request = _parse(raw)
@@ -372,8 +416,12 @@ class ControlServer:
         if entry is None:
             code = "unsupported" if verb in KNOWN_VERBS else "unknown_verb"
             return _encode(_failure(code, f"no handler for {verb!r}", request_id, self.verbs))
+        if entry.owner_only and not peer_verified:
+            return _encode(_failure("forbidden", "the peer could not be verified", request_id))
         try:
             result = await self._call(entry, params)
+        except VerbRefused as refused:
+            return _encode(_failure(refused.code, refused.detail, request_id))
         except (TimeoutError, DeadlineMissed):
             return _encode(_failure("timeout", f"{verb} took too long", request_id))
         except Exception as exc:

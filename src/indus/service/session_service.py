@@ -60,6 +60,14 @@ profile's allowed plugins and the agreed shell hooks before the first agent is b
 plugins' toolsets to each selection, gives each top-level agent the hooks-bus seams and the frozen
 plugin prompt sections, runs ``on_session_start`` after a session is attached and
 ``on_session_end`` before it is closed, and takes every registration back at ``aclose``.
+
+Daemon seams (P17-08, ``service.daemon_host``): ``broker_factory`` builds each session's broker
+(the daemon hands it the session's ``RequestBook``); with a ``turn_door`` every turn the service
+would start on its own — host injections, background-subagent results, undelivered steer text —
+is handed to the door (the daemon's admission ledger) instead; ``start_admitted`` starts a turn
+the door admitted under the ledger's generation; ``reload`` rebuilds a session's agent from the
+store (another process ran it meanwhile). ``events_since`` and ``receipt`` have trivial in-process
+forms: one replay epoch per service over the kept events, and no admissions.
 """
 
 from __future__ import annotations
@@ -114,12 +122,15 @@ from indus.providers.auxiliary import AuxClient, auto_title, generate_title
 from indus.providers.route import RuntimeRoute
 from indus.providers.types import Usage
 from indus.service import code_host
+from indus.service.admissions import Receipt
 from indus.service.broker import ServerRequestBroker
 from indus.service.code_host import KernelUpkeep
+from indus.service.event_log import Replay, ReplayGap, new_replay_epoch
 from indus.service.maintenance import MaintenanceTimer
 from indus.service.mcp_host import McpUpkeep
 from indus.service.plugin_host import PluginUpkeep
-from indus.state import sessions, titles
+from indus.state import lineage, sessions, titles
+from indus.state.runtime_ledger import LedgerRefusal
 from indus.state.session_lock import (
     LOCK_DIR_NAME,
     LockBusy,
@@ -131,7 +142,9 @@ from indus.state.session_lock import (
 __all__ = [
     "BUSY_COPY",
     "AgentFactory",
+    "BrokerFactory",
     "SessionService",
+    "TurnDoor",
     "protocol_error_for",
 ]
 
@@ -156,6 +169,12 @@ type AgentFactory = Callable[
     [str, EventSink, ServerRequestBroker, AgentOptions, Sequence[str] | None], Awaitable[Agent]
 ]
 """Builds the agent of one session: ``(session_id, sink, broker, options, toolsets)``."""
+
+type BrokerFactory = Callable[[str, EventSink], ServerRequestBroker]
+"""Builds the server-request broker of one session: ``(session_id, sink)``."""
+
+type TurnDoor = Callable[[str, str, str], Awaitable[bool]]
+"""Takes a turn the service would start itself: ``(session_id, text, origin)`` → accepted."""
 
 
 def protocol_error_for(exc: BaseException) -> ProtocolError:
@@ -245,6 +264,8 @@ class SessionService:
         kernels: KernelUpkeep | None = None,
         mcp: McpUpkeep | None = None,
         plugins: PluginUpkeep | None = None,
+        broker_factory: BrokerFactory | None = None,
+        turn_door: TurnDoor | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
@@ -272,6 +293,10 @@ class SessionService:
         self._input_probe: Callable[[str], bool] | None = None
         self._turn_end: list[TurnEndListener] = []
         self._moved: list[Callable[[str, str], object]] = []
+        self.broker_factory = broker_factory
+        self.turn_door = turn_door
+        self.replay_epoch = new_replay_epoch()
+        """The in-process replay epoch (``events_since``); the daemon's event log has its own."""
 
     def _default_lock_dir(self) -> Path:
         if isinstance(self.store, StateStore):
@@ -347,6 +372,8 @@ class SessionService:
             return False
         if if_generation is not None and attached.agent.generation != if_generation:
             return False
+        if self.turn_door is not None:
+            return await self._through_door(attached, text, origin)
         try:
             await self._start(attached, text)
         except ProtocolError as exc:
@@ -450,6 +477,17 @@ class SessionService:
                 pending_requests=list(attached.broker.pending_requests()),
             )
 
+    async def _through_door(self, attached: _Attached, text: str, origin: str) -> bool:
+        assert self.turn_door is not None
+        try:
+            accepted = await self.turn_door(attached.session_id, text, origin)
+        except Exception:
+            log.warning("the turn door refused a %s message", origin, exc_info=True)
+            return False
+        if accepted:
+            log.info("handed a %s turn of session %s to the door", origin, attached.session_id)
+        return accepted
+
     async def _store_title(self, session_id: str, title: str, options: AgentOptions) -> None:
         """A title given at create: the row is written now (otherwise the first turn writes it)
         and titled with the user's authority, so automatic titling never replaces it."""
@@ -509,14 +547,7 @@ class SessionService:
             )
         try:
             sink = EventSink(session_id)
-            broker = ServerRequestBroker(
-                session_id=session_id,
-                deliver=sink.request,
-                emit=sink.emit,
-                next_seq=sink.next_seq,
-                clock=self.scope.clock,
-                answerable_kinds=self._answerable,
-            )
+            broker = self._new_broker(session_id, sink)
             if self.mcp is not None:
                 await self.mcp.start()
                 selection = self.mcp.selection(selection)
@@ -532,8 +563,7 @@ class SessionService:
             raise
         attached = _Attached(session_id, agent, sink, broker, taken)
         self._attached[session_id] = attached
-        agent.on_session_moved(lambda old, new: self._follow(attached, old, new))
-        subagents.set_delivery(agent, lambda text: self.deliver_internal(attached, text))
+        self._wire_agent(attached)
         if self.plugins is not None:
             await self.plugins.session_started(session_id, options)
         # `cronjob_manage run` results (P14-18) arrive the same way as background subagents'.
@@ -543,6 +573,72 @@ class SessionService:
             )
         )
         return attached
+
+    def _new_broker(self, session_id: str, sink: EventSink) -> ServerRequestBroker:
+        if self.broker_factory is not None:
+            return self.broker_factory(session_id, sink)
+        return ServerRequestBroker(
+            session_id=session_id,
+            deliver=sink.request,
+            emit=sink.emit,
+            next_seq=sink.next_seq,
+            clock=self.scope.clock,
+            answerable_kinds=self._answerable,
+        )
+
+    def _wire_agent(self, attached: _Attached) -> None:
+        agent = attached.agent
+        agent.on_session_moved(lambda old, new: self._follow(attached, old, new))
+        subagents.set_delivery(agent, lambda text: self.deliver_internal(attached, text))
+
+    async def reload(self, session_id: str) -> str:
+        """Rebuild the session's agent from the store (another process ran the session while
+        this one waited for its lease); follows the lineage tip when that process compacted it.
+        Busy while a turn runs. Returns the id the session is attached under now."""
+        async with _mapped():
+            self._check_open()
+            attached = self._get(session_id)
+            if attached.running is not None:
+                raise _busy(f"session {attached.session_id} is running a turn")
+            old = attached.agent
+            tip = await self._lineage_tip(attached.session_id)
+            if tip != attached.session_id:
+                previous = attached.session_id
+                attached.sink.session_id = tip
+                self._follow(attached, previous, tip)
+            agent = await self._factory(
+                attached.session_id,
+                attached.sink,
+                attached.broker,
+                old.options,
+                old.toolset_selection,
+            )
+            if self.mcp is not None:
+                self.mcp.attach(agent)
+            attached.agent = agent
+            attached.turn = None
+            self._wire_agent(attached)
+            try:
+                await old.close()
+            except Exception:
+                log.warning("closing the replaced agent of %s failed", session_id, exc_info=True)
+            log.info("session %s reloaded from the store", attached.session_id)
+            return attached.session_id
+
+    async def _lineage_tip(self, session_id: str) -> str:
+        store = self.store
+        if not isinstance(store, StateStore):
+            return session_id
+
+        def tip() -> str:
+            with store.handle.read() as conn:
+                return lineage.tip_in(conn, session_id)
+
+        try:
+            return await run_blocking(tip, label="session lineage")
+        except Exception:
+            log.warning("could not follow the lineage of %s; keeping it", session_id, exc_info=True)
+            return session_id
 
     def _follow(self, attached: _Attached, old: str, new: str) -> None:
         """A rotating compaction moved ``attached`` from ``old`` to ``new`` (see the module notes).
@@ -599,6 +695,20 @@ class SessionService:
             running = await self._start(attached, text, message=message)
             return PromptSubmitResult(turn_id=running.turn_id, generation=running.generation)
 
+    async def start_admitted(self, session_id: str, text: str, *, generation: int) -> RunningTurn:
+        """Start a turn the daemon's ledger admitted, under the ledger's ``generation``; attaches a
+        stored session first. Busy while a turn runs."""
+        async with _mapped():
+            self._check_open()
+            _check_text(text)
+            attached = self._attached.get(self.current_id(session_id))
+            if attached is None:
+                attached = await self._attach_existing(session_id)
+            if attached.running is not None:
+                raise _busy(f"session {attached.session_id} is running a turn")
+            message = await self._expand(attached, text)
+            return await self._start(attached, text, message=message, generation=generation)
+
     async def _expand(self, attached: _Attached, text: str) -> str:
         """``text`` with its ``@`` references expanded (P08-19); refusals become a notice. A
         failure here never blocks the message: it is sent as typed."""
@@ -649,15 +759,22 @@ class SessionService:
                 raise _busy(str(exc)) from exc
 
     async def _start(
-        self, attached: _Attached, text: str, *, message: str | None = None
+        self,
+        attached: _Attached,
+        text: str,
+        *,
+        message: str | None = None,
+        generation: int | None = None,
     ) -> RunningTurn:
         if attached.running is not None:
             raise _busy(f"session {attached.session_id} is running a turn")
         try:
             if message is not None and message != text:
-                running = await attached.agent.start_turn(message, persist_text=text)
+                running = await attached.agent.start_turn(
+                    message, persist_text=text, generation=generation
+                )
             else:
-                running = await attached.agent.start_turn(text)
+                running = await attached.agent.start_turn(text, generation=generation)
         except AgentBusy as exc:
             raise _busy(str(exc)) from exc
         attached.turn = running
@@ -750,6 +867,10 @@ class SessionService:
             log.info("no automatic title for session %s: %s", attached.session_id, exc)
 
     async def _follow_up(self, attached: _Attached, text: str) -> None:
+        if self.turn_door is not None:
+            if not attached.agent.closed:
+                await self._through_door(attached, text, "steer follow-up")
+            return
         if attached.running is not None or attached.agent.closed:
             return
         try:
@@ -806,11 +927,16 @@ class SessionService:
     # -- control of the running turn ---------------------------------------------------------------
 
     def interrupt(
-        self, session_id: str, generation: int | None = None, *, hard: bool = False
+        self,
+        session_id: str,
+        generation: int | None = None,
+        *,
+        hard: bool = False,
+        by_system: bool = False,
     ) -> SessionInterruptResult:
         """Stop the running turn (only ``generation`` when given; a stale one is a no-op)."""
         attached = self._get(session_id)
-        done = attached.agent.interrupt(generation, hard=hard)
+        done = attached.agent.interrupt(generation, hard=hard, by_system=by_system)
         if done:
             attached.broker.cancel_all(CancelReason.INTERRUPTED)
         if hard:  # a hard stop also ends the session's background subagents (P10-05)
@@ -848,6 +974,34 @@ class SessionService:
     def events(self, session_id: str, since: int | None = None) -> list[EventBase]:
         """Kept events of the session with a seq above ``since`` (all kept ones for None)."""
         return self._get(session_id).sink.since(since)
+
+    def events_since(self, session_id: str, epoch: str | None, cursor: int) -> Replay | ReplayGap:
+        """The kept events after ``cursor`` in the in-process form of the daemon's replay: a gap
+        when ``epoch`` is not this service's, the cursor is ahead, or events after it are gone.
+        In-process seqs start at 0, so a client that saw nothing yet passes -1."""
+        if cursor < -1:
+            raise ValueError("cursor must be >= -1")
+        sink = self._get(session_id).sink
+        last = sink.last_seq
+        if epoch != self.replay_epoch:
+            return ReplayGap(session_id, self.replay_epoch, last, "epoch_changed")
+        if cursor > last:
+            return ReplayGap(session_id, self.replay_epoch, last, "ahead")
+        kept = sink.since(None)
+        if cursor < last and (not kept or kept[0].seq > cursor + 1):
+            return ReplayGap(session_id, self.replay_epoch, last, "evicted")
+        wire: list[dict[str, Any]] = []
+        for event in kept:
+            if event.seq > cursor:
+                data = event.to_wire()
+                data["replay_epoch"] = self.replay_epoch
+                wire.append(data)
+        return Replay(session_id, self.replay_epoch, tuple(wire), last)
+
+    async def receipt(self, admission_id: str) -> Receipt:
+        """In-process turns have no admissions: every id is unknown here (the daemon host
+        answers from its ledger)."""
+        raise LedgerRefusal("not_found", field="admission_id")
 
     def subscribe(self, session_id: str, listener: EventListener) -> Callable[[], None]:
         """Live events (called on the service loop); returns the unsubscribe callable."""

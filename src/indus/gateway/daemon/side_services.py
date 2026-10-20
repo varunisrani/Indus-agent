@@ -13,8 +13,9 @@ verbs are built from the daemon's ``identity()``, ``status_snapshot()``, ``reque
 ``attach(daemon)`` wires, in order:
 
 1. the control socket (``identify``, ``status`` from ``daemon.runtime_status()``, plus the verbs
-   the daemon answers itself: ``drain``, ``reload-plugins``, ``pause-for-update``); a socket that
-   cannot be bound raises ``ControlSocketError`` and the startup fails;
+   the daemon answers itself: ``drain``, ``reload-plugins``, ``pause-for-update``, and the attach
+   verbs ``describe`` / ``session-ticket`` of P17-11 over a ticket book made for this daemon start);
+   a socket that cannot be bound raises ``ControlSocketError`` and the startup fails;
 2. the reconnect watcher, connecting through ``daemon.connect_platform(name)`` and reporting each
    change through ``daemon.set_platform_status(name, status | None)``; ``/platform`` sees it;
 3. the gateway hook folders, fed from the daemon's hooks bus and the service's turn ends, and
@@ -36,9 +37,11 @@ from typing import TYPE_CHECKING, Any, Protocol
 from indus.foundation import config
 from indus.foundation.scope import Scope, scope_or_none
 from indus.gateway.control_socket import ControlServer, Handler, identity_payload
+from indus.gateway.daemon.attach_verbs import AttachVerbs
 from indus.gateway.daemon.parts import DaemonPart, Stage
 from indus.gateway.daemon.reconnect import ConnectOutcome, PlatformHealth, ReconnectWatcher
 from indus.gateway.hooks import GatewayHooks, bridge
+from indus.service.ws_auth import TicketBook
 from indus.state.gateway_runtime import PlatformStatus
 
 if TYPE_CHECKING:
@@ -219,11 +222,18 @@ def _flag(params: Mapping[str, Any], key: str, default: bool) -> bool:
 
 
 class DaemonBridge:
-    """``GatewayDaemon`` through ``DaemonPorts`` (see the module notes)."""
+    """``GatewayDaemon`` through ``DaemonPorts`` (see the module notes).
+
+    ``attach_verbs`` holds the P17-11 attach verbs over a ticket book made for this daemon
+    start (a fresh ``instance_id``, so tickets of an earlier start are useless). Until the
+    WebSocket endpoint (P17-13) is mounted there is no ``ws_url`` and no session host:
+    ``describe`` answers the ids and versions with empty source and capability lists, and
+    ``session-ticket`` answers ``ws_unavailable`` without minting."""
 
     def __init__(self, daemon: GatewayDaemon, part: ControlPart) -> None:
         self.daemon = daemon
         self.part = part
+        self.attach_verbs = AttachVerbs(daemon.scope.home, TicketBook.for_home(daemon.scope.home))
 
     @property
     def scope(self) -> Scope:
@@ -255,10 +265,12 @@ class DaemonBridge:
             self.daemon.set_platform_status(name, row)
 
     def control_handlers(self) -> Mapping[str, tuple[Handler, float]]:
+        # ``session-ticket`` is owner-only by name (``control_socket.OWNER_ONLY_VERBS``).
         return {
             "drain": (self._drain, _DRAIN_S),
             "pause-for-update": (self._pause_for_update, _DRAIN_S),
             "reload-plugins": (self._reload_plugins, _DRAIN_S),
+            **self.attach_verbs.handlers(),
         }
 
     # -- verbs (async: they run on the daemon's loop) -------------------------------------------
@@ -320,6 +332,7 @@ class ControlPart(DaemonPart):
 
     def __init__(self) -> None:
         self.services: SideServices | None = None
+        self.bridge: DaemonBridge | None = None
         self._daemon: GatewayDaemon | None = None
         self._seen: set[str] = set()
         self._undo: list[Callable[[], None]] = []
@@ -333,7 +346,8 @@ class ControlPart(DaemonPart):
         ]
 
     async def start(self, daemon: GatewayDaemon) -> None:
-        self.services = await attach(DaemonBridge(daemon, self))
+        self.bridge = DaemonBridge(daemon, self)
+        self.services = await attach(self.bridge)
 
     def _up(self, name: str, _adapter: Adapter) -> None:
         self._seen.add(name)
@@ -365,11 +379,16 @@ class ControlPart(DaemonPart):
             undo()
         self._undo.clear()
         services, self.services = self.services, None
-        if services is not None:
-            try:
-                await services.stop()
-            except Exception:
-                log.warning("the control socket did not stop cleanly", exc_info=True)
+        bridge, self.bridge = self.bridge, None
+        try:
+            if services is not None:
+                try:
+                    await services.stop()
+                except Exception:
+                    log.warning("the control socket did not stop cleanly", exc_info=True)
+        finally:
+            if bridge is not None:
+                bridge.attach_verbs.close()  # every outstanding ticket stops working
 
 
 def create(_daemon: GatewayDaemon) -> ControlPart:

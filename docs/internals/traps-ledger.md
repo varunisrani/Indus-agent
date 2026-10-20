@@ -420,6 +420,10 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_chat_select.py::test_resume_restores_cwd_history_and_refuses_changed_flags`
   - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_survives_resume`
   - Review: classic chat as gateway client (refused flags, reduced slash set, exit 3) arrives with P17 (P06-03)
+  - `tests/unit/service/test_creation_policy.py::test_resume_with_a_different_model_is_a_policy_conflict`
+  - `tests/unit/service/test_creation_policy.py::test_a_bypass_launch_must_name_model_and_provider`
+  - `tests/unit/service/test_creation_policy.py::test_api_key_is_never_stored`
+  - `tests/unit/service/test_daemon_host.py::test_create_freezes_the_policy_and_resume_checks_it`
 - **R04.2** Profile must be resolved before any import
   - `tests/unit/foundation/test_preparse.py::test_fresh_interpreter_imports_nothing_else`
   - `tests/unit/foundation/test_preparse.py::test_short_flag`
@@ -636,7 +640,8 @@ Checked by `python -m tooling.checks traps`.
 - **R05.17** Synchronized output inside tmux
   - Review: not yet planned (P00-guards)
 - **R05.18** Busy-mode default differs by surface
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/service/test_daemon_host.py::test_busy_default_per_surface`
+  - `tests/unit/service/test_daemon_host.py::test_tui_input_queues_and_cli_input_interrupts`
 - **R05.19** Paste-to-attachment heuristics
   - Review: not yet planned (P00-guards)
 - **R05.20** Child stdin hijack (stdio mode)
@@ -975,6 +980,10 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
 - **R08.4** One-use credentials
   - Review: not yet planned (P00-guards)
+  - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
+  - `tests/unit/service/test_ws_auth.py::test_a_ticket_from_another_daemon_start_is_unknown`
+  - `tests/unit/service/test_ws_auth.py::test_upgrade_accepts_once_and_echoes_only_the_base_protocol`
+  - `tests/unit/gateway/daemon/test_attach_verbs.py::test_round_trip_describe_ticket_upgrade`
 - **R08.5** Connection test must cover the used leg
   - Review: not yet planned (P00-guards)
 - **R08.6** Soft vs hard re-home

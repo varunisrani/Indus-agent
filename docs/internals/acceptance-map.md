@@ -1262,6 +1262,12 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/integration/gateway/test_control_part.py::test_the_control_part_serves_reconnects_and_drains`
   - `tests/unit/gateway/test_control_socket.py::test_identify_round_trip_and_owner_only_socket`
   - `tests/unit/gateway/test_control_socket.py::test_wire_table`
+- **ACC-K32-2** Attach verbs: `session-ticket` (owner-only peer) and `describe` (answers while a turn runs)
+  - `tests/unit/gateway/daemon/test_attach_verbs.py::test_round_trip_describe_ticket_upgrade`
+  - `tests/unit/gateway/daemon/test_attach_verbs.py::test_describe_answers_while_a_turn_runs`
+  - `tests/unit/gateway/daemon/test_attach_verbs.py::test_an_unverified_peer_gets_no_ticket`
+  - `tests/unit/gateway/daemon/test_attach_verbs.py::test_group_writable_home_refused_by_the_client`
+  - `tests/integration/gateway/test_control_part.py::test_the_daemon_serves_the_attach_verbs`
 - **ACC-K33-1** Reconnect watcher with capped backoff, "needs attention" flag, `/platform pause
   - `tests/unit/gateway/daemon/test_reconnect.py::test_backoff_sequence`
   - `tests/unit/gateway/daemon/test_reconnect.py::test_needs_attention_after_threshold`
@@ -1283,6 +1289,15 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/gateway/test_webhook.py::test_coalescing_runs_the_newest_event_once_after_the_quiet_window`
   - `tests/contract/gateway/test_webhook.py::test_events_filters_and_direct_delivery`
   - `tests/unit/cli/commands/test_webhook.py::test_test_signs_and_posts_to_the_local_receiver`
+- **ACC-K51-3** Attach tickets are single-use, 30 s, purpose- and instance-bound, loopback and Origin checked, never in a URL or log
+  - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
+  - `tests/unit/service/test_ws_auth.py::test_expiry_at_thirty_seconds`
+  - `tests/unit/service/test_ws_auth.py::test_wrong_purpose_fails_and_spends_the_ticket`
+  - `tests/unit/service/test_ws_auth.py::test_upgrade_refuses_bad_origin`
+  - `tests/unit/service/test_ws_auth.py::test_query_string_ticket_is_ignored_and_not_logged`
+  - `tests/unit/service/test_ws_auth.py::test_ticket_absent_from_logs`
+  - `tests/unit/foundation/test_redact.py::test_ws_tickets_are_masked_whole`
+  - `tests/unit/service/test_ws_auth.py::test_mint_and_burn_cannot_grow_the_book_without_bound`
 - **ACC-K52-1** `indus gateway setup` and per-platform setup helpers (WhatsApp pairing, Slack app)
   - Review: not yet planned (phase TBD)
 - **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …

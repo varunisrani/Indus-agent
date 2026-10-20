@@ -20,7 +20,9 @@ from indus.gateway.adapters.base import AdapterConnectError
 from indus.gateway.daemon.lifecycle import MAINTENANCE_NOTICE, RESTARTING_NOTICE
 from indus.gateway.daemon.process import GatewayDaemon
 from indus.gateway.daemon.side_services import ControlPart
+from indus.protocol.methods import PROTOCOL_VERSION
 from indus.service import gateway_control
+from indus.service.ws_auth import WS_INTERACTIVE, TicketRefused, stable_profile_id
 from indus.state.gateway_runtime import EXIT_OK
 from tests.integration.gateway.daemon_kit import (
     ALLOWED,
@@ -116,5 +118,47 @@ def test_the_control_part_serves_reconnects_and_drains(tmp_path: Path) -> None:
         startup = [e for e in seen(recorder) if e["event"] == "gateway:startup"]
         assert len(startup) == 1 and startup[0]["context"]["platforms"] == ["telegram"]
         assert gateway_control.socket_path_for(scope.home) is None
+
+    asyncio.run(main())
+
+
+def test_the_daemon_serves_the_attach_verbs(tmp_path: Path) -> None:
+    """P17-11 wiring: ``describe`` and ``session-ticket`` are registered on the daemon's control
+    socket over a ticket book made for this start. Until the WebSocket endpoint (P17-13) is
+    mounted no ticket is minted (``ws_unavailable``); the book is revoked at stop."""
+    scope = daemon_scope(tmp_path)
+    part = ControlPart()
+    daemon = GatewayDaemon(
+        scope,
+        options=quick(),
+        registry=fake_registry(fake_entry(fake_platform())),
+        service_factory=fake_service(model_server(), tmp_path / "svc-locks"),
+        parts=[part],
+    )
+
+    async def main() -> None:
+        flight = await fly(daemon)
+        try:
+            bridge = part.bridge
+            assert bridge is not None
+            book = bridge.attach_verbs.book
+            described = await asyncio.to_thread(gateway_control.describe, scope.home)
+            assert described is not None
+            assert described["profile_id"] == stable_profile_id(scope.home) == book.profile_id
+            assert described["instance_id"] == book.instance_id
+            assert described["protocol_version"] == PROTOCOL_VERSION
+            assert described["ws_url"] is None
+            ticket = await asyncio.to_thread(
+                gateway_control.session_ticket, scope.home, WS_INTERACTIVE
+            )
+            assert ticket.error == "ws_unavailable" and book.outstanding() == 0
+            minted = book.mint(WS_INTERACTIVE)  # as the endpoint will once it is mounted
+            assert book.outstanding() == 1
+        finally:
+            assert await flight.stop() == EXIT_OK
+        assert part.bridge is None
+        with pytest.raises(TicketRefused) as caught:
+            book.redeem(minted.ticket, purpose=WS_INTERACTIVE)
+        assert caught.value.reason == "unknown"
 
     asyncio.run(main())

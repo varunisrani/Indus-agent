@@ -102,9 +102,14 @@ _URL_USERINFO = re.compile(
 )
 _QUERY_NAMES = (
     "token|key|api_key|apikey|access_token|refresh_token|id_token|secret|client_secret|"
-    "password|passwd|sig|signature|auth"
+    "password|passwd|sig|signature|auth|ticket"
 )
 _QUERY_PARAM = re.compile(r"(?i)[?&](?:" + _QUERY_NAMES + r")=(?P<s>[^&#\s\"'<>]{1,4096})")
+# WebSocket tickets (P17-10): offered as a subprotocol, or (refused, but possible in a log) as a
+# ``ticket`` query value. A ticket is masked whole: no leading or trailing characters are kept.
+_WS_TICKET = re.compile(r"(?i)\bindus-gateway-ticket\.(?P<s>[A-Za-z0-9_\-]{1,512})")
+_QUERY_TICKET = re.compile(r"(?i)[?&]ticket=(?P<s>[^&#\s\"'<>]{1,4096})")
+_FULL_MASK_PATTERNS = (_WS_TICKET, _QUERY_TICKET)
 
 # A credential-shaped name: some identifier whose underscore/dash/dot-separated parts include one of
 # the words, so MONKEY, AUTHOR or KEYBOARD do not count.
@@ -152,7 +157,15 @@ def _pem_spans(text: str) -> list[tuple[int, int]]:
 
 def _spans_for(text: str, assignments: bool = True) -> list[tuple[int, int]]:
     spans = _pem_spans(text)
-    for pattern in (_VENDOR_KEYS, _AUTH_HEADER, _BEARER, _JWT, _URL_USERINFO, _QUERY_PARAM):
+    for pattern in (
+        _VENDOR_KEYS,
+        _AUTH_HEADER,
+        _BEARER,
+        _JWT,
+        _URL_USERINFO,
+        _QUERY_PARAM,
+        *_FULL_MASK_PATTERNS,
+    ):
         for match in pattern.finditer(text):
             spans.append(match.span("s"))
     if not assignments:
@@ -167,6 +180,11 @@ def _spans_for(text: str, assignments: bool = True) -> list[tuple[int, int]]:
         if not _is_reference(match.group("s")):
             spans.append(match.span("s"))
     return spans
+
+
+def _full_spans(text: str) -> list[tuple[int, int]]:
+    """Spans masked whole (``MASK_SHORT``), never as ``abcd…wxyz``."""
+    return [m.span("s") for p in _FULL_MASK_PATTERNS for m in p.finditer(text)]
 
 
 def _merge(spans: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -202,11 +220,13 @@ def _redact(
         spans.extend(m.span() for m in exact.finditer(text))
     if not spans:
         return text
+    full = _full_spans(text)
     out: list[str] = []
     last = 0
     for start, end in _merge(spans):
         out.append(text[last:start])
-        out.append(mask(text[start:end]))
+        whole = any(s < end and start < e for s, e in full)
+        out.append(MASK_SHORT if whole else mask(text[start:end]))
         last = end
     out.append(text[last:])
     result = "".join(out)

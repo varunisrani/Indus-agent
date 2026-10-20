@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gc
 import os
+import sys
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -91,3 +92,26 @@ def no_os_keychain(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(secrets, "_system_keyring", fail.Keyring)
     yield
     secrets.reset_probe_cache()
+
+
+@pytest.fixture(autouse=True)
+def reopen_after_a_host_exit() -> Iterator[None]:
+    """Undo what a simulated process exit leaves behind, after every test.
+
+    A host's exit path (``indus cron tick``, ``indus -z``, the gateway daemon's stop, the TUI
+    bridge) shuts the process's terminal runtime down, which closes the shared environment
+    registry and raises the one-way foreground fence (``FOREGROUND``). In a real process nothing
+    runs after that; in this one interpreter every later test would get "[host is exiting:
+    command not started]" (rc 130) from its first command. So the fence is lowered and a closed
+    shared runtime is dropped once the test is over. Modules not imported yet are left alone.
+    """
+    yield
+    wait = sys.modules.get("indus.backends.wait")
+    terminal = sys.modules.get("indus.tools.builtin.terminal")
+    if terminal is not None:
+        shared = terminal._shared  # pyright: ignore[reportPrivateUsage]
+        found = shared.get("default")
+        if found is not None and found.environments._closed:  # pyright: ignore[reportPrivateUsage]
+            del shared["default"]
+    if wait is not None and wait.FOREGROUND.fenced:
+        wait.FOREGROUND.reset_for_tests()

@@ -84,6 +84,12 @@ CASES: list[tuple[str, list[str]]] = [
     ("https://h.example/?access_token=FAKEaccess#frag", ["FAKEaccess"]),
     ("https://s3.example/obj?X=1&sig=FAKEsignature", ["FAKEsignature"]),
     ("https://h.example/?password=FAKEpass1", ["FAKEpass1"]),
+    ("ws://127.0.0.1:9/ws?ticket=FAKEticketFAKEticket0123", ["FAKEticketFAKEticket0123"]),
+    # WebSocket ticket subprotocol (P17-10)
+    (
+        "offered indus-gateway-v1, indus-gateway-ticket.FAKEticket_FAKE-ticket0123",
+        ["FAKEticket_FAKE-ticket0123"],
+    ),
     # assignments
     ("OPENAI_API_KEY=FAKEvalue0123456789", ["FAKEvalue0123456789"]),
     ("export GITHUB_TOKEN=FAKEgh0123", ["FAKEgh0123"]),
@@ -137,6 +143,23 @@ def test_table(text: str, gone: list[str]) -> None:
 
 def test_openai_assignment_masked_with_ends_kept() -> None:
     assert redact_text(f"OPENAI_API_KEY={FAKE_OPENAI}") == "OPENAI_API_KEY=sk-p…6789"
+
+
+def test_ws_tickets_are_masked_whole() -> None:
+    """Lead ruling (P17 wave 2): a WebSocket ticket keeps no leading or trailing characters."""
+    ticket = "".join(random.Random(7).choices(string.ascii_letters + string.digits + "_-", k=43))
+    offered = f"offered indus-gateway-v1, indus-gateway-ticket.{ticket}"
+    assert redact_text(offered) == f"offered indus-gateway-v1, indus-gateway-ticket.{MASK_SHORT}"
+    url = f"ws://127.0.0.1:9/ws?ticket={ticket}&x=1"
+    assert redact_text(url) == f"ws://127.0.0.1:9/ws?ticket={MASK_SHORT}&x=1"
+    upper = f"ws://127.0.0.1:9/ws?a=1&TICKET={ticket}"
+    assert redact_text(upper) == f"ws://127.0.0.1:9/ws?a=1&TICKET={MASK_SHORT}"
+    for out in (redact_text(offered), redact_text(url), redact_text(upper)):
+        assert ticket[:4] not in out and ticket[-4:] not in out
+    # a short or odd ticket is still masked whole; other query values keep their ends
+    assert redact_text("indus-gateway-ticket.abc") == f"indus-gateway-ticket.{MASK_SHORT}"
+    token = "FAKEtokenFAKEtoken0123"
+    assert redact_text(f"https://h/x?token={token}") == f"https://h/x?token={mask(token)}"
 
 
 def test_url_masked_twice() -> None:

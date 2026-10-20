@@ -151,6 +151,9 @@ class TurnTicket:
         self._steer: Callable[[str], bool] | None = None
         self.lease_wait = WaitInterrupt()
         """Ends this turn's wait for the session lease when the turn is stopped first."""
+        self.lease_waited = False
+        """True when the lease was won only after another holder was seen: that holder may have
+        changed the session, so the runner reloads it before running (P17-08)."""
 
     @property
     def session_id(self) -> str:
@@ -528,6 +531,7 @@ class AdmissionService:
                     outcome = self._not_run(ticket, got)
                 else:
                     lease = got
+                    ticket.lease_waited = got.waited
                     lease.start(on_lost=ticket.interrupt)
             if lease is not None or self.leases is None:
                 meter.begin(ticket.generation)

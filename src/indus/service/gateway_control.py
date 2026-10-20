@@ -19,6 +19,11 @@ Requests are at most 64 KiB, answers at most 512 KiB.
 Safety: a client refuses a home other people can write to — world-writable always, group-writable
 unless the group is the user's own private group — because whoever can write there can swap the
 socket or the pointer for their own.
+
+Attach verbs (P17-11): ``session_ticket`` asks for a single-use WebSocket ticket and checks the
+answer (ticket shape, a credential-free loopback ``ws_url``, the profile and instance the caller
+expects); ``describe`` returns the daemon's attach descriptor. A ``TicketReply`` never shows its
+ticket in ``repr``.
 """
 
 from __future__ import annotations
@@ -33,6 +38,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlsplit
+
+from indus.service.ws_auth import is_loopback_host, looks_like_ticket
 
 __all__ = [
     "DEFAULT_TIMEOUT_S",
@@ -44,12 +52,16 @@ __all__ = [
     "REQUEST_KEYS",
     "SOCKET_FILE",
     "ControlReply",
+    "TicketReply",
+    "describe",
     "fits",
     "home_is_safe",
     "identify",
     "pointer_path",
     "query",
+    "session_ticket",
     "socket_path_for",
+    "ws_url_is_safe",
 ]
 
 PROTOCOL = 1
@@ -257,3 +269,106 @@ def identify(home: Path, *, timeout: float = DEFAULT_TIMEOUT_S) -> dict[str, Any
     if not isinstance(pid, int) or isinstance(pid, bool) or pid < 1:
         return None
     return reply.result
+
+
+# -- attach verbs (P17-11) ------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TicketReply:
+    """A ``session-ticket`` answer. ``ticket`` is the secret (hidden from ``repr``); ``error`` is a
+    short code when ``ok`` is false: the ``ControlReply`` codes, plus ``bad_response``,
+    ``profile_mismatch`` and ``stale_instance`` for an answer the caller cannot trust."""
+
+    ok: bool
+    ticket: str = field(default="", repr=False)
+    ws_url: str = ""
+    profile_id: str = ""
+    instance_id: str = ""
+    expires_in: float = 0.0
+    error: str | None = None
+    detail: str = ""
+
+
+def ws_url_is_safe(url: object) -> bool:
+    """A ``ws://`` (or ``wss://``) URL on a literal loopback address with a port, no user info,
+    no query and no fragment: nothing secret can ride in it."""
+    if not isinstance(url, str) or not url:
+        return False
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme in ("ws", "wss")
+        and is_loopback_host(parts.hostname)
+        and port is not None
+        and not parts.username
+        and not parts.password
+        and not parts.query
+        and not parts.fragment
+        and "@" not in parts.netloc
+    )
+
+
+def session_ticket(
+    home: Path,
+    purpose: str,
+    *,
+    profile_id: str | None = None,
+    instance_id: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT_S,
+) -> TicketReply:
+    """Ask the daemon serving ``home`` for a ticket. ``profile_id`` / ``instance_id`` are the
+    ones the caller expects (they are sent along, and the answer must carry the same). Never
+    raises."""
+    params: dict[str, Any] = {"purpose": purpose}
+    if profile_id is not None:
+        params["profile_id"] = profile_id
+    if instance_id is not None:
+        params["instance_id"] = instance_id
+    reply = query(home, "session-ticket", params, timeout=timeout)
+    if not reply.ok or reply.result is None:
+        return TicketReply(False, error=reply.error or "failed", detail=reply.detail)
+    result = reply.result
+    ticket = result.get("ticket")
+    ws_url = result.get("ws_url")
+    got_profile = result.get("profile_id")
+    got_instance = result.get("instance_id")
+    expires_in = result.get("expires_in", 0)
+    if not looks_like_ticket(ticket):
+        return TicketReply(False, error="bad_response", detail="the answer holds no ticket")
+    if not ws_url_is_safe(ws_url):
+        return TicketReply(False, error="bad_response", detail="the ws_url is not a loopback URL")
+    if not isinstance(got_profile, str) or not isinstance(got_instance, str):
+        return TicketReply(False, error="bad_response", detail="the answer names no profile")
+    if profile_id is not None and got_profile != profile_id:
+        return TicketReply(False, error="profile_mismatch", detail="another profile answered")
+    if instance_id is not None and got_instance != instance_id:
+        return TicketReply(False, error="stale_instance", detail="the daemon restarted")
+    if isinstance(expires_in, bool) or not isinstance(expires_in, int | float):
+        expires_in = 0
+    return TicketReply(
+        True,
+        ticket=cast(str, ticket),
+        ws_url=cast(str, ws_url),
+        profile_id=got_profile,
+        instance_id=got_instance,
+        expires_in=float(expires_in),
+    )
+
+
+def describe(home: Path, *, timeout: float = DEFAULT_TIMEOUT_S) -> dict[str, Any] | None:
+    """The daemon's attach descriptor (``profile_id``, ``instance_id``, ``code_version``,
+    ``ws_url``, ``creatable_sources``, ``capabilities``), or None when no daemon answers it
+    well-formed."""
+    reply = query(home, "describe", timeout=timeout)
+    if not reply.ok or reply.result is None:
+        return None
+    result = reply.result
+    if not isinstance(result.get("profile_id"), str) or not isinstance(
+        result.get("instance_id"), str
+    ):
+        return None
+    return result
