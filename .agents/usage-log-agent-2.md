@@ -41,3 +41,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-20 21:50 UTC | Agent 2 | Account 2 | 70% (reading 21:43) | 30% | 23:20 UTC | P18-11..16 + drive fix landed; only P19 integrator #2 running; no new agents |
 | 2026-10-20 22:07 UTC | Agent 2 | Account 2 | 73% (reading 22:00) | 27% | 23:20 UTC | only P19 integrator #2 running; no new agents |
 | 2026-10-20 22:19 UTC | Agent 2 | Account 2 | 74% (reading 22:19) | 26% | 23:20 UTC | only P19 integrator #2 running; no new agents |
+| 2026-10-20 22:30 UTC | Agent 2 | Account 2 | 76% (reading 22:30) | 24% | 23:20 UTC | 75% guard: no new agents; P19 integrator #2 running |

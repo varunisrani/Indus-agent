@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 74,
-  "remaining_pct": 26,
+  "usage_pct": 76,
+  "remaining_pct": 24,
   "resets_at": "2026-10-20T23:20:00+00:00",
-  "last_check": "2026-10-20T22:19:00+00:00",
-  "current_step": "P18-11..16 landed 9786b32, drive fix 155ef32; P19 integrator #2 (m1+a2+d1, P19-18) running; no new agents (near 75%)",
+  "last_check": "2026-10-20T22:30:00+00:00",
+  "current_step": "75% guard: no new agents; P19 integrator #2 (m1+a2+d1, P19-18) running",
   "last_commit": "155ef32"
 }
