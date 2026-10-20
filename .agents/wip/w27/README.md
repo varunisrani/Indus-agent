@@ -61,3 +61,24 @@
   bridge-only methods over the daemon (dual-host matrix); runtime.describe declared/served by P17-25.
 - Incident: one `indus gateway grant` run without INDUS_HOME appended a keychain warning line to /root/.indus/logs/agent.log
   and errors.log and touched /root/.indus/cache/scratch/.last_prune (files pre-existed). Owner item.
+
+## w27-k7.patch: P17-18 CLI attaches by default + P17-21 store ownership across processes — done (base ac389c3)
+- Builder checks: cli/service/state/contract/daemon/control 2534 passed / 48 skipped; 60 s multiprocess stress alone
+  passed (6,123 turns, no lost rows); ruff, pyright, lint-imports, tooling.checks ok. No new deps.
+- Stand-in: tests/unit/cli/_stubs_k7.py. K7 ASSUMED `indus.gateway.daemon.ensure:ensure(home, *, timeout)` and
+  `await indus.service.remote.host:RemoteSessionService.connect(scope, endpoint, *, surface)` with create/resume(policy=),
+  submit(unattended=), pending(session_id), discard_unknown(session_id, admission_id, generation); reasons outcome_unknown /
+  blocked_by_unknown / policy_conflict / stale_generation. K6 ACTUALLY built service/gateway_ensure.ensure(home, env, mode)
+  + home_dialer + Channel + RemoteSessionService(channel, Journal(home)).start() + RemoteHost — adapt via
+  attach.backend_factory and delete the stub. Until wired, `indus` without --local exits 1 with a clear message (no silent
+  fallback).
+- Shared: cli/app.py + args.py (`--local`, GlobalArgs.local — K8 reads it), cli/chat.py + oneshot.py (route choice),
+  sessions_maint.py / sessions.py / import_cmd.py (gate), gateway/control_socket.py (`maintenance-run` owner-only verb),
+  daemon/side_services.py (one line registering MaintenanceVerb), traps R03.1/R03.16/R04.1/R09.11/R09.21, ACC-I55-2,
+  ACC-K51-1.
+- Decisions: HostOverrides runs stay in-process; refused flags -w, --no-restore-cwd, --voice, --save-trajectories (exit 2,
+  name --local); slash subset /help /quit /detach /stop /discard; -z source cli; no alias resolution; --local keeps the P02
+  file lock (excludes the daemon); backup not gated (read-only); optimize keeps its holder check; ensure should treat
+  "already running" during a local maintenance lock as retry.
+- Follow-ups: resume recap needs a daemon snapshot read; REPL end on channel loss; maintenance.run over WS (P17-25);
+  backups still include ledger tables (R03.21).

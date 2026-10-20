@@ -1,0 +1,3906 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 5a80e33..9c99c5a 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1035,6 +1035,13 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/integration/cli/test_oneshot_exit_codes.py::test_completed_prints_only_text`
+   - `tests/e2e/test_demo1.py::test_demo1_create_run_quit_then_continue`
+   - `tests/unit/cli/test_chat_select.py::test_the_repl_entry_is_the_launch_adapter`
++- **ACC-I55-2** Classic chat as a client of the profile's daemon (P17-18): refused flags exit 2 and name `--local`, frozen launch flags, lost-owner queue exits 3, `/discard` by generation; `--local` keeps the in-process route
++  - `tests/unit/cli/test_attach.py::test_each_refused_flag_exits_2_and_names_local`
++  - `tests/unit/cli/test_attach.py::test_local_runs_in_process_and_never_ensures`
++  - `tests/unit/cli/test_attach.py::test_a_changed_frozen_flag_on_resume_exits_2`
++  - `tests/unit/cli/test_attach.py::test_an_unknown_turn_blocks_a_finite_query_with_exit_3`
++  - `tests/unit/cli/test_attach.py::test_discard_with_a_stale_generation_is_refused`
++  - Review: runs against the K6 stand-in until P17-15..17 land (P17-18)
+ - **ACC-J1-1** `indus --tui` launcher: TTY gate, cwd pinning, resume and one-shot options, heap flag, exit summary …
+   - Review: not yet planned (phase TBD)
+ - **ACC-J2-1** Transport: renderer spawns a Python child over JSON-RPC on stdin/stdout first. Changed (P1 …
+@@ -1397,6 +1404,12 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/contract/gateway/test_webhook.py::test_coalescing_runs_the_newest_event_once_after_the_quiet_window`
+   - `tests/contract/gateway/test_webhook.py::test_events_filters_and_direct_delivery`
+   - `tests/unit/cli/commands/test_webhook.py::test_test_signs_and_posts_to_the_local_receiver`
++- **ACC-K51-1** CLI attach: `indus`, `chat`, `-q` and `-z` ensure the daemon and run their turns there by default; leaving only detaches
++  - `tests/unit/cli/test_attach.py::test_chat_q_attaches_by_default`
++  - `tests/unit/cli/test_attach.py::test_z_attaches_by_default_and_prints_only_the_reply`
++  - `tests/unit/cli/test_attach.py::test_ensure_failure_exits_1_and_runs_nothing_locally`
++  - `tests/unit/cli/test_attach.py::test_interactive_chat_runs_the_repl_over_the_daemon_and_only_detaches`
++  - Review: runs against the K6 stand-in until P17-15..17 land (P17-18)
+ - **ACC-K51-3** Attach tickets are single-use, 30 s, purpose- and instance-bound, loopback and Origin checked, never in a URL or log
+   - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
+   - `tests/unit/service/test_ws_auth.py::test_expiry_at_thirty_seconds`
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index 3dd5c39..f5999e7 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -299,6 +299,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/state/test_journal.py::test_unreadable_header_keeps_wal_and_switches_nothing`
+   - `tests/unit/state/test_journal.py::test_cross_vm_mount_keeps_an_existing_wal_store`
+   - `tests/unit/state/test_journal.py::test_vulnerable_sqlite_uses_delete_for_new_and_keeps_existing_wal`
++  - `tests/integration/state/test_multiprocess_daemon.py::test_daemon_writer_and_readers_share_the_store`
+ - **R03.2** Stray open/close cancels SQLite's POSIX locks
+   - Review: not yet planned (P00-guards)
+ - **R03.3** Checkpoint mode
+@@ -359,6 +360,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/e2e/test_doctor_minimal.py::test_fresh_home_reports_a_missing_store_and_creates_none`
+   - `tests/unit/cli/commands/test_sessions.py::test_list_opens_read_only_and_changes_nothing`
+   - `tests/unit/cli/commands/test_sessions.py::test_list_without_a_store_creates_nothing`
++  - `tests/unit/service/test_maintenance_gate.py::test_read_only_commands_create_nothing_in_an_empty_home`
+   - `tests/unit/cli/commands/test_status.py::test_status_without_any_provider`
+ - **R03.17** Descriptor exhaustion
+   - `tests/unit/state/test_readpool.py::test_nine_concurrent_readers_use_eight_pooled_and_the_writer`
+@@ -422,7 +424,11 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/cli/test_chat_select.py::test_frozen_flag_conflict_and_same_value`
+   - `tests/unit/cli/test_chat_select.py::test_resume_restores_cwd_history_and_refuses_changed_flags`
+   - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_survives_resume`
+-  - Review: classic chat as gateway client (refused flags, reduced slash set, exit 3) arrives with P17 (P06-03)
++  - `tests/unit/cli/test_attach.py::test_each_refused_flag_exits_2_and_names_local`
++  - `tests/unit/cli/test_attach.py::test_the_slash_subset`
++  - `tests/unit/cli/test_attach.py::test_a_query_queued_behind_a_lost_owner_exits_3`
++  - `tests/unit/cli/test_attach.py::test_a_bypass_launch_without_a_route_is_refused`
++  - `tests/unit/cli/test_attach.py::test_the_daemons_policy_conflict_exits_2`
+   - `tests/unit/service/test_creation_policy.py::test_resume_with_a_different_model_is_a_policy_conflict`
+   - `tests/unit/service/test_creation_policy.py::test_a_bypass_launch_must_name_model_and_provider`
+   - `tests/unit/service/test_creation_policy.py::test_api_key_is_never_stored`
+@@ -1060,7 +1066,9 @@ Checked by `python -m tooling.checks traps`.
+ - **R09.10** MCP approval tools are hollow
+   - Review: not yet planned (P00-guards)
+ - **R09.11** Never resend a turn with unknown outcome (ACP viewer)
+-  - Review: not yet planned (P00-guards)
++  - `tests/unit/cli/test_attach.py::test_transport_lost_mid_turn_is_outcome_unknown_and_never_resent`
++  - `tests/unit/cli/test_attach.py::test_an_unknown_turn_blocks_a_finite_query_with_exit_3`
++  - Review: the ACP viewer half is P19 (P17-18 covers the CLI)
+ - **R09.12** "Allow for session" has no ACP kind
+   - Review: not yet planned (P00-guards)
+ - **R09.13** Two ACP implementations, one constructor
+@@ -1088,7 +1096,11 @@ Checked by `python -m tooling.checks traps`.
+ - **R09.20** Profile-scoped writes need an explicit profile
+   - Review: not yet planned (P00-guards)
+ - **R09.21** Gateway-owned data cannot be bulk-edited live
+-  - Review: not yet planned (P00-guards)
++  - `tests/unit/service/test_maintenance_gate.py::test_prune_with_a_live_daemon_runs_inside_the_daemon`
++  - `tests/unit/service/test_maintenance_gate.py::test_a_daemon_without_the_verb_refuses_and_nothing_is_deleted`
++  - `tests/unit/service/test_maintenance_gate.py::test_a_held_ownership_lock_refuses_and_nothing_is_deleted`
++  - `tests/unit/service/test_maintenance_gate.py::test_restoring_a_backup_is_refused_while_a_daemon_owns_the_profile`
++  - `tests/integration/state/test_multiprocess_daemon.py::test_daemon_writer_and_readers_share_the_store`
+ - **R09.22** Brand assets
+   - Review: not yet planned (P00-guards)
+ - **R09.23** Reverse-proxy prefix
+diff --git a/docs/notes/P17/cli-attach.md b/docs/notes/P17/cli-attach.md
+new file mode 100644
+index 0000000..1693e39
+--- /dev/null
++++ b/docs/notes/P17/cli-attach.md
+@@ -0,0 +1,139 @@
++# Task: CLI attaches by default (P17-18) Phase: 17 Owner: wave-27 builder K7
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `hermes_cli/gateway_chat.py` (all:
++refused options and where each lives now, bypass launch rule, resume policy check, finite vs
++interactive, detach on Ctrl-C), `hermes_cli/gateway_chat_commands.py` (the slash subset and its
++help text), `hermes_cli/gateway_chat_view.py` (pending/unknown display, `/discard`, the finite
++"blocked" detach with exit 3, interrupt and exit-code tables). Research 04 §3.4.6, §3.4.8; trap
++R04.1, R09.11. Closed before writing.
++Evidence: none.
++
++What it does (own words): `indus`, `indus chat`, `chat -q` and `indus -z` no longer build an agent in
++this process by default. They make sure the profile's daemon runs (`ensure`, P17-15), connect to it
++over the attach channel (P17-16) and drive a `RemoteSessionService` (P17-17): the daemon runs the
++tools and writes the store, the CLI shows events and sends input. `--local` keeps the in-process
++route of P06 exactly as it is today. A run that injects its own model client (the test seam
++`HostOverrides`) is in-process too: such a client cannot reach a daemon.
++
++Rules in attach mode:
++- **Refused flags** (exit 2, nothing runs, the message names `--local` and where the capability
++  lives): `-w/--worktree` (creating a worktree is local work), `--no-restore-cwd` (the daemon keeps
++  the session's frozen folder; `--in DIR` picks one for a new session), `--voice` (recording and
++  speech-to-text happen in this terminal), `--save-trajectories` (written by the local agent after
++  each turn). Nothing ever falls back to a local agent (R04.1).
++- **Bypass launch** (`--safe-mode`, `--ignore-user-config`, or their env vars) for a new session
++  must name `--model` and `--provider` (P17-09 `check_launch`): exit 2 with an example.
++- **Frozen policy**: a new session sends its creation policy (cwd, model, provider, reasoning,
++  toolsets, turn cap, skills, switches; launch env vars become fields); a resume sends only the
++  flags given and the daemon refuses a different value (`policy_conflict`) → exit 2. A local
++  read-only pre-check gives the same answer before connecting.
++- **Session selection** reads the store read-only (ids, titles, `latest`, breadcrumb); the CLI never
++  writes the store in attach mode.
++- **Finite runs** (`-z`, `chat -q` with `--oneshot`/`-Q`/no terminal): submit once, wait, print as
++  the in-process tables do (`oneshot_exit_code`, `finite_exit_code`). A session whose queue is
++  paused behind a lost (unknown) turn, or a query that ends up waiting behind one, exits **3** and
++  nothing is resent. A lost transport while our own turn runs gives "outcome unknown, do not
++  resend" (exit 1 for `chat -q`, 2 for `-z`); the journal entry stays for an explicit retry.
++  Ctrl-C interrupts our turn (its generation), waits up to **10 s** for it to settle, then exits 130
++  ("detached; accepted work continues in the daemon" when it did not settle).
++- **Interactive**: the same classic REPL and renderer (`run_repl`) over an `AttachedHost` (a
++  blocking ReplHost on its own loop thread). Slash subset: `/help`, `/quit` (`/exit`, `/detach`),
++  `/stop`, `/discard <admission_id>`; approvals and questions use the REPL's cards; every other
++  slash or `!` line is answered "not available while attached; use --local". Unknown admissions
++  are listed at start with their `/discard` line.
++- **Detach**: closing the terminal or `/quit` only detaches (`aclose`); the daemon finishes accepted
++  work. Never an interrupt on the way out.
++- `/discard <id>` looks the row up in the session's pending list and sends its generation; a stale
++  generation (the row moved on) is refused with a message.
++
++Inputs → outputs: global flags + `--local` → `attach.run_attached_chat` / `attach.run_attached_oneshot`
++→ exit codes 0/1/2/3/130 and the same stdout contract as in-process.
++
++Files: `src/indus/cli/attach.py`, `tests/unit/cli/test_attach.py`, `tests/unit/cli/_stubs_k7.py`
++(stand-in for K6). Shared: `src/indus/cli/chat.py` (route choice), `src/indus/cli/oneshot.py`
++(route choice for `-z`), `src/indus/cli/app.py` (`--local` flag), `src/indus/cli/args.py`
++(`GlobalArgs.local`).
++
++Edge cases / failure modes:
++- daemon cannot be ensured (start failed, budget spent, planned stop) → exit 1, one line, "nothing
++  ran in this terminal; use --local"; never a local agent.
++- the attach implementation is missing from the build → same exit 1 line.
++- refused flags combined → all named in one message, exit 2, nothing ensured.
++- `-c`/`-r` miss → the selection error, as in-process (exit 1).
++- resume with a changed frozen flag → exit 2 (local pre-check or daemon `policy_conflict`).
++- unknown admissions before a finite submit → exit 3, nothing submitted.
++- the finite wait reports "blocked behind unknown" → exit 3, input retained by the daemon.
++- transport lost mid-turn → outcome unknown, exit 1 / 2, no resend.
++- Ctrl-C while waiting → interrupt by generation, 10 s settle, 130.
++- `/discard` with an id not pending as unknown, or a stale generation → refused, nothing changes.
++
++Our design differences / decisions:
++- `--local` instead of refusing everything (D-16.10). A `HostOverrides` run is in-process.
++- `--image` / `--verbose` / `--run-budget` / `--compact` are not flags of our CLI, so they are not in
++  the refused table; `--voice` and `--save-trajectories` are (they need this process).
++- Slash subset is smaller than the reference's (`/model`, `/branch`, `/compress`, `/yolo`,
++  `/title`, `/undo`, `/retry`, `/new`, `/usage`, `/tools` need daemon mutation verbs P17-25 has
++  not declared yet): they answer "not available while attached".
++- `-z` attached sessions are created with source `cli` (the daemon's creatable sources have no
++  `oneshot`); `-z` asks the daemon for an unattended turn (`submit(..., unattended=True)`).
++- No model alias resolution on the client: our resolver has no aliases, values freeze as typed
++  (D-16.424).
++- `--local` keeps the P02 per-session file lock; the daemon's host takes the same lock
++  (D-16.426), so a `--local` run and the daemon exclude each other on one session. Moving
++  `--local` onto the durable lease is a follow-up (it changes `SessionService`).
++
++Tests we will write (`tests/unit/cli/test_attach.py`, against the K6 stand-in):
++- each refused flag exits 2 and names `--local`; nothing ensured;
++- `--local` (and a `HostOverrides` run) never ensures (the P06 suite stays green as is);
++- attach is the default for chat, `-q` and `-z`; ensure failure exits 1 and runs nothing locally;
++- finite `-q`/`-z` reply and exit codes over the stand-in; usage file written;
++- unknown admission pending → exit 3 before any submit; wait blocked behind unknown → exit 3;
++- transport lost mid-turn → outcome unknown, no second submit;
++- resume policy conflict → exit 2; bypass launch without model/provider → exit 2;
++- interactive: the REPL host feeds events, `/discard` with a stale generation refused, `/stop`
++  interrupts by generation, unknown slash answered, closing only detaches (no interrupt).
++
++## Decisions for the lead
++- The K6 interface this slice assumed is listed in `tests/unit/cli/_stubs_k7.py`'s docstring and
++  in `attach.py` (`AttachBackend`, `AttachedService`): ensure loaded by name from
++  `indus.gateway.daemon.ensure:ensure` (the CLI may not import the gateway; precedent: `send` in
++  `app.REGISTRY`), the remote host from `indus.service.remote.host:RemoteSessionService.connect`.
++  Failure reasons on exceptions: `.reason` (or ProtocolError `data["reason"]`)
++  `outcome_unknown`, `blocked_by_unknown`, `policy_conflict`, `stale_generation`.
++- `submit(..., unattended=True)` for `-z` and `pending(session_id)` / `discard_unknown(session_id,
++  admission_id, generation)` are needed on the remote host (protocol rows for P17-25).
++- `--local` is a top-level flag repeated on `chat` (`GlobalArgs.local`); the TUI slice (K8) reads
++  the same field for `indus --tui --local`.
++
++- A finite run whose turn asks a question (approval, clarify) nobody here can answer detaches
++  without cancelling and exits 3 (found in the compare step; the reference does the same).
++- `--local` / `GlobalArgs.local` are added by this slice (`app.py`, `args.py`).
++
++Compare checklist (filled after the rewrite; reopened `gateway_chat.py`, `gateway_chat_commands.py`,
++`gateway_chat_view.py`):
++- [x] refused flags each named with where they live, nothing started (test: `test_attach.py::test_each_refused_flag_exits_2_and_names_local`)
++- [x] bypass launch needs a route (test: `test_attach.py::test_a_bypass_launch_without_a_route_is_refused`)
++- [x] resume policy refusal is exit 2, locally and from the daemon (tests: `test_attach.py::test_a_changed_frozen_flag_on_resume_exits_2`, `::test_the_daemons_policy_conflict_exits_2`)
++- [x] unknown blocks a finite submit, exit 3, nothing submitted (test: `test_attach.py::test_an_unknown_turn_blocks_a_finite_query_with_exit_3`); queued behind it later → 3 (`::test_a_query_queued_behind_a_lost_owner_exits_3`)
++- [x] own lost turn: outcome unknown, never resent (test: `test_attach.py::test_transport_lost_mid_turn_is_outcome_unknown_and_never_resent`)
++- [x] `/discard` looks up the lost row and sends its generation; stale refused (test: `test_attach.py::test_discard_with_a_stale_generation_is_refused`)
++- [x] Ctrl-C interrupts by generation, 10 s settle, then detach (tests: `test_attach.py::test_ctrl_c_interrupts_by_generation_and_waits_to_settle`, `::test_a_turn_that_does_not_settle_detaches`)
++- [x] gap found: a finite viewer with an open question would wait for ever — now detaches with exit 3 (test: `test_attach.py::test_a_question_nobody_can_answer_detaches_a_finite_run_with_exit_3`)
++- [x] gap found: an interrupted turn without a reply exits 130 silently — now one stderr line saying it was not run again (test: `test_attach.py::test_an_interrupt_without_a_reply_says_it_was_not_run_again`)
++- [x] gap found (ours): a Ctrl-C the OS delivers to another thread was never seen by a main thread blocked on a future — the waits now run in 0.1 s slices (same Ctrl-C tests)
++- Deliberate differences: `--local` instead of refusing everything (D-16.10); smaller slash subset (the
++  session mutation verbs are not declared on the wire yet); `-z` sessions are created as `cli`; the
++  "Session:" line is printed at the end as in-process (`session_id:` on stderr), not at the start.
++- Not taken: `--create-if-missing`, `--image`, `--run-budget`, `--compact`, `--format stream-json`
++  (not flags of our CLI); the resume recap of earlier messages in attach mode (needs a snapshot
++  read from the daemon); ending the REPL at once when the daemon goes away (needs a "channel lost"
++  signal from P17-16) — follow-ups.
++
++## Status
++
++Done against the K6 stand-in (2026-10-20). Integration: delete `tests/unit/cli/_stubs_k7.py`, point
++`attach.ENSURE_ENTRY` / `REMOTE_ENTRY` at K6's real names if they differ, and either give
++`RemoteSessionService` the calls listed in the stand-in's docstring or wrap it in an adapter
++(`attach.backend_factory`). Shared edits: `cli/app.py`, `cli/args.py`, `cli/chat.py`,
++`cli/oneshot.py`, `docs/internals/traps-ledger.md` (R04.1, R09.11),
++`docs/internals/acceptance-map.md` (ACC-I55-2, ACC-K51-1).
+diff --git a/docs/notes/P17/store-ownership.md b/docs/notes/P17/store-ownership.md
+new file mode 100644
+index 0000000..a9a04ab
+--- /dev/null
++++ b/docs/notes/P17/store-ownership.md
+@@ -0,0 +1,113 @@
++# Task: Store ownership across processes (P17-21) Phase: 17 Owner: wave-27 builder K7
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): no reference code file is named by the
++row. Research 03 §3.2 (writable vs read-only opens: read-only never creates, quarantines, migrates
++or checkpoints), R03.1 (never live-downgrade WAL), R03.16 (browsing never writes); research 09
++R09.21 (bulk maintenance takes the profile's exclusive gateway lock and is refused while the gateway
++runs). Our P15 `gateway/daemon/liveness.py` (`gateway.lock` flock), `service/gateway_control.py`
++(control client), `cli/commands/sessions_maint.py` (P07-15 verbs), `state/browse.py`.
++Evidence: none.
++
++What it does (own words): while a daemon owns the profile it is the one writer of the session
++store. A bulk change made by another process at the same time (pruning thousands of rows,
++rebuilding the search index, importing an export, restoring a backup over the live file) races
++the daemon's turns and can leave rows half-deleted under a running turn or swap the file under an
++open connection. So every bulk maintenance verb asks the **maintenance gate** first:
++
++1. **A daemon answers the control socket** (liveness is the socket answer, R06.18): the request is
++   sent to the daemon (`maintenance-run`, owner-only), which runs it on its own store handle,
++   through the same writer executor as its live turns, so the two are serialised (R09.21). A
++   daemon that does not serve the verb (an older build), refuses it, or an operation that only
++   makes sense with the daemon stopped (restoring a backup zip over the home) is **refused** with
++   a clear message naming `indus gateway stop`; nothing is written locally.
++2. **No daemon answers**: the CLI takes the profile ownership lock itself (the daemon's
++   single-instance `flock` on `<home>/gateway.lock`, non-blocking) and runs the verb while it
++   holds it, so a daemon starting meanwhile cannot claim the profile until the verb is done. If
++   the lock is held (a daemon is starting or stopping, its socket is not answering yet, or another
++   maintenance run holds it), the verb is refused: "try again in a moment".
++
++Reads stay as they are and are pinned: `sessions list/browse/pinned/stats/export` and the
++previews/`--dry-run` open read-only connections (`state.browse.open_readonly`) that never create,
++migrate or checkpoint anything (R03.16) — they need no gate and never block on it.
++
++The multi-process stress test runs a "daemon" process (it holds `gateway.lock` and writes turns —
++session rows plus user/assistant messages — through the P02 writer), two CLI-style readers (read-only
++list + transcript reads), one dashboard-style reader (read-only search + stats), and one process
++that runs a WAL checkpoint in the middle; a CLI `sessions prune` attempt during the run is refused
++by the gate. Afterwards: every message the writer was told was stored is stored once, in order; no
++reader or writer saw "database is locked"; the journal mode every process saw (and the file header
++sampled through the run) never changed (R03.1); the store passes its integrity checks.
++
++Inputs → outputs: `MaintenanceGate(scope).run(op, params, local=...)` → `GateResult(where="daemon" |
++"local", result)` or `MaintenanceRefused(reason, message)`; daemon side
++`MaintenanceVerb(scope).handlers()` → `{"maintenance-run": (handler, seconds)}`.
++
++Files: `src/indus/service/maintenance_gate.py`, `tests/unit/service/test_maintenance_gate.py`,
++`tests/integration/state/test_multiprocess_daemon.py`, `tests/integration/state/multiprocess_worker.py`.
++Shared: `src/indus/cli/commands/sessions_maint.py` (prune, repair, import through the gate),
++`src/indus/cli/commands/sessions.py` (delete through the gate), `src/indus/cli/commands/import_cmd.py`
++(restore refused while a daemon owns the profile, lock held otherwise),
++`src/indus/gateway/control_socket.py` (`maintenance-run` known and owner-only),
++`src/indus/gateway/daemon/side_services.py` (the daemon serves the verb).
++
++Edge cases / failure modes:
++- daemon alive but its socket is slow / unreachable → the lock is held by it → refused, never run
++  locally (a missed answer is not proof of death);
++- stale socket file with no daemon → no answer, lock free → local under the lock;
++- the request is too large for one exchange (prune of thousands of ids) → sent in batches;
++- a session in use when the daemon deletes it → guarded and reported, as the P02 functions do;
++- the daemon answers a refusal (`unsupported`, `forbidden`, `failed`) → refused with its code;
++- home not safe (group/world-writable) → the client will not talk to the socket; the lock path
++  decides (held → refused);
++- previews and `--dry-run` never take the lock or ask the daemon.
++
++Our design differences / decisions:
++- Our names: maintenance gate, `maintenance-run` control verb (the JSON-RPC `maintenance.run`
++  name is P17-25's; the control socket is the owner-only one-exchange channel every CLI verb
++  already uses).
++- The reference answers 409 while the gateway runs; we run the verb inside the daemon when it
++  serves it, and refuse otherwise.
++- Restoring a backup zip (`indus import`) is never routed: it replaces files under the daemon, so
++  it is refused while a daemon owns the profile.
++- `indus backup` copies databases with the online backup API from a read-only connection: a
++  consistent snapshot that never writes the live store, so it is not gated (the plan row lists it;
++  recorded below).
++- `optimize` (VACUUM) already refuses while any other process holds the store (R03.25); with a
++  daemon running that is always the case, so it stays as is.
++
++Tests we will write:
++- `test_maintenance_gate.py`: daemon live → `sessions prune` runs inside the daemon (spy on the
++  verb; the CLI opens no writable handle); daemon without the verb → refused, nothing deleted; no
++  daemon → local under the lock (the lock is held during the run); lock held by someone else →
++  refused; `sessions delete` / `repair` / `import` through the gate; `indus import` refused while
++  a daemon answers; batches of ids; read-only list/stats/export/browse in an empty home create no
++  file.
++- `test_multiprocess_daemon.py`: the 60 s (`INDUS_STRESS_SECONDS`) stress run above.
++
++## Decisions for the lead
++- `maintenance-run` is an owner-only control verb (added to `KNOWN_VERBS` / `OWNER_ONLY_VERBS`);
++  ops `prune` (ids), `delete` (one session chain), `repair` (search index rebuild), `import`
++  (a JSON-lines export path). P17-25 may add the JSON-RPC `maintenance.run` beside it.
++- `indus backup` is not gated (read-only online backup); backups still include the ledger tables
++  (R03.21 follow-up from wave 1).
++- The CLI holding `gateway.lock` during a local maintenance run makes a daemon start in that window
++  report "already running"; ensure (P17-15) should treat that as "try again" rather than a fault.
++
++Compare checklist (filled after the rewrite; reread research 03 §3.2, R03.1, R03.16, research 09 R09.21):
++- [x] R09.21 bulk edit with a live owner goes through the owner (test: `test_maintenance_gate.py::test_prune_with_a_live_daemon_runs_inside_the_daemon`; also delete, repair, import)
++- [x] R09.21 refused when the owner cannot run it, nothing written (test: `test_maintenance_gate.py::test_a_daemon_without_the_verb_refuses_and_nothing_is_deleted`)
++- [x] R09.21 without an owner the CLI takes the profile lock; a held lock refuses (tests: `test_maintenance_gate.py::test_without_a_daemon_prune_runs_here_holding_the_ownership_lock`, `::test_a_held_ownership_lock_refuses_and_nothing_is_deleted`)
++- [x] restore under a live daemon refused (test: `test_maintenance_gate.py::test_restoring_a_backup_is_refused_while_a_daemon_owns_the_profile`)
++- [x] R03.16 read-only browsing creates nothing, takes no lock (test: `test_maintenance_gate.py::test_read_only_commands_create_nothing_in_an_empty_home`)
++- [x] R03.1 WAL never switched live; no lost rows; no "database is locked" (test: `test_multiprocess_daemon.py::test_daemon_writer_and_readers_share_the_store`)
++- [x] R09.21 single deletes stay revision-fenced/guarded and leave tombstones: the daemon runs the same P02 `delete_session` (guarded sessions reported: `test_maintenance_gate.py::test_a_guarded_session_is_reported_by_the_daemon`)
++- Deliberate differences: run inside the owner instead of a flat 409; `backup` not gated (read-only
++  online backup); `optimize` keeps its holder check.
++- Not taken: a JSON-RPC `maintenance.run` on the WebSocket (P17-25 owns the method table).
++
++## Status
++
++Done (2026-10-20). Shared edits: `cli/commands/sessions_maint.py`, `cli/commands/sessions.py`,
++`cli/commands/import_cmd.py`, `gateway/control_socket.py` (`maintenance-run` known, owner-only),
++`gateway/daemon/side_services.py` (the daemon serves it), `docs/internals/traps-ledger.md` (R03.1,
++R03.16, R09.21).
+diff --git a/src/indus/cli/app.py b/src/indus/cli/app.py
+index 0498271..bf4f656 100644
+--- a/src/indus/cli/app.py
++++ b/src/indus/cli/app.py
+@@ -339,6 +339,13 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
+             help="Pick the full-screen interface or the classic prompt.",
+         )
+     )
++    add(
++        click.option(
++            "--local",
++            **_not_given(True),
++            help="Run the agent in this terminal instead of the profile's gateway daemon.",
++        )
++    )
+     add(
+         click.option(
+             "--dev",
+@@ -380,6 +387,7 @@ def globals_from(values: dict[str, Any]) -> GlobalArgs:
+         "pass_session_id",
+         "checkpoints",
+         "dev",
++        "local",
+     ):
+         if values.get(name) is False:
+             values.pop(name)
+diff --git a/src/indus/cli/args.py b/src/indus/cli/args.py
+index 7263749..eabc63c 100644
+--- a/src/indus/cli/args.py
++++ b/src/indus/cli/args.py
+@@ -111,6 +111,8 @@ class GlobalArgs:
+     checkpoints: bool = False
+     accept_hooks: bool = False
+     dev: bool = False
++    local: bool = False
++    """``--local``: run the agent in this process instead of attaching to the daemon (P17-18)."""
+ 
+     @classmethod
+     def from_values(cls, values: Mapping[str, Any]) -> GlobalArgs:
+diff --git a/src/indus/cli/attach.py b/src/indus/cli/attach.py
+new file mode 100644
+index 0000000..10c1ed5
+--- /dev/null
++++ b/src/indus/cli/attach.py
+@@ -0,0 +1,1012 @@
++"""Classic chat and one-shots as clients of the profile's daemon (P17-18, R04.1, D-16.10).
++
++By default ``indus``, ``indus chat``, ``chat -q`` and ``indus -z`` do not run an agent here. They
++make sure the profile's gateway daemon runs (``ensure``, P17-15), attach to it (P17-16) and drive
++its sessions through a remote session service (P17-17): the daemon runs the tools and writes the
++store, this process shows the events and sends what the person types. ``--local`` keeps the
++in-process route of P06 unchanged; so does a run whose driver injects its own model client
++(``HostOverrides``, test drivers only), which no daemon could use.
++
++Attach mode rules:
++
++- **Refused flags** (exit 2 before anything starts; nothing falls back to a local agent):
++  ``-w/--worktree``, ``--no-restore-cwd``, ``--voice``, ``--save-trajectories`` — each needs this
++  process; the message names ``--local`` and where the capability lives.
++- **Launch policy**: a new session sends its creation policy (P17-09; launch env vars become
++  fields); a bypass launch (safe mode, ignore-user-config) must name model and provider (exit 2).
++  A resume sends only the flags given; a different frozen value is refused (exit 2), first by a
++  read-only check here, then by the daemon (``policy_conflict``).
++- **Selection** (``-c``, ``-r``, ``latest``, the breadcrumb) reads the store read-only.
++- **Finite runs** print as the in-process tables do (``oneshot.finite_exit_code`` /
++  ``oneshot_exit_code``). A session paused behind a lost turn (an ``unknown`` admission), or a
++  query that ends up queued behind one, exits **3** and nothing is resent. A transport lost while
++  our own turn ran is "outcome unknown": never resubmitted (exit 1 for ``chat -q``, 2 for ``-z``).
++  Ctrl-C interrupts the turn by its generation and waits up to ``SETTLE_S`` (10 s) for it to
++  settle, then exits 130.
++- **Interactive**: the classic REPL and its one renderer (``repl.app.run_repl``) over
++  ``AttachedHost``. Slash subset: ``/help``, ``/quit`` (``/exit``, ``/detach``), ``/stop``,
++  ``/discard <admission_id>`` (resolves a lost turn; its generation is sent and checked). Every
++  other slash or ``!`` line is answered "not available while attached". Leaving only detaches: the
++  daemon finishes accepted work.
++
++The shared-daemon client lives outside the CLI layer, so it is loaded by name
++(``ENSURE_ENTRY``, ``REMOTE_ENTRY``; the same rule as ``indus send`` in ``app.REGISTRY``).
++``AttachBackend`` / ``AttachedService`` are the calls this module needs from it.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import concurrent.futures
++import importlib
++import inspect
++import logging
++import queue
++import threading
++import time
++from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
++from dataclasses import dataclass
++from pathlib import Path
++from typing import TYPE_CHECKING, Any, Final, Protocol, Self
++
++import click
++
++from indus.cli.args import ChatArgs, CliState, GlobalArgs, split_csv
++from indus.protocol.events import ExitReason
++from indus.protocol.methods import (
++    PromptSubmitResult,
++    ProtocolError,
++    ServerRequestAnswerResult,
++    SessionCreateParams,
++    SessionInterruptResult,
++    SessionRedirectResult,
++    SessionSteerResult,
++)
++
++if TYPE_CHECKING:
++    from indus.cli.oneshot import RunOutcome
++    from indus.cli.repl.app import Repl
++    from indus.foundation.scope import Scope
++    from indus.protocol.requests_port import AnswerModel
++    from indus.service.creation_policy import CreationPolicy
++
++__all__ = [
++    "BLOCKED_EXIT",
++    "ENSURE_ENTRY",
++    "REFUSED_FLAGS",
++    "REMOTE_ENTRY",
++    "SETTLE_S",
++    "AttachBackend",
++    "AttachUnavailable",
++    "AttachedHost",
++    "AttachedService",
++    "attached_commands",
++    "backend_factory",
++    "failure_reason",
++    "refused_flags",
++    "run_attached_chat",
++    "run_attached_oneshot",
++    "wants_local",
++]
++
++log = logging.getLogger(__name__)
++
++ENSURE_ENTRY: Final = "indus.gateway.daemon.ensure:ensure"
++"""``ensure(home, *, timeout) -> endpoint`` (P17-15): a live daemon, started when needed."""
++REMOTE_ENTRY: Final = "indus.service.remote.host:RemoteSessionService"
++"""``await RemoteSessionService.connect(scope, endpoint, *, surface) -> AttachedService``."""
++ENSURE_TIMEOUT_S: Final = 60.0
++SETTLE_S: Final = 10.0
++"""How long Ctrl-C waits for the interrupted turn to settle before detaching."""
++CALL_TIMEOUT_S: Final = 120.0
++BLOCKED_EXIT: Final = 3
++"""A finite query that cannot run because the session waits behind a lost turn."""
++
++REFUSED_FLAGS: Final[tuple[tuple[str, str, str], ...]] = (
++    ("worktree", "-w/--worktree", "a new worktree is made in this terminal's repository"),
++    (
++        "no_restore_cwd",
++        "--no-restore-cwd",
++        "the daemon keeps a session's own folder (give --in DIR for a new session)",
++    ),
++    ("voice", "--voice", "recording and speech-to-text run in this terminal"),
++    (
++        "save_trajectories",
++        "--save-trajectories",
++        "the samples are written by an agent running in this process",
++    ),
++)
++"""``(field, flag as typed, why it needs this process)``; the field is on ``GlobalArgs`` or
++``ChatArgs``."""
++
++_BYPASS_EXAMPLE = 'indus --safe-mode --provider openrouter --model <model> -q "hello"'
++_UNKNOWN_HINT = (
++    "Resume this session in a terminal and /discard the lost turn (its outcome is unknown); "
++    "do not send the input again."
++)
++_HELP = (
++    "Attached to the gateway daemon. Commands here: /stop (interrupt the reply), "
++    "/discard <admission_id> (resolve a turn lost in a daemon restart), /quit or /detach (leave; "
++    "accepted work goes on), /help. Approvals and questions are answered in place. Everything "
++    "else runs with `indus --local`."
++)
++
++
++class AttachUnavailable(Exception):
++    """The daemon could not be reached or started; nothing ran in this process."""
++
++
++class AttachedService(Protocol):
++    """What the CLI calls on the remote session service (methods may be sync or async)."""
++
++    def create(
++        self, params: SessionCreateParams, *, source: str, policy: Mapping[str, Any]
++    ) -> Any: ...
++    def resume(self, session_id: str, *, policy: Mapping[str, Any] | None) -> Any: ...
++    def submit(self, session_id: str, text: str, *, unattended: bool = False) -> Any: ...
++    def wait(self, session_id: str, turn_id: str) -> Any: ...
++    def interrupt(self, session_id: str, generation: int | None, *, hard: bool = False) -> Any: ...
++    def steer(self, session_id: str, text: str) -> Any: ...
++    def redirect(self, session_id: str, text: str) -> Any: ...
++    def answer_server_request(
++        self, session_id: str, request_id: str, answer: Mapping[str, Any] | AnswerModel
++    ) -> Any: ...
++    def subscribe(self, session_id: str, listener: Callable[[Any], None]) -> Any: ...
++    def on_request(self, session_id: str, listener: Callable[[Any], None]) -> Any: ...
++    def pending(self, session_id: str) -> Any: ...
++    def discard_unknown(self, session_id: str, admission_id: str, generation: int) -> Any: ...
++    def aclose(self) -> Any: ...
++
++
++class AttachBackend(Protocol):
++    """How the CLI reaches the daemon: ``ensure`` it, then ``connect`` a remote service."""
++
++    def ensure(self, scope: Scope, *, timeout: float) -> Any: ...
++    def connect(self, scope: Scope, endpoint: Any, *, surface: str) -> Awaitable[Any]: ...
++
++
++def _load(entry: str) -> Any:
++    module, _, attr = entry.partition(":")
++    try:
++        return getattr(importlib.import_module(module), attr)
++    except (ImportError, AttributeError) as exc:
++        raise AttachUnavailable("this build has no shared-daemon client") from exc
++
++
++class _SharedDaemon:
++    """The real backend: ``ENSURE_ENTRY`` and ``REMOTE_ENTRY``, loaded on first use."""
++
++    def ensure(self, scope: Scope, *, timeout: float) -> Any:
++        return _load(ENSURE_ENTRY)(scope.home, timeout=timeout)
++
++    async def connect(self, scope: Scope, endpoint: Any, *, surface: str) -> Any:
++        remote = _load(REMOTE_ENTRY)
++        return await remote.connect(scope, endpoint, surface=surface)
++
++
++def _default_backend() -> AttachBackend:
++    return _SharedDaemon()
++
++
++backend_factory: Callable[[], AttachBackend] = _default_backend
++"""Builds the backend for a run (tests put a stand-in here)."""
++
++
++# -- small rules ----------------------------------------------------------------------------------
++
++
++def wants_local(state: CliState, args: GlobalArgs) -> bool:
++    """``--local``, or a driver that injected its own model client (no daemon could use it)."""
++    return args.local or state.overrides is not None
++
++
++def refused_flags(args: GlobalArgs, chat: ChatArgs | None = None) -> list[tuple[str, str]]:
++    """``(flag, why)`` for each given flag that needs this process."""
++    out: list[tuple[str, str]] = []
++    for name, flag, why in REFUSED_FLAGS:
++        value = getattr(args, name, None)
++        if value is None and chat is not None:
++            value = getattr(chat, name, None)
++        if value not in (None, False):
++            out.append((flag, why))
++    return out
++
++
++def _refusal_lines(prefix: str, refused: Sequence[tuple[str, str]]) -> list[str]:
++    flags = ", ".join(flag for flag, _ in refused)
++    lines = [
++        f"{prefix}: {flags} cannot be used while attached to the gateway daemon; nothing was "
++        "started. Run with --local to use an agent in this terminal:"
++    ]
++    lines.extend(f"  {flag}: {why}" for flag, why in refused)
++    return lines
++
++
++def failure_reason(obj: object) -> str | None:
++    """The short reason a remote refusal or result carries (``outcome_unknown``,
++    ``blocked_by_unknown``, ``policy_conflict``, ``stale_generation`` ...), or None."""
++    for name in ("reason", "code_name", "code"):
++        value = getattr(obj, name, None)
++        if isinstance(value, str) and value:
++            return value
++    data = getattr(obj, "data", None)
++    if isinstance(data, Mapping):
++        value = data.get("reason")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
++        if isinstance(value, str) and value:
++            return value
++    return None
++
++
++def _message(exc: BaseException) -> str:
++    text = getattr(exc, "message", None)
++    return text if isinstance(text, str) and text else str(exc) or type(exc).__name__
++
++
++async def _settle(value: Any) -> Any:
++    return await value if inspect.isawaitable(value) else value
++
++
++@dataclass(frozen=True)
++class PendingRow:
++    """One not-yet-finished admission of the session, as the daemon lists it."""
++
++    admission_id: str
++    state: str
++    generation: int
++    text: str = ""
++
++    @classmethod
++    def of(cls, raw: Any) -> PendingRow:
++        get: Callable[[str], Any] = (
++            raw.get if isinstance(raw, Mapping) else (lambda k: getattr(raw, k, None))  # pyright: ignore[reportUnknownMemberType]
++        )
++        generation = get("generation")
++        return cls(
++            str(get("admission_id") or ""),
++            str(get("state") or ""),
++            generation if isinstance(generation, int) else 0,
++            str(get("text") or ""),
++        )
++
++
++def _policy_wire(policy: CreationPolicy) -> dict[str, Any]:
++    return {k: list(v) if isinstance(v, tuple) else v for k, v in policy.given().items()}
++
++
++def _creation_policy(state: CliState, args: GlobalArgs, chat: ChatArgs, cwd: Path) -> Any:
++    from indus.service.creation_policy import CreationPolicy, check_launch, launch_flags_from_env
++
++    launch: dict[str, Any] = {
++        "cwd": str(cwd),
++        "model": args.model,
++        "provider": args.provider,
++        "reasoning": args.reasoning,
++        "toolsets": split_csv(args.toolsets),
++        "max_turns": chat.max_turns,
++        "skills": split_csv(list(args.skills)) or [],
++        "checkpoints": args.checkpoints,
++        "yolo": args.yolo,
++        "accept_hooks": args.accept_hooks,
++        "ignore_rules": args.ignore_rules,
++        "safe_mode": args.safe_mode,
++        "ignore_user_config": args.ignore_user_config,
++        "pass_session_id": args.pass_session_id,
++    }
++    launch.update(launch_flags_from_env(state.scope.env))
++    policy = CreationPolicy.from_launch(launch)
++    check_launch(policy)
++    return policy
++
++
++def _resume_policy(args: GlobalArgs, chat: ChatArgs, cwd: Path) -> dict[str, Any] | None:
++    from indus.cli.session_select import launch_from_args
++
++    _policy, given = launch_from_args(args, chat, cwd=cwd)
++    wire: dict[str, Any] = {k: list(v) if isinstance(v, tuple) else v for k, v in given.items()}
++    if args.checkpoints:
++        wire["checkpoints"] = True
++    if args.accept_hooks:
++        wire["accept_hooks"] = True
++    return wire or None
++
++
++# -- the host the REPL drives ---------------------------------------------------------------------
++
++
++class AttachedHost:
++    """The remote service on its own loop thread, offered as blocking calls (a ``ReplHost``)."""
++
++    def __init__(
++        self,
++        backend: AttachBackend,
++        scope: Scope,
++        endpoint: Any,
++        *,
++        surface: str = "cli",
++        call_timeout: float | None = CALL_TIMEOUT_S,
++    ) -> None:
++        self.backend = backend
++        self.scope = scope
++        self.endpoint = endpoint
++        self.surface = surface
++        self.call_timeout = call_timeout
++        self._loop: asyncio.AbstractEventLoop | None = None
++        self._thread: threading.Thread | None = None
++        self._ready = threading.Event()
++        self._service: Any = None
++        self._stopped = False
++
++    def start(self) -> Self:
++        self._thread = threading.Thread(target=self._run, name="indus-attach", daemon=True)
++        self._thread.start()
++        if not self._ready.wait(10.0):
++            raise AttachUnavailable("the attach loop did not start")
++        try:
++            self._service = self.call(
++                self.backend.connect(self.scope, self.endpoint, surface=self.surface)
++            )
++        except Exception as exc:
++            self.stop()
++            if isinstance(exc, AttachUnavailable):
++                raise
++            raise AttachUnavailable(_message(exc)) from exc
++        return self
++
++    def _run(self) -> None:
++        loop = asyncio.new_event_loop()
++        self._loop = loop
++        asyncio.set_event_loop(loop)
++        loop.call_soon(self._ready.set)
++        try:
++            loop.run_forever()
++        finally:
++            loop.close()
++
++    @property
++    def service(self) -> Any:
++        if self._service is None:
++            raise RuntimeError("the attached host is not connected")
++        return self._service
++
++    def future(self, name: str, *args: Any, **kwargs: Any) -> concurrent.futures.Future[Any]:
++        """``service.<name>(...)`` started on the loop (sync or async alike)."""
++        service = self.service
++
++        async def step() -> Any:
++            return await _settle(getattr(service, name)(*args, **kwargs))
++
++        return self._schedule(step())
++
++    def _schedule(self, coro: Coroutine[Any, Any, Any]) -> concurrent.futures.Future[Any]:
++        loop = self._loop
++        if loop is None or loop.is_closed():
++            coro.close()
++            raise RuntimeError("the attached host is not running")
++        return asyncio.run_coroutine_threadsafe(coro, loop)
++
++    def call(self, coro: Awaitable[Any], *, timeout: float | None = -1.0) -> Any:
++        async def run() -> Any:
++            return await coro
++
++        fut = self._schedule(run())
++        wait = self.call_timeout if timeout == -1.0 else timeout
++        try:
++            return fut.result(wait)
++        except TimeoutError:
++            fut.cancel()
++            raise
++
++    def invoke(self, name: str, *args: Any, **kwargs: Any) -> Any:
++        """Call ``service.<name>(...)`` on the loop (sync or async alike) and wait for it."""
++        fut = self.future(name, *args, **kwargs)
++        try:
++            return fut.result(self.call_timeout)
++        except TimeoutError:
++            fut.cancel()
++            raise
++
++    def stop(self) -> None:
++        """Detach (never interrupt) and stop the loop."""
++        if self._stopped or self._thread is None:
++            return
++        self._stopped = True
++        try:
++            if self._service is not None:
++                self.invoke("aclose")
++        except Exception:
++            log.warning("detaching from the daemon failed", exc_info=True)
++        finally:
++            loop = self._loop
++            if loop is not None and not loop.is_closed():
++                loop.call_soon_threadsafe(loop.stop)
++            self._thread.join(10.0)
++
++    # -- ReplHost ---------------------------------------------------------------------------------
++
++    def submit(self, session_id: str, text: str) -> PromptSubmitResult:
++        return self.invoke("submit", session_id, text)
++
++    def interrupt(
++        self, session_id: str, generation: int | None = None, *, hard: bool = False
++    ) -> SessionInterruptResult:
++        return self.invoke("interrupt", session_id, generation, hard=hard)
++
++    def steer(self, session_id: str, text: str) -> SessionSteerResult:
++        return self.invoke("steer", session_id, text)
++
++    def redirect(self, session_id: str, text: str) -> SessionRedirectResult:
++        return self.invoke("redirect", session_id, text)
++
++    def answer_server_request(
++        self, session_id: str, request_id: str, answer: Mapping[str, Any] | AnswerModel
++    ) -> ServerRequestAnswerResult:
++        return self.invoke("answer_server_request", session_id, request_id, answer)
++
++    def feed(self, session_id: str) -> tuple[queue.Queue[Any], Callable[[], None]]:
++        feed: queue.Queue[Any] = queue.Queue()
++
++        async def attach() -> Callable[[], Awaitable[None]]:
++            off_events = await _settle(self.service.subscribe(session_id, feed.put))
++            off_requests = await _settle(self.service.on_request(session_id, feed.put))
++
++            async def detach() -> None:
++                for off in (off_events, off_requests):
++                    if callable(off):
++                        await _settle(off())
++
++            return detach
++
++        detach = self.call(attach())
++        return feed, lambda: self.call(detach())
++
++    # -- the rest ---------------------------------------------------------------------------------
++
++    def pending(self, session_id: str) -> list[PendingRow]:
++        rows = self.invoke("pending", session_id) or []
++        return [PendingRow.of(row) for row in rows]
++
++
++# -- opening the session --------------------------------------------------------------------------
++
++
++@dataclass
++class _Plan:
++    """What the run attaches to: an existing session (and its row) or a new one's policy."""
++
++    session_id: str | None
++    row: Mapping[str, Any] | None
++    create_policy: dict[str, Any] | None
++    resume_policy: dict[str, Any] | None
++    cwd: Path
++
++
++def _select(state: CliState, args: GlobalArgs, cwd: Path) -> tuple[str | None, Any]:
++    """The session to resume (read-only) and its row; raises ``SelectionError`` on a miss."""
++    from indus.cli import resume, session_select
++    from indus.cli.commands.sessions import read_view
++    from indus.state import sessions
++
++    if args.resume is None and args.continue_ is None:
++        return None, None
++    latest = (args.resume or "").strip().lower() == session_select.LATEST or (
++        args.resume is None and args.continue_ == session_select.BARE_CONTINUE
++    )
++    crumb = resume.read_breadcrumb(state.scope) if latest else None
++    with read_view(state.scope) as view:
++        if view is None:
++            wanted = args.resume or args.continue_
++            if latest:
++                raise session_select.SelectionError("No earlier session to continue here.")
++            raise session_select.SelectionError(f"No session found matching '{wanted}'.")
++        handle = view.as_handle()
++        sid = session_select.select_session(handle, args, cwd=cwd, breadcrumb=crumb)
++        row = sessions.get(handle, sid) if sid is not None else None
++    return sid, row
++
++
++def _plan(
++    state: CliState, args: GlobalArgs, chat: ChatArgs, prefix: str, err: Callable[[str], None]
++) -> _Plan | int:
++    """Select the session and build its policy; an int is the exit code (already explained)."""
++    from indus.cli import session_select
++    from indus.cli.commands.sessions import StoreProblem
++    from indus.service.creation_policy import PolicyRefused
++
++    if args.in_dir is not None:
++        try:
++            session_select.enter_in_dir(args.in_dir)
++        except session_select.SelectionError as exc:
++            for line in exc.lines():
++                err(line)
++            return exc.code
++    cwd = Path.cwd()
++    try:
++        sid, row = _select(state, args, cwd)
++    except session_select.SelectionError as exc:
++        for line in exc.lines():
++            err(line)
++        return exc.code
++    except StoreProblem as exc:
++        err(exc.format_message())
++        return 1
++    if sid is None:
++        try:
++            policy = _creation_policy(state, args, chat, cwd)
++        except PolicyRefused as exc:
++            if exc.reason == "bypass_needs_route":
++                err(
++                    f"{prefix}: --safe-mode / --ignore-user-config read no profile defaults, so "
++                    f"a new session needs --model and --provider too. Example: {_BYPASS_EXAMPLE}"
++                )
++            else:
++                err(f"{prefix}: this launch cannot be used: {exc.message}")
++            return 2
++        return _Plan(None, None, _policy_wire(policy), None, cwd)
++    stored = session_select.stored_launch(row)
++    _launch, given = session_select.launch_from_args(args, chat, cwd=cwd)
++    if stored is not None:
++        conflicts = session_select.check_frozen(stored, given)
++        if conflicts:
++            _conflict(prefix, conflicts, err)
++            return 2
++    return _Plan(sid, row, None, _resume_policy(args, chat, cwd), cwd)
++
++
++def _conflict(prefix: str, names: Sequence[str], err: Callable[[str], None]) -> None:
++    err(
++        f"{prefix}: this session was started with different settings for {', '.join(names)}; "
++        "a resumed session keeps its own."
++    )
++    err("Drop those flags, or start a new session to change them.")
++
++
++def _ensure(backend: AttachBackend, scope: Scope) -> Any:
++    try:
++        return backend.ensure(scope, timeout=ENSURE_TIMEOUT_S)
++    except AttachUnavailable:
++        raise
++    except Exception as exc:
++        raise AttachUnavailable(_message(exc)) from exc
++
++
++def _unreachable(prefix: str, exc: BaseException, err: Callable[[str], None]) -> int:
++    err(
++        f"{prefix}: could not attach to this profile's gateway daemon: {_message(exc)}. "
++        "Nothing ran in this terminal; run with --local to use an agent here."
++    )
++    return 1
++
++
++def _open(host: AttachedHost, plan: _Plan, source: str) -> str:
++    """Create or resume on the daemon; returns the session id (``ProtocolError`` and policy
++    refusals propagate)."""
++    if plan.session_id is None:
++        params = SessionCreateParams(cwd=str(plan.cwd))
++        created = host.invoke("create", params, source=source, policy=plan.create_policy or {})
++        return str(created.session_id)
++    resumed = host.invoke("resume", plan.session_id, policy=plan.resume_policy)
++    return str(getattr(resumed, "session_id", None) or plan.session_id)
++
++
++# -- finite runs ----------------------------------------------------------------------------------
++
++
++_SLICE_S: Final = 0.1
++
++
++class _NeedsInput(Exception):
++    """The daemon asked a question nobody at this finite run can answer."""
++
++
++def _result(
++    fut: concurrent.futures.Future[Any],
++    timeout: float | None,
++    asked: threading.Event | None = None,
++) -> Any:
++    """``fut.result(timeout)`` in short slices: a Ctrl-C the OS hands to another thread is only
++    noticed when this (main) thread runs Python again. ``asked`` set → ``_NeedsInput``."""
++    end = None if timeout is None else time.monotonic() + timeout
++    while True:
++        if asked is not None and asked.is_set() and not fut.done():
++            raise _NeedsInput
++        left = _SLICE_S if end is None else min(_SLICE_S, end - time.monotonic())
++        if left <= 0:
++            raise TimeoutError
++        try:
++            return fut.result(left)
++        except TimeoutError:
++            if fut.done():
++                raise
++            continue
++
++
++@dataclass
++class _Finite:
++    outcome: RunOutcome
++    blocked: bool = False
++    needs_input: bool = False
++    unknown: bool = False
++    detached: bool = False
++    failure: str | None = None
++
++
++def _run_finite(
++    host: AttachedHost, plan: _Plan, text: str, *, source: str, unattended: bool
++) -> _Finite:
++    from indus.cli.oneshot import RunOutcome
++
++    run = _Finite(RunOutcome())
++    outcome = run.outcome
++    sid = _open(host, plan, source)
++    outcome.session_id = sid
++    if any(row.state == "unknown" for row in host.pending(sid)):
++        run.blocked = True
++        return run
++    asked = threading.Event()
++    host.invoke("on_request", sid, lambda _request: asked.set())
++    ticket = host.invoke("submit", sid, text, unattended=unattended)
++    outcome.started = True
++    waiting = host.future("wait", sid, ticket.turn_id)
++    try:
++        result = _result(waiting, None, asked)
++    except _NeedsInput:
++        waiting.cancel()
++        run.needs_input = True
++        return run
++    except KeyboardInterrupt:
++        outcome.interrupted = True
++        try:
++            host.invoke("interrupt", sid, ticket.generation)
++            result = _result(waiting, SETTLE_S)
++        except (TimeoutError, KeyboardInterrupt):
++            waiting.cancel()
++            run.detached = True
++            return run
++    except Exception as exc:
++        reason = failure_reason(exc)
++        if reason == "blocked_by_unknown":
++            run.blocked = True
++            return run
++        if reason == "outcome_unknown":
++            run.unknown = True
++            outcome.failure = "the outcome of this turn is unknown (the daemon lost it)"
++            return run
++        raise
++    outcome.session_id = getattr(result, "session_id", None) or sid
++    outcome.exit_reason = result.exit_reason
++    outcome.final_text = result.final_text
++    outcome.api_calls = result.api_calls
++    if result.exit_reason in (ExitReason.INTERRUPTED_BY_USER, ExitReason.INTERRUPTED_BY_SYSTEM):
++        outcome.interrupted = True
++    elif result.failure is not None:
++        outcome.failure = result.failure.reason
++    return run
++
++
++def _finite_session(
++    state: CliState,
++    plan: _Plan,
++    text: str,
++    *,
++    source: str,
++    unattended: bool,
++    prefix: str,
++    err: Callable[[str], None],
++) -> _Finite | int:
++    backend = backend_factory()
++    try:
++        endpoint = _ensure(backend, state.scope)
++        host = AttachedHost(backend, state.scope, endpoint).start()
++    except AttachUnavailable as exc:
++        return _unreachable(prefix, exc, err)
++    try:
++        return _run_finite(host, plan, text, source=source, unattended=unattended)
++    except ProtocolError as exc:
++        err(f"{prefix}: {exc.message}")
++        return 1
++    except Exception as exc:
++        reason = failure_reason(exc)
++        if reason == "policy_conflict":
++            fields = getattr(exc, "fields", None) or [getattr(exc, "field", "launch settings")]
++            _conflict(prefix, [str(f) for f in fields], err)
++            return 2
++        log.warning("the attached run failed", exc_info=True)
++        err(f"{prefix}: the attached run failed: {_message(exc)}")
++        return 1
++    finally:
++        host.stop()
++
++
++def _finite_stop(run: _Finite, err: Callable[[str], None]) -> int | None:
++    """The exit code (and its lines) of a finite run that ended without a turn result."""
++    from indus.cli.oneshot import INTERRUPTED
++
++    sid = run.outcome.session_id
++    if run.blocked:
++        for line in _blocked_lines(sid):
++            err(line)
++        return BLOCKED_EXIT
++    if run.needs_input:
++        err(
++            "The reply is waiting for an answer (an approval or a question) that nobody here can "
++            "give; detached without cancelling it."
++        )
++        err(f"Resume the session in a terminal to answer it: `indus -r {sid}`.")
++        return BLOCKED_EXIT
++    if run.detached:
++        err("Detached: the turn is still stopping; accepted work goes on in the daemon.")
++        return INTERRUPTED
++    if run.outcome.interrupted and not (run.outcome.final_text or "").strip():
++        err("The turn was interrupted; it was not run again. Resume the session to go on.")
++    return None
++
++
++def _blocked_lines(session_id: str | None) -> list[str]:
++    return [
++        "This session is waiting behind a turn the daemon lost (its outcome is unknown); "
++        "nothing was sent, and any accepted input stays queued.",
++        f"Resume it with `indus -r {session_id}` and /discard the lost turn, then try again."
++        if session_id
++        else "Resume the session and /discard the lost turn, then try again.",
++    ]
++
++
++def run_attached_chat(
++    state: CliState, args: GlobalArgs, chat: ChatArgs, *, query: str | None, finite: bool
++) -> int:
++    """``indus chat`` attached to the daemon; returns the exit code."""
++    prefix = "indus"
++
++    def err(line: str) -> None:
++        click.echo(line, err=True)
++
++    refused = refused_flags(args, chat)
++    if refused:
++        for line in _refusal_lines(prefix, refused):
++            err(line)
++        return 2
++    plan = _plan(state, args, chat, prefix, err)
++    if isinstance(plan, int):
++        return plan
++    source = chat.source or "cli"
++    if finite:
++        assert query is not None
++        return _finite_chat(state, plan, query, source=source, quiet=chat.quiet, err=err)
++    return _interactive(state, args, chat, plan, query, source=source, err=err)
++
++
++def _finite_chat(
++    state: CliState,
++    plan: _Plan,
++    query: str,
++    *,
++    source: str,
++    quiet: bool,
++    err: Callable[[str], None],
++) -> int:
++    from indus.cli import resume
++    from indus.cli.oneshot import finite_exit_code
++
++    del quiet  # nothing but the reply and the session line is printed either way
++    run = _finite_session(
++        state, plan, query, source=source, unattended=False, prefix="indus chat", err=err
++    )
++    if isinstance(run, int):
++        return run
++    outcome = run.outcome
++    if outcome.session_id:
++        resume.write_breadcrumb(state.scope, outcome.session_id, str(plan.cwd))
++    stop = _finite_stop(run, err)
++    if stop is not None:
++        return stop
++    reply = (outcome.final_text or "").encode("utf-8", "replace").decode("utf-8")
++    if reply:
++        click.echo(reply.rstrip("\n"))
++    if outcome.failure:
++        err(f"indus chat: {outcome.failure}")
++    if run.unknown:
++        err(_UNKNOWN_HINT)
++    if outcome.session_id:
++        err(f"session_id: {outcome.session_id}")
++    return finite_exit_code(outcome)
++
++
++def run_attached_oneshot(
++    state: CliState, args: GlobalArgs, prompt: str, usage_file: str | None
++) -> int:
++    """``indus -z`` attached to the daemon (after ``oneshot``'s own checks)."""
++    from indus.cli.oneshot import oneshot_exit_code, write_usage_file
++
++    prefix = "indus -z"
++    messages: list[str] = []
++
++    def err(line: str) -> None:
++        messages.append(line)
++        click.echo(line, err=True)
++
++    refused = refused_flags(args)
++    if refused:
++        for line in _refusal_lines(prefix, refused):
++            err(line)
++        return 2
++    plan = _plan(state, args, ChatArgs(), prefix, err)
++    if isinstance(plan, int):
++        _write_failed_usage(usage_file, args, messages)
++        return plan
++    run = _finite_session(
++        state, plan, prompt, source="cli", unattended=True, prefix=prefix, err=err
++    )
++    if isinstance(run, int):
++        _write_failed_usage(usage_file, args, messages)
++        return run
++    outcome = run.outcome
++    outcome.model = outcome.model or args.model
++    outcome.provider = outcome.provider or args.provider
++    write_usage_file(usage_file, outcome, outcome.failure)
++    stop = _finite_stop(run, err)
++    if stop is not None:
++        return stop
++    reply = (outcome.final_text or "").encode("utf-8", "replace").decode("utf-8")
++    if reply:
++        if outcome.failure is not None:
++            err(f"{prefix}: {reply.rstrip()}")
++        else:
++            click.echo(reply.rstrip("\n"))
++    code = oneshot_exit_code(outcome)
++    if code == 1:
++        err(f"{prefix}: the run finished without a reply.")
++    elif code == 2 and outcome.failure:
++        err(f"{prefix}: {outcome.failure}")
++        if run.unknown:
++            err(_UNKNOWN_HINT)
++    return code
++
++
++def _write_failed_usage(path: str | None, args: GlobalArgs, messages: Sequence[str]) -> None:
++    from indus.cli.oneshot import RunOutcome, write_usage_file
++
++    reason = messages[0] if messages else "could not start"
++    write_usage_file(path, RunOutcome(model=args.model, provider=args.provider), reason)
++
++
++# -- interactive ----------------------------------------------------------------------------------
++
++
++def _pending_notes(rows: Sequence[PendingRow]) -> list[str]:
++    unknown = [row for row in rows if row.state == "unknown"]
++    if not unknown:
++        return []
++    notes = [
++        "A turn was lost when the daemon restarted: its outcome is unknown and it was not run "
++        "again. /discard it to let queued work go on (do not resend it)."
++    ]
++    for row in unknown:
++        preview = f" — {row.text[:60]}" if row.text else ""
++        notes.append(f"  /discard {row.admission_id}{preview}")
++    return notes
++
++
++def attached_commands(host: AttachedHost) -> Callable[[Repl, str], bool]:
++    """The REPL's command hook in attach mode (see the module notes)."""
++
++    def hook(repl: Repl, text: str) -> bool:
++        line = text.strip()
++        if line.startswith("!"):
++            repl.error("shell commands (!) run in this terminal: start with `indus --local`")
++            return True
++        if not line.startswith("/"):
++            return False
++        name, _, rest = line[1:].partition(" ")
++        name = name.lower()
++        if name in ("quit", "exit", "detach", "q"):
++            repl.note("detached; accepted work goes on in the daemon")
++            repl.request_exit()
++        elif name == "help":
++            repl.print(_HELP)
++        elif name == "stop":
++            if not repl.interrupt():
++                repl.note("nothing is running")
++        elif name == "discard":
++            _discard(repl, host, rest.strip())
++        else:
++            repl.error(
++                f"/{name} is not available while attached to the gateway daemon; /help lists "
++                "what works here, or start with `indus --local`."
++            )
++        return True
++
++    return hook
++
++
++def _discard(repl: Repl, host: AttachedHost, admission_id: str) -> None:
++    if not admission_id or " " in admission_id:
++        repl.error("usage: /discard <admission_id>")
++        return
++    try:
++        rows = host.pending(repl.session_id)
++    except Exception as exc:
++        repl.error(f"could not list the session's lost turns: {_message(exc)}")
++        return
++    row = next((r for r in rows if r.admission_id == admission_id and r.state == "unknown"), None)
++    if row is None:
++        repl.error(f"{admission_id} is not a lost turn of this session; nothing was discarded")
++        return
++    try:
++        result = host.invoke("discard_unknown", repl.session_id, admission_id, row.generation)
++    except Exception as exc:
++        result = exc
++    reason = failure_reason(result)
++    if isinstance(result, BaseException) or reason == "stale_generation":
++        if reason == "stale_generation":
++            repl.error(
++                f"refused: {admission_id} changed since it was listed (stale generation); "
++                "nothing was discarded"
++            )
++        else:
++            repl.error(f"could not discard {admission_id}: {_message(result)}")  # pyright: ignore[reportArgumentType]
++        return
++    repl.note(f"discarded {admission_id}; queued work can go on")
++
++
++def _interactive(
++    state: CliState,
++    args: GlobalArgs,
++    chat: ChatArgs,
++    plan: _Plan,
++    seed: str | None,
++    *,
++    source: str,
++    err: Callable[[str], None],
++) -> int:
++    from indus.cli import resume
++    from indus.cli.repl.app import ReplOptions, run_repl
++
++    backend = backend_factory()
++    try:
++        endpoint = _ensure(backend, state.scope)
++        host = AttachedHost(backend, state.scope, endpoint).start()
++    except AttachUnavailable as exc:
++        return _unreachable("indus", exc, err)
++    try:
++        try:
++            sid = _open(host, plan, source)
++            rows = host.pending(sid)
++        except ProtocolError as exc:
++            err(f"indus: {exc.message}")
++            return 1
++        except Exception as exc:
++            if failure_reason(exc) == "policy_conflict":
++                fields = getattr(exc, "fields", None) or ["launch settings"]
++                _conflict("indus", [str(f) for f in fields], err)
++                return 2
++            log.warning("opening the attached session failed", exc_info=True)
++            err(f"indus: the session could not be opened on the daemon: {_message(exc)}")
++            return 1
++        resume.write_breadcrumb(state.scope, sid, str(plan.cwd))
++        notes = [
++            "Attached to this profile's gateway daemon: it runs the agent, this terminal shows "
++            "it. /help lists what works here; `indus --local` runs the agent in this terminal.",
++            *_pending_notes(rows),
++        ]
++        title = (plan.row or {}).get("title")
++        options = ReplOptions.from_scope(
++            state.scope, model=args.model or "", title=str(title or "")
++        )
++
++        def ready(repl: Repl) -> None:
++            for note in notes:
++                repl.note(note)
++            if seed is not None and seed.strip():
++                text = seed
++                repl.post(lambda: repl.send(text))
++
++        return run_repl(
++            host,
++            sid,
++            scope=state.scope,
++            options=options,
++            commands=attached_commands(host),
++            on_ready=ready,
++        )
++    finally:
++        host.stop()
+diff --git a/src/indus/cli/chat.py b/src/indus/cli/chat.py
+index 57f6383..4c6e7b0 100644
+--- a/src/indus/cli/chat.py
++++ b/src/indus/cli/chat.py
+@@ -19,6 +19,10 @@ resolved, and one of three paths runs:
+ 
+ The REPL runs on an ``InProcessHost``; after it returns, the sessions are closed, the terminal
+ runtime is shut down on the host's loop and the store handle is released.
++
++All of the above is the ``--local`` route (P17-18). Without ``--local`` (and without a driver's
++``HostOverrides``) the classic interface attaches to the profile's gateway daemon instead
++(``indus.cli.attach``): same selection rules and exit codes, the agent runs in the daemon.
+ """
+ 
+ from __future__ import annotations
+@@ -198,6 +202,10 @@ def run_chat(state: CliState, args: GlobalArgs, chat: ChatArgs) -> int:
+             return code
+     terminal = state.stdin_isatty() and state.stdout_isatty()
+     finite = query is not None and (chat.oneshot or chat.quiet or not terminal)
++    from indus.cli import attach
++
++    if not attach.wants_local(state, args):
++        return attach.run_attached_chat(state, args, chat, query=query, finite=finite)
+     return _ChatRun(state, args, chat, query=query, finite=finite, note=note).run()
+ 
+ 
+diff --git a/src/indus/cli/commands/import_cmd.py b/src/indus/cli/commands/import_cmd.py
+index c5e429e..b233fca 100644
+--- a/src/indus/cli/commands/import_cmd.py
++++ b/src/indus/cli/commands/import_cmd.py
+@@ -18,6 +18,10 @@ the existing database with the online backup API, so connections that have it op
+ restored data instead of a replaced file; another process holding it means the file is skipped
+ with a warning. Fewer sessions or messages after the import than before is reported. Exit 1 when
+ anything was skipped.
++
++Store ownership (P17-21): while a gateway daemon answers for this profile nothing is restored (it
++has the files open; stop it first); otherwise the writes happen while this process holds the
++profile ownership lock, so no daemon starts halfway.
+ """
+ 
+ from __future__ import annotations
+@@ -253,7 +257,16 @@ def import_command(zipfile_path: str, force: bool) -> int:
+             for line in damaged[:10]:
+                 err(f"  {line}")
+             return 1
+-        restored, skipped, shrunk = _restore(zf, plan, home, scope)
++        from indus.service.maintenance_gate import MaintenanceGate, MaintenanceRefused
++
++        gate = MaintenanceGate(scope)
++        try:
++            gate.refuse_while_owned("restoring a backup")
++            with gate.locally("restoring a backup"):
++                restored, skipped, shrunk = _restore(zf, plan, home, scope)
++        except MaintenanceRefused as exc:
++            err(exc.message)
++            return 1
+     click.echo(f"Restored {restored} file(s) into {home}.")
+     if plan.runtime:
+         click.echo(
+diff --git a/src/indus/cli/commands/sessions.py b/src/indus/cli/commands/sessions.py
+index 6a8c4b5..fd5103a 100644
+--- a/src/indus/cli/commands/sessions.py
++++ b/src/indus/cli/commands/sessions.py
+@@ -4,7 +4,9 @@ Everything that only looks opens the store read-only (``state.browse.open_readon
+ ``mode=ro`` connection, no schema set-up, no migration, no checkpoint, a missing file is reported
+ and never created; R03.16). The P02 listing and export functions take a store handle; they get a
+ small view with the scope and that read-only connection instead (``ReadView``). Changes (rename,
+-delete, pin) go through the shared writable handle, and only when the store file already exists.
++delete, pin) go through the shared writable handle, and only when the store file already exists;
++``delete`` asks the maintenance gate first (P17-21): with a gateway daemon owning the profile the
++daemon deletes the session, else this process does while holding the ownership lock.
+ 
+ The maintenance verbs (prune, archive, optimize, repair, recover, import) live in
+ ``sessions_maint`` and are added to this group at import.
+@@ -350,14 +352,28 @@ def delete_command(session_id: str, assume_yes: bool) -> int:
+     if not answer:
+         click.echo("Kept.")
+         return 0
+-    with writable_store(scope) as store:
+-        if store is None:
+-            raise StoreProblem(f"No session found matching '{session_id}'.")
+-        try:
+-            removed = deletion.delete_session(store, sid, whole_chain=True)
+-        except deletion.SessionGuarded as exc:
+-            err(f"Not deleted: {exc.message}.")
+-            return 1
++
++    def here() -> bool | None:
++        with writable_store(scope) as store:
++            if store is None:
++                raise StoreProblem(f"No session found matching '{session_id}'.")
++            try:
++                return deletion.delete_session(store, sid, whole_chain=True)
++            except deletion.SessionGuarded as exc:
++                err(f"Not deleted: {exc.message}.")
++                return None
++
++    from indus.cli.commands.sessions_maint import gate_for
++    from indus.service.maintenance_gate import MaintenanceRefused
++
++    try:
++        done = gate_for(scope).run("delete", {"session_id": sid}, here, what="deleting a session")
++    except MaintenanceRefused as exc:
++        err(exc.message)
++        return 1
++    removed = bool(done.value.get("removed")) if done.where == "daemon" else done.value
++    if removed is None:
++        return 1
+     if not removed:
+         err(f"Session {sid} was already gone.")
+         return 1
+diff --git a/src/indus/cli/commands/sessions_maint.py b/src/indus/cli/commands/sessions_maint.py
+index 0b0a017..16439f2 100644
+--- a/src/indus/cli/commands/sessions_maint.py
++++ b/src/indus/cli/commands/sessions_maint.py
+@@ -11,6 +11,11 @@ repair) never runs while another process or another handle in this process has t
+ unless ``--force``. ``optimize`` treats that as a skip with the holder list, not a failure
+ (R03.25). ``repair`` never opens a structurally damaged file for writing (opening would quarantine
+ it); ``recover`` salvages such a file read-only into a new store.
++
++Store ownership (P17-21, R09.21): the writing step of ``prune``, ``repair`` and ``import`` goes
++through the maintenance gate (``gate_for``). While a gateway daemon owns the profile it runs
++inside the daemon (or is refused when the daemon cannot run it); otherwise it runs here while
++this process holds the profile ownership lock. Previews and ``--dry-run`` never ask the gate.
+ """
+ 
+ from __future__ import annotations
+@@ -41,6 +46,7 @@ from indus.cli.session_filters import (
+ from indus.foundation.errors import StoreError, StoreUnavailable
+ from indus.foundation.home import secure_dir
+ from indus.foundation.scope import Scope
++from indus.service.maintenance_gate import MaintenanceGate, MaintenanceRefused
+ from indus.state import (
+     browse,
+     connection,
+@@ -54,7 +60,13 @@ from indus.state import (
+ from indus.state.readpool import open_read_only
+ from indus.state.registry import StoreHandle
+ 
+-__all__ = ["DEFAULT_NEVER_ACTIVE_DAYS", "DEFAULT_PRUNE_DAYS", "SALVAGE_TABLES", "register"]
++__all__ = [
++    "DEFAULT_NEVER_ACTIVE_DAYS",
++    "DEFAULT_PRUNE_DAYS",
++    "SALVAGE_TABLES",
++    "gate_for",
++    "register",
++]
+ 
+ DEFAULT_PRUNE_DAYS = 90
+ DEFAULT_NEVER_ACTIVE_DAYS = 30
+@@ -69,6 +81,11 @@ def _now(scope: Scope) -> float:
+     return scope.clock.now().timestamp()
+ 
+ 
++def gate_for(scope: Scope) -> MaintenanceGate:
++    """The maintenance gate for this profile (tests replace it)."""
++    return MaintenanceGate(scope)
++
++
+ def _filter(values: dict[str, Any], scope: Scope) -> SessionFilter:
+     try:
+         return build_filter(values, scope.clock.now())
+@@ -201,18 +218,31 @@ def prune_command(
+     if not answer:
+         click.echo("Nothing was deleted.")
+         return 0
+-    with _private_handle(scope) as handle:
+-        found = maintenance.holders_of(handle)
+-        if found and not force:
+-            err(*_holders_block(found))
+-            err("Nothing was deleted. Close those, or pass --force to prune anyway.")
+-            return 1
+-        if simple:
+-            report = maintenance.prune(handle, days, source=source)
+-            deleted, skipped = report.count, len(report.spared_guarded)
+-        else:
++
++    def here() -> tuple[int, int] | None:
++        with _private_handle(scope) as handle:
++            found = maintenance.holders_of(handle)
++            if found and not force:
++                err(*_holders_block(found))
++                err("Nothing was deleted. Close those, or pass --force to prune anyway.")
++                return None
++            if simple:
++                report = maintenance.prune(handle, days, source=source)
++                return report.count, len(report.spared_guarded)
+             outcome = deletion.delete_many(handle, ids)
+-            deleted, skipped = len(outcome.deleted), len(outcome.guarded)
++            return len(outcome.deleted), len(outcome.guarded)
++
++    try:
++        done = gate_for(scope).run("prune", {"ids": ids}, here, what="pruning sessions")
++    except MaintenanceRefused as exc:
++        err(exc.message)
++        return 1
++    if done.where == "daemon":
++        deleted, skipped = int(done.value.get("deleted", 0)), int(done.value.get("guarded", 0))
++    elif done.value is None:
++        return 1
++    else:
++        deleted, skipped = done.value
+     click.echo(f"Deleted {deleted} session(s).")
+     if skipped:
+         click.echo(f"Left {skipped} session(s) that were in use.")
+@@ -354,19 +384,36 @@ def repair_command(check_only: bool, no_backup: bool, force: bool) -> int:
+             "that can still be read with `indus sessions recover --output FILE`."
+         )
+         return 1
+-    with _private_handle(scope) as handle:
+-        found = maintenance.holders_of(handle)
+-        if found and not force:
+-            err(*_holders_block(found))
+-            err("Nothing was changed. Close those, or pass --force.")
+-            return 1
++
++    def backup() -> None:
+         if not no_backup:
+             saved = _backup_path(scope)
+-            copy_database(path, saved)
++            copy_database(path, saved)  # a read-only online copy: safe beside a live writer
+             click.echo(f"Backup: {saved}")
+-        if not fts.rebuild(handle):
+-            err("The search index could not be rebuilt now (the store is busy); try again later.")
+-            return 1
++
++    def here() -> bool | None:
++        with _private_handle(scope) as handle:
++            found = maintenance.holders_of(handle)
++            if found and not force:
++                err(*_holders_block(found))
++                err("Nothing was changed. Close those, or pass --force.")
++                return None
++            backup()
++            return fts.rebuild(handle)
++
++    try:
++        done = gate_for(scope).run(
++            "repair", {}, here, what="repairing the session store", before_daemon=backup
++        )
++    except MaintenanceRefused as exc:
++        err(exc.message)
++        return 1
++    rebuilt = bool(done.value.get("rebuilt")) if done.where == "daemon" else done.value
++    if done.where == "local" and rebuilt is None:
++        return 1
++    if not rebuilt:
++        err("The search index could not be rebuilt now (the store is busy); try again later.")
++        return 1
+     lines, _ = _problems(_check(scope))
+     if lines:
+         err("Still not healthy after the rebuild:", *lines)
+@@ -556,31 +603,54 @@ def import_command(file: str) -> int:
+     if not path.is_file():
+         err(f"No such file: {path}")
+         return 1
++
++    def here() -> dict[str, Any] | None:
++        try:
++            handle = registry.acquire(scope)
++        except StoreError as exc:
++            raise StoreProblem(f"The session store cannot be opened: {exc}") from exc
++        try:
++            report = portability.import_jsonl(handle, path)
++        except StoreError as exc:
++            err(f"Nothing was imported: {exc}")
++            return None
++        finally:
++            handle.close()
++        return {
++            "ok": report.ok,
++            "imported": len(report.imported),
++            "skipped": len(report.skipped),
++            "detached": len(report.detached),
++            "retitled": len(report.retitled),
++            "errors": [str(issue) for issue in report.errors[:20]],
++            "error_count": len(report.errors),
++        }
++
+     try:
+-        handle = registry.acquire(scope)
+-    except StoreError as exc:
+-        raise StoreProblem(f"The session store cannot be opened: {exc}") from exc
+-    try:
+-        report = portability.import_jsonl(handle, path)
+-    except StoreError as exc:
+-        err(f"Nothing was imported: {exc}")
++        done = gate_for(scope).run(
++            "import", {"path": str(path.resolve())}, here, what="importing sessions"
++        )
++    except MaintenanceRefused as exc:
++        err(exc.message)
+         return 1
+-    finally:
+-        handle.close()
+-    if not report.ok:
+-        err(f"Nothing was imported: {len(report.errors)} problem(s) in {path}:")
+-        for issue in report.errors[:20]:
++    report: dict[str, Any] | None = dict(done.value) if done.value is not None else None
++    if report is None:
++        return 1
++    if not report.get("ok"):
++        count = int(report.get("error_count") or 0)
++        err(f"Nothing was imported: {count} problem(s) in {path}:")
++        for issue in report.get("errors") or []:
+             err(f"  {issue}")
+-        if len(report.errors) > 20:
+-            err(f"  … and {len(report.errors) - 20} more")
++        if count > 20:
++            err(f"  … and {count - 20} more")
+         return 1
+-    click.echo(f"Imported {len(report.imported)} session(s) from {path}.")
+-    if report.skipped:
+-        click.echo(f"Already here, skipped: {len(report.skipped)}.")
+-    if report.detached:
+-        click.echo(f"Imported without their missing parent: {len(report.detached)}.")
+-    if report.retitled:
+-        click.echo(f"Renamed because the title was taken: {len(report.retitled)}.")
++    click.echo(f"Imported {report.get('imported', 0)} session(s) from {path}.")
++    if report.get("skipped"):
++        click.echo(f"Already here, skipped: {report['skipped']}.")
++    if report.get("detached"):
++        click.echo(f"Imported without their missing parent: {report['detached']}.")
++    if report.get("retitled"):
++        click.echo(f"Renamed because the title was taken: {report['retitled']}.")
+     return 0
+ 
+ 
+diff --git a/src/indus/cli/oneshot.py b/src/indus/cli/oneshot.py
+index e13a9aa..68a1f78 100644
+--- a/src/indus/cli/oneshot.py
++++ b/src/indus/cli/oneshot.py
+@@ -16,6 +16,10 @@ refuse hardline commands. ``--usage-file`` gets a JSON report even when the run
+ that cannot be written never changes the exit code. When ``indus`` runs as a real process, the
+ entry point then flushes, shuts logging down and leaves through ``os._exit``
+ (``CliState.hard_exit``) so no late finaliser can change the code after the reply was printed.
++
++That is the ``--local`` route. By default (P17-18) both run in the profile's gateway daemon
++(``indus.cli.attach``) with the same tables, plus exit 3 when the session waits behind a turn
++the daemon lost.
+ """
+ 
+ from __future__ import annotations
+@@ -359,6 +363,10 @@ class _OneShot:
+             return self.fail(2, problem)
+         if toolsets is not None:
+             self.args = replace(args, toolsets=",".join(toolsets))
++        from indus.cli import attach
++
++        if not attach.wants_local(self.state, self.args):
++            return attach.run_attached_oneshot(self.state, self.args, prompt, args.usage_file)
+         if self.args.in_dir is not None:
+             from indus.cli.session_select import SelectionError, enter_in_dir
+ 
+diff --git a/src/indus/gateway/control_socket.py b/src/indus/gateway/control_socket.py
+index 302a53e..dec13d2 100644
+--- a/src/indus/gateway/control_socket.py
++++ b/src/indus/gateway/control_socket.py
+@@ -78,10 +78,12 @@ KNOWN_VERBS = (
+     "pause-for-update",
+     "session-ticket",
+     "describe",
++    "maintenance-run",
+ )
+ """Verbs P15 and P17 name; all but the first two answer ``unsupported`` until registered."""
+-OWNER_ONLY_VERBS = frozenset({"session-ticket"})
+-"""Verbs answered only to a peer the OS confirmed as this user (they hand out credentials)."""
++OWNER_ONLY_VERBS = frozenset({"session-ticket", "maintenance-run"})
++"""Verbs answered only to a peer the OS confirmed as this user (they hand out credentials, or
++bulk-change the profile's data: ``maintenance-run``, P17-21)."""
+ 
+ LAUNCHD_LABEL_PREFIX = "ai.indus.gateway"
+ _SOCKET_NAME = "gw.sock"
+diff --git a/src/indus/gateway/daemon/side_services.py b/src/indus/gateway/daemon/side_services.py
+index dbfbb89..646ec33 100644
+--- a/src/indus/gateway/daemon/side_services.py
++++ b/src/indus/gateway/daemon/side_services.py
+@@ -41,6 +41,7 @@ from indus.gateway.daemon.attach_verbs import AttachVerbs
+ from indus.gateway.daemon.parts import DaemonPart, Stage
+ from indus.gateway.daemon.reconnect import ConnectOutcome, PlatformHealth, ReconnectWatcher
+ from indus.gateway.hooks import GatewayHooks, bridge
++from indus.service.maintenance_gate import MaintenanceVerb
+ from indus.service.ws_auth import TicketBook
+ from indus.state.gateway_runtime import PlatformStatus
+ 
+@@ -271,6 +272,8 @@ class DaemonBridge:
+             "pause-for-update": (self._pause_for_update, _DRAIN_S),
+             "reload-plugins": (self._reload_plugins, _DRAIN_S),
+             **self.attach_verbs.handlers(),
++            # P17-21: bulk session maintenance runs here, beside the live turns (R09.21).
++            **MaintenanceVerb(self.daemon.scope).handlers(),
+         }
+ 
+     # -- verbs (async: they run on the daemon's loop) -------------------------------------------
+diff --git a/src/indus/service/maintenance_gate.py b/src/indus/service/maintenance_gate.py
+new file mode 100644
+index 0000000..c2212e1
+--- /dev/null
++++ b/src/indus/service/maintenance_gate.py
+@@ -0,0 +1,378 @@
++"""Who may bulk-edit the session store right now: the maintenance gate (P17-21, R09.21).
++
++While a gateway daemon owns the profile it is the one writer of the store. A bulk change made by
++another process at the same time (a prune of many sessions, a search-index rebuild, an import,
++a restore over the live file) would race the daemon's turns. Every bulk maintenance verb therefore
++asks the gate, which decides where it runs:
++
++1. **A daemon answers the control socket** (an answer is liveness, R06.18): the operation is sent
++   to it as the owner-only ``maintenance-run`` verb and runs inside the daemon on its own store
++   handle, through the writer executor its turns use, so the two never interleave. A daemon that
++   does not serve the verb, refuses it, or cannot be asked (an operation that needs it stopped)
++   means **refused**: nothing is written by this process.
++2. **No daemon answers**: this process takes the profile ownership lock (the daemon's
++   single-instance ``flock`` on ``<home>/gateway.lock``) without waiting and runs the operation
++   while holding it, so no daemon can claim the profile halfway. A held lock (a daemon starting,
++   one whose socket is slow, another maintenance run) means **refused**.
++
++Read-only browsing never comes here: it opens ``mode=ro`` connections that create, migrate and
++checkpoint nothing (R03.16).
++
++The daemon half is ``MaintenanceVerb``: the daemon registers ``handlers()`` on its control socket;
++each operation runs on a worker thread with the daemon's shared store handle.
++
++Operations (``op`` and params): ``prune`` (``ids``: the sessions the caller showed, at most
++``MAX_IDS`` per request; the gate batches), ``delete`` (``session_id``: the session and its
++continuations), ``repair`` (rebuild the search index), ``import`` (``path``: a JSON-lines export
++the daemon reads).
++"""
++
++from __future__ import annotations
++
++import contextlib
++import fcntl
++import logging
++import os
++from collections.abc import Callable, Generator, Mapping, Sequence
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any, Final, Literal, cast
++
++from indus.foundation.blocking import run_blocking
++from indus.foundation.errors import StoreError
++from indus.foundation.scope import Scope
++from indus.service import gateway_control
++from indus.state import deletion, fts, portability, registry
++from indus.state.gateway_runtime import lock_path
++from indus.state.registry import StoreHandle
++
++__all__ = [
++    "MAINTENANCE_VERB",
++    "MAX_IDS",
++    "OPS",
++    "VERB_TIMEOUT_S",
++    "GateResult",
++    "MaintenanceGate",
++    "MaintenanceRefused",
++    "MaintenanceVerb",
++    "OwnershipLock",
++    "Owner",
++]
++
++log = logging.getLogger(__name__)
++
++MAINTENANCE_VERB: Final = "maintenance-run"
++"""The owner-only control verb a daemon serves bulk maintenance on."""
++OPS: Final[tuple[str, ...]] = ("prune", "delete", "repair", "import")
++MAX_IDS: Final = 1000
++"""Session ids per ``prune`` request (a request line is at most 64 KiB)."""
++VERB_TIMEOUT_S: Final = 600.0
++"""How long the daemon gives one operation, and the client waits for its answer."""
++_MAX_REPORTED: Final = 20
++
++type Where = Literal["daemon", "local"]
++type RefusalReason = Literal["daemon_cannot", "daemon_refused", "needs_stopped", "busy"]
++
++
++class MaintenanceRefused(Exception):
++    """The operation cannot run now; nothing was written. ``message`` is for the person."""
++
++    def __init__(self, reason: RefusalReason, message: str) -> None:
++        super().__init__(message)
++        self.reason: RefusalReason = reason
++        self.message = message
++
++
++@dataclass(frozen=True)
++class Owner:
++    """Who owns the profile: a daemon that answered (its pid), or nobody."""
++
++    daemon: bool
++    pid: int | None = None
++
++
++@dataclass(frozen=True)
++class GateResult:
++    """Where the operation ran and what it answered: the daemon's (merged) JSON answer, or the
++    value ``local`` returned."""
++
++    where: Where
++    value: Any
++    answers: Sequence[Mapping[str, Any]] = field(default_factory=tuple[Mapping[str, Any], ...])
++
++
++class OwnershipLock:
++    """The profile's ownership lock taken by a process that is not the daemon (non-blocking)."""
++
++    def __init__(self, home: Path) -> None:
++        self.path = lock_path(home)
++        self._fd: int | None = None
++
++    @property
++    def held(self) -> bool:
++        return self._fd is not None
++
++    def try_acquire(self) -> bool:
++        if self._fd is not None:
++            return True
++        self.path.parent.mkdir(parents=True, exist_ok=True)
++        fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)  # never inherited (PEP 446)
++        try:
++            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
++        except OSError:
++            os.close(fd)
++            return False
++        self._fd = fd
++        return True
++
++    def release(self) -> None:
++        fd, self._fd = self._fd, None
++        if fd is None:
++            return
++        with contextlib.suppress(OSError):
++            fcntl.flock(fd, fcntl.LOCK_UN)
++        with contextlib.suppress(OSError):
++            os.close(fd)
++
++
++type Identify = Callable[[Path], Mapping[str, Any] | None]
++type Ask = Callable[..., gateway_control.ControlReply]
++
++
++def _identify(home: Path) -> Mapping[str, Any] | None:
++    return gateway_control.identify(home)
++
++
++def _ask(home: Path, verb: str, params: Mapping[str, Any], *, timeout: float) -> Any:
++    return gateway_control.query(home, verb, params, timeout=timeout)
++
++
++def _stop_hint(pid: int | None) -> str:
++    who = f" (pid {pid})" if pid else ""
++    return f"The gateway daemon{who} owns this profile's sessions"
++
++
++class MaintenanceGate:
++    """Decides where a bulk maintenance operation runs (see the module notes)."""
++
++    def __init__(
++        self,
++        scope: Scope,
++        *,
++        identify: Identify = _identify,
++        ask: Ask = _ask,
++        timeout: float = VERB_TIMEOUT_S,
++    ) -> None:
++        self.scope = scope
++        self.home = scope.home
++        self._identify = identify
++        self._ask = ask
++        self.timeout = timeout
++
++    def owner(self) -> Owner:
++        """A daemon answering the control socket owns the profile; nothing else counts."""
++        answer = self._identify(self.home)
++        if answer is None:
++            return Owner(False)
++        pid = answer.get("pid")
++        return Owner(True, pid if isinstance(pid, int) and not isinstance(pid, bool) else None)
++
++    @contextlib.contextmanager
++    def locally(self, what: str) -> Generator[None]:
++        """Hold the ownership lock for a local run, or refuse (``busy``)."""
++        lock = OwnershipLock(self.home)
++        if not lock.try_acquire():
++            raise MaintenanceRefused(
++                "busy",
++                f"Not done: {what} needs this profile to itself, and a gateway daemon is starting "
++                "or stopping, or another maintenance run is going on. Try again in a moment "
++                "(`indus gateway status` shows the daemon).",
++            )
++        try:
++            yield
++        finally:
++            lock.release()
++
++    def run(
++        self,
++        op: str,
++        params: Mapping[str, Any],
++        local: Callable[[], Any],
++        *,
++        what: str,
++        before_daemon: Callable[[], None] | None = None,
++    ) -> GateResult:
++        """Run ``op`` in the daemon when one owns the profile, else ``local()`` under the lock.
++        ``before_daemon`` runs here first when the daemon will run it (a read-only backup)."""
++        if op not in OPS:
++            raise ValueError(f"unknown maintenance op {op!r}")
++        owner = self.owner()
++        if owner.daemon:
++            if before_daemon is not None:
++                before_daemon()
++            return self._in_daemon(op, params, owner, what)
++        with self.locally(what):
++            return GateResult("local", local())
++
++    def refuse_while_owned(self, what: str) -> None:
++        """For operations that need the daemon stopped (restoring files under it)."""
++        owner = self.owner()
++        if owner.daemon:
++            raise MaintenanceRefused(
++                "needs_stopped",
++                f"Not done: {_stop_hint(owner.pid)}; {what} would change files it has open. "
++                "Stop it with `indus gateway stop`, then run this again.",
++            )
++
++    def _in_daemon(self, op: str, params: Mapping[str, Any], owner: Owner, what: str) -> GateResult:
++        batches: list[Mapping[str, Any]] = [params]
++        if op == "prune":
++            ids = [str(i) for i in params.get("ids", ())]
++            batches = [
++                {**params, "ids": ids[i : i + MAX_IDS]} for i in range(0, max(len(ids), 1), MAX_IDS)
++            ]
++        answers: list[Mapping[str, Any]] = []
++        for batch in batches:
++            reply = self._ask(
++                self.home,
++                MAINTENANCE_VERB,
++                {"op": op, **batch},
++                timeout=self.timeout,
++            )
++            done = " (earlier batches were done)" if answers else ""
++            if reply.ok and reply.result is not None:
++                refused = reply.result.get("refused")
++                if refused is None:
++                    answers.append(reply.result)
++                    continue
++                detail = reply.result.get("detail")
++                raise MaintenanceRefused(
++                    "daemon_refused",
++                    f"Not done{done}: {detail if isinstance(detail, str) else refused}.",
++                )
++            if reply.error in ("unsupported", "unknown_verb"):
++                raise MaintenanceRefused(
++                    "daemon_cannot",
++                    f"Not done: {_stop_hint(owner.pid)} and cannot run {what} for you. Stop it "
++                    "with `indus gateway stop`, then run this again.",
++                )
++            detail = f": {reply.detail}" if reply.detail else ""
++            raise MaintenanceRefused(
++                "daemon_refused",
++                f"Not done{done}: {_stop_hint(owner.pid)} and answered {reply.error}{detail}.",
++            )
++        return GateResult("daemon", _merge(answers), tuple(answers))
++
++
++def _merge(answers: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
++    """Batched answers as one: counts added, lists joined."""
++    if len(answers) == 1:
++        return answers[0]
++    out: dict[str, Any] = {}
++    for answer in answers:
++        for key, value in answer.items():
++            if isinstance(value, int) and not isinstance(value, bool):
++                out[key] = int(out.get(key, 0)) + value
++            elif isinstance(value, list):
++                out[key] = [*out.get(key, []), *value]
++            else:
++                out[key] = value
++    return out
++
++
++# -- the daemon half ------------------------------------------------------------------------------
++
++
++class _BadParams(Exception):
++    pass
++
++
++def _ids(params: Mapping[str, Any]) -> list[str]:
++    raw: object = params.get("ids")
++    if not isinstance(raw, list):
++        raise _BadParams("ids must be a list of session ids")
++    items = cast(list[object], raw)
++    if len(items) > MAX_IDS:
++        raise _BadParams("ids must be a list of at most 1000 session ids")
++    out: list[str] = []
++    for item in items:
++        if not isinstance(item, str) or not item or len(item) > 200:
++            raise _BadParams("ids must be session ids")
++        out.append(item)
++    return out
++
++
++def _text(params: Mapping[str, Any], name: str) -> str:
++    value = params.get(name)
++    if not isinstance(value, str) or not value or len(value) > 4096:
++        raise _BadParams(f"{name} is missing")
++    return value
++
++
++class MaintenanceVerb:
++    """``maintenance-run`` inside the daemon: each operation on the daemon's own store handle."""
++
++    def __init__(
++        self,
++        scope: Scope,
++        *,
++        store: Callable[[], StoreHandle] | None = None,
++        release: Callable[[StoreHandle], None] | None = None,
++    ) -> None:
++        self.scope = scope
++        self._store = store or (lambda: registry.acquire(scope))
++        self._release = release or registry.release
++
++    def handlers(self) -> dict[str, tuple[Callable[[dict[str, Any]], Any], float]]:
++        return {MAINTENANCE_VERB: (self.handle, VERB_TIMEOUT_S)}
++
++    async def handle(self, params: dict[str, Any]) -> Mapping[str, Any]:
++        """Run one operation; a refusal is answered as ``{"refused": code, "detail": ...}`` (the
++        control wire's error answers belong to the gateway layer)."""
++        op = params.get("op")
++        if op not in OPS:
++            return {"refused": "bad_op", "detail": "unknown maintenance operation"}
++        try:
++            return await run_blocking(self._run, str(op), params, label=f"maintenance {op}")
++        except _BadParams as exc:
++            return {"refused": "bad_params", "detail": str(exc)}
++        except StoreError as exc:
++            log.warning("maintenance %s failed: %s", op, exc.code)
++            return {"refused": "store_error", "detail": exc.message}
++
++    def _run(self, op: str, params: Mapping[str, Any]) -> Mapping[str, Any]:
++        store = self._store()
++        try:
++            log.info("maintenance %s runs in the daemon", op)
++            if op == "prune":
++                report = deletion.delete_many(store, _ids(params))
++                return {
++                    "deleted": len(report.deleted),
++                    "removed": len(report.removed),
++                    "guarded": len(report.guarded),
++                    "unknown": len(report.unknown),
++                }
++            if op == "delete":
++                sid = _text(params, "session_id")
++                try:
++                    removed = deletion.delete_session(store, sid, whole_chain=True)
++                except deletion.SessionGuarded as exc:
++                    return {"refused": "guarded", "detail": exc.message}
++                return {"removed": bool(removed)}
++            if op == "repair":
++                return {"rebuilt": fts.rebuild(store)}
++            path = Path(_text(params, "path"))
++            if not path.is_absolute() or not path.is_file():
++                raise _BadParams("path must name an existing file by its absolute path")
++            imported = portability.import_jsonl(store, path)
++            return {
++                "ok": imported.ok,
++                "imported": len(imported.imported),
++                "skipped": len(imported.skipped),
++                "detached": len(imported.detached),
++                "retitled": len(imported.retitled),
++                "errors": [str(issue) for issue in imported.errors[:_MAX_REPORTED]],
++                "error_count": len(imported.errors),
++            }
++        finally:
++            self._release(store)
+diff --git a/tests/integration/state/multiprocess_worker.py b/tests/integration/state/multiprocess_worker.py
+new file mode 100644
+index 0000000..f8b612c
+--- /dev/null
++++ b/tests/integration/state/multiprocess_worker.py
+@@ -0,0 +1,255 @@
++"""One process of the P17-21 multi-process run; the parent is ``test_multiprocess_daemon.py``.
++
++Run as ``python multiprocess_worker.py <role> <home> <out.json> <options-json>``. The worker builds
++a scope for the temp ``home``, prints ``ready <journal mode or ->``, reads one JSON line
++``{"start": t, "deadline": t}`` (wall-clock seconds) from stdin, works until the deadline and
++writes its result to ``out.json``. Roles:
++
++- ``daemon``: holds the profile ownership lock (``gateway.lock``) as the gateway daemon does and
++  writes turns until the deadline: ``threads`` threads, each creating a session per turn and
++  appending a user and an assistant message through the P02 writer. At the window's midpoint it
++  runs a WAL checkpoint on its writer connection.
++- ``cli``: what `indus sessions list` and a transcript read do, once per loop: open the store
++  read-only (``read_view``), list sessions, read the newest session's messages, close.
++- ``dashboard``: one long-lived read-only connection (a dashboard keeps one), searching and
++  counting in a loop.
++- ``maint``: at the midpoint, runs `indus sessions prune -y` through the app's dispatch; with the
++  daemon owning the profile the gate must refuse it.
++
++Every reader samples the store file's header (bytes 18-19: 1 = rollback journal, 2 = WAL) and the
++journal mode its connection reports, so the parent can tell whether the mode ever changed live.
++"""
++
++from __future__ import annotations
++
++import json
++import logging
++import sqlite3
++import sys
++import threading
++import time
++from pathlib import Path
++from typing import Any
++
++from indus.foundation.clock import SystemClock
++from indus.foundation.scope import EnvView, Scope, make_scope
++from indus.state import journal, listing, messages, registry, search, sessions
++from indus.state.registry import StoreHandle
++
++PINNED_SQLITE = (3, 51, 3)
++MAX_KEPT_ERRORS = 50
++WORDS = ("amber", "basalt", "cobalt", "delta", "ember", "fjord")
++
++
++def _until(moment: float) -> None:
++    gate = threading.Event()
++    while (left := moment - time.time()) > 0:
++        gate.wait(left)
++
++
++class Errors:
++    def __init__(self) -> None:
++        self.lock = threading.Lock()
++        self.count = 0
++        self.kept: list[dict[str, Any]] = []
++
++    def add(self, where: str, exc: BaseException) -> None:
++        with self.lock:
++            self.count += 1
++            if len(self.kept) < MAX_KEPT_ERRORS:
++                self.kept.append({"where": where, "type": type(exc).__name__, "text": str(exc)})
++
++    def as_dict(self) -> dict[str, Any]:
++        return {"error_count": self.count, "errors": self.kept}
++
++
++def _scope(home: Path) -> Scope:
++    env = EnvView.from_process().with_overlay({"INDUS_HOME": str(home)})
++    return make_scope(home, env=env, clock=SystemClock())
++
++
++def header_mode(db: Path) -> int | None:
++    """Bytes 18-19 of the file header: 1 rollback journal, 2 WAL (None when unreadable)."""
++    try:
++        with db.open("rb") as raw:
++            head = raw.read(20)
++    except OSError:
++        return None
++    if len(head) < 20 or head[18] != head[19]:
++        return None
++    return head[18]
++
++
++def run_daemon(scope: Scope, opts: dict[str, Any], window: dict[str, float]) -> dict[str, Any]:
++    from indus.service.maintenance_gate import OwnershipLock
++
++    lock = OwnershipLock(scope.home)
++    if not lock.try_acquire():
++        raise SystemExit("the daemon could not take the ownership lock")
++    store = registry.open_unshared(scope)
++    threads = int(opts.get("threads", 4))
++    turns: dict[str, list[list[int]]] = {f"t{j}": [] for j in range(threads)}
++    errors = Errors()
++    checkpoint: dict[str, Any] = {}
++    deadline = window["deadline"]
++    midpoint = window["start"] + (deadline - window["start"]) / 2
++
++    def work(thread: int) -> None:
++        name = f"t{thread}"
++        n = 0
++        while time.time() < deadline:
++            sid = f"turn-{name}-{n:05d}"
++            try:
++                sessions.create(store, sid, "cli")
++                ids: list[int] = []
++                for role in ("user", "assistant"):
++                    text = f"{sid} {role} {WORDS[n % len(WORDS)]} " + "words " * (n % 40)
++                    ids.append(messages.append(store, sid, {"role": role, "content": text}))
++                turns[name].append(ids)
++            except Exception as exc:  # judged by the parent
++                errors.add(sid, exc)
++            n += 1
++
++    def checkpointer() -> None:
++        _until(midpoint)
++        try:
++            with store.writer.borrow() as conn:
++                row = conn.execute("PRAGMA wal_checkpoint(RESTART)").fetchone()
++            checkpoint.update(ran=True, at=time.time(), row=list(row) if row else None)
++        except Exception as exc:
++            errors.add("checkpoint", exc)
++            checkpoint["ran"] = False
++
++    workers = [threading.Thread(target=work, args=(j,)) for j in range(threads)]
++    workers.append(threading.Thread(target=checkpointer))
++    for t in workers:
++        t.start()
++    for t in workers:
++        t.join()
++    mode = store.journal_mode
++    store.close()
++    lock.release()
++    return {
++        "role": "daemon",
++        "turns": turns,
++        "count": sum(len(v) for v in turns.values()),
++        "checkpoint": checkpoint,
++        "mode": mode,
++        **errors.as_dict(),
++    }
++
++
++def _sample(db: Path, conn: sqlite3.Connection, seen: dict[str, set[Any]]) -> None:
++    seen["header"].add(header_mode(db))
++    seen["pragma"].add(str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower())
++
++
++def run_cli(scope: Scope, opts: dict[str, Any], window: dict[str, float]) -> dict[str, Any]:
++    from indus.cli.commands.sessions import read_view
++
++    errors = Errors()
++    seen: dict[str, set[Any]] = {"header": set(), "pragma": set()}
++    loops = rows = 0
++    db = Path(opts["db"])
++    while time.time() < window["deadline"]:
++        loops += 1
++        try:
++            with read_view(scope) as view:
++                assert view is not None
++                found = listing.list_sessions(view.as_handle(), limit=20)
++                with view.read() as conn:
++                    _sample(db, conn, seen)
++                    if found:
++                        rows += len(
++                            conn.execute(
++                                "SELECT id FROM messages WHERE session_id = ? ORDER BY id",
++                                (found[0].id,),
++                            ).fetchall()
++                        )
++        except Exception as exc:
++            errors.add(f"loop {loops}", exc)
++    return {
++        "role": "cli",
++        "loops": loops,
++        "rows": rows,
++        "header": sorted(x for x in seen["header"] if x is not None),
++        "pragma": sorted(seen["pragma"]),
++        **errors.as_dict(),
++    }
++
++
++def run_dashboard(scope: Scope, opts: dict[str, Any], window: dict[str, float]) -> dict[str, Any]:
++    from indus.cli.commands.sessions import ReadView
++    from indus.state import browse
++
++    errors = Errors()
++    seen: dict[str, set[Any]] = {"header": set(), "pragma": set()}
++    loops = hits = 0
++    db = Path(opts["db"])
++    store = browse.open_readonly(scope)
++    view = ReadView(scope, store)
++    try:
++        while time.time() < window["deadline"]:
++            loops += 1
++            word = WORDS[loops % len(WORDS)]
++            try:
++                hits += len(search.search(view.as_handle(), word, limit=20))
++                with view.read() as conn:
++                    conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
++                    _sample(db, conn, seen)
++            except Exception as exc:
++                errors.add(f"loop {loops}", exc)
++    finally:
++        store.close()
++    return {
++        "role": "dashboard",
++        "loops": loops,
++        "hits": hits,
++        "header": sorted(x for x in seen["header"] if x is not None),
++        "pragma": sorted(seen["pragma"]),
++        **errors.as_dict(),
++    }
++
++
++def run_maint(scope: Scope, opts: dict[str, Any], window: dict[str, float]) -> dict[str, Any]:
++    from click.testing import CliRunner
++
++    from indus.cli import app as app_mod
++    from indus.cli.args import CliState
++
++    _until(window["start"] + (window["deadline"] - window["start"]) / 2)
++    state = CliState(scope=scope, stdin_isatty=lambda: False, stdout_isatty=lambda: False)
++    with CliRunner().isolation() as (out, err, _mixed):
++        code = app_mod.dispatch(["sessions", "prune", "-y"], state)
++    return {
++        "role": "maint",
++        "code": code,
++        "out": out.getvalue().decode(),
++        "err": err.getvalue().decode(),
++        "error_count": 0,
++    }
++
++
++def main(argv: list[str]) -> int:
++    role, home, out = argv[1], Path(argv[2]), Path(argv[3])
++    opts: dict[str, Any] = json.loads(argv[4]) if len(argv) > 4 else {}
++    logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
++    if opts.get("pin_sqlite"):
++        journal.linked_sqlite_version = lambda: PINNED_SQLITE  # same override as the unit tests
++    scope = _scope(home)
++    store: StoreHandle | None = None
++    mode = "-"
++    if role == "daemon":
++        store = registry.open_unshared(scope)
++        mode = store.journal_mode
++        store.close()
++    print(f"ready {mode}", flush=True)
++    window = json.loads(sys.stdin.readline())
++    runners = {"daemon": run_daemon, "cli": run_cli, "dashboard": run_dashboard, "maint": run_maint}
++    result = runners[role](scope, opts, window)
++    out.write_text(json.dumps(result), encoding="utf-8")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv))
+diff --git a/tests/integration/state/test_multiprocess_daemon.py b/tests/integration/state/test_multiprocess_daemon.py
+new file mode 100644
+index 0000000..2a85f97
+--- /dev/null
++++ b/tests/integration/state/test_multiprocess_daemon.py
+@@ -0,0 +1,220 @@
++"""P17-21: a daemon writing turns beside CLI and dashboard readers, for ``INDUS_STRESS_SECONDS``.
++
++Five processes share one store (``multiprocess_worker.py``): the "daemon" holds the profile
++ownership lock and writes turns (a session and a user and an assistant message each) with four
++threads, running a WAL checkpoint at the midpoint; two CLI-style readers open the store read-only
++per loop (`indus sessions list` plus a transcript read); a dashboard-style reader keeps one
++read-only connection and searches; a maintenance process runs `indus sessions prune -y` at the
++midpoint. Afterwards:
++
++- every message the daemon was told was stored is stored exactly once, in its turn's order, and
++  each turn's session counts its two messages (no lost rows);
++- no process saw "database is locked" or any other error;
++- the journal mode never changed live: every process saw the mode the store was created with,
++  in the PRAGMA and in the file header (R03.1);
++- the prune was refused by the maintenance gate (the daemon owns the profile) and the old
++  sessions it would have deleted are still there (R09.21);
++- the file passes its integrity check.
++
++The run is in WAL mode: when the host SQLite is one whose WAL could be reset, the linked version
++is pinned as the unit tests do so the store still opens in WAL.
++"""
++
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++import time
++from collections.abc import Iterator
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.foundation.clock import SystemClock
++from indus.foundation.scope import EnvView, make_scope
++from indus.state import guards, journal, readpool, registry
++from indus.state.registry import StoreHandle
++from tests.conftest import STRESS_SECONDS
++
++pytestmark = pytest.mark.slow
++
++WORKER = Path(__file__).with_name("multiprocess_worker.py")
++PINNED_SQLITE = (3, 51, 3)
++HEADER_WAL = 2
++OLD = ("old-a", "old-b", "old-c")
++
++
++@pytest.fixture
++def home(isolated_home: Path) -> Iterator[Path]:
++    guards.reset_health()
++    readpool.reset_fd_cache()
++    journal.reset_once_logs()
++    path = isolated_home / "profiles" / "work"
++    path.mkdir(parents=True, exist_ok=True)
++    (path / "profile.yaml").touch()
++    yield path
++    registry.close_all()
++    guards.reset_health()
++    readpool.reset_fd_cache()
++
++
++def _open(home: Path) -> StoreHandle:
++    env = EnvView.from_process().with_overlay({"INDUS_HOME": str(home)})
++    return registry.open_unshared(make_scope(home, env=env, clock=SystemClock()))
++
++
++def _seed_old(store: StoreHandle) -> None:
++    """Sessions a bare prune would delete (ended 100 days ago)."""
++    from tests.unit.state._helpers_d import DAY, add_message, add_session
++
++    at = store.scope.clock.now().timestamp() - 100 * DAY
++    for sid in OLD:
++        add_session(store, sid, started_at=at, end_reason="cli_close", ended_at=at, message_count=1)
++        add_message(store, sid, "an old conversation", timestamp=at)
++
++
++def _run(home: Path, db: Path, logs: Path, pin: bool) -> dict[str, dict[str, Any]]:
++    plan = [
++        ("daemon", "daemon"),
++        ("cli1", "cli"),
++        ("cli2", "cli"),
++        ("dashboard", "dashboard"),
++        ("maint", "maint"),
++    ]
++    logs.mkdir(parents=True, exist_ok=True)
++    procs: dict[str, subprocess.Popen[str]] = {}
++    results: dict[str, dict[str, Any]] = {}
++    root = str(Path(__file__).resolve().parents[3])
++    opts = json.dumps({"pin_sqlite": pin, "db": str(db), "threads": 4})
++    try:
++        for name, role in plan:
++            err = (logs / f"{name}.stderr").open("w", encoding="utf-8")
++            procs[name] = subprocess.Popen(
++                [sys.executable, str(WORKER), role, str(home), str(logs / f"{name}.json"), opts],
++                stdin=subprocess.PIPE,
++                stdout=subprocess.PIPE,
++                stderr=err,
++                text=True,
++                cwd=root,
++            )
++            assert procs[name].stdout is not None
++            line = procs[name].stdout.readline().split()  # type: ignore[union-attr]
++            stderr = (logs / f"{name}.stderr").read_text(encoding="utf-8")[-3000:]
++            assert line[:1] == ["ready"], f"{name} did not start:\n{stderr}"
++        start = time.time()
++        window = {"start": start, "deadline": start + STRESS_SECONDS}
++        for proc in procs.values():
++            assert proc.stdin is not None
++            proc.stdin.write(json.dumps(window) + "\n")
++            proc.stdin.close()
++        for name, proc in procs.items():
++            code = proc.wait(timeout=STRESS_SECONDS + 120)
++            stderr = (logs / f"{name}.stderr").read_text(encoding="utf-8")[-3000:]
++            assert code == 0, f"{name} exited {code}:\n{stderr}"
++            results[name] = json.loads((logs / f"{name}.json").read_text(encoding="utf-8"))
++    finally:
++        for proc in procs.values():
++            if proc.poll() is None:
++                proc.kill()
++                proc.wait(timeout=30)
++    return results
++
++
++def _problems(results: dict[str, dict[str, Any]], store: StoreHandle, mode: str) -> list[str]:
++    found: list[str] = []
++    for name, result in sorted(results.items()):
++        if result.get("error_count"):
++            kinds = sorted({e["type"] for e in result.get("errors", [])})
++            found.append(f"{name}: {result['error_count']} errors reached callers {kinds}")
++        for err in result.get("errors", []):
++            if "database is locked" in err["text"].lower():
++                found.append(f"{name}: 'database is locked' surfaced at {err['where']}")
++                break
++    daemon = results["daemon"]
++    if daemon["count"] < 10:
++        found.append(f"the daemon wrote only {daemon['count']} turns")
++    if not daemon["checkpoint"].get("ran"):
++        found.append("the midpoint checkpoint did not run")
++    if daemon["mode"] != mode:
++        found.append(f"the daemon ended in {daemon['mode']}, created in {mode}")
++    for name in ("cli1", "cli2", "dashboard"):
++        result = results[name]
++        if not result["loops"]:
++            found.append(f"{name} made no progress")
++        if result["pragma"] != [mode]:
++            found.append(f"{name} saw journal modes {result['pragma']}, not only {mode}")
++        if mode == "wal" and result["header"] != [HEADER_WAL]:
++            found.append(f"{name} saw file header modes {result['header']}")
++    if not results["dashboard"]["hits"]:
++        found.append("the dashboard search found nothing")
++    maint = results["maint"]
++    if maint["code"] != 1 or "Try again in a moment" not in maint["err"]:
++        found.append(f"the prune was not refused by the gate: {maint}")
++    with store.read() as conn:
++        stored: dict[str, list[int]] = {}
++        for row in conn.execute(
++            "SELECT id, session_id FROM messages WHERE session_id LIKE 'turn-%' ORDER BY id"
++        ):
++            stored.setdefault(str(row[1]), []).append(int(row[0]))
++        counts = {
++            str(r[0]): int(r[1])
++            for r in conn.execute(
++                "SELECT id, message_count FROM sessions WHERE id LIKE 'turn-%'"
++            ).fetchall()
++        }
++        old = {
++            str(r[0])
++            for r in conn.execute(
++                f"SELECT id FROM sessions WHERE id IN ({', '.join('?' for _ in OLD)})", OLD
++            )
++        }
++        check = [str(r[0]) for r in conn.execute("PRAGMA integrity_check").fetchall()]
++    told = 0
++    for thread, turns in daemon["turns"].items():
++        for n, ids in enumerate(turns):
++            told += len(ids)
++            sid_rows = [sid for sid, rows in stored.items() if rows == ids]
++            if len(sid_rows) != 1:
++                found.append(f"{thread} turn {n}: its messages {ids} are not stored as one turn")
++    if told != sum(len(v) for v in stored.values()):
++        found.append(f"{told} messages reported, {sum(len(v) for v in stored.values())} stored")
++    wrong = [sid for sid, rows in stored.items() if counts.get(sid) != len(rows)]
++    if wrong:
++        found.append(f"{len(wrong)} sessions' message_count differs from their rows")
++    if old != set(OLD):
++        found.append(f"the refused prune deleted {set(OLD) - old}")
++    if check != ["ok"]:
++        found.append(f"integrity_check: {check[:5]}")
++    return found
++
++
++def test_daemon_writer_and_readers_share_the_store(
++    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    pin = journal.wal_reset_vulnerable(journal.linked_sqlite_version())
++    if pin:
++        monkeypatch.setattr(journal, "linked_sqlite_version", lambda: PINNED_SQLITE)
++    store = _open(home)
++    try:
++        mode = store.journal_mode
++        db = store.path
++        _seed_old(store)
++    finally:
++        store.close()
++    assert mode == "wal", "the store did not open in WAL"
++    results = _run(home, db, tmp_path / "logs", pin)
++    summary = {
++        "seconds": STRESS_SECONDS,
++        "turns": results["daemon"]["count"],
++        "cli_loops": [results["cli1"]["loops"], results["cli2"]["loops"]],
++        "dashboard_loops": results["dashboard"]["loops"],
++        "checkpoint": results["daemon"]["checkpoint"].get("row"),
++    }
++    print("multiprocess:", json.dumps(summary))
++    store = _open(home)
++    try:
++        assert _problems(results, store, mode) == []
++    finally:
++        store.close()
+diff --git a/tests/unit/cli/_stubs_k7.py b/tests/unit/cli/_stubs_k7.py
+new file mode 100644
+index 0000000..511a050
+--- /dev/null
++++ b/tests/unit/cli/_stubs_k7.py
+@@ -0,0 +1,263 @@
++# STAND-IN: removed at integration
++"""Stand-ins for slice K6 (P17-15 ensure, P17-16 channel, P17-17 RemoteSessionService) used by the
++P17-18 attach tests. Removed at integration, when ``attach.ENSURE_ENTRY`` / ``REMOTE_ENTRY`` load
++the real pieces.
++
++Interface assumed (K7, written down for the integrator):
++
++- ``ensure(home: Path, *, timeout: float) -> endpoint`` (``indus.gateway.daemon.ensure:ensure``):
++  returns the credential-free descriptor (``ws_url``, ``profile_id``, ``instance_id``,
++  ``code_version``) of a live daemon, starting one when needed; any failure is an exception whose
++  text is one credential-free line (start failed, recover budget spent, planned stop). It scrubs
++  the launch env vars (``creation_policy.scrub_launch_env``) from the env a started daemon gets.
++- ``await RemoteSessionService.connect(scope, endpoint, *, surface="cli") -> service``
++  (``indus.service.remote.host``). Methods (sync or async; the CLI awaits whatever comes back):
++  - ``create(params: SessionCreateParams, *, source: str, policy: Mapping) -> SessionCreateResult``
++    (idempotent by a client request id inside; ``policy`` is the P17-09 launch mapping);
++  - ``resume(session_id, *, policy: Mapping | None) -> SessionResumeResult``; a changed frozen
++    value raises an error whose ``reason`` (or ``code_name``) is ``policy_conflict`` and whose
++    ``fields`` lists the fields;
++  - ``submit(session_id, text, *, unattended=False) -> PromptSubmitResult`` (``turn_id`` = the
++    admission id; ``unattended`` = `-z`: no person will answer approvals);
++  - ``wait(session_id, turn_id) -> TurnResult``; raises with ``reason`` ``outcome_unknown`` when
++    the transport (or the daemon) was lost while the turn ran (never resent; the journal entry
++    is kept), and ``blocked_by_unknown`` when the input is queued behind an unknown admission;
++  - ``interrupt(session_id, generation, *, hard=False)``, ``steer``, ``redirect``,
++    ``answer_server_request`` as ``SessionService``;
++  - ``subscribe(session_id, listener)`` / ``on_request(session_id, listener)`` -> an off callable;
++    events and server requests are the ``indus.protocol`` models;
++  - ``pending(session_id)`` -> rows with ``admission_id``, ``state`` (``queued`` / ``started`` /
++    ``unknown``), ``generation`` and ``text``;
++  - ``discard_unknown(session_id, admission_id, generation)``; a stale generation answers (or
++    raises) something whose ``code`` / ``reason`` is ``stale_generation``;
++  - ``aclose()`` detaches only (turns keep running in the daemon).
++"""
++
++from __future__ import annotations
++
++import asyncio
++import threading
++from collections.abc import Callable, Mapping
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++
++from indus.core.exit_reasons import Failure
++from indus.core.turn_state import TurnResult
++from indus.protocol.events import ExitReason, MessageDelta, TurnDone, TurnStarted
++from indus.protocol.methods import (
++    PromptSubmitResult,
++    ServerRequestAnswerResult,
++    SessionCreateParams,
++    SessionCreateResult,
++    SessionInterruptResult,
++    SessionRedirectResult,
++    SessionResumeResult,
++    SessionSteerResult,
++)
++
++
++@dataclass(frozen=True)
++class StubEndpoint:
++    ws_url: str = "ws://127.0.0.1:47012/ws"
++    profile_id: str = "work"
++    instance_id: str = "inst-1"
++    code_version: str = "0.0.0"
++
++
++class RemoteFailure(Exception):
++    """A refusal or loss as the remote host would raise it."""
++
++    def __init__(self, reason: str, message: str = "", **extra: Any) -> None:
++        super().__init__(message or reason)
++        self.reason = reason
++        self.message = message or reason
++        for key, value in extra.items():
++            setattr(self, key, value)
++
++
++@dataclass(frozen=True)
++class Stale:
++    """The fences' "aimed at another generation" answer."""
++
++    code: str = "stale_generation"
++
++
++def turn_result(
++    session_id: str,
++    turn_id: str,
++    text: str | None = "done",
++    *,
++    reason: ExitReason | None = None,
++    failure: str | None = None,
++) -> TurnResult:
++    return TurnResult(
++        session_id=session_id,
++        turn_id=turn_id,
++        generation=1,
++        exit_reason=reason or ExitReason.COMPLETED,
++        final_text=text,
++        rows=[],
++        current_turn_user_index=0,
++        api_calls=1,
++        failure=Failure(failure, False) if failure else None,
++    )
++
++
++@dataclass
++class StubRemote:
++    """An in-memory remote session service (see the module notes)."""
++
++    reply: str = "hello from the daemon"
++    known: set[str] = field(default_factory=lambda: {"s-old"})
++    pending_rows: list[dict[str, Any]] = field(default_factory=lambda: [])
++    wait_with: Callable[[str, str], Any] | None = None
++    conflict: tuple[str, ...] = ()
++    calls: list[tuple[str, Any]] = field(default_factory=lambda: [])
++    listeners: dict[str, list[Callable[[Any], None]]] = field(default_factory=lambda: {})
++    askers: dict[str, list[Callable[[Any], None]]] = field(default_factory=lambda: {})
++    closed: bool = False
++    released: threading.Event = field(default_factory=threading.Event)
++    generation: int = 0
++    seq: int = 0
++
++    def _next(self) -> int:
++        self.seq += 1
++        return self.seq
++
++    async def create(
++        self, params: SessionCreateParams, *, source: str, policy: Mapping[str, Any]
++    ) -> SessionCreateResult:
++        self.calls.append(("create", {"cwd": params.cwd, "source": source, "policy": dict(policy)}))
++        sid = f"s-new-{len(self.calls)}"
++        self.known.add(sid)
++        return SessionCreateResult(session_id=sid, created=True)
++
++    async def resume(
++        self, session_id: str, *, policy: Mapping[str, Any] | None
++    ) -> SessionResumeResult:
++        self.calls.append(("resume", {"session_id": session_id, "policy": policy}))
++        if self.conflict:
++            raise RemoteFailure("policy_conflict", "frozen", fields=list(self.conflict))
++        return SessionResumeResult(session_id=session_id, message_count=0, last_seq=0)
++
++    async def submit(
++        self, session_id: str, text: str, *, unattended: bool = False
++    ) -> PromptSubmitResult:
++        self.generation += 1
++        turn = f"adm-{self.generation}"
++        self.calls.append(("submit", {"text": text, "unattended": unattended, "turn": turn}))
++        for listener in self.listeners.get(session_id, []):
++            listener(
++                TurnStarted(
++                    session_id=session_id,
++                    seq=self._next(),
++                    turn_id=turn,
++                    generation=self.generation,
++                )
++            )
++        return PromptSubmitResult(turn_id=turn, generation=self.generation)
++
++    async def wait(self, session_id: str, turn_id: str) -> TurnResult:
++        self.calls.append(("wait", turn_id))
++        if self.wait_with is not None:
++            got = self.wait_with(session_id, turn_id)
++            while asyncio.iscoroutine(got) or isinstance(got, asyncio.Future):
++                got = await got
++            return got
++        return turn_result(session_id, turn_id, self.reply)
++
++    def interrupt(
++        self, session_id: str, generation: int | None, *, hard: bool = False
++    ) -> SessionInterruptResult:
++        self.calls.append(("interrupt", generation))
++        self.released.set()
++        return SessionInterruptResult(interrupted=True)
++
++    def steer(self, session_id: str, text: str) -> SessionSteerResult:
++        self.calls.append(("steer", text))
++        return SessionSteerResult(queued=True)
++
++    def redirect(self, session_id: str, text: str) -> SessionRedirectResult:
++        from indus.protocol.methods import RedirectOutcome
++
++        self.calls.append(("redirect", text))
++        return SessionRedirectResult(outcome=RedirectOutcome.REDIRECTED)
++
++    def answer_server_request(
++        self, session_id: str, request_id: str, answer: Any
++    ) -> ServerRequestAnswerResult:
++        self.calls.append(("answer", request_id))
++        return ServerRequestAnswerResult(accepted=True)
++
++    def subscribe(self, session_id: str, listener: Callable[[Any], None]) -> Callable[[], None]:
++        self.listeners.setdefault(session_id, []).append(listener)
++
++        def off() -> None:
++            self.calls.append(("unsubscribe", session_id))
++            if listener in self.listeners.get(session_id, []):
++                self.listeners[session_id].remove(listener)
++
++        return off
++
++    def on_request(self, session_id: str, listener: Callable[[Any], None]) -> Callable[[], None]:
++        self.askers.setdefault(session_id, []).append(listener)
++        return lambda: None
++
++    def ask(self, session_id: str, request: Any) -> None:
++        for listener in list(self.askers.get(session_id, [])):
++            listener(request)
++
++    def emit(self, session_id: str, turn_id: str, text: str) -> None:
++        for listener in list(self.listeners.get(session_id, [])):
++            listener(
++                MessageDelta(session_id=session_id, seq=self._next(), turn_id=turn_id, text=text)
++            )
++            listener(
++                TurnDone(
++                    session_id=session_id,
++                    seq=self._next(),
++                    turn_id=turn_id,
++                    reason=ExitReason.COMPLETED,
++                )
++            )
++
++    async def pending(self, session_id: str) -> list[dict[str, Any]]:
++        self.calls.append(("pending", session_id))
++        return list(self.pending_rows)
++
++    async def discard_unknown(self, session_id: str, admission_id: str, generation: int) -> Any:
++        self.calls.append(("discard", (admission_id, generation)))
++        row = next((r for r in self.pending_rows if r["admission_id"] == admission_id), None)
++        if row is None or row.get("current_generation", row["generation"]) != generation:
++            return Stale()
++        self.pending_rows.remove(row)
++        return {"state": "terminal"}
++
++    async def aclose(self) -> None:
++        self.calls.append(("aclose", None))
++        self.closed = True
++
++
++@dataclass
++class StubBackend:
++    """``ensure`` + ``connect`` over a ``StubRemote``."""
++
++    remote: StubRemote = field(default_factory=StubRemote)
++    ensure_error: Exception | None = None
++    ensured: list[Path] = field(default_factory=lambda: [])
++    surfaces: list[str] = field(default_factory=lambda: [])
++
++    def ensure(self, scope: Any, *, timeout: float) -> StubEndpoint:
++        self.ensured.append(scope.home)
++        if self.ensure_error is not None:
++            raise self.ensure_error
++        return StubEndpoint()
++
++    connect_error: Exception | None = None
++
++    async def connect(self, scope: Any, endpoint: Any, *, surface: str) -> StubRemote:
++        self.surfaces.append(surface)
++        if self.connect_error is not None:
++            raise self.connect_error
++        return self.remote
+diff --git a/tests/unit/cli/test_attach.py b/tests/unit/cli/test_attach.py
+new file mode 100644
+index 0000000..25d1a75
+--- /dev/null
++++ b/tests/unit/cli/test_attach.py
+@@ -0,0 +1,555 @@
++"""P17-18: `indus`, `chat`, `-q` and `-z` attach to the profile's daemon by default.
++
++The daemon side is the K6 stand-in (``_stubs_k7``: ``StubBackend`` / ``StubRemote``), installed as
++``attach.backend_factory``. Commands run through the app's dispatch like a person types them.
++"""
++
++from __future__ import annotations
++
++import signal
++import threading
++from collections.abc import Callable, Iterator
++from pathlib import Path
++from typing import Any, cast
++
++import pytest
++from click.testing import CliRunner
++
++from indus.cli import app as app_mod
++from indus.cli import attach, first_run
++from indus.cli.args import ChatArgs, CliState, GlobalArgs, HostOverrides
++from indus.cli.session_select import LaunchPolicy
++from indus.foundation.scope import Scope
++from indus.protocol.events import ExitReason, MessageDelta, TurnDone
++from indus.state import registry
++from tests.fakes.agent import any_window
++from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn
++from tests.unit.cli._stubs_k7 import RemoteFailure, StubBackend, StubRemote, turn_result
++from tests.unit.state._helpers_d import add_session
++
++
++@pytest.fixture
++def backend(monkeypatch: pytest.MonkeyPatch) -> StubBackend:
++    stub = StubBackend()
++    monkeypatch.setattr(attach, "backend_factory", lambda: stub)
++    monkeypatch.setattr(first_run, "usable_provider", lambda _scope: "a test provider")
++    return stub
++
++
++class Ran:
++    def __init__(self, code: int, out: str, err: str) -> None:
++        self.code, self.out, self.err = code, out, err
++
++
++def invoke(
++    scope: Scope, *argv: str, tty: bool = False, overrides: HostOverrides | None = None
++) -> Ran:
++    state = CliState(
++        scope=scope, overrides=overrides, stdin_isatty=lambda: tty, stdout_isatty=lambda: tty
++    )
++    with CliRunner().isolation() as (out, err, _mixed):
++        code = app_mod.dispatch(list(argv), state)
++    return Ran(code, out.getvalue().decode(), err.getvalue().decode())
++
++
++def calls(remote: StubRemote, name: str) -> list[Any]:
++    return [arg for kind, arg in remote.calls if kind == name]
++
++
++# -- the route ------------------------------------------------------------------------------------
++
++
++def test_local_and_driver_overrides_stay_in_process(scope: Scope) -> None:
++    state = CliState(scope=scope)
++    assert not attach.wants_local(state, GlobalArgs())
++    assert attach.wants_local(state, GlobalArgs(local=True))
++    assert attach.wants_local(CliState(scope=scope, overrides=HostOverrides()), GlobalArgs())
++
++
++def test_local_flag_is_global_and_on_chat(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    from indus.cli import chat as chat_mod
++
++    seen: list[GlobalArgs] = []
++
++    def fake(state: CliState, args: GlobalArgs, chat: ChatArgs) -> int:
++        seen.append(args)
++        return 0
++
++    monkeypatch.setattr(chat_mod, "run_chat", fake)
++    assert app_mod.dispatch(["chat", "--local"], CliState(scope=scope)) == 0
++    assert seen[0].local is True
++    assert app_mod.dispatch(["chat"], CliState(scope=scope)) == 0
++    assert seen[1].local is False
++
++
++def test_a_driver_with_its_own_model_never_ensures(scope: Scope, backend: StubBackend) -> None:
++    server = FakeModelServer(script_of(text_turn("from this process")))
++    overrides = HostOverrides(
++        route=fake_route(server), client_factory=lambda _r: server.client(), list_models=any_window
++    )
++    ran = invoke(scope, "chat", "-q", "hi", "--oneshot", overrides=overrides)
++    assert ran.code == 0, ran.err
++    assert ran.out.strip() == "from this process"
++    assert backend.ensured == []
++
++
++def test_local_runs_in_process_and_never_ensures(
++    scope: Scope, backend: StubBackend, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from indus.cli import chat as chat_mod
++
++    ran_here: list[bool] = []
++
++    class Here:
++        def __init__(self, *_a: Any, **_k: Any) -> None:
++            ran_here.append(True)
++
++        def run(self) -> int:
++            return 0
++
++    monkeypatch.setattr(chat_mod, "_ChatRun", Here)
++    assert invoke(scope, "--local", "chat", "-q", "hi").code == 0
++    assert ran_here == [True]
++    assert backend.ensured == []
++
++
++# -- refused flags --------------------------------------------------------------------------------
++
++
++@pytest.mark.parametrize(
++    ("argv", "flag"),
++    [
++        (["-w", "chat", "-q", "x"], "-w/--worktree"),
++        (["--no-restore-cwd", "-c"], "--no-restore-cwd"),
++        (["chat", "--voice"], "--voice"),
++        (["chat", "--save-trajectories", "-q", "x"], "--save-trajectories"),
++        (["-w", "-z", "x"], "-w/--worktree"),
++    ],
++)
++def test_each_refused_flag_exits_2_and_names_local(
++    scope: Scope, backend: StubBackend, argv: list[str], flag: str
++) -> None:
++    ran = invoke(scope, *argv)
++    assert ran.code == 2
++    assert flag in ran.err and "--local" in ran.err and "nothing was started" in ran.err
++    assert backend.ensured == []
++    assert backend.remote.calls == []
++
++
++def test_refused_flags_are_named_together() -> None:
++    refused = attach.refused_flags(
++        GlobalArgs(worktree="x", no_restore_cwd=True), ChatArgs(voice=True)
++    )
++    assert [flag for flag, _ in refused] == ["-w/--worktree", "--no-restore-cwd", "--voice"]
++    assert attach.refused_flags(GlobalArgs(), ChatArgs()) == []
++
++
++# -- finite runs ----------------------------------------------------------------------------------
++
++
++def test_chat_q_attaches_by_default(scope: Scope, backend: StubBackend, tmp_path: Path) -> None:
++    ran = invoke(scope, "chat", "-q", "say hello")
++    assert ran.code == 0, ran.err
++    assert ran.out == "hello from the daemon\n"
++    assert "session_id: s-new-1" in ran.err
++    assert backend.ensured == [scope.home]
++    assert backend.surfaces == ["cli"]
++    (created,) = calls(backend.remote, "create")
++    assert created["source"] == "cli"
++    assert created["policy"]["cwd"] == str(Path.cwd())
++    assert calls(backend.remote, "submit")[0]["unattended"] is False
++    assert backend.remote.closed
++
++
++def test_z_attaches_by_default_and_prints_only_the_reply(
++    scope: Scope, backend: StubBackend, tmp_path: Path
++) -> None:
++    usage = tmp_path / "u.json"
++    ran = invoke(scope, "-z", "say hello", "--usage-file", str(usage), "-m", "m1", "--yolo")
++    assert ran.code == 0, ran.err
++    assert ran.out == "hello from the daemon\n"
++    assert ran.err == ""
++    (submitted,) = calls(backend.remote, "submit")
++    assert submitted == {"text": "say hello", "unattended": True, "turn": "adm-1"}
++    policy = calls(backend.remote, "create")[0]["policy"]
++    assert policy["model"] == "m1" and policy["yolo"] is True
++    import json
++
++    report = json.loads(usage.read_text(encoding="utf-8"))
++    assert report["completed"] is True and report["session_id"] == "s-new-1"
++
++
++def test_launch_env_vars_become_creation_fields(
++    scope: Scope, backend: StubBackend, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    scoped = scope.with_env(scope.env.with_overlay({"INDUS_IGNORE_RULES": "1"}))
++    ran = invoke(scoped, "-z", "hi")
++    assert ran.code == 0, ran.err
++    assert calls(backend.remote, "create")[0]["policy"]["ignore_rules"] is True
++
++
++def test_ensure_failure_exits_1_and_runs_nothing_locally(
++    scope: Scope, backend: StubBackend, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from indus.cli import runtime
++
++    backend.ensure_error = RuntimeError("the daemon did not answer within 60 s")
++    monkeypatch.setattr(runtime, "build_service", lambda *_a, **_k: pytest.fail("ran locally"))
++    for argv in (["chat", "-q", "hi"], ["-z", "hi"]):
++        ran = invoke(scope, *argv)
++        assert ran.code == 1
++        assert "did not answer within 60 s" in ran.err and "--local" in ran.err
++        assert ran.out == ""
++
++
++def test_a_refused_connection_exits_1_without_a_traceback(
++    scope: Scope, backend: StubBackend
++) -> None:
++    backend.connect_error = ConnectionRefusedError("the upgrade was refused (4401)")
++    for argv in (["chat", "-q", "hi"], ["-z", "hi"]):
++        ran = invoke(scope, *argv)
++        assert ran.code == 1
++        assert "4401" in ran.err and "--local" in ran.err
++    assert backend.remote.calls == []
++
++
++def test_a_build_without_the_client_says_so(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setattr(first_run, "usable_provider", lambda _scope: "a test provider")
++    monkeypatch.setattr(attach, "ENSURE_ENTRY", "indus.no_such_module:ensure")
++    ran = invoke(scope, "chat", "-q", "hi")
++    assert ran.code == 1
++    assert "no shared-daemon client" in ran.err and "--local" in ran.err
++
++
++@pytest.mark.parametrize(
++    ("result", "chat_code", "z_code"),
++    [
++        (lambda s, t: turn_result(s, t, "partial", failure="rate_limit"), 1, 2),
++        (lambda s, t: turn_result(s, t, None), 0, 1),
++        (lambda s, t: turn_result(s, t, "", reason=ExitReason.INTERRUPTED_BY_USER), 130, 130),
++    ],
++)
++def test_finite_exit_codes_follow_the_in_process_tables(
++    scope: Scope,
++    backend: StubBackend,
++    result: Callable[[str, str], Any],
++    chat_code: int,
++    z_code: int,
++) -> None:
++    backend.remote.wait_with = result
++    assert invoke(scope, "chat", "-q", "hi").code == chat_code
++    assert invoke(scope, "-z", "hi").code == z_code
++
++
++def test_an_unknown_turn_blocks_a_finite_query_with_exit_3(
++    scope: Scope, backend: StubBackend
++) -> None:
++    backend.remote.pending_rows = [
++        {"admission_id": "adm-lost", "state": "unknown", "generation": 4, "text": "earlier"}
++    ]
++    for argv in (["chat", "-q", "hi"], ["-z", "hi"]):
++        ran = invoke(scope, *argv)
++        assert ran.code == 3
++        assert "lost" in ran.err and "/discard" in ran.err
++    assert calls(backend.remote, "submit") == []
++
++
++def test_a_query_queued_behind_a_lost_owner_exits_3(scope: Scope, backend: StubBackend) -> None:
++    def blocked(_s: str, _t: str) -> Any:
++        raise RemoteFailure("blocked_by_unknown")
++
++    backend.remote.wait_with = blocked
++    ran = invoke(scope, "chat", "-q", "hi")
++    assert ran.code == 3
++    assert "nothing was sent" in ran.err
++    assert len(calls(backend.remote, "submit")) == 1
++
++
++def test_transport_lost_mid_turn_is_outcome_unknown_and_never_resent(
++    scope: Scope, backend: StubBackend
++) -> None:
++    def lost(_s: str, _t: str) -> Any:
++        raise RemoteFailure("outcome_unknown", "the connection dropped")
++
++    backend.remote.wait_with = lost
++    chat = invoke(scope, "chat", "-q", "hi")
++    oneshot = invoke(scope, "-z", "hi")
++    assert chat.code == 1 and oneshot.code == 2
++    for ran in (chat, oneshot):
++        assert "unknown" in ran.err and "do not send the input again" in ran.err
++    assert len(calls(backend.remote, "submit")) == 2  # one per run, never a resend
++
++
++def test_ctrl_c_interrupts_by_generation_and_waits_to_settle(
++    scope: Scope, backend: StubBackend
++) -> None:
++    remote = backend.remote
++
++    async def interrupted(session_id: str, turn_id: str) -> Any:
++        import asyncio
++
++        signal.raise_signal(signal.SIGINT)  # the person presses Ctrl-C while the turn runs
++        await asyncio.to_thread(remote.released.wait, 10.0)
++        return turn_result(session_id, turn_id, "", reason=ExitReason.INTERRUPTED_BY_USER)
++
++    remote.wait_with = interrupted
++    ran = invoke(scope, "chat", "-q", "hi")
++    assert ran.code == 130
++    assert calls(remote, "interrupt") == [1]
++    assert "Detached" not in ran.err
++
++
++def test_a_turn_that_does_not_settle_detaches(
++    scope: Scope, backend: StubBackend, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    monkeypatch.setattr(attach, "SETTLE_S", 0.2)
++    never = threading.Event()
++
++    async def stuck(_s: str, _t: str) -> Any:
++        import asyncio
++
++        signal.raise_signal(signal.SIGINT)
++        await asyncio.to_thread(never.wait, 10.0)
++
++    backend.remote.wait_with = stuck
++    try:
++        ran = invoke(scope, "-z", "hi")
++    finally:
++        never.set()
++    assert ran.code == 130
++    assert "Detached" in ran.err and "goes on in the daemon" in ran.err
++
++
++def test_a_question_nobody_can_answer_detaches_a_finite_run_with_exit_3(
++    scope: Scope, backend: StubBackend
++) -> None:
++    remote = backend.remote
++    done = threading.Event()
++
++    async def asks(session_id: str, _turn: str) -> Any:
++        import asyncio
++
++        remote.ask(session_id, {"kind": "approval"})
++        await asyncio.to_thread(done.wait, 10.0)
++
++    remote.wait_with = asks
++    try:
++        ran = invoke(scope, "chat", "-q", "clean up")
++    finally:
++        done.set()
++    assert ran.code == 3
++    assert "waiting for an answer" in ran.err and "indus -r s-new-1" in ran.err
++    assert calls(remote, "interrupt") == []  # detached without cancelling
++
++
++def test_an_interrupt_without_a_reply_says_it_was_not_run_again(
++    scope: Scope, backend: StubBackend
++) -> None:
++    backend.remote.wait_with = lambda s, t: turn_result(
++        s, t, "", reason=ExitReason.INTERRUPTED_BY_SYSTEM
++    )
++    ran = invoke(scope, "chat", "-q", "hi")
++    assert ran.code == 130
++    assert "not run again" in ran.err
++
++
++# -- launch policy --------------------------------------------------------------------------------
++
++
++def _seed_launched(scope: Scope, sid: str, **launch: Any) -> None:
++    policy = LaunchPolicy(cwd=str(Path.cwd()), **launch)
++    with registry.open_unshared(scope) as store:
++        add_session(store, sid, title=f"{sid} talk", model_config={"launch": policy.record()})
++
++
++def test_a_changed_frozen_flag_on_resume_exits_2(scope: Scope, backend: StubBackend) -> None:
++    _seed_launched(scope, "s-old", model="m1")
++    ran = invoke(scope, "-r", "s-old", "-m", "m2", "chat", "-q", "hi")
++    assert ran.code == 2
++    assert "different settings for --model" in ran.err
++    assert backend.ensured == []
++    same = invoke(scope, "-r", "s-old", "-m", "m1", "chat", "-q", "hi")
++    assert same.code == 0, same.err
++    (resumed,) = calls(backend.remote, "resume")
++    assert resumed == {"session_id": "s-old", "policy": {"model": "m1"}}
++
++
++def test_the_daemons_policy_conflict_exits_2(scope: Scope, backend: StubBackend) -> None:
++    with registry.open_unshared(scope) as store:
++        add_session(store, "s-old", title="made elsewhere")
++    backend.remote.conflict = ("toolsets",)
++    ran = invoke(scope, "-r", "s-old", "-t", "web", "-z", "hi")
++    assert ran.code == 2
++    assert "different settings for toolsets" in ran.err
++    assert calls(backend.remote, "submit") == []
++
++
++def test_a_bypass_launch_without_a_route_is_refused(scope: Scope, backend: StubBackend) -> None:
++    ran = invoke(scope, "--safe-mode", "-z", "hi")
++    assert ran.code == 2
++    assert "--model and --provider" in ran.err
++    assert backend.ensured == []
++    named = invoke(scope, "--safe-mode", "-m", "m1", "--provider", "openai", "-z", "hi")
++    assert named.code == 0, named.err
++
++
++def test_resume_by_title_reads_the_store_read_only(
++    scope: Scope, backend: StubBackend, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    with registry.open_unshared(scope) as store:
++        add_session(store, "s-old", title="old talk")
++    registry.close_all()
++    monkeypatch.setattr(registry, "acquire", lambda *_a, **_k: pytest.fail("opened for writing"))
++    ran = invoke(scope, "-c", "old talk", "chat", "-q", "hi")
++    assert ran.code == 0, ran.err
++    assert calls(backend.remote, "resume")[0]["session_id"] == "s-old"
++
++
++def test_a_missing_session_is_a_selection_error(scope: Scope, backend: StubBackend) -> None:
++    ran = invoke(scope, "-r", "nothing-like-it", "chat", "-q", "hi")
++    assert ran.code == 1
++    assert "No session found matching 'nothing-like-it'" in ran.err
++    assert backend.ensured == []
++
++
++# -- interactive ----------------------------------------------------------------------------------
++
++
++class FakeRepl:
++    """The parts of ``Repl`` the attach hook and the launch use."""
++
++    def __init__(self, session_id: str = "s-new-1", *, busy: bool = False) -> None:
++        self.session_id = session_id
++        self.busy = busy
++        self.notes: list[str] = []
++        self.errors: list[str] = []
++        self.printed: list[str] = []
++        self.sent: list[str] = []
++        self.exited = False
++        self.interrupts = 0
++
++    def note(self, text: str) -> None:
++        self.notes.append(text)
++
++    def error(self, text: str) -> None:
++        self.errors.append(text)
++
++    def print(self, renderable: Any, *, style: str = "") -> None:
++        self.printed.append(str(renderable))
++
++    def request_exit(self) -> None:
++        self.exited = True
++
++    def interrupt(self) -> bool:
++        self.interrupts += 1
++        return self.busy
++
++    def post(self, fn: Callable[[], Any]) -> None:
++        fn()
++
++    def send(self, text: str) -> None:
++        self.sent.append(text)
++
++
++@pytest.fixture
++def host(scope: Scope) -> Iterator[tuple[attach.AttachedHost, StubRemote]]:
++    stub = StubBackend()
++    attached = attach.AttachedHost(stub, scope, object()).start()
++    try:
++        yield attached, stub.remote
++    finally:
++        attached.stop()
++
++
++def test_discard_with_a_stale_generation_is_refused(
++    host: tuple[attach.AttachedHost, StubRemote],
++) -> None:
++    attached, remote = host
++    remote.pending_rows = [
++        {"admission_id": "adm-9", "state": "unknown", "generation": 3, "current_generation": 4},
++        {"admission_id": "adm-10", "state": "unknown", "generation": 5},
++        {"admission_id": "adm-11", "state": "queued", "generation": 0},
++    ]
++    hook = attach.attached_commands(attached)
++    repl = FakeRepl()
++    assert hook(cast(Any, repl), "/discard adm-9")
++    assert "stale generation" in repl.errors[-1]
++    assert calls(remote, "discard") == [("adm-9", 3)]
++    assert hook(cast(Any, repl), "/discard adm-11")  # queued, not lost: nothing sent
++    assert "not a lost turn" in repl.errors[-1]
++    assert hook(cast(Any, repl), "/discard")
++    assert "usage" in repl.errors[-1]
++    assert hook(cast(Any, repl), "/discard adm-10")
++    assert repl.notes[-1].startswith("discarded adm-10")
++    assert calls(remote, "discard") == [("adm-9", 3), ("adm-10", 5)]
++
++
++def test_the_slash_subset(host: tuple[attach.AttachedHost, StubRemote]) -> None:
++    attached, _remote = host
++    hook = attach.attached_commands(attached)
++    repl = FakeRepl(busy=True)
++    assert hook(cast(Any, repl), "/stop") and repl.interrupts == 1
++    assert hook(cast(Any, repl), "/help") and "/discard" in repl.printed[-1]
++    assert hook(cast(Any, repl), "/model gpt-x")
++    assert "not available while attached" in repl.errors[-1] and "--local" in repl.errors[-1]
++    assert hook(cast(Any, repl), "!ls")
++    assert "--local" in repl.errors[-1]
++    assert not hook(cast(Any, repl), "plain text goes to the model")
++    assert not repl.exited
++    assert hook(cast(Any, repl), "/detach") and repl.exited
++
++
++def test_the_feed_carries_remote_events_and_detaches(
++    host: tuple[attach.AttachedHost, StubRemote],
++) -> None:
++    attached, remote = host
++    feed, detach = attached.feed("s-1")
++    ticket = attached.submit("s-1", "hello")
++    remote.emit("s-1", ticket.turn_id, "hi there")
++    items = [feed.get(timeout=5.0) for _ in range(3)]
++    assert [type(i).__name__ for i in items] == ["TurnStarted", "MessageDelta", "TurnDone"]
++    assert isinstance(items[1], MessageDelta) and items[1].text == "hi there"
++    assert isinstance(items[2], TurnDone)
++    assert attached.interrupt("s-1", 1).interrupted
++    detach()
++    assert ("unsubscribe", "s-1") in remote.calls
++
++
++def test_interactive_chat_runs_the_repl_over_the_daemon_and_only_detaches(
++    scope: Scope, backend: StubBackend, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from indus.cli.repl import app as repl_app
++
++    backend.remote.pending_rows = [
++        {"admission_id": "adm-7", "state": "unknown", "generation": 2, "text": "lost words"}
++    ]
++    seen: dict[str, Any] = {}
++
++    def fake_run_repl(host: Any, session_id: str, **kw: Any) -> int:
++        repl = FakeRepl(session_id)
++        kw["on_ready"](repl)
++        seen.update(session=session_id, notes=repl.notes, sent=repl.sent, host=host)
++        ticket = host.submit(session_id, "typed")
++        seen["generation"] = ticket.generation
++        return 0
++
++    monkeypatch.setattr(repl_app, "run_repl", fake_run_repl)
++    ran = invoke(scope, "chat", "-q", "seeded words", tty=True)
++    assert ran.code == 0, ran.err
++    assert seen["session"] == "s-new-1"
++    assert seen["sent"] == ["seeded words"]
++    assert any("/discard adm-7" in note for note in seen["notes"])
++    assert any("--local" in note for note in seen["notes"])
++    assert isinstance(seen["host"], attach.AttachedHost)
++    assert calls(backend.remote, "interrupt") == []  # leaving never stops the daemon's work
++    assert backend.remote.closed
++
++
++def test_failure_reasons_are_read_from_errors_and_answers() -> None:
++    assert attach.failure_reason(RemoteFailure("outcome_unknown")) == "outcome_unknown"
++
++    class WithData(Exception):
++        data = {"reason": "policy_conflict"}
++
++    assert attach.failure_reason(WithData()) == "policy_conflict"
++    assert attach.failure_reason(object()) is None
+diff --git a/tests/unit/service/test_maintenance_gate.py b/tests/unit/service/test_maintenance_gate.py
+new file mode 100644
+index 0000000..d7b34bf
+--- /dev/null
++++ b/tests/unit/service/test_maintenance_gate.py
+@@ -0,0 +1,396 @@
++"""P17-21: the maintenance gate — bulk store changes go through the daemon that owns the profile.
++
++A "daemon" here is a real control socket (``gateway.control_socket.ControlServer``) on its own
++loop thread in the profile home, holding the profile ownership lock like the real daemon, with
++the ``maintenance-run`` verb registered over its own store handle. The CLI verbs run through the
++app's dispatch, as a person would type them.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import os
++import sqlite3
++import threading
++from collections.abc import Callable, Iterator
++from contextlib import contextmanager
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.cli.commands import sessions, sessions_maint  # noqa: F401  (sessions loads the verbs)
++from indus.foundation.scope import Scope, make_scope
++from indus.gateway.control_socket import ControlServer
++from indus.service import maintenance_gate as gate_mod
++from indus.service.maintenance_gate import (
++    MAINTENANCE_VERB,
++    MAX_IDS,
++    MaintenanceGate,
++    MaintenanceRefused,
++    MaintenanceVerb,
++    OwnershipLock,
++)
++from indus.state import connection, deletion, fts, maintenance, portability, registry
++from indus.state.registry import StoreHandle
++from indus.state.schema import meta_set
++from tests.unit.cli.commands._helpers_d import (  # noqa: F401
++    aged,
++    fake_clock,
++    run,
++    seeded,
++    store_globals,
++)
++
++
++def _ids(scope: Scope) -> set[str]:
++    with seeded(scope) as store, store.read() as conn:
++        return {str(r[0]) for r in conn.execute("SELECT id FROM sessions")}
++
++
++def _old_and_new(scope: Scope) -> None:
++    with seeded(scope) as store:
++        aged(store, "old", 100, title="old talk")
++        aged(store, "recent", 10, title="recent talk")
++
++
++class Spy:
++    """The daemon's ``maintenance-run`` with every request recorded."""
++
++    def __init__(self, verb: MaintenanceVerb) -> None:
++        self.verb = verb
++        self.calls: list[dict[str, Any]] = []
++        self.threads: list[str] = []
++
++    async def handle(self, params: dict[str, Any]) -> Any:
++        self.calls.append(dict(params))
++        self.threads.append(threading.current_thread().name)
++        return await self.verb.handle(params)
++
++
++@contextmanager
++def daemon(
++    scope: Scope, *, serve_maintenance: bool = True, hold_lock: bool = True
++) -> Iterator[Spy]:
++    """A control socket answering for ``scope.home`` on its own loop thread (see the notes)."""
++    lock = OwnershipLock(scope.home)
++    if hold_lock:
++        assert lock.try_acquire()
++    store = registry.open_unshared(scope)
++    spy = Spy(MaintenanceVerb(scope, store=lambda: store, release=lambda _h: None))
++    ready = threading.Event()
++    stopping: list[asyncio.AbstractEventLoop] = []
++    stop_event: list[asyncio.Event] = []
++    failure: list[BaseException] = []
++
++    async def serve() -> None:
++        server = ControlServer(scope.home, status=lambda: {"state": "running"}, env={})
++        if serve_maintenance:
++            server.register(MAINTENANCE_VERB, spy.handle, timeout=60.0)
++        await server.start()
++        stopping.append(asyncio.get_running_loop())
++        stop_event.append(asyncio.Event())
++        ready.set()
++        try:
++            await stop_event[0].wait()
++        finally:
++            await server.stop()
++
++    def main() -> None:
++        try:
++            asyncio.run(serve())
++        except BaseException as exc:  # reported to the test
++            failure.append(exc)
++            ready.set()
++
++    thread = threading.Thread(target=main, name="fake-daemon", daemon=True)
++    thread.start()
++    assert ready.wait(10.0)
++    assert not failure, failure
++    try:
++        yield spy
++    finally:
++        stopping[0].call_soon_threadsafe(stop_event[0].set)
++        thread.join(10.0)
++        store.close()
++        lock.release()
++
++
++@pytest.fixture
++def no_local_writes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
++    """Fail the test if the CLI opens a writable handle of its own."""
++    opened: list[str] = []
++
++    @contextmanager
++    def refuse(_scope: Scope) -> Iterator[Any]:
++        opened.append("private handle")
++        raise AssertionError("the CLI opened a writable store handle while a daemon owns it")
++        yield  # pragma: no cover
++
++    monkeypatch.setattr(sessions_maint, "_private_handle", refuse)
++    return opened
++
++
++# -- with a live daemon ---------------------------------------------------------------------------
++
++
++def test_prune_with_a_live_daemon_runs_inside_the_daemon(
++    scope: Scope, no_local_writes: list[str]
++) -> None:
++    _old_and_new(scope)
++    with daemon(scope) as spy:
++        result = run(scope, "sessions", "prune", "-y")
++    assert result.code == 0, result.err
++    assert "Deleted 1 session(s)" in result.out
++    assert [call["op"] for call in spy.calls] == ["prune"]
++    assert spy.calls[0]["ids"] == ["old"]
++    assert _ids(scope) == {"recent"}
++    assert no_local_writes == []
++
++
++def test_a_dry_run_never_asks_the_daemon(scope: Scope) -> None:
++    _old_and_new(scope)
++    with daemon(scope) as spy:
++        result = run(scope, "sessions", "prune", "--dry-run")
++    assert result.code == 0 and "Would delete 1 session(s)" in result.out
++    assert spy.calls == []
++    assert _ids(scope) == {"old", "recent"}
++
++
++def test_a_daemon_without_the_verb_refuses_and_nothing_is_deleted(
++    scope: Scope, no_local_writes: list[str]
++) -> None:
++    _old_and_new(scope)
++    with daemon(scope, serve_maintenance=False):
++        result = run(scope, "sessions", "prune", "-y")
++    assert result.code == 1
++    assert "owns this profile" in result.err and "indus gateway stop" in result.err
++    assert _ids(scope) == {"old", "recent"}
++    assert no_local_writes == []
++
++
++def test_delete_with_a_live_daemon_runs_inside_the_daemon(scope: Scope) -> None:
++    _old_and_new(scope)
++    with daemon(scope) as spy:
++        result = run(scope, "sessions", "delete", "old", "-y")
++    assert result.code == 0, result.err
++    assert "Deleted old" in result.out
++    assert spy.calls == [{"op": "delete", "session_id": "old"}]
++    assert _ids(scope) == {"recent"}
++
++
++def test_a_guarded_session_is_reported_by_the_daemon(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    _old_and_new(scope)
++
++    def guarded(*_a: Any, **_k: Any) -> bool:
++        raise deletion.SessionGuarded("store.session_guarded", "the session is in use")
++
++    monkeypatch.setattr(deletion, "delete_session", guarded)
++    with daemon(scope):
++        result = run(scope, "sessions", "delete", "old", "-y")
++    assert result.code == 1
++    assert "in use" in result.err
++    assert _ids(scope) == {"old", "recent"}
++
++
++def test_repair_and_import_run_inside_the_daemon(scope: Scope, tmp_path: Path) -> None:
++    with seeded(scope) as store:
++        aged(store, "s1", 1, content="searchable words")
++        path = store.path
++    donor = make_scope(tmp_path / "donor", clock=scope.clock)
++    with registry.open_unshared(donor) as store:
++        aged(store, "carried", 2, title="carried over", messages=2)
++        lines = list(portability.export_session(store, "carried"))
++    payload = tmp_path / "in.jsonl"
++    payload.write_text("".join(portability.dump_line(o) + "\n" for o in lines))
++    with daemon(scope) as spy:
++        # Marked stale after the daemon opened the store (an open rebuilds a stale index).
++        with sqlite3.connect(path) as raw:
++            meta_set(raw, fts.STALE_KEY, "test")
++        repaired = run(scope, "sessions", "repair")
++        imported = run(scope, "sessions", "import", str(payload))
++    assert repaired.code == 0, repaired.err
++    assert "Backup:" in repaired.out and "healthy" in repaired.out
++    assert imported.code == 0, imported.err
++    assert "Imported 1 session(s)" in imported.out
++    assert [call["op"] for call in spy.calls] == ["repair", "import"]
++    assert spy.calls[1]["path"] == str(payload.resolve())
++    assert "carried" in _ids(scope)
++
++
++def test_restoring_a_backup_is_refused_while_a_daemon_owns_the_profile(
++    scope: Scope, tmp_path: Path
++) -> None:
++    import zipfile
++
++    archive = tmp_path / "b.zip"
++    with zipfile.ZipFile(archive, "w") as zf:
++        zf.writestr("config.yaml", "model: theirs\n")
++    with daemon(scope):
++        result = run(scope, "import", str(archive), "-f")
++    assert result.code == 1
++    assert "indus gateway stop" in result.err
++    assert not (scope.home / "config.yaml").exists()
++
++
++def test_big_prunes_go_to_the_daemon_in_batches(scope: Scope) -> None:
++    asked: list[dict[str, Any]] = []
++
++    def ask(_home: Path, verb: str, params: dict[str, Any], *, timeout: float) -> Any:
++        from indus.service.gateway_control import ControlReply
++
++        asked.append(params)
++        return ControlReply(True, result={"deleted": len(params["ids"]), "guarded": 0})
++
++    gate = MaintenanceGate(scope, identify=lambda _h: {"pid": 4242}, ask=ask)
++    ids = [f"s{i}" for i in range(MAX_IDS * 2 + 5)]
++    done = gate.run("prune", {"ids": ids}, lambda: pytest.fail("ran locally"), what="pruning")
++    assert done.where == "daemon"
++    assert [len(p["ids"]) for p in asked] == [MAX_IDS, MAX_IDS, 5]
++    assert done.value["deleted"] == len(ids)
++
++
++def test_a_refusal_in_a_later_batch_says_earlier_ones_were_done(scope: Scope) -> None:
++    from indus.service.gateway_control import ControlReply
++
++    replies = iter(
++        [ControlReply(True, result={"deleted": 1}), ControlReply(False, error="timeout")]
++    )
++    gate = MaintenanceGate(
++        scope, identify=lambda _h: {"pid": 7}, ask=lambda *_a, **_k: next(replies)
++    )
++    with pytest.raises(MaintenanceRefused) as caught:
++        gate.run("prune", {"ids": ["a"] * (MAX_IDS + 1)}, lambda: None, what="pruning")
++    assert caught.value.reason == "daemon_refused"
++    assert "earlier batches were done" in caught.value.message and "pid 7" in caught.value.message
++
++
++# -- without a daemon -----------------------------------------------------------------------------
++
++
++def test_without_a_daemon_prune_runs_here_holding_the_ownership_lock(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    _old_and_new(scope)
++    seen: list[bool] = []
++    real = maintenance.prune
++
++    def watched(*args: Any, **kwargs: Any) -> Any:
++        if not kwargs.get("dry_run"):  # the preview reads without the lock
++            probe = OwnershipLock(scope.home)
++            seen.append(probe.try_acquire())  # False: this process holds the profile lock
++            probe.release()
++        return real(*args, **kwargs)
++
++    monkeypatch.setattr(maintenance, "prune", watched)
++    result = run(scope, "sessions", "prune", "-y")
++    assert result.code == 0, result.err
++    assert seen == [False]
++    assert _ids(scope) == {"recent"}
++    probe = OwnershipLock(scope.home)
++    assert probe.try_acquire()  # released afterwards
++    probe.release()
++
++
++def test_a_held_ownership_lock_refuses_and_nothing_is_deleted(scope: Scope) -> None:
++    _old_and_new(scope)
++    lock = OwnershipLock(scope.home)
++    assert lock.try_acquire()  # a daemon that is starting (its socket is not up yet)
++    try:
++        result = run(scope, "sessions", "prune", "-y")
++        deleted = run(scope, "sessions", "delete", "old", "-y")
++    finally:
++        lock.release()
++    assert result.code == 1 and "Try again in a moment" in result.err
++    assert deleted.code == 1
++    assert _ids(scope) == {"old", "recent"}
++
++
++def test_an_unknown_op_is_a_programming_error(scope: Scope) -> None:
++    with pytest.raises(ValueError):
++        MaintenanceGate(scope).run("vacuum", {}, lambda: None, what="x")
++
++
++# -- the daemon half on its own -------------------------------------------------------------------
++
++
++def test_the_verb_refuses_bad_requests(scope: Scope) -> None:
++    store: StoreHandle = registry.open_unshared(scope)
++    try:
++        verb = MaintenanceVerb(scope, store=lambda: store, release=lambda _h: None)
++
++        async def ask(params: dict[str, Any]) -> Any:
++            return await verb.handle(params)
++
++        assert asyncio.run(ask({"op": "drop-all"}))["refused"] == "bad_op"
++        assert asyncio.run(ask({"op": "prune", "ids": "old"}))["refused"] == "bad_params"
++        too_many = {"op": "prune", "ids": ["x"] * (MAX_IDS + 1)}
++        assert asyncio.run(ask(too_many))["refused"] == "bad_params"
++        assert asyncio.run(ask({"op": "import", "path": "rel.jsonl"}))["refused"] == "bad_params"
++        assert asyncio.run(ask({"op": "delete"}))["refused"] == "bad_params"
++    finally:
++        store.close()
++
++
++def test_the_verb_is_owner_only() -> None:
++    from indus.gateway.control_socket import KNOWN_VERBS, OWNER_ONLY_VERBS
++
++    assert MAINTENANCE_VERB in KNOWN_VERBS and MAINTENANCE_VERB in OWNER_ONLY_VERBS
++
++
++# -- read-only browsing (R03.16) ------------------------------------------------------------------
++
++
++def _tree(root: Path) -> set[str]:
++    return {str(p.relative_to(root)) for p in root.rglob("*")}
++
++
++@pytest.mark.parametrize(
++    "argv",
++    [
++        ("sessions", "list"),
++        ("sessions", "pinned"),
++        ("sessions", "browse"),
++        ("sessions", "stats"),
++        ("sessions", "export", "-"),
++        ("sessions", "prune", "--dry-run"),
++        ("sessions", "archive", "--older-than", "1d", "--dry-run"),
++    ],
++)
++def test_read_only_commands_create_nothing_in_an_empty_home(
++    scope: Scope, argv: tuple[str, ...]
++) -> None:
++    before = _tree(scope.home)
++    result = run(scope, *argv)
++    assert result.code == 0, result.err
++    assert _tree(scope.home) == before
++    assert not connection.default_store_path(scope).exists()
++    assert not (scope.home / "gateway.lock").exists()
++
++
++def test_the_gate_answer_names_no_daemon_when_none_answers(scope: Scope) -> None:
++    owner = MaintenanceGate(scope).owner()
++    assert owner.daemon is False and owner.pid is None
++
++
++def test_a_live_daemon_is_the_owner(scope: Scope) -> None:
++    with daemon(scope):
++        owner = MaintenanceGate(scope).owner()
++    assert owner.daemon is True and owner.pid == os.getpid()
++
++
++def test_gate_for_is_the_seam(monkeypatch: pytest.MonkeyPatch, scope: Scope) -> None:
++    made: list[Scope] = []
++    real: Callable[[Scope], MaintenanceGate] = sessions_maint.gate_for
++
++    def fake(s: Scope) -> MaintenanceGate:
++        made.append(s)
++        return real(s)
++
++    monkeypatch.setattr(sessions_maint, "gate_for", fake)
++    _old_and_new(scope)
++    assert run(scope, "sessions", "prune", "-y").code == 0
++    assert made and made[0].home == scope.home
++    assert gate_mod.MAINTENANCE_VERB == "maintenance-run"
