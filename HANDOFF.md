@@ -78,10 +78,10 @@ In flight:
 - Wave 25 (from `d50d5d3`, started 03:08 UTC 2026-10-20; brief `.agents/wip/w25/brief.md`):
   - K3 (P17-08/09) + K4 (P17-10/11/12) DONE; P17 wave-2 integrator in scratchpad verify9 (brief
     `.agents/wip/w25/k-integrator-brief.md`, D-16.420..439).
-  - E6 (P16-11 Teams + 12 Graph) + E7 (P16-13 Google Chat + 20 QQ Bot): integrator in scratchpad verify10 (brief
+  - E6 (P16-11 Teams + 12 Graph) + E7 (P16-13 Google Chat + 20 QQ Bot) + E8 (P16-16 DingTalk + 17/18 WeCom): integrator in scratchpad verify10 (brief
     `.agents/wip/w25/e67-integrator-brief.md`, rulings in README, D-16.440..459).
-  - Builders running: E8 (P16-16 DingTalk + 17/18 WeCom), E9 (P16-14 Feishu + 15 docs), E10 (P16-24 BlueBubbles + 28
-    SimpleX + 29 Buzz) in scratchpad wt-w25{e8,e9,e10}. If paused, patches go in `.agents/wip/w25/`.
+  - Builders running: E9 (P16-14 Feishu + 15 docs), E10 (P16-24 BlueBubbles + 28
+    SimpleX + 29 Buzz) in scratchpad wt-w25{e9,e10}. If paused, patches go in `.agents/wip/w25/`.
 - Last landings: P16-04/10/23/26/27 WhatsApp Cloud/SMS/LINE/ntfy/IRC + per-platform lock keys (`4aa2c78`), P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
   fix), P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
   "P15 wave 22 + Demo 3 landing notes"), P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the
