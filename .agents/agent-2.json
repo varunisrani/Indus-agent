@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 26,
-  "remaining_pct": 74,
+  "usage_pct": 39,
+  "remaining_pct": 61,
   "resets_at": "2026-10-20T23:20:00+00:00",
-  "last_check": "2026-10-20T19:09:00+00:00",
-  "current_step": "P19-01..07 landed 3ade87c; P16 + REST integrators, builder A2 (P19-08..13) running; w30-m1 parked",
-  "last_commit": "3ade87c"
+  "last_check": "2026-10-20T19:40:00+00:00",
+  "current_step": "P16 + REST + P19b integrators and drive-harness fix running; P19-01..07 landed 3ade87c; learning test fix 0e9a538",
+  "last_commit": "0e9a538"
 }
