@@ -87,3 +87,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-19 23:36 UTC | 50% | 50% | 03:00 UTC | wave-22 integrator + P17 w1 integrator running; E2/E3 parked; lead gating E1 + P08-13 cooldown fix
 2026-10-19 23:57 UTC | 55% | 45% | 03:00 UTC | P17-01..07 landed (ff7bbe3); wave-22 integrator running; lead gating E1 + cooldown + local-kill fixes
 2026-10-20 00:21 UTC | 56% | 44% | 03:00 UTC | P16-01 + 2 fixes landed; lead gating wave 22 (verify4); E4/E5 builders start after wave 22 lands
+2026-10-20 00:46 UTC | 63% | 37% | 03:00 UTC | P15 done (5378127); E2+E3 integrator (verify7), E4, E5 running

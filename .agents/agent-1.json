@@ -2,11 +2,11 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 56,
+  "usage_pct": 63,
   "remaining_pct": 37,
   "resets_at": "2026-10-19T22:00:00+00:00",
   "last_check": "2026-10-19T20:10:00+00:00",
   "current_step": "P15 W1-W4 integrating; W5, P21 B3, P22 R2 building",
   "last_commit": "42a852e",
-  "updated_at": "2026-10-20T00:21:00Z"
+  "updated_at": "2026-10-20T00:46:00Z"
 }
