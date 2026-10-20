@@ -2,11 +2,11 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 75,
-  "remaining_pct": 37,
-  "resets_at": "2026-10-19T22:00:00+00:00",
-  "last_check": "2026-10-19T20:10:00+00:00",
-  "current_step": "P15 W1-W4 integrating; W5, P21 B3, P22 R2 building",
-  "last_commit": "42a852e",
-  "updated_at": "2026-10-20T10:36:00Z"
+  "usage_pct": 79,
+  "remaining_pct": 21,
+  "resets_at": "2026-10-20T13:00:00+00:00",
+  "last_check": "2026-10-20T11:02:00+00:00",
+  "current_step": "P17-15..22 full gate on verify14; E12/E13/E14 parked; no new agents until 13:00 reset",
+  "last_commit": "5e3fbed",
+  "updated_at": "2026-10-20T11:02:00Z"
 }
