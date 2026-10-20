@@ -79,8 +79,8 @@ In flight:
   - Integrator for parked E2 + E3 (P16-05 Signal, 06 Matrix, 08 Mattermost, 09 Email) in scratchpad verify7, brief
     `.agents/wip/w23/e-integrator-brief.md` (onto main's adapter seams; registry rows; D-16.380..399). Patches in
     `.agents/wip/w23/`.
-  - Builders E4 (P16-04 WhatsApp Cloud + 10 SMS) and E5 (P16-23 LINE + 26 ntfy + 27 IRC) in scratchpad wt-w24e4 /
-    wt-w24e5, brief `.agents/wip/w24/brief.md`. If paused, patches go in `.agents/wip/w24/`.
+  - Builders E4 (P16-04 WhatsApp Cloud + 10 SMS) and E5 (P16-23 LINE + 26 ntfy + 27 IRC) DONE, parked in
+    `.agents/wip/w24/` (README has registry/credential rows); integrate after E2+E3 lands (next window).
 - Last landings: P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
   "P15 wave 22 + Demo 3 landing notes"), P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the
   cooldown ladder, P05-03 local stop_tree waits for the whole tree after SIGKILL; P17-01..07 (`ff7bbe3`; notes in LEAD-NOTES "P17 wave 1 landing notes"), P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
