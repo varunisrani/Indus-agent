@@ -72,15 +72,16 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `3ade87c` (P18-01..10, 17..22 in 077ef96; P19-01..07 in 3ade87c).
-Done: P00–P15, P17, P21, P22 complete; P16 31/36; P18 16/30; P19 7/18. 484/648 tasks landed (the old "476" was a miscount: the
+Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `aa696ad` (P16 complete in aa696ad; P18-01..10, 17..22 in 077ef96; P19-01..07 in 3ade87c).
+Done: P00–P17, P21, P22 complete; P18 16/30; P19 7/18. 489/648 tasks landed (the old "476" was a miscount: the
 phase table summed to 461 before P18). Built and parked: 25 more (see below).
 In flight (Agent 2):
-1. **P16 integrator** (scratchpad int-p16) — w28 E15/E16/E17 + core proposal; `discord-voice` extra re-lock. Lands P16
-   COMPLETE. D-16.560..579.
+1. **P19 integrator #2** (scratchpad int-p19b) — w30-m1 (P19-14..17 mcp serve) + w30-a2 (P19-08..13), then builds P19-18.
+   D-16.626..649.
 2. **REST integrator** (scratchpad int-rest, base 6484ddd) — w30-r1/r2/r3 (P18-11..16) with the lead decisions below.
-3. **Builder A2** (scratchpad w30-a2, base = main + the P19 integrator's pre-landing snapshot) — P19-08..13.
-4. Root-causing `tests/integration/learning/test_m2_demo.py::test_m2_learning_slice` (failed once under load in a P19 full run; passes alone).
+3. **Harness fix** (scratchpad fix-drive) — `tests/fakes/turn.drive` must not advance the fake clock while pool threads work
+   (root cause of three load failures today: test_batch 077ef96, learning review 0e9a538; prefetch helper ca2860b was a
+   yield-count wait).
 Parked in `.agents/wip/w30/` (README per patch): w30-m1 (P19-14..17 `indus mcp serve`, base main), w30-r1 (P18-11/12),
 w30-r2 (P18-13/14), w30-r3 (P18-15/16; prompt-size breakdown not built) — the r* patches are diffs against main + W1 + W2,
 so they now apply on main. REST integration owes: merge the three _rest_app_r* builders; adjust the 1 + 3 W1 tests the
@@ -94,7 +95,8 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
 per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
 in docs/plan/phases/README.md and this file.
-- Last landings: P19-01..07 `indus acp` (`3ade87c`; D-16.600..609; attached session/new waits on D-16.602 session.mutate +
+- Last landings: P16-25, 33–36 Photon (disabled), native draft streams, Telegram topics/stickers, Discord voice, adapter matrix
+  + doctor gateway checks (`aa696ad`; P16 COMPLETE; D-16.560..570; notes in LEAD-NOTES "P16-25, 33..36 landing notes"), P19-01..07 `indus acp` (`3ade87c`; D-16.600..609; attached session/new waits on D-16.602 session.mutate +
   acp.editor_policy on the daemon; notes in LEAD-NOTES "P19-01..07 landing notes"), P18-01..10, 17..22 web app factory + gates, gated login, OIDC, proxies, WS auth (subprotocol only), PTY
   bridge, chat WS routes, profile scope, SPA shell and pages (`077ef96`; D-16.580..595; notes in LEAD-NOTES "P18-01..10, 17..22
   landing notes (integrator)"), P17-23..27 idle exit, profile binding, protocol additions, dual-host matrix, shared-backend demo
