@@ -13,11 +13,18 @@
 4. every part's ``prepare``; then the ``CONTROL`` parts start (the control socket);
 5. platforms connect, each with its token lock and a timeout, while the intake holds inbound
    events (startup restore);
-6. the ``RECOVERY`` parts (ledger sweep), boot recovery (``recovery``), the held events replayed;
-7. the ``BACKGROUND`` parts, housekeeping (status heartbeat, drain marker), the loop watchdog,
-   systemd ``READY=1``, status ``running``.
+6. the ``RECOVERY`` parts (ledger sweep); the shared session host (P17-22: ``DaemonSessionHost``
+   over the chat service, owner epoch begun under this start's ``instance_id``, the intake's
+   ``shared`` bridge); boot recovery (``recovery``, reading the runtime ledger); the held events
+   replayed;
+7. the ``BACKGROUND`` parts; the loopback WebSocket endpoint over the host (P17-13; its URL
+   feeds ``describe`` / ``session-ticket``, its row the status surface ``ws``); housekeeping
+   (status heartbeat, drain marker), the loop watchdog, systemd ``READY=1``, status ``running``.
 
-Then it waits for a stop or restart (``lifecycle``) and shuts down in reverse.
+Then it waits for a stop or restart (``lifecycle``) and shuts down in reverse: the WebSocket
+endpoint first (clients detached), the parts and platforms, the intake, then the host (running
+turns interrupted and settled, sessions and the service closed), the control socket (the ticket
+book revoked) last. Without a host (it could not open) chat turns run on the service as before.
 Exit codes: 0 clean, 75 restart me, 78 fatal configuration (``state.gateway_runtime``).
 """
 
@@ -72,6 +79,7 @@ from indus.gateway.outbound.sender import OutboundSender
 from indus.gateway.registry import PlatformRegistry, proxy_for
 from indus.gateway.token_locks import TokenLocks, default_lock_dir
 from indus.safety.child_env import FORCE_PREFIX
+from indus.service.ws_auth import TicketBook, new_instance_id
 from indus.state import registry as store_registry
 from indus.state.gateway_runtime import (
     EXIT_CONFIG,
@@ -93,9 +101,12 @@ from indus.state.pairing import PairingStore
 from indus.state.registry import StoreHandle
 
 if TYPE_CHECKING:
+    from indus.gateway.core.shared_host import MessagingHost
     from indus.gateway.http import SurfaceSpec
+    from indus.gateway.ws.server import WsEndpoint
     from indus.plugins.hooks import HookBus
     from indus.service.automation import SessionAutomation
+    from indus.service.daemon_host import DaemonSessionHost
     from indus.service.mcp_host import McpUpkeep
     from indus.service.plugin_host import PluginUpkeep
     from indus.service.session_service import SessionService
@@ -160,6 +171,11 @@ class DaemonOptions:
     takeover_wait: float = 10.0
     install_signals: bool = True
     watchdogs: bool = True
+    shared_host: bool = True
+    """Chat turns as admissions on the daemon session host (P17-22); False runs them on the
+    service directly (no WebSocket endpoint either)."""
+    attach_ws: bool = True
+    """Serve the loopback WebSocket attach endpoint over the session host (P17-13)."""
     export_guard_env: bool = True
     hard_exit: Callable[[int], object] = _hard_exit
 
@@ -270,6 +286,14 @@ class GatewayDaemon:
         self.sender_options: dict[str, Any] = {}
         self.closers: list[Callable[[], Awaitable[None]]] = []
         self.holder: PidRecord | None = None
+        self.instance_id = new_instance_id()
+        """This start's owner id: the runtime ledger's owner epoch and the ticket book share it."""
+        self.tickets = TicketBook.for_home(scope.home, instance_id=self.instance_id)
+        """The attach tickets of this start (minted by the control socket, redeemed by the
+        WebSocket endpoint; revoked when the control part stops)."""
+        self.host: DaemonSessionHost | None = None
+        self.shared: MessagingHost | None = None
+        self.ws: WsEndpoint | None = None
         self._up: list[UpListener] = []
         self._down: list[DownListener] = []
         self._ready: list[ReadyListener] = []
@@ -370,6 +394,10 @@ class GatewayDaemon:
 
     def status_snapshot(self) -> dict[str, Any]:
         return self.status.snapshot().to_json()
+
+    def ws_url(self) -> str | None:
+        """The attach WebSocket's URL while it serves, else None."""
+        return self.ws.ws_url if self.ws is not None else None
 
     # -- names other slices' ports use ----------------------------------------------------------
 
@@ -589,14 +617,74 @@ class GatewayDaemon:
         if self.lifecycle.stopping:
             return
         await self._start_stage(Stage.RECOVERY)
+        if self.lifecycle.stopping:
+            return
+        await self._open_host()
         try:
             self.boot.recovery = await self.recovery.run()
             self.boot.restart_loop_tripped = self.boot.recovery.guard_tripped
         except Exception:
             log.exception("boot recovery failed; continuing")
+        if self.shared is not None:
+            await self.shared.release_blocked(self.recovery.blocked)
         await self.pipeline.finish_restore()
         await self._start_stage(Stage.BACKGROUND)
+        await self._mount_ws()
         await self._tell(self._ready)
+
+    async def _open_host(self) -> None:
+        """The shared session host over the chat service (P17-22); on failure chat turns stay on
+        the service (logged)."""
+        if not self.options.shared_host:
+            return
+        from indus.core.liveness import LivenessSettings
+        from indus.gateway.core.shared_host import MessagingHost
+        from indus.service.daemon_host import DaemonSessionHost
+        from indus.service.turn_lease import TurnLeases
+
+        shared = MessagingHost(self.store)
+        try:
+            host = await DaemonSessionHost.open(
+                self.service,
+                self.store,
+                instance_id=self.instance_id,
+                leases=TurnLeases(self.store),
+                liveness=LivenessSettings.from_scope(self.scope),
+                on_blocked=shared.on_blocked,
+            )
+        except Exception:
+            log.exception("the shared session host could not open; chat turns run in-process")
+            return
+        shared.bind(host)
+        self.host = host
+        self.shared = shared
+        self.pipeline.shared = shared
+
+    async def _mount_ws(self) -> None:
+        """The attach WebSocket over the host on 127.0.0.1 (a port the OS picks)."""
+        host = self.host
+        if host is None or not self.options.attach_ws or self.lifecycle.stopping:
+            return
+        from indus.gateway.ws.server import WsEndpoint
+
+        endpoint = WsEndpoint(host, self.tickets, scope=self.scope)
+        try:
+            await endpoint.start()
+        except Exception as exc:
+            log.warning("the attach WebSocket is not available: %s", exc)
+            return
+        self.ws = endpoint
+        self.status.set_surface("ws", endpoint.status_row())
+
+    async def _stop_ws(self) -> None:
+        endpoint, self.ws = self.ws, None
+        if endpoint is None:
+            return
+        try:
+            await endpoint.stop()
+        except Exception:
+            log.warning("the attach WebSocket did not stop cleanly", exc_info=True)
+        self.status.set_surface("ws", endpoint.status_row())
 
     async def _start_stage(self, stage: Stage) -> None:
         for part in self.parts:
@@ -875,6 +963,8 @@ class GatewayDaemon:
     async def _housekeeping(self) -> None:
         while True:
             await self.clock.sleep(self.options.heartbeat_interval)
+            if self.ws is not None:
+                self.status.set_surface("ws", self.ws.status_row())
             await run_blocking(self.status.heartbeat, label="status heartbeat")
 
     async def _drain_watcher(self) -> None:
@@ -981,6 +1071,7 @@ class GatewayDaemon:
         for task in list(self._tasks):
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
+        await self._stop_ws()  # attached clients go first (sockets closed, viewers detached)
         started = list(self._started)
         self._started.clear()
         for part in reversed([p for p in started if p.stage is Stage.BACKGROUND]):
@@ -1000,8 +1091,17 @@ class GatewayDaemon:
         if self.automation is not None:
             with contextlib.suppress(Exception):
                 await self.automation.stop()
+        shared, self.shared = self.shared, None
+        if shared is not None:
+            await shared.aclose()
+        host, self.host = self.host, None
         service: SessionService | None = getattr(self, "service", None)
-        if service is not None:
+        if host is not None:
+            try:
+                await host.aclose()  # running turns interrupted and settled; closes the service
+            except Exception:
+                log.warning("the session host did not close cleanly", exc_info=True)
+        elif service is not None:
             try:
                 await service.aclose()
             except Exception:

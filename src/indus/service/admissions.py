@@ -21,7 +21,9 @@ turn's outcome and final text. Then it takes the next input.
 - **Unknown turns.** A turn started by an earlier daemon is ``unknown`` and never replayed; the
   session's FIFO pauses behind it. ``on_blocked(session_id, row)`` runs once per unknown admission
   (messaging tells the chat once per pause, R06.19). ``discard_unknown(id, generation)`` is the
-  operator's resolution; a stale generation is refused (``stale_generation``).
+  operator's resolution; a stale generation is refused (``stale_generation``). Its
+  ``terminal_write`` (``close_lost_turn``) closes the lost turn in its transcript in the same
+  transaction.
 - **Gate.** ``gate(conn)``, when given, is the owner's admission gate (a drain refuses new
   work): it runs inside the ledger transaction of every new admission and every claim, and raises
   to refuse.
@@ -62,6 +64,7 @@ from indus.service.turn_liveness import (
     LivenessSettings,
     LivenessWatchdog,
 )
+from indus.state import messages
 from indus.state import runtime_ledger as ledger
 from indus.state.registry import StoreHandle
 from indus.state.runtime_ledger import (
@@ -71,20 +74,24 @@ from indus.state.runtime_ledger import (
     Outcome,
     SettleOutcome,
 )
+from indus.state.sessions import END_COMPRESSION
 
 __all__ = [
     "CANCELLED",
     "INTERRUPTED",
     "LEASE_TIMEOUT",
+    "LOST_TURN_NOTE",
     "SHUTDOWN",
     "SYSTEM_INTERRUPT",
     "AdmissionService",
     "LedgerRefusal",
     "Offload",
     "Receipt",
+    "TerminalWrite",
     "TurnOutcome",
     "TurnRunner",
     "TurnTicket",
+    "close_lost_turn",
 ]
 
 log = logging.getLogger(__name__)
@@ -95,6 +102,46 @@ SYSTEM_INTERRUPT: Final = ExitReason.INTERRUPTED_BY_SYSTEM.value
 SHUTDOWN: Final = "shutdown"
 LEASE_TIMEOUT: Final = "lease_timeout"
 _DETAIL_CHARS: Final = 160
+
+
+type TerminalWrite = Callable[[sqlite3.Connection, AdmissionRow], None]
+"""The owner's effect when an unknown turn is discarded, inside the ledger transaction."""
+
+LOST_TURN_NOTE: Final = (
+    "[This turn was lost when the agent process stopped; its outcome is unknown and it was not "
+    "run again.]"
+)
+
+
+def close_lost_turn(note: str = LOST_TURN_NOTE, *, now: Callable[[], float]) -> TerminalWrite:
+    """A ``terminal_write`` that closes the lost turn in its transcript with ``note``.
+
+    The note is an assistant message appended to the admission's session when that session's last
+    active message is the person's (the lost turn ended without a reply). Nothing is written for a
+    session with no row, no messages, a reply already in place, or one that was compressed into a
+    continuation (its transcript is closed already)."""
+
+    def write(conn: sqlite3.Connection, row: AdmissionRow) -> None:
+        found = conn.execute(
+            "SELECT ended_at, end_reason FROM sessions WHERE id = ?", (row.session_id,)
+        ).fetchone()
+        if found is None or (found[0] is not None and found[1] == END_COMPRESSION):
+            return
+        last = conn.execute(
+            "SELECT role FROM messages WHERE session_id = ? AND active = 1 ORDER BY id DESC "
+            "LIMIT 1",
+            (row.session_id,),
+        ).fetchone()
+        if last is None or last[0] != "user":
+            return
+        messages.append_in(
+            conn,
+            row.session_id,
+            {"role": "assistant", "content": note, "finish_reason": "lost"},
+            now=now(),
+        )
+
+    return write
 
 
 class Offload(Protocol):
@@ -385,14 +432,24 @@ class AdmissionService:
                 self._kick(row.session_id)
         return await self.receipt(admission_id)
 
-    async def discard_unknown(self, admission_id: str, expected_generation: int) -> Receipt:
-        """Resolve a turn lost in a restart (generation checked); the FIFO then moves on."""
+    async def discard_unknown(
+        self,
+        admission_id: str,
+        expected_generation: int,
+        *,
+        terminal_write: TerminalWrite | None = None,
+    ) -> Receipt:
+        """Resolve a turn lost in a restart (generation checked); the FIFO then moves on.
+
+        ``terminal_write(conn, row)`` runs in the discard's own transaction (``close_lost_turn``
+        writes a short note into the lost turn's transcript); when it raises nothing changes."""
         settled = await self._off(
             lambda: ledger.resolve_unknown(
                 self.store,
                 epoch=self.epoch,
                 admission_id=admission_id,
                 generation=expected_generation,
+                terminal_write=terminal_write,
             )
         )
         self._told.discard(admission_id)

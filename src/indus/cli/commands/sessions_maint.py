@@ -11,6 +11,11 @@ repair) never runs while another process or another handle in this process has t
 unless ``--force``. ``optimize`` treats that as a skip with the holder list, not a failure
 (R03.25). ``repair`` never opens a structurally damaged file for writing (opening would quarantine
 it); ``recover`` salvages such a file read-only into a new store.
+
+Store ownership (P17-21, R09.21): the writing step of ``prune``, ``repair`` and ``import`` goes
+through the maintenance gate (``gate_for``). While a gateway daemon owns the profile it runs
+inside the daemon (or is refused when the daemon cannot run it); otherwise it runs here while
+this process holds the profile ownership lock. Previews and ``--dry-run`` never ask the gate.
 """
 
 from __future__ import annotations
@@ -41,6 +46,7 @@ from indus.cli.session_filters import (
 from indus.foundation.errors import StoreError, StoreUnavailable
 from indus.foundation.home import secure_dir
 from indus.foundation.scope import Scope
+from indus.service.maintenance_gate import MaintenanceGate, MaintenanceRefused
 from indus.state import (
     browse,
     connection,
@@ -54,7 +60,13 @@ from indus.state import (
 from indus.state.readpool import open_read_only
 from indus.state.registry import StoreHandle
 
-__all__ = ["DEFAULT_NEVER_ACTIVE_DAYS", "DEFAULT_PRUNE_DAYS", "SALVAGE_TABLES", "register"]
+__all__ = [
+    "DEFAULT_NEVER_ACTIVE_DAYS",
+    "DEFAULT_PRUNE_DAYS",
+    "SALVAGE_TABLES",
+    "gate_for",
+    "register",
+]
 
 DEFAULT_PRUNE_DAYS = 90
 DEFAULT_NEVER_ACTIVE_DAYS = 30
@@ -67,6 +79,11 @@ SALVAGE_TABLES = ("system_prompts", "sessions", "messages", "model_usage", "sess
 
 def _now(scope: Scope) -> float:
     return scope.clock.now().timestamp()
+
+
+def gate_for(scope: Scope) -> MaintenanceGate:
+    """The maintenance gate for this profile (tests replace it)."""
+    return MaintenanceGate(scope)
 
 
 def _filter(values: dict[str, Any], scope: Scope) -> SessionFilter:
@@ -201,18 +218,31 @@ def prune_command(
     if not answer:
         click.echo("Nothing was deleted.")
         return 0
-    with _private_handle(scope) as handle:
-        found = maintenance.holders_of(handle)
-        if found and not force:
-            err(*_holders_block(found))
-            err("Nothing was deleted. Close those, or pass --force to prune anyway.")
-            return 1
-        if simple:
-            report = maintenance.prune(handle, days, source=source)
-            deleted, skipped = report.count, len(report.spared_guarded)
-        else:
+
+    def here() -> tuple[int, int] | None:
+        with _private_handle(scope) as handle:
+            found = maintenance.holders_of(handle)
+            if found and not force:
+                err(*_holders_block(found))
+                err("Nothing was deleted. Close those, or pass --force to prune anyway.")
+                return None
+            if simple:
+                report = maintenance.prune(handle, days, source=source)
+                return report.count, len(report.spared_guarded)
             outcome = deletion.delete_many(handle, ids)
-            deleted, skipped = len(outcome.deleted), len(outcome.guarded)
+            return len(outcome.deleted), len(outcome.guarded)
+
+    try:
+        done = gate_for(scope).run("prune", {"ids": ids}, here, what="pruning sessions")
+    except MaintenanceRefused as exc:
+        err(exc.message)
+        return 1
+    if done.where == "daemon":
+        deleted, skipped = int(done.value.get("deleted", 0)), int(done.value.get("guarded", 0))
+    elif done.value is None:
+        return 1
+    else:
+        deleted, skipped = done.value
     click.echo(f"Deleted {deleted} session(s).")
     if skipped:
         click.echo(f"Left {skipped} session(s) that were in use.")
@@ -354,19 +384,36 @@ def repair_command(check_only: bool, no_backup: bool, force: bool) -> int:
             "that can still be read with `indus sessions recover --output FILE`."
         )
         return 1
-    with _private_handle(scope) as handle:
-        found = maintenance.holders_of(handle)
-        if found and not force:
-            err(*_holders_block(found))
-            err("Nothing was changed. Close those, or pass --force.")
-            return 1
+
+    def backup() -> None:
         if not no_backup:
             saved = _backup_path(scope)
-            copy_database(path, saved)
+            copy_database(path, saved)  # a read-only online copy: safe beside a live writer
             click.echo(f"Backup: {saved}")
-        if not fts.rebuild(handle):
-            err("The search index could not be rebuilt now (the store is busy); try again later.")
-            return 1
+
+    def here() -> bool | None:
+        with _private_handle(scope) as handle:
+            found = maintenance.holders_of(handle)
+            if found and not force:
+                err(*_holders_block(found))
+                err("Nothing was changed. Close those, or pass --force.")
+                return None
+            backup()
+            return fts.rebuild(handle)
+
+    try:
+        done = gate_for(scope).run(
+            "repair", {}, here, what="repairing the session store", before_daemon=backup
+        )
+    except MaintenanceRefused as exc:
+        err(exc.message)
+        return 1
+    rebuilt = bool(done.value.get("rebuilt")) if done.where == "daemon" else done.value
+    if done.where == "local" and rebuilt is None:
+        return 1
+    if not rebuilt:
+        err("The search index could not be rebuilt now (the store is busy); try again later.")
+        return 1
     lines, _ = _problems(_check(scope))
     if lines:
         err("Still not healthy after the rebuild:", *lines)
@@ -556,31 +603,54 @@ def import_command(file: str) -> int:
     if not path.is_file():
         err(f"No such file: {path}")
         return 1
+
+    def here() -> dict[str, Any] | None:
+        try:
+            handle = registry.acquire(scope)
+        except StoreError as exc:
+            raise StoreProblem(f"The session store cannot be opened: {exc}") from exc
+        try:
+            report = portability.import_jsonl(handle, path)
+        except StoreError as exc:
+            err(f"Nothing was imported: {exc}")
+            return None
+        finally:
+            handle.close()
+        return {
+            "ok": report.ok,
+            "imported": len(report.imported),
+            "skipped": len(report.skipped),
+            "detached": len(report.detached),
+            "retitled": len(report.retitled),
+            "errors": [str(issue) for issue in report.errors[:20]],
+            "error_count": len(report.errors),
+        }
+
     try:
-        handle = registry.acquire(scope)
-    except StoreError as exc:
-        raise StoreProblem(f"The session store cannot be opened: {exc}") from exc
-    try:
-        report = portability.import_jsonl(handle, path)
-    except StoreError as exc:
-        err(f"Nothing was imported: {exc}")
+        done = gate_for(scope).run(
+            "import", {"path": str(path.resolve())}, here, what="importing sessions"
+        )
+    except MaintenanceRefused as exc:
+        err(exc.message)
         return 1
-    finally:
-        handle.close()
-    if not report.ok:
-        err(f"Nothing was imported: {len(report.errors)} problem(s) in {path}:")
-        for issue in report.errors[:20]:
+    report: dict[str, Any] | None = dict(done.value) if done.value is not None else None
+    if report is None:
+        return 1
+    if not report.get("ok"):
+        count = int(report.get("error_count") or 0)
+        err(f"Nothing was imported: {count} problem(s) in {path}:")
+        for issue in report.get("errors") or []:
             err(f"  {issue}")
-        if len(report.errors) > 20:
-            err(f"  … and {len(report.errors) - 20} more")
+        if count > 20:
+            err(f"  … and {count - 20} more")
         return 1
-    click.echo(f"Imported {len(report.imported)} session(s) from {path}.")
-    if report.skipped:
-        click.echo(f"Already here, skipped: {len(report.skipped)}.")
-    if report.detached:
-        click.echo(f"Imported without their missing parent: {len(report.detached)}.")
-    if report.retitled:
-        click.echo(f"Renamed because the title was taken: {len(report.retitled)}.")
+    click.echo(f"Imported {report.get('imported', 0)} session(s) from {path}.")
+    if report.get("skipped"):
+        click.echo(f"Already here, skipped: {report['skipped']}.")
+    if report.get("detached"):
+        click.echo(f"Imported without their missing parent: {report['detached']}.")
+    if report.get("retitled"):
+        click.echo(f"Renamed because the title was taken: {report['retitled']}.")
     return 0
 
 

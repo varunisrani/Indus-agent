@@ -31,8 +31,11 @@ from indus.gateway.daemon.recovery import (
     UNKNOWN_REASON,
     resolve_unknown,
 )
+from indus.service.admissions import LOST_TURN_NOTE
 from indus.state import gateway_routes as routes
+from indus.state import messages, sessions
 from indus.state import registry as store_registry
+from indus.state import runtime_ledger as ledger
 from indus.state.gateway_runtime import EXIT_OK, boots_path
 from tests.fakes.model import FakeModelServer, Finish, Stall, Text, Turn, text_turn
 from tests.fakes.platform.core import FakeChatPlatform
@@ -301,6 +304,43 @@ def test_resolve_unknown_checks_the_generation(tmp_path: Path) -> None:
         entry = routes.get(store, "k")
         assert entry is not None and not entry.resume_pending and entry.active_turn_token is None
         assert not resolve_unknown(store, "k", "turn-9")
+
+
+def test_resolve_unknown_discards_the_lost_admission_and_closes_its_transcript(
+    tmp_path: Path,
+) -> None:
+    scope = daemon_scope(tmp_path)
+    with store_registry.shared(scope) as store:
+        routes.get_or_create(
+            store,
+            "k",
+            new_session_id=lambda: "s1",
+            platform="telegram",
+            chat_type="dm",
+            origin={"platform": "telegram", "chat_id": "1"},
+        )
+        sessions.create(store, "s1", "telegram")
+        messages.append(store, "s1", {"role": "user", "content": "deploy it"})
+        epoch = ledger.begin_owner_epoch(store, "dead-owner").epoch
+        ledger.admit(
+            store,
+            epoch=epoch,
+            principal_id="messaging:telegram:1",
+            session_id="s1",
+            request_id="turn-9",
+            payload={"text": "deploy it"},
+        )
+        ledger.claim_head(store, epoch=epoch, session_id="s1")
+        ledger.begin_owner_epoch(store, "next-owner")  # the owner died: started → unknown
+        routes.begin_turn(store, "k", "turn-9")
+        routes.mark_resume_pending(store, "k", UNKNOWN_REASON)
+        assert resolve_unknown(store, "k", "turn-9")
+        lost = ledger.find(store, "messaging:telegram:1", "s1", "turn-9")
+        assert lost is not None and lost.outcome == "discarded"
+        assert [(m["role"], m["content"]) for m in messages.get(store, "s1")] == [
+            ("user", "deploy it"),
+            ("assistant", LOST_TURN_NOTE),
+        ]
 
 
 @pytest.mark.parametrize("notice", [True, False])

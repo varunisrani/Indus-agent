@@ -33,6 +33,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/service/test_fences.py::test_interrupt_with_older_generation_is_stale_and_leaves_turn_running`
   - `tests/unit/service/test_fences.py::test_stop_queued_claimed_meanwhile_stops_that_claim`
   - `tests/unit/service/test_fences.py::test_interrupts_through_the_fence_reach_only_the_named_generation`
+  - `tests/unit/cli/test_attach.py::test_ctrl_c_on_a_queued_input_never_interrupts_another_surfaces_turn`
   - `tests/unit/service/test_fences.py::test_stop_names_its_session`
   - `tests/unit/service/test_fences.py::test_latched_control_dropped_when_generation_released`
   - `tests/unit/providers/test_streaming.py::test_cancellation_close_latency_under_200ms`
@@ -299,6 +300,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_journal.py::test_unreadable_header_keeps_wal_and_switches_nothing`
   - `tests/unit/state/test_journal.py::test_cross_vm_mount_keeps_an_existing_wal_store`
   - `tests/unit/state/test_journal.py::test_vulnerable_sqlite_uses_delete_for_new_and_keeps_existing_wal`
+  - `tests/integration/state/test_multiprocess_daemon.py::test_daemon_writer_and_readers_share_the_store`
 - **R03.2** Stray open/close cancels SQLite's POSIX locks
   - Review: not yet planned (P00-guards)
 - **R03.3** Checkpoint mode
@@ -359,6 +361,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/e2e/test_doctor_minimal.py::test_fresh_home_reports_a_missing_store_and_creates_none`
   - `tests/unit/cli/commands/test_sessions.py::test_list_opens_read_only_and_changes_nothing`
   - `tests/unit/cli/commands/test_sessions.py::test_list_without_a_store_creates_nothing`
+  - `tests/unit/service/test_maintenance_gate.py::test_read_only_commands_create_nothing_in_an_empty_home`
   - `tests/unit/cli/commands/test_status.py::test_status_without_any_provider`
 - **R03.17** Descriptor exhaustion
   - `tests/unit/state/test_readpool.py::test_nine_concurrent_readers_use_eight_pooled_and_the_writer`
@@ -380,10 +383,14 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/service/test_turn_lease.py::test_a_live_holder_cannot_be_declared_dead_without_proof`
 - **R03.21** Never replay started work
   - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
+  - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_turn_lost_with_its_daemon_pauses_the_chat_once_and_never_runs_again`
+  - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_lost_host_turn_whose_reply_was_stored_is_owed_once_not_paused`
   - `tests/integration/gateway/test_boot_recovery.py::test_a_turn_cut_by_a_stop_resumes_once_across_three_boots`
   - `tests/unit/state/test_runtime_ledger.py::test_restart_flips_started_to_unknown_and_blocks_the_next_row`
   - `tests/unit/service/test_admissions.py::test_restart_parks_the_lost_turn_and_tells_once`
   - `tests/unit/service/test_fences.py::test_stop_of_an_unknown_admission_changes_nothing`
+  - `tests/unit/service/test_admissions.py::test_discard_closes_the_lost_turn_in_its_transcript`
+  - `tests/integration/gateway/test_boot_recovery.py::test_resolve_unknown_discards_the_lost_admission_and_closes_its_transcript`
 - **R03.22** Deleted ids must stay dead
   - `tests/unit/state/test_deletion.py::test_deleted_id_cannot_be_recreated`
   - `tests/unit/state/test_deletion.py::test_sweep_never_weakens_a_user_tombstone`
@@ -422,7 +429,12 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_chat_select.py::test_frozen_flag_conflict_and_same_value`
   - `tests/unit/cli/test_chat_select.py::test_resume_restores_cwd_history_and_refuses_changed_flags`
   - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_survives_resume`
-  - Review: classic chat as gateway client (refused flags, reduced slash set, exit 3) arrives with P17 (P06-03)
+  - `tests/unit/cli/test_attach.py::test_each_refused_flag_exits_2_and_names_local`
+  - `tests/unit/cli/test_attach.py::test_the_slash_subset`
+  - `tests/unit/cli/test_attach.py::test_a_query_queued_behind_a_lost_owner_exits_3`
+  - `tests/unit/cli/test_attach.py::test_a_bypass_launch_without_a_route_is_refused`
+  - `tests/unit/cli/test_attach.py::test_the_daemons_policy_conflict_exits_2`
+  - `tests/unit/cli/test_attach.py::test_launch_settings_the_daemon_cannot_take_yet_are_refused`
   - `tests/unit/service/test_creation_policy.py::test_resume_with_a_different_model_is_a_policy_conflict`
   - `tests/unit/service/test_creation_policy.py::test_a_bypass_launch_must_name_model_and_provider`
   - `tests/unit/service/test_creation_policy.py::test_api_key_is_never_stored`
@@ -598,7 +610,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/test_quick_commands.py::test_exec_env_has_no_provider_key`
   - `tests/unit/gateway/core/test_commands.py::test_quick_exec_has_no_provider_keys_and_redacted_output`
 - **R05.1** Docs describe a transport the code no longer uses
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/transport/attach.test.ts::explicit URL first, then --local, else the grant helper`
+  - `apps/tui/src/transport/attach.test.ts::an explicit URL is only ever dialled: no helper, no daemon, no local child`
+  - `tests/unit/cli/test_tui_launch.py::test_attach_by_default_and_local_keeps_the_bridge_child`
 - **R05.2** Events arrive before the UI subscribes
   - Review: not yet planned (P00-guards)
 - **R05.3** Server requests must not stall the agent
@@ -606,7 +620,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/service/test_request_redelivery.py::test_kind_no_viewer_renders_is_refused_up_front`
   - `tests/unit/service/test_request_redelivery.py::test_reattach_reoffers_open_approval_with_same_id`
   - `tests/unit/service/test_request_redelivery.py::test_withdrawal_emits_settled_withdrawn`
-  - Review: TS client answers unrenderable kinds with -32601 at once (P17-20)
+  - `packages/client/src/ws-transport.test.ts::answers a kind nobody here renders with -32601 at once, under the request id`
+  - `packages/client/src/ws-transport.test.ts::declines with server_request.decline only when the daemon advertised it`
 - **R05.4** Interrupt races
   - `tests/unit/cli/repl/test_render.py::test_deltas_after_an_interrupt_are_ignored`
   - `tests/unit/cli/repl/test_render.py::test_interrupt_mid_delta_golden`
@@ -626,7 +641,9 @@ Checked by `python -m tooling.checks traps`.
 - **R05.8** Dead PTY loop
   - Review: not yet planned (P00-guards)
 - **R05.9** Heartbeat false positives
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/service/remote/test_channel.py::test_a_server_streaming_without_pongs_stays_connected`
+  - `tests/unit/service/remote/test_channel.py::test_a_silent_server_is_closed_at_45_s`
+  - `packages/client/src/ws-transport.test.ts::counts any inbound frame as liveness on a WebSocket (R05.9)`
 - **R05.10** Stale async results
   - Review: not yet planned (P00-guards)
 - **R05.11** README key tables drift from code
@@ -654,6 +671,7 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
 - **R05.21** Session create must be idempotent
   - Review: not yet planned (P00-guards)
+  - `tests/unit/service/remote/test_host.py::test_a_lost_create_reply_then_retry_makes_one_session`
 - **R05.22** Approval command redaction and wrapping
   - `tests/unit/safety/approvals/test_human.py::test_request_shows_redacted_wrapped_command`
   - `tests/unit/cli/repl/test_cards.py::test_long_command_wraps_without_clipping`
@@ -786,8 +804,12 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/test_control_socket.py::test_identify_round_trip_and_owner_only_socket`
   - `tests/unit/cli/commands/test_gateway.py::test_a_reused_pid_is_never_signalled`
   - `tests/unit/cli/commands/test_gateway.py::test_status_on_a_dead_pid_with_a_fresh_file_is_stale`
+  - `tests/integration/gateway/test_ensure.py::test_cold_start_then_warm_ensure_does_not_spawn`
+  - `tests/integration/gateway/test_ensure.py::test_a_starting_daemon_is_waited_for_not_doubled`
 - **R06.19** Unknown turns after a crash must pause, not replay
   - `tests/integration/gateway/test_boot_recovery.py::test_a_crash_left_turn_pauses_the_conversation_until_reset`
+  - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_turn_lost_with_its_daemon_pauses_the_chat_once_and_never_runs_again`
+  - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_marker_whose_admission_never_started_runs_it_once`
   - `tests/integration/gateway/test_boot_recovery.py::test_resolve_unknown_checks_the_generation`
   - `tests/unit/service/test_admissions.py::test_discard_with_an_old_generation_is_refused`
   - `tests/unit/state/test_runtime_ledger.py::test_discard_unknown_needs_the_generation`
@@ -995,6 +1017,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/service/test_ws_auth.py::test_a_ticket_from_another_daemon_start_is_unknown`
   - `tests/unit/service/test_ws_auth.py::test_upgrade_accepts_once_and_echoes_only_the_base_protocol`
   - `tests/unit/gateway/daemon/test_attach_verbs.py::test_round_trip_describe_ticket_upgrade`
+  - `tests/unit/service/remote/test_channel.py::test_each_reconnect_mints_a_new_ticket`
 - **R08.5** Connection test must cover the used leg
   - Review: not yet planned (P00-guards)
 - **R08.6** Soft vs hard re-home
@@ -1063,7 +1086,12 @@ Checked by `python -m tooling.checks traps`.
 - **R09.10** MCP approval tools are hollow
   - Review: not yet planned (P00-guards)
 - **R09.11** Never resend a turn with unknown outcome (ACP viewer)
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/service/remote/test_host.py::test_a_socket_lost_after_admission_is_outcome_unknown`
+  - `tests/unit/service/remote/test_host.py::test_a_reconnect_replays_missed_deltas_exactly_once`
+  - `tests/unit/cli/test_attach.py::test_transport_lost_mid_turn_is_outcome_unknown_and_never_resent`
+  - `tests/unit/cli/test_attach.py::test_an_unknown_turn_blocks_a_finite_query_with_exit_3`
+  - `tests/unit/cli/test_attach_remote.py::test_a_lost_wait_is_outcome_unknown_or_blocked_when_ours_still_waits`
+  - Review: the ACP viewer half is P19 (P17-18 covers the CLI)
 - **R09.12** "Allow for session" has no ACP kind
   - Review: not yet planned (P00-guards)
 - **R09.13** Two ACP implementations, one constructor
@@ -1091,7 +1119,13 @@ Checked by `python -m tooling.checks traps`.
 - **R09.20** Profile-scoped writes need an explicit profile
   - Review: not yet planned (P00-guards)
 - **R09.21** Gateway-owned data cannot be bulk-edited live
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/service/test_maintenance_gate.py::test_prune_with_a_live_daemon_runs_inside_the_daemon`
+  - `tests/unit/service/test_maintenance_gate.py::test_a_daemon_without_the_verb_refuses_and_nothing_is_deleted`
+  - `tests/unit/service/test_maintenance_gate.py::test_a_held_ownership_lock_refuses_and_nothing_is_deleted`
+  - `tests/unit/service/test_maintenance_gate.py::test_restoring_a_backup_is_refused_while_a_daemon_owns_the_profile`
+  - `tests/integration/state/test_multiprocess_daemon.py::test_daemon_writer_and_readers_share_the_store`
+  - `tests/unit/service/test_maintenance_gate.py::test_an_unverified_peer_cannot_run_maintenance`
+  - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
 - **R09.22** Brand assets
   - Review: not yet planned (P00-guards)
 - **R09.23** Reverse-proxy prefix

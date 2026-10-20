@@ -234,9 +234,11 @@ commands:
 long_running:
   - cron daemon
   - gateway run           # the gateway itself
+  - gateway ensure        # starts a gateway when none runs and waits for it (P17-15)
   - gateway start         # starts a gateway (or its service) and waits for it
   - gateway restart       # the same, after a stop
   - gateway install       # would register a real user service; --help only here
+  - gateway grant         # ensures (may start) the daemon before it mints a ticket (P17-19)
 
 with_arguments:
   auth add openrouter: 1          # no key given and no terminal to ask for one

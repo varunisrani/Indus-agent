@@ -38,7 +38,9 @@ __all__ = [
     "BYPASS_FIELDS",
     "FROZEN_FIELDS",
     "LAUNCH_ENV",
+    "LAUNCH_ENV_PREFIXES",
     "LAUNCH_KEY",
+    "LAUNCH_ONLY_ENV",
     "CreationPolicy",
     "PolicyConflict",
     "PolicyRefused",
@@ -84,6 +86,13 @@ LAUNCH_ENV: Final[Mapping[str, str]] = {
     "INDUS_ACCEPT_HOOKS": "accept_hooks",
 }
 """Launch-option env vars and the creation field each one sets."""
+
+LAUNCH_ONLY_ENV: Final = frozenset(
+    {"INDUS_MODEL", "INDUS_PROVIDER", "INDUS_CWD", "INDUS_LAUNCH_CWD"}
+)
+"""Other per-run launch values (the TUI launcher's model and folder) a daemon must not inherit."""
+LAUNCH_ENV_PREFIXES: Final = ("INDUS_TUI_",)
+"""Every ``INDUS_TUI_*`` variable belongs to one TUI run."""
 
 _DROPPED: Final = frozenset({"api_key"})
 _SWITCHES: Final = frozenset(
@@ -346,8 +355,15 @@ def launch_flags_from_env(env: Mapping[str, str]) -> dict[str, bool]:
 
 
 def scrub_launch_env(env: Mapping[str, str]) -> dict[str, str]:
-    """A copy of ``env`` without the launch-option vars (they belong to one session)."""
-    return {name: value for name, value in env.items() if name not in LAUNCH_ENV}
+    """A copy of ``env`` without the launch-option vars (they belong to one session or run):
+    ``LAUNCH_ENV``, ``LAUNCH_ONLY_ENV`` and every ``INDUS_TUI_*``."""
+    return {
+        name: value
+        for name, value in env.items()
+        if name not in LAUNCH_ENV
+        and name not in LAUNCH_ONLY_ENV
+        and not name.startswith(LAUNCH_ENV_PREFIXES)
+    }
 
 
 # -- storage --------------------------------------------------------------------------------------

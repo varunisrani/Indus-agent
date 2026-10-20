@@ -1,9 +1,11 @@
-// The TUI's entry: terminal checks and mode hygiene first, then the bridge child, the app runtime
-// (P12-27) and Ink.
+// The TUI's entry: terminal checks and mode hygiene first, then the link to the agent (by default an
+// attach to the profile's daemon over its WebSocket, P17-19; `--local`: the bridge child), the app
+// runtime (P12-27) and Ink.
 //
 // Order matters: truecolor and NODE_ENV are set before React or any colour library loads, the
 // mode reset is written before the first frame, and every exit path goes through `Lifecycle`.
 
+import type { ConnectHooks } from "@indus/client";
 import { applyTruecolorOptIn } from "./theme/detect.ts";
 
 applyTruecolorOptIn(process.env);
@@ -39,6 +41,7 @@ const [
   { AppRuntime, LinkWatch },
   { App },
   { splitCommand },
+  attach,
 ] = await Promise.all([
   import("@indus/client"),
   import("@indus/client/stdio"),
@@ -56,6 +59,7 @@ const [
   import("./app/appRuntime.ts"),
   import("./app/App.tsx"),
   import("./composer/externalEditor.ts"),
+  import("./transport/attach.ts"),
 ]);
 
 // The first frame paints the cached theme (no flash); detection refines it after.
@@ -98,16 +102,39 @@ const bridgeSpawn =
       };
 let bridgePid: number | undefined;
 const links = new LinkWatch();
+const spawnLocal = (hooks: ConnectHooks) => {
+  const transport = spawnStdioTransport({
+    ...bridgeSpawn,
+    logs: hooks.logs,
+    onEvent: hooks.onEvent,
+  });
+  bridgePid = transport.pid;
+  return transport;
+};
+// Attach by default; `--local` (INDUS_TUI_LOCAL=1) runs the bridge child; an explicit
+// INDUS_TUI_GATEWAY_URL is dialled and nothing else. A terminal grant at startup runs the local
+// child instead, with a visible line (attach.ts).
+const plan = attach.chooseTransport(process.env);
+const connect =
+  plan.mode === "local"
+    ? spawnLocal
+    : attach.attachConnector({
+        plan,
+        ...(plan.mode === "daemon"
+          ? {
+              runGrant: attach.grantRunner({
+                command: plan.command,
+                args: plan.args,
+                env: attach.helperEnv(process.env),
+              }),
+              local: spawnLocal,
+            }
+          : {}),
+      });
 const client = new IndusClient({
-  connect: links.wrap((hooks) => {
-    const transport = spawnStdioTransport({
-      ...bridgeSpawn,
-      logs: hooks.logs,
-      onEvent: hooks.onEvent,
-    });
-    bridgePid = transport.pid;
-    return transport;
-  }),
+  connect: links.wrap(connect),
+  // Cursors drop an event delivered twice across a reconnect (the daemon numbers per run).
+  replay: plan.mode !== "local",
 });
 lifecycle.setBridgeStopper(() => {
   void client.close();

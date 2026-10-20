@@ -49,6 +49,16 @@ for the turn-end listener that delivered it (bounded by ``FINAL_SETTLE_S``).
 Mirror notes (P15-20): a message delivered into a routed chat from elsewhere (cron, ``indus
 send``) while its session was not running here waits in the session's metadata; it is staged as
 a must-deliver note just before that session's next turn.
+
+On the shared host (P17-22, ``shared``: the daemon's ``MessagingHost``) the turn itself is an
+admission: the message is admitted into the session's durable FIFO under the claim's marker token
+as its request id, the handler waits for the admission to settle, and the session's server
+requests reach the chat through the intake's ``messaging`` viewer. The final still leaves through
+the turn-end listener, which maps the turn to its admission (reply anchor, final gate keyed by the
+admission id, and whether a turn another surface submitted is posted to the chat at all). A
+message that lands behind a turn whose outcome is unknown is withdrawn and its conversation
+paused (the recovery interceptor tells the person once). Without ``shared`` (tests, in-process
+use) turns run on the service directly, as before.
 """
 
 from __future__ import annotations
@@ -58,6 +68,7 @@ import contextlib
 import contextvars
 import itertools
 import logging
+import secrets
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -85,6 +96,7 @@ from indus.gateway.core.bot_loop import (
 from indus.gateway.core.events import InboundEvent, MessageKind, Source, model_text
 from indus.gateway.core.sent_index import SentIndex
 from indus.gateway.core.session_keys import build_session_key, origin_of
+from indus.gateway.core.shared_host import UNKNOWN_PAUSE_REASON, principal_for
 from indus.protocol.base import ProtocolModel
 from indus.protocol.errors import SESSION_BUSY, SESSION_NOT_FOUND, TEXT_EMPTY
 from indus.protocol.events import ExitReason
@@ -93,13 +105,16 @@ from indus.service.commands.registry import REGISTRY
 from indus.service.session_service import BUSY_COPY, SessionService
 from indus.state import gateway_routes as routes
 from indus.state.registry import StoreHandle
+from indus.state.runtime_ledger import LedgerRefusal
 
 if TYPE_CHECKING:
     from indus.gateway.adapters.base import Adapter
     from indus.gateway.core.busy import BusyGuard
     from indus.gateway.core.commands import ChatCommands
+    from indus.gateway.core.shared_host import MessagingHost
     from indus.gateway.daemon.reconnect import ReconnectWatcher
     from indus.service.automation import SessionAutomation
+    from indus.service.request_redelivery import Offer
 
 __all__ = [
     "ANSWERABLE_KINDS",
@@ -136,6 +151,11 @@ FINAL_SETTLE_S = 300.0
 """Longest wait for a turn's final to pass through the sender before the marker is cleared."""
 
 FAILED_TURN = "Sorry, I couldn't finish that reply ({reason}). Please try again."
+QUEUE_FULL_TURN = (
+    "Too many messages are already waiting in this conversation; send this one again after the "
+    "current reply."
+)
+_EXIT_VALUES = frozenset(reason.value for reason in ExitReason)
 SECRET_PROMPT = (
     "This step needs a password or secret typed into a terminal, which isn't supported here. "
     "Run it from the terminal app instead."
@@ -218,6 +238,11 @@ class Claim:
     # The agent's turn has ended; only its bookkeeping (final hand-over, marker, release) is
     # left. A stop's drain leaves such a turn alone instead of interrupting and resuming it.
     finished: bool = False
+    token: str = ""
+    """The durable active-turn marker's token (also the admission's request id on the shared
+    host)."""
+    admission_id: str | None = None
+    """The turn's admission on the shared host, once admitted."""
 
 
 class ClaimTable:
@@ -538,7 +563,12 @@ class AdmissionPipeline:
         self._history: dict[str, list[str]] = {}
         self._origins: OrderedDict[str, _Origin] = OrderedDict()
         self._anchors: OrderedDict[tuple[str, int], str] = OrderedDict()
-        self._finals: OrderedDict[tuple[str, int], asyncio.Event] = OrderedDict()
+        self._requests: OrderedDict[str, str] = OrderedDict()  # request id -> reply anchor
+        self._finals: OrderedDict[object, asyncio.Event] = OrderedDict()
+        self.shared: MessagingHost | None = None
+        """The daemon's shared session host (P17-22); None runs turns on the service."""
+        self._abandoned: set[asyncio.Task[None]] = set()
+        self._admitted: dict[str, Claim] = {}  # admission id -> the claim waiting on it
         self._watched: set[str] = set()
         self._tasks: set[asyncio.Task[Any]] = set()
         self._restoring = False
@@ -1012,8 +1042,34 @@ class AdmissionPipeline:
     async def _create_session(self, source: Source) -> str:
         platform = str(source.platform).lower()
         toolsets = self.toolsets_for(platform)
-        created = await self.service.create(SessionCreateParams(toolsets=toolsets))
+        return await self.create_session(SessionCreateParams(toolsets=toolsets))
+
+    async def create_session(self, params: SessionCreateParams) -> str:
+        """A new session for a chat (on the shared host when there is one); its id."""
+        if self.shared is not None:
+            return await self.shared.create(params)
+        created = await self.service.create(params)
         return created.session_id
+
+    async def close_session(self, session_id: str) -> None:
+        """End a chat's session (its queued input on the shared host is cancelled first)."""
+        shared = self.shared
+        if shared is not None and shared.hosted(session_id):
+            await shared.close(session_id)
+            return
+        await self.service.close(session_id)
+
+    async def _attach(self, session_id: str) -> str:
+        """Make sure the session is attached (hosted, on the shared host); its current id.
+        ``SESSION_NOT_FOUND`` for an id the store does not have."""
+        shared = self.shared
+        if shared is not None:
+            if shared.hosted(session_id):
+                return self.service.current_id(session_id)
+            return await shared.resume(session_id)
+        if session_id not in self.service.attached():
+            await self.service.resume(session_id)
+        return session_id
 
     async def session_for(self, key: str, source: Source) -> str:
         """The key's session, created and routed on first use, attached to the service."""
@@ -1035,11 +1091,13 @@ class AdmissionPipeline:
             label="gateway route",
         )
         if fresh is not None and not created and entry.session_id != fresh:
-            await self.service.close(fresh)
+            await self.close_session(fresh)
         sid = self.service.current_id(entry.session_id)
-        if sid not in self.service.attached():
+        if sid not in self.service.attached() or (
+            self.shared is not None and not self.shared.hosted(sid)
+        ):
             try:
-                await self.service.resume(sid)
+                sid = await self._attach(sid)
             except ProtocolError as exc:
                 if exc.error is not SESSION_NOT_FOUND:
                     raise
@@ -1056,7 +1114,7 @@ class AdmissionPipeline:
         if old:
             with contextlib.suppress(ProtocolError):
                 self.service.interrupt(old, hard=True)
-            await self.service.close(old)
+            await self.close_session(old)
             self._applied.pop(old, None)
         sid = await self._create_session(source)
         entry = await run_blocking(routes.rotate, self.store, key, sid, label="gateway route")
@@ -1081,9 +1139,8 @@ class AdmissionPipeline:
         """Point the key at an existing session (``/resume``) and attach it."""
         old = await self.session_id_for(key)
         if old and old != session_id:
-            await self.service.close(old)
-        if session_id not in self.service.attached():
-            await self.service.resume(session_id)
+            await self.close_session(old)
+        await self._attach(session_id)
         entry = await run_blocking(
             routes.rotate, self.store, key, session_id, label="gateway route"
         )
@@ -1096,7 +1153,15 @@ class AdmissionPipeline:
         return session_id
 
     def _watch(self, session_id: str) -> None:
-        """Listen for the session's server requests once."""
+        """Listen for the session's server requests once (on the shared host: as the session's
+        ``messaging`` viewer, which renders approval and clarify prompts)."""
+        shared = self.shared
+        if shared is not None:
+            try:
+                shared.watch(session_id, ANSWERABLE_KINDS, self._on_offer)
+            except Exception:
+                log.warning("could not watch the requests of %s", session_id, exc_info=True)
+            return
         if session_id in self._watched:
             return
         try:
@@ -1109,6 +1174,11 @@ class AdmissionPipeline:
 
     def _on_request(self, session_id: str, request: ProtocolModel) -> None:
         self.spawn(self._deliver_request(session_id, request), name="server request")
+
+    def _on_offer(self, session_id: str, offer: Offer) -> None:
+        if self._closed:
+            return
+        self._on_request(session_id, offer.request)
 
     async def _deliver_request(self, session_id: str, request: ProtocolModel) -> None:
         origin = await self._origin_of(self.service.current_id(session_id))
@@ -1236,7 +1306,7 @@ class AdmissionPipeline:
 
     async def _turn(self, event: InboundEvent, key: str, claim: Claim) -> None:
         source = event.source
-        token = f"turn-{claim.generation}"
+        token = claim.token = f"turn-{claim.generation}-{secrets.token_hex(6)}"
         marked = False
         ended = False
         sid: str | None = None
@@ -1262,6 +1332,9 @@ class AdmissionPipeline:
             marked = await run_blocking(
                 routes.begin_turn, self.store, key, token, label="active-turn marker"
             )
+            if self.shared is not None:
+                ended = await self._admitted_turn(self.shared, event, key, claim, sid, text)
+                return
             try:
                 ticket = await self.service.submit(sid, text)
             except ProtocolError as exc:
@@ -1292,6 +1365,7 @@ class AdmissionPipeline:
                 text = FAILED_TURN.format(reason=exc.message)
             await self.reply(source, text, reply_to=event.message_id, kind="notice")
         except asyncio.CancelledError:
+            self._abandon(claim)
             raise
         except Exception as exc:
             log.exception("the turn for %s failed", key)
@@ -1304,24 +1378,143 @@ class AdmissionPipeline:
         finally:
             await self._finish(key, claim, token, marked, sid, wait_final=ended)
 
-    def _final_gate(self, session_id: str, generation: int) -> asyncio.Event:
-        """Set once the turn-end listener has handed this turn's final to the sender."""
-        found = self._finals.get((session_id, generation))
+    async def _admitted_turn(
+        self,
+        shared: MessagingHost,
+        event: InboundEvent,
+        key: str,
+        claim: Claim,
+        sid: str,
+        text: str,
+    ) -> bool:
+        """The turn as an admission on the shared host; True when it completed (its final is
+        then on its way through the turn-end listener)."""
+        source = event.source
+        if event.message_id:
+            self._requests[claim.token] = event.message_id
+            while len(self._requests) > _ANCHORS_KEPT:
+                self._requests.popitem(last=False)
+        sender = str(source.user_id or source.chat_id)
+        try:
+            receipt = await shared.submit(
+                sid,
+                text,
+                principal=principal_for(str(source.platform), sender),
+                request_id=claim.token,
+            )
+        except LedgerRefusal as refusal:
+            self._requests.pop(claim.token, None)
+            log.info("the message for %s was not admitted: %s", key, refusal.reason)
+            notice = (
+                QUEUE_FULL_TURN
+                if refusal.reason == "queue_full"
+                else FAILED_TURN.format(reason=refusal.reason.replace("_", " "))
+            )
+            await self.reply(source, notice, reply_to=event.message_id, kind="notice")
+            return False
+        claim.admission_id = receipt.admission_id
+        self._admitted[receipt.admission_id] = claim
+        if receipt.blocked_by is not None:
+            # Behind a turn whose outcome was lost in a restart: never answered here (R06.19).
+            self._requests.pop(claim.token, None)
+            await shared.stop(sid, receipt.admission_id)
+            await self._pause_behind_unknown(event, key)
+            return False
+        settled = await shared.wait(receipt.admission_id)
+        claim.turn_generation = settled.generation
+        claim.finished = True
+        if settled.outcome == "failed":
+            reason = settled.detail or "failed"
+            if reason in _EXIT_VALUES:
+                reason = reason.replace("_", " ")
+            await self.reply(
+                source, FAILED_TURN.format(reason=reason), reply_to=event.message_id, kind="notice"
+            )
+        if settled.outcome != "completed":
+            self._requests.pop(claim.token, None)
+        return settled.outcome == "completed"
+
+    async def _pause_behind_unknown(self, event: InboundEvent, key: str) -> None:
+        """Pause the chat's route (the recovery interceptor tells the person once)."""
+        try:
+            entry = await run_blocking(routes.get, self.store, key, label="gateway route")
+            reason = (entry.resume_reason or "") if entry is not None else ""
+            if entry is not None and not (
+                entry.resume_pending and reason.startswith(UNKNOWN_PAUSE_REASON)
+            ):
+                await run_blocking(
+                    routes.mark_resume_pending,
+                    self.store,
+                    key,
+                    UNKNOWN_PAUSE_REASON,
+                    label="resume flag",
+                )
+        except Exception:
+            log.warning("could not pause %s behind its unknown turn", key, exc_info=True)
+        await self.intercept(event, key)
+
+    def _abandon(self, claim: Claim) -> None:
+        """The handler was cancelled (``/new``, ``/stop`` while setting up, shutdown): its
+        admission must not run, or finish, on its own later."""
+        shared, sid, admission = self.shared, claim.session_id, claim.admission_id
+        if shared is None or sid is None or admission is None or claim.finished:
+            return
+        task = asyncio.ensure_future(shared.stop(sid, admission))
+        self._abandoned.add(task)
+        task.add_done_callback(self._abandoned.discard)
+
+    async def interrupt_claim(self, claim: Claim) -> None:
+        """Stop the claim's turn (a stop's drain): its own admission on the shared host (cancelled
+        while queued), else the session's running turn."""
+        sid = claim.session_id
+        if not sid:
+            return
+        if self.shared is not None and claim.admission_id is not None:
+            await self.shared.stop(sid, claim.admission_id)
+            return
+        with contextlib.suppress(ProtocolError):
+            self.service.interrupt(sid, hard=True)
+
+    async def side_turn(self, session_id: str, prompt: str, source: Source) -> tuple[bool, str]:
+        """Run one turn in a side session (``/bg``) and wait: (completed, final text or why not)."""
+        shared = self.shared
+        if shared is not None:
+            sender = str(source.user_id or source.chat_id)
+            receipt = await shared.submit(
+                session_id,
+                prompt,
+                principal=principal_for(str(source.platform), sender),
+                request_id=f"side-{secrets.token_hex(8)}",
+            )
+            settled = await shared.wait(receipt.admission_id)
+            why = (settled.detail or settled.outcome or "failed").replace("_", " ")
+            return settled.outcome == "completed", (settled.final_text or "").strip() or why
+        ticket = await self.service.submit(session_id, prompt)
+        result = await self.service.wait(session_id, ticket.turn_id)
+        text = (result.final_text or "").strip() or (
+            result.failure_reason or result.exit_reason.value.replace("_", " ")
+        )
+        return result.exit_reason is ExitReason.COMPLETED, text
+
+    def _final_gate(self, key: object) -> asyncio.Event:
+        """Set once the turn-end listener has handed this turn's final to the sender (keyed by
+        the admission id on the shared host, else by session id and generation)."""
+        found = self._finals.get(key)
         if found is None:
             found = asyncio.Event()
-            self._finals[(session_id, generation)] = found
+            self._finals[key] = found
             while len(self._finals) > _ANCHORS_KEPT:
                 self._finals.popitem(last=False)
         return found
 
-    async def _await_final(self, sid: str, generation: int) -> None:
-        gate = self._final_gate(sid, generation)
+    async def _await_final(self, key: object, what: str) -> None:
+        gate = self._final_gate(key)
         try:
             await asyncio.wait_for(gate.wait(), FINAL_SETTLE_S)
         except TimeoutError:
-            log.warning("the final of %s (turn %d) was not handed over in time", sid, generation)
+            log.warning("the final of %s was not handed over in time", what)
         finally:
-            self._finals.pop((sid, generation), None)
+            self._finals.pop(key, None)
 
     async def _stage_mirror_notes(self, session_id: str) -> None:
         from indus.gateway.delivery.mirror import stage_pending
@@ -1349,8 +1542,15 @@ class AdmissionPipeline:
                 await self.apply_model(self.service.current_id(once_sid), choice)
             except Exception:
                 log.warning("could not restore the model after a one-turn switch", exc_info=True)
-        if marked and wait_final and sid is not None and claim.turn_generation is not None:
-            await self._await_final(sid, claim.turn_generation)  # R06.5: ledger before marker
+        if claim.admission_id is not None:
+            self._admitted.pop(claim.admission_id, None)
+        if marked and wait_final and claim.admission_id is not None:
+            await self._await_final(claim.admission_id, f"admission {claim.admission_id}")
+        elif marked and wait_final and sid is not None and claim.turn_generation is not None:
+            # R06.5: ledger before marker
+            await self._await_final(
+                (sid, claim.turn_generation), f"{sid} (turn {claim.turn_generation})"
+            )
         if marked:
             try:
                 await run_blocking(
@@ -1387,13 +1587,31 @@ class AdmissionPipeline:
 
     async def _on_turn_end(self, ended: TurnEnd) -> None:
         """Deliver a completed turn's final text to its chat; then the next queued message."""
+        gate: object = (ended.session_id, ended.generation)
         try:
+            owner = None
+            if self.shared is not None:
+                running = self.shared.running_admission(ended.session_id, ended.generation)
+                waiting = self._admitted.get(running) if running is not None else None
+                if waiting is not None:
+                    # Its reply is about to go out: a stop's drain must leave it alone (D-16.339).
+                    waiting.finished = True
+                owner = await self.shared.owner_of(ended.session_id, ended.generation)
+            deliver = True
+            if owner is not None:
+                gate = owner.admission_id
+                deliver = owner.deliver
+                waiting = self._admitted.get(owner.admission_id)
+                if waiting is not None:
+                    waiting.finished = True
+                anchor = self._requests.pop(owner.request_id, None)
+            else:
+                anchor = self._anchors.pop((ended.session_id, ended.generation), None)
             session_id = self.service.current_id(ended.session_id)
             origin = await self._origin_of(session_id)
             if origin is None:
                 return
-            anchor = self._anchors.pop((ended.session_id, ended.generation), None)
-            if ended.completed and ended.final_text.strip():
+            if deliver and ended.completed and ended.final_text.strip():
                 await self.reply(
                     origin.source,
                     ended.final_text,
@@ -1403,7 +1621,7 @@ class AdmissionPipeline:
                     message_ref=f"{ended.session_id}:{ended.turn_id}",
                 )
         finally:
-            self._final_gate(ended.session_id, ended.generation).set()
+            self._final_gate(gate).set()
         self.drain(origin.key)
 
     # -- busy acknowledgements ---------------------------------------------------------------------

@@ -16,6 +16,10 @@ refuse hardline commands. ``--usage-file`` gets a JSON report even when the run 
 that cannot be written never changes the exit code. When ``indus`` runs as a real process, the
 entry point then flushes, shuts logging down and leaves through ``os._exit``
 (``CliState.hard_exit``) so no late finaliser can change the code after the reply was printed.
+
+That is the ``--local`` route. By default (P17-18) both run in the profile's gateway daemon
+(``indus.cli.attach``) with the same tables, plus exit 3 when the session waits behind a turn
+the daemon lost.
 """
 
 from __future__ import annotations
@@ -359,6 +363,10 @@ class _OneShot:
             return self.fail(2, problem)
         if toolsets is not None:
             self.args = replace(args, toolsets=",".join(toolsets))
+        from indus.cli import attach
+
+        if not attach.wants_local(self.state, self.args):
+            return attach.run_attached_oneshot(self.state, self.args, prompt, args.usage_file)
         if self.args.in_dir is not None:
             from indus.cli.session_select import SelectionError, enter_in_dir
 

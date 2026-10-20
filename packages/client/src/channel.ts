@@ -11,7 +11,7 @@ import {
 } from "@indus/protocol";
 import { type Clock, systemClock, type TimerHandle } from "./clock.ts";
 import {
-  type GatewayRpcError,
+  GatewayRpcError,
   NotConnected,
   RequestAborted,
   RpcTimeout,
@@ -27,6 +27,10 @@ export type RequestId = number | string;
 export interface CloseInfo {
   /** Short reason for logs ("exit", "heartbeat", "closed by client", ...). */
   reason: string;
+  /** The WebSocket close code, when the link was a WebSocket. */
+  code?: number;
+  /** No retry can help (a forbidden peer, a terminal attach verdict). */
+  terminal?: boolean;
 }
 
 /** Frames as objects; how they travel (NDJSON, WebSocket text, in-memory) is the transport's job. */
@@ -64,8 +68,10 @@ export interface IncomingRequest {
   readonly replayed: boolean;
   /** `rpc`: an id-bearing request frame; `server_request`: our P04 notification wire. */
   readonly via: "rpc" | "server_request";
-  /** Aborts when the server withdraws the request (`server_request.cancelled`). */
+  /** Aborts when the server withdraws the request (`server_request.cancelled`, `request.settled`). */
   readonly signal: AbortSignal;
+  /** The generation of the turn that asked, when the daemon named it (sent back with the answer). */
+  readonly generation?: number;
 }
 
 export type RpcRequestHandler = (request: IncomingRequest) => unknown;
@@ -102,7 +108,12 @@ export interface ChannelOptions {
 
 const JSONRPC = "2.0";
 const ANSWER_METHOD = "server_request.answer";
+const DECLINE_METHOD = "server_request.decline";
 const CANCELLED_EVENT = "server_request.cancelled";
+/** The daemon's settlement event (P17-07): answered elsewhere, withdrawn or undeliverable. */
+const SETTLED_EVENT = "request.settled";
+/** The capability a daemon advertises when it counts a viewer's "not shown here" decline. */
+export const DECLINE_CAPABILITY = "request.decline";
 
 interface Pending {
   method: string;
@@ -117,7 +128,16 @@ interface Held {
   controller: AbortController;
   payload: ServerRequest | undefined;
   transport: Transport | null;
+  /**
+   * `bridge`: the stdio bridge's bare server request (a refusal is the kind's decline answer);
+   * `daemon`: the daemon's `{request, replayed, generation}` offer (a refusal is a `-32601` error
+   * frame under the request's id, so the daemon offers it elsewhere at once, R05.3).
+   */
+  wire: "bridge" | "daemon";
 }
+
+const isGeneration = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
 
 /** The answer a kind gets when nothing here can answer it: the agent goes on at once. */
 export function declineAnswer(request: ServerRequest): ServerRequestAnswer {
@@ -161,6 +181,12 @@ export class RpcChannel {
   private readonly answered = new Set<string>();
   /** The id as it came on the wire (number or string) for id-bearing requests. */
   private readonly wireIds = new Map<string, RequestId>();
+  /** Open server requests: the generation of the turn that asked, when known. */
+  private readonly generations = new Map<string, number>();
+  /** Open server requests by id, for `decline`. */
+  private readonly entries = new Map<string, Held>();
+  /** What the server advertised in its ready frame (`request.decline`, ...). */
+  private serverCapabilities: ReadonlySet<string> = new Set();
 
   constructor(options: ChannelOptions = {}) {
     this.options = options;
@@ -204,6 +230,39 @@ export class RpcChannel {
   /** Drop the current transport without closing it; its calls fail with `error`. */
   detach(error: Error = new TransportClosed("detached")): void {
     if (this.transport !== null) this.release(error, "detached");
+  }
+
+  /** The server's advertised capabilities (from its ready frame), replacing earlier ones. */
+  setServerCapabilities(capabilities: readonly string[]): void {
+    this.serverCapabilities = new Set(capabilities);
+  }
+
+  /** The generation the server named for an open request, if any. */
+  generationOf(requestId: string): number | undefined {
+    return this.generations.get(requestId);
+  }
+
+  /**
+   * "Not shown here" for an open server request. Sent as `server_request.decline` only when the
+   * server advertised `request.decline`; otherwise the refusal every server understands (a
+   * `-32601` error frame on the daemon's wire, the kind's decline answer on the bridge's). The
+   * first respond / fail wins: false when the request was already answered or is unknown.
+   */
+  decline(requestId: string): boolean {
+    const entry = this.entries.get(requestId);
+    if (entry === undefined || this.answered.has(requestId)) return false;
+    if (entry.request.via === "server_request" && this.serverCapabilities.has(DECLINE_CAPABILITY)) {
+      if (!this.finish(requestId)) return false;
+      const payload = entry.payload as ServerRequest;
+      this.call(DECLINE_METHOD, { session_id: payload.session_id, request_id: requestId }).catch(
+        (error: unknown) => this.undelivered(requestId, error, "decline"),
+      );
+      entry.controller.abort();
+      return true;
+    }
+    this.refuse(entry, "declined here");
+    entry.controller.abort();
+    return true;
   }
 
   /** Install the server-request handlers; requests held until now are delivered in order. */
@@ -289,11 +348,13 @@ export class RpcChannel {
       if (frame.id !== undefined) {
         this.acceptRpcRequest(frame.id, frame.method, frame.params);
       } else if (frame.method === SERVER_REQUEST_METHOD) {
-        if (isObject(frame.params))
-          this.acceptServerRequest(frame.params as unknown as ServerRequest, false);
+        if (isObject(frame.params)) this.acceptOffer(frame.params);
         else this.diagnose("server request without params ignored");
       } else {
-        if (frame.method === CANCELLED_EVENT && isObject(frame.params)) {
+        if (
+          (frame.method === CANCELLED_EVENT || frame.method === SETTLED_EVENT) &&
+          isObject(frame.params)
+        ) {
           this.withdraw(String(frame.params.request_id));
         }
         this.options.onNotification?.(frame.method, frame.params);
@@ -342,10 +403,32 @@ export class RpcChannel {
       signal: controller.signal,
     };
     // Keep the original id type for the answer frame.
-    this.track({ request, controller, payload: undefined, transport: this.transport }, rawId);
+    this.track(
+      { request, controller, payload: undefined, transport: this.transport, wire: "bridge" },
+      rawId,
+    );
   }
 
-  private acceptServerRequest(payload: ServerRequest, replayed: boolean): void {
+  /** A `server_request` notification: the bridge's bare request or the daemon's offer. */
+  private acceptOffer(params: Record<string, unknown>): void {
+    if (isObject(params.request)) {
+      this.acceptServerRequest(
+        params.request as unknown as ServerRequest,
+        params.replayed === true,
+        "daemon",
+        isGeneration(params.generation) ? params.generation : undefined,
+      );
+      return;
+    }
+    this.acceptServerRequest(params as unknown as ServerRequest, false, "bridge", undefined);
+  }
+
+  private acceptServerRequest(
+    payload: ServerRequest,
+    replayed: boolean,
+    wire: "bridge" | "daemon" = "bridge",
+    generation: number | undefined = undefined,
+  ): void {
     if (typeof payload.request_id !== "string" || typeof payload.kind !== "string") {
       this.diagnose("server request without request_id or kind ignored");
       return;
@@ -358,8 +441,16 @@ export class RpcChannel {
       replayed,
       via: "server_request",
       signal: controller.signal,
+      ...(generation === undefined ? {} : { generation }),
     };
-    this.track({ request, controller, payload, transport: this.transport }, payload.request_id);
+    if (generation !== undefined && this.open.has(payload.request_id)) {
+      // A re-offer names the generation a bare resume copy lacked.
+      this.generations.set(payload.request_id, generation);
+    }
+    this.track(
+      { request, controller, payload, transport: this.transport, wire },
+      payload.request_id,
+    );
   }
 
   private track(entry: Held, wireId: RequestId): void {
@@ -369,6 +460,8 @@ export class RpcChannel {
       return;
     }
     this.open.set(id, entry.controller);
+    this.entries.set(id, entry);
+    if (entry.request.generation !== undefined) this.generations.set(id, entry.request.generation);
     this.wireIds.set(id, wireId);
     if (this.handlers === null) {
       this.held.push(entry);
@@ -419,7 +512,7 @@ export class RpcChannel {
   /** Nothing here answers this request: tell the server at once (R05.3). */
   private refuse(entry: Held, why: string): void {
     this.diagnose(`server request ${entry.request.method} refused: ${why}`);
-    if (entry.request.via === "rpc") {
+    if (entry.request.via === "rpc" || entry.wire === "daemon") {
       this.sendError(
         entry,
         ERROR_CODES.METHOD_NOT_FOUND.code,
@@ -434,7 +527,7 @@ export class RpcChannel {
 
   private crash(entry: Held, error: unknown): void {
     this.diagnose(`server request handler for ${entry.request.method} failed: ${errorText(error)}`);
-    if (entry.request.via === "rpc") {
+    if (entry.request.via === "rpc" || entry.wire === "daemon") {
       this.sendError(
         entry,
         ERROR_CODES.INTERNAL_ERROR.code,
@@ -449,6 +542,7 @@ export class RpcChannel {
 
   private answer(entry: Held, value: unknown): void {
     const { request } = entry;
+    const generation = this.generations.get(request.id) ?? request.generation;
     if (!this.finish(request.id)) {
       this.diagnose(`second answer for ${request.id} dropped`);
       return;
@@ -466,13 +560,28 @@ export class RpcChannel {
       session_id: payload.session_id,
       request_id: payload.request_id,
       answer: value,
-    }).catch((error: unknown) => {
-      this.diagnose(`answer for ${request.id} not delivered: ${errorText(error)}`);
-    });
+      ...(generation === undefined ? {} : { generation }),
+    }).catch((error: unknown) => this.undelivered(request.id, error, "answer"));
+  }
+
+  /**
+   * An answer that never reached the server (no link, or the link went while it waited) does
+   * not count: forget it so the server's re-offer after a reconnect is shown again. An error
+   * frame from the server means it did arrive.
+   */
+  private undelivered(id: string, error: unknown, what: string): void {
+    this.diagnose(`${what} for ${id} not delivered: ${errorText(error)}`);
+    if (error instanceof GatewayRpcError) return;
+    this.answered.delete(id);
   }
 
   private sendError(entry: Held, code: number, message: string): void {
     if (!this.finish(entry.request.id)) return;
+    if (entry.request.via === "server_request") {
+      // The daemon reads an error frame under the request's id as this viewer's refusal.
+      this.sendOn(entry, { jsonrpc: JSONRPC, id: entry.request.id, error: { code, message } });
+      return;
+    }
     this.sendOn(entry, {
       jsonrpc: JSONRPC,
       id: this.wireIdOf(entry.request.id),
@@ -484,6 +593,7 @@ export class RpcChannel {
   private sendOn(entry: Held, frame: OutboundFrame): void {
     if (entry.transport === null || entry.transport !== this.transport) {
       this.diagnose(`answer for ${entry.request.id} dropped: its connection is gone`);
+      this.answered.delete(entry.request.id);
       return;
     }
     try {
@@ -503,12 +613,14 @@ export class RpcChannel {
   private finish(id: string): boolean {
     if (this.answered.has(id)) return false;
     this.open.delete(id);
+    this.entries.delete(id);
     this.remember(id);
     return true;
   }
 
   private remember(id: string): void {
     this.answered.add(id);
+    this.generations.delete(id);
     if (this.answered.size > ANSWERED_ID_MEMORY) {
       const oldest = this.answered.values().next().value;
       if (oldest !== undefined) this.answered.delete(oldest);
@@ -519,6 +631,7 @@ export class RpcChannel {
     const controller = this.open.get(id);
     if (controller === undefined) return;
     this.open.delete(id);
+    this.entries.delete(id);
     this.remember(id);
     this.held = this.held.filter((entry) => entry.request.id !== id);
     controller.abort();
@@ -542,7 +655,10 @@ export class RpcChannel {
       entry.reject(error);
     }
     // Requests still held belong to the old connection; a resume re-delivers the open ones.
-    for (const entry of this.held) this.open.delete(entry.request.id);
+    for (const entry of this.held) {
+      this.open.delete(entry.request.id);
+      this.entries.delete(entry.request.id);
+    }
     this.held = [];
     this.diagnose(`connection ${why}`);
   }

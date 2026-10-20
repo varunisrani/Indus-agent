@@ -11,6 +11,7 @@ export {
   type CallOptions,
   type ChannelOptions,
   type CloseInfo,
+  DECLINE_CAPABILITY,
   declineAnswer,
   type HandlerTable,
   type IncomingRequest,
@@ -22,7 +23,12 @@ export {
   type Transport,
   type Unsubscribe,
 } from "./channel.ts";
-export { type ConnectHooks, IndusClient, type IndusClientOptions } from "./client.ts";
+export {
+  type ClientReplayOptions,
+  type ConnectHooks,
+  IndusClient,
+  type IndusClientOptions,
+} from "./client.ts";
 export { type Clock, systemClock } from "./clock.ts";
 export {
   errorNameFor,
@@ -41,4 +47,26 @@ export * from "./limits.ts";
 export * from "./localEvents.ts";
 export { cutLine, LogRing, redactUrls } from "./logRing.ts";
 export { encodeFrame, LineSplitter, type ParsedLine, parseFrameLine, preview } from "./ndjson.ts";
+export {
+  type Admission,
+  type Cursor,
+  REPLAY_CURSOR_CAPACITY,
+  REPLAY_GAP_EVENT,
+  ReplayCursors,
+  type ReplayOptions,
+} from "./replay.ts";
 export { Ring } from "./ring.ts";
+export {
+  attachUrlProblem,
+  CLOSE_REASONS,
+  closeReason,
+  GATEWAY_SUBPROTOCOL,
+  protocolsProblem,
+  TERMINAL_CLOSE_CODES,
+  TICKET_SUBPROTOCOL_PREFIX,
+  type WebSocketFactory,
+  type WebSocketLike,
+  WS_OPEN_TIMEOUT_MS,
+  WsTransport,
+  type WsTransportOptions,
+} from "./ws-transport.ts";

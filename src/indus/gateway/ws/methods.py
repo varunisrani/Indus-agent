@@ -9,12 +9,17 @@ turn they target: ``session.interrupt``, ``session.steer`` and ``server_request.
 the submitting surface decides what happens while a turn runs (TUI queues, others interrupt);
 ``queue`` queues; ``reject`` answers ``SESSION_BUSY`` while a turn runs; ``steer`` / ``redirect``
 are refused — a steer names its generation through ``session.steer``. ``turn_id`` is the
-admission id.
+admission id. A ``request_id`` from the client is the admission request id (under one principal
+per surface), so sending the same input again returns its first admission.
 
 ``session.close`` only detaches this connection (other viewers and running turns carry on).
 ``server_request.decline`` records this viewer's refusal (``4404`` "not shown here" when it
 advertised ``request.decline``, else ``-32601``): the request stays with the other viewers and is
 settled undeliverable when none is left.
+
+``admission.discard`` resolves a lost (``unknown``) turn of a session this connection watches, by
+its generation; the lost turn is closed in its transcript with a short note in the same
+transaction (``admissions.close_lost_turn``). Another session's admission reads as not found.
 """
 
 from __future__ import annotations
@@ -23,6 +28,8 @@ import secrets
 from typing import TYPE_CHECKING
 
 from indus.protocol.attach import (
+    AdmissionDiscardParams,
+    AdmissionDiscardResult,
     EventsSinceParams,
     EventsSinceResult,
     ReplayGapInfo,
@@ -63,6 +70,7 @@ from indus.protocol.methods import (
     SubmitStatus,
     negotiate_features,
 )
+from indus.service.admissions import close_lost_turn
 from indus.service.event_log import ReplayGap
 from indus.service.fences import ControlApplied, ControlStatus, Responded, StaleGeneration
 from indus.service.request_redelivery import NOT_SHOWN_CODE, UNRENDERABLE_CODE
@@ -202,12 +210,19 @@ async def submit(conn: WsConnection, params: PromptSubmitParams) -> PromptSubmit
     key = conn.subs.require(params.session_id)
     busy = _busy_mode(conn, key, params)
     was_running = conn.host.admissions.running(key)
+    if params.request_id is not None:
+        # The client's own id: one principal per surface (every attached client is the owner),
+        # so an explicit retry over a new connection is an exact retry (P17-17).
+        principal, request_id = f"attach:{conn.subs.surface}", params.request_id
+    else:
+        principal = f"{conn.subs.surface}:{conn.connection_id}"
+        request_id = f"ws-{secrets.token_hex(8)}"
     try:
         receipt = await conn.host.submit(
             key,
             params.text,
-            principal=f"{conn.subs.surface}:{conn.connection_id}",
-            request_id=f"ws-{secrets.token_hex(8)}",
+            principal=principal,
+            request_id=request_id,
             connection_id=conn.connection_id,
             surface=conn.subs.surface,
             busy=busy,
@@ -266,6 +281,28 @@ async def decline(
     return ServerRequestDeclineResult(
         accepted=conn.host.refuse(key, conn.connection_id, params.request_id, code)
     )
+
+
+@methods.method("admission.discard")
+async def discard(conn: WsConnection, params: AdmissionDiscardParams) -> AdmissionDiscardResult:
+    key = conn.subs.require(params.session_id)
+    try:
+        receipt = await conn.host.receipt(params.admission_id)
+    except LedgerRefusal:
+        return AdmissionDiscardResult(discarded=False, reason="not_found")
+    if receipt.session_id != key:
+        return AdmissionDiscardResult(discarded=False, reason="not_found")  # another session's
+    clock = conn.host.store.scope.clock
+    try:
+        await conn.host.discard_unknown(
+            params.admission_id,
+            params.generation,
+            terminal_write=close_lost_turn(now=lambda: clock.now().timestamp()),
+        )
+    except LedgerRefusal as refusal:
+        reason = "stale_generation" if refusal.reason == "stale_generation" else "not_found"
+        return AdmissionDiscardResult(discarded=False, reason=reason)
+    return AdmissionDiscardResult(discarded=True)
 
 
 def served() -> list[str]:

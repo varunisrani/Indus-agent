@@ -323,6 +323,11 @@ export class SessionLifecycle {
     this.deps.onOpened?.(id, reason);
   }
 
+  /** A line to show once the next session opens (opening clears the transcript). */
+  carry(line: string): void {
+    this.carried.push(line);
+  }
+
   /** Keep the live row's title and model in step with `session.info`. */
   noteInfo(id: string, info: Record<string, unknown>): void {
     const row = this.live.get(id);

@@ -70,6 +70,7 @@ from indus.service.admissions import (
     AdmissionService,
     Offload,
     Receipt,
+    TerminalWrite,
     TurnOutcome,
     TurnTicket,
 )
@@ -485,8 +486,16 @@ class DaemonSessionHost:
     async def wait(self, admission_id: str) -> Receipt:
         return await self.admissions.wait(admission_id)
 
-    async def discard_unknown(self, admission_id: str, expected_generation: int) -> Receipt:
-        return await self.admissions.discard_unknown(admission_id, expected_generation)
+    async def discard_unknown(
+        self,
+        admission_id: str,
+        expected_generation: int,
+        *,
+        terminal_write: TerminalWrite | None = None,
+    ) -> Receipt:
+        return await self.admissions.discard_unknown(
+            admission_id, expected_generation, terminal_write=terminal_write
+        )
 
     async def _door(self, session_id: str, text: str, origin: str) -> bool:
         """Turns the service would start itself enter the queue like any other input."""

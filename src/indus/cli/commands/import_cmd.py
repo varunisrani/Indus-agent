@@ -18,6 +18,10 @@ the existing database with the online backup API, so connections that have it op
 restored data instead of a replaced file; another process holding it means the file is skipped
 with a warning. Fewer sessions or messages after the import than before is reported. Exit 1 when
 anything was skipped.
+
+Store ownership (P17-21): while a gateway daemon answers for this profile nothing is restored (it
+has the files open; stop it first); otherwise the writes happen while this process holds the
+profile ownership lock, so no daemon starts halfway.
 """
 
 from __future__ import annotations
@@ -253,7 +257,16 @@ def import_command(zipfile_path: str, force: bool) -> int:
             for line in damaged[:10]:
                 err(f"  {line}")
             return 1
-        restored, skipped, shrunk = _restore(zf, plan, home, scope)
+        from indus.service.maintenance_gate import MaintenanceGate, MaintenanceRefused
+
+        gate = MaintenanceGate(scope)
+        try:
+            gate.refuse_while_owned("restoring a backup")
+            with gate.locally("restoring a backup"):
+                restored, skipped, shrunk = _restore(zf, plan, home, scope)
+        except MaintenanceRefused as exc:
+            err(exc.message)
+            return 1
     click.echo(f"Restored {restored} file(s) into {home}.")
     if plan.runtime:
         click.echo(

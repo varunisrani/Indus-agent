@@ -50,7 +50,6 @@ from indus.foundation.scope import Scope
 from indus.gateway.core.events import InboundEvent, Source
 from indus.gateway.core.slash_access import SlashPolicy, policy_for, scope_of, tier_label
 from indus.protocol.base import ProtocolModel
-from indus.protocol.events import ExitReason
 from indus.protocol.methods import ProtocolError, SessionCreateParams
 from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice
 from indus.service.commands.registry import REGISTRY, CommandDef
@@ -515,16 +514,10 @@ async def _run_background(
     text = ""
     ok = False
     try:
-        created = await p.service.create(
+        sid = await p.create_session(
             SessionCreateParams(toolsets=p.toolsets_for(str(source.platform).lower()))
         )
-        sid = created.session_id
-        ticket = await p.service.submit(sid, prompt)
-        result = await p.service.wait(sid, ticket.turn_id)
-        ok = result.exit_reason is ExitReason.COMPLETED
-        text = (result.final_text or "").strip() or (
-            result.failure_reason or result.exit_reason.value.replace("_", " ")
-        )
+        ok, text = await p.side_turn(sid, prompt, source)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -533,7 +526,7 @@ async def _run_background(
     finally:
         if sid is not None:
             with contextlib.suppress(Exception):
-                await p.service.close(sid)
+                await p.close_session(sid)
     head = f"[{task_id}] Done:" if ok else f"[{task_id}] Failed:"
     await p.reply(source, f"{head}\n{text}", reply_to=reply_to, kind="final")
 

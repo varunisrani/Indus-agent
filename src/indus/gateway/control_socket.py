@@ -78,10 +78,12 @@ KNOWN_VERBS = (
     "pause-for-update",
     "session-ticket",
     "describe",
+    "maintenance-run",
 )
 """Verbs P15 and P17 name; all but the first two answer ``unsupported`` until registered."""
-OWNER_ONLY_VERBS = frozenset({"session-ticket"})
-"""Verbs answered only to a peer the OS confirmed as this user (they hand out credentials)."""
+OWNER_ONLY_VERBS = frozenset({"session-ticket", "maintenance-run"})
+"""Verbs answered only to a peer the OS confirmed as this user (they hand out credentials, or
+bulk-change the profile's data: ``maintenance-run``, P17-21)."""
 
 LAUNCHD_LABEL_PREFIX = "ai.indus.gateway"
 _SOCKET_NAME = "gw.sock"

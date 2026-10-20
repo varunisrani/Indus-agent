@@ -36,11 +36,36 @@ export interface ExitEvent {
   stderr_last: string | null;
 }
 
+/** A WebSocket link closed (P17-20); `terminal` when no retry can help. */
+export interface ClosedEvent {
+  type: "transport.closed";
+  /** The WebSocket close code, null when the link never opened. */
+  code: number | null;
+  reason: string;
+  terminal: boolean;
+}
+
+/**
+ * Getting attach credentials failed (P17-19: the grant helper). `terminal` failures carry a
+ * repair hint and are not retried; the others go to the reconnect backoff.
+ */
+export interface AttachFailedEvent {
+  type: "transport.attach_failed";
+  terminal: boolean;
+  code: string;
+  message: string;
+  hint: string | null;
+  /** True when the surface carries on with a local agent instead. */
+  fallback: boolean;
+}
+
 export type TransportEvent =
   | ProtocolErrorEvent
   | StderrEvent
   | StartTimeoutEvent
   | ExitEvent
+  | ClosedEvent
+  | AttachFailedEvent
   | ReconnectingEvent;
 
 /**
@@ -55,6 +80,14 @@ export interface ReadyEvent {
   protocol_version?: number;
   /** True when the server answers `gateway.ping`. */
   heartbeat?: boolean;
+  /** The daemon's replay epoch (WebSocket attach): event cursors are valid within it. */
+  replay_epoch?: string | null;
+  /** The profile the daemon serves (WebSocket attach). */
+  profile_id?: string | null;
+  /** This daemon start (WebSocket attach). */
+  instance_id?: string | null;
+  /** What the daemon offers attached clients (for example `request.decline`). */
+  capabilities?: string[] | null;
 }
 
 /** STUB (protocol gap): the keep-alive method; any answer, even an error frame, counts. */

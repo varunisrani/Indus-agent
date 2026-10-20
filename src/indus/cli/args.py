@@ -111,6 +111,8 @@ class GlobalArgs:
     checkpoints: bool = False
     accept_hooks: bool = False
     dev: bool = False
+    local: bool = False
+    """``--local``: run the agent in this process instead of attaching to the daemon (P17-18)."""
 
     @classmethod
     def from_values(cls, values: Mapping[str, Any]) -> GlobalArgs:

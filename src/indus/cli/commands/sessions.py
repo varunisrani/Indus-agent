@@ -4,7 +4,9 @@ Everything that only looks opens the store read-only (``state.browse.open_readon
 ``mode=ro`` connection, no schema set-up, no migration, no checkpoint, a missing file is reported
 and never created; R03.16). The P02 listing and export functions take a store handle; they get a
 small view with the scope and that read-only connection instead (``ReadView``). Changes (rename,
-delete, pin) go through the shared writable handle, and only when the store file already exists.
+delete, pin) go through the shared writable handle, and only when the store file already exists;
+``delete`` asks the maintenance gate first (P17-21): with a gateway daemon owning the profile the
+daemon deletes the session, else this process does while holding the ownership lock.
 
 The maintenance verbs (prune, archive, optimize, repair, recover, import) live in
 ``sessions_maint`` and are added to this group at import.
@@ -350,14 +352,28 @@ def delete_command(session_id: str, assume_yes: bool) -> int:
     if not answer:
         click.echo("Kept.")
         return 0
-    with writable_store(scope) as store:
-        if store is None:
-            raise StoreProblem(f"No session found matching '{session_id}'.")
-        try:
-            removed = deletion.delete_session(store, sid, whole_chain=True)
-        except deletion.SessionGuarded as exc:
-            err(f"Not deleted: {exc.message}.")
-            return 1
+
+    def here() -> bool | None:
+        with writable_store(scope) as store:
+            if store is None:
+                raise StoreProblem(f"No session found matching '{session_id}'.")
+            try:
+                return deletion.delete_session(store, sid, whole_chain=True)
+            except deletion.SessionGuarded as exc:
+                err(f"Not deleted: {exc.message}.")
+                return None
+
+    from indus.cli.commands.sessions_maint import gate_for
+    from indus.service.maintenance_gate import MaintenanceRefused
+
+    try:
+        done = gate_for(scope).run("delete", {"session_id": sid}, here, what="deleting a session")
+    except MaintenanceRefused as exc:
+        err(exc.message)
+        return 1
+    removed = bool(done.value.get("removed")) if done.where == "daemon" else done.value
+    if removed is None:
+        return 1
     if not removed:
         err(f"Session {sid} was already gone.")
         return 1

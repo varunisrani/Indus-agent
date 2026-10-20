@@ -120,6 +120,9 @@ class PromptSubmitParams(ProtocolModel):
     """The user's message."""
     when_busy: BusyAction = BusyAction.REJECT
     """While a turn runs: refuse (``SESSION_BUSY``), queue it, steer or redirect the turn."""
+    request_id: str | None = Field(default=None, min_length=1, max_length=200)
+    """The client's id for this input (daemon): sending it again returns the first admission
+    instead of running the text twice."""
 
 
 class PromptSubmitResult(ProtocolModel):

@@ -19,6 +19,10 @@ resolved, and one of three paths runs:
 
 The REPL runs on an ``InProcessHost``; after it returns, the sessions are closed, the terminal
 runtime is shut down on the host's loop and the store handle is released.
+
+All of the above is the ``--local`` route (P17-18). Without ``--local`` (and without a driver's
+``HostOverrides``) the classic interface attaches to the profile's gateway daemon instead
+(``indus.cli.attach``): same selection rules and exit codes, the agent runs in the daemon.
 """
 
 from __future__ import annotations
@@ -198,6 +202,10 @@ def run_chat(state: CliState, args: GlobalArgs, chat: ChatArgs) -> int:
             return code
     terminal = state.stdin_isatty() and state.stdout_isatty()
     finite = query is not None and (chat.oneshot or chat.quiet or not terminal)
+    from indus.cli import attach
+
+    if not attach.wants_local(state, args):
+        return attach.run_attached_chat(state, args, chat, query=query, finite=finite)
     return _ChatRun(state, args, chat, query=query, finite=finite, note=note).run()
 
 

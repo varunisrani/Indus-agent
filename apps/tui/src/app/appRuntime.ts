@@ -40,6 +40,7 @@ import { STATUS_READY, uiStore } from "../state/uiStore.ts";
 import { PromptQueue } from "../submit/queue.ts";
 import { Submitter } from "../submit/submission.ts";
 import type { ExitReason } from "../terminal/lifecycle.ts";
+import { attachFailureLines } from "../transport/attach.ts";
 import { TurnController } from "../turn/controller.ts";
 import type { Env } from "./launchOptions.ts";
 import { type ExitInfo, Recovery } from "./recovery.ts";
@@ -225,7 +226,7 @@ export class AppRuntime {
       ...(options.themePinned === undefined ? {} : { themePinned: options.themePinned }),
     });
     this.cleanups.push(this.client.subscribe((event) => this.onEvent(event)));
-    options.links.onLost(() => this.linkLost());
+    options.links.onLost((info) => this.linkLost(info));
 
     this.keyActions = this.makeKeyActions();
     this.switcherOps = this.makeSwitcherOps();
@@ -278,6 +279,12 @@ export class AppRuntime {
       if (!this.disposed) this.park();
     } else if (event.type === "tool.completed" && event.name === "clarify") {
       this.cards.flushOpenClarify();
+    } else if (event.type === "transport.attach_failed") {
+      // P17-19: a terminal verdict is said once (with its repair hint); a retry is a status.
+      // With a local fallback a session opens next, which clears the transcript: carry it.
+      if (event.terminal && event.fallback) this.lifecycle.carry(attachFailureLines(event));
+      else if (event.terminal) this.system(attachFailureLines(event));
+      else this.controller.setStatus(`attach failed (${event.code}); retrying…`, 4_000);
     }
     this.handle(event);
   }
@@ -289,7 +296,11 @@ export class AppRuntime {
     this.lastExit = null;
     const target = this.recovery.ready();
     try {
-      await this.rpc.call("client.capabilities", { features: [...CLIENT_FEATURES] });
+      // `surface` tells a daemon this viewer is the TUI (busy default queue, presence, P17-08).
+      await this.rpc.call("client.capabilities", {
+        features: [...CLIENT_FEATURES],
+        surface: "tui",
+      });
     } catch {
       // an older bridge without the method: cards still work for whatever it sends
     }
@@ -341,8 +352,11 @@ export class AppRuntime {
     });
   }
 
-  /** The child is gone: reset, park the session, restart within the budget. */
-  private linkLost(): void {
+  /**
+   * The link is gone: reset, park the session, restart within the budget. A terminal close (an
+   * attach verdict no retry can fix, P17-19) stops here: the reason was already said.
+   */
+  private linkLost(info?: CloseInfo): void {
     if (this.disposed) return;
     this.park();
     const live = this.parked ?? null;
@@ -352,6 +366,11 @@ export class AppRuntime {
     this.controller.reset();
     this.cards.settleAll();
     overlayStore.getState().closeFlowCards();
+    if (info?.terminal === true) {
+      this.recovery.stop();
+      this.controller.setStatus(DAEMON_UNAVAILABLE_STATUS);
+      return;
+    }
     this.recovery.lost(live, exit);
   }
 
@@ -524,6 +543,9 @@ export class AppRuntime {
     };
   }
 }
+
+/** Status text once attaching failed for good. */
+export const DAEMON_UNAVAILABLE_STATUS = "agent daemon unavailable";
 
 /** Status text while nothing is open yet. */
 export const STATUS_IDLE = STATUS_READY;

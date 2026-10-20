@@ -35,7 +35,9 @@ describe("bootstrap order", () => {
       }),
     );
     await r.ready();
-    expect(r.calls("client.capabilities")).toEqual([{ features: ["server_requests"] }]);
+    expect(r.calls("client.capabilities")).toEqual([
+      { features: ["server_requests"], surface: "tui" },
+    ]);
     expect(r.calls("session.create")).toEqual([
       { model: "m-1", toolsets: ["web", "files"], cwd: "/w", idempotency_key: "key-1" },
     ]);

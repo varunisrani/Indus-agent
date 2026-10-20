@@ -231,9 +231,14 @@ async def test_home_detection_retried_no_sooner_than_30s(
         await drive(clock, env.connect())
         assert not env.home_detected and env.remote_home == "/home/dev"
         assert home_lookups() == 1
-        clock.advance(HOME_RETRY_S - 5)
+        # Measure from the failure itself: `drive` moves the fake clock while the fake ssh runs in
+        # real time, so fake seconds already passed inside connect() (more on a loaded machine).
+        failed_at = env._home_failed_at  # pyright: ignore[reportPrivateUsage]
+        assert failed_at is not None
+        clock.advance(max(0.0, failed_at + HOME_RETRY_S - 5 - clock.monotonic()))
         assert not env.home_retry_due()
-        await drive(clock, env.execute("true"))
+        # a fine step keeps the drift inside this command far below the 5 s left before the retry
+        await drive(clock, env.execute("true"), step=0.001)
         assert home_lookups() == 1
         clock.advance(HOME_RETRY_S)
         assert env.home_retry_due()

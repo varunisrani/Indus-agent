@@ -238,6 +238,26 @@ def test_env_is_pinned_and_stale_names_are_cleared(scope: Scope, rig: Rig) -> No
     assert argv == [str(rig.pkg / "_tui_dist" / "entry.js")]
 
 
+def test_attach_by_default_and_local_keeps_the_bridge_child(scope: Scope, rig: Rig) -> None:
+    """P17-19: the renderer gets the grant helper's program; ``--local`` exports the switch, and
+    a stale switch from the shell never survives."""
+    state = _state(scope, rig, INDUS_TUI_LOCAL="1")
+    assert _launch(state, rig) == 0
+    env = rig.env_out()
+    assert env["INDUS_TUI_GRANT_COMMAND"] == str(rig.bin / "indus")
+    assert "INDUS_TUI_LOCAL" not in env
+
+    @dataclass(frozen=True)
+    class LocalArgs(GlobalArgs):  # ``--local`` lands with P17-18's flag table
+        local: bool = True
+
+    assert _launch(_state(scope, rig), rig, LocalArgs(interface="tui")) == 0
+    assert rig.env_out()["INDUS_TUI_LOCAL"] == "1"
+    own = _state(scope, rig, INDUS_TUI_GRANT_COMMAND="/opt/indus gateway grant --json")
+    assert _launch(own, rig) == 0
+    assert rig.env_out()["INDUS_TUI_GRANT_COMMAND"] == "/opt/indus gateway grant --json"
+
+
 def test_user_bridge_command_is_kept(scope: Scope, rig: Rig) -> None:
     state = _state(scope, rig, INDUS_TUI_BRIDGE_COMMAND="/opt/my-indus")
     assert _launch(state, rig) == 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -13,15 +14,17 @@ from indus.foundation.scope import Scope
 from indus.service.admissions import (
     CANCELLED,
     LEASE_TIMEOUT,
+    LOST_TURN_NOTE,
     SHUTDOWN,
     AdmissionService,
     Receipt,
     TurnOutcome,
     TurnTicket,
+    close_lost_turn,
 )
 from indus.service.turn_lease import LEASE_LOST, LeaseSettings, TurnLeases
 from indus.service.turn_liveness import STALLED, LivenessSettings
-from indus.state import registry, turn_leases
+from indus.state import messages, registry, turn_leases
 from indus.state import runtime_ledger as ledger
 from indus.state.registry import StoreHandle
 from indus.state.runtime_ledger import AdmissionRow, LedgerRefusal
@@ -29,6 +32,7 @@ from indus.state.turn_leases import LeaseHolder, ProcessProbe
 from indus.state.writer import Budget
 from tests.fakes.clock import FakeClock
 from tests.unit.backends._aio import aio
+from tests.unit.state._helpers_d import add_message, add_session
 
 ME = "cli:alice"
 
@@ -245,6 +249,60 @@ async def test_discard_with_an_old_generation_is_refused(store: StoreHandle) -> 
     finished = await second.wait(later.admission_id)
     assert finished.outcome == "completed" and model.calls == ["after that"]
     await second.aclose()
+
+
+@aio
+async def test_discard_closes_the_lost_turn_in_its_transcript(store: StoreHandle) -> None:
+    lost, later = await _lost_turn(store)
+    add_session(store, "s1")
+    add_message(store, "s1", "risky", role="user")
+    model = Model()
+    second = await opened(store, model)
+    now = lambda: 1_700_000_000.0  # noqa: E731
+    seen: list[str] = []
+
+    def broken(conn: sqlite3.Connection, row: AdmissionRow) -> None:
+        seen.append(row.admission_id)
+        raise OSError("transcript unwritable")
+
+    with pytest.raises(OSError):
+        await second.discard_unknown(lost.admission_id, 1, terminal_write=broken)
+    still = await second.receipt(lost.admission_id)
+    assert still.state == "unknown" and seen == [lost.admission_id]  # rolled back with it
+
+    done = await second.discard_unknown(
+        lost.admission_id, 1, terminal_write=close_lost_turn(now=now)
+    )
+    assert done.outcome == "discarded"
+    rows = messages.get(store, "s1")
+    assert [(m["role"], m["content"]) for m in rows] == [
+        ("user", "risky"),
+        ("assistant", LOST_TURN_NOTE),
+    ]
+    finished = await second.wait(later.admission_id)
+    assert finished.outcome == "completed"
+    # A second close of the same transcript writes nothing more (the last message is ours).
+    store.write(lambda conn: close_lost_turn(now=now)(conn, lost))
+    assert len(messages.get(store, "s1")) == 2
+    await second.aclose()
+
+
+def test_closing_a_lost_turn_skips_a_transcript_that_needs_no_note(store: StoreHandle) -> None:
+    lost = AdmissionRow(
+        "a1", 1, ME, "s2", "r1", {"text": "x"}, "d", "unknown", None, 1, 1, None, None, None, 0, 0
+    )
+    close = close_lost_turn(now=lambda: 1.0)
+    store.write(lambda conn: close(conn, lost))  # no session row: nothing
+    add_session(store, "s2")
+    store.write(lambda conn: close(conn, lost))  # no messages: nothing
+    add_message(store, "s2", "hi", role="user")
+    add_message(store, "s2", "the reply", role="assistant")
+    store.write(lambda conn: close(conn, lost))  # a reply already closes it
+    assert [m["role"] for m in messages.get(store, "s2")] == ["user", "assistant"]
+    add_session(store, "s3", ended_at=2.0, end_reason="compression")
+    add_message(store, "s3", "hi", role="user")
+    store.write(lambda conn: close(conn, replace(lost, session_id="s3")))
+    assert [m["role"] for m in messages.get(store, "s3")] == ["user"]
 
 
 @aio

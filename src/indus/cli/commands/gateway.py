@@ -175,6 +175,11 @@ def _service_usable(manager: ServiceManager | None) -> ServiceManager | None:
     registry=(
         ("run", RUN_TARGET, "Run the gateway in the foreground (Ctrl+C stops it)."),
         (
+            "ensure",
+            "indus.cli.commands.gateway_ensure:ensure_command",
+            "Make sure the gateway runs and print where clients attach.",
+        ),
+        (
             "api-key",
             "indus.cli.commands.gateway_api_key:api_key_group",
             "Create, list and revoke the API server's bearer keys.",
@@ -183,6 +188,11 @@ def _service_usable(manager: ServiceManager | None) -> ServiceManager | None:
             "setup",
             "indus.cli.wizards.gateway_setup:setup_command",
             "Set up a messaging platform step by step.",
+        ),
+        (
+            "grant",
+            "indus.cli.commands.gateway_grant:grant_command",
+            "Print a single-use attach grant for a client of the daemon (used by the TUI).",
         ),
     ),
     help="Run and look after the messaging gateway of this profile.",

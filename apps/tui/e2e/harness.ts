@@ -237,6 +237,8 @@ export class Tui {
       env: cleanEnv({
         INDUS_HOME: home.home,
         INDUS_TUI_BRIDGE_COMMAND: INDUS,
+        // Demo 2 drives the stdio bridge child (`--local`); attach is the default since P17-19.
+        INDUS_TUI_LOCAL: "1",
         INDUS_TUI_ACTIVE_SESSION_FILE: home.activeFile,
         NODE_ENV: "production",
         TERM: "xterm-256color",

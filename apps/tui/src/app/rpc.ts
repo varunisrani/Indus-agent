@@ -36,10 +36,13 @@ export function rpcFromClient(client: IndusClient): Rpc {
       }
       const sessionId = uiStore.getState().sid;
       if (sessionId === null) throw new Error("no session to answer for");
+      // The daemon (P17-20) needs the generation of the turn that asked.
+      const generation = client.channel.generationOf(requestId);
       await client.request("server_request.answer", {
         session_id: sessionId,
         request_id: requestId,
         answer: answer as ServerRequestAnswer,
+        ...(generation === undefined ? {} : { generation }),
       });
     },
     waitForAnswer: (requestId, signal) =>

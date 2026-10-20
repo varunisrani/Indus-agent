@@ -252,10 +252,11 @@ async def drain_turns(daemon: GatewayDaemon, *, drain_timeout: float, grace: flo
             await _unflag(daemon, key)
             continue
         interrupted.append(key)
-        session_id = claim.session_id if claim is not None else None
-        if session_id:
+        if claim is not None:
+            # Its own admission on the shared host (cancelled while still queued), else the
+            # session's running turn.
             with contextlib.suppress(ProtocolError, Exception):
-                daemon.service.interrupt(session_id, hard=True)
+                await pipeline.interrupt_claim(claim)
     for key in interrupted:
         source = await _origin(daemon, key)
         if source is not None:
@@ -270,7 +271,7 @@ async def drain_turns(daemon: GatewayDaemon, *, drain_timeout: float, grace: flo
                 routes.end_turn,
                 daemon.store,
                 key,
-                f"turn-{claim.generation}",
+                claim.token or f"turn-{claim.generation}",
                 label="active-turn marker",
             )
     log.info("interrupted %d chat turn(s) for the stop", len(interrupted))

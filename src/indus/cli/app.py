@@ -341,6 +341,13 @@ def global_options(*, repeated: bool = False) -> list[Decorator]:
     )
     add(
         click.option(
+            "--local",
+            **_not_given(True),
+            help="Run the agent in this terminal instead of the profile's gateway daemon.",
+        )
+    )
+    add(
+        click.option(
             "--dev",
             **_not_given(True),
             hidden=True,
@@ -380,6 +387,7 @@ def globals_from(values: dict[str, Any]) -> GlobalArgs:
         "pass_session_id",
         "checkpoints",
         "dev",
+        "local",
     ):
         if values.get(name) is False:
             values.pop(name)

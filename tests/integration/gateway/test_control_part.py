@@ -123,9 +123,10 @@ def test_the_control_part_serves_reconnects_and_drains(tmp_path: Path) -> None:
 
 
 def test_the_daemon_serves_the_attach_verbs(tmp_path: Path) -> None:
-    """P17-11 wiring: ``describe`` and ``session-ticket`` are registered on the daemon's control
-    socket over a ticket book made for this start. Until the WebSocket endpoint (P17-13) is
-    mounted no ticket is minted (``ws_unavailable``); the book is revoked at stop."""
+    """P17-11 wiring, completed by P17-22: ``describe`` and ``session-ticket`` are registered on
+    the daemon's control socket over the ticket book of this start; ``describe`` names the
+    mounted WebSocket endpoint and the session host's sources and capabilities, and
+    ``session-ticket`` mints; the book is revoked at stop."""
     scope = daemon_scope(tmp_path)
     part = ControlPart()
     daemon = GatewayDaemon(
@@ -145,15 +146,19 @@ def test_the_daemon_serves_the_attach_verbs(tmp_path: Path) -> None:
             described = await asyncio.to_thread(gateway_control.describe, scope.home)
             assert described is not None
             assert described["profile_id"] == stable_profile_id(scope.home) == book.profile_id
-            assert described["instance_id"] == book.instance_id
+            assert described["instance_id"] == book.instance_id == daemon.instance_id
             assert described["protocol_version"] == PROTOCOL_VERSION
-            assert described["ws_url"] is None
+            assert described["ws_url"] == daemon.ws_url()
+            assert str(described["ws_url"]).startswith("ws://127.0.0.1:")
+            assert "cli" in described["creatable_sources"]
+            assert "messaging" not in described["creatable_sources"]
+            assert "events.since" in described["capabilities"]
             ticket = await asyncio.to_thread(
                 gateway_control.session_ticket, scope.home, WS_INTERACTIVE
             )
-            assert ticket.error == "ws_unavailable" and book.outstanding() == 0
-            minted = book.mint(WS_INTERACTIVE)  # as the endpoint will once it is mounted
-            assert book.outstanding() == 1
+            assert ticket.ok and ticket.ws_url == daemon.ws_url() and book.outstanding() == 1
+            minted = book.mint(WS_INTERACTIVE)
+            assert book.outstanding() == 2
         finally:
             assert await flight.stop() == EXIT_OK
         assert part.bridge is None

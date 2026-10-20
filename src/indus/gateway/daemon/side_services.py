@@ -41,6 +41,7 @@ from indus.gateway.daemon.attach_verbs import AttachVerbs
 from indus.gateway.daemon.parts import DaemonPart, Stage
 from indus.gateway.daemon.reconnect import ConnectOutcome, PlatformHealth, ReconnectWatcher
 from indus.gateway.hooks import GatewayHooks, bridge
+from indus.service.maintenance_gate import MaintenanceVerb
 from indus.service.ws_auth import TicketBook
 from indus.state.gateway_runtime import PlatformStatus
 
@@ -221,19 +222,38 @@ def _flag(params: Mapping[str, Any], key: str, default: bool) -> bool:
     return value if isinstance(value, bool) else default
 
 
+class _HostView:
+    """The daemon's session host as ``AttachHost`` reads it: empty until the host is open."""
+
+    def __init__(self, daemon: GatewayDaemon) -> None:
+        self._daemon = daemon
+
+    def creatable_sources(self) -> Sequence[str]:
+        host = getattr(self._daemon, "host", None)
+        return host.creatable_sources() if host is not None else ()
+
+    def capabilities(self) -> Sequence[str]:
+        host = getattr(self._daemon, "host", None)
+        return host.capabilities() if host is not None else ()
+
+
 class DaemonBridge:
     """``GatewayDaemon`` through ``DaemonPorts`` (see the module notes).
 
-    ``attach_verbs`` holds the P17-11 attach verbs over a ticket book made for this daemon
-    start (a fresh ``instance_id``, so tickets of an earlier start are useless). Until the
-    WebSocket endpoint (P17-13) is mounted there is no ``ws_url`` and no session host:
-    ``describe`` answers the ids and versions with empty source and capability lists, and
-    ``session-ticket`` answers ``ws_unavailable`` without minting."""
+    ``attach_verbs`` holds the P17-11 attach verbs over the daemon's ticket book for this start
+    (``daemon.tickets``: its ``instance_id`` is the start's, so tickets of an earlier start are
+    useless), the daemon's session host and its WebSocket URL (P17-22). Until the host is open and
+    the endpoint listens, ``describe`` answers empty source and capability lists with a null
+    ``ws_url``, and ``session-ticket`` answers ``ws_unavailable`` without minting."""
 
     def __init__(self, daemon: GatewayDaemon, part: ControlPart) -> None:
         self.daemon = daemon
         self.part = part
-        self.attach_verbs = AttachVerbs(daemon.scope.home, TicketBook.for_home(daemon.scope.home))
+        book = getattr(daemon, "tickets", None) or TicketBook.for_home(daemon.scope.home)
+        ws_url = getattr(daemon, "ws_url", None) or (lambda: None)
+        self.attach_verbs = AttachVerbs(
+            daemon.scope.home, book, host=_HostView(daemon), ws_url=ws_url
+        )
 
     @property
     def scope(self) -> Scope:
@@ -271,6 +291,8 @@ class DaemonBridge:
             "pause-for-update": (self._pause_for_update, _DRAIN_S),
             "reload-plugins": (self._reload_plugins, _DRAIN_S),
             **self.attach_verbs.handlers(),
+            # P17-21: bulk session maintenance runs here, beside the live turns (R09.21).
+            **MaintenanceVerb(self.daemon.scope).handlers(),
         }
 
     # -- verbs (async: they run on the daemon's loop) -------------------------------------------

@@ -21,13 +21,32 @@ them afterwards, in order), after the RECOVERY parts (the delivery-ledger sweep)
    The chat gets ``HEADS_UP``; the session gets an internal turn (``RESUME_NOTE``).
 3. Restart notices: when this boot follows an earlier run, one ``BACK_ONLINE`` line per connected
    platform to its home channel, unless the platform's ``restart_notice`` is off.
+
+On the shared host (P17-22) step 1 reads the runtime ledger, where every started admission of the
+previous owner is now ``unknown``. The marker's token is its admission's request id:
+
+- a stored final written after the turn began is delivered once (as above) and the session's
+  unknown admission is discarded, so the conversation goes on;
+- an admission that never started (still queued) or that settled is not a crash-left turn: the
+  marker is cleared and nothing is paused (a queued one runs now and its reply goes out);
+- otherwise the route is paused as above.
+
+Then every other unknown admission (a turn the host started on its own, a marker already cleared)
+is settled the same way per chat route of its session: a final the lost turn stored is owed once
+(through ``crash_reply_sink``, which skips it when the delivery ledger shows it went out) and the
+admission is discarded; otherwise the routes are paused. ``blocked`` is the admission service's
+notice that queued input waits behind an unknown turn (handed on only after this recovery ran):
+the route is paused and the chat told once. ``resolve_unknown`` also discards the session's
+unknown admission and closes the lost turn in its transcript with a short assistant note
+(``admissions.close_lost_turn``, in the discard's transaction), so a later resume does not
+start from a dangling question.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from indus.foundation.blocking import run_blocking
@@ -37,15 +56,20 @@ from indus.gateway.core.admission import (
     reset_identity,
 )
 from indus.gateway.core.events import InboundEvent, Source
+from indus.gateway.core.shared_host import UNKNOWN_PAUSE_REASON
 from indus.gateway.daemon.lifecycle import INTERRUPTED_REASON
 from indus.gateway.daemon.watchdogs import RestartLoopGuard
+from indus.service.admissions import close_lost_turn
 from indus.state import gateway_routes as routes
 from indus.state import messages
+from indus.state import runtime_ledger as ledger
 from indus.state.gateway_routes import RouteEntry
 from indus.state.gateway_runtime import boots_path
 from indus.state.registry import StoreHandle
+from indus.state.runtime_ledger import AdmissionRow, LedgerRefusal
 
 if TYPE_CHECKING:
+    from indus.gateway.core.shared_host import MessagingHost
     from indus.gateway.daemon.process import GatewayDaemon
 
 __all__ = [
@@ -63,7 +87,7 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-UNKNOWN_REASON = "unknown_turn"
+UNKNOWN_REASON = UNKNOWN_PAUSE_REASON
 _TOLD = UNKNOWN_REASON + ":told"
 RESUME_FRESH = 3600.0
 
@@ -86,6 +110,8 @@ type CrashReplySink = Callable[[RouteEntry, Source, str], Awaitable[None]]
 class RecoveryReport:
     recovered_replies: list[str] = field(default_factory=list[str])
     paused: list[str] = field(default_factory=list[str])
+    cleared: list[str] = field(default_factory=list[str])
+    """Markers whose admission never started or settled (not crash-left turns)."""
     resumed: list[str] = field(default_factory=list[str])
     skipped: dict[str, str] = field(default_factory=dict[str, str])
     notices: list[str] = field(default_factory=list[str])
@@ -101,13 +127,43 @@ def _paused(entry: RouteEntry | None) -> bool:
 
 
 def resolve_unknown(store: StoreHandle, session_key: str, token: str) -> bool:
-    """Operator resolution of an unknown turn: only while the pause still has ``token``."""
+    """Operator resolution of an unknown turn: only while the pause still has ``token``. The
+    session's unknown admission in the runtime ledger (if any) is discarded with it, so the
+    session's queue moves on at its next input."""
     entry = routes.get(store, session_key)
     if not _paused(entry) or entry is None or entry.active_turn_token != token:
         return False
+    _discard_unknown_rows(store, entry.session_id, token)
     routes.end_turn(store, session_key, token)
     routes.clear_resume_pending(store, session_key)
     return True
+
+
+def _discard_unknown_rows(store: StoreHandle, session_id: str, token: str) -> None:
+    epoch = ledger.current_epoch(store)
+    if epoch is None:
+        return
+    with store.read() as conn:
+        found = conn.execute(
+            "SELECT session_id FROM runtime_admissions WHERE request_id = ? "
+            "ORDER BY seq DESC LIMIT 1",
+            (token,),
+        ).fetchone()
+    key = str(found[0]) if found is not None else session_id
+    close = close_lost_turn(now=lambda: store.scope.clock.now().timestamp())
+    for row in ledger.pending(store, key):
+        if row.state != "unknown" or row.generation is None:
+            continue
+        try:
+            ledger.resolve_unknown(
+                store,
+                epoch=epoch,
+                admission_id=row.admission_id,
+                generation=row.generation,
+                terminal_write=close,
+            )
+        except LedgerRefusal as refusal:
+            log.warning("could not discard the lost turn %s: %s", row.admission_id, refusal)
 
 
 def _source_of(entry: RouteEntry) -> Source | None:
@@ -141,6 +197,11 @@ class BootRecovery:
         self.daemon = daemon
         self.crash_reply_sink: CrashReplySink = self._send_recovered
         self._told: set[str] = set()
+
+    @property
+    def shared(self) -> MessagingHost | None:
+        pipeline = getattr(self.daemon, "pipeline", None)
+        return pipeline.shared if pipeline is not None else None
 
     # -- the pause gate (an intake interceptor) ----------------------------------------------------
 
@@ -178,6 +239,7 @@ class BootRecovery:
         for entry in entries:
             if entry.active_turn_token:
                 await self._crash_left(entry, report)
+        await self._pause_unknown(report)
         await self._resume(report)
         await self._notices(report)
         return report
@@ -186,6 +248,16 @@ class BootRecovery:
         store = self.daemon.store
         key, token = entry.session_key, entry.active_turn_token or ""
         started = entry.active_turn_started_at or 0.0
+        owner: AdmissionRow | None = None
+        unknown: AdmissionRow | None = None
+        shared = self.shared
+        if shared is not None:
+            try:
+                owner = await shared.by_request(token)
+                ledger_key = owner.session_id if owner is not None else entry.session_id
+                unknown = await shared.unknown_of(ledger_key)
+            except Exception:
+                log.warning("could not read the runtime ledger for %s", key, exc_info=True)
         try:
             text = await run_blocking(
                 _final_after, store, entry.session_id, started, label="transcript"
@@ -204,6 +276,13 @@ class BootRecovery:
             except Exception:
                 log.warning("could not deliver the recovered reply for %s", key, exc_info=True)
             report.recovered_replies.append(key)
+            if shared is not None and unknown is not None:
+                await shared.discard(unknown)  # its reply is owed and sent: the FIFO goes on
+            return
+        if owner is not None and unknown is None and owner.state != "unknown":
+            # Never started (it runs now) or settled before the crash: not a crash-left turn.
+            await run_blocking(routes.end_turn, store, key, token, label="active-turn marker")
+            report.cleared.append(key)
             return
         await run_blocking(
             routes.mark_resume_pending, store, key, UNKNOWN_REASON, label="resume flag"
@@ -215,6 +294,85 @@ class BootRecovery:
             key,
             token,
         )
+
+    async def _pause_unknown(self, report: RecoveryReport) -> None:
+        """Every unknown admission pauses the chat routes of its session (R06.19)."""
+        shared = self.shared
+        if shared is None:
+            return
+        try:
+            rows = await shared.unknown_rows()
+        except Exception:
+            log.warning("could not read the unknown turns", exc_info=True)
+            return
+        store = self.daemon.store
+        for row in rows:
+            entries = [e for e in await self._routes_of(row.session_id) if not _paused(e)]
+            if not entries:
+                continue
+            try:
+                text = await run_blocking(
+                    _final_after, store, row.session_id, row.created_at, label="transcript"
+                )
+            except Exception:
+                log.warning("could not read the transcript of %s", row.session_id, exc_info=True)
+                text = None
+            if text is not None:
+                # The lost turn stored its reply: owed once (the ledger knows if it went out).
+                for entry in entries:
+                    source = _source_of(entry)
+                    if source is None:
+                        continue
+                    owed = replace(
+                        entry,
+                        active_turn_token=row.request_id,
+                        active_turn_started_at=row.created_at,
+                    )
+                    try:
+                        await self.crash_reply_sink(owed, source, text)
+                    except Exception:
+                        log.warning("could not deliver the owed reply", exc_info=True)
+                    report.recovered_replies.append(entry.session_key)
+                await shared.discard(row)
+                continue
+            for entry in entries:
+                await run_blocking(
+                    routes.mark_resume_pending,
+                    self.daemon.store,
+                    entry.session_key,
+                    UNKNOWN_REASON,
+                    label="resume flag",
+                )
+                report.paused.append(entry.session_key)
+                log.warning(
+                    "%s waits behind a turn whose outcome was lost in a restart; paused until "
+                    "/reset",
+                    entry.session_key,
+                )
+
+    async def _routes_of(self, session_id: str) -> list[RouteEntry]:
+        try:
+            return await run_blocking(
+                routes.routes_for_session, self.daemon.store, session_id, label="gateway route"
+            )
+        except Exception:
+            log.warning("could not read the routes of %s", session_id, exc_info=True)
+            return []
+
+    async def blocked(self, session_id: str, row: AdmissionRow) -> None:
+        """Queued input waits behind the unknown admission ``row``: pause the session's chat
+        routes and tell each chat once (later messages are dropped quietly)."""
+        del row
+        store = self.daemon.store
+        for entry in await self._routes_of(session_id):
+            key = entry.session_key
+            if entry.resume_reason == _TOLD or key in self._told:
+                continue
+            source = _source_of(entry)
+            self._told.add(key)
+            await run_blocking(routes.mark_resume_pending, store, key, _TOLD, label="resume flag")
+            if source is not None:
+                await self.daemon.pipeline.reply(source, UNKNOWN_NOTICE, kind="notice")
 
     async def _send_recovered(self, entry: RouteEntry, source: Source, text: str) -> None:
         await self.daemon.pipeline.reply(source, f"{RECOVERED_LABEL}\n\n{text}", kind="final")

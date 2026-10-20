@@ -223,6 +223,7 @@ def test_catalogue_names() -> None:
         "session.unsubscribe",
         "sessions.watch",
         "events.since",
+        "admission.discard",
     ]
     for spec in METHODS.values():
         assert spec.summary

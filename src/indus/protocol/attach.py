@@ -3,8 +3,10 @@
 A connection to the per-profile daemon may watch several sessions. ``session.subscribe`` makes it
 a viewer of one session: the events after its cursor are sent first (or a ``session.replay_gap``
 when they cannot be), then every new event of the session. ``events.since`` is the pull form.
-``sessions.watch`` turns on ``session.updated`` notifications for list views. These names are
-served only by the daemon (``DAEMON_ONLY_METHODS``); the stdio bridge answers them ``-32601``.
+``sessions.watch`` turns on ``session.updated`` notifications for list views.
+``admission.discard`` resolves a turn the daemon lost in a restart (its outcome is unknown) so the
+session's queue moves on; it names the lost turn's generation. These names are served only by the
+daemon (``DAEMON_ONLY_METHODS``); the stdio bridge answers them ``-32601``.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ from indus.protocol.errors import SESSION_NOT_FOUND, SESSION_REFUSED, STORE_FAIL
 __all__ = [
     "ATTACH_METHODS",
     "DAEMON_ONLY_METHODS",
+    "AdmissionDiscardParams",
+    "AdmissionDiscardResult",
     "EventsSinceParams",
     "EventsSinceResult",
     "ReplayGapInfo",
@@ -126,6 +130,28 @@ class EventsSinceResult(ProtocolModel):
     """Open server requests offered again to this connection."""
 
 
+class AdmissionDiscardParams(ProtocolModel):
+    """Resolve a turn the daemon lost in a restart (its outcome is unknown): it is never run again
+    and the session's queued input may go on."""
+
+    session_id: SessionId
+    """A session this connection watches."""
+    admission_id: str = Field(min_length=1, max_length=200)
+    """The lost turn's admission."""
+    generation: NonNegativeInt
+    """The lost turn's generation; another value changes nothing (``stale_generation``)."""
+
+
+class AdmissionDiscardResult(ProtocolModel):
+    """Whether the lost turn was discarded."""
+
+    discarded: bool
+    """True when it is discarded now (or already was, by this same request)."""
+    reason: Literal["stale_generation", "not_found"] | None = None
+    """Why nothing changed: the admission is not a lost turn of that generation, or not one of
+    this session."""
+
+
 type _Row = tuple[str, type[ProtocolModel], type[ProtocolModel], tuple[ErrorCode, ...]]
 
 _SESSION = (SESSION_NOT_FOUND, SESSION_REFUSED, STORE_FAILED)
@@ -135,6 +161,7 @@ ATTACH_METHODS: tuple[_Row, ...] = (
     ("session.unsubscribe", SessionUnsubscribeParams, SessionUnsubscribeResult, ()),
     ("sessions.watch", SessionsWatchParams, SessionsWatchResult, ()),
     ("events.since", EventsSinceParams, EventsSinceResult, (SESSION_NOT_FOUND,)),
+    ("admission.discard", AdmissionDiscardParams, AdmissionDiscardResult, (SESSION_NOT_FOUND,)),
 )
 """``(name, params, result, extra errors)`` for the attach methods, in declaration order."""
 

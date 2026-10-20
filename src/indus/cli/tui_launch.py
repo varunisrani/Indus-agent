@@ -11,7 +11,9 @@ outer renderer are replaced), ``NODE_ENV=production`` (D-04.2), the bridge comma
 the renderer writes the live session id into, and the launch flags under ``LAUNCH_NAMES`` (every
 one of them is cleared first, so nothing stale from the shell survives). Node's old-space heap is
 raised through ``NODE_OPTIONS`` unless the user already set one, and kept under a container memory
-limit when one is found.
+limit when one is found. The renderer attaches to the profile's daemon by default through
+``indus gateway grant`` (``INDUS_TUI_GRANT_COMMAND``, P17-19); ``--local`` exports
+``INDUS_TUI_LOCAL=1`` and the renderer runs the bridge child instead.
 
 The renderer is found in this order: ``--dev`` runs the checkout's TypeScript through ``tsx``;
 ``INDUS_TUI_DIR/dist/entry.js``; the bundle shipped in the package (``indus/_tui_dist``); the
@@ -87,6 +89,8 @@ DIR_ENV = "INDUS_TUI_DIR"
 FORCE_BUILD_ENV = "INDUS_TUI_FORCE_BUILD"
 SESSION_FILE_ENV = "INDUS_TUI_ACTIVE_SESSION_FILE"
 RESUME_ENV = "INDUS_TUI_RESUME"
+GRANT_ENV = "INDUS_TUI_GRANT_COMMAND"
+LOCAL_ENV = "INDUS_TUI_LOCAL"
 CWD_ENVS = ("INDUS_TUI_CWD", "INDUS_LAUNCH_CWD")
 
 _VALUE_NAMES = {
@@ -111,6 +115,7 @@ _SWITCH_NAMES = {
 LAUNCH_NAMES: tuple[str, ...] = (
     RESUME_ENV,
     SESSION_FILE_ENV,
+    LOCAL_ENV,
     *_VALUE_NAMES.values(),
     *_SWITCH_NAMES.values(),
 )
@@ -390,6 +395,14 @@ def _bridge_command(env: Mapping[str, str], system: System) -> str | None:
     return _indus_program(env, system)
 
 
+def _grant_command(env: Mapping[str, str], system: System) -> str | None:
+    """The program the renderer runs as ``gateway grant --json`` (P17-19)."""
+    own = (env.get(GRANT_ENV) or "").strip()
+    if own:
+        return own
+    return _indus_program(env, system)
+
+
 def _indus_program(env: Mapping[str, str], system: System) -> str | None:
     name = "indus.exe" if system.platform == "win32" else "indus"
     beside = system.script_dir / name
@@ -410,6 +423,7 @@ def build_child_env(
     session_file: Path,
     heap: int,
     bridge: str | None,
+    grant: str | None = None,
 ) -> dict[str, str]:
     """The renderer's env: ``base`` with this run's names pinned (see the module notes)."""
     env = {k: v for k, v in base.items() if k not in LAUNCH_NAMES}
@@ -421,6 +435,10 @@ def build_child_env(
     env[SESSION_FILE_ENV] = str(session_file)
     if bridge:
         env[BRIDGE_ENV] = bridge
+    if grant:
+        env[GRANT_ENV] = grant
+    if getattr(args, "local", False):  # ``--local`` (P17-18 adds the flag): keep the bridge child
+        env[LOCAL_ENV] = "1"
     if resume_id:
         env[RESUME_ENV] = resume_id
     values: dict[str, str | None] = {
@@ -682,6 +700,7 @@ def run(
             session_file=session_file,
             heap=heap_mb(cgroup_limit(machine.cgroup_files)),
             bridge=_bridge_command(base, machine),
+            grant=_grant_command(base, machine),
         )
         argv = [node, *renderer.argv] if renderer.via_node else list(renderer.argv)
         try:

@@ -224,6 +224,19 @@ def test_scrub_removes_only_launch_vars() -> None:
     assert len(env) == len(LAUNCH_ENV) + 2  # the input is not changed
 
 
+def test_scrub_also_drops_the_tui_launchers_run_values() -> None:
+    env = {
+        "INDUS_MODEL": "m1",
+        "INDUS_PROVIDER": "p1",
+        "INDUS_LAUNCH_CWD": "/w",
+        "INDUS_TUI_QUERY": "hello",
+        "INDUS_TUI_GRANT_COMMAND": "indus",
+        "INDUS_HOME": "/h",
+        "INDUS_GATEWAY_LOCK_DIR": "/l",
+    }
+    assert scrub_launch_env(env) == {"INDUS_HOME": "/h", "INDUS_GATEWAY_LOCK_DIR": "/l"}
+
+
 # -- storage --------------------------------------------------------------------------------------
 
 

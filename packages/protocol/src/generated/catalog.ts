@@ -15,6 +15,19 @@ export const PROTOCOL_VERSION = 1;
 
 /** Method name → params type, result type and the error names it may return. */
 export const METHODS = deepFreeze({
+  "admission.discard": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "SESSION_NOT_FOUND"
+    ],
+    "params": "AdmissionDiscardParams",
+    "result": "AdmissionDiscardResult"
+  },
   "clarify.lock": {
     "errors": [
       "PARSE_ERROR",
@@ -574,6 +587,7 @@ export const METHODS = deepFreeze({
 export type MethodName = keyof typeof METHODS;
 
 export interface MethodTypes {
+  "admission.discard": { params: T.AdmissionDiscardParams; result: T.AdmissionDiscardResult };
   "clarify.lock": { params: T.ClarifyLockParams; result: T.ClarifyLockResult };
   "client.capabilities": { params: T.ClientCapabilitiesParams; result: T.ClientCapabilitiesResult };
   "command.dispatch": { params: T.CommandDispatchParams; result: T.CommandDispatchResult };

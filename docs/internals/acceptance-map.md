@@ -347,6 +347,8 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-B25-2** Inputs started under a dead owner become unknown, are never replayed and pause their session
   - `tests/unit/state/test_runtime_ledger.py::test_restart_flips_started_to_unknown_and_blocks_the_next_row`
   - `tests/unit/service/test_admissions.py::test_restart_parks_the_lost_turn_and_tells_once`
+  - `tests/integration/gateway/test_messaging_on_shared_host.py::test_a_turn_lost_with_its_daemon_pauses_the_chat_once_and_never_runs_again`
+  - `tests/unit/service/remote/test_host.py::test_a_lost_turn_is_discarded_by_its_generation_and_closed_in_its_transcript`
 - **ACC-B26-1** Queue a prompt to run after the current turn (`/queue`, list/edit/move/clear)
   - `tests/unit/cli/slash/test_dispatch.py::test_queue_runs_after_the_turn`
   - `tests/unit/cli/slash/test_control_cmds.py::test_queue_management`
@@ -1035,10 +1037,24 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/integration/cli/test_oneshot_exit_codes.py::test_completed_prints_only_text`
   - `tests/e2e/test_demo1.py::test_demo1_create_run_quit_then_continue`
   - `tests/unit/cli/test_chat_select.py::test_the_repl_entry_is_the_launch_adapter`
+- **ACC-I55-2** Classic chat as a client of the profile's daemon (P17-18): refused flags exit 2 and name `--local`, frozen launch flags, lost-owner queue exits 3, `/discard` by generation; `--local` keeps the in-process route
+  - `tests/unit/cli/test_attach.py::test_each_refused_flag_exits_2_and_names_local`
+  - `tests/unit/cli/test_attach.py::test_local_runs_in_process_and_never_ensures`
+  - `tests/unit/cli/test_attach.py::test_a_changed_frozen_flag_on_resume_exits_2`
+  - `tests/unit/cli/test_attach.py::test_an_unknown_turn_blocks_a_finite_query_with_exit_3`
+  - `tests/unit/cli/test_attach.py::test_discard_with_a_stale_generation_is_refused`
+  - `tests/unit/cli/test_attach.py::test_launch_settings_the_daemon_cannot_take_yet_are_refused`
+  - `tests/unit/cli/test_attach_remote.py::test_a_session_behind_a_lost_turn_exits_3_and_discard_lets_it_go_on`
+  - `tests/integration/cli/test_attach_daemon.py::test_chat_starts_a_daemon_when_none_runs_and_local_starts_nothing`
 - **ACC-J1-1** `indus --tui` launcher: TTY gate, cwd pinning, resume and one-shot options, heap flag, exit summary …
   - Review: not yet planned (phase TBD)
 - **ACC-J2-1** Transport: renderer spawns a Python child over JSON-RPC on stdin/stdout first. Changed (P1 …
   - Review: not yet planned (phase TBD)
+- **ACC-J2-2** TUI attaches to the profile daemon by default over the loopback WebSocket (grant helper, ticket only in the subprotocol, describe then one ready); `--local` keeps the stdio child; an explicit URL never falls back
+  - `tests/unit/cli/commands/test_gateway_grant.py::test_the_grant_carries_the_ticket_only_inside_protocols`
+  - `apps/tui/src/transport/attach.test.ts::describe, then exactly one synthetic ready; send waits for it`
+  - `apps/tui/src/transport/attach.test.ts::attaches, describes and opens a session on the daemon`
+  - `apps/tui/src/transport/attach.test.ts::an explicit URL is only ever dialled: no helper, no daemon, no local child`
 - **ACC-J3-1** Declared wire contract with generated TypeScript types; error codes with one fixed meaning each. …
   - Review: not yet planned (phase TBD)
 - **ACC-J4-1** Layout: transcript with banner and session panel, live streaming row, tool trail, status rule with …
@@ -1397,6 +1413,20 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/gateway/test_webhook.py::test_coalescing_runs_the_newest_event_once_after_the_quiet_window`
   - `tests/contract/gateway/test_webhook.py::test_events_filters_and_direct_delivery`
   - `tests/unit/cli/commands/test_webhook.py::test_test_signs_and_posts_to_the_local_receiver`
+- **ACC-K51-1** CLI attach: `indus`, `chat`, `-q` and `-z` ensure the daemon and run their turns there by default; leaving only detaches
+  - `tests/unit/cli/test_attach.py::test_chat_q_attaches_by_default`
+  - `tests/unit/cli/test_attach.py::test_z_attaches_by_default_and_prints_only_the_reply`
+  - `tests/unit/cli/test_attach.py::test_ensure_failure_exits_1_and_runs_nothing_locally`
+  - `tests/unit/cli/test_attach.py::test_interactive_chat_runs_the_repl_over_the_daemon_and_only_detaches`
+  - `tests/unit/cli/test_attach_remote.py::test_chat_q_runs_its_turn_in_the_daemon_and_prints_the_reply`
+  - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
+- **ACC-K51-2** TUI attach: grant verdicts (terminal shows the hint without retry, others back off), recover budget, TS client resumes from its cursor without duplicates
+  - `apps/tui/src/transport/attach.test.ts::a terminal verdict after attaching shows the hint once and is not retried`
+  - `apps/tui/src/transport/attach.test.ts::asks start first, then recover within the budget, then discover`
+  - `tests/unit/cli/commands/test_gateway_grant.py::test_a_daemon_without_an_attach_endpoint_is_terminal_with_a_hint`
+  - `tests/unit/cli/commands/test_gateway_grant.py::test_ensure_verdicts_keep_their_terminal_flag`
+  - `tests/contract/client/test_ts_client_against_daemon.py::test_ts_client_attaches_answers_and_resumes_from_its_cursor`
+  - `tests/integration/cli/test_attach_daemon.py::test_cli_second_client_ts_client_and_maintenance_share_one_daemon`
 - **ACC-K51-3** Attach tickets are single-use, 30 s, purpose- and instance-bound, loopback and Origin checked, never in a URL or log
   - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
   - `tests/unit/service/test_ws_auth.py::test_expiry_at_thirty_seconds`
@@ -1412,6 +1442,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/service/test_subscriptions.py::test_an_overflowing_viewer_drops_to_a_gap_and_recovers_by_subscribing_again`
   - `tests/unit/service/test_subscriptions.py::test_an_open_approval_is_offered_again_on_subscribe`
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_connection_reaches_only_sessions_it_attached`
+  - `tests/unit/service/remote/test_host.py::test_a_reconnect_replays_missed_deltas_exactly_once`
+  - `tests/contract/client/test_ts_client_against_daemon.py::test_ts_client_attaches_answers_and_resumes_from_its_cursor`
+  - `packages/client/src/replay.test.ts::resumes every tracked session from its cursor after a reconnect, without duplicates`
 - **ACC-K52-1** `indus gateway setup` and per-platform setup helpers (WhatsApp pairing, Slack app)
   - `tests/unit/cli/wizards/test_gateway_setup.py::test_every_platform_runs_with_a_fake_check`
   - `tests/unit/cli/wizards/test_gateway_setup.py::test_menu_runs_until_done`
