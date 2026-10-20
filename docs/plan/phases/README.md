@@ -37,7 +37,7 @@ acceptance, done when. Paths and conventions come from
 | P14 | [P14-cron.md](P14-cron.md) | 1.5 | 19 | 47 | 9 | 4 | 19 | M4 | done (M4 demo; in this commit) |
 | P15 | [P15-gateway-core-demo3.md](P15-gateway-core-demo3.md) | 2.5 | 36 | 131 | 11 | 6 | 36 | **Demo 3** | done (Demo 3; adapters `5378127`) |
 | P16 | [P16-more-platforms.md](P16-more-platforms.md) | 3 | 36 | 136 | 6 | 4 | 36 | — | in progress (01, 04–06, 08–18, 20, 23, 24, 26–29 done `19e9a77`) |
-| P17 | [P17-daemon-shared-backend.md](P17-daemon-shared-backend.md) | 2.5 | 27 | 65 | 17 | 2 | 27 | M5 | in progress (01..12 done) |
+| P17 | [P17-daemon-shared-backend.md](P17-daemon-shared-backend.md) | 2.5 | 27 | 65 | 17 | 2 | 27 | M5 | in progress (01..14 done `8e91087`; WS endpoint mounted by 22) |
 | P18 | [P18-web-dashboard.md](P18-web-dashboard.md) | 2.5 | 30 | 148 | 11 | 6 | 30 | — | planned |
 | P19 | [P19-acp-mcp-serve.md](P19-acp-mcp-serve.md) | 1.5 | 18 | 54 | 10 | 4 | 18 | M6 | planned |
 | P20 | [P20-desktop-demo4.md](P20-desktop-demo4.md) | 3.5 | 40 | 183 | 8 | 5 | 40 | **Demo 4** (M7) | planned |
