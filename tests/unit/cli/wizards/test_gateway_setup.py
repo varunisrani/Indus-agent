@@ -191,6 +191,8 @@ def test_every_platform_runs_with_a_fake_check(clean: Scope, world: World, name:
     section = platform_raw(clean, name)
     for ask in (a for a in steps.asks if a.kind == "setting" and a.required):
         assert section[ask.name] == fake_value(ask.name)
+    # a platform shipped disabled (Photon) is switched on by the wizard, not by its credentials
+    assert section.get("enabled") is (True if steps.enable else None)
     if steps.access:
         assert section["extra"]["allow_from"] == ["alice", "bob"]
         assert section["extra"]["unauthorized_dm_behavior"] == "ignore"

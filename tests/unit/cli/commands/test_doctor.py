@@ -88,6 +88,7 @@ def test_check_order_is_stable() -> None:
         "external",
         "tools",
         "computer_use",  # P10-20
+        "gateway",  # P16-36
     ]
 
 

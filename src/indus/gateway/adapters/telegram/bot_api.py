@@ -46,6 +46,7 @@ __all__ = [
     "File",
     "FileRef",
     "Forbidden",
+    "ForumTopic",
     "InlineKeyboardButton",
     "InlineKeyboardMarkup",
     "InputFile",
@@ -87,6 +88,9 @@ BOT_API_METHODS: Final[Mapping[str, str]] = {
     "set_my_commands": "setMyCommands",
     "get_file": "getFile",
     "answer_callback_query": "answerCallbackQuery",
+    # P16-33 native drafts, P16-34 private-chat topics
+    "send_message_draft": "sendMessageDraft",
+    "create_forum_topic": "createForumTopic",
 }
 
 
@@ -162,6 +166,8 @@ class User:
     first_name: str = ""
     username: str | None = None
     last_name: str | None = None
+    # ``getMe`` only: the bot's Threaded Mode (topics in private chats) is on.
+    has_topics_enabled: bool = False
 
     @property
     def full_name(self) -> str:
@@ -175,6 +181,7 @@ class User:
             first_name=str(data.get("first_name") or ""),
             username=_opt_str(data.get("username")),
             last_name=_opt_str(data.get("last_name")),
+            has_topics_enabled=data.get("has_topics_enabled") is True,
         )
 
 
@@ -221,6 +228,10 @@ class FileRef:
     width: int | None = None
     height: int | None = None
     emoji: str | None = None
+    # stickers only
+    set_name: str | None = None
+    is_animated: bool = False
+    is_video: bool = False
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> FileRef:
@@ -234,6 +245,9 @@ class FileRef:
             width=_opt_int(data.get("width")),
             height=_opt_int(data.get("height")),
             emoji=_opt_str(data.get("emoji")),
+            set_name=_opt_str(data.get("set_name")),
+            is_animated=data.get("is_animated") is True,
+            is_video=data.get("is_video") is True,
         )
 
 
@@ -405,6 +419,19 @@ class File:
             file_path=_opt_str(data.get("file_path")),
             file_unique_id=str(data.get("file_unique_id") or ""),
             file_size=_opt_int(data.get("file_size")),
+        )
+
+
+@dataclass(frozen=True)
+class ForumTopic:
+    message_thread_id: int
+    name: str = ""
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> ForumTopic:
+        return cls(
+            message_thread_id=int(data.get("message_thread_id") or 0),
+            name=str(data.get("name") or ""),
         )
 
 
@@ -893,6 +920,34 @@ class BotApi:
             },
         )
         return result is True
+
+    async def send_message_draft(
+        self,
+        chat_id: int | str,
+        draft_id: int,
+        text: str,
+        *,
+        parse_mode: str | None = None,
+        message_thread_id: int | None = None,
+    ) -> bool:
+        """Show (or animate) a draft of a reply in a private chat; frames with the same
+        ``draft_id`` update one draft. The reply itself is sent with ``send_message``."""
+        result = await self._call(
+            "sendMessageDraft",
+            {
+                "chat_id": _chat(chat_id),
+                "draft_id": int(draft_id),
+                "text": text,
+                "parse_mode": parse_mode,
+                "message_thread_id": message_thread_id,
+            },
+        )
+        return result is True
+
+    async def create_forum_topic(self, chat_id: int | str, name: str) -> ForumTopic:
+        """Open a topic (a forum supergroup, or a private chat with the bot's Threaded Mode)."""
+        result = await self._call("createForumTopic", {"chat_id": _chat(chat_id), "name": name})
+        return ForumTopic.from_json(_dict(result))
 
     async def get_file(self, file_id: str) -> File:
         return File.from_json(_dict(await self._call("getFile", {"file_id": file_id})))

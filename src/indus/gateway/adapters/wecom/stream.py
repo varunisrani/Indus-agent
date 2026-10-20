@@ -79,6 +79,9 @@ class FrameSender(Protocol):
 class WeComStream:
     """One native reply stream (see the module notes)."""
 
+    # The stream is the reply and stays open across tool calls.
+    one_message_per_turn = True
+
     def __init__(
         self,
         sender: FrameSender,
@@ -119,15 +122,17 @@ class WeComStream:
         return pending is not None and not pending.done()
 
     async def push(self, text: str) -> bool:
-        """One interim frame with the whole text so far. False when the stream is closed or the
-        text does not extend what was sent (it was skipped to keep frames prefix-stable)."""
+        """One interim frame with the whole text so far. False only when the stream is closed
+        (finished or expired); a text that does not extend what was sent is skipped to keep frames
+        prefix-stable and the stream stays usable (the next extending frame or the final carries
+        the text, see `NativeStream`)."""
         if self.finished or self.expired:
             return False
         if text == self.sent:
             return True
         if not text.startswith(self.sent):
             log.debug("wecom: stream %s skipped a frame that rewrites sent text", self.stream_id)
-            return False
+            return True
         if (
             self.interim >= MAX_INTERIM_FRAMES
             or len(text.encode("utf-8")) > MAX_FRAME_BYTES
@@ -192,6 +197,11 @@ class WeComStream:
                 remainder=rest,
             )
         return SendResult.sent(self.stream_id)
+
+    async def abandon(self) -> None:
+        """The turn was cancelled: close the bubble with what it shows (best effort)."""
+        if not self.finished and not self.expired and self.sent:
+            await self.finish(self.sent)
 
 
 def _code(answer: dict[str, Any]) -> int:

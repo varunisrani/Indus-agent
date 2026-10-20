@@ -106,6 +106,9 @@ class PlatformSteps:
     home: bool = True
     # A platform set up elsewhere: the wizard prints this and asks nothing.
     elsewhere: str = ""
+    # A platform its credentials do not turn on (shipped disabled, P16-25): the wizard sets
+    # ``platforms.<name>.enabled: true`` once every value is saved.
+    enable: bool = False
 
 
 def _secret(name: str, question: str, *, required: bool = True) -> Ask:
@@ -311,6 +314,19 @@ STEPS: Mapping[str, PlatformSteps] = {
             _setting("server_url", "Server URL"),
             _secret("BLUEBUBBLES_PASSWORD", "Server password"),
         ),
+    ),
+    "photon": PlatformSteps(
+        (
+            "Photon runs iMessage lines for you: copy your Photon project's id and secret. The "
+            "gateway runs its own sidecar on Node.js 24 (loopback port 8789) with a Spectrum "
+            "provider module you supply (one that exports createSpectrumLink); none ships.",
+        ),
+        (
+            _secret("PHOTON_PROJECT_ID", "Project id"),
+            _secret("PHOTON_PROJECT_SECRET", "Project secret"),
+            _setting("provider", "Provider module (an absolute path or a package name)"),
+        ),
+        enable=True,
     ),
     "simplex": PlatformSteps(
         ("Run the SimpleX Chat CLI as a local daemon: simplex-chat -p 5225",),
@@ -941,6 +957,9 @@ def _configure(run: _Run, info: PlatformInfo) -> None:
         _save_platform(run.scope, info.name, settings)
         for key, value in settings.items():
             run.say(f"platforms.{info.name}.{key}: {value}")
+    if steps.enable and _platform_settings(run.scope, info.name).get("enabled") is not True:
+        _save_platform(run.scope, info.name, {"enabled": True})
+        run.say(f"platforms.{info.name}.enabled: true")
     if steps.access and not info.trusted_inbound:
         _access(run, info)
     if steps.home:

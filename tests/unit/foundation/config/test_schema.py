@@ -314,6 +314,7 @@ def test_decided_defaults() -> None:
         "ephemeral_system_ttl": 0.0,  # P15-17: notices stay unless set
         "tool_progress_grouping": "accumulate",  # P15-16
         "heartbeat_seconds": 180.0,
+        "platforms": {},  # P16-33: display.platforms.<name>.native_stream
     }
     platform = {  # P15-02: enabled unset = follow credentials
         "enabled": None,
@@ -346,6 +347,7 @@ def test_decided_defaults() -> None:
         "wecom_callback": platform,  # P16-18
         "feishu": platform,  # P16-14
         "bluebubbles": platform,  # P16-24
+        "photon": platform,  # P16-25
         "simplex": platform,  # P16-28
         "buzz": platform,  # P16-29
         "weixin": platform,  # P16-19
@@ -575,6 +577,10 @@ def test_gateway_rows_validate() -> None:  # P15 wave 1
     assert schema.validate({"gateway": {"unauthorized_dm_behavior": "shout"}}) != []
     assert schema.validate({"gateway": {"bot_loop_guard": {"window_seconds": 0}}}) != []
     assert schema.validate({"display": {"ephemeral_system_ttl": -1}}) != []
+    native = {"display": {"platforms": {"slack": {"native_stream": True}}}}  # P16-33
+    assert schema.validate(native) == []
+    sometimes = {"display": {"platforms": {"slack": {"native_stream": "sometimes"}}}}
+    assert schema.validate(sometimes) != []
     assert schema.validate({"gateway": {"stt_enabled": False}}) == []  # P15-23
     assert schema.validate({"gateway": {"stt_enabled": "sometimes"}}) != []
     assert schema.validate({"agent": {"reconnect_attention_after": 0}}) == []  # P15-29

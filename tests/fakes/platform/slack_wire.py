@@ -48,6 +48,9 @@ SURFACE: dict[str, tuple[str, ...]] = {
         "assistant_threads_setStatus",
         "conversations_open",
         "conversations_info",
+        "chat_startStream",
+        "chat_appendStream",
+        "chat_stopStream",
     ),
     "slack_sdk.errors:SlackApiError": (),
     "slack_bolt.app.async_app:AsyncApp": ("event", "action", "client"),
@@ -264,6 +267,87 @@ class FakeWebClient:
             }
         )
 
+    # -- native streams (P16-33): one platform message per stream, frames in ``wire.stream_log`` --
+
+    def _stream_refusal(self, name: str) -> None:
+        refusal = self.wire.stream_refusal
+        if refusal is not None:
+            response = SlackResponse({"ok": False, "error": refusal})
+            raise SlackApiError(f"The request to the Slack API failed. ({name})", response)
+
+    def _open_stream(self, channel: str, ts: str) -> FakeMessage:
+        message = self.wire.platform.message(ts)
+        if message is None or ts not in self.wire.open_streams:
+            response = SlackResponse({"ok": False, "error": "message_not_in_streaming_state"})
+            raise SlackApiError("The request to the Slack API failed.", response)
+        return message
+
+    async def chat_startStream(  # noqa: N802
+        self,
+        *,
+        channel: str,
+        thread_ts: str,
+        markdown_text: str | None = None,
+        recipient_user_id: str | None = None,
+        recipient_team_id: str | None = None,
+        **kw: Any,
+    ) -> SlackResponse:
+        args = {
+            "channel": channel,
+            "thread_ts": thread_ts,
+            "markdown_text": markdown_text,
+            "recipient_user_id": recipient_user_id,
+            "recipient_team_id": recipient_team_id,
+            **kw,
+        }
+
+        async def start() -> FakeMessage:
+            self.wire.platform._check("stream", channel)  # pyright: ignore[reportPrivateUsage]
+            self._stream_refusal("chat.startStream")
+            return await self.wire.platform.post(
+                channel, markdown_text or "", thread_id=_id_of(thread_ts), extra={"stream": True}
+            )
+
+        sent = await self._do("chat_startStream", args, start())
+        ts = _ts(sent)
+        self.wire.open_streams[ts] = 0
+        self.wire.stream_log.append(("start", ts, markdown_text or ""))
+        return SlackResponse({"ok": True, "channel": channel, "ts": ts})
+
+    async def chat_appendStream(  # noqa: N802
+        self, *, channel: str, ts: str, markdown_text: str | None = None, **kw: Any
+    ) -> SlackResponse:
+        args = {"channel": channel, "ts": ts, "markdown_text": markdown_text, **kw}
+
+        async def append() -> None:
+            self.wire.platform._check("stream", channel)  # pyright: ignore[reportPrivateUsage]
+            self._stream_refusal("chat.appendStream")
+            message = self._open_stream(channel, ts)
+            message.text += markdown_text or ""
+            self.wire.open_streams[ts] += 1
+            limit = self.wire.seal_after
+            if limit is not None and self.wire.open_streams[ts] >= limit:
+                del self.wire.open_streams[ts]  # Slack sealed it on its own
+
+        await self._do("chat_appendStream", args, append())
+        self.wire.stream_log.append(("append", ts, markdown_text or ""))
+        return SlackResponse({"ok": True, "channel": channel, "ts": ts})
+
+    async def chat_stopStream(  # noqa: N802
+        self, *, channel: str, ts: str, markdown_text: str | None = None, **kw: Any
+    ) -> SlackResponse:
+        args = {"channel": channel, "ts": ts, "markdown_text": markdown_text, **kw}
+
+        async def stop() -> None:
+            self.wire.platform._check("stop", channel)  # pyright: ignore[reportPrivateUsage]
+            message = self._open_stream(channel, ts)
+            message.text += markdown_text or ""
+            del self.wire.open_streams[ts]
+
+        await self._do("chat_stopStream", args, stop())
+        self.wire.stream_log.append(("stop", ts, markdown_text or ""))
+        return SlackResponse({"ok": True, "channel": channel, "ts": ts})
+
     async def assistant_threads_setStatus(  # noqa: N802
         self, *, channel_id: str, thread_ts: str, status: str
     ) -> SlackResponse:
@@ -349,6 +433,12 @@ class SlackWire:
         self.app = FakeApp(self)
         self.ephemeral: list[tuple[str, str, str]] = []
         self._envelopes = itertools.count(1)
+        # P16-33 native streams: open stream ts → appends so far; every frame in order; an error
+        # code Slack answers every stream call with (feature off); seal a stream after n appends.
+        self.open_streams: dict[str, int] = {}
+        self.stream_log: list[tuple[str, str, str]] = []
+        self.stream_refusal: str | None = None
+        self.seal_after: int | None = None
 
     def handler(self, app_token: str) -> FakeSocketModeHandler:
         return FakeSocketModeHandler(self.app, app_token)

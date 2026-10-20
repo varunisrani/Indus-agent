@@ -249,6 +249,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/whatsapp/test_adapter.py::test_create_adapter_builds_an_owner_with_a_minimal_child_env`
   - `tests/unit/gateway/adapters/whatsapp/test_sidecar.py::test_a_fresh_bridge_gets_a_private_token_through_its_env_only`
   - `tests/contract/web/test_pty_route.py::test_child_env_comes_from_the_builder`
+  - `tests/unit/gateway/adapters/photon/test_adapter.py::test_create_adapter_reads_the_credentials_and_builds_a_minimal_child_env`
+  - `tests/unit/gateway/adapters/photon/test_sidecar.py::test_a_fresh_sidecar_gets_its_token_and_credentials_through_its_env_only`
+  - `tests/unit/gateway/adapters/photon/test_real_sidecar.py::test_the_adapter_runs_the_real_sidecar`
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
   - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
@@ -784,11 +787,16 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/outbound/test_ports.py::test_marks_reach_the_door_but_never_the_wire`
   - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_every_stream_frame_is_a_prefix_of_the_next`
   - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_unanswered_interims_are_skipped_and_the_final_carries_the_text`
-  - Review: prefix-stable frames for native streams arrive with native streaming (P2); the edit transport closes fences per frame (P15-16)
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_recorded_telegram_draft_frames_are_prefix_stable`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_recorded_slack_stream_frames_are_prefix_stable`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_no_duplicate_final_after_seal`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_a_rewriting_or_repeated_frame_is_skipped`
+  - Review: the consumer's native branch (raw frames, no fence closing) is a proposed core change (P16-33); the edit transport closes fences per frame (P15-16)
 - **R06.13** Telegram counts edits against the same per-chat allowance as sends
   - `tests/unit/gateway/core/test_send_slot.py::test_interim_edit_while_a_send_waits_is_dropped_and_final_goes_through`
   - `tests/unit/gateway/core/test_send_slot.py::test_five_sends_to_one_chat_start_one_second_apart`
   - `tests/unit/gateway/adapters/test_base.py::test_edits_share_the_send_slot`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_draft_frames_share_the_chats_send_slot`
   - `tests/unit/gateway/outbound/test_stream.py::test_three_floods_stop_edits_and_final_sends_tail`
   - `tests/unit/gateway/outbound/test_stream.py::test_flood_backoff_is_capped_at_30_seconds`
 - **R06.14** Silence tokens are whole-message only and never hide failures

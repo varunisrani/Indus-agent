@@ -11,6 +11,7 @@ client's methods are documented Bot API methods.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,6 +24,7 @@ from indus.gateway.adapters.telegram.bot_api import (
     File,
     FileRef,
     Forbidden,
+    ForumTopic,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -66,6 +68,8 @@ SURFACE: dict[str, tuple[str, ...]] = {
         "set_my_commands",
         "get_file",
         "answer_callback_query",
+        "send_message_draft",
+        "create_forum_topic",
         "download_file",
         "aclose",
     ),
@@ -132,6 +136,15 @@ class FakeBot:
     # Bytes ``download_file`` serves per file path (default: a short text naming the path).
     files: dict[str, bytes] = field(default_factory=dict[str, bytes])
     bot_username: str = "indus_test_bot"
+    # P16-34: the bot's Threaded Mode (``getMe.has_topics_enabled``); topics opened by the bot.
+    has_topics_enabled: bool = False
+    topics: list[tuple[str, int, str]] = field(default_factory=list[tuple[str, int, str]])
+    # P16-33: every draft frame (chat, draft id, text, thread); a refusal text for drafts.
+    drafts: list[tuple[str, int, str, int | None]] = field(
+        default_factory=list[tuple[str, int, str, int | None]]
+    )
+    refuse_drafts: str | None = None
+    _topic_ids: itertools.count[int] = field(default_factory=lambda: itertools.count(101))
 
     async def _do(self, name: str, kwargs: dict[str, Any], coro: Any) -> Any:
         self.calls.append((name, kwargs))
@@ -154,6 +167,7 @@ class FakeBot:
             True,
             self.platform.bot_name,
             username=self.bot_username,
+            has_topics_enabled=self.has_topics_enabled,
         )
 
     async def aclose(self) -> None:
@@ -358,6 +372,49 @@ class FakeBot:
         for start in range(0, len(data), 64 * 1024):
             yield data[start : start + 64 * 1024]
 
+    async def send_message_draft(
+        self,
+        chat_id: int | str,
+        draft_id: int,
+        text: str,
+        *,
+        parse_mode: str | None = None,
+        message_thread_id: int | None = None,
+    ) -> bool:
+        """Drafts are previews: recorded, never stored as messages. Arm failures with
+        ``platform.fail(kind, op="draft")``; ``refuse_drafts`` refuses every frame."""
+        args = {
+            "chat_id": chat_id,
+            "draft_id": draft_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            "message_thread_id": message_thread_id,
+        }
+
+        async def frame() -> bool:
+            self.platform._check("draft", str(chat_id))  # pyright: ignore[reportPrivateUsage]
+            if self.refuse_drafts is not None:
+                raise BadRequest(f"Bad Request: {self.refuse_drafts}")
+            if utf16_units(text) > MAX_LEN:
+                raise BadRequest("Bad Request: text is too long")
+            self.drafts.append((str(chat_id), draft_id, text, message_thread_id))
+            return True
+
+        return await self._do("send_message_draft", args, frame())
+
+    async def create_forum_topic(self, chat_id: int | str, name: str) -> ForumTopic:
+        args = {"chat_id": chat_id, "name": name}
+
+        async def opened() -> ForumTopic:
+            self.platform._check("topic", str(chat_id))  # pyright: ignore[reportPrivateUsage]
+            if not self.has_topics_enabled and str(chat_id).isdigit():
+                raise BadRequest("Bad Request: the chat is not a forum")
+            thread = next(self._topic_ids)
+            self.topics.append((str(chat_id), thread, name))
+            return ForumTopic(thread, name)
+
+        return await self._do("create_forum_topic", args, opened())
+
     async def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> bool:
         await self._do(
             "answer_callback_query",
@@ -396,6 +453,7 @@ __all__ = [
     "Chat",
     "FakeBot",
     "Forbidden",
+    "ForumTopic",
     "InlineKeyboardButton",
     "InlineKeyboardMarkup",
     "Message",

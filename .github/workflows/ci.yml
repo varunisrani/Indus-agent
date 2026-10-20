@@ -109,6 +109,28 @@ jobs:
       - name: Tests on Python 3.14
         run: uv run --locked --python 3.14 pytest -q -m "not perf"
 
+  # The adapter matrix (P16-36, the M5 criterion): the shared contract suite over every registered
+  # platform's wire fake, plus the gate that fails, naming the platform, when one lacks a wire fake
+  # or a contract run (tests/contract/gateway/test_adapter_matrix.py). No extras: every adapter must
+  # pass over its fake without its SDK; the vendor-name drift rows run in the extras lane.
+  adapters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Adapter matrix and contract suite
+        run: uv run pytest tests/contract/gateway -q -m "not perf" -p no:randomly
+
   # Demo 1 (P06-14): the real `indus` in a pseudo-terminal against the fake model, on Linux and
   # macOS (pty and signal behaviour differ between them).
   e2e:
@@ -171,6 +193,7 @@ jobs:
     needs:
       - checks
       - py314
+      - adapters
       - e2e
       - ts
     if: always()

@@ -33,6 +33,10 @@ thread), switched off for the process once Slack says the app may not use it.
 Settings (``platforms.slack``): ``ignored_channels`` (no inbound, outbound refused),
 ``reply_in_thread`` (default true), ``typing_status_text`` (default "is thinking…").
 
+Native streams (P16-33, ``streams.py``): with ``display.platforms.slack.native_stream`` on,
+``open_stream`` gives a ``chat.startStream`` / ``appendStream`` / ``stopStream`` stream into the
+reply's thread; an app Slack refuses streaming to switches them off for the process.
+
 The libraries are imported in one place, ``load_sdk``, on the first connect; tests hand in a
 `SlackSdk` built over the wire fake instead.
 """
@@ -49,6 +53,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 from urllib.parse import urlsplit
 
+from indus.gateway.adapters._native import native_stream_enabled
 from indus.gateway.adapters.base import (
     REPLY_TO_KEY,
     Adapter,
@@ -66,6 +71,7 @@ from indus.gateway.adapters.base import (
     code_points,
 )
 from indus.gateway.adapters.slack import blocks as kit
+from indus.gateway.adapters.slack.streams import SlackStream
 from indus.gateway.core.events import Attachment, ChatType, InboundEvent, MessageKind, Source
 from indus.gateway.core.send import SendResult
 
@@ -321,6 +327,9 @@ class SlackAdapter(Adapter):
             "conversations_info",
             "users_info",
             "assistant_threads_setStatus",
+            "chat_startStream",
+            "chat_appendStream",
+            "chat_stopStream",
         ),
         "slack_bolt.app.async_app:AsyncApp": ("event", "action", "client"),
         "slack_bolt.adapter.socket_mode.async_handler:AsyncSocketModeHandler": (
@@ -341,6 +350,7 @@ class SlackAdapter(Adapter):
         sdk: SlackSdk | None = None,
         sink: InboundSink | None = None,
         http_transport: Any = None,
+        native_stream: bool = False,
     ) -> None:
         super().__init__(clock=clock, settings=settings, secrets=(bot_token, app_token), sink=sink)
         self._bot_token = bot_token
@@ -367,6 +377,9 @@ class SlackAdapter(Adapter):
         self._chat_names = _Cache(NAMES_MAX)
         self._statuses: dict[str, str] = {}
         self._status_off = False
+        # P16-33: ``display.platforms.slack.native_stream``; off for good once Slack refuses.
+        self.native_stream = native_stream
+        self.native_off = False
 
     @classmethod
     def from_config(cls, config: AdapterConfig, *, sdk: SlackSdk | None = None) -> SlackAdapter:
@@ -384,6 +397,7 @@ class SlackAdapter(Adapter):
             proxy=config.proxy,
             send_only=config.send_only,
             sdk=sdk,
+            native_stream=native_stream_enabled(config.scope, PLATFORM),
         )
 
     # -- lifecycle ---------------------------------------------------------------------------------
@@ -837,6 +851,62 @@ class SlackAdapter(Adapter):
         except Exception as exc:
             return self._failure(exc)
         return SendResult.sent(message_id)
+
+    # -- native streams (P16-33) -------------------------------------------------------------------
+
+    def open_stream(
+        self,
+        chat_id: str,
+        *,
+        reply_to: str | None = None,
+        meta: Mapping[str, Any] | None = None,
+    ) -> SlackStream | None:
+        """A native stream for one reply, or None (off, refused before, no thread to stream into,
+        an ignored channel, not connected): the caller then streams by edits."""
+        given: Mapping[str, Any] = meta or {}
+        thread = _text(given.get("thread_id")) or _text(given.get("thread_ts")) or (reply_to or "")
+        if (
+            not self.native_stream
+            or self.native_off
+            or self.send_only
+            or self._client is None
+            or self.is_ignored(chat_id)
+            or not thread
+        ):
+            return None
+        return SlackStream(
+            self,
+            chat_id,
+            thread_ts=thread,
+            recipient_user=_text(given.get("user_id")) or None,
+            recipient_team=self.team_id or None,
+        )
+
+    def stream_client(self) -> Any:
+        return self._web()
+
+    async def stream_channel(self, chat_id: str) -> str:
+        return await self._channel(chat_id)
+
+    def stream_error(self, exc: BaseException) -> str:
+        return _api_error(exc)
+
+    def stream_retry_after(self, exc: BaseException) -> float | None:
+        return _retry_after(exc)
+
+    def stream_opened(self, channel: str, thread_ts: str) -> None:
+        """We posted in this thread: later messages there count as addressed to us."""
+        self._threads.add((channel, thread_ts))
+
+    def native_unavailable(self, code: str) -> None:
+        """Slack refused streaming to this app: edits from now on (logged once)."""
+        if not self.native_off:
+            self.native_off = True
+            log.warning(
+                "slack: native streaming is not available to this app (%s); streaming by edits. "
+                "Turn on the app's Agents & AI Apps feature to use it",
+                code,
+            )
 
     async def _delete(self, chat_id: str, message_id: str) -> bool:
         channel = await self._channel(chat_id)

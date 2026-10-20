@@ -15,6 +15,7 @@ import random
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from indus.gateway.adapters._native import NativeStream
 from indus.gateway.adapters.base import FINAL_KEY, INTERIM_KEY, Adapter, MediaKind
 from indus.gateway.core.events import Source, reply_thread
 from indus.gateway.core.send import (
@@ -29,6 +30,7 @@ from indus.gateway.outbound.formatting import Formatter, formatter_for
 
 __all__ = [
     "FINAL_KEY",
+    "open_native_stream",
     "INTERIM_KEY",
     "can_delete",
     "can_edit",
@@ -73,6 +75,21 @@ def can_edit(adapter: Adapter) -> bool:
 
 def can_delete(adapter: Adapter) -> bool:
     return adapter.capabilities.supports_delete
+
+
+def open_native_stream(
+    adapter: Adapter,
+    chat_id: str,
+    *,
+    reply_to: str | None = None,
+    meta: Mapping[str, Any] | None = None,
+) -> NativeStream | None:
+    """The adapter's native reply stream for this reply, or None (P16-33); an adapter that fails
+    to open one streams by edits."""
+    try:
+        return adapter.open_stream(chat_id, reply_to=reply_to, meta=meta)
+    except Exception:
+        return None
 
 
 def formatter(adapter: Adapter) -> Formatter:

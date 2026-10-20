@@ -5,7 +5,9 @@ The registry row (``indus.gateway.registry``) points at ``create_adapter``. It r
 environment), the webhook URL and secret (``TELEGRAM_WEBHOOK_URL`` / ``TELEGRAM_WEBHOOK_SECRET``,
 secret store first, or ``platforms.telegram.webhook_url``), the proxy the gateway chose and the
 ``platforms.telegram`` extra keys, and builds the adapter over our own Bot API client.
-``BOT_FACTORY`` builds the client (tests put the wire fake there).
+``BOT_FACTORY`` builds the client (tests put the wire fake there). Native drafts follow
+``display.platforms.telegram.native_stream``; sticker descriptions are kept in
+``<home>/gateway/telegram_stickers.json``.
 """
 
 from __future__ import annotations
@@ -13,9 +15,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from indus.gateway.adapters._native import native_stream_enabled
 from indus.gateway.adapters.telegram.adapter import TelegramAdapter, TelegramOptions
 from indus.gateway.adapters.telegram.bot_api import BotApi
 from indus.gateway.adapters.telegram.inbound import UpdateReceipts
+from indus.gateway.adapters.telegram.stickers import CACHE_FILE, StickerCache, StickerNotes
 from indus.gateway.config import AdapterConfig, read_secret
 
 __all__ = ["BOT_FACTORY", "TOKEN_ENV", "TelegramAdapter", "create_adapter", "default_bot"]
@@ -46,6 +50,12 @@ def create_adapter(config: AdapterConfig) -> TelegramAdapter:
         config.extra,
         webhook_url=read_secret(config.scope, WEBHOOK_URL_ENV),
         webhook_secret=secret,
+        native_stream=native_stream_enabled(config.scope, "telegram"),
+    )
+    stickers = StickerNotes(
+        StickerCache(config.scope.home / "gateway" / CACHE_FILE),
+        config.clock,
+        enabled=options.sticker_descriptions,
     )
     return TelegramAdapter(
         BOT_FACTORY(token, config),
@@ -55,4 +65,5 @@ def create_adapter(config: AdapterConfig) -> TelegramAdapter:
         options=options,
         receipts=UpdateReceipts(config.clock, path_for=_receipts_path(config.scope.home)),
         send_only=config.send_only,
+        stickers=stickers,
     )

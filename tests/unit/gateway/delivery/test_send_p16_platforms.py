@@ -303,6 +303,38 @@ def test_indus_send_to_whatsapp(scope: Scope, monkeypatch: pytest.MonkeyPatch) -
     assert bridge.paths("/events") == []
 
 
+def test_indus_send_to_photon(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
+    from indus.gateway.adapters import photon as package
+    from indus.gateway.adapters.photon.adapter import PhotonAdapter
+    from tests.fakes.platform.photon_wire import FakeLauncher, FakeSidecar
+
+    # Shipped disabled: the credentials alone never turn it on; the config does.
+    secrets: Any = scope.secrets
+    secrets.set("PHOTON_PROJECT_ID", "proj-test")
+    secrets.set("PHOTON_PROJECT_SECRET", "ph-" + "s" * 12)
+    off = load_gateway_settings(scope).platforms["photon"]
+    assert not off.enabled and off.reason == "not configured"
+    (scope.home / "config.yaml").write_text(
+        "platforms:\n  photon:\n    enabled: true\n    provider: ./provider.mjs\n",
+        encoding="utf-8",
+    )
+    loader.reset()
+    settings = load_gateway_settings(scope).platforms["photon"]
+    assert settings.enabled and settings.reason == "enabled in config"
+    clock: Any = scope.clock
+    sidecar = FakeSidecar()
+    sidecar.platform.clock = clock
+    launcher = FakeLauncher(sidecar)
+    built = _wrap(monkeypatch, package, launcher=launcher, transport=sidecar.transport)
+    adapter = send_command.build_adapter(scope, "photon", settings, _registry("photon"))
+    assert isinstance(adapter, PhotonAdapter) and adapter is built[0] and adapter.send_only
+    assert _send(scope, adapter, "+15550000200", "deploy done").ok
+    assert [c.body["text"] for c in sidecar.paths("/send")] == ["deploy done"]
+    # send-only: the running sidecar is attached, never started, streamed or stopped
+    assert (launcher.attaches, launcher.ensures, launcher.stops) == (1, 0, 0)
+    assert sidecar.paths("/events") == []
+
+
 def test_indus_send_to_weixin(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> None:
     import json
 

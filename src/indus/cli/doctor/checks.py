@@ -1,8 +1,9 @@
 """The built-in ``indus doctor`` checks, in their run order (P07-19).
 
 python → packages → home → config → env → keychain → auth store → providers (``--live`` probes)
-→ session store → terminal backend → git and rg → tools → desktop control. Each returns findings;
-with ``ctx.fix`` the home, config and env checks repair what is safe and say so.
+→ session store → terminal backend → git and rg → tools → desktop control, then the messaging
+gateway (``gateway_checks``, P16-36). Each returns findings; with ``ctx.fix`` the home, config and
+env checks repair what is safe and say so.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from indus.cli.doctor import (
     DoctorContext,
     Finding,
     Severity,
+    gateway_checks,  # noqa: F401 - registers the messaging gateway section (P16-36)
     register,
     remote_backends,  # registers the cloud backends check (P21-13)
 )

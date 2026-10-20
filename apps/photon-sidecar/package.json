@@ -1,0 +1,15 @@
+{
+  "name": "@indus/photon-sidecar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Loopback HTTP sidecar between the Indus Agent gateway and a Photon Spectrum link",
+  "bin": {
+    "indus-photon-sidecar": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  }
+}

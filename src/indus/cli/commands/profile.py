@@ -92,6 +92,7 @@ CHANNEL_PLATFORMS: tuple[str, ...] = (
     "weixin",
     "qqbot",
     "bluebubbles",
+    "photon",
     "homeassistant",
 )
 """Messaging platforms whose settings a clone leaves behind (until P15's platform registry)."""

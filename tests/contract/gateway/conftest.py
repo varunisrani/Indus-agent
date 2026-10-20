@@ -12,10 +12,12 @@ raises and is recorded, so an adapter that swallows the error still fails the no
 from __future__ import annotations
 
 import asyncio
+import importlib
 import socket
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -134,29 +136,22 @@ def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[SocketGuard]:
 
 
 # -- platform cases ------------------------------------------------------------------------------
-# Each module registers its case on import (``register_case`` is defined above).
-from tests.contract.gateway import bluebubbles_case as _bluebubbles_case  # noqa: E402, F401
-from tests.contract.gateway import buzz_case as _buzz_case  # noqa: E402, F401
-from tests.contract.gateway import dingtalk_case as _dingtalk_case  # noqa: E402, F401
-from tests.contract.gateway import discord_case as _discord_case  # noqa: E402, F401
-from tests.contract.gateway import email_case as _email_case  # noqa: E402, F401
-from tests.contract.gateway import feishu_case as _feishu_case  # noqa: E402, F401
-from tests.contract.gateway import google_chat_case as _google_chat_case  # noqa: E402, F401
-from tests.contract.gateway import irc_case as _irc_case  # noqa: E402, F401
-from tests.contract.gateway import line_case as _line_case  # noqa: E402, F401
-from tests.contract.gateway import matrix_case as _matrix_case  # noqa: E402, F401
-from tests.contract.gateway import mattermost_case as _mattermost_case  # noqa: E402, F401
-from tests.contract.gateway import ntfy_case as _ntfy_case  # noqa: E402, F401
-from tests.contract.gateway import qqbot_case as _qqbot_case  # noqa: E402, F401
-from tests.contract.gateway import signal_case as _signal_case  # noqa: E402, F401
-from tests.contract.gateway import simplex_case as _simplex_case  # noqa: E402, F401
-from tests.contract.gateway import slack_case as _slack_case  # noqa: E402, F401
-from tests.contract.gateway import sms_case as _sms_case  # noqa: E402, F401
-from tests.contract.gateway import teams_case as _teams_case  # noqa: E402, F401
-from tests.contract.gateway import telegram_case as _telegram_case  # noqa: E402, F401
-from tests.contract.gateway import wecom_callback_case as _wecom_callback_case  # noqa: E402, F401
-from tests.contract.gateway import wecom_case as _wecom_case  # noqa: E402, F401
-from tests.contract.gateway import weixin_case as _weixin_case  # noqa: E402, F401
-from tests.contract.gateway import whatsapp_case as _whatsapp_case  # noqa: E402, F401
-from tests.contract.gateway import whatsapp_cloud_case as _whatsapp_cloud_case  # noqa: E402, F401
-from tests.contract.gateway import yuanbao_case as _yuanbao_case  # noqa: E402, F401
+# Every ``*_case.py`` module beside this file registers its case on import (``register_case``
+# above), in file-name order. A module that fails to import is kept in ``CASE_IMPORT_ERRORS``
+# instead of stopping the whole directory: the adapter matrix (``test_adapter_matrix.py``, P16-36)
+# fails naming it, so a removed wire fake is reported against its platform.
+
+CASE_DIR = Path(__file__).parent
+CASE_IMPORT_ERRORS: dict[str, str] = {}
+
+
+def _load_cases() -> None:
+    for path in sorted(CASE_DIR.glob("*_case.py")):
+        module = f"{__package__ or 'tests.contract.gateway'}.{path.stem}"
+        try:
+            importlib.import_module(module)
+        except Exception as exc:
+            CASE_IMPORT_ERRORS[path.stem] = f"{type(exc).__name__}: {exc}"
+
+
+_load_cases()

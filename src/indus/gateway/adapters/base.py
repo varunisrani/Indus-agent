@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 from indus.foundation.clock import Clock
 from indus.foundation.redact import redact_text
+from indus.gateway.adapters._native import NativeStream
 from indus.gateway.core.events import Attachment, ChatType, InboundEvent
 from indus.gateway.core.send import DELIVERY_FAILED_NOTICE, RetryPolicy, SendResult, send_with_retry
 from indus.gateway.core.send_slot import SendSlots
@@ -433,6 +434,17 @@ class Adapter(ABC):
 
     async def _delete(self, chat_id: str, message_id: str) -> bool:
         return False
+
+    def open_stream(
+        self,
+        chat_id: str,
+        *,
+        reply_to: str | None = None,
+        meta: Mapping[str, Any] | None = None,
+    ) -> NativeStream | None:
+        """A native reply stream into ``chat_id`` (P16-33: Telegram drafts, Slack streams, WeCom
+        reply streams), or None: the stream consumer then edits a message instead."""
+        return None
 
     async def send_with_retry(
         self,

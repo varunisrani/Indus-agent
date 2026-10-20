@@ -125,6 +125,8 @@ TELEGRAM_DOCUMENTED_METHODS = frozenset(
         "getFile",
         "answerCallbackQuery",
         "getChat",
+        "sendMessageDraft",  # P16-33 native drafts (private chats)
+        "createForumTopic",  # P16-34 topics in private chats (Threaded Mode)
     }
 )
 

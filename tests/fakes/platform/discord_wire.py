@@ -14,7 +14,9 @@ Cap: 2,000 code points.
 allowed mentions, proxy). ``client.login`` is the REST-only open (``logins``); ``client.start``
 also opens the gateway (``gateway_sessions``). ``client.http`` keeps the application commands
 (``commands``) and logs every mutation with its fake-clock time (``mutations``). Members' roles
-come from ``member_roles``; a chat with a guild id makes its senders guild members.
+come from ``member_roles``; a chat with a guild id makes its senders guild members. Members sit
+in the voice channels ``voice_states`` names (``author.voice.channel``, P16-35); voice audio itself
+is not part of this fake (the voice tests bring their own link).
 """
 
 from __future__ import annotations
@@ -175,6 +177,8 @@ class Author:
     bot: bool = False
     # Present only for guild members (``discord.Member``); a DM sender is a plain user.
     roles: tuple[Role, ...] | None = None
+    # A guild member's voice state (``discord.Member.voice``): ``.channel`` is their voice channel.
+    voice: Any = None
 
     @property
     def display_name(self) -> str:
@@ -353,7 +357,7 @@ class DiscordMessage:
         return thread
 
 
-_CHANNEL_TYPES = {"dm": "private", "thread": "public_thread", "text": "text"}
+_CHANNEL_TYPES = {"dm": "private", "thread": "public_thread", "text": "text", "voice": "voice"}
 
 
 @dataclass
@@ -589,6 +593,8 @@ class DiscordWire:
         self.sent_views: list[View | None] = []
         self.logs: dict[int, list[DiscordMessage]] = {}
         self.member_roles: dict[str, tuple[int, ...]] = {}
+        # User id → the voice channel id they sit in (P16-35); guild members only.
+        self.voice_states: dict[str, int] = {}
         self.thread_failures = 0
         self.logins = 0
         self.gateway_sessions = 0
@@ -638,9 +644,16 @@ class DiscordWire:
 
     def _author(self, user_id: str, name: str, is_bot: bool, guild_id: int | None) -> Author:
         roles = None
+        voice = None
         if guild_id is not None:
             roles = tuple(Role(r) for r in self.member_roles.get(str(user_id), ()))
-        return Author(int(user_id), name or str(user_id), is_bot, roles)
+            sits = self.voice_states.get(str(user_id))
+            if sits is not None:
+                channel = self.channel(sits, kind="voice")
+                channel.guild_id = guild_id
+                channel.name = channel.name or f"voice-{sits}"
+                voice = SimpleNamespace(channel=channel)
+        return Author(int(user_id), name or str(user_id), is_bot, roles, voice)
 
     def _message(self, item: FakeInbound) -> DiscordMessage:
         kind = {"dm": "dm", "thread": "thread"}.get(item.chat_kind, "text")

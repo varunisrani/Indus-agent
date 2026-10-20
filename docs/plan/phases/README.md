@@ -36,7 +36,7 @@ acceptance, done when. Paths and conventions come from
 | P13 | [P13-mcp-plugins-hooks-hub.md](P13-mcp-plugins-hooks-hub.md) | 2 | 28 | 61 | 13 | 5 | 28 | — | done (78fdc96, aed252e; N3+N4 in this commit) |
 | P14 | [P14-cron.md](P14-cron.md) | 1.5 | 19 | 47 | 9 | 4 | 19 | M4 | done (M4 demo; in this commit) |
 | P15 | [P15-gateway-core-demo3.md](P15-gateway-core-demo3.md) | 2.5 | 36 | 131 | 11 | 6 | 36 | **Demo 3** | done (Demo 3; adapters `5378127`) |
-| P16 | [P16-more-platforms.md](P16-more-platforms.md) | 3 | 36 | 136 | 6 | 4 | 36 | — | in progress (01–24, 26–32 done `cfa6def`; 25, 33–36 left) |
+| P16 | [P16-more-platforms.md](P16-more-platforms.md) | 3 | 36 | 136 | 6 | 4 | 36 | — | done (`cfa6def`; 25, 33–36 in this commit; Photon ships disabled) |
 | P17 | [P17-daemon-shared-backend.md](P17-daemon-shared-backend.md) | 2.5 | 27 | 65 | 17 | 2 | 27 | M5 | done (`d1b05df`; M5 dual-host matrix + shared-backend demo) |
 | P18 | [P18-web-dashboard.md](P18-web-dashboard.md) | 2.5 | 30 | 148 | 11 | 6 | 30 | — | in progress (01–10, 17–22 landed; 11–16 parked in .agents/wip/w30; 23–30 left) |
 | P19 | [P19-acp-mcp-serve.md](P19-acp-mcp-serve.md) | 1.5 | 18 | 54 | 10 | 4 | 18 | M6 | in progress (01–07 landed; 14–17 parked in .agents/wip/w30; 08–13 building; 18 left) |

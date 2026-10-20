@@ -54,7 +54,7 @@ PyPI for packages of other platforms).
 | SecretStorage | 3.5.0 | BSD-3-Clause | via keyring (Linux) | P01-16 |
 | jeepney | 0.9.0 | MIT | via keyring / SecretStorage (Linux) | P01-16 |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | via SecretStorage (Linux) and mcp's `pyjwt[crypto]` (the Teams bot-token RS256 check, P16-11); extras `google-chat` (RS256 for Google Chat's service-account assertion and callback tokens), `wecom` (AES for the WeCom callback crypto and media) and `weixin` (AES-128-ECB for iLink media, the vendor's scheme) | P01-16, P16-11, P16-13, P16-18, P16-19 |
-| cffi | 2.1.1 | MIT-0 (exception recorded in `tooling/checks/licenses_allow.json`) | via cryptography (also extras `google-chat`, `wecom`, `weixin`); via python-olm (extra `matrix-e2ee`) | P01-16, P16-13, P16-18, P16-07, P16-19 |
+| cffi | 2.1.1 | MIT-0 (exception recorded in `tooling/checks/licenses_allow.json`) | via cryptography (also extras `google-chat`, `wecom`, `weixin`); via python-olm (extra `matrix-e2ee`); via PyNaCl (extra `discord-voice`) | P01-16, P16-13, P16-18, P16-07, P16-19, P16-35 |
 | pycparser | 3.0 | BSD-3-Clause | via cffi (also extras `google-chat`, `wecom`, `weixin`, `matrix-e2ee`) | P01-16, P16-13, P16-18, P16-07, P16-19 |
 | pywin32-ctypes | 0.2.3 | BSD-3-Clause | via keyring (Windows) | P01-16 |
 | pydantic | 2.13.5 | MIT | config schema and defaults | P01-09 |
@@ -129,7 +129,9 @@ PyPI for packages of other platforms).
 | fastapi | 0.142.2 | MIT | the gateway's HTTP apps: the OpenAI-compatible API server and the webhook receiver (on starlette) | P15-30 |
 | annotated-doc | 0.0.5 | MIT | via fastapi; extra `research`, via typer | P15-30, P22-11 |
 | discord.py | 2.7.1 | MIT | extra `discord`: the Discord gateway adapter (client, components, command routes) | P15-34 |
-| audioop-lts | 0.2.2 | PSF-2.0 | extra `discord`, via discord.py (Python 3.13+; voice is not used) | P15-34 |
+| audioop-lts | 0.2.2 | PSF-2.0 | extras `discord`, `discord-voice`, via discord.py (Python 3.13+) | P15-34, P16-35 |
+| PyNaCl | 1.5.0 (the only release discord.py's `<1.6` allows) | Apache-2.0 (the wheels bundle libsodium, ISC) | extra `discord-voice`, via `discord.py[voice]`: the voice transport's AEAD (`aead_xchacha20_poly1305_rtpsize`), used through `nacl.secret.Aead` only; needs cffi | P16-35 |
+| davey | 0.1.6 | MIT (wheel metadata classifier) | extra `discord-voice`, via `discord.py[voice]`: Discord's DAVE end-to-end voice encryption, used through the voice connection's session | P16-35 |
 | modal | 1.6.1 | Apache-2.0 | extra `modal`: the Modal sandbox SDK (terminal backend `modal`) | P21-05 |
 | synchronicity | 0.12.6 | Apache-2.0 | extra `modal`, via modal (sync wrappers of its async API) | P21-05 |
 | grpclib | 0.4.9 | BSD-3-Clause | extra `modal`, via modal (gRPC client) | P21-05 |

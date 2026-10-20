@@ -15,6 +15,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -145,6 +146,21 @@ def gateway(capsys: pytest.CaptureFixture[str], scope: Scope, *args: str) -> Ran
     return run_cli(capsys, scope, "gateway", *args)
 
 
+def status_once_serving(
+    capsys: pytest.CaptureFixture[str], scope: Scope, limit: float = 20.0
+) -> Ran:
+    """``indus gateway status`` once the daemon has finished starting. ``start`` returns as soon
+    as the control socket answers (stage one of the daemon's start); the state turns ``running``
+    only after the platforms, recovery, the session host and the background parts are up, so a
+    ``status`` right after ``start`` may honestly say ``starting``."""
+    end = time.monotonic() + limit
+    while True:
+        ran = gateway(capsys, scope, "status")
+        if "): starting (" not in ran.out or time.monotonic() > end:
+            return ran
+        threading.Event().wait(0.1)
+
+
 def unit_path(scope: Scope) -> Path:
     return (
         Path(scope.env["XDG_CONFIG_HOME"])
@@ -210,7 +226,7 @@ def test_start_status_stop_without_a_service(capsys: pytest.CaptureFixture[str],
     again = gateway(capsys, gw, "start")
     assert again.code == 0 and f"already running (pid {found['pid']})" in again.out
 
-    status = gateway(capsys, gw, "status")
+    status = status_once_serving(capsys, gw)
     assert status.code == 0
     assert f"running (pid {found['pid']}, answered on the control socket)" in status.out
     assert "spool" in status.out and "connected" in status.out

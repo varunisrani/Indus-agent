@@ -20,6 +20,10 @@ refused here, privately.
 
 Outbound: text as given (already formatted and chunked by the sender), split again only past
 2,000 code points, ``allowed_mentions`` none unless configured, replies as message references.
+
+Voice channels (P16-35, ``voice.py``): ``/voice join|leave|status`` in a server, typed or as the
+application command, are answered here (``/voice on|off`` stay with the shared command); a reply
+sent to a joined voice channel is posted in its chat and spoken there too.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ import importlib
 import logging
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
@@ -51,6 +56,7 @@ from indus.gateway.adapters.base import (
 )
 from indus.gateway.adapters.discord import commands as cmds
 from indus.gateway.adapters.discord import inbound
+from indus.gateway.adapters.discord import voice as voice_mod
 from indus.gateway.config import GLOBAL_ALLOW_ALL_ENV, GLOBAL_ALLOWED_USERS_ENV, policy_env
 from indus.gateway.core.authz import MentionPolicy, allow_set
 from indus.gateway.core.events import Attachment, InboundEvent, MessageKind, Source, parse_command
@@ -104,6 +110,9 @@ _FATAL_STARTUP = {
 THREAD_FALLBACK_NAME = "Conversation"
 REFUSED_PRESS = "You are not allowed to use these buttons."
 REFUSED_COMMAND = "You are not allowed to use this bot's commands."
+VOICE_WORKING = "Working on it…"
+# Marks a send that must not be spoken (command answers and transcript echoes in a voice chat).
+VOICE_QUIET_KEY = "voice_quiet"
 
 
 def load_sdk() -> Any:
@@ -127,6 +136,18 @@ def _truthy(value: object) -> bool:
 def _setting(extra: Mapping[str, Any], key: str, default: bool) -> bool:
     raw = extra.get(key)
     return default if raw is None else _truthy(raw)
+
+
+def _seconds_setting(extra: Mapping[str, Any], key: str, default: float) -> float:
+    raw = extra.get(key)
+    if raw is None or isinstance(raw, bool):
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        log.warning("discord: platforms.discord.%s is not a number; using %g", key, default)
+        return default
+    return value if value >= 0 else default
 
 
 def _retry_after(exc: BaseException) -> float | None:
@@ -179,6 +200,7 @@ class DiscordAdapter(Adapter):
             "dm_messages",
             "guild_messages",
             "members",
+            "voice_states",
         ),
         "discord.abc:Messageable": ("send", "typing", "fetch_message", "history"),
         "discord:Message": ("edit", "delete", "create_thread"),
@@ -197,6 +219,7 @@ class DiscordAdapter(Adapter):
             "edit_global_command",
             "delete_global_command",
         ),
+        **voice_mod.VOICE_VENDOR_NAMES,
     }
 
     def __init__(
@@ -215,6 +238,7 @@ class DiscordAdapter(Adapter):
         extra_commands: Sequence[tuple[str, str, str]] = (),
         fetch_transport: httpx.AsyncBaseTransport | None = None,
         cdn_hosts: frozenset[str] = CDN_HOSTS,
+        voice_deps: voice_mod.VoiceDeps | None = None,
     ) -> None:
         credentials: Mapping[str, str] = getattr(settings, "credentials", None) or {}
         self._token = token or credentials.get(TOKEN_ENV) or ""
@@ -251,6 +275,12 @@ class DiscordAdapter(Adapter):
         self._fallback: OrderedDict[str, Any] = OrderedDict()
         # Message id → the channel or thread holding it (edits and deletes inside threads).
         self._where: OrderedDict[str, Any] = OrderedDict()
+        self.voice = voice_mod.VoiceChannels(
+            self,
+            voice_deps,
+            idle_seconds=_seconds_setting(extra, "voice_idle_seconds", voice_mod.IDLE_LEAVE_S),
+            me=lambda: self._me,
+        )
 
     # -- the library -------------------------------------------------------------------------------
 
@@ -285,6 +315,7 @@ class DiscordAdapter(Adapter):
         intents.dm_messages = True
         intents.guild_messages = True
         intents.members = bool(self._roles)
+        intents.voice_states = True  # who sits in which voice channel (``/voice join``)
         return intents
 
     # -- lifecycle ---------------------------------------------------------------------------------
@@ -363,6 +394,7 @@ class DiscordAdapter(Adapter):
             self._client = None
 
     async def _close(self) -> None:
+        await self.voice.close()  # leave every voice channel while the client still runs
         task, self._sync_task = self._sync_task, None
         if task is not None:
             task.cancel()
@@ -397,7 +429,10 @@ class DiscordAdapter(Adapter):
             if not app_id:
                 log.warning("discord: no application id; commands not synced")
                 return
-            specs = cmds.desired_commands(self.extra_commands)
+            specs = [
+                replace(spec, args_hint=voice_mod.VOICE_ARGS_HINT) if spec.name == "voice" else spec
+                for spec in cmds.desired_commands(self.extra_commands)
+            ]
             summary = await cmds.sync_commands(client.http, app_id, specs, clock=self.clock)
             log.info(
                 "discord: commands synced (%d created, %d edited, %d deleted, %d unchanged)",
@@ -427,6 +462,8 @@ class DiscordAdapter(Adapter):
 
     async def _on_message(self, message: Any) -> None:
         if not self._first_time(str(getattr(message, "id", ""))):
+            return
+        if await self._voice_text_command(message):
             return
         event = await self._event_for(message, edited=False)
         if event is not None:
@@ -613,6 +650,17 @@ class DiscordAdapter(Adapter):
         here. Without a role allowlist the authorization chain decides alone."""
         if not self._roles:
             return True
+        return await self._admitted(user, guild)
+
+    async def voice_allowed(self, user: Any, guild: Any) -> bool:
+        """Who may bring the bot into a voice channel and be heard there: allow-all, a user
+        allowlist, an allowed role or a pairing approval (always checked, roles or not)."""
+        return await self._admitted(user, guild)
+
+    def role_granted(self, user: Any, guild: Any) -> bool:
+        return self._role_grant(user, guild)
+
+    async def _admitted(self, user: Any, guild: Any) -> bool:
         names = policy_env(self.platform)
         if _truthy(self._env.get(names.allow_all_users)) or _truthy(
             self._env.get(GLOBAL_ALLOW_ALL_ENV)
@@ -698,6 +746,8 @@ class DiscordAdapter(Adapter):
             log.info("discord: refused /%s from %s", name, getattr(user, "id", "?"))
             await self._respond(interaction, REFUSED_COMMAND)
             return
+        if name == "voice" and await self._voice_app_command(interaction, args, user):
+            return
         await self._respond(interaction, f"Running /{name}…")
         await self.emit(
             InboundEvent(
@@ -707,6 +757,49 @@ class DiscordAdapter(Adapter):
                 metadata={"mentioned": True, "app_command": name},
             )
         )
+
+    # -- voice channels ----------------------------------------------------------------------------
+
+    async def _voice_text_command(self, message: Any) -> bool:
+        """Answer a typed ``/voice join|leave|status`` here; False for anything else."""
+        author = getattr(message, "author", None)
+        if author is None or getattr(author, "bot", False):
+            return False
+        if self._me and str(getattr(author, "id", "")) == self._me:
+            return False
+        text = inbound.strip_mentions(str(getattr(message, "content", "") or ""), self._me)
+        sub = voice_mod.voice_command(text.strip())
+        if sub is None:
+            return False
+        channel = getattr(message, "channel", None)
+        guild = getattr(message, "guild", None) or getattr(channel, "guild", None)
+        if guild is None and sub == "status":
+            return False  # in a DM the shared /voice status answers
+        answer = await self.voice.command(sub, user=author, guild=guild)
+        await self.post_voice_text(str(getattr(channel, "id", "")), answer)
+        return True
+
+    async def _voice_app_command(self, interaction: Any, args: str, user: Any) -> bool:
+        sub = voice_mod.voice_command(f"/voice {args}")
+        guild = getattr(interaction, "guild", None)
+        if sub is None or (guild is None and sub == "status"):
+            return False
+        if sub == "status" or guild is None:
+            await self._respond(interaction, await self.voice.command(sub, user=user, guild=guild))
+            return True
+        await self._respond(interaction, VOICE_WORKING)  # joining can outlast the 3 s answer window
+        answer = await self.voice.command(sub, user=user, guild=guild)
+        channel_id = str(getattr(interaction, "channel_id", None) or "")
+        if channel_id:
+            await self.post_voice_text(channel_id, answer)
+        return True
+
+    async def post_voice_text(self, channel_id: str, text: str) -> None:
+        """Post ``text`` in a chat without speaking it (command answers, transcript echoes)."""
+        if channel_id and text:
+            result = await self.send(channel_id, text, meta={VOICE_QUIET_KEY: True})
+            if not result.ok:
+                log.debug("discord: a voice notice was not posted: %s", result.error)
 
     # -- outbound: where to ------------------------------------------------------------------------
 
@@ -830,7 +923,10 @@ class DiscordAdapter(Adapter):
             channel = await self._target(chat_id, meta)
         except Exception as exc:
             return self._failure(exc, [], chunked)
-        return await self._post(chat_id, channel, chunked, self._reference(reply_to, channel), [])
+        result = await self._post(chat_id, channel, chunked, self._reference(reply_to, channel), [])
+        if result.ok and not meta.get(VOICE_QUIET_KEY):
+            self.voice.speak_later(str(chat_id), text)  # a joined voice channel says it aloud
+        return result
 
     async def _edit(
         self, chat_id: str, message_id: str, text: str, final: bool, meta: dict[str, Any]

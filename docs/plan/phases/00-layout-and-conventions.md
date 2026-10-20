@@ -325,6 +325,9 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | pywinpty | 3.0.5 | 2026-06-10 | MIT (PyPI classifier) | extra `dashboard`, Windows only (`sys_platform == 'win32'`): ConPTY for the Chat tab; 3.1.0 (2026-10-15) is inside the 14-day window | P18-07 |
 | discord.py | 2.7.1 | 2026-03-03 | MIT | extra `discord` | P15-34 |
 | audioop-lts | 0.2.2 | 2025-08-05 | PSF-2.0 | extra `discord` (via discord.py, Python 3.13+) | P15-34 |
+| discord.py[voice] | 2.7.1 | 2026-03-03 | MIT | extra `discord-voice` (discord.py's own voice extra on the `discord` pin) | P16-35 |
+| PyNaCl | 1.5.0 | 2022-01-07 | Apache-2.0 (bundles libsodium, ISC) | extra `discord-voice` (via discord.py[voice], `<1.6`) | P16-35 |
+| davey | 0.1.6 | 2026-06-22 | MIT (wheel metadata classifier) | extra `discord-voice` (via discord.py[voice], `>=0.1.0`; prebuilt wheels for CPython 3.13 / 3.14) | P16-35 |
 | slack-bolt | 1.30.0 | 2026-07-15 | MIT | extra `slack` | P15-35 |
 | slack-sdk | 3.44.1 | 2026-09-03 | MIT | extra `slack` | P15-35 |
 | aiohttp | 3.14.3 | (already locked via modal / daytona) | Apache-2.0 AND MIT | extra `slack` (named: Bolt's async app and Socket Mode handler) | P15-35 |

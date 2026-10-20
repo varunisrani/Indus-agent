@@ -163,6 +163,8 @@ _FEISHU_COMMENT_THREAD = re.compile(r"whole|[A-Za-z0-9_-]{1,64}")
 _BLUEBUBBLES_GUID = re.compile(r"[A-Za-z]{2,16};[-+];[^\s,:;]{1,200}")
 _BLUEBUBBLES_PHONE = re.compile(r"\+?[0-9][0-9().-]{5,}")
 _DIGITS = re.compile(r"[0-9]{1,20}")
+_PHOTON_NUMBER = re.compile(r"\+[1-9][0-9]{5,14}")
+_PHOTON_GROUP = re.compile(r"any;\+;[A-Za-z0-9._-]{1,128}")
 _WEIXIN_ID = re.compile(r"[A-Za-z0-9_.@-]{1,128}")
 
 
@@ -202,6 +204,22 @@ def _bluebubbles_chat(text: str) -> str | None:
     if _BLUEBUBBLES_PHONE.fullmatch(text):
         return text
     return text.lower() if _EMAIL.fullmatch(text) else None
+
+
+def _photon_handle(text: str) -> str | None:
+    if _PHOTON_NUMBER.fullmatch(text):
+        return text
+    return text.lower() if _EMAIL.fullmatch(text) else None
+
+
+def _photon_chat(text: str) -> str | None:
+    """A Photon space: a handle (number or email), ``any;-;<handle>`` (a DM) or ``any;+;<id>``."""
+    if _PHOTON_GROUP.fullmatch(text):
+        return text
+    if text.startswith("any;-;"):
+        handle = _photon_handle(text[len("any;-;") :])
+        return None if handle is None else "any;-;" + handle
+    return _photon_handle(text)
 
 
 def _buzz_dm(text: str) -> str | None:
@@ -563,6 +581,13 @@ def _build() -> dict[str, TargetRule]:
             "a chat GUID such as iMessage;-;+15551234567, a phone number or an email address",
             ("bluebubbles:iMessage;-;+15551234567", "bluebubbles:+15551234567"),
             chat=_bluebubbles_chat,
+        ),
+        _rule(
+            "photon",
+            "a phone number in E.164 form, an email address, a DM space any;-;<handle> or a group "
+            "space any;+;<id>",
+            ("photon:+15551234567", "photon:any;+;chat300"),
+            chat=_photon_chat,
         ),
         TargetRule("simplex", _simplex_split, _SIMPLEX_FORMS, ("simplex:12", "simplex:group:3")),
         TargetRule(

@@ -827,7 +827,13 @@ class WeComAdapter(Adapter):
         """One ``aibot_respond_msg`` frame for `WeComStream` (see `FrameSender`)."""
         return self._request(CMD_RESPOND, body, req_id=req_id)
 
-    def open_stream(self, chat_id: str, *, reply_to: str | None = None) -> WeComStream | None:
+    def open_stream(
+        self,
+        chat_id: str,
+        *,
+        reply_to: str | None = None,
+        meta: Mapping[str, Any] | None = None,
+    ) -> WeComStream | None:
         """A native reply stream into ``chat_id``, or None (streaming off, or no inbound message
         to answer: the caller sends normally)."""
         if not self.options.native_stream or self._socket is None:

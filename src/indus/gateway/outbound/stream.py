@@ -17,7 +17,16 @@ one live message per segment up to date:
   message is edited to it (post-stream additions ride along); a new message is sent only when
   nothing is editable, and after edits stopped only the missing tail is sent;
 - flood refusals stretch the edit interval (doubling, or the server's wait, capped at 30 s); three
-  in a row stop interim edits for this stream.
+  in a row stop interim edits for this stream;
+- native streams (P16-33, R06.12): when the adapter opens one (``Adapter.open_stream``: Telegram
+  drafts, Slack streams, WeCom reply streams; each behind its own switch), interim updates push the
+  raw reply so far up to its last whitespace — media directives out, secrets masked, but no fence
+  closing, cursor or markup conversion, so every frame is a prefix of the next — instead of
+  editing. A tool call finishes the segment's stream (the next segment opens a new one) unless the
+  stream is the whole turn's message (``one_message_per_turn``: it stays open and the next segment
+  follows a blank line); an approval prompt finishes it. ``finish`` hands the stream the declared
+  final (text added after streaming rides it). A stream that gives up (``push`` False) or a final
+  it cannot deliver falls back to the edit path for what is left; a cancelled turn abandons it.
 
 Every send and edit except the final is marked interim (``ports``). Text is masked by ``redact``
 before it is formatted.
@@ -35,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from indus.foundation.clock import Clock
+from indus.gateway.adapters._native import NativeStream
 from indus.gateway.adapters.base import Adapter
 from indus.gateway.core.send import SendResult
 from indus.gateway.outbound import ports
@@ -133,6 +143,10 @@ class StreamConsumer:
         self._shown_upto = 0
         self._src_at_edit = 0
         self._timer = False
+        # native stream state (P16-33)
+        self._native: NativeStream | None = None
+        self._native_ok = True
+        self._turn_start = 0  # where the current segment starts in a whole-turn stream
 
     # -- input (any thread) ----------------------------------------------------------------------
 
@@ -189,7 +203,7 @@ class StreamConsumer:
                         await self._end_segment()
                     elif kind == "approval":
                         try:
-                            await self._end_segment()
+                            await self._end_segment(sealing=True)
                         finally:
                             if not value.done():
                                 value.set_result(True)
@@ -386,11 +400,101 @@ class StreamConsumer:
                 self._port, self._chat_id, self._msg_id, text, final=False, meta=self._meta
             )
 
+    # -- native streams (P16-33) -------------------------------------------------------------------
+
+    def _stream(self) -> NativeStream | None:
+        """The open native stream, opening one when the adapter offers it (asked once)."""
+        if self._native is None and self._native_ok:
+            reply_to = self._reply_to if not self.outcome.message_ids else None
+            self._native = ports.open_native_stream(
+                self._port, self._chat_id, reply_to=reply_to, meta=self._meta
+            )
+            self._native_ok = self._native is not None
+        return self._native
+
+    def _frame(self, raw: str) -> str:
+        """Raw text as a native frame: media directives out, secrets masked, nothing else."""
+        return self._redact(strip_media_tags(raw))
+
+    async def _native_update(self) -> bool:
+        """One native frame; False when the edit path should take this update."""
+        if self._msg_id is not None or not self._native_ok:
+            return False
+        stream = self._stream()
+        if stream is None:
+            return False
+        live = self._src[self._sealed :]
+        cut = max(live.rfind(" "), live.rfind("\n"))
+        if cut < 0 or len(strip_media_tags(live[: cut + 1]).strip()) < _MIN_FIRST_CHARS:
+            return True  # only a partial word so far
+        self._last_edit = self._clock.monotonic()
+        if await stream.push(self._frame(live[: cut + 1])):
+            self._src_at_edit = len(self._src)
+            return True
+        self._native, self._native_ok = None, False  # the stream gave up: edits from here
+        return False
+
+    async def _native_segment_end(self, *, sealing: bool) -> bool:
+        """A tool call or approval with a stream open; True when it was handled here."""
+        stream = self._native
+        if stream is None:
+            return False
+        body = self._src[self._sealed :]
+        if stream.one_message_per_turn and not sealing:
+            if body.strip() and not self._src.endswith("\n\n"):
+                self._src += "\n\n"
+            self._turn_start = len(self._src)
+            return True
+        self._native = None
+        if not body.strip() or is_silence(self._src):
+            await stream.abandon()
+            self._reset_segment()
+            return True
+        result = await stream.finish(self._frame(body).rstrip())
+        if not result.ok:
+            self._native_ok = False
+            return False  # the edit path delivers the segment
+        self._record_ids(result)
+        self._reset_segment()
+        self._turn_start = 0
+        return True
+
+    async def _native_finish(self, final_text: str | None) -> bool:
+        """The declared final through the open stream; True when it was delivered."""
+        stream, self._native = self._native, None
+        if stream is None:
+            return False
+        declared = self._src if final_text is None else final_text
+        final = self._src if final_text is None else self._src[: self._turn_start] + final_text
+        if is_silence(declared):
+            await stream.abandon()
+            self.outcome.silenced = True
+            return True
+        result = await stream.finish(self._frame(final[self._sealed :]).rstrip())
+        if not result.ok:
+            self._native_ok = False
+            self._src = final
+            return False  # the edit path sends it
+        self._record_ids(result)
+        self.outcome.final_delivered = True
+        self.outcome.final_message_id = result.message_id
+        return True
+
     async def _interim_update(self) -> None:
         self._timer = False
-        if not self._edits or len(self._src) == self._src_at_edit:
+        if len(self._src) == self._src_at_edit:
             return
         if could_become_silence(self._src):
+            return
+        if self._native is not None or (self._native_ok and self._msg_id is None):
+            waited = self._clock.monotonic() - self._last_edit >= self._interval - _EPSILON
+            enough = len(self._src) - self._src_at_edit >= self._cfg.buffer_threshold
+            if not (waited or enough):
+                self._timer = True
+                return
+            if await self._native_update():
+                return
+        if not self._edits:
             return
         waited = self._clock.monotonic() - self._last_edit >= self._interval - _EPSILON
         enough = len(self._src) - self._src_at_edit >= self._cfg.buffer_threshold
@@ -419,13 +523,17 @@ class StreamConsumer:
         self._msg_id, self._shown, self._shown_upto = None, "", 0
         self._src_at_edit = 0
 
-    async def _end_segment(self) -> None:
+    async def _end_segment(self, *, sealing: bool = False) -> None:
+        if await self._native_segment_end(sealing=sealing):
+            return
         body = self._src[self._sealed :]
         if body.strip() and not is_silence(self._src):
             await self._complete(final=False)
         self._reset_segment()
 
     async def _finish(self, final_text: str | None) -> None:
+        if await self._native_finish(final_text):
+            return
         final = self._src if final_text is None else final_text
         if is_silence(final):
             self.outcome.silenced = True
@@ -445,6 +553,11 @@ class StreamConsumer:
         self.outcome.final_message_id = (self._msg_id or None) if ok else None
 
     async def _on_cancel(self) -> None:
+        stream, self._native = self._native, None
+        if stream is not None:
+            with contextlib.suppress(Exception):
+                await stream.abandon()
+            return
         if not self._msg_id or not self._edits:
             return
         with contextlib.suppress(Exception):

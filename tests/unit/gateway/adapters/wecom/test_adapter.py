@@ -111,7 +111,7 @@ def test_every_stream_frame_is_a_prefix_of_the_next() -> None:
         for text in ("Hel", "Hello", "Hello wor"):
             assert await stream.push(text)
             await settle(rig.clock)
-        assert await stream.push("Bye") is False  # rewrites sent text: skipped
+        assert await stream.push("Bye") is True  # rewrites sent text: skipped, stream usable
         await settle(rig.clock)
         final = await drive(rig.clock, stream.finish("Hello world"))
         assert final.ok and final.message_id == stream.stream_id

@@ -25,6 +25,10 @@ retry policy sleeps at most ``inline_wait_cap`` = 5 s and hands longer waits to 
 Edits: "message is not modified" is success; a markup refusal is retried once as plain text (cards
 are edited with plain Markdown by the prompts module); an interim edit over the cap shows its
 first piece; a final edit over the cap edits the first piece in and sends the rest as replies.
+
+P16 additions, each behind its setting: native drafts (``open_stream``, ``drafts.py``; on with
+``display.platforms.telegram.native_stream``), DM topics (``topics.py``; ``dm_topics``) and sticker
+descriptions (``stickers.py``; ``sticker_descriptions``, on by default).
 """
 
 from __future__ import annotations
@@ -59,6 +63,7 @@ from indus.gateway.adapters.telegram.bot_api import (
     BadRequest,
     BotApi,
     BotCommand,
+    FileRef,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputFile,
@@ -68,22 +73,26 @@ from indus.gateway.adapters.telegram.bot_api import (
     Update,
     User,
 )
+from indus.gateway.adapters.telegram.drafts import DraftStream
 from indus.gateway.adapters.telegram.inbound import (
     GENERAL_TOPIC,
     MAX_CONCURRENT_UPDATES,
     Normaliser,
     UpdateDispatcher,
     UpdateReceipts,
+    attachment_ref,
     menu_commands,
     parse_ref,
 )
+from indus.gateway.adapters.telegram.stickers import StickerCache, StickerNotes
+from indus.gateway.adapters.telegram.topics import DmTopics
 from indus.gateway.adapters.telegram.webhook import (
     UvicornServer,
     WebhookOptions,
     WebhookServer,
     webhook_app,
 )
-from indus.gateway.core.events import Attachment, InboundEvent
+from indus.gateway.core.events import Attachment, InboundEvent, MessageKind
 from indus.gateway.core.send import ErrorKind, SendResult, classify_send_error, is_ambiguous_timeout
 from indus.gateway.outbound.chunker import (
     Chunked,
@@ -163,6 +172,12 @@ class TelegramOptions:
     require_topics: bool = False
     command_menu: bool = True
     webhook: WebhookOptions | None = field(default=None)
+    # P16-34: topics of private chats as separate sessions (needs the bot's Threaded Mode).
+    dm_topics: bool = False
+    # P16-34: describe static stickers once (cached by unique file id).
+    sticker_descriptions: bool = True
+    # P16-33: ``display.platforms.telegram.native_stream`` (read by ``create_adapter``).
+    native_stream: bool = False
 
     @classmethod
     def from_extra(
@@ -171,6 +186,7 @@ class TelegramOptions:
         *,
         webhook_url: str | None = None,
         webhook_secret: str | None = None,
+        native_stream: bool = False,
     ) -> TelegramOptions:
         url = (webhook_url or str(extra.get("webhook_url") or "")).strip()
         webhook = None
@@ -192,6 +208,9 @@ class TelegramOptions:
             require_topics=_flag(extra.get("require_topics"), False),
             command_menu=_flag(extra.get("command_menu"), True),
             webhook=webhook,
+            dm_topics=_flag(extra.get("dm_topics"), False),
+            sticker_descriptions=_flag(extra.get("sticker_descriptions"), True),
+            native_stream=native_stream,
         )
 
 
@@ -269,6 +288,7 @@ class TelegramAdapter(Adapter):
         receipts: UpdateReceipts | None = None,
         server_factory: Callable[[], WebhookServer] | None = None,
         send_only: bool = False,
+        stickers: StickerNotes | None = None,
     ) -> None:
         super().__init__(clock=clock, settings=settings, secrets=secrets, sink=sink)
         self.bot = bot
@@ -291,6 +311,14 @@ class TelegramAdapter(Adapter):
         self._forum_menus: set[str] = set()
         self._previews: dict[tuple[str, str], str] = {}
         self._tasks: set[asyncio.Task[None]] = set()
+        self.topics = DmTopics(enabled=self.options.dm_topics, clock=clock)
+        self.stickers = stickers or StickerNotes(
+            StickerCache(None), clock, enabled=self.options.sticker_descriptions
+        )
+        # Set once Telegram says drafts cannot work for this bot, or inside DM topics
+        # (``drafts_unavailable``).
+        self.drafts_off = False
+        self.topic_drafts_off = False
 
     # -- lifecycle ---------------------------------------------------------------------------------
 
@@ -324,6 +352,7 @@ class TelegramAdapter(Adapter):
             ) from None
         self.me = me
         self.normaliser.identify(me.id, me.username)
+        self.topics.identify(me)
         if self.send_only:
             return
         await self.receipts.bind(me.id)
@@ -381,8 +410,11 @@ class TelegramAdapter(Adapter):
 
     async def _register_commands(self) -> None:
         commands = menu_commands()
+        topic = self.topics.menu_entry()
         for scope in MENU_SCOPES:
-            await self._set_menu(commands, {"type": scope})
+            private = topic is not None and scope == "all_private_chats"
+            rows = [*commands, topic] if private and topic is not None else commands
+            await self._set_menu(rows, {"type": scope})
 
     async def _set_menu(self, commands: Sequence[BotCommand], scope: Mapping[str, Any]) -> None:
         try:
@@ -489,11 +521,39 @@ class TelegramAdapter(Adapter):
         event = self.normaliser.message_event(update.update_id, message)
         if event is None:
             return
+        event = self.topics.place(event, message)
         if event.source.chat_type == "forum":
             self._forum_menu(event.source.chat_id)
         if await self._lobby(event):
             return
+        if await self.topics.handle(self, event):
+            return
+        if message.sticker is not None and event.kind is MessageKind.STICKER:
+            event = await self._sticker_event(event, message.sticker)
         await self.emit(event)
+
+    async def _sticker_event(self, event: InboundEvent, sticker: FileRef) -> InboundEvent:
+        """The sticker's note as the event text (``stickers.py``)."""
+        source = event.source
+        addressed = (
+            source.chat_type == "dm"
+            or event.metadata.get("mentioned") is True
+            or event.reply_to_is_own
+        )
+        try:
+            note = await self.stickers.note_for(
+                sticker,
+                sender=source.user_id or source.chat_id,
+                addressed=addressed,
+                download=self._sticker_bytes,
+            )
+        except Exception:
+            log.warning("telegram: sticker note failed", exc_info=True)
+            return event
+        return event.model_copy(update={"text": note})
+
+    def _sticker_bytes(self, sticker: FileRef) -> AsyncIterator[bytes]:
+        return self.fetch_media(Attachment(ref=attachment_ref(sticker), mime="image/webp"))
 
     async def _lobby(self, event: InboundEvent) -> bool:
         """Under ``require_topics``: plain text in a forum's General topic gets a reminder
@@ -515,8 +575,16 @@ class TelegramAdapter(Adapter):
         return True
 
     def register_fetchers(self, seat: FetcherSeat) -> Callable[[], None] | None:
-        """Register ``fetch_media`` with the media intake (P15-23); returns the undo."""
-        return seat.register_fetcher(self.platform, self.fetch_media)
+        """Register ``fetch_media`` with the media intake (P15-23) and let sticker notes use the
+        intake's describer and image cache; returns the undo."""
+        undo_fetcher = seat.register_fetcher(self.platform, self.fetch_media)
+        undo_stickers = self.stickers.attach(seat)
+
+        def undo() -> None:
+            undo_stickers()
+            undo_fetcher()
+
+        return undo
 
     async def fetch_media(self, attachment: Attachment) -> AsyncIterator[bytes]:
         """The intake's fetcher for ``tg:`` refs: ``getFile``, then the file download."""
@@ -680,6 +748,42 @@ class TelegramAdapter(Adapter):
     def is_final_failure(self, result: SendResult) -> bool:
         """A revoked token: neither a retry nor plain text can help."""
         return not result.ok and "unauthorized" in (result.error or "").lower()
+
+    # -- native drafts (P16-33) --------------------------------------------------------------------
+
+    def open_stream(
+        self,
+        chat_id: str,
+        *,
+        reply_to: str | None = None,
+        meta: Mapping[str, Any] | None = None,
+    ) -> DraftStream | None:
+        """A draft stream for one reply segment in a private chat, or None (drafts off, not a
+        private chat, not connected): the caller then streams by edits."""
+        if (
+            not self.options.native_stream
+            or self.drafts_off
+            or self.send_only
+            or not self.connected
+            or not str(chat_id).isdigit()  # private chats have positive ids
+        ):
+            return None
+        thread = _send_thread(meta or {})
+        if thread is not None and self.topic_drafts_off:
+            return None
+        return DraftStream(self, str(chat_id), thread=thread, reply_to=reply_to)
+
+    def drafts_unavailable(self, reason: str, *, in_topics: bool = False) -> None:
+        """Telegram said drafts cannot work here (``in_topics``: inside DM topics only): stream
+        by edits there from now on."""
+        if in_topics:
+            if not self.topic_drafts_off:
+                self.topic_drafts_off = True
+                log.warning("telegram: native drafts off inside topics (%s)", reason)
+            return
+        if not self.drafts_off:
+            self.drafts_off = True
+            log.warning("telegram: native drafts switched off (%s); streaming by edits", reason)
 
     # -- typing and reactions ----------------------------------------------------------------------
 

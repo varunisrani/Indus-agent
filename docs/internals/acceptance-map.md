@@ -598,6 +598,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/core/test_prompts.py::test_only_the_requester_or_an_admin_answers_in_a_shared_thread`
   - `tests/unit/gateway/core/test_prompts.py::test_clarify_by_text`
   - `tests/unit/gateway/core/test_prompts.py::test_clarify_buttons_with_paging_and_other`
+  - `tests/e2e/gateway/test_demo_p16.py::test_an_approval_over_matrix_is_answered_by_a_typed_approve`
   - `tests/e2e/gateway/test_demo3.py::test_a_dangerous_command_is_approved_with_a_telegram_button`
 - **ACC-E9-1** Whole-script approval for `execute_code`
   - `tests/unit/tools/builtin/code/test_runner.py::test_manual_approval_denied_spawns_nothing`
@@ -1146,7 +1147,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_a_dropped_stream_reopens_after_2_4_8_doubling_to_60_seconds`
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_33_attachments_go_out_in_two_sends`
-  - Review: live lane against a real signal-cli daemon (P16-36 doctor reachability check)
+  - `tests/unit/cli/test_doctor_gateway.py::test_local_daemons_are_probed_without_credentials`
+  - `tests/e2e/gateway/test_demo_p16.py::test_one_gateway_answers_on_telegram_signal_and_matrix`
+  - Review: live lane against a real signal-cli daemon (owner)
 - **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/whatsapp/test_real_bridge.py::test_the_adapter_runs_the_real_bridge`
@@ -1167,6 +1170,7 @@ Checked by `python -m tooling.checks acceptance`.
   - Review: live lane against a real Meta test number (P16-36)
 - **ACC-K10-1** Matrix (any homeserver by access token; optional end-to-end encryption)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/e2e/gateway/test_demo_p16.py::test_one_gateway_answers_on_telegram_signal_and_matrix`
   - `tests/unit/gateway/adapters/matrix/test_adapter.py::test_backlog_event_at_startup_is_ignored`
   - `tests/unit/gateway/adapters/matrix/test_adapter.py::test_a_46000_byte_reply_is_split_by_bytes_as_well_as_chars`
   - `tests/unit/gateway/adapters/matrix/test_crypto.py::test_only_verified_devices_of_allowed_users_get_room_keys`
@@ -1267,6 +1271,18 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/bluebubbles/test_adapter.py::test_callback_without_the_right_token_is_refused_before_parsing`
   - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_bluebubbles`
   - Review: live lane against a real BlueBubbles server on a Mac (owner)
+- **ACC-K12-2** Photon (iMessage through our own Spectrum sidecar; shipped disabled until a Spectrum provider is cleared)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/photon/test_adapter.py::test_a_replayed_event_is_ignored`
+  - `tests/unit/gateway/adapters/photon/test_adapter.py::test_a_placeholder_then_its_attachment_within_15_s_is_one_event`
+  - `tests/unit/gateway/adapters/photon/test_adapter.py::test_preview_art_is_dropped_for_30_s_after_our_own_link`
+  - `tests/unit/gateway/adapters/photon/test_adapter.py::test_the_sidecar_token_is_required`
+  - `tests/unit/gateway/adapters/photon/test_sidecar.py::test_npm_ci_heals_a_missing_install_without_scripts_bounded_to_600_s`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_photon`
+  - `tests/unit/cli/test_doctor_gateway.py::test_photon_sidecar_needs_node_a_script_a_provider_and_its_credentials`
+  - `tests/unit/gateway/adapters/photon/test_real_sidecar.py::test_the_adapter_runs_the_real_sidecar`
+  - `apps/photon-sidecar/src/http.test.ts::refuses a request without the token, or with another one, in constant time`
+  - Review: a Spectrum provider (licence cleared) and a live lane against a real Photon project (owner / P16-36)
 - **ACC-K12-3** Microsoft Teams (Bot Framework activities, RS256 token check, Adaptive Cards)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/teams/test_adapter.py::test_a_token_for_another_app_is_refused_with_401_and_nothing_is_parsed`
@@ -1399,6 +1415,12 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/intake/test_media.py::test_an_album_becomes_one_event`
   - `tests/unit/gateway/intake/test_media.py::test_foreign_paths_are_refused_and_never_read`
   - `tests/integration/gateway/test_three_platforms.py::test_media_fetchers_follow_each_platform_up_and_down`
+- **ACC-K24-3** Telegram stickers described once by the vision describer and cached by unique file id (LRU 2,000, persisted)
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_the_same_sticker_twice_costs_one_vision_call`
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_animated_stickers_are_never_downloaded`
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_a_failed_description_is_not_remembered`
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_fresh_descriptions_are_budgeted_per_sender`
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_the_cache_drops_the_least_recently_used_and_survives_bad_files`
 - **ACC-K25-1** Outbound chunking with fence carry-over and `(i/n)` markers; per-platform formatting with …
   - `tests/unit/gateway/outbound/test_chunker.py::test_fence_is_closed_and_reopened_with_its_language`
   - `tests/unit/gateway/outbound/test_formatting.py::test_golden_markdownv2_cases`
@@ -1415,7 +1437,14 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/outbound/test_stream.py::test_edits_follow_interval_and_threshold`
   - `tests/unit/gateway/outbound/test_progress.py::test_typing_pauses_while_approval_waits`
   - `tests/unit/gateway/outbound/test_progress.py::test_accumulate_edits_one_bubble_with_throttle_and_repeat_counter`
-  - Review: native drafts and status phrase catalogues come with native streaming (P2)
+  - Review: status phrase catalogues; native drafts are ACC-K28-2 (P16-33)
+- **ACC-K28-2** Native draft streaming: Telegram drafts and Slack streams, prefix-stable frames, final declared by the caller, no duplicate final after seal
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_recorded_telegram_draft_frames_are_prefix_stable`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_recorded_slack_stream_frames_are_prefix_stable`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_no_duplicate_final_after_seal`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_a_flood_during_a_stream_backs_off_without_sleeping`
+  - `tests/unit/gateway/adapters/test_native_streams.py::test_the_switch_is_display_platforms_native_stream`
+  - Review: the stream consumer's native branch and the runner feeding it are proposed core changes (P16-33)
 - **ACC-K29-1** Send retries with an error classifier and a dead-target registry
   - `tests/unit/gateway/core/test_send.py::test_classifier_table`
   - `tests/unit/gateway/core/test_send.py::test_transient_exhausted_sends_one_notice`
@@ -1462,6 +1491,20 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/gateway/test_webhook.py::test_coalescing_runs_the_newest_event_once_after_the_quiet_window`
   - `tests/contract/gateway/test_webhook.py::test_events_filters_and_direct_delivery`
   - `tests/unit/cli/commands/test_webhook.py::test_test_signs_and_posts_to_the_local_receiver`
+- **ACC-K45-1** Discord voice channels: `/voice join|leave|status`, per-speaker utterances become turns keyed on the voice channel, replies spoken through a mixer, idle leave, clear answers when voice cannot work
+  - `tests/unit/gateway/adapters/discord/test_voice.py::test_two_speakers_become_two_turns_keyed_on_the_voice_channel`
+  - `tests/unit/gateway/adapters/discord/test_voice.py::test_the_bot_leaves_after_300_seconds_without_speech`
+  - `tests/unit/gateway/adapters/discord/test_voice.py::test_missing_ffmpeg_answers_and_text_keeps_working`
+  - `tests/unit/gateway/adapters/discord/test_voice.py::test_typed_voice_join_joins_hears_and_speaks_replies`
+  - `tests/unit/gateway/adapters/discord/test_voice.py::test_the_receiver_decodes_known_speakers_only`
+  - `tests/unit/cli/test_doctor_gateway.py::test_discord_voice_readiness`
+  - Review: live lane in a real server with the `discord-voice` extra, libopus and ffmpeg (receive path over discord.py's voice socket and DAVE) (P16-35 / owner)
+- **ACC-K46-1** Telegram DM topic mode: each DM topic its own session, `/topic` opens one (needs the bot's Threaded Mode)
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_two_dm_topics_are_two_sessions`
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_without_the_mode_a_private_chat_stays_one_session`
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_the_topic_command_opens_a_topic_and_greets_inside_it`
+  - `tests/unit/gateway/adapters/telegram/test_topics.py::test_without_threaded_mode_the_command_says_how_to_turn_it_on`
+  - Review: live check of DM topic fields and `createForumTopic` in private chats (P16-36 / owner)
 - **ACC-K47-1** Idle exit: a daemon `ensure` started (not a supervised or hand-started one) exits after `gateway.idle_exit_seconds` (600 s) with no client and no work, recorded as `idle_exit`, and the next `ensure` starts a new one
   - `tests/unit/gateway/daemon/test_idle_exit.py::test_exits_at_600_s_of_idle`
   - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_busy_poll_restarts_the_window`

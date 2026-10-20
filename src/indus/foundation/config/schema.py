@@ -458,6 +458,16 @@ class BrowserSection(_Section):
     )
 
 
+class DisplayPlatformSection(_Section):
+    """Display settings for one messaging platform (``display.platforms.<name>``, P16-33)."""
+
+    native_stream: bool = Field(
+        default=False,
+        description="show replies as they are written through the platform's own streaming "
+        "(Telegram drafts, Slack streams) instead of a message edited in place",
+    )
+
+
 class DisplaySection(_Section):
     language: str = Field(default="en", description="interface language")
     interface: Literal["cli", "tui"] = Field(
@@ -527,6 +537,10 @@ class DisplaySection(_Section):
         ge=0,
         description="messaging: a 'still working' line every this many seconds on long turns; "
         "0 = never",
+    )
+    platforms: dict[str, DisplayPlatformSection] = Field(
+        default_factory=dict[str, DisplayPlatformSection],
+        description="messaging: per platform name, display settings (native_stream)",
     )
 
 
@@ -1286,6 +1300,9 @@ class PlatformsSection(_Section):
     feishu: PlatformSection = Field(default_factory=PlatformSection, description="Feishu / Lark")
     bluebubbles: PlatformSection = Field(
         default_factory=PlatformSection, description="BlueBubbles (iMessage)"
+    )
+    photon: PlatformSection = Field(
+        default_factory=PlatformSection, description="iMessage through Photon (own sidecar)"
     )
     simplex: PlatformSection = Field(default_factory=PlatformSection, description="SimpleX Chat")
     buzz: PlatformSection = Field(default_factory=PlatformSection, description="Buzz (Nostr)")

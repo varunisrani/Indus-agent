@@ -66,6 +66,7 @@ BUILTIN_NAMES: tuple[str, ...] = (
     "weixin",
     "feishu",
     "bluebubbles",
+    "photon",
     "simplex",
     "buzz",
     "yuanbao",
@@ -175,6 +176,9 @@ def _chat_entry(
 
 def builtin_entries() -> tuple[PlatformEntry, ...]:
     """The platforms that ship with Indus Agent, in a fixed order."""
+    # The package's __init__ holds only names (stdlib imports); the adapter itself stays lazy.
+    from indus.gateway.adapters import photon
+
     return (
         replace(
             _chat_entry(
@@ -555,6 +559,30 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             ),
             # One BlueBubbles server is one iMessage account; a new password is the same server.
             lock_env=("BLUEBUBBLES_SERVER_URL",),
+        ),
+        PlatformEntry(
+            name="photon",
+            label="iMessage (Photon)",
+            # Our own Node sidecar (apps/photon-sidecar) on loopback, driven over httpx; the
+            # Spectrum provider is operator-supplied (none ships), so the platform ships disabled:
+            # no credential table row, it turns on only with platforms.photon.enabled: true.
+            factory=_lazy_factory("indus.gateway.adapters.photon:create_adapter"),
+            check_fn=modules_installed("httpx"),
+            required_env=photon.CREDENTIAL_ENV,
+            install_hint=(
+                "install Node.js 24 and a Photon Spectrum provider module (exports "
+                "createSpectrumLink; platforms.photon.provider), then set "
+                "platforms.photon.enabled: true"
+            ),
+            allowlist_env=policy_env_name("photon", "ALLOWED_USERS"),
+            allow_all_env=policy_env_name("photon", "ALLOW_ALL_USERS"),
+            allow_bots_env=policy_env_name("photon", "ALLOW_BOTS"),
+            home_env=policy_env_name("photon", "HOME_CHANNEL"),
+            max_len=8000,
+            dm_is_private=True,
+            platform_hint=photon.PLATFORM_HINT,
+            # One Photon project answers in one gateway; a new project secret is the same project.
+            lock_env=photon.LOCK_ENV,
         ),
         replace(
             _chat_entry(
