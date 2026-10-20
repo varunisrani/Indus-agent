@@ -1265,6 +1265,10 @@ class PlatformsSection(_Section):
     matrix: PlatformSection = Field(default_factory=PlatformSection, description="Matrix")
     mattermost: PlatformSection = Field(default_factory=PlatformSection, description="Mattermost")
     email: PlatformSection = Field(default_factory=PlatformSection, description="Email")
+    whatsapp_cloud: PlatformSection = Field(
+        default_factory=PlatformSection, description="WhatsApp Business (Cloud API)"
+    )
+    sms: PlatformSection = Field(default_factory=PlatformSection, description="SMS (Twilio)")
 
 
 class MessageTimestampsSection(_Section):

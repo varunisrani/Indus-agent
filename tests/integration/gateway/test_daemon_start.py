@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 
@@ -162,6 +163,41 @@ def test_a_token_collision_with_nothing_connected_exits_78(tmp_path: Path) -> No
     assert status.exit_code == EXIT_CONFIG and "token_conflict" in (status.exit_reason or "")
     assert status.platforms["telegram"].state == "fatal"
     assert not pid_path(scope.home).exists()
+
+
+def test_the_lock_key_is_the_entrys_lock_env_when_it_names_one(tmp_path: Path) -> None:
+    """IRC locks on server + nick (neither a credential): the same pair held by another
+    profile parks IRC as a conflict; another nick on the same server connects (R06.16)."""
+    other = TokenLocks(tmp_path / "token-locks", profile="other", pid=os.getppid())
+    assert other.acquire("irc", "irc.example.test\nindus", startup=True).acquired
+
+    def daemon_for(profile: str, nick: str) -> GatewayDaemon:
+        env = {"IRC_SERVER": "irc.example.test", "IRC_NICKNAME": nick}
+        scope = daemon_scope(tmp_path, profile=profile, env=env)
+        irc = replace(
+            fake_entry(fake_platform("irc"), name="irc"), lock_env=("IRC_SERVER", "IRC_NICKNAME")
+        )
+        return GatewayDaemon(
+            scope,
+            options=quick(),
+            registry=fake_registry(fake_entry(fake_platform()), irc),
+            service_factory=fake_service(model_server(), tmp_path / f"svc-{profile}"),
+            parts=[],
+        )
+
+    async def main() -> None:
+        same = daemon_for("work", "indus")
+        flight = await fly(same)
+        assert same.platforms["telegram"].state == "connected"
+        irc = same.platforms["irc"]
+        assert irc.state == "fatal" and irc.error_code == "token_conflict"
+        assert await flight.stop() == EXIT_OK
+        renamed = daemon_for("play", "indus2")
+        flight = await fly(renamed)
+        assert renamed.platforms["irc"].state == "connected"
+        assert await flight.stop() == EXIT_OK
+
+    run(main())
 
 
 def test_a_missing_library_is_fatal_for_that_platform_while_the_others_connect(

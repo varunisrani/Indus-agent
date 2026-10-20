@@ -14,11 +14,13 @@ from indus.foundation.config.schema import PlatformSection
 from indus.foundation.scope import Scope
 from indus.gateway.config import (
     BUILTIN_CREDENTIALS,
+    BUILTIN_PUBLIC_ENV,
     GLOBAL_ALLOW_ALL_ENV,
     GLOBAL_ALLOWED_USERS_ENV,
     HomeChannel,
     legacy_reset_notice,
     load_gateway_settings,
+    lock_key,
     policy_env,
     read_secret,
     reset_warnings,
@@ -173,10 +175,19 @@ def test_policy_env_names_use_our_prefix() -> None:
         "matrix": ("MATRIX_ACCESS_TOKEN",),
         "mattermost": ("MATTERMOST_TOKEN",),
         "email": ("EMAIL_ADDRESS", "EMAIL_PASSWORD"),
+        "whatsapp_cloud": ("WHATSAPP_CLOUD_ACCESS_TOKEN", "WHATSAPP_CLOUD_PHONE_NUMBER_ID"),
+        "sms": ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"),
+        "line": ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"),
     }
+    # Servers, nicks and topics turn their platform on but are not secrets (never masked).
+    assert dict(BUILTIN_PUBLIC_ENV) == {
+        "ntfy": ("NTFY_TOPIC",),
+        "irc": ("IRC_SERVER", "IRC_NICKNAME"),
+    }
+    assert not set(BUILTIN_PUBLIC_ENV) & set(BUILTIN_CREDENTIALS)
     # URLs and hosts are read by the adapters, never masked or lock-keyed as credentials.
     for names in BUILTIN_CREDENTIALS.values():
-        assert not any(n.endswith(("_URL", "_HOST", "_HOMESERVER")) for n in names)
+        assert not any(n.endswith(("_URL", "_HOST", "_HOMESERVER", "_SERVER")) for n in names)
 
 
 def test_defaults_come_from_the_shared_table(scope: Scope) -> None:
@@ -240,12 +251,62 @@ def test_invalid_platform_block_falls_back_alone(scope: Scope) -> None:
 
 
 def test_plugin_platform_without_credentials_runs_on_config(scope: Scope) -> None:
-    _write(scope, "platforms:\n  irc:\n    enabled: true\n    extra:\n      server: irc.example\n")
+    _write(
+        scope, "platforms:\n  fakechat:\n    enabled: true\n    extra:\n      server: chat.test\n"
+    )
     settings = load_gateway_settings(scope)
-    assert settings.platforms["irc"].enabled
-    assert settings.platforms["irc"].extra == {"server": "irc.example"}
-    _write(scope, "platforms:\n  irc:\n    extra: {}\n")
+    assert settings.platforms["fakechat"].enabled
+    assert settings.platforms["fakechat"].extra == {"server": "chat.test"}
+    _write(scope, "platforms:\n  fakechat:\n    extra: {}\n")
+    assert not load_gateway_settings(scope).platforms["fakechat"].enabled
+
+
+def test_public_names_turn_a_platform_on_but_are_not_credentials(scope: Scope) -> None:
     assert not load_gateway_settings(scope).platforms["irc"].enabled
+    half = load_gateway_settings(_with_env(scope, IRC_SERVER="irc.example.test")).platforms["irc"]
+    assert not half.enabled and half.reason == "not configured"
+    scope = _with_env(scope, IRC_SERVER="irc.example.test", IRC_NICKNAME="indus")
+    irc = load_gateway_settings(scope).platforms["irc"]
+    assert irc.enabled and irc.reason == "credentials"
+    assert dict(irc.credentials) == {}  # nothing to mask: the server and nick are public
+    _write(scope, "platforms:\n  ntfy:\n    enabled: true\n")
+    ntfy = load_gateway_settings(scope).platforms["ntfy"]
+    assert not ntfy.enabled and ntfy.reason == "missing credentials: NTFY_TOPIC"
+
+
+def test_lock_keys_follow_the_registry_entry(scope: Scope) -> None:
+    from indus.gateway.registry import PlatformRegistry
+
+    registry = PlatformRegistry()
+
+    def key(platform: str, **env: str) -> str:
+        entry = registry.get(platform)
+        assert entry is not None
+        local = _with_env(scope, **env)
+        settings = load_gateway_settings(local).platforms[platform]
+        assert settings.enabled
+        return lock_key(local, settings, entry.lock_env)
+
+    # IRC: server + nick, in that order (R06.16); the channel is not part of it.
+    irc = key("irc", IRC_SERVER="irc.example.test", IRC_NICKNAME="indus", IRC_CHANNEL="#a")
+    assert irc == "irc.example.test\nindus"
+    assert key("irc", IRC_SERVER="irc.example.test", IRC_NICKNAME="indus") == irc
+    assert key("irc", IRC_SERVER="irc.example.test", IRC_NICKNAME="indus2") != irc
+    assert key("ntfy", NTFY_TOPIC="alerts") == "alerts"
+    # Email: address + IMAP host; a new password is the same mailbox.
+    mail = {
+        "EMAIL_ADDRESS": "bot@example.test",
+        "EMAIL_IMAP_HOST": "imap.example.test",
+        "EMAIL_SMTP_HOST": "smtp.example.test",
+    }
+    first = key("email", EMAIL_PASSWORD=_fake_token("p1"), **mail)
+    assert first == "bot@example.test\nimap.example.test"
+    assert key("email", EMAIL_PASSWORD=_fake_token("p2"), **mail) == first
+    assert _fake_token("p1") not in first
+    # Without ``lock_env``: the credential values, as before (Signal keeps its number).
+    signal = registry.get("signal")
+    assert signal is not None and signal.lock_env == ()
+    assert key("telegram", TELEGRAM_BOT_TOKEN=_fake_token("tg")) == _fake_token("tg")
 
 
 def test_custom_credential_table(scope: Scope) -> None:

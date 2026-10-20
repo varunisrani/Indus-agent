@@ -456,10 +456,18 @@ async def check_inbound(case: AdapterCase, env: CaseEnv, adapter: Adapter) -> No
     else:
         bot = find("the bot message", lambda e: e.text == "beep")
         expect(bot.source.is_bot, "inbound", "a bot-authored message not marked is_bot")
-    voice = find("the voice note", lambda e: e.kind is MessageKind.VOICE)
-    expect(len(voice.media) == 1, "inbound", "voice note without its attachment")
-    find("the photo", lambda e: e.kind is MessageKind.PHOTO and "look" in e.text)
-    find("the document", lambda e: e.kind is MessageKind.DOCUMENT)
+    if "media" in lacks:
+        media_kinds = (MessageKind.VOICE, MessageKind.PHOTO, MessageKind.DOCUMENT)
+        carried = [e for e in events if e.media or e.kind in media_kinds]
+        expect(not carried, "inbound", "the platform lacks media but an attachment arrived")
+    else:
+        voice = find("the voice note", lambda e: e.kind is MessageKind.VOICE)
+        expect(len(voice.media) == 1, "inbound", "voice note without its attachment")
+        if "caption" in lacks:
+            find("the photo", lambda e: e.kind is MessageKind.PHOTO and len(e.media) == 1)
+        else:
+            find("the photo", lambda e: e.kind is MessageKind.PHOTO and "look" in e.text)
+        find("the document", lambda e: e.kind is MessageKind.DOCUMENT)
     if "edit" in lacks:
         absent("edit", "hello again")
     for edit in [e for e in events if e.text == "hello again"]:

@@ -39,9 +39,10 @@ from indus.foundation.scope import Scope
 log = logging.getLogger(__name__)
 
 # Vendor credential names (kept as the vendors spell them, D-16.22). Every name must be present.
-# Their values are masked in every log line and error text (``Adapter.scrub``) and joined they key
-# the token lock, so only secrets and identities belong here: server URLs and hosts are read by the
-# adapter itself (Signal's account number, a person's phone number, is masked too).
+# Their values are masked in every log line and error text (``Adapter.scrub``) and, unless the
+# registry entry names its own ``lock_env``, joined they key the token lock, so only secrets and
+# identities belong here: server URLs and hosts are read by the adapter itself (Signal's account
+# number and the SMS and WhatsApp numbers, a person's phone number, are masked too).
 BUILTIN_CREDENTIALS: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
         "telegram": ("TELEGRAM_BOT_TOKEN",),
@@ -51,6 +52,19 @@ BUILTIN_CREDENTIALS: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "matrix": ("MATRIX_ACCESS_TOKEN",),
         "mattermost": ("MATTERMOST_TOKEN",),
         "email": ("EMAIL_ADDRESS", "EMAIL_PASSWORD"),
+        "whatsapp_cloud": ("WHATSAPP_CLOUD_ACCESS_TOKEN", "WHATSAPP_CLOUD_PHONE_NUMBER_ID"),
+        "sms": ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"),
+        "line": ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"),
+    }
+)
+
+# Env names a platform needs that are not secrets (a server, a nick, a topic). Like credentials,
+# all of them present turn the platform on, but their values are never masked; the registry
+# entry's ``lock_env`` decides whether they key the token lock.
+BUILTIN_PUBLIC_ENV: Mapping[str, tuple[str, ...]] = MappingProxyType(
+    {
+        "ntfy": ("NTFY_TOPIC",),
+        "irc": ("IRC_SERVER", "IRC_NICKNAME"),
     }
 )
 
@@ -251,9 +265,12 @@ def _platform(
     section: PlatformSection,
     names: tuple[str, ...],
     problems: list[str],
+    public: tuple[str, ...] = (),
 ) -> PlatformSettings:
     found = {n: v for n in names if (v := read_secret(scope, n)) is not None}
     missing = [n for n in names if n not in found]
+    missing += [n for n in public if read_secret(scope, n) is None]
+    names = (*names, *public)
     has_credentials = bool(names) and not missing
     explicit = section.enabled
     home = _home_channel(scope, name, section)
@@ -307,18 +324,28 @@ def gateway_section(scope: Scope) -> GatewaySection:
 
 
 def load_gateway_settings(
-    scope: Scope, *, credentials: Mapping[str, tuple[str, ...]] = BUILTIN_CREDENTIALS
+    scope: Scope,
+    *,
+    credentials: Mapping[str, tuple[str, ...]] = BUILTIN_CREDENTIALS,
+    public: Mapping[str, tuple[str, ...]] = BUILTIN_PUBLIC_ENV,
 ) -> GatewaySettings:
     """Effective gateway settings for ``scope``: one entry per known or configured platform."""
     view = _view(scope)
     problems: list[str] = []
     raw_platforms = _mapping(view.get("platforms"))
-    names = sorted(set(credentials) | set(raw_platforms) | set(PlatformsSection.model_fields))
+    names = sorted(
+        set(credentials) | set(public) | set(raw_platforms) | set(PlatformsSection.model_fields)
+    )
     platforms: dict[str, PlatformSettings] = {}
     for name in names:
         section = _section(name, raw_platforms.get(name), problems)
         platforms[name] = _platform(
-            scope, name, section, tuple(credentials.get(name, ())), problems
+            scope,
+            name,
+            section,
+            tuple(credentials.get(name, ())),
+            problems,
+            tuple(public.get(name, ())),
         )
     try:
         gateway = GatewaySection.model_validate(_mapping(view.get("gateway")))
@@ -338,8 +365,21 @@ def load_gateway_settings(
     return GatewaySettings(MappingProxyType(platforms), gateway, tuple(problems), display)
 
 
+def lock_key(scope: Scope, settings: PlatformSettings, lock_env: tuple[str, ...] = ()) -> str:
+    """What the daemon's token lock is keyed on (R06.16; the lock file name holds only a hash).
+
+    With ``lock_env`` (the registry entry's): those values, read like credentials, joined in that
+    order. Without: the platform's credential values joined in name order. Empty: no lock.
+    """
+    if lock_env:
+        values = [read_secret(scope, n) or "" for n in lock_env]
+        return "\n".join(values) if any(values) else ""
+    return "\n".join(settings.credentials[k] for k in sorted(settings.credentials))
+
+
 __all__ = [
     "BUILTIN_CREDENTIALS",
+    "BUILTIN_PUBLIC_ENV",
     "AdapterConfig",
     "GLOBAL_ALLOWED_USERS_ENV",
     "GLOBAL_ALLOW_ALL_ENV",
@@ -350,6 +390,7 @@ __all__ = [
     "gateway_section",
     "legacy_reset_notice",
     "load_gateway_settings",
+    "lock_key",
     "policy_env",
     "read_secret",
     "reset_warnings",

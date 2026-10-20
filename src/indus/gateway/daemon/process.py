@@ -44,6 +44,7 @@ from indus.gateway.config import (
     GatewaySettings,
     PlatformSettings,
     load_gateway_settings,
+    lock_key,
     read_secret,
 )
 from indus.gateway.core.admission import AdmissionPipeline, ModelChoice
@@ -287,6 +288,9 @@ class GatewayDaemon:
         self.token_locks = TokenLocks(
             default_lock_dir(scope.env), profile=scope.profile_id, home=str(scope.home)
         )
+        # Platform → the key its token lock was taken on, so the release uses the same key even
+        # when the secret store changed in between.
+        self._lock_keys: dict[str, str] = {}
         # Filled in by assembly.
         self.settings: GatewaySettings = GatewaySettings({}, _empty_section())
         self.plugins: PluginUpkeep | None = None
@@ -731,8 +735,16 @@ class GatewayDaemon:
             return "degraded"
         return "running"
 
-    def _credential(self, settings: PlatformSettings) -> str:
-        return "\n".join(settings.credentials[k] for k in sorted(settings.credentials))
+    def _lock_key(self, name: str, settings: PlatformSettings) -> str:
+        """The platform's token-lock key: its registry entry's ``lock_env`` values when it names
+        them (IRC server + nick, email address + IMAP host), else its credential values."""
+        entry = self.registry.get(name)
+        return lock_key(self.scope, settings, entry.lock_env if entry is not None else ())
+
+    def _release_lock(self, name: str) -> None:
+        credential = self._lock_keys.pop(name, "")
+        if credential:
+            self.token_locks.release(name, credential)
 
     async def connect_platform(self, name: str, *, is_reconnect: bool = True) -> PlatformRuntime:
         """(Re)connect one platform: the reconnect watcher's entry point (W4, P15-29)."""
@@ -751,7 +763,7 @@ class GatewayDaemon:
         if missing is not None:
             await self._failed(name, "fatal", "missing_dependency", missing)
             return
-        credential = self._credential(settings)
+        credential = self._lock_key(name, settings)
         if credential:
             outcome = await run_blocking(
                 lambda: self.token_locks.acquire(name, credential, startup=startup),
@@ -761,6 +773,7 @@ class GatewayDaemon:
                 state: PlatformState = "fatal" if outcome.fatal else "retrying"
                 await self._failed(name, state, "token_conflict", outcome.message)
                 return
+            self._lock_keys[name] = credential
         proxy = proxy_for(
             env=self.scope.env,
             trust_env=bool(self.settings.gateway.trust_env),
@@ -769,8 +782,7 @@ class GatewayDaemon:
         config = AdapterConfig(name, settings, self.scope, self.clock, proxy)
         adapter = self.registry.create_adapter(name, config)
         if not isinstance(adapter, Adapter):
-            if credential:
-                self.token_locks.release(name, credential)
+            self._release_lock(name)
             await self._failed(
                 name, "fatal", "adapter_build_failed", "the adapter could not be built"
             )
@@ -790,8 +802,8 @@ class GatewayDaemon:
             )
             return
         except AdapterConnectError as exc:
-            if not exc.retryable and credential:
-                self.token_locks.release(name, credential)
+            if not exc.retryable:
+                self._release_lock(name)
             state = "retrying" if exc.retryable else "fatal"
             await self._failed(name, state, exc.code, str(exc))
             return
@@ -844,9 +856,8 @@ class GatewayDaemon:
                 await asyncio.wait_for(adapter.disconnect(), self.options.disconnect_timeout)
             except Exception:
                 log.warning("platform %s did not disconnect cleanly", name, exc_info=True)
-        settings = self.settings.get(name)
-        if fatal and settings is not None and (credential := self._credential(settings)):
-            self.token_locks.release(name, credential)
+        if fatal:
+            self._release_lock(name)
         if reason != "stopping":
             self.set_platform_state(
                 name, "fatal" if fatal else "retrying", error_code=reason, error=error
@@ -996,6 +1007,7 @@ class GatewayDaemon:
             await self._stop_part(part)
         with contextlib.suppress(Exception):
             await run_blocking(self.token_locks.release_all, label="token locks")
+        self._lock_keys.clear()
         store: StoreHandle | None = getattr(self, "store", None)
         if store is not None:
             with contextlib.suppress(Exception):

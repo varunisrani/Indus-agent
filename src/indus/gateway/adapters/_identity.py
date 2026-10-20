@@ -19,6 +19,9 @@ of every npub entry.
 Signal. signal-cli names a sender by phone number and by account UUID; the number (when there is
 one) is the ``user_id`` and the UUID the ``user_id_alt`` that session keys prefer, so a number
 change keeps the conversation.
+
+Phone numbers in logs. ``mask_number`` hides every digit of a number but the last four (separators
+kept); ``mask_numbers`` does that to every number-like run in a text (WhatsApp Cloud, SMS).
 """
 
 from __future__ import annotations
@@ -45,6 +48,8 @@ __all__ = [
     "hex_to_npub",
     "is_whatsapp_broadcast",
     "is_whatsapp_non_user",
+    "mask_number",
+    "mask_numbers",
     "nostr_pubkey",
     "npub_to_hex",
     "signal_number",
@@ -381,3 +386,28 @@ def signal_sender(number: str | None, account_uuid: str | None) -> SignalSender 
     if ident is not None:
         return SignalSender(ident, ident)
     return None
+
+
+# -- phone numbers in logs --------------------------------------------------------------------
+
+_NUMBER_RUN = re.compile(r"\+?\d[\d ().-]{6,}\d")
+
+
+def mask_number(value: str) -> str:
+    """A phone number for logs: every digit but the last four hidden."""
+    digits = sum(c.isdigit() for c in value)
+    keep = 4 if digits > 6 else 0
+    out: list[str] = []
+    seen = 0
+    for char in value:
+        if char.isdigit():
+            seen += 1
+            out.append(char if seen > digits - keep else "*")
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def mask_numbers(text: str) -> str:
+    """``text`` with every phone-number-like run masked."""
+    return _NUMBER_RUN.sub(lambda m: mask_number(m.group(0)), text)

@@ -334,6 +334,8 @@ def test_decided_defaults() -> None:
         "matrix": platform,  # P16-06
         "mattermost": platform,  # P16-08
         "email": platform,  # P16-09
+        "whatsapp_cloud": platform,  # P16-04
+        "sms": platform,  # P16-10
     }
     assert d["gateway"] == {
         "message_timestamps": {"enabled": False},

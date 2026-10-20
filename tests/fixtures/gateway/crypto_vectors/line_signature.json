@@ -1,0 +1,26 @@
+{
+  "about": "X-Line-Signature known answers, written from the LINE Messaging API spec (base64 of HMAC-SHA256 over the raw request body, keyed with the channel secret). Each signature was computed independently with `openssl dgst -sha256 -hmac <secret> -binary | base64` (OpenSSL 3.0.13) over the body's UTF-8 bytes, not with our code.",
+  "channel_secret": "test-channel-secret-0001",
+  "vectors": [
+    {
+      "name": "the console's verify call (no events)",
+      "body": "{\"destination\":\"Uffffffffffffffffffffffffffffffff\",\"events\":[]}",
+      "signature": "7vXM0ofsQgJbdxpMIeYBVRjZzlGAdG7g1CSFLwlZKUw="
+    },
+    {
+      "name": "one text message event, compact JSON",
+      "body": "{\"destination\":\"Uffffffffffffffffffffffffffffffff\",\"events\":[{\"type\":\"message\",\"mode\":\"active\",\"timestamp\":1767258000000,\"source\":{\"type\":\"user\",\"userId\":\"Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaa200\"},\"webhookEventId\":\"01EV0000000000000000000001\",\"deliveryContext\":{\"isRedelivery\":false},\"replyToken\":\"rt000000000000000000000000000001\",\"message\":{\"id\":\"100001\",\"type\":\"text\",\"quoteToken\":\"q100001\",\"text\":\"hello there\"}}]}",
+      "signature": "Z1nBTMz8uwk9RjvqlrORIiFVMLjdrd4z3iPvGa8K6h8="
+    },
+    {
+      "name": "pretty-printed JSON with a line break and non-ASCII text (signed as raw UTF-8 bytes)",
+      "body": "{\"destination\": \"Uffffffffffffffffffffffffffffffff\",\n  \"events\": [{\"type\": \"message\", \"message\": {\"id\": \"100002\", \"type\": \"text\", \"text\": \"こんにちは 👋\"}}]}",
+      "signature": "axL+slSBFTLzMENX5CBV3pK8DnXF7O4iwjwLMMELVsg="
+    },
+    {
+      "name": "an empty body",
+      "body": "",
+      "signature": "S6BWDczxCZW8L5egel3Baja6V+GF0e2RInYqlp45myE="
+    }
+  ]
+}

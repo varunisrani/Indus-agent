@@ -3,9 +3,9 @@
 Each ``PlatformEntry`` says how to build the platform's adapter, how to tell whether its library is
 installed without importing it, which env names carry its credential and its access lists, its
 message cap, whether its DMs are really private (R06.24) and an optional cron target parser.
-Telegram, Discord, Slack, Signal, Matrix, Mattermost, Email, the API server and the webhook
-receiver are built in; plugins add entries through the P13 provider registry
-(``load_plugin_entries``).
+Telegram, Discord, Slack, Signal, Matrix, Mattermost, Email, WhatsApp (Cloud API), SMS, LINE, ntfy,
+IRC, the API server and the webhook receiver are built in; plugins add entries through the P13
+provider registry (``load_plugin_entries``).
 
 A platform's SDK is imported in exactly one place, ``PlatformRegistry.create_adapter``, which the
 gateway calls only for enabled platforms: importing this module, listing entries or probing
@@ -49,6 +49,11 @@ BUILTIN_NAMES: tuple[str, ...] = (
     "matrix",
     "mattermost",
     "email",
+    "whatsapp_cloud",
+    "sms",
+    "line",
+    "ntfy",
+    "irc",
     "api_server",
     "webhook",
 )
@@ -108,6 +113,11 @@ class PlatformEntry:
     dm_is_private: bool = True
     platform_hint: str = ""
     cron_target_parser: TargetParser | None = None
+    # The env names whose values, joined in this order, key the daemon's token lock (R06.16). Empty:
+    # the platform's credential values (``BUILTIN_CREDENTIALS``). Set it when the unique identity
+    # is not the secret (IRC: server + nick) or is not only the secret (email: address + IMAP host,
+    # never the password).
+    lock_env: tuple[str, ...] = ()
     # Group allowlists read from env (empty: config only). Authorization reads them (P15-08).
     group_users_env: str = ""
     group_chats_env: str = ""
@@ -246,6 +256,95 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
                 ),
             ),
             install_hint="pip install indus-agent (email needs no extra)",
+            # One mailbox on one server belongs to one gateway; a new password is not a new box.
+            lock_env=("EMAIL_ADDRESS", "EMAIL_IMAP_HOST"),
+        ),
+        replace(
+            _chat_entry(
+                "whatsapp_cloud",
+                "WhatsApp Business (Cloud API)",
+                # Our own Graph API client over httpx; the webhook runs on the P16-01 kit.
+                sdk=("httpx",),
+                extra_name="whatsapp",
+                required_env=("WHATSAPP_CLOUD_ACCESS_TOKEN", "WHATSAPP_CLOUD_PHONE_NUMBER_ID"),
+                max_len=4096,
+                hint=(
+                    "You are talking through WhatsApp. Markdown is converted to WhatsApp "
+                    "formatting; avoid tables. A reply more than 24 hours after the person's last "
+                    "message cannot be delivered."
+                ),
+            ),
+            install_hint="pip install indus-agent (WhatsApp Cloud needs no extra)",
+        ),
+        replace(
+            _chat_entry(
+                "sms",
+                "SMS (Twilio)",
+                # Our own Twilio REST client over httpx; the webhook runs on the P16-01 kit.
+                sdk=("httpx",),
+                extra_name="sms",
+                required_env=("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"),
+                max_len=1600,
+                hint=(
+                    "You are talking through SMS. Use plain text only and keep replies short "
+                    "(about 1,600 characters per message)."
+                ),
+            ),
+            install_hint="pip install indus-agent (SMS needs no extra)",
+        ),
+        replace(
+            _chat_entry(
+                "line",
+                "LINE",
+                # Our own Messaging API client over httpx; the webhook runs on the P16-01 kit.
+                sdk=("httpx",),
+                extra_name="line",
+                required_env=("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"),
+                max_len=20000,
+                hint=(
+                    "You are talking through LINE. Replies are plain text (Markdown is removed); "
+                    "keep them short."
+                ),
+            ),
+            install_hint="pip install indus-agent (LINE needs no extra)",
+        ),
+        replace(
+            _chat_entry(
+                "ntfy",
+                "ntfy",
+                # Our own client over httpx (JSON stream in, POST out).
+                sdk=("httpx",),
+                extra_name="ntfy",
+                required_env=("NTFY_TOPIC",),
+                max_len=4096,
+                hint=(
+                    "You are talking through ntfy push notifications: plain text, at most 4096 "
+                    "bytes per message; anyone who knows the topic can read it."
+                ),
+            ),
+            install_hint="pip install indus-agent (ntfy needs no extra)",
+            # Every topic reports "dm" but anyone who knows its name reads it (R06.24).
+            dm_is_private=False,
+            # Two gateways never answer one topic list; the topic is not masked as a secret.
+            lock_env=("NTFY_TOPIC",),
+        ),
+        replace(
+            _chat_entry(
+                "irc",
+                "IRC",
+                # asyncio streams and the standard ``ssl`` module: no library.
+                sdk=("ssl",),
+                extra_name="irc",
+                required_env=("IRC_SERVER", "IRC_NICKNAME"),
+                max_len=450,
+                hint=(
+                    "You are chatting on IRC: plain text only, short lines; people address you by "
+                    "your nick."
+                ),
+            ),
+            install_hint="pip install indus-agent (IRC needs no extra)",
+            # One nick on one network belongs to one gateway (R06.16); neither is a secret.
+            lock_env=("IRC_SERVER", "IRC_NICKNAME"),
         ),
         PlatformEntry(
             name="api_server",

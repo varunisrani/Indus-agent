@@ -1133,6 +1133,50 @@ Checked by `python -m tooling.checks acceptance`.
   - Review: live lane against a real signal-cli daemon (P16-36 doctor reachability check)
 - **ACC-K9-1** WhatsApp through a local bridge → WhatsApp Business Cloud API
   - Review: not yet planned (phase TBD)
+- **ACC-K9-2** WhatsApp Business Cloud API (Graph sends, signed webhook, 24-hour window)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_a_duplicate_wamid_is_ignored`
+  - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_a_bad_signature_is_401_before_parsing_and_compared_in_constant_time`
+  - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_the_subscription_handshake`
+  - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_a_send_outside_the_24_hour_window_is_forbidden_final_and_tried_once`
+  - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_four_approval_choices_render_as_a_list_and_three_as_buttons`
+  - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_numbers_and_tokens_are_masked_in_errors_and_logs`
+  - `tests/unit/gateway/adapters/whatsapp_cloud/test_adapter.py::test_indus_send_builds_a_send_only_adapter`
+  - Review: live lane against a real Meta test number (P16-36)
+- **ACC-K10-4** SMS through Twilio (signed webhook, REST send, 1,600-character pieces)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_the_signature_covers_a_url_with_a_query_string`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_forged_or_missing_signatures_are_403_and_compared_in_constant_time`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_1601_characters_become_two_messages`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_markdown_is_removed_by_the_plain_formatter`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_an_unsubscribed_number_is_forbidden_final_and_tried_once`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_numbers_and_credentials_are_masked_in_logs`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_indus_send_builds_a_send_only_adapter`
+  - Review: live lane against a real Twilio number (P16-36)
+- **ACC-K12-5** LINE (signed webhook, reply token or push, served media)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_signature_vectors_from_the_spec`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_a_bad_or_missing_signature_is_refused_before_parsing`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_reply_token_at_51_seconds_falls_back_to_push`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_twelve_bubbles_go_out_in_three_calls`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_media_url_expires_after_its_ttl`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_a_slow_turn_offers_the_still_working_button`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_indus_send_opens_line_send_only`
+- **ACC-K12-7** ntfy (streamed topics in, POST out; a broadcast surface, R06.24)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_unknown_sender_on_ntfy_never_gets_a_pairing_code`
+  - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_a_stalled_stream_reconnects_at_90_seconds`
+  - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_a_token_is_never_sent_to_a_plain_http_server`
+  - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_indus_send_opens_no_subscription`
+- **ACC-K12-8** IRC (TLS socket, SASL, byte caps, pacing; token lock on server + nick)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_multibyte_text_splits_at_byte_boundaries`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_nick_collision_recovers_with_underscores`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_one_line_per_half_second_per_target`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_a_password_is_never_sent_over_a_plain_connection`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_the_token_lock_key_is_server_and_nick`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_indus_send_uses_its_own_nick_and_joins_only_the_target`
+  - `tests/integration/gateway/test_daemon_start.py::test_the_lock_key_is_the_entrys_lock_env_when_it_names_one`
 - **ACC-K13-1** Inbound normalisation: command detection, burst text batching, per-platform dedupe, reply context …
   - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
   - `tests/unit/gateway/core/test_events.py::test_property_text_not_starting_with_slash_is_never_a_command`

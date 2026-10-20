@@ -572,6 +572,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/commands/test_profile.py::test_clone_through_symlinked_env`
   - `tests/unit/cli/commands/test_profile.py::test_keychain_entries_copied_to_new_namespace`
   - `tests/unit/gateway/test_token_locks.py::test_two_processes_race_exactly_one_wins`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_the_token_lock_key_is_server_and_nick`
   - `tests/unit/gateway/test_token_locks.py::test_lock_name_hides_credential`
 - **R04.27** Bang shell is not a bypass
   - `tests/unit/cli/test_bang.py::test_floor_blocks_rm_rf_root`
@@ -657,6 +658,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_busy.py::test_an_idle_queue_command_from_the_adapter_does_not_hold_up_reading`
   - `tests/unit/gateway/core/test_prompts.py::test_approve_while_busy_answers_inline`
   - `tests/e2e/gateway/test_demo3.py::test_chunker_busy_guards_and_default_deny`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_multibyte_text_splits_at_byte_boundaries`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_multibyte_lines_reach_the_server_whole`
 - **R06.2** Claim the session slot before the first await
   - `tests/unit/gateway/core/test_admission.py::test_two_events_for_one_key_with_no_await_between_start_one_turn`
   - `tests/unit/gateway/core/test_admission.py::test_claims_are_synchronous_and_released_by_generation`
@@ -673,6 +676,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/telegram/test_adapter.py::test_a_97_minute_flood_wait_comes_back_typed_without_sleeping`
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_a_long_attachment_wait_is_handed_over_without_sleeping`
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_an_attachment_rate_limit_is_retried_exactly_once_after_its_refill`
+  - `tests/unit/gateway/adapters/line/test_adapter.py::test_a_long_server_wait_is_handed_back_and_the_monthly_quota_is_not_retried`
 - **R06.4** Retry ambiguity: timeouts are not retryable
   - `tests/unit/gateway/core/test_send.py::test_read_timeout_is_attempted_exactly_once`
   - `tests/unit/gateway/core/test_send.py::test_partial_split_resumes_only_the_remainder`
@@ -682,6 +686,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/delivery/test_ledger.py::test_partial_split_resumes_only_the_undelivered_pieces`
   - `tests/unit/gateway/adapters/test_http.py::test_httpx_failures_are_classified_by_class`
   - `tests/unit/gateway/adapters/test_http.py::test_a_read_timeout_is_attempted_once_and_a_connect_failure_retried`
+  - `tests/unit/gateway/adapters/sms/test_adapter.py::test_a_failure_after_the_first_piece_resumes_with_the_rest_only`
 - **R06.5** Ledger states must distinguish "never started" from "maybe sent"
   - `tests/integration/gateway/test_ledger_recovery.py::test_kill_point_then_boot`
   - `tests/unit/gateway/delivery/test_ledger.py::test_boot_sweep_rules`
@@ -749,6 +754,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/gateway/test_daemon_start.py::test_a_token_collision_with_nothing_connected_exits_78`
   - `tests/unit/gateway/test_token_locks.py::test_startup_conflict_is_fatal_and_midrun_retryable`
   - `tests/unit/gateway/test_token_locks.py::test_two_processes_race_exactly_one_wins`
+  - `tests/unit/gateway/adapters/irc/test_adapter.py::test_the_token_lock_key_is_server_and_nick`
+  - `tests/integration/gateway/test_daemon_start.py::test_the_lock_key_is_the_entrys_lock_env_when_it_names_one`
+  - `tests/unit/gateway/test_config.py::test_lock_keys_follow_the_registry_entry`
 - **R06.17** Exit code semantics with supervisors
   - `tests/integration/gateway/test_daemon_start.py::test_a_second_daemon_for_the_same_profile_refuses`
   - `tests/integration/gateway/test_daemon_start.py::test_the_daemon_process_serves_refuses_a_second_and_drains_on_sigterm`
@@ -794,6 +802,7 @@ Checked by `python -m tooling.checks traps`.
 - **R06.24** Broadcast surfaces that report "dm"
   - `tests/unit/gateway/adapters/test_base.py::test_default_capabilities`
   - `tests/unit/gateway/core/test_authz.py::test_broadcast_dm_never_gets_a_code`
+  - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_unknown_sender_on_ntfy_never_gets_a_pairing_code`
 - **R06.25** Gateway config loader diverges from CLI defaults
   - `tests/unit/gateway/test_config.py::test_defaults_come_from_the_shared_table`
   - `tests/unit/gateway/test_config.py::test_settings_round_trip_through_the_writer`

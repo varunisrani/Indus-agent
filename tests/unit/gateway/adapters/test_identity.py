@@ -18,6 +18,8 @@ from indus.gateway.adapters._identity import (
     hex_to_npub,
     is_whatsapp_broadcast,
     is_whatsapp_non_user,
+    mask_number,
+    mask_numbers,
     nostr_pubkey,
     npub_to_hex,
     signal_number,
@@ -233,3 +235,11 @@ def test_signal_senders_keep_the_uuid_as_the_alternate_id() -> None:
     assert signal_sender(None, UUID.upper()) == SignalSender(UUID, UUID)
     assert signal_sender("garbage", UUID) == SignalSender(UUID, UUID)
     assert signal_sender(None, "not-a-uuid") is None
+
+
+def test_phone_numbers_are_masked_but_the_last_four_digits() -> None:
+    assert mask_number("+15551230001") == "+*******0001"
+    assert mask_number("+1 (555) 123-0001") == "+* (***) ***-0001"
+    assert mask_number("12345") == "*****"  # too short to keep any digits
+    text = "sent from +15551230001 to 1 555 123 0002 at 10:30"
+    assert mask_numbers(text) == "sent from +*******0001 to * *** *** 0002 at 10:30"
