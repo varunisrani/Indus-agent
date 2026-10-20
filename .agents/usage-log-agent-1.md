@@ -93,3 +93,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 01:57 UTC | 75% | 25% | 03:00 UTC | P16-05/06/08/09 landed (b702a98); nothing running; E4+E5 integration after reset
 2026-10-20 03:08 UTC | 0% | 100% | 08:00 UTC | window reset; started E4+E5 integrator + K3, K4, E6, E7 builders
 2026-10-20 03:33 UTC | 21% | 79% | 08:00 UTC | K4 done (parked); E4+E5 integrator gating; K3, E6, E7 running; started E8 (DingTalk + WeCom)
+2026-10-20 03:58 UTC | 33% | 67% | 08:00 UTC | container restart 03:38 (all resumed); E6, E7 done (parked); verify8 + verify9 integrators, E8 running; started E9, E10

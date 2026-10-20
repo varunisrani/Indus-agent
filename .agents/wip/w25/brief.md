@@ -21,6 +21,13 @@ Slices (each owns only its tasks' files):
   (secrets module), single use, short TTL, bound to purpose/profile; constant-time comparison; never logged.
 - E6 = P16-11 Microsoft Teams adapter + P16-12 Microsoft Graph change-notification receiver.
 - E7 = P16-13 Google Chat adapter + P16-20 QQ Bot adapter.
+- E9 = P16-14 Feishu/Lark adapter + P16-15 Feishu document tools and comment intake (doc tools are model tools: register
+  them where the P16 row says, treat document/comment content as untrusted input, never execute links).
+- E10 = P16-24 BlueBubbles adapter + P16-28 SimpleX adapter + P16-29 Buzz adapter (Nostr relay; use the kit's npub
+  helpers in _identity.py; verify Nostr event signatures with a library already in the lock or an allowed one in an
+  optional extra — no hand-rolled Schnorr/secp256k1 maths in src/).
+No hand-written cryptography anywhere in src/ (signature verify, AES, RSA/ECDSA/Schnorr): use `cryptography` (base
+dependency) or another allowed library. HMAC via the stdlib `hmac` module is fine.
 - E8 = P16-16 DingTalk adapter + P16-17 WeCom smart-robot adapter + P16-18 WeCom callback adapter (crypto vectors in
   tests/fixtures/gateway/crypto_vectors/, derived by you from the vendor specs with an independent tool, not our code).
 Callback-receiving adapters build on the P16-01 kit (signature/JWT checks in constant time on the raw body before
