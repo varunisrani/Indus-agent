@@ -76,7 +76,7 @@ Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`,
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
 - Wave 25 (from `d50d5d3`, started 03:08 UTC 2026-10-20; brief `.agents/wip/w25/brief.md`):
-  - E6 (P16-11 Teams + 12 Graph) + E7 (P16-13 Google Chat + 20 QQ Bot) + E8 (P16-16 DingTalk + 17/18 WeCom): integrator in scratchpad verify10 (brief
+  - E6 (P16-11 Teams + 12 Graph) + E7 (P16-13 Google Chat + 20 QQ Bot) + E8 (P16-16 DingTalk + 17/18 WeCom): DONE; rebased as `1ee4974` in scratchpad verify10, lead gating the combined tree (brief
     `.agents/wip/w25/e67-integrator-brief.md`, rulings in README, D-16.440..459).
   - E9 (P16-14 Feishu + 15 docs) and E10 (P16-24 BlueBubbles + 28 SimpleX + 29 Buzz) DONE, parked in
     `.agents/wip/w25/` (README has rows; E10 adds coincurve) — integrate after verify10 lands (D-16.460..479). If paused, patches go in `.agents/wip/w25/`.
