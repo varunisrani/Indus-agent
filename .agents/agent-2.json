@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 7,
-  "remaining_pct": 93,
+  "usage_pct": 24,
+  "remaining_pct": 76,
   "resets_at": "2026-10-20T18:20:00+00:00",
-  "last_check": "2026-10-20T16:27:00+00:00",
-  "current_step": "Took the turn; starting P16 (w28), P18 (w29 W1/W2/F1), P19 (w29 A1) integrators",
-  "last_commit": "79b047f"
+  "last_check": "2026-10-20T17:00:00+00:00",
+  "current_step": "Integrators P16/P18/P19 running; builder M1 (P19-14..17 MCP serve) running",
+  "last_commit": "0ab0d95"
 }
