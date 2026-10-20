@@ -360,6 +360,20 @@ def test_rate_limited_primary_cools_down_on_a_doubling_ladder(
     asyncio.run(main())
 
 
+def test_a_reset_that_already_passed_arms_no_ladder_step(
+    scope: Scope, fake_clock: FakeClock
+) -> None:
+    async def main() -> None:
+        chain = await make_chain(scope, fake_clock, BACKUP_ENTRY)
+        passed = fake_clock.now() - timedelta(seconds=5)
+        decision = await chain.activate(verdict("rate_limit", 429, reset_at=passed), "rate_limit")
+        assert chain.cooldown_until <= fake_clock.monotonic()
+        assert "next turn" in decision.notice
+        assert await chain.restore() is not None  # the primary is back at the next turn start
+
+    asyncio.run(main())
+
+
 def test_ladder_is_capped_at_four_hours(scope: Scope, fake_clock: FakeClock) -> None:
     async def main() -> None:
         chain = await make_chain(scope, fake_clock, BACKUP_ENTRY)

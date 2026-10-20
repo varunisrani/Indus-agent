@@ -274,11 +274,13 @@ class FallbackChain:
             return None
         if self.active:  # a fallback failed: the primary was not the failing source
             return None
-        left = 0.0
         if verdict.reset_at is not None:
-            left = (verdict.reset_at - self.clock.now()).total_seconds()
-        ladder = COOLDOWN_BASE_S * float(1 << min(self.level, 32))
-        seconds = left if left > 0 else min(ladder, COOLDOWN_MAX_S)
+            # The provider named its reset: follow it, also when it has already passed (a slow
+            # retry path must not turn a short reset into a ladder step).
+            seconds = max((verdict.reset_at - self.clock.now()).total_seconds(), 0.0)
+        else:
+            ladder = COOLDOWN_BASE_S * float(1 << min(self.level, 32))
+            seconds = min(ladder, COOLDOWN_MAX_S)
         self.level += 1
         self.cooldown_until = max(self.cooldown_until, self._monotonic() + seconds)
         log.info("primary route cooling down for %.0f s (level %d)", seconds, self.level)
@@ -359,8 +361,10 @@ class FallbackChain:
                 f"({_reason_text(reason)}); using {after.model} via {after.provider} for the "
                 "rest of this turn."
             )
-            if cooldown is not None:
+            if cooldown is not None and cooldown >= 1:
                 notice += f" The main model is retried after about {cooldown:.0f} s."
+            elif cooldown is not None:
+                notice += " The main model is retried at the next turn."
             log.warning("%s", notice)
             return Decision("switched", notice=notice)
         if verdict is None or verdict.reason not in RATE_LIMIT_REASONS:
