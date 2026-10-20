@@ -1,6 +1,6 @@
 # Wave 23 (P16 E1-E3, P17 K1-K2) — parked builder patches, base 78be7b3
 
-E1 (P16-01 HTTP listener kit) is being landed alone by the lead (D-16.350..354).
+E1 (P16-01 HTTP listener kit) LANDED e3b3aa1 (D-16.350..354).
 
 ## (LANDED ff7bbe3) w23-k2.patch: P17-05..07 (generation fences, event log + replay, request re-delivery) — done
 - Builder checks: 131 own + broker tests; broad service/gateway/tui_bridge/protocol run 2001 passed / 23 skipped; ruff,

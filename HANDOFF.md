@@ -78,11 +78,11 @@ In flight:
 - Wave 22: T/D/S builders DONE (P15-33..35); integrator in scratchpad verify4 merging them and building Demo 3
   (P15-36), brief `.agents/wip/p15w4/integrator-brief.md` (lead rulings: one send-only shape, one fetcher shape,
   Telegram webhook binds loopback by default; D-16.330 onward). Patches + README in `.agents/wip/p15w4/`.
-- Wave 23 (from `78be7b3`, brief `.agents/wip/w23/brief.md`): E1 (P16-01 kit) done, lead landing it (verify5,
-  D-16.350..354); K1 + K2 = P17-01..07 LANDED (`ff7bbe3`, D-16.360..369); E2 (P16-06 Matrix + 08 Mattermost) and E3 (P16-05 Signal +
+- Wave 23 (from `78be7b3`, brief `.agents/wip/w23/brief.md`): E1 = P16-01 kit LANDED (`e3b3aa1`, D-16.350..354); K1 + K2 = P17-01..07 LANDED (`ff7bbe3`, D-16.360..369); E2 (P16-06 Matrix + 08 Mattermost) and E3 (P16-05 Signal +
   09 Email) DONE, parked — integrate after wave 22 lands (registry/credential/send-only seams overlap). E1 landing
   carries a P08-13 fix (expired provider reset no longer arms the 60 s ladder; soak-test flake root cause). Patches + README in `.agents/wip/w23/`.
-- Last landings: P17-01..07 (`ff7bbe3`; notes in LEAD-NOTES "P17 wave 1 landing notes"), P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
+- Last landings: P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the
+  cooldown ladder, P05-03 local stop_tree waits for the whole tree after SIGKILL; P17-01..07 (`ff7bbe3`; notes in LEAD-NOTES "P17 wave 1 landing notes"), P21-12 rest, 13, 14, 16 + P22-10..15 (`6f04798`; notes in LEAD-NOTES "P21 B3 + P22 R2
   landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
   landing notes"), P15-01..18 (`c0e0201`), P21-01..11, 15 and P22-01..09 (`42a852e`).
