@@ -130,6 +130,22 @@ def test_hash_name_resolves_through_the_directory(scope: Scope, router: Delivery
     assert missing.status == "delivery_failed" and "unknown_channel" in (missing.reason or "")
 
 
+def test_a_native_hash_chat_is_sent_as_written(scope: Scope, router: DeliveryRouter) -> None:
+    """IRC channels are real ids: a #name the directory does not know still goes out (P16-32)."""
+    adapter = _attach(scope, router, "irc")
+    assert _deliver(scope, _job("irc:#ops"), "hi").status == "delivered"
+    assert adapter.ops[0].chat_id == "#ops"
+
+
+def test_platform_target_rules_are_installed_with_the_router(
+    scope: Scope, router: DeliveryRouter
+) -> None:
+    """A Matrix room id carries ':' — the platform rule keeps it whole (P16-32)."""
+    adapter = _attach(scope, router, "matrix")
+    assert _deliver(scope, _job("matrix:!room:example.org"), "hi").status == "delivered"
+    assert adapter.ops[0].chat_id == "!room:example.org"
+
+
 def test_all_is_resolved_at_fire_time(scope: Scope, router: DeliveryRouter) -> None:
     tg = _attach(scope, router, "telegram")
     job = _job("all")

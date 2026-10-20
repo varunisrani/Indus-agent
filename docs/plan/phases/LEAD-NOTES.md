@@ -446,3 +446,17 @@
   replay_gap{overflow}; limits 1 MiB/message, 64 connections, 120 s idle) are recorded in the two task notes; protocol
   additions (attach methods, BridgeReady fields, generation on steer/answer) regenerated into packages/protocol.
 
+## P16-31/32 landing notes (lead) — gateway setup wizard and per-platform target parsers (slice E11)
+- Single slice, integrated by the lead on main. New: gateway/adapters/targets.py (one rule per landed chat platform,
+  `install()`/`uninstall()`), cli/wizards/gateway_setup.py (`indus gateway setup`); whatsapp_cloud added to cron
+  KNOWN_PLATFORMS.
+- Wiring done at landing: `DeliveryRouter.__init__` installs the rules (daemon and `indus send` both build a router);
+  `resolve` sends a `#…` chat as written when the directory has no match and the platform's `#` names are real ids
+  (IRC, Matrix aliases). A root autouse fixture (`drop_platform_target_rules`) removes the rules after each test so
+  tests that parse without a router see P14's plain grammar regardless of order. The CLI side (`indus cron create`,
+  the cronjob tool) cannot import the gateway, keeps plain parsing, and stores raw text the gateway re-parses.
+- Decisions D-16.520 … D-16.523. Follow-ups: P07 `indus setup` gateway section should hand off to the wizard; profile
+  clone CHANNEL_PLATFORMS should derive from BUILTIN_CREDENTIALS/BUILTIN_PUBLIC_ENV; email lock key ignores
+  platforms.email.imap_host; `PlatformEntry.cron_target_parser` unused; Slack @handle lookup not built; rules for
+  WhatsApp bridge, Weixin, Yuanbao, Photon, Raft come with their adapters.
+

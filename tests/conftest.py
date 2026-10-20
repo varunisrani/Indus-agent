@@ -115,3 +115,14 @@ def reopen_after_a_host_exit() -> Iterator[None]:
             del shared["default"]
     if wait is not None and wait.FOREGROUND.fenced:
         wait.FOREGROUND.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def drop_platform_target_rules() -> Iterator[None]:
+    """A gateway router installs the per-platform target rules (P16-32) process-wide; remove them
+    after every test so a test that parses targets without a router sees P14's plain grammar
+    whatever ran before it. Not imported yet → nothing to do."""
+    yield
+    platform_targets = sys.modules.get("indus.gateway.adapters.targets")
+    if platform_targets is not None:
+        platform_targets.uninstall()

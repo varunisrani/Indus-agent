@@ -541,6 +541,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/cli/test_non_tty.py::test_table_names_every_command_and_nothing_else`
   - `tests/contract/cli/test_non_tty.py::test_without_arguments`
   - `tests/contract/cli/test_non_tty.py::test_guidance_with_arguments`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_without_a_terminal_the_keys_are_printed`
 - **R04.20** Two different exit-code tables
   - `tests/unit/cli/test_oneshot.py::test_oneshot_code_table`
   - `tests/integration/cli/test_oneshot_exit_codes.py::test_failed_run_exits_2_and_writes_the_usage_file`
@@ -581,6 +582,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/test_token_locks.py::test_two_processes_race_exactly_one_wins`
   - `tests/unit/gateway/adapters/irc/test_adapter.py::test_the_token_lock_key_is_server_and_nick`
   - `tests/unit/gateway/test_token_locks.py::test_lock_name_hides_credential`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_a_bot_token_of_another_profile_is_refused`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_the_lock_identity_decides_not_each_value`
 - **R04.27** Bang shell is not a bypass
   - `tests/unit/cli/test_bang.py::test_floor_blocks_rm_rf_root`
   - `tests/unit/cli/test_bang.py::test_dangerous_command_asks_and_deny_blocks`

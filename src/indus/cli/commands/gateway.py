@@ -179,6 +179,11 @@ def _service_usable(manager: ServiceManager | None) -> ServiceManager | None:
             "indus.cli.commands.gateway_api_key:api_key_group",
             "Create, list and revoke the API server's bearer keys.",
         ),
+        (
+            "setup",
+            "indus.cli.wizards.gateway_setup:setup_command",
+            "Set up a messaging platform step by step.",
+        ),
     ),
     help="Run and look after the messaging gateway of this profile.",
     context_settings=_SETTINGS,

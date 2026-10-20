@@ -221,6 +221,7 @@ commands:
   gateway api-key list: 0
   gateway api-key create: 0   # prints the new key once
   gateway api-key revoke: 2   # a key id is required
+  gateway setup: 2        # prints the secret names and config keys to set (R04.19)
 
   webhook: 0              # no subcommand lists the routes (P15-32)
   webhook list: 0

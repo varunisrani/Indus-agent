@@ -1413,7 +1413,12 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/service/test_subscriptions.py::test_an_open_approval_is_offered_again_on_subscribe`
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_connection_reaches_only_sessions_it_attached`
 - **ACC-K52-1** `indus gateway setup` and per-platform setup helpers (WhatsApp pairing, Slack app)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_every_platform_runs_with_a_fake_check`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_menu_runs_until_done`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_slack_prints_a_manifest`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_telegram_prints_the_bot_link`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_access_modes_are_explained`
+  - `tests/unit/cli/wizards/test_gateway_setup.py::test_the_command_is_wired_under_gateway`
 - **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …
   - Review: not yet planned (phase TBD)
 - **ACC-L3-1** Sessions page: list, search with snippets, view as markdown, rename, export, prune, delete, resume …

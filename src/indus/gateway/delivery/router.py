@@ -41,6 +41,7 @@ from indus.cron import targets
 from indus.cron.delivery import DeliveryReceipt, DeliveryRequest
 from indus.cron.targets import DeliveryTarget
 from indus.foundation.scope import Scope
+from indus.gateway.adapters import targets as platform_targets
 from indus.gateway.config import HomeChannel
 from indus.gateway.delivery.directory import ChannelDirectory
 from indus.gateway.delivery.mirror import Mirror
@@ -123,6 +124,8 @@ class DeliveryRouter:
         self._senders: dict[str, OutboundSender] = {}
         self._undo: dict[str, Callable[[], None]] = {}
         self._all_undo: Callable[[], None] | None = None
+        # Per-platform target grammar (P16-32): once per process, before any target is parsed.
+        platform_targets.install()
 
     # -- registration ----------------------------------------------------------------------------
 
@@ -189,9 +192,12 @@ class DeliveryRouter:
         chat = target.chat_id
         if chat.startswith("#"):
             found = self.directory.resolve(platform, chat) if self.directory else None
-            if found is None:
-                return f"unknown_channel: no chat named {chat} is known on {platform}"
-            return Resolved(platform, found[0], target.thread_id or found[1])
+            if found is not None:
+                return Resolved(platform, found[0], target.thread_id or found[1])
+            if platform_targets.hash_is_native(platform):
+                # IRC channels and Matrix aliases are real ids: send as written.
+                return Resolved(platform, chat, target.thread_id)
+            return f"unknown_channel: no chat named {chat} is known on {platform}"
         return Resolved(platform, chat, target.thread_id)
 
     # -- sending ---------------------------------------------------------------------------------
