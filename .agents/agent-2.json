@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 55,
-  "remaining_pct": 45,
-  "resets_at": "2026-10-20T18:20:00+00:00",
-  "last_check": "2026-10-20T18:05:00+00:00",
-  "current_step": "Integrators P16/P18/P19 + builder R2 (P18-13/14) running; w30-m1 and w30-r1 parked",
-  "last_commit": "52b569c"
+  "usage_pct": 9,
+  "remaining_pct": 91,
+  "resets_at": "2026-10-20T23:20:00+00:00",
+  "last_check": "2026-10-20T18:36:00+00:00",
+  "current_step": "Integrators P16/P18/P19 in full-suite runs; builder R3 (P18-15/16) running; w30-m1/r1/r2 parked",
+  "last_commit": "2c612a9"
 }
