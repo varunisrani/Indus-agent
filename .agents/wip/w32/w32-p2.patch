@@ -1,0 +1,4818 @@
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 481d9a3..5b9f0e3 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -14,6 +14,11 @@
+     "@radix-ui/react-dialog": "1.1.23",
+     "@radix-ui/react-switch": "1.3.7",
+     "@tanstack/react-query": "5.104.1",
++    "@xterm/addon-fit": "0.11.0",
++    "@xterm/addon-unicode11": "0.9.0",
++    "@xterm/addon-web-links": "0.12.0",
++    "@xterm/addon-webgl": "0.19.0",
++    "@xterm/xterm": "6.0.0",
+     "react": "19.3.0",
+     "react-dom": "19.3.0",
+     "react-router": "8.4.0"
+diff --git a/apps/web/src/chat/ChatHost.tsx b/apps/web/src/chat/ChatHost.tsx
+new file mode 100644
+index 0000000..3fc6d6d
+--- /dev/null
++++ b/apps/web/src/chat/ChatHost.tsx
+@@ -0,0 +1,555 @@
++// The Chat tab (P18-26): the TUI in xterm over `/api/pty`, with the right rail (P18-27) beside it.
++//
++// The shell mounts this once, on the first visit to `/chat`, and afterwards only hides it
++// (`active` false), so the terminal and its socket survive other tabs (R09.6). This component
++// wires three things together:
++// - the terminal view (`terminal.ts`, xterm; a fake in tests),
++// - the PTY connection (`ptySocket.ts`): channel id per mount, this tab's attach token
++//   (`attachToken.ts`), `?resume=` from the URL, the profile switcher, the picked workspace,
++// - the rail, inside an error boundary so nothing it does can take the terminal down (R09.1).
++//
++// "Start new session" and the rail's "New chat" rotate the attach token and dial with `fresh=1`;
++// a session picked in the rail (or a `/chat?resume=<id>` link from the Sessions page) redials in
++// place with that resume id.
++
++import {
++  type ClipboardEvent,
++  Component,
++  type ComponentType,
++  type DragEvent,
++  type ErrorInfo,
++  type ReactNode,
++  type TouchEvent,
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
++import { useSearchParams } from "react-router";
++import type { ChatHostProps } from "../shell/ChatHostSlot.tsx";
++import { useProfileScope } from "../shell/ProfileScope.tsx";
++import { useWideScreen } from "../shell/Sidebar.tsx";
++import { Button } from "../ui/controls.tsx";
++import { type AttachTokenKeeper, attachTokens } from "./attachToken.ts";
++import {
++  attachImage,
++  ChatRail,
++  type ChatRailProps,
++  firstImage,
++  storedWorkspace,
++} from "./ChatRail.tsx";
++import type { FeedDeps } from "./eventsFeed.ts";
++import {
++  browserPtyDeps,
++  PtyConnection,
++  type PtyDeps,
++  type PtyRequest,
++  type PtyStatus,
++} from "./ptySocket.ts";
++import { COPY } from "./reconnect.ts";
++import {
++  type ChatTerminal,
++  CompositionGuard,
++  createXtermTerminal,
++  isMouseReport,
++  type TerminalFactory,
++} from "./terminal.ts";
++
++/** Seams for tests; every default is the real browser piece. */
++export interface ChatHostDeps {
++  terminal?: TerminalFactory;
++  pty?: PtyDeps;
++  feed?: FeedDeps;
++  tokens?: AttachTokenKeeper;
++  rail?: ComponentType<ChatRailProps>;
++}
++
++export interface ChatHostFullProps extends ChatHostProps {
++  deps?: ChatHostDeps;
++}
++
++const NOTICE_MS = 4_000;
++
++/** A channel id for one mount of the host (ties the PTY child to the rail's feed). */
++export function newChannelId(): string {
++  const random =
++    typeof globalThis.crypto?.randomUUID === "function"
++      ? globalThis.crypto.randomUUID()
++      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
++  return `chat-${random}`;
++}
++
++class RailBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
++  override state = { failed: false };
++
++  static getDerivedStateFromError(): { failed: boolean } {
++    return { failed: true };
++  }
++
++  override componentDidCatch(error: Error, info: ErrorInfo): void {
++    // biome-ignore lint/suspicious/noConsole: rail failures are logged, the terminal keeps going
++    console.warn("[indus chat] the side panel failed", error, info.componentStack);
++  }
++
++  override render(): ReactNode {
++    if (this.state.failed) {
++      return (
++        <p role="status" className="p-3 text-xs text-muted">
++          Chat details are unavailable. The terminal is not affected.
++        </p>
++      );
++    }
++    return this.props.children;
++  }
++}
++
++function Overlay({ children }: { children: ReactNode }) {
++  return (
++    <div
++      data-testid="chat-overlay"
++      className="absolute inset-0 flex items-center justify-center bg-bg/80 p-6"
++    >
++      <div
++        role="alert"
++        className="flex max-w-md flex-col items-start gap-3 rounded-lg border border-line bg-raised p-4 text-sm"
++      >
++        {children}
++      </div>
++    </div>
++  );
++}
++
++function StatusLayer({
++  status,
++  onReconnect,
++  onStartFresh,
++}: {
++  status: PtyStatus;
++  onReconnect(): void;
++  onStartFresh(): void;
++}) {
++  const stop = status.stop;
++  if (status.phase === "reconnecting") {
++    return (
++      <p role="status" className="absolute inset-x-0 top-0 bg-warn/15 px-3 py-1 text-xs text-warn">
++        {COPY.reconnecting}
++      </p>
++    );
++  }
++  if (!stop) return null;
++  switch (stop.kind) {
++    case "superseded":
++      return (
++        <p
++          role="status"
++          className="absolute inset-x-0 top-0 flex items-center gap-2 px-3 py-1 text-xs text-muted"
++        >
++          <span className="flex-1">{COPY.superseded}</span>
++          <button type="button" className="underline" onClick={onReconnect}>
++            Use it here
++          </button>
++        </p>
++      );
++    case "exited":
++      return (
++        <Overlay>
++          <p>{COPY.exited}</p>
++          <Button tone="primary" onClick={onStartFresh}>
++            Start new session
++          </Button>
++        </Overlay>
++      );
++    case "start-failed":
++      return (
++        <Overlay>
++          <p>{COPY.startFailed}</p>
++          <Button onClick={onReconnect}>Try again</Button>
++        </Overlay>
++      );
++    case "gave-up":
++      return (
++        <Overlay>
++          <p>{COPY.gaveUp}</p>
++          <Button tone="primary" onClick={onReconnect}>
++            Reconnect
++          </Button>
++        </Overlay>
++      );
++    case "rejected":
++      return (
++        <Overlay>
++          <p>{stop.message}</p>
++          {stop.reload ? (
++            <Button tone="primary" onClick={() => window.location.reload()}>
++              Reload page
++            </Button>
++          ) : null}
++        </Overlay>
++      );
++  }
++}
++
++/** Bottom inset that keeps the prompt above a mobile soft keyboard. */
++function useKeyboardInset(): number {
++  const [inset, setInset] = useState(0);
++  useEffect(() => {
++    const viewport = window.visualViewport;
++    if (!viewport) return;
++    const update = () => {
++      const covered = window.innerHeight - viewport.height - viewport.offsetTop;
++      setInset(covered > 1 ? Math.round(covered) : 0);
++    };
++    viewport.addEventListener("resize", update);
++    viewport.addEventListener("scroll", update);
++    return () => {
++      viewport.removeEventListener("resize", update);
++      viewport.removeEventListener("scroll", update);
++    };
++  }, []);
++  return inset;
++}
++
++export function ChatHost({ active, deps = {} }: ChatHostFullProps) {
++  const [channel] = useState(newChannelId);
++  const [searchParams, setSearchParams] = useSearchParams();
++  const { active: profile } = useProfileScope();
++  const wide = useWideScreen();
++  const inset = useKeyboardInset();
++
++  const makeTerminal = deps.terminal ?? createXtermTerminal;
++  const ptyDeps = deps.pty ?? browserPtyDeps;
++  const tokens = deps.tokens ?? attachTokens;
++  const Rail = deps.rail ?? ChatRail;
++
++  const viewRef = useRef<HTMLDivElement | null>(null);
++  const termRef = useRef<ChatTerminal | null>(null);
++  const connRef = useRef<PtyConnection | null>(null);
++  const activeRef = useRef(active);
++  activeRef.current = active;
++  const profileRef = useRef(profile);
++  profileRef.current = profile;
++
++  const [status, setStatus] = useState<PtyStatus>({ phase: "connecting" });
++  const [resumeId, setResumeId] = useState<string | null>(null);
++  const [notice, setNotice] = useState<string | null>(null);
++  const [ready, setReady] = useState(false);
++  const [railOpen, setRailOpen] = useState(false);
++
++  const resumeParam = (searchParams.get("resume") ?? "").trim();
++  const initialResume = useRef(resumeParam);
++
++  const showNotice = useCallback((text: string) => setNotice(text), []);
++  useEffect(() => {
++    if (!notice) return;
++    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
++    return () => clearTimeout(timer);
++  }, [notice]);
++
++  /** Dial for `resume` (or a fresh chat); `rotate` mints a new attach token first. */
++  const start = useCallback(
++    async (options: { resume?: string; fresh?: boolean; rotate?: boolean }) => {
++      const conn = connRef.current;
++      if (!conn) return;
++      const attach = options.rotate ? await tokens.rotate() : await tokens.current();
++      if (connRef.current !== conn) return;
++      const request: PtyRequest = { channel, attach };
++      const who = profileRef.current;
++      if (who) request.profile = who;
++      if (options.resume) request.resume = options.resume;
++      else {
++        const cwd = storedWorkspace(who);
++        if (cwd) request.cwd = cwd;
++        if (options.fresh) request.fresh = true;
++      }
++      setResumeId(options.resume ?? null);
++      conn.connect(request);
++    },
++    [channel, tokens],
++  );
++
++  // Terminal + connection: made once per mount.
++  useEffect(() => {
++    let cancelled = false;
++    let cleanups: Array<() => void> = [];
++    void (async () => {
++      const term = await makeTerminal();
++      const view = viewRef.current;
++      if (cancelled || !view) {
++        term.dispose();
++        return;
++      }
++      termRef.current = term;
++      const conn = new PtyConnection(
++        {
++          output: (text) => term.write(text),
++          status: setStatus,
++          resumed: (id) => setResumeId(id),
++          notice: showNotice,
++        },
++        () => term.size(),
++        ptyDeps,
++      );
++      connRef.current = conn;
++      const guard = new CompositionGuard((text) => conn.send(text));
++      term.open(view);
++      term.fit();
++      const offData = term.onData((data) => {
++        if (isMouseReport(data)) return;
++        const out = guard.filter(data);
++        if (out) conn.send(out);
++      });
++      const offResize = term.onResize(() => conn.sendSize());
++      const input = term.input();
++      const onCompositionEnd = (event: CompositionEvent) => guard.commit(event.data ?? "");
++      input?.addEventListener("compositionend", onCompositionEnd);
++      const observer =
++        typeof ResizeObserver === "function" ? new ResizeObserver(() => term.fit()) : null;
++      observer?.observe(view);
++      cleanups = [
++        offData,
++        offResize,
++        () => input?.removeEventListener("compositionend", onCompositionEnd),
++        () => observer?.disconnect(),
++        () => guard.dispose(),
++        () => conn.dispose(),
++        () => term.dispose(),
++      ];
++      conn.setActive(activeRef.current);
++      await start(initialResume.current ? { resume: initialResume.current } : {});
++      if (!cancelled) setReady(true);
++    })();
++    return () => {
++      cancelled = true;
++      for (const cleanup of cleanups) cleanup();
++      termRef.current = null;
++      connRef.current = null;
++    };
++  }, [makeTerminal, ptyDeps, showNotice, start]);
++
++  // Shown or hidden by the shell: park redials, release the GPU renderer, refit on return.
++  useEffect(() => {
++    const conn = connRef.current;
++    const term = termRef.current;
++    if (!ready || !conn || !term) return;
++    conn.setActive(active);
++    term.setRendererVisible(active && document.visibilityState !== "hidden");
++    if (active) {
++      term.fit();
++      conn.sendSize();
++      term.focus();
++    }
++  }, [active, ready]);
++
++  // Page-return signals: dial a parked connection, follow tab visibility for the renderer.
++  useEffect(() => {
++    if (!ready) return;
++    const resumed = () => {
++      termRef.current?.setRendererVisible(
++        activeRef.current && document.visibilityState !== "hidden",
++      );
++      connRef.current?.pageResumed();
++    };
++    document.addEventListener("visibilitychange", resumed);
++    window.addEventListener("focus", resumed);
++    window.addEventListener("online", resumed);
++    window.addEventListener("pageshow", resumed);
++    return () => {
++      document.removeEventListener("visibilitychange", resumed);
++      window.removeEventListener("focus", resumed);
++      window.removeEventListener("online", resumed);
++      window.removeEventListener("pageshow", resumed);
++    };
++  }, [ready]);
++
++  // A `/chat?resume=<id>` link (Sessions page) while the chat is on screen: resume in place.
++  useEffect(() => {
++    if (!ready || !active || !resumeParam) return;
++    if (connRef.current?.request?.resume === resumeParam) return;
++    void start({ resume: resumeParam });
++  }, [ready, active, resumeParam, start]);
++
++  // Another profile picked: the terminal follows it.
++  const lastProfile = useRef(profile);
++  useEffect(() => {
++    if (!ready || lastProfile.current === profile) return;
++    lastProfile.current = profile;
++    void start({});
++  }, [ready, profile, start]);
++
++  const dropResumeParam = useCallback(() => {
++    setSearchParams(
++      (params) => {
++        const next = new URLSearchParams(params);
++        next.delete("resume");
++        return next;
++      },
++      { replace: true },
++    );
++  }, [setSearchParams]);
++
++  const startFresh = useCallback(() => {
++    if (activeRef.current) dropResumeParam();
++    void start({ fresh: true, rotate: true });
++    setRailOpen(false);
++  }, [dropResumeParam, start]);
++
++  const resumeSession = useCallback(
++    (id: string) => {
++      if (activeRef.current) {
++        setSearchParams(
++          (params) => {
++            const next = new URLSearchParams(params);
++            next.set("resume", id);
++            return next;
++          },
++          { replace: true },
++        );
++      }
++      void start({ resume: id });
++      setRailOpen(false);
++    },
++    [setSearchParams, start],
++  );
++
++  const typeIntoChat = useCallback((text: string) => connRef.current?.send(text) ?? false, []);
++
++  const reconnect = useCallback(() => connRef.current?.reconnect(), []);
++
++  const onPaste = (event: ClipboardEvent<HTMLElement>) => {
++    const image = firstImage(event.clipboardData?.files);
++    if (!image) return; // text paste: xterm handles it
++    event.preventDefault();
++    event.stopPropagation();
++    attachImage(image, typeIntoChat).then(
++      () => showNotice(`${image.name || "The image"} goes with your next message.`),
++      (error: unknown) =>
++        showNotice(error instanceof Error ? error.message : "The image could not be attached."),
++    );
++  };
++
++  const onDrop = (event: DragEvent<HTMLElement>) => {
++    const image = firstImage(event.dataTransfer?.files);
++    if (!image) return;
++    event.preventDefault();
++    attachImage(image, typeIntoChat).then(
++      () => showNotice(`${image.name || "The image"} goes with your next message.`),
++      (error: unknown) =>
++        showNotice(error instanceof Error ? error.message : "The image could not be attached."),
++    );
++  };
++
++  // One-finger drags scroll the terminal on touch screens.
++  const touchY = useRef<number | null>(null);
++  const touchRest = useRef(0);
++  const onTouchStart = (event: TouchEvent) => {
++    touchY.current = event.touches.length === 1 ? (event.touches[0]?.clientY ?? null) : null;
++    touchRest.current = 0;
++  };
++  const onTouchMove = (event: TouchEvent) => {
++    const term = termRef.current;
++    const y = event.touches[0]?.clientY;
++    if (touchY.current === null || y === undefined || !term) return;
++    const moved = touchY.current - y + touchRest.current;
++    const height = term.rowHeight();
++    const lines = Math.trunc(moved / height);
++    touchY.current = y;
++    touchRest.current = moved - lines * height;
++    if (lines !== 0) term.scrollLines(lines);
++  };
++
++  const rail = useMemo(
++    () => (
++      <RailBoundary>
++        <Rail
++          channel={channel}
++          profile={profile}
++          connected={status.phase === "open"}
++          resumeId={resumeId}
++          onResume={resumeSession}
++          onNewChat={startFresh}
++          typeIntoChat={typeIntoChat}
++          {...(deps.feed ? { feedDeps: deps.feed } : {})}
++        />
++      </RailBoundary>
++    ),
++    [
++      Rail,
++      channel,
++      profile,
++      status.phase,
++      resumeId,
++      resumeSession,
++      startFresh,
++      typeIntoChat,
++      deps.feed,
++    ],
++  );
++
++  return (
++    <div className="flex min-h-0 flex-1" data-testid="chat-layout" data-phase={status.phase}>
++      <section
++        aria-label="Chat terminal"
++        className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-code p-2"
++        style={inset ? { paddingBottom: inset } : undefined}
++        onPasteCapture={onPaste}
++        onDragOver={(event) => {
++          if (Array.from(event.dataTransfer?.types ?? []).includes("Files")) event.preventDefault();
++        }}
++        onDrop={onDrop}
++        onTouchStart={onTouchStart}
++        onTouchMove={onTouchMove}
++      >
++        <div ref={viewRef} data-testid="chat-terminal" className="min-h-0 flex-1" />
++        <StatusLayer status={status} onReconnect={reconnect} onStartFresh={startFresh} />
++        {notice ? (
++          <p
++            role="status"
++            data-testid="chat-notice"
++            className="absolute bottom-3 left-3 right-3 rounded-md border border-line bg-raised px-3 py-1 text-xs"
++          >
++            {notice}
++          </p>
++        ) : null}
++        {wide ? null : (
++          <button
++            type="button"
++            className="absolute right-3 top-3 rounded-md border border-line bg-raised px-2 py-1 text-xs"
++            aria-expanded={railOpen}
++            onClick={() => setRailOpen(true)}
++          >
++            Details
++          </button>
++        )}
++      </section>
++      {wide ? (
++        <aside aria-label="Chat details" className="w-72 shrink-0 border-l border-line bg-raised">
++          {rail}
++        </aside>
++      ) : (
++        <div
++          className={railOpen ? "fixed inset-0 z-40 flex justify-end bg-bg/60" : "hidden"}
++          aria-hidden={railOpen ? undefined : true}
++        >
++          <aside
++            aria-label="Chat details"
++            className="flex h-full w-80 max-w-[90vw] flex-col border-l border-line bg-raised"
++          >
++            <div className="flex justify-end p-2">
++              <button
++                type="button"
++                className="rounded-md border border-line px-2 py-1 text-xs"
++                onClick={() => setRailOpen(false)}
++              >
++                Close
++              </button>
++            </div>
++            <div className="min-h-0 flex-1">{rail}</div>
++          </aside>
++        </div>
++      )}
++    </div>
++  );
++}
++
++export default ChatHost;
+diff --git a/apps/web/src/chat/ChatRail.test.tsx b/apps/web/src/chat/ChatRail.test.tsx
+new file mode 100644
+index 0000000..c4a7e72
+--- /dev/null
++++ b/apps/web/src/chat/ChatRail.test.tsx
+@@ -0,0 +1,354 @@
++import { QueryClientProvider } from "@tanstack/react-query";
++import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
++import { MemoryRouter } from "react-router";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { ProfileScopeProvider } from "../shell/ProfileScope.tsx";
++import { FakePtyServer } from "../testing/fakePtyServer.ts";
++import { createMockApi, type MockApi } from "../testing/mockApi.ts";
++import { testClient } from "../testing/render.tsx";
++import { AttachTokenKeeper } from "./attachToken.ts";
++import { ChatHost, type ChatHostDeps } from "./ChatHost.tsx";
++import { attachImage, type ChatRailProps, chooseWorkspace } from "./ChatRail.tsx";
++import { browserFeedDeps, FEED_COPY } from "./eventsFeed.ts";
++import { browserPtyDeps } from "./ptySocket.ts";
++import { COPY } from "./reconnect.ts";
++import type { ChatTerminal, TermSize } from "./terminal.ts";
++
++const TOKEN = ["rail", "session", "value"].join("-");
++
++class FakeTerminal implements ChatTerminal {
++  readonly written: string[] = [];
++  element: HTMLElement | null = null;
++  gpu = false;
++  disposed = false;
++  readonly #data = new Set<(data: string) => void>();
++
++  open(parent: HTMLElement): void {
++    const element = document.createElement("div");
++    element.dataset.testid = "fake-xterm";
++    parent.appendChild(element);
++    this.element = element;
++  }
++  write(text: string): void {
++    this.written.push(text);
++  }
++  onData(listener: (data: string) => void): () => void {
++    this.#data.add(listener);
++    return () => this.#data.delete(listener);
++  }
++  onResize(_listener: (size: TermSize) => void): () => void {
++    return () => {};
++  }
++  /** What a person typing into the terminal does. */
++  type(data: string): void {
++    for (const listener of this.#data) listener(data);
++  }
++  size(): TermSize {
++    return { cols: 100, rows: 30 };
++  }
++  fit(): void {}
++  focus(): void {}
++  scrollLines(): void {}
++  rowHeight(): number {
++    return 16;
++  }
++  setRendererVisible(visible: boolean): void {
++    this.gpu = visible;
++  }
++  input(): HTMLTextAreaElement | undefined {
++    return undefined;
++  }
++  dispose(): void {
++    this.disposed = true;
++  }
++}
++
++function memoryStorage(): Storage {
++  const map = new Map<string, string>();
++  return {
++    get length() {
++      return map.size;
++    },
++    clear: () => map.clear(),
++    getItem: (key) => map.get(key) ?? null,
++    key: () => null,
++    removeItem: (key) => {
++      map.delete(key);
++    },
++    setItem: (key, value) => {
++      map.set(key, value);
++    },
++  };
++}
++
++interface Harness {
++  server: FakePtyServer;
++  terminal: FakeTerminal;
++  mock: MockApi;
++  channel(): string;
++}
++
++let restoreFetch: () => void = () => {};
++
++function installApi(mock: MockApi, model: string | null) {
++  const previous = globalThis.fetch;
++  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
++    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
++    if (url.includes("/api/model/info")) {
++      return new Response(JSON.stringify({ model, provider: model ? "fake" : null }), {
++        status: 200,
++        headers: { "Content-Type": "application/json" },
++      });
++    }
++    return mock.fetch(input, init);
++  }) as typeof fetch;
++  restoreFetch = () => {
++    globalThis.fetch = previous;
++  };
++}
++
++function renderHost(
++  options: { rail?: ChatHostDeps["rail"]; model?: string | null; path?: string } = {},
++): Harness {
++  const server = new FakePtyServer();
++  const terminal = new FakeTerminal();
++  const mock = createMockApi();
++  installApi(mock, options.model === undefined ? "configured-model" : options.model);
++  let n = 0;
++  const tokens = new AttachTokenKeeper({
++    storage: memoryStorage,
++    locks: () => undefined,
++    mint: () => {
++      n += 1;
++      return `attach-${n}`;
++    },
++  });
++  const deps: ChatHostDeps = {
++    terminal: async () => terminal,
++    pty: {
++      ...browserPtyDeps,
++      socket: server.dial,
++      frame: () => {},
++      fontsReady: () => Promise.resolve(),
++    },
++    feed: { ...browserFeedDeps, socket: server.dial },
++    tokens,
++    ...(options.rail ? { rail: options.rail } : {}),
++  };
++  render(
++    <QueryClientProvider client={testClient()}>
++      <MemoryRouter initialEntries={[options.path ?? "/chat"]}>
++        <ProfileScopeProvider>
++          <ChatHost active deps={deps} />
++        </ProfileScopeProvider>
++      </MemoryRouter>
++    </QueryClientProvider>,
++  );
++  return {
++    server,
++    terminal,
++    mock,
++    channel: () => server.last("/api/pty").query.get("channel") ?? "",
++  };
++}
++
++async function connected(h: Harness): Promise<void> {
++  await waitFor(() => expect(screen.getByTestId("chat-layout").dataset.phase).toBe("open"));
++  if (h.server.socketsAt("/api/events").length > 0) return;
++  await waitFor(() => expect(h.server.socketsAt("/api/events").length).toBeGreaterThan(0));
++}
++
++beforeEach(() => {
++  window.__INDUS_SESSION_TOKEN__ = TOKEN;
++  vi.spyOn(console, "warn").mockImplementation(() => {});
++});
++
++afterEach(() => {
++  restoreFetch();
++});
++
++describe("model badge", () => {
++  it("shows the configured model until the feed names the model answering", async () => {
++    const h = renderHost();
++    await connected(h);
++    const badge = await screen.findByTestId("chat-model");
++    await waitFor(() => expect(badge.textContent).toContain("configured-model"));
++    expect(badge.dataset.source).toBe("configured");
++
++    // The rail listens on the same channel the PTY child publishes on.
++    const feedChannel = h.server.last("/api/events").query.get("channel");
++    expect(feedChannel).toBe(h.channel());
++    act(() => {
++      h.server.publish(h.channel(), {
++        type: "session.info",
++        session_id: "s-live",
++        seq: 3,
++        model: "fallback-model",
++        provider: "backup",
++      });
++    });
++    const live = await screen.findByTestId("chat-model");
++    expect(live.dataset.source).toBe("live");
++    expect(live.textContent).toContain("fallback-model");
++    expect(live.textContent).not.toContain("configured-model");
++  });
++
++  it("says so when no model is configured and the feed is silent", async () => {
++    const h = renderHost({ model: null });
++    await connected(h);
++    expect(await screen.findByText("No model configured")).toBeTruthy();
++  });
++});
++
++describe("session switcher", () => {
++  it("lists recent chats and a click resumes in place with a new PTY URL", async () => {
++    const h = renderHost();
++    await connected(h);
++    const first = h.server.last("/api/pty");
++    expect(first.query.get("resume")).toBeNull();
++    const rail = screen.getByTestId("chat-rail");
++    const entry = await within(rail).findByText("Plan the release");
++    expect(within(rail).queryByText("Nightly digest")).toBeNull(); // automation stays out
++    const xterm = screen.getByTestId("fake-xterm");
++
++    fireEvent.click(entry);
++    await waitFor(() => expect(h.server.last("/api/pty")).not.toBe(first));
++    const next = h.server.last("/api/pty");
++    expect(next.query.get("resume")).toBe("s-chat-2");
++    expect(next.query.get("attach")).toBe(first.query.get("attach"));
++    expect(next.query.get("channel")).toBe(first.query.get("channel"));
++    expect(next.query.get("cwd")).toBeNull();
++    expect(first.clientClose?.code).toBe(1000);
++    expect(screen.getByTestId("fake-xterm")).toBe(xterm);
++    const calls = h.mock.callsTo("GET", "/api/sessions");
++    expect(calls.at(-1)?.query.get("order")).toBe("recent");
++  });
++
++  it("New chat dials fresh with a new attach token and the remembered workspace", async () => {
++    chooseWorkspace("", "/srv/work");
++    const h = renderHost();
++    await connected(h);
++    const first = h.server.last("/api/pty");
++    expect(first.query.get("cwd")).toBe("/srv/work");
++    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
++    await waitFor(() => expect(h.server.last("/api/pty")).not.toBe(first));
++    const next = h.server.last("/api/pty");
++    expect(next.query.get("fresh")).toBe("1");
++    expect(next.query.get("cwd")).toBe("/srv/work");
++    expect(next.query.get("attach")).not.toBe(first.query.get("attach"));
++  });
++
++  it("a /chat?resume= link opens that session", async () => {
++    const h = renderHost({ path: "/chat?resume=s-chat-1" });
++    await connected(h);
++    expect(h.server.socketsAt("/api/pty")).toHaveLength(1);
++    expect(h.server.last("/api/pty").query.get("resume")).toBe("s-chat-1");
++  });
++});
++
++describe("isolation", () => {
++  it("a rail that throws leaves the terminal mounted and connected", async () => {
++    vi.spyOn(console, "error").mockImplementation(() => {});
++    const Broken = (_props: ChatRailProps): never => {
++      throw new Error("rail exploded");
++    };
++    const h = renderHost({ rail: Broken });
++    await waitFor(() => expect(screen.getByTestId("chat-layout").dataset.phase).toBe("open"));
++    expect(screen.getByTestId("fake-xterm")).toBeTruthy();
++    expect(screen.getByText(/Chat details are unavailable/)).toBeTruthy();
++    act(() => h.server.pty().output("still here"));
++    expect(h.terminal.written.join("")).toContain("still here");
++    h.terminal.type("ls\r");
++    expect(h.server.pty().typed).toEqual(["ls\r"]);
++  });
++
++  it("a 4403 on the feed shows the reload notice and the terminal stays open", async () => {
++    const h = renderHost();
++    await connected(h);
++    act(() => h.server.last("/api/events").serverClose(4403));
++    expect(await screen.findByText(FEED_COPY.loginExpired)).toBeTruthy();
++    expect(screen.getByRole("button", { name: "Reload page" })).toBeTruthy();
++    expect(screen.getByTestId("chat-layout").dataset.phase).toBe("open");
++    expect(h.server.last("/api/pty").open).toBe(true);
++  });
++});
++
++describe("rail actions", () => {
++  it("the reasoning picker types the TUI's own command", async () => {
++    const h = renderHost();
++    await connected(h);
++    fireEvent.change(screen.getByLabelText("Reasoning effort"), { target: { value: "high" } });
++    expect(h.server.pty().typed).toEqual(["/reasoning high\r"]);
++  });
++
++  it("copy last answer copies the latest completed reply", async () => {
++    const writeText = vi.fn(async () => {});
++    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
++    const h = renderHost();
++    await connected(h);
++    const button = screen.getByRole("button", { name: "Copy last answer" }) as HTMLButtonElement;
++    expect(button.disabled).toBe(true);
++    act(() => {
++      h.server.publish(h.channel(), {
++        jsonrpc: "2.0",
++        method: "message.complete",
++        params: {
++          session_id: "s1",
++          seq: 9,
++          turn_id: "t1",
++          text: "the final answer",
++          reason: "done",
++        },
++      });
++    });
++    await waitFor(() => expect(button.disabled).toBe(false));
++    fireEvent.click(button);
++    await waitFor(() => expect(writeText).toHaveBeenCalledWith("the final answer"));
++    expect(await screen.findByText("Last answer copied.")).toBeTruthy();
++  });
++
++  it("an image is uploaded through the Files API and attached with /image", async () => {
++    const mock = createMockApi({ files: { "/home/user": [] } });
++    installApi(mock, null);
++    const typed: string[] = [];
++    const file = new File([new Uint8Array([1, 2, 3])], "screen shot.png", { type: "image/png" });
++    const path = await attachImage(file, (text) => typed.push(text) > 0, 1234);
++    expect(path).toBe("/home/user/indus-chat-uploads/1234-screen-shot.png");
++    const upload = mock.callsTo("POST", "/api/files/upload")[0];
++    const body = upload?.body as Record<string, unknown> | undefined;
++    expect(body?.path).toBe(path);
++    expect(typed).toEqual([`/image ${path}\r`]);
++    await expect(
++      attachImage(new File(["x"], "notes.txt", { type: "text/plain" }), () => true),
++    ).rejects.toThrow("Only images");
++  });
++});
++
++describe("terminal overlays", () => {
++  it("child exit offers a new session, which dials fresh with a rotated token", async () => {
++    const h = renderHost();
++    await connected(h);
++    const first = h.server.last("/api/pty");
++    act(() => h.server.pty().exit());
++    expect(await screen.findByText(COPY.exited)).toBeTruthy();
++    fireEvent.click(screen.getByRole("button", { name: "Start new session" }));
++    await waitFor(() => expect(h.server.last("/api/pty")).not.toBe(first));
++    const next = h.server.last("/api/pty");
++    expect(next.query.get("fresh")).toBe("1");
++    expect(next.query.get("attach")).not.toBe(first.query.get("attach"));
++    await waitFor(() => expect(screen.queryByTestId("chat-overlay")).toBeNull());
++  });
++
++  it("typing while reconnecting shows the notice", async () => {
++    const h = renderHost();
++    await connected(h);
++    h.server.autoAccept = false;
++    act(() => h.server.last("/api/pty").drop());
++    await waitFor(() =>
++      expect(screen.getByTestId("chat-layout").dataset.phase).toBe("reconnecting"),
++    );
++    act(() => h.terminal.type("x"));
++    expect(await screen.findByTestId("chat-notice")).toBeTruthy();
++    expect(screen.getByText(COPY.reconnecting)).toBeTruthy();
++  });
++});
+diff --git a/apps/web/src/chat/ChatRail.tsx b/apps/web/src/chat/ChatRail.tsx
+new file mode 100644
+index 0000000..dff2d22
+--- /dev/null
++++ b/apps/web/src/chat/ChatRail.tsx
+@@ -0,0 +1,594 @@
++// The chat's right rail (P18-27): model badge, session switcher, workspace and reasoning pickers,
++// copy-last-answer and image upload, next to the terminal.
++//
++// Its only live source is the chat's event feed (`eventsFeed.ts`). The rail never runs a second
++// chat: changes it makes go into the terminal as the TUI's own slash commands (`/reasoning`,
++// `/image`), and resuming or starting a session asks the host for a new PTY connection. Everything
++// here is best-effort: the host wraps the rail in an error boundary and nothing here can stop or
++// block the terminal (R09.1).
++
++import { useQuery } from "@tanstack/react-query";
++import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
++import { api, joinPath, request } from "../lib/api.ts";
++import { relativeTime } from "../lib/format.ts";
++import type { SessionInfo } from "../lib/restTypes.ts";
++import { AUTOMATION_SOURCES } from "../pages/sessions/sources.ts";
++import { Badge, Button, inputClass, Notice } from "../ui/controls.tsx";
++import {
++  browserFeedDeps,
++  EventsFeed,
++  type FeedDeps,
++  type FeedEvent,
++  type FeedStatus,
++} from "./eventsFeed.ts";
++
++export interface ChatRailProps {
++  /** The host's channel id: the feed listens to the same channel as the PTY child publishes on. */
++  channel: string;
++  /** Active profile ("" = the backend's own). */
++  profile: string;
++  /** True while the terminal socket is open. */
++  connected: boolean;
++  /** The session the terminal was asked to resume, if any. */
++  resumeId: string | null;
++  onResume(id: string): void;
++  onNewChat(): void;
++  /** Type `text` into the terminal as if the person did; false when not connected. */
++  typeIntoChat(text: string): boolean;
++  feedDeps?: FeedDeps;
++}
++
++// -- live state from the feed ------------------------------------------------------------------
++
++export interface LiveSession {
++  sessionId?: string;
++  model?: string;
++  provider?: string;
++  reasoning?: string | null;
++  cwd?: string | null;
++  title?: string | null;
++}
++
++export interface FeedState {
++  status: FeedStatus;
++  live: LiveSession | null;
++  lastAnswer: string | null;
++  reconnect(): void;
++}
++
++function text(value: unknown): string | undefined {
++  return typeof value === "string" && value ? value : undefined;
++}
++
++/** What a `session.info` event tells the rail. */
++export function liveFrom(event: FeedEvent): LiveSession {
++  const live: LiveSession = {};
++  const sessionId = text(event.session_id);
++  const model = text(event.model);
++  const provider = text(event.provider);
++  if (sessionId) live.sessionId = sessionId;
++  if (model) live.model = model;
++  if (provider) live.provider = provider;
++  if ("reasoning_effort" in event) live.reasoning = text(event.reasoning_effort) ?? null;
++  if ("cwd" in event) live.cwd = text(event.cwd) ?? null;
++  if ("title" in event) live.title = text(event.title) ?? null;
++  return live;
++}
++
++export function useEventsFeed(channel: string, deps: FeedDeps = browserFeedDeps): FeedState {
++  const [status, setStatus] = useState<FeedStatus>({ phase: "connecting" });
++  const [live, setLive] = useState<LiveSession | null>(null);
++  const [lastAnswer, setLastAnswer] = useState<string | null>(null);
++  const [feed, setFeed] = useState<EventsFeed | null>(null);
++
++  useEffect(() => {
++    const next = new EventsFeed(
++      channel,
++      {
++        status: setStatus,
++        event: (event) => {
++          if (event.type === "session.info") {
++            const update = liveFrom(event);
++            setLive((was) =>
++              was?.sessionId === update.sessionId ? { ...was, ...update } : update,
++            );
++          } else if (event.type === "session.title") {
++            const title = text(event.title);
++            if (title) setLive((was) => ({ ...(was ?? {}), title }));
++          } else if (event.type === "message.complete") {
++            const answer = text(event.text);
++            if (answer) setLastAnswer(answer);
++          }
++        },
++      },
++      deps,
++    );
++    setFeed(next);
++    next.start();
++    return () => next.stop();
++  }, [channel, deps]);
++
++  const reconnect = useCallback(() => feed?.reconnect(), [feed]);
++  return { status, live, lastAnswer, reconnect };
++}
++
++// -- workspace memory --------------------------------------------------------------------------
++
++export const WORKSPACE_KEY = "indus.chat.workspace";
++export const WORKSPACES_KEY = "indus.chat.workspaces";
++const MAX_REMEMBERED = 8;
++
++function profileKey(base: string, profile: string): string {
++  return `${base}.${profile || "(serving)"}`;
++}
++
++function readLocal(key: string): string | null {
++  try {
++    return window.localStorage.getItem(key);
++  } catch {
++    return null;
++  }
++}
++
++function writeLocal(key: string, value: string | null): void {
++  try {
++    if (value === null) window.localStorage.removeItem(key);
++    else window.localStorage.setItem(key, value);
++  } catch {
++    // storage unavailable: the choice lasts for this page only
++  }
++}
++
++/** The folder a new chat of `profile` starts in ("" = the server's default). */
++export function storedWorkspace(profile: string): string {
++  return readLocal(profileKey(WORKSPACE_KEY, profile)) ?? "";
++}
++
++/** Folders picked before for `profile`, most recent first. */
++export function rememberedWorkspaces(profile: string): string[] {
++  const raw = readLocal(profileKey(WORKSPACES_KEY, profile));
++  if (!raw) return [];
++  try {
++    const value: unknown = JSON.parse(raw);
++    return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
++  } catch {
++    return [];
++  }
++}
++
++/** Pick `path` for `profile` ("" = default); it moves to the front of the remembered list. */
++export function chooseWorkspace(profile: string, path: string): void {
++  writeLocal(profileKey(WORKSPACE_KEY, profile), path || null);
++  if (!path) return;
++  const list = [path, ...rememberedWorkspaces(profile).filter((p) => p !== path)];
++  writeLocal(profileKey(WORKSPACES_KEY, profile), JSON.stringify(list.slice(0, MAX_REMEMBERED)));
++}
++
++/** True for an absolute POSIX or Windows path. */
++export function isAbsolutePath(path: string): boolean {
++  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
++}
++
++/** Options for the picker: remembered folders, then the live session's folder, de-duplicated. */
++export function workspaceOptions(profile: string, liveCwd: string | null | undefined): string[] {
++  const out = rememberedWorkspaces(profile);
++  if (liveCwd && !out.includes(liveCwd)) out.push(liveCwd);
++  return out;
++}
++
++// -- images ------------------------------------------------------------------------------------
++
++export const UPLOAD_FOLDER = "indus-chat-uploads";
++
++function safeName(name: string): string {
++  const cleaned = name.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+/, "");
++  return cleaned.slice(-80) || "image";
++}
++
++/**
++ * Upload an image through the Files API and attach it to the next message with `/image <path>`.
++ * Throws with a plain message when it cannot.
++ */
++export async function attachImage(
++  file: File,
++  typeIntoChat: (text: string) => boolean,
++  now: number = Date.now(),
++): Promise<string> {
++  if (!file.type.startsWith("image/")) throw new Error("Only images can be attached here.");
++  const root = await api.files.list();
++  const folder = joinPath(root.path, UPLOAD_FOLDER);
++  const named = new File([file], `${now}-${safeName(file.name)}`, { type: file.type });
++  await api.files.upload(folder, named);
++  const path = joinPath(folder, named.name);
++  if (!typeIntoChat(`/image ${path}\r`)) {
++    throw new Error("The image was uploaded, but the chat is not connected to attach it.");
++  }
++  return path;
++}
++
++/** The first image among pasted or dropped files. */
++export function firstImage(files: FileList | readonly File[] | null | undefined): File | null {
++  if (!files) return null;
++  for (const file of Array.from(files)) if (file.type.startsWith("image/")) return file;
++  return null;
++}
++
++// -- the rail ----------------------------------------------------------------------------------
++
++export const EFFORTS: ReadonlyArray<{ value: string; label: string }> = [
++  { value: "minimal", label: "Minimal" },
++  { value: "low", label: "Low" },
++  { value: "medium", label: "Medium" },
++  { value: "high", label: "High" },
++  { value: "xhigh", label: "Extra high" },
++  { value: "none", label: "Off" },
++];
++
++interface ModelInfo {
++  model: string | null;
++  provider: string | null;
++}
++
++function sessionLabel(session: SessionInfo): string {
++  return session.title?.trim() || session.preview?.trim() || session.id;
++}
++
++function ModelBadge({ live }: { live: LiveSession | null }) {
++  const configured = useQuery({
++    queryKey: ["chat", "model-info"],
++    queryFn: () => request<ModelInfo>("/api/model/info"),
++    staleTime: 60_000,
++  });
++  if (live?.model) {
++    return (
++      <div data-testid="chat-model" data-source="live" className="flex flex-col gap-1">
++        <span className="truncate font-mono text-sm" title={live.model}>
++          {live.model}
++        </span>
++        <span className="flex items-center gap-1 text-xs text-muted">
++          <Badge tone="ok">answering</Badge>
++          {live.provider ? <span className="truncate">{live.provider}</span> : null}
++        </span>
++      </div>
++    );
++  }
++  const model = configured.data?.model;
++  return (
++    <div data-testid="chat-model" data-source="configured" className="flex flex-col gap-1">
++      <span className="truncate font-mono text-sm">
++        {model ?? (configured.isLoading ? "…" : "No model configured")}
++      </span>
++      {model ? (
++        <span className="flex items-center gap-1 text-xs text-muted">
++          <Badge>configured</Badge>
++          {configured.data?.provider ? <span>{configured.data.provider}</span> : null}
++        </span>
++      ) : null}
++    </div>
++  );
++}
++
++function SessionSwitcher({
++  profile,
++  current,
++  onResume,
++  onNewChat,
++}: {
++  profile: string;
++  current: string | null;
++  onResume(id: string): void;
++  onNewChat(): void;
++}) {
++  const sessions = useQuery({
++    queryKey: ["chat", "sessions", profile],
++    queryFn: () =>
++      api.sessions.list({ order: "recent", limit: 20, excludeSources: AUTOMATION_SOURCES }),
++    staleTime: 15_000,
++  });
++  const rows = sessions.data?.sessions ?? [];
++  return (
++    <section aria-labelledby="chat-rail-sessions" className="flex min-h-0 flex-col gap-2">
++      <div className="flex items-center gap-2">
++        <h2 id="chat-rail-sessions" className="flex-1 text-xs font-semibold uppercase text-muted">
++          Sessions
++        </h2>
++        <Button
++          tone="ghost"
++          className="px-2 py-0.5 text-xs"
++          onClick={() => void sessions.refetch()}
++          aria-label="Refresh sessions"
++        >
++          Refresh
++        </Button>
++        <Button tone="primary" className="px-2 py-0.5 text-xs" onClick={onNewChat}>
++          New chat
++        </Button>
++      </div>
++      {sessions.isError ? (
++        <Notice tone="warn">The session list could not be loaded.</Notice>
++      ) : rows.length === 0 ? (
++        <p className="text-xs text-muted">{sessions.isLoading ? "Loading…" : "No sessions yet."}</p>
++      ) : (
++        <ul className="flex flex-col gap-1 overflow-auto">
++          {rows.map((session) => (
++            <li key={session.id}>
++              <button
++                type="button"
++                data-session-id={session.id}
++                aria-current={session.id === current ? "true" : undefined}
++                className={`w-full rounded-md border px-2 py-1.5 text-left text-sm hover:bg-code ${
++                  session.id === current ? "border-accent" : "border-transparent"
++                }`}
++                onClick={() => onResume(session.id)}
++              >
++                <span className="block truncate">{sessionLabel(session)}</span>
++                <span className="flex gap-2 text-xs text-muted">
++                  <span>{relativeTime(session.last_active)}</span>
++                  <span>
++                    {session.message_count} {session.message_count === 1 ? "message" : "messages"}
++                  </span>
++                  {session.source ? <span>{session.source}</span> : null}
++                </span>
++              </button>
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++const OTHER = "\u0000other";
++
++function WorkspacePicker({ profile, liveCwd }: { profile: string; liveCwd: string | null }) {
++  const id = useId();
++  const [selected, setSelected] = useState(() => storedWorkspace(profile));
++  const [options, setOptions] = useState(() => workspaceOptions(profile, liveCwd));
++  const [typing, setTyping] = useState(false);
++  const [draft, setDraft] = useState("");
++  const [error, setError] = useState<string | null>(null);
++
++  useEffect(() => {
++    setSelected(storedWorkspace(profile));
++    setOptions(workspaceOptions(profile, liveCwd));
++  }, [profile, liveCwd]);
++
++  const pick = (path: string) => {
++    chooseWorkspace(profile, path);
++    setSelected(path);
++    setOptions(workspaceOptions(profile, liveCwd));
++  };
++
++  const submit = (event: FormEvent) => {
++    event.preventDefault();
++    const path = draft.trim();
++    if (!isAbsolutePath(path)) {
++      setError("Enter a full path, starting at the root of the disk.");
++      return;
++    }
++    setError(null);
++    setTyping(false);
++    setDraft("");
++    pick(path);
++  };
++
++  return (
++    <section className="flex flex-col gap-1">
++      <label htmlFor={id} className="text-xs font-semibold uppercase text-muted">
++        Workspace for new chats
++      </label>
++      <select
++        id={id}
++        className={inputClass}
++        value={typing ? OTHER : selected}
++        onChange={(event) => {
++          const value = event.target.value;
++          if (value === OTHER) {
++            setTyping(true);
++            return;
++          }
++          setTyping(false);
++          pick(value);
++        }}
++      >
++        <option value="">Default folder</option>
++        {options.map((path) => (
++          <option key={path} value={path}>
++            {path}
++          </option>
++        ))}
++        <option value={OTHER}>Other path…</option>
++      </select>
++      {typing ? (
++        <form className="flex gap-1" onSubmit={submit}>
++          <input
++            aria-label="Workspace path"
++            className={`${inputClass} min-w-0 flex-1`}
++            placeholder="/path/to/project"
++            value={draft}
++            onChange={(event) => setDraft(event.target.value)}
++          />
++          <Button type="submit" className="px-2 py-1 text-xs">
++            Use
++          </Button>
++        </form>
++      ) : null}
++      {error ? <p className="text-xs text-danger">{error}</p> : null}
++      <p className="text-xs text-muted">Used when you start a new chat.</p>
++    </section>
++  );
++}
++
++function ReasoningPicker({
++  current,
++  onPick,
++}: {
++  current: string | null | undefined;
++  onPick(value: string): void;
++}) {
++  const id = useId();
++  const [chosen, setChosen] = useState(current ?? "");
++  useEffect(() => setChosen(current ?? ""), [current]);
++  return (
++    <section className="flex flex-col gap-1">
++      <label htmlFor={id} className="text-xs font-semibold uppercase text-muted">
++        Reasoning effort
++      </label>
++      <select
++        id={id}
++        className={inputClass}
++        value={chosen}
++        onChange={(event) => {
++          const value = event.target.value;
++          if (!value) return;
++          setChosen(value);
++          onPick(value);
++        }}
++      >
++        <option value="">{current ? "Current" : "Session default"}</option>
++        {EFFORTS.map((effort) => (
++          <option key={effort.value} value={effort.value}>
++            {effort.label}
++          </option>
++        ))}
++      </select>
++    </section>
++  );
++}
++
++export function ChatRail({
++  channel,
++  profile,
++  connected,
++  resumeId,
++  onResume,
++  onNewChat,
++  typeIntoChat,
++  feedDeps,
++}: ChatRailProps) {
++  const feed = useEventsFeed(channel, feedDeps ?? browserFeedDeps);
++  const [message, setMessage] = useState<{ tone: "neutral" | "warn"; text: string } | null>(null);
++  const [dragging, setDragging] = useState(false);
++
++  const say = (text: string, tone: "neutral" | "warn" = "neutral") => setMessage({ text, tone });
++
++  const copyLast = async () => {
++    if (!feed.lastAnswer) return;
++    try {
++      await navigator.clipboard.writeText(feed.lastAnswer);
++      say("Last answer copied.");
++    } catch {
++      say("The browser did not allow copying.", "warn");
++    }
++  };
++
++  const upload = async (file: File | null) => {
++    if (!file) {
++      say("Drop or paste an image file.", "warn");
++      return;
++    }
++    say(`Uploading ${file.name}…`);
++    try {
++      await attachImage(file, typeIntoChat);
++      say(`${file.name} goes with your next message.`);
++    } catch (error) {
++      say(error instanceof Error ? error.message : "The image could not be attached.", "warn");
++    }
++  };
++
++  const current = feed.live?.sessionId ?? resumeId;
++
++  return (
++    <section
++      aria-label="Chat tools"
++      data-testid="chat-rail"
++      className={`flex h-full min-h-0 flex-col gap-4 overflow-auto p-3 text-sm ${
++        dragging ? "outline outline-2 outline-accent" : ""
++      }`}
++      onDragOver={(event) => {
++        if (Array.from(event.dataTransfer.types).includes("Files")) {
++          event.preventDefault();
++          setDragging(true);
++        }
++      }}
++      onDragLeave={() => setDragging(false)}
++      onDrop={(event) => {
++        event.preventDefault();
++        setDragging(false);
++        void upload(firstImage(event.dataTransfer.files));
++      }}
++    >
++      <section aria-label="Model" className="flex flex-col gap-1">
++        <h2 className="text-xs font-semibold uppercase text-muted">Model</h2>
++        <ModelBadge live={feed.live} />
++      </section>
++
++      {feed.status.notice ? (
++        <div className="flex flex-col gap-1" data-testid="chat-feed-notice">
++          <Notice tone="warn">{feed.status.notice}</Notice>
++          {feed.status.phase === "stopped" ? (
++            feed.status.reload ? (
++              <Button className="self-start text-xs" onClick={() => window.location.reload()}>
++                Reload page
++              </Button>
++            ) : (
++              <Button className="self-start text-xs" onClick={feed.reconnect}>
++                Reconnect
++              </Button>
++            )
++          ) : null}
++        </div>
++      ) : null}
++
++      <SessionSwitcher
++        profile={profile}
++        current={current}
++        onResume={onResume}
++        onNewChat={onNewChat}
++      />
++
++      <WorkspacePicker profile={profile} liveCwd={feed.live?.cwd ?? null} />
++
++      <ReasoningPicker
++        current={feed.live?.reasoning}
++        onPick={(value) => {
++          if (!typeIntoChat(`/reasoning ${value}\r`)) {
++            say("The chat is not connected; the reasoning effort was not changed.", "warn");
++          }
++        }}
++      />
++
++      <section className="flex flex-col gap-2">
++        <Button
++          disabled={!feed.lastAnswer}
++          onClick={() => void copyLast()}
++          title={feed.lastAnswer ? undefined : "No answer in this chat yet"}
++        >
++          Copy last answer
++        </Button>
++        <label className="flex cursor-pointer flex-col gap-1 rounded-md border border-dashed border-line p-2 text-xs text-muted">
++          <span>Drop or paste an image to attach it to your next message, or pick one.</span>
++          <input
++            type="file"
++            accept="image/*"
++            className="text-xs"
++            disabled={!connected}
++            onChange={(event) => {
++              void upload(firstImage(event.target.files));
++              event.target.value = "";
++            }}
++          />
++        </label>
++      </section>
++
++      {message ? (
++        <p
++          role="status"
++          className={`text-xs ${message.tone === "warn" ? "text-warn" : "text-muted"}`}
++        >
++          {message.text}
++        </p>
++      ) : null}
++    </section>
++  );
++}
+diff --git a/apps/web/src/chat/attachToken.test.ts b/apps/web/src/chat/attachToken.test.ts
+new file mode 100644
+index 0000000..eb89078
+--- /dev/null
++++ b/apps/web/src/chat/attachToken.test.ts
+@@ -0,0 +1,139 @@
++import { describe, expect, it } from "vitest";
++import {
++  ATTACH_LOCK_PREFIX,
++  ATTACH_TOKEN_KEY,
++  type AttachTokenDeps,
++  AttachTokenKeeper,
++  type LockSource,
++  mintToken,
++} from "./attachToken.ts";
++
++/** A Web Locks stand-in shared by several "documents"; `ifAvailable` only. */
++class FakeLocks implements LockSource {
++  readonly held = new Set<string>();
++
++  request(
++    name: string,
++    _options: { ifAvailable: true },
++    callback: (lock: unknown) => Promise<unknown>,
++  ): Promise<unknown> {
++    if (this.held.has(name)) return callback(null);
++    this.held.add(name);
++    const hold = callback({ name });
++    return hold.finally(() => this.held.delete(name));
++  }
++}
++
++function memoryStorage(): Storage {
++  const map = new Map<string, string>();
++  return {
++    get length() {
++      return map.size;
++    },
++    clear: () => map.clear(),
++    getItem: (key) => map.get(key) ?? null,
++    key: (index) => [...map.keys()][index] ?? null,
++    removeItem: (key) => {
++      map.delete(key);
++    },
++    setItem: (key, value) => {
++      map.set(key, value);
++    },
++  };
++}
++
++function counter(): () => string {
++  let n = 0;
++  return () => {
++    n += 1;
++    return `minted-${n}`;
++  };
++}
++
++function deps(storage: Storage | null, locks: LockSource | undefined, mint = counter()) {
++  return { storage: () => storage, locks: () => locks, mint } satisfies AttachTokenDeps;
++}
++
++const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
++
++describe("AttachTokenKeeper", () => {
++  it("mints, stores the token in session storage and holds its lock", async () => {
++    const storage = memoryStorage();
++    const locks = new FakeLocks();
++    const keeper = new AttachTokenKeeper(deps(storage, locks));
++    const token = await keeper.current();
++    expect(token).toBe("minted-1");
++    expect(storage.getItem(ATTACH_TOKEN_KEY)).toBe(token);
++    expect(locks.held.has(`${ATTACH_LOCK_PREFIX}${token}`)).toBe(true);
++    expect(await keeper.current()).toBe(token);
++  });
++
++  it("a reloaded tab gets its stored token back", async () => {
++    const storage = memoryStorage();
++    storage.setItem(ATTACH_TOKEN_KEY, "kept-from-before");
++    const keeper = new AttachTokenKeeper(deps(storage, new FakeLocks()));
++    expect(await keeper.current()).toBe("kept-from-before");
++  });
++
++  it("a duplicated tab (same storage copy, lock held by the first) mints its own", async () => {
++    const locks = new FakeLocks();
++    const first = new AttachTokenKeeper(deps(memoryStorage(), locks, () => "first-token"));
++    const shared = await first.current();
++    // "Duplicate tab" copies session storage into the new document.
++    const copy = memoryStorage();
++    copy.setItem(ATTACH_TOKEN_KEY, shared);
++    const second = new AttachTokenKeeper(deps(copy, locks, () => "second-token"));
++    expect(await second.current()).toBe("second-token");
++    expect(copy.getItem(ATTACH_TOKEN_KEY)).toBe("second-token");
++    expect(await first.current()).toBe("first-token");
++  });
++
++  it("rotate mints a new token and lets the old lock go", async () => {
++    const storage = memoryStorage();
++    const locks = new FakeLocks();
++    const keeper = new AttachTokenKeeper(deps(storage, locks));
++    const old = await keeper.current();
++    const fresh = await keeper.rotate();
++    await flush();
++    expect(fresh).not.toBe(old);
++    expect(storage.getItem(ATTACH_TOKEN_KEY)).toBe(fresh);
++    expect(locks.held.has(`${ATTACH_LOCK_PREFIX}${old}`)).toBe(false);
++    expect(locks.held.has(`${ATTACH_LOCK_PREFIX}${fresh}`)).toBe(true);
++    expect(await keeper.current()).toBe(fresh);
++  });
++
++  it("overlapping calls agree on one token", async () => {
++    const keeper = new AttachTokenKeeper(deps(memoryStorage(), new FakeLocks()));
++    const [a, b] = await Promise.all([keeper.current(), keeper.current()]);
++    expect(a).toBe(b);
++  });
++
++  it("without Web Locks, session storage alone decides", async () => {
++    const storage = memoryStorage();
++    storage.setItem(ATTACH_TOKEN_KEY, "stored");
++    const keeper = new AttachTokenKeeper(deps(storage, undefined));
++    expect(await keeper.current()).toBe("stored");
++  });
++
++  it("blocked storage still yields a token for this document", async () => {
++    const throwing = {
++      getItem: () => {
++        throw new Error("blocked");
++      },
++      setItem: () => {
++        throw new Error("blocked");
++      },
++    } as unknown as Storage;
++    const keeper = new AttachTokenKeeper(deps(throwing, new FakeLocks()));
++    expect(await keeper.current()).toBe("minted-1");
++    expect(await keeper.current()).toBe("minted-1");
++    const none = new AttachTokenKeeper(deps(null, undefined));
++    expect(await none.current()).toBe("minted-1");
++  });
++
++  it("mintToken makes 128-bit hex values", () => {
++    const a = mintToken();
++    expect(a).toMatch(/^[0-9a-f]{32}$/);
++    expect(mintToken()).not.toBe(a);
++  });
++});
+diff --git a/apps/web/src/chat/attachToken.ts b/apps/web/src/chat/attachToken.ts
+new file mode 100644
+index 0000000..21de429
+--- /dev/null
++++ b/apps/web/src/chat/attachToken.ts
+@@ -0,0 +1,166 @@
++// This tab's keep-alive identity for the chat PTY (P18-26, R09.6), sent as `?attach=`.
++//
++// The server keeps one PTY per attach token (plus profile and resume target) and closes an older
++// socket of the same key 4409 when a new one attaches. A token shared by two tabs would make them
++// steal the terminal from each other, so the token must be per tab:
++// - it lives in session storage (`indus.pty.token.chat`), which survives a reload of this tab but
++//   not a new tab;
++// - "Duplicate tab" copies session storage, so the token is also claimed with a Web Lock
++//   (`indus.pty.attach.<token>`) held for the document's lifetime. A document that finds the lock
++//   taken knows another live tab owns that token and mints its own. A reload frees the lock (the
++//   old document is gone), so the reloaded tab gets its token, and its PTY, back.
++// - "Start new session" rotates the token so the old keep-alive PTY is not reattached; the lock of
++//   the old token is released.
++// Without Web Locks the session storage alone decides; with storage blocked every document mints.
++
++export const ATTACH_TOKEN_KEY = "indus.pty.token.chat";
++export const ATTACH_LOCK_PREFIX = "indus.pty.attach.";
++
++/** The slice of `LockManager` the keeper needs. */
++export interface LockSource {
++  request(
++    name: string,
++    options: { ifAvailable: true },
++    callback: (lock: unknown) => Promise<unknown>,
++  ): Promise<unknown>;
++}
++
++export interface AttachTokenDeps {
++  storage(): Storage | null;
++  locks(): LockSource | undefined;
++  mint(): string;
++}
++
++function browserStorage(): Storage | null {
++  try {
++    return typeof window === "undefined" ? null : window.sessionStorage;
++  } catch {
++    return null;
++  }
++}
++
++function browserLocks(): LockSource | undefined {
++  if (typeof navigator === "undefined") return undefined;
++  const locks = (navigator as Navigator & { locks?: LockSource }).locks;
++  return locks ?? undefined;
++}
++
++/** 128 random bits as hex. */
++export function mintToken(): string {
++  const bytes = new Uint8Array(16);
++  globalThis.crypto.getRandomValues(bytes);
++  let out = "";
++  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
++  return out;
++}
++
++export const browserTokenDeps: AttachTokenDeps = {
++  storage: browserStorage,
++  locks: browserLocks,
++  mint: mintToken,
++};
++
++interface Held {
++  token: string;
++  release: () => void;
++}
++
++export class AttachTokenKeeper {
++  #held: Held | null = null;
++  /** Serialises claims: two overlapping calls must not both mint. */
++  #queue: Promise<unknown> = Promise.resolve();
++  readonly #deps: AttachTokenDeps;
++
++  constructor(deps: AttachTokenDeps = browserTokenDeps) {
++    this.#deps = deps;
++  }
++
++  /** The token this document holds right now, if any. */
++  get held(): string | null {
++    return this.#held?.token ?? null;
++  }
++
++  /** This tab's token: the one held, else the stored one if no live tab claims it, else a new one. */
++  current(): Promise<string> {
++    return this.#serial(async () => {
++      if (this.#held) return this.#held.token;
++      const stored = this.#read();
++      if (stored) {
++        const release = await this.#claim(stored);
++        if (release) {
++          this.#held = { token: stored, release };
++          return stored;
++        }
++      }
++      return this.#adopt(this.#deps.mint());
++    });
++  }
++
++  /** A new token for a fresh session; the old one's lock is let go. */
++  rotate(): Promise<string> {
++    return this.#serial(async () => {
++      const previous = this.#held;
++      this.#held = null;
++      previous?.release();
++      return this.#adopt(this.#deps.mint());
++    });
++  }
++
++  #serial<T>(work: () => Promise<T>): Promise<T> {
++    const next = this.#queue.then(work, work);
++    this.#queue = next.catch(() => undefined);
++    return next;
++  }
++
++  async #adopt(token: string): Promise<string> {
++    this.#write(token);
++    // A freshly minted token cannot be held elsewhere; no lock support still counts as held.
++    const release = (await this.#claim(token)) ?? (() => {});
++    this.#held = { token, release };
++    return token;
++  }
++
++  /** Take the token's lock: a release function, or null when another document holds it. */
++  async #claim(token: string): Promise<(() => void) | null> {
++    const locks = this.#deps.locks();
++    if (!locks) return () => {};
++    return new Promise<(() => void) | null>((settle) => {
++      let answered = false;
++      const answer = (value: (() => void) | null) => {
++        if (!answered) {
++          answered = true;
++          settle(value);
++        }
++      };
++      locks
++        .request(`${ATTACH_LOCK_PREFIX}${token}`, { ifAvailable: true }, (lock) => {
++          if (lock === null) {
++            answer(null);
++            return Promise.resolve();
++          }
++          // Keep the lock until released: the callback's promise is the hold.
++          return new Promise<void>((letGo) => answer(() => letGo()));
++        })
++        .catch(() => answer(() => {}));
++    });
++  }
++
++  #read(): string {
++    try {
++      return this.#deps.storage()?.getItem(ATTACH_TOKEN_KEY) ?? "";
++    } catch {
++      return "";
++    }
++  }
++
++  #write(token: string): void {
++    try {
++      this.#deps.storage()?.setItem(ATTACH_TOKEN_KEY, token);
++    } catch {
++      // storage blocked: the token lasts for this document only
++    }
++  }
++}
++
++/** The keeper every chat host in this document shares. */
++export const attachTokens = new AttachTokenKeeper();
+diff --git a/apps/web/src/chat/eventsFeed.test.ts b/apps/web/src/chat/eventsFeed.test.ts
+new file mode 100644
+index 0000000..fe26b3f
+--- /dev/null
++++ b/apps/web/src/chat/eventsFeed.test.ts
+@@ -0,0 +1,191 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { FakePtyServer } from "../testing/fakePtyServer.ts";
++import {
++  browserFeedDeps,
++  EventsFeed,
++  FEED_ATTEMPTS,
++  FEED_COPY,
++  type FeedDeps,
++  type FeedEvent,
++  type FeedStatus,
++  feedDelay,
++  parseFeedFrame,
++} from "./eventsFeed.ts";
++
++const TOKEN = ["feed", "token", "value"].join("-");
++const settle = () => vi.advanceTimersByTimeAsync(0);
++
++function makeFeed(overrides: Partial<FeedDeps> = {}, autoAccept = true) {
++  const server = new FakePtyServer({ autoAccept });
++  const events: FeedEvent[] = [];
++  const statuses: FeedStatus[] = [];
++  const dialTimes: number[] = [];
++  const feed = new EventsFeed(
++    "chat-feed",
++    { event: (e) => events.push(e), status: (s) => statuses.push(s) },
++    {
++      ...browserFeedDeps,
++      socket: (url, protocols) => {
++        dialTimes.push(Date.now());
++        return server.dial(url, protocols);
++      },
++      ...overrides,
++    },
++  );
++  return { server, feed, events, statuses, dialTimes };
++}
++
++beforeEach(() => {
++  vi.useFakeTimers();
++  window.__INDUS_SESSION_TOKEN__ = TOKEN;
++  vi.spyOn(console, "warn").mockImplementation(() => {});
++});
++
++afterEach(() => {
++  vi.useRealTimers();
++});
++
++describe("EventsFeed", () => {
++  it("subscribes to its channel with the credential only in the subprotocols", async () => {
++    const rig = makeFeed();
++    rig.feed.start();
++    await settle();
++    const socket = rig.server.last("/api/events");
++    expect(socket.query.get("channel")).toBe("chat-feed");
++    expect(socket.url).not.toContain(TOKEN);
++    expect(socket.protocols).toContain(`indus-dashboard-token.${TOKEN}`);
++    expect(rig.statuses.at(-1)).toEqual({ phase: "live" });
++
++    rig.server.publish("chat-feed", { type: "session.info", session_id: "s1", model: "m-live" });
++    rig.server.publish("chat-feed", "not json");
++    rig.server.publish("other-channel", { type: "status", kind: "working" });
++    expect(rig.events).toEqual([{ type: "session.info", session_id: "s1", model: "m-live" }]);
++  });
++
++  it("waits 1 s, 2 s, 4 s … capped at 30 s and stops after 15 attempts", async () => {
++    const rig = makeFeed({}, false);
++    rig.feed.start();
++    await settle();
++    rig.server.accept(rig.server.last("/api/events"));
++    const drops: number[] = [];
++    rig.server.last("/api/events").drop();
++    drops.push(Date.now());
++    const expected: number[] = [];
++    for (let attempt = 1; attempt <= FEED_ATTEMPTS; attempt += 1) {
++      const delay = feedDelay(attempt);
++      expected.push(delay);
++      await vi.advanceTimersByTimeAsync(delay);
++      rig.server.last("/api/events").drop();
++      drops.push(Date.now());
++    }
++    const waits = rig.dialTimes.slice(1).map((at, i) => at - (drops[i] ?? 0));
++    expect(waits).toEqual(expected);
++    expect(expected.slice(0, 7)).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
++    expect(rig.statuses.at(-1)).toEqual({
++      phase: "stopped",
++      notice: FEED_COPY.gaveUp,
++      reload: false,
++    });
++    const count = rig.server.sockets.length;
++    await vi.advanceTimersByTimeAsync(10 * 60_000);
++    expect(rig.server.sockets.length).toBe(count);
++
++    rig.feed.reconnect();
++    await settle();
++    expect(rig.server.sockets.length).toBe(count + 1);
++  });
++
++  it("an open resets the attempt count", async () => {
++    const rig = makeFeed();
++    rig.feed.start();
++    await settle();
++    rig.server.last("/api/events").drop();
++    expect(rig.feed.attempts).toBe(1);
++    await vi.advanceTimersByTimeAsync(1_000);
++    expect(rig.statuses.at(-1)).toEqual({ phase: "live" });
++    expect(rig.feed.attempts).toBe(0);
++    // The next outage starts from the first step again (1 s, not 2 s).
++    rig.server.last("/api/events").drop();
++    expect(rig.feed.attempts).toBe(1);
++    await vi.advanceTimersByTimeAsync(999);
++    expect(rig.server.sockets).toHaveLength(2);
++    await vi.advanceTimersByTimeAsync(1);
++    expect(rig.server.sockets).toHaveLength(3);
++  });
++
++  it.each([4401, 4403])("stops at %i with the reload notice", async (code) => {
++    const rig = makeFeed();
++    rig.feed.start();
++    await settle();
++    rig.server.last("/api/events").serverClose(code);
++    expect(rig.statuses.at(-1)).toEqual({
++      phase: "stopped",
++      notice: FEED_COPY.loginExpired,
++      reload: true,
++    });
++    await vi.advanceTimersByTimeAsync(60_000);
++    expect(rig.server.sockets).toHaveLength(1);
++  });
++
++  it("a bad channel (4400) stops without asking for a reload", async () => {
++    const server = new FakePtyServer();
++    const statuses: FeedStatus[] = [];
++    const feed = new EventsFeed(
++      "not a channel!",
++      { event: () => {}, status: (s) => statuses.push(s) },
++      { ...browserFeedDeps, socket: server.dial },
++    );
++    feed.start();
++    await settle();
++    expect(statuses.at(-1)).toEqual({
++      phase: "stopped",
++      notice: FEED_COPY.unavailable,
++      reload: false,
++    });
++  });
++
++  it("gives each attempt 15 s, a hung ticket included", async () => {
++    const target = vi
++      .fn<FeedDeps["target"]>()
++      .mockImplementationOnce(() => new Promise(() => {}))
++      .mockImplementation(browserFeedDeps.target);
++    const rig = makeFeed({ target }, false);
++    rig.feed.start();
++    await vi.advanceTimersByTimeAsync(14_999);
++    expect(rig.statuses.at(-1)?.phase).toBe("connecting");
++    await vi.advanceTimersByTimeAsync(1);
++    expect(rig.statuses.at(-1)?.phase).toBe("retrying");
++    await vi.advanceTimersByTimeAsync(1_000);
++    expect(target).toHaveBeenCalledTimes(2);
++    const stuck = rig.server.last("/api/events");
++    await vi.advanceTimersByTimeAsync(15_000);
++    expect(stuck.clientClose).not.toBeNull();
++    expect(rig.statuses.at(-1)?.phase).toBe("retrying");
++  });
++
++  it("stop closes the socket and nothing redials", async () => {
++    const rig = makeFeed();
++    rig.feed.start();
++    await settle();
++    const socket = rig.server.last("/api/events");
++    rig.feed.stop();
++    expect(socket.clientClose?.code).toBe(1000);
++    await vi.advanceTimersByTimeAsync(60_000);
++    expect(rig.server.sockets).toHaveLength(1);
++  });
++});
++
++describe("parseFeedFrame", () => {
++  it("reads protocol events and JSON-RPC notifications, ignores the rest", () => {
++    expect(parseFeedFrame('{"type":"turn.done","session_id":"s"}')).toEqual({
++      type: "turn.done",
++      session_id: "s",
++    });
++    expect(
++      parseFeedFrame('{"jsonrpc":"2.0","method":"message.complete","params":{"text":"hi"}}'),
++    ).toEqual({ type: "message.complete", text: "hi" });
++    expect(parseFeedFrame("[1,2]")).toBeNull();
++    expect(parseFeedFrame('{"id":1,"result":{}}')).toBeNull();
++    expect(parseFeedFrame("plain text")).toBeNull();
++  });
++});
+diff --git a/apps/web/src/chat/eventsFeed.ts b/apps/web/src/chat/eventsFeed.ts
+new file mode 100644
+index 0000000..01b6e09
+--- /dev/null
++++ b/apps/web/src/chat/eventsFeed.ts
+@@ -0,0 +1,232 @@
++// The chat rail's event feed (P18-27): a listen-only socket to `/api/events?channel=<id>`.
++//
++// The backend fans out every event the chat's TUI child publishes for that channel; subscribers
++// never speak (anything sent is dropped server-side). Frames are JSON: either a protocol event
++// (`{"type": "session.info", …}`, `packages/protocol` EVENTS) or a JSON-RPC notification whose
++// method is the event type (`{"method": "session.info", "params": {…}}`); both become a
++// `FeedEvent`. Anything else is ignored.
++//
++// The feed is best-effort and never touches the terminal (R09.1). After a drop it waits 1 s, 2 s,
++// 4 s … up to 30 s between attempts, at most 15 attempts per outage (an open resets the count),
++// then stops with a notice and a manual reconnect. Each attempt — the gated ticket fetch and the
++// handshake — has 15 s. 4401 and 4403 stop at once: only a reload (a new login or token) helps.
++// 4400 (bad channel) stops too; it never heals.
++
++import { type WsTarget, wsTarget } from "../lib/wsUrl.ts";
++import type { PtySocket } from "./ptySocket.ts";
++
++export const EVENTS_PATH = "/api/events";
++export const EVENTS_PURPOSE = "web-events";
++export const FEED_BASE_MS = 1_000;
++export const FEED_CAP_MS = 30_000;
++export const FEED_ATTEMPTS = 15;
++export const FEED_CONNECT_TIMEOUT_MS = 15_000;
++
++export const FEED_COPY = {
++  loginExpired: "Live chat details stopped: your login expired. Reload the page.",
++  gaveUp: `Live chat details stopped after ${FEED_ATTEMPTS} tries to reconnect. Reconnect, or reload the page.`,
++  unavailable: "Live chat details are not available for this chat.",
++  retrying: (ms: number) => `Live chat details paused; trying again in ${Math.round(ms / 1000)} s.`,
++} as const;
++
++/** Wait before attempt `attempt` (1-based) of an outage: 1, 2, 4, 8, 16, 30, 30 … seconds. */
++export function feedDelay(attempt: number): number {
++  const step = Math.max(0, Math.floor(attempt) - 1);
++  return Math.min(FEED_CAP_MS, FEED_BASE_MS * 2 ** Math.min(step, 16));
++}
++
++export interface FeedEvent {
++  type: string;
++  session_id?: string;
++  [field: string]: unknown;
++}
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/** The event a frame carries, or null for anything that is not one. */
++export function parseFeedFrame(text: string): FeedEvent | null {
++  let value: unknown;
++  try {
++    value = JSON.parse(text);
++  } catch {
++    return null;
++  }
++  if (!isRecord(value)) return null;
++  if (typeof value.type === "string" && value.type) return value as FeedEvent;
++  if (typeof value.method === "string" && value.method && isRecord(value.params)) {
++    return { ...value.params, type: value.method };
++  }
++  return null;
++}
++
++export type FeedPhase = "connecting" | "live" | "retrying" | "stopped";
++
++export interface FeedStatus {
++  phase: FeedPhase;
++  /** Plain-language line for the rail; absent while all is well. */
++  notice?: string;
++  /** True when the notice asks for a page reload rather than a reconnect. */
++  reload?: boolean;
++}
++
++export interface FeedListener {
++  event(event: FeedEvent): void;
++  status(status: FeedStatus): void;
++}
++
++export interface FeedDeps {
++  target(path: string, purpose: string, params: Record<string, string>): Promise<WsTarget>;
++  socket(url: string, protocols: string[]): PtySocket;
++}
++
++export const browserFeedDeps: FeedDeps = {
++  target: (path, purpose, params) => wsTarget(path, purpose, params),
++  socket: (url, protocols) => new WebSocket(url, protocols),
++};
++
++const OPEN = 1;
++const STOP_CODES = new Set([4400, 4401, 4403]);
++
++export class EventsFeed {
++  readonly #channel: string;
++  readonly #listener: FeedListener;
++  readonly #deps: FeedDeps;
++  #socket: PtySocket | null = null;
++  #generation = 0;
++  #attempts = 0;
++  #running = false;
++  #retry: ReturnType<typeof setTimeout> | null = null;
++  #deadline: ReturnType<typeof setTimeout> | null = null;
++
++  constructor(channel: string, listener: FeedListener, deps: FeedDeps = browserFeedDeps) {
++    this.#channel = channel;
++    this.#listener = listener;
++    this.#deps = deps;
++  }
++
++  /** Attempts used in the current outage. */
++  get attempts(): number {
++    return this.#attempts;
++  }
++
++  start(): void {
++    if (this.#running) return;
++    this.#running = true;
++    this.#attempts = 0;
++    this.#listener.status({ phase: "connecting" });
++    void this.#dial();
++  }
++
++  /** Manual reconnect after the feed stopped. */
++  reconnect(): void {
++    this.stop();
++    this.start();
++  }
++
++  stop(): void {
++    this.#running = false;
++    this.#generation += 1;
++    this.#clearTimers();
++    this.#drop();
++  }
++
++  async #dial(): Promise<void> {
++    const generation = ++this.#generation;
++    this.#clearTimers();
++    this.#deadline = setTimeout(() => {
++      this.#deadline = null;
++      if (generation !== this.#generation) return;
++      // Ticket or handshake took too long: abandon the attempt.
++      this.#generation += 1;
++      this.#drop();
++      this.#failed();
++    }, FEED_CONNECT_TIMEOUT_MS);
++
++    let target: WsTarget;
++    try {
++      target = await this.#deps.target(EVENTS_PATH, EVENTS_PURPOSE, { channel: this.#channel });
++    } catch {
++      if (generation !== this.#generation) return;
++      this.#clearTimers();
++      this.#failed();
++      return;
++    }
++    if (generation !== this.#generation || !this.#running) return;
++    const socket = this.#deps.socket(target.url, target.protocols);
++    this.#socket = socket;
++    socket.onopen = () => {
++      if (generation !== this.#generation) return;
++      this.#clearTimers();
++      this.#attempts = 0;
++      this.#listener.status({ phase: "live" });
++    };
++    socket.onmessage = (message) => {
++      if (generation !== this.#generation || typeof message.data !== "string") return;
++      const event = parseFeedFrame(message.data);
++      if (event) this.#listener.event(event);
++    };
++    socket.onclose = (close) => {
++      if (generation !== this.#generation) return;
++      this.#socket = null;
++      this.#clearTimers();
++      // biome-ignore lint/suspicious/noConsole: close codes are for diagnosis, never in the copy
++      console.warn(`[indus chat] event feed closed: code=${close.code}`);
++      if (STOP_CODES.has(close.code)) {
++        this.#running = false;
++        const auth = close.code !== 4400;
++        this.#listener.status({
++          phase: "stopped",
++          notice: auth ? FEED_COPY.loginExpired : FEED_COPY.unavailable,
++          reload: auth,
++        });
++        return;
++      }
++      this.#failed();
++    };
++    socket.onerror = () => {
++      // the close event follows
++    };
++  }
++
++  #failed(): void {
++    if (!this.#running) return;
++    if (this.#attempts >= FEED_ATTEMPTS) {
++      this.#running = false;
++      this.#listener.status({ phase: "stopped", notice: FEED_COPY.gaveUp, reload: false });
++      return;
++    }
++    this.#attempts += 1;
++    const delay = feedDelay(this.#attempts);
++    this.#listener.status({ phase: "retrying", notice: FEED_COPY.retrying(delay) });
++    this.#retry = setTimeout(() => {
++      this.#retry = null;
++      if (this.#running) void this.#dial();
++    }, delay);
++  }
++
++  #drop(): void {
++    const socket = this.#socket;
++    this.#socket = null;
++    if (!socket) return;
++    socket.onopen = null;
++    socket.onmessage = null;
++    socket.onclose = null;
++    socket.onerror = null;
++    if (socket.readyState <= OPEN) {
++      try {
++        socket.close(1000, "feed closed");
++      } catch {
++        // already closing
++      }
++    }
++  }
++
++  #clearTimers(): void {
++    if (this.#retry !== null) clearTimeout(this.#retry);
++    if (this.#deadline !== null) clearTimeout(this.#deadline);
++    this.#retry = null;
++    this.#deadline = null;
++  }
++}
+diff --git a/apps/web/src/chat/ptySocket.test.ts b/apps/web/src/chat/ptySocket.test.ts
+new file mode 100644
+index 0000000..ff991dc
+--- /dev/null
++++ b/apps/web/src/chat/ptySocket.test.ts
+@@ -0,0 +1,499 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { FakePtyServer, type FakeSocket } from "../testing/fakePtyServer.ts";
++import {
++  browserPtyDeps,
++  PtyConnection,
++  type PtyDeps,
++  type PtyRequest,
++  type PtyStatus,
++  ptyParams,
++  resizeFrame,
++} from "./ptySocket.ts";
++import { COPY } from "./reconnect.ts";
++
++// The loopback session token, built at run time (no credential-shaped literal in the source).
++const TOKEN = ["loop", "back", "value"].join("-");
++
++interface Rig {
++  server: FakePtyServer;
++  conn: PtyConnection;
++  statuses: PtyStatus[];
++  output: string[];
++  notices: string[];
++  resumed: string[];
++  frames: Array<() => void>;
++  fontsLoaded: () => void;
++  state: { hidden: boolean; gated: boolean; reloadUsed: boolean; reloads: number };
++  dialTimes: number[];
++}
++
++function makeRig(overrides: Partial<PtyDeps> = {}, options: { autoAccept?: boolean } = {}): Rig {
++  const server = new FakePtyServer({ autoAccept: options.autoAccept ?? true });
++  const statuses: PtyStatus[] = [];
++  const output: string[] = [];
++  const notices: string[] = [];
++  const resumed: string[] = [];
++  const frames: Array<() => void> = [];
++  const state = { hidden: false, gated: false, reloadUsed: false, reloads: 0 };
++  const dialTimes: number[] = [];
++  let fontsLoaded: () => void = () => {};
++  const fonts = new Promise<void>((resolve) => {
++    fontsLoaded = resolve;
++  });
++  const deps: PtyDeps = {
++    ...browserPtyDeps,
++    socket: (url, protocols) => {
++      dialTimes.push(Date.now());
++      return server.dial(url, protocols);
++    },
++    frame: (callback) => frames.push(callback),
++    fontsReady: () => fonts,
++    mayReload: () => !state.reloadUsed,
++    reloadOnce: () => {
++      if (state.reloadUsed) return false;
++      state.reloadUsed = true;
++      state.reloads += 1;
++      return true;
++    },
++    gated: () => state.gated,
++    hidden: () => state.hidden,
++    now: () => Date.now(),
++    ...overrides,
++  };
++  const conn = new PtyConnection(
++    {
++      output: (text) => output.push(text),
++      status: (status) => statuses.push(status),
++      notice: (text) => notices.push(text),
++      resumed: (id) => resumed.push(id),
++    },
++    () => ({ cols: 120, rows: 40 }),
++    deps,
++  );
++  return {
++    server,
++    conn,
++    statuses,
++    output,
++    notices,
++    resumed,
++    frames,
++    fontsLoaded: () => fontsLoaded(),
++    state,
++    dialTimes,
++  };
++}
++
++const settle = () => vi.advanceTimersByTimeAsync(0);
++const base: PtyRequest = { channel: "chat-one", attach: "tab-a" };
++
++beforeEach(() => {
++  vi.useFakeTimers();
++  window.__INDUS_SESSION_TOKEN__ = TOKEN;
++  vi.spyOn(console, "warn").mockImplementation(() => {});
++});
++
++afterEach(() => {
++  vi.useRealTimers();
++});
++
++function phase(rig: Rig): string | undefined {
++  return rig.statuses.at(-1)?.phase;
++}
++
++describe("dial", () => {
++  it("puts channel, attach, profile and a fresh chat's folder in the query, the credential only in the subprotocols", async () => {
++    const rig = makeRig();
++    rig.conn.connect({ ...base, profile: "work", cwd: "/srv/project", fresh: true });
++    await settle();
++    const socket = rig.server.last();
++    expect(socket.path).toBe("/api/pty");
++    expect(Object.fromEntries(socket.query)).toEqual({
++      channel: "chat-one",
++      attach: "tab-a",
++      profile: "work",
++      cwd: "/srv/project",
++      fresh: "1",
++    });
++    expect(socket.url).not.toContain(TOKEN);
++    expect(socket.protocols).toEqual(["indus-dashboard-v1", `indus-dashboard-token.${TOKEN}`]);
++    expect(phase(rig)).toBe("open");
++
++    // A redial repeats the query without `fresh` (it would wipe the channel's session again).
++    socket.drop();
++    await vi.advanceTimersByTimeAsync(250);
++    const again = rig.server.last();
++    expect(again).not.toBe(socket);
++    expect(again.query.get("fresh")).toBeNull();
++    expect(again.query.get("cwd")).toBe("/srv/project");
++  });
++
++  it("sends no folder and no fresh flag with a resume", () => {
++    expect(ptyParams({ ...base, resume: "s-7", cwd: "/srv/x", fresh: true }, true)).toEqual({
++      channel: "chat-one",
++      attach: "tab-a",
++      resume: "s-7",
++    });
++  });
++
++  it("sends the size at once, after two animation frames and after fonts load, before any output", async () => {
++    const rig = makeRig();
++    let sentBeforeOutput = -1;
++    rig.conn.connect(base);
++    await settle();
++    const socket = rig.server.last();
++    const firstOutput = rig.output.length;
++    rig.server.pty().output("prompt> ");
++    if (rig.output.length > firstOutput) sentBeforeOutput = socket.resizes().length;
++    expect(sentBeforeOutput).toBe(1);
++    expect(socket.sent[0]).toBe(resizeFrame(120, 40));
++    expect(rig.output.join("")).toBe("prompt> ");
++
++    rig.frames.shift()?.();
++    expect(socket.resizes()).toHaveLength(1);
++    rig.frames.shift()?.();
++    expect(socket.resizes()).toHaveLength(2);
++    rig.fontsLoaded();
++    await settle();
++    expect(socket.resizes()).toEqual([
++      { cols: 120, rows: 40 },
++      { cols: 120, rows: 40 },
++      { cols: 120, rows: 40 },
++    ]);
++    expect(socket.input()).toEqual([]);
++  });
++
++  it("sends a keep-alive after 20 s of silence only", async () => {
++    const rig = makeRig();
++    rig.conn.connect(base);
++    await settle();
++    const socket = rig.server.last();
++    expect(socket.resizes()).toHaveLength(1);
++    await vi.advanceTimersByTimeAsync(19_999);
++    expect(socket.resizes()).toHaveLength(1);
++    await vi.advanceTimersByTimeAsync(1);
++    expect(socket.resizes()).toHaveLength(2);
++
++    // Traffic in either direction restarts the quiet period.
++    await vi.advanceTimersByTimeAsync(10_000);
++    rig.server.pty().output("tick");
++    await vi.advanceTimersByTimeAsync(10_000);
++    expect(socket.resizes()).toHaveLength(2);
++    rig.conn.send("a");
++    await vi.advanceTimersByTimeAsync(19_000);
++    expect(socket.resizes()).toHaveLength(2);
++    await vi.advanceTimersByTimeAsync(1_000);
++    expect(socket.resizes()).toHaveLength(3);
++  });
++});
++
++describe("reconnect", () => {
++  it("retries 250, 500, 1000, 2000, 3000 ms and then stops", async () => {
++    const rig = makeRig({}, { autoAccept: false });
++    rig.conn.connect(base);
++    await settle();
++    rig.server.accept(rig.server.last());
++    const drops: number[] = [];
++    rig.server.last().drop();
++    drops.push(Date.now());
++    for (const delay of [250, 500, 1000, 2000, 3000]) {
++      expect(phase(rig)).toBe("reconnecting");
++      const before = rig.server.sockets.length;
++      await vi.advanceTimersByTimeAsync(delay - 1);
++      expect(rig.server.sockets.length).toBe(before);
++      await vi.advanceTimersByTimeAsync(1);
++      expect(rig.server.sockets.length).toBe(before + 1);
++      rig.server.last().drop();
++      drops.push(Date.now());
++    }
++    const waits = rig.dialTimes.slice(1).map((at, i) => at - (drops[i] ?? 0));
++    expect(waits).toEqual([250, 500, 1000, 2000, 3000]);
++    expect(rig.statuses.at(-1)).toEqual({ phase: "stopped", stop: { kind: "gave-up" } });
++    const count = rig.server.sockets.length;
++    await vi.advanceTimersByTimeAsync(120_000);
++    expect(rig.server.sockets.length).toBe(count);
++
++    // Only a manual reconnect starts again, with a fresh ladder.
++    rig.conn.reconnect();
++    await settle();
++    expect(rig.server.sockets.length).toBe(count + 1);
++    rig.server.accept(rig.server.last());
++    expect(phase(rig)).toBe("open");
++  });
++
++  it("parks while hidden or on another page and dials once when back, throttled to 1 s", async () => {
++    const rig = makeRig();
++    rig.conn.connect(base);
++    await settle();
++    rig.state.hidden = true;
++    rig.server.last().drop();
++    expect(phase(rig)).toBe("paused");
++    await vi.advanceTimersByTimeAsync(60_000);
++    expect(rig.server.sockets).toHaveLength(1);
++
++    rig.state.hidden = false;
++    rig.conn.pageResumed();
++    rig.conn.pageResumed();
++    await settle();
++    expect(rig.server.sockets).toHaveLength(2);
++    expect(phase(rig)).toBe("open");
++
++    // Leaving the chat page parks a redial the same way; coming back inside the throttle waits.
++    rig.conn.setActive(false);
++    rig.server.last().drop();
++    expect(phase(rig)).toBe("paused");
++    await vi.advanceTimersByTimeAsync(200);
++    rig.conn.setActive(true);
++    await vi.advanceTimersByTimeAsync(799);
++    expect(rig.server.sockets).toHaveLength(2);
++    await vi.advanceTimersByTimeAsync(1);
++    expect(rig.server.sockets).toHaveLength(3);
++
++    // A redial that comes due while the tab is hidden parks instead of dialling.
++    rig.server.last().drop();
++    expect(phase(rig)).toBe("reconnecting");
++    rig.state.hidden = true;
++    await vi.advanceTimersByTimeAsync(250);
++    expect(phase(rig)).toBe("paused");
++    expect(rig.server.sockets).toHaveLength(3);
++  });
++
++  it("refuses input while reconnecting, with one notice per outage", async () => {
++    const rig = makeRig();
++    rig.conn.connect(base);
++    await settle();
++    rig.server.last().drop();
++    expect(rig.conn.send("ls\r")).toBe(false);
++    expect(rig.conn.send("ls\r")).toBe(false);
++    expect(rig.notices).toEqual([COPY.inputRefused]);
++    await vi.advanceTimersByTimeAsync(250);
++    expect(phase(rig)).toBe("open");
++    expect(rig.conn.send("ls\r")).toBe(true);
++    expect(rig.server.pty().typed).toEqual(["ls\r"]);
++    rig.server.last().drop();
++    rig.conn.send("x");
++    expect(rig.notices).toHaveLength(2);
++  });
++
++  it("gives a stuck handshake 8 s, then counts it as a failed attempt", async () => {
++    const rig = makeRig({}, { autoAccept: false });
++    rig.conn.connect(base);
++    await settle();
++    const stuck = rig.server.last();
++    await vi.advanceTimersByTimeAsync(7_999);
++    expect(stuck.clientClose).toBeNull();
++    expect(phase(rig)).toBe("connecting");
++    await vi.advanceTimersByTimeAsync(1);
++    expect(stuck.clientClose).not.toBeNull();
++    expect(phase(rig)).toBe("reconnecting");
++    await vi.advanceTimersByTimeAsync(250);
++    expect(rig.server.sockets).toHaveLength(2);
++  });
++
++  it("gives a ticket that never arrives 8 s, and a late ticket opens nothing", async () => {
++    let release: (value: { url: string; protocols: string[] }) => void = () => {};
++    const target = vi
++      .fn<PtyDeps["target"]>()
++      .mockImplementationOnce(
++        () =>
++          new Promise((resolve) => {
++            release = resolve;
++          }),
++      )
++      .mockImplementation(browserPtyDeps.target);
++    const rig = makeRig({ target });
++    rig.conn.connect(base);
++    await vi.advanceTimersByTimeAsync(8_000);
++    expect(phase(rig)).toBe("reconnecting");
++    expect(rig.server.sockets).toHaveLength(0);
++    await vi.advanceTimersByTimeAsync(250);
++    expect(target).toHaveBeenCalledTimes(2);
++    expect(rig.server.sockets).toHaveLength(1);
++    release({ url: "ws://localhost/api/pty?channel=late", protocols: [] });
++    await settle();
++    expect(rig.server.sockets).toHaveLength(1);
++  });
++});
++
++describe("close codes", () => {
++  async function closedWith(code: number, setup: (rig: Rig) => void = () => {}, clean = true) {
++    const rig = makeRig();
++    setup(rig);
++    rig.conn.connect(base);
++    await settle();
++    rig.server.last().serverClose(code, "", clean);
++    return rig;
++  }
++
++  it("4401 in loopback reloads once; a second 4401 shows the login copy", async () => {
++    const rig = await closedWith(4401);
++    expect(rig.state.reloads).toBe(1);
++    expect(phase(rig)).toBe("stopped");
++    const again = await closedWith(4401, (r) => {
++      r.state.reloadUsed = true;
++    });
++    expect(again.state.reloads).toBe(0);
++    expect(again.statuses.at(-1)).toEqual({
++      phase: "stopped",
++      stop: { kind: "rejected", message: COPY.loginExpired, reload: true },
++    });
++  });
++
++  it("4401 in gated mode never reloads", async () => {
++    const rig = await closedWith(4401, (r) => {
++      r.state.gated = true;
++    });
++    expect(rig.state.reloads).toBe(0);
++    expect(rig.statuses.at(-1)?.stop).toEqual({
++      kind: "rejected",
++      message: COPY.loginExpired,
++      reload: true,
++    });
++  });
++
++  it.each([
++    [4403, COPY.origin],
++    [4404, COPY.disabled],
++    [4408, COPY.peer],
++  ])("%i shows its explanation and does not retry", async (code, message) => {
++    const rig = await closedWith(code);
++    const stop = rig.statuses.at(-1)?.stop;
++    expect(stop?.kind).toBe("rejected");
++    expect(stop && "message" in stop ? stop.message : "").toBe(message);
++    await vi.advanceTimersByTimeAsync(10_000);
++    expect(rig.server.sockets).toHaveLength(1);
++  });
++
++  it("1011 ends with the could-not-start overlay", async () => {
++    const rig = await closedWith(1011);
++    expect(rig.statuses.at(-1)).toEqual({ phase: "ended", stop: { kind: "start-failed" } });
++  });
++
++  it("4410 ends the session and marks the terminal", async () => {
++    const rig = await closedWith(4410);
++    expect(rig.statuses.at(-1)).toEqual({ phase: "ended", stop: { kind: "exited" } });
++    expect(rig.output.join("")).toContain(COPY.endedLine);
++  });
++
++  it("4409 is quiet and does not take the terminal back", async () => {
++    const rig = await closedWith(4409);
++    expect(rig.statuses.at(-1)).toEqual({ phase: "stopped", stop: { kind: "superseded" } });
++    expect(rig.output).toEqual([]);
++    await vi.advanceTimersByTimeAsync(30_000);
++    expect(rig.server.sockets).toHaveLength(1);
++  });
++
++  it.each([1012, 1013, 1001])("%i reconnects", async (code) => {
++    const rig = await closedWith(code);
++    expect(phase(rig)).toBe("reconnecting");
++    await vi.advanceTimersByTimeAsync(250);
++    expect(rig.server.sockets).toHaveLength(2);
++  });
++
++  it("an unclean close reconnects, a clean 1000 ends", async () => {
++    expect(phase(await closedWith(1006, () => {}, false))).toBe("reconnecting");
++    expect((await closedWith(1000)).statuses.at(-1)?.stop).toEqual({ kind: "exited" });
++  });
++});
++
++describe("resume replay", () => {
++  it("an announced resume reports the id and sanitises for 30 s", async () => {
++    const rig = makeRig();
++    rig.server.channelFiles.set("chat-one", "s-remembered");
++    rig.conn.connect(base);
++    await settle();
++    expect(rig.resumed).toEqual(["s-remembered"]);
++    const flood = `top${"\r\n".repeat(81)}bottom\x1b[K`;
++    rig.server.pty().output(flood);
++    expect(rig.output.join("")).toBe("top\r\n\r\nbottom");
++    await vi.advanceTimersByTimeAsync(30_000);
++    rig.output.length = 0;
++    rig.server.pty().output(flood);
++    expect(rig.output.join("")).toBe(flood);
++  });
++
++  it("an explicit resume sanitises from the open", async () => {
++    const rig = makeRig();
++    rig.conn.connect({ ...base, resume: "s-1" });
++    await settle();
++    expect(rig.resumed).toEqual([]);
++    rig.server.pty().output("a\x1b[2Kb\r\n");
++    rig.server.pty().output("c");
++    expect(rig.output.join("")).toBe("ab\r\nc");
++  });
++});
++
++describe("keep-alive registry semantics", () => {
++  function secondTab(server: FakePtyServer): { conn: PtyConnection; statuses: PtyStatus[] } {
++    const statuses: PtyStatus[] = [];
++    const conn = new PtyConnection(
++      { output: () => {}, status: (s) => statuses.push(s) },
++      () => ({ cols: 80, rows: 24 }),
++      {
++        ...browserPtyDeps,
++        socket: server.dial,
++        frame: () => {},
++        fontsReady: () => new Promise(() => {}),
++      },
++    );
++    return { conn, statuses };
++  }
++
++  it("a redial with the same token reattaches the PTY: ring replayed, then a redraw", async () => {
++    const rig = makeRig();
++    rig.conn.connect(base);
++    await settle();
++    rig.server.pty().output("history line\r\n");
++    rig.server.last().drop();
++    rig.server.ptys[0]?.output("while away\r\n");
++    rig.output.length = 0;
++    await vi.advanceTimersByTimeAsync(250);
++    expect(rig.server.ptys).toHaveLength(1);
++    expect(rig.output.join("")).toBe("history line\r\nwhile away\r\n\x0c");
++  });
++
++  it("another socket with the same key supersedes this one (4409, quiet, no retry)", async () => {
++    const rig = makeRig();
++    rig.conn.connect(base);
++    await settle();
++    const other = secondTab(rig.server);
++    other.conn.connect(base);
++    await settle();
++    expect(rig.server.socketsAt("/api/pty")[0]?.serverCloseCode).toBe(4409);
++    expect(rig.statuses.at(-1)).toEqual({ phase: "stopped", stop: { kind: "superseded" } });
++    expect(other.statuses.at(-1)?.phase).toBe("open");
++    await vi.advanceTimersByTimeAsync(30_000);
++    expect(rig.server.socketsAt("/api/pty")).toHaveLength(2);
++  });
++
++  it("child exit ends the session; a fresh start spawns a new PTY in the same channel", async () => {
++    const rig = makeRig();
++    rig.server.channelFiles.set("chat-one", "s-old");
++    rig.conn.connect(base);
++    await settle();
++    rig.conn.send("/exit\r");
++    expect(rig.server.pty().typed).toEqual(["/exit\r"]);
++    rig.server.pty().exit();
++    expect(rig.statuses.at(-1)?.phase).toBe("ended");
++
++    rig.conn.connect({ ...base, attach: "tab-a-rotated", fresh: true });
++    await settle();
++    const socket: FakeSocket = rig.server.last();
++    expect(socket.query.get("fresh")).toBe("1");
++    expect(rig.server.ptys).toHaveLength(2);
++    expect(rig.server.channelFiles.has("chat-one")).toBe(false);
++    expect(phase(rig)).toBe("open");
++  });
++
++  it("a fresh connect drops the old socket without reacting to its close", async () => {
++    const rig = makeRig();
++    rig.conn.connect(base);
++    await settle();
++    const first = rig.server.last();
++    rig.conn.connect({ ...base, resume: "s-2" });
++    await settle();
++    expect(first.clientClose?.code).toBe(1000);
++    expect(rig.statuses.filter((s) => s.phase === "reconnecting")).toEqual([]);
++    expect(rig.server.last().query.get("resume")).toBe("s-2");
++  });
++});
+diff --git a/apps/web/src/chat/ptySocket.ts b/apps/web/src/chat/ptySocket.ts
+new file mode 100644
+index 0000000..837233f
+--- /dev/null
++++ b/apps/web/src/chat/ptySocket.ts
+@@ -0,0 +1,565 @@
++// The chat terminal's socket to `/api/pty` (P18-26), without React or xterm.
++//
++// `PtyConnection` dials, keeps and redials one PTY socket and reports to its owner through
++// `PtyListener`: terminal text to write, the phase to show, an announced resume id, notices.
++//
++// One dial: `channel`, `attach`, `resume`, `profile`, `cwd` (only without a resume), `fresh=1`
++// (only on the first dial after "new chat") go in the query; the credential goes only in the
++// subprotocol list (`lib/wsUrl.ts`). From the start of the dial — a gated ticket fetch included —
++// the socket has 8 s to open; past that the attempt is abandoned as failed. Once open, the in-band
++// resize escape is sent at once (the TUI needs a size for its first paint), again after two
++// animation frames (layout settled) and when fonts have loaded (cell size changed), and after any
++// 20 s without a frame in either direction (a keep-alive the server consumes).
++//
++// Text frames are terminal text, except the server's `{"type":"resume","id":…}` announcement of
++// an implicit resume. Binary frames are UTF-8 decoded as a stream. While a resume replays
++// (explicit or announced) the text goes through the `ResumeSanitizer` for 30 s.
++//
++// After a close the verdict (`reconnect.ts`) decides: reload once, show copy, show an overlay, stay
++// quiet, or climb the ladder. Redials never run while the page is hidden or the chat is not the
++// current page: the connection parks and dials once when both are true again, at most once per
++// second. Redials repeat the first dial's query without `fresh`, so the server's keep-alive key is
++// the same and it reattaches the same PTY (ring replay, then a redraw).
++
++import { TOKEN_RELOAD_KEY } from "../lib/api.ts";
++import { authRequired } from "../lib/bootstrap.ts";
++import { type WsTarget, wsTarget } from "../lib/wsUrl.ts";
++import {
++  CLOSE,
++  type CloseVerdict,
++  COPY,
++  judgeClose,
++  KEEPALIVE_MS,
++  OPEN_DEADLINE_MS,
++  RESUME_THROTTLE_MS,
++  ReconnectLadder,
++} from "./reconnect.ts";
++import { ResumeSanitizer } from "./resumeSanitizer.ts";
++
++export const PTY_PATH = "/api/pty";
++export const PTY_PURPOSE = "web-pty";
++
++const SOCKET_CONNECTING = 0;
++const SOCKET_OPEN = 1;
++
++/** What the server needs to pick (or start) the PTY. */
++export interface PtyRequest {
++  channel: string;
++  attach: string;
++  resume?: string;
++  profile?: string;
++  /** Folder for a fresh chat; ignored (not sent) with a resume. */
++  cwd?: string;
++  /** Start a new conversation in this channel (drops its remembered session). */
++  fresh?: boolean;
++}
++
++/** The query of one dial; `first` is false for redials. */
++export function ptyParams(request: PtyRequest, first: boolean): Record<string, string> {
++  const params: Record<string, string> = { channel: request.channel, attach: request.attach };
++  if (request.resume) params.resume = request.resume;
++  if (request.profile) params.profile = request.profile;
++  if (!request.resume && request.cwd) params.cwd = request.cwd;
++  if (first && request.fresh && !request.resume) params.fresh = "1";
++  return params;
++}
++
++/** The exact frame the server consumes as a size change (never written to the child). */
++export function resizeFrame(cols: number, rows: number): string {
++  return `\x1b[RESIZE:${Math.max(1, Math.floor(cols))};${Math.max(1, Math.floor(rows))}]`;
++}
++
++/** The id of a `{"type":"resume","id":…}` control frame, else null. */
++export function resumeAnnouncement(text: string): string | null {
++  if (!text.startsWith("{")) return null;
++  try {
++    const value: unknown = JSON.parse(text);
++    if (typeof value !== "object" || value === null) return null;
++    const record = value as { type?: unknown; id?: unknown };
++    return record.type === "resume" && typeof record.id === "string" && record.id
++      ? record.id
++      : null;
++  } catch {
++    return null;
++  }
++}
++
++export type PtyPhase =
++  /** Dialling (first time or after a manual reconnect). */
++  | "connecting"
++  | "open"
++  /** Waiting for the next automatic attempt. */
++  | "reconnecting"
++  /** Dropped while hidden or on another page; dials when the chat is visible again. */
++  | "paused"
++  /** Not dialling any more: refused, superseded, or the ladder ran out (see `PtyStatus.stop`). */
++  | "stopped"
++  /** The TUI process ended or could not start; a new session is needed. */
++  | "ended";
++
++export type PtyStop =
++  | { kind: "gave-up" }
++  | { kind: "superseded" }
++  | { kind: "rejected"; message: string; reload: boolean }
++  | { kind: "exited" }
++  | { kind: "start-failed" };
++
++export interface PtyStatus {
++  phase: PtyPhase;
++  /** Why it stopped or ended. */
++  stop?: PtyStop;
++}
++
++export interface PtyListener {
++  output(text: string): void;
++  status(status: PtyStatus): void;
++  /** The server reopened the channel's last session on its own (implicit resume). */
++  resumed?(id: string): void;
++  /** One-line notices (input refused while not connected). */
++  notice?(text: string): void;
++}
++
++/** The minimum of `WebSocket` the connection uses (the fake server implements it too). */
++export interface PtySocket {
++  readonly readyState: number;
++  binaryType: BinaryType;
++  onopen: ((event: Event) => void) | null;
++  onmessage: ((event: MessageEvent) => void) | null;
++  onclose: ((event: CloseEvent) => void) | null;
++  onerror: ((event: Event) => void) | null;
++  send(data: string): void;
++  close(code?: number, reason?: string): void;
++}
++
++export interface PtyDeps {
++  target(path: string, purpose: string, params: Record<string, string>): Promise<WsTarget>;
++  socket(url: string, protocols: string[]): PtySocket;
++  /** Run `callback` on the next animation frame. */
++  frame(callback: () => void): void;
++  /** Settles when the page's fonts have loaded. */
++  fontsReady(): Promise<unknown>;
++  /** Reload the page if the one allowed loopback reload has not happened; false otherwise. */
++  reloadOnce(): boolean;
++  /** Whether the one reload is still available (read before deciding). */
++  mayReload(): boolean;
++  gated(): boolean;
++  hidden(): boolean;
++  now(): number;
++}
++
++function storage(): Storage | null {
++  try {
++    return window.sessionStorage;
++  } catch {
++    return null;
++  }
++}
++
++export const browserPtyDeps: PtyDeps = {
++  target: (path, purpose, params) => wsTarget(path, purpose, params),
++  socket: (url, protocols) => new WebSocket(url, protocols),
++  frame: (callback) => {
++    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => callback());
++    else setTimeout(callback, 16);
++  },
++  fontsReady: () => document.fonts?.ready ?? Promise.resolve(),
++  mayReload: () => {
++    const store = storage();
++    if (!store) return false;
++    try {
++      return store.getItem(TOKEN_RELOAD_KEY) === null;
++    } catch {
++      return false;
++    }
++  },
++  reloadOnce: () => {
++    const store = storage();
++    try {
++      if (!store || store.getItem(TOKEN_RELOAD_KEY) !== null) return false;
++      store.setItem(TOKEN_RELOAD_KEY, String(Date.now()));
++    } catch {
++      return false;
++    }
++    window.location.reload();
++    return true;
++  },
++  gated: authRequired,
++  hidden: () => typeof document !== "undefined" && document.visibilityState === "hidden",
++  now: () => Date.now(),
++};
++
++type Timer = ReturnType<typeof setTimeout>;
++
++export class PtyConnection {
++  readonly #deps: PtyDeps;
++  readonly #listener: PtyListener;
++  readonly #size: () => { cols: number; rows: number };
++  readonly #ladder = new ReconnectLadder();
++  readonly #sanitizer: ResumeSanitizer;
++
++  #request: PtyRequest | null = null;
++  #socket: PtySocket | null = null;
++  /** Bumped by every dial and by dispose; a stale socket's or ticket's callbacks see a mismatch. */
++  #generation = 0;
++  #status: PtyStatus = { phase: "stopped" };
++  #first = true;
++  #active = true;
++  #disposed = false;
++  #lastResumeAt = Number.NEGATIVE_INFINITY;
++  #noticeShown = false;
++  #decoder = new TextDecoder();
++
++  #deadline: Timer | null = null;
++  #retry: Timer | null = null;
++  #keepalive: Timer | null = null;
++  #window: Timer | null = null;
++
++  constructor(
++    listener: PtyListener,
++    size: () => { cols: number; rows: number },
++    deps: PtyDeps = browserPtyDeps,
++  ) {
++    this.#listener = listener;
++    this.#size = size;
++    this.#deps = deps;
++    this.#sanitizer = new ResumeSanitizer(() => deps.now());
++  }
++
++  get status(): PtyStatus {
++    return this.#status;
++  }
++
++  get request(): PtyRequest | null {
++    return this.#request;
++  }
++
++  /** Start a new connection for `request` (drops the current socket without reacting to it). */
++  connect(request: PtyRequest): void {
++    if (this.#disposed) return;
++    this.#request = { ...request };
++    this.#first = true;
++    this.#ladder.reset();
++    this.#dropSocket();
++    this.#clear("retry");
++    this.#setStatus({ phase: "connecting" });
++    void this.#dial();
++  }
++
++  /** Manual reconnect (after the ladder stopped, or "try again"): same request, fresh ladder. */
++  reconnect(): void {
++    if (this.#disposed || !this.#request) return;
++    this.#ladder.reset();
++    this.#dropSocket();
++    this.#clear("retry");
++    this.#setStatus({ phase: "connecting" });
++    void this.#dial();
++  }
++
++  /** Whether the chat is the page on screen; leaving parks a pending redial. */
++  setActive(active: boolean): void {
++    this.#active = active;
++    if (active) this.pageResumed();
++    else if (this.#status.phase === "reconnecting" && this.#retry !== null) this.#park();
++  }
++
++  /**
++   * The page came back (visible, focus, online) or the chat became the current page: a parked
++   * connection dials again, at most once per `RESUME_THROTTLE_MS` (a burst of such events makes one
++   * dial; one inside the throttle is deferred to its end, not dropped).
++   */
++  pageResumed(): void {
++    if (this.#disposed || !this.#request || !this.#mayDial()) return;
++    if (this.#status.phase !== "paused" || this.#retry !== null) return;
++    const wait = this.#lastResumeAt + RESUME_THROTTLE_MS - this.#deps.now();
++    if (wait > 0) {
++      this.#retry = setTimeout(() => {
++        this.#retry = null;
++        this.#resumeDial();
++      }, wait);
++      return;
++    }
++    this.#resumeDial();
++  }
++
++  #resumeDial(): void {
++    if (!this.#mayDial()) {
++      this.#park();
++      return;
++    }
++    this.#lastResumeAt = this.#deps.now();
++    this.#setStatus({ phase: "reconnecting" });
++    void this.#dial();
++  }
++
++  /** Send keystrokes; false (with one notice per outage) when not connected. */
++  send(data: string): boolean {
++    const socket = this.#socket;
++    if (this.#status.phase !== "open" || !socket || socket.readyState !== SOCKET_OPEN) {
++      if (!this.#noticeShown) {
++        this.#noticeShown = true;
++        this.#listener.notice?.(COPY.inputRefused);
++      }
++      return false;
++    }
++    socket.send(data);
++    this.#touch();
++    return true;
++  }
++
++  /** Tell the server the terminal's current size (no-op while not open). */
++  sendSize(): void {
++    const socket = this.#socket;
++    if (!socket || socket.readyState !== SOCKET_OPEN) return;
++    const { cols, rows } = this.#size();
++    socket.send(resizeFrame(cols, rows));
++    this.#touch();
++  }
++
++  dispose(): void {
++    this.#disposed = true;
++    this.#generation += 1;
++    this.#dropSocket();
++    for (const name of ["deadline", "retry", "keepalive", "window"] as const) this.#clear(name);
++  }
++
++  // -- dialling ---------------------------------------------------------------------------------
++
++  #mayDial(): boolean {
++    return this.#active && !this.#deps.hidden();
++  }
++
++  async #dial(): Promise<void> {
++    const request = this.#request;
++    if (!request) return;
++    this.#dropSocket();
++    const generation = ++this.#generation;
++    const params = ptyParams(request, this.#first);
++    this.#clear("deadline");
++    this.#deadline = setTimeout(() => this.#onDeadline(generation), OPEN_DEADLINE_MS);
++
++    let target: WsTarget;
++    try {
++      target = await this.#deps.target(PTY_PATH, PTY_PURPOSE, params);
++    } catch (error) {
++      if (generation !== this.#generation) return;
++      // biome-ignore lint/suspicious/noConsole: diagnosis without server access; no credential in it
++      console.warn("[indus chat] could not prepare the chat connection", error);
++      this.#clear("deadline");
++      this.#afterFailure();
++      return;
++    }
++    if (generation !== this.#generation || this.#disposed) return;
++
++    const socket = this.#deps.socket(target.url, target.protocols);
++    socket.binaryType = "arraybuffer";
++    this.#socket = socket;
++    this.#decoder = new TextDecoder();
++    socket.onopen = () => {
++      if (generation === this.#generation) this.#onOpen(socket, request);
++    };
++    socket.onmessage = (event) => {
++      if (generation === this.#generation) this.#onMessage(event.data);
++    };
++    socket.onclose = (event) => {
++      if (generation === this.#generation) this.#onClose(event.code, event.wasClean, event.reason);
++    };
++    socket.onerror = () => {
++      // The close event that follows carries the code; nothing to do here.
++    };
++  }
++
++  #onDeadline(generation: number): void {
++    this.#deadline = null;
++    if (generation !== this.#generation) return;
++    const socket = this.#socket;
++    if (socket && socket.readyState === SOCKET_CONNECTING) {
++      // Stuck handshake: abandon it; its own close (if it ever comes) is ignored.
++      this.#dropSocket();
++      this.#afterFailure();
++    } else if (!socket) {
++      // The ticket never came: this attempt is over, a late ticket must not open a socket.
++      this.#generation += 1;
++      this.#afterFailure();
++    }
++  }
++
++  #onOpen(socket: PtySocket, request: PtyRequest): void {
++    this.#clear("deadline");
++    this.#ladder.reset();
++    this.#first = false;
++    this.#noticeShown = false;
++    this.#setStatus({ phase: "open" });
++    this.sendSize();
++    this.#deps.frame(() => this.#deps.frame(() => this.#sizeIfCurrent(socket)));
++    void this.#deps.fontsReady().then(
++      () => this.#sizeIfCurrent(socket),
++      () => undefined,
++    );
++    if (request.resume) this.#beginReplay();
++  }
++
++  #sizeIfCurrent(socket: PtySocket): void {
++    if (this.#socket === socket) this.sendSize();
++  }
++
++  #onMessage(data: unknown): void {
++    this.#touch();
++    let text: string;
++    if (typeof data === "string") {
++      const announced = resumeAnnouncement(data);
++      if (announced !== null) {
++        this.#beginReplay();
++        this.#listener.resumed?.(announced);
++        return;
++      }
++      text = data;
++    } else if (data instanceof ArrayBuffer) {
++      text = this.#decoder.decode(new Uint8Array(data), { stream: true });
++    } else if (ArrayBuffer.isView(data)) {
++      text = this.#decoder.decode(data, { stream: true });
++    } else {
++      return;
++    }
++    const out = this.#sanitizer.active ? this.#sanitizer.feed(text) : text;
++    if (out) this.#listener.output(out);
++  }
++
++  #beginReplay(): void {
++    this.#sanitizer.begin();
++    this.#clear("window");
++    this.#window = setTimeout(() => {
++      this.#window = null;
++      const released = this.#sanitizer.settle();
++      if (released) this.#listener.output(released);
++    }, this.#sanitizer.remainingMs);
++  }
++
++  #onClose(code: number, clean: boolean, reason: string): void {
++    this.#socket = null;
++    this.#clear("deadline");
++    this.#clear("keepalive");
++    this.#clear("window");
++    const tail = this.#sanitizer.end();
++    if (tail) this.#listener.output(tail);
++    // biome-ignore lint/suspicious/noConsole: close codes go to the console, never into the copy
++    console.warn(`[indus chat] terminal socket closed: code=${code}${reason ? ` ${reason}` : ""}`);
++
++    const verdict: CloseVerdict = judgeClose(code, clean, {
++      gated: this.#deps.gated(),
++      mayReload: this.#deps.mayReload(),
++    });
++    switch (verdict.kind) {
++      case "reload":
++        if (this.#deps.reloadOnce()) {
++          this.#setStatus({ phase: "stopped" });
++          return;
++        }
++        this.#setStatus({
++          phase: "stopped",
++          stop: { kind: "rejected", message: COPY.loginExpired, reload: true },
++        });
++        return;
++      case "rejected":
++        this.#setStatus({ phase: "stopped", stop: verdict });
++        return;
++      case "superseded":
++        this.#setStatus({ phase: "stopped", stop: { kind: "superseded" } });
++        return;
++      case "start-failed":
++        this.#setStatus({ phase: "ended", stop: { kind: "start-failed" } });
++        return;
++      case "exited":
++        if (code === CLOSE.exited || code === CLOSE.normal) {
++          this.#listener.output(`\r\n\x1b[2m${COPY.endedLine}\x1b[0m\r\n`);
++        }
++        this.#setStatus({ phase: "ended", stop: { kind: "exited" } });
++        return;
++      case "retry":
++        this.#afterFailure();
++        return;
++    }
++  }
++
++  /** A transient failure: park, climb or stop. */
++  #afterFailure(): void {
++    if (this.#disposed) return;
++    if (!this.#mayDial()) {
++      this.#park();
++      return;
++    }
++    const delay = this.#ladder.climb();
++    if (delay === null) {
++      this.#setStatus({ phase: "stopped", stop: { kind: "gave-up" } });
++      return;
++    }
++    this.#setStatus({ phase: "reconnecting" });
++    this.#clear("retry");
++    this.#retry = setTimeout(() => {
++      this.#retry = null;
++      if (!this.#mayDial()) {
++        this.#park();
++        return;
++      }
++      void this.#dial();
++    }, delay);
++  }
++
++  #park(): void {
++    this.#clear("retry");
++    this.#setStatus({ phase: "paused" });
++  }
++
++  // -- keep-alive and housekeeping --------------------------------------------------------------
++
++  /** Some frame went either way: the keep-alive waits another full period of silence. */
++  #touch(): void {
++    this.#clear("keepalive");
++    if (!this.#socket || this.#socket.readyState !== SOCKET_OPEN) return;
++    this.#keepalive = setTimeout(() => {
++      this.#keepalive = null;
++      this.sendSize();
++    }, KEEPALIVE_MS);
++  }
++
++  #dropSocket(): void {
++    const socket = this.#socket;
++    this.#socket = null;
++    this.#clear("keepalive");
++    if (!socket) return;
++    socket.onopen = null;
++    socket.onmessage = null;
++    socket.onclose = null;
++    socket.onerror = null;
++    try {
++      socket.close(1000, "client closed");
++    } catch {
++      // already closing
++    }
++  }
++
++  #clear(name: "deadline" | "retry" | "keepalive" | "window"): void {
++    switch (name) {
++      case "deadline":
++        if (this.#deadline !== null) clearTimeout(this.#deadline);
++        this.#deadline = null;
++        return;
++      case "retry":
++        if (this.#retry !== null) clearTimeout(this.#retry);
++        this.#retry = null;
++        return;
++      case "keepalive":
++        if (this.#keepalive !== null) clearTimeout(this.#keepalive);
++        this.#keepalive = null;
++        return;
++      case "window":
++        if (this.#window !== null) clearTimeout(this.#window);
++        this.#window = null;
++        return;
++    }
++  }
++
++  #setStatus(status: PtyStatus): void {
++    this.#status = status;
++    if (!this.#disposed) this.#listener.status(status);
++  }
++}
+diff --git a/apps/web/src/chat/reconnect.ts b/apps/web/src/chat/reconnect.ts
+new file mode 100644
+index 0000000..78e802e
+--- /dev/null
++++ b/apps/web/src/chat/reconnect.ts
+@@ -0,0 +1,137 @@
++// What the chat terminal does after its socket closes (P18-26): the timing constants, the
++// reconnect ladder and the verdict for each close code, with the words the person sees. Pure: no
++// socket, no DOM, so every rule is testable on its own. Close codes never appear in the copy; the
++// connection logs them to the console instead.
++
++/** First reconnect delay; each later one doubles up to the cap. */
++export const RECONNECT_BASE_MS = 250;
++export const RECONNECT_CAP_MS = 3_000;
++/** Automatic attempts before the ladder stops and only a manual reconnect is offered. */
++export const RECONNECT_ATTEMPTS = 5;
++/** Page-return events (visible, focus, online) start at most one attempt per this period. */
++export const RESUME_THROTTLE_MS = 1_000;
++/** From the start of a dial (ticket fetch included) until the socket must be open. */
++export const OPEN_DEADLINE_MS = 8_000;
++/** Silence after which a resize frame is sent to keep idle-closing proxies off the socket. */
++export const KEEPALIVE_MS = 20_000;
++/** How long after a resume the output is sanitised (R09.8). */
++export const SANITIZE_WINDOW_MS = 30_000;
++
++/** Delay before automatic attempt `attempt` (1-based): 250, 500, 1000, 2000, 3000 ms. */
++export function reconnectDelay(attempt: number): number {
++  const step = Math.max(0, Math.floor(attempt) - 1);
++  return Math.min(RECONNECT_CAP_MS, RECONNECT_BASE_MS * 2 ** step);
++}
++
++/** Counts automatic attempts in one outage. */
++export class ReconnectLadder {
++  #used = 0;
++  readonly limit: number;
++
++  constructor(limit: number = RECONNECT_ATTEMPTS) {
++    this.limit = limit;
++  }
++
++  /** Attempts used since the last successful open. */
++  get used(): number {
++    return this.#used;
++  }
++
++  get exhausted(): boolean {
++    return this.#used >= this.limit;
++  }
++
++  /** Claim the next attempt: its delay, or null when the ladder is used up. */
++  climb(): number | null {
++    if (this.exhausted) return null;
++    this.#used += 1;
++    return reconnectDelay(this.#used);
++  }
++
++  reset(): void {
++    this.#used = 0;
++  }
++}
++
++export const CLOSE = {
++  normal: 1000,
++  goingAway: 1001,
++  abnormal: 1006,
++  startFailed: 1011,
++  restarting: 1012,
++  tryAgain: 1013,
++  credential: 4401,
++  origin: 4403,
++  disabled: 4404,
++  peer: 4408,
++  superseded: 4409,
++  exited: 4410,
++} as const;
++
++export const COPY = {
++  reconnecting: "The chat connection dropped. Reconnecting…",
++  gaveUp:
++    "The chat lost its connection to the dashboard server. If you stopped indus dashboard, start it again; otherwise reconnect.",
++  inputRefused: "The chat is not connected right now, so this input was not sent.",
++  exited:
++    "This chat session has ended. If you did not end it, open Logs to see what happened, or start a new session.",
++  startFailed: "The chat could not start. The terminal above says why.",
++  superseded: "This chat terminal moved to another tab or window.",
++  loginExpired: "Your dashboard login expired (the server may have restarted). Reload the page.",
++  origin:
++    "The dashboard refused this chat because the page address does not match the server. Open the address indus dashboard printed.",
++  disabled: "This dashboard server does not offer the chat terminal.",
++  peer: "This dashboard only takes chat connections from the machine it runs on.",
++  endedLine: "[chat session ended]",
++} as const;
++
++export type CloseVerdict =
++  /** 4401 in loopback mode, first time: the token rotated; reload the page once. */
++  | { kind: "reload" }
++  /** Refused before any PTY existed; retrying cannot help. */
++  | { kind: "rejected"; message: string; reload: boolean }
++  /** 1011: the server could not start the chat and printed why in the terminal. */
++  | { kind: "start-failed" }
++  /** 4410 or a clean 1000: the TUI process ended. */
++  | { kind: "exited" }
++  /** 4409: another socket took this PTY over; stay quiet. */
++  | { kind: "superseded" }
++  /** Anything transient: climb the ladder. */
++  | { kind: "retry" };
++
++export interface CloseContext {
++  /** Gated mode (a login provider guards the dashboard). */
++  gated: boolean;
++  /** False when the one allowed reload already happened (or storage cannot remember it). */
++  mayReload: boolean;
++}
++
++/** What to do after a close with `code` (`clean` is the event's `wasClean`). */
++export function judgeClose(code: number, clean: boolean, context: CloseContext): CloseVerdict {
++  switch (code) {
++    case CLOSE.credential:
++      if (!context.gated && context.mayReload) return { kind: "reload" };
++      return { kind: "rejected", message: COPY.loginExpired, reload: true };
++    case CLOSE.origin:
++      return { kind: "rejected", message: COPY.origin, reload: false };
++    case CLOSE.disabled:
++      return { kind: "rejected", message: COPY.disabled, reload: true };
++    case CLOSE.peer:
++      return { kind: "rejected", message: COPY.peer, reload: false };
++    case CLOSE.startFailed:
++      return { kind: "start-failed" };
++    case CLOSE.exited:
++      return { kind: "exited" };
++    case CLOSE.superseded:
++      return { kind: "superseded" };
++    case CLOSE.goingAway:
++    case CLOSE.abnormal:
++    case CLOSE.restarting:
++    case CLOSE.tryAgain:
++      return { kind: "retry" };
++    case CLOSE.normal:
++      return clean ? { kind: "exited" } : { kind: "retry" };
++    default:
++      return clean ? { kind: "exited" } : { kind: "retry" };
++  }
++}
+diff --git a/apps/web/src/chat/resumeSanitizer.test.ts b/apps/web/src/chat/resumeSanitizer.test.ts
+new file mode 100644
+index 0000000..62255f9
+--- /dev/null
++++ b/apps/web/src/chat/resumeSanitizer.test.ts
+@@ -0,0 +1,126 @@
++import { describe, expect, it } from "vitest";
++import { FLOOD_BREAKS, ResumeSanitizer, scrub, splitTail } from "./resumeSanitizer.ts";
++
++function clock() {
++  const state = { now: 1_000 };
++  return { state, now: () => state.now };
++}
++
++const crlf = (n: number) => "\r\n".repeat(n);
++
++describe("ResumeSanitizer", () => {
++  it("folds 80 blank lines into one inside the 30 s window and not after", () => {
++    const c = clock();
++    const s = new ResumeSanitizer(c.now);
++    s.begin();
++    expect(s.feed(`head${crlf(81)}tail`)).toBe("head\r\n\r\ntail");
++
++    c.state.now += 29_999;
++    expect(s.active).toBe(true);
++    expect(s.feed(`a${crlf(81)}b`)).toBe("a\r\n\r\nb");
++
++    c.state.now += 1;
++    expect(s.active).toBe(false);
++    expect(s.feed(`a${crlf(81)}b`)).toBe(`a${crlf(81)}b`);
++  });
++
++  it("drops erase sequences inside the window and keeps them after", () => {
++    const c = clock();
++    const s = new ResumeSanitizer(c.now);
++    s.begin();
++    expect(s.feed("one\x1b[Ktwo\x1b[2Xthree\x1b[0K.")).toBe("onetwothree.");
++    c.state.now += 30_000;
++    expect(s.feed("spin\x1b[K.")).toBe("spin\x1b[K.");
++  });
++
++  it("passes everything through before any resume", () => {
++    const s = new ResumeSanitizer(clock().now);
++    const text = `x\x1b[K${crlf(70)}y`;
++    expect(s.active).toBe(false);
++    expect(s.feed(text)).toBe(text);
++  });
++
++  it("keeps runs below the threshold", () => {
++    const s = new ResumeSanitizer(clock().now);
++    s.begin();
++    const text = `a${crlf(FLOOD_BREAKS - 1)}b`;
++    expect(s.feed(text)).toBe(text);
++  });
++
++  it("recognises an erase sequence split across frames", () => {
++    const s = new ResumeSanitizer(clock().now);
++    s.begin();
++    expect(s.feed("left\x1b")).toBe("left");
++    expect(s.feed("[")).toBe("");
++    expect(s.feed("2")).toBe("");
++    expect(s.feed("Kright")).toBe("right");
++    // An escape that turns out to be something else is passed on whole.
++    expect(s.feed("x\x1b[")).toBe("x");
++    expect(s.feed("31mred")).toBe("\x1b[31mred");
++  });
++
++  it("collects a flood split across frames, CR and LF split too", () => {
++    const s = new ResumeSanitizer(clock().now);
++    s.begin();
++    let out = s.feed(`start${crlf(30)}\r`);
++    out += s.feed(`\n${crlf(20)}`);
++    out += s.feed(`${crlf(30)}end`);
++    expect(out).toBe("start\r\n\r\nend");
++  });
++
++  it("collects a flood interrupted by erase codes", () => {
++    const s = new ResumeSanitizer(clock().now);
++    s.begin();
++    let out = s.feed(`a${crlf(30)}\x1b[`);
++    out += s.feed(`K${crlf(30)}b`);
++    out += s.feed(`${crlf(25)}\x1b[K${crlf(25)}c`);
++    expect(out).toBe("a\r\n\r\nb\r\n\r\nc");
++  });
++
++  it("settle releases held breaks when the window ends; a held escape completes with the next frame", () => {
++    const c = clock();
++    const s = new ResumeSanitizer(c.now);
++    s.begin();
++    expect(s.feed(`line${crlf(3)}`)).toBe("line");
++    c.state.now += 30_000;
++    expect(s.settle()).toBe(crlf(3));
++
++    s.begin();
++    expect(s.feed("x\x1b[1")).toBe("x");
++    c.state.now += 30_000;
++    expect(s.settle()).toBe("");
++    expect(s.feed("mbold")).toBe("\x1b[1mbold");
++  });
++
++  it("end drops a held partial escape and closes the window", () => {
++    const s = new ResumeSanitizer(clock().now);
++    s.begin();
++    expect(s.feed(`a${crlf(2)}\x1b[`)).toBe("a");
++    expect(s.end()).toBe(crlf(2));
++    expect(s.active).toBe(false);
++    expect(s.feed("K")).toBe("K");
++  });
++
++  it("begin while active extends the window, never shortens it", () => {
++    const c = clock();
++    const s = new ResumeSanitizer(c.now);
++    s.begin();
++    c.state.now += 20_000;
++    s.begin();
++    expect(s.remainingMs).toBe(30_000);
++  });
++});
++
++describe("helpers", () => {
++  it("splitTail holds a partial escape, the breaks before it, or trailing breaks", () => {
++    expect(splitTail("abc")).toEqual(["abc", ""]);
++    expect(splitTail("abc\r\n\r\n")).toEqual(["abc", "\r\n\r\n"]);
++    expect(splitTail("abc\r")).toEqual(["abc", "\r"]);
++    expect(splitTail("abc\r\n\x1b[12")).toEqual(["abc", "\r\n\x1b[12"]);
++    expect(splitTail("abc\x1b[12m")).toEqual(["abc\x1b[12m", ""]);
++  });
++
++  it("scrub removes erase codes before measuring floods", () => {
++    expect(scrub(`${crlf(25)}\x1b[K${crlf(25)}`)).toBe("\r\n\r\n");
++  });
++});
+diff --git a/apps/web/src/chat/resumeSanitizer.ts b/apps/web/src/chat/resumeSanitizer.ts
+new file mode 100644
+index 0000000..b9d65a3
+--- /dev/null
++++ b/apps/web/src/chat/resumeSanitizer.ts
+@@ -0,0 +1,117 @@
++// Output clean-up while a resumed chat replays its history (P18-26, R09.8).
++//
++// When the TUI reopens a long session it redraws the whole transcript, and on the way it emits
++// floods of blank lines and erase sequences (`ESC [ n K`, `ESC [ n X`) that leave xterm's viewport
++// blank. For a bounded window after a resume (explicit `resume=`, or the server's announced
++// implicit one) this filter drops those erase sequences and folds any run of 50 or more line breaks
++// into a single blank line. Outside the window the stream passes through untouched: erase codes are
++// how spinners and status lines repaint in place.
++//
++// The PTY runs in cooked mode, so line breaks arrive as CR LF; frames are cut wherever a read
++// ended, so an escape sequence, a CR/LF pair or a long run can span frames. The filter therefore
++// holds back the end of a frame that might continue: a partial escape (`ESC`, `ESC [`,
++// `ESC [ digits`), the newline run just before it, or a trailing newline run (a lone trailing CR
++// included). Erase codes are removed before runs are measured, so erase codes sprinkled through a
++// flood do not break it into short runs that slip past.
++
++import { SANITIZE_WINDOW_MS } from "./reconnect.ts";
++
++/** Line breaks in a row that count as a flood. */
++export const FLOOD_BREAKS = 50;
++
++// biome-ignore lint/suspicious/noControlCharactersInRegex: terminal streams are escape sequences
++const ERASE = /\x1b\[\d*[KX]/g;
++const FLOOD = new RegExp(`(?:\\r?\\n){${FLOOD_BREAKS},}`, "g");
++// biome-ignore lint/suspicious/noControlCharactersInRegex: terminal streams are escape sequences
++const PARTIAL_ESCAPE = /\x1b(?:\[\d*)?$/;
++/** What a flood becomes: end the line, then one blank line. */
++const FOLDED = "\r\n\r\n";
++
++/** Drop erase sequences, then fold floods of line breaks. */
++export function scrub(text: string): string {
++  return text.replace(ERASE, "").replace(FLOOD, FOLDED);
++}
++
++/** Index where a trailing run of line breaks (and a lone CR after it) starts in `text[0, end)`. */
++function breaksStart(text: string, end: number): number {
++  let at = end;
++  if (at > 0 && text[at - 1] === "\r") at -= 1;
++  while (at > 0 && text[at - 1] === "\n") {
++    at -= 1;
++    if (at > 0 && text[at - 1] === "\r") at -= 1;
++  }
++  return at;
++}
++
++/** Split `text` into what can be filtered now and a tail that may continue in the next frame. */
++export function splitTail(text: string): [ready: string, tail: string] {
++  const partial = PARTIAL_ESCAPE.exec(text);
++  const end = partial ? partial.index : text.length;
++  const cut = breaksStart(text, end);
++  return [text.slice(0, cut), text.slice(cut)];
++}
++
++export class ResumeSanitizer {
++  #until = Number.NEGATIVE_INFINITY;
++  #held = "";
++  readonly #now: () => number;
++  readonly #windowMs: number;
++
++  constructor(now: () => number = Date.now, windowMs: number = SANITIZE_WINDOW_MS) {
++    this.#now = now;
++    this.#windowMs = windowMs;
++  }
++
++  /** Open (or extend) the window: a resume replay starts now. */
++  begin(): void {
++    this.#until = Math.max(this.#until, this.#now() + this.#windowMs);
++  }
++
++  /** True while output is being filtered. */
++  get active(): boolean {
++    return this.#now() < this.#until;
++  }
++
++  /** How long the window still runs (0 when closed). */
++  get remainingMs(): number {
++    return Math.max(0, this.#until - this.#now());
++  }
++
++  /** Filter one decoded frame; returns what to write now. */
++  feed(chunk: string): string {
++    if (!this.active) {
++      // Window over: whatever was still held goes first (a held escape completes with `chunk`).
++      const released = this.settle();
++      const out = released + this.#held + chunk;
++      this.#held = "";
++      return out;
++    }
++    const combined = this.#held + chunk;
++    const [ready, tail] = splitTail(combined);
++    this.#held = tail;
++    return scrub(ready);
++  }
++
++  /**
++   * The window ended: release held line breaks (folded if they already make a flood). A held
++   * partial escape stays held and goes out in front of the next frame, where it completes.
++   */
++  settle(): string {
++    const partial = PARTIAL_ESCAPE.exec(this.#held);
++    const keep = partial ? this.#held.slice(partial.index) : "";
++    const release = partial ? this.#held.slice(0, partial.index) : this.#held;
++    this.#held = keep;
++    return release.replace(FLOOD, FOLDED);
++  }
++
++  /**
++   * The stream closed: release held line breaks, drop a held partial escape (written into the
++   * next stream it would swallow that stream's first bytes) and close the window.
++   */
++  end(): string {
++    const out = this.settle();
++    this.#held = "";
++    this.#until = Number.NEGATIVE_INFINITY;
++    return out;
++  }
++}
+diff --git a/apps/web/src/chat/terminal.ts b/apps/web/src/chat/terminal.ts
+new file mode 100644
+index 0000000..ae48828
+--- /dev/null
++++ b/apps/web/src/chat/terminal.ts
+@@ -0,0 +1,301 @@
++// The chat's terminal view (P18-26): xterm.js with the fit, Unicode 11, web-links and WebGL addons,
++// behind the small `ChatTerminal` surface the host needs (tests give the host a fake).
++//
++// WebGL is the fast renderer but not everywhere: software rasterisers (llvmpipe, SwiftShader,
++// softpipe, anything reporting "software") advertise WebGL and then fail or crawl, so the DOM
++// renderer is kept there; a context loss also falls back to it. Browsers cap live GL contexts, so
++// the WebGL addon is disposed while the terminal is hidden (another dashboard tab, or the browser
++// tab in the background) and loaded again on return.
++//
++// Colours come from the @indus/ui tokens of the active theme (CSS variables plus the 16-colour ANSI
++// map), re-read when `data-theme` on <html> changes.
++
++import { ansi, type ThemeName } from "@indus/ui";
++
++export interface TermSize {
++  cols: number;
++  rows: number;
++}
++
++export interface ChatTerminal {
++  open(parent: HTMLElement): void;
++  write(text: string): void;
++  onData(listener: (data: string) => void): () => void;
++  onResize(listener: (size: TermSize) => void): () => void;
++  size(): TermSize;
++  /** Resize to the parent's box (no-op while the parent is hidden). */
++  fit(): void;
++  focus(): void;
++  scrollLines(lines: number): void;
++  /** Pixel height of one row, for touch scrolling. */
++  rowHeight(): number;
++  /** Load or release the GPU renderer (when supported). */
++  setRendererVisible(visible: boolean): void;
++  /** The hidden input xterm types into (composition events come from it). */
++  input(): HTMLTextAreaElement | undefined;
++  dispose(): void;
++}
++
++export type TerminalFactory = () => Promise<ChatTerminal>;
++
++const SOFTWARE_RENDERER = /llvmpipe|swiftshader|softpipe|software/i;
++
++/** True for a GL renderer string that names a software rasteriser. */
++export function isSoftwareRenderer(renderer: string): boolean {
++  return SOFTWARE_RENDERER.test(renderer);
++}
++
++/** Whether the GPU renderer should be used on this page (probes one context, then frees it). */
++export function webglUsable(doc: Document = document): boolean {
++  let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null;
++  try {
++    const canvas = doc.createElement("canvas");
++    gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
++  } catch {
++    return false;
++  }
++  if (!gl) return false;
++  let software = false;
++  try {
++    const info = gl.getExtension("WEBGL_debug_renderer_info");
++    if (info) software = isSoftwareRenderer(String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)));
++  } catch {
++    // renderer name hidden: trust the context we got
++  }
++  try {
++    gl.getExtension("WEBGL_lose_context")?.loseContext();
++  } catch {
++    // already gone
++  }
++  return !software;
++}
++
++function themeName(): ThemeName {
++  const set = document.documentElement.dataset.theme;
++  if (set === "indus-dark" || set === "indus-light") return set;
++  const dark =
++    typeof window.matchMedia === "function" &&
++    window.matchMedia("(prefers-color-scheme: dark)").matches;
++  return dark ? "indus-dark" : "indus-light";
++}
++
++function cssVar(name: string, fallback: string): string {
++  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
++  return value || fallback;
++}
++
++/** xterm colours for the active theme. */
++export function terminalColours(): Record<string, string> {
++  const name = themeName();
++  const map = ansi[name];
++  const dark = name === "indus-dark";
++  return {
++    background: cssVar("--indus-color-code-bg", dark ? "#16181d" : "#f6f5f2"),
++    foreground: cssVar("--indus-color-fg", dark ? "#e8e6e1" : "#1f1f1c"),
++    cursor: cssVar("--indus-color-accent", dark ? "#8ab4f8" : "#2557c7"),
++    selectionBackground: cssVar("--indus-color-selection", dark ? "#33415c" : "#cdd9f2"),
++    black: map.black,
++    red: map.red,
++    green: map.green,
++    yellow: map.yellow,
++    blue: map.blue,
++    magenta: map.magenta,
++    cyan: map.cyan,
++    white: map.white,
++    brightBlack: map.brightBlack,
++    brightRed: map.brightRed,
++    brightGreen: map.brightGreen,
++    brightYellow: map.brightYellow,
++    brightBlue: map.brightBlue,
++    brightMagenta: map.brightMagenta,
++    brightCyan: map.brightCyan,
++    brightWhite: map.brightWhite,
++  };
++}
++
++/** The real terminal (xterm and its addons load with the chat chunk). */
++export const createXtermTerminal: TerminalFactory = async () => {
++  const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebLinksAddon }, { WebglAddon }] =
++    await Promise.all([
++      import("@xterm/xterm"),
++      import("@xterm/addon-fit"),
++      import("@xterm/addon-unicode11"),
++      import("@xterm/addon-web-links"),
++      import("@xterm/addon-webgl"),
++      import("@xterm/xterm/css/xterm.css"),
++    ]);
++
++  const term = new Terminal({
++    allowProposedApi: true, // the Unicode 11 width table is a proposed API
++    cursorBlink: true,
++    fontFamily: cssVar("--indus-font-mono", "ui-monospace, SFMono-Regular, Menlo, monospace"),
++    fontSize: 14,
++    scrollback: 5_000,
++    theme: terminalColours(),
++  });
++  const fit = new FitAddon();
++  term.loadAddon(fit);
++  term.loadAddon(new Unicode11Addon());
++  term.unicode.activeVersion = "11";
++  term.loadAddon(
++    new WebLinksAddon((_event, uri) => {
++      window.open(uri, "_blank", "noopener,noreferrer");
++    }),
++  );
++
++  const gpuAllowed = webglUsable();
++  let gpu: InstanceType<typeof WebglAddon> | null = null;
++  let opened = false;
++  const releaseGpu = () => {
++    const addon = gpu;
++    gpu = null;
++    try {
++      addon?.dispose();
++    } catch {
++      // already released
++    }
++  };
++  const loadGpu = () => {
++    if (!gpuAllowed || gpu || !opened) return;
++    try {
++      const addon = new WebglAddon();
++      addon.onContextLoss(() => releaseGpu());
++      term.loadAddon(addon);
++      gpu = addon;
++    } catch {
++      gpu = null; // the DOM renderer stays
++    }
++  };
++
++  const themeWatch = new MutationObserver(() => {
++    term.options.theme = terminalColours();
++  });
++  themeWatch.observe(document.documentElement, {
++    attributes: true,
++    attributeFilter: ["data-theme"],
++  });
++
++  return {
++    open(parent) {
++      term.open(parent);
++      opened = true;
++      loadGpu();
++    },
++    write: (text) => term.write(text),
++    onData(listener) {
++      const sub = term.onData(listener);
++      return () => sub.dispose();
++    },
++    onResize(listener) {
++      const sub = term.onResize(listener);
++      return () => sub.dispose();
++    },
++    size: () => ({ cols: term.cols, rows: term.rows }),
++    fit() {
++      const element = term.element;
++      if (!element || element.offsetParent === null) return; // hidden: nothing to measure
++      try {
++        fit.fit();
++      } catch {
++        // not measurable yet
++      }
++    },
++    focus: () => term.focus(),
++    scrollLines: (lines) => term.scrollLines(lines),
++    rowHeight() {
++      const height = term.element?.clientHeight ?? 0;
++      return term.rows > 0 && height > 0 ? height / term.rows : 17;
++    },
++    setRendererVisible(visible) {
++      if (visible) loadGpu();
++      else releaseGpu();
++    },
++    input: () => term.textarea,
++    dispose() {
++      themeWatch.disconnect();
++      releaseGpu();
++      term.dispose();
++    },
++  };
++};
++
++/** SGR mouse reports (`ESC [ < b ; x ; y M|m`); never forwarded to the PTY. */
++// biome-ignore lint/suspicious/noControlCharactersInRegex: terminal streams are escape sequences
++const MOUSE_REPORT = /^(?:\x1b\[<\d+;\d+;\d+[Mm])+$/;
++
++export function isMouseReport(data: string): boolean {
++  return MOUSE_REPORT.test(data);
++}
++
++/** How long a composition commit waits for xterm to deliver it, and how long echoes count. */
++export const COMMIT_WAIT_MS = 20;
++export const ECHO_MS = 80;
++
++/**
++ * IME composition safety net. xterm normally turns a composition commit into `onData`; some
++ * browsers and soft keyboards do not, and some deliver it twice (a repeated `compositionend`, or
++ * `onData` after the commit). `commit(text)` forwards `text` after a short wait unless xterm's data
++ * already carried it; `filter(data)` strips an echo of a commit this guard forwarded.
++ */
++export class CompositionGuard {
++  readonly #send: (data: string) => void;
++  readonly #now: () => number;
++  #pending: string | null = null;
++  #timer: ReturnType<typeof setTimeout> | null = null;
++  #forwarded: { text: string; at: number } | null = null;
++  #typed: { text: string; at: number } | null = null;
++
++  constructor(send: (data: string) => void, now: () => number = Date.now) {
++    this.#send = send;
++    this.#now = now;
++  }
++
++  #recent(entry: { text: string; at: number } | null): entry is { text: string; at: number } {
++    return entry !== null && this.#now() - entry.at <= ECHO_MS;
++  }
++
++  /** A `compositionend` with its committed text. */
++  commit(text: string): void {
++    if (!text) return;
++    if (this.#recent(this.#typed) && this.#typed.text.endsWith(text)) return; // xterm had it
++    if (this.#recent(this.#forwarded) && this.#forwarded.text === text) return; // fired twice
++    this.#release();
++    this.#pending = text;
++    this.#timer = setTimeout(() => this.#release(), COMMIT_WAIT_MS);
++  }
++
++  /** xterm's `onData`; returns what is still worth sending. */
++  filter(data: string): string {
++    let out = data;
++    if (!data.startsWith("\x1b") && this.#recent(this.#forwarded)) {
++      const sent = this.#forwarded.text;
++      if (data === sent) out = "";
++      else if (data.startsWith(sent)) out = data.slice(sent.length);
++    }
++    if (out && !out.startsWith("\x1b")) {
++      const carried = this.#recent(this.#typed) ? this.#typed.text : "";
++      this.#typed = { text: (carried + out).slice(-256), at: this.#now() };
++      if (this.#pending !== null && this.#typed.text.endsWith(this.#pending)) this.#cancel();
++    }
++    return out;
++  }
++
++  dispose(): void {
++    this.#cancel();
++  }
++
++  #release(): void {
++    const text = this.#pending;
++    this.#cancel();
++    if (text) {
++      this.#forwarded = { text, at: this.#now() };
++      this.#send(text);
++    }
++  }
++
++  #cancel(): void {
++    if (this.#timer !== null) clearTimeout(this.#timer);
++    this.#timer = null;
++    this.#pending = null;
++  }
++}
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index f7927b1..b52a776 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -1,7 +1,7 @@
+ // Browser entry: outer query cache (shell data), router with the injected base path, theme tokens.
+ 
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+-import { StrictMode } from "react";
++import { lazy, StrictMode } from "react";
+ import { createRoot } from "react-dom/client";
+ import { BrowserRouter } from "react-router";
+ import { App } from "./App.tsx";
+@@ -9,6 +9,9 @@ import { basePath } from "./lib/bootstrap.ts";
+ import { ThemeStyles } from "./shell/ThemeSwitch.tsx";
+ import "./index.css";
+ 
++// The chat terminal (P18-26) and xterm load only when /chat is first visited.
++const ChatHost = lazy(() => import("./chat/ChatHost.tsx"));
++
+ const client = new QueryClient({
+   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+ });
+@@ -21,7 +24,7 @@ if (root) {
+       <QueryClientProvider client={client}>
+         <BrowserRouter {...(base ? { basename: base } : {})}>
+           <ThemeStyles />
+-          <App />
++          <App chatHost={ChatHost} />
+         </BrowserRouter>
+       </QueryClientProvider>
+     </StrictMode>,
+diff --git a/apps/web/src/testing/fakePtyServer.ts b/apps/web/src/testing/fakePtyServer.ts
+new file mode 100644
+index 0000000..a01da8b
+--- /dev/null
++++ b/apps/web/src/testing/fakePtyServer.ts
+@@ -0,0 +1,326 @@
++// An in-memory stand-in for the dashboard's chat sockets (P18-26/27 tests). Nothing opens a port:
++// `server.dial(url, protocols)` returns a `FakeSocket` with the browser `WebSocket` surface the
++// chat code uses, and the test drives the server side (accept, emit PTY bytes, close with a code).
++//
++// It follows the contract of the real routes (src/indus/web/ws/*, src/indus/web/pty/*) closely
++// enough to test the client against it:
++// - credentials: only in the subprotocol list (`indus-dashboard-v1` plus
++//   `indus-dashboard-token.<t>` or `indus-dashboard-ticket.<t>`); a `token`/`ticket`/`internal`
++//   query parameter or a missing credential is accepted and closed 4401, as the helper does;
++// - `/api/pty`: `fresh` drops the channel's remembered session; without `resume` (and not fresh)
++//   a remembered session is announced with a `{"type":"resume","id":…}` text frame first; without
++//   `attach` the PTY lives as long as its socket; with `attach` the keep-alive registry: key =
++//   token + profile + explicit resume, other PTYs of the same token are ended (viewer closed
++//   4409), an existing PTY is reattached (its old viewer closed 4409, the ring replayed, then one
++//   Ctrl-L), a new one spawned; a detached PTY keeps collecting output; child exit closes the
++//   viewer 4410; a frame that is exactly the resize escape is recorded, never "typed";
++// - `/api/events`: each subscriber of a channel gets every published frame; what it sends is
++//   ignored.
++
++const PROTOCOL = "indus-dashboard-v1";
++const CREDENTIAL = /^indus-dashboard-(token|ticket)\.(.+)$/;
++// biome-ignore lint/suspicious/noControlCharactersInRegex: terminal streams are escape sequences
++const RESIZE = /^\x1b\[RESIZE:(\d{1,9});(\d{1,9})\]$/;
++const CHANNEL = /^[A-Za-z0-9._-]{1,128}$/;
++const REDRAW = "\x0c";
++
++export const SOCKET_STATES = { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 } as const;
++
++const encoder = new TextEncoder();
++
++function asBuffer(data: string | Uint8Array): ArrayBuffer {
++  const bytes = typeof data === "string" ? encoder.encode(data) : data;
++  const copy = new Uint8Array(bytes.byteLength);
++  copy.set(bytes);
++  return copy.buffer;
++}
++
++function closeEvent(code: number, reason: string, wasClean: boolean): CloseEvent {
++  return { code, reason, wasClean, type: "close" } as unknown as CloseEvent;
++}
++
++function messageEvent(data: unknown): MessageEvent {
++  return { data, type: "message" } as unknown as MessageEvent;
++}
++
++export class FakeSocket {
++  readonly url: string;
++  readonly path: string;
++  readonly query: URLSearchParams;
++  readonly protocols: string[];
++  readyState: number = SOCKET_STATES.CONNECTING;
++  binaryType: BinaryType = "blob";
++  onopen: ((event: Event) => void) | null = null;
++  onmessage: ((event: MessageEvent) => void) | null = null;
++  onclose: ((event: CloseEvent) => void) | null = null;
++  onerror: ((event: Event) => void) | null = null;
++  /** Every frame the client sent, in order. */
++  readonly sent: string[] = [];
++  /** The close the client asked for, if it closed first. */
++  clientClose: { code: number | undefined; reason: string | undefined } | null = null;
++  /** The close the server sent, if it closed first. */
++  serverCloseCode: number | null = null;
++  /** Server-side hooks set by the route emulation. */
++  onClientFrame: ((data: string) => void) | null = null;
++  onClientGone: (() => void) | null = null;
++
++  constructor(url: string, protocols: string[]) {
++    this.url = url;
++    const parsed = new URL(url);
++    this.path = parsed.pathname;
++    this.query = parsed.searchParams;
++    this.protocols = [...protocols];
++  }
++
++  get open(): boolean {
++    return this.readyState === SOCKET_STATES.OPEN;
++  }
++
++  /** The credential kind and value offered in the subprotocols, if any. */
++  credential(): { kind: string; value: string } | null {
++    for (const offered of this.protocols) {
++      const found = CREDENTIAL.exec(offered);
++      if (found?.[1] && found[2]) return { kind: found[1], value: found[2] };
++    }
++    return null;
++  }
++
++  // client side ---------------------------------------------------------------------------------
++
++  send(data: string): void {
++    if (this.readyState !== SOCKET_STATES.OPEN)
++      throw new Error("send on a socket that is not open");
++    this.sent.push(data);
++    this.onClientFrame?.(data);
++  }
++
++  close(code?: number, reason?: string): void {
++    if (this.readyState === SOCKET_STATES.CLOSED) return;
++    this.clientClose = { code, reason };
++    this.readyState = SOCKET_STATES.CLOSED;
++    this.onClientGone?.();
++    this.onclose?.(closeEvent(code ?? 1005, reason ?? "", true));
++  }
++
++  // server side ---------------------------------------------------------------------------------
++
++  /** Complete the handshake. */
++  accept(): void {
++    if (this.readyState !== SOCKET_STATES.CONNECTING) return;
++    this.readyState = SOCKET_STATES.OPEN;
++    this.onopen?.({ type: "open" } as Event);
++  }
++
++  /** PTY output as a binary frame. */
++  emit(data: string | Uint8Array): void {
++    if (this.readyState !== SOCKET_STATES.OPEN) return;
++    this.onmessage?.(messageEvent(asBuffer(data)));
++  }
++
++  /** A text frame (control frames, red error text, feed events). */
++  emitText(text: string): void {
++    if (this.readyState !== SOCKET_STATES.OPEN) return;
++    this.onmessage?.(messageEvent(text));
++  }
++
++  /** The server closes the socket with `code`. */
++  serverClose(code: number, reason = "", wasClean = true): void {
++    if (this.readyState === SOCKET_STATES.CLOSED) return;
++    this.serverCloseCode = code;
++    this.readyState = SOCKET_STATES.CLOSED;
++    this.onClientGone?.();
++    this.onclose?.(closeEvent(code, reason, wasClean));
++  }
++
++  /** The connection died without a close frame (network loss): 1006, not clean. */
++  drop(): void {
++    this.serverClose(1006, "", false);
++  }
++
++  /** Frames the client sent that were not resize escapes. */
++  input(): string[] {
++    return this.sent.filter((frame) => !RESIZE.test(frame));
++  }
++
++  /** Sizes the client reported, in order. */
++  resizes(): Array<{ cols: number; rows: number }> {
++    const out: Array<{ cols: number; rows: number }> = [];
++    for (const frame of this.sent) {
++      const found = RESIZE.exec(frame);
++      if (found) out.push({ cols: Number(found[1]), rows: Number(found[2]) });
++    }
++    return out;
++  }
++}
++
++/** One PTY: its output ring and the socket watching it. */
++export class FakePty {
++  ring = "";
++  viewer: FakeSocket | null = null;
++  readonly typed: string[] = [];
++  alive = true;
++  readonly key: string | null;
++  readonly spawnedBy: FakeSocket;
++
++  constructor(key: string | null, spawnedBy: FakeSocket) {
++    this.key = key;
++    this.spawnedBy = spawnedBy;
++  }
++
++  /** The child wrote `text`: kept in the ring, forwarded to the viewer. */
++  output(text: string): void {
++    this.ring += text;
++    this.viewer?.emit(text);
++  }
++
++  /** The child exited: the viewer is told 4410. */
++  exit(): void {
++    this.alive = false;
++    this.viewer?.serverClose(4410, "the chat process exited");
++    this.viewer = null;
++  }
++}
++
++export interface FakeServerOptions {
++  /** Complete handshakes on their own (on a microtask); default true. */
++  autoAccept?: boolean;
++}
++
++export class FakePtyServer {
++  readonly sockets: FakeSocket[] = [];
++  readonly ptys: FakePty[] = [];
++  /** Channel → the session its last PTY reported (the active-session file). */
++  readonly channelFiles = new Map<string, string>();
++  readonly #keepAlive = new Map<string, FakePty>();
++  readonly #subscribers = new Map<string, Set<FakeSocket>>();
++  autoAccept: boolean;
++
++  constructor(options: FakeServerOptions = {}) {
++    this.autoAccept = options.autoAccept ?? true;
++  }
++
++  /** Use as the socket factory: `new WebSocket(url, protocols)`. */
++  readonly dial = (url: string, protocols: string[]): FakeSocket => {
++    const socket = new FakeSocket(url, protocols);
++    this.sockets.push(socket);
++    if (this.autoAccept) queueMicrotask(() => this.accept(socket));
++    return socket;
++  };
++
++  /** Sockets dialled to `path`, oldest first. */
++  socketsAt(path: string): FakeSocket[] {
++    return this.sockets.filter((socket) => socket.path === path);
++  }
++
++  /** The newest socket dialled to `path`. */
++  last(path = "/api/pty"): FakeSocket {
++    const found = this.socketsAt(path).at(-1);
++    if (!found) throw new Error(`no socket dialled to ${path}`);
++    return found;
++  }
++
++  /** The PTY the newest `/api/pty` socket is watching. */
++  pty(): FakePty {
++    const socket = this.last("/api/pty");
++    const found = this.ptys.find((pty) => pty.viewer === socket);
++    if (!found) throw new Error("the newest PTY socket watches no PTY");
++    return found;
++  }
++
++  /** Publish one frame to every `/api/events` subscriber of `channel`. */
++  publish(channel: string, frame: unknown): number {
++    const text = typeof frame === "string" ? frame : JSON.stringify(frame);
++    const subs = [...(this.#subscribers.get(channel) ?? [])];
++    for (const socket of subs) socket.emitText(text);
++    return subs.length;
++  }
++
++  /** Accept `socket` and run the route behind its path. */
++  accept(socket: FakeSocket): void {
++    if (socket.readyState !== SOCKET_STATES.CONNECTING) return;
++    socket.accept();
++    if (!this.#authorised(socket)) {
++      socket.serverClose(4401, "credential refused");
++      return;
++    }
++    if (socket.path.endsWith("/api/pty")) this.#servePty(socket);
++    else if (socket.path.endsWith("/api/events")) this.#serveEvents(socket);
++  }
++
++  #authorised(socket: FakeSocket): boolean {
++    for (const name of ["token", "ticket", "internal"]) {
++      if (socket.query.has(name)) return false;
++    }
++    return socket.protocols.includes(PROTOCOL) && socket.credential() !== null;
++  }
++
++  #servePty(socket: FakeSocket): void {
++    const query = socket.query;
++    const fresh = ["1", "true", "yes", "on"].includes((query.get("fresh") ?? "").toLowerCase());
++    const explicit = fresh ? "" : (query.get("resume") ?? "").trim();
++    const channelRaw = query.get("channel") ?? "";
++    const channel = CHANNEL.test(channelRaw) ? channelRaw : null;
++    if (channel && fresh) this.channelFiles.delete(channel);
++    if (channel && !explicit && !fresh) {
++      const remembered = this.channelFiles.get(channel);
++      if (remembered) socket.emitText(JSON.stringify({ type: "resume", id: remembered }));
++    }
++
++    const token = (query.get("attach") ?? "").trim();
++    let pty: FakePty;
++    if (!token) {
++      pty = new FakePty(null, socket);
++      this.ptys.push(pty);
++      pty.viewer = socket;
++      socket.onClientGone = () => {
++        pty.viewer = null;
++        pty.alive = false;
++      };
++    } else {
++      const key = `${token}\u0000${query.get("profile") ?? ""}\u0000${explicit}`;
++      for (const [other, stale] of this.#keepAlive) {
++        if (other !== key && other.startsWith(`${token}\u0000`)) {
++          this.#keepAlive.delete(other);
++          stale.viewer?.serverClose(4409, "opened in another tab");
++          stale.viewer = null;
++          stale.alive = false;
++        }
++      }
++      const existing = this.#keepAlive.get(key);
++      if (existing?.alive) {
++        pty = existing;
++        const old = pty.viewer;
++        if (old && old !== socket) old.serverClose(4409, "opened in another tab");
++        pty.viewer = socket;
++        if (pty.ring) socket.emit(pty.ring);
++        socket.emit(REDRAW);
++      } else {
++        pty = new FakePty(key, socket);
++        this.ptys.push(pty);
++        this.#keepAlive.set(key, pty);
++        pty.viewer = socket;
++      }
++      socket.onClientGone = () => {
++        if (pty.viewer === socket) pty.viewer = null; // detach only
++      };
++    }
++    socket.onClientFrame = (data) => {
++      if (!RESIZE.test(data)) pty.typed.push(data);
++    };
++  }
++
++  #serveEvents(socket: FakeSocket): void {
++    const channel = socket.query.get("channel") ?? "";
++    if (!CHANNEL.test(channel)) {
++      socket.serverClose(4400, "bad channel");
++      return;
++    }
++    const subs = this.#subscribers.get(channel) ?? new Set<FakeSocket>();
++    subs.add(socket);
++    this.#subscribers.set(channel, subs);
++    socket.onClientGone = () => {
++      subs.delete(socket);
++      if (subs.size === 0) this.#subscribers.delete(channel);
++    };
++  }
++}
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 341de45..0b1a465 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1581,7 +1581,10 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/contract/web/test_pty_route.py::test_reattach_supersedes_replays_and_redraws`
+   - `tests/contract/web/test_events_fanout.py::test_a_child_s_three_events_reach_both_subscribers`
+   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
+-  - Review: the xterm host and the M6 browser run (P18-30)
++  - `apps/web/src/chat/ChatRail.test.tsx::lists recent chats and a click resumes in place with a new PTY URL`
++  - `apps/web/src/chat/ChatRail.test.tsx::shows the configured model until the feed names the model answering`
++  - `apps/web/src/chat/ptySocket.test.ts::a redial with the same token reattaches the PTY: ring replayed, then a redraw`
++  - Review: the M6 browser run against a real dashboard and daemon (P18-30)
+ - **ACC-L5-1** Config page from a schema; Keys page with redacted previews
+   - Review: not yet planned (phase TBD)
+   - `apps/web/src/pages/ConfigPage.test.tsx::renders the right control for each schema type, grouped by category`
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index 0dc5005..f2e67b7 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -1112,6 +1112,9 @@ Checked by `python -m tooling.checks traps`.
+   - Review: not yet planned (P00-guards)
+   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
+   - `apps/web/src/App.test.tsx::does not mount the chat host before the first visit`
++  - `apps/web/src/chat/ChatRail.test.tsx::a rail that throws leaves the terminal mounted and connected`
++  - `apps/web/src/chat/ChatRail.test.tsx::a 4403 on the feed shows the reload notice and the terminal stays open`
++  - `apps/web/src/chat/ChatRail.test.tsx::the reasoning picker types the TUI's own command`
+ - **R09.2** WebSocket auth differs from REST auth
+   - Review: not yet planned (P00-guards)
+   - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_subprotocol_is_accepted_once`
+@@ -1157,13 +1160,19 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/contract/web/test_pty_route.py::test_reattach_supersedes_replays_and_redraws`
+   - `tests/contract/web/test_pty_route.py::test_resize_frames_are_applied_never_written`
+   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
+-  - Review: the client half (hidden chat host, Web Lock, 20 s keepalive) (P18-26)
++  - `apps/web/src/chat/attachToken.test.ts::a duplicated tab (same storage copy, lock held by the first) mints its own`
++  - `apps/web/src/chat/ptySocket.test.ts::a redial with the same token reattaches the PTY: ring replayed, then a redraw`
++  - `apps/web/src/chat/ptySocket.test.ts::another socket with the same key supersedes this one (4409, quiet, no retry)`
++  - `apps/web/src/chat/ptySocket.test.ts::sends a keep-alive after 20 s of silence only`
++  - `apps/web/src/chat/ptySocket.test.ts::parks while hidden or on another page and dials once when back, throttled to 1 s`
+ - **R09.7** Resize escape is in-band
+   - `tests/unit/web/pty/test_resize.py::test_only_an_exact_frame_is_a_resize`
+   - `tests/unit/web/pty/test_resize.py::test_sizes_are_clamped`
+   - `tests/contract/web/test_pty_route.py::test_a_real_child_never_sees_the_resize_escape`
+ - **R09.8** Resume replay garbage
+-  - Review: not yet planned (P00-guards)
++  - `apps/web/src/chat/resumeSanitizer.test.ts::folds 80 blank lines into one inside the 30 s window and not after`
++  - `apps/web/src/chat/resumeSanitizer.test.ts::collects a flood split across frames, CR and LF split too`
++  - `apps/web/src/chat/ptySocket.test.ts::an announced resume reports the id and sanitises for 30 s`
+ - **R09.9** ACP history replay must finish before the load/resume response
+   - `tests/contract/acp/test_session_load.py::test_the_whole_history_streams_before_the_response`
+   - `tests/contract/acp/test_session_new.py::test_the_response_frame_comes_before_the_post_attach_updates`
+diff --git a/docs/notes/P18/chat-host.md b/docs/notes/P18/chat-host.md
+new file mode 100644
+index 0000000..96213f5
+--- /dev/null
++++ b/docs/notes/P18/chat-host.md
+@@ -0,0 +1,143 @@
++# Task: Chat host — xterm over `/api/pty` (P18-26) Phase: 18 Owner: builder P2 (wave 32)
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `web/src/pages/ChatPage.tsx` (module header,
++imports, the connect effect: ticket phase, `onopen`, `onmessage`, `onclose`), `web/src/lib/pty-reconnect.ts`,
++`web/src/lib/pty-resume-sanitizer.ts`, `web/src/lib/pty-attach-token.ts`, `web/src/lib/pty-close-copy.ts`,
++`web/src/lib/pty-composition.ts`, `web/src/lib/chat-channel-id.ts`, `web/src/lib/xterm-webgl-gating.ts` (probe
++part). Our side: `src/indus/web/ws/{pty_route,chat_gate,events_fanout}.py`, `src/indus/web/pty/{registry,
++resize,channels}.py`, `apps/web/src/lib/wsUrl.ts`, `apps/web/src/shell/ChatHostSlot.tsx`, `docs/notes/P18/
++{pty-registry,chat-ws-routes,spa-shell,rest-client}.md`, P18 LEAD-NOTES landing sections.
++Evidence: none (prework against an in-memory fake PTY server; no capture of the running reference).
++
++What it does (own words): the Chat tab is the real TUI (`indus --tui`) running in a PTY on the
++dashboard host, drawn in the browser by xterm.js over the `/api/pty` WebSocket. The host is mounted
++once (P18-17's slot) and only hidden on other tabs. Each mount picks its own channel id
++(`chat-<uuid>`), which ties the PTY child to the right rail's event feed. Each browser tab has an
++attach token in session storage (`indus.pty.token.chat`) that it claims with a Web Lock
++(`indus.pty.attach.<token>`); a duplicated tab finds the lock held and mints its own token, so it
++gets its own PTY instead of stealing the first tab's (the server closes a superseded socket 4409).
++"Start new session" rotates the token so the old keep-alive PTY is not reattached. Each dial carries
++`channel`, `attach`, `resume` (when one is asked for), `profile` (the switcher's selection), `cwd`
++(the picked workspace, only for a fresh chat) and `fresh=1` (only on the first dial of a "new chat");
++the credential rides only in the subprotocol list (`wsUrl.ts`). The socket has 8 s from the start of
++the dial (ticket fetch included) to open, else the attempt counts as failed. On open the client sends
++the in-band resize escape at once, again after two animation frames and once more when fonts have
++loaded, and then every 20 s of silence as a keep-alive. For 30 s after a resume (explicit, or the
++server's `{type:"resume"}` announcement) the output is sanitised: erase-line/erase-char sequences are
++dropped and runs of 50+ blank lines become one (R09.8). Close codes decide what the person sees.
++
++Inputs → outputs: window globals (token, base path, gated flag), `?resume=` on `/chat`, the profile
++switcher, the rail's workspace / resume / new-chat actions → one PTY socket at a time; terminal bytes
++in xterm; overlays and banners; keystrokes and resize frames out.
++
++Files: `apps/web/src/chat/{ChatHost.tsx,ptySocket.ts,attachToken.ts,resumeSanitizer.ts,reconnect.ts,
++terminal.ts}`, tests `apps/web/src/chat/{ptySocket,resumeSanitizer,attachToken}.test.ts`,
++`apps/web/src/testing/fakePtyServer.ts`; shared: `apps/web/src/main.tsx` (one line: pass the lazy host),
++`apps/web/package.json` + `pnpm-lock.yaml` (xterm packages).
++
++Edge cases / failure modes:
++- Close codes: 4401 in loopback → reload the page once (same session-storage guard the REST client uses,
++  cleared by the next 2xx); 4401 again, or in gated mode → "login expired, reload" copy. 1011 → "could
++  not start" overlay (the server printed the reason in red in the terminal) with "Try again". 4410 →
++  "session ended" overlay with "Start new session". 4409 → quiet (a short muted line, no overlay, no
++  retry). 4403 / 4404 / 4408 → explanatory copy. 1012 / 1013 / 1001 / 1006 / any unclean close →
++  reconnect 250, 500, 1,000, 2,000, 3,000 ms, then stop with a "lost connection" overlay and a manual
++  Reconnect button. A clean 1000 counts as the session ending.
++- Reconnect never runs while the tab is hidden or the host is on another page: the connection parks
++  ("paused") and starts one attempt when the page is visible and on `/chat` again, at most once per
++  second however many visibility/focus/online events arrive. A stopped ladder only restarts by hand.
++- Typing while not connected is refused with one notice per outage (never queued into a socket that
++  will replay old keystrokes).
++- A ticket fetch that hangs or fails, or a socket stuck in CONNECTING, is caught by the 8 s deadline and
++  routed into the ordinary ladder.
++- Reconnects reuse the first dial's query minus `fresh` (repeating `fresh` would wipe the channel's
++  session file again); a learned implicit resume id is not added, so the keep-alive key stays the same
++  and the server reattaches the same PTY (ring replay + Ctrl-L redraw).
++- Sanitiser state across frames: a partial CSI at a frame end is held back, as is a trailing newline
++  run (and a newline run just before a held partial escape, so erase codes inside a flood do not split
++  it); erase codes are removed before blank runs are collapsed. When the window ends the held text is
++  released; a held partial escape then goes out with the next frame. On close a held partial escape is
++  dropped (it would wedge the parser of the next stream).
++- WebGL: off for software rasterisers (llvmpipe, SwiftShader, softpipe, "software") and when no context
++  can be made; the addon is disposed while the host is hidden or the tab is in the background and loaded
++  again on return (browsers cap live GL contexts); a context loss falls back to the DOM renderer.
++- Mobile: the bottom inset follows `visualViewport` so the soft keyboard does not cover the prompt; a
++  composition commit that xterm did not deliver through `onData` is forwarded once (duplicates within a
++  short window dropped); one-finger touch drags scroll the terminal.
++- SGR mouse reports are never forwarded (the server already turns TUI mouse reporting off).
++- Web Locks missing → session storage alone; storage blocked → a fresh token per document.
++
++Our design differences / decisions:
++- Framework-free `PtyConnection` (ptySocket.ts) owns the socket, ladder, deadline, keep-alive and
++  sanitiser; `ChatHost` only wires it to xterm and React state. Every browser seam (socket factory,
++  dial target, animation frame, fonts, reload, visibility) is a dependency, so tests run on fake timers.
++- Keep-alive fires only after 20 s with no frame in either direction (the row's "while quiet"), not on a
++  fixed interval.
++- The sanitiser's whole filter (erase codes and blank runs) is bounded to the 30 s window, as our row
++  says; after it the stream passes untouched.
++- The attach-token keeper releases the lock of a token it rotated away from.
++- Copy is ours; close codes never appear in text (they go to the console).
++
++Tests we will write:
++- ptySocket: query and subprotocols (no credential in URL, cwd only fresh, fresh only first dial); resize
++  before first output, after two frames and after fonts; keep-alive at 20 s only when quiet; ladder
++  250/500/1,000/2,000/3,000 then stop; hidden pauses and visible resumes (throttled); input refused with a
++  notice while reconnecting; each close code's verdict; 8 s deadline for a stuck socket and a hung ticket;
++  implicit resume frame starts the sanitiser; keep-alive registry semantics against the fake server
++  (reattach replays the ring + `\x0c`; a second tab with the same token supersedes the first, 4409 quiet;
++  child exit 4410).
++- resumeSanitizer: 80 blank lines collapse to one within 30 s and not after; erase codes dropped within,
++  kept after; split CSI and split CRLF across frames; end drops a partial escape.
++- attachToken: stored under `indus.pty.token.chat`; reused in the same document; lock held by another
++  document mints a new token; rotate mints and frees the old lock; no Web Locks; storage throwing.
++
++## Decisions for the lead
++- 4409 "quiet" is shown as one muted status line ("this terminal moved to another tab") with no overlay
++  and no retry. Easy to drop to nothing.
++- The 30 s sanitiser window covers blank-run collapsing too (row text), unlike a filter that collapses
++  forever; change `ResumeSanitizer.feed` if blank floods outside a resume ever show up.
++- Clean 1000 close is treated as "session ended" (start-new overlay), not a reconnect.
++- The TUI (TS) side of the event feed — reading `INDUS_TUI_SIDECAR_URL` / `INDUS_TUI_SIDECAR_CREDENTIAL`
++  and publishing to `/api/pub` — is not built yet (TUI owner; LEAD-NOTES follow-up). Until it is, the rail
++  shows the configured model and no live data.
++
++Compare checklist (filled after the rewrite; reopened `web/src/pages/ChatPage.tsx` connect effect, `onclose`
++and input forwarding, `web/src/lib/pty-reconnect.ts`, `pty-resume-sanitizer.ts`, `pty-attach-token.ts`,
++`pty-close-copy.ts`, `pty-composition.ts`):
++- [x] Ladder 250 → 3,000 ms, 5 attempts, then stop with a manual reconnect (test: `ptySocket.test.ts::retries
++  250, 500, 1000, 2000, 3000 ms and then stops`)
++- [x] No redial while hidden or off the page; page-return events (visibility, focus, online, pageshow) dial once,
++  1 s throttle; a stopped ladder is not restarted by them (test: `ptySocket.test.ts::parks while hidden or on
++  another page and dials once when back, throttled to 1 s`)
++- [x] The ticket phase is covered by the open budget (tests: `ptySocket.test.ts::gives a stuck handshake 8 s, then
++  counts it as a failed attempt`, `::gives a ticket that never arrives 8 s, and a late ticket opens nothing`)
++- [x] Resize at once, after two frames, after fonts; keep-alive (tests: `ptySocket.test.ts::sends the size at once,
++  after two animation frames and after fonts load, before any output`, `::sends a keep-alive after 20 s of silence
++  only`)
++- [x] Implicit resume control frame starts the replay handling (test: `ptySocket.test.ts::an announced resume reports
++  the id and sanitises for 30 s`)
++- [x] Close-code table 4401 (reload once / gated) / 4403 / 4404 / 4408 / 1011 / 4410 / 4409 / 1001 / 1012 / 1013 /
++  unclean / clean 1000 (tests: `ptySocket.test.ts` "close codes" group)
++- [x] Attach token + Web Lock, duplicate tab mints its own, rotate on a fresh start (tests: `attachToken.test.ts`)
++- [x] Sanitiser buffers a partial CSI and newline runs across frames; a partial escape is dropped at close (tests:
++  `resumeSanitizer.test.ts`)
++- [x] Input refused while not open, one notice per outage; SGR mouse reports never forwarded (test:
++  `ptySocket.test.ts::refuses input while reconnecting, with one notice per outage`)
++- [x] Composition commit forwarded once when xterm did not deliver it, echoes dropped (`terminal.ts`
++  `CompositionGuard`)
++- Deliberate differences: (1) the reference gives the ticket phase and the CONNECTING phase 8 s each; we give the
++  whole dial one 8 s budget (row: "socket must open within 8,000 ms"). (2) The reference sends its keep-alive on a
++  fixed 20 s interval; ours only after 20 s of silence (row: "while quiet"). (3) The reference keeps collapsing
++  blank floods after its window and strips erase codes after collapsing; we bound both to the 30 s window (row
++  text) and strip first, so floods with erase codes inside still fold. (4) After 4409 the reference may redial on
++  the next page-return event and take the terminal back; ours stays put and offers "Use it here" (row: "4409 →
++  quiet"). (5) The input-refused notice is a host line, not text written into the terminal. (6) We free the Web
++  Lock of a rotated token.
++- Not taken: the resume "loading" overlay, the `?learn=` seed, plugin slots, keyboard shortcut remaps, Android
++  replacement-input normalisation, font-tier sizing, scroll pinning during replay, Safari/complex-script WebGL
++  heuristics beyond the software-renderer gate — not in our row; candidates for the P18-30 parity review.
++
++## Status
++
++Done (2026-10-20) as prework against the fake PTY server; real-server E2E is P18-30. Shared edits:
++`apps/web/src/main.tsx` (lazy host), `apps/web/package.json` / `pnpm-lock.yaml` (five xterm packages).
+diff --git a/docs/notes/P18/chat-rail.md b/docs/notes/P18/chat-rail.md
+new file mode 100644
+index 0000000..e0802ef
+--- /dev/null
++++ b/docs/notes/P18/chat-rail.md
+@@ -0,0 +1,98 @@
++# Task: Chat right rail (P18-27) Phase: 18 Owner: builder P2 (wave 32)
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `web/src/components/ChatSidebar.tsx` (header
++comment, the two sockets, imports), `web/src/lib/events-reconnect.ts`, `web/src/lib/eventsFeedClient.ts`.
++Our side: `src/indus/web/ws/events_fanout.py` (`/api/events` subscriber contract), `src/indus/web/ws/
++rpc_sidecar.py`, `src/indus/web/routes/{models,files,sessions}.py`, `packages/protocol/src/generated/
++{catalog,types}.ts` (event names, `SessionInfo`, `MessageComplete`), `apps/tui/src/slash/localCommands.ts`
++(`/reasoning`, `/image`), `apps/tui/src/pickers/modelPickerState.ts` (effort words).
++Evidence: none (prework against the fake WS server and the typed REST mock).
++
++What it does (own words): beside the terminal, a rail shows what the terminal cannot: which model is
++answering, the profile's recent sessions to jump between, where a new chat will start, the reasoning
++effort, a copy button for the last answer and an image drop/paste target. It listens to the chat's
++event feed (`/api/events?channel=<the host's channel>`), which the backend fans out from the PTY
++child. The model badge prefers the model named by the feed's latest `session.info` (the model really
++answering, which a provider fallback can change) and otherwise shows the configured model from
++`GET /api/model/info`. The rail never talks to the chat itself except by typing into the terminal the
++same slash commands a person would (`/reasoning <level>`, `/image <path>`), so there is still one chat
++implementation (R09.1). Anything the rail does can fail without touching the terminal: it sits in an
++error boundary, its sockets and queries are its own, and its notices stay inside it. On screens
++narrower than 1,024 px it folds into a slide-over opened from a "Details" button.
++
++Inputs → outputs: feed frames (protocol events, or JSON-RPC notifications whose method is the event
++type), `/api/model/info`, `/api/sessions?order=recent`, `/api/files` + `/api/files/upload`, local
++storage → badge, session list, workspace choice for the next new chat, keystrokes into the PTY.
++
++Files: `apps/web/src/chat/{ChatRail.tsx,eventsFeed.ts}`, tests `apps/web/src/chat/{eventsFeed.test.ts,
++ChatRail.test.tsx}`.
++
++Edge cases / failure modes:
++- Feed reconnect: 1 s, 2 s, 4 s … capped at 30 s, at most 15 attempts, then stop with a "reconnect or
++  reload" notice and a Reconnect button; the counter resets after an open. Each attempt (ticket fetch
++  plus handshake) has 15 s. 4401 / 4403 stop at once with "your login expired, reload the page"; 4400
++  (bad channel) stops quietly. Frames that are not JSON objects with an event type are ignored.
++- Session list: title, else preview, else the id; relative time of last activity; message count;
++  source. A click resumes that session in the same terminal (new PTY URL with `resume=<id>`); "New
++  chat" starts fresh (new attach token, `fresh=1`, picked workspace as `cwd`); Refresh refetches.
++- Workspace: remembered per profile in local storage (selection and a most-recent-first list of up to 8
++  paths), plus the live session's folder from `session.info`; "Other path…" takes an absolute path
++  (relative input refused in the form; the server refuses a missing folder with red text + 1011). It
++  only applies to the next new chat.
++- Reasoning picker: minimal / low / medium / high / extra high / off; shows the live level from
++  `session.info`; refused with a notice while the terminal is not connected.
++- Copy last answer: the text of the latest `message.complete`; disabled until there is one; clipboard
++  failure shows a notice.
++- Image paste/drop: images only; uploaded through the Files API to `<files root>/indus-chat-uploads/
++  <time>-<safe name>`, then `/image <path>` is typed into the terminal; failures show in the rail.
++
++Our design differences / decisions:
++- The rail drives reasoning effort and image attachment through the TUI's own slash commands instead of
++  a second RPC path, so the terminal shows the result exactly as the TUI does.
++- No model picker in the rail (the Models page, P18-24, owns model changes).
++- The JSON-RPC sidecar (`/api/ws`) is not used by the rail yet: nothing in our row needs connection
++  state beyond the feed and the PTY phase.
++
++Tests we will write:
++- eventsFeed: URL has the channel and no credential; delays 1 s → 30 s; stops after 15 attempts; 4401 and
++  4403 stop with the reload notice; 15 s connect timeout counts as a failed attempt; open resets the
++  counter; frame parsing (event object, JSON-RPC notification, junk).
++- ChatRail (with ChatHost, fake terminal, fake WS server, typed REST mock): badge from `session.info`
++  beats the configured model; configured model when the feed is silent; a session click redials the PTY
++  with `resume=<id>`; New chat dials with `fresh=1`, a new attach token and the remembered workspace as
++  `cwd`; a throwing rail leaves the terminal mounted; a 4403 feed close shows the reload notice;
++  reasoning picker types `/reasoning high`; copy last answer.
++
++## Decisions for the lead
++- "Projects + discovered git repos" for the workspace picker need a backend list route that does not
++  exist in the generated route list (no `/api/projects` or repo discovery in P18-11..16). The picker
++  offers remembered paths, the live session's folder and "Other path…" today; add the route and feed it
++  into `workspaceOptions` (ChatRail.tsx) as a follow-up.
++- Uploaded chat images go to `indus-chat-uploads/` under the Files root (the user's home, or the locked
++  root); nothing cleans them up yet.
++- Feed frames: the TUI publisher does not exist yet; the rail accepts both a bare protocol event
++  (`{type, …}`) and a JSON-RPC notification (`{method, params}`), so whichever the TUI owner picks works.
++
++Compare checklist (filled after the rewrite; reopened `web/src/components/ChatSidebar.tsx` header and
++sockets, `web/src/lib/events-reconnect.ts`, `web/src/lib/eventsFeedClient.ts`):
++- [x] Feed backoff 1 s → 30 s, 15 attempts, 15 s connect budget incl. ticket (tests: `eventsFeed.test.ts::waits
++  1 s, 2 s, 4 s … capped at 30 s and stops after 15 attempts`, `::gives each attempt 15 s, a hung ticket included`)
++- [x] 4401/4403 terminal with a reload notice (tests: `eventsFeed.test.ts::stops at %i with the reload notice`,
++  `ChatRail.test.tsx::a 4403 on the feed shows the reload notice and the terminal stays open`)
++- [x] Model badge: live `session.info` first, configured model second (tests: `ChatRail.test.tsx::shows the
++  configured model until the feed names the model answering`, `::says so when no model is configured and the feed
++  is silent`)
++- [x] Rail failures never reach the terminal (test: `ChatRail.test.tsx::a rail that throws leaves the terminal
++  mounted and connected`)
++- [x] Session click resumes in place, same attach token and channel (test: `ChatRail.test.tsx::lists recent chats and
++  a click resumes in place with a new PTY URL`)
++- Deliberate differences: the reference retries the feed on every code but 1000/4401/4403; we also stop
++  on 4400 (a bad channel id never heals) and retry 1000. The reference's model picker and reload prompt
++  live in its sidebar; ours stay on the Models page.
++- Not taken: the JSON-RPC sidecar badge and credential warnings, the flap guard that refills the budget
++  only after 10 s of uptime (an open resets our counter at once) — candidates for P18-30.
++
++## Status
++
++Done (2026-10-20) as prework against the fake WS server and REST mock; workspace discovery route is a
++follow-up (above).
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 0974c1f..f20c13b 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -182,6 +182,8 @@ importers:
+         specifier: 5.0.3
+         version: 5.0.3(@types/node@24.19.1)(jsdom@29.1.1)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0))
+ 
++  apps/photon-sidecar: {}
++
+   apps/tui:
+     dependencies:
+       '@indus/client':
+@@ -228,6 +230,21 @@ importers:
+       '@tanstack/react-query':
+         specifier: 5.104.1
+         version: 5.104.1(react@19.3.0)
++      '@xterm/addon-fit':
++        specifier: 0.11.0
++        version: 0.11.0
++      '@xterm/addon-unicode11':
++        specifier: 0.9.0
++        version: 0.9.0
++      '@xterm/addon-web-links':
++        specifier: 0.12.0
++        version: 0.12.0
++      '@xterm/addon-webgl':
++        specifier: 0.19.0
++        version: 0.19.0
++      '@xterm/xterm':
++        specifier: 6.0.0
++        version: 6.0.0
+       react:
+         specifier: 19.3.0
+         version: 19.3.0
+@@ -877,9 +894,24 @@ packages:
+   '@vitest/spy@5.0.3':
+     resolution: {integrity: sha512-XhFysQTB8AZ+P4gMi+Lpo99vg2AZi0qKpaB9yXQl37+CaMEAPO3iH/wGVnSyL5MPERiLezpqTVtrR6UZH5GCXg==}
+ 
++  '@xterm/addon-fit@0.11.0':
++    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
++
++  '@xterm/addon-unicode11@0.9.0':
++    resolution: {integrity: sha512-FxDnYcyuXhNl+XSqGZL/t0U9eiNb/q3EWT5rYkQT/zuig8Gz/VagnQANKHdDWFM2lTMk9ly0EFQxxxtZUoRetw==}
++
++  '@xterm/addon-web-links@0.12.0':
++    resolution: {integrity: sha512-4Smom3RPyVp7ZMYOYDoC/9eGJJJqYhnPLGGqJ6wOBfB8VxPViJNSKdgRYb8NpaM6YSelEKbA2SStD7lGyqaobw==}
++
++  '@xterm/addon-webgl@0.19.0':
++    resolution: {integrity: sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==}
++
+   '@xterm/headless@6.0.0':
+     resolution: {integrity: sha512-5Yj1QINYCyzrZtf8OFIHi47iQtI+0qYFPHmouEfG8dHNxbZ9Tb9YGSuLcsEwj9Z+OL75GJqPyJbyoFer80a2Hw==}
+ 
++  '@xterm/xterm@6.0.0':
++    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
++
+   ansi-escapes@7.3.0:
+     resolution: {integrity: sha512-BvU8nYgGQBxcmMuEeUEmNTvrMVjJNSH7RgW24vXexN4Ven6qCvy4TntnvlnwnMLTVlcRQQdbRY8NKnaIoeWDNg==}
+     engines: {node: '>=18'}
+@@ -2095,8 +2127,18 @@ snapshots:
+ 
+   '@vitest/spy@5.0.3': {}
+ 
++  '@xterm/addon-fit@0.11.0': {}
++
++  '@xterm/addon-unicode11@0.9.0': {}
++
++  '@xterm/addon-web-links@0.12.0': {}
++
++  '@xterm/addon-webgl@0.19.0': {}
++
+   '@xterm/headless@6.0.0': {}
+ 
++  '@xterm/xterm@6.0.0': {}
++
+   ansi-escapes@7.3.0:
+     dependencies:
+       environment: 1.1.0
