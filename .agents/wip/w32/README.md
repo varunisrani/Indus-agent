@@ -1,5 +1,25 @@
 # Wave 32 parked patches (P18-23..29; lead: Agent 2) — base 0aac95d
 
+## w32-p1.patch: P18-23 Channels / Webhooks / Pairing pages, P18-24 Profiles / builder / Models pages, P18-25 System page + status strip + banners — done
+- Builder checks: apps/web vitest 158 passed (23 files); pnpm lint / fmt:check / -r typecheck clean; tooling.checks ok
+  (similarity 0). No Python, no packages, lock unchanged.
+- New: apps/web/src/pages/{Channels,Webhooks,Pairing,Profiles,ProfileBuilder,Models,System}Page.tsx + tests,
+  pages/profiles/profileName.ts, pages/system/{Machine,Credential,Operation}Sections.tsx, shell/{StatusStrip,
+  PressureBanner}.tsx (+tests), shell/shellStatus.ts, ui/{ActionLog,CopyButton}.tsx, lib/api.admin.test.ts (every new call
+  matches the generated route list and its scoped flag), notes docs/notes/P18/page-{channels,profiles-models,system}.md.
+- Shared: lib/restTypes.ts, lib/api.ts (profile, actions, daemon, messaging, pairing, webhooks, model, providerLogin, system
+  groups; forProfile; saveAttachment; optional profile on skills/mcp), testing/mockApi.ts, shell/routes.ts (seven pending rows
+  → real pages; chat stays page: null), shell/ProfileScope.tsx (refresh()), App.tsx (status strip above sidebarFooter,
+  pressure banner) — CONFLICTS with w32-p3's main.tsx/AuthWidget sidebarFooter: keep both.
+- Decisions (number at integration): boot id = daemon pid from GET /api/daemon, suspected OOM restart = pid changed while the
+  last memory reading was critical ("may" wording; switch in shellStatus.useBootWatch if the heartbeat gains a boot id);
+  banner dismissals in sessionStorage indus.pressure.dismissed; restart banner mark sessionStorage
+  indus.channels.restart.<profile>; builder follow-up calls after create (partial result listed, not rolled back); action logs
+  poll 1 s, 400 lines.
+- Follow-ups: backup download has no download ticket (fetch + blob with the session header today); prompt-size breakdown
+  (D-16.622); builder lacks clone_all.
+- Env slip (lead's brief bug): /w32-p1-home, /pnpm-store, entries in /uv-cache at the filesystem root.
+
 ## w32-p2.patch: P18-26 chat host (xterm over /api/pty) + P18-27 chat right rail — done (P18-27's projects/repos list needs a backend route)
 - Builder checks: chat tests 68 passed; apps/web vitest 164 passed (18 files); pnpm lint / fmt:check / -r typecheck clean;
   tooling.checks ok; a scratch vite build ok (xterm chunk 474 kB < 600 kB). No Python.
