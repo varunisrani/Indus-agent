@@ -6,7 +6,7 @@
   "remaining_pct": 17,
   "resets_at": "2026-10-20T18:00:00+00:00",
   "last_check": "2026-10-20T15:41:00+00:00",
-  "current_step": "P17-23..27 integrator (verify16) only agent running; parked w28 E15-E17, w29 W1 W2 F1 A1; integrators after 18:00 reset",
-  "last_commit": "cfa6def",
-  "updated_at": "2026-10-20T14:58:00Z"
+  "current_step": "P17 landed (d1b05df); nothing running; P16 E15-E17 + P18 W1 W2 F1 + P19 A1 parked; integrators after 18:00 reset",
+  "last_commit": "d1b05df",
+  "updated_at": "2026-10-20T16:10:00Z"
 }

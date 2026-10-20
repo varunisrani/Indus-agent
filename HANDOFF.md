@@ -75,10 +75,6 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- Wave 28 builders (brief `.agents/wip/w28/brief.md`): L1 P17-23 idle exit (wt-w28l1), L2 P17-24 profile binding +
-  P17-25 protocol additions/codegen (wt-w28l2), L3 P17-26 dual-host matrix + P17-27 shared-backend demo (wt-w28l3).
-  L1, L2, L3 DONE, parked; P17-23..27 integrator running in scratchpad verify16 (brief
-  `.agents/wip/w28/l-integrator-brief.md`, D-16.540..559).
 - Wave 28 P16 builders (brief `.agents/wip/w28/brief-p16.md`): E15 P16-25 Photon (wt-w28e15), E16 P16-33 native
   streams + P16-34 Telegram topics/stickers (wt-w28e16), E17 P16-35 Discord voice + P16-36 adapter matrix/doctor (wt-w28e17).
   E15, E16, E17 DONE, parked. Next (after the 18:00 reset): one P16 integrator for E15+E16+E17 (D-16.560..579; re-lock
@@ -87,9 +83,10 @@ In flight:
 - Wave 29 (brief `.agents/wip/w29/brief.md`): W1 P18-01..06, W2 P18-07..10, F1 P18-17..22, A1 P19-01..07 all DONE and
   parked in `.agents/wip/w29/` (README lists wiring, decisions, and owed items: online re-lock for agent-client-protocol
   0.12.1, F1's pnpm-lock + new npm packages, W1/W2 gate join, WS credentials in query vs subprotocol, tests/fakes/daemon.py
-  shared by w28-l3 and w29-a1). Next: one P18 integrator (W1+W2+F1) and one P19 integrator (A1), after P17 lands.
+  shared by w28-l3 and w29-a1). Next: one P18 integrator (W1+W2+F1) and one P19 integrator (A1).
 - Later: P18-11..16, 23..30; P19-08..18; P20, P23, P24, P25.
-- Last landings: P16-02/03/07/19/21/22/30 WhatsApp bridge (no Baileys mapping), Matrix E2EE, Weixin, Yuanbao + tools,
+- Last landings: P17-23..27 idle exit, profile binding, protocol additions, dual-host matrix, shared-backend demo
+  (`d1b05df`; P17 COMPLETE; D-16.540..557; notes in LEAD-NOTES "P17-23..27 landing notes (integrator)"), P16-02/03/07/19/21/22/30 WhatsApp bridge (no Baileys mapping), Matrix E2EE, Weixin, Yuanbao + tools,
   Raft (`cfa6def`; D-16.524..539; notes in LEAD-NOTES "P16 wave 27 landing notes (integrator)"), P17-15..22 ensure/attach channel/remote session host, CLI + TUI attach by default, @indus/client WS
   transport, store ownership across processes, messaging on the shared host (`090479b`; ssh home-retry test fix at landing), P16-31/32 gateway setup wizard + per-platform target parsers (`8708c50`), P17-13/14 WebSocket attach endpoint + subscriptions (`8e91087`; wsproto into base deps), P16-14/15/24/28/29 Feishu + doc tools, BlueBubbles, SimpleX, Buzz (`19e9a77`), P16-11/12/13/16/17/18/20 Teams, Graph, Google Chat, DingTalk, WeCom ×2, QQ Bot (`6cc32b0`), P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
   test fixture that resets the process-exit fence), P16-04/10/23/26/27 WhatsApp Cloud/SMS/LINE/ntfy/IRC + per-platform lock keys (`4aa2c78`), P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
@@ -99,7 +96,7 @@ In flight:
   landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
   landing notes"), P15-01..18 (`c0e0201`), P21-01..11, 15 and P22-01..09 (`42a852e`).
-  Done: P00–P15, P21, P22 complete; P16 31/36; P17 22/27.
+  Done: P00–P15, P21, P22 complete; P16 31/36; P17 complete.
 Next: P15-33..36 — builders T/D/S (Telegram own Bot API client over httpx, no LGPL; Discord; Slack), each
 with `create_adapter(AdapterConfig)`, a send-only open for `indus send` and media fetchers; Demo 3 (P15-36)
 at integration. Builder brief: `.agents/wip/p15w4/brief.md`. Then P16, P17.
