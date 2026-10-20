@@ -75,12 +75,13 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- Wave 27 (from `ac389c3`, started 08:08 UTC 2026-10-20; brief `.agents/wip/w27/brief.md`), worktrees scratchpad
-  wt-w27{k6,k7,k8,k9,e11}: K6 = P17-15 ensure + 16 attach channel + 17 remote session host; K7 = P17-18 CLI attach +
-  21 store ownership; K8 = P17-19 TUI attach + 20 @indus/client WS transport; K9 = P17-22 messaging on the shared
-  host (DaemonSessionHost in the daemon + mount the WS endpoint); E11 = P16-31 setup helpers + 32 target parsers LANDED;
-  E12 = P16-07 Matrix E2EE + 19 Weixin; E13 = P16-02 WhatsApp Node bridge + 03 adapter (wt-w27e12/e13).
-  If paused, patches go in `.agents/wip/w27/`. Later: P17-23..27; P16-02/03, 07, 19, 21/22, 25, 30, 33–36.
+- P17-15..22 (K6 ensure/channel/remote host, K7 CLI attach + store ownership, K8 TUI attach + TS client, K9 messaging on
+  the shared host) all built; one integrator in scratchpad verify14 merges them with end-to-end attach tests (brief
+  `.agents/wip/w27/k-integrator-brief.md`, D-16.480..499). Patches + README in `.agents/wip/w27/`.
+- Builders E12 (P16-07 Matrix E2EE + 19 Weixin) and E13 (P16-02 WhatsApp Node bridge + 03 adapter) in scratchpad
+  wt-w27e12 / wt-w27e13. If paused, patches go in `.agents/wip/w27/`.
+- Later: P17-23..27 (idle exit, profile binding, protocol additions + codegen, dual-host matrix, demo); P16-21/22
+  (Yuanbao), 25 (Photon), 30 (Raft), 33–36.
 - Last landings: P16-31/32 gateway setup wizard + per-platform target parsers (`8708c50`), P17-13/14 WebSocket attach endpoint + subscriptions (`8e91087`; wsproto into base deps), P16-14/15/24/28/29 Feishu + doc tools, BlueBubbles, SimpleX, Buzz (`19e9a77`), P16-11/12/13/16/17/18/20 Teams, Graph, Google Chat, DingTalk, WeCom ×2, QQ Bot (`6cc32b0`), P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
   test fixture that resets the process-exit fence), P16-04/10/23/26/27 WhatsApp Cloud/SMS/LINE/ntfy/IRC + per-platform lock keys (`4aa2c78`), P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
   fix), P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
