@@ -132,3 +132,30 @@
   frequency limit; inbound media https Tencent hosts only; groups off by default; ECB vendor-mandated via cryptography.
 - Follow-ups: vodozemac engine; iLink names need a live check (P16-36); `indus send` into encrypted rooms via the daemon;
   Weixin QR login (P16-31).
+
+## w27-e14.patch: P16-21 Yuanbao adapter + P16-22 Yuanbao tools + P16-30 Raft wake bridge — done (base 846a142)
+- Builder checks: yuanbao + raft 66 passed / 1 skipped (real opener needs httpx-ws; passed with it); required set 690 passed;
+  wider gateway/cli/config/contract/tools 4882 passed; integration + e2e gateway 50 passed; ruff, pyright, lint-imports,
+  tooling.checks ok. No new packages; extra `yuanbao = ["httpx-ws==0.9.0"]` (re-lock metadata).
+- Stand-in: tests/unit/gateway/adapters/yuanbao/_stubs_e14.py (registry entries + hint texts + PENDING_PLATFORMS) — remove when
+  the rows land (see below).
+- Shared: schema rows platforms.yuanbao / raft; targets.py Yuanbao rule (group:<code> / direct:<account>, bare numbers refused);
+  gateway_setup STEPS for yuanbao/raft; conftest import; traps R02.25/R02.26/R06.3/R06.4/R06.24; ACC-K11-6, ACC-K12-11;
+  THIRD_PARTY_NOTICES + 00-layout httpx-ws/wsproto rows name yuanbao.
+- Wiring (core): BUILTIN_NAMES += yuanbao, raft (after buzz); registry
+  `replace(_chat_entry("yuanbao", "Yuanbao", sdk=("httpx_ws",), extra_name="yuanbao", required_env=("YUANBAO_APP_ID",
+  "YUANBAO_APP_SECRET"), max_len=4000, hint=<YUANBAO_ENTRY.platform_hint>), lock_env=("YUANBAO_APP_ID",))` and
+  `PlatformEntry(name="raft", label="Raft", factory=_lazy_factory("indus.gateway.adapters.raft:create_adapter"),
+  check_fn=modules_installed("uvicorn"), required_env=("RAFT_PROFILE",), install_hint=<RAFT_ENTRY.install_hint>,
+  dm_is_private=False, platform_hint=<RAFT_ENTRY.platform_hint>, lock_env=("RAFT_PROFILE",))` (texts in _stubs_e14.py);
+  BUILTIN_CREDENTIALS yuanbao (APP_ID, APP_SECRET); BUILTIN_PUBLIC_ENV raft (RAFT_PROFILE); toolsets `yuanbao` (platforms
+  {yuanbao}) + `indus-yuanbao` (CORE + yuanbao) + into indus-gateway; UNTRUSTED_PREFIXES += "yuanbao_"; gateway_tool_registry
+  registers yuanbao tools; cron KNOWN_PLATFORMS += yuanbao; raft in send_command and directory _NOT_TARGETS. Then delete the
+  stub, drop PENDING_PLATFORMS imports, use PlatformRegistry() in yuanbao/test_tools.py and raft/test_adapter.py; send cases.
+- Decisions: operator runs `raft agent bridge` (URL + token in <home>/platforms/raft/bridge.json 0600); activity telemetry
+  endpoints only (report_activity seam); Yuanbao `indus send` opens its own send-only socket (kick behaviour needs live
+  check); auth-bind instance id 17 (configurable); errors read from message text; no 1.5 s push merging; tools act on the
+  current chat only; yuanbao_send_dm text-only, recipient must be a group member, passes the gateway Authorizer, approval
+  each time (per-recipient session approval), credential shapes masked; early pushes buffered (≤200) until the sink is set.
+- Follow-ups: tools' current_identity() under P17-22 tasks (session-id → route lookup); TypingLoop seam; Yuanbao live lane;
+  quoted-message context; Raft /health activity summary; supervised raft bridge child.
