@@ -113,3 +113,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 12:46 UTC | 84% | 16% | 13:00 UTC | P16 w27 integrator running in verify15; reset in 14 min, letting it run
 2026-10-20 13:10 UTC | 2% | 98% | 18:00 UTC | window reset; P16 w27 integration gating (verify15, re-locked online); started wave 28 builders L1/L2/L3 (P17-23..27)
 2026-10-20 13:50 UTC | 13% | 87% | 18:00 UTC | P16 w27 landed (cfa6def); L1 parked; L2/L3 building; started E15/E16/E17 (P16-25, 33-36)
+2026-10-20 14:00 UTC | 27% | 73% | 18:00 UTC | L2 parked; owner asked for more agents: started W1/W2/F1 (P18) + A1 (P19); 8 builders running

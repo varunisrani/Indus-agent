@@ -77,11 +77,14 @@ P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
 - Wave 28 builders (brief `.agents/wip/w28/brief.md`): L1 P17-23 idle exit (wt-w28l1), L2 P17-24 profile binding +
   P17-25 protocol additions/codegen (wt-w28l2), L3 P17-26 dual-host matrix + P17-27 shared-backend demo (wt-w28l3).
-  L1 DONE, parked (w28-l1.patch).
+  L1, L2 DONE, parked (w28-l1.patch, w28-l2.patch).
 - Wave 28 P16 builders (brief `.agents/wip/w28/brief-p16.md`): E15 P16-25 Photon (wt-w28e15), E16 P16-33 native
   streams + P16-34 Telegram topics/stickers (wt-w28e16), E17 P16-35 Discord voice + P16-36 adapter matrix/doctor (wt-w28e17).
   If paused, patches go in `.agents/wip/w28/`.
-- Later: P18, P19, P20, P23, P24, P25.
+- Wave 29 builders (brief `.agents/wip/w29/brief.md`, owner asked for more parallel agents): W1 P18-01..06 web server +
+  auth (wt-w29w1), W2 P18-07..10 PTY + chat WS + profile scope (wt-w29w2), F1 P18-17..22 frontend prework (wt-w29f1),
+  A1 P19-01..07 ACP (wt-w29a1). If paused, patches go in `.agents/wip/w29/`.
+- Later: P18-11..16, 23..30; P19-08..18; P20, P23, P24, P25.
 - Last landings: P16-02/03/07/19/21/22/30 WhatsApp bridge (no Baileys mapping), Matrix E2EE, Weixin, Yuanbao + tools,
   Raft (`cfa6def`; D-16.524..539; notes in LEAD-NOTES "P16 wave 27 landing notes (integrator)"), P17-15..22 ensure/attach channel/remote session host, CLI + TUI attach by default, @indus/client WS
   transport, store ownership across processes, messaging on the shared host (`090479b`; ssh home-retry test fix at landing), P16-31/32 gateway setup wizard + per-platform target parsers (`8708c50`), P17-13/14 WebSocket attach endpoint + subscriptions (`8e91087`; wsproto into base deps), P16-14/15/24/28/29 Feishu + doc tools, BlueBubbles, SimpleX, Buzz (`19e9a77`), P16-11/12/13/16/17/18/20 Teams, Graph, Google Chat, DingTalk, WeCom ×2, QQ Bot (`6cc32b0`), P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
