@@ -1,0 +1,1440 @@
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 1083a6d..d23078c 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -1413,6 +1413,14 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/contract/gateway/test_webhook.py::test_coalescing_runs_the_newest_event_once_after_the_quiet_window`
+   - `tests/contract/gateway/test_webhook.py::test_events_filters_and_direct_delivery`
+   - `tests/unit/cli/commands/test_webhook.py::test_test_signs_and_posts_to_the_local_receiver`
++- **ACC-K47-1** Idle exit: a daemon `ensure` started (not a supervised or hand-started one) exits after `gateway.idle_exit_seconds` (600 s) with no client and no work, recorded as `idle_exit`, and the next `ensure` starts a new one
++  - `tests/unit/gateway/daemon/test_idle_exit.py::test_exits_at_600_s_of_idle`
++  - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_busy_poll_restarts_the_window`
++  - `tests/unit/gateway/daemon/test_idle_exit.py::test_every_quick_reason`
++  - `tests/unit/gateway/daemon/test_idle_exit.py::test_an_auto_started_daemon_stops_itself_as_idle_exit`
++  - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_supervised_daemon_never_idles_out`
++  - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_due_cron_job_keeps_the_daemon`
++  - `tests/unit/gateway/daemon/test_idle_exit.py::test_ensure_waits_out_an_idle_exiting_daemon`
+ - **ACC-K51-1** CLI attach: `indus`, `chat`, `-q` and `-z` ensure the daemon and run their turns there by default; leaving only detaches
+   - `tests/unit/cli/test_attach.py::test_chat_q_attaches_by_default`
+   - `tests/unit/cli/test_attach.py::test_z_attaches_by_default_and_prints_only_the_reply`
+diff --git a/docs/notes/P17/idle-exit.md b/docs/notes/P17/idle-exit.md
+new file mode 100644
+index 0000000..3bee812
+--- /dev/null
++++ b/docs/notes/P17/idle-exit.md
+@@ -0,0 +1,159 @@
++# Task: Idle exit for auto-started daemons (P17-23) Phase: 17 Owner: wave-28 builder L1
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `gateway/run_idle_exit.py` (all:
++arming, the busy probes, the poll loop, the exit). Research 06 §3.22 (idle exit / scale-to-zero),
++research 05 §3.2 (a client's first ensure starts the daemon with idle exit on). Our P17-15
++`service/gateway_ensure.py` (`AUTOSTART_ENV`, `planned_stop_reason`, the recover mode) and its
++note, P17-22's note (`messaging` viewers), P15-24/25 `gateway/daemon/process.py`, `lifecycle.py`,
++`status.py`, P17-08 `service/daemon_host.py` + `viewers.py`, P17-10 `ws_auth.TicketBook`, P17-13
++`gateway/ws/server.py`, P15-21 `gateway/cron_host.py`, P14 `cron/store.py` / `cron/ticker.py` /
++`cron/due.py`, P10 `core/session_scheduler.py`. Closed before writing.
++Evidence: none.
++
++What it does (own words): a daemon that a client's `ensure` started on its own (detached, not by a
++service manager, not by `indus gateway run`/`start` by hand) is a convenience nobody else will stop.
++Left alone, every throwaway profile (a script, a test, one `indus chat -q`) would keep a daemon
++alive forever. So such a daemon watches itself and exits once it has served nobody and had nothing
++to do for `gateway.idle_exit_seconds` (600 s by default; 0 turns it off). "Nothing to do" means all
++of these, checked every poll:
++
++- no attach client: no viewer of any session other than the messaging intake's own (`messaging`
++  viewers are the gateway's own and never count), no live WebSocket connection, no ticket minted
++  and not yet used (a client is between `session-ticket` and its dial);
++- no turn: no running generation on the host, no session on the chat service that is busy or has
++  input waiting, no chat turn holding a claim in the intake;
++- no admission queued in the runtime ledger (queued rows stuck behind an unknown turn do not count:
++  that queue is paused until a person resolves it, and the next daemon restarts it);
++- no cron run in flight and no cron job due within the next tick (60 s);
++- no messaging platform enabled (or connected), and no HTTP surface (API server, webhook) enabled:
++  a person who configured one of those wants a daemon that stays;
++- no loop or heartbeat due on a session the daemon holds within the next tick, no background
++  process of the terminal tool still running in one of those sessions;
++- nothing changed since the last poll (a new connection, a new session, a new event): a client that
++  came and went between two polls still counts as activity.
++
++A probe that cannot answer (unreadable cron store, a store error) counts as busy: the daemon stays.
++Idle time is measured from the last poll that saw the daemon busy (or from arming). When it reaches
++the window, the loop-only facts are checked once more with nothing awaited in between, and the exit
++begins at once: the status file says `draining` with exit reason `idle_exit` (so a racing client
++can tell), the lifecycle stops with reason `idle_exit` (exit code 0), and the normal shutdown runs.
++The status file ends `stopped` with `exit_reason: idle_exit`. That is not a planned stop
++(`planned_stop:<reason>`), so the next client's `ensure` — `start` or `recover` — starts a fresh
++daemon without saying anything about it. A client that races the exit (its `identify` is answered
++by the leaving daemon) waits for that process to go and then starts a new one.
++
++Arming: only when the daemon's environment carries `INDUS_GATEWAY_AUTOSTART=1` (set by `ensure`'s
++detached start, never by a service unit or `gateway start`) and the daemon is not supervised (a
++service manager would just restart it). The marker is removed from the daemon's own environment
++once read, so processes the agent starts do not inherit it.
++
++Inputs → outputs: env `INDUS_GATEWAY_AUTOSTART`, config `gateway.idle_exit_seconds` (float ≥ 0,
++default 600, re-read every poll so setting 0 disarms a running daemon), the daemon's live state →
++a stop with reason `idle_exit`, status `stopped`/`idle_exit`, exit 0; `ensure` then starts again.
++
++Files: `src/indus/gateway/daemon/idle_exit.py`, `tests/unit/gateway/daemon/test_idle_exit.py`.
++Shared: `src/indus/gateway/daemon/process.py` (arm at `running`, `DaemonOptions.idle_exit_seconds`,
++the terminal process table kept for the probe), `src/indus/service/gateway_ensure.py` (wait out a
++daemon that is idle-exiting), `src/indus/foundation/config/schema.py` +
++`tests/unit/foundation/config/test_schema.py` (the `gateway.idle_exit_seconds` row),
++`docs/internals/acceptance-map.md` (ACC-K47-1).
++
++Edge cases / failure modes:
++- a client attaches at second 599 → the poll sees the viewer (or the connection, or the outstanding
++  ticket) and idle time starts again from that poll;
++- a short client between two polls → the activity fingerprint changed → counts as busy;
++- a viewer that is the messaging intake's → ignored (an enabled platform already blocks the exit);
++- `gateway.idle_exit_seconds: 0` or negative/garbage → 0 disables, garbage keeps the default;
++- a supervised daemon, or one started without the marker → never armed;
++- an exit racing a new client: the client's dial is refused (daemon stopping) or its `ensure` sees
++  `draining`/`idle_exit` and waits for the old pid, then starts a new daemon;
++- a probe raising → busy ("probe failed"), logged at debug level, the daemon stays;
++- the daemon already stopping for another reason → the watcher ends without touching anything.
++
++Our design differences / decisions:
++- Setting name `gateway.idle_exit_seconds` (the phase row), not the reference's longer name.
++- Stop reason is exactly `idle_exit` (the reference writes a sentence whose prefix clients match).
++- Cron: only a job due within the next tick (or running) keeps the daemon (the phase row); the
++  reference keeps it up while any runnable job exists. See "Decisions for the lead".
++- No kanban, hosted-room, handoff or multi-profile probes (no such features in our daemon yet).
++- The poll interval is `min(30, max(0.1, window / 4))` s; one idle reading at the end of the window
++  plus the synchronous re-check replaces the reference's "two consecutive idle readings".
++
++Tests we will write (`tests/unit/gateway/daemon/test_idle_exit.py`):
++- fake clock, scripted probe: exits at exactly 600 s; busy at 590 → no exit until 1190; a
++  fingerprint change resets; a raising probe keeps it up; window 0 disarms; re-check at the end
++  vetoes the exit;
++- the daemon probe over a stand-in daemon: attached viewer (not `messaging`), connection, ticket,
++  running turn, queued admission (and one behind an unknown row), enabled platform, HTTP part,
++  due/running cron, global cron pause, due loop → each named as the busy reason;
++- arming: marker + unsupervised only; the marker is not inherited;
++- a real in-process daemon (fake model, no platform) armed with a short window stops by itself
++  with `stopped`/`idle_exit`, exit 0; a supervised one is not armed; a due cron job keeps it;
++- `ensure`: `planned_stop_reason` is None after an idle exit; an idle-exiting daemon is waited out.
++
++## Decisions for the lead
++- Cron rule: the row says "no cron job due within the next tick"; the reference keeps the daemon
++  up while any runnable job exists. With the row's rule a recurring job that comes due after the
++  exit runs once as a catch-up when a client next starts the daemon, but a one-shot job past its
++  grace (120 s) is closed as missed. Taken: the row. To switch, change `CRON_HORIZON_S` handling in
++  `idle_exit.cron_busy` to "any runnable job" (one line).
++- Extra busy conditions beyond the row (all fail closed): outstanding ticket, live WebSocket
++  connection, activity fingerprint between polls, HTTP surface enabled, loops/heartbeats due on held
++  sessions, running terminal background processes in held sessions, intake chat claims.
++- Queued input stuck behind an unknown turn does not keep the daemon (that FIFO is paused until a
++  person discards; the next daemon restarts it); the reference counts every queued row. Loops and
++  heartbeats keep it only when due within the next tick on a session the daemon holds (the
++  reference: any active one), same reasoning as cron.
++- The marker `INDUS_GATEWAY_AUTOSTART` is removed from the daemon's scope env once read (processes
++  it starts through the scope env do not inherit it); `os.environ` is left alone (raw-environ rule).
++- `ensure` (P17-15 file) now waits for a daemon whose status says `draining`/`stopping` with exit
++  reason `idle_exit` to exit and then starts a new one (`discover` answers `absent`/`idle_exit`).
++- Proposed D-id row (§2.7): "Idle exit (P17-23) | Exit after 600 s with any runnable cron job
++  blocking; a long reason label | `gateway.idle_exit_seconds`; only cron due within the next tick
++  blocks; reason `idle_exit`; extra probes listed in the note".
++
++Compare checklist (filled after the rewrite; reopened `gateway/run_idle_exit.py`):
++- [x] armed only for an auto-started, unsupervised daemon (test:
++  `test_idle_exit.py::test_a_supervised_or_hand_started_daemon_is_not_armed`,
++  `::test_a_supervised_daemon_never_idles_out`, `::test_only_the_ensure_marker_arms`)
++- [x] exits after the window with nothing to do, recorded as `idle_exit`, not a planned stop (test:
++  `::test_exits_at_600_s_of_idle`, `::test_an_auto_started_daemon_stops_itself_as_idle_exit`)
++- [x] clients: attached viewers, live connections, outstanding tickets, activity since the last
++  look keep it; the intake's `messaging` viewers do not (test: `::test_every_quick_reason`,
++  `::test_the_messaging_intake_is_not_a_client`, `::test_activity_between_two_polls_counts`,
++  `::test_the_fingerprint_moves_with_connections_sessions_and_events`)
++- [x] work: turns, queued admissions, cron, messaging platforms (also reconnecting ones: they are
++  enabled), loops/heartbeats, background processes (test: `::test_every_quick_reason`,
++  `::test_queued_input_keeps_the_daemon_unless_it_waits_behind_an_unknown_turn`,
++  `::test_cron_due_within_the_next_tick_or_running_keeps_the_daemon`,
++  `::test_cron_from_the_store_and_due_loops`, `::test_a_due_cron_job_keeps_the_daemon`,
++  `::test_a_background_process_in_a_held_session_keeps_the_daemon`)
++- [x] every probe fails closed (test: `::test_a_failing_probe_keeps_the_daemon_up`)
++- [x] disk reads off the loop, loop-only facts re-checked with nothing awaited before the stop
++  (test: `::test_the_last_look_vetoes_the_exit`)
++- [x] the exit is visible (status `draining` with `idle_exit`) before the shutdown; a client that
++  races it waits for the process to go, then starts a new one (test:
++  `::test_ensure_waits_out_an_idle_exiting_daemon`)
++- [x] window re-read every poll, 0 disables, a value that is not a number keeps the default (test:
++  `::test_the_window_setting_and_the_poll_interval`, `::test_window_zero_disarms_and_a_new_window_counts_from_then`)
++- [x] gap found: the reference stamps client activity at arming, so the window counts from the
++  start — ours does the same (`IdleWatch.run` sets `idle_since` when it starts).
++- Deliberate differences: a window of 0 at arming keeps polling, so turning the setting back on
++  later arms the running daemon (the reference never arms it then); idle time counts from the last
++  busy poll and one final synchronous re-check replaces "two consecutive idle readings"; the poll
++  floor is 0.1 s (0.5 s there) so tests can use short windows; no warning is logged for a
++  non-numeric setting (config validation reports it); queued input behind an unknown turn and
++  cron jobs not due within the next tick do not keep the daemon (see Decisions); the descriptor's
++  capabilities are not emptied while leaving (clients read the status file's `idle_exit` instead).
++- Not taken: kanban boards, hosted rooms, pending handoffs, managed workers and the hosted
++  scale-to-zero (no such features in our daemon; K47's hosted half is P3); multiplexed profiles
++  (P24).
++
++## Status
++
++Done (2026-10-20). Shared files changed: `src/indus/gateway/daemon/process.py` (marker read and
++removed from the daemon's env, `DaemonOptions.idle_exit_seconds`, `idle_watch` armed at `running`,
++`terminal_processes` kept by the chat service build), `src/indus/service/gateway_ensure.py`
++(`IDLE_EXIT_REASON`, an idle-exiting daemon is waited out / `absent` for `discover`),
++`src/indus/foundation/config/schema.py` + `tests/unit/foundation/config/test_schema.py`
++(`gateway.idle_exit_seconds`), `docs/internals/acceptance-map.md` (ACC-K47-1). No trap rows.
+diff --git a/src/indus/foundation/config/schema.py b/src/indus/foundation/config/schema.py
+index 501bb50..52e87ed 100644
+--- a/src/indus/foundation/config/schema.py
++++ b/src/indus/foundation/config/schema.py
+@@ -1393,6 +1393,12 @@ class GatewaySection(_Section):
+     systemd_watchdog_seconds: float = Field(
+         default=0.0, ge=0, description="systemd watchdog interval; 0 turns the pings off"
+     )
++    idle_exit_seconds: float = Field(
++        default=600.0,
++        ge=0,
++        description="a gateway a client started on its own exits after this many seconds with no "
++        "client and no work; 0 keeps it running",
++    )
+     delivery_ledger: bool = Field(
+         default=True,
+         description="record each chat reply before sending it, so a crash or restart cannot "
+diff --git a/src/indus/gateway/daemon/idle_exit.py b/src/indus/gateway/daemon/idle_exit.py
+new file mode 100644
+index 0000000..f48650f
+--- /dev/null
++++ b/src/indus/gateway/daemon/idle_exit.py
+@@ -0,0 +1,397 @@
++"""Idle exit for a daemon that a client's ``ensure`` started (P17-23).
++
++A daemon started by ``ensure`` (``INDUS_GATEWAY_AUTOSTART=1`` in its environment, set only by
++``service.gateway_ensure``'s detached start) and not supervised is nobody's to stop. ``arm`` gives
++such a daemon an ``IdleWatch``: every poll it asks ``DaemonProbe`` why the daemon must stay, and
++once nothing has kept it busy for ``gateway.idle_exit_seconds`` (600 s; 0 disables; re-read every
++poll) it stops with the reason ``idle_exit`` (exit 0). The status file says ``draining`` with that
++exit reason at once and ends ``stopped`` / ``idle_exit``; that is not a planned stop, so the next
++client's ``ensure`` starts a new daemon without a word.
++
++Busy means any of (``DaemonProbe``; every probe fails closed: an error counts as busy):
++
++- ``quick`` (loop-only facts, synchronous): the daemon stopping; a messaging platform enabled or
++  connected; an HTTP surface part; an outstanding attach ticket; a WebSocket connection; a viewer
++  that is not the messaging intake's; a running generation on the host; a chat-service session busy
++  or with input waiting; an intake chat claim; a running background process of the terminal tool
++  in a held session;
++- ``slow`` (store and file reads, off the loop): an admission queued in the runtime ledger (not one
++  stuck behind an unknown turn); a cron run in flight or a cron job due within the next tick
++  (``CRON_HORIZON_S``) unless cron is paused globally; a loop or heartbeat due within the next tick
++  on a held session;
++- ``fingerprint``: the connections, held sessions and their event counters changed since the last
++  poll (a client that came and went between two polls).
++
++Idle time runs from the last poll that saw the daemon busy (or from arming). When it reaches the
++window, ``quick`` and ``fingerprint`` are checked once more with nothing awaited before the stop.
++"""
++
++from __future__ import annotations
++
++import logging
++from collections.abc import Awaitable, Callable, Hashable, Iterable, Mapping
++from datetime import datetime, timedelta
++from pathlib import Path
++from typing import TYPE_CHECKING, Any, Final, Protocol
++
++from indus.cron.models import CronJob
++from indus.cron.ticker import TICK_INTERVAL_S, claim_is_live, global_pause, in_flight
++from indus.foundation.blocking import run_blocking
++from indus.foundation.clock import Clock
++from indus.foundation.config import loader as config_loader
++from indus.foundation.scope import Scope
++from indus.service.gateway_ensure import AUTOSTART_ENV
++from indus.state import runtime_ledger as ledger
++
++if TYPE_CHECKING:
++    from indus.gateway.daemon.process import GatewayDaemon
++
++__all__ = [
++    "CONFIG_KEY",
++    "CRON_HORIZON_S",
++    "DEFAULT_IDLE_EXIT_S",
++    "IDLE_EXIT_REASON",
++    "MESSAGING_SURFACE",
++    "DaemonProbe",
++    "IdleProbe",
++    "IdleWatch",
++    "arm",
++    "autostarted",
++    "cron_busy",
++    "idle_exit_seconds",
++    "poll_interval",
++]
++
++log = logging.getLogger(__name__)
++
++IDLE_EXIT_REASON: Final = "idle_exit"
++"""The stop reason and the status file's ``exit_reason`` (never a ``planned_stop:`` label)."""
++CONFIG_KEY: Final = "gateway.idle_exit_seconds"
++DEFAULT_IDLE_EXIT_S: Final = 600.0
++CRON_HORIZON_S: Final = TICK_INTERVAL_S
++"""A cron job due within this many seconds keeps the daemon (the next tick would run it)."""
++MESSAGING_SURFACE: Final = "messaging"
++"""Viewers of this surface are the intake's own and never count as clients."""
++_MAX_POLL_S: Final = 30.0
++_MIN_POLL_S: Final = 0.1
++
++
++def idle_exit_seconds(scope: Scope) -> float:
++    """``gateway.idle_exit_seconds``: 0 or less disables; a value that is not a number keeps the
++    default."""
++    try:
++        view: Any = scope.config if scope.config is not None else config_loader.load(scope)
++        value = view.get(CONFIG_KEY)
++    except Exception:
++        return DEFAULT_IDLE_EXIT_S
++    if value is None or isinstance(value, bool) or not isinstance(value, int | float):
++        return DEFAULT_IDLE_EXIT_S
++    return max(0.0, float(value))
++
++
++def poll_interval(window: float) -> float:
++    """How often the watch looks: a quarter of the window, between 0.1 s and 30 s."""
++    return min(_MAX_POLL_S, max(_MIN_POLL_S, window / 4))
++
++
++def autostarted(env: Mapping[str, str] | Any) -> bool:
++    """Did ``ensure`` start this process (its marker in the environment)?"""
++    try:
++        return env.get(AUTOSTART_ENV) == "1"
++    except Exception:
++        return False
++
++
++def cron_busy(
++    jobs: Iterable[CronJob],
++    *,
++    home: Path,
++    now: datetime,
++    horizon: float = CRON_HORIZON_S,
++    paused: bool = False,
++) -> str | None:
++    """Why cron keeps the daemon: a run in flight, or (unless ``paused`` globally) a job the
++    scheduler would fire within ``horizon`` seconds. None when nothing is due."""
++    listed = list(jobs)
++    for job in listed:
++        if in_flight(home, job.id) or (
++            job.fire_claim is not None and claim_is_live(job.fire_claim, now)
++        ):
++            return f"cron job {job.id} is running"
++    if paused:
++        return None
++    edge = now + timedelta(seconds=max(0.0, horizon))
++    for job in listed:
++        if not job.enabled or job.has_pause_marker or job.state == "completed":
++            continue
++        if job.state == "error":
++            if job.recurring:
++                return f"cron job {job.id} is due for repair"
++            continue
++        if job.quota_hold_until is not None and job.quota_hold_until > edge:
++            continue
++        if job.next_run_at is None or job.next_run_at <= edge:
++            return f"cron job {job.id} is due"
++    return None
++
++
++class IdleProbe(Protocol):
++    """What the watch asks every poll (see the module notes)."""
++
++    def quick(self) -> str | None:
++        """Why the daemon is busy from loop-only facts, or None. Must not await."""
++        ...
++
++    async def slow(self) -> str | None:
++        """Why the daemon is busy from stored state (may read files), or None."""
++        ...
++
++    def fingerprint(self) -> Hashable:
++        """A value that changes whenever a client or a session shows activity."""
++        ...
++
++
++class IdleWatch:
++    """Polls ``probe`` and calls ``on_idle(seconds_idle)`` once the daemon stayed idle for the
++    window (see the module notes). ``run`` returns after ``on_idle`` or when ``finished()``."""
++
++    def __init__(
++        self,
++        probe: IdleProbe,
++        *,
++        clock: Clock,
++        window: Callable[[], float],
++        on_idle: Callable[[float], object],
++        finished: Callable[[], bool] = lambda: False,
++        interval: float | None = None,
++    ) -> None:
++        self.probe = probe
++        self.clock = clock
++        self._window = window
++        self._on_idle = on_idle
++        self._finished = finished
++        self._interval = interval
++        self.busy: str | None = None
++        """The last busy reason seen (None after an idle poll)."""
++        self.idle_since = clock.monotonic()
++        self.fired = False
++
++    def window(self) -> float:
++        try:
++            return max(0.0, float(self._window()))
++        except Exception:
++            return DEFAULT_IDLE_EXIT_S
++
++    def _quick(self) -> str | None:
++        try:
++            return self.probe.quick()
++        except Exception as exc:
++            log.debug("idle probe failed; staying up", exc_info=True)
++            return f"idle probe failed ({type(exc).__name__})"
++
++    async def _slow(self) -> str | None:
++        try:
++            return await self.probe.slow()
++        except Exception as exc:
++            log.debug("idle probe failed; staying up", exc_info=True)
++            return f"idle probe failed ({type(exc).__name__})"
++
++    def _print(self) -> Hashable:
++        try:
++            return self.probe.fingerprint()
++        except Exception:
++            return object()  # never equal: counts as activity
++
++    async def run(self) -> None:
++        self.idle_since = self.clock.monotonic()
++        seen = self._print()
++        while not self._finished():
++            window = self.window()
++            await self.clock.sleep(self._interval or poll_interval(window or DEFAULT_IDLE_EXIT_S))
++            if self._finished():
++                return
++            window = self.window()
++            reason = self._quick() or await self._slow()
++            now_print = self._print()
++            if now_print != seen:
++                seen = now_print
++                reason = reason or "recent client activity"
++            now = self.clock.monotonic()
++            if window <= 0:
++                self.busy, self.idle_since = "idle exit disabled", now
++                continue
++            if reason is not None:
++                if reason != self.busy:
++                    log.debug("idle exit: staying up (%s)", reason)
++                self.busy, self.idle_since = reason, now
++                continue
++            self.busy = None
++            if now - self.idle_since < window:
++                continue
++            # Last look at what can change on the loop; nothing is awaited from here to the stop.
++            final = self._quick()
++            if final is not None or self._print() != seen or self._finished():
++                self.busy, self.idle_since = final or "recent client activity", now
++                continue
++            self.fired = True
++            self._on_idle(now - self.idle_since)
++            return
++
++
++class DaemonProbe:
++    """The busy checks over a running ``GatewayDaemon`` (see the module notes)."""
++
++    def __init__(self, daemon: GatewayDaemon, *, horizon: float = CRON_HORIZON_S) -> None:
++        self.daemon = daemon
++        self.horizon = horizon
++
++    # -- loop-only facts ---------------------------------------------------------------------------
++
++    def quick(self) -> str | None:
++        daemon = self.daemon
++        if daemon.lifecycle.stopping:
++            return "already stopping"
++        platforms = sorted(set(daemon.settings.enabled()) | set(daemon.adapters))
++        if platforms:
++            return "messaging platform enabled: " + ", ".join(platforms)
++        if any(part.name == "http" for part in daemon.parts):
++            return "HTTP surfaces enabled"
++        if daemon.tickets.outstanding():
++            return "a client is attaching"
++        ws = daemon.ws
++        if ws is not None and ws.connections:
++            return f"{len(ws.connections)} client connection(s)"
++        host = daemon.host
++        if host is not None:
++            for key in host.viewers.sessions():
++                if any(v.surface != MESSAGING_SURFACE for v in host.viewers.viewers(key)):
++                    return f"a viewer is attached to {key}"
++            for key in host.hosted():
++                if host.fences.running(key) is not None or host.admissions.running(key):
++                    return f"a turn runs in {key}"
++        service = getattr(daemon, "service", None)
++        held: list[str] = list(service.attached()) if service is not None else []
++        for session_id in held:
++            if not service.is_idle(session_id):  # type: ignore[union-attr]
++                return f"session {session_id} is busy"
++        pipeline = getattr(daemon, "pipeline", None)
++        if pipeline is not None and len(pipeline.claims):
++            return "a chat turn runs"
++        processes = daemon.terminal_processes
++        if processes is not None:
++            home = str(daemon.scope.home)
++            for session_id in [None, *held]:
++                if any(r.status == "running" for r in processes.list(home, session_id)):
++                    return "a background process runs"
++        return None
++
++    def fingerprint(self) -> Hashable:
++        daemon = self.daemon
++        ws = daemon.ws
++        connections = tuple(sorted(ws.connections)) if ws is not None else ()
++        host = daemon.host
++        sessions: tuple[tuple[str, int], ...] = ()
++        if host is not None:
++            sessions = tuple(sorted((k, host.event_log.last_seq(k)) for k in host.hosted()))
++        return (connections, sessions)
++
++    # -- stored state ------------------------------------------------------------------------------
++
++    async def slow(self) -> str | None:
++        daemon = self.daemon
++        store = getattr(daemon, "store", None)
++        if store is not None:
++            queued = await run_blocking(lambda: _queued_session(store), label="idle probe")
++            if queued is not None:
++                return f"input is queued for {queued}"
++        reason = await run_blocking(self._cron, label="idle probe")
++        if reason is not None:
++            return reason
++        return await self._automation()
++
++    def _cron(self) -> str | None:
++        from indus.cron.store import CronStore
++
++        scope = self.daemon.scope
++        jobs = CronStore(scope).load()
++        now = self.daemon.clock.now()
++        paused = global_pause(scope.home) is not None
++        return cron_busy(jobs, home=scope.home, now=now, horizon=self.horizon, paused=paused)
++
++    async def _automation(self) -> str | None:
++        automation = self.daemon.automation
++        service = getattr(self.daemon, "service", None)
++        if automation is None or service is None:
++            return None
++        held = set(service.attached())
++        if not held:
++            return None
++        before = self.daemon.clock.now().timestamp() + self.horizon
++        for source in list(automation.scheduler.sources):
++            for entry in await automation.meta.due(source.namespace, before):
++                if entry.session_id in held:
++                    return f"{source.namespace} due in {entry.session_id}"
++        return None
++
++
++def _queued_session(store: Any) -> str | None:
++    """A session holding queued input the daemon can run (not paused behind an unknown turn)."""
++    for session_id in ledger.sessions_with_queued(store):
++        rows = ledger.pending(store, session_id)
++        if not any(row.state == "unknown" for row in rows):
++            return session_id
++    return None
++
++
++def _begin_exit(daemon: GatewayDaemon, window: float, idle_for: float) -> None:
++    """Make the exit visible, then stop (synchronous: no await since the last idle check)."""
++    daemon.status.set_state("draining", exit_reason=IDLE_EXIT_REASON)
++    log.info(
++        "no client and no work for %.0f s (%s = %g): exiting; the next client starts a new gateway",
++        idle_for,
++        CONFIG_KEY,
++        window,
++    )
++    daemon.request_stop(IDLE_EXIT_REASON)
++
++
++def arm(
++    daemon: GatewayDaemon,
++    *,
++    window: Callable[[], float] | None = None,
++    probe: IdleProbe | None = None,
++    spawn: Callable[[Awaitable[None]], object] | None = None,
++) -> IdleWatch | None:
++    """Start the watch for an auto-started, unsupervised daemon; None when it does not apply."""
++    if not daemon.autostarted:
++        return None
++    if daemon.is_supervised:
++        log.info("idle exit not armed: the gateway is supervised")
++        return None
++    chosen = window if window is not None else (lambda: idle_exit_seconds(daemon.scope))
++    holder: dict[str, IdleWatch] = {}
++
++    def fire(idle_for: float) -> None:
++        _begin_exit(daemon, holder["watch"].window(), idle_for)
++
++    watch = IdleWatch(
++        probe if probe is not None else DaemonProbe(daemon),
++        clock=daemon.clock,
++        window=chosen,
++        on_idle=fire,
++        finished=lambda: daemon.lifecycle.stopping,
++    )
++    holder["watch"] = watch
++    seconds = watch.window()
++    if seconds <= 0:
++        log.info("idle exit is off (%s = 0)", CONFIG_KEY)
++    else:
++        log.info(
++            "started by a client: exits after %.0f s with nothing to do (%s)", seconds, CONFIG_KEY
++        )
++    coro = watch.run()
++    if spawn is not None:
++        spawn(coro)
++    else:
++        daemon.spawn(coro, name="gateway idle exit")
++    return watch
+diff --git a/src/indus/gateway/daemon/process.py b/src/indus/gateway/daemon/process.py
+index 86a4cc6..575bec8 100644
+--- a/src/indus/gateway/daemon/process.py
++++ b/src/indus/gateway/daemon/process.py
+@@ -19,7 +19,9 @@
+    replayed;
+ 7. the ``BACKGROUND`` parts; the loopback WebSocket endpoint over the host (P17-13; its URL
+    feeds ``describe`` / ``session-ticket``, its row the status surface ``ws``); housekeeping
+-   (status heartbeat, drain marker), the loop watchdog, systemd ``READY=1``, status ``running``.
++   (status heartbeat, drain marker), the loop watchdog, systemd ``READY=1``, status ``running``;
++   for a daemon ``ensure`` started (and no supervisor), the idle-exit watch (P17-23,
++   ``idle_exit``: stop reason ``idle_exit`` after ``gateway.idle_exit_seconds`` with nothing to do).
+ 
+ Then it waits for a stop or restart (``lifecycle``) and shuts down in reverse: the WebSocket
+ endpoint first (clients detached), the parts and platforms, the intake, then the host (running
+@@ -58,7 +60,7 @@ from indus.gateway.core.admission import AdmissionPipeline, ModelChoice
+ from indus.gateway.core.authz import Authorizer, UnauthorizedHandler
+ from indus.gateway.core.bot_loop import BotLoopGuard, ConcurrencyCap, settings_reader
+ from indus.gateway.core.sent_index import SentIndex
+-from indus.gateway.daemon import liveness
++from indus.gateway.daemon import idle_exit, liveness
+ from indus.gateway.daemon.command import run_command  # the CLI's "module:attr" target
+ from indus.gateway.daemon.drain import drain_verdict, machine_epoch
+ from indus.gateway.daemon.lifecycle import Lifecycle, drain_turns, wait_for_turns
+@@ -79,6 +81,7 @@ from indus.gateway.outbound.sender import OutboundSender
+ from indus.gateway.registry import PlatformRegistry, proxy_for
+ from indus.gateway.token_locks import TokenLocks, default_lock_dir
+ from indus.safety.child_env import FORCE_PREFIX
++from indus.service.gateway_ensure import AUTOSTART_ENV
+ from indus.service.ws_auth import TicketBook, new_instance_id
+ from indus.state import registry as store_registry
+ from indus.state.gateway_runtime import (
+@@ -101,6 +104,7 @@ from indus.state.pairing import PairingStore
+ from indus.state.registry import StoreHandle
+ 
+ if TYPE_CHECKING:
++    from indus.backends.processes import ProcessRegistry
+     from indus.gateway.core.shared_host import MessagingHost
+     from indus.gateway.http import SurfaceSpec
+     from indus.gateway.ws.server import WsEndpoint
+@@ -177,6 +181,9 @@ class DaemonOptions:
+     attach_ws: bool = True
+     """Serve the loopback WebSocket attach endpoint over the session host (P17-13)."""
+     export_guard_env: bool = True
++    idle_exit_seconds: float | None = None
++    """The idle-exit window of an auto-started daemon (P17-23); None reads
++    ``gateway.idle_exit_seconds`` (600 s; 0 disables) every poll."""
+     hard_exit: Callable[[int], object] = _hard_exit
+ 
+ 
+@@ -294,6 +301,11 @@ class GatewayDaemon:
+         self.host: DaemonSessionHost | None = None
+         self.shared: MessagingHost | None = None
+         self.ws: WsEndpoint | None = None
++        self.autostarted = False
++        """Started by a client's ``ensure`` (its marker was in the environment; P17-23)."""
++        self.idle_watch: idle_exit.IdleWatch | None = None
++        self.terminal_processes: ProcessRegistry | None = None
++        """The terminal tool's background processes of the chat service (the idle probe)."""
+         self._up: list[UpListener] = []
+         self._down: list[DownListener] = []
+         self._ready: list[ReadyListener] = []
+@@ -513,6 +525,10 @@ class GatewayDaemon:
+         home = self.scope.home
+         loop = asyncio.get_running_loop()
+         self._loop = loop
++        self.autostarted = idle_exit.autostarted(self.scope.env)
++        if self.autostarted:
++            # Read once; processes this daemon starts must not look auto-started themselves.
++            self.scope = self.scope.with_env(self.scope.env.with_overlay({AUTOSTART_ENV: None}))
+         if self.options.export_guard_env:
+             # Children (the agent's own terminal) carry the marker through child_env's force
+             # entry, so `indus gateway stop/restart` run from inside this gateway can refuse.
+@@ -591,6 +607,8 @@ class GatewayDaemon:
+             )
+             self._loop_watchdog.start()
+         self.systemd.ready("running")
++        chosen = self.options.idle_exit_seconds
++        self.idle_watch = idle_exit.arm(self, window=None if chosen is None else lambda: chosen)
+         log.info(
+             "gateway running: %s",
+             ", ".join(sorted(self.adapters)) or "no messaging platform connected",
+@@ -1219,6 +1237,7 @@ async def _session_service(
+ 
+     if chat:
+         terminal_host.install(handle, terminal.runtime().processes)
++        daemon.terminal_processes = terminal.runtime().processes
+ 
+         async def shut_terminal() -> None:
+             await terminal.runtime().shutdown()
+diff --git a/src/indus/service/gateway_ensure.py b/src/indus/service/gateway_ensure.py
+index 895b186..d4d34b9 100644
+--- a/src/indus/service/gateway_ensure.py
++++ b/src/indus/service/gateway_ensure.py
+@@ -15,6 +15,11 @@ Modes:
+   writes) is not, and at most ``RECOVER_LIMIT`` recoveries may happen per ``RECOVER_WINDOW_S``
+   (the caller's ``RecoverBudget``); past it the verdict is ``refused/recover_budget``.
+ 
++A daemon that is exiting because it sat idle (P17-23: its status says ``draining``/``stopping``
++with the exit reason ``idle_exit``) is not attachable even while it still answers: ``start`` and
++``recover`` wait for that process to be gone and then start a new one; ``discover`` answers
++``absent``/``idle_exit``. An idle exit is never a planned stop.
++
+ In ``start`` mode a daemon whose ``code_version`` differs from ``version`` (the caller's own,
+ ``indus.__version__`` by default) is asked to restart gracefully (SIGUSR1: it refuses new turns and
+ lets running ones finish), once per call; a fresh one that still differs is accepted with ``skew``
+@@ -56,6 +61,7 @@ __all__ = [
+     "DEFAULT_TIMEOUT_S",
+     "RECOVER_LIMIT",
+     "RECOVER_WINDOW_S",
++    "IDLE_EXIT_REASON",
+     "Endpoint",
+     "Ensured",
+     "Mode",
+@@ -82,6 +88,9 @@ _TAIL_BYTES: Final = 64 * 1024
+ _LAUNCH_WAIT_S: Final = 10.0
+ _NOT_DELIBERATE: Final = frozenset({"restart"})
+ """Planned-stop reasons that are part of a restart, not a person stopping the daemon."""
++IDLE_EXIT_REASON: Final = "idle_exit"
++"""The exit reason of a daemon that stopped itself after idling (P17-23's ``idle_exit``)."""
++_LEAVING: Final = frozenset({"draining", "stopping"})
+ 
+ # The intermediate of the double fork: starts the daemon in a new session with its output on
+ # our stderr (the stdio log), prints its pid and exits, so the daemon is re-parented away.
+@@ -193,6 +202,28 @@ def planned_stop_reason(home: Path) -> str | None:
+     return None if reason in _NOT_DELIBERATE else reason
+ 
+ 
++def _idle_exiting(home: Path) -> tuple[int, int | None] | None:
++    """(pid, start time) of a live daemon that is on its way out after an idle exit, else None."""
++    view = gateway_runtime.runtime_view(home)
++    if view.liveness != "running" or view.state not in _LEAVING or view.pid is None:
++        return None
++    if (view.data or {}).get("exit_reason") != IDLE_EXIT_REASON:
++        return None
++    return view.pid, view.start_time
++
++
++def _await_gone(run: _Run, pid: int, start_time: int | None) -> Ensured | None:
++    """Wait (within the deadline) for an idle-exiting daemon to be gone; None once it is."""
++    log.info("gateway pid %d is exiting after being idle: waiting to start a new one", pid)
++    while gateway_runtime.alive(pid, start_time):
++        if run.left() <= 0:
++            return Ensured(
++                "starting", "timeout", f"the idle gateway (pid {pid}) is still shutting down"
++            )
++        run.pause(_POLL_S)
++    return None
++
++
+ def _wait(seconds: float) -> None:
+     threading.Event().wait(max(0.0, seconds))
+ 
+@@ -246,6 +277,14 @@ def ensure(
+         list(argv) if argv is not None else daemon_argv(),
+     )
+     found = gateway_control.identify(home)
++    leaving = _idle_exiting(home)
++    if leaving is not None and (found is None or found.get("pid") == leaving[0]):
++        if mode == "discover":
++            return Ensured("absent", IDLE_EXIT_REASON, "the gateway is exiting after being idle")
++        waited = _await_gone(run, *leaving)
++        if waited is not None:
++            return waited
++        found = gateway_control.identify(home)  # another client may have started one meanwhile
+     if found is not None:
+         return _with_live(run, found, mode, service)
+     if _starting(home):
+diff --git a/tests/unit/foundation/config/test_schema.py b/tests/unit/foundation/config/test_schema.py
+index af62abd..4ebe5ba 100644
+--- a/tests/unit/foundation/config/test_schema.py
++++ b/tests/unit/foundation/config/test_schema.py
+@@ -367,6 +367,7 @@ def test_decided_defaults() -> None:
+         "media_trust_recent_seconds": 600.0,
+         "connect_timeout_seconds": 30.0,  # P15-24
+         "systemd_watchdog_seconds": 0.0,
++        "idle_exit_seconds": 600.0,  # P17-23
+         "delivery_ledger": True,  # P15-19
+         "stt_enabled": True,  # P15-23
+         "api_server": {  # P15-30, P15-31
+@@ -513,6 +514,7 @@ def test_model_shorthand_validates() -> None:
+         ("gateway.media_trust_recent", bool),
+         ("agent.restart_drain_timeout", float),
+         ("gateway.systemd_watchdog_seconds", float),
++        ("gateway.idle_exit_seconds", float),
+         ("gateway.delivery_ledger", bool),
+         ("gateway.api_server.port", int),
+         ("gateway.api_server.cors_origins", list),
+@@ -584,6 +586,12 @@ def test_gateway_daemon_rows_validate() -> None:  # P15-24, P15-25
+     assert schema.validate({"agent": {"cron_drain_timeout": -1}}) != []  # P15-21
+ 
+ 
++def test_idle_exit_row_validates() -> None:  # P17-23
++    assert schema.validate({"gateway": {"idle_exit_seconds": 0}}) == []
++    assert schema.validate({"gateway": {"idle_exit_seconds": 120.5}}) == []
++    assert schema.validate({"gateway": {"idle_exit_seconds": -1}}) != []
++
++
+ def test_http_surface_rows_validate() -> None:  # P15-30..32
+     ok = {"gateway": {"api_server": {"enabled": True, "port": 0, "cors_origins": ["https://a"]}}}
+     assert schema.validate(ok) == []
+diff --git a/tests/unit/gateway/daemon/test_idle_exit.py b/tests/unit/gateway/daemon/test_idle_exit.py
+new file mode 100644
+index 0000000..0e69540
+--- /dev/null
++++ b/tests/unit/gateway/daemon/test_idle_exit.py
+@@ -0,0 +1,629 @@
++"""P17-23: an auto-started daemon exits after its idle window (fake clock), and only then."""
++
++from __future__ import annotations
++
++import asyncio
++import os
++from collections.abc import Callable, Iterator
++from dataclasses import dataclass, field
++from datetime import UTC, datetime, timedelta
++from pathlib import Path
++from types import SimpleNamespace
++from typing import Any, cast
++
++import pytest
++
++from indus.cron.grammar import parse_schedule
++from indus.cron.models import CronJob, JobSpec
++from indus.cron.store import CronStore
++from indus.cron.ticker import pause_all
++from indus.foundation.scope import Scope
++from indus.gateway.daemon.idle_exit import (
++    DEFAULT_IDLE_EXIT_S,
++    IDLE_EXIT_REASON,
++    DaemonProbe,
++    IdleWatch,
++    arm,
++    autostarted,
++    cron_busy,
++    idle_exit_seconds,
++    poll_interval,
++)
++from indus.gateway.daemon.lifecycle import Lifecycle
++from indus.gateway.daemon.process import GatewayDaemon
++from indus.service import gateway_ensure
++from indus.service.gateway_ensure import AUTOSTART_ENV, planned_stop_reason
++from indus.service.viewers import Viewer, ViewerRegistry
++from indus.service.ws_auth import WS_INTERACTIVE, TicketBook
++from indus.state import registry
++from indus.state import runtime_ledger as ledger
++from indus.state.gateway_runtime import (
++    EXIT_OK,
++    ProcessIdentity,
++    RuntimeStatus,
++    read_status,
++    write_status,
++)
++from indus.state.registry import StoreHandle
++from tests.conftest import FAKE_CLOCK_START
++from tests.fakes.clock import FakeClock
++from tests.unit.backends._aio import aio
++
++# -- the watch on a fake clock ----------------------------------------------------------------
++
++
++@dataclass
++class Scripted:
++    """A probe whose answers the test sets."""
++
++    busy: str | None = None
++    stored: str | None = None
++    print_: int = 0
++    finals: list[str | None] = field(default_factory=list[str | None])
++    raise_slow: bool = False
++
++    def quick(self) -> str | None:
++        if self.finals and self.busy is None:
++            return self.finals.pop(0)
++        return self.busy
++
++    async def slow(self) -> str | None:
++        if self.raise_slow:
++            raise OSError("store unreadable")
++        return self.stored
++
++    def fingerprint(self) -> int:
++        return self.print_
++
++
++class Rig:
++    def __init__(self, window: float = 600.0) -> None:
++        self.clock = FakeClock(FAKE_CLOCK_START)
++        self.probe = Scripted()
++        self.window = window
++        self.fired: list[float] = []
++        self.stopping = False
++        self.watch = IdleWatch(
++            self.probe,
++            clock=self.clock,
++            window=lambda: self.window,
++            on_idle=self.fired.append,
++            finished=lambda: self.stopping,
++        )
++
++    async def start(self) -> asyncio.Task[None]:
++        task = asyncio.ensure_future(self.watch.run())
++        await self.clock.run_until_idle()
++        return task
++
++    async def to(self, second: float, step: float = 30.0) -> None:
++        """Move the clock to ``second`` (from start), stopping at every multiple of ``step`` (the
++        polls of a 600 s window) so each poll sees the time it was due at."""
++        while True:
++            now = self.clock.monotonic()
++            boundary = (now // step + 1) * step
++            if boundary > second:
++                break
++            await self.clock.advance_and_settle(boundary - now)
++        left = second - self.clock.monotonic()
++        if left > 0:
++            await self.clock.advance_and_settle(left)
++
++
++class OneValue:
++    """A config source answering every key with one value."""
++
++    def __init__(self, value: object) -> None:
++        self.value = value
++
++    def get(self, path: str, /) -> object:
++        return self.value
++
++
++def test_the_window_setting_and_the_poll_interval(scope: Scope) -> None:
++    assert idle_exit_seconds(scope) == DEFAULT_IDLE_EXIT_S == 600.0
++    for value, expected in [(0, 0.0), (-5, 0.0), (90.5, 90.5), ("soon", 600.0), (True, 600.0)]:
++        changed = scope.with_config(OneValue(value))
++        assert idle_exit_seconds(changed) == expected
++    assert poll_interval(600) == 30.0
++    assert poll_interval(40) == 10.0
++    assert poll_interval(0.2) == 0.1
++
++
++@aio
++async def test_exits_at_600_s_of_idle() -> None:
++    rig = Rig()
++    task = await rig.start()
++    await rig.to(599)
++    assert rig.fired == []
++    await rig.to(600)
++    assert rig.fired == [600.0]
++    await asyncio.wait_for(task, 1)
++    assert rig.watch.fired
++
++
++@aio
++async def test_a_busy_poll_restarts_the_window() -> None:
++    rig = Rig()
++    task = await rig.start()
++    await rig.to(580)
++    rig.probe.busy = "a viewer is attached to s1"
++    await rig.to(600)
++    assert rig.watch.busy == "a viewer is attached to s1" and rig.watch.idle_since == 600
++    rig.probe.busy = None
++    await rig.to(1199)
++    assert rig.fired == []
++    await rig.to(1200)
++    assert rig.fired == [600.0]
++    await task
++
++
++@aio
++async def test_activity_between_two_polls_counts() -> None:
++    rig = Rig()
++    task = await rig.start()
++    await rig.to(590)
++    rig.probe.print_ += 1  # a client came and went between the polls at 570 and 600
++    await rig.to(1199)
++    assert rig.fired == []
++    await rig.to(1200)
++    assert rig.fired == [600.0]
++    await task
++
++
++@aio
++async def test_a_failing_probe_keeps_the_daemon_up() -> None:
++    rig = Rig()
++    rig.probe.raise_slow = True
++    task = await rig.start()
++    await rig.to(3000)
++    assert rig.fired == [] and rig.watch.busy == "idle probe failed (OSError)"
++    rig.probe.raise_slow = False
++    await rig.to(3600)
++    assert rig.fired == [600.0]
++    await task
++
++
++@aio
++async def test_a_stored_reason_keeps_the_daemon_up() -> None:
++    rig = Rig()
++    rig.probe.stored = "cron job j1 is due"
++    task = await rig.start()
++    await rig.to(1800)
++    assert rig.fired == [] and rig.watch.busy == "cron job j1 is due"
++    rig.stopping = True
++    await rig.to(1830)
++    await asyncio.wait_for(task, 1)
++    assert rig.fired == []
++
++
++@aio
++async def test_window_zero_disarms_and_a_new_window_counts_from_then() -> None:
++    rig = Rig(window=0)
++    task = await rig.start()
++    await rig.to(6000)
++    assert rig.fired == []
++    rig.window = 600
++    await rig.to(6599)
++    assert rig.fired == []
++    await rig.to(6600)
++    assert rig.fired == [600.0]
++    await task
++
++
++@aio
++async def test_the_last_look_vetoes_the_exit() -> None:
++    rig = Rig()
++    task = await rig.start()
++    await rig.to(570)
++    rig.probe.finals = [None, "a client is attaching"]  # idle at the poll, busy on the re-check
++    await rig.to(600)
++    assert rig.fired == [] and rig.watch.busy == "a client is attaching"
++    await rig.to(1200)
++    assert rig.fired == [600.0]
++    await task
++
++
++# -- the daemon probe ---------------------------------------------------------------------------
++
++
++NOW = FAKE_CLOCK_START
++
++
++def _job(schedule: str = "every 1h", **fields: Any) -> CronJob:
++    parsed = parse_schedule(schedule, UTC, now=NOW)
++    data: dict[str, Any] = {
++        "id": fields.pop("id", "a1b2c3d4e5f6"),
++        "created_at": NOW - timedelta(days=1),
++        "prompt": "check",
++        "schedule": parsed,
++        "schedule_display": parsed.display,
++        "next_run_at": NOW + timedelta(hours=1),
++    }
++    data.update(fields)
++    return CronJob.model_validate(data)
++
++
++def test_cron_due_within_the_next_tick_or_running_keeps_the_daemon(tmp_path: Path) -> None:
++    def busy(*jobs: CronJob, paused: bool = False) -> str | None:
++        return cron_busy(jobs, home=tmp_path, now=NOW, paused=paused)
++
++    assert busy() is None
++    assert busy(_job()) is None  # due in an hour
++    assert busy(_job(next_run_at=NOW + timedelta(seconds=61))) is None
++    assert busy(_job(next_run_at=NOW + timedelta(seconds=60))) == "cron job a1b2c3d4e5f6 is due"
++    assert busy(_job(next_run_at=NOW - timedelta(minutes=5))) is not None  # overdue
++    assert busy(_job(next_run_at=None)) is not None  # the next tick plans it
++    soon = NOW + timedelta(seconds=30)
++    assert busy(_job(next_run_at=soon, enabled=False)) is None
++    assert busy(_job(next_run_at=soon, state="paused", paused_at=NOW)) is None
++    assert busy(_job(next_run_at=soon, state="completed")) is None
++    assert busy(_job(next_run_at=soon, quota_hold_until=NOW + timedelta(hours=2))) is None
++    assert busy(_job(state="error")) == "cron job a1b2c3d4e5f6 is due for repair"
++    assert busy(_job(next_run_at=soon), paused=True) is None  # cron paused globally
++    claim = {"owner": "gw-1", "claimed_at": NOW.isoformat(), "heartbeat_at": NOW.isoformat()}
++    running = _job(fire_claim=claim)
++    assert busy(running, paused=True) == "cron job a1b2c3d4e5f6 is running"
++    stale = {**claim, "heartbeat_at": (NOW - timedelta(hours=1)).isoformat()}
++    assert busy(_job(fire_claim=stale)) is None
++
++
++def _viewer(connection_id: str, surface: str) -> Viewer:
++    return Viewer.of(connection_id, surface, send=lambda _event: None)
++
++
++class FakeHost:
++    def __init__(self) -> None:
++        self.viewers = ViewerRegistry()
++        self.keys: list[str] = []
++        self.running_gen: dict[str, int] = {}
++        self.seq: dict[str, int] = {}
++        self.fences = SimpleNamespace(running=self.running_gen.get)
++        self.admissions = SimpleNamespace(running=lambda _key: None)
++        self.event_log = SimpleNamespace(last_seq=lambda key: self.seq.get(key, 0))
++
++    def hosted(self) -> list[str]:
++        return list(self.keys)
++
++
++class FakeService:
++    def __init__(self) -> None:
++        self.held: dict[str, bool] = {}
++
++    def attached(self) -> list[str]:
++        return list(self.held)
++
++    def is_idle(self, session_id: str) -> bool:
++        return self.held[session_id]
++
++
++class StandIn:
++    """The parts of ``GatewayDaemon`` the probe reads."""
++
++    def __init__(self, scope: Scope, store: StoreHandle | None = None) -> None:
++        self.scope = scope
++        self.clock = scope.clock
++        self.lifecycle = Lifecycle()
++        self.enabled: list[str] = []
++        self.settings = SimpleNamespace(enabled=lambda: list(self.enabled))
++        self.adapters: dict[str, object] = {}
++        self.parts: list[Any] = []
++        self.tickets = TicketBook.for_home(scope.home, monotonic=scope.clock.monotonic)
++        self.ws: Any = None
++        self.host = FakeHost()
++        self.service = FakeService()
++        self.pipeline = SimpleNamespace(claims=[])
++        self.terminal_processes: Any = None
++        self.automation: Any = None
++        if store is not None:
++            self.store = store
++
++    def probe(self) -> DaemonProbe:
++        return DaemonProbe(cast(GatewayDaemon, self))
++
++
++@pytest.fixture
++def store(scope: Scope) -> Iterator[StoreHandle]:
++    handle = registry.open_unshared(scope)
++    yield handle
++    handle.close()
++
++
++def test_every_quick_reason(scope: Scope) -> None:
++    daemon = StandIn(scope)
++    probe = daemon.probe()
++    assert probe.quick() is None
++    checks: list[tuple[Callable[[], object], Callable[[], object], str]] = [
++        (
++            lambda: daemon.enabled.append("telegram"),
++            daemon.enabled.clear,
++            "messaging platform enabled: telegram",
++        ),
++        (
++            lambda: daemon.parts.append(SimpleNamespace(name="http")),
++            daemon.parts.clear,
++            "HTTP surfaces enabled",
++        ),
++        (
++            lambda: daemon.tickets.mint(WS_INTERACTIVE),
++            daemon.tickets.revoke_all,
++            "a client is attaching",
++        ),
++        (
++            lambda: setattr(daemon, "ws", SimpleNamespace(connections={"ws-1": object()})),
++            lambda: setattr(daemon, "ws", None),
++            "1 client connection(s)",
++        ),
++        (
++            lambda: daemon.host.viewers.attach("s1", _viewer("ws-2", "cli")),
++            lambda: daemon.host.viewers.forget("s1"),
++            "a viewer is attached to s1",
++        ),
++        (
++            lambda: (daemon.host.keys.append("s1"), daemon.host.running_gen.update(s1=3)),
++            daemon.host.running_gen.clear,
++            "a turn runs in s1",
++        ),
++        (
++            lambda: daemon.service.held.update(s2=False),
++            lambda: daemon.service.held.update(s2=True),
++            "session s2 is busy",
++        ),
++        (
++            lambda: daemon.pipeline.claims.append("k"),
++            daemon.pipeline.claims.clear,
++            "a chat turn runs",
++        ),
++        (
++            lambda: daemon.lifecycle.request_stop("test"),
++            lambda: None,
++            "already stopping",
++        ),
++    ]
++    for make, undo, reason in checks:
++        make()
++        assert probe.quick() == reason
++        undo()
++        if reason != "already stopping":
++            assert probe.quick() is None, reason
++
++
++def test_the_messaging_intake_is_not_a_client(scope: Scope) -> None:
++    daemon = StandIn(scope)
++    daemon.host.viewers.attach("chat-1", _viewer("intake", "messaging"))
++    assert daemon.probe().quick() is None
++    daemon.host.viewers.attach("chat-1", _viewer("ws-9", "tui"))
++    assert daemon.probe().quick() == "a viewer is attached to chat-1"
++
++
++def test_a_background_process_in_a_held_session_keeps_the_daemon(scope: Scope) -> None:
++    daemon = StandIn(scope)
++    daemon.service.held["s1"] = True
++    records = {"s1": [SimpleNamespace(status="exited")]}
++    daemon.terminal_processes = SimpleNamespace(list=lambda _home, sid: records.get(sid, []))
++    assert daemon.probe().quick() is None
++    records["s1"].append(SimpleNamespace(status="running"))
++    assert daemon.probe().quick() == "a background process runs"
++
++
++def test_the_fingerprint_moves_with_connections_sessions_and_events(scope: Scope) -> None:
++    daemon = StandIn(scope)
++    probe = daemon.probe()
++    first = probe.fingerprint()
++    daemon.host.keys.append("s1")
++    second = probe.fingerprint()
++    daemon.host.seq["s1"] = 4
++    third = probe.fingerprint()
++    daemon.ws = SimpleNamespace(connections={"ws-1": object()})
++    fourth = probe.fingerprint()
++    assert len({first, second, third, fourth}) == 4
++    assert probe.fingerprint() == fourth
++
++
++@aio
++async def test_queued_input_keeps_the_daemon_unless_it_waits_behind_an_unknown_turn(
++    scope: Scope, store: StoreHandle
++) -> None:
++    daemon = StandIn(scope, store)
++    probe = daemon.probe()
++    assert await probe.slow() is None
++    epoch = ledger.begin_owner_epoch(store, "daemon-1").epoch
++
++    def admit(session_id: str, request_id: str) -> None:
++        ledger.admit(
++            store,
++            epoch=epoch,
++            principal_id="attach:cli",
++            session_id=session_id,
++            request_id=request_id,
++            payload={"text": request_id},
++        )
++
++    admit("s1", "r1")
++    assert await probe.slow() == "input is queued for s1"
++    assert ledger.claim_head(store, epoch=epoch, session_id="s1").kind == "claimed"
++    admit("s1", "r2")  # queued behind the started turn
++    epoch = ledger.begin_owner_epoch(store, "daemon-2").epoch  # the started turn becomes unknown
++    assert await probe.slow() is None  # that queue is paused until a person resolves it
++    admit("s2", "r3")
++    assert await probe.slow() == "input is queued for s2"
++
++
++@aio
++async def test_cron_from_the_store_and_due_loops(scope: Scope) -> None:
++    daemon = StandIn(scope)
++    probe = daemon.probe()
++    cron = CronStore(scope)
++    made = cron.create(JobSpec(schedule="every 1m", prompt="ping"))
++    assert await probe.slow() == f"cron job {made.id} is due"
++    pause_all(scope.home, "holiday", scope.clock.now())
++    assert await probe.slow() is None
++    due: list[Any] = []
++
++    async def due_rows(namespace: str, before: float) -> list[Any]:
++        return [row for row in due if row.namespace == namespace and row.due_at <= before]
++
++    daemon.automation = SimpleNamespace(
++        scheduler=SimpleNamespace(sources=[SimpleNamespace(namespace="loops")]),
++        meta=SimpleNamespace(due=due_rows),
++    )
++    soon = scope.clock.now().timestamp() + 30
++    due.append(SimpleNamespace(namespace="loops", session_id="s9", due_at=soon))
++    assert await probe.slow() is None  # not a session this daemon holds
++    daemon.service.held["s9"] = True
++    assert await probe.slow() == "loops due in s9"
++
++
++# -- arming and the real daemon -------------------------------------------------------------------
++
++
++def test_only_the_ensure_marker_arms() -> None:
++    assert autostarted({AUTOSTART_ENV: "1"})
++    assert not autostarted({AUTOSTART_ENV: "0"})
++    assert not autostarted({})
++
++
++def test_a_supervised_or_hand_started_daemon_is_not_armed(scope: Scope) -> None:
++    spawned: list[object] = []
++
++    def keep(coro: Any) -> None:
++        spawned.append(coro)
++        coro.close()
++
++    for started, supervised in [(False, False), (True, True)]:
++        daemon = SimpleNamespace(autostarted=started, is_supervised=supervised)
++        assert arm(cast(GatewayDaemon, daemon), spawn=keep) is None
++    daemon = SimpleNamespace(
++        autostarted=True,
++        is_supervised=False,
++        scope=scope,
++        clock=scope.clock,
++        lifecycle=Lifecycle(),
++    )
++    watch = arm(cast(GatewayDaemon, daemon), probe=Scripted(), spawn=keep)
++    assert watch is not None and len(spawned) == 1 and watch.window() == 600.0
++
++
++def _kit() -> Any:
++    from tests.integration.gateway import daemon_kit
++
++    return daemon_kit
++
++
++def _daemon(tmp_path: Path, *, supervised: bool, window: float, parts: list[Any]) -> GatewayDaemon:
++    kit = _kit()
++    scope = kit.daemon_scope(
++        tmp_path,
++        env={"TELEGRAM_BOT_TOKEN": None, AUTOSTART_ENV: "1"},
++    )
++    return GatewayDaemon(
++        scope,
++        options=kit.quick(supervised=supervised, idle_exit_seconds=window, attach_ws=False),
++        registry=kit.fake_registry(),
++        service_factory=kit.fake_service(kit.model_server(), tmp_path / "svc-locks"),
++        parts=parts,
++    )
++
++
++posix = pytest.mark.skipif(os.name != "posix", reason="POSIX locks")
++
++
++@posix
++def test_an_auto_started_daemon_stops_itself_as_idle_exit(tmp_path: Path) -> None:
++    daemon = _daemon(tmp_path, supervised=False, window=0.4, parts=[])
++    code = asyncio.run(asyncio.wait_for(daemon.run(), 30))
++    assert code == EXIT_OK
++    assert daemon.autostarted and daemon.idle_watch is not None and daemon.idle_watch.fired
++    assert daemon.scope.env.get(AUTOSTART_ENV) is None  # children do not inherit the marker
++    assert daemon.status.history[-4:] == ["running", "draining", "stopping", "stopped"]
++    status = read_status(daemon.scope.home)
++    assert status is not None and status.state == "stopped"
++    assert status.exit_reason == IDLE_EXIT_REASON and status.exit_code == 0
++    assert planned_stop_reason(daemon.scope.home) is None  # the next ensure starts it again
++
++
++@posix
++def test_a_supervised_daemon_never_idles_out(tmp_path: Path) -> None:
++    daemon = _daemon(tmp_path, supervised=True, window=0.2, parts=[])
++
++    async def main() -> None:
++        flight = await _kit().fly(daemon)
++        assert daemon.idle_watch is None
++        await daemon.clock.sleep(1.0)
++        assert daemon.status.state == "running"
++        assert await flight.stop() == EXIT_OK
++
++    asyncio.run(main())
++    status = read_status(daemon.scope.home)
++    assert status is not None and status.exit_reason == "test"
++
++
++@posix
++def test_a_due_cron_job_keeps_the_daemon(tmp_path: Path) -> None:
++    daemon = _daemon(tmp_path, supervised=False, window=0.3, parts=[])
++    job = CronStore(daemon.scope).create(JobSpec(schedule="every 1m", prompt="ping"))
++
++    async def main() -> None:
++        flight = await _kit().fly(daemon)
++        watch = daemon.idle_watch
++        assert watch is not None
++        await daemon.clock.sleep(1.2)
++        assert daemon.status.state == "running" and not watch.fired
++        assert watch.busy == f"cron job {job.id} is due"
++        assert await flight.stop() == EXIT_OK
++
++    asyncio.run(main())
++
++
++# -- ensure after an idle exit -------------------------------------------------------------------
++
++
++def _status(home: Path, state: str, reason: str | None) -> None:
++    identity = ProcessIdentity.current()
++    status = RuntimeStatus(cast(Any, state), "", identity, profile="work", exit_reason=reason)
++    write_status(home, status.stamped(datetime.now(UTC)))
++
++
++def test_ensure_treats_an_idle_exit_as_not_deliberate(tmp_path: Path) -> None:
++    _status(tmp_path, "stopped", IDLE_EXIT_REASON)
++    assert planned_stop_reason(tmp_path) is None
++    _status(tmp_path, "stopped", "planned_stop:stop")
++    assert planned_stop_reason(tmp_path) == "stop"
++
++
++def test_ensure_waits_out_an_idle_exiting_daemon(
++    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    home = tmp_path / "profile"
++    home.mkdir(mode=0o700)
++    _status(home, "draining", IDLE_EXIT_REASON)
++    me = os.getpid()
++    answers: list[dict[str, Any] | None] = [{"pid": me}, None]
++    monkeypatch.setattr(gateway_ensure.gateway_control, "identify", lambda _h: answers.pop(0))
++    assert gateway_ensure._idle_exiting(home) is not None  # pyright: ignore[reportPrivateUsage]
++    found = gateway_ensure.ensure(home, {}, mode="discover")
++    assert (found.state, found.reason) == ("absent", IDLE_EXIT_REASON)
++
++    # start: wait while the old pid lives, then start a new daemon.
++    answers[:] = [{"pid": me}, None]
++    alive = iter([True, True, False])
++    monkeypatch.setattr(gateway_ensure.gateway_runtime, "alive", lambda _p, _s: next(alive))
++    started: list[str] = []
++
++    def fake_start(run: Any, service: Any) -> gateway_ensure.Ensured:
++        started.append("start")
++        return gateway_ensure.Ensured("ready", started=True)
++
++    monkeypatch.setattr(gateway_ensure, "_start", fake_start)
++    paused: list[float] = []
++    found = gateway_ensure.ensure(home, {}, mode="start", pause=paused.append)
++    assert found.started and started == ["start"] and len(paused) == 2
++
++    # the deadline passes while it is still leaving: not attachable, nothing started.
++    answers[:] = [{"pid": me}]
++    monkeypatch.setattr(gateway_ensure.gateway_runtime, "alive", lambda _p, _s: True)
++    clock = iter([0.0, 0.0, 5.0])
++    found = gateway_ensure.ensure(
++        home, {}, mode="recover", timeout=1.0, monotonic=lambda: next(clock), pause=paused.append
++    )
++    assert (found.state, found.reason) == ("starting", "timeout") and started == ["start"]
