@@ -75,14 +75,12 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- P17-15..22 (K6 ensure/channel/remote host, K7 CLI attach + store ownership, K8 TUI attach + TS client, K9 messaging on
-  the shared host) all built; one integrator in scratchpad verify14 merges them with end-to-end attach tests (brief
-  `.agents/wip/w27/k-integrator-brief.md`, D-16.480..499). Patches + README in `.agents/wip/w27/`.
-- E12 (P16-07 Matrix E2EE + 19 Weixin) DONE, parked. Builder E14 (P16-21/22 Yuanbao + 30 Raft, wt-w27e14); E13 (P16-02/03 WhatsApp bridge) DONE,
-  parked pending the Baileys licence decision. If paused, patches go in `.agents/wip/w27/`.
-- Later: P17-23..27 (idle exit, profile binding, protocol additions + codegen, dual-host matrix, demo); P16-21/22
-  (Yuanbao), 25 (Photon), 30 (Raft), 33–36.
-- Last landings: P16-31/32 gateway setup wizard + per-platform target parsers (`8708c50`), P17-13/14 WebSocket attach endpoint + subscriptions (`8e91087`; wsproto into base deps), P16-14/15/24/28/29 Feishu + doc tools, BlueBubbles, SimpleX, Buzz (`19e9a77`), P16-11/12/13/16/17/18/20 Teams, Graph, Google Chat, DingTalk, WeCom ×2, QQ Bot (`6cc32b0`), P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
+- Parked in `.agents/wip/w27/` (patches + README): E12 (P16-07 Matrix E2EE + 19 Weixin), E13 (P16-02/03 WhatsApp
+  bridge; ships without the Baileys mapping unless the owner decides), E14 (P16-21/22 Yuanbao + 30 Raft; remove the
+  `_stubs_e14.py` stand-in when the registry rows land). Next: one P16 integrator for E12+E13+E14 (D-16.524..539).
+- Later: P17-23..27 (idle exit, profile binding, protocol additions + codegen, dual-host matrix, demo); P16-25 (Photon), 33–36.
+- Last landings: P17-15..22 ensure/attach channel/remote session host, CLI + TUI attach by default, @indus/client WS
+  transport, store ownership across processes, messaging on the shared host (`090479b`; ssh home-retry test fix at landing), P16-31/32 gateway setup wizard + per-platform target parsers (`8708c50`), P17-13/14 WebSocket attach endpoint + subscriptions (`8e91087`; wsproto into base deps), P16-14/15/24/28/29 Feishu + doc tools, BlueBubbles, SimpleX, Buzz (`19e9a77`), P16-11/12/13/16/17/18/20 Teams, Graph, Google Chat, DingTalk, WeCom ×2, QQ Bot (`6cc32b0`), P17-08..12 session host, creation policy, tickets, attach verbs, RPC dispatcher (`ec2b0eb`; also a root
   test fixture that resets the process-exit fence), P16-04/10/23/26/27 WhatsApp Cloud/SMS/LINE/ntfy/IRC + per-platform lock keys (`4aa2c78`), P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
   fix), P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
   "P15 wave 22 + Demo 3 landing notes"), P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the
@@ -90,7 +88,7 @@ In flight:
   landing notes"), P15-19..32 (`d8eb3c0`: ledger, `indus send`, cron in daemon, approvals over chat, media
   intake, daemon, control socket, `indus gateway`, API server, webhooks; notes in LEAD-NOTES "P15 waves 2–3
   landing notes"), P15-01..18 (`c0e0201`), P21-01..11, 15 and P22-01..09 (`42a852e`).
-  Done: P00–P15, P21, P22 complete; P16 24/36; P17 14/27.
+  Done: P00–P15, P21, P22 complete; P16 24/36; P17 22/27.
 Next: P15-33..36 — builders T/D/S (Telegram own Bot API client over httpx, no LGPL; Discord; Slack), each
 with `create_adapter(AdapterConfig)`, a send-only open for `indus send` and media fetchers; Demo 3 (P15-36)
 at integration. Builder brief: `.agents/wip/p15w4/brief.md`. Then P16, P17.
