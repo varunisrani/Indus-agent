@@ -75,9 +75,13 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 Turn: AGENT_1 (took it at 10:19 UTC 2026-10-19). Done: P00–P14 (P13 `d4815be`, P14 `b1f2839`).
 P14 = cron (`b1f2839`, M4 demo test tests/integration/cron/test_m4_demo.py).
 In flight:
-- Wave 23/24 (from `0a106d2`, started 00:40 UTC):
-  - Builders E4 (P16-04 WhatsApp Cloud + 10 SMS) and E5 (P16-23 LINE + 26 ntfy + 27 IRC) DONE, parked in
-    `.agents/wip/w24/` (README has registry/credential rows); integrate after E2+E3 lands (next window).
+- Wave 25 (from `d50d5d3`, started 03:08 UTC 2026-10-20; brief `.agents/wip/w25/brief.md`):
+  - Integrator for parked E4 + E5 (P16-04 WhatsApp Cloud, 10 SMS, 23 LINE, 26 ntfy, 27 IRC) in scratchpad verify8,
+    brief `.agents/wip/w24/integrator-brief.md` (adds a per-platform lock-key field; D-16.400..419). Patches in
+    `.agents/wip/w24/`.
+  - Builders K3 (P17-08 session host + 09 creation policy), K4 (P17-10 tickets/ws_auth + 11 attach verbs + 12 RPC
+    dispatcher), E6 (P16-11 Teams + 12 Graph receiver), E7 (P16-13 Google Chat + 20 QQ Bot) in scratchpad
+    wt-w25{k3,k4,e6,e7}. If paused, patches go in `.agents/wip/w25/`.
 - Last landings: P16-05/06/08/09 Signal/Matrix/Mattermost/Email (`b702a98`, with a P02-19 VACUUM lock-patience
   fix), P15-33..36 Telegram/Discord/Slack + Demo 3 (`5378127`; P15 COMPLETE; notes in LEAD-NOTES
   "P15 wave 22 + Demo 3 landing notes"), P16-01 kit (`e3b3aa1`) with two root-cause fixes — P08-13 expired provider reset no longer arms the
