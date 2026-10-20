@@ -6,6 +6,6 @@
   "remaining_pct": 24,
   "resets_at": "2026-10-20T23:20:00+00:00",
   "last_check": "2026-10-20T22:30:00+00:00",
-  "current_step": "75% guard: no new agents; P19 integrator #2 (m1+a2+d1, P19-18) running",
-  "last_commit": "155ef32"
+  "current_step": "P19 complete eab425c; nothing in flight; 75% guard \u2014 next builders (P18-23..30) after the 23:20 reset",
+  "last_commit": "eab425c"
 }

@@ -72,23 +72,21 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `155ef32` (P16 complete aa696ad; P18-01..22 in 077ef96 + 9786b32; P19-01..07 in 3ade87c; drive-harness fix 155ef32).
-Done: P00–P17, P21, P22 complete; P18 22/30 (16 partly: prompt-size breakdown owed); P19 7/18. 495/648 tasks landed (the old "476" was a miscount: the
-phase table summed to 461 before P18). Built and parked: 10 more P19 tasks + D-16.602 (see below).
-In flight (Agent 2):
-1. **P19 integrator #2** (scratchpad int-p19b) — w30-m1 (P19-14..17 mcp serve) + w30-a2 (P19-08..13) + w31-d1 (daemon
-   session.mutate / acp.editor_policy, D-16.602 — attached `indus acp` against a real daemon) + its wiring patch, then builds
-   P19-18. D-16.626..649. If it is not landed when you take the turn: its worktree has the combined tree; land it (rebase,
-   targeted checks, full run) — the parked patches stay in .agents/wip/w30 (m1, a2) and w31 (d1) until then.
+Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `eab425c` (P16 aa696ad; P18-01..22 077ef96 + 9786b32; P19 complete 3ade87c + eab425c; drive fix 155ef32).
+Done: P00–P17, P19, P21, P22 complete; P18 22/30 (16 partly: prompt-size breakdown owed). 506/648 tasks landed (the old "476" was a miscount: the
+phase table summed to 461 before P18). Nothing parked.
+In flight: nothing.
 Open test follow-ups (root-cause, never re-run to green): (a) tests/integration/core/test_d04_1_terminal_tool_backstop.py::
 test_tool_answers_through_the_backstop_when_the_wait_is_wedged failed once in the REST full run (hypothesis: SIGKILL
 without a bounded wait for exit); (b) tests/unit/cron/test_ticker.py::test_daemon_fires_an_every_30m_job_twice_in_an_hour
 failed once ("cron cleanup output pruning took longer than 10 s", 1 call not 2) — its hand-rolled clock loop advances 10 s
 per 0.5 ms and does not hold for off-loop work (tests/fakes/turn.drive does since 155ef32: copy its awaited_calls() check);
 not reproduced with writer/prune delays; (c) ~30 helpers with own clock loops (backends conftest, gateway adapters,
-providers, terminal rig) should read awaited_calls() the same way.
-Parked: `.agents/wip/w30/` w30-m1 (P19-14..17), w30-a2 (P19-08..13); `.agents/wip/w31/` w31-d1 (D-16.602 daemon side) — all
-being integrated by P19 integrator #2 (above).
+providers, terminal rig) should read awaited_calls() the same way; (d) matrix adapter
+`test_media_over_the_cap_is_refused_before_upload` (helper counts fake-clock steps while a file stat runs on a thread —
+same class as (c)); (e) msgraph `test_renewal_fires_at_eighty_percent_of_the_lifetime` (failed once, not root-caused).
+Owed product follow-ups: P18-16 prompt-size breakdown; ACP no_mcp on the daemon, model switch not written to the
+session row, real-daemon reattach test (ACC-M8-2), MCP-only approval (register mcp serve as a viewer), mcp-serve user doc.
 Then: P18-23..30 (pages, chat host, login, build/serve, e2e M6), P20, P23, P24, P25. Briefs: `.agents/wip/w29/brief.md`,
 `.agents/wip/w30/README.md`.
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
@@ -96,7 +94,8 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
 per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
 in docs/plan/phases/README.md and this file.
-- Last landings: P18-11..16 dashboard REST (`9786b32`; download tickets, no tokens in URLs, daemon `stop` verb,
+- Last landings: P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
+  daemon; `indus mcp serve`; D-16.626..642), P18-11..16 dashboard REST (`9786b32`; download tickets, no tokens in URLs, daemon `stop` verb,
   generated route list; D-16.596..598, 610..622), drive-harness fix (`155ef32`), learning/prefetch test fixes (`0e9a538`,
   `ca2860b`), P16-25, 33–36 Photon (disabled), native draft streams, Telegram topics/stickers, Discord voice, adapter matrix
   + doctor gateway checks (`aa696ad`; P16 COMPLETE; D-16.560..570; notes in LEAD-NOTES "P16-25, 33..36 landing notes"), P19-01..07 `indus acp` (`3ade87c`; D-16.600..609; attached session/new waits on D-16.602 session.mutate +
