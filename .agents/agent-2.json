@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 55,
-  "remaining_pct": 45,
+  "usage_pct": 65,
+  "remaining_pct": 35,
   "resets_at": "2026-10-20T23:20:00+00:00",
-  "last_check": "2026-10-20T20:47:00+00:00",
+  "last_check": "2026-10-20T21:19:00+00:00",
   "current_step": "P16 complete aa696ad; REST + P19b integrators and drive-harness fix running",
   "last_commit": "aa696ad"
 }
