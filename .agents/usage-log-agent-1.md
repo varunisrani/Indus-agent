@@ -110,3 +110,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 11:02 UTC | 79% | 21% | 13:00 UTC | E14 parked (5e3fbed); verify14 (P17-15..22) full gate running after lead ssh-test fix; no new agents until reset
 2026-10-20 11:31 UTC | 79% | 21% | 13:00 UTC | P17-15..22 landed (090479b); nothing running; E12/E13/E14 parked; next step 13:04 post-reset
 2026-10-20 12:26 UTC | 83% | 17% | 13:00 UTC | P16 w27 integrator (E12+E13+E14) running in verify15 (started 12:00 at the owner's 'continue'); P17-23..27 builders wait for reset
+2026-10-20 12:46 UTC | 84% | 16% | 13:00 UTC | P16 w27 integrator running in verify15; reset in 14 min, letting it run
