@@ -79,3 +79,38 @@
 - Follow-ups: trap rows R09.9/13/14/16 and ACC-M1-1/2, M2-1/2/3, M8-1/2, Q7-2; tool kinds in replay (P19-10); approval
   re-offered at load by a second editor test; local frozen launch policy not written to the session row;
   `indus tools install browser` for --setup-browser.
+
+## w29-w1.patch: P18-01..06 web app factory, token gate + Host guard, gated mode (basic auth, cookies, audit), OIDC + service bearer, proxies/prefix, WS auth helper — done (base e02d3f5)
+- Builder checks: web unit/integration + service ws_auth + contract cli + cli/test_app + config 989 passed / 2 skipped;
+  ruff, pyright, lint-imports, tooling.checks ok (public-path list re-sorted after a similarity hit). Full suite and perf not
+  run. Compare step ticked from Read notes, reference NOT reopened line by line (each note says so) — integrator or a later
+  pass should do the real Compare.
+- No packages: argon2id via cryptography's Argon2id (PHC strings); pyjwt + cryptography already base deps. The `web` extra
+  name is taken (ddgs): suggested new `dashboard` extra for ptyprocess/pywinpty (W2) and psutil.
+- New: src/indus/web/{app (create_app, AppOptions, DaemonLink, /api/health), spa, serve_runtime, state, prefix, command}.py;
+  web/auth/{__init__, gate, token, public_paths, host_guard, providers, basic, cookies, audit, oidc, service_bearer, proxy};
+  web/routes/{__init__ (ROUTERS), auth, ws_ticket}; web/ws/__init__.py (ws_accept, guarded_ws, websocket_routes); tests
+  unit/web (+auth, ws), integration/web/test_serve_ensure.py, tests/fakes/idp/fake_oidc.py (runtime keys); notes
+  docs/notes/P18/{app-spa,token-gate,basic-auth,oidc-bearer,proxy-prefix,ws-auth}.md.
+- Shared: service/ws_auth.py (dashboard purposes, mint(purpose, profile_id=), close codes 4404/4408, clamp_close_reason,
+  InternalCredential, authenticate_dashboard_upgrade), cli/app.py (dashboard + serve rows -> indus.web.command, loaded by
+  name: layer contract forbids cli -> web), web/__init__.py lazy exports, schema DashboardSection (public_url,
+  trusted_proxies, basic_auth.{username,password_hash}, oidc.{issuer,client_id,scopes,id_token_leeway}, theme,
+  show_token_analytics) + test, contract cli help catalogue + non_tty_table, traps R09.2-5, R09.23, ACC-L1-1.
+- W2 join: W2 assumed `await gate(websocket, purpose)`; W1 built `guarded_ws(purpose, allow_internal=...)(handler(ws,
+  grant))` + routers via options.routers / ROUTERS; internal credential at state.internal.value; feature flags
+  state.feature_enabled; W1 also has a `web-pub` purpose (internal only). Integrator: adapt W2's chat_gate onto guarded_ws
+  and remove W2's stand-in. REST tasks read dashboard_state(request.app) and auth.gate.session_of; SPA catch-alls last;
+  /api/daemon/drain bearer seam; P18-28 replaces routes.auth.render_login.
+- SECURITY DECISION OWED: WS credentials ride in the query (?token=, ?ticket=, ?internal=) per the row; AGENTS/brief say no
+  tokens in URLs — prefer the subprotocol (as P17's ticket subprotocol) unless the browser path forces the query; decide at
+  integration and make F1's wsUrl.ts match.
+- Other decisions (D-ids): plugin API prefix /api/ext/<name>/; gated mode 401 when the session-token header / Bearer=token is
+  present even with a valid cookie; unsafe methods 403 on foreign Origin; X-Forwarded-Prefix only from trusted peers, Vary
+  header; own outermost forwarded middleware, uvicorn proxy_headers=False, access log off; refused upgrade accepted then
+  closed with the code; ticket route 409 not_gated in loopback mode; desktop session token < 32 url-safe chars refuses
+  start; env names INDUS_DASHBOARD_{USERNAME,PASSWORD,SESSION_SECRET (>=32 bytes),OIDC_ISSUER,OIDC_CLIENT_ID,DRAIN_SECRET,
+  PUBLIC_URL}; OIDC sessions our own HMAC tokens, only the IdP refresh token in a cookie, nonce, single-flight refresh;
+  runtime records <root>/dashboard.json and <home>/serve.json (0600, trusted only with a matching health answer); serve
+  ensure under <home>/serve.lock; only dashboard mode attaches via DaemonLink; exit codes 75 / 78 / 1.
+- Follow-ups: full Compare pass; MCP OAuth callback on the public allowlist (P18-14, D-id); §2.7 rows; ACC L2/L13/L18.
