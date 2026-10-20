@@ -49,9 +49,10 @@ class AdapterCase:
     # Deliver queued inbound traffic to the adapter; the default advances the clock a little.
     pump: Callable[[CaseEnv, Adapter], Awaitable[None]] | None = None
     # Inbound shapes the platform has no way to express (``group``, ``thread``, ``bot``,
-    # ``edit``, ``media``, ``caption``): its wire fake has no form for them (or one the adapter
+    # ``edit``, ``media``, ``document``): its wire fake has no form for them (or one the adapter
     # must drop), and the inbound check then expects no event for them instead of a normalised
-    # one (P16).
+    # one (P16). ``caption``: photos carry no text; ``voice_media``: voice notes arrive as the
+    # platform's transcript without an attachment (WeCom).
     lacks: frozenset[str] = frozenset()
 
 
@@ -134,15 +135,21 @@ def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[SocketGuard]:
 
 # -- platform cases ------------------------------------------------------------------------------
 # Each module registers its case on import (``register_case`` is defined above).
+from tests.contract.gateway import dingtalk_case as _dingtalk_case  # noqa: E402, F401
 from tests.contract.gateway import discord_case as _discord_case  # noqa: E402, F401
 from tests.contract.gateway import email_case as _email_case  # noqa: E402, F401
+from tests.contract.gateway import google_chat_case as _google_chat_case  # noqa: E402, F401
 from tests.contract.gateway import irc_case as _irc_case  # noqa: E402, F401
 from tests.contract.gateway import line_case as _line_case  # noqa: E402, F401
 from tests.contract.gateway import matrix_case as _matrix_case  # noqa: E402, F401
 from tests.contract.gateway import mattermost_case as _mattermost_case  # noqa: E402, F401
 from tests.contract.gateway import ntfy_case as _ntfy_case  # noqa: E402, F401
+from tests.contract.gateway import qqbot_case as _qqbot_case  # noqa: E402, F401
 from tests.contract.gateway import signal_case as _signal_case  # noqa: E402, F401
 from tests.contract.gateway import slack_case as _slack_case  # noqa: E402, F401
 from tests.contract.gateway import sms_case as _sms_case  # noqa: E402, F401
+from tests.contract.gateway import teams_case as _teams_case  # noqa: E402, F401
 from tests.contract.gateway import telegram_case as _telegram_case  # noqa: E402, F401
+from tests.contract.gateway import wecom_callback_case as _wecom_callback_case  # noqa: E402, F401
+from tests.contract.gateway import wecom_case as _wecom_case  # noqa: E402, F401
 from tests.contract.gateway import whatsapp_cloud_case as _whatsapp_cloud_case  # noqa: E402, F401

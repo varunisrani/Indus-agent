@@ -1153,6 +1153,64 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/sms/test_adapter.py::test_numbers_and_credentials_are_masked_in_logs`
   - `tests/unit/gateway/adapters/sms/test_adapter.py::test_indus_send_builds_a_send_only_adapter`
   - Review: live lane against a real Twilio number (P16-36)
+- **ACC-K11-1** DingTalk (Stream Mode socket, session webhook with robot-API fallback)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/dingtalk/test_adapter.py::test_an_expired_session_webhook_falls_back_to_the_robot_api`
+  - `tests/unit/gateway/adapters/dingtalk/test_adapter.py::test_pings_are_acked_with_their_data_and_callbacks_at_once`
+  - `tests/unit/gateway/adapters/dingtalk/test_adapter.py::test_endpoints_off_dingtalk_are_refused`
+  - `tests/unit/gateway/adapters/dingtalk/test_adapter.py::test_group_gating_by_mention_and_chat`
+  - `tests/unit/gateway/adapters/dingtalk/test_adapter.py::test_secrets_never_reach_logs_errors_or_the_logged_url`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_dingtalk`
+  - Review: live lane against a real DingTalk robot (P16-36)
+- **ACC-K11-3** WeCom: smart robot (socket, native streams) and callback app (signed, AES-encrypted XML)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_every_stream_frame_is_a_prefix_of_the_next`
+  - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_a_takeover_reconnects_once_then_two_within_ten_minutes_are_fatal`
+  - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_inbound_media_is_downloaded_and_decrypted`
+  - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_thirty_messages_a_minute_per_chat`
+  - `tests/unit/gateway/adapters/wecom/test_callback.py::test_signatures_match_the_vectors`
+  - `tests/unit/gateway/adapters/wecom/test_callback.py::test_decryption_matches_the_vectors`
+  - `tests/unit/gateway/adapters/wecom/test_callback.py::test_xxe_payloads_are_refused_before_any_event`
+  - `tests/unit/gateway/adapters/wecom/test_callback.py::test_the_signature_is_checked_in_constant_time_before_decrypting`
+  - `tests/unit/gateway/adapters/wecom/test_callback.py::test_stale_timestamps_wrong_corps_and_repeats`
+  - `tests/unit/gateway/adapters/wecom/test_callback.py::test_replies_are_split_by_bytes_and_tokens_are_refreshed_once`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_wecom`
+  - Review: live lane against a real WeCom robot and app (P16-36)
+- **ACC-K11-5** QQ Bot (API v2 gateway socket, passive replies, chunked media upload)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_resume_after_a_drop_keeps_the_sequence`
+  - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_the_daily_upload_limit_is_not_retried`
+  - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_heartbeats_follow_the_hello_interval_and_a_missing_ack_replaces_the_socket`
+  - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_passive_replies_name_the_message_with_a_growing_seq`
+  - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_a_long_qq_rate_limit_is_handed_over_without_sleeping`
+  - `tests/unit/gateway/adapters/qqbot/test_upload.py::test_part_retries_are_exact`
+  - `tests/unit/gateway/adapters/qqbot/test_upload.py::test_the_daily_limit_is_never_retried`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_qqbot`
+  - Review: live lane against a real QQ bot (sandbox) (P16-36)
+- **ACC-K12-3** Microsoft Teams (Bot Framework activities, RS256 token check, Adaptive Cards)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/teams/test_adapter.py::test_a_token_for_another_app_is_refused_with_401_and_nothing_is_parsed`
+  - `tests/unit/gateway/adapters/teams/test_adapter.py::test_a_service_url_off_the_allow_list_is_never_stored_or_called`
+  - `tests/unit/gateway/adapters/teams/test_adapter.py::test_service_url_allow_list_refuses_lookalikes`
+  - `tests/unit/gateway/adapters/teams/test_adapter.py::test_proactive_send_uses_the_stored_reference_after_a_restart`
+  - `tests/unit/gateway/adapters/teams/test_adapter.py::test_a_card_press_is_acknowledged_and_handed_to_the_core`
+  - `tests/unit/gateway/adapters/teams/test_botauth.py::test_only_rs256_is_accepted`
+  - `tests/unit/gateway/adapters/teams/test_botauth.py::test_unsigned_and_hmac_confused_tokens_are_refused`
+  - `tests/unit/gateway/adapters/teams/test_botauth.py::test_an_unknown_kid_refreshes_once_then_waits_before_asking_again`
+  - `tests/unit/gateway/adapters/teams/test_botauth.py::test_small_keys_and_non_signing_entries_are_ignored`
+  - `tests/unit/gateway/adapters/test_jws.py::test_no_rsa_arithmetic_of_our_own_in_src`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_teams`
+  - Review: the meeting-summary pipeline is not in 1.0 (D-16.87, K12 gap); live lane against a real bot registration (P16-36)
+- **ACC-K12-4** Graph webhooks (validation handshake, clientState, subscriptions renewed at 80 %)
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_the_validation_handshake_echoes_the_token_as_plain_text`
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_bad_validation_requests_are_refused_without_echo`
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_a_wrong_client_state_is_dropped`
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_renewal_fires_at_eighty_percent_of_the_lifetime`
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_notifications_are_deduplicated_for_an_hour`
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_events_are_internal_never_commands_and_sanitised`
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_replies_are_forwarded_or_reported_undelivered_never_posted_to_graph`
+  - `tests/unit/gateway/delivery/test_graph_forward.py::test_the_router_part_forwards_graph_replies_and_never_targets_the_receiver`
+  - Review: live lane against a real tenant subscription (P16-36)
 - **ACC-K12-5** LINE (signed webhook, reply token or push, served media)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/line/test_adapter.py::test_signature_vectors_from_the_spec`
@@ -1162,6 +1220,19 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/line/test_adapter.py::test_media_url_expires_after_its_ttl`
   - `tests/unit/gateway/adapters/line/test_adapter.py::test_a_slow_turn_offers_the_still_working_button`
   - `tests/unit/gateway/adapters/line/test_adapter.py::test_indus_send_opens_line_send_only`
+- **ACC-K12-6** Google Chat (signed HTTP events or Pub/Sub pull, cards v2, 503 while draining)
+  - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
+  - `tests/unit/gateway/adapters/google_chat/test_adapter.py::test_a_forged_token_is_refused_with_401_before_the_body_is_read`
+  - `tests/unit/gateway/adapters/google_chat/test_adapter.py::test_while_the_gateway_drains_callbacks_get_503_and_the_redelivery_is_admitted`
+  - `tests/unit/gateway/adapters/google_chat/test_adapter.py::test_an_attachment_from_an_untrusted_host_is_never_fetched`
+  - `tests/unit/gateway/adapters/google_chat/test_adapter.py::test_pubsub_pulls_hands_on_and_acknowledges`
+  - `tests/unit/gateway/adapters/google_chat/test_adapter.py::test_pubsub_waits_while_draining_and_backs_off_on_failures`
+  - `tests/unit/gateway/adapters/google_chat/test_auth.py::test_forged_and_unsigned_tokens_are_refused`
+  - `tests/unit/gateway/adapters/google_chat/test_auth.py::test_keys_are_cached_for_300_seconds_and_unknown_kids_refetch_once_a_minute`
+  - `tests/unit/gateway/adapters/google_chat/test_auth.py::test_the_key_json_is_checked_and_never_echoed`
+  - `tests/integration/gateway/test_daemon_start.py::test_every_connected_adapter_gets_the_drain_probe_until_it_goes_down`
+  - `tests/unit/gateway/delivery/test_send_p16_platforms.py::test_indus_send_to_google_chat`
+  - Review: live lane against a real Chat app (P16-36)
 - **ACC-K12-7** ntfy (streamed topics in, POST out; a broadcast surface, R06.24)
   - `tests/contract/gateway/test_adapter_contract.py::test_adapter_contract`
   - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_unknown_sender_on_ntfy_never_gets_a_pairing_code`

@@ -336,6 +336,13 @@ def test_decided_defaults() -> None:
         "email": platform,  # P16-09
         "whatsapp_cloud": platform,  # P16-04
         "sms": platform,  # P16-10
+        "teams": platform,  # P16-11
+        "msgraph": platform,  # P16-12
+        "google_chat": platform,  # P16-13
+        "qqbot": platform,  # P16-20
+        "dingtalk": platform,  # P16-16
+        "wecom": platform,  # P16-17
+        "wecom_callback": platform,  # P16-18
     }
     assert d["gateway"] == {
         "message_timestamps": {"enabled": False},

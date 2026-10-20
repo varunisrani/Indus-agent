@@ -1269,6 +1269,17 @@ class PlatformsSection(_Section):
         default_factory=PlatformSection, description="WhatsApp Business (Cloud API)"
     )
     sms: PlatformSection = Field(default_factory=PlatformSection, description="SMS (Twilio)")
+    teams: PlatformSection = Field(default_factory=PlatformSection, description="Microsoft Teams")
+    msgraph: PlatformSection = Field(
+        default_factory=PlatformSection, description="Microsoft Graph change notifications"
+    )
+    google_chat: PlatformSection = Field(default_factory=PlatformSection, description="Google Chat")
+    qqbot: PlatformSection = Field(default_factory=PlatformSection, description="QQ Bot")
+    dingtalk: PlatformSection = Field(default_factory=PlatformSection, description="DingTalk")
+    wecom: PlatformSection = Field(default_factory=PlatformSection, description="WeCom smart robot")
+    wecom_callback: PlatformSection = Field(
+        default_factory=PlatformSection, description="WeCom callback app"
+    )
 
 
 class MessageTimestampsSection(_Section):

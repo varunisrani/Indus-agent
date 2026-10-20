@@ -200,6 +200,33 @@ def test_the_lock_key_is_the_entrys_lock_env_when_it_names_one(tmp_path: Path) -
     run(main())
 
 
+def test_every_connected_adapter_gets_the_drain_probe_until_it_goes_down(tmp_path: Path) -> None:
+    """The base ``set_drain_probe`` seam: the daemon installs ``lifecycle.notice`` on platform up
+    (Google Chat answers 503 and pauses Pub/Sub through it) and removes it on the way down."""
+    scope = daemon_scope(tmp_path)
+    daemon = GatewayDaemon(
+        scope,
+        options=quick(),
+        registry=fake_registry(fake_entry(fake_platform())),
+        service_factory=fake_service(model_server(), tmp_path / "svc-locks"),
+        parts=[],
+    )
+
+    async def main() -> None:
+        flight = await fly(daemon)
+        adapter = daemon.adapters["telegram"]
+        assert adapter.draining() is False
+        daemon.lifecycle.set_draining("maintenance")
+        assert adapter.draining() is True
+        daemon.lifecycle.clear_draining()
+        assert adapter.draining() is False
+        assert await flight.stop() == EXIT_OK
+        # stopping drains the lifecycle; the probe left with the platform
+        assert daemon.lifecycle.draining and adapter.draining() is False
+
+    run(main())
+
+
 def test_a_missing_library_is_fatal_for_that_platform_while_the_others_connect(
     tmp_path: Path,
 ) -> None:

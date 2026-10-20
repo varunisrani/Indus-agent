@@ -1,0 +1,14 @@
+{
+  "_comment": "Made by make_wecom_vectors.sh with openssl/coreutils from the vendor spec; do not edit by hand.",
+  "token": "indusvectortoken",
+  "encoding_aes_key": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFE",
+  "receive_id": "wwvectorcorp0001",
+  "timestamp": "1767258000",
+  "nonce": "n0nce4vectors",
+  "aes_key_hex": "69b71d79f8218a39259a7a29aabb2dbafc31cb3d35db7e39ebbf3d0010831051",
+  "iv_hex": "69b71d79f8218a39259a7a29aabb2dba",
+  "echostr": {"plain": "1234567890123456789", "encrypted": "IG+0eOkLdhYW9kHtuT3HY8ENEFZUgLPdJ/8ZndEB1iMKKOJHGWKTJ3PSCtWfyE1kaq06n72NELRX9Ppyg8AIEg==", "signature": "c5ccbba0d4adcf194a2db97caff5a67dd9b17eff"},
+  "message": {"plain": "<xml><ToUserName><![CDATA[wwvectorcorp0001]]></ToUserName><FromUserName><![CDATA[ana]]></FromUserName><CreateTime>1767258000</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[hello from the vector]]></Content><MsgId>7000000000000000001</MsgId><AgentID>1000002</AgentID></xml>", "encrypted": "IG+0eOkLdhYW9kHtuT3HYzOy+YsMiTrWUMfphtt7+o6I6hyAjnuSGh/0EOwPCDYgY8FBclVLhzfMXTtk2eBvEy3JSlXbuqEb42EMwNDs/7szOWTqswoNQFNLpB2xN0WzUd+PC7EuDI3uKbb0lzpaUHel6yreUnarlPy6Gz859NbFC7mUq1D3+pn0RR6xjnYG4YpGoMBzdA1ejIhqVNyFisE0dkzwCPDqSky3yFGua79umdCp797lVbu2IwovyfNeEW1YlZkqolkZnJgnWp8KPsUNZ8AI1awk242gBSUnFStaRI31o8Vgpf4y+Mq+qnxvQpuPSXPUn/UMse1gItE/CnBv/O6zCvA+w6DewYzjuF6TMAKKlI2nImtdPZsRF3OnGn1L35XCJU2AQdgGJHx2PMi7MD4AuL+cHT/UM9ju247q0lDAmoR3RcXhWpwWLHnGNp3u9TwZ2ukBCIsE/Xpdsg==", "signature": "086fcf811b0b64d9467866e5c09e08db95d355db"},
+  "wrong_receive_id": {"encrypted": "IG+0eOkLdhYW9kHtuT3HYzOy+YsMiTrWUMfphtt7+o6I6hyAjnuSGh/0EOwPCDYgY8FBclVLhzfMXTtk2eBvEy3JSlXbuqEb42EMwNDs/7szOWTqswoNQFNLpB2xN0WzUd+PC7EuDI3uKbb0lzpaUHel6yreUnarlPy6Gz859NbFC7mUq1D3+pn0RR6xjnYG4YpGoMBzdA1ejIhqVNyFisE0dkzwCPDqSky3yFGua79umdCp797lVbu2IwovyfNeEW1YlZkqolkZnJgnWp8KPsUNZ8AI1awk242gBSUnFStaRI31o8Vgpf4y+Mq+qnxvQpuPSXPUn/UMse1gItE/CnBv/O6zCvA+w6DewYzjuF6TMAKKlI2nImtdPZsRF3OnGn1L35XCJU2AQdgGJHx2PD6icpmqAno2eAZ4E1d4301/YDzADDcnbNxL32p+p6e6r7uLCh49ZcIH2e8/+++Wdw==", "signature": "ca8af87f02c3acf2e2c3de73fe8e4b1f52788a53"},
+  "bad_padding": {"encrypted": "IG+0eOkLdhYW9kHtuT3HYzOy+YsMiTrWUMfphtt7+o6I6hyAjnuSGh/0EOwPCDYgY8FBclVLhzfMXTtk2eBvEy3JSlXbuqEb42EMwNDs/7szOWTqswoNQFNLpB2xN0WzUd+PC7EuDI3uKbb0lzpaUHel6yreUnarlPy6Gz859NbFC7mUq1D3+pn0RR6xjnYG4YpGoMBzdA1ejIhqVNyFisE0dkzwCPDqSky3yFGua79umdCp797lVbu2IwovyfNeEW1YlZkqolkZnJgnWp8KPsUNZ8AI1awk242gBSUnFStaRI31o8Vgpf4y+Mq+qnxvQpuPSXPUn/UMse1gItE/CnBv/O6zCvA+w6DewYzjuF6TMAKKlI2nImtdPZsRF3OnGn1L35XCJU2AQdgGJHx2PMi7MD4AuL+cHT/UM9ju247Yuxixablyoff7fdEl/l+kRXqvxFqgs37wwadEPiM0dQ==", "signature": "781052a9eeb55c3c64547d3bed32f1a94f590aad"}
+}

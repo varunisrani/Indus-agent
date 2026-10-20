@@ -816,6 +816,9 @@ class GatewayDaemon:
         adapter.set_fatal_listener(
             lambda code, message: self._lost_for_good(name, adapter, code, message)
         )
+        # Adapters whose platform redelivers (Google Chat's 503, an unacknowledged pull) leave
+        # new events with it while the gateway drains.
+        adapter.set_drain_probe(self.lifecycle.notice)
         self.senders[name] = self.make_sender(name, adapter)
         self.set_platform_state(name, "connected")
         log.info("platform %s connected", name)
@@ -852,6 +855,7 @@ class GatewayDaemon:
         if adapter is not None:
             adapter.set_sink(None)
             adapter.set_fatal_listener(None)
+            adapter.set_drain_probe(None)
             try:
                 await asyncio.wait_for(adapter.disconnect(), self.options.disconnect_timeout)
             except Exception:

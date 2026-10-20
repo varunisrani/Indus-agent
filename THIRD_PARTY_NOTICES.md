@@ -53,9 +53,9 @@ PyPI for packages of other platforms).
 | more-itertools | 11.1.0 | MIT | via jaraco.classes / jaraco.functools | P01-16 |
 | SecretStorage | 3.5.0 | BSD-3-Clause | via keyring (Linux) | P01-16 |
 | jeepney | 0.9.0 | MIT | via keyring / SecretStorage (Linux) | P01-16 |
-| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | via SecretStorage (Linux) | P01-16 |
-| cffi | 2.1.1 | MIT-0 (exception recorded in `tooling/checks/licenses_allow.json`) | via cryptography | P01-16 |
-| pycparser | 3.0 | BSD-3-Clause | via cffi | P01-16 |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | via SecretStorage (Linux) and mcp's `pyjwt[crypto]` (the Teams bot-token RS256 check, P16-11); extras `google-chat` (RS256 for Google Chat's service-account assertion and callback tokens) and `wecom` (AES for the WeCom callback crypto and media) | P01-16, P16-11, P16-13, P16-18 |
+| cffi | 2.1.1 | MIT-0 (exception recorded in `tooling/checks/licenses_allow.json`) | via cryptography (also extras `google-chat`, `wecom`) | P01-16, P16-13, P16-18 |
+| pycparser | 3.0 | BSD-3-Clause | via cffi (also extras `google-chat`, `wecom`) | P01-16, P16-13, P16-18 |
 | pywin32-ctypes | 0.2.3 | BSD-3-Clause | via keyring (Windows) | P01-16 |
 | pydantic | 2.13.5 | MIT | config schema and defaults | P01-09 |
 | pydantic-core | 2.46.5 | MIT | via pydantic | P01-09 |
@@ -159,8 +159,8 @@ PyPI for packages of other platforms).
 | deprecated | 1.3.1 | MIT | extra `daytona`, via daytona / opentelemetry | P21-07 |
 | wrapt | 2.5.0 | BSD-2-Clause | extra `daytona`, via deprecated / opentelemetry-instrumentation | P21-07 |
 | googleapis-common-protos | 1.75.5 | Apache-2.0 | extra `daytona`, via opentelemetry-exporter-otlp-proto-http | P21-07 |
-| httpx-ws | 0.9.0 | MIT | extras `daytona` (via daytona) and `mattermost` (the Mattermost event socket); WebSocket over httpx | P21-07, P16-08 |
-| wsproto | 1.3.2 | MIT | extras `daytona` and `mattermost`, via httpx-ws / simple-websocket | P21-07, P16-08 |
+| httpx-ws | 0.9.0 | MIT | extras `daytona` (via daytona), `mattermost` (the Mattermost event socket), `dingtalk` (the Stream Mode socket), `wecom` (the smart-robot socket) and `qqbot` (the QQ Bot gateway socket); WebSocket over httpx | P21-07, P16-08, P16-16, P16-17, P16-20 |
+| wsproto | 1.3.2 | MIT | extras `daytona`, `mattermost`, `dingtalk`, `wecom` and `qqbot`, via httpx-ws / simple-websocket | P21-07, P16-08, P16-16, P16-17, P16-20 |
 | obstore | 0.11.1 | MIT | extra `daytona`, via daytona (object storage client) | P21-07 |
 | opentelemetry-sdk | 1.45.0 | Apache-2.0 | extra `daytona`, via daytona (tracing; off unless DAYTONA_OTEL_ENABLED) | P21-07 |
 | opentelemetry-semantic-conventions | 0.66b0 | Apache-2.0 | extra `daytona`, via opentelemetry-sdk | P21-07 |

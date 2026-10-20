@@ -682,6 +682,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_a_long_attachment_wait_is_handed_over_without_sleeping`
   - `tests/unit/gateway/adapters/signal/test_adapter.py::test_an_attachment_rate_limit_is_retried_exactly_once_after_its_refill`
   - `tests/unit/gateway/adapters/line/test_adapter.py::test_a_long_server_wait_is_handed_back_and_the_monthly_quota_is_not_retried`
+  - `tests/unit/gateway/adapters/qqbot/test_adapter.py::test_a_long_qq_rate_limit_is_handed_over_without_sleeping`
 - **R06.4** Retry ambiguity: timeouts are not retryable
   - `tests/unit/gateway/core/test_send.py::test_read_timeout_is_attempted_exactly_once`
   - `tests/unit/gateway/core/test_send.py::test_partial_split_resumes_only_the_remainder`
@@ -738,6 +739,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/outbound/test_stream.py::test_every_non_final_send_is_marked_interim`
   - `tests/unit/gateway/outbound/test_stream.py::test_final_edits_the_stream_message_instead_of_sending_again`
   - `tests/unit/gateway/outbound/test_ports.py::test_marks_reach_the_door_but_never_the_wire`
+  - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_every_stream_frame_is_a_prefix_of_the_next`
+  - `tests/unit/gateway/adapters/wecom/test_adapter.py::test_unanswered_interims_are_skipped_and_the_final_carries_the_text`
   - Review: prefix-stable frames for native streams arrive with native streaming (P2); the edit transport closes fences per frame (P15-16)
 - **R06.13** Telegram counts edits against the same per-chat allowance as sends
   - `tests/unit/gateway/core/test_send_slot.py::test_interim_edit_while_a_send_waits_is_dropped_and_final_goes_through`
@@ -808,6 +811,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/test_base.py::test_default_capabilities`
   - `tests/unit/gateway/core/test_authz.py::test_broadcast_dm_never_gets_a_code`
   - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_unknown_sender_on_ntfy_never_gets_a_pairing_code`
+  - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_events_are_internal_never_commands_and_sanitised`
 - **R06.25** Gateway config loader diverges from CLI defaults
   - `tests/unit/gateway/test_config.py::test_defaults_come_from_the_shared_table`
   - `tests/unit/gateway/test_config.py::test_settings_round_trip_through_the_writer`

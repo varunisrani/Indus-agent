@@ -178,6 +178,18 @@ def test_policy_env_names_use_our_prefix() -> None:
         "whatsapp_cloud": ("WHATSAPP_CLOUD_ACCESS_TOKEN", "WHATSAPP_CLOUD_PHONE_NUMBER_ID"),
         "sms": ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"),
         "line": ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"),
+        "teams": ("TEAMS_CLIENT_ID", "TEAMS_CLIENT_SECRET", "TEAMS_TENANT_ID"),
+        "msgraph": ("MSGRAPH_WEBHOOK_CLIENT_STATE",),
+        "google_chat": ("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",),
+        "qqbot": ("QQ_APP_ID", "QQ_CLIENT_SECRET"),
+        "dingtalk": ("DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"),
+        "wecom": ("WECOM_BOT_ID", "WECOM_SECRET"),
+        "wecom_callback": (
+            "WECOM_CALLBACK_CORP_ID",
+            "WECOM_CALLBACK_CORP_SECRET",
+            "WECOM_CALLBACK_TOKEN",
+            "WECOM_CALLBACK_ENCODING_AES_KEY",
+        ),
     }
     # Servers, nicks and topics turn their platform on but are not secrets (never masked).
     assert dict(BUILTIN_PUBLIC_ENV) == {
@@ -307,6 +319,49 @@ def test_lock_keys_follow_the_registry_entry(scope: Scope) -> None:
     signal = registry.get("signal")
     assert signal is not None and signal.lock_env == ()
     assert key("telegram", TELEGRAM_BOT_TOKEN=_fake_token("tg")) == _fake_token("tg")
+
+
+def test_p16_e6_to_e8_lock_keys_are_the_stable_ids_never_the_secrets(scope: Scope) -> None:
+    from indus.gateway.registry import PlatformRegistry
+
+    registry = PlatformRegistry()
+
+    def key(platform: str, **env: str) -> str:
+        entry = registry.get(platform)
+        assert entry is not None
+        local = _with_env(scope, **env)
+        settings = load_gateway_settings(local).platforms[platform]
+        assert settings.enabled, settings.reason
+        return lock_key(local, settings, entry.lock_env)
+
+    def rotated(platform: str, secret_name: str, expected: str, **env: str) -> None:
+        first = key(platform, **{secret_name: _fake_token("s1")}, **env)
+        assert first == expected
+        assert key(platform, **{secret_name: _fake_token("s2")}, **env) == first
+        assert _fake_token("s1") not in first
+
+    teams = {"TEAMS_CLIENT_ID": "app-1", "TEAMS_TENANT_ID": "tenant-1"}
+    rotated("teams", "TEAMS_CLIENT_SECRET", "app-1\ntenant-1", **teams)
+    rotated("qqbot", "QQ_CLIENT_SECRET", "102000009", QQ_APP_ID="102000009")
+    rotated("dingtalk", "DINGTALK_CLIENT_SECRET", "ding-app", DINGTALK_CLIENT_ID="ding-app")
+    rotated("wecom", "WECOM_SECRET", "bot-1", WECOM_BOT_ID="bot-1")
+    callback = {
+        "WECOM_CALLBACK_CORP_ID": "corp-1",
+        "WECOM_CALLBACK_AGENT_ID": "1000002",
+        "WECOM_CALLBACK_TOKEN": _fake_token("tok"),
+        "WECOM_CALLBACK_ENCODING_AES_KEY": _fake_token("aes"),
+    }
+    rotated("wecom_callback", "WECOM_CALLBACK_CORP_SECRET", "corp-1\n1000002", **callback)
+    other_agent = {**callback, "WECOM_CALLBACK_AGENT_ID": "1000003"}
+    assert key("wecom_callback", WECOM_CALLBACK_CORP_SECRET="x", **other_agent) != key(
+        "wecom_callback", WECOM_CALLBACK_CORP_SECRET="x", **callback
+    )
+    # Google Chat (the key JSON) and the Graph receiver (its clientState) keep the credential.
+    for name in ("google_chat", "msgraph"):
+        entry = registry.get(name)
+        assert entry is not None and entry.lock_env == ()
+    state = _fake_token("graph-client-state")
+    assert key("msgraph", MSGRAPH_WEBHOOK_CLIENT_STATE=state) == state
 
 
 def test_custom_credential_table(scope: Scope) -> None:

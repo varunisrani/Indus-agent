@@ -77,6 +77,7 @@ KNOWN_PLATFORMS: frozenset[str] = frozenset(
         "teams",
         "telegram",
         "wecom",
+        "wecom_callback",
         "weixin",
         "whatsapp",
         "yuanbao",

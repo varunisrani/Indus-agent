@@ -60,6 +60,13 @@ def test_unknown_platform_is_reported_never_local() -> None:
     assert only_bad.targets == () and not only_bad.ok
 
 
+def test_the_p16_e6_to_e8_chat_platforms_are_targets_and_the_graph_receiver_is_not() -> None:
+    names = ("teams", "google_chat", "qqbot", "dingtalk", "wecom", "wecom_callback")
+    parsed = parse_targets([f"{name}:chat-1" for name in names])
+    assert parsed.ok and [t.platform for t in parsed.targets] == list(names)
+    assert [p.code for p in parse_targets("msgraph:sub-1").problems] == ["unknown_platform"]
+
+
 @pytest.mark.parametrize("token", [":123", "telegram:", "local:abc", "all:x"])
 def test_bad_addresses(token: str) -> None:
     parsed = parse_targets(token)

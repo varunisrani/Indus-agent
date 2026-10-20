@@ -4,8 +4,9 @@ Each ``PlatformEntry`` says how to build the platform's adapter, how to tell whe
 installed without importing it, which env names carry its credential and its access lists, its
 message cap, whether its DMs are really private (R06.24) and an optional cron target parser.
 Telegram, Discord, Slack, Signal, Matrix, Mattermost, Email, WhatsApp (Cloud API), SMS, LINE, ntfy,
-IRC, the API server and the webhook receiver are built in; plugins add entries through the P13
-provider registry (``load_plugin_entries``).
+IRC, Microsoft Teams, Google Chat, QQ Bot, DingTalk, WeCom (smart robot and callback app), the API
+server, the webhook receiver and the Microsoft Graph change-notification receiver are built in;
+plugins add entries through the P13 provider registry (``load_plugin_entries``).
 
 A platform's SDK is imported in exactly one place, ``PlatformRegistry.create_adapter``, which the
 gateway calls only for enabled platforms: importing this module, listing entries or probing
@@ -54,8 +55,15 @@ BUILTIN_NAMES: tuple[str, ...] = (
     "line",
     "ntfy",
     "irc",
+    "teams",
+    "google_chat",
+    "qqbot",
+    "dingtalk",
+    "wecom",
+    "wecom_callback",
     "api_server",
     "webhook",
+    "msgraph",
 )
 
 
@@ -346,6 +354,110 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             # One nick on one network belongs to one gateway (R06.16); neither is a secret.
             lock_env=("IRC_SERVER", "IRC_NICKNAME"),
         ),
+        replace(
+            _chat_entry(
+                "teams",
+                "Microsoft Teams",
+                # Our own Bot Connector client over httpx; the activity endpoint runs on the
+                # P16-01 kit; the token check uses cryptography (a base-install dependency).
+                sdk=("httpx",),
+                extra_name="teams",
+                required_env=("TEAMS_CLIENT_ID", "TEAMS_CLIENT_SECRET", "TEAMS_TENANT_ID"),
+                max_len=28000,
+                hint=(
+                    "You are talking through Microsoft Teams. Markdown is rendered (bold, italic, "
+                    "code, lists); avoid tables and raw HTML. Keep replies clear and professional."
+                ),
+            ),
+            install_hint="pip install indus-agent (Teams needs no extra)",
+            # The bot is its app registration in its tenant; a new client secret is the same bot.
+            lock_env=("TEAMS_CLIENT_ID", "TEAMS_TENANT_ID"),
+        ),
+        _chat_entry(
+            "google_chat",
+            "Google Chat",
+            # Chat and Pub/Sub REST over httpx; RS256 through cryptography (the extra names it).
+            sdk=("cryptography",),
+            extra_name="google-chat",
+            required_env=("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",),
+            max_len=4000,
+            hint=(
+                "You are talking through Google Chat. *bold*, _italic_, ~strike~ and code render; "
+                "headings and tables do not."
+            ),
+        ),
+        replace(
+            _chat_entry(
+                "qqbot",
+                "QQ Bot",
+                # REST over httpx; the gateway socket needs httpx-ws (the ``qqbot`` extra).
+                sdk=("httpx_ws",),
+                extra_name="qqbot",
+                required_env=("QQ_APP_ID", "QQ_CLIENT_SECRET"),
+                max_len=4000,
+                hint="You are talking through QQ. Formatting is not rendered, so write plain text.",
+            ),
+            # One QQ bot (app id) answers in one gateway; a new client secret is the same bot.
+            lock_env=("QQ_APP_ID",),
+        ),
+        replace(
+            _chat_entry(
+                "dingtalk",
+                "DingTalk",
+                # REST over httpx; the Stream Mode socket needs httpx-ws (the ``dingtalk`` extra).
+                sdk=("httpx_ws",),
+                extra_name="dingtalk",
+                required_env=("DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"),
+                max_len=20000,
+                hint=(
+                    "You are talking through DingTalk. Markdown is rendered (headings, bold, "
+                    "lists, links); avoid tables and raw HTML."
+                ),
+            ),
+            # The app key identifies the robot; a new app secret is the same robot.
+            lock_env=("DINGTALK_CLIENT_ID",),
+        ),
+        replace(
+            _chat_entry(
+                "wecom",
+                "WeCom",
+                # The smart-robot socket needs httpx-ws (the ``wecom`` extra).
+                sdk=("httpx_ws",),
+                extra_name="wecom",
+                required_env=("WECOM_BOT_ID", "WECOM_SECRET"),
+                max_len=4000,
+                hint=(
+                    "You are talking through WeCom (WeChat Work). Markdown is rendered (bold, "
+                    "lists, links, code); avoid tables. Keep replies short."
+                ),
+            ),
+            # The bot id identifies the robot; a new secret is the same robot.
+            lock_env=("WECOM_BOT_ID",),
+        ),
+        replace(
+            _chat_entry(
+                "wecom_callback",
+                "WeCom (callback app)",
+                # AES for the callback crypto through cryptography (the ``wecom`` extra).
+                sdk=("cryptography",),
+                extra_name="wecom",
+                required_env=(
+                    "WECOM_CALLBACK_CORP_ID",
+                    "WECOM_CALLBACK_CORP_SECRET",
+                    "WECOM_CALLBACK_AGENT_ID",
+                    "WECOM_CALLBACK_TOKEN",
+                    "WECOM_CALLBACK_ENCODING_AES_KEY",
+                ),
+                max_len=2048,
+                hint=(
+                    "You are talking through a WeCom (WeChat Work) app. Formatting is not "
+                    "rendered, so write plain text, and keep each message short."
+                ),
+            ),
+            factory=_lazy_factory("indus.gateway.adapters.wecom:create_callback_adapter"),
+            # One app (agent) of one company answers in one gateway; secrets may rotate.
+            lock_env=("WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_AGENT_ID"),
+        ),
         PlatformEntry(
             name="api_server",
             label="API server",
@@ -361,6 +473,18 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             factory=_lazy_factory("indus.gateway.http.webhook:create_adapter"),
             check_fn=modules_installed("fastapi", "uvicorn"),
             install_hint="pip install 'indus-agent[gateway]'",
+            dm_is_private=False,
+            trusted_inbound=True,
+        ),
+        PlatformEntry(
+            name="msgraph",
+            label="Microsoft Graph change notifications",
+            factory=_lazy_factory("indus.gateway.adapters.msgraph:create_adapter"),
+            check_fn=modules_installed("httpx"),
+            # The clientState secret every notification must carry (16-128 printable characters).
+            required_env=("MSGRAPH_WEBHOOK_CLIENT_STATE",),
+            install_hint="pip install indus-agent (no extra)",
+            # Notifications become internal events, never chat; the clientState authenticates them.
             dm_is_private=False,
             trusted_inbound=True,
         ),

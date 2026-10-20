@@ -13,17 +13,21 @@ Two daemon parts (``PART_FACTORIES`` names ``ledger_part`` and ``router_part``):
 - ``RouterPart`` (``Stage.BACKGROUND``): the delivery router registers a P14 deliverer for each
   platform that connects (and ``all`` while any is attached) and removes it when the platform goes
   down; the channel directory is rebuilt at start and every 5 minutes; mirror notes reach the
-  conversations that live in a chat something was delivered to.
+  conversations that live in a chat something was delivered to. A Microsoft Graph receiver
+  (P16-12) that comes up gets a forward (``graph_forward``): its replies go to
+  ``platforms.msgraph.deliver_to`` through this router, never back to Graph.
 """
 
 from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from indus.cron import targets as cron_targets
 from indus.foundation.blocking import run_blocking
+from indus.gateway.core.send import ErrorKind, SendResult
 from indus.gateway.daemon.parts import DaemonPart, Stage
 from indus.gateway.delivery import directory as directory_mod
 from indus.gateway.delivery.directory import ChannelDirectory
@@ -41,7 +45,7 @@ if TYPE_CHECKING:
     from indus.gateway.daemon.process import GatewayDaemon
     from indus.state.gateway_routes import RouteEntry
 
-__all__ = ["LedgerPart", "RouterPart", "ledger_part", "router_part"]
+__all__ = ["LedgerPart", "RouterPart", "graph_forward", "ledger_part", "router_part"]
 
 log = logging.getLogger(__name__)
 
@@ -114,6 +118,31 @@ class LedgerPart(DaemonPart):
         await self.ledger.aclose()
 
 
+def graph_forward(router: DeliveryRouter) -> Callable[[str, str], Awaitable[SendResult]]:
+    """The Graph receiver's reply port: one concrete ``platform:chat`` target through ``router``
+    (an unsolicited delivery on that platform's sender, with its ledger and retries). A target
+    that is not one chat on another platform, or a failed delivery, is a final failure (never
+    retried by the Graph side, so a reply is never sent twice)."""
+
+    async def forward(target: str, text: str) -> SendResult:
+        parsed = cron_targets.parse_targets(target)
+        found = parsed.targets if parsed.ok else ()
+        if len(found) != 1 or not found[0].is_explicit or found[0].platform == "msgraph":
+            return SendResult(
+                ok=False,
+                error=f"deliver_to {target!r} is not one chat on another platform",
+                kind=ErrorKind.BAD_FORMAT,
+            )
+        receipt = await router.send(found[0], text, label="a Microsoft Graph notification reply")
+        if receipt.ok:
+            return SendResult.sent(receipt.message_id or f"forwarded:{found[0].render()}")
+        return SendResult(
+            ok=False, error=receipt.error or "delivery failed", kind=ErrorKind.UNKNOWN
+        )
+
+    return forward
+
+
 class RouterPart(DaemonPart):
     """See the module notes."""
 
@@ -142,7 +171,13 @@ class RouterPart(DaemonPart):
         )
         router = self.router
 
-        def up(name: str, _adapter: Adapter) -> None:
+        def up(name: str, adapter: Adapter) -> None:
+            from indus.gateway.adapters.msgraph.adapter import GraphReceiver
+
+            if isinstance(adapter, GraphReceiver):
+                # An ingress, not a chat: its replies are forwarded, it is never a target.
+                adapter.set_forward(graph_forward(router))
+                return
             sender = daemon.senders.get(name)
             if sender is not None:
                 router.attach(name, sender)

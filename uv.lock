@@ -1237,6 +1237,9 @@ browser = [
 daytona = [
     { name = "daytona" },
 ]
+dingtalk = [
+    { name = "httpx-ws" },
+]
 discord = [
     { name = "discord-py" },
 ]
@@ -1244,6 +1247,9 @@ docs = [
     { name = "openpyxl" },
     { name = "pypdf" },
     { name = "python-docx" },
+]
+google-chat = [
+    { name = "cryptography" },
 ]
 mattermost = [
     { name = "httpx-ws" },
@@ -1253,6 +1259,9 @@ modal = [
 ]
 pty = [
     { name = "ptyprocess" },
+]
+qqbot = [
+    { name = "httpx-ws" },
 ]
 research = [
     { name = "datasets" },
@@ -1273,6 +1282,10 @@ voice = [
 web = [
     { name = "ddgs" },
 ]
+wecom = [
+    { name = "cryptography" },
+    { name = "httpx-ws" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1290,6 +1303,8 @@ requires-dist = [
     { name = "anyio", specifier = "==4.15.1" },
     { name = "click", specifier = "==8.5.0" },
     { name = "croniter", specifier = "==6.2.4" },
+    { name = "cryptography", marker = "extra == 'google-chat'", specifier = "==50.0.2" },
+    { name = "cryptography", marker = "extra == 'wecom'", specifier = "==50.0.2" },
     { name = "datasets", marker = "extra == 'research'", specifier = "==5.0.1" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = "==0.220.0" },
     { name = "ddgs", marker = "extra == 'web'", specifier = "==9.16.0" },
@@ -1297,7 +1312,10 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.142.2" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = "==1.2.1" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "httpx-ws", marker = "extra == 'dingtalk'", specifier = "==0.9.0" },
     { name = "httpx-ws", marker = "extra == 'mattermost'", specifier = "==0.9.0" },
+    { name = "httpx-ws", marker = "extra == 'qqbot'", specifier = "==0.9.0" },
+    { name = "httpx-ws", marker = "extra == 'wecom'", specifier = "==0.9.0" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "keyring", specifier = "==25.7.0" },
     { name = "mcp", specifier = "==2.3.0" },
@@ -1318,7 +1336,7 @@ requires-dist = [
     { name = "uvicorn", specifier = "==0.54.0" },
     { name = "vercel-sandbox", marker = "extra == 'vercel'", specifier = "==0.7.0" },
 ]
-provides-extras = ["web", "docs", "pty", "browser", "voice", "modal", "daytona", "vercel", "research", "discord", "slack", "mattermost"]
+provides-extras = ["web", "docs", "pty", "browser", "voice", "modal", "daytona", "vercel", "research", "discord", "slack", "mattermost", "google-chat", "qqbot", "dingtalk", "wecom"]
 
 [package.metadata.requires-dev]
 dev = [

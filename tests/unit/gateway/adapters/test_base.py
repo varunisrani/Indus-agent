@@ -359,3 +359,25 @@ def test_outbound_marks_never_reach_the_hooks() -> None:
 def test_format_follows_the_markup_capability() -> None:
     adapter = Marked(clock=_clock())
     assert adapter.format("Version 1.2 is **out**!") == "Version 1\\.2 is *out*\\!"
+
+
+def test_the_drain_probe_seam_reads_through_and_fails_open(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    adapter = Plain(clock=_clock())
+    assert adapter.draining() is False  # nothing installed: running
+    state: list[str | None] = [None]
+    adapter.set_drain_probe(lambda: state[0])
+    assert adapter.draining() is False
+    state[0] = "The gateway is restarting."
+    assert adapter.draining() is True
+
+    def broken() -> object:
+        raise RuntimeError("probe down")
+
+    adapter.set_drain_probe(broken)
+    with caplog.at_level(logging.WARNING):
+        assert adapter.draining() is False
+    assert "drain probe failed" in caplog.text
+    adapter.set_drain_probe(None)
+    assert adapter.draining() is False

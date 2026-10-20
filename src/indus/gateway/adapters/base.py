@@ -44,6 +44,9 @@ log = logging.getLogger(__name__)
 InboundSink = Callable[[InboundEvent], Awaitable[None]]
 # Told when a running connection is lost for good (a revoked token): ``(code, message)``.
 FatalListener = Callable[[str, str], object]
+# Truthy while the gateway drains (the daemon installs ``Lifecycle.notice``): adapters whose
+# platform redelivers (a 503 to a webhook, an unacknowledged pull) can leave new events with it.
+DrainProbe = Callable[[], object]
 # A platform's download of one inbound attachment, as chunks (Telegram ``getFile`` and friends).
 type Fetcher = Callable[[Attachment], AsyncIterator[bytes]]
 
@@ -240,6 +243,7 @@ class Adapter(ABC):
         self._sink_warned = False
         self.connected = False
         self._fatal: FatalListener | None = None
+        self._drain_probe: DrainProbe | None = None
         self.slots = SendSlots(clock, self.capabilities.slot_spacing)
 
     def __repr__(self) -> str:
@@ -318,6 +322,22 @@ class Adapter(ABC):
             listener(code, self.scrub(message))
         except Exception:
             log.warning("%s: the fatal-state listener failed", self.platform, exc_info=True)
+
+    def set_drain_probe(self, probe: DrainProbe | None) -> None:
+        """How to tell that the gateway is draining (the daemon installs it on platform up for
+        every adapter; most ignore it and let the core answer new turns with its pause notice)."""
+        self._drain_probe = probe
+
+    def draining(self) -> bool:
+        """True while the installed drain probe says so; a failing probe reads as running."""
+        probe = self._drain_probe
+        if probe is None:
+            return False
+        try:
+            return bool(probe())
+        except Exception:
+            log.warning("%s: the drain probe failed; treating as running", self.platform)
+            return False
 
     # -- inbound -----------------------------------------------------------------------------------
 
@@ -662,6 +682,7 @@ __all__ = [
     "ChannelEntry",
     "ChatInfo",
     "ClarifyPrompt",
+    "DrainProbe",
     "FatalListener",
     "Fetcher",
     "FetcherSeat",

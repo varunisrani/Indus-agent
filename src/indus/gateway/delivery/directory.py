@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 
 REFRESH_SECONDS: Final = 300.0
 # Platforms whose chats are not send targets (HTTP surfaces).
-_NOT_TARGETS: Final = frozenset({"api_server", "webhook", "local"})
+_NOT_TARGETS: Final = frozenset({"api_server", "webhook", "msgraph", "local"})
 
 
 def _norm(name: str) -> str:

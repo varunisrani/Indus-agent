@@ -55,6 +55,18 @@ BUILTIN_CREDENTIALS: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "whatsapp_cloud": ("WHATSAPP_CLOUD_ACCESS_TOKEN", "WHATSAPP_CLOUD_PHONE_NUMBER_ID"),
         "sms": ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"),
         "line": ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"),
+        "teams": ("TEAMS_CLIENT_ID", "TEAMS_CLIENT_SECRET", "TEAMS_TENANT_ID"),
+        "msgraph": ("MSGRAPH_WEBHOOK_CLIENT_STATE",),
+        "google_chat": ("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",),
+        "qqbot": ("QQ_APP_ID", "QQ_CLIENT_SECRET"),
+        "dingtalk": ("DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"),
+        "wecom": ("WECOM_BOT_ID", "WECOM_SECRET"),
+        "wecom_callback": (
+            "WECOM_CALLBACK_CORP_ID",
+            "WECOM_CALLBACK_CORP_SECRET",
+            "WECOM_CALLBACK_TOKEN",
+            "WECOM_CALLBACK_ENCODING_AES_KEY",
+        ),
     }
 )
 

@@ -52,6 +52,20 @@ slack = ["slack-bolt==1.30.0", "slack-sdk==3.44.1", "aiohttp==3.14.3"]
 # Event socket of the Mattermost adapter (P16-08; MIT, needs wsproto MIT; both already locked through
 # the daytona extra). REST and Matrix (P16-06) use httpx only. Imported lazily by the adapter.
 mattermost = ["httpx-ws==0.9.0"]
+# Google Chat (P16-13; Apache-2.0 OR BSD-3-Clause, needs cffi MIT-0 and pycparser BSD-3-Clause; all
+# already locked via keyring's SecretStorage and mcp's pyjwt[crypto]): RS256 for the service-account
+# assertion and Google's callback tokens. Chat and Pub/Sub REST run on httpx. Imported lazily.
+google-chat = ["cryptography==50.0.2"]
+# QQ Bot gateway socket (P16-20; MIT, needs wsproto MIT; both already locked). REST runs on httpx.
+# Imported lazily by the adapter.
+qqbot = ["httpx-ws==0.9.0"]
+# DingTalk Stream Mode socket (P16-16; our own Stream Mode client over httpx + httpx-ws, MIT, no
+# dingtalk-stream SDK). REST and `indus send` need only httpx. Imported lazily by the adapter.
+dingtalk = ["httpx-ws==0.9.0"]
+# WeCom: the smart-robot socket (P16-17, httpx-ws MIT) and AES for the callback crypto and media
+# (P16-18; cryptography Apache-2.0 OR BSD-3-Clause, already locked via keyring/SecretStorage on
+# Linux). Both imported lazily.
+wecom = ["httpx-ws==0.9.0", "cryptography==50.0.2"]
 
 [project.scripts]
 indus = "indus.cli.entry:main"
