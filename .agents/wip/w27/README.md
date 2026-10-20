@@ -82,3 +82,26 @@
   "already running" during a local maintenance lock as retry.
 - Follow-ups: resume recap needs a daemon snapshot read; REPL end on channel loss; maintenance.run over WS (P17-25);
   backups still include ledger tables (R03.21).
+
+## w27-e13.patch: P16-02 WhatsApp Node bridge sidecar + P16-03 WhatsApp bridge adapter — done (base 90209a7)
+- Builder checks: bridge vitest 37 passed; pnpm 892 passed (62 files); pnpm -r typecheck clean; biome clean; pytest
+  whatsapp + contract + schema 479 passed / 47 skipped (incl. the real Node bridge over loopback with the fake provider);
+  config 217 passed; ruff, pyright, lint-imports, tooling.checks ok. NO new packages (Python or Node); pnpm lock unchanged.
+- OWNER DECISION: Baileys (MIT) depends on libsignal-node (GPL-3.0, git URL) and a non-optional `sharp` peer with
+  LGPL-3.0-or-later libvips binaries — not on licenses_allow.json. The bridge reaches WhatsApp only through our own
+  WaSocket interface and loads an operator-installed provider named by INDUS_WA_PROVIDER; `bindBaileys` is our own MIT
+  mapping (no build-time import). Options: (a) allow an operator-installed copyleft provider (dependency would be
+  @whiskeysockets/baileys@6.7.24, installed by the operator, not shipped); (b) delete bindBaileys; (c) build a provider on
+  whatsapp-web.js (Apache-2.0, drives Chromium via puppeteer).
+- Wiring (core): registry `PlatformEntry("whatsapp", "WhatsApp", lazy indus.gateway.adapters.whatsapp:create_adapter,
+  check_fn=modules_installed("httpx"), required_env=(), max_len=4096, dm_is_private=True)` + INDUS_WHATSAPP_* policy env;
+  BUILTIN_NAMES += whatsapp before whatsapp_cloud; no credentials (enable via platforms.whatsapp.enabled: true); no lock_env
+  (auth folder + pidfile ownership); hint in the note; add an `indus send` case after the row lands; target rule for
+  whatsapp (P16-32 follow-up).
+- Security: loopback-only local API (non-loopback host exits 2), Bearer token per start (0600 file) compared in constant
+  time, Host header must be loopback, 64 KiB JSON cap, auth folder 0700 / umask 077, no message text or numbers on stdout,
+  exits within 2 s of parent death; adapter adopts only its own healthy bridge, never signals others, child env minimal.
+- Decisions: per-start token persisted 0600; require_mention default on; lazy media; cursor+epoch events; slot spacing
+  0.3 s; provider from config/env; bridge script from config (source checkout default apps/whatsapp-bridge/src/main.ts).
+- Follow-ups: packaging the bridge for wheel installs (P23/P25); P16-31 pairing flow (INDUS_WA_MODE=pair); canonical
+  participant alias folding (core); bridge proxy; doctor ports 3000/3001–3999; live lane; .nvmrc Node 24 vs sandbox 22.
