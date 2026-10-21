@@ -29,3 +29,31 @@
 - Follow-ups: BUILD P24-47 from browser-broker.md (asyncio broker, BROWSER_CONTROLLER ws_auth purpose, API mount); ACC rows
   C22/C24/C25 + trap R02.22 browser drivers; verify server-request event log/redelivery does not record secret-request answers;
   Camofox sub-requests unguarded; Lightpanda Chrome fallback stateless.
+
+## w38-s1.patch: P24-42 egress proxy, P24-43 memory caps, P24-44 plugin packs — done except Compare; P24-45 hub extras PARTIAL (snapshot untested); P24-46 NOT STARTED (base e52fc08)
+- Builder checks: ruff, format, pyright 0, lint-imports; last run 776 passed (own + docker + hub + contract cli); earlier wider
+  3000 passed / 3 skipped; tooling.checks ok (4 similarity hits in egress.py rewritten). No packages (proposed extra egress =
+  cryptography 50.0.2, already locked). Compare step NOT done for P24-42..45 (checklists unticked).
+- New: backends/docker/egress.py (asyncio proxy; certs via cryptography; TLS opened only for allow-listed hosts; per-container
+  token swapped for the SecretStore secret; others tunnelled; non-public addresses refused; indus-egress posture label;
+  enforcement refuses bypass settings; detached daemon + pidfile + health, stop signals only a verified pid),
+  backends/memory_scope.py (systemd-run --user --scope MemoryMax from terminal.background_memory_max default 1G clamp
+  64M..4G; probe cached 60 s; no user bus → uncapped + debug line; OOM → "killed: memory cap"), cli/commands/{egress,
+  plugin_pack}.py, plugins/packs.py (40-hex SHAs; secret/consent/allow_* seeds stripped; user values win; no --yes; one
+  review + per-plugin consent; export only git-installed), learning/skills/hub/{sources_extra (ClawHub, LobeHub, browse.sh),
+  publish (one commit via the Git data API + PR; refuses escaping symlinks), snapshot (export|import wired, NO TESTS)}.py;
+  tests + fakes/systemd_run.py + fixtures/plugins/packs; notes egress-proxy, memory-caps, plugin-packs, hub-extras,
+  suggestions-blueprints (P24-46 note only).
+- Shared (unions): backends/docker/environment.py (posture mounts / add-host / env names; LABEL_EGRESS in reuse labels;
+  open_docker(egress=) — containers made before this have no posture label and are no longer reused; the reaper removes them),
+  backends/processes.py (wraps local jobs; memory_cap; OOM mapping), schema EgressSection + terminal.background_memory_max,
+  cli/app.py (egress), cli/commands/plugins.py (public ask_env / dependencies_ok; pack group), cli/commands/skills_hub.py
+  (publish, snapshot), hub/sources.py (SourceSet + fallback + routing + base-URL overrides), contract help catalogue +
+  non_tty_table, tests/fakes/backend/docker_cli.py (--add-host value flag), hub/test_sources.py.
+- Decisions (D-ids): off-list hosts tunnelled by default (egress.block_other_hosts = reference default-deny); per-container
+  tokens stored as digests; `egress enable` needs --yes without a TTY; NODE_EXTRA_CA_CERTS (no NODE_OPTIONS change); pack
+  seeds stripped with a warning; bare `name` pack entries unresolvable (no plugin catalogue); publish pins API 2022-11-28;
+  snapshots record content hashes + report drift.
+- TODO: snapshot tests; Compare for P24-42..45; build P24-46 (suggested jobs + blueprints, /suggestions + /blueprint slash rows,
+  gateway + TUI surfaces); ACC D15-1, D16-1, G7-1, F27-1 + traps R02.20, R07.19, R07.26; verify ClawHub / LobeHub / browse.sh API
+  shapes against vendor docs.
