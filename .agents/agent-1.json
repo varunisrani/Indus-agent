@@ -1,12 +1,12 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "PAUSED",
-  "usage_pct": 91,
-  "remaining_pct": 9,
-  "resets_at": "2026-10-21T13:10:00+00:00",
-  "last_check": "2026-10-21T10:20:00+00:00",
-  "current_step": "Handed the turn to Agent 2 at 91%; P23 integration saved as w36/p23-integration-green.patch",
+  "state": "READY",
+  "usage_pct": 0,
+  "remaining_pct": 100,
+  "resets_at": "2026-10-21T18:10:00+00:00",
+  "last_check": "2026-10-21T13:16:00+00:00",
+  "current_step": "Window reset; Agent 2 holds the turn (P23 lander + wave 39 P24 UI running); READY to take it back",
   "last_commit": "52deb8b",
-  "updated_at": "2026-10-21T10:20:00Z"
+  "updated_at": "2026-10-21T13:16:00Z"
 }
