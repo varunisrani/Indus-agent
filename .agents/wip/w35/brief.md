@@ -25,7 +25,8 @@ P20-40 (Electron E2E + Demo 4) is done at integration.
 
 Rules:
 - ENV RULE: set `export S=<your scratch dir>` as ONE statement, then `export HOME=$S/home XDG_CACHE_HOME=$S/home/.cache
-  npm_config_cache=$S/home/.npm TMPDIR=$S/tmp ELECTRON_SKIP_BINARY_DOWNLOAD=1` as a SECOND statement (one combined
+  npm_config_cache=$S/home/.npm ELECTRON_SKIP_BINARY_DOWNLOAD=1` as a SECOND statement (do NOT point TMPDIR into
+  the long scratchpad path: Unix socket paths exceed 108 bytes and three Python tests fail with "AF_UNIX path too long") (one combined
   statement leaves $S empty and writes at `/`). Never write under the real ~, /root or /. Use the pnpm store dir
   /tmp/claude-0/-home-user/3c64a974-489c-5625-af4d-c59c9cfe7428/scratchpad/pnpm-store-p20 (`pnpm install --frozen-lockfile
   --store-dir <that>`). There is no Electron binary in this container: Electron-launching tests must skip cleanly without
