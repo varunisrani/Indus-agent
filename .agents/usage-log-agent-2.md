@@ -49,3 +49,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-21 00:28 UTC | Agent 2 | Account 2 | 21% (reading 00:23) | 79% | 04:20 UTC | P18 integrator running; T1 fixes in full gate |
 | 2026-10-21 00:59 UTC | Agent 2 | Account 2 | 35% (reading 00:58) | 65% | 04:20 UTC | load fixes landed; P18 integrator, D1 (P20-01..07), F1 running |
 | 2026-10-21 01:32 UTC | Agent 2 | Account 2 | 45% (reading 01:32) | 55% | 04:20 UTC | wave 34 M/R/C + P18 integrator running; F1 gate running |
+| 2026-10-21 01:58 UTC | Agent 2 | Account 2 | 61% (reading 01:58) | 39% | 04:20 UTC | F1 landed 385c32a; wave 34 M/R/C + P18 integrator running; 75% expected ~02:20 |
