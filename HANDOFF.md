@@ -139,6 +139,10 @@ untimestamped generic signature (replay after the 1 h delivery-id window) — de
 timestamped form.
 
 ## Watch out for
+- Disk: the session's writable allowance (~40 GB) filled up on 2026-10-21 21:20 (ENOSPC stopped the P24 lander and G1). Lead
+  freed ~22 GB by deleting finished builders' scratch dirs. Every brief must say: pytest with `--basetemp=$S/pt` (deleted after
+  each run), remove build output once a step passes, and the lead deletes a builder's $S dir when it parks the slice. Owner
+  item: /tmp/pytest-of-root (~2 GB of stale basetemps) and /root (~6 GB) — agents are blocked from cleaning them.
 - Parking a builder: run extract-patch, CHECK the patch file exists and is non-empty, and only then remove the worktree
   (never chain the removal with `;`). Do not pass --exclude for paths git already ignores (e.g. `.venv/**`): `git add`
   fails and the script exits without a patch. (2026-10-21: the I2 worktree was lost this way and rebuilt by its builder.)
