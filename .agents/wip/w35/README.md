@@ -122,3 +122,37 @@
   one chat pane per window ("new tab" = new chat); layout saved by the main window only; launch profile fixed per launch.
 - Follow-ups: per-profile connections in main; Settings UI for projects/scan/default dir; worktree lanes; all-profiles
   sidebar; remember a closed pane's size.
+
+## w35-d4.patch: P20-35 HUD, quick entry, extra windows + P20-36 tray, keep awake, notifications + P20-37 updates (unsigned 1.0) — done
+- Builder checks: lint, fmt:check, -r typecheck, check-ipc, gen-bridge-types --check clean; root pnpm test 1979 passed /
+  12 skipped; ambient tests 112; tooling.checks ok (one similarity hit in defaultHudBounds rewritten). Real HUD / tray /
+  notifications / update flows only with fakes (no Electron binary, no desktop session). Update checks against a loopback
+  fake feed (testing/fakeFeed.ts). No Python.
+- New: apps/desktop/electron/ambient/{shortcuts,hud,quickEntry,activeSession,tray,trayIcon,keepAwake,notifications,dbus,
+  linkPreview,settings,install}.ts, electron/updates/{updater,marker,skew,feed,engine,version,install}.ts (+tests);
+  src/{hud/Hud.tsx, quick/QuickEntry.tsx, quick/deliver.ts, ambient/*, updates/UpdateNotice.tsx, updates/skew.ts};
+  testing/{fakeFeed,fakeFloating}.ts; notes hud-quick-entry.md, tray-keep-awake.md, updates.md.
+- Shared: ipc channels/schemas (+21 channels; update status shape) + global.d.ts; electron/windows/{factory,manager,
+  windowUrl}.ts (openHud, openQuick, onWindowCreated, kindOf, windowOf); quitGuard.ts (subscribe); backend/install.ts
+  (optional updateGate); electron/main.ts (wiring below) — D1, D2, D3, D5 also edit main.ts; src/app/App.tsx (HUD + quick
+  roots, <AmbientHost>); src/main.tsx; en.ts; apps/desktop/package.json; pnpm-lock.yaml; pnpm-workspace.yaml (OVERRIDE
+  sax -> 1.4.1 ISC to avoid BlueOak 1.6.1 — CONFLICTS with D5's electron-builder tree which also has sax 1.6.1; reconcile:
+  one override for the whole workspace, or drop it if the owner allows BlueOak for build-only); traps R08.13, R08.14;
+  00-layout pin row.
+- main.ts wiring: `const updateGate = createUpdateGate(context);` before installBackend(..., {updateGate:
+  gateHooks(updateGate)}); then installAmbient(context, ambientElectron(), backend) AFTER installBackend; installUpdates(
+  context, {app, fetch: net.fetch, runtimeVersion}, {gate: updateGate, stopAppWork}); all before registry.seal().
+- Cross-slice: settings (D3) uses shortcuts.get/set, ambient.get/set/onChanged, updates.*; sidebar (D1) hud.open({sessionId})
+  "pop out"; links.preview({url}); packaging (D5) writes desktop-build-stamp.json {version, commit, channel, updateOwner}
+  (also into app.asar.unpacked) and ships electron-updater in the app's node_modules (loaded by name); P23 `indus update`
+  writes the marker {format: 1, owner, pid, process_start, created_at} (updates.md); preload-bridge.md channel count.
+- Packages: electron-updater 6.8.9 (MIT, 2026-06-05) + builder-util-runtime 9.7.0, fs-extra 10.1.0, jsonfile 6.2.1,
+  universalify 2.0.1, js-yaml 4.3.2, argparse 2.0.1 (Python-2.0), lazy-val 1.0.5, lodash.escaperegexp 4.1.2,
+  lodash.isequal 4.5.0 (deprecated upstream), tiny-typed-emitter 2.1.0, semver 7.7.4 — all allowed.
+- Decisions (D-ids): D-Bus via the gdbus CLI (no library); tray glyph drawn in code, chime synthesised; link previews refuse
+  loopback/private hosts; snap chord only while a HUD is open; main window returns unfocused after the HUD (reference
+  focuses); quick entry targets the last-used window, no picker; single-JSON update marker (not the reference's v2);
+  availability via the releases API, electron-updater feed at apply; default releases repo varunisrani/indus-agent
+  (owner-open, same as D-16.690); background checks only when packaged or INDUS_DESKTOP_UPDATE_FEED is set.
+- Follow-ups: P20-40 E2E for real HUD / quick window / global shortcuts / tray with and without a StatusNotifier host;
+  signed-update install (P23); a transcript user of links.preview.
