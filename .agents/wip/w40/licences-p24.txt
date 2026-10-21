@@ -1,9 +1,0 @@
-P24 integration: new packages (licence allow-list + age check, exclude-newer 2026-10-04, >= 14 days)
-Python (uv.lock; extras only):
-| package          | version | uploaded   | licence                                   | extra        | allowed |
-| sherpa-onnx      | 1.13.8  | 2026-09-10 | Apache-2.0 (LICENSE in the wheel)         | wake-sherpa  | yes     |
-| sherpa-onnx-core | 1.13.8  | 2026-09-10 | Apache-2.0 (METADATA License: Apache-2.0; bundles libonnxruntime, MIT upstream) | wake-sherpa | yes |
-New extras over packages already locked (no lock change for them): relay = httpx-ws 0.9.0 (MIT),
-browser-cloud = playwright 1.63.0 (Apache-2.0), vault = cryptography 50.0.2 (Apache-2.0 OR BSD-3-Clause),
-egress = cryptography 50.0.2.
-npm (pnpm-lock.yaml): no new packages (pnpm install --frozen-lockfile accepted the lock unchanged).

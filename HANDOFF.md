@@ -76,29 +76,28 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 ACTIVE (owner gave it to Agent 1 at 21:05 UTC; Agent 2 being stopped by the owner). In flight (Agent 1):
-P24 lander in scratchpad verify20 (brief `.agents/wip/w41/p24-lander-brief.md`); P25 tooling builders Q1 (P25-05..09 parity),
-D1 (P25-14..17 docs + notices), G1 (P25-10..13, 18, 19 gates + perf) in wt-w41* (brief `.agents/wip/w41/brief-p25.md`). Main `fd44e16`+status commits, green.
-Done: P00–P22 complete; P23 21/23 (`fd44e16`; P23-15/16 desktop signing open). 575/648 landed (89%).
-1. **Land P24** from `.agents/wip/w40/p24-int-wip.patch` (base 823caff; read w40/README.md + landing-p24.md first). Expected
-   union conflicts with P23 listed in the README; re-lock uv; then run the Python FULL suite + perf to completion (the
-   integrator's second run was stopped at ~88%) and root-cause anything red. TS / Electron / Playwright were green. Commit
-   "[Agent 1] P24 …", push, prune w37/w38/w39/w40. Phase table: P24 built 45/47 (21/22 post-1.0), "Done when" not met.
-2. **P24 owed wiring** (D-16.799): multiplex in `gateway run`; room loop; relay front in the daemon; LSP manager + hooks +
-   stop gates in the agent loop; register message_agent and a2a_call from the gateway host; suggestion offers from the review
-   step; preview automation server requests; desktop plugin consumers + plugins inventory page; TUI wake → voice mode;
-   `indus dashboard --console`; profile_rows in profiles.list. Then the P24 demos (two profiles, room, LSP stop gate).
-3. P23-15/16 desktop signing (owner certificates), then **P25** (hardening, security review, parity, v1.0).
-Owner items: D-16.690 release base (indusagi/indus-agent vs varunisrani/Indus-agent); release environment + signing
-secrets; 3 unmapped contributors; D-16.800 wake engine; D-16.801 ffmpeg source for `indus pm`; D-16.802 pm catalogue
-exclusions; Playwright 1.56.1 pin; stray paths at / (list in the w39 era HANDOFF: /fix-m2-home, /w30-a2-home, /w30-r3-home,
-/w31-d1-home, /w32-p1-home, /w32-p2-home, /w32-t1-home, /uv-cache, /pnpm-store, /x, /backends_conftest.orig,
-/dbg_msgraph.py). D-16.691 remote desktop dial: fixed and E2E-verified inside the w40 patch.
+Turn: AGENT_1 ACTIVE. Main `5c0cff8` (P24 landed) + status commits.
+Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built (`5c0cff8`; wiring owed); P25 15/24 built and parked
+(`.agents/wip/w41/`: d1 docs + notices, g1 gates + perf, q1 parity — README lists the post-landing steps).
+1. **P25 wave-41 integrator**: land w41-d1, w41-g1, w41-q1 on main (now with P24): regenerate notices (`uv sync --all-extras`,
+   notices.py refresh/write) and reference pages after P24; wire the CI steps G1 lists; full gate with a SHORT pytest basetemp
+   (long paths break AF_UNIX tests).
+2. **D-16.799 wiring builders** (P24 features built but not called): multiplex in `gateway run`; room loop + idle-exit count;
+   relay front in the daemon; LSP manager + LspToolHooks + StopGates in core/loop.py; message_agent + a2a_call + browser_vault /
+   browser_exec registration; suggestion offers; preview automation server requests; desktop contribution-registry consumers +
+   plugins page; TUI wake → voice; `indus dashboard --console`; profile_rows in profiles.list. Then the P24 demos (two profiles,
+   room, LSP stop gate).
+3. **P25 remaining**: 01–04 security (threat model + guards, Python + desktop/web regression suites, dependency audit), 20–24
+   release (checklist, fresh-clone gates, canary rehearsal, post-release smoke, Windows terminal best effort). P23-15/16 signing.
+Owner items: see the list below (release base D-16.690, signing secrets, licence rulings incl. D1's dated exceptions and the
+Git for Windows source offer, D-16.800–802, similarity verdicts (20 regions), 58 ACC Review rows, parity reference captures,
+stray paths at / and /root, /tmp/pytest-of-root).
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
 (--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**' — never exclude git-ignored paths), CHECK the
-patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree; one integrator per
-group runs the full gate; the lead commits, rebases, fast-forwards, pushes, updates the phase table and this file.
-- Last landings: P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree AND its $S dir; one
+integrator per group runs the full gate (pytest --basetemp short); the lead commits, rebases, fast-forwards, pushes, updates the
+phase table and this file.
+- Last landings: P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
   P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),

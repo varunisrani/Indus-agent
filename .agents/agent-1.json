@@ -6,7 +6,7 @@
   "remaining_pct": 67,
   "resets_at": "2026-10-22T02:00:00+00:00",
   "last_check": "2026-10-21T21:59:00+00:00",
-  "current_step": "P24 lander (verify20); P25 builders Q1 D1 G1 (wt-w41*)",
-  "last_commit": "52deb8b",
+  "current_step": "P24 landed (5c0cff8); next P25 w41 integrator + D-16.799 wiring builders",
+  "last_commit": "5c0cff8",
   "updated_at": "2026-10-21T21:06:00Z"
 }

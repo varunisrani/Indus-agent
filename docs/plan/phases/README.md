@@ -44,7 +44,7 @@ acceptance, done when. Paths and conventions come from
 | P21 | [P21-remaining-backends.md](P21-remaining-backends.md) | 1.5 | 16 | 40 | 7 | 3 | 17 | — | done (`6f04798`; live vendor smoke + ACC-D5-2 need real credentials/Apptainer) |
 | P22 | [P22-research-tooling.md](P22-research-tooling.md) | 1 | 15 | 36 | 6 | 4 | 15 | — | done (`6f04798`) |
 | P23 | [P23-packaging-release.md](P23-packaging-release.md) | 2 | 23 | 78 | 8 | 4 | 24 | — | in progress (21/23 in this commit; P23-15/16 desktop signing open; Docker / Nix / installer-E2E lanes not yet run in CI) |
-| P24 | [P24-multiplex-extras.md](P24-multiplex-extras.md) | 3.5 | 47 | 218 | 27 | 11 | 47 | M8 | planned |
+| P24 | [P24-multiplex-extras.md](P24-multiplex-extras.md) | 3.5 | 47 | 218 | 27 | 11 | 47 | M8 | in progress (45/47 built `5c0cff8`; wiring owed D-16.799 for 01–04, 06–10, 15–17, 20, 25, 28–32; 21/22 post-1.0; Done-when not met) |
 | P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | planned |
 
 ## How a phase runs
