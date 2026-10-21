@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 35,
-  "remaining_pct": 65,
+  "usage_pct": 45,
+  "remaining_pct": 55,
   "resets_at": "2026-10-21T04:20:00+00:00",
-  "last_check": "2026-10-21T00:59:00+00:00",
-  "current_step": "P18 integrator (p1+p2+p3, P18-30), D1 (P20-01..07), F1 (P18/P19 follow-ups) running; load fixes landed 59c12c4",
-  "last_commit": "1e9bd5d"
+  "last_check": "2026-10-21T01:32:00+00:00",
+  "current_step": "P20-01..07 landed 86f44f7; wave 34 builders M (P20-08..14), R (15..18), C (19..24) + P18 integrator running; F1 follow-ups in full gate",
+  "last_commit": "9a1917d"
 }
