@@ -90,3 +90,32 @@
   gateway stage asks y/N; channel save failure warns; CI/GITHUB_ACTIONS turns on --verbose.
 - Follow-ups: real digests; shellcheck in CI; web/TUI pages from a release payload (P23-23 artefact manifest);
   --include-desktop only warns; migrate baseline skipifs; fresh-VM install lane (P23-23).
+
+## w36-i2.patch: P23-06 install.ps1 core and stages, P23-07 Windows bootstrap + cmd shim, P23-20 uninstall finished — done (pwsh untested) (base d5e575e)
+- RESTORED by the builder from its own context after the lead's parking error removed the original worktree. Not
+  byte-identical: one extra pwsh-only test (test_pwsh_missing_digest_is_refused_before_any_download) + a static assertion;
+  two interactive prompt lines in uninstall.py rewrapped (strings tests check unchanged); test line wrapping.
+- Builder checks (restored tree): ruff, format (13 files), pyright 0, lint-imports, tooling.checks ok; uninstall +
+  integration/install + contract cli + test_app + test_entry 616 passed / 28 skipped (pwsh cases; no pwsh here — static checks
+  via tests/integration/install/ps_static.py). Windows installs blocked until I1's pins have real digests.
+- ENV SLIP (owner item): the first `uv run` of the ORIGINAL run used HOME=/root and wrote into /root/.cache/uv (an editable
+  build + a few cache entries). Nothing under /root in the restored run.
+- New: scripts/install/ps/{00-core,10-bootstrap,20-stages,90-entry}.ps1, scripts/install.ps1 (built with STAND-IN pins —
+  REBUILD at integration), scripts/install.cmd (CRLF; .gitattributes rule suggested), scripts/install/stages.json (I1 also
+  wrote one — keep I1's + add `dispatch_only: ["desktop"]` and `extras`), src/indus/cli/uninstall.py,
+  docs/internals/uninstall-levels.md (P24-34 consumes), tests integration/install (__init__, ps_static, test_install_ps1,
+  test_install_ps1_bootstrap), tests/unit/cli/test_uninstall.py, notes install-ps1.md, install-ps1-bootstrap.md, uninstall.md.
+- STAND-IN: tests/integration/install/_stubs_i2.py — move render_ps1 into I1's build.py (+ --check): header, then 00-core.ps1
+  with `# @@INDUS_EMBED@@` replaced by compact stages.json + pins.json here-strings, then other ps/*.ps1 in name order.
+- Shared: cli/app.py (uninstall row before acp), contract cli help catalogue + non_tty_table (uninstall: 1), traps R10.15,
+  ACC-I42-1..3 + new ACC-S2-1/2.
+- Wiring: Get-IndusPin reads I1's pins shape (mirror, python.provision, release.repository); release origin = pins.json
+  release.repository (a test catches install.cmd URL drift); skip choices update.installs.<id>.skip via `indus config set
+  --force`; receipts installer "ps1"; uninstall install kind from cli/version.install_method + .git (U1's detector may
+  replace); launchers recognised by `# indus launcher` / `rem indus launcher`; click command raises Exit(code).
+- Decisions (D-ids): POSIX spellings via ValueFromRemainingArguments, exit codes as install.sh; ASCII-only, PowerShell 5.1
+  compatible; mirror only after network-class failures; user PATH keeps its registry value kind; native Windows gateway
+  stage points to WSL2 (D-16.55); no -ProtocolVersion / COM path resolver / AppContainer ACL grant; uninstall removes PATH
+  only between exact markers; declined named profiles keep <root>/profiles, -y never removes them; running gateway stopped
+  by SIGTERM to its recorded pid; --data refuses while this profile's gateway runs; cancel exits 0.
+- Follow-ups: pwsh tests + Windows install-e2e lane; PowerShell 5.1/7 in tool-versions.md.
