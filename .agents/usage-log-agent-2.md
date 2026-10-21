@@ -67,3 +67,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-21 15:21 UTC | Agent 2 | Account 2 | 67% (reading 15:18) | 33% | 17:30 UTC | P24 integrator running |
 | 2026-10-21 15:43 UTC | Agent 2 | Account 2 | 70% (reading 15:42) | 30% | 17:30 UTC | P24 integrator running |
 | 2026-10-21 16:00 UTC | Agent 2 | Account 2 | 73% (reading 15:54) | 27% | 17:30 UTC | P24 integrator running |
+| 2026-10-21 16:13 UTC | Agent 2 | Account 2 | 75% (reading 16:02) | 25% | 17:30 UTC | 75% guard: no new agents; P24 integrator running |
