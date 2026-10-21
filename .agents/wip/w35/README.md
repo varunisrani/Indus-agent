@@ -92,3 +92,33 @@
   review show "not available here"; preview pop-out is a prop; file-watch storm breaker on all platforms.
 - Follow-ups: real PTY run + hostile guest E2E (P20-40); remote terminals via the serve PTY bridge (P18-07); PR badges / gh
   auth; restart terminal in the last folder.
+
+## w35-d1.patch: P20-25 sidebar (sessions + projects) + P20-26 profile rail, routing, switch shapes + P20-27 pane shell and interface modes — done
+- Builder checks: biome (583 files), -r typecheck clean; check-ipc, gen-bridge-types --check, dump-slash-catalog --check ok;
+  root pnpm test 1969 passed / 12 skipped (desktop 737); ruff, format, pyright, lint-imports; tests/contract/web +
+  tests/unit/web 618 passed; tooling.checks ok; vite + electron main builds ok. Wired-app Electron test NOT run (no
+  binary). No stand-ins, no packages.
+- New: apps/desktop/src/sidebar/*, src/profiles/*, electron/profiles/routing.ts, src/panes/{paneTree, presets,
+  layoutStore, PaneShell, shortcuts, strings.en, panes.css} (+tests incl. seeded property test); notes sidebar.md,
+  profile-routing.md, pane-shell.md.
+- Shared: ipc channels/schemas (indus:profile:prepare-change, indus:profile:commit-change → 78 channels; profileState gains
+  launch; launch facts gain homeDir) + global.d.ts; homeDir defaults in electron/ipc/bridge.ts, electron/windows/ipc.ts,
+  src/app/bridge.ts, registry.test.ts; electron/main.ts (installProfiles + BackendPort from installBackend) — D2, D3, D5
+  also edit main.ts; electron/backend/install.ts ({launchProfile}); electron/backend/localAttach.ts (+test: always
+  `-p default` explicitly); src/gateway/connectionStore.ts (setPrimary/release); src/main.tsx, App.tsx, Shell.tsx (rail,
+  sidebar, pane shell, shortcuts, interface mode; per-profile workspaces); Composer.tsx (+test) + chatSlots.tsx
+  (newSessionCwd → cwd on session.create); en.ts (nav.sessionsLater → nav.more); styles.css; PYTHON
+  src/indus/web/routes/sessions_store.py (lineage_root on /api/sessions rows) + contract test; traps R08.6, R08.7;
+  preload-bridge.md P20-26 row.
+- Wiring: D2 panes register via paneRegistry.register({id, stateful, title?, render(ctx {sessionId, profile, active,
+  hidden})}) from src/panes/PaneShell.tsx — D2 assumed ctx {sessionId, workspace, mode, hidden, connection, openPreview?,
+  addToChat?}: reconcile at integration (add workspace/mode/connection/openPreview/addToChat to D1's ctx); preview +
+  terminal stateful. D3 settings: Gateways page wraps remote.save/forget in switcher.applyConnectionChange(...); profile
+  rename/delete via switcher.renameProfile/deleteProfile; Workspace page uses ProjectStore setRepoScan/setDefaultDirectory.
+  Fake backend's 404 on /api/sessions now shows an empty list.
+- Decisions (D-ids): pin/archive as fenced writes (snapshot first, one re-read on stale revision); projects are local per-
+  profile records; profile storage keys registered in one place (test fails on unlisted keys); main keeps one published
+  connection, background redial re-homes REST target (REST calls name their profile); simple mode refuses hidden panes;
+  one chat pane per window ("new tab" = new chat); layout saved by the main window only; launch profile fixed per launch.
+- Follow-ups: per-profile connections in main; Settings UI for projects/scan/default dir; worktree lanes; all-profiles
+  sidebar; remember a closed pane's size.
