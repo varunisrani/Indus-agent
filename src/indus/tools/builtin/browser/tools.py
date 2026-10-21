@@ -10,6 +10,13 @@ would be refused.
 
 Results are JSON text. Text that comes from the page is redacted here; the tool round fences
 every ``browser_*`` result as untrusted data (P04 ``untrusted.py``).
+
+P24: a navigate result names the ``engine`` that served the page (``local``, ``cloud:<provider>``,
+``local-sidecar``, ``lightpanda`` / ``chrome-fallback``, …) and carries a backend's one-time
+``notice`` (a cloud fallback, an engine note). With a cloud provider and
+``browser.route_private_local`` on, a private address is opened in the task's local sidecar
+session instead of being refused, and a cloud navigation stopped at a private address is retried
+there (``routing``).
 """
 
 from __future__ import annotations
@@ -19,13 +26,13 @@ import json
 import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from indus.foundation.scope import Scope, scope_or_none
 from indus.safety.redaction import redact_output
 from indus.safety.url_policy import Blocked, Resolver, check_url_async, normalize_url
-from indus.tools.builtin.browser import snapshot
+from indus.tools.builtin.browser import routing, snapshot
 from indus.tools.builtin.browser.driver import (
     BrowserMissing,
     PageDriver,
@@ -33,6 +40,8 @@ from indus.tools.builtin.browser.driver import (
     RefNotFound,
     ref_selector,
 )
+from indus.tools.builtin.browser.engines import EngineMissing
+from indus.tools.builtin.browser.real_profile import RealProfileRefused
 from indus.tools.builtin.browser.session import (
     BrowserSession,
     CommandTimeout,
@@ -97,6 +106,30 @@ def _fetchable(url: str) -> bool:
         return False
 
 
+class _Retry:
+    """A cloud navigation stopped at a private address: try the sidecar route."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+def served_by(session: BrowserSession) -> dict[str, Any]:
+    """The ``engine`` that served the page, and the backend's one-time notes."""
+    engine = session.engine
+    notes: list[str] = []
+    take = getattr(session.page, "take_notes", None)
+    if callable(take):
+        notes.extend(cast(list[str], take()))
+        engine = str(getattr(session.page, "served_by", engine))
+    notice = session.take_notice()
+    if notice:
+        notes.insert(0, notice)
+    out: dict[str, Any] = {"engine": engine}
+    if notes:
+        out["notice"] = " ".join(notes)
+    return out
+
+
 def _bot_warning(title: str) -> str | None:
     lowered = title.lower()
     if any(word in lowered for word in BOT_TITLE_WORDS):
@@ -121,14 +154,17 @@ class PageTools:
     def task_key(task_id: str | None) -> str:
         return task_id or "default"
 
-    async def open_session(self, task_id: str | None, scope: Scope | None) -> BrowserSession | str:
-        """The task's session, or the error result text."""
+    async def open_session(
+        self, task_id: str | None, scope: Scope | None, *, route: routing.Route | None = None
+    ) -> BrowserSession | str:
+        """The task's session (on its current route unless ``route`` is given), or the error
+        result text."""
         resolved = scope if scope is not None else scope_or_none()
         if resolved is None:
             return fail("The browser tools need a profile scope; none is active here.")
         try:
-            return await self.manager.session(self.task_key(task_id), resolved)
-        except (PlaywrightMissing, BrowserMissing) as exc:
+            return await self.manager.session(self.task_key(task_id), resolved, route=route)
+        except (PlaywrightMissing, BrowserMissing, EngineMissing, RealProfileRefused) as exc:
             return fail(str(exc))
         except Exception as exc:
             log.warning("browser session could not start: %s", exc, exc_info=True)
@@ -169,7 +205,7 @@ class PageTools:
         url = session.page.url()
         if not _fetchable(url):
             return None
-        blocked = await self.refused(url, session.scope)
+        blocked = await self.refused(url, session.check_scope)
         if blocked is None:
             return None
         try:
@@ -211,6 +247,10 @@ class PageTools:
 
     # -- handlers -----------------------------------------------------------------------------
 
+    def cloud_serving(self, scope: Scope) -> bool:
+        """Whether a cloud provider would serve this scope's main route (hybrid routing)."""
+        return self.manager.choice_for(scope).mode == "cloud"
+
     async def navigate(
         self,
         args: Mapping[str, Any],
@@ -224,23 +264,58 @@ class PageTools:
             return fail("url is required, e.g. https://example.com")
         url = normalize_url(raw)
         resolved = scope if scope is not None else scope_or_none()
+        route: routing.Route = routing.MAIN
         if resolved is not None:  # refused before any browser starts
             blocked = await self.refused(url, resolved)
             if blocked is not None:
-                return fail(f"Blocked: {blocked.reason}", blocked=blocked.kind)
-        session = await self.open_session(task_id, resolved)
+                if not routing.local_route_for(blocked, resolved, self.cloud_serving(resolved)):
+                    return fail(f"Blocked: {blocked.reason}", blocked=blocked.kind)
+                again = await self.refused(url, routing.relaxed_scope(resolved))
+                if again is not None:
+                    return fail(f"Blocked: {again.reason}", blocked=again.kind)
+                route = routing.SIDECAR
+        done = await self._navigate_on(url, task_id, resolved, route, aux)
+        if isinstance(done, _Retry) and resolved is not None:
+            done = await self._navigate_on(url, task_id, resolved, routing.SIDECAR, aux)
+        return done.text if isinstance(done, _Retry) else done
+
+    async def _navigate_on(
+        self,
+        url: str,
+        task_id: str | None,
+        scope: Scope | None,
+        route: routing.Route,
+        aux: Any,
+    ) -> str | _Retry:
+        session = await self.open_session(task_id, scope, route=route)
         if isinstance(session, str):
             return session
+        key = self.task_key(task_id)
         first = session.first_open
         limit = session.timeouts.navigation(first)
+        seen = len(session.private_hits)
+        retry = route == routing.MAIN and routing.routing_on(
+            session.scope, session.choice.mode == "cloud" and not session.fell_back
+        )
         try:
             await self.run(session, lambda p: p.goto(url, limit), label="navigate", timeout_s=limit)
         except Exception as exc:
-            return self.failure(exc, session, "Opening the page")
+            text = self.failure(exc, session, "Opening the page")
+            if retry and len(session.private_hits) > seen:
+                return _Retry(text)
+            return text
         session.first_open = False
+        landing = session.page.url()
         bad = await self.landed_badly(session, "the page redirected to")
         if bad is not None:
+            if retry and len(session.private_hits) > seen:
+                return _Retry(bad)
+            if retry and _fetchable(landing):
+                why = await self.refused(landing, session.scope)
+                if why is not None and why.kind == "private":
+                    return _Retry(bad)
             return bad
+        self.manager.set_route(key, route)
         try:
             title = await self.run(session, lambda p: p.title(), label="title")
         except Exception as exc:
@@ -260,6 +335,7 @@ class PageTools:
         except Exception as exc:
             log.debug("outline after navigate failed: %s", exc)
         body.update(session.supervisor.view())
+        body.update(served_by(session))
         return as_json(body)
 
     async def snapshot(

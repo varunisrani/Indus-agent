@@ -9,6 +9,7 @@ import type {
   IndusDesktopPrefs,
   IndusDesktopProfile,
   IndusDesktopSecrets,
+  IndusDesktopUninstall,
   IndusDesktopUpdates,
   IndusDesktopZoom,
   IndusLaunchFacts,
@@ -29,6 +30,8 @@ export interface SettingsBridge {
   readonly ambient?: IndusDesktopAmbient;
   /** The data-URL read cap (P20-29). */
   readonly fs?: IndusDesktopFs;
+  /** About → Uninstall (P24-34). */
+  readonly uninstall?: IndusDesktopUninstall;
 }
 
 /** `model.save_key` over the daemon (keys go to the profile's secret store, never the renderer). */

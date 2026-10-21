@@ -524,6 +524,21 @@ BUILTIN: Final[tuple[CommandDef, ...]] = (
         surfaces=TERMINAL,
         owner="P14",
     ),
+    _cmd(
+        "suggestions",
+        "List suggested jobs; accept or dismiss one",
+        "tools",
+        args="[list|accept|dismiss|refresh] [n]",
+        subs=("list", "accept", "dismiss", "refresh"),
+        owner="P24",
+    ),
+    _cmd(
+        "blueprint",
+        "Set up a job from a blueprint; with no name, list them",
+        "tools",
+        args="[name] [slot=value ...]",
+        owner="P24",
+    ),
     # -- information ----------------------------------------------------------------------------
     _cmd(
         "help", "List commands; add a word to filter them", "info", args="[filter]", busy="dispatch"

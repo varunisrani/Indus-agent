@@ -48,7 +48,13 @@ class HttpPart(DaemonPart):
         def status(name: str, data: dict[str, Any]) -> None:
             daemon.status.set_surface(name, data)
 
-        host = HttpHost(daemon.scope, services=build, store=daemon.store, on_status=status)
+        host = HttpHost(
+            daemon.scope,
+            services=build,
+            store=daemon.store,
+            on_status=status,
+            tickets=daemon.tickets,
+        )
         self.surfaces = await start_http_surfaces(host)
         for problem in self.surfaces.problems:
             name, _, why = problem.partition(": ")

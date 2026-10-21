@@ -198,12 +198,45 @@ commands:
   cron incidents: 0
   cron notepad: 2
   cron doctor: 0          # no jobs, no findings
+  kanban: 0               # P24-13: lists the (empty) default board
+  kanban board: 0
+  kanban create: 2
+  kanban list: 0
+  kanban show: 2
+  kanban move: 2
+  kanban comment: 2
+  kanban attach: 2
+  kanban assign: 2
+  kanban review: 2
+  kanban dispatch: 0      # one pass over an empty board
+  kanban archive: 2
+  project: 0              # P24-14: says there are no projects yet
+  project create: 2
+  project list: 0
+  project use: 0          # no argument: clears the active project
+  project add-path: 2
+  project remove-path: 2
+  project archive: 2
+  cron suggestions: 0     # no subcommand lists them: none yet (P24-46)
+  cron suggestions list: 0
+  cron suggestions accept: 2
+  cron suggestions dismiss: 2
+  cron suggestions refresh: 0   # offers the starter set; schedules nothing
   research: 2             # a group with no default action prints its help
   research batch: 2       # DATASET and --run-name are required
   research distributions: 0
   research compress: 2    # INPUT is required
   research swe: 2         # --task or --prompts is required
   research sample: 2      # no dataset list: there is no default dataset
+  pet: 2                  # a group with no default action prints its help (P24-19)
+  pet generate: 2         # IDEA is required
+  pet hatch: 2            # TOKEN and --name are required
+  pet list: 0             # says there are no pets yet
+  pet show: 1             # no pet is shown in a fresh profile
+  pet use: 2
+  pet off: 0
+  pet rename: 2
+  pet remove: 2
 
   pairing: 0              # no subcommand lists requests and paired users (P15-09)
   pairing list: 0
@@ -228,8 +261,61 @@ commands:
   webhook subscribe: 2    # a route name is required
   webhook remove: 2
   webhook test: 2
+  peer: 0                 # no subcommand lists the peers (P24-07)
+  peer add: 2             # a name and --url are required
+  peer list: 0
+  peer remove: 2
+  peer dm: 2              # a target and a message are required
+  peer run: 2
+  peer status: 2
+  peer stop: 2
 
   serve discover: 1       # no headless backend runs (P18-01)
+  vault: 0                # no subcommand lists the items (P24-40)
+  vault list: 0
+  vault add: 1            # values come from hidden prompts only: needs a terminal
+  vault remove: 2         # a handle is required
+  vault lock: 0
+  vault unlock: 0
+
+  lsp: 0                  # no subcommand shows the status (P24-15)
+  lsp status: 0
+  lsp install-hint: 2     # a server id is required
+  lsp restart: 0          # nothing runs in this process: says so
+
+  verify: 1               # an empty folder has no recipe: guidance (P24-17)
+
+  import-agent: 1         # the fresh HOME has neither ~/.claude nor ~/.codex (P24-18)
+  pm: 2                   # a group with no default action prints its help (P24-24)
+  pm lock: 1              # downloads every archive to hash it: needs --yes without a terminal
+  pm install: 1           # nothing is locked yet
+  pm env: 0               # prints {} (nothing installed)
+  pm doctor: 0            # nothing locked or installed yet
+  pm repair: 0            # nothing to repair
+  pm gc: 0
+  pm bundle: 2            # --out is required
+  pm status: 0            # no operation recorded yet
+  pm update: 1            # nothing is locked yet
+
+  egress: 2               # a group with no default action prints its help (P24-42)
+  egress status: 0
+  egress enable: 1        # starts a background proxy: needs --yes without a terminal
+  egress disable: 0       # nothing running, nothing to stop
+  egress allow: 2         # a host is required
+  blueprint: 2            # a group with no default action prints its help (P24-46)
+  blueprint list: 0
+  blueprint show: 2       # a name is required
+  blueprint use: 2
+  plugins pack: 2         # a group with no default action prints its help (P24-44)
+  plugins pack show: 2    # a pack file is required
+  plugins pack install: 2
+  plugins pack export: 1  # nothing installed from git to export
+  skills publish: 2       # a skill and --repo are required (P24-45)
+  skills snapshot: 2      # a group with no default action prints its help
+  skills snapshot export: 0
+  skills snapshot import: 2   # a snapshot file is required
+
+  console: 1              # the REPL needs a terminal; prints the --run form (P24-36)
 
   uninstall: 1            # no terminal to confirm on: says to pass -y or --dry-run (P23-20)
   update: 1               # needs -y without a terminal; refused before any fetch (P23-19)
@@ -272,6 +358,17 @@ with_arguments:
   cron run no-such-job: 1
   cron remove no-such-job -y: 1
   cron notepad no-such-job list: 1
+  cron suggestions accept 1: 1   # nothing is waiting (P24-46)
+  blueprint show no-such-blueprint: 1
+  blueprint use morning-brief --dry-run: 0
   webhook remove no-such-route: 1
   webhook test no-such-route: 1
+  peer remove ghost: 1
+  peer dm ghost hello: 1           # no peer of that name: says how to add one
+  vault remove local-000000000000: 1
   research batch missing.jsonl --run-name r1: 2   # no such dataset
+  import-agent codex: 1            # no ~/.codex in the fresh HOME (P24-18)
+  import-agent --sync: 0           # no import recorded yet
+  pm install --without ripgrep: 1  # nothing is locked yet (checked before the arguments)
+  pm update --check: 1             # nothing is locked yet
+  console --run status: 0         # a read-only command runs without a terminal (P24-36)

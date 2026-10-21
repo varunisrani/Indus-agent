@@ -33,11 +33,21 @@ from indus.tools.builtin.browser.vision import VisionTool
 from indus.tools.registry import ToolRegistry, ToolTraits
 from indus.tools.toolsets import BROWSER_TOOLS
 
-__all__ = ["DEFAULT_TOOLS", "TOOLSET", "TOOL_NAMES", "BrowserTools", "register_tools"]
+__all__ = [
+    "DEFAULT_TOOLS",
+    "EXTRA_TOOL_NAMES",
+    "TOOLSET",
+    "TOOL_NAMES",
+    "BrowserTools",
+    "register_tools",
+]
 
 TOOLSET = "browser"
 MAX_RESULT_CHARS = 100_000
-TOOL_NAMES: tuple[str, ...] = BROWSER_TOOLS
+EXTRA_TOOL_NAMES: tuple[str, ...] = ("browser_exec", "browser_vault")
+"""Registered by their own modules (P24-39, P24-40), not by ``BrowserTools``."""
+TOOL_NAMES: tuple[str, ...] = tuple(n for n in BROWSER_TOOLS if n not in EXTRA_TOOL_NAMES)
+"""The session tools ``BrowserTools`` registers."""
 ACTS = ToolTraits(mutating=True)
 _METHOD = re.compile(r"^[A-Z][A-Za-z]*\.[a-zA-Z][A-Za-z0-9]*$")
 
@@ -136,7 +146,7 @@ class BrowserTools:
     async def dialog(
         self, args: Mapping[str, Any], *, task_id: str | None = None, scope: Scope | None = None
     ) -> str:
-        session = self.manager.get(self.pages.task_key(task_id))
+        session = self.manager.current(self.pages.task_key(task_id))
         if session is None:
             return fail("No browser page is open for this task; nothing to answer.")
         action = str(args.get("action") or "").strip().lower()
@@ -207,3 +217,10 @@ DEFAULT_TOOLS = BrowserTools()
 
 def register_tools(registry: ToolRegistry) -> None:
     DEFAULT_TOOLS.register(registry)
+    # P24-39 / P24-40: the scripted CLI runner (offered when the CLI is found) and the vault
+    # autofill (offered when a vault source is configured), over the same session manager.
+    from indus.tools.builtin.browser.exec_cli import register_exec_tool
+    from indus.tools.builtin.browser.vault import register_vault_tool
+
+    register_exec_tool(registry)
+    register_vault_tool(registry, DEFAULT_TOOLS.manager)

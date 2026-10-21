@@ -11,7 +11,8 @@
 // remote connection (P20-11) the renderer offers a reservation id instead of a credential and main
 // swaps that one subprotocol entry for the saved token on that upgrade, so the token never crosses
 // the bridge — this needs the subprotocol header, so it works where the hook sees it (Node, tests)
-// but not inside Electron 44 (integration finding; the owner decides the remote dial).
+// but not inside Electron 44 (integration finding, D-16.691). Remote dials therefore offer a
+// single-use ticket the server mints per dial (`reserveTicketDial`, P24-29).
 
 import { randomBytes } from "node:crypto";
 
@@ -107,7 +108,26 @@ export class DialReservations {
     };
   }
 
-  /** A remote dial: a reservation id stands in for the token until main rewrites the upgrade. */
+  /**
+   * A remote dial with a ticket the server minted for it (P24-29, the D-16.691 fix): offered as
+   * `indus-dashboard-ticket.<ticket>`; the reservation only removes `Origin` on that one upgrade.
+   */
+  reserveTicketDial(url: string, ticket: string, webContentsId: number): TicketAnswer {
+    const marker = `${DASHBOARD_TICKET_PREFIX}${ticket}`;
+    this.add(url, webContentsId, marker, null);
+    return {
+      ticket,
+      wsUrl: url,
+      expiresInMs: RESERVATION_TTL_MS,
+      protocols: [DASHBOARD_SUBPROTOCOL, marker],
+    };
+  }
+
+  /**
+   * A remote dial by header rewrite: a reservation id stands in for the token until main rewrites
+   * the upgrade. Superseded by `reserveTicketDial` (Electron ignores the rewrite, D-16.691); kept
+   * for callers outside Electron.
+   */
   reserveRemote(url: string, token: string, webContentsId: number): TicketAnswer {
     const id = randomBytes(24).toString("base64url");
     const marker = `${DASHBOARD_TICKET_PREFIX}${id}`;

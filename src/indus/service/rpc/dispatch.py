@@ -57,6 +57,9 @@ from indus.protocol.errors import (
 )
 from indus.protocol.events import EVENTS
 from indus.protocol.methods import METHODS, ProtocolError, validate_params
+from indus.protocol.pets import PET_DEADLINES
+from indus.protocol.voice import VOICE_DEADLINES
+from indus.protocol.wake import WAKE_DEADLINES
 from indus.service.session_service import protocol_error_for
 
 __all__ = [
@@ -91,6 +94,12 @@ DEADLINES: Mapping[str, float] = MappingProxyType(
         "session.compress": 600.0,
         # A change may compress or start an editor's MCP servers (session.mutate).
         "session.mutate": 600.0,
+        # P24-19: the pet's drawing steps wait for the image service.
+        **PET_DEADLINES,
+        # P24-20: a first wake.start may load a model.
+        **WAKE_DEADLINES,
+        # P24-35: a long clip or reply may take the speech provider a while.
+        **VOICE_DEADLINES,
     }
 )
 """Per-method deadlines (seconds) that differ from ``DEFAULT_DEADLINE_S``."""

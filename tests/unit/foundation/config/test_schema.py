@@ -61,6 +61,7 @@ def test_decided_defaults() -> None:
         "ssh_key": "",
         "ssh_persistent_shell": True,
         "credential_files": [],
+        "background_memory_max": "1G",  # P24-43
     }
     assert d["tool_output"] == {"max_chars": 50000}
     # P08 (context and cost): the union of the three wave-1 slices
@@ -292,6 +293,16 @@ def test_decided_defaults() -> None:
         "env_passthrough": [],
         "dialog_policy": "must_respond",
         "dialog_timeout_s": 300,
+        # P24-38..41, 47
+        "provider": "local",
+        "engine": "chromium",
+        "camofox_url": "",
+        "real_profile": False,
+        "real_profile_dir": "",
+        "route_private_local": False,
+        "vault_sources": ["local", "onepassword", "bitwarden"],
+        "control_enabled": False,
+        "control_developer_mode": False,
     }
     assert d["display"] == {
         "language": "en",
@@ -353,6 +364,7 @@ def test_decided_defaults() -> None:
         "weixin": platform,  # P16-19
         "yuanbao": platform,  # P16-21
         "raft": platform,  # P16-30
+        "a2a": platform,  # P24-10
     }
     assert d["gateway"] == {
         "message_timestamps": {"enabled": False},
@@ -392,6 +404,14 @@ def test_decided_defaults() -> None:
             "rate_limit": 30,
             "max_body_bytes": 1_048_576,
             "routes": {},
+        },
+        "multiplex_profiles": False,  # P24-01 (D-16.17: off by default)
+        "profile_routes": [],  # P24-03
+        "relay": {  # P24-08
+            "url": "",
+            "gateway_id": "",
+            "connect_timeout_seconds": 30.0,
+            "request_timeout_seconds": 30.0,
         },
     }
     assert d["tui"] == {  # P12-31
@@ -462,11 +482,11 @@ def test_every_default_validates() -> None:
 
 def test_unknown_section_survives_validate_and_dump() -> None:
     data: dict[str, Any] = schema.defaults_tree()
-    data["kanban"] = {"lanes": ["todo", "done"], "wip": 3}
+    data["whiteboard"] = {"lanes": ["todo", "done"], "wip": 3}
     assert schema.validate(data) == []
     reread = yamlio.load_safe(yamlio.dump_plain(data))
-    assert reread["kanban"] == {"lanes": ["todo", "done"], "wip": 3}
-    assert schema.ConfigModel.model_validate(data).model_dump(by_alias=True)["kanban"] == {
+    assert reread["whiteboard"] == {"lanes": ["todo", "done"], "wip": 3}
+    assert schema.ConfigModel.model_validate(data).model_dump(by_alias=True)["whiteboard"] == {
         "lanes": ["todo", "done"],
         "wip": 3,
     }
@@ -525,6 +545,8 @@ def test_model_shorthand_validates() -> None:
         ("gateway.api_server.port", int),
         ("gateway.api_server.cors_origins", list),
         ("gateway.webhook.routes", dict),
+        ("gateway.multiplex_profiles", bool),
+        ("gateway.profile_routes", list),
         ("platforms.telegram.streaming", bool),
         ("platforms.discord.tool_progress", str),
         ("display.ephemeral_system_ttl", float),
@@ -639,7 +661,113 @@ def test_dashboard_refuses_proxies_that_trust_everyone(entry: str) -> None:
     assert schema.validate({"dashboard": {"trusted_proxies": ["172.20.0.0/24"]}}) == []
 
 
+def test_pm_rows_validate() -> None:  # P24-23
+    assert schema.DEFAULTS["pm"] == {"mirror_url": "", "timeout_s": 60.0}
+    assert schema.validate({"pm": {"mirror_url": "https://mirror.example/pm"}}) == []
+    assert schema.validate({"pm": {"timeout_s": 0}}) != []
+
+
 def test_acp_rows_validate() -> None:  # P19-03
     assert schema.DEFAULTS["acp"] == {"allow_local_fallback": False}  # D-16.83
     assert schema.validate({"acp": {"allow_local_fallback": True}}) == []
     assert schema.validate({"acp": {"allow_local_fallback": "sometimes"}}) != []
+
+
+def test_multiplex_rows_validate() -> None:  # P24-01, P24-03
+    assert schema.validate({"gateway": {"multiplex_profiles": True}}) == []
+    assert schema.validate({"gateway": {"multiplex_profiles": "sometimes"}}) != []
+    routes = [{"name": "ops", "platform": "telegram", "profile": "ops", "chat": "-100"}]
+    assert schema.validate({"gateway": {"profile_routes": routes}}) == []
+    assert schema.validate({"gateway": {"profile_routes": {"ops": "x"}}}) != []
+
+
+def test_relay_rows_validate() -> None:  # P24-08
+    relay = schema.DEFAULTS["gateway"]["relay"]
+    assert relay == {
+        "url": "",
+        "gateway_id": "",
+        "connect_timeout_seconds": 30.0,
+        "request_timeout_seconds": 30.0,
+    }
+    good = {"gateway": {"relay": {"url": "https://relay.example", "gateway_id": "gw-1"}}}
+    assert schema.validate(good) == []
+    assert schema.validate({"gateway": {"relay": {"request_timeout_seconds": 0}}}) != []
+
+
+def test_a2a_rows_validate() -> None:  # P24-10
+    a2a = schema.DEFAULTS["a2a"]
+    assert (a2a["host"], a2a["port"], a2a["public"]) == ("127.0.0.1", 9900, False)
+    assert a2a["inbound_peers"] == [] and a2a["peers"] == {}
+    assert (a2a["reply_timeout_seconds"], a2a["max_turns_per_context"]) == (300.0, 5)
+    assert schema.DEFAULTS["platforms"]["a2a"]["enabled"] is None
+    peer = {"url": "http://10.0.0.5:9900/", "trusted": True}
+    assert schema.validate({"a2a": {"inbound_peers": ["alice"], "peers": {"lab": peer}}}) == []
+    assert schema.validate({"a2a": {"port": 70000}}) != []
+    assert schema.validate({"a2a": {"peers": {"lab": {"trusted": "maybe"}}}}) != []
+
+
+def test_board_and_project_rows() -> None:  # P24-11..14
+    assert schema.DEFAULTS["kanban"] == {
+        "dispatch_in_gateway": True,
+        "dispatch_interval_seconds": 60,
+        "max_in_progress": 0,
+        "failure_limit": 2,
+    }
+    projects = schema.DEFAULTS["projects"]
+    assert projects["default_directory"] == ""
+    assert projects["discovery"]["enabled"] is True
+    assert projects["discovery"]["max_depth"] == 3
+    assert "node_modules" in projects["discovery"]["excludes"]
+    assert schema.validate({"kanban": {"failure_limit": 0}}) != []
+    assert schema.validate({"projects": {"discovery": {"max_depth": 9}}}) != []
+    assert schema.validate({"projects": {"discovery": {"roots": ["~/code"]}}}) == []
+
+
+def test_lsp_rows_validate() -> None:  # P24-15, P24-16
+    lsp = schema.DEFAULTS["lsp"]
+    assert lsp["enabled"] is True
+    assert lsp["wait_timeout"] == 5.0
+    assert lsp["idle_timeout"] == 600.0
+    assert lsp["broken_retry_s"] == 0.0
+    assert lsp["trusted_workspaces"] == [] and lsp["servers"] == {}
+    assert (
+        schema.validate({"lsp": {"idle_timeout": 0, "servers": {"gopls": {"disabled": True}}}})
+        == []
+    )
+    assert schema.validate({"lsp": {"wait_timeout": 0}}) != []
+    assert schema.validate({"lsp": {"idle_timeout": -1}}) != []
+
+
+def test_verify_rows_validate() -> None:  # P24-17
+    verify = schema.DEFAULTS["verify"]
+    assert verify == {
+        "on_stop": False,
+        "phase_timeout": 600.0,
+        "ready_timeout": 60.0,
+        "max_stop_attempts": 2,
+        "max_hook_nudges": 3,
+    }
+    assert schema.validate({"verify": {"on_stop": True, "phase_timeout": 30}}) == []
+    assert schema.validate({"verify": {"phase_timeout": 0}}) != []
+
+
+def test_egress_rows_validate() -> None:  # P24-42
+    assert schema.DEFAULTS["egress"] == {
+        "enabled": False,
+        "enforce": True,
+        "port": 47900,
+        "bind": "auto",
+        "hosts": [],
+        "rules": [],
+        "block_other_hosts": False,
+    }
+    good = {"enabled": True, "hosts": ["api.example.test"], "rules": [{"host": "x.test"}]}
+    assert schema.validate({"egress": good}) == []
+    assert schema.validate({"egress": {"port": 70000}}) != []
+    assert schema.validate({"egress": {"enabled": "sometimes"}}) != []
+
+
+def test_background_memory_row_validates() -> None:  # P24-43
+    assert schema.validate({"terminal": {"background_memory_max": "512M"}}) == []
+    assert schema.validate({"terminal": {"background_memory_max": 768}}) == []
+    assert schema.validate({"terminal": {"background_memory_max": ["x"]}}) != []

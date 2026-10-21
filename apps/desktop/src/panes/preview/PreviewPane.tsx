@@ -12,14 +12,27 @@ import {
   ArrowRight,
   Camera,
   ExternalLink,
+  MapPin,
   PictureInPicture2,
   RotateCw,
+  Send,
+  X,
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { desktopBridge } from "../../app/bridge.ts";
 import { Loader } from "../../app/Loader.tsx";
 import type { IndusDesktopBridge } from "../../global.d.ts";
 import { useT } from "../../i18n/index.tsx";
+import { AnnotateSession, type GuestPick, guestCall, guestInstallScript } from "./annotate.ts";
+import { windowPreviewAutomation } from "./automation.ts";
 import {
   addressOf,
   fileUrlOf,
@@ -43,6 +56,13 @@ interface WebviewElement extends HTMLElement {
   goForward?(): void;
   reload?(): void;
   loadURL?(url: string): Promise<void>;
+  executeJavaScript?(code: string): Promise<unknown>;
+}
+
+/** Run `code` in the guest page (bound: Electron reads `this` inside the method). */
+function guestRunner(view: WebviewElement | null): ((code: string) => Promise<unknown>) | null {
+  if (view === null || typeof view.executeJavaScript !== "function") return null;
+  return (code) => (view.executeJavaScript as (c: string) => Promise<unknown>).call(view, code);
 }
 
 export interface PreviewPaneProps {
@@ -57,6 +77,10 @@ export interface PreviewPaneProps {
   onPopOut?(target: PreviewTarget): void;
   /** Present when a captured image can be added to the conversation. */
   onAttachCapture?(dataUrl: string): void;
+  /** The session this preview belongs to (the agent may drive it, P24-25). */
+  sessionId?: string | null;
+  /** Present when annotate notes can be put into the chat (P24-25). */
+  onAnnotationSend?(text: string): void;
 }
 
 const BUTTON =
@@ -302,9 +326,74 @@ export function PreviewPane(props: PreviewPaneProps) {
     },
     [],
   );
+  const sessionRef = useRef<string | null>(props.sessionId ?? null);
+  sessionRef.current = props.sessionId ?? null;
+  const detachAutomation = useRef<(() => void) | null>(null);
   const register = useCallback((element: WebviewElement | null) => {
     view.current = element;
+    detachAutomation.current?.();
+    detachAutomation.current = null;
+    const run = guestRunner(element);
+    if (element === null || run === null) return;
+    detachAutomation.current = windowPreviewAutomation.attach({
+      executeJavaScript: run,
+      loadURL: async (url) => {
+        await element.loadURL?.(url);
+      },
+      sessionId: () => sessionRef.current,
+    });
   }, []);
+  useEffect(() => () => detachAutomation.current?.(), []);
+
+  // -- annotate mode (P24-25) ---------------------------------------------------------------------
+  const onAnnotationSend = props.onAnnotationSend;
+  const annotations = useMemo(
+    () => new AnnotateSession({ onSend: (text) => onAnnotationSend?.(text) }),
+    [onAnnotationSend],
+  );
+  const pins = useSyncExternalStore(
+    (listener) => annotations.subscribe(listener),
+    () => annotations.list(),
+    () => annotations.list(),
+  );
+  const [annotating, setAnnotating] = useState(false);
+  useEffect(() => {
+    if (!annotating) return;
+    const run = guestRunner(view.current);
+    if (run === null) {
+      setAnnotating(false);
+      return;
+    }
+    let live = true;
+    const loop = async () => {
+      await run(guestInstallScript());
+      await run(guestCall("start"));
+      while (live) {
+        const event = (await run(guestCall("next"))) as { type?: string; pick?: GuestPick } | null;
+        if (!live || event === null || event.type !== "pick" || event.pick === undefined) break;
+        annotations.add(event.pick);
+        await run(
+          guestCall(
+            "showPins",
+            annotations
+              .list()
+              .map((p) => ({ number: p.number, selector: p.selector, note: p.note })),
+          ),
+        );
+      }
+    };
+    loop().catch(() => {
+      if (live) setAnnotating(false);
+    });
+    return () => {
+      live = false;
+      void run(guestCall("stop")).catch(() => {});
+    };
+  }, [annotating, annotations]);
+  const leaveAnnotate = () => {
+    annotations.discard();
+    setAnnotating(false);
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -401,6 +490,16 @@ export function PreviewPane(props: PreviewPaneProps) {
         {loading ? <Loader /> : null}
         <button
           type="button"
+          className={`${BUTTON} ${annotating ? "bg-raised text-accent" : ""}`}
+          aria-label={t("annotate.toggle")}
+          aria-pressed={annotating}
+          disabled={!isWeb || !showsGuest}
+          onClick={() => (annotating ? leaveAnnotate() : setAnnotating(true))}
+        >
+          <MapPin size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
           className={BUTTON}
           aria-label={t("preview.capture")}
           disabled={!showsGuest}
@@ -466,6 +565,57 @@ export function PreviewPane(props: PreviewPaneProps) {
             {t("preview.dismissCapture")}
           </button>
         </figure>
+      ) : null}
+
+      {annotating ? (
+        <section
+          className="flex max-h-64 flex-col gap-1 overflow-auto border-b border-line px-3 py-2 text-xs"
+          aria-label={t("annotate.toggle")}
+          data-testid="annotate-panel"
+        >
+          <p className="text-muted">{t("annotate.hint")}</p>
+          {pins.map((pin) => (
+            <div key={pin.number} className="flex items-start gap-2">
+              <span className="font-semibold">{t("annotate.pin", { number: pin.number })}</span>
+              <textarea
+                className="min-h-8 flex-1 rounded border border-line bg-bg px-1"
+                aria-label={t("annotate.pin", { number: pin.number })}
+                placeholder={t("annotate.notePlaceholder")}
+                value={pin.note}
+                onChange={(event) => annotations.setNote(pin.number, event.target.value)}
+              />
+              <button
+                type="button"
+                className={BUTTON}
+                aria-label={t("annotate.remove", { number: pin.number })}
+                onClick={() => annotations.remove(pin.number)}
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 hover:bg-raised disabled:opacity-40"
+              disabled={pins.length === 0 || onAnnotationSend === undefined}
+              onClick={() => {
+                annotations.send(address);
+                setAnnotating(false);
+              }}
+            >
+              <Send size={12} aria-hidden="true" />
+              {t("annotate.send")}
+            </button>
+            <button
+              type="button"
+              className="rounded border border-line px-2 py-0.5 hover:bg-raised"
+              onClick={leaveAnnotate}
+            >
+              {t("annotate.done")}
+            </button>
+          </div>
+        </section>
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col">

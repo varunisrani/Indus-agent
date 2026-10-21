@@ -13,17 +13,22 @@ import { desktopBridge, hasShell, launchFacts, readWindowQuery } from "./app/bri
 import { chatSlots } from "./app/chatSlots.tsx";
 import { installErrorForwarding } from "./app/errorForwarding.ts";
 import { mountFindBar } from "./app/FindBar.tsx";
+import { managementSlots, rpcOf } from "./app/manage/managementSlots.tsx";
 import { settingsSlots } from "./app/settingsSlots.tsx";
 import { applyStoredTheme } from "./app/theme.tsx";
+import { BotsPage, BotsSurface, botsContribution, registryHost } from "./bots/BotsPage.tsx";
+import { startDesktopPlugins } from "./contrib/host.ts";
 import { ConnectionStore } from "./gateway/connectionStore.ts";
 import { translate } from "./i18n/index.tsx";
 import { registerWorkingPanes } from "./panes/d2Panes.tsx";
 import { LayoutStore } from "./panes/layoutStore.ts";
 import { paneRegistry } from "./panes/PaneShell.tsx";
+import type { LooseRpc } from "./pet/PetOverlay.tsx";
 import { profileKey } from "./profiles/storageFamilies.ts";
 import { ProfileSwitcher } from "./profiles/switching.ts";
 import { ChatWorkspace } from "./profiles/workspace.ts";
 import { SidebarModel } from "./sidebar/Sidebar.tsx";
+import { installAppWake } from "./wake/appWake.ts";
 
 applyStoredTheme();
 document.title = translate("app.name");
@@ -52,14 +57,23 @@ async function start(): Promise<void> {
   const switcher = new ProfileSwitcher<ChatWorkspace>({
     initial,
     createWorkspace: (profile) =>
-      new ChatWorkspace(profile, connections, (workspace) => ({
-        ...chatSlots({
+      new ChatWorkspace(profile, connections, (workspace) => {
+        const settings = settingsSlots({ connection: workspace.connection });
+        const manage = managementSlots({
           connection: workspace.connection,
-          transcripts: workspace.transcripts,
           profile: workspace.profile,
-        }),
-        ...settingsSlots({ connection: workspace.connection }),
-      })),
+        });
+        return {
+          ...chatSlots({
+            connection: workspace.connection,
+            transcripts: workspace.transcripts,
+            profile: workspace.profile,
+          }),
+          ...settings,
+          pages: manage.pages, // P24-27, P24-28, P24-31
+          overlays: { ...manage.overlays, ...settings.overlays },
+        };
+      }),
     bridge: bridge?.profile ?? null,
     log: (line) => bridge?.logs.rendererError({ message: line, source: "renderer:profiles" }),
   });
@@ -100,6 +114,33 @@ async function start(): Promise<void> {
       />
     </StrictMode>,
   );
+  // The Bots surface (P24-31) is a bundled contribution in the app's registry (P24-32): its route
+  // and nav entry; the page itself is the workspace's `bots` page slot.
+  if (hasShell(query.kind)) {
+    new BotsSurface(
+      registryHost(),
+      botsContribution(
+        () => <BotsPage rpc={rpcOf(switcher.foreground().connection)} />,
+        translate("nav.bots"),
+      ),
+    ).setEnabled(true);
+  }
+  // The wake word (P24-20) over the foreground connection; a detection dictates into the
+  // composer (P24-35). Armed at launch only when it was turned on (consent stays with the switch).
+  if (bridge !== null && query.kind === "main") {
+    const { controller } = installAppWake(
+      () => switcher.foreground().connection as unknown as LooseRpc,
+    );
+    void controller.start({ consent: false });
+  }
+  // Desktop plugins (P24-32): checked in main, loaded here through a host built from the bridge.
+  if (bridge !== null && hasShell(query.kind)) {
+    void startDesktopPlugins({
+      bridge,
+      connection: () => switcher.foreground().connection,
+      profile: () => switcher.getState().foreground,
+    });
+  }
   // Main reveals the window once the first frame is painted (no white flash).
   requestAnimationFrame(() => bridge?.windows.painted());
   if (hasShell(query.kind)) mountFindBar(); // find in the transcript (P20-39)

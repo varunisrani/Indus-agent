@@ -552,3 +552,28 @@ def test_a_quick_exec_command_is_stopped_after_its_limit(
         assert answer == "The command ran longer than 30 s and was stopped."
 
     run(main())
+
+
+def test_suggestions_and_blueprints_work_in_a_chat(
+    scope: Scope, fake_clock: FakeClock, tmp_path: Path
+) -> None:  # P24-46 on the gateway surface
+    from indus.cron import ports as cron_ports
+
+    async def main() -> None:
+        kit = await build_kit(scope, fake_clock, tmp_path)
+        try:
+            listed = await idle_reply(kit, "/blueprint")
+            assert isinstance(listed, str) and "morning-brief" in listed
+            asked = await idle_reply(kit, "/blueprint morning-brief")
+            assert isinstance(asked, Rewrite) and asked.text  # the agent asks the questions
+            added = await idle_reply(kit, "/suggestions refresh")
+            assert isinstance(added, str) and added.startswith("Added")
+            done = await idle_reply(kit, "/suggestions accept 1")
+            assert isinstance(done, str) and done.startswith("Scheduled"), done
+            (job,) = cron_ports.backend_for(scope).list_jobs(include_disabled=True)
+            origin = cron_ports.field(job, "origin")
+            assert cron_ports.field(origin, "chat_id") == dm("x").source.chat_id
+        finally:
+            await kit.close()
+
+    run(main())

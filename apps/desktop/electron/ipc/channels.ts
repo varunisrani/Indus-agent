@@ -112,6 +112,73 @@ export const CHANNELS = [
     owner: "P20-11",
   },
 
+  // connections registry (P24-29)
+  {
+    name: "indus:connections:list",
+    kind: "invoke",
+    group: "connections",
+    method: "list",
+    owner: "P24-29",
+  },
+  {
+    name: "indus:connections:test",
+    kind: "invoke",
+    group: "connections",
+    method: "test",
+    owner: "P24-29",
+  },
+  {
+    name: "indus:connections:save",
+    kind: "invoke",
+    group: "connections",
+    method: "save",
+    owner: "P24-29",
+  },
+  {
+    name: "indus:connections:remove",
+    kind: "invoke",
+    group: "connections",
+    method: "remove",
+    owner: "P24-29",
+  },
+  {
+    name: "indus:connections:set-primary",
+    kind: "invoke",
+    group: "connections",
+    method: "setPrimary",
+    owner: "P24-29",
+  },
+  {
+    name: "indus:connections:set-launch-mode",
+    kind: "invoke",
+    group: "connections",
+    method: "setLaunchMode",
+    owner: "P24-29",
+  },
+  {
+    name: "indus:connections:sign-in",
+    kind: "invoke",
+    group: "connections",
+    method: "signIn",
+    owner: "P24-29",
+  },
+  {
+    name: "indus:connections:sign-out",
+    kind: "invoke",
+    group: "connections",
+    method: "signOut",
+    owner: "P24-29",
+  },
+
+  // artifacts (P24-28)
+  {
+    name: "indus:artifacts:download",
+    kind: "invoke",
+    group: "artifacts",
+    method: "download",
+    owner: "P24-28",
+  },
+
   // REST proxy
   { name: "indus:api", kind: "invoke", group: "api", method: "request", owner: "P20-14" },
 
@@ -571,6 +638,87 @@ export const CHANNELS = [
 
   // app-owned work (quit guard)
   { name: "indus:work:active", kind: "send", group: "work", method: "report", owner: "P20-13" },
+
+  // desktop pet overlay (P24-19): app windows show / hide / speak; the pet window reads its state
+  // and reports whether the pointer is over the figure (click-through elsewhere)
+  { name: "indus:pet:show", kind: "invoke", group: "pet", method: "show", owner: "P24-19" },
+  { name: "indus:pet:hide", kind: "invoke", group: "pet", method: "hide", owner: "P24-19" },
+  { name: "indus:pet:say", kind: "send", group: "pet", method: "say", owner: "P24-19" },
+  { name: "indus:pet:get", kind: "invoke", group: "pet", method: "get", owner: "P24-19" },
+  { name: "indus:pet:state", kind: "event", group: "pet", method: "onState", owner: "P24-19" },
+  { name: "indus:pet:pointer", kind: "send", group: "pet", method: "pointer", owner: "P24-19" },
+
+  // wake-word indicator (P24-20)
+  {
+    name: "indus:wake:indicator",
+    kind: "send",
+    group: "wake",
+    method: "setIndicator",
+    owner: "P24-20",
+  },
+  {
+    name: "indus:wake:indicator-get",
+    kind: "invoke",
+    group: "wake",
+    method: "getIndicator",
+    owner: "P24-20",
+  },
+  {
+    name: "indus:wake:indicator-state",
+    kind: "event",
+    group: "wake",
+    method: "onIndicator",
+    owner: "P24-20",
+  },
+
+  // VS Code Marketplace themes (P24-33): search and download through main (allow-listed hosts)
+  {
+    name: "indus:themes:search",
+    kind: "invoke",
+    group: "themes",
+    method: "searchMarketplace",
+    owner: "P24-33",
+  },
+  {
+    name: "indus:themes:download",
+    kind: "invoke",
+    group: "themes",
+    method: "downloadMarketplace",
+    owner: "P24-33",
+  },
+
+  // desktop plugins on disk (checked in main, served through indus-plugin:)
+  { name: "indus:plugins:list", kind: "invoke", group: "plugins", method: "list", owner: "P24-32" },
+  {
+    name: "indus:plugins:rescan",
+    kind: "invoke",
+    group: "plugins",
+    method: "rescan",
+    owner: "P24-32",
+  },
+  {
+    name: "indus:plugins:changed",
+    kind: "event",
+    group: "plugins",
+    method: "onChanged",
+    owner: "P24-32",
+  },
+
+  // uninstall from Settings → About (runs `indus uninstall` from a helper after the app quits)
+  {
+    name: "indus:uninstall:summary",
+    kind: "invoke",
+    group: "uninstall",
+    method: "summary",
+    owner: "P24-34",
+  },
+  {
+    name: "indus:uninstall:run",
+    kind: "invoke",
+    group: "uninstall",
+    method: "run",
+    owner: "P24-34",
+  },
 ] as const satisfies readonly ChannelDef[];
 
 export type Channel = (typeof CHANNELS)[number];

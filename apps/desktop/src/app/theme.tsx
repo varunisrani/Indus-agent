@@ -2,7 +2,16 @@
 // written once; switching flips `data-theme` on <html> and tells main so the title bar matches.
 
 import { type ThemeName, themeNames, tokensToCss } from "@indus/ui";
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { appearance } from "../theme/themeStore.ts";
 import { desktopBridge } from "./bridge.ts";
 
 export type ThemeMode = "light" | "dark" | "system";
@@ -83,9 +92,20 @@ export function ThemeProvider(props: { children: ReactNode }) {
     [mode, resolved],
   );
 
+  // P24-33: a chosen preset or user theme paints over the built-in tokens (nothing when unchosen)
+  const choices = useSyncExternalStore(appearance.subscribe, appearance.get, appearance.get);
+  const presetCss = useMemo(
+    () =>
+      choices.theme === null
+        ? ""
+        : appearance.css(null, resolved === "indus-dark" ? "dark" : "light"),
+    [choices, resolved],
+  );
+
   return (
     <ThemeContext.Provider value={value}>
       <ThemeStyles />
+      {presetCss === "" ? null : <style data-indus-appearance="">{presetCss}</style>}
       {props.children}
     </ThemeContext.Provider>
   );

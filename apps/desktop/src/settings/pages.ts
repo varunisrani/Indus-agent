@@ -10,6 +10,7 @@ import type { MessageKey } from "../i18n/index.tsx";
 
 export type CustomPage =
   | "persona"
+  | "chat-voice"
   | "appearance-theme"
   | "appearance-typography"
   | "appearance-window"
@@ -18,6 +19,7 @@ export type CustomPage =
   | "providers-keys"
   | "providers-endpoints"
   | "gateways-connection"
+  | "gateways-connections"
   | "gateways-storage"
   | "keyboard"
   | "notifications"
@@ -98,6 +100,7 @@ export const VIEWS: readonly ViewDef[] = [
         fields: ["display.show_reasoning", "display.busy_input_mode", "timezone"],
       },
       { id: "personality", label: "settings.page.chat.personality", custom: "persona" },
+      { id: "voice", label: "settings.page.chat.voice", custom: "chat-voice" }, // P24-20, P24-35
     ],
   },
   {
@@ -205,6 +208,11 @@ export const VIEWS: readonly ViewDef[] = [
         id: "connection",
         label: "settings.page.gateways.connection",
         custom: "gateways-connection",
+      },
+      {
+        id: "connections",
+        label: "settings.page.gateways.connections",
+        custom: "gateways-connections",
       },
       { id: "storage", label: "settings.page.gateways.storage", custom: "gateways-storage" },
     ],
@@ -481,6 +489,13 @@ export const MANIFEST: readonly ManifestRow[] = [
     page: "version",
     label: "settings.logs.title",
     keywords: ["logs", "log file", "diagnostics", "debug", "errors"],
+  },
+  {
+    id: "uninstall",
+    view: "about",
+    page: "version",
+    label: "settings.uninstall.title",
+    keywords: ["uninstall", "remove", "delete", "app", "everything"],
   },
   {
     id: "default-directory",

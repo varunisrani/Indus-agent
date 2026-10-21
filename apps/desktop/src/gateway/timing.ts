@@ -34,10 +34,20 @@ export const LIVENESS_REPROBE_DELAY_MS = 3_000;
 /** Consecutive misses (during a turn) that rebuild the transport. */
 export const LIVENESS_FAILURE_STREAK = 2;
 
+/** The daemon's longer deadlines (`rpc.dispatch.DEADLINES`) plus a little room for the answer. */
+const LONG_METHODS: Readonly<Record<string, number>> = {
+  "pet.generate": 450_000, // the drawing step (P24-19): 435 s on the daemon
+  "pet.hatch": 3_630_000, // every mood drawn: 3615 s on the daemon
+  "wake.start": 190_000, // a first start may load a model (P24-20): 180 s
+  "voice.transcribe": 310_000, // the speech providers (P24-35): 300 s
+  "voice.speak": 310_000,
+};
+
 const METHOD_TIMEOUTS: Readonly<Record<string, number>> = {
   "prompt.submit": PROMPT_SUBMIT_TIMEOUT_MS,
   "server_request.answer": SERVER_REQUEST_ANSWER_TIMEOUT_MS,
   "server_request.decline": SERVER_REQUEST_ANSWER_TIMEOUT_MS,
+  ...LONG_METHODS,
 };
 
 /** The default deadline of one method. */

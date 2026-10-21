@@ -30,7 +30,7 @@ export interface WindowQuery {
   readonly profile: string | null;
 }
 
-const KINDS: readonly IndusWindowKind[] = ["secondary", "instance", "hud", "quick"];
+const KINDS: readonly IndusWindowKind[] = ["secondary", "instance", "hud", "quick", "pet", "wake"];
 
 /** The window kind and its options from the query string (`?win=secondary&watch=1&profile=x`). */
 export function readWindowQuery(search: string): WindowQuery {

@@ -3,6 +3,7 @@
 //   /                 new chat (home)
 //   /<sessionId>      a chat
 //   /capabilities, /messaging, /artifacts          pages (empty "coming later" in 1.0)
+//   /webhooks, /command-center, /learning-map, /bots  management pages (P24-27, P24-28, P24-31)
 //   /settings, /cron, /profiles, /agents           overlays over the route they opened from
 //   anything else     → new chat
 //
@@ -10,7 +11,15 @@
 // navigation state and return to it on close; opened cold, they return home.
 
 export const NEW_CHAT_PATH = "/";
-export const PAGES = ["capabilities", "messaging", "artifacts"] as const;
+export const PAGES = [
+  "capabilities",
+  "messaging",
+  "artifacts",
+  "webhooks",
+  "command-center",
+  "learning-map",
+  "bots",
+] as const;
 export const OVERLAYS = ["settings", "cron", "profiles", "agents"] as const;
 
 export type PageId = (typeof PAGES)[number];

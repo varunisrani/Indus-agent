@@ -128,3 +128,8 @@ Done (2026-10-18). Goldens hold `[]` tool arrays until P05 registers tools; rege
   (a scheduled run has nobody to answer a question), so `cron/tools.json` lost the `clarify`
   schema. `prompt.txt` is unchanged. Regenerated with `--update-golden`; diff reviewed (36 lines
   removed from `cron/tools.json`, nothing else changed).
+- 2026-10-21 (P24 integration, browser tools): P24-39 `browser_exec` and P24-40 `browser_vault`
+  are registered by the browser module and listed in `BROWSER_TOOLS`, so all four surfaces gained
+  both schemas (probes pass here; live, `browser_exec` needs the browser CLI and `browser_vault` a
+  configured vault source). `prompt.txt` is unchanged. Regenerated with `--update-golden`; diff
+  reviewed (76 added lines per `tools.json`, nothing removed).

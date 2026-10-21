@@ -6,6 +6,8 @@
 //   instance   <base>/?win=instance[&profile=NAME]
 //   hud        <base>/?win=hud[&profile=NAME][#/<sessionId>]
 //   quick      <base>/?win=quick
+//   pet        <base>/?win=pet          (P24-19)
+//   wake       <base>/?win=wake         (P24-20)
 
 import { type AppOrigin, appEntryUrl } from "../appOrigin.ts";
 import type { WindowKind } from "./factory.ts";
@@ -21,7 +23,8 @@ export function windowQuery(kind: WindowKind, options: WindowUrlOptions = {}): s
   const params = new URLSearchParams({ win: kind });
   if (kind === "secondary" && options.watch === true) params.set("watch", "1");
   const profile = (options.profile ?? "").trim();
-  if (profile !== "" && kind !== "quick") params.set("profile", profile);
+  if (profile !== "" && kind !== "quick" && kind !== "pet" && kind !== "wake")
+    params.set("profile", profile);
   return `?${params.toString()}`;
 }
 
@@ -51,7 +54,7 @@ export function parseWindowQuery(url: string): {
   }
   const params = new URLSearchParams(search);
   const raw = params.get("win");
-  const kinds: WindowKind[] = ["secondary", "instance", "hud", "quick"];
+  const kinds: WindowKind[] = ["secondary", "instance", "hud", "quick", "pet", "wake"];
   const kind = kinds.find((k) => k === raw) ?? "main";
   const profile = (params.get("profile") ?? "").trim();
   return { kind, watch: params.get("watch") === "1", profile: profile === "" ? null : profile };

@@ -72,6 +72,8 @@ OBSERVATION = Budget("observation", 0.5)
 FAST_JITTER = (0.020, 0.150)
 SLOW_JITTER = (0.250, 1.000)
 SLOW_AFTER = 2.0
+DEADLINE_DUST = 1e-9
+"""Seconds left before a deadline that are only float rounding: the deadline is reached."""
 CHECKPOINT_EVERY = 50
 
 
@@ -106,12 +108,18 @@ def jitter_pause(
     rng: random.Random,
     slow_only: bool = False,
 ) -> float | None:
-    """The next pause before a retry, or None when the deadline has passed."""
-    if now >= deadline:
+    """The next pause before a retry, or None when the deadline has passed.
+
+    A pause never runs past the deadline: when less than a jitter step is left, the last pause is
+    exactly what remains (a 1 ms floor there made the total wait overshoot the patience by up to
+    1 ms for about one RNG draw in 400, P24 integration finding), and the float dust that rounding
+    may leave after it counts as the deadline reached."""
+    remaining = deadline - now
+    if remaining <= DEADLINE_DUST:
         return None
     slow = slow_only or (now - started) >= SLOW_AFTER
     low, high = SLOW_JITTER if slow else FAST_JITTER
-    return min(rng.uniform(low, high), max(deadline - now, 0.001))
+    return min(rng.uniform(low, high), remaining)
 
 
 class _NestedWrite(threading.local):

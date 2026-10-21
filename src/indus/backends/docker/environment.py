@@ -4,7 +4,8 @@
 Lifecycle. A container runs ``sleep infinity`` with Indus's labels: ``indus-agent=1``,
 ``indus-task-id`` (``shared`` for a profile-wide container, else the session), ``indus-profile``
 and ``indus-environment``, a fingerprint of the image, the mounts and the profile home (left out
-when ``docker_shared_key`` makes several profiles share one container). With
+when ``docker_shared_key`` makes several profiles share one container), and ``indus-egress``, the
+egress posture (``egress.py``, P24-42). With
 ``docker_persist_across_processes`` a new process first attaches to a matching container (running
 preferred, a stopped one is started); otherwise it creates one named ``indus-<hex8>``. A failed
 ``docker run`` removes the half-made container by name, and its error text never shows a variable
@@ -55,6 +56,7 @@ from indus.backends.contract import (
 )
 from indus.backends.docker import recovery
 from indus.backends.docker.args import run_args
+from indus.backends.docker.egress import LABEL_EGRESS, EgressPlan, plan_for
 from indus.backends.docker.env import (
     client_env,
     managed_names,
@@ -92,6 +94,7 @@ from indus.foundation.scope import Scope
 
 __all__ = [
     "LABEL_AGENT",
+    "LABEL_EGRESS",
     "LABEL_ENVIRONMENT",
     "LABEL_PROFILE",
     "LABEL_TASK",
@@ -591,6 +594,7 @@ def _host_cwd(scope: Scope, override: object) -> str:
 
 
 type ReaperStarter = Callable[[DockerCli, Scope, str, str], object]
+type EgressPlanner = Callable[[Scope, DockerSettings], EgressPlan]
 
 
 async def open_docker(
@@ -600,8 +604,13 @@ async def open_docker(
     os_name: str = sys.platform,
     clock: Clock | None = None,
     reaper: ReaperStarter | None = None,
+    egress: EgressPlanner | None = None,
 ) -> DockerEnvironment:
-    """A started Docker environment for ``request`` (the registry's factory)."""
+    """A started Docker environment for ``request`` (the registry's factory).
+
+    ``egress`` gives the P24-42 posture (default ``egress.plan_for``): its mounts, host entry and
+    variable names join ``docker run``, its label joins the reuse labels, and its values (with a
+    token minted per new container) ride the client env of ``docker run`` only."""
     scope = request.scope
     settings = settings_for(scope)
     client = require_client(scope, settings.binary)
@@ -626,10 +635,13 @@ async def open_docker(
     )
     run = run_args(settings, facts)
     run_env = plan_env(scope, settings)
+    posture = (egress or plan_for)(scope, settings)
     labels = {
         LABEL_AGENT: "1",
         LABEL_TASK: label_value(task_key),
         LABEL_PROFILE: profile_label(scope, settings.shared_key),
+        # A container made without the proxy is never reused with it, nor the reverse (R02.20).
+        LABEL_EGRESS: posture.label,
     }
     if not settings.shared_key:
         labels[LABEL_ENVIRONMENT] = fingerprint(settings.image, mounts.args, str(scope.home))
@@ -644,11 +656,19 @@ async def open_docker(
         cli,
         image=settings.image,
         labels=labels,
-        run_args=(*run.args, *mounts.args, *name_flags(run_env.run_names), *run.extra),
+        run_args=(
+            *run.args,
+            *mounts.args,
+            *posture.mount_args,
+            *posture.host_args,
+            *name_flags({*run_env.run_names, *posture.names}),
+            *run.extra,
+        ),
         init=run.init,
         workdir=cwd,
         network=settings.network,
-        values=lambda: plan_env(scope, settings).values,
+        # The user's values win where egress.enforce is off (a clash is refused when it is on).
+        values=lambda: {**posture.values(), **plan_env(scope, settings).values},
     )
     env = DockerEnvironment(
         scope,

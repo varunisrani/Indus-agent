@@ -342,6 +342,11 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | aiosqlite | 0.22.1 | 2025-12-23 | MIT | extra `matrix-e2ee` (Linux only): the device store's SQLite driver | P16-07 |
 | asyncpg | 0.31.0 | 2025-11-24 | Apache-2.0 | extra `matrix-e2ee` (Linux only): imported by mautrix's crypto-store module (no PostgreSQL is used) | P16-07 |
 | agent-client-protocol | 0.12.1 | 2026-08-16 | Apache-2.0 (no licence metadata on PyPI; `LICENSE` read in the 0.12.1 sdist, sha256 `9963ccb5…0095`; needs pydantic only; schema v1.19.0, `PROTOCOL_VERSION` 1) | extra `acp` + dev (the ACP tests run in the gate without extras) | P19-01 |
+| sherpa-onnx | 1.13.8 | 2026-09-10 | Apache-2.0 (PyPI metadata "Apache licensed"; `LICENSE` in the wheel) | extra `wake-sherpa`: keyword spotting for the wake word, the engine besides openWakeWord (which cannot be locked on Python 3.13); imported lazily | P24-20 |
+| sherpa-onnx-core | 1.13.8 | 2026-09-10 | Apache-2.0 (bundles the onnxruntime shared libraries, MIT) | extra `wake-sherpa`, pinned beside sherpa-onnx: the wheels require it, but the index metadata uv resolves from omits it (without it `import sherpa_onnx` fails) | P24-20 |
+| httpx-ws | 0.9.0 | (already locked via daytona) | MIT | extra `relay`: the relay connector's dial-out socket (signed hello with the stdlib hmac) | P24-08 |
+| playwright | 1.63.0 | 2026-09-15 | Apache-2.0 | extra `browser-cloud`: connect_over_cdp to cloud browser sessions and a user's CDP endpoint (same pin as `browser`) | P24-38 |
+| cryptography | 50.0.2 | (already locked) | Apache-2.0 OR BSD-3-Clause | extras `vault` (the local browser vault's Fernet key) and `egress` (per-host certificates of the Docker egress proxy); imported lazily | P24-40, P24-42 |
 | Node | 24.21.0 LTS | 2026-09-07 | MIT | `.nvmrc` | P00-08 |
 | pnpm | 12.9.1 | 2026-10-03 | MIT | `packageManager` | P00-08 |
 | typescript | 6.0.3 | 2026-04-16 | Apache-2.0 | dev | P00-08 (7.x native compiler reconsidered at P12) |

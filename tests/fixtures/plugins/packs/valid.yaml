@@ -1,0 +1,21 @@
+# A pack written for the P24-44 tests (our own content).
+pack:
+  name: research-kit
+  description: Tools for reading papers.
+  author: Indus tests
+  version: 1.2.0
+plugins:
+  - repo: someone/indus-plugin-notes
+    ref: 0123456789abcdef0123456789abcdef01234567
+  - repo: https://git.example.test/team/mono.git
+    ref: 89ABCDEF0123456789ABCDEF0123456789ABCDEF
+    subdir: plugins/cite
+  - name: catalogue-only
+    ref: fedcba9876543210fedcba9876543210fedcba98
+config:
+  notes:
+    greeting: hello
+    limits:
+      per_day: 5
+skills:
+  - arxiv-reader

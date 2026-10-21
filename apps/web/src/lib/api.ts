@@ -100,6 +100,7 @@ export const PROFILE_SCOPED_FAMILIES = [
   "/api/pairing",
   "/api/plugins",
   "/api/providers/login",
+  "/api/session-import",
   "/api/sessions",
   "/api/skills",
   "/api/status",

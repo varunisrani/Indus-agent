@@ -225,6 +225,8 @@ class FakePage:
     async def evaluate(self, expression: str) -> Any:
         self.evaluated.append(expression)
         await self._maybe_hang("evaluate")
+        if expression not in self.driver.eval_answers and self.driver.eval_hook is not None:
+            return await self.driver.eval_hook(self, expression)
         answer = self.driver.eval_answers.get(expression)
         if callable(answer):
             return await cast(Callable[[FakePage], Awaitable[Any]], answer)(self)
@@ -301,6 +303,8 @@ class FakeDriver:
         self.cdp_calls: list[tuple[str, dict[str, Any], bool]] = []
         self.cdp_answers: dict[str, Any] = {}
         self.eval_answers: dict[str, Any] = {}
+        # Scripted pages (P24-40): answers expressions not in ``eval_answers``.
+        self.eval_hook: Callable[[FakePage, str], Awaitable[Any]] | None = None
         self.key_targets: dict[str, str] = {}
         self.hang_on: set[str] = set()
         self.close_failures = 0

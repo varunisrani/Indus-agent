@@ -21,6 +21,7 @@ Sources:
   ``well-known:<base>/<name>``.
 - ``skills-sh`` — the skills.sh directory: search through its API, content from GitHub; a repo's
   ``skills.sh.json`` groupings become category labels.
+- ``clawhub``, ``lobehub``, ``browse-sh`` — P24-45 (``sources_extra``), community trust.
 
 Only ``SKILL.md`` and files it names under ``references/``, ``templates/``, ``scripts/``,
 ``examples/`` and ``assets/`` are fetched; a reference that leaves the skill folder refuses the
@@ -28,7 +29,8 @@ whole bundle. Every request goes through the P05 URL policy at connect time (``s
 redirect hops included, with explicit timeouts.
 
 Search asks every configured source within one budget; when they found nothing for a non-empty
-query and no filter was given, skills.sh and the well-known sites are asked live, capped at 8 s.
+query and no filter was given, skills.sh, ClawHub, LobeHub, browse.sh and the well-known sites
+are asked live, capped at 8 s.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import quote, unquote, urljoin, urlsplit
 
 import httpx
@@ -57,6 +59,13 @@ from indus.learning.skills.format import (
 from indus.learning.skills.hub.lock import Taps, Trust, safe_rel_path, safe_skill_name
 from indus.safety.safe_transport import TransportFactory, safe_client
 from indus.safety.url_policy import Resolver
+
+if TYPE_CHECKING:
+    from indus.learning.skills.hub.sources_extra import (
+        BrowseShSource,
+        ClawHubSource,
+        LobeHubSource,
+    )
 
 __all__ = [
     "FALLBACK_CAP_S",
@@ -1027,10 +1036,18 @@ class SourceSet:
     github: GitHubSource
     well_known: WellKnownSource
     skills_sh: SkillsShSource
+    clawhub: ClawHubSource
+    lobehub: LobeHubSource
+    browse_sh: BrowseShSource
+
+    @property
+    def extra(self) -> list[Source]:
+        """The P24-45 sources (community trust, live search only)."""
+        return [self.clawhub, self.lobehub, self.browse_sh]
 
     @property
     def all(self) -> list[Source]:
-        return [self.official, self.url, self.github, self.well_known, self.skills_sh]
+        return [self.official, self.url, self.github, self.well_known, self.skills_sh, *self.extra]
 
     @property
     def configured(self) -> list[Source]:
@@ -1039,9 +1056,10 @@ class SourceSet:
 
     @property
     def fallback(self) -> list[Source]:
-        """Asked live when the configured sources found nothing: skills.sh and the well-known
-        sites of ``skills.hub.well_known``."""
-        return [self.skills_sh, self.well_known] if self.well_known.sites else [self.skills_sh]
+        """Asked live when the configured sources found nothing: skills.sh, ClawHub, LobeHub,
+        browse.sh and the well-known sites of ``skills.hub.well_known``."""
+        live: list[Source] = [self.skills_sh, *self.extra]
+        return [*live, self.well_known] if self.well_known.sites else live
 
     def by_id(self, source_id: str) -> Source | None:
         wanted = "skills-sh" if source_id == "skills.sh" else source_id
@@ -1049,7 +1067,8 @@ class SourceSet:
 
     def for_identifier(self, identifier: str) -> Source | None:
         """The adapter an identifier names by its shape; None for a bare name."""
-        for source in (self.official, self.well_known, self.url, self.skills_sh, self.github):
+        ordered = (self.official, self.well_known, self.url, self.skills_sh, *self.extra)
+        for source in (*ordered, self.github):
             if source.handles(identifier):
                 return source
         return None
@@ -1082,8 +1101,14 @@ def build_sources(
     github_api: str = "https://api.github.com",
     github_raw: str = "https://raw.githubusercontent.com",
     skills_sh: str = "https://skills.sh",
+    clawhub: str = "",
+    lobehub: str = "",
+    browse_sh: str = "",
 ) -> SourceSet:
-    """The adapters for ``scope``: taps from ``.hub/taps.json``, sites from ``skills.hub``."""
+    """The adapters for ``scope``: taps from ``.hub/taps.json``, sites from ``skills.hub``. The
+    base addresses of the P24-45 sources may be overridden (tests); empty = the real ones."""
+    from indus.learning.skills.hub import sources_extra as extra
+
     client = http or HubHttp(scope)
     taps = Taps(scope.home / "skills").list()
     sites_raw = _setting(scope, "skills.hub.well_known", [])
@@ -1098,6 +1123,9 @@ def build_sources(
         github=github,
         well_known=WellKnownSource(client, sites),
         skills_sh=SkillsShSource(client, github, skills_sh),
+        clawhub=extra.ClawHubSource(client, clawhub or extra.CLAWHUB_BASE),
+        lobehub=extra.LobeHubSource(client, lobehub or extra.LOBEHUB_BASE),
+        browse_sh=extra.BrowseShSource(client, browse_sh or extra.BROWSE_SH_BASE),
     )
 
 

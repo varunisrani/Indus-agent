@@ -26,6 +26,10 @@ import { type MessageKey, useT } from "../i18n/index.tsx";
 import { profileKey } from "../profiles/storageFamilies.ts";
 import { useSwitcher } from "../profiles/switcherReact.tsx";
 import { MAX_SCAN_DEPTH, type ProjectStore } from "../sidebar/projects.ts";
+import { AppearancePresets } from "../theme/AppearancePage.tsx";
+import { appWake } from "../wake/appWake.ts";
+import { WakeToggle } from "../wake/WakeIndicator.tsx";
+import { ConnectionsPage } from "./ConnectionsPage.tsx";
 import { attempt, type SettingsBridge, usePrefs, useSettings } from "./context.tsx";
 import {
   acceleratorFromEvent,
@@ -37,6 +41,7 @@ import {
 } from "./keybindings.ts";
 import type { CustomPage } from "./pages.ts";
 import { patchFor, rest, valueAt } from "./settingsApi.ts";
+import { UninstallSection } from "./UninstallSection.tsx";
 
 // -- small building blocks ----------------------------------------------------------------------
 
@@ -188,7 +193,8 @@ const THEME_CHOICES: ReadonlyArray<{ mode: ThemeMode; key: MessageKey }> = [
 
 function ThemePage() {
   const t = useT();
-  const { mode, setMode } = useTheme();
+  const { mode, setMode, resolved } = useTheme();
+  const foreground = useSwitcher()?.getState().foreground ?? null;
   return (
     <div className="settings-rows">
       <Row row="theme" label={t("settings.theme.title")}>
@@ -208,6 +214,8 @@ function ThemePage() {
           ))}
         </div>
       </Row>
+      {/* P24-33: presets, accent, per-profile theme and fonts, VS Code import */}
+      <AppearancePresets profile={foreground} mode={resolved === "indus-dark" ? "dark" : "light"} />
     </div>
   );
 }
@@ -570,6 +578,9 @@ function AboutPage() {
       </Row>
       <Row row="logs" label={t("settings.logs.title")}>
         <LogsViewer />
+      </Row>
+      <Row row="uninstall" label={t("settings.uninstall.title")}>
+        <UninstallSection uninstall={bridge?.uninstall} />
       </Row>
     </div>
   );
@@ -1517,8 +1528,24 @@ function ProfilesPage() {
 
 // -- the table --------------------------------------------------------------------------------------
 
+/** Voice (P24-20, P24-35): the wake word's switch; dictation and read-aloud live in the composer. */
+function VoicePage() {
+  const t = useT();
+  const controller = appWake();
+  return (
+    <div className="flex flex-col gap-3">
+      {controller === null ? (
+        <p className="text-sm text-muted">{t("settings.voice.noWindow")}</p>
+      ) : (
+        <WakeToggle controller={controller} />
+      )}
+    </div>
+  );
+}
+
 const PAGES: Readonly<Record<CustomPage, () => ReactNode>> = {
   persona: () => <PersonaPage />,
+  "chat-voice": () => <VoicePage />,
   "appearance-theme": () => <ThemePage />,
   "appearance-typography": () => <TypographyPage />,
   "appearance-window": () => <WindowPage />,
@@ -1527,6 +1554,7 @@ const PAGES: Readonly<Record<CustomPage, () => ReactNode>> = {
   "providers-keys": () => <KeysPage />,
   "providers-endpoints": () => <EndpointsPage />,
   "gateways-connection": () => <ConnectionPage />,
+  "gateways-connections": () => <ConnectionsPage />, // P24-29
   "gateways-storage": () => <StoragePage />,
   keyboard: () => <KeyboardPage />,
   notifications: () => <NotificationsPage />,

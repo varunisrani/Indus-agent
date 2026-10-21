@@ -92,6 +92,58 @@
   },
   {
     "function": {
+      "description": "Run a short scripted list of browser steps through the external agent-browser CLI, in one named session that persists between calls. Steps (in order): open {url}, snapshot, screenshot, eval {code}, click {ref}, type {ref, text}, press {key}, scroll {direction: up|down|left|right}, back. Refs come from a snapshot (e.g. @e3). The call stops at the first failing step. Use the browser_* tools for single actions.",
+      "name": "browser_exec",
+      "parameters": {
+        "properties": {
+          "session": {
+            "description": "Name of an isolated browser session to reuse across calls (1-64 letters, digits, dashes or underscores). Omit for this task's session.",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "action": {
+                  "enum": [
+                    "open",
+                    "snapshot",
+                    "screenshot",
+                    "eval",
+                    "click",
+                    "type",
+                    "press",
+                    "scroll",
+                    "back"
+                  ],
+                  "type": "string"
+                },
+                "code": {"type": "string"},
+                "direction": {"type": "string"},
+                "key": {"type": "string"},
+                "ref": {"type": "string"},
+                "text": {"type": "string"},
+                "url": {"type": "string"}
+              },
+              "required": ["action"],
+              "type": "object"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "type": "array"
+          },
+          "timeout_s": {
+            "description": "Seconds for the whole call (default 300, max 1800).",
+            "type": "integer"
+          }
+        },
+        "required": ["steps"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
       "description": "List the images on the current page: address, alt text and natural size (inline data images are left out). Useful to pick an image for the vision tools. Open a page with browser_navigate first.",
       "name": "browser_get_images",
       "parameters": {"properties": {}, "required": [], "type": "object"}
@@ -175,6 +227,30 @@
           "text": {"description": "The text the field should hold.", "type": "string"}
         },
         "required": ["ref", "text"],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Use saved logins, cards and addresses on the CURRENT browser page without the secret entering the conversation. Actions: list (call first: handles; logins show the identifier you type yourself; locked managers are listed); fill (handle: fills the password of a login, card fields after the user approves, address fields; refused unless the page origin matches the item exactly); save_login (nothing saved for this site: the user types it in a hidden prompt, it is saved and filled); enter_code (a one-time code after the password, generated or asked of the user); unlock (backend: ask the user to unlock 1Password, Bitwarden or the local vault). Never type, ask for or repeat a password, card number, CVC or code yourself. Stop when the user declines.",
+      "name": "browser_vault",
+      "parameters": {
+        "properties": {
+          "action": {
+            "enum": ["list", "fill", "save_login", "enter_code", "unlock"],
+            "type": "string"
+          },
+          "backend": {
+            "description": "unlock only",
+            "enum": ["local", "onepassword", "bitwarden"],
+            "type": "string"
+          },
+          "handle": {"description": "fill / enter_code: a handle from list", "type": "string"},
+          "label": {"description": "save_login: a short site name", "type": "string"}
+        },
+        "required": ["action"],
         "type": "object"
       }
     },

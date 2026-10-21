@@ -4,7 +4,15 @@
 // from a navigation (R08.20); transparent kinds start transparent so no white frame flashes;
 // helper windows get no preload at all. DevTools exist only in dev builds.
 
-export type WindowKind = "main" | "secondary" | "instance" | "hud" | "quick" | "hidden";
+export type WindowKind =
+  | "main"
+  | "secondary"
+  | "instance"
+  | "hud"
+  | "quick"
+  | "pet"
+  | "wake"
+  | "hidden";
 
 export interface KindTraits {
   /** Renders the chat app (preload, IPC, sender-checked). */
@@ -23,6 +31,10 @@ export const KIND_TRAITS: Readonly<Record<WindowKind, KindTraits>> = {
   instance: { app: true, panes: true, transparent: false, selfSizing: false, frameless: true },
   hud: { app: true, panes: false, transparent: true, selfSizing: true, frameless: true },
   quick: { app: true, panes: false, transparent: true, selfSizing: true, frameless: true },
+  // P24-19, P24-20: overlays that never take focus (the pet covers the work area, click-through
+  // except over the figure; the wake indicator is a small light at the top of the screen).
+  pet: { app: true, panes: false, transparent: true, selfSizing: true, frameless: true },
+  wake: { app: true, panes: false, transparent: true, selfSizing: true, frameless: true },
   hidden: { app: false, panes: false, transparent: false, selfSizing: false, frameless: false },
 };
 
@@ -136,6 +148,12 @@ export function windowOptionsFor(
     options.fullscreenable = false;
     // macOS clamps programmatic bounds to the current display unless this is on.
     if (kind === "hud") options.enableLargerThanScreen = true;
+    // The overlays (P24-19, P24-20) are glanceable only: never focused, never in a taskbar.
+    if (kind === "pet" || kind === "wake") {
+      options.focusable = false;
+      options.skipTaskbar = true;
+      options.movable = false;
+    }
   } else {
     options.backgroundColor = input.backgroundColor;
   }

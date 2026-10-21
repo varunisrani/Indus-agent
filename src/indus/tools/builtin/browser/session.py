@@ -30,6 +30,17 @@ this manager does not track once idle for max(3,600 s, 20 × inactivity).
 Every session gets its request guard before first use (``request_gate(scope)``: the P05 URL check
 under the session's scope and the manager's ``resolver``; see ``guard``). A browser whose guard
 cannot be installed is closed and the session is not started (fail closed).
+
+P24 backends (``cloud``, ``real_profile``, ``engines``, ``routing``): after a CDP endpoint, the
+choice is the real profile (``browser.real_profile``), then a cloud provider (``browser.provider``),
+then the local engine (``browser.engine``). A backend hands back an ``Opened``: the handle, an
+``engine`` label (what served the pages), cleanups that run exactly once on every way out (close,
+idle close, force reap, shutdown), and for the real profile the user's folder, which is never
+removed. A cloud provider that fails falls back to a local Chromium once for the session; the
+session keeps the cloud choice (so it is not replaced on every call) and a one-time ``notice``.
+A task may also have a *sidecar* session (``routing``) that serves private addresses locally
+while a cloud provider serves the rest; ``routes`` remembers which one the task's last navigation
+used, and ``session()`` hands out that one.
 """
 
 from __future__ import annotations
@@ -56,7 +67,14 @@ from indus.foundation.scope import Scope, use_scope
 from indus.platform import facts
 from indus.safety.child_env import child_env, is_blocked
 from indus.safety.url_policy import Blocked, Resolver, check_url_async
+from indus.tools.builtin.browser import routing
 from indus.tools.builtin.browser.cdp import Supervisor
+from indus.tools.builtin.browser.cloud import (
+    PROVIDER_NAMES,
+    PROVIDERS,
+    CloudBrowsers,
+    CloudFailure,
+)
 from indus.tools.builtin.browser.driver import (
     BrowserHandle,
     Driver,
@@ -64,7 +82,10 @@ from indus.tools.builtin.browser.driver import (
     PageDriver,
     PlaywrightDriver,
 )
+from indus.tools.builtin.browser.engines import Camofox, Lightpanda, Opened
 from indus.tools.builtin.browser.guard import RequestGate
+from indus.tools.builtin.browser.real_profile import RealProfiles
+from indus.tools.builtin.browser.real_profile import enabled as real_profile_enabled
 from indus.tools.registry import scope_key
 
 __all__ = [
@@ -74,10 +95,12 @@ __all__ = [
     "Choice",
     "CommandTimeout",
     "DialogBlocking",
+    "SIDECAR_CHOICE",
     "SessionManager",
     "Timeouts",
     "browser_env",
     "choose",
+    "engine_for",
     "inactivity_for",
     "needs_sandbox_bypass",
     "orphan_grace_s",
@@ -175,9 +198,19 @@ def orphan_grace_s(inactivity_s: float) -> float:
 
 @dataclass(frozen=True)
 class Choice:
-    mode: Literal["local", "cdp"]
+    mode: Literal["local", "cdp", "cloud", "real-profile"]
     cdp_url: str | None = None
-    source: str = "default"  # default | connect | env | config | use-local
+    source: str = "default"  # default | connect | env | config | use-local | sidecar
+    provider: str | None = None  # the cloud provider of a "cloud" choice
+    engine: str = "chromium"  # the local engine of a "local" choice
+
+    @property
+    def key(self) -> tuple[str, str | None, str | None, str]:
+        return (self.mode, self.cdp_url, self.provider, self.engine)
+
+
+SIDECAR_CHOICE = Choice("local", source="sidecar")
+ENGINES = frozenset({"chromium", "lightpanda", "camofox"})
 
 
 class BrowserChoices:
@@ -209,14 +242,27 @@ def configured_endpoint(scope: Scope | None) -> tuple[str, str] | None:
     return None
 
 
+def engine_for(scope: Scope | None) -> str:
+    engine = setting(scope, "browser.engine")
+    return engine if isinstance(engine, str) and engine in ENGINES else "chromium"
+
+
 def choose(scope: Scope, choices: BrowserChoices) -> Choice:
+    """``/browser`` choice, CDP endpoint, real profile, cloud provider, then the local engine."""
     picked = choices.get(scope)
     if picked is not None:
+        if picked.mode == "local":
+            return Choice("local", source=picked.source, engine=engine_for(scope))
         return picked
     endpoint = configured_endpoint(scope)
     if endpoint is not None:
         return Choice("cdp", endpoint[0], endpoint[1])
-    return Choice("local")
+    if real_profile_enabled(scope):
+        return Choice("real-profile", source="config")
+    provider = setting(scope, "browser.provider")
+    if isinstance(provider, str) and provider in PROVIDER_NAMES:
+        return Choice("cloud", source="config", provider=provider)
+    return Choice("local", engine=engine_for(scope))
 
 
 # -- launch details ---------------------------------------------------------------------------
@@ -376,6 +422,27 @@ class BrowserSession:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # Commands left running behind an open dialog; cancelled when the session closes.
     background: set[asyncio.Future[Any]] = field(default_factory=set[asyncio.Future[Any]])
+    # P24: what served the pages, a one-time notice, cleanups run once at the end, a folder in
+    # use that is never removed (the real profile), the cloud fallback, the sidecar's relaxed
+    # checks and the private addresses the guard refused (routing).
+    engine: str = "local"
+    notice: str | None = None
+    cleanups: list[Callable[[], Awaitable[None]]] = field(
+        default_factory=list[Callable[[], Awaitable[None]]]
+    )
+    user_dir: Path | None = None
+    fell_back: bool = False
+    relaxed: bool = False
+    private_hits: list[str] = field(default_factory=list[str])
+
+    def take_notice(self) -> str | None:
+        notice, self.notice = self.notice, None
+        return notice
+
+    @property
+    def check_scope(self) -> Scope:
+        """The scope URL checks of this session run under (relaxed for a sidecar)."""
+        return routing.relaxed_scope(self.scope) if self.relaxed else self.scope
 
     def cancel_background(self) -> None:
         for work in list(self.background):
@@ -389,6 +456,17 @@ class BrowserSession:
     @property
     def timeouts(self) -> Timeouts:
         return timeouts_for(self.scope)
+
+
+def _fallback_notice(provider: str, exc: BaseException) -> str:
+    label = PROVIDERS[provider].label if provider in PROVIDERS else provider
+    # A provider's own text is safe (no keys); anything else (an attach error can quote the
+    # connect address, which may carry a key) is named by its type only.
+    why = str(exc) if isinstance(exc, CloudFailure) else type(exc).__name__
+    return (
+        f"The {label} cloud browser could not be used ({why}). A local browser serves this "
+        "session instead; it closes with the session, and the next session tries the cloud again."
+    )
 
 
 def _swallow(task: asyncio.Future[Any]) -> None:
@@ -411,8 +489,14 @@ class SessionManager:
         wall_time: Callable[[], float] = time.time,
         sandbox_check: Callable[[Scope], bool] = needs_sandbox_bypass,
         resolver: Resolver | None = None,
+        cloud: CloudBrowsers | None = None,
+        lightpanda: Lightpanda | None = None,
+        camofox: Camofox | None = None,
     ) -> None:
         self.driver_factory = driver_factory
+        self.cloud = cloud if cloud is not None else CloudBrowsers()
+        self.lightpanda = lightpanda if lightpanda is not None else Lightpanda()
+        self.camofox = camofox if camofox is not None else Camofox()
         self.resolver = resolver
         self.clock = clock if clock is not None else SystemClock()
         self.processes = processes if processes is not None else HostProcesses()
@@ -430,6 +514,8 @@ class SessionManager:
         self._touched: dict[str, float] = {}
         self._passes = 0
         self.pid = os.getpid()
+        self.real_profiles = RealProfiles(self.clock)
+        self.routes: dict[str, routing.Route] = {}  # task id -> route of its last navigation
 
     # -- lookup -----------------------------------------------------------------------------------
 
@@ -443,6 +529,18 @@ class SessionManager:
     def get(self, task_id: str) -> BrowserSession | None:
         return self.sessions.get(task_id)
 
+    def key_for(self, task_id: str, route: routing.Route | None = None) -> str:
+        """The session key serving ``task_id`` on ``route`` (default: its current route)."""
+        chosen = route or self.routes.get(task_id, routing.MAIN)
+        return task_id if chosen == routing.MAIN else routing.sidecar_key(task_id)
+
+    def current(self, task_id: str) -> BrowserSession | None:
+        """The session the task's last navigation used."""
+        return self.sessions.get(self.key_for(task_id))
+
+    def set_route(self, task_id: str, route: routing.Route) -> None:
+        self.routes[task_id] = route
+
     def choice_for(self, scope: Scope) -> Choice:
         return choose(scope, self.choices)
 
@@ -451,37 +549,43 @@ class SessionManager:
             return current.suspect
         if current.supervisor.gave_up:
             return "the connection to the browser was lost"
-        if (current.choice.mode, current.choice.cdp_url) != (wanted.mode, wanted.cdp_url):
+        if current.choice.key != wanted.key:
             return "the browser choice changed"
         return None
 
-    async def session(self, task_id: str, scope: Scope) -> BrowserSession:
-        """The task's session, started (or replaced) as needed."""
+    async def session(
+        self, task_id: str, scope: Scope, *, route: routing.Route | None = None
+    ) -> BrowserSession:
+        """The task's session on ``route`` (default: its current route), started or replaced as
+        needed."""
         self._ensure_janitor()
-        wanted = self.choice_for(scope)
-        lock = self._creating.setdefault(task_id, asyncio.Lock())
+        chosen = route or self.routes.get(task_id, routing.MAIN)
+        key = self.key_for(task_id, chosen)
+        sidecar = chosen == routing.SIDECAR
+        wanted = SIDECAR_CHOICE if sidecar else self.choice_for(scope)
+        lock = self._creating.setdefault(key, asyncio.Lock())
         async with lock:
-            current = self.sessions.get(task_id)
+            current = self.sessions.get(key)
             if current is not None:
                 reason = self._stale(current, wanted)
                 if reason is None:
-                    self.touch(task_id)
+                    self.touch(key)
                     return current
-                log.info("replacing the browser session of %s: %s", task_id, reason)
+                log.info("replacing the browser session of %s: %s", key, reason)
                 try:
-                    await self.close(task_id)
+                    await self.close(key)
                 except Exception as exc:
                     log.warning("closing the old browser session failed (%s); force reap", exc)
-                    await self.force_reap(task_id)
-            made = await self._create(task_id, scope, wanted)
-            self.sessions[task_id] = made
-            self.failures.pop(task_id, None)
-            self.touch(task_id)
+                    await self.force_reap(key)
+            made = await self._create(key, scope, wanted, relaxed=sidecar)
+            self.sessions[key] = made
+            self.failures.pop(key, None)
+            self.touch(key)
             return made
 
     # -- creation ---------------------------------------------------------------------------------
 
-    def _new_profile(self, scope: Scope, task_id: str) -> Path:
+    def new_profile(self, scope: Scope, task_id: str) -> Path:
         root = scope.home / PROFILES_DIR
         folder = root / f"s-{secrets.token_hex(5)}"
         folder.mkdir(parents=True, exist_ok=False)
@@ -505,25 +609,40 @@ class SessionManager:
             command_timeout_s=timeouts.command,
         )
 
-    def request_gate(self, scope: Scope) -> RequestGate:
-        """The P05 URL check for every request of a session under ``scope``."""
+    def env_for(self, scope: Scope) -> dict[str, str]:
+        """The environment a browser process of ``scope`` gets (R02.22)."""
+        return browser_env(scope)
+
+    def request_gate(self, scope: Scope, hits: list[str] | None = None) -> RequestGate:
+        """The P05 URL check for every request of a session under ``scope``; private addresses
+        it refuses are added to ``hits`` when given (hybrid routing)."""
         resolver = self.resolver
 
         async def gate(url: str) -> str | None:
             verdict = await check_url_async(url, scope, resolver=resolver)
-            return verdict.reason if isinstance(verdict, Blocked) else None
+            if not isinstance(verdict, Blocked):
+                return None
+            if hits is not None and verdict.kind == "private":
+                hits.append(url)
+            return verdict.reason
 
         return gate
 
-    async def _guarded(self, handle: BrowserHandle, scope: Scope) -> BrowserHandle:
+    async def guarded(
+        self, handle: BrowserHandle, scope: Scope, hits: list[str] | None = None
+    ) -> BrowserHandle:
+        """``handle`` with its request guard installed; closed (and the error raised) when the
+        guard cannot be installed."""
         try:
-            await handle.guard(self.request_gate(scope))
+            await handle.guard(self.request_gate(scope, hits))
         except BaseException:
             log.warning("the browser's request guard could not be installed; closing it")
             with contextlib.suppress(Exception):
                 await handle.close()
             raise
         return handle
+
+    _guarded = guarded
 
     def _supervisor(self, scope: Scope) -> Supervisor:
         return Supervisor(
@@ -533,26 +652,75 @@ class SessionManager:
             scope=scope,
         )
 
-    async def _create(self, task_id: str, scope: Scope, choice: Choice) -> BrowserSession:
+    async def _launch_local(
+        self, scope: Scope, task_id: str, check_scope: Scope
+    ) -> tuple[BrowserHandle, Path]:
+        self._homes[scope.home] = inactivity_for(scope)
+        folder = self.new_profile(scope, task_id)
+        try:
+            handle = await self.driver().launch(self.launch_spec(scope, folder))
+            handle = await self.guarded(handle, check_scope)
+        except BaseException:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        return handle, folder
+
+    async def _open_cloud(
+        self, scope: Scope, task_id: str, provider: str, hits: list[str]
+    ) -> Opened:
+        made = await self.cloud.open(provider, scope, task_id)
+
+        async def give_back() -> None:
+            await self.cloud.release(scope, made)
+
+        timeouts = timeouts_for(scope)
+        try:
+            handle = await self.driver().attach(
+                made.cdp_url, timeout_s=timeouts.open, command_timeout_s=timeouts.command
+            )
+            handle = await self.guarded(handle, scope, hits)
+        except BaseException:
+            await give_back()
+            raise
+        return Opened(handle, f"cloud:{provider}", cleanups=[give_back])
+
+    async def _create(
+        self, task_id: str, scope: Scope, choice: Choice, *, relaxed: bool = False
+    ) -> BrowserSession:
         driver = self.driver()
         timeouts = timeouts_for(scope)
         supervisor = self._supervisor(scope)
+        check_scope = routing.relaxed_scope(scope) if relaxed else scope
+        hits: list[str] = []
         folder: Path | None = None
+        opened: Opened | None = None
+        notice: str | None = None
+        engine = "local-sidecar" if relaxed else "local"
         with use_scope(scope):
             if choice.mode == "cdp" and choice.cdp_url:
                 handle = await driver.attach(
                     choice.cdp_url, timeout_s=timeouts.open, command_timeout_s=timeouts.command
                 )
-                handle = await self._guarded(handle, scope)
+                handle = await self.guarded(handle, check_scope)
+                engine = "cdp"
             else:
-                self._homes[scope.home] = inactivity_for(scope)
-                folder = self._new_profile(scope, task_id)
-                try:
-                    handle = await driver.launch(self.launch_spec(scope, folder))
-                    handle = await self._guarded(handle, scope)
-                except BaseException:
-                    shutil.rmtree(folder, ignore_errors=True)
-                    raise
+                if choice.mode == "cloud" and choice.provider:
+                    try:
+                        opened = await self._open_cloud(scope, task_id, choice.provider, hits)
+                    except Exception as exc:
+                        notice = _fallback_notice(choice.provider, exc)
+                        log.warning(
+                            "cloud browser %s failed for %s; a local browser serves instead",
+                            choice.provider,
+                            task_id,
+                        )
+                else:
+                    opened = await self._open_other(scope, task_id, choice)
+                if opened is not None:
+                    handle = opened.handle
+                    engine = opened.engine
+                else:
+                    handle, folder = await self._launch_local(scope, task_id, check_scope)
         made = BrowserSession(
             task_id=task_id,
             scope=scope,
@@ -562,12 +730,29 @@ class SessionManager:
             ref_attr=f"data-indus-ref-{secrets.token_hex(4)}",
             profile_dir=folder,
             loop=asyncio.get_running_loop(),
+            engine=engine,
+            notice=notice or (opened.notice if opened is not None else None),
+            cleanups=list(opened.cleanups) if opened is not None else [],
+            user_dir=opened.user_dir if opened is not None else None,
+            fell_back=notice is not None,
+            relaxed=relaxed,
+            private_hits=hits,
         )
         if choice.mode == "cdp" and choice.cdp_url:
             supervisor.reconnect = self._reattacher(made)
         handle.listen(supervisor)
-        log.info("browser session started for %s (%s)", task_id, choice.mode)
+        log.info("browser session started for %s (%s)", task_id, engine)
         return made
+
+    async def _open_other(self, scope: Scope, task_id: str, choice: Choice) -> Opened | None:
+        """The real profile or an alternative engine; None for a plain local Chromium."""
+        if choice.mode == "real-profile":
+            return await self.real_profiles.open(self, scope, task_id)
+        if choice.mode == "local" and choice.engine == "lightpanda":
+            return await self.lightpanda.open(self, scope, task_id)
+        if choice.mode == "local" and choice.engine == "camofox":
+            return await self.camofox.open(self, scope, task_id)
+        return None
 
     def _reattacher(self, made: BrowserSession) -> Callable[[], Awaitable[None]]:
         async def reattach() -> None:
@@ -577,7 +762,7 @@ class SessionManager:
                 handle = await self.driver().attach(
                     url, timeout_s=timeouts.open, command_timeout_s=timeouts.command
                 )
-                handle = await self._guarded(handle, made.scope)
+                handle = await self.guarded(handle, made.check_scope)
             made.handle = handle
             handle.listen(made.supervisor)
 
@@ -649,6 +834,17 @@ class SessionManager:
 
     # -- closing ----------------------------------------------------------------------------------
 
+    @staticmethod
+    async def _run_cleanups(current: BrowserSession) -> None:
+        """Run the session's cleanups once each (release a cloud browser, the real profile, stop
+        an engine's server); never raises."""
+        while current.cleanups:
+            cleanup = current.cleanups.pop(0)
+            try:
+                await asyncio.wait_for(cleanup(), CLOSE_TIMEOUT_S)
+            except Exception:
+                log.warning("a browser session cleanup failed", exc_info=True)
+
     def _forget(self, task_id: str) -> BrowserSession | None:
         found = self.sessions.pop(task_id, None)
         self.activity.pop(task_id, None)
@@ -668,6 +864,8 @@ class SessionManager:
             await asyncio.wait_for(current.handle.close(), CLOSE_TIMEOUT_S)
         if self.sessions.get(task_id) is current:
             self._forget(task_id)
+        with use_scope(current.scope):
+            await self._run_cleanups(current)
         if current.profile_dir is not None:
             shutil.rmtree(current.profile_dir, ignore_errors=True)
         log.info("browser session of %s closed", task_id)
@@ -682,19 +880,30 @@ class SessionManager:
             await current.supervisor.stop()
         if current.profile_dir is not None:
             self._kill_folder(current.profile_dir)
+        if current.user_dir is not None:
+            self._kill_folder(current.user_dir, remove=False)  # the user's own folder stays
+        with use_scope(current.scope):
+            await self._run_cleanups(current)
         log.warning("browser session of %s force-reaped", task_id)
 
-    def _kill_folder(self, folder: Path) -> int:
+    def _kill_folder(self, folder: Path, *, remove: bool = True) -> int:
         pids = self.processes.find(_profile_marker(folder))
         for pid in pids:
             self.processes.kill(pid)
-        shutil.rmtree(folder, ignore_errors=True)
+        if remove:
+            shutil.rmtree(folder, ignore_errors=True)
         return len(pids)
 
     async def end(self, task_id: str) -> None:
-        """Close the task's session at the end of its owner (a finished subagent, a closed
-        conversation): awaited on the loop that owns it, else handed to that loop; a session
-        that will not close is force-reaped. Never raises."""
+        """Close the task's sessions (its main one and any sidecar) at the end of its owner (a
+        finished subagent, a closed conversation). Never raises."""
+        self.routes.pop(task_id, None)
+        await self._end_one(routing.sidecar_key(task_id))
+        await self._end_one(task_id)
+
+    async def _end_one(self, task_id: str) -> None:
+        """Close one session: awaited on the loop that owns it, else handed to that loop; a
+        session that will not close is force-reaped."""
         current = self.sessions.get(task_id)
         if current is None:
             return
@@ -712,7 +921,12 @@ class SessionManager:
             await self.force_reap(task_id)
 
     def release(self, task_id: str) -> None:
-        """Close the task's session from any thread (child teardown, task end); never raises."""
+        """Close the task's sessions from any thread (child teardown, task end); never raises."""
+        self.routes.pop(task_id, None)
+        self._release_one(routing.sidecar_key(task_id))
+        self._release_one(task_id)
+
+    def _release_one(self, task_id: str) -> None:
         current = self.sessions.get(task_id)
         if current is None:
             return

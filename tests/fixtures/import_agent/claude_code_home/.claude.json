@@ -1,0 +1,17 @@
+{
+  "numStartups": 12,
+  "theme": "dark",
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "set-at-test-time", "GITHUB_HOST": "github.example"}
+    },
+    "docs": {
+      "type": "http",
+      "url": "https://docs.example/mcp",
+      "headers": {"Authorization": "Bearer set-at-test-time", "X-Team": "blue"}
+    }
+  }
+}

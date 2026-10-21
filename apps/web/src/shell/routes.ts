@@ -17,8 +17,11 @@ export interface PageRoute {
   path: string;
   title: string;
   nav: NavPlacement;
-  /** Null for `/chat`, whose terminal lives outside the router (ChatHostSlot). */
-  page: PageComponent | null;
+  /**
+   * Null for `/chat`, whose terminal lives outside the router (ChatHostSlot). A dashboard plugin's
+   * tab or override (P24-37, `plugins/registry.ts::mergePluginRoutes`) brings a plain component.
+   */
+  page: PageComponent | ComponentType | null;
 }
 
 export interface ExternalLink {

@@ -14,8 +14,14 @@ without it a new session is made and the request's system and earlier messages a
 its first message. Streams send ``: keepalive`` after 10 s of silence; a client that goes away
 interrupts its turn. More turns than ``max_concurrent_runs`` (runs included) get 429.
 
+With a browser-control broker (P24-47) the app also has ``POST /v1/browser-control/register``
+and the controller WebSocket ``/v1/browser-control/ws`` (``gateway.browser_broker.routes``).
+
 ``ApiServer`` binds and serves the app (``serving.HttpServer``) and refuses to start while the
-profile has no API key.
+profile has no API key. ``front`` wraps the whole app before it is served: under multiplexing
+(P24-04) the default profile's listener is a ``gateway.multiplex.ingress.SharedIngress`` around
+it, outside this profile's bearer gate, so ``/p/<profile>/…`` reaches that profile's own app,
+checked with that profile's own keys.
 """
 
 from __future__ import annotations
@@ -146,6 +152,9 @@ class ApiContext:
     jobs: set[asyncio.Task[None]] = field(default_factory=set[asyncio.Task[None]])
     """Cron runs started with ``/api/jobs/{id}/run`` (cancelled and awaited at close)."""
     requests_served: int = 0
+    browser_broker: Any = None
+    """A ``gateway.browser_broker.BrowserBroker`` when ``browser.control_enabled`` is on: the
+    register route and the controller WebSocket are mounted only then (P24-47)."""
 
     def __post_init__(self) -> None:
         self.gate = TurnGate(lambda: self.settings().max_concurrent_runs)
@@ -402,6 +411,14 @@ def build_api_app(ctx: ApiContext) -> Asgi:
     ctx.runs = runs.RunTable(ctx)
     app.include_router(runs.router(ctx))
     app.include_router(admin_routes.router(ctx))
+    # P24-07: a peer gateway's bot chat and DMs (/v1/bots/chat, /v1/bots/dm)
+    from indus.gateway.rooms.peers import bots_router
+
+    app.include_router(bots_router(ctx))
+    if ctx.browser_broker is not None:
+        from indus.gateway.browser_broker.routes import mount_routes
+
+        mount_routes(app, ctx.browser_broker, lambda: ctx.settings().cors_origins)
 
     def too_large(limit: int) -> dict[str, Any]:
         if limit < 0:
@@ -726,11 +743,16 @@ class ApiServer:
     """The API app on its own port inside the daemon (see the module notes)."""
 
     def __init__(
-        self, ctx: ApiContext, *, on_status: Callable[[dict[str, Any]], object] | None = None
+        self,
+        ctx: ApiContext,
+        *,
+        on_status: Callable[[dict[str, Any]], object] | None = None,
+        front: Callable[[Asgi], Asgi] | None = None,
     ) -> None:
         self.ctx = ctx
         self.on_status = on_status
-        self.app = build_api_app(ctx)
+        self.profile_app = build_api_app(ctx)
+        self.app = front(self.profile_app) if front is not None else self.profile_app
         self.server: HttpServer | None = None
         self._beat: asyncio.Task[None] | None = None
 
@@ -745,7 +767,12 @@ class ApiServer:
             )
         settings = self.ctx.settings()
         sock = await bind_listener(settings.host, settings.port, self.ctx.clock)
-        server = HttpServer(self.app, sock, name="API server")
+        ws: dict[str, Any] | None = None
+        if self.ctx.browser_broker is not None:
+            from indus.gateway.browser_broker.routes import ws_settings
+
+            ws = ws_settings()
+        server = HttpServer(self.app, sock, name="API server", ws=ws)
         await server.start()
         self.server = server
         if self.on_status is not None:
@@ -775,6 +802,8 @@ class ApiServer:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._beat
             self._beat = None
+        if self.ctx.browser_broker is not None:
+            await self.ctx.browser_broker.aclose()
         jobs = list(self.ctx.jobs)
         for task in jobs:
             task.cancel()

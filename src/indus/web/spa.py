@@ -19,7 +19,8 @@ that appears while the process runs is picked up without a restart.
 
 Bootstrap: one inline ``<script>`` before ``</head>`` sets ``__INDUS_SESSION_TOKEN__`` (loopback
 mode only), ``__INDUS_BASE_PATH__``, ``__INDUS_AUTH_REQUIRED__``,
-``__INDUS_DASHBOARD_EMBEDDED_CHAT__``, ``__INDUS_INITIAL_PROFILE__`` and
+``__INDUS_DASHBOARD_EMBEDDED_CHAT__``, ``__INDUS_DASHBOARD_CONSOLE__`` (P24-36),
+``__INDUS_INITIAL_PROFILE__`` and
 ``__INDUS_DASHBOARD_PROFILE__``. Values are JSON with ``<``, ``>``,
 ``&`` and the two JavaScript line separators escaped, so no value can close the script. The active
 theme's first-paint CSS goes in just before it.
@@ -133,6 +134,7 @@ def bootstrap_script(state: DashboardState, prefix: str) -> str:
             f"window.__INDUS_BASE_PATH__={_js(prefix)};",
             f"window.__INDUS_AUTH_REQUIRED__={_js(state.gated)};",
             f"window.__INDUS_DASHBOARD_EMBEDDED_CHAT__={_js(state.embedded_chat)};",
+            f"window.__INDUS_DASHBOARD_CONSOLE__={_js(state.console_enabled)};",  # P24-36
             f"window.__INDUS_INITIAL_PROFILE__={_js(state.initial_profile)};",
             f"window.__INDUS_DASHBOARD_PROFILE__={_js(state.profile_name)};",
         ]

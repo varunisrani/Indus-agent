@@ -12,6 +12,7 @@ import { sendShown } from "../chat/localEcho.ts";
 import type { ErrorItem, TranscriptItem } from "../chat/messageStream.ts";
 import { useTranscriptStore } from "../chat/transcriptReact.tsx";
 import type { TranscriptStore } from "../chat/transcriptStore.ts";
+import { rpcVoicePort, type VoicePort } from "../chat/voice/dictation.ts";
 import type { ChatConnection } from "../gateway/connectionStore.ts";
 import { browserStorage } from "../profiles/storageFamilies.ts";
 import { newChatTarget } from "../sidebar/projects.ts";
@@ -38,6 +39,7 @@ function ComposerSlot(props: {
   sessionId: string | null;
   profile: string | null;
   inflight: InflightJournal;
+  voice: VoicePort;
 }) {
   const navigate = useNavigate();
   const transcripts = useTranscriptStore();
@@ -61,6 +63,7 @@ function ComposerSlot(props: {
         profile={props.profile}
         inflight={props.inflight}
         localRows={transcripts}
+        voice={props.voice}
         newSessionCwd={
           props.sessionId === null ? newChatTarget.get(browserStorage(), props.profile) : null
         }
@@ -95,9 +98,18 @@ export interface ChatSlotDeps {
 /** The slots `Root` mounts for a main window. */
 export function chatSlots(deps: ChatSlotDeps): AppSlots {
   const inflight = deps.inflight ?? new InflightJournal();
+  // P24-35: dictation and read-aloud through the daemon's voice.* (its speech providers)
+  const voice = rpcVoicePort((method, params, signal) =>
+    deps.connection.request(method as "voice.transcribe", params as never, { signal }),
+  );
   return {
     composer: (sessionId) => (
-      <ComposerSlot sessionId={sessionId} profile={deps.profile} inflight={inflight} />
+      <ComposerSlot
+        sessionId={sessionId}
+        profile={deps.profile}
+        inflight={inflight}
+        voice={voice}
+      />
     ),
     cards: (sessionId) => (sessionId === null ? null : <CardStack sessionId={sessionId} />),
     statusBar: <StatusBarSlot />,

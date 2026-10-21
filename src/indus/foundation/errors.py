@@ -137,6 +137,32 @@ ERROR_CODES: dict[str, str] = {
     "cron.slot_taken": "this scheduled slot already has an attempt; it is never run twice",
     "cron.attempt_final": "the attempt is already finished; finished attempts never change",
     "cron.notepad_limit": "a notepad write would break the size limits; nothing was written",
+    "rooms.invalid": "a group-room id, name, event kind, actor or payload breaks a rule",
+    "rooms.not_found": "no live group room has this id (or it was disbanded)",
+    "rooms.conflict": "the room id is taken with other settings or belonged to a disbanded room",
+    "rooms.event_conflict": "the room event id is already bound to other content",
+    "rooms.cursor_moved": "the room log moved past the sequence number the caller expected",
+    "rooms.authority_conflict": "the writer is not the room's current authority",
+    "rooms.authority_superseded": "the authority claim was committed but a newer one holds it",
+    "rooms.full": "a group-room count or size limit was reached",
+    "peers.failed": "a call to a peer gateway did not work (the typed reason says why)",
+    "rooms.confirm_required": "authority promotion needs the operator's explicit confirm: true",
+    "rooms.driver": "a room driver lease or task operation was refused",
+    "rooms.stale": "the room lease or task attempt moved on; nothing was written",
+    # P24-11..13 task board
+    "board.error": "task board problem",
+    "board.not_found": "no task on this board has that id",
+    "board.bad_input": "a board value breaks a rule (status, kind, slug, link, size)",
+    "board.refused": "the task is not in a state that allows this change",
+    "board.live_claim": "a live worker holds the task; prove its run or force the change",
+    "board.too_large": "the attachment is larger than the board's 25 MiB limit",
+    # P24-14 projects
+    "projects.error": "project problem",
+    "projects.not_found": "no project has this id, slug or name",
+    "projects.bad_input": "a project value breaks a rule (name, slug, folder)",
+    "bots.error": "a bots request is malformed or names an unknown method",
+    "bots.unknown_profile": "no profile (bot) has this name",
+    "bots.bad_avatar": "the avatar is not one of the accepted kinds or is too large",
 }
 
 

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { cleanupFakes, posix, tempDir, writeFakeIndus } from "../../testing/fakeIndus.ts";
+import { closeFakeServes, fakeServe, SERVE_TOKEN } from "../../testing/fakeServe.ts";
 import { fileAppOrigin } from "../appOrigin.ts";
 import type { MainContext } from "../context.ts";
 import { CHANNELS } from "../ipc/channels.ts";
@@ -19,7 +20,7 @@ import type { UpgradeDetails } from "./tickets.ts";
 
 const APP_URL = "file:///opt/Indus/app/dist/index.html#/";
 const KNOWN_ID = 11;
-const OWNED = ["P20-08", "P20-09", "P20-10", "P20-11", "P20-12", "P20-13", "P20-14"];
+const OWNED = ["P20-08", "P20-09", "P20-10", "P20-11", "P20-12", "P20-13", "P20-14", "P24-29"];
 
 type Listener = (event: IpcEventLike, ...args: unknown[]) => unknown;
 
@@ -28,6 +29,7 @@ afterAll(() => {
   for (const key of Object.keys(process.env)) if (!(key in savedEnv)) delete process.env[key];
   Object.assign(process.env, savedEnv);
   cleanupFakes();
+  closeFakeServes();
 });
 
 function rig() {
@@ -244,6 +246,69 @@ describe.skipIf(!posix)("the wired backend (fake indus)", () => {
     // the daemon still answers
     const ticket = await r.invoke("indus:connection:ticket", {});
     expect(ticket.ok).toBe(true);
+  });
+
+  it("a registry remote dials with a server-minted ticket per dial, never the token (D-16.691)", async () => {
+    const r = rig();
+    const serve = await fakeServe();
+    const saved = (await r.invoke("indus:connections:save", {
+      kind: "remote",
+      url: serve.url,
+      label: "Build box",
+      token: SERVE_TOKEN,
+      headers: { "CF-Access-Client-Id": "cf-7", Cookie: "x=1" },
+    })) as { ok: true; value: { saved: boolean; id: string; droppedHeaders: string[] } };
+    expect(saved.value).toMatchObject({ saved: true, droppedHeaders: ["Cookie"] });
+    const listed = (await r.invoke("indus:connections:set-primary", { id: saved.value.id })) as {
+      value: { primaryId: string; connections: Array<Record<string, unknown>> };
+    };
+    expect(listed.value.primaryId).toBe(saved.value.id);
+    const got = await r.invoke("indus:connection:get", {});
+    expect(got).toMatchObject({ ok: true, value: { mode: "remote", codeVersion: "0.24.0" } });
+
+    const dials: Array<{ ticket: string; protocols: string[]; wsUrl: string }> = [];
+    for (let i = 0; i < 2; i += 1) {
+      const answer = (await r.invoke("indus:connection:ticket", {})) as {
+        ok: true;
+        value: { ticket: string; protocols: string[]; wsUrl: string };
+      };
+      dials.push(answer.value);
+    }
+    expect(dials[0]?.ticket).not.toBe(dials[1]?.ticket);
+    expect(serve.minted.slice(-2)).toEqual(dials.map((d) => d.ticket)); // the save test minted one
+    expect(dials[0]?.protocols).toEqual([
+      "indus-dashboard-v1",
+      `indus-dashboard-ticket.${dials[0]?.ticket}`,
+    ]);
+    // inside Electron the hook sees no subprotocol header: matched by window + URL, Origin removed
+    const headers: Array<Record<string, string> | undefined> = [];
+    r.rewrite()?.(
+      {
+        url: dials[0]?.wsUrl as string,
+        webContentsId: KNOWN_ID,
+        resourceType: "webSocket",
+        requestHeaders: { Origin: "file://" },
+      },
+      (response) => headers.push(response.requestHeaders),
+    );
+    expect(headers[0]).toEqual({});
+    const opened = await new Promise<boolean>((resolve) => {
+      const ws = new WebSocket(dials[0]?.wsUrl as string, dials[0]?.protocols);
+      ws.addEventListener("message", () => {
+        resolve(true);
+        ws.close();
+      });
+      ws.addEventListener("close", () => resolve(false));
+    });
+    expect(opened).toBe(true);
+    const api = await r.invoke("indus:api", { method: "GET", path: "/api/config" });
+    expect(api).toMatchObject({ ok: true, value: { status: 200 } });
+    expect(
+      serve.seen.some((line) => line.startsWith("GET /api/config") && line.includes("cf=cf-7")),
+    ).toBe(true);
+    const everything = JSON.stringify([r.sent, got, dials, listed, saved]);
+    expect(everything).not.toContain(SERVE_TOKEN);
+    expect(r.lines.join("\n")).not.toContain(SERVE_TOKEN);
   });
 
   it("remote: a bad address is bad-request; nothing saved when the server is unreachable", async () => {

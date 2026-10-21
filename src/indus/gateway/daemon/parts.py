@@ -68,12 +68,14 @@ PART_FACTORIES: tuple[str, ...] = (
     "indus.gateway.delivery.parts:router_part",
     "indus.gateway.extras:create",
     "indus.gateway.http.part:create",
+    "indus.gateway.board_part:create",
 )
 """``"module:attr"`` factories of the parts every gateway runs (each feature adds its line):
 the control socket with the reconnect watcher and gateway hooks (P15-27, P15-29; CONTROL), the
 delivery-ledger sweep (P15-19; RECOVERY), the platform deliverers and channel directory (P15-20;
 BACKGROUND), cron, chat prompts and media intake (P15-21..23; BACKGROUND), the API server and
-the webhook receiver (P15-30..32; BACKGROUND, only when enabled)."""
+the webhook receiver (P15-30..32; BACKGROUND, only when enabled), the task-board watchers and
+dispatcher (P24-12; BACKGROUND, boards that exist, ``kanban.dispatch_in_gateway``)."""
 
 
 def load_parts(

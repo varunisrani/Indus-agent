@@ -79,6 +79,7 @@ class HttpHost:
     secrets: KeyStore | None = None  # default: the scope's store, else the profile's
     deliver: Any = None  # webhook.DirectDeliver; default: P14's deliverer registry
     on_status: Callable[[str, dict[str, Any]], object] | None = None
+    tickets: Any = None  # service.ws_auth.TicketBook: the browser-control broker's (P24-47)
 
 
 @dataclass
@@ -107,6 +108,26 @@ def _secrets(host: HttpHost) -> KeyStore:
         mode = str(config.get("security.secret_store") or "auto")
     return open_secret_store(
         host.scope.home, host.scope.profile_id, mode=mode, clock=host.scope.clock
+    )
+
+
+def _browser_broker(host: HttpHost) -> Any:
+    """The browser-control broker over the daemon's ticket book when ``browser.control_enabled``
+    is on (P24-47), else None (its routes are then not mounted at all)."""
+    from indus.gateway.browser_broker import control_enabled, developer_mode
+
+    scope = host.scope
+    if host.tickets is None or not control_enabled(scope):
+        return None
+    from indus.gateway.browser_broker.artifacts import ArtifactStore
+    from indus.gateway.browser_broker.broker import BrowserBroker
+
+    return BrowserBroker(
+        host.tickets,
+        clock=scope.clock,
+        developer_mode=lambda: developer_mode(scope),
+        enabled=lambda: control_enabled(scope),
+        artifacts=ArtifactStore(scope.home / "cache" / "browser-control"),
     )
 
 
@@ -149,6 +170,7 @@ async def start_http_surfaces(host: HttpHost) -> HttpSurfaces:
             completions=completions,
         )
         ctx.cron = default_cron(ctx)
+        ctx.browser_broker = _browser_broker(host)
         status = host.on_status
         server = ApiServer(
             ctx, on_status=(lambda data: status("api_server", data)) if status else None

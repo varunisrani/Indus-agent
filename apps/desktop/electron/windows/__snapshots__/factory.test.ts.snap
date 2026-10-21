@@ -166,6 +166,48 @@ exports[`window factory > main (packaged) preferences 1`] = `
 }
 `;
 
+exports[`window factory > pet (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": true,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > pet (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
 exports[`window factory > quick (dev) preferences 1`] = `
 {
   "allowRunningInsecureContent": false,
@@ -247,5 +289,47 @@ exports[`window factory > secondary (packaged) preferences 1`] = `
   "spellcheck": false,
   "webSecurity": true,
   "webviewTag": true,
+}
+`;
+
+exports[`window factory > wake (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": true,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > wake (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
 }
 `;

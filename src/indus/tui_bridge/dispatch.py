@@ -38,6 +38,7 @@ HANDLER_MODULES: tuple[str, ...] = (
     "indus.tui_bridge.methods_shell",  # P12-31
     "indus.tui_bridge.methods_config",  # P12-31
     "indus.tui_bridge.methods_composer",  # P12-31
+    "indus.tui_bridge.methods_extras",  # P24-14, 19, 20, 26 (projects, pet, wake, capabilities)
 )
 """Modules whose ``register(table)`` adds handlers, in order."""
 

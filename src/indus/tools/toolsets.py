@@ -5,6 +5,9 @@ diamond is harmless (a toolset met again on the same walk adds nothing). Tools a
 registered into a toolset are merged into that toolset's members, and a toolset known only to the
 registry resolves to its registered tools (R02.25, D-16.74).
 
+An opt-in toolset (``opt_in``: the task board sets, ``project``) is resolved only when it is named;
+"all" leaves it out.
+
 Platform bundles (``indus-*``) all start from one shared ``core`` list, which includes the named
 sets its tools come from, so a tool registered into ``file`` reaches every bundle that carries
 ``core``. ``indus-webhook`` is a fixed floor (read-only web, vision, clarify; R02.27) and takes
@@ -38,8 +41,8 @@ MEMO_MAX = 256
 BROWSER_TOOLS: tuple[str, ...] = tuple(
     f"browser_{verb}"
     for verb in (
-        "back", "cdp", "click", "console", "dialog", "get_images",
-        "navigate", "press", "scroll", "snapshot", "type", "vision",
+        "back", "cdp", "click", "console", "dialog", "exec", "get_images",
+        "navigate", "press", "scroll", "snapshot", "type", "vault", "vision",
     )
 )  # fmt: skip
 # The tools every platform bundle starts from. Later phases append their tools here (and to the
@@ -86,6 +89,7 @@ class Toolset:
     platforms: frozenset[str] | None = None  # set: only sessions on these platforms get it
     posture: bool = False  # per-session posture; never written to config
     registry_members: bool = True  # False: registered tools are not merged in (fixed floors)
+    opt_in: bool = False  # True: only when named; "all" never brings it in (P24-13)
 
 
 def _set(description: str, *tools: str, includes: tuple[str, ...] = ()) -> Toolset:
@@ -194,6 +198,29 @@ TOOLSETS: dict[str, Toolset] = {
         "Yuanbao groups, direct messages and stickers", platforms=frozenset({"yuanbao"})
     ),
     "indus-yuanbao": Toolset("Yuanbao chats", includes=(CORE, "yuanbao")),
+    # P24-07: `message_agent` (registered by the host that installs a bot transport) belongs to
+    # canonical bot chats only, sessions on the `bots` platform, even in a session that selects
+    # every toolset (R02.25).
+    "bots": Toolset("Message other bots (canonical bot chats only)", platforms=frozenset({"bots"})),
+    "indus-bots": Toolset("Canonical bot chats", includes=(CORE, "bots")),
+    # P24-10: calls to configured A2A peer agents; its probe offers it only when a peer is set up.
+    "a2a": _set("Send messages to other AI agents over A2A (configured peers)", "a2a_call"),
+    # Sessions opened by A2A peers (platform ``a2a``): the core tools plus calls to other peers.
+    "indus-a2a": Toolset("A2A peer agents", includes=(CORE, "a2a")),
+    # P24-13: the task board. Tools register into these sets (registry members, R02.25), so every
+    # board tool, kanban_schedule included, is reachable where a set is on. Both are opt-in: the
+    # dispatcher gives workers `kanban-worker`; orchestrators enable `kanban` (adds list/unblock).
+    "kanban-worker": Toolset(
+        "Task board worker: show, finish, block, review and comment on the dispatched task",
+        opt_in=True,
+    ),
+    "kanban": Toolset(
+        "Task board: the worker tools plus listing and unblocking tasks (orchestrators)",
+        includes=("kanban-worker",),
+        opt_in=True,
+    ),
+    # P24-14: projects (named workspaces); the desktop and TUI enable it for their sessions.
+    "project": Toolset("Projects: the current project and the folders it owns", opt_in=True),
     "indus-gateway": Toolset(
         "Messaging gateway: the union of the platform bundles it serves",
         includes=(
@@ -247,6 +274,7 @@ def get_toolset(
         static.platforms,
         static.posture,
         static.registry_members,
+        static.opt_in,
     )
 
 
@@ -303,7 +331,8 @@ def resolve(
         found: set[str] = set()
         gated = _gated(registry, resolved_scope)
         for each in toolset_names(registry, resolved_scope):
-            if each not in gated:
+            static = TOOLSETS.get(each)
+            if each not in gated and not (static is not None and static.opt_in):
                 found |= _walk(each, registry, resolved_scope, set())
     else:
         found = _walk(name, registry, resolved_scope, set())

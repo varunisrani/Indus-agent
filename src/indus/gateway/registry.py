@@ -5,9 +5,9 @@ installed without importing it, which env names carry its credential and its acc
 message cap, whether its DMs are really private (R06.24) and an optional cron target parser.
 Telegram, Discord, Slack, Signal, Matrix, Mattermost, Email, WhatsApp (Cloud API), SMS, LINE, ntfy,
 IRC, Microsoft Teams, Google Chat, QQ Bot, DingTalk, WeCom (smart robot and callback app), Feishu /
-Lark, BlueBubbles (iMessage), SimpleX Chat, Buzz, the API server, the webhook receiver and the
-Microsoft Graph change-notification receiver are built in; plugins add entries through the P13
-provider registry (``load_plugin_entries``).
+Lark, BlueBubbles (iMessage), SimpleX Chat, Buzz, the API server, the webhook receiver, the
+Microsoft Graph change-notification receiver and A2A (Agent2Agent, P24-10) are built in; plugins
+add entries through the P13 provider registry (``load_plugin_entries``).
 
 A platform's SDK is imported in exactly one place, ``PlatformRegistry.create_adapter``, which the
 gateway calls only for enabled platforms: importing this module, listing entries or probing
@@ -74,6 +74,7 @@ BUILTIN_NAMES: tuple[str, ...] = (
     "api_server",
     "webhook",
     "msgraph",
+    "a2a",
 )
 
 
@@ -178,6 +179,7 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
     """The platforms that ship with Indus Agent, in a fixed order."""
     # The package's __init__ holds only names (stdlib imports); the adapter itself stays lazy.
     from indus.gateway.adapters import photon
+    from indus.gateway.adapters.a2a import A2A_ENTRY
 
     return (
         replace(
@@ -686,6 +688,8 @@ def builtin_entries() -> tuple[PlatformEntry, ...]:
             dm_is_private=False,
             trusted_inbound=True,
         ),
+        # P24-10: peer agents over A2A; no credential, on with platforms.a2a.enabled.
+        A2A_ENTRY,
     )
 
 

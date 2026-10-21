@@ -14,6 +14,7 @@ afterEach(() => {
   delete window.__INDUS_BASE_PATH__;
   delete window.__INDUS_AUTH_REQUIRED__;
   delete window.__INDUS_DASHBOARD_EMBEDDED_CHAT__;
+  delete window.__INDUS_DASHBOARD_CONSOLE__;
   delete window.__INDUS_INITIAL_PROFILE__;
   delete window.__INDUS_DASHBOARD_PROFILE__;
 });

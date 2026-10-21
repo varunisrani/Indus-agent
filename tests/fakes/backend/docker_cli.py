@@ -45,7 +45,7 @@ VALUE_FLAGS = frozenset(
         "--cap-drop", "--cap-add", "--security-opt", "--cpus", "--memory", "-m", "--pids-limit",
         "--shm-size", "--storage-opt", "--user", "-u", "--network", "--net", "--mount",
         "--entrypoint", "--pull", "--hostname", "-p", "--publish", "--format", "--filter", "-t",
-        "--time", "--signal",
+        "--time", "--signal", "--add-host",
     }
 )  # fmt: skip
 

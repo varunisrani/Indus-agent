@@ -13,9 +13,12 @@ Verbs: ``identify`` and ``status`` are built in and answered on the loop (they o
 daemon already holds, so they answer while turns run). ``drain``, ``reload-plugins``,
 ``pause-for-update``, ``session-ticket`` and ``describe`` are known but answered ``unsupported``
 until the daemon registers handlers for them (``register``; the attach verbs come from
-``gateway.daemon.attach_verbs``, P17-11). A handler takes the request's ``params`` dict and
-returns a dict; a synchronous one runs on the ``io`` blocking pool (D-04.1) within its time
-budget. A handler refuses with ``VerbRefused(code, detail)``: the answer carries that code.
+``gateway.daemon.attach_verbs``, P17-11; ``serve-profile``, ``unserve-profile`` and
+``rescan-profiles`` from ``gateway.multiplex.host``, P24-01, owner-only: they change which
+profiles this process serves, and so which profiles it mints tickets for). A handler takes the
+request's ``params`` dict and returns a dict; a synchronous one runs on the ``io`` blocking pool
+(D-04.1) within its time budget. A handler refuses with ``VerbRefused(code, detail)``: the answer
+carries that code.
 
 Owner-only verbs (``session-ticket``, and any verb registered with ``owner_only=True``) are
 answered only when the OS confirmed the peer is this user; where it cannot say, they answer
@@ -83,8 +86,12 @@ KNOWN_VERBS = (
     "deliver-message",
     "approvals-open",
     "approvals-respond",
+    "serve-profile",
+    "unserve-profile",
+    "rescan-profiles",
 )
-"""Verbs P15 and P17-P19 name; all but the first two answer ``unsupported`` until registered."""
+"""Verbs P15, P17-P19 and P24 name; all but the first two answer ``unsupported`` until
+registered."""
 OWNER_ONLY_VERBS = frozenset(
     {
         "session-ticket",
@@ -93,12 +100,15 @@ OWNER_ONLY_VERBS = frozenset(
         "deliver-message",
         "approvals-open",
         "approvals-respond",
+        "serve-profile",
+        "unserve-profile",
+        "rescan-profiles",
     }
 )
 """Verbs answered only to a peer the OS confirmed as this user (they hand out credentials,
 bulk-change the profile's data: ``maintenance-run``, P17-21, end the daemon: ``stop``, the
-dashboard's stop / restart buttons, P18-15, or send and approve as the profile: the messaging
-bridge's verbs, P19-16/17)."""
+dashboard's stop / restart buttons, P18-15, send and approve as the profile: the messaging
+bridge's verbs, P19-16/17, or change the served profiles of a multiplexed gateway, P24-01)."""
 
 LAUNCHD_LABEL_PREFIX = "ai.indus.gateway"
 _SOCKET_NAME = "gw.sock"

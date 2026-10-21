@@ -1,0 +1,1 @@
+{ "name": "notes", "label": "Notes", "icon": "not-an-icon", "tab": { "path": "/notes", "override": "/logs" }, "entry": "notes.js" }

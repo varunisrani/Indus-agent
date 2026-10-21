@@ -54,6 +54,7 @@ from starlette.websockets import WebSocket
 from indus.foundation.scope import Scope
 from indus.gateway.http.serving import HttpServer, bind_listener
 from indus.gateway.ws import methods as ws_methods
+from indus.gateway.ws.extras import WsExtras
 from indus.protocol.bridge import READY_METHOD, BridgeReady
 from indus.protocol.envelope import Request
 from indus.protocol.errors import INTERNAL_ERROR
@@ -267,6 +268,10 @@ class WsConnection:
         check_payload(BridgeReady, params, strict=self.strict)
         self.outbox.put(notification(READY_METHOD, params))
 
+    def notify(self, method: str, params: Mapping[str, Any]) -> None:
+        """Send one unnumbered notification (``wake.detected``, P24-20) on the loop."""
+        self._put(notification(method, params))
+
     def close_soon(self, code: int, reason: str) -> None:
         """Ask the connection to close (from any task on the loop)."""
         self._mark_close(code, reason)
@@ -408,6 +413,7 @@ class WsConnection:
             if pending:
                 await asyncio.wait(pending, timeout=self.limits.drain_s)
         detached = await self.subs.close()
+        self.endpoint.extras.connection_closed(self)
         writer.cancel()
         with contextlib.suppress(BaseException):
             await writer
@@ -454,6 +460,9 @@ class WsEndpoint:
         self.strict = strict_from(scope) if strict is None else strict
         self._origins = origins
         self.table = ws_methods.table()
+        # P24: projects, pet, wake word, capabilities, bots, group rooms (gateway.ws.extras)
+        self.extras = WsExtras(self.scope, instance_id=book.instance_id)
+        self.extras.register(self.table)
         self.watch = SessionWatch(host)
         self.connections: dict[str, WsConnection] = {}
         self.violations: list[ContractViolation] = []
@@ -515,6 +524,7 @@ class WsEndpoint:
         self._server = server
         self._stopping = False
         self._url = f"ws://{shown}:{bound_port}{WS_PATH}"
+        self.extras.bind_loop(asyncio.get_running_loop())
         self.watch.start()
         log.info("gateway WebSocket listening on %s", loggable_url(self._url))
         return self._url
@@ -531,6 +541,7 @@ class WsEndpoint:
         if server is not None:
             await server.stop()
         self.watch.stop()
+        self.extras.close()
 
     async def _serve(self, websocket: WebSocket) -> None:
         scope = websocket.scope

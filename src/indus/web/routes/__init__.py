@@ -26,5 +26,7 @@ ROUTERS: tuple[str, ...] = (
     "indus.web.routes.models:router",
     "indus.web.routes.files:router",
     "indus.web.routes.system:router",
+    "indus.web.routes.session_import:router",
+    "indus.web.plugins:router",  # P24-37 dashboard plugins (list, rescan, assets)
 )
 """``"module:attr"`` of every router ``create_app`` includes, in order."""

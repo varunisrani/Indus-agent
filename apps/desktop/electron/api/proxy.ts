@@ -42,6 +42,11 @@ export interface ProxyTarget {
   token: string;
   /** The connection's profile, used when the request names none. */
   profile: string | null;
+  /**
+   * A registry connection's own headers for `url` (P24-29: its credential — token, OAuth bearer or
+   * basic session — plus access-proxy headers); without it the session token header is sent.
+   */
+  headers?: (url: string) => Promise<Record<string, string>>;
 }
 
 export interface Timers {
@@ -140,6 +145,17 @@ export class ApiProxy {
     }
     const timeoutMs =
       request.timeoutMs ?? (STARTUP_PATHS.has(route) ? STARTUP_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
+    let credential: Record<string, string>;
+    try {
+      credential =
+        target.headers === undefined
+          ? { [SESSION_TOKEN_HEADER]: target.token }
+          : await target.headers(url.toString());
+    } catch (error) {
+      const code =
+        (error as { kind?: unknown }).kind === "unreachable" ? "unreachable" : "unauthorized";
+      throw new IpcError(code, "sign in to this server again or check its credential");
+    }
     const controller = new AbortController();
     const timer = this.timers.setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
@@ -148,7 +164,7 @@ export class ApiProxy {
         method: request.method,
         headers: {
           Accept: "application/json",
-          [SESSION_TOKEN_HEADER]: target.token,
+          ...credential,
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         },
         ...(body === undefined ? {} : { body }),

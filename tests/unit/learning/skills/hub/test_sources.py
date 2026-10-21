@@ -319,6 +319,9 @@ def _meta(name: str, source: str) -> SkillMeta:
 
 def _set(web: FakeWeb, scope: Scope, **parts: Any) -> SourceSet:
     sources = web.sources(scope)
+    # The P24-45 fallback sources answer at once here unless a test sets them.
+    for key, sid in (("clawhub", "clawhub"), ("lobehub", "lobehub"), ("browse_sh", "browse-sh")):
+        setattr(sources, key, _Fixed(sid, []))
     for key, value in parts.items():
         setattr(sources, key, value)
     return sources

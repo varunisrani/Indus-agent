@@ -326,3 +326,23 @@ def test_awrite_serialises_without_blocking_the_loop(
     assert results == list(range(20))
     assert max_in_flight == 1
     assert ticks >= 50
+
+
+def test_a_pause_never_runs_past_the_deadline() -> None:
+    """P24 integration: a 1 ms floor made the last retry overshoot the patience whenever a jitter
+    draw left under 1 ms (about 1 draw in 400); the wait must sum to the patience exactly."""
+    import random
+
+    from indus.state.writer import DEADLINE_DUST, jitter_pause
+
+    rng = random.Random(0)
+    left = jitter_pause(now=19.9995, started=0.0, deadline=20.0, rng=rng, slow_only=True)
+    assert left == pytest.approx(0.0005, abs=1e-12)
+    assert jitter_pause(now=20.0 - DEADLINE_DUST / 2, started=0.0, deadline=20.0, rng=rng) is None
+    for seed in range(2000):
+        draws = random.Random(seed)
+        now, waited = 0.0, 0.0
+        while (pause := jitter_pause(now=now, started=0.0, deadline=20.0, rng=draws)) is not None:
+            now += pause
+            waited += pause
+        assert waited == pytest.approx(20.0, abs=1e-6), seed

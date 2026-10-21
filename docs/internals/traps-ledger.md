@@ -109,6 +109,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/test_scope.py::test_bind_scope_in_executor`
   - `tests/unit/foundation/test_scope.py::test_spawn_inherits_current`
   - `tests/unit/core/subagents/test_batch.py::test_cap_is_respected_and_results_keep_task_order`
+  - `tests/unit/gateway/multiplex/test_scope.py::test_each_activity_runs_under_its_profile`
 - **R01.17** Empty and degenerate outputs
   - Review: not yet planned (P00-guards)
 - **R01.18** Exit-path completeness
@@ -139,6 +140,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/approvals/test_policy.py::test_runtime_delete_is_a_floor`
   - `tests/unit/safety/approvals/test_policy.py::test_sudo_stdin_without_configured_password_is_a_floor`
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_with_mode_off`
+  - `tests/unit/cli/commands/test_import_agent.py::test_permission_rules_map_and_the_floors_still_come_first`
 - **R02.5** Silence is not consent; withdrawal is not refusal
   - `tests/unit/safety/approvals/test_human.py::test_timeout_blocks_with_timeout_outcome`
   - `tests/unit/safety/approvals/test_human.py::test_withdrawn_is_not_answered`
@@ -175,6 +177,8 @@ Checked by `python -m tooling.checks traps`.
   - Review: other areas still to pin (P00-guards)
   - `tests/unit/backends/test_sandbox_records.py::test_profile_isolation`
   - `tests/unit/backends/test_task_overrides.py::test_profile_scoping_and_clear`
+  - `tests/unit/gateway/multiplex/test_scope.py::test_eviction_writes_memory_into_the_secondary_only`
+  - `tests/unit/gateway/multiplex/test_scope.py::test_inbound_media_moves_into_the_routed_profile_cache`
 - **R02.9** Approved command killed by a stale interrupt
   - `tests/unit/safety/approvals/test_human.py::test_stale_interrupt_cleared_once`
   - Review: the terminal tool calls `clear_stale_interrupt` once before its retry loop (P05-12)
@@ -215,6 +219,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/backends/test_remote_processes.py::test_no_completion_where_nothing_can_receive_it`
   - `tests/unit/core/subagents/test_child.py::test_child_background_terminal_result_has_no_notify_and_the_subagent_note`
   - `tests/unit/core/subagents/test_teardown.py::test_handed_off_job_survives_and_reports_to_the_parent`
+  - `tests/unit/board/test_dispatcher.py::test_worker_env_has_pins_and_no_provider_key`
 - **R02.18** Watch-pattern floods
   - `tests/unit/backends/test_process_notify.py::test_watch_three_strike_windows_switch_it_off`
   - `tests/unit/backends/test_process_notify.py::test_watch_lifetime_cap_after_eight_notices`
@@ -243,6 +248,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/code/test_runner.py::test_child_env_has_no_credentials`
   - `tests/unit/tools/builtin/browser/test_session.py::test_launch_env_lacks_provider_keys_and_credentials`
   - `tests/unit/plugins/test_shell_hooks.py::test_env_is_scrubbed`
+  - `tests/unit/tools/lsp/test_manager.py::test_server_env_comes_from_child_env_builder`
   - Review: other child processes (P00-guards)
   - `tests/unit/cron/test_script.py::test_env_lacks_provider_keys_and_keeps_passthrough`
   - `tests/unit/backends/test_vendor_env.py::test_every_vendor_token_is_out_of_every_child_env`
@@ -252,6 +258,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/photon/test_adapter.py::test_create_adapter_reads_the_credentials_and_builds_a_minimal_child_env`
   - `tests/unit/gateway/adapters/photon/test_sidecar.py::test_a_fresh_sidecar_gets_its_token_and_credentials_through_its_env_only`
   - `tests/unit/gateway/adapters/photon/test_real_sidecar.py::test_the_adapter_runs_the_real_sidecar`
+  - `tests/unit/board/test_dispatcher.py::test_worker_env_has_pins_and_no_provider_key`
+  - `tests/unit/pm/test_store.py::test_the_runner_environment_comes_from_the_env_builder`
 - **R02.23** Docs vs code drift (do not trust docs for numbers)
   - `tests/unit/safety/approvals/test_policy.py::test_default_mode_is_manual_and_asks`
   - `tests/unit/tools/builtin/test_process_manage.py::test_registered_in_the_terminal_toolset`
@@ -269,6 +277,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/feishu/test_tools.py::test_the_feishu_rows_are_in_the_toolset_table`
   - `tests/unit/gateway/adapters/feishu/test_tools.py::test_only_the_gateway_daemon_registers_the_tools`
   - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_the_tools_are_absent_from_every_other_bundle`
+  - `tests/unit/tools/builtin/test_board.py::test_schedule_present_when_the_toolset_is_on`
+  - `tests/unit/tools/builtin/test_board.py::test_worker_session_lacks_list_and_unblock`
 - **R02.26** Send-message is not a tool
   - `tests/unit/gateway/delivery/test_router.py::test_no_model_tool_wraps_the_router`
   - `tests/unit/gateway/adapters/yuanbao/test_tools.py::test_a_dm_to_a_user_outside_the_group_is_refused`
@@ -285,6 +295,7 @@ Checked by `python -m tooling.checks traps`.
 - **R02.29** Unscoped probes at boot
   - `tests/unit/backends/test_remote_probes.py::test_an_unscoped_probe_caches_nothing_and_the_first_scoped_call_checks`
   - `tests/unit/backends/test_remote_probes.py::test_a_check_that_loses_its_scope_is_quiet_and_not_remembered`
+  - `tests/unit/gateway/multiplex/test_scope.py::test_probes_before_any_scope_are_quiet_and_rerun_on_the_first_scoped_turn`
 - **R02.30** SDK backends lie about timeouts
   - `tests/unit/backends/test_sdk_call.py::test_never_returning_call_hits_the_deadline_and_cancels_once`
   - `tests/unit/backends/test_sdk_call.py::test_exec_never_retried`
@@ -410,6 +421,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/service/test_admissions.py::test_discard_closes_the_lost_turn_in_its_transcript`
   - `tests/integration/gateway/test_boot_recovery.py::test_resolve_unknown_discards_the_lost_admission_and_closes_its_transcript`
   - `apps/desktop/src/chat/busyActions.test.ts::an unknown turn shows one Discard, blocks the queue and is never resubmitted`
+  - `tests/unit/gateway/rooms/test_driver.py::test_a_task_whose_lease_generation_changed_settles_indeterminate`
+  - `tests/unit/gateway/rooms/test_driver.py::test_start_takes_only_the_head_and_waits_for_recovery`
 - **R03.22** Deleted ids must stay dead
   - `tests/unit/state/test_deletion.py::test_deleted_id_cannot_be_recreated`
   - `tests/unit/state/test_deletion.py::test_sweep_never_weakens_a_user_tombstone`
@@ -427,6 +440,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_connection.py::test_default_store_path_comes_from_the_scope`
   - `tests/unit/service/remote/test_profile_guard.py::test_client_for_a_refuses_b_socket_before_any_ticket`
   - `tests/unit/service/remote/test_profile_guard.py::test_ready_naming_another_or_no_profile_is_refused_before_sending`
+  - `tests/unit/gateway/multiplex/test_scope.py::test_child_env_of_a_secondary_lacks_launch_names`
 - **R03.24** Test runs touching the live store
   - `tests/unit/state/test_connection.py::test_guard_refuses_real_root_and_named_profiles`
   - `tests/unit/state/test_connection.py::test_guard_runs_before_anything_touches_disk`
@@ -579,6 +593,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/cli/test_non_tty.py::test_without_arguments`
   - `tests/contract/cli/test_non_tty.py::test_guidance_with_arguments`
   - `tests/unit/cli/wizards/test_gateway_setup.py::test_without_a_terminal_the_keys_are_printed`
+  - `tests/unit/cli/commands/test_kanban.py::test_missing_arguments_are_usage_errors`
+  - `tests/unit/cli/commands/test_project.py::test_bare_command_says_there_are_none`
+  - `tests/unit/cli/commands/test_import_agent.py::test_without_a_terminal_the_import_needs_yes`
+  - `tests/unit/cli/commands/test_pm.py::test_lock_asks_first_and_needs_yes_without_a_terminal`
+  - `tests/unit/cli/commands/test_pm.py::test_fresh_profile_commands_without_a_terminal`
 - **R04.20** Two different exit-code tables
   - `tests/unit/cli/test_oneshot.py::test_oneshot_code_table`
   - `tests/integration/cli/test_oneshot_exit_codes.py::test_failed_run_exits_2_and_writes_the_usage_file`
@@ -692,6 +711,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/service/remote/test_profile_guard.py::test_ws_endpoint_refuses_a_scope_of_another_profile`
   - `tests/unit/service/remote/test_profile_guard.py::test_client_for_a_refuses_b_socket_before_any_ticket`
   - `tests/unit/service/remote/test_profile_guard.py::test_launch_env_never_reaches_a_daemon_the_grant_starts`
+  - `tests/unit/gateway/multiplex/test_scope.py::test_the_secondary_view_has_none_of_the_launch_env`
 - **R05.15** Error codes are not stable
   - `tests/unit/protocol/test_attach_contract.py::test_each_error_code_appears_once_with_one_meaning`
   - `tests/unit/protocol/test_attach_contract.py::test_codes_outside_method_answers_say_where_they_travel`
@@ -843,6 +863,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/gateway/test_signals.py::test_sigusr1_lets_the_turn_finish_refuses_new_ones_and_exits_75`
   - `tests/unit/gateway/service/test_units.py::test_golden`
   - `tests/unit/gateway/service/test_units.py::test_launchd_wrapper_maps_78_to_0`
+  - `tests/unit/gateway/multiplex/test_host.py::test_an_owner_that_never_answers_is_a_transient_refusal`
+  - `tests/integration/gateway/multiplex/test_attach_second_run.py::test_a_record_without_a_live_answer_refuses_with_75`
 - **R06.18** Liveness is PID + start time, or a socket answer
   - `tests/integration/gateway/test_control_part.py::test_the_control_part_serves_reconnects_and_drains`
   - `tests/integration/web/test_daemon_stop.py::test_the_dashboard_stop_ends_the_daemon_as_a_planned_stop`
@@ -893,13 +915,17 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/adapters/ntfy/test_adapter.py::test_unknown_sender_on_ntfy_never_gets_a_pairing_code`
   - `tests/unit/gateway/adapters/msgraph/test_adapter.py::test_events_are_internal_never_commands_and_sanitised`
   - `tests/unit/gateway/adapters/raft/test_adapter.py::test_raft_never_gets_pairing_codes`
+  - `tests/unit/gateway/adapters/a2a/test_adapter.py::test_the_registry_entry_marks_dms_not_private`
+  - `tests/unit/gateway/adapters/a2a/test_adapter.py::test_approval_cards_are_never_offered_to_peers`
 - **R06.25** Gateway config loader diverges from CLI defaults
   - `tests/unit/gateway/test_config.py::test_defaults_come_from_the_shared_table`
   - `tests/unit/gateway/test_config.py::test_settings_round_trip_through_the_writer`
   - `tests/unit/gateway/test_config.py::test_gateway_rows_reach_their_readers`
   - `tests/unit/foundation/config/test_schema.py::test_gateway_rows_validate`
 - **R06.26** Multiplex secret reads must fail closed (if multiplexing is built)
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/gateway/multiplex/test_scope.py::test_a_secondary_without_its_own_allowlist_denies`
+  - `tests/unit/gateway/multiplex/test_scope.py::test_a_routed_scope_built_the_wrong_way_still_fails_closed`
+  - `tests/unit/gateway/multiplex/test_no_env_reads.py::test_a_seeded_environ_get_in_an_adapter_fails_the_guard`
 - **R07.1** Frozen memory snapshot vs live writes
   - `tests/unit/learning/memory/test_prompt_block.py::test_write_during_turn_one_keeps_prompt_bytes`
   - `tests/unit/learning/memory/test_prompt_block.py::test_resume_after_restart_restores_block_bytes`
@@ -1041,6 +1067,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/learning/skills/test_project_trust.py::test_editing_a_trusted_skill_rescans`
   - `tests/unit/learning/skills/test_project_trust.py::test_cron_in_an_untrusted_repo_never_prompts_and_loads_nothing`
   - `tests/unit/learning/skills/test_project_trust.py::test_a_command_in_a_code_span_or_fence_is_quarantined`
+  - `tests/unit/learning/skills/hub/test_sources_extra.py::test_injection_marked_lobehub_agent_is_blocked_by_the_scanner`
+  - `tests/unit/learning/skills/hub/test_snapshot.py::test_now_dangerous_skill_refused_even_with_force`
 - **R07.27** Same-name skills
   - `tests/unit/learning/skills/test_resolver.py::test_cross_tier_shadowing_is_the_same_for_every_consumer`
   - `tests/unit/learning/skills/test_resolver.py::test_same_tier_duplicate_is_ambiguous`
@@ -1077,9 +1105,14 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/backend/tickets.test.ts::inside Electron (no subprotocol header) a local dial is matched by window and exact URL`
   - `apps/desktop/src/gateway/connectionStore.test.ts::dials with a fresh single-use ticket offered only as a subprotocol`
   - `apps/desktop/testing/electron/wiredApp.electron.test.ts::fake backend: boot, connect, prompt, streamed reply, one approval answered once`
+  - `apps/desktop/electron/connections/remoteDial.test.ts::each dial mints its own single-use ticket`
+  - `apps/desktop/electron/backend/install.test.ts::a registry remote dials with a server-minted ticket per dial, never the token (D-16.691)`
+  - `tests/unit/web/ws/test_ws_auth.py::test_a_token_mode_ticket_opens_one_socket_through_the_app`
 - **R08.5** Connection test must cover the used leg
   - `apps/desktop/electron/backend/remote.test.ts::HTTP ok + WS 4401 → not saved, error shown`
   - `apps/desktop/electron/backend/remote.test.ts::both legs pass → saved; the token goes to the secrets store, not the file`
+  - `apps/desktop/electron/connections/remoteDial.test.ts::HTTP-only success with a WS failure reports the connection as failing`
+  - `apps/desktop/electron/connections/install.test.ts::saves only after both legs pass; a failed test writes no secret`
 - **R08.6** Soft vs hard re-home
   - `apps/desktop/e2e/core/chat.electron.test.ts::profile rail: switch to another profile (its own daemon, empty list) and back`
   - `apps/desktop/src/profiles/switching.test.ts::leaves no session store entry from the old connection`
@@ -1111,7 +1144,17 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/foundation/test_secret_probe.py::test_keychain_mode_raises_when_unusable`
   - `tests/unit/foundation/test_secret_probe.py::test_file_mode_never_touches_keyring`
 - **R08.11** Canonical bot chat identity
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_bot_chat.py::test_created_once_hidden_and_found_again`
+  - `tests/unit/state/test_bot_chat.py::test_canonical_chat_survives_compression`
+  - `tests/unit/state/test_bot_chat.py::test_a_racing_creator_is_adopted_not_forked`
+  - `tests/unit/state/test_bot_chat.py::test_recency_is_never_consulted`
+  - `tests/unit/state/test_bot_chat.py::test_an_ambiguous_lineage_fails_closed`
+  - `tests/unit/gateway/rooms/test_peers.py::test_local_delivery_runs_one_turn_in_the_targets_canonical_chat`
+  - Review: desktop bots page (P24-31)
+  - `tests/unit/service/test_bots_rpc.py::test_open_after_compression_returns_the_live_tip`
+  - `tests/unit/service/test_bots_rpc.py::test_two_concurrent_opens_create_one_chat`
+  - `apps/desktop/src/bots/canonicalChat.test.ts::canonical lookup after compression opens the live tip`
+  - `apps/desktop/src/bots/canonicalChat.test.ts::two concurrent clicks create one chat`
 - **R08.12** Slash curation hiding user extensions
   - `apps/desktop/src/chat/slash.test.ts::a new skill command appears in both completion paths`
   - `apps/desktop/src/chat/slash.test.ts::hides only known built-ins without a desktop surface`
@@ -1157,6 +1200,7 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
 - **R08.23** Remote execution boundary
   - `apps/desktop/src/chat/composer/Composer.test.tsx::remote mode uploads bytes: no client path reaches the remote host`
+  - `apps/desktop/electron/connections/ssh.test.ts::client-only files reach the remote as bytes, never as a client path (R08.23)`
 - **R08.24** Quit semantics with attached gateways
   - `apps/desktop/e2e/core/lifecycle.electron.test.ts::quit stops the app's own processes; the shared daemon keeps running`
   - `apps/desktop/electron/quitGuard.test.ts::attached local daemon with running turns → informational prompt, nothing is stopped`
@@ -1331,6 +1375,8 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
   - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`
   - `apps/web/src/shell/assets.test.ts::loads no web fonts from stylesheets`
+  - `packages/ui/src/tokens/presets.test.ts::are twelve, with our own unique names`
+  - `tests/unit/cli/commands/test_pet.py::test_no_reference_art_ships`
 - **R09.23** Reverse-proxy prefix
   - Review: not yet planned (P00-guards)
   - `tests/unit/web/test_prefix.py::test_same_build_at_root_and_under_a_prefix`

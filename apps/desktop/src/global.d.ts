@@ -110,6 +110,35 @@ export type IndusLaunchFacts = {
   deepLinkScheme: string;
 };
 
+export type IndusMarketplaceItem = {
+  publisher: string;
+  extension: string;
+  displayName: string;
+  description: string;
+  version: string;
+  installs: number;
+};
+
+export type IndusPetView = {
+  visible: boolean;
+  name: string | null;
+  scale: number;
+  revision: string | null;
+  moods: Record<string, string>;
+  bubble: string | null;
+};
+
+export type IndusPluginFile = {
+  id: string;
+  kind: "disk" | "package";
+  file: string;
+  size: number;
+  hash: string;
+  status: "ready" | "refused";
+  reason?: string;
+  packageName?: string;
+};
+
 export type IndusPrefsPatch = {
   minimizeToTray?: boolean;
   keepAwake?: "never" | "while-working" | "always";
@@ -174,6 +203,17 @@ export type IndusShortcutsView = {
   rejected?: { action: IndusShortcutAction; reason: IndusShortcutRefusal };
 };
 
+export type IndusUninstallLevel = "gui" | "keep-data" | "full";
+
+export type IndusUninstallSummary = {
+  allowed: boolean;
+  levels: Array<IndusUninstallLevel>;
+  reason?: string;
+  installKind: string;
+  home: string;
+  confirmPhrase: string;
+};
+
 export type IndusUpdateChannel = "stable" | "canary";
 
 export type IndusUpdateSkew = {
@@ -202,7 +242,17 @@ export type IndusUpdateStatus = {
   checkedAt?: number;
 };
 
-export type IndusWindowKind = "main" | "secondary" | "instance" | "hud" | "quick" | "hidden";
+export type IndusWakeIndicatorState = "hidden" | "listening" | "heard" | "capturing";
+
+export type IndusWindowKind =
+  | "main"
+  | "secondary"
+  | "instance"
+  | "hud"
+  | "quick"
+  | "pet"
+  | "wake"
+  | "hidden";
 
 export type IndusWindowState = { maximized: boolean; fullscreen: boolean; focused: boolean };
 
@@ -253,6 +303,166 @@ export interface IndusDesktopConnection {
   }>;
   /** `indus:remote:forget` (P20-11) */
   forgetRemote(payload?: Record<string, never>): Promise<{ ok: true }>;
+}
+
+export interface IndusDesktopConnections {
+  /** `indus:connections:list` (P24-29) */
+  list(payload?: Record<string, never>): Promise<{
+    connections: Array<{
+      id: string;
+      kind: "local" | "remote" | "ssh";
+      label: string;
+      url?: string;
+      authMode?: "token" | "oauth" | "basic";
+      ssh?: {
+        host: string;
+        user?: string;
+        port?: number;
+        keyPath?: string;
+        remoteProfile?: string;
+      };
+      primary: boolean;
+      lastUsed: boolean;
+      hasCredential: boolean;
+      signedIn: boolean;
+      headerNames: Array<string>;
+    }>;
+    primaryId: string;
+    launchMode: "primary" | "last-used";
+    quarantined: number;
+  }>;
+  /** `indus:connections:test` (P24-29) */
+  test(payload: {
+    id?: string;
+    kind: "remote" | "ssh";
+    label?: string;
+    url?: string;
+    authMode?: "token" | "oauth" | "basic";
+    ssh?: { host: string; user?: string; port?: number; keyPath?: string; remoteProfile?: string };
+    token?: string;
+    username?: string;
+    password?: string;
+    headers?: Record<string, string>;
+  }): Promise<{
+    ok: boolean;
+    http: "ok" | "unauthorized" | "unreachable" | "error";
+    ws: "ok" | "unauthorized" | "unreachable" | "error";
+    nativeSignIn: boolean;
+    message?: string;
+  }>;
+  /** `indus:connections:save` (P24-29) */
+  save(payload: {
+    id?: string;
+    kind: "remote" | "ssh";
+    label?: string;
+    url?: string;
+    authMode?: "token" | "oauth" | "basic";
+    ssh?: { host: string; user?: string; port?: number; keyPath?: string; remoteProfile?: string };
+    token?: string;
+    username?: string;
+    password?: string;
+    headers?: Record<string, string>;
+  }): Promise<{
+    saved: boolean;
+    id?: string;
+    test: {
+      ok: boolean;
+      http: "ok" | "unauthorized" | "unreachable" | "error";
+      ws: "ok" | "unauthorized" | "unreachable" | "error";
+      nativeSignIn: boolean;
+      message?: string;
+    } | null;
+    droppedHeaders: Array<string>;
+    message?: string;
+  }>;
+  /** `indus:connections:remove` (P24-29) */
+  remove(payload: { id: string }): Promise<{
+    connections: Array<{
+      id: string;
+      kind: "local" | "remote" | "ssh";
+      label: string;
+      url?: string;
+      authMode?: "token" | "oauth" | "basic";
+      ssh?: {
+        host: string;
+        user?: string;
+        port?: number;
+        keyPath?: string;
+        remoteProfile?: string;
+      };
+      primary: boolean;
+      lastUsed: boolean;
+      hasCredential: boolean;
+      signedIn: boolean;
+      headerNames: Array<string>;
+    }>;
+    primaryId: string;
+    launchMode: "primary" | "last-used";
+    quarantined: number;
+  }>;
+  /** `indus:connections:set-primary` (P24-29) */
+  setPrimary(payload: { id: string }): Promise<{
+    connections: Array<{
+      id: string;
+      kind: "local" | "remote" | "ssh";
+      label: string;
+      url?: string;
+      authMode?: "token" | "oauth" | "basic";
+      ssh?: {
+        host: string;
+        user?: string;
+        port?: number;
+        keyPath?: string;
+        remoteProfile?: string;
+      };
+      primary: boolean;
+      lastUsed: boolean;
+      hasCredential: boolean;
+      signedIn: boolean;
+      headerNames: Array<string>;
+    }>;
+    primaryId: string;
+    launchMode: "primary" | "last-used";
+    quarantined: number;
+  }>;
+  /** `indus:connections:set-launch-mode` (P24-29) */
+  setLaunchMode(payload: { mode: "primary" | "last-used" }): Promise<{
+    connections: Array<{
+      id: string;
+      kind: "local" | "remote" | "ssh";
+      label: string;
+      url?: string;
+      authMode?: "token" | "oauth" | "basic";
+      ssh?: {
+        host: string;
+        user?: string;
+        port?: number;
+        keyPath?: string;
+        remoteProfile?: string;
+      };
+      primary: boolean;
+      lastUsed: boolean;
+      hasCredential: boolean;
+      signedIn: boolean;
+      headerNames: Array<string>;
+    }>;
+    primaryId: string;
+    launchMode: "primary" | "last-used";
+    quarantined: number;
+  }>;
+  /** `indus:connections:sign-in` (P24-29) */
+  signIn(payload: { id: string }): Promise<{ ok: boolean; message?: string }>;
+  /** `indus:connections:sign-out` (P24-29) */
+  signOut(payload: { id: string }): Promise<{ ok: true }>;
+}
+
+export interface IndusDesktopArtifacts {
+  /** `indus:artifacts:download` (P24-28) */
+  download(payload: {
+    path: string;
+    profile: string | null;
+    sessionId: string;
+  }): Promise<{ savedTo: string }>;
 }
 
 export interface IndusDesktopApi {
@@ -679,10 +889,71 @@ export interface IndusDesktopWork {
   report(payload: { items: Array<{ id: string; label: string }> }): void;
 }
 
+export interface IndusDesktopPet {
+  /** `indus:pet:show` (P24-19) */
+  show(payload: {
+    name: string;
+    scale: number;
+    revision: string;
+    moods: Record<string, string>;
+  }): Promise<{ visible: boolean }>;
+  /** `indus:pet:hide` (P24-19) */
+  hide(payload?: Record<string, never>): Promise<{ visible: boolean }>;
+  /** `indus:pet:say` (P24-19) */
+  say(payload: { text: string }): void;
+  /** `indus:pet:get` (P24-19) */
+  get(payload?: Record<string, never>): Promise<IndusPetView>;
+  /** `indus:pet:state` (P24-19) */
+  onState(listener: (payload: IndusPetView) => void): () => void;
+  /** `indus:pet:pointer` (P24-19) */
+  pointer(payload: { over: boolean }): void;
+}
+
+export interface IndusDesktopWake {
+  /** `indus:wake:indicator` (P24-20) */
+  setIndicator(payload: { state: IndusWakeIndicatorState }): void;
+  /** `indus:wake:indicator-get` (P24-20) */
+  getIndicator(payload?: Record<string, never>): Promise<{ state: IndusWakeIndicatorState }>;
+  /** `indus:wake:indicator-state` (P24-20) */
+  onIndicator(listener: (payload: { state: IndusWakeIndicatorState }) => void): () => void;
+}
+
+export interface IndusDesktopThemes {
+  /** `indus:themes:search` (P24-33) */
+  searchMarketplace(payload: { query: string }): Promise<{ items: Array<IndusMarketplaceItem> }>;
+  /** `indus:themes:download` (P24-33) */
+  downloadMarketplace(payload: {
+    publisher: string;
+    extension: string;
+    version: string;
+  }): Promise<{ vsixBase64: string }>;
+}
+
+export interface IndusDesktopPlugins {
+  /** `indus:plugins:list` (P24-32) */
+  list(payload?: Record<string, never>): Promise<{ files: Array<IndusPluginFile> }>;
+  /** `indus:plugins:rescan` (P24-32) */
+  rescan(payload?: Record<string, never>): Promise<{ files: Array<IndusPluginFile> }>;
+  /** `indus:plugins:changed` (P24-32) */
+  onChanged(listener: (payload: { files: Array<IndusPluginFile> }) => void): () => void;
+}
+
+export interface IndusDesktopUninstall {
+  /** `indus:uninstall:summary` (P24-34) */
+  summary(payload?: Record<string, never>): Promise<IndusUninstallSummary>;
+  /** `indus:uninstall:run` (P24-34) */
+  run(payload: {
+    level: IndusUninstallLevel;
+    typed?: string;
+  }): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+}
+
 export interface IndusDesktopBridge {
   readonly facts: IndusDesktopFacts;
   readonly boot: IndusDesktopBoot;
   readonly connection: IndusDesktopConnection;
+  readonly connections: IndusDesktopConnections;
+  readonly artifacts: IndusDesktopArtifacts;
   readonly api: IndusDesktopApi;
   readonly profile: IndusDesktopProfile;
   readonly windows: IndusDesktopWindows;
@@ -708,6 +979,11 @@ export interface IndusDesktopBridge {
   readonly journal: IndusDesktopJournal;
   readonly prefs: IndusDesktopPrefs;
   readonly work: IndusDesktopWork;
+  readonly pet: IndusDesktopPet;
+  readonly wake: IndusDesktopWake;
+  readonly themes: IndusDesktopThemes;
+  readonly plugins: IndusDesktopPlugins;
+  readonly uninstall: IndusDesktopUninstall;
 }
 
 declare global {

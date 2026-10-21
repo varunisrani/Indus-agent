@@ -114,6 +114,8 @@ UNSCOPED_WRITES = frozenset(
         "POST /api/files/mkdir",
         "POST /api/files/upload",
         "DELETE /api/files",
+        # the dashboard plugin catalogue is the backend's own (P24-37)
+        "POST /api/dashboard/plugins/rescan",
     }
 )
 """Every write route of the real app that deliberately takes no profile (R09.20)."""

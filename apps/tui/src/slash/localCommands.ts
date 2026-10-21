@@ -18,6 +18,8 @@ import type {
 } from "@indus/protocol";
 import type { ModelPickerPayload } from "../cards/payloads.ts";
 import { errorText } from "../cards/rpcLike.ts";
+import { PET_COMMAND } from "../commands/pet.ts";
+import { WAKE_COMMAND } from "../commands/wake.ts";
 import { applyModelChoice } from "../pickers/modelPickerState.ts";
 import { steerParams } from "../state/turnStore.ts";
 import type { UiState } from "../state/uiStore.ts";
@@ -712,4 +714,6 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
       await setting(ctx, "mouse", "mouse", next !== "off", false);
     },
   },
+  WAKE_COMMAND, // P24-20
+  PET_COMMAND, // P24-19
 ];

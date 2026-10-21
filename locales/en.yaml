@@ -195,6 +195,8 @@ slash:
   reload-mcp: "Reconnect MCP servers from the config"
   plugins: "List plugins, or enable/disable one for this profile"
   cron: "Manage scheduled jobs"
+  suggestions: "List suggested jobs; accept or dismiss one"
+  blueprint: "Set up a job from a blueprint; with no name, list them"
   help: "List commands; add a word to filter them"
   commands: "List every command you can run here, names only"
   usage: "Show token use and cost of this session"

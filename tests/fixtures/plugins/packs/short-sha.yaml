@@ -1,0 +1,7 @@
+# A pack with a short ref: refused (P24-44 tests).
+name: loose-pins
+plugins:
+  - repo: someone/indus-plugin-notes
+    ref: 0123456789abcdef0123456789abcdef01234567
+  - repo: someone/indus-plugin-cite
+    ref: 89abcde

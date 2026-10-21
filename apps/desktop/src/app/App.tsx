@@ -16,16 +16,22 @@ import {
 } from "../gateway/react.tsx";
 import { Hud } from "../hud/Hud.tsx";
 import { I18nProvider } from "../i18n/index.tsx";
+import { type LooseRpc, PetHost, PetOverlay } from "../pet/PetOverlay.tsx";
 import {
   SwitcherProvider,
   useForeground,
+  useSwitcher,
+  useSwitcherState,
   type WindowSwitcher,
 } from "../profiles/switcherReact.tsx";
 import { QuickEntry } from "../quick/QuickEntry.tsx";
+import { ProfileAppearanceStyle } from "../theme/AppearancePage.tsx";
+import { WakeIndicator } from "../wake/WakeIndicator.tsx";
 import { hasShell, type WindowQuery } from "./bridge.ts";
+import { CapabilitiesRoute } from "./capabilities/CapabilitiesPage.tsx";
 import { RootErrorBoundary } from "./ErrorBoundary.tsx";
 import { ComingLaterPage, LaterWindow, OverlayCard } from "./pages.tsx";
-import { backgroundOf, classifyPath, closeTarget, type OverlayId } from "./routes.ts";
+import { backgroundOf, classifyPath, closeTarget, type OverlayId, type PageId } from "./routes.ts";
 import { Shell, type ShellChrome, ShellChromeProvider } from "./Shell.tsx";
 import { ThemeProvider } from "./theme.tsx";
 
@@ -38,6 +44,8 @@ export interface AppSlots {
   statusBar?: ReactNode;
   /** Built overlays (P20-32 Settings); the others keep their "coming later" card. */
   overlays?: Partial<Record<OverlayId, (onClose: () => void) => ReactNode>>;
+  /** Built pages (P24-27/28/31 management pages); the others keep their "coming later" state. */
+  pages?: Partial<Record<PageId, () => ReactNode>>;
   /** Window-wide layers inside the router (P20-33 onboarding, P20-34 deep links). */
   layers?: ReactNode;
 }
@@ -45,13 +53,20 @@ export interface AppSlots {
 export function AppRoutes(props: { slots?: AppSlots }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const foreground = useSwitcherState(useSwitcher())?.foreground;
   const view = classifyPath(location.pathname);
   if (view.kind === "unknown") return <Navigate to="/" replace />;
   const background =
     view.kind === "overlay" ? classifyPath(backgroundOf(location.state) ?? "/") : view;
   const slots = props.slots ?? {};
   let main: ReactNode;
-  if (background.kind === "page") {
+  const page = background.kind === "page" ? slots.pages?.[background.page] : undefined;
+  if (page !== undefined) {
+    main = page(); // a workspace's page (P24-26..31), e.g. Capabilities with its counts
+  } else if (background.kind === "page" && background.page === "capabilities") {
+    // P24-26 without a workspace slot: the page over REST only (no counts, no desktop plugins)
+    main = <CapabilitiesRoute {...(foreground === undefined ? {} : { profile: foreground })} />;
+  } else if (background.kind === "page") {
     main = <ComingLaterPage page={background.page} />;
   } else {
     const sessionId = background.kind === "chat" ? background.sessionId : null;
@@ -121,6 +136,8 @@ function ForegroundRoutes(props: { switcher: WindowSwitcher; boot?: RootProps["b
         <ServerRequestStoreProvider value={workspace.connection.serverRequests}>
           <AppRoutes slots={workspace.slots} />
           <AmbientHost connection={workspace.connection} transcripts={workspace.transcripts} />
+          <PetHost connection={workspace.connection as unknown as LooseRpc} />
+          <ProfileAppearanceStyle profile={workspace.profile} />
           <BootOverlay
             {...props.boot}
             onReady={() => props.switcher.foreground().connection.start()}
@@ -132,6 +149,16 @@ function ForegroundRoutes(props: { switcher: WindowSwitcher; boot?: RootProps["b
 }
 
 export function Root(props: RootProps) {
+  // the overlays (P24-19 pet, P24-20 wake indicator): no connection, no router
+  if (props.window.kind === "pet" || props.window.kind === "wake") {
+    return (
+      <I18nProvider>
+        <ThemeProvider>
+          {props.window.kind === "pet" ? <PetOverlay /> : <WakeIndicator />}
+        </ThemeProvider>
+      </I18nProvider>
+    );
+  }
   if (props.window.kind === "quick") {
     return (
       <I18nProvider>

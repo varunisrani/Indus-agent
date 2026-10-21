@@ -58,6 +58,10 @@ NON_CHAT: Mapping[str, tuple[str, tuple[str, ...]]] = {
         "a wake bridge: the agent answers through Raft's own CLI, replies here go nowhere",
         ("tests/unit/gateway/adapters/raft/test_adapter.py",),
     ),
+    "a2a": (
+        "a JSON-RPC task server for peer agents: answers are task results, not chat sends",
+        ("tests/unit/gateway/adapters/a2a/test_adapter.py",),
+    ),
 }
 
 # Platforms being built in the current wave, allowed without a case until they land.
@@ -284,7 +288,13 @@ def test_pending_and_non_chat_entries_stay_honest(tmp_path: Path) -> None:
     missing = matrix_problems(_builtins(), real_facts(), import_errors={}, root=tmp_path)
     assert all(
         p.startswith(
-            ("platform api_server", "platform webhook", "platform msgraph", "platform raft")
+            (
+                "platform api_server",
+                "platform webhook",
+                "platform msgraph",
+                "platform raft",
+                "platform a2a",
+            )
         )
         for p in missing
     )

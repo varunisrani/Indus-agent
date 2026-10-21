@@ -3,11 +3,15 @@
 // so tests can supply memory equivalents.
 
 import { useQuery } from "@tanstack/react-query";
-import { type ComponentType, type ReactNode, Suspense, useEffect, useState } from "react";
+import { type ComponentType, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
+import { ConsoleEntry } from "./console/ConsoleModal.tsx";
 import { api } from "./lib/api.ts";
-import { embeddedChatEnabled } from "./lib/bootstrap.ts";
+import { consoleEnabled, embeddedChatEnabled } from "./lib/bootstrap.ts";
 import type { ConfigObject } from "./lib/restTypes.ts";
+import { mergePluginRoutes, pluginRegistry } from "./plugins/registry.ts";
+import { PluginSlot, pluginPageFor, SLOT_PAGES } from "./plugins/slots.tsx";
+import { usePluginState } from "./plugins/usePluginState.ts";
 import { type ChatHostProps, ChatHostSlot, ChatPending } from "./shell/ChatHostSlot.tsx";
 import { PageHeader } from "./shell/PageHeader.tsx";
 import { PressureBanner } from "./shell/PressureBanner.tsx";
@@ -71,11 +75,27 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
   });
   const showAnalytics = analyticsFlag(config.data);
 
-  const routes = ROUTES.filter((r) => r.path !== CHAT_PATH || chatEnabled);
+  const plugins = usePluginState();
+  const routes = useMemo(() => {
+    const builtin = ROUTES.filter((r) => r.path !== CHAT_PATH || chatEnabled);
+    const byName = new Map(plugins.manifests.map((m) => [m.name, m]));
+    void plugins.version; // re-merge when a plugin registers late
+    return mergePluginRoutes(builtin, plugins.manifests, (name) => {
+      const manifest = byName.get(name);
+      return manifest && pluginRegistry.component(name) ? pluginPageFor(manifest) : undefined;
+    });
+  }, [chatEnabled, plugins.manifests, plugins.version]);
   const navItems: PageRoute[] = routes.filter(
     (r) => r.nav === "main" || (r.nav === "analytics-flag" && showAnalytics),
   );
-  const current = routeFor(location.pathname);
+  const current = routes.find((r) => r.path === location.pathname.replace(/(.)\/+$/, "$1"));
+  // Until the plugins are in, a plugin tab's deep link waits instead of falling back to the
+  // default page, and a page a plugin overrides waits instead of flashing the built-in one.
+  const waitForPlugins =
+    !plugins.settled &&
+    ((location.pathname !== "/" && routeFor(location.pathname) === undefined) ||
+      plugins.manifests.some((m) => m.tab.override === location.pathname));
+  const pageSlot = SLOT_PAGES.find((page) => location.pathname === `/${page}`);
   const onChat = chatEnabled && current?.path === CHAT_PATH;
   const title = current?.title ?? "Indus Agent";
 
@@ -109,41 +129,60 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
         onCloseMobile={() => setMobileOpen(false)}
         footer={
           <>
+            <PluginSlot name="sidebar" />
             <StatusStrip />
+            <ConsoleEntry enabled={consoleEnabled()} />
             {sidebarFooter}
           </>
         }
       />
       <div className="flex min-w-0 flex-1 flex-col">
+        <PluginSlot name="backdrop" />
         <PageHeader title={title} start={menuButton}>
+          <PluginSlot name="header-banner" />
           <ProfileBanner />
           <PressureBanner />
           <main className="flex min-h-0 flex-1 flex-col overflow-auto">
+            <PluginSlot name="pre-main" />
+            {pageSlot ? <PluginSlot name={`${pageSlot}:top`} /> : null}
             <ProfileKeyed>
               <Suspense fallback={<RouteFallback />}>
-                <Routes>
-                  <Route
-                    path="/"
-                    element={
-                      <Navigate to={{ pathname: DEFAULT_PATH, search: location.search }} replace />
-                    }
-                  />
-                  {routes.map(({ path, page: Page }) => (
-                    <Route key={path} path={path} element={Page ? <Page /> : null} />
-                  ))}
-                  <Route
-                    path="*"
-                    element={
-                      <Navigate to={{ pathname: DEFAULT_PATH, search: location.search }} replace />
-                    }
-                  />
-                </Routes>
+                {waitForPlugins ? (
+                  <RouteFallback />
+                ) : (
+                  <Routes>
+                    <Route
+                      path="/"
+                      element={
+                        <Navigate
+                          to={{ pathname: DEFAULT_PATH, search: location.search }}
+                          replace
+                        />
+                      }
+                    />
+                    {routes.map(({ path, page: Page }) => (
+                      <Route key={path} path={path} element={Page ? <Page /> : null} />
+                    ))}
+                    <Route
+                      path="*"
+                      element={
+                        <Navigate
+                          to={{ pathname: DEFAULT_PATH, search: location.search }}
+                          replace
+                        />
+                      }
+                    />
+                  </Routes>
+                )}
               </Suspense>
             </ProfileKeyed>
+            {pageSlot ? <PluginSlot name={`${pageSlot}:bottom`} /> : null}
+            <PluginSlot name="post-main" />
             {chatEnabled ? <ChatHostSlot active={onChat} host={chatHost} /> : null}
           </main>
         </PageHeader>
       </div>
+      <PluginSlot name="overlay" />
     </div>
   );
 }

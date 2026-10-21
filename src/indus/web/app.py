@@ -16,9 +16,10 @@ The middleware stack, outermost first: forwarded headers from trusted proxies �
 origins on 9119, 5173 and the chosen port) → service-bearer seam → login gate → plugin-route gate →
 Host guard → auth body limit (``auth.gate`` explains each). Routers come from
 ``indus.web.routes.ROUTERS`` plus ``options.routers``, then the Chat tab's WebSocket routes
-(``/api/pty``, ``/api/pub``, ``/api/events``, ``/api/ws``; ``ws.chat_routes``, in both modes); the
-SPA catch-alls go last. The pages served are the ones ``web.bundle.locate`` finds (the checkout's
-``apps/web/dist``, else the package's ``web/static``). The profile resolver (``web.scope``) is
+(``/api/pty``, ``/api/pub``, ``/api/events``, ``/api/ws``; ``ws.chat_routes``, in both modes), the
+admin console socket (``/api/console``, ``web.console``, P24-36); the SPA catch-alls go last. The
+pages served are the ones ``web.bundle.locate`` finds (the checkout's ``apps/web/dist``, else the
+package's ``web/static``). The profile resolver (``web.scope``) is
 installed over the backend's own scope. The lifespan starts the PTY reaper and, at stop, ends
 every PTY and removes the channel files.
 
@@ -74,6 +75,9 @@ from indus.web.auth.proxy import (
 from indus.web.auth.service_bearer import BearerSeam, register_drain
 from indus.web.auth.token import SessionToken
 from indus.web.bundle import locate as locate_bundle
+from indus.web.console import CONSOLE_PATH, ConsoleRoute
+from indus.web.plugins import DashboardPlugins
+from indus.web.plugins import install as install_plugins
 from indus.web.routes import ROUTERS
 from indus.web.scope import install as install_scopes
 from indus.web.spa import SpaBundle, mount_spa
@@ -245,6 +249,11 @@ def create_app(scope: Scope, mode: Mode, *, options: AppOptions | None = None) -
         if lines:
             raise GateRefused(lines)
     rules = HostRules(opts.host, frozenset({public.host}) if public is not None else frozenset())
+    plugins = DashboardPlugins(scope)  # P24-37
+
+    def plugin_allowed(name: str) -> bool:
+        return opts.plugin_allowed(name) or plugins.api_allowed(name)
+
     ctx = AuthContext(
         gated=gated,
         token=token,
@@ -253,7 +262,7 @@ def create_app(scope: Scope, mode: Mode, *, options: AppOptions | None = None) -
         audit=audit,
         rules=rules,
         public=public,
-        plugin_allowed=opts.plugin_allowed,
+        plugin_allowed=plugin_allowed,
         api_only=mode == "serve",
     )
     tickets = TicketBook.for_home(scope.home, purposes=DASHBOARD_PURPOSES, monotonic=opts.monotonic)
@@ -307,7 +316,7 @@ def create_app(scope: Scope, mode: Mode, *, options: AppOptions | None = None) -
     install_scopes(app, chat.scopes)
     app.add_middleware(AuthBodyLimit)
     app.add_middleware(HostGuard, rules=rules)
-    app.add_middleware(PluginRouteGate, allowed=opts.plugin_allowed)
+    app.add_middleware(PluginRouteGate, allowed=plugin_allowed)
     app.add_middleware(LoginGate, ctx=ctx)
     app.add_middleware(BearerSeam, registry=registry, audit=audit)
     app.add_middleware(
@@ -324,6 +333,10 @@ def create_app(scope: Scope, mode: Mode, *, options: AppOptions | None = None) -
     for router in opts.routers:
         app.include_router(router)
     app.include_router(chat.router())
+    install_plugins(app, plugins)  # P24-37: plugin backends under /api/ext/<name>/
+    console = ConsoleRoute(scopes=chat.scopes)  # P24-36
+    state.extras["console"] = console
+    app.add_api_websocket_route(CONSOLE_PATH, console.endpoint)
     mount_spa(app, state)
     log.info(
         "dashboard app built (%s, %s mode, %d login providers)",

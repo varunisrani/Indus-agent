@@ -1,0 +1,7 @@
+{
+  "model": "a-model",
+  "permissions": {
+    "allow": ["Bash(git status)", "Bash(npm run test:*)", "Read(~/notes/**)", "Bash"],
+    "deny": ["Bash(curl:*)", "WebFetch(domain:example.com)"]
+  }
+}

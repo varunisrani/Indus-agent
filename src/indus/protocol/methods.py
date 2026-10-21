@@ -21,7 +21,9 @@ from indus.protocol.base import (
     ProtocolModel,
     SessionId,
 )
+from indus.protocol.bots import BOT_METHODS
 from indus.protocol.bridge import BRIDGE_METHODS, BRIDGE_NOTIFICATIONS, HistoryMessage
+from indus.protocol.capabilities import CAPABILITY_METHODS
 from indus.protocol.errors import (
     ADMISSION_CONFLICT,
     ANSWER_KIND_MISMATCH,
@@ -44,7 +46,12 @@ from indus.protocol.errors import (
     UNKNOWN_PARAM_KEY,
     ErrorCode,
 )
+from indus.protocol.groups import GROUP_METHODS
+from indus.protocol.pets import PET_METHODS
+from indus.protocol.projects import PROJECT_METHODS
 from indus.protocol.server_requests import ServerRequest, ServerRequestAnswer
+from indus.protocol.voice import VOICE_METHODS
+from indus.protocol.wake import WAKE_DETECTED_EVENT, WAKE_METHODS, WakeDetected
 
 PROTOCOL_VERSION = 1
 """Bumped when a change breaks existing clients."""
@@ -362,6 +369,20 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
                 _spec(name, params, result, *errors)
                 for name, params, result, errors in ATTACH_METHODS
             ),
+            # P24: projects, pet, wake word, capabilities, bots, group rooms and voice
+            *(
+                _spec(name, params, result, *errors)
+                for group in (
+                    PROJECT_METHODS,
+                    PET_METHODS,
+                    WAKE_METHODS,
+                    CAPABILITY_METHODS,
+                    BOT_METHODS,
+                    GROUP_METHODS,
+                    VOICE_METHODS,
+                )
+                for name, params, result, errors in group
+            ),
         )
     }
 )
@@ -369,7 +390,7 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
 
 
 NOTIFICATIONS: Mapping[str, type[ProtocolModel]] = MappingProxyType(
-    {**BRIDGE_NOTIFICATIONS, **ATTACH_NOTIFICATIONS}
+    {**BRIDGE_NOTIFICATIONS, **ATTACH_NOTIFICATIONS, WAKE_DETECTED_EVENT: WakeDetected}
 )
 """Notifications that are neither events nor server requests (``gateway.ready`` and the daemon's
 unnumbered frames): method → params model."""

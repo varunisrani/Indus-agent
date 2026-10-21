@@ -50,7 +50,7 @@ def handle(d: Dispatcher, method: str, params: dict[str, Any] | None = None) -> 
 def test_table_serves_every_declared_method_and_nothing_else() -> None:
     table = build_table()
     assert sorted(table.names()) == sorted(set(METHODS) - DAEMON_ONLY_METHODS)
-    assert len(HANDLER_MODULES) == 8
+    assert len(HANDLER_MODULES) == 9
     with pytest.raises(ValueError, match="not declared"):
         table.add("session.explode", lambda bridge, params: None)  # type: ignore[arg-type, return-value]
     with pytest.raises(ValueError, match="already"):

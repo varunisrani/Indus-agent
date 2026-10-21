@@ -213,6 +213,16 @@ export class WindowManager {
     return this.create("quick", {}, bounds).win;
   }
 
+  /** The pet overlay over a work area (P24-19); bounds are the pet controller's. */
+  openPet(bounds: Rect): BrowserWindowLike {
+    return this.create("pet", {}, bounds).win;
+  }
+
+  /** The wake-word indicator (P24-20); bounds are the indicator controller's. */
+  openWakeIndicator(bounds: Rect): BrowserWindowLike {
+    return this.create("wake", {}, bounds).win;
+  }
+
   /** Called for every window this manager creates (tray, ambient wiring). */
   onWindowCreated(listener: (win: BrowserWindowLike, kind: WindowKind) => void): () => void {
     this.createdListeners.add(listener);

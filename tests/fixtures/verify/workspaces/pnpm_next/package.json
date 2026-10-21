@@ -1,0 +1,5 @@
+{
+  "name": "web",
+  "scripts": {"dev": "next dev --port 3100", "build": "next build", "lint": "next lint", "test": "vitest run"},
+  "dependencies": {"next": "15.0.0", "react": "19.0.0"}
+}

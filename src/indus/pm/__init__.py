@@ -1,1 +1,1 @@
-"""Helper-binary manager for `indus pm`."""
+"""The helper-binary manager (`indus pm`, P24-23); consumers use ``indus.pm.api``."""

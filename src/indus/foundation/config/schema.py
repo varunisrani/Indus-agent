@@ -216,6 +216,12 @@ class TerminalSection(_Section):
         default_factory=list,
         description="host files copied into sandboxes (mounted read-only, pushed upload-only)",
     )
+    # P24-43: a transient systemd scope with MemoryMax around each local background process.
+    background_memory_max: str | int = Field(
+        default="1G",
+        description="memory cap of a local background process on Linux with systemd "
+        "(64M..4G, a bare number is MiB; off disables)",
+    )
 
     @field_validator("modal_mode")
     @classmethod
@@ -237,6 +243,35 @@ def check_modal_mode(value: str) -> str:
     if mode not in ("auto", "direct"):
         raise ValueError(f"modal_mode must be auto or direct, not {value!r}")
     return mode
+
+
+class EgressSection(_Section):
+    """P24-42: the credential-injection proxy for Docker sandboxes (``indus egress``)."""
+
+    enabled: bool = Field(
+        default=False, description="route Docker sandboxes through the host's egress proxy"
+    )
+    enforce: bool = Field(
+        default=True,
+        description="refuse a sandbox whose settings would bypass the proxy (off: they win)",
+    )
+    port: int = Field(default=47900, ge=0, le=65535, description="the proxy's port (0 = any)")
+    bind: str = Field(
+        default="auto",
+        description="the proxy's listen address; auto = the Docker bridge on Linux, else loopback",
+    )
+    hosts: list[str] = Field(
+        default_factory=list,
+        description="extra hosts whose TLS the proxy opens (nothing injected unless a rule says)",
+    )
+    rules: list[dict[str, Any]] = Field(
+        default_factory=list[dict[str, Any]],
+        description="injection rules: {host, secret, header} (the secret's value never leaves "
+        "the host)",
+    )
+    block_other_hosts: bool = Field(
+        default=False, description="refuse hosts that are not on the egress list"
+    )
 
 
 class ToolOutputSection(_Section):
@@ -456,6 +491,36 @@ class BrowserSection(_Section):
     )
     dialog_timeout_s: int = Field(
         default=300, description="seconds an unanswered dialog waits before it is dismissed"
+    )
+    # P24-38..41, 47 (browser backends, vault, private-URL routing, controller broker)
+    provider: Literal["local", "browser-use", "browserbase", "firecrawl"] = Field(
+        default="local", description="where browser sessions run: local, or a cloud provider"
+    )
+    engine: Literal["chromium", "lightpanda", "camofox"] = Field(
+        default="chromium", description="local browser engine: chromium, lightpanda or camofox"
+    )
+    camofox_url: str = Field(
+        default="", description="address of the Camofox server; empty = http://127.0.0.1:9377"
+    )
+    real_profile: bool = Field(
+        default=False, description="let the agent drive your own browser profile (opt-in)"
+    )
+    real_profile_dir: str = Field(
+        default="", description="your browser profile folder; empty = the default Chromium one"
+    )
+    route_private_local: bool = Field(
+        default=False,
+        description="with a cloud provider, open private addresses in a local browser instead",
+    )
+    vault_sources: list[str] = Field(
+        default_factory=lambda: ["local", "onepassword", "bitwarden"],
+        description="password sources browser_vault may use: local, onepassword, bitwarden",
+    )
+    control_enabled: bool = Field(
+        default=False, description="let an external browser controller register (API server)"
+    )
+    control_developer_mode: bool = Field(
+        default=False, description="allow raw CDP and evaluate for a negotiated controller"
     )
 
 
@@ -885,6 +950,63 @@ class LoopsSection(_Section):
     )
 
 
+class KanbanSection(_Section):
+    """The task board and its dispatcher (P24-11..13)."""
+
+    dispatch_in_gateway: bool = Field(
+        default=True,
+        description="the gateway daemon starts workers for ready board tasks; false = only "
+        "`indus kanban dispatch` does",
+    )
+    dispatch_interval_seconds: int = Field(
+        default=60, ge=1, description="seconds between dispatcher passes in the daemon"
+    )
+    max_in_progress: int = Field(
+        default=0,
+        ge=0,
+        description="workers running at once; 0 = from memory (one per 512 MB, 2 to 8)",
+    )
+    failure_limit: int = Field(
+        default=2, ge=1, description="failed attempts in a row before a task is blocked"
+    )
+
+
+class ProjectsDiscoverySection(_Section):
+    """Repository discovery for projects (P24-14)."""
+
+    enabled: bool = Field(default=True, description="look for git repositories to offer")
+    roots: list[str] = Field(
+        default_factory=list, description="folders to scan; empty = your home folder"
+    )
+    excludes: list[str] = Field(
+        default_factory=lambda: [
+            "node_modules",
+            "Library",
+            "AppData",
+            "Applications",
+            "vendor",
+            "target",
+            "dist",
+            "build",
+            "venv",
+            "__pycache__",
+        ],
+        description="folder names (or patterns, or absolute paths) never scanned",
+    )
+    max_depth: int = Field(default=3, ge=0, le=6, description="how many folders deep to look")
+
+
+class ProjectsSection(_Section):
+    """Projects: named workspaces of this profile (P24-14)."""
+
+    default_directory: str = Field(
+        default="", description="where a new chat starts when no project applies; empty = detached"
+    )
+    discovery: ProjectsDiscoverySection = Field(
+        default_factory=ProjectsDiscoverySection, description="finding repositories"
+    )
+
+
 class ResearchSection(_Section):
     """Research tooling: batch runs, saved chat samples, dataset sampling (P22)."""
 
@@ -1160,6 +1282,36 @@ class VoiceSection(_Section):
     read_aloud: bool = Field(default=False, description="speak each final answer while voice is on")
 
 
+class PetSection(_Section):
+    """The desktop pet and the TUI ``/pet`` pane (P24-19)."""
+
+    enabled: bool = Field(default=False, description="show the active pet")
+    active: str = Field(default="", description="slug of the pet to show (indus pet list)")
+    scale: float = Field(default=1.0, description="pet size on every surface, 0.25-3")
+
+
+class WakeWordSection(_Section):
+    """Hands-free start of voice mode (P24-20); the microphone opens only while enabled."""
+
+    enabled: bool = Field(default=False, description="listen for the wake phrase")
+    consent: bool = Field(
+        default=False,
+        description="the person agreed to microphone listening (set only by an explicit on)",
+    )
+    engine: Literal["openwakeword", "sherpa"] = Field(
+        default="openwakeword", description="keyword engine: openwakeword or sherpa"
+    )
+    phrase: str = Field(default="hey indus", description="the phrase to listen for")
+    model: str = Field(
+        default="", description="path to the wake model (none ships: train or supply one)"
+    )
+    threshold: float = Field(default=0.5, description="score a frame needs to count, 0-1")
+    confirm_frames: int = Field(
+        default=3, description="frames over the threshold in a row before it fires (1-10)"
+    )
+    cooldown_s: float = Field(default=2.0, description="quiet seconds after a detection")
+
+
 class PluginsSection(_Section):
     """Python plugins (P13-13..17): which may load and how long they get."""
 
@@ -1314,6 +1466,10 @@ class PlatformsSection(_Section):
     raft: PlatformSection = Field(
         default_factory=PlatformSection, description="Raft (wake bridge for the Raft CLI)"
     )
+    a2a: PlatformSection = Field(
+        default_factory=PlatformSection,
+        description="A2A: other AI agents send this agent tasks (settings under a2a)",
+    )
 
 
 class MessageTimestampsSection(_Section):
@@ -1369,6 +1525,22 @@ class WebhookSection(_Section):
     routes: dict[str, dict[str, Any]] = Field(
         default_factory=dict[str, dict[str, Any]],
         description="webhook routes by name (secret names a stored secret, never its value)",
+    )
+
+
+class RelaySection(_Section):
+    """The relay connector the gateway dials out to (P24-08); the shared secret is the stored
+    secret INDUS_RELAY_SECRET, never a config value."""
+
+    url: str = Field(
+        default="", description="the connector's base URL (https://…); empty: no relay"
+    )
+    gateway_id: str = Field(default="", description="this gateway's id at the connector")
+    connect_timeout_seconds: float = Field(
+        default=30.0, gt=0, description="seconds to dial and finish the signed handshake"
+    )
+    request_timeout_seconds: float = Field(
+        default=30.0, gt=0, description="seconds to wait for the answer to one operation"
     )
 
 
@@ -1441,6 +1613,61 @@ class GatewaySection(_Section):
     )
     webhook: WebhookSection = Field(
         default_factory=WebhookSection, description="the webhook receiver"
+    )
+    multiplex_profiles: bool = Field(
+        default=False,
+        description="one gateway process serves every profile under this root (off: one "
+        "gateway per profile)",
+    )
+    profile_routes: list[dict[str, Any]] = Field(
+        default_factory=list[dict[str, Any]],
+        description="with multiplex_profiles: hand messages a bot receives to another profile "
+        "({name, platform, profile, bot, guild, chat, thread, user, enabled}; most specific wins)",
+    )
+    relay: RelaySection = Field(
+        default_factory=RelaySection, description="the relay connector (dial-out front end)"
+    )
+
+
+class A2APeerSection(_Section):
+    """One A2A peer the a2a_call tool may call; its key is the stored secret
+    INDUS_A2A_PEER_<NAME>_KEY."""
+
+    url: str = Field(default="", description="the peer's A2A JSON-RPC endpoint URL")
+    trusted: bool = Field(
+        default=False,
+        description="allow a private, loopback or link-local address for this peer",
+    )
+    timeout_seconds: float = Field(default=120.0, gt=0, description="seconds to wait for an answer")
+
+
+class A2ASection(_Section):
+    """A2A (Agent2Agent) in both directions (P24-10). Inbound runs when platforms.a2a.enabled is
+    true; each inbound peer's token is the stored secret INDUS_A2A_TOKEN_<PEER>."""
+
+    host: str = Field(default="127.0.0.1", description="address to serve on (loopback by default)")
+    port: int = Field(default=9900, ge=0, le=65535, description="port to serve on")
+    public: bool = Field(default=False, description="required to serve on a non-loopback address")
+    public_url: str = Field(
+        default="", description="the URL peers reach this agent at (for the agent card)"
+    )
+    agent_name: str = Field(default="Indus Agent", description="name on the agent card")
+    description: str = Field(
+        default="An Indus agent reachable over A2A.", description="description on the agent card"
+    )
+    inbound_peers: list[str] = Field(
+        default_factory=list[str],
+        description="peers allowed to send tasks; none: every call is refused",
+    )
+    reply_timeout_seconds: float = Field(
+        default=300.0, gt=0, description="seconds a peer's call waits for the agent's reply"
+    )
+    max_turns_per_context: int = Field(
+        default=5, ge=1, description="messages one peer conversation may send before it is refused"
+    )
+    peers: dict[str, A2APeerSection] = Field(
+        default_factory=dict[str, A2APeerSection],
+        description="peer agents the a2a_call tool may call, by name",
     )
 
 
@@ -1539,6 +1766,76 @@ class AcpSection(_Section):
     )
 
 
+class LspSection(_Section):
+    """Language servers for edits (P24-15, P24-16)."""
+
+    enabled: bool = Field(
+        default=True,
+        description="check edits with a language server when one is installed (nothing is "
+        "ever installed for you; see `indus lsp status`)",
+    )
+    wait_timeout: float = Field(
+        default=5.0, gt=0, description="seconds to wait for a server's verdict on an edit"
+    )
+    idle_timeout: float = Field(
+        default=600.0,
+        ge=0,
+        description="seconds an unused server keeps running (values under 30 count as 30; 0 = "
+        "never stop idle servers)",
+    )
+    broken_retry_s: float = Field(
+        default=0.0,
+        ge=0,
+        description="seconds before a server that failed to start is tried again (0 = only "
+        "after `indus lsp restart`)",
+    )
+    trusted_workspaces: list[str] = Field(
+        default_factory=list[str],
+        description="folders where servers that run project code (rust-analyzer, gopls, ...) "
+        "may start, besides the session's own work tree",
+    )
+    servers: dict[str, dict[str, Any]] = Field(
+        default_factory=dict[str, dict[str, Any]],
+        description="per-server overrides or new servers: command, extensions, root_markers, "
+        "language_id, env, initialization_options, disabled",
+    )
+
+
+class VerifySection(_Section):
+    """`indus verify` and verify-on-stop (P24-17)."""
+
+    on_stop: bool = Field(
+        default=False,
+        description="after code edits, run the workspace's build and test before the agent's "
+        "answer is final, and send it back to work when they fail",
+    )
+    phase_timeout: float = Field(
+        default=600.0, gt=0, description="seconds each bootstrap/build/test command may run"
+    )
+    ready_timeout: float = Field(
+        default=60.0, gt=0, description="seconds a started service gets to answer on 127.0.0.1"
+    )
+    max_stop_attempts: int = Field(
+        default=2, ge=0, description="times per turn verify-on-stop may send the agent back"
+    )
+    max_hook_nudges: int = Field(
+        default=3, ge=0, description="times per turn a pre_verify plugin hook may send it back"
+    )
+
+
+class PmSection(_Section):
+    """The helper-binary manager (``indus pm``, P24-23)."""
+
+    mirror_url: str = Field(
+        default="",
+        description="content-addressed mirror tried after a download's own URL "
+        "(<mirror_url>/sha256/<hash>); empty: none",
+    )
+    timeout_s: float = Field(
+        default=60.0, gt=0, description="seconds one pm network request may take"
+    )
+
+
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
@@ -1560,6 +1857,9 @@ class ConfigModel(BaseModel):
     agent: AgentSection = Field(default_factory=AgentSection, description="the turn loop")
     terminal: TerminalSection = Field(
         default_factory=TerminalSection, description="where and how commands run"
+    )
+    egress: EgressSection = Field(
+        default_factory=EgressSection, description="the egress proxy for Docker sandboxes"
     )
     tool_output: ToolOutputSection = Field(
         default_factory=ToolOutputSection, description="how much tool output the model sees"
@@ -1678,6 +1978,10 @@ class ConfigModel(BaseModel):
     computer_use: ComputerUseSection = Field(
         default_factory=ComputerUseSection, description="desktop control (computer_use)"
     )
+    pet: PetSection = Field(default_factory=PetSection, description="the desktop pet (indus pet)")
+    wake_word: WakeWordSection = Field(
+        default_factory=WakeWordSection, description="wake phrase that starts voice mode"
+    )
     moa: MoaSection = Field(default_factory=MoaSection, description="mixture of agents (/moa)")
     goals: GoalsSection = Field(default_factory=GoalsSection, description="standing goals (/goal)")
     loops: LoopsSection = Field(
@@ -1688,6 +1992,12 @@ class ConfigModel(BaseModel):
     )
     research: ResearchSection = Field(
         default_factory=ResearchSection, description="research tooling (indus research)"
+    )
+    kanban: KanbanSection = Field(
+        default_factory=KanbanSection, description="the task board (indus kanban)"
+    )
+    projects: ProjectsSection = Field(
+        default_factory=ProjectsSection, description="projects (indus project)"
     )
     plugins: PluginsSection = Field(
         default_factory=PluginsSection, description="Python plugins and their hooks"
@@ -1719,6 +2029,16 @@ class ConfigModel(BaseModel):
     updates: UpdatesSection = Field(
         default_factory=UpdatesSection, description="updating this install (indus update)"
     )
+    a2a: A2ASection = Field(
+        default_factory=A2ASection, description="A2A peer agents, inbound and outbound"
+    )
+    lsp: LspSection = Field(
+        default_factory=LspSection, description="language-server checks of edits (indus lsp)"
+    )
+    verify: VerifySection = Field(
+        default_factory=VerifySection, description="workspace checks (indus verify)"
+    )
+    pm: PmSection = Field(default_factory=PmSection, description="helper programs (indus pm)")
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 

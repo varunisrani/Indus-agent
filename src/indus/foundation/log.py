@@ -72,7 +72,10 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 CONSOLE_DATE_FORMAT = "%H:%M:%S"
 
 # Third-party loggers that flood at INFO/DEBUG; pinned at WARNING by setup.
-NOISY_LOGGERS = ("httpx", "httpcore", "urllib3", "asyncio")
+NOISY_LOGGERS = ("httpx", "httpcore", "httpx2", "httpcore2", "urllib3", "asyncio")
+"""Libraries whose INFO lines carry full request URLs (query strings may hold a single-use ticket
+or an OAuth code): held at WARNING. ``httpx2`` / ``httpcore2`` are the fork the MCP SDK and the
+ASGI test client use (P24 integration finding)."""
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,9 @@ other code may assemble a key.
 Layout: ``<ns>:<platform>:<chat_type>[:<scope_id>][:<chat_id>][<user and thread parts>]``.
 
 - ``<ns>`` is ``@default`` for the default profile and the profile id otherwise. ``@`` is outside
-  the profile-id alphabet, so no profile can ever produce the default namespace.
+  the profile-id alphabet, so no profile can ever produce the default namespace. Under
+  multiplexing (P24-03) the namespace is the *routed* profile's — the profile that runs the
+  message, which may not be the one whose bot received it — and ``profile_of_key`` reads it back.
 - Only Slack puts a scope (its workspace id) before the chat id; a Discord guild id is never part
   of a key.
 - DMs key on the chat id; without one on the sender, without both one slot per platform. In a DM
@@ -35,6 +37,7 @@ __all__ = [
     "canonical_participant",
     "key_namespace",
     "origin_of",
+    "profile_of_key",
 ]
 
 DEFAULT_NAMESPACE = "@default"
@@ -66,6 +69,14 @@ def key_namespace(profile: str | None) -> str:
     if not name or name == DEFAULT_PROFILE:
         return DEFAULT_NAMESPACE
     return name
+
+
+def profile_of_key(session_key: str) -> str:
+    """The profile whose namespace starts ``session_key`` (``default`` for ``@default``)."""
+    namespace = session_key.split(":", 1)[0].strip()
+    if not namespace or namespace == DEFAULT_NAMESPACE:
+        return DEFAULT_PROFILE
+    return namespace
 
 
 def canonical_participant(source: SourceLike) -> str:

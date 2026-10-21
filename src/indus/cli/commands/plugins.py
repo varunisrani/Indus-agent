@@ -8,7 +8,8 @@
 - ``update [name|--all] [--force] [--trust-update-url]``, ``remove <name> [-y]``;
 - ``enable`` / ``disable <name>``; ``info <name>``;
   ``capabilities <name> [--grant X] [--revoke X]``;
-- ``check-updates``; ``validate <dir>`` (manifest + scan for authors; exit 1 when dangerous).
+- ``check-updates``; ``validate <dir>`` (manifest + scan for authors; exit 1 when dangerous);
+- ``pack install|show|export`` (``plugin_pack``, P24-44).
 
 Without a terminal nothing is asked: an install stays disabled unless ``--enable`` and nothing
 needs a question, a caution scan needs ``--force``, ``remove`` needs ``-y``, and no capability is
@@ -37,7 +38,7 @@ from indus.plugins.install import InstallBlocked, Installer, InstallError, forge
 from indus.plugins.manifest import PluginManifest, read_manifest
 from indus.safety.content_scan import ScanReport, render_report, scan_tree
 
-__all__ = ["plugin_lines", "plugins_group", "toggle_plugin"]
+__all__ = ["ask_env", "dependencies_ok", "plugin_lines", "plugins_group", "toggle_plugin"]
 
 NOT_A_SANDBOX = (
     "Capabilities record what you allowed; they are not a sandbox. A plugin runs inside Indus "
@@ -237,6 +238,12 @@ def _deps_ok(scope: Scope, io: prompts.Interactive, manifest: PluginManifest) ->
     if not ok:
         err(f"Installing the packages failed: {output.strip()[-500:]}")
     return ok
+
+
+ask_env = _ask_env
+"""The ``requires_env`` questions of one installed plugin (also used by plugin packs)."""
+dependencies_ok = _deps_ok
+"""Python dependencies consented and installed (also used by plugin packs)."""
 
 
 def _capabilities(raw: dict[str, Any], io: prompts.Interactive, manifest: PluginManifest) -> None:
@@ -558,3 +565,12 @@ def validate_command(folder: Path) -> None:
     click.echo(render_report(report))
     if report.verdict == "dangerous":
         raise click.exceptions.Exit(1)
+
+
+def _add_pack_group() -> None:
+    from indus.cli.commands.plugin_pack import pack_group
+
+    plugins_group.add_command(pack_group)
+
+
+_add_pack_group()

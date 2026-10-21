@@ -1,0 +1,164 @@
+# Helper programs `indus pm` can install (P24-23, S9). Our own list and pins (D-16.52).
+#
+# A package says what it is; `indus pm lock` turns each target's URL into a pinned
+# {url, sha256} in <root>/pm/lock.json, and `indus pm update` moves a pin to the newest upstream
+# release that is at least 14 days old.
+#
+# Keys:
+#   summary    one line for `indus pm doctor` and `indus pm install`
+#   kind       required (always installed), default (installed unless declined), optional (on
+#              request only)
+#   version    the pinned upstream version (the lock may carry a newer one after `update`)
+#   url        URL template; {version} and every key of the target's table are filled in
+#   format     tar.gz, tar.xz, zip or file (a single executable); a target may override it
+#   strip      leading folders dropped from every archive member (default 0)
+#   exe        executable inside the unpacked folder ({version} and target keys filled in;
+#              ".exe" is added on Windows targets); empty for a package without one
+#   path       folders inside the unpacked folder that go first on PATH (default: the
+#              executable's folder)
+#   depends    packages installed first
+#   releases   where newer versions come from: "github:<owner>/<repo>", "node", or "pinned"
+#              (moves only with the product, e.g. Chromium follows the browser library)
+#   tag_prefix text before the version in a release tag (default "")
+#   targets    the targets the package ships for, each a table of template values
+
+[packages.ripgrep]
+summary = "fast text search (search_files)"
+kind = "required"
+version = "14.1.1"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/{version}/ripgrep-{version}-{triple}.{ext}"
+format = "tar.gz"
+strip = 1
+exe = "rg"
+releases = "github:BurntSushi/ripgrep"
+
+[packages.ripgrep.targets]
+linux-x64 = { triple = "x86_64-unknown-linux-musl", ext = "tar.gz" }
+linux-x64-musl = { triple = "x86_64-unknown-linux-musl", ext = "tar.gz" }
+linux-arm64 = { triple = "aarch64-unknown-linux-gnu", ext = "tar.gz" }
+darwin-x64 = { triple = "x86_64-apple-darwin", ext = "tar.gz" }
+darwin-arm64 = { triple = "aarch64-apple-darwin", ext = "tar.gz" }
+win32-x64 = { triple = "x86_64-pc-windows-msvc", ext = "zip", format = "zip" }
+win32-arm64 = { triple = "aarch64-pc-windows-msvc", ext = "zip", format = "zip" }
+
+[packages.uv]
+summary = "Python package runner for skills and MCP servers started with uvx"
+kind = "required"
+version = "0.5.11"
+url = "https://github.com/astral-sh/uv/releases/download/{version}/uv-{triple}.{ext}"
+format = "tar.gz"
+strip = 1
+exe = "uv"
+releases = "github:astral-sh/uv"
+
+[packages.uv.targets]
+linux-x64 = { triple = "x86_64-unknown-linux-gnu", ext = "tar.gz" }
+linux-x64-musl = { triple = "x86_64-unknown-linux-musl", ext = "tar.gz" }
+linux-arm64 = { triple = "aarch64-unknown-linux-gnu", ext = "tar.gz" }
+linux-arm64-musl = { triple = "aarch64-unknown-linux-musl", ext = "tar.gz" }
+darwin-x64 = { triple = "x86_64-apple-darwin", ext = "tar.gz" }
+darwin-arm64 = { triple = "aarch64-apple-darwin", ext = "tar.gz" }
+win32-x64 = { triple = "x86_64-pc-windows-msvc", ext = "zip", format = "zip", strip = 0 }
+win32-arm64 = { triple = "aarch64-pc-windows-msvc", ext = "zip", format = "zip", strip = 0 }
+
+[packages.node]
+summary = "JavaScript runtime for MCP servers started with npx"
+kind = "default"
+version = "22.11.0"
+url = "https://nodejs.org/dist/v{version}/node-v{version}-{platform}.{ext}"
+format = "tar.xz"
+strip = 1
+exe = "bin/node"
+path = ["bin"]
+releases = "node"
+
+[packages.node.targets]
+linux-x64 = { platform = "linux-x64", ext = "tar.xz" }
+linux-arm64 = { platform = "linux-arm64", ext = "tar.xz" }
+darwin-x64 = { platform = "darwin-x64", ext = "tar.gz", format = "tar.gz" }
+darwin-arm64 = { platform = "darwin-arm64", ext = "tar.gz", format = "tar.gz" }
+win32-x64 = { platform = "win-x64", ext = "zip", format = "zip", exe = "node", path = ["."] }
+win32-arm64 = { platform = "win-arm64", ext = "zip", format = "zip", exe = "node", path = ["."] }
+
+[packages.gh]
+summary = "GitHub command line (skills that work with pull requests and issues)"
+kind = "optional"
+version = "2.63.0"
+url = "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_{platform}.{ext}"
+format = "tar.gz"
+strip = 1
+exe = "bin/gh"
+path = ["bin"]
+releases = "github:cli/cli"
+tag_prefix = "v"
+
+[packages.gh.targets]
+linux-x64 = { platform = "linux_amd64", ext = "tar.gz" }
+linux-arm64 = { platform = "linux_arm64", ext = "tar.gz" }
+darwin-x64 = { platform = "macOS_amd64", ext = "zip", format = "zip" }
+darwin-arm64 = { platform = "macOS_arm64", ext = "zip", format = "zip" }
+win32-x64 = { platform = "windows_amd64", ext = "zip", format = "zip", strip = 0 }
+win32-arm64 = { platform = "windows_arm64", ext = "zip", format = "zip", strip = 0 }
+
+[packages.ffmpeg]
+summary = "audio and video conversion (voice notes, media tools)"
+kind = "default"
+version = "6.0"
+url = "https://github.com/eugeneware/ffmpeg-static/releases/download/b{version}/ffmpeg-{platform}"
+format = "file"
+exe = "ffmpeg"
+releases = "github:eugeneware/ffmpeg-static"
+tag_prefix = "b"
+
+[packages.ffmpeg.targets]
+linux-x64 = { platform = "linux-x64" }
+linux-arm64 = { platform = "linux-arm64" }
+darwin-x64 = { platform = "darwin-x64" }
+darwin-arm64 = { platform = "darwin-arm64" }
+win32-x64 = { platform = "win32-x64" }
+
+[packages.chromium]
+summary = "headless browser for the browser tools"
+kind = "default"
+version = "1194"
+url = "https://playwright.azureedge.net/builds/chromium/{version}/chromium-{platform}.zip"
+format = "zip"
+strip = 1
+exe = "{binary}"
+releases = "pinned"
+
+[packages.chromium.targets]
+linux-x64 = { platform = "linux", binary = "chrome" }
+linux-arm64 = { platform = "linux-arm64", binary = "chrome" }
+darwin-x64 = { platform = "mac", binary = "Chromium.app/Contents/MacOS/Chromium" }
+darwin-arm64 = { platform = "mac-arm64", binary = "Chromium.app/Contents/MacOS/Chromium" }
+win32-x64 = { platform = "win64", binary = "chrome" }
+
+[packages.whispercpp]
+summary = "local speech to text where no Python wheel exists (Windows)"
+kind = "optional"
+version = "1.7.1"
+url = "https://github.com/ggml-org/whisper.cpp/releases/download/v{version}/whisper-bin-{platform}.zip"
+format = "zip"
+exe = "{binary}"
+releases = "github:ggml-org/whisper.cpp"
+tag_prefix = "v"
+
+[packages.whispercpp.targets]
+win32-x64 = { platform = "x64", binary = "main" }
+
+[packages.llamacpp]
+summary = "local model server (llama-server) for offline models"
+kind = "optional"
+version = "4000"
+url = "https://github.com/ggml-org/llama.cpp/releases/download/b{version}/llama-b{version}-bin-{platform}.zip"
+format = "zip"
+exe = "{binary}"
+releases = "github:ggml-org/llama.cpp"
+tag_prefix = "b"
+
+[packages.llamacpp.targets]
+linux-x64 = { platform = "ubuntu-x64", binary = "build/bin/llama-server" }
+darwin-arm64 = { platform = "macos-arm64", binary = "build/bin/llama-server" }
+darwin-x64 = { platform = "macos-x64", binary = "build/bin/llama-server" }
+win32-x64 = { platform = "win-avx2-x64", binary = "llama-server" }

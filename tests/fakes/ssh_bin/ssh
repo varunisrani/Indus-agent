@@ -1,0 +1,73 @@
+#!/bin/sh
+# A scripted stand-in for OpenSSH's `ssh` (P24-30 tests). Written for Indus; it never connects
+# anywhere: the "remote" is this machine, and remote commands run here with `sh -c`.
+#
+#   INDUS_FAKE_SSH_LOG       append one line per call: every argument followed by \037
+#   INDUS_FAKE_SSH_SCENARIO  ok (default) | hostkey | auth | unreachable | hang
+#   INDUS_FAKE_SSH_TUNNEL    stay (default) | die      (what an `-N -L` forward child does)
+#   INDUS_FAKE_SSH_MASTER    alive (default) | dead    (what `-O check` answers)
+#
+# Arguments are read the way our client builds them: options, then `--`, the destination and an
+# optional remote command.
+
+if [ -n "$INDUS_FAKE_SSH_LOG" ]; then
+  for arg in "$@"; do printf '%s\037' "$arg" >> "$INDUS_FAKE_SSH_LOG"; done
+  printf '\n' >> "$INDUS_FAKE_SSH_LOG"
+fi
+
+control_op=""
+forward=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --) shift; break ;;
+    -O) control_op="$2"; shift 2 ;;
+    -o|-p|-i|-L) shift 2 ;;
+    -N) forward=1; shift ;;
+    *) shift ;;
+  esac
+done
+target="$1"
+[ $# -gt 0 ] && shift
+host="${target#*@}"
+
+case "${INDUS_FAKE_SSH_SCENARIO:-ok}" in
+  hostkey)
+    cat >&2 <<BANNER
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+Offending ED25519 key in /home/someone/.ssh/known_hosts:3
+Host key for $host has changed and you have requested strict checking.
+Host key verification failed.
+BANNER
+    exit 255 ;;
+  auth)
+    echo "$target: Permission denied (publickey)." >&2
+    exit 255 ;;
+  unreachable)
+    echo "ssh: connect to host $host port 22: Connection refused" >&2
+    exit 255 ;;
+  hang)
+    exec sleep 30 ;;
+esac
+
+if [ -n "$control_op" ]; then
+  if [ "$control_op" = "check" ] && [ "${INDUS_FAKE_SSH_MASTER:-alive}" = "dead" ]; then
+    echo "Control socket connect: No such file or directory" >&2
+    exit 255
+  fi
+  exit 0
+fi
+
+if [ "$forward" = 1 ]; then
+  if [ "${INDUS_FAKE_SSH_TUNNEL:-stay}" = "die" ]; then
+    echo "channel 0: open failed: connect failed: Connection refused" >&2
+    exit 1
+  fi
+  exec sleep 300
+fi
+
+if [ $# -eq 0 ]; then
+  exit 0
+fi
+exec sh -c "$*"

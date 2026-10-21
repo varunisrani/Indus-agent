@@ -7,6 +7,7 @@ variable, so nothing a test does can reach a real home.
 from __future__ import annotations
 
 import gc
+import logging
 import os
 import sys
 from collections.abc import Callable, Iterator
@@ -85,6 +86,28 @@ def scope(isolated_home: Path, fake_clock: FakeClock) -> Scope:
 def fake_model_script() -> Callable[[str], Script]:
     """Load a script from ``tests/fixtures/model_scripts/`` by name (``"hello"``) or path."""
     return load_script
+
+
+@pytest.fixture(autouse=True)
+def restore_log_levels() -> Iterator[None]:
+    """Put back every logger's level after each test. A host's log setup (``indus.foundation.log``,
+    run by CLI commands tests invoke in-process) lowers the root logger to the file level; left
+    behind, libraries' INFO lines (a test client's request line with its query string) reach
+    every later test's ``caplog`` (P24 integration: ``test_tickets_never_reach_a_log_record``
+    failed only after such a test)."""
+    manager = logging.Logger.manager
+    root = logging.getLogger()
+    before = root.level
+    levels = {
+        name: logger.level
+        for name, logger in list(manager.loggerDict.items())
+        if isinstance(logger, logging.Logger)
+    }
+    yield
+    root.setLevel(before)
+    for name, logger in list(manager.loggerDict.items()):
+        if isinstance(logger, logging.Logger):
+            logger.setLevel(levels.get(name, logging.NOTSET))
 
 
 @pytest.fixture(autouse=True)

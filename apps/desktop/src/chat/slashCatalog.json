@@ -434,6 +434,22 @@
       "desktop": false
     },
     {
+      "name": "suggestions",
+      "aliases": [],
+      "description": "List suggested jobs; accept or dismiss one",
+      "category": "tools",
+      "argsHint": "[list|accept|dismiss|refresh] [n]",
+      "desktop": true
+    },
+    {
+      "name": "blueprint",
+      "aliases": [],
+      "description": "Set up a job from a blueprint; with no name, list them",
+      "category": "tools",
+      "argsHint": "[name] [slot=value ...]",
+      "desktop": true
+    },
+    {
       "name": "help",
       "aliases": [],
       "description": "List commands; add a word to filter them",

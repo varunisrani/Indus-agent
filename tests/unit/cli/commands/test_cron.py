@@ -351,3 +351,21 @@ def test_slash_store_missing(scope: Scope, monkeypatch: pytest.MonkeyPatch) -> N
     ctx = make_ctx(scope)
     slash_cron(ctx, "list")
     assert "not available" in ctx.lines[-1]
+
+
+def test_a_cli_pass_can_deliver_to_the_own_bot_chat(
+    scope: Scope, backend: RecordingHost, monkeypatch: pytest.MonkeyPatch
+) -> None:  # P24-07: the self-chat target outside the gateway
+    from indus.cron import delivery as cron_delivery
+
+    seen: list[bool] = []
+
+    def tick(echo: object) -> int:
+        seen.append(cron_delivery.deliverer_for("self-chat") is not None)
+        return 0
+
+    monkeypatch.setattr(backend, "tick", tick, raising=False)
+    assert cron_delivery.deliverer_for("self-chat") is None
+    assert cli(scope, "tick").code == 0
+    assert seen == [True]
+    assert cron_delivery.deliverer_for("self-chat") is None  # released after the pass

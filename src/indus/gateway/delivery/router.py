@@ -13,10 +13,17 @@ How a target is resolved, at send time:
   channel directory (not found → ``unknown_channel``);
 - ``origin`` → already turned into a concrete target by P14 from the job's stored origin;
 - ``all`` → the home channel of every platform attached at that moment (platforms without one
-  are reported, not fatal unless none is left).
+  are reported, not fatal unless none is left);
+- ``self-chat`` → the job's own profile's canonical bot chat, as an incoming message (P24-07;
+  registered while the router exists, ``gateway.rooms.peers.deliver_self_chat``).
 
-The transport is the platform's connected native adapter (a relay transport arrives in P24); no
-adapter → ``platform_not_connected``. Sends are unsolicited deliveries through the platform's
+The transport is the platform's connected native adapter, or a relay connector's adapter for it
+(P24-09, ``attach(..., via_relay=True)``), chosen by ``relay.adapter.resolve_transport``: an
+enabled native adapter wins (even while it is down), the relay serves a platform only when it
+fronts it, and an explicitly disabled native adapter never hides the relay. ``native_state`` says
+per platform whether its native adapter is enabled (True), explicitly disabled (False) or not
+configured (None); without it an attached native adapter counts as enabled. No transport →
+``platform_not_connected``. Sends are unsolicited deliveries through the platform's
 ``OutboundSender``: chats proven dead are skipped, the text is masked, formatted and chunked, and
 media tags in it are never followed — only trusted files the caller passes are attached (cron's
 checked attachments, ``indus send --file`` after the media path policy). Cron output longer than
@@ -47,6 +54,7 @@ from indus.gateway.delivery.directory import ChannelDirectory
 from indus.gateway.delivery.mirror import Mirror
 from indus.gateway.outbound.media_policy import MediaItem, MediaRef
 from indus.gateway.outbound.sender import DeliveryReport, FinalReply, OutboundSender
+from indus.gateway.relay.adapter import resolve_transport
 
 __all__ = [
     "MAX_PLATFORM_OUTPUT",
@@ -62,6 +70,7 @@ MAX_PLATFORM_OUTPUT: Final = 4000
 """Cron output above this many characters is cut on platforms that do not split natively."""
 
 type HomeLookup = Callable[[str], HomeChannel | None]
+type NativeState = Callable[[str], bool | None]
 
 
 @dataclass(frozen=True)
@@ -115,22 +124,31 @@ class DeliveryRouter:
         homes: HomeLookup,
         directory: ChannelDirectory | None = None,
         mirror: Mirror | None = None,
+        native_state: NativeState | None = None,
     ) -> None:
         self.scope = scope
         self.homes = homes
         self.directory = directory
         self.mirror = mirror
+        self.native_state = native_state
         self._lock = threading.Lock()
         self._senders: dict[str, OutboundSender] = {}
+        # Platforms a relay connector fronts (P24-09), beside the native adapters above.
+        self._relay: dict[str, OutboundSender] = {}
         self._undo: dict[str, Callable[[], None]] = {}
         self._all_undo: Callable[[], None] | None = None
         # Per-platform target grammar (P16-32): once per process, before any target is parsed.
         platform_targets.install()
+        # P24-07: `self-chat` injects cron output into this profile's canonical bot chat.
+        from indus.gateway.rooms.peers import install_self_chat
+
+        self._self_chat_undo: Callable[[], None] | None = install_self_chat()
 
     # -- registration ----------------------------------------------------------------------------
 
-    def attach(self, platform: str, sender: OutboundSender) -> None:
-        """``platform``'s adapter connected: deliver to it through ``sender`` from now on."""
+    def attach(self, platform: str, sender: OutboundSender, *, via_relay: bool = False) -> None:
+        """``platform``'s adapter connected: deliver to it through ``sender`` from now on.
+        ``via_relay``: the adapter is a relay connector's (P24-09)."""
         name = platform.strip().lower()
 
         async def deliver(request: DeliveryRequest) -> DeliveryReceipt:
@@ -139,7 +157,7 @@ class DeliveryRouter:
         # a reconnect registers again: the new deliverer replaces the old one in P14's table
         undo = cron_delivery.register_deliverer(name, deliver)
         with self._lock:
-            self._senders[name] = sender
+            (self._relay if via_relay else self._senders)[name] = sender
             self._undo[name] = undo
             need_all = self._all_undo is None
         if need_all:
@@ -147,13 +165,14 @@ class DeliveryRouter:
             with self._lock:
                 self._all_undo = all_undo
 
-    def detach(self, platform: str) -> None:
-        """``platform`` failed for good: stop delivering to it."""
+    def detach(self, platform: str, *, via_relay: bool = False) -> None:
+        """``platform`` failed for good: stop delivering to it (through that transport)."""
         name = platform.strip().lower()
         with self._lock:
-            self._senders.pop(name, None)
-            undo = self._undo.pop(name, None)
-            last = not self._senders
+            (self._relay if via_relay else self._senders).pop(name, None)
+            gone = name not in self._senders and name not in self._relay
+            undo = self._undo.pop(name, None) if gone else None
+            last = not self._senders and not self._relay
             all_undo = self._all_undo if last else None
             if last:
                 self._all_undo = None
@@ -163,16 +182,38 @@ class DeliveryRouter:
             all_undo()
 
     def close(self) -> None:
+        with self._lock:
+            relayed = sorted(self._relay)
+        for name in relayed:
+            self.detach(name, via_relay=True)
         for name in self.attached():
             self.detach(name)
+        undo, self._self_chat_undo = self._self_chat_undo, None
+        if undo is not None:
+            undo()
 
     def attached(self) -> list[str]:
         with self._lock:
-            return sorted(self._senders)
+            return sorted(set(self._senders) | set(self._relay))
+
+    def _native(self, name: str, attached: bool) -> bool | None:
+        if self.native_state is None:
+            return True if attached else None
+        try:
+            return self.native_state(name)
+        except Exception:
+            log.warning("native state lookup failed for %s", name, exc_info=True)
+            return True if attached else None
 
     def sender_for(self, platform: str) -> OutboundSender | None:
+        name = platform.strip().lower()
         with self._lock:
-            return self._senders.get(platform.strip().lower())
+            native = self._senders.get(name)
+            relay = self._relay.get(name)
+        choice = resolve_transport(self._native(name, native is not None), relay is not None)
+        if choice == "native":
+            return native
+        return relay if choice == "relay" else None
 
     # -- resolution ------------------------------------------------------------------------------
 

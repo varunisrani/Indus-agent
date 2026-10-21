@@ -6,7 +6,9 @@ output and state, and announces exits, watched lines and heartbeats through ``pr
 
 Starting on the host: bash in a new session and process group, stdout and stderr in one pipe — or
 a pseudo-terminal when asked (``ptyprocess``, extra ``pty``; without it the job runs on pipes and
-says so). A request that names a non-local environment (Docker, SSH, ...) starts the job inside
+says so). On Linux with a systemd user manager the job runs in its own capped transient scope
+(``memory_scope``, P24-43); a SIGKILL there that Indus did not send ends it as ``killed: memory
+cap``. A request that names a non-local environment (Docker, SSH, ...) starts the job inside
 it through ``remote_processes`` (P11-12): output arrives from a poller instead of a pipe. The
 record, with its owner (profile home, session id, environment key), is in the table before any
 output is read. A start that fails, or yields no pid, leaves a record that is ``exited`` with
@@ -54,7 +56,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import IO, Any, Literal, Protocol, cast
 
-from indus.backends import process_checkpoint, process_receipts, remote_processes
+from indus.backends import memory_scope, process_checkpoint, process_receipts, remote_processes
 from indus.backends.contract import BackendError, Environment
 from indus.backends.local import LocalProcess, force_kill_tree, stop_tree
 from indus.backends.process_notify import (
@@ -457,6 +459,7 @@ class ProcessRecord:
     pidfd: int | None = field(default=None, repr=False)
     poller: asyncio.Future[None] | None = field(default=None, repr=False)
     handoff_note: str = ""  # why a subagent handed this job to its parent (P10-06)
+    memory_cap: int = 0  # bytes of the job's systemd scope cap; 0 = not scoped (P24-43)
 
     @property
     def status(self) -> Literal["running", "exited"]:
@@ -597,7 +600,10 @@ class ProcessRegistry:
         env["PYTHONUNBUFFERED"] = "1"  # so poll shows progress, not one burst at the end
         try:
             argv = job_argv(request.command, env, request.snapshot)
-            handle = self._launch(record, LaunchSpec(argv, request.cwd, env, request.use_pty))
+            scoped = memory_scope.wrap(request.scope, argv, env, job_id=record.id)
+            record.memory_cap = scoped.cap
+            spec = LaunchSpec(scoped.argv, request.cwd, scoped.env, request.use_pty)
+            handle = self._launch(record, spec)
         except Exception as exc:
             log.warning("background process failed to start: %s", type(exc).__name__)
             self._fail_start(record, f"could not start the process: {exc}")
@@ -836,6 +842,8 @@ class ProcessRegistry:
         record.ended_mono = self.clock.monotonic()
         if record.kill_source:
             record.reason, record.source = "killed", record.kill_source
+        elif memory_scope.is_memory_kill(code, scoped=record.memory_cap > 0, killed_by_us=False):
+            record.reason, record.source = "killed", memory_scope.MEMORY_CAP_SOURCE
         if reason == "lost":
             record.reason, record.source = "lost", source or "backend_lost"
         record.heartbeat = None

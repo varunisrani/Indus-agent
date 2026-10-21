@@ -38,10 +38,14 @@ describe("renderer CSP meta", () => {
         expect(directive(policy, "connect-src")).toContain(source);
       }
     }
-    expect(directive(rendererMetaCsp({ dev: false }), "script-src")).toEqual(["'self'"]);
+    // `indus-plugin:` serves only plugin modules main checked (P24-32)
+    expect(directive(rendererMetaCsp({ dev: false }), "script-src")).toEqual([
+      "'self'",
+      "indus-plugin:",
+    ]);
     expect(
       directive(rendererMetaCsp({ dev: true, devServerOrigin: DEV_ORIGIN }), "script-src"),
-    ).toEqual(["'self'", DEV_ORIGIN]);
+    ).toEqual(["'self'", "indus-plugin:", DEV_ORIGIN]);
   });
 
   it("is the first tag in <head> of the page, and the page has no inline script", () => {

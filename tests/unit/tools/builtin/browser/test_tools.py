@@ -11,12 +11,13 @@ import pytest
 
 from indus.foundation.scope import Scope
 from indus.safety import url_policy
-from indus.tools.builtin.browser import TOOL_NAMES
+from indus.tools.builtin.browser import EXTRA_TOOL_NAMES, TOOL_NAMES, register_tools
 from indus.tools.builtin.browser import tools as tools_mod
 from indus.tools.builtin.browser.tools import js_url_literals, parse_ref
 from indus.tools.calls import ToolCall, ToolContext
 from indus.tools.dispatch import dispatch
 from indus.tools.registry import ToolRegistry
+from indus.tools.toolsets import BROWSER_TOOLS
 from tests.fakes.aux_model import FakeAuxModel
 from tests.fakes.browser import FakeSite, el
 from tests.unit.tools.builtin.browser._rig import Rig, make_rig, make_scope_for
@@ -384,6 +385,13 @@ def test_all_browser_tools_register_into_the_browser_toolset(rig: Rig) -> None:
     for name in TOOL_NAMES:
         entry = registry.get(name)
         assert entry is not None and not entry.traits.read_only  # barriers
+
+
+def test_the_module_hook_adds_exec_and_vault_to_the_set() -> None:  # P24-39, P24-40
+    registry = ToolRegistry()
+    register_tools(registry)
+    assert sorted(registry.names_in_toolset("browser")) == sorted(BROWSER_TOOLS)
+    assert set(EXTRA_TOOL_NAMES) <= set(BROWSER_TOOLS)
 
 
 def test_toolset_is_unavailable_without_playwright(

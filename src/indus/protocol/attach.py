@@ -13,7 +13,7 @@ folder, model, title, history), fenced against its running turn and idempotent b
 ``runtime.describe`` is the control socket's ``describe`` over the WebSocket, and
 ``maintenance.run`` runs bulk store maintenance inside the daemon that owns the store (P17-21).
 These names are served only by the daemon (``DAEMON_ONLY_METHODS``); the stdio bridge answers them
-``-32601``.
+``-32601``, as it does the daemon's ``bots.*`` and ``groups.*`` (P24-31, P24-06).
 
 Frames the daemon sends outside a session's numbered stream are notifications
 (``ATTACH_NOTIFICATIONS``): ``session.replay_gap`` (this viewer cannot be caught up; reload a
@@ -27,6 +27,7 @@ from typing import Final, Literal
 from pydantic import Field, JsonValue, NonNegativeInt, PositiveInt
 
 from indus.protocol.base import ProtocolModel, SessionId
+from indus.protocol.bots import BOT_METHODS
 from indus.protocol.errors import (
     ADMISSION_NOT_FOUND,
     IDEMPOTENCY_CONFLICT,
@@ -36,6 +37,7 @@ from indus.protocol.errors import (
     STORE_FAILED,
     ErrorCode,
 )
+from indus.protocol.groups import GROUP_METHODS
 
 __all__ = [
     "ACP_EDITOR_POLICY",
@@ -468,7 +470,9 @@ ATTACH_METHODS: tuple[_Row, ...] = (
 )
 """``(name, params, result, extra errors)`` for the attach methods, in declaration order."""
 
-DAEMON_ONLY_METHODS: frozenset[str] = frozenset(row[0] for row in ATTACH_METHODS)
+DAEMON_ONLY_METHODS: frozenset[str] = frozenset(
+    row[0] for row in (*ATTACH_METHODS, *BOT_METHODS, *GROUP_METHODS)
+)
 """Declared names only the daemon's WebSocket serves (the stdio bridge answers ``-32601``)."""
 
 ACP_EDITOR_POLICY: Final = "acp.editor_policy"

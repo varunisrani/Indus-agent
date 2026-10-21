@@ -51,6 +51,10 @@ function PreviewHost(props: { context: PaneRenderContext }) {
       mode={context.mode}
       hidden={context.hidden}
       onNavigate={previewTargets.set}
+      sessionId={context.sessionId}
+      {...(context.addToChat === undefined
+        ? {}
+        : { onAnnotationSend: (text: string) => context.addToChat?.(text) })}
     />
   );
 }

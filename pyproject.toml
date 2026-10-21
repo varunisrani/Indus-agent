@@ -42,6 +42,12 @@ browser = ["playwright==1.63.0"]
 # Local speech to text for the STT library (P10-18; MIT) and the microphone/speaker library for
 # CLI voice mode (P10-19; MIT, needs cffi); 00-layout section 4.
 voice = ["faster-whisper==1.2.1", "sounddevice==0.5.6"]
+# Wake-word keyword spotting with sherpa-onnx (P24-20; Apache-2.0, with sherpa-onnx-core
+# Apache-2.0; docs/notes/P24/wake-word.md). The default engine, openWakeWord, is not an extra: on
+# Linux it needs tflite-runtime, which has no Python 3.13 wheels. Imported lazily only.
+# sherpa-onnx-core (the onnxruntime libraries) is pinned too: the index metadata uv resolves from
+# omits the wheels' own Requires-Dist on it, and without it the import fails.
+wake-sherpa = ["sherpa-onnx==1.13.8", "sherpa-onnx-core==1.13.8"]
 # Cloud sandbox SDKs for the terminal backends (P21; Apache-2.0, Apache-2.0, MIT;
 # docs/notes/P21/sdk-versions.md). Imported lazily by their backend only.
 modal = ["modal==1.6.1"]
@@ -109,6 +115,19 @@ weixin = ["cryptography==50.0.2"]
 # Yuanbao bot socket (P16-21; httpx-ws MIT, needs wsproto MIT; both already locked). Sign tokens,
 # uploads and media run on httpx; HMAC through the stdlib. Imported lazily by the adapter only.
 yuanbao = ["httpx-ws==0.9.0"]
+# The relay connector's dial-out socket (P24-08; httpx-ws MIT, needs wsproto MIT; both already
+# locked). The signed hello uses the stdlib hmac. Imported lazily by indus.gateway.relay.transport.
+# A2A (P24-10) needs no extra: JSON-RPC over httpx and the gateway's own HTTP server.
+relay = ["httpx-ws==0.9.0"]
+# Cloud browsers and user CDP endpoints (P24-38; Playwright Apache-2.0, already locked through the
+# browser extra): connect_over_cdp to the provider's session. Imported lazily by browser/cloud.py.
+browser-cloud = ["playwright==1.63.0"]
+# browser_vault's local vault (P24-40; cryptography Apache-2.0 OR BSD-3-Clause, already locked):
+# Fernet with the key in the SecretStore. 1Password / Bitwarden are their own CLIs. Imported lazily.
+vault = ["cryptography==50.0.2"]
+# The Docker egress proxy's per-host certificates (P24-42; cryptography, already locked). Imported
+# lazily by indus.backends.docker.egress only.
+egress = ["cryptography==50.0.2"]
 # Editor agent over the Agent Client Protocol (P19-01; agent-client-protocol Apache-2.0, LICENSE read
 # at the 0.12.1 sdist; needs pydantic only). Imported lazily by `indus acp` only.
 acp = ["agent-client-protocol==0.12.1"]
@@ -204,10 +223,19 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "TID251"]
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "time.sleep".msg = "inject a Clock (tests: tests.fakes.clock.FakeClock)"
 "asyncio.sleep".msg = "inject a Clock (tests: tests.fakes.clock.FakeClock / checkpoint())"
+# pm internals stay inside indus.pm: ask the facade for a tool (P24-23, boundary rule).
+"indus.pm.fetch".msg = "pm internals: use indus.pm.api (ensure / tool_path / env_for)"
+"indus.pm.store".msg = "pm internals: use indus.pm.api (ensure / tool_path / env_for)"
+"indus.pm.lock".msg = "pm internals: use indus.pm.api (ensure / tool_path / env_for)"
 
 [tool.ruff.lint.per-file-ignores]
 "src/indus/foundation/clock.py" = ["TID251"]
 "tests/fakes/clock.py" = ["TID251"]
+# indus.pm may import its own internals; the pm tests and fake origin exercise them directly.
+"src/indus/pm/**" = ["TID251"]
+"tests/unit/pm/**" = ["TID251"]
+"tests/fakes/pm_origin.py" = ["TID251"]
+"tests/unit/cli/commands/test_pm.py" = ["TID251"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "tooling/checks/tests"]

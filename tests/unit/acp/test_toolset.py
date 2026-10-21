@@ -14,9 +14,15 @@ from tests.fakes.agent import DictConfig
 from tests.fakes.clock import FakeClock
 from tests.fakes.mcp.scripted import FakeFleet, FakeServer, drive, tool
 
-VERBS = ("back", "cdp", "click", "console", "dialog", "get_images") + (
-    "navigate", "press", "scroll", "snapshot", "type", "vision",
-)  # fmt: skip
+VERBS = ("back", "cdp", "click", "console", "dialog", "exec", "get_images") + (
+    "navigate",
+    "press",
+    "scroll",
+    "snapshot",
+    "type",
+    "vault",
+    "vision",
+)  # fmt: skip  (exec, vault: P24-39 / P24-40, offered when set up)
 GOLDEN = sorted(
     [
         *(f"browser_{verb}" for verb in VERBS),

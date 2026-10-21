@@ -1,0 +1,11 @@
+model = "a-model"
+approval_policy = "on-request"
+
+[mcp_servers.files]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/srv/projects"]
+env = { LOG_LEVEL = "debug" }
+
+[mcp_servers.tracker]
+url = "https://tracker.example/mcp"
+bearer_token_env_var = "TRACKER_TOKEN"

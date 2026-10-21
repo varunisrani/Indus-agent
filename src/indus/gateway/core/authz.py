@@ -30,6 +30,10 @@ bots never get a code, codes and login offers need a platform whose DMs are priv
 ``ignore`` logs the fix and tells the home channel once per sender, ``decline`` answers once per
 sender per 24 h (stamp first). Mention gating: in groups, answer only when mentioned unless the
 channel is free-response.
+
+Under multiplexing each served profile has its own chain, built with ``Authorizer.for_scope``
+(P24-02): its policy values come only from that profile's secret store and its own env view
+(fail closed, R06.26).
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from indus.foundation.scope import Scope
 from indus.gateway.core._shapes import AdapterLike, SourceLike, capability, flag, text_of
 from indus.gateway.core.bot_loop import BotLoopGuard, conversation_of
 from indus.gateway.registry import PlatformEntry, PlatformRegistry, policy_env_name
@@ -219,6 +224,16 @@ class Authorizer:
             return None if entry is None else PlatformPolicy.from_entry(entry)
 
         return cls(policy_for=policy_for, **kwargs)
+
+    @classmethod
+    def for_scope(cls, scope: Scope, registry: PlatformRegistry, **kwargs: Any) -> Authorizer:
+        """The chain of the profile ``scope`` serves, reading every policy value through the
+        fail-closed scoped reader (P24-02, R06.26): a value that profile does not have is absent,
+        never the launch process's."""
+        from indus.gateway.multiplex.scope import scoped_reader_for
+
+        kwargs.setdefault("profile", scope.profile_id)
+        return cls.from_registry(registry, env=scoped_reader_for(scope), **kwargs)
 
     # -- readers ---------------------------------------------------------------------------------
 

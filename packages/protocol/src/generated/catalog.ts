@@ -56,6 +56,54 @@ export const METHODS = deepFreeze({
     "params": "AdmissionReceiptParams",
     "result": "AdmissionReceiptResult"
   },
+  "bots.list": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "BotsNoParams",
+    "result": "BotsListResult"
+  },
+  "bots.open": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "BotsProfileParams",
+    "result": "BotsOpenResult"
+  },
+  "bots.update": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "BotsUpdateParams",
+    "result": "BotsUpdateResult"
+  },
+  "capabilities.summary": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "CapabilitiesSummaryParams",
+    "result": "CapabilitiesSummaryResult"
+  },
   "clarify.lock": {
     "errors": [
       "PARSE_ERROR",
@@ -187,6 +235,162 @@ export const METHODS = deepFreeze({
     "params": "GatewayPingParams",
     "result": "GatewayPingResult"
   },
+  "groups.capabilities": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsNoParams",
+    "result": "GroupsCapabilitiesResult"
+  },
+  "groups.create": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsCreateParams",
+    "result": "GroupsRoomResult"
+  },
+  "groups.demote": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsDemoteParams",
+    "result": "GroupsAuthorityResult"
+  },
+  "groups.disband": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsRoomParams",
+    "result": "GroupsDisbandResult"
+  },
+  "groups.list": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsListParams",
+    "result": "GroupsListResult"
+  },
+  "groups.log": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsLogParams",
+    "result": "GroupsLogResult"
+  },
+  "groups.promote": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsPromoteParams",
+    "result": "GroupsAuthorityResult"
+  },
+  "groups.rename": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsRenameParams",
+    "result": "GroupsRoomResult"
+  },
+  "groups.retry": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsRetryParams",
+    "result": "GroupsRetryResult"
+  },
+  "groups.send": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsSendParams",
+    "result": "GroupsSendResult"
+  },
+  "groups.state": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsStateParams",
+    "result": "GroupsStateResult"
+  },
+  "groups.status": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsRoomParams",
+    "result": "GroupsStatusResult"
+  },
+  "groups.stop": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsStopParams",
+    "result": "GroupsStopResult"
+  },
   "image.attach": {
     "errors": [
       "PARSE_ERROR",
@@ -273,6 +477,224 @@ export const METHODS = deepFreeze({
     ],
     "params": "PasteCollapseParams",
     "result": "PasteCollapseResult"
+  },
+  "pet.disable": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "PetNoParams",
+    "result": "PetDisableResult"
+  },
+  "pet.generate": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "PROVIDER_UNAVAILABLE"
+    ],
+    "params": "PetGenerateParams",
+    "result": "PetGenerateResult"
+  },
+  "pet.hatch": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "PROVIDER_UNAVAILABLE"
+    ],
+    "params": "PetHatchParams",
+    "result": "PetSlugResult"
+  },
+  "pet.info": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "PetInfoParams",
+    "result": "PetInfoResult"
+  },
+  "pet.list": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "PetNoParams",
+    "result": "PetListResult"
+  },
+  "pet.remove": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "PetSlugParams",
+    "result": "PetSlugResult"
+  },
+  "pet.rename": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "PetRenameParams",
+    "result": "PetSlugResult"
+  },
+  "pet.select": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "PetSlugParams",
+    "result": "PetSlugResult"
+  },
+  "projects.add_path": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsAddPathParams",
+    "result": "ProjectResult"
+  },
+  "projects.archive": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsArchiveParams",
+    "result": "ProjectResult"
+  },
+  "projects.create": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsCreateParams",
+    "result": "ProjectResult"
+  },
+  "projects.discover": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsDiscoverParams",
+    "result": "ProjectsDiscoverResult"
+  },
+  "projects.for_path": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsForPathParams",
+    "result": "ProjectsUseResult"
+  },
+  "projects.get": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsGetParams",
+    "result": "ProjectResult"
+  },
+  "projects.list": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsListParams",
+    "result": "ProjectsListResult"
+  },
+  "projects.remove_path": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsRemovePathParams",
+    "result": "ProjectResult"
+  },
+  "projects.update": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsUpdateParams",
+    "result": "ProjectResult"
+  },
+  "projects.use": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "ProjectsUseParams",
+    "result": "ProjectsUseResult"
   },
   "prompt.background": {
     "errors": [
@@ -657,6 +1079,104 @@ export const METHODS = deepFreeze({
     ],
     "params": "SlashExecParams",
     "result": "SlashExecResult"
+  },
+  "voice.speak": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "PROVIDER_UNAVAILABLE"
+    ],
+    "params": "VoiceSpeakParams",
+    "result": "VoiceSpeakResult"
+  },
+  "voice.transcribe": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "PROVIDER_UNAVAILABLE"
+    ],
+    "params": "VoiceTranscribeParams",
+    "result": "VoiceTranscribeResult"
+  },
+  "wake.feed": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "WakeFeedParams",
+    "result": "WakeFeedResult"
+  },
+  "wake.pause": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "WakeNoParams",
+    "result": "WakeOwnerResult"
+  },
+  "wake.resume": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "WakeNoParams",
+    "result": "WakeOwnerResult"
+  },
+  "wake.start": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "WakeStartParams",
+    "result": "WakeStartResult"
+  },
+  "wake.status": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "WakeNoParams",
+    "result": "WakeStatusResult"
+  },
+  "wake.stop": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "WakeStopParams",
+    "result": "WakeOwnerResult"
   }
 } as const);
 
@@ -666,6 +1186,10 @@ export interface MethodTypes {
   "admission.cancel": { params: T.AdmissionCancelParams; result: T.AdmissionCancelResult };
   "admission.discard": { params: T.AdmissionDiscardParams; result: T.AdmissionDiscardResult };
   "admission.receipt": { params: T.AdmissionReceiptParams; result: T.AdmissionReceiptResult };
+  "bots.list": { params: T.BotsNoParams; result: T.BotsListResult };
+  "bots.open": { params: T.BotsProfileParams; result: T.BotsOpenResult };
+  "bots.update": { params: T.BotsUpdateParams; result: T.BotsUpdateResult };
+  "capabilities.summary": { params: T.CapabilitiesSummaryParams; result: T.CapabilitiesSummaryResult };
   "clarify.lock": { params: T.ClarifyLockParams; result: T.ClarifyLockResult };
   "client.capabilities": { params: T.ClientCapabilitiesParams; result: T.ClientCapabilitiesResult };
   "command.dispatch": { params: T.CommandDispatchParams; result: T.CommandDispatchResult };
@@ -676,6 +1200,19 @@ export interface MethodTypes {
   "config.set": { params: T.ConfigSetParams; result: T.ConfigSetResult };
   "events.since": { params: T.EventsSinceParams; result: T.EventsSinceResult };
   "gateway.ping": { params: T.GatewayPingParams; result: T.GatewayPingResult };
+  "groups.capabilities": { params: T.GroupsNoParams; result: T.GroupsCapabilitiesResult };
+  "groups.create": { params: T.GroupsCreateParams; result: T.GroupsRoomResult };
+  "groups.demote": { params: T.GroupsDemoteParams; result: T.GroupsAuthorityResult };
+  "groups.disband": { params: T.GroupsRoomParams; result: T.GroupsDisbandResult };
+  "groups.list": { params: T.GroupsListParams; result: T.GroupsListResult };
+  "groups.log": { params: T.GroupsLogParams; result: T.GroupsLogResult };
+  "groups.promote": { params: T.GroupsPromoteParams; result: T.GroupsAuthorityResult };
+  "groups.rename": { params: T.GroupsRenameParams; result: T.GroupsRoomResult };
+  "groups.retry": { params: T.GroupsRetryParams; result: T.GroupsRetryResult };
+  "groups.send": { params: T.GroupsSendParams; result: T.GroupsSendResult };
+  "groups.state": { params: T.GroupsStateParams; result: T.GroupsStateResult };
+  "groups.status": { params: T.GroupsRoomParams; result: T.GroupsStatusResult };
+  "groups.stop": { params: T.GroupsStopParams; result: T.GroupsStopResult };
   "image.attach": { params: T.ImageAttachParams; result: T.ImageAttachResult };
   "input.detect_drop": { params: T.InputDetectDropParams; result: T.InputDetectDropResult };
   "maintenance.run": { params: T.MaintenanceRunParams; result: T.MaintenanceRunResult };
@@ -683,6 +1220,24 @@ export interface MethodTypes {
   "model.options": { params: T.ModelOptionsParams; result: T.ModelOptionsResult };
   "model.save_key": { params: T.ModelSaveKeyParams; result: T.ModelSaveKeyResult };
   "paste.collapse": { params: T.PasteCollapseParams; result: T.PasteCollapseResult };
+  "pet.disable": { params: T.PetNoParams; result: T.PetDisableResult };
+  "pet.generate": { params: T.PetGenerateParams; result: T.PetGenerateResult };
+  "pet.hatch": { params: T.PetHatchParams; result: T.PetSlugResult };
+  "pet.info": { params: T.PetInfoParams; result: T.PetInfoResult };
+  "pet.list": { params: T.PetNoParams; result: T.PetListResult };
+  "pet.remove": { params: T.PetSlugParams; result: T.PetSlugResult };
+  "pet.rename": { params: T.PetRenameParams; result: T.PetSlugResult };
+  "pet.select": { params: T.PetSlugParams; result: T.PetSlugResult };
+  "projects.add_path": { params: T.ProjectsAddPathParams; result: T.ProjectResult };
+  "projects.archive": { params: T.ProjectsArchiveParams; result: T.ProjectResult };
+  "projects.create": { params: T.ProjectsCreateParams; result: T.ProjectResult };
+  "projects.discover": { params: T.ProjectsDiscoverParams; result: T.ProjectsDiscoverResult };
+  "projects.for_path": { params: T.ProjectsForPathParams; result: T.ProjectsUseResult };
+  "projects.get": { params: T.ProjectsGetParams; result: T.ProjectResult };
+  "projects.list": { params: T.ProjectsListParams; result: T.ProjectsListResult };
+  "projects.remove_path": { params: T.ProjectsRemovePathParams; result: T.ProjectResult };
+  "projects.update": { params: T.ProjectsUpdateParams; result: T.ProjectResult };
+  "projects.use": { params: T.ProjectsUseParams; result: T.ProjectsUseResult };
   "prompt.background": { params: T.PromptBackgroundParams; result: T.PromptBackgroundResult };
   "prompt.submit": { params: T.PromptSubmitParams; result: T.PromptSubmitResult };
   "reload.mcp": { params: T.ReloadMcpParams; result: T.ReloadMcpResult };
@@ -709,6 +1264,14 @@ export interface MethodTypes {
   "sessions.watch": { params: T.SessionsWatchParams; result: T.SessionsWatchResult };
   "shell.exec": { params: T.ShellExecParams; result: T.ShellExecResult };
   "slash.exec": { params: T.SlashExecParams; result: T.SlashExecResult };
+  "voice.speak": { params: T.VoiceSpeakParams; result: T.VoiceSpeakResult };
+  "voice.transcribe": { params: T.VoiceTranscribeParams; result: T.VoiceTranscribeResult };
+  "wake.feed": { params: T.WakeFeedParams; result: T.WakeFeedResult };
+  "wake.pause": { params: T.WakeNoParams; result: T.WakeOwnerResult };
+  "wake.resume": { params: T.WakeNoParams; result: T.WakeOwnerResult };
+  "wake.start": { params: T.WakeStartParams; result: T.WakeStartResult };
+  "wake.status": { params: T.WakeNoParams; result: T.WakeStatusResult };
+  "wake.stop": { params: T.WakeStopParams; result: T.WakeOwnerResult };
 }
 
 /** Event type (also the notification method) → event type name. */
@@ -769,7 +1332,8 @@ export const NOTIFICATIONS = deepFreeze({
   "gateway.ready": "BridgeReady",
   "session.replay_gap": "SessionReplayGap",
   "session.updated": "SessionUpdated",
-  "sessions.resync": "SessionsResync"
+  "sessions.resync": "SessionsResync",
+  "wake.detected": "WakeDetected"
 } as const);
 
 export type NotificationName = keyof typeof NOTIFICATIONS;
@@ -779,6 +1343,7 @@ export interface NotificationTypes {
   "session.replay_gap": T.SessionReplayGap;
   "session.updated": T.SessionUpdated;
   "sessions.resync": T.SessionsResync;
+  "wake.detected": T.WakeDetected;
 }
 
 /** The notification method that carries a server request. */

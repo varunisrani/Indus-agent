@@ -143,7 +143,9 @@ def test_mode_decides_the_credential() -> None:
     assert _code(in_gated) == CLOSE_BAD_TICKET
     ticket = book.mint(WEB_PTY).ticket
     in_loopback = _decide(_scope(f"ticket={ticket}"), book=book)
-    assert _code(in_loopback) == CLOSE_BAD_TICKET
+    # token mode takes a minted ticket too (the desktop's per-dial ticket, D-16.691), once
+    assert isinstance(in_loopback, DashboardAccepted) and in_loopback.credential == "ticket"
+    assert _code(_decide(_scope(f"ticket={ticket}"), book=book)) == CLOSE_BAD_TICKET
     both = _decide(_scope("token=the-token", f"ticket={book.mint(WEB_PTY).ticket}"), book=book)
     assert _code(both) == CLOSE_BAD_TICKET
     assert _code(_decide(_scope(), book=book)) == CLOSE_BAD_TICKET
@@ -266,6 +268,22 @@ def test_loopback_token_through_the_app(ws_app: Callable[..., Built]) -> None:
     assert _close_code(built.client, "/api/test-pty", _offer("token", "wrong")) == CLOSE_BAD_TICKET
     # the token in the URL is refused even when it is right
     assert _close_code(built.client, f"/api/test-pty?token={built.token}") == CLOSE_BAD_TICKET
+
+
+def test_a_token_mode_ticket_opens_one_socket_through_the_app(
+    ws_app: Callable[..., Built],
+) -> None:
+    """D-16.691: the desktop mints a ticket over HTTP with the token, then dials with the ticket."""
+    built = ws_app()
+    pty = "/api/test-pty"
+    answer = built.client.post(
+        "/api/auth/ws-ticket", json={"purpose": WEB_PTY}, headers=built.auth()
+    )
+    ticket = answer.json()["ticket"]
+    with built.client.websocket_connect(WS + pty, subprotocols=_offer("ticket", ticket)) as socket:
+        assert socket.accepted_subprotocol == DASHBOARD_SUBPROTOCOL
+        assert socket.receive_json() == {"purpose": WEB_PTY, "credential": "ticket"}
+    assert _close_code(built.client, pty, _offer("ticket", ticket)) == CLOSE_BAD_TICKET  # spent
 
 
 def test_a_refusal_still_echoes_the_protocol(ws_app: Callable[..., Built]) -> None:
@@ -393,7 +411,12 @@ def test_every_websocket_route_goes_through_the_helper(ws_app: Callable[..., Bui
     assert paths >= {"/api/test-pty", "/api/test-pub", "/api/pty", "/api/pub", "/api/events"}
     assert "/api/ws" in paths
     for path, endpoint in routes:
-        assert getattr(endpoint, WS_PURPOSE_ATTR, None) in DASHBOARD_PURPOSES, path
+        purpose = getattr(endpoint, WS_PURPOSE_ATTR, None)
+        assert purpose in DASHBOARD_PURPOSES, path
+        if not built.state.feature_enabled(purpose):
+            # a socket whose feature is off (the admin console by default, P24-36) answers 4404
+            assert _close_code(built.client, path) == CLOSE_DISABLED, path
+            continue
         assert _close_code(built.client, path) == CLOSE_BAD_TICKET, path
         in_url = f"{path}?token={built.token}"
         assert _close_code(built.client, in_url, [DASHBOARD_SUBPROTOCOL]) == CLOSE_BAD_TICKET, path

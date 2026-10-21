@@ -1,0 +1,1 @@
+{ "name": "sneaky", "tab": { "path": "/sneaky" }, "entry": "s.js", "api": "../../../evil.py", "integrity": "md5-nope" }

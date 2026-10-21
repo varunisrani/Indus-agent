@@ -17,16 +17,23 @@ parsable JSON, YAML or TOML file (or a new one) into one that does not parse is 
 anything is written. A file that was already broken may still be edited, so it can be repaired
 in steps.
 
-LSP diagnostics are a later tier (P24).
+LSP tier (P24-16): when a language-server checker is installed for the process
+(``indus.tools.lsp.diagnostics.install_active``) and the file lies on this host, the edit is also
+checked by its language server. A verdict that comes within the write budget (0.08 s) joins the
+report (``introduced``, linter ``…+lsp:<server>``); a later one reaches the session as a note on
+its next tool result or at the end of the turn. Either way the file is recorded as edited this
+turn for the stop gates.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import posixpath
 import re
 import secrets
+import sys
 import tomllib
 import warnings
 from collections import Counter
@@ -326,7 +333,7 @@ async def _lint_shell(
     return _delta(tool, path, list(after.lines), renamed)
 
 
-async def lint_edit(
+async def _lint_base(
     path: str,
     before: str | None,
     after: str,
@@ -352,3 +359,80 @@ async def lint_edit(
             )
         return await _lint_shell(path, before, host, timeout=timeout, cancel=cancel)
     return LintReport("skipped", note=f"no linter for {suffix or 'files without a suffix'}")
+
+
+async def lint_edit(
+    path: str,
+    before: str | None,
+    after: str,
+    *,
+    host: ExecHost | None = None,
+    timeout: float = SHELL_TIMEOUT_S,
+    cancel: CancelLike | None = None,
+) -> LintReport:
+    """Lint ``path`` after it was written with ``after``; ``before`` is the old text (``None``
+    for a new file). Shell checkers need ``host`` and read the file as it is on disk now. The
+    LSP tier joins in when a checker is installed (module notes)."""
+    started = _lsp_clock_start()
+    report = await _lint_base(path, before, after, host=host, timeout=timeout, cancel=cancel)
+    try:
+        return await _with_lsp(path, before, after, host, report, started)
+    except Exception as exc:  # the language server must never break an edit that happened
+        log.debug("LSP check of %s failed: %s: %s", path, type(exc).__name__, exc)
+        return report
+
+
+_LSP_MODULE = "indus.tools.lsp.diagnostics"
+
+
+def _lsp_clock_start() -> float | None:
+    if _LSP_MODULE not in sys.modules:  # never imported: no checker can be installed
+        return None
+    from indus.tools.lsp import diagnostics
+
+    checker = diagnostics.active()
+    return checker.clock.monotonic() if checker is not None else None
+
+
+def _host_path(path: str, host: ExecHost | None) -> str | None:
+    """``path`` as a path on this machine, or None when the edit happened elsewhere."""
+    flags = getattr(host, "flags", None) if host is not None else None
+    if flags is not None and (
+        getattr(flags, "container_paths", False) or not getattr(flags, "host_local", True)
+    ):
+        return None
+    if os.path.isabs(path):
+        return path
+    base = getattr(host, "cwd", None) if host is not None else None
+    return os.path.join(base, path) if isinstance(base, str) and os.path.isabs(base) else None
+
+
+async def _with_lsp(
+    path: str,
+    before: str | None,
+    after: str,
+    host: ExecHost | None,
+    report: LintReport,
+    started: float | None,
+) -> LintReport:
+    if _LSP_MODULE not in sys.modules:
+        return report
+    from indus.tools.lsp import diagnostics
+
+    local = _host_path(path, host)
+    if local is None:
+        return report
+    diagnostics.record_edit(local)
+    checker = diagnostics.active()
+    if checker is None:
+        return report
+    owner, _turn = diagnostics.current_owner()
+    outcome = await checker.check_edit(local, before, after, owner=owner, started=started)
+    found = outcome.text(path)
+    if found is None:
+        return report
+    lines = tuple(found.splitlines())
+    linter = f"{report.linter}+lsp:{outcome.server}" if report.linter else f"lsp:{outcome.server}"
+    if report.status == "introduced":
+        return LintReport("introduced", linter, report.errors + lines, report.existing, report.note)
+    return LintReport("introduced", linter, lines, report.existing)

@@ -7,6 +7,7 @@ declare global {
     __INDUS_BASE_PATH__?: string;
     __INDUS_AUTH_REQUIRED__?: boolean;
     __INDUS_DASHBOARD_EMBEDDED_CHAT__?: boolean;
+    __INDUS_DASHBOARD_CONSOLE__?: boolean;
     __INDUS_INITIAL_PROFILE__?: string;
     __INDUS_DASHBOARD_PROFILE__?: string;
   }
@@ -38,6 +39,11 @@ export function authRequired(): boolean {
 /** Whether the backend serves the embedded chat terminal; on unless it says otherwise. */
 export function embeddedChatEnabled(): boolean {
   return host()?.__INDUS_DASHBOARD_EMBEDDED_CHAT__ !== false;
+}
+
+/** Whether the backend serves the admin console socket (P24-36); off unless it says so. */
+export function consoleEnabled(): boolean {
+  return host()?.__INDUS_DASHBOARD_CONSOLE__ === true;
 }
 
 /** The profile named in the launch (`indus dashboard -p NAME` opens `?profile=NAME`). */

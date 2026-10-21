@@ -19,7 +19,7 @@ describe("CSP", () => {
     expect(
       buildCsp({ dev: false, connectOrigins: ["ws://127.0.0.1:41000", "http://127.0.0.1:9119"] }),
     ).toBe(
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+      "default-src 'self'; script-src 'self' indus-plugin:; style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: blob: indus-media:; media-src 'self' blob: indus-media:; font-src 'self' data:; " +
         "connect-src 'self' ws://127.0.0.1:41000 http://127.0.0.1:9119; frame-src 'none'; object-src 'none'; " +
         "base-uri 'none'; form-action 'none'",
@@ -28,7 +28,7 @@ describe("CSP", () => {
 
   it("dev policy adds only the dev server (scripts and HMR socket)", () => {
     const csp = buildCsp({ dev: true, devServerOrigin: "http://localhost:5173" });
-    expect(csp).toContain("script-src 'self' http://localhost:5173;");
+    expect(csp).toContain("script-src 'self' indus-plugin: http://localhost:5173;");
     expect(csp).toContain("connect-src 'self' http://localhost:5173 ws://localhost:5173;");
   });
 
@@ -38,7 +38,7 @@ describe("CSP", () => {
       buildCsp({ dev: true, devServerOrigin: "http://localhost:5173" }),
     ]) {
       const script = csp.split("; ").find((d) => d.startsWith("script-src")) ?? "";
-      expect(script).not.toMatch(/unsafe-eval|unsafe-inline|\*|data:/);
+      expect(script).not.toMatch(/unsafe-eval|unsafe-inline|\*|data:|blob:/);
     }
   });
 
@@ -72,7 +72,7 @@ describe("CSP", () => {
       .split("; ")
       .find((directive) => directive.startsWith("connect-src "));
     for (const source of RUNTIME_CONNECT_SOURCES) expect(connect).toContain(` ${source}`);
-    expect(new CspState({ dev: false }).current()).toMatch(/script-src 'self';/);
+    expect(new CspState({ dev: false }).current()).toMatch(/script-src 'self' indus-plugin:;/);
   });
 
   it("meta injection: one tag, first in head", () => {

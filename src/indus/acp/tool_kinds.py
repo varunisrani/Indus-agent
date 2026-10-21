@@ -52,6 +52,10 @@ _GROUPS: Final[dict[str, tuple[str, ...]]] = {
         "browser_get_images",
         "browser_console",
         "vision_analyze",
+        "kanban_show",
+        "kanban_list",
+        "kanban_attachments",
+        "project_info",
     ),
     "edit": ("write_file", "patch", "skill_manage"),
     "search": ("search_files", "session_search"),
@@ -66,6 +70,8 @@ _GROUPS: Final[dict[str, tuple[str, ...]]] = {
         "browser_back",
         "browser_dialog",
         "browser_cdp",
+        "browser_exec",  # P24-39: a scripted step list through a browser CLI
+        "browser_vault",  # P24-40: fills a login or card the model never sees
         "delegate_task",
         "image_generate",
         "text_to_speech",
@@ -74,9 +80,32 @@ _GROUPS: Final[dict[str, tuple[str, ...]]] = {
         "video_extend",
         "computer_use",
     ),
-    "fetch": ("web_search", "web_extract", "browser_navigate"),
+    "fetch": (
+        "web_search",
+        "web_extract",
+        "browser_navigate",
+        "kanban_attach_url",
+        "a2a_call",  # P24-10: a message to a peer agent
+    ),
     "think": ("_thinking",),
-    "other": ("todo_list", "memory", "clarify", "cronjob_manage"),
+    "other": (
+        "todo_list",
+        "memory",
+        "clarify",
+        "cronjob_manage",
+        # P24-13 board tools that change the board, not files.
+        "kanban_complete",
+        "kanban_block",
+        "kanban_schedule",
+        "kanban_request_review",
+        "kanban_request_changes",
+        "kanban_heartbeat",
+        "kanban_comment",
+        "kanban_attach",
+        "kanban_create",
+        "kanban_unblock",
+        "kanban_link",
+    ),
 }
 
 KINDS: Final[Mapping[str, str]] = {name: kind for kind, names in _GROUPS.items() for name in names}

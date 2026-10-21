@@ -70,6 +70,7 @@ KNOWN_PLATFORMS: frozenset[str] = frozenset(
         "photon",
         "qqbot",
         "raft",
+        "self-chat",  # P24-07: the profile's own canonical bot chat (gateway.rooms.peers)
         "signal",
         "simplex",
         "slack",

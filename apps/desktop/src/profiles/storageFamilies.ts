@@ -26,17 +26,21 @@ export const PROFILE_FAMILIES: readonly ProfileFamily[] = [
   { id: "sidebar-view", kind: "perKey", prefix: "indus.desktop.sidebar.view." },
   // P20-25: the folder a fresh draft starts in (cleared once used)
   { id: "new-chat-target", kind: "record", key: "indus.desktop.new-chat-target" },
+  // P24-33: a profile's own theme and chat / terminal fonts
+  { id: "appearance-profiles", kind: "record", key: "indus.desktop.appearance.profiles" },
 ];
 
 /** Keys that are the same for every profile (left alone by rename and delete). */
 export const WINDOW_KEYS: readonly string[] = [
   "indus-desktop-theme", // P20-15
+  "indus-desktop-appearance", // P24-33 (preset, accent, user themes)
   "indus.desktop.statusbar.items", // P20-23
   "indus.desktop.model-presets", // P20-23 (per model, not per profile)
   "indus.desktop.model-favourites", // P20-23
   "indus.desktop.inflight.v1", // P20-20 (per session; pruned by age)
   "indus.desktop.image-drafts.v1", // P20-20
   "indus.desktop.panes.v1", // P20-27
+  "indus.desktop.plugins.decisions", // P24-32 (the person's on/off choice per desktop plugin)
 ];
 
 /** The profile part of a key: `null` and blank mean the default profile. */

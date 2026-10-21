@@ -65,6 +65,7 @@ from indus.protocol.server_requests import (
     SudoAnswer,
     SudoRequest,
 )
+from indus.protocol.wake import WakeDetected
 from tests.unit.protocol._attach_samples import ATTACH_SAMPLES
 from tests.unit.protocol._bridge_samples import BRIDGE_SAMPLES
 
@@ -198,3 +199,4 @@ SAMPLES: list[ProtocolModel] = [
 
 SAMPLES += BRIDGE_SAMPLES
 SAMPLES += ATTACH_SAMPLES
+SAMPLES += [WakeDetected(phrase="hey indus", surface="gui")]  # P24-20 notification

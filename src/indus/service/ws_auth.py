@@ -13,7 +13,10 @@ an expired ticket or a ticket for another purpose is refused, and any failed red
 ticket spends it. The digests are compared with ``hmac.compare_digest``.
 
 ``profile_id`` is a stable hash of the profile home. ``instance_id`` is random per daemon start
-(one book per start), so a ticket minted by an earlier daemon is unknown to the next one.
+(one book per start), so a ticket minted by an earlier daemon is unknown to the next one. A book
+of a gateway that serves several profiles (P24-01) is built with ``served=`` (the served profile
+ids, read at each call): it refuses to mint or redeem a ticket bound to any other profile
+(``wrong_profile``), so a profile the gateway stopped serving fails closed.
 
 The upgrade check (``authenticate_upgrade``) refuses a peer that is not a loopback address and an
 ``Origin`` header that is present but not allow-listed (close 4403), then redeems exactly one
@@ -32,7 +35,9 @@ each with its own close code: the feature is enabled (else 4404), the credential
 the subprotocol list, never in the URL, the way the gateway's ticket does: the client offers
 ``indus-dashboard-v1`` plus exactly one of ``indus-dashboard-token.<session token>`` (loopback
 mode), ``indus-dashboard-ticket.<ticket>`` (gated mode, which refuses the session token even when
-it is right) or ``indus-dashboard-internal.<credential>`` (a server-spawned client, on the routes
+it is right; loopback mode takes a ticket too, minted for a client that presented the token over
+HTTP — the desktop app dials that way, since Electron cannot put a held token into an upgrade,
+D-16.691) or ``indus-dashboard-internal.<credential>`` (a server-spawned client, on the routes
 that allow the process-lifetime ``InternalCredential``); the server echoes only
 ``indus-dashboard-v1``. A ``?token=``, ``?ticket=`` or ``?internal=`` in the query is refused
 (4401) and a ticket found there is spent. Close reasons are cut to 123 bytes
@@ -50,7 +55,7 @@ import re
 import secrets
 import threading
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -59,6 +64,7 @@ from urllib.parse import parse_qsl
 from indus.protocol.errors import TICKET_INVALID
 
 __all__ = [
+    "BROWSER_CONTROLLER",
     "CLOSE_BAD_TICKET",
     "CLOSE_DISABLED",
     "CLOSE_FORBIDDEN",
@@ -81,6 +87,7 @@ __all__ = [
     "UpgradeAccepted",
     "UpgradeRefused",
     "WEB_CONSOLE",
+    "WEB_PLUGIN",
     "WEB_EVENTS",
     "WEB_PTY",
     "WEB_PUB",
@@ -108,14 +115,22 @@ TICKET_PROTOCOL_PREFIX = "indus-gateway-ticket."
 
 WS_INTERACTIVE = "ws-interactive"
 NATIVE_HTTP = "native-http"
-DEFAULT_PURPOSES: frozenset[str] = frozenset({WS_INTERACTIVE, NATIVE_HTTP})
+BROWSER_CONTROLLER = "browser-controller"
+"""A browser controller's socket (P24-47): minted only by the broker's ``register`` route, which
+binds the ticket to the controller's identity; one minted elsewhere has no identity and is
+refused."""
+DEFAULT_PURPOSES: frozenset[str] = frozenset({WS_INTERACTIVE, NATIVE_HTTP, BROWSER_CONTROLLER})
 """What a ticket may be minted for; P18 passes its dashboard purposes to ``TicketBook``."""
 WEB_PTY = "web-pty"
 WEB_EVENTS = "web-events"
 WEB_RPC = "web-rpc"
 WEB_PUB = "web-pub"
 WEB_CONSOLE = "web-console"
-DASHBOARD_PURPOSES: frozenset[str] = frozenset({WEB_PTY, WEB_EVENTS, WEB_RPC, WEB_PUB, WEB_CONSOLE})
+WEB_PLUGIN = "web-plugin"
+"""A dashboard plugin's own socket under ``/api/ext/<name>/`` (P24-37)."""
+DASHBOARD_PURPOSES: frozenset[str] = frozenset(
+    {WEB_PTY, WEB_EVENTS, WEB_RPC, WEB_PUB, WEB_CONSOLE, WEB_PLUGIN}
+)
 """The dashboard's WebSocket purposes (P18-06); its ticket book mints only these."""
 DASHBOARD_SUBPROTOCOL = "indus-dashboard-v1"
 """The protocol a dashboard client offers and the server echoes."""
@@ -222,6 +237,7 @@ class TicketBook:
         ttl: float = TICKET_TTL_S,
         limit: int = MAX_LIVE_TICKETS,
         purposes: Iterable[str] = DEFAULT_PURPOSES,
+        served: Callable[[], Collection[str]] | None = None,
     ) -> None:
         if not profile_id:
             raise ValueError("a ticket book needs a profile id")
@@ -232,6 +248,7 @@ class TicketBook:
         self.ttl = ttl
         self.limit = limit
         self.purposes: frozenset[str] = frozenset(purposes)
+        self._served = served
         self._now = monotonic
         self._lock = threading.Lock()
         self._entries: dict[bytes, _Entry] = {}
@@ -246,13 +263,28 @@ class TicketBook:
         for key in stale:
             del self._entries[key]
 
+    def serves(self, profile_id: str) -> bool:
+        """Is ``profile_id`` one this book may bind tickets to? Always, without a served set; an
+        error reading the set counts as no (fail closed)."""
+        served = self._served
+        if served is None:
+            return True
+        try:
+            return profile_id in served()
+        except Exception:
+            log.warning("the served profile set could not be read; refusing the ticket")
+            return False
+
     def mint(self, purpose: str, *, profile_id: str | None = None) -> MintedTicket:
-        """A new ticket for ``purpose``; ``TicketRefused`` for an unknown purpose (``malformed``)
-        or when ``limit`` tickets are already live (``capacity``). ``profile_id`` binds the ticket
-        to another profile than the book's own (a dashboard serving several profiles)."""
+        """A new ticket for ``purpose``; ``TicketRefused`` for an unknown purpose (``malformed``),
+        a profile outside the served set (``wrong_profile``) or when ``limit`` tickets are already
+        live (``capacity``). ``profile_id`` binds the ticket to another profile than the book's
+        own (a dashboard or a multiplexed gateway serving several profiles)."""
         bound_profile = profile_id or self.profile_id
         if purpose not in self.purposes:
             raise TicketRefused("malformed", "unknown ticket purpose")
+        if not self.serves(bound_profile):
+            raise TicketRefused("wrong_profile", "this gateway does not serve that profile")
         with self._lock:
             now = self._now()
             self._prune(now)
@@ -302,7 +334,9 @@ class TicketBook:
                 raise TicketRefused("wrong_purpose", "the ticket was minted for another purpose")
             if profile_id is not None and profile_id != grant.profile_id:
                 raise TicketRefused("wrong_profile", "the ticket belongs to another profile")
-            return grant
+        if not self.serves(grant.profile_id):
+            raise TicketRefused("wrong_profile", "this gateway no longer serves that profile")
+        return grant
 
     def spend(self, ticket: object) -> bool:
         """Burn ``ticket`` without using it (it was seen where it must not be). True when it was
@@ -366,12 +400,15 @@ def is_loopback_host(host: object) -> bool:
     return address.is_loopback
 
 
-def offered_tickets(subprotocols: Sequence[object]) -> list[str]:
-    """The ticket parts of every ``indus-gateway-ticket.<t>`` subprotocol offered."""
+def offered_tickets(
+    subprotocols: Sequence[object], prefix: str = TICKET_PROTOCOL_PREFIX
+) -> list[str]:
+    """The ticket parts of every ``<prefix><t>`` subprotocol offered (``indus-gateway-ticket.``
+    unless another endpoint names its own prefix)."""
     return [
-        item[len(TICKET_PROTOCOL_PREFIX) :]
+        item[len(prefix) :]
         for item in subprotocols
-        if isinstance(item, str) and item.startswith(TICKET_PROTOCOL_PREFIX)
+        if isinstance(item, str) and item.startswith(prefix)
     ]
 
 
@@ -400,14 +437,14 @@ def _subprotocols(scope: Mapping[str, Any], headers: Mapping[str, list[str]]) ->
     return offered
 
 
-def _query_tickets(scope: Mapping[str, Any]) -> list[str]:
+def _query_tickets(scope: Mapping[str, Any], prefix: str = TICKET_PROTOCOL_PREFIX) -> list[str]:
     raw: object = scope.get("query_string") or b""
     if not isinstance(raw, bytes) or not raw:
         return []
     found: list[str] = []
     for key, value in parse_qsl(raw.decode("latin-1"), keep_blank_values=True):
-        if key.lower() in _QUERY_TICKET_KEYS or value.startswith(TICKET_PROTOCOL_PREFIX):
-            found.append(value.removeprefix(TICKET_PROTOCOL_PREFIX))
+        if key.lower() in _QUERY_TICKET_KEYS or value.startswith(prefix):
+            found.append(value.removeprefix(prefix))
     return found
 
 
@@ -428,12 +465,16 @@ def authenticate_upgrade(
     *,
     book: TicketBook,
     origins: Iterable[str] = (),
+    subprotocol: str = SUBPROTOCOL,
+    ticket_prefix: str = TICKET_PROTOCOL_PREFIX,
 ) -> UpgradeAccepted | UpgradeRefused:
-    """Decide one WebSocket upgrade from its ASGI ``scope`` (see the module notes)."""
+    """Decide one WebSocket upgrade from its ASGI ``scope`` (see the module notes).
+    ``subprotocol`` and ``ticket_prefix`` name another endpoint's pair (the browser-control
+    broker's, P24-47); the rules are the same."""
     headers = _headers(scope)
     offered = _subprotocols(scope, headers)
-    tickets = offered_tickets(offered)
-    in_query = _query_tickets(scope)
+    tickets = offered_tickets(offered, ticket_prefix)
+    in_query = _query_tickets(scope, ticket_prefix)
     for value in in_query:
         book.spend(value)
     if in_query:
@@ -454,14 +495,14 @@ def authenticate_upgrade(
             return refuse(CLOSE_FORBIDDEN, "origin not allowed")
     if len(tickets) != 1:
         return refuse(CLOSE_BAD_TICKET, "exactly one ticket must be offered")
-    if SUBPROTOCOL not in offered:
-        return refuse(CLOSE_BAD_TICKET, f"{SUBPROTOCOL} not offered")
+    if subprotocol not in offered:
+        return refuse(CLOSE_BAD_TICKET, f"{subprotocol} not offered")
     try:
         grant = book.redeem(tickets[0], purpose=purpose)
     except TicketRefused as refused:
         log.info("WebSocket upgrade refused: ticket %s", refused.reason)
         return UpgradeRefused(CLOSE_BAD_TICKET, f"ticket {refused.reason}")
-    return UpgradeAccepted(SUBPROTOCOL, grant)
+    return UpgradeAccepted(subprotocol, grant)
 
 
 # -- the dashboard's upgrade check (P18-06) -------------------------------------------------------
@@ -606,8 +647,6 @@ def authenticate_dashboard_upgrade(
             return refuse(CLOSE_BAD_TICKET, "credential refused")
         credential = "token"
     else:
-        if not gated:
-            return refuse(CLOSE_BAD_TICKET, "use the session token on this server")
         try:
             grant = book.redeem(tickets[0], purpose=purpose, profile_id=profile_id)
         except TicketRefused as refused:

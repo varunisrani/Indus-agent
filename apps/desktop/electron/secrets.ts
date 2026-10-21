@@ -22,7 +22,10 @@ import type { IpcRegistry } from "./ipc/registry.ts";
 
 export const KEYCHAIN_PROBE_TIMEOUT_MS = 2_000;
 export const DESKTOP_SECRET_NAMES = ["remote-connection-token", "access-proxy-headers"] as const;
-export type DesktopSecretName = (typeof DESKTOP_SECRET_NAMES)[number];
+/** Per-connection secrets of the connections registry (P24-29): token, OAuth set, proxy headers. */
+export const CONNECTION_SECRET_RE = /^connection-[a-z0-9][a-z0-9-]{0,63}-(token|oauth|headers)$/;
+export type ConnectionSecretName = `connection-${string}`;
+export type DesktopSecretName = (typeof DESKTOP_SECRET_NAMES)[number] | ConnectionSecretName;
 export type SecretStoreKind = "keychain" | "file";
 
 /** The parts of Electron's `safeStorage` we use. */
@@ -134,7 +137,9 @@ export interface SecretsPolicyView {
 }
 
 export function isDesktopSecretName(name: string): name is DesktopSecretName {
-  return (DESKTOP_SECRET_NAMES as readonly string[]).includes(name);
+  return (
+    (DESKTOP_SECRET_NAMES as readonly string[]).includes(name) || CONNECTION_SECRET_RE.test(name)
+  );
 }
 
 export interface DesktopSecretsOptions {
@@ -216,7 +221,7 @@ export class DesktopSecrets {
       );
     }
     const values = new Map<DesktopSecretName, string>();
-    for (const name of DESKTOP_SECRET_NAMES) {
+    for (const name of this.knownNames()) {
       const value = this.get(name);
       if (value !== null) values.set(name, value);
     }
@@ -224,6 +229,22 @@ export class DesktopSecrets {
     writePrivateFile(this.options.policyPath, `${JSON.stringify(this.policy)}\n`, this.platform);
     for (const [name, value] of values) this.writeEntry(name, value, this.effectiveStore());
     return this.view();
+  }
+
+  /** The fixed names plus every per-connection entry on disk. */
+  private knownNames(): DesktopSecretName[] {
+    const names: DesktopSecretName[] = [...DESKTOP_SECRET_NAMES];
+    let files: string[] = [];
+    try {
+      files = fs.readdirSync(this.options.dir);
+    } catch {
+      files = [];
+    }
+    for (const file of files) {
+      const name = file.endsWith(".json") ? file.slice(0, -5) : "";
+      if (CONNECTION_SECRET_RE.test(name)) names.push(name as ConnectionSecretName);
+    }
+    return names;
   }
 
   private checkName(name: string): DesktopSecretName {

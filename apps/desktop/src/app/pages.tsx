@@ -2,7 +2,20 @@
 // an empty state for pages, a dismissable card for overlays.
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { Archive, Bot, Clock, MessagesSquare, Puzzle, Settings, Users, X } from "lucide-react";
+import {
+  Archive,
+  Bot,
+  Clock,
+  Gauge,
+  MessagesSquare,
+  Orbit,
+  Puzzle,
+  Settings,
+  Smile,
+  Users,
+  Webhook,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { type MessageKey, useT } from "../i18n/index.tsx";
 import type { OverlayId, PageId } from "./routes.ts";
@@ -11,6 +24,10 @@ export const PAGE_TEXT: Readonly<Record<PageId, { title: MessageKey; body: Messa
   capabilities: { title: "nav.capabilities", body: "page.capabilities.body" },
   messaging: { title: "nav.messaging", body: "page.messaging.body" },
   artifacts: { title: "nav.artifacts", body: "page.artifacts.body" },
+  webhooks: { title: "nav.webhooks", body: "page.webhooks.body" },
+  "command-center": { title: "nav.command-center", body: "page.command-center.body" },
+  "learning-map": { title: "nav.learning-map", body: "page.learning-map.body" },
+  bots: { title: "nav.bots", body: "page.bots.body" },
 };
 
 export const OVERLAY_TEXT: Readonly<Record<OverlayId, { title: MessageKey; body: MessageKey }>> = {
@@ -24,6 +41,10 @@ export const PAGE_ICONS: Readonly<Record<PageId, ReactNode>> = {
   capabilities: <Puzzle aria-hidden="true" size={16} />,
   messaging: <MessagesSquare aria-hidden="true" size={16} />,
   artifacts: <Archive aria-hidden="true" size={16} />,
+  webhooks: <Webhook aria-hidden="true" size={16} />,
+  "command-center": <Gauge aria-hidden="true" size={16} />,
+  "learning-map": <Orbit aria-hidden="true" size={16} />,
+  bots: <Smile aria-hidden="true" size={16} />,
 };
 
 export const OVERLAY_ICONS: Readonly<Record<OverlayId, ReactNode>> = {

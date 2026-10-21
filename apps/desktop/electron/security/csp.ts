@@ -1,12 +1,25 @@
 // The renderer's Content-Security-Policy (D-16.19). One builder, applied twice: as a meta tag in
 // the built HTML (`injectCspMeta`, used by the renderer build) and as a response header for the
 // app's own URLs (`installCspHeaders`). No `unsafe-eval` and no inline script anywhere; the only
-// relaxation is inline styles (the Tailwind runtime). A dev build adds the Vite dev server to
+// relaxation is inline styles (the Tailwind runtime). Scripts come from the app and from
+// `indus-plugin:`, which serves only plugin modules main has checked (P24-32). A dev build adds the Vite dev server to
 // script and connect sources and nothing else.
 
 import { type AppOrigin, appUrlPatterns, isAppUrl } from "../appOrigin.ts";
 
 export const MEDIA_SCHEME = "indus-media";
+/** Desktop plugin modules, checked and served by main (P24-32, `electron/plugins/diskPlugins.ts`). */
+export const PLUGIN_SCHEME = "indus-plugin";
+/**
+ * `protocol.registerSchemesAsPrivileged` privileges of `indus-plugin:`. Module scripts are fetched
+ * in CORS mode, so the scheme must be CORS-enabled or `import()` of it fails.
+ */
+export const PLUGIN_SCHEME_PRIVILEGES = Object.freeze({
+  secure: true,
+  standard: true,
+  supportFetchAPI: true,
+  corsEnabled: true,
+});
 
 export interface CspInput {
   dev: boolean;
@@ -54,7 +67,10 @@ export function buildCsp(input: CspInput): string {
   ]);
   const directives: Array<[string, string[]]> = [
     ["default-src", ["'self'"]],
-    ["script-src", dev === null ? ["'self'"] : ["'self'", dev]],
+    [
+      "script-src",
+      dev === null ? ["'self'", `${PLUGIN_SCHEME}:`] : ["'self'", `${PLUGIN_SCHEME}:`, dev],
+    ],
     ["style-src", ["'self'", "'unsafe-inline'"]],
     ["img-src", ["'self'", "data:", "blob:", `${MEDIA_SCHEME}:`]],
     ["media-src", ["'self'", "blob:", `${MEDIA_SCHEME}:`]],

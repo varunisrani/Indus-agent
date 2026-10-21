@@ -9,6 +9,8 @@
 //
 // Later tasks add exactly one `install…(context)` line to the INSTALL STEPS list in `boot()`.
 
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -43,7 +45,10 @@ import type { TrayLike } from "./ambient/tray.ts";
 import { trayBitmap } from "./ambient/trayIcon.ts";
 import { appMenuTemplate } from "./appMenu.ts";
 import { type AppOrigin, devServerOrigin, fileAppOrigin } from "./appOrigin.ts";
+import { installArtifactsIpc } from "./artifacts/download.ts";
 import { type ElectronHooks, installBackend } from "./backend/install.ts";
+import { runCommand } from "./backend/process.ts";
+import { resolveBackend } from "./backend/resolver.ts";
 import type { MainContext } from "./context.ts";
 import { installContextMenus, type MenuContentsLike } from "./contextMenu.ts";
 import { DeepLinkRouter, installDeepLinks } from "./deepLinks.ts";
@@ -57,6 +62,7 @@ import { DesktopLog } from "./log.ts";
 import { installMediaProtocol, MediaRoots, type MediaTarget } from "./mediaProtocol.ts";
 import { installPanes, type PaneElectron, type PanesHandle } from "./panesInstall.ts";
 import { desktopPaths, resolveIndusHome, userDataOverride } from "./paths.ts";
+import { installDiskPlugins } from "./plugins/diskPlugins.ts";
 import { installPrefsIpc } from "./prefs.ts";
 import { type BackendPort, installProfiles } from "./profiles/routing.ts";
 import {
@@ -65,7 +71,13 @@ import {
   probeKeychain,
   type SafeStorageLike,
 } from "./secrets.ts";
-import { CspState, installCspHeaders, MEDIA_SCHEME } from "./security/csp.ts";
+import {
+  CspState,
+  installCspHeaders,
+  MEDIA_SCHEME,
+  PLUGIN_SCHEME,
+  PLUGIN_SCHEME_PRIVILEGES,
+} from "./security/csp.ts";
 import {
   ExternalOpener,
   installExternalOpenIpc,
@@ -89,9 +101,13 @@ import {
   type LockApp,
   lockTempDir,
 } from "./singleInstance.ts";
+import { type Fetcher, installThemeMarketplace } from "./theme/marketplace.ts";
+import { installUninstall } from "./uninstall.ts";
 import { createUpdateGate, gateHooks, installUpdates } from "./updates/install.ts";
 import { installWindowIpc } from "./windows/ipc.ts";
 import { type BrowserWindowLike, WindowManager } from "./windows/manager.ts";
+import { installPetWindow } from "./windows/petWindow.ts";
+import { installWakeIndicator } from "./windows/wakeIndicator.ts";
 
 /** Replaced at build time by scripts/build-electron.mjs with the validated defaults JSON. */
 declare const __INDUS_ENV_DEFAULTS__: string | undefined;
@@ -145,6 +161,8 @@ protocol.registerSchemesAsPrivileged([
     scheme: MEDIA_SCHEME,
     privileges: { secure: true, standard: true, stream: true, supportFetchAPI: true },
   },
+  // P24-32: checked desktop plugin modules (ES module imports need a standard, CORS-enabled scheme)
+  { scheme: PLUGIN_SCHEME, privileges: { ...PLUGIN_SCHEME_PRIVILEGES } },
 ]);
 
 // Every deep link — cold-start argv, a second launch, macOS open-url — goes into one queue that
@@ -420,6 +438,11 @@ async function boot(): Promise<void> {
     },
     { launchProfile: () => profiles.launch().profile },
   ); // P20-08..14
+  installArtifactsIpc(context.registry, {
+    current: () => backend.orchestrator.current(),
+    downloadsDir: () => app.getPath("downloads"),
+    log: logLine,
+  }); // P24-28
   backendPort = {
     attachedProfile: () => {
       const descriptor = backend.orchestrator.current()?.descriptor;
@@ -479,6 +502,75 @@ async function boot(): Promise<void> {
     },
     log: logLine,
   }); // P20-34
+  installDiskPlugins(context, {
+    protocol,
+    fs: {
+      readdir: (dir) => fs.promises.readdir(dir),
+      stat: (file) => fs.promises.stat(file),
+      readFile: (file) => fs.promises.readFile(file),
+    },
+    watch: (dir, onEvent) => {
+      try {
+        return fs.watch(dir, { persistent: false }, () => onEvent());
+      } catch {
+        return null; // the folder does not exist yet: no hot reload until the next start
+      }
+    },
+  }); // P24-32
+  installUninstall(context, {
+    home: paths.home,
+    platform: process.platform,
+    pid: process.pid,
+    execPath: process.execPath,
+    indus: async () => {
+      const found = await resolveBackend({
+        env: process.env,
+        argv: process.argv.slice(1),
+        platform: process.platform,
+        packaged: app.isPackaged,
+        home: paths.home,
+        homeDir: os.homedir(),
+        devCheckoutRoot: app.isPackaged ? null : path.resolve(app.getAppPath(), "..", ".."),
+        appExecPath: process.execPath,
+        isWsl: process.platform === "linux" && process.env.WSL_DISTRO_NAME !== undefined,
+        log: logLine,
+      });
+      return found.kind === "found" ? found.backend : null;
+    },
+    run: async (indus, args, timeoutMs) => {
+      const result = await runCommand(indus, args, { timeoutMs });
+      return result.code === 0 ? result.stdout : null;
+    },
+    readReceipts: async () => {
+      const dir = path.join(paths.home, "logs", "install_receipts");
+      const names = await fs.promises.readdir(dir).catch(() => [] as string[]);
+      const found: unknown[] = [];
+      for (const name of names.filter((n) => n.endsWith(".json"))) {
+        try {
+          found.push(JSON.parse(await fs.promises.readFile(path.join(dir, name), "utf8")));
+        } catch {
+          // an unreadable receipt confirms nothing
+        }
+      }
+      return found;
+    },
+    writeHelper: async (text, extension) => {
+      const file = path.join(
+        os.tmpdir(),
+        `indus-uninstall-${randomBytes(6).toString("hex")}${extension}`,
+      );
+      await fs.promises.writeFile(file, text, { encoding: "utf8", mode: 0o700, flag: "wx" });
+      return file;
+    },
+    spawnDetached: context.machinery.guard(
+      "starting the uninstall helper",
+      (command: string, args: readonly string[]) => {
+        spawn(command, [...args], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+      },
+    ),
+    quit: () => app.quit(),
+    log: logLine,
+  }); // P24-34
   const startDeepLinks = installDeepLinks(context, deepLinks); // P20-34
   panesRef = installPanes(context, {
     ...paneElectron(windows),
@@ -504,6 +596,11 @@ async function boot(): Promise<void> {
     emitFindOpen: (contents) =>
       registry.emit(contents as unknown as WebContents, "indus:find:open", {}),
   }); // P20-39
+  installPetWindow(context, { screen }); // P24-19
+  installWakeIndicator(context, { screen }); // P24-20
+  installThemeMarketplace(context, {
+    fetch: ((url: string, init: RequestInit) => net.fetch(url, init)) as unknown as Fetcher,
+  }); // P24-33
   registry.seal();
 
   Menu.setApplicationMenu(

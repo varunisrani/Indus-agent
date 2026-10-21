@@ -266,6 +266,156 @@
       "required": ["request_id", "session_id", "command", "description"],
       "type": "object"
     },
+    "AvatarKind": {"enum": ["face", "upload", "portrait", "pet"], "type": "string"},
+    "BotAvatar": {
+      "additionalProperties": false,
+      "description": "A bot's picture: a generated face, an uploaded or portrait image, or the profile's pet.",
+      "properties": {
+        "data": {
+          "anyOf": [{"maxLength": 524288, "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A ``data:image/png|jpeg|webp;base64,…`` URL (``upload``, ``portrait``)."
+        },
+        "kind": {
+          "$ref": "#/$defs/AvatarKind",
+          "description": "``face``, ``upload``, ``portrait`` or ``pet``."
+        },
+        "seed": {
+          "anyOf": [{"maxLength": 64, "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The face's seed (``face``)."
+        }
+      },
+      "required": ["kind"],
+      "type": "object"
+    },
+    "BotCanonical": {
+      "additionalProperties": false,
+      "description": "The bot's forever-chat.",
+      "properties": {"session_id": {"description": "The live tip of the chat.", "type": "string"}},
+      "required": ["session_id"],
+      "type": "object"
+    },
+    "BotRoutine": {
+      "additionalProperties": false,
+      "description": "One of the bot's scheduled jobs.",
+      "properties": {
+        "enabled": {"description": "It runs.", "type": "boolean"},
+        "id": {"description": "The job id.", "type": "string"},
+        "name": {"description": "Its name.", "type": "string"},
+        "schedule": {"description": "Its schedule.", "type": "string"}
+      },
+      "required": ["id", "name", "schedule", "enabled"],
+      "type": "object"
+    },
+    "BotRow": {
+      "additionalProperties": false,
+      "description": "One bot.",
+      "properties": {
+        "avatar": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The picture (``{kind, seed?, data?}``).",
+          "type": "object"
+        },
+        "canonical": {
+          "anyOf": [{"$ref": "#/$defs/BotCanonical"}, {"type": "null"}],
+          "description": "The forever-chat, or null when it has none yet."
+        },
+        "hidden": {"description": "Hidden from the list.", "type": "boolean"},
+        "profile": {"description": "The profile's name.", "type": "string"},
+        "routines": {
+          "description": "Scheduled jobs.",
+          "items": {"$ref": "#/$defs/BotRoutine"},
+          "type": "array"
+        },
+        "sections": {
+          "description": "Sidebar sections.",
+          "items": {"type": "string"},
+          "type": "array"
+        }
+      },
+      "required": ["profile", "avatar", "hidden", "sections", "routines", "canonical"],
+      "type": "object"
+    },
+    "BotsListResult": {
+      "additionalProperties": false,
+      "description": "Every bot.",
+      "properties": {
+        "bots": {
+          "description": "The bots, by profile.",
+          "items": {"$ref": "#/$defs/BotRow"},
+          "type": "array"
+        }
+      },
+      "required": ["bots"],
+      "type": "object"
+    },
+    "BotsNoParams": {
+      "additionalProperties": false,
+      "description": "No parameters.",
+      "properties": {},
+      "type": "object"
+    },
+    "BotsOpenResult": {
+      "additionalProperties": false,
+      "description": "The bot's forever-chat, created only when it has none.",
+      "properties": {
+        "created": {"description": "This call created it.", "type": "boolean"},
+        "session_id": {"description": "The chat's live tip.", "type": "string"}
+      },
+      "required": ["session_id", "created"],
+      "type": "object"
+    },
+    "BotsProfileParams": {
+      "additionalProperties": false,
+      "description": "One bot (a profile).",
+      "properties": {
+        "profile": {
+          "description": "The profile's name.",
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["profile"],
+      "type": "object"
+    },
+    "BotsUpdateParams": {
+      "additionalProperties": false,
+      "description": "Change a bot's picture, visibility or sidebar sections.",
+      "properties": {
+        "avatar": {
+          "anyOf": [{"$ref": "#/$defs/BotAvatar"}, {"type": "null"}],
+          "default": null,
+          "description": "The new picture."
+        },
+        "hidden": {
+          "anyOf": [{"type": "boolean"}, {"type": "null"}],
+          "default": null,
+          "description": "Hide the bot from the list."
+        },
+        "profile": {
+          "description": "The profile's name.",
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sections": {
+          "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+          "default": null,
+          "description": "Sidebar sections (at most 20, 64 characters each)."
+        }
+      },
+      "required": ["profile"],
+      "type": "object"
+    },
+    "BotsUpdateResult": {
+      "additionalProperties": false,
+      "description": "The changed bot.",
+      "properties": {"bot": {"$ref": "#/$defs/BotRow", "description": "The bot."}},
+      "required": ["bot"],
+      "type": "object"
+    },
     "BridgeReady": {
       "additionalProperties": false,
       "description": "The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for\nrequests.",
@@ -317,6 +467,40 @@
       "description": "Why an open server request was withdrawn.",
       "enum": ["interrupted", "turn_ended", "timed_out", "answered_elsewhere", "session_closed"],
       "type": "string"
+    },
+    "CapabilitiesSummaryParams": {
+      "additionalProperties": false,
+      "description": "Count the capabilities of the caller's profile.",
+      "properties": {},
+      "type": "object"
+    },
+    "CapabilitiesSummaryResult": {
+      "additionalProperties": false,
+      "description": "One count per Capabilities tab.",
+      "properties": {
+        "mcp_servers": {"$ref": "#/$defs/CapabilityCount", "description": "Configured MCP servers."},
+        "plugins": {"$ref": "#/$defs/CapabilityCount", "description": "Discovered agent plugins."},
+        "skills": {
+          "$ref": "#/$defs/CapabilityCount",
+          "description": "Installed skills (plugin skills excluded)."
+        },
+        "toolsets": {
+          "$ref": "#/$defs/CapabilityCount",
+          "description": "Plain toolsets, enabled when the CLI selection offers all their tools."
+        }
+      },
+      "required": ["skills", "toolsets", "mcp_servers", "plugins"],
+      "type": "object"
+    },
+    "CapabilityCount": {
+      "additionalProperties": false,
+      "description": "How many of one kind there are, and how many are on.",
+      "properties": {
+        "enabled": {"description": "Those switched on.", "type": "integer"},
+        "total": {"description": "All of them.", "type": "integer"}
+      },
+      "required": ["total", "enabled"],
+      "type": "object"
     },
     "CatalogEntry": {
       "additionalProperties": false,
@@ -706,6 +890,16 @@
       "required": ["key", "value", "applied", "saved"],
       "type": "object"
     },
+    "DiscoveredRepo": {
+      "additionalProperties": false,
+      "description": "One repository found by the scan.",
+      "properties": {
+        "label": {"description": "Its folder name.", "type": "string"},
+        "root": {"description": "The repository folder.", "type": "string"}
+      },
+      "required": ["root", "label"],
+      "type": "object"
+    },
     "DispatchKind": {
       "description": "What a dispatched command resolved to.",
       "enum": ["exec", "alias", "skill", "send", "prefill", "plugin"],
@@ -956,6 +1150,369 @@
         }
       },
       "required": ["session_id", "seq", "status", "goal", "turns_used", "max_turns"],
+      "type": "object"
+    },
+    "GroupsAuthorityResult": {
+      "additionalProperties": false,
+      "description": "The room's authority after a promote or demote.",
+      "properties": {
+        "authority": {"description": "The gateway that holds the room.", "type": "string"},
+        "epoch": {"description": "Its epoch.", "type": "integer"},
+        "idempotent": {"description": "True when nothing changed.", "type": "boolean"},
+        "reason": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The promote's reason."
+        }
+      },
+      "required": ["authority", "epoch", "idempotent"],
+      "type": "object"
+    },
+    "GroupsCapabilitiesResult": {
+      "additionalProperties": false,
+      "description": "What this gateway's room service offers.",
+      "properties": {
+        "authority_transfer": {
+          "description": "How authority moves (an operator recovery step).",
+          "type": "string"
+        },
+        "driver": {"description": "A room driver runs here.", "type": "boolean"},
+        "gateway_id": {"description": "This gateway's room identity.", "type": "string"},
+        "methods": {
+          "description": "The ``groups.*`` methods served.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "protocol": {"description": "The room protocol version.", "type": "integer"}
+      },
+      "required": ["protocol", "driver", "gateway_id", "methods", "authority_transfer"],
+      "type": "object"
+    },
+    "GroupsCreateParams": {
+      "additionalProperties": false,
+      "description": "Create a room (idempotent for the same id and settings).",
+      "properties": {
+        "members": {
+          "description": "The members (``{handle | profile | id, ...}``).",
+          "items": {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
+          "type": "array"
+        },
+        "name": {"description": "Its display name.", "type": "string"},
+        "room_id": {"description": "The new room's id.", "type": "string"}
+      },
+      "required": ["room_id", "name", "members"],
+      "type": "object"
+    },
+    "GroupsDemoteParams": {
+      "additionalProperties": false,
+      "description": "Adopt a strictly newer authority lineage seen elsewhere.",
+      "properties": {
+        "observed_epoch": {"description": "Its epoch.", "type": "integer"},
+        "observed_gateway_id": {
+          "description": "The gateway that holds the room now.",
+          "type": "string"
+        },
+        "room_id": {"description": "The room's id.", "type": "string"}
+      },
+      "required": ["room_id", "observed_gateway_id", "observed_epoch"],
+      "type": "object"
+    },
+    "GroupsDisbandResult": {
+      "additionalProperties": false,
+      "description": "The disbanded room.",
+      "properties": {
+        "disbanded_at": {"description": "When.", "type": "number"},
+        "idempotent": {"description": "True when it was disbanded already.", "type": "boolean"},
+        "room_id": {"description": "The room's id.", "type": "string"}
+      },
+      "required": ["room_id", "disbanded_at", "idempotent"],
+      "type": "object"
+    },
+    "GroupsListParams": {
+      "additionalProperties": false,
+      "description": "A page of rooms.",
+      "properties": {
+        "include_disbanded": {
+          "default": false,
+          "description": "Also list disbanded rooms.",
+          "type": "boolean"
+        },
+        "limit": {"default": 100, "description": "Rooms per page.", "type": "integer"},
+        "offset": {"default": 0, "description": "Rooms to skip.", "type": "integer"}
+      },
+      "type": "object"
+    },
+    "GroupsListResult": {
+      "additionalProperties": false,
+      "description": "A page of rooms.",
+      "properties": {
+        "rooms": {
+          "description": "The rooms.",
+          "items": {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
+          "type": "array"
+        }
+      },
+      "required": ["rooms"],
+      "type": "object"
+    },
+    "GroupsLogParams": {
+      "additionalProperties": false,
+      "description": "A page of a room's event log.",
+      "properties": {
+        "include_disbanded": {
+          "default": false,
+          "description": "Read a disbanded room's log too.",
+          "type": "boolean"
+        },
+        "limit": {"default": 100, "description": "Events per page.", "type": "integer"},
+        "room_id": {"description": "The room's id.", "type": "string"},
+        "since_seq": {
+          "default": 0,
+          "description": "Events after this sequence number.",
+          "type": "integer"
+        }
+      },
+      "required": ["room_id"],
+      "type": "object"
+    },
+    "GroupsLogResult": {
+      "additionalProperties": false,
+      "description": "A page of events.",
+      "properties": {
+        "authority": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "``{gateway_id, epoch}`` of the room's authority.",
+          "type": "object"
+        },
+        "cursor": {"description": "Pass as ``since_seq`` for the next page.", "type": "integer"},
+        "events": {
+          "description": "The events, oldest first.",
+          "items": {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
+          "type": "array"
+        },
+        "has_more": {"description": "More events follow.", "type": "boolean"},
+        "latest_seq": {"description": "The room's newest sequence number.", "type": "integer"}
+      },
+      "required": ["events", "cursor", "latest_seq", "has_more", "authority"],
+      "type": "object"
+    },
+    "GroupsNoParams": {
+      "additionalProperties": false,
+      "description": "No parameters.",
+      "properties": {},
+      "type": "object"
+    },
+    "GroupsPromoteParams": {
+      "additionalProperties": false,
+      "description": "Claim a room's authority on this gateway (operator recovery; not atomic).",
+      "properties": {
+        "confirm": {
+          "default": false,
+          "description": "Must be true: the old authority was fenced first.",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "authority-unreachable",
+          "description": "Why, for the log.",
+          "type": "string"
+        },
+        "room_id": {"description": "The room's id.", "type": "string"}
+      },
+      "required": ["room_id"],
+      "type": "object"
+    },
+    "GroupsRenameParams": {
+      "additionalProperties": false,
+      "description": "Rename a room.",
+      "properties": {
+        "event_id": {"description": "The rename's idempotency key.", "type": "string"},
+        "name": {"description": "The new name.", "type": "string"},
+        "room_id": {"description": "The room's id.", "type": "string"}
+      },
+      "required": ["room_id", "event_id", "name"],
+      "type": "object"
+    },
+    "GroupsRetryParams": {
+      "additionalProperties": false,
+      "description": "Retry a deferred or indeterminate turn (it may run twice).",
+      "properties": {
+        "room_id": {"description": "The room's id.", "type": "string"},
+        "task_id": {"description": "The task to retry.", "type": "string"}
+      },
+      "required": ["room_id", "task_id"],
+      "type": "object"
+    },
+    "GroupsRetryResult": {
+      "additionalProperties": false,
+      "description": "The requeued task.",
+      "properties": {
+        "task": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The task.",
+          "type": "object"
+        }
+      },
+      "required": ["task"],
+      "type": "object"
+    },
+    "GroupsRoomParams": {
+      "additionalProperties": false,
+      "description": "One room.",
+      "properties": {"room_id": {"description": "The room's id.", "type": "string"}},
+      "required": ["room_id"],
+      "type": "object"
+    },
+    "GroupsRoomResult": {
+      "additionalProperties": false,
+      "description": "The room a create or rename acted on.",
+      "properties": {
+        "idempotent": {
+          "description": "True when nothing changed (a repeated call).",
+          "type": "boolean"
+        },
+        "room": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The room.",
+          "type": "object"
+        }
+      },
+      "required": ["room", "idempotent"],
+      "type": "object"
+    },
+    "GroupsSendParams": {
+      "additionalProperties": false,
+      "description": "The person's message to a room.",
+      "properties": {
+        "author": {"default": "person", "description": "Who wrote it.", "type": "string"},
+        "client_event_id": {
+          "description": "The client's retry key: a repeated send is a no-op.",
+          "type": "string"
+        },
+        "detect_stop": {
+          "default": true,
+          "description": "Hold every member a stop directive in the text names.",
+          "type": "boolean"
+        },
+        "room_id": {"description": "The room's id.", "type": "string"},
+        "text": {"description": "The message.", "minLength": 1, "type": "string"},
+        "thread_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A thread inside the room."
+        }
+      },
+      "required": ["room_id", "client_event_id", "text"],
+      "type": "object"
+    },
+    "GroupsSendResult": {
+      "additionalProperties": false,
+      "description": "The stored message and what its stop directives did.",
+      "properties": {
+        "cancelled": {
+          "description": "Queued tasks cancelled for them.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "event": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The stored event.",
+          "type": "object"
+        },
+        "held": {
+          "description": "Members a stop directive held.",
+          "items": {"type": "string"},
+          "type": "array"
+        }
+      },
+      "required": ["event", "held", "cancelled"],
+      "type": "object"
+    },
+    "GroupsStateParams": {
+      "additionalProperties": false,
+      "description": "A room's current state.",
+      "properties": {
+        "include_disbanded": {
+          "default": false,
+          "description": "Answer for a disbanded room too.",
+          "type": "boolean"
+        },
+        "room_id": {"description": "The room's id.", "type": "string"}
+      },
+      "required": ["room_id"],
+      "type": "object"
+    },
+    "GroupsStateResult": {
+      "additionalProperties": false,
+      "description": "A room and its pending authority claim.",
+      "properties": {
+        "authority_claim": {
+          "anyOf": [
+            {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
+            {"type": "null"}
+          ],
+          "default": null,
+          "description": "A claim in progress, if any."
+        },
+        "room": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The room.",
+          "type": "object"
+        }
+      },
+      "required": ["room"],
+      "type": "object"
+    },
+    "GroupsStatusResult": {
+      "additionalProperties": false,
+      "description": "Whether the room is working, blocked or waiting for an operator.",
+      "properties": {
+        "blocked": {"description": "A turn is indeterminate or stopping.", "type": "boolean"},
+        "counts": {
+          "additionalProperties": {"type": "integer"},
+          "description": "Tasks by status.",
+          "type": "object"
+        },
+        "pending_actions": {
+          "description": "What an operator may do (``{kind: retry, task_id}``).",
+          "items": {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
+          "type": "array"
+        },
+        "working": {"description": "A turn is queued, running or stopping.", "type": "boolean"}
+      },
+      "required": ["working", "blocked", "counts", "pending_actions"],
+      "type": "object"
+    },
+    "GroupsStopParams": {
+      "additionalProperties": false,
+      "description": "Stop every queued and running turn of a room.",
+      "properties": {
+        "cancel_id": {"description": "The stop's idempotency key.", "type": "string"},
+        "room_id": {"description": "The room's id.", "type": "string"}
+      },
+      "required": ["room_id", "cancel_id"],
+      "type": "object"
+    },
+    "GroupsStopResult": {
+      "additionalProperties": false,
+      "description": "What the stop did.",
+      "properties": {
+        "cancelled": {
+          "description": "Queued tasks cancelled.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "event": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The ``room.stop_requested`` event.",
+          "type": "object"
+        },
+        "stopping": {
+          "description": "Running tasks asked to stop.",
+          "items": {"type": "string"},
+          "type": "array"
+        }
+      },
+      "required": ["event", "cancelled", "stopping"],
       "type": "object"
     },
     "HeartbeatFired": {
@@ -1404,6 +1961,532 @@
         }
       },
       "required": ["placeholder", "path", "lines"],
+      "type": "object"
+    },
+    "PetDisableResult": {
+      "additionalProperties": false,
+      "description": "The display state after the call.",
+      "properties": {"enabled": {"description": "Always false.", "type": "boolean"}},
+      "required": ["enabled"],
+      "type": "object"
+    },
+    "PetDraftInfo": {
+      "additionalProperties": false,
+      "description": "One draft look.",
+      "properties": {
+        "data_uri": {"description": "The picture.", "type": "string"},
+        "index": {"description": "Its number, for ``pet.hatch``.", "type": "integer"}
+      },
+      "required": ["index", "data_uri"],
+      "type": "object"
+    },
+    "PetGenerateParams": {
+      "additionalProperties": false,
+      "description": "Draw draft looks for a new pet.",
+      "properties": {
+        "count": {
+          "default": 4,
+          "description": "How many looks to draw.",
+          "maximum": 4,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "idea": {
+          "description": "What the pet is, in a few words.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["idea"],
+      "type": "object"
+    },
+    "PetGenerateResult": {
+      "additionalProperties": false,
+      "description": "The drafts and the token that names them.",
+      "properties": {
+        "drafts": {
+          "description": "The looks that came back.",
+          "items": {"$ref": "#/$defs/PetDraftInfo"},
+          "type": "array"
+        },
+        "token": {"description": "Pass it to ``pet.hatch`` (valid for an hour).", "type": "string"}
+      },
+      "required": ["token", "drafts"],
+      "type": "object"
+    },
+    "PetHatchParams": {
+      "additionalProperties": false,
+      "description": "Turn one draft into a pet.",
+      "properties": {
+        "name": {
+          "description": "The pet's name.",
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pick": {
+          "description": "The draft's index.",
+          "exclusiveMaximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "token": {
+          "description": "From ``pet.generate``.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["token", "pick", "name"],
+      "type": "object"
+    },
+    "PetInfoParams": {
+      "additionalProperties": false,
+      "description": "The shown pet, for a renderer.",
+      "properties": {
+        "known_revision": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The revision the caller already holds; the pictures are left out when it is current."
+        }
+      },
+      "type": "object"
+    },
+    "PetInfoResult": {
+      "additionalProperties": false,
+      "description": "The shown pet; only ``enabled`` (false) when no pet is shown.",
+      "properties": {
+        "enabled": {"description": "A pet is chosen and the display is on.", "type": "boolean"},
+        "moods": {
+          "anyOf": [
+            {"additionalProperties": {"type": "string"}, "type": "object"},
+            {"type": "null"}
+          ],
+          "default": null,
+          "description": "Mood → picture as a data URI."
+        },
+        "name": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Its display name."
+        },
+        "revision": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Changes whenever a picture or the name changes."
+        },
+        "scale": {
+          "anyOf": [{"type": "number"}, {"type": "null"}],
+          "default": null,
+          "description": "Size on every surface (0.25-3)."
+        },
+        "slug": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The pet's slug."
+        },
+        "unchanged": {
+          "anyOf": [{"type": "boolean"}, {"type": "null"}],
+          "default": null,
+          "description": "True when ``known_revision`` is current and ``moods`` is left out."
+        }
+      },
+      "required": ["enabled"],
+      "type": "object"
+    },
+    "PetListResult": {
+      "additionalProperties": false,
+      "description": "Every pet of the profile.",
+      "properties": {
+        "active": {"description": "The chosen slug (\"\" when none).", "type": "string"},
+        "enabled": {"description": "The display is on.", "type": "boolean"},
+        "pets": {
+          "description": "The pets, by slug.",
+          "items": {"$ref": "#/$defs/PetRow"},
+          "type": "array"
+        }
+      },
+      "required": ["pets", "active", "enabled"],
+      "type": "object"
+    },
+    "PetNoParams": {
+      "additionalProperties": false,
+      "description": "No parameters.",
+      "properties": {},
+      "type": "object"
+    },
+    "PetRenameParams": {
+      "additionalProperties": false,
+      "description": "Rename a pet.",
+      "properties": {
+        "name": {"description": "The new name.", "maxLength": 40, "minLength": 1, "type": "string"},
+        "slug": {
+          "description": "The pet's slug.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["slug", "name"],
+      "type": "object"
+    },
+    "PetRow": {
+      "additionalProperties": false,
+      "description": "One pet in the list.",
+      "properties": {
+        "name": {"description": "Its display name.", "type": "string"},
+        "shown": {"description": "It is the active pet and the display is on.", "type": "boolean"},
+        "slug": {"description": "The pet's slug.", "type": "string"}
+      },
+      "required": ["slug", "name", "shown"],
+      "type": "object"
+    },
+    "PetSlugParams": {
+      "additionalProperties": false,
+      "description": "One pet.",
+      "properties": {
+        "slug": {
+          "description": "The pet's slug.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["slug"],
+      "type": "object"
+    },
+    "PetSlugResult": {
+      "additionalProperties": false,
+      "description": "The pet the call acted on.",
+      "properties": {
+        "name": {"description": "Its display name.", "type": "string"},
+        "shown": {"description": "It is the pet shown now.", "type": "boolean"},
+        "slug": {"description": "Its slug (after a rename, the new one).", "type": "string"}
+      },
+      "required": ["slug", "name", "shown"],
+      "type": "object"
+    },
+    "ProjectFolderInfo": {
+      "additionalProperties": false,
+      "description": "One folder a project owns.",
+      "properties": {
+        "kind": {
+          "description": "``folder``, ``repo`` or ``worktree``.",
+          "enum": ["folder", "repo", "worktree"],
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "An optional display label."
+        },
+        "path": {"description": "Absolute folder path.", "type": "string"},
+        "primary": {"description": "True for the project's main folder.", "type": "boolean"}
+      },
+      "required": ["path", "kind", "primary"],
+      "type": "object"
+    },
+    "ProjectInfo": {
+      "additionalProperties": false,
+      "description": "A project with its folders and the sessions that joined it.",
+      "properties": {
+        "archived": {
+          "default": false,
+          "description": "True when hidden from the sidebar.",
+          "type": "boolean"
+        },
+        "board_slug": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The task board bound to this project."
+        },
+        "colour": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A display colour."
+        },
+        "description": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "What the project is about."
+        },
+        "folders": {
+          "description": "Every folder the project owns, main folder first.",
+          "items": {"$ref": "#/$defs/ProjectFolderInfo"},
+          "type": "array"
+        },
+        "icon": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "An icon name or emoji."
+        },
+        "id": {"description": "The project id (``p_…``).", "type": "string"},
+        "name": {"description": "The display name.", "type": "string"},
+        "primary_path": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The main folder."
+        },
+        "sessions": {
+          "description": "Ids of sessions that started inside the project's folders.",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "slug": {"description": "The unique short name.", "type": "string"}
+      },
+      "required": ["id", "slug", "name"],
+      "type": "object"
+    },
+    "ProjectResult": {
+      "additionalProperties": false,
+      "description": "The project after the call.",
+      "properties": {"project": {"$ref": "#/$defs/ProjectInfo", "description": "The project."}},
+      "required": ["project"],
+      "type": "object"
+    },
+    "ProjectSummary": {
+      "additionalProperties": false,
+      "description": "One row of the projects list.",
+      "properties": {
+        "active": {"description": "True for the profile's active project.", "type": "boolean"},
+        "archived": {"description": "True when archived.", "type": "boolean"},
+        "folders": {"description": "How many folders the project owns.", "type": "integer"},
+        "id": {"description": "The project id.", "type": "string"},
+        "name": {"description": "The display name.", "type": "string"},
+        "primary_path": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The main folder."
+        },
+        "slug": {"description": "The unique short name.", "type": "string"}
+      },
+      "required": ["id", "slug", "name", "folders", "archived", "active"],
+      "type": "object"
+    },
+    "ProjectsAddPathParams": {
+      "additionalProperties": false,
+      "description": "Add a folder to a project.",
+      "properties": {
+        "kind": {
+          "default": "folder",
+          "description": "``folder``, ``repo`` or ``worktree``.",
+          "enum": ["folder", "repo", "worktree"],
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "An optional display label."
+        },
+        "path": {"description": "The folder.", "minLength": 1, "type": "string"},
+        "primary": {"default": false, "description": "Make it the main folder.", "type": "boolean"},
+        "project": {"description": "Id, slug or name.", "minLength": 1, "type": "string"}
+      },
+      "required": ["project", "path"],
+      "type": "object"
+    },
+    "ProjectsArchiveParams": {
+      "additionalProperties": false,
+      "description": "Archive (or restore) a project.",
+      "properties": {
+        "archived": {"default": true, "description": "False restores it.", "type": "boolean"},
+        "project": {"description": "Id, slug or name.", "minLength": 1, "type": "string"}
+      },
+      "required": ["project"],
+      "type": "object"
+    },
+    "ProjectsCreateParams": {
+      "additionalProperties": false,
+      "description": "Create a project.",
+      "properties": {
+        "board_slug": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A task board to bind."
+        },
+        "colour": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A display colour."
+        },
+        "description": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "What the project is about."
+        },
+        "folders": {
+          "description": "Folders it owns (the first is the main folder unless ``primary`` is given).",
+          "items": {"type": "string"},
+          "type": "array"
+        },
+        "icon": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "An icon name or emoji."
+        },
+        "name": {"description": "The display name.", "minLength": 1, "type": "string"},
+        "primary": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The main folder."
+        },
+        "slug": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A short name; made from the name when left out."
+        },
+        "use": {
+          "default": false,
+          "description": "Also make it the active project.",
+          "type": "boolean"
+        }
+      },
+      "required": ["name"],
+      "type": "object"
+    },
+    "ProjectsDiscoverParams": {
+      "additionalProperties": false,
+      "description": "Find git repositories under the scan roots (the profile's discovery settings).",
+      "properties": {},
+      "type": "object"
+    },
+    "ProjectsDiscoverResult": {
+      "additionalProperties": false,
+      "description": "The repositories found, sorted by path.",
+      "properties": {
+        "repos": {
+          "description": "The repositories.",
+          "items": {"$ref": "#/$defs/DiscoveredRepo"},
+          "type": "array"
+        }
+      },
+      "required": ["repos"],
+      "type": "object"
+    },
+    "ProjectsForPathParams": {
+      "additionalProperties": false,
+      "description": "The project owning a folder; with ``session_id`` the session joins it.",
+      "properties": {
+        "path": {
+          "description": "A folder (a session's working folder).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A session started in that folder."
+        }
+      },
+      "required": ["path"],
+      "type": "object"
+    },
+    "ProjectsGetParams": {
+      "additionalProperties": false,
+      "description": "Read one project by id, slug or name.",
+      "properties": {
+        "project": {"description": "Id, slug or name.", "minLength": 1, "type": "string"}
+      },
+      "required": ["project"],
+      "type": "object"
+    },
+    "ProjectsListParams": {
+      "additionalProperties": false,
+      "description": "List the profile's projects.",
+      "properties": {
+        "include_archived": {
+          "default": false,
+          "description": "Also list archived projects.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ProjectsListResult": {
+      "additionalProperties": false,
+      "description": "The projects, oldest first.",
+      "properties": {
+        "active_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The active project, if any."
+        },
+        "projects": {
+          "description": "One row per project.",
+          "items": {"$ref": "#/$defs/ProjectSummary"},
+          "type": "array"
+        }
+      },
+      "required": ["projects"],
+      "type": "object"
+    },
+    "ProjectsRemovePathParams": {
+      "additionalProperties": false,
+      "description": "Remove a folder from a project (the main folder moves to the next one).",
+      "properties": {
+        "path": {"description": "The folder.", "minLength": 1, "type": "string"},
+        "project": {"description": "Id, slug or name.", "minLength": 1, "type": "string"}
+      },
+      "required": ["project", "path"],
+      "type": "object"
+    },
+    "ProjectsUpdateParams": {
+      "additionalProperties": false,
+      "description": "Change a project's fields; ``\"\"`` clears icon, colour and board.",
+      "properties": {
+        "board_slug": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A new bound board."
+        },
+        "colour": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A new colour."
+        },
+        "description": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A new description."
+        },
+        "icon": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A new icon."
+        },
+        "name": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "A new display name."
+        },
+        "project": {"description": "Id, slug or name.", "minLength": 1, "type": "string"}
+      },
+      "required": ["project"],
+      "type": "object"
+    },
+    "ProjectsUseParams": {
+      "additionalProperties": false,
+      "description": "Set the active project; leave ``project`` out to clear it.",
+      "properties": {
+        "project": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Id, slug or name."
+        }
+      },
+      "type": "object"
+    },
+    "ProjectsUseResult": {
+      "additionalProperties": false,
+      "description": "The active (or found) project, if any.",
+      "properties": {
+        "project": {
+          "anyOf": [{"$ref": "#/$defs/ProjectInfo"}, {"type": "null"}],
+          "default": null,
+          "description": "The project, or nothing."
+        }
+      },
       "type": "object"
     },
     "PromptBackgroundParams": {
@@ -2919,6 +4002,7 @@
       "required": ["request_id", "session_id", "reason"],
       "type": "object"
     },
+    "Surface": {"enum": ["tui", "gui", "cli"], "type": "string"},
     "TodoItem": {
       "additionalProperties": false,
       "description": "One entry of the session's task list.",
@@ -3232,6 +4316,218 @@
       },
       "required": ["surface", "count"],
       "type": "object"
+    },
+    "VoiceSpeakParams": {
+      "additionalProperties": false,
+      "description": "Read a text aloud.",
+      "properties": {
+        "text": {"description": "The text.", "maxLength": 20000, "minLength": 1, "type": "string"}
+      },
+      "required": ["text"],
+      "type": "object"
+    },
+    "VoiceSpeakResult": {
+      "additionalProperties": false,
+      "description": "The speech.",
+      "properties": {
+        "audio_b64": {"description": "The audio, base64.", "type": "string"},
+        "mime": {"description": "Its type.", "type": "string"}
+      },
+      "required": ["audio_b64", "mime"],
+      "type": "object"
+    },
+    "VoiceTranscribeParams": {
+      "additionalProperties": false,
+      "description": "The text of one recorded clip.",
+      "properties": {
+        "audio_b64": {
+          "description": "The clip, base64.",
+          "maxLength": 22369625,
+          "minLength": 1,
+          "type": "string"
+        },
+        "mime": {
+          "description": "Its type (``audio/webm``, ``audio/wav`` ...).",
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The chat the clip is for (null: a new chat)."
+        }
+      },
+      "required": ["audio_b64", "mime"],
+      "type": "object"
+    },
+    "VoiceTranscribeResult": {
+      "additionalProperties": false,
+      "description": "What was said.",
+      "properties": {
+        "text": {
+          "description": "The transcript (\"\" when nothing could be heard).",
+          "type": "string"
+        }
+      },
+      "required": ["text"],
+      "type": "object"
+    },
+    "WakeDetected": {
+      "additionalProperties": false,
+      "description": "``wake.detected``: the phrase was heard; start voice capture now.",
+      "properties": {
+        "phrase": {"description": "The phrase heard.", "type": "string"},
+        "surface": {"description": "The owning surface.", "type": "string"}
+      },
+      "required": ["phrase", "surface"],
+      "type": "object"
+    },
+    "WakeFeedParams": {
+      "additionalProperties": false,
+      "description": "Client-captured audio for a ``client_capture`` listener.",
+      "properties": {
+        "pcm": {
+          "description": "Base64 int16 mono little-endian audio.",
+          "maxLength": 85337,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sample_rate": {"default": 16000, "description": "Must be 16000.", "type": "integer"}
+      },
+      "required": ["pcm"],
+      "type": "object"
+    },
+    "WakeFeedResult": {
+      "additionalProperties": false,
+      "description": "Whether the audio reached the detector.",
+      "properties": {
+        "fed": {
+          "description": "False when no client-capture listener of this caller is armed.",
+          "type": "boolean"
+        }
+      },
+      "required": ["fed"],
+      "type": "object"
+    },
+    "WakeNoParams": {
+      "additionalProperties": false,
+      "description": "No parameters.",
+      "properties": {},
+      "type": "object"
+    },
+    "WakeOwnerResult": {
+      "additionalProperties": false,
+      "description": "The answer of an owner-gated call.",
+      "properties": {
+        "ok": {"description": "The call took effect.", "type": "boolean"},
+        "reason": {
+          "anyOf": [{"const": "not_owner", "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Another surface owns the listener (or none is armed)."
+        }
+      },
+      "required": ["ok"],
+      "type": "object"
+    },
+    "WakeStartParams": {
+      "additionalProperties": false,
+      "description": "Arm the listener for the calling surface.",
+      "properties": {
+        "client_capture": {
+          "default": false,
+          "description": "The surface sends the audio with ``wake.feed``; no microphone is opened by the daemon.",
+          "type": "boolean"
+        },
+        "consent": {
+          "default": false,
+          "description": "An explicit \"on\" from the person: store consent and turn the feature on first.",
+          "type": "boolean"
+        },
+        "surface": {
+          "$ref": "#/$defs/Surface",
+          "default": "gui",
+          "description": "Who asks: ``gui`` (desktop), ``tui`` or ``cli``."
+        }
+      },
+      "type": "object"
+    },
+    "WakeStartResult": {
+      "additionalProperties": false,
+      "description": "Whether the listener is armed for this caller.",
+      "properties": {
+        "capture": {
+          "anyOf": [{"enum": ["local", "client"], "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Who captures the audio."
+        },
+        "consent_saved": {
+          "anyOf": [{"type": "boolean"}, {"type": "null"}],
+          "default": null,
+          "description": "True when this call stored consent."
+        },
+        "engine": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The engine in use."
+        },
+        "hint": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "What to install or set, for ``unavailable``."
+        },
+        "phrase": {"description": "The phrase listened for.", "type": "string"},
+        "reason": {
+          "anyOf": [
+            {"enum": ["disabled", "consent_required", "unavailable", "owned"], "type": "string"},
+            {"type": "null"}
+          ],
+          "default": null,
+          "description": "Why not."
+        },
+        "started": {"description": "True when armed.", "type": "boolean"}
+      },
+      "required": ["started", "phrase"],
+      "type": "object"
+    },
+    "WakeStatusResult": {
+      "additionalProperties": false,
+      "description": "What the listener is doing, for this caller.",
+      "properties": {
+        "available": {"description": "The engine and model are present.", "type": "boolean"},
+        "consent": {"description": "``wake_word.consent``.", "type": "boolean"},
+        "enabled": {"description": "``wake_word.enabled``.", "type": "boolean"},
+        "engine": {"description": "The configured engine.", "type": "string"},
+        "hint": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "What is missing."
+        },
+        "listening": {
+          "description": "Armed for this caller and not paused (the microphone or the feed is live).",
+          "type": "boolean"
+        },
+        "owner_surface": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The surface that owns the listener, if any."
+        },
+        "phrase": {"description": "The phrase listened for.", "type": "string"}
+      },
+      "required": ["enabled", "consent", "listening", "phrase", "engine", "available"],
+      "type": "object"
+    },
+    "WakeStopParams": {
+      "additionalProperties": false,
+      "description": "Disarm the listener.",
+      "properties": {
+        "persist": {
+          "default": false,
+          "description": "An explicit \"off\": also turn ``wake_word.enabled`` off.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3505,6 +4801,54 @@
         "params": "AdmissionReceiptParams",
         "result": "AdmissionReceiptResult"
       },
+      "bots.list": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "BotsNoParams",
+        "result": "BotsListResult"
+      },
+      "bots.open": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "BotsProfileParams",
+        "result": "BotsOpenResult"
+      },
+      "bots.update": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "BotsUpdateParams",
+        "result": "BotsUpdateResult"
+      },
+      "capabilities.summary": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "CapabilitiesSummaryParams",
+        "result": "CapabilitiesSummaryResult"
+      },
       "clarify.lock": {
         "errors": [
           "PARSE_ERROR",
@@ -3636,6 +4980,162 @@
         "params": "GatewayPingParams",
         "result": "GatewayPingResult"
       },
+      "groups.capabilities": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsNoParams",
+        "result": "GroupsCapabilitiesResult"
+      },
+      "groups.create": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsCreateParams",
+        "result": "GroupsRoomResult"
+      },
+      "groups.demote": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsDemoteParams",
+        "result": "GroupsAuthorityResult"
+      },
+      "groups.disband": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsRoomParams",
+        "result": "GroupsDisbandResult"
+      },
+      "groups.list": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsListParams",
+        "result": "GroupsListResult"
+      },
+      "groups.log": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsLogParams",
+        "result": "GroupsLogResult"
+      },
+      "groups.promote": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsPromoteParams",
+        "result": "GroupsAuthorityResult"
+      },
+      "groups.rename": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsRenameParams",
+        "result": "GroupsRoomResult"
+      },
+      "groups.retry": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsRetryParams",
+        "result": "GroupsRetryResult"
+      },
+      "groups.send": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsSendParams",
+        "result": "GroupsSendResult"
+      },
+      "groups.state": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsStateParams",
+        "result": "GroupsStateResult"
+      },
+      "groups.status": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsRoomParams",
+        "result": "GroupsStatusResult"
+      },
+      "groups.stop": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "GroupsStopParams",
+        "result": "GroupsStopResult"
+      },
       "image.attach": {
         "errors": [
           "PARSE_ERROR",
@@ -3722,6 +5222,224 @@
         ],
         "params": "PasteCollapseParams",
         "result": "PasteCollapseResult"
+      },
+      "pet.disable": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "PetNoParams",
+        "result": "PetDisableResult"
+      },
+      "pet.generate": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "PROVIDER_UNAVAILABLE"
+        ],
+        "params": "PetGenerateParams",
+        "result": "PetGenerateResult"
+      },
+      "pet.hatch": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "PROVIDER_UNAVAILABLE"
+        ],
+        "params": "PetHatchParams",
+        "result": "PetSlugResult"
+      },
+      "pet.info": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "PetInfoParams",
+        "result": "PetInfoResult"
+      },
+      "pet.list": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "PetNoParams",
+        "result": "PetListResult"
+      },
+      "pet.remove": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "PetSlugParams",
+        "result": "PetSlugResult"
+      },
+      "pet.rename": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "PetRenameParams",
+        "result": "PetSlugResult"
+      },
+      "pet.select": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "PetSlugParams",
+        "result": "PetSlugResult"
+      },
+      "projects.add_path": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsAddPathParams",
+        "result": "ProjectResult"
+      },
+      "projects.archive": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsArchiveParams",
+        "result": "ProjectResult"
+      },
+      "projects.create": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsCreateParams",
+        "result": "ProjectResult"
+      },
+      "projects.discover": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsDiscoverParams",
+        "result": "ProjectsDiscoverResult"
+      },
+      "projects.for_path": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsForPathParams",
+        "result": "ProjectsUseResult"
+      },
+      "projects.get": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsGetParams",
+        "result": "ProjectResult"
+      },
+      "projects.list": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsListParams",
+        "result": "ProjectsListResult"
+      },
+      "projects.remove_path": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsRemovePathParams",
+        "result": "ProjectResult"
+      },
+      "projects.update": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsUpdateParams",
+        "result": "ProjectResult"
+      },
+      "projects.use": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "ProjectsUseParams",
+        "result": "ProjectsUseResult"
       },
       "prompt.background": {
         "errors": [
@@ -4106,13 +5824,112 @@
         ],
         "params": "SlashExecParams",
         "result": "SlashExecResult"
+      },
+      "voice.speak": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "PROVIDER_UNAVAILABLE"
+        ],
+        "params": "VoiceSpeakParams",
+        "result": "VoiceSpeakResult"
+      },
+      "voice.transcribe": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "PROVIDER_UNAVAILABLE"
+        ],
+        "params": "VoiceTranscribeParams",
+        "result": "VoiceTranscribeResult"
+      },
+      "wake.feed": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "WakeFeedParams",
+        "result": "WakeFeedResult"
+      },
+      "wake.pause": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "WakeNoParams",
+        "result": "WakeOwnerResult"
+      },
+      "wake.resume": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "WakeNoParams",
+        "result": "WakeOwnerResult"
+      },
+      "wake.start": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "WakeStartParams",
+        "result": "WakeStartResult"
+      },
+      "wake.status": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "WakeNoParams",
+        "result": "WakeStatusResult"
+      },
+      "wake.stop": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY"
+        ],
+        "params": "WakeStopParams",
+        "result": "WakeOwnerResult"
       }
     },
     "notifications": {
       "gateway.ready": "BridgeReady",
       "session.replay_gap": "SessionReplayGap",
       "session.updated": "SessionUpdated",
-      "sessions.resync": "SessionsResync"
+      "sessions.resync": "SessionsResync",
+      "wake.detected": "WakeDetected"
     },
     "server_request_method": "server_request",
     "server_requests": {

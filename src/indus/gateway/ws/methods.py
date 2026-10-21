@@ -49,6 +49,7 @@ import contextlib
 import secrets
 from typing import TYPE_CHECKING, Final
 
+from indus.foundation.blocking import run_blocking
 from indus.gateway.control_socket import code_version
 from indus.protocol.attach import (
     AdmissionCancelParams,
@@ -114,6 +115,7 @@ from indus.protocol.methods import (
     SubmitStatus,
     negotiate_features,
 )
+from indus.service import projects_rpc
 from indus.service.admissions import Receipt, close_lost_turn
 from indus.service.event_log import ReplayGap
 from indus.service.fences import ControlApplied, ControlStatus, Responded, StaleGeneration
@@ -194,6 +196,11 @@ async def capabilities(
 async def create(conn: WsConnection, params: SessionCreateParams) -> SessionCreateResult:
     result = await conn.host.create(params, source=conn.subs.surface)
     conn.subs.adopt(result.session_id, cursor=0)
+    if result.created and params.cwd:
+        # P24-14: a session started in a project's folder belongs to that project
+        await run_blocking(
+            projects_rpc.join_session, conn.scope, result.session_id, params.cwd, label="project"
+        )
     return result
 
 

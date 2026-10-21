@@ -58,7 +58,9 @@ Tests we will write:
 
 The renderer codes against `window.indusDesktop` (type `IndusDesktopBridge`, `src/global.d.ts`,
 generated); main codes against `registry.handle / on / sync / emit` with payloads typed from
-`electron/ipc/schemas.ts`. Both come from one table, `electron/ipc/channels.ts` (76 channels at P20-07; 111 after P20-39, table below).
+`electron/ipc/schemas.ts`. Both come from one table, `electron/ipc/channels.ts` (76 channels at P20-07; 111 after P20-39, table below; 136 after P24:
++11 pet / wake indicator / themes (P24-19, 20, 33), +9 connections / artifacts (P24-28, 29), +5
+plugins / uninstall (P24-32, 34) — those rows live in `channels.ts` with their owner task).
 
 Rules every slice follows:
 - Add or change a channel = one row in `channels.ts` (name `indus:<group>:<action>`, kind, bridge

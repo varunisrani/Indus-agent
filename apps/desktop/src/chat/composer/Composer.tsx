@@ -38,6 +38,8 @@ import { ModelPicker, ModelPrefs, modelKey } from "../ModelPicker.tsx";
 import { QueuePanel, useBusySnapshot } from "../QueuePanel.tsx";
 import { errorMessage, isUncertain } from "../rpcErrors.ts";
 import { helpLines, isSlashLine, type LocalCommandName, runSlash } from "../slash.ts";
+import type { VoicePort } from "../voice/dictation.ts";
+import { VoiceButtons } from "../voice/VoiceButtons.tsx";
 import {
   type Attachment,
   AttachmentError,
@@ -103,6 +105,8 @@ export interface ComposerProps {
   pickFiles?(): Promise<string[]>;
   attachmentDeps?: Partial<Pick<StageDeps, "guardLocalPath" | "readLocalBytes" | "uploadBytes">>;
   completionDebounceMs?: number;
+  /** The daemon's voice methods (P24-35); the mic and talk buttons show only with one. */
+  voice?: VoicePort | null;
 }
 
 const history = new PromptHistory();
@@ -681,6 +685,15 @@ export function Composer(props: ComposerProps) {
             <button type="button" className={BUTTON} onClick={() => void pick()}>
               {t("composer.attach")}
             </button>
+          ) : null}
+          {props.voice ? (
+            <VoiceButtons
+              port={props.voice}
+              store={store}
+              sessionId={props.sessionId}
+              profile={props.profile ?? null}
+              connection={connection}
+            />
           ) : null}
           <span className="flex-1" />
           {busy.running ? (

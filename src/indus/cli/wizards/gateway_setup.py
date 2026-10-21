@@ -379,6 +379,11 @@ STEPS: Mapping[str, PlatformSteps] = {
     "webhook": PlatformSteps(
         elsewhere="Webhook routes are set up with `indus webhook`.",
     ),
+    "a2a": PlatformSteps(
+        elsewhere="A2A peer agents are set up in config.yaml: platforms.a2a.enabled, the peers "
+        "allowed in under a2a.inbound_peers (each one's token is the stored secret "
+        "INDUS_A2A_TOKEN_<PEER>), and the agents you call under a2a.peers.",
+    ),
 }
 """Platform name → what the wizard asks (a platform without a row asks its registry env names)."""
 

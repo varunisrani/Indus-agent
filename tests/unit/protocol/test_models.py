@@ -10,7 +10,21 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from indus.protocol import attach, bridge, envelope, events, methods, server_requests
+from indus.protocol import (
+    attach,
+    bots,
+    bridge,
+    capabilities,
+    envelope,
+    events,
+    groups,
+    methods,
+    pets,
+    projects,
+    server_requests,
+    voice,
+    wake,
+)
 from indus.protocol.base import ProtocolModel
 from indus.protocol.envelope import (
     ErrorResponse,
@@ -229,7 +243,22 @@ def test_catalogue_names() -> None:
         "session.mutate",
         "runtime.describe",
         "maintenance.run",
+        # P24 (rows declared beside their wire models)
+        *(
+            row[0]
+            for group in (
+                projects.PROJECT_METHODS,
+                pets.PET_METHODS,
+                wake.WAKE_METHODS,
+                capabilities.CAPABILITY_METHODS,
+                bots.BOT_METHODS,
+                groups.GROUP_METHODS,
+                voice.VOICE_METHODS,
+            )
+            for row in group
+        ),
     ]
+    assert len(METHODS) == 89
     for spec in METHODS.values():
         assert spec.summary
 

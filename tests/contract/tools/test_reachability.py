@@ -41,7 +41,11 @@ def test_every_registered_builtin_is_reachable(builtins: ToolRegistry) -> None:
 
 def test_every_registered_builtin_reachable_from_all(builtins: ToolRegistry) -> None:
     everything = set(resolve("all", builtins))
-    assert [n for n in builtins.names() if n not in everything] == []
+    # Opt-in sets (the task board, projects; P24-13/14) are reachable only when named.
+    opt_in = {n for n, ts in TOOLSETS.items() if ts.opt_in}
+    named = set().union(*(set(resolve(n, builtins)) for n in opt_in))
+    assert not named & everything
+    assert [n for n in builtins.names() if n not in everything | named] == []
 
 
 def test_reachability_check_catches_an_orphan() -> None:

@@ -32,7 +32,12 @@ export interface ConnectionDescriptor {
 /** A live connection as main holds it (the REST credential never leaves main). */
 export interface Connection {
   descriptor: ConnectionDescriptor;
-  rest: { origin: string; token: string };
+  rest: {
+    origin: string;
+    token: string;
+    /** A registry connection's own request headers (P24-29); absent: the token header. */
+    headers?: (url: string) => Promise<Record<string, string>>;
+  };
   /** A fresh single-use dial for `webContentsId`. */
   ticket(webContentsId: number): Promise<TicketAnswer>;
 }

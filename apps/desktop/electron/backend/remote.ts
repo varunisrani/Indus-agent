@@ -1,4 +1,6 @@
 // One saved remote connection (P20-11): a URL and a token for an Indus server running elsewhere.
+// Since P24-29 the connections registry (`connections/registry.ts`) decides which remote a launch
+// dials (`RemoteDeps.registry`); this file's test/save/forget keep serving the first-run chooser.
 // Saving needs both legs to pass with the real credential (R08.5): an HTTP call and a WebSocket.
 // Only a confirmed 401/403 (or a 4401/4403 close) means "unauthorized"; timeouts, refused
 // connections and 5xx are connectivity and never ask for a new token (R08.4). The URL lives in
@@ -7,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { RemoteAuth } from "../connections/remoteDial.ts";
 import { readJsonFile, writeFileAtomic } from "../fsSecure.ts";
 import { SESSION_TOKEN_HEADER } from "./localAttach.ts";
 import { REMOTE_PROBE_TIMEOUT_MS } from "./remoteLiveness.ts";
@@ -91,11 +94,19 @@ export interface RemoteDeps {
   log: (line: string) => void;
   timeoutMs?: number;
   settleMs?: number;
+  /** The connections registry (P24-29): when given, it decides what `saved()` answers. */
+  registry?: { launchRemote(): SavedRemote | null };
 }
 
 export interface SavedRemote {
   url: string;
   token: string;
+  /** The connections-registry entry (P24-29); absent for a dial built from the P20 file alone. */
+  connectionId?: string;
+  /** Main's credential view of this remote (token, OAuth or basic + access-proxy headers). */
+  auth?: RemoteAuth;
+  /** An SSH entry (P24-30): open the tunnel and the remote serve, then dial what it answers. */
+  prepare?: () => Promise<{ url: string; auth: RemoteAuth }>;
 }
 
 export class RemoteStore {
@@ -118,8 +129,9 @@ export class RemoteStore {
     return { url: this.savedUrl(), hasToken: this.deps.secrets.get(REMOTE_TOKEN_SECRET) !== null };
   }
 
-  /** The saved remote with its token (main only), or null. */
+  /** The remote this launch dials (main only), or null for this computer. */
   saved(): SavedRemote | null {
+    if (this.deps.registry !== undefined) return this.deps.registry.launchRemote();
     const url = this.savedUrl();
     const token = this.deps.secrets.get(REMOTE_TOKEN_SECRET);
     return url === null || token === null ? null : { url, token };

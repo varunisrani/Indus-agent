@@ -16,6 +16,9 @@ import {
   FirstRunReset,
   RemoteConnectError,
 } from "../boot/orchestrator.ts";
+import { ConnectionsService, installConnectionsIpc } from "../connections/install.ts";
+import { DialError, mintRemoteTicket, RemoteAuth } from "../connections/remoteDial.ts";
+import { SshBackends } from "../connections/ssh.ts";
 import type { MainContext } from "../context.ts";
 import { InstallerRunner, resolveInstallerScript } from "../installer/runner.ts";
 import type { EventChannel } from "../ipc/channels.ts";
@@ -140,6 +143,7 @@ function asIpcError(error: unknown): IpcError {
 }
 
 export interface BackendHandle {
+  connections: ConnectionsService;
   orchestrator: BootOrchestrator;
   quitGuard: QuitGuard;
   installer: InstallerRunner;
@@ -149,6 +153,8 @@ export interface BackendHandle {
 export interface BackendOptions {
   /** The profile a request that names none runs (P20-26's launch decision). */
   launchProfile?: () => string | null;
+  /** The connections registry (P24-29); built here when the caller passes none. */
+  connections?: ConnectionsService;
 }
 
 export function installBackend(
@@ -176,7 +182,21 @@ export function installBackend(
     guard: (what, fn) => context.machinery.guard(what, fn),
     log: line,
   });
-  const remote = new RemoteStore({ userData: paths.userData, secrets: context.secrets, log: line });
+  const sshBackends = new SshBackends({ controlDir: path.join(paths.userData, "ssh"), log: line }); // P24-30
+  const connections =
+    options.connections ??
+    new ConnectionsService({
+      userData: paths.userData,
+      secrets: context.secrets,
+      log: line,
+      ssh: sshBackends,
+    });
+  const remote = new RemoteStore({
+    userData: paths.userData,
+    secrets: context.secrets,
+    log: line,
+    registry: connections,
+  });
 
   const installer = new InstallerRunner({
     home: paths.home,
@@ -282,9 +302,23 @@ export function installBackend(
   };
 
   const connectRemote = async (saved: SavedRemote, profile: string | null): Promise<Connection> => {
+    // P24-29: the registry entry's credential (token, OAuth, basic + access-proxy headers); an SSH
+    // entry first opens its tunnel and remote serve (P24-30) and dials what that answers.
+    let base = saved.url;
+    let auth = saved.auth ?? new RemoteAuth(saved.url, { mode: "token", token: saved.token });
+    if (saved.prepare !== undefined) {
+      try {
+        ({ url: base, auth } = await saved.prepare());
+      } catch (error) {
+        throw new RemoteConnectError(
+          error instanceof Error ? redactSecrets(error.message) : "the SSH connection failed",
+        );
+      }
+    }
     let status: Response;
     try {
-      status = await fetch(`${saved.url}/api/status`, {
+      status = await fetch(`${base}/api/status`, {
+        headers: auth.proxyHeaders(`${base}/api/status`),
         signal: AbortSignal.timeout(REMOTE_PROBE_TIMEOUT_MS),
       });
     } catch {
@@ -293,12 +327,15 @@ export function installBackend(
     const info = (await status.json().catch(() => ({}))) as Record<string, unknown>;
     let check: Response;
     try {
-      check = await fetch(`${saved.url}/api/config`, {
-        headers: { "X-Indus-Session-Token": saved.token },
-        signal: AbortSignal.timeout(REMOTE_PROBE_TIMEOUT_MS),
-      });
+      check = await auth.request("/api/config");
       await check.body?.cancel();
-    } catch {
+    } catch (error) {
+      if (error instanceof DialError && error.kind === "unauthorized") {
+        throw new RemoteConnectError(error.message, {
+          reauth: true,
+          statusCode: error.status ?? 401,
+        });
+      }
       throw new RemoteConnectError("the remote Indus did not answer");
     }
     const leg = classifyStatus(check.status);
@@ -313,8 +350,9 @@ export function installBackend(
         statusCode: check.status,
       });
     }
-    const wsUrl = remoteWsUrl(saved.url);
+    const wsUrl = remoteWsUrl(base);
     context.csp.addConnectOrigin(new URL(wsUrl).origin);
+    if (saved.connectionId !== undefined) connections.markUsed(saved.connectionId);
     const connection: Connection = {
       descriptor: {
         mode: "remote",
@@ -324,9 +362,27 @@ export function installBackend(
         codeVersion: typeof info.version === "string" ? info.version : "",
         wsUrl,
       },
-      rest: { origin: saved.url, token: saved.token },
-      ticket: async (webContentsId) =>
-        reservations.reserveRemote(wsUrl, saved.token, webContentsId),
+      rest: {
+        origin: base,
+        token: saved.token,
+        headers: async (url) => ({ ...auth.proxyHeaders(url), ...(await auth.authHeaders()) }),
+      },
+      // one server-minted single-use ticket per dial (D-16.691: Electron ignores a rewritten
+      // subprotocol, so the token itself can never reach the upgrade)
+      ticket: async (webContentsId) => {
+        try {
+          const minted = await mintRemoteTicket(auth, { profile });
+          return reservations.reserveTicketDial(wsUrl, minted.ticket, webContentsId);
+        } catch (error) {
+          if (error instanceof DialError && error.kind === "unauthorized") {
+            throw new IpcError("unauthorized", error.message);
+          }
+          throw new IpcError(
+            "ticket-failed",
+            error instanceof Error ? redactSecrets(error.message) : "the server gave no ticket",
+          );
+        }
+      },
     };
     supervisor.stop();
     current = { attach: null, connection };
@@ -379,6 +435,7 @@ export function installBackend(
           origin: connection.rest.origin,
           token: connection.rest.token,
           profile: connection.descriptor.profile,
+          ...(connection.rest.headers === undefined ? {} : { headers: connection.rest.headers }),
         };
   };
   const proxy = new ApiProxy({ target, log: line });
@@ -445,15 +502,21 @@ export function installBackend(
       );
     }
   };
-  registry.handle("indus:remote:get", () => remote.get());
+  // The first-run chooser's single remote (P20-11) is the registry's primary since P24-29.
+  registry.handle("indus:remote:get", () => connections.primaryRemote());
   registry.handle("indus:remote:test", (input) => remote.test(remoteInput(input)));
   registry.handle("indus:remote:save", async (input) => {
-    const result = await remote.save(remoteInput(input));
-    if (result.saved) orchestrator.applyConnectionChange();
+    const checked = remoteInput(input);
+    const result = await remote.save(checked);
+    if (result.saved) {
+      connections.adoptRemote(checked.url, checked.token);
+      orchestrator.applyConnectionChange();
+    }
     return result;
   });
   registry.handle("indus:remote:forget", () => {
     remote.forget();
+    connections.forgetPrimaryRemote();
     orchestrator.applyConnectionChange();
     return { ok: true as const };
   });
@@ -477,10 +540,16 @@ export function installBackend(
 
   let quitConfirmed = process.env.INDUS_DESKTOP_SKIP_QUIT_PROMPT === "1";
   electron.app.on("before-quit", (event) => {
-    if (quitConfirmed) return;
+    if (quitConfirmed) {
+      void sshBackends.closeAll(); // our tunnels end with the app; the master persists its 300 s
+      return;
+    }
     const owned = installer.running() ? [{ id: "installer", label: "Installing Indus" }] : [];
     const prompt = quitPrompt(quitGuard.work(), owned);
-    if (prompt === null) return;
+    if (prompt === null) {
+      void sshBackends.closeAll();
+      return;
+    }
     event.preventDefault();
     void electron
       .showMessageBox({
@@ -556,5 +625,10 @@ export function installBackend(
       line(`[orphans] not reaped: ${error instanceof Error ? error.message : String(error)}`),
   );
 
-  return { orchestrator, quitGuard, installer, proxy };
+  installConnectionsIpc(registry, connections, {
+    onChange: () => orchestrator.applyConnectionChange(),
+    openExternal: (url, contentsId) => context.externalOpener.open({ url, contentsId }),
+  });
+
+  return { connections, orchestrator, quitGuard, installer, proxy };
 }

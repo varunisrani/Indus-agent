@@ -91,6 +91,7 @@ def test_bootstrap_globals_are_escaped(build: Builder) -> None:
         "__INDUS_BASE_PATH__",
         "__INDUS_AUTH_REQUIRED__",
         "__INDUS_DASHBOARD_EMBEDDED_CHAT__",
+        "__INDUS_DASHBOARD_CONSOLE__",
         "__INDUS_INITIAL_PROFILE__",
         "__INDUS_DASHBOARD_PROFILE__",
     ):

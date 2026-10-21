@@ -129,6 +129,94 @@ export interface ApprovalRequest {
   choices?: ApprovalChoice[];
 }
 
+export type AvatarKind = "face" | "upload" | "portrait" | "pet";
+
+/** A bot's picture: a generated face, an uploaded or portrait image, or the profile's pet. */
+export interface BotAvatar {
+  /** `face`, `upload`, `portrait` or `pet`. */
+  kind: AvatarKind;
+  /** The face's seed (`face`). */
+  seed?: string | null;
+  /** A `data:image/png|jpeg|webp;base64,…` URL (`upload`, `portrait`). */
+  data?: string | null;
+}
+
+/** The bot's forever-chat. */
+export interface BotCanonical {
+  /** The live tip of the chat. */
+  session_id: string;
+}
+
+/** One of the bot's scheduled jobs. */
+export interface BotRoutine {
+  /** The job id. */
+  id: string;
+  /** Its name. */
+  name: string;
+  /** Its schedule. */
+  schedule: string;
+  /** It runs. */
+  enabled: boolean;
+}
+
+/** One bot. */
+export interface BotRow {
+  /** The profile's name. */
+  profile: string;
+  /** The picture (`{kind, seed?, data?}`). */
+  avatar: { [key: string]: JsonValue };
+  /** Hidden from the list. */
+  hidden: boolean;
+  /** Sidebar sections. */
+  sections: string[];
+  /** Scheduled jobs. */
+  routines: BotRoutine[];
+  /** The forever-chat, or null when it has none yet. */
+  canonical: BotCanonical | null;
+}
+
+/** Every bot. */
+export interface BotsListResult {
+  /** The bots, by profile. */
+  bots: BotRow[];
+}
+
+/** No parameters. */
+export interface BotsNoParams {
+}
+
+/** The bot's forever-chat, created only when it has none. */
+export interface BotsOpenResult {
+  /** The chat's live tip. */
+  session_id: string;
+  /** This call created it. */
+  created: boolean;
+}
+
+/** One bot (a profile). */
+export interface BotsProfileParams {
+  /** The profile's name. */
+  profile: string;
+}
+
+/** Change a bot's picture, visibility or sidebar sections. */
+export interface BotsUpdateParams {
+  /** The profile's name. */
+  profile: string;
+  /** The new picture. */
+  avatar?: BotAvatar | null;
+  /** Hide the bot from the list. */
+  hidden?: boolean | null;
+  /** Sidebar sections (at most 20, 64 characters each). */
+  sections?: string[] | null;
+}
+
+/** The changed bot. */
+export interface BotsUpdateResult {
+  /** The bot. */
+  bot: BotRow;
+}
+
 /**
  * The first frame of a connection (stdio or the daemon's WebSocket): the server is ready for
  * requests.
@@ -155,6 +243,30 @@ export type BusyAction = "reject" | "queue" | "steer" | "redirect";
 
 /** Why an open server request was withdrawn. */
 export type CancelReason = "interrupted" | "turn_ended" | "timed_out" | "answered_elsewhere" | "session_closed";
+
+/** Count the capabilities of the caller's profile. */
+export interface CapabilitiesSummaryParams {
+}
+
+/** One count per Capabilities tab. */
+export interface CapabilitiesSummaryResult {
+  /** Installed skills (plugin skills excluded). */
+  skills: CapabilityCount;
+  /** Plain toolsets, enabled when the CLI selection offers all their tools. */
+  toolsets: CapabilityCount;
+  /** Configured MCP servers. */
+  mcp_servers: CapabilityCount;
+  /** Discovered agent plugins. */
+  plugins: CapabilityCount;
+}
+
+/** How many of one kind there are, and how many are on. */
+export interface CapabilityCount {
+  /** All of them. */
+  total: number;
+  /** Those switched on. */
+  enabled: number;
+}
 
 /** One command the client can offer. */
 export interface CatalogEntry {
@@ -365,6 +477,14 @@ export interface ConfigSetResult {
   saved: boolean;
 }
 
+/** One repository found by the scan. */
+export interface DiscoveredRepo {
+  /** The repository folder. */
+  root: string;
+  /** Its folder name. */
+  label: string;
+}
+
 /** What a dispatched command resolved to. */
 export type DispatchKind = "exec" | "alias" | "skill" | "send" | "prefill" | "plugin";
 
@@ -461,6 +581,228 @@ export interface GoalUpdate {
   max_turns: number;
   /** Why it changed: the judge's reason, a failing gate, a pause cause. */
   reason?: string;
+}
+
+/** The room's authority after a promote or demote. */
+export interface GroupsAuthorityResult {
+  /** The gateway that holds the room. */
+  authority: string;
+  /** Its epoch. */
+  epoch: number;
+  /** True when nothing changed. */
+  idempotent: boolean;
+  /** The promote's reason. */
+  reason?: string | null;
+}
+
+/** What this gateway's room service offers. */
+export interface GroupsCapabilitiesResult {
+  /** The room protocol version. */
+  protocol: number;
+  /** A room driver runs here. */
+  driver: boolean;
+  /** This gateway's room identity. */
+  gateway_id: string;
+  /** The `groups.*` methods served. */
+  methods: string[];
+  /** How authority moves (an operator recovery step). */
+  authority_transfer: string;
+}
+
+/** Create a room (idempotent for the same id and settings). */
+export interface GroupsCreateParams {
+  /** The new room's id. */
+  room_id: string;
+  /** Its display name. */
+  name: string;
+  /** The members (`{handle | profile | id, ...}`). */
+  members: { [key: string]: JsonValue }[];
+}
+
+/** Adopt a strictly newer authority lineage seen elsewhere. */
+export interface GroupsDemoteParams {
+  /** The room's id. */
+  room_id: string;
+  /** The gateway that holds the room now. */
+  observed_gateway_id: string;
+  /** Its epoch. */
+  observed_epoch: number;
+}
+
+/** The disbanded room. */
+export interface GroupsDisbandResult {
+  /** The room's id. */
+  room_id: string;
+  /** When. */
+  disbanded_at: number;
+  /** True when it was disbanded already. */
+  idempotent: boolean;
+}
+
+/** A page of rooms. */
+export interface GroupsListParams {
+  /** Rooms per page. */
+  limit?: number;
+  /** Rooms to skip. */
+  offset?: number;
+  /** Also list disbanded rooms. */
+  include_disbanded?: boolean;
+}
+
+/** A page of rooms. */
+export interface GroupsListResult {
+  /** The rooms. */
+  rooms: { [key: string]: JsonValue }[];
+}
+
+/** A page of a room's event log. */
+export interface GroupsLogParams {
+  /** The room's id. */
+  room_id: string;
+  /** Events after this sequence number. */
+  since_seq?: number;
+  /** Events per page. */
+  limit?: number;
+  /** Read a disbanded room's log too. */
+  include_disbanded?: boolean;
+}
+
+/** A page of events. */
+export interface GroupsLogResult {
+  /** The events, oldest first. */
+  events: { [key: string]: JsonValue }[];
+  /** Pass as `since_seq` for the next page. */
+  cursor: number;
+  /** The room's newest sequence number. */
+  latest_seq: number;
+  /** More events follow. */
+  has_more: boolean;
+  /** `{gateway_id, epoch}` of the room's authority. */
+  authority: { [key: string]: JsonValue };
+}
+
+/** No parameters. */
+export interface GroupsNoParams {
+}
+
+/** Claim a room's authority on this gateway (operator recovery; not atomic). */
+export interface GroupsPromoteParams {
+  /** The room's id. */
+  room_id: string;
+  /** Must be true: the old authority was fenced first. */
+  confirm?: boolean;
+  /** Why, for the log. */
+  reason?: string;
+}
+
+/** Rename a room. */
+export interface GroupsRenameParams {
+  /** The room's id. */
+  room_id: string;
+  /** The rename's idempotency key. */
+  event_id: string;
+  /** The new name. */
+  name: string;
+}
+
+/** Retry a deferred or indeterminate turn (it may run twice). */
+export interface GroupsRetryParams {
+  /** The room's id. */
+  room_id: string;
+  /** The task to retry. */
+  task_id: string;
+}
+
+/** The requeued task. */
+export interface GroupsRetryResult {
+  /** The task. */
+  task: { [key: string]: JsonValue };
+}
+
+/** One room. */
+export interface GroupsRoomParams {
+  /** The room's id. */
+  room_id: string;
+}
+
+/** The room a create or rename acted on. */
+export interface GroupsRoomResult {
+  /** The room. */
+  room: { [key: string]: JsonValue };
+  /** True when nothing changed (a repeated call). */
+  idempotent: boolean;
+}
+
+/** The person's message to a room. */
+export interface GroupsSendParams {
+  /** The room's id. */
+  room_id: string;
+  /** The client's retry key: a repeated send is a no-op. */
+  client_event_id: string;
+  /** The message. */
+  text: string;
+  /** A thread inside the room. */
+  thread_id?: string | null;
+  /** Who wrote it. */
+  author?: string;
+  /** Hold every member a stop directive in the text names. */
+  detect_stop?: boolean;
+}
+
+/** The stored message and what its stop directives did. */
+export interface GroupsSendResult {
+  /** The stored event. */
+  event: { [key: string]: JsonValue };
+  /** Members a stop directive held. */
+  held: string[];
+  /** Queued tasks cancelled for them. */
+  cancelled: string[];
+}
+
+/** A room's current state. */
+export interface GroupsStateParams {
+  /** The room's id. */
+  room_id: string;
+  /** Answer for a disbanded room too. */
+  include_disbanded?: boolean;
+}
+
+/** A room and its pending authority claim. */
+export interface GroupsStateResult {
+  /** The room. */
+  room: { [key: string]: JsonValue };
+  /** A claim in progress, if any. */
+  authority_claim?: { [key: string]: JsonValue } | null;
+}
+
+/** Whether the room is working, blocked or waiting for an operator. */
+export interface GroupsStatusResult {
+  /** A turn is queued, running or stopping. */
+  working: boolean;
+  /** A turn is indeterminate or stopping. */
+  blocked: boolean;
+  /** Tasks by status. */
+  counts: { [key: string]: number };
+  /** What an operator may do (`{kind: retry, task_id}`). */
+  pending_actions: { [key: string]: JsonValue }[];
+}
+
+/** Stop every queued and running turn of a room. */
+export interface GroupsStopParams {
+  /** The room's id. */
+  room_id: string;
+  /** The stop's idempotency key. */
+  cancel_id: string;
+}
+
+/** What the stop did. */
+export interface GroupsStopResult {
+  /** The `room.stop_requested` event. */
+  event: { [key: string]: JsonValue };
+  /** Queued tasks cancelled. */
+  cancelled: string[];
+  /** Running tasks asked to stop. */
+  stopping: string[];
 }
 
 /** A heartbeat sent its recurring instruction into the session (shown as a "wake" row). */
@@ -714,6 +1056,298 @@ export interface PasteCollapseResult {
   path: string;
   /** Lines in the paste. */
   lines: number;
+}
+
+/** The display state after the call. */
+export interface PetDisableResult {
+  /** Always false. */
+  enabled: boolean;
+}
+
+/** One draft look. */
+export interface PetDraftInfo {
+  /** Its number, for `pet.hatch`. */
+  index: number;
+  /** The picture. */
+  data_uri: string;
+}
+
+/** Draw draft looks for a new pet. */
+export interface PetGenerateParams {
+  /** What the pet is, in a few words. */
+  idea: string;
+  /** How many looks to draw. */
+  count?: number;
+}
+
+/** The drafts and the token that names them. */
+export interface PetGenerateResult {
+  /** Pass it to `pet.hatch` (valid for an hour). */
+  token: string;
+  /** The looks that came back. */
+  drafts: PetDraftInfo[];
+}
+
+/** Turn one draft into a pet. */
+export interface PetHatchParams {
+  /** From `pet.generate`. */
+  token: string;
+  /** The draft's index. */
+  pick: number;
+  /** The pet's name. */
+  name: string;
+}
+
+/** The shown pet, for a renderer. */
+export interface PetInfoParams {
+  /** The revision the caller already holds; the pictures are left out when it is current. */
+  known_revision?: string | null;
+}
+
+/** The shown pet; only `enabled` (false) when no pet is shown. */
+export interface PetInfoResult {
+  /** A pet is chosen and the display is on. */
+  enabled: boolean;
+  /** The pet's slug. */
+  slug?: string | null;
+  /** Its display name. */
+  name?: string | null;
+  /** Size on every surface (0.25-3). */
+  scale?: number | null;
+  /** Changes whenever a picture or the name changes. */
+  revision?: string | null;
+  /** True when `known_revision` is current and `moods` is left out. */
+  unchanged?: boolean | null;
+  /** Mood → picture as a data URI. */
+  moods?: { [key: string]: string } | null;
+}
+
+/** Every pet of the profile. */
+export interface PetListResult {
+  /** The pets, by slug. */
+  pets: PetRow[];
+  /** The chosen slug ("" when none). */
+  active: string;
+  /** The display is on. */
+  enabled: boolean;
+}
+
+/** No parameters. */
+export interface PetNoParams {
+}
+
+/** Rename a pet. */
+export interface PetRenameParams {
+  /** The pet's slug. */
+  slug: string;
+  /** The new name. */
+  name: string;
+}
+
+/** One pet in the list. */
+export interface PetRow {
+  /** The pet's slug. */
+  slug: string;
+  /** Its display name. */
+  name: string;
+  /** It is the active pet and the display is on. */
+  shown: boolean;
+}
+
+/** One pet. */
+export interface PetSlugParams {
+  /** The pet's slug. */
+  slug: string;
+}
+
+/** The pet the call acted on. */
+export interface PetSlugResult {
+  /** Its slug (after a rename, the new one). */
+  slug: string;
+  /** Its display name. */
+  name: string;
+  /** It is the pet shown now. */
+  shown: boolean;
+}
+
+/** One folder a project owns. */
+export interface ProjectFolderInfo {
+  /** Absolute folder path. */
+  path: string;
+  /** `folder`, `repo` or `worktree`. */
+  kind: "folder" | "repo" | "worktree";
+  /** True for the project's main folder. */
+  primary: boolean;
+  /** An optional display label. */
+  label?: string | null;
+}
+
+/** A project with its folders and the sessions that joined it. */
+export interface ProjectInfo {
+  /** The project id (`p_…`). */
+  id: string;
+  /** The unique short name. */
+  slug: string;
+  /** The display name. */
+  name: string;
+  /** What the project is about. */
+  description?: string | null;
+  /** An icon name or emoji. */
+  icon?: string | null;
+  /** A display colour. */
+  colour?: string | null;
+  /** The task board bound to this project. */
+  board_slug?: string | null;
+  /** The main folder. */
+  primary_path?: string | null;
+  /** True when hidden from the sidebar. */
+  archived?: boolean;
+  /** Every folder the project owns, main folder first. */
+  folders?: ProjectFolderInfo[];
+  /** Ids of sessions that started inside the project's folders. */
+  sessions?: string[];
+}
+
+/** The project after the call. */
+export interface ProjectResult {
+  /** The project. */
+  project: ProjectInfo;
+}
+
+/** One row of the projects list. */
+export interface ProjectSummary {
+  /** The project id. */
+  id: string;
+  /** The unique short name. */
+  slug: string;
+  /** The display name. */
+  name: string;
+  /** The main folder. */
+  primary_path?: string | null;
+  /** How many folders the project owns. */
+  folders: number;
+  /** True when archived. */
+  archived: boolean;
+  /** True for the profile's active project. */
+  active: boolean;
+}
+
+/** Add a folder to a project. */
+export interface ProjectsAddPathParams {
+  /** Id, slug or name. */
+  project: string;
+  /** The folder. */
+  path: string;
+  /** `folder`, `repo` or `worktree`. */
+  kind?: "folder" | "repo" | "worktree";
+  /** Make it the main folder. */
+  primary?: boolean;
+  /** An optional display label. */
+  label?: string | null;
+}
+
+/** Archive (or restore) a project. */
+export interface ProjectsArchiveParams {
+  /** Id, slug or name. */
+  project: string;
+  /** False restores it. */
+  archived?: boolean;
+}
+
+/** Create a project. */
+export interface ProjectsCreateParams {
+  /** The display name. */
+  name: string;
+  /** Folders it owns (the first is the main folder unless `primary` is given). */
+  folders?: string[];
+  /** The main folder. */
+  primary?: string | null;
+  /** A short name; made from the name when left out. */
+  slug?: string | null;
+  /** What the project is about. */
+  description?: string | null;
+  /** An icon name or emoji. */
+  icon?: string | null;
+  /** A display colour. */
+  colour?: string | null;
+  /** A task board to bind. */
+  board_slug?: string | null;
+  /** Also make it the active project. */
+  use?: boolean;
+}
+
+/** Find git repositories under the scan roots (the profile's discovery settings). */
+export interface ProjectsDiscoverParams {
+}
+
+/** The repositories found, sorted by path. */
+export interface ProjectsDiscoverResult {
+  /** The repositories. */
+  repos: DiscoveredRepo[];
+}
+
+/** The project owning a folder; with `session_id` the session joins it. */
+export interface ProjectsForPathParams {
+  /** A folder (a session's working folder). */
+  path: string;
+  /** A session started in that folder. */
+  session_id?: string | null;
+}
+
+/** Read one project by id, slug or name. */
+export interface ProjectsGetParams {
+  /** Id, slug or name. */
+  project: string;
+}
+
+/** List the profile's projects. */
+export interface ProjectsListParams {
+  /** Also list archived projects. */
+  include_archived?: boolean;
+}
+
+/** The projects, oldest first. */
+export interface ProjectsListResult {
+  /** One row per project. */
+  projects: ProjectSummary[];
+  /** The active project, if any. */
+  active_id?: string | null;
+}
+
+/** Remove a folder from a project (the main folder moves to the next one). */
+export interface ProjectsRemovePathParams {
+  /** Id, slug or name. */
+  project: string;
+  /** The folder. */
+  path: string;
+}
+
+/** Change a project's fields; `""` clears icon, colour and board. */
+export interface ProjectsUpdateParams {
+  /** Id, slug or name. */
+  project: string;
+  /** A new display name. */
+  name?: string | null;
+  /** A new description. */
+  description?: string | null;
+  /** A new icon. */
+  icon?: string | null;
+  /** A new colour. */
+  colour?: string | null;
+  /** A new bound board. */
+  board_slug?: string | null;
+}
+
+/** Set the active project; leave `project` out to clear it. */
+export interface ProjectsUseParams {
+  /** Id, slug or name. */
+  project?: string | null;
+}
+
+/** The active (or found) project, if any. */
+export interface ProjectsUseResult {
+  /** The project, or nothing. */
+  project?: ProjectInfo | null;
 }
 
 /** Run a prompt in a separate session; its reply arrives as a notice. */
@@ -1513,6 +2147,8 @@ export interface SudoRequest {
   reason: string;
 }
 
+export type Surface = "tui" | "gui" | "cli";
+
 /** One entry of the session's task list. */
 export interface TodoItem {
   /** The item's id. */
@@ -1667,4 +2303,122 @@ export interface ViewerCount {
   surface: "cli" | "tui" | "gui" | "acp" | "web" | "messaging";
   /** How many of them are attached. */
   count: number;
+}
+
+/** Read a text aloud. */
+export interface VoiceSpeakParams {
+  /** The text. */
+  text: string;
+}
+
+/** The speech. */
+export interface VoiceSpeakResult {
+  /** The audio, base64. */
+  audio_b64: string;
+  /** Its type. */
+  mime: string;
+}
+
+/** The text of one recorded clip. */
+export interface VoiceTranscribeParams {
+  /** The chat the clip is for (null: a new chat). */
+  session_id?: string | null;
+  /** The clip, base64. */
+  audio_b64: string;
+  /** Its type (`audio/webm`, `audio/wav` ...). */
+  mime: string;
+}
+
+/** What was said. */
+export interface VoiceTranscribeResult {
+  /** The transcript ("" when nothing could be heard). */
+  text: string;
+}
+
+/** `wake.detected`: the phrase was heard; start voice capture now. */
+export interface WakeDetected {
+  /** The phrase heard. */
+  phrase: string;
+  /** The owning surface. */
+  surface: string;
+}
+
+/** Client-captured audio for a `client_capture` listener. */
+export interface WakeFeedParams {
+  /** Base64 int16 mono little-endian audio. */
+  pcm: string;
+  /** Must be 16000. */
+  sample_rate?: number;
+}
+
+/** Whether the audio reached the detector. */
+export interface WakeFeedResult {
+  /** False when no client-capture listener of this caller is armed. */
+  fed: boolean;
+}
+
+/** No parameters. */
+export interface WakeNoParams {
+}
+
+/** The answer of an owner-gated call. */
+export interface WakeOwnerResult {
+  /** The call took effect. */
+  ok: boolean;
+  /** Another surface owns the listener (or none is armed). */
+  reason?: "not_owner" | null;
+}
+
+/** Arm the listener for the calling surface. */
+export interface WakeStartParams {
+  /** Who asks: `gui` (desktop), `tui` or `cli`. */
+  surface?: Surface;
+  /** An explicit "on" from the person: store consent and turn the feature on first. */
+  consent?: boolean;
+  /** The surface sends the audio with `wake.feed`; no microphone is opened by the daemon. */
+  client_capture?: boolean;
+}
+
+/** Whether the listener is armed for this caller. */
+export interface WakeStartResult {
+  /** True when armed. */
+  started: boolean;
+  /** Why not. */
+  reason?: "disabled" | "consent_required" | "unavailable" | "owned" | null;
+  /** What to install or set, for `unavailable`. */
+  hint?: string | null;
+  /** The phrase listened for. */
+  phrase: string;
+  /** The engine in use. */
+  engine?: string | null;
+  /** Who captures the audio. */
+  capture?: "local" | "client" | null;
+  /** True when this call stored consent. */
+  consent_saved?: boolean | null;
+}
+
+/** What the listener is doing, for this caller. */
+export interface WakeStatusResult {
+  /** `wake_word.enabled`. */
+  enabled: boolean;
+  /** `wake_word.consent`. */
+  consent: boolean;
+  /** Armed for this caller and not paused (the microphone or the feed is live). */
+  listening: boolean;
+  /** The surface that owns the listener, if any. */
+  owner_surface?: string | null;
+  /** The phrase listened for. */
+  phrase: string;
+  /** The configured engine. */
+  engine: string;
+  /** The engine and model are present. */
+  available: boolean;
+  /** What is missing. */
+  hint?: string | null;
+}
+
+/** Disarm the listener. */
+export interface WakeStopParams {
+  /** An explicit "off": also turn `wake_word.enabled` off. */
+  persist?: boolean;
 }

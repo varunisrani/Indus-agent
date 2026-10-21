@@ -215,7 +215,8 @@ def test_invalid_rows(installed: None, token: str, word: str) -> None:
 
 
 def test_every_chat_platform_has_a_rule() -> None:
-    not_targets = {"api_server", "webhook", "msgraph", "raft"}
+    # a2a: a peer reaches us; nothing can be pushed to it (A2A push is not built, P24-10)
+    not_targets = {"api_server", "webhook", "msgraph", "raft", "a2a"}
     assert set(targets.RULES) == set(BUILTIN_NAMES) - not_targets
     for name, rule in targets.RULES.items():
         assert rule.platform == name and rule.forms and rule.examples

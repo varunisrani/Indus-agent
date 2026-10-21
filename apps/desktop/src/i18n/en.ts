@@ -2,13 +2,21 @@
 // One flat record; keys are `area.thing`. Other slices append their own block at the end.
 
 import { AMBIENT_STRINGS } from "../ambient/strings.en.ts";
+import { CAPABILITY_STRINGS } from "../app/capabilities/strings.en.ts";
+import { MANAGE_STRINGS } from "../app/manage/strings.en.ts";
 import { CHAT_STRINGS } from "../chat/strings.en.ts";
+import { VOICE_STRINGS } from "../chat/voice/strings.en.ts";
 import { DEEP_LINK_STRINGS } from "../deepLinks/strings.en.ts";
 import { ONBOARDING_STRINGS } from "../onboarding/strings.en.ts";
+import { ANNOTATE_STRINGS } from "../panes/preview/annotateStrings.en.ts";
 import { PANE_STRINGS } from "../panes/strings.en.ts";
+import { PET_STRINGS } from "../pet/strings.en.ts";
 import { PROFILE_STRINGS } from "../profiles/strings.en.ts";
 import { SETTINGS_STRINGS } from "../settings/strings.en.ts";
+import { UNINSTALL_STRINGS } from "../settings/uninstallStrings.en.ts";
 import { SIDEBAR_STRINGS } from "../sidebar/strings.en.ts";
+import { THEME_STRINGS } from "../theme/strings.en.ts";
+import { WAKE_STRINGS } from "../wake/strings.en.ts";
 
 export const en = {
   "app.name": "Indus",
@@ -184,4 +192,26 @@ export const en = {
 
   // HUD, quick entry, tray, keep awake, notifications, updates (P20-35..37)
   ...AMBIENT_STRINGS,
+
+  // desktop pet (P24-19), wake word (P24-20)
+  ...PET_STRINGS,
+  ...WAKE_STRINGS,
+
+  // preview annotate mode (P24-25)
+  ...ANNOTATE_STRINGS,
+
+  // capabilities page (P24-26)
+  ...CAPABILITY_STRINGS,
+
+  // themes and appearance (P24-33)
+  ...THEME_STRINGS,
+
+  // management pages (P24-27..31)
+  ...MANAGE_STRINGS,
+
+  // uninstall from Settings → About (P24-34)
+  ...UNINSTALL_STRINGS,
+
+  // composer voice: dictation, read-aloud, spoken conversation (P24-35)
+  ...VOICE_STRINGS,
 } as const satisfies Record<string, string>;

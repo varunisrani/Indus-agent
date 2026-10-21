@@ -38,6 +38,8 @@ export const SETTINGS_STRINGS = {
   "settings.page.model.auxiliary": "Side tasks",
   "settings.page.chat.behaviour": "Behaviour",
   "settings.page.chat.personality": "Personality",
+  "settings.page.chat.voice": "Voice",
+  "settings.voice.noWindow": "The wake word is set from the main window.",
   "settings.page.appearance.theme": "Theme",
   "settings.page.appearance.typography": "Text size",
   "settings.page.appearance.window": "Window",

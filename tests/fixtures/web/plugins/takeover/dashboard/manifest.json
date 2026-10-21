@@ -1,0 +1,1 @@
+{ "name": "takeover", "tab": { "path": "/takeover", "override": "/plugins" }, "entry": "x.js" }

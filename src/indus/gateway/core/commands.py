@@ -11,8 +11,8 @@ Handlers are looked up by name in two tables, never chosen by if-chains:
 - ``ANYTIME`` — usable idle or while a reply runs (status, approve, deny, help, commands, yolo,
   verbose, usage, bg, btw, platform, version, subgoal, heartbeat);
 - ``IDLE_ONLY`` — new/reset, resume, sessions, title, model, sethome, whoami, retry, undo,
-  compress, approvals, personality, skills, memory, reload-mcp, moa, and the idle forms of stop,
-  queue, steer, goal and loop.
+  compress, approvals, personality, skills, memory, reload-mcp, moa, suggestions, blueprint, and
+  the idle forms of stop, queue, steer, goal and loop.
 
 ``MID_RUN`` holds the variants the busy guard (P15-12) runs while a reply is in progress: stop,
 new, queue, steer, goal, loop. Another command runs mid-reply only when the registry's busy policy
@@ -995,6 +995,56 @@ async def _reload_mcp(ctx: CommandContext) -> Reply:
     return await run("once")
 
 
+def _cron_backend(scope: Scope) -> Any:
+    from indus.cron import ports as cron_ports
+    from indus.service import cron_host
+
+    cron_host.install()  # the process's backend (the daemon has it already; idempotent)
+    return cron_ports.backend_for(scope)
+
+
+def _job_origin(ctx: CommandContext) -> dict[str, Any]:
+    """Where a job made from this chat delivers by default: this chat (P24-46)."""
+    source = ctx.source
+    return {"platform": ctx.platform, "chat_id": str(source.chat_id), "thread_id": source.thread_id}
+
+
+async def _suggestions(ctx: CommandContext) -> Reply:
+    """``/suggestions [list|accept N|dismiss N|refresh]`` (P24-46); accepted jobs deliver here."""
+    from indus.cron.suggestions import handle_suggestions
+
+    scope = ctx.scope
+    return await run_blocking(
+        lambda: handle_suggestions(
+            scope,
+            ctx.args,
+            backend=lambda: _cron_backend(scope),
+            surface="gateway",
+            origin=_job_origin(ctx),
+        ),
+        label="suggestions",
+    )
+
+
+async def _blueprint(ctx: CommandContext) -> Reply:
+    """``/blueprint [name [slot=value ...]]`` (P24-46): a name alone hands the agent the
+    blueprint's questions as the next turn; with every value given, the job is made here."""
+    from indus.cron.blueprints import handle_blueprint
+
+    scope = ctx.scope
+    reply = await run_blocking(
+        lambda: handle_blueprint(
+            scope,
+            ctx.args,
+            backend=lambda: _cron_backend(scope),
+            surface="gateway",
+            origin=_job_origin(ctx),
+        ),
+        label="blueprint",
+    )
+    return Rewrite(reply.seed) if reply.seed else reply.text
+
+
 async def _not_in_chat(ctx: CommandContext) -> Reply:
     return NOT_IN_CHAT.format(name=ctx.name)
 
@@ -1126,6 +1176,8 @@ IDLE_ONLY: Final[Mapping[str, Handler]] = {
     "steer": _idle_payload,
     "goal": _automation("goal"),
     "loop": _automation("loop"),
+    "suggestions": _suggestions,
+    "blueprint": _blueprint,
 }
 
 MID_RUN: Final[Mapping[str, Handler]] = {

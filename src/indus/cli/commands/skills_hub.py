@@ -10,7 +10,8 @@
 - ``check-updates`` / ``update [name|--all] [--force]`` / ``audit [name]`` /
   ``uninstall <name> [-y]`` (``check`` stays the P09 file validator);
 - ``tap add|remove|list`` and ``trust|untrust <repo>`` (trust only for the fixed trusted set);
-- ``trust-project [path]``: load the skills of that repo (``skills.trusted_project_dirs``).
+- ``trust-project [path]``: load the skills of that repo (``skills.trusted_project_dirs``);
+- ``publish <skill> --to github --repo owner/name`` and ``snapshot export|import`` (P24-45).
 
 Exit codes: 0 done, 1 refused / blocked / failed, 2 a confirmation needs a terminal or ``-y``.
 """
@@ -40,7 +41,9 @@ __all__ = [
     "DEEP_LINK_SCHEME",
     "deep_link_install",
     "make_sources",
+    "publish_client",
     "register",
+    "register_sharing",
     "slash_install",
     "slash_search_lines",
 ]
@@ -515,3 +518,146 @@ def register(group: click.Group) -> None:
         click.echo(f"Trusted {root}: {state.found} project skill{'s' if state.found != 1 else ''}.")
         if held:
             click.echo(f"{held} quarantined by the content scan (they stay unloaded).")
+
+    register_sharing(group)
+
+
+# -- publish and snapshots (P24-45) ---------------------------------------------------------------
+
+
+def publish_client(scope: Scope) -> Any:
+    """The HTTP client publishing uses (tests replace this): the SSRF-safe one."""
+    import httpx
+
+    from indus.safety.safe_transport import safe_client
+
+    return safe_client(scope, timeout=httpx.Timeout(30.0, connect=10.0))
+
+
+def register_sharing(group: click.Group) -> None:
+    """``publish`` and ``snapshot export|import`` on the ``skills`` group."""
+
+    @group.command("publish")
+    @click.argument("skill")
+    @click.option(
+        "--to", "target", type=click.Choice(["github"]), default="github", show_default=True
+    )
+    @click.option("--repo", required=True, help="The GitHub repository: owner/name.")
+    @click.option(
+        "--path", "folder", default="skills", show_default=True, help="Folder in the repo."
+    )
+    @click.option("--branch", default="", help="Branch to create (default indus/add-skill-<name>).")
+    @click.option("--no-pr", is_flag=True, help="Only push the branch; open no pull request.")
+    @click.option("--yes", "-y", is_flag=True, help="Do not ask first.")
+    def publish_command(
+        skill: str, target: str, repo: str, folder: str, branch: str, no_pr: bool, yes: bool
+    ) -> None:
+        """Share a local skill on GitHub (a branch and a pull request)."""
+        from indus.learning.skills.hub.publish import prepare, publish_github
+        from indus.learning.skills.hub.sources import HubError, github_token
+
+        scope = _scope()
+        try:
+            plan = prepare(scope, skill)
+        except (HubError, OSError) as exc:
+            _fail(f"Not published: {exc}")
+            return
+        click.echo(f"Skill {plan.name}: {len(plan.files)} file(s), scan {plan.report.verdict}.")
+        for rel in sorted(plan.files):
+            click.echo(f"  {rel}")
+        token = github_token(scope)
+        if not token:
+            _fail("Publishing needs your GitHub token: set GITHUB_TOKEN (`indus auth` or .env).")
+            return
+        io = io_for(cli_state(), "Publishing needs a terminal to confirm, or -y.")
+        answer = confirm(io, f"Publish {plan.name} to {target}:{repo}?", assume_yes=yes)
+        if answer is None:
+            raise click.exceptions.Exit(2)
+        if not answer:
+            click.echo("Nothing published.")
+            raise click.exceptions.Exit(1)
+
+        async def work() -> str:
+            async with publish_client(scope) as client:
+                return await publish_github(
+                    plan,
+                    repo,
+                    token=token,
+                    client=client,
+                    path=folder,
+                    branch=branch,
+                    pr=not no_pr,
+                    say=click.echo,
+                )
+
+        try:
+            where = asyncio.run(work())
+        except HubError as exc:
+            _fail(f"Not published: {exc}")
+            return
+        click.echo(f"Published: {where}")
+
+    @group.group("snapshot")
+    def snapshot_group() -> None:
+        """Export or import the hub skills of this profile."""
+
+    @snapshot_group.command("export")
+    @click.option("--output", "-o", default="-", help="Write to this file (default: stdout).")
+    def snapshot_export_command(output: str) -> None:
+        """Write the installed hub skills and taps as JSON."""
+        from indus.learning.skills.hub.snapshot import export_snapshot
+
+        data = export_snapshot(_scope())
+        text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        if output == "-":
+            click.echo(text, nl=False)
+            return
+        Path(output).expanduser().write_text(text, encoding="utf-8")
+        click.echo(f"Snapshot written: {len(data['skills'])} skill(s), {len(data['taps'])} tap(s).")
+
+    @snapshot_group.command("import")
+    @click.argument("source", type=click.Path(dir_okay=False, path_type=Path))
+    @click.option("--force", is_flag=True, help="Install over a caution verdict (never dangerous).")
+    @click.option("--yes", "-y", is_flag=True, help="Do not ask first.")
+    def snapshot_import_command(source: Path, force: bool, yes: bool) -> None:
+        """Install the skills of a snapshot again (each one scanned)."""
+        from indus.learning.skills.hub.snapshot import import_snapshot, read_snapshot
+        from indus.learning.skills.hub.sources import HubError
+
+        scope = _scope()
+        try:
+            snapshot = read_snapshot(source.read_text(encoding="utf-8-sig"))
+        except OSError as exc:
+            _fail(f"Cannot read {source}: {exc.strerror or exc}")
+            return
+        except HubError as exc:
+            _fail(str(exc))
+            return
+        io = io_for(cli_state(), "Importing skills needs a terminal to confirm, or -y.")
+        no_terminal = False
+
+        def ask(preview: Preview) -> bool:
+            nonlocal no_terminal
+            answer = confirm(io, f"Install {preview.name!r}?", assume_yes=yes)
+            if answer is None:
+                no_terminal = True
+                return False
+            return answer
+
+        async def work(sources: SourceSet) -> Any:
+            return await import_snapshot(
+                scope, sources, snapshot, force=force, confirm=ask, say=click.echo
+            )
+
+        rows = _run(scope, work)
+        failed = 0
+        for row in rows:
+            mark = "✓" if row.ok else "✗"
+            note = f" — {row.message}" if row.message else ""
+            click.echo(f"{mark} {row.name} ({row.status}){note}")
+            failed += 0 if row.ok else 1
+        click.echo(f"{len(rows) - failed} of {len(rows)} skill(s) in place.")
+        if no_terminal:
+            raise click.exceptions.Exit(2)
+        if failed:
+            raise click.exceptions.Exit(1)

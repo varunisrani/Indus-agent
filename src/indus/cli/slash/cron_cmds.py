@@ -7,6 +7,10 @@
 - ``/cron pause|resume|remove <job>`` and ``/cron run <job> [context…]`` (the run happens in the
   background; its summary is printed when it ends).
 
+``/suggestions`` and ``/blueprint`` (P24-46) run the shared handlers of ``indus.cron.suggestions``
+and ``indus.cron.blueprints``; ``/blueprint <name>`` without values sends the agent the
+blueprint's seed prompt as the next turn.
+
 The checks are the CLI's (``indus.cli.commands.cron``); everything else lives in a terminal.
 """
 
@@ -31,7 +35,7 @@ from indus.cron import ports
 from indus.cron import tool as checks
 from indus.cron.ports import StoreUnavailable
 
-__all__ = ["CRON_USAGE", "HANDLERS", "cron_cmd"]
+__all__ = ["CRON_USAGE", "HANDLERS", "blueprint_cmd", "cron_cmd", "suggestions_cmd"]
 
 CRON_USAGE = (
     'Usage: /cron [list [all] | add <schedule> <prompt> | edit <job> --prompt "…" | '
@@ -148,4 +152,21 @@ def cron_cmd(ctx: SlashContext, args: str) -> SlashResult:
     return SlashResult()
 
 
-HANDLERS = {"cron": cron_cmd}
+def suggestions_cmd(ctx: SlashContext, args: str) -> SlashResult:
+    """``/suggestions [list|accept N|dismiss N|refresh]`` (P24-46)."""
+    from indus.cron.suggestions import handle_suggestions
+
+    ctx.say(handle_suggestions(ctx.scope, args, backend=lambda: cron_backend(ctx.scope)))
+    return SlashResult()
+
+
+def blueprint_cmd(ctx: SlashContext, args: str) -> SlashResult:
+    """``/blueprint [name [slot=value …]]`` (P24-46): a name alone hands the agent the seed."""
+    from indus.cron.blueprints import handle_blueprint
+
+    reply = handle_blueprint(ctx.scope, args, backend=lambda: cron_backend(ctx.scope))
+    ctx.say(reply.text)
+    return SlashResult(submit=reply.seed)
+
+
+HANDLERS = {"cron": cron_cmd, "suggestions": suggestions_cmd, "blueprint": blueprint_cmd}

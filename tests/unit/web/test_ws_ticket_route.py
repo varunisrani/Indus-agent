@@ -38,12 +38,25 @@ def test_tickets_need_a_session(build: Builder) -> None:
     assert "ticket" not in response.json()
 
 
-def test_loopback_mode_has_no_tickets(build: Builder) -> None:
+def test_a_token_mode_client_gets_a_ticket(build: Builder) -> None:
+    """D-16.691: the desktop's main process holds the token and mints one ticket per dial."""
     built = build()
     response = built.client.post(
         "/api/auth/ws-ticket", json={"purpose": WEB_PTY}, headers=built.auth()
     )
-    assert response.status_code == 409 and response.json()["error"] == "not_gated"
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert looks_like_ticket(body["ticket"]) and body["purpose"] == WEB_PTY
+    log = built.state.auth.audit.path.read_text(encoding="utf-8")
+    assert "ws_ticket_minted" in log and body["ticket"] not in log
+
+
+def test_token_mode_tickets_still_need_the_token(build: Builder) -> None:
+    built = build()
+    response = built.client.post("/api/auth/ws-ticket", json={"purpose": WEB_PTY})
+    assert response.status_code == 401
+    assert "ticket" not in response.json()
 
 
 def test_bad_purposes_and_profiles_are_refused(build: Builder) -> None:

@@ -1,0 +1,13 @@
+{
+  "name": "hello",
+  "label": "Hello",
+  "description": "A sample tab.",
+  "icon": "Sparkles",
+  "version": "1.2.0",
+  "tab": { "path": "/hello", "position": "after:skills" },
+  "slots": ["sidebar", "sessions:top", "Not A Slot"],
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "api.py",
+  "integrity": "sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}

@@ -3,7 +3,9 @@
 Verbs: ``create <schedule> <prompt…>``, ``edit <job>``, ``list [--all]``, ``pause <job>``,
 ``resume <job>``, ``run <job> [--context …]``, ``remove <job> [-y]``, ``status``, ``tick``,
 ``daemon``, ``pause-all [--reason]``, ``resume-all``, ``runs <job>``, ``history``,
-``incidents [--all] [--ack ID]``, ``notepad <job> list|get|set|unset``, ``doctor``.
+``incidents [--all] [--ack ID]``, ``notepad <job> list|get|set|unset``, ``doctor``,
+``suggestions [list|accept N|dismiss N|refresh]`` (P24-46: suggested jobs, created only on
+accept).
 
 A job is named by its id or its name (any case; an exact id wins; a name shared by several jobs is
 refused with their ids). ``create`` and ``edit`` check what they are given the same way the agent's
@@ -27,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
@@ -550,11 +552,25 @@ def status_command() -> None:
     _say(status_lines(_backend(scope), scope))
 
 
+@contextlib.contextmanager
+def _self_chat() -> Iterator[None]:
+    """The ``self-chat`` target (P24-07: a job's output into this profile's own bot chat) works
+    from a CLI scheduler pass as it does inside the gateway."""
+    from indus.service.self_chat import install_self_chat
+
+    undo = install_self_chat()
+    try:
+        yield
+    finally:
+        undo()
+
+
 @cron_group.command("tick")
 def tick_command() -> None:
     """Run one scheduler pass now (for a user timer) and wait for its jobs."""
     scope = cli_state().scope
-    code = _backend(scope).tick(click.echo)
+    with _self_chat():
+        code = _backend(scope).tick(click.echo)
     if code:
         raise click.exceptions.Exit(code)
 
@@ -563,7 +579,8 @@ def tick_command() -> None:
 def daemon_command() -> None:
     """Run the scheduler every minute until stopped (Ctrl+C / SIGTERM)."""
     scope = cli_state().scope
-    code = _backend(scope).daemon()
+    with _self_chat():
+        code = _backend(scope).daemon()
     if code:
         raise click.exceptions.Exit(code)
 
@@ -702,3 +719,68 @@ def doctor_command() -> None:
     total = len(report.findings) + (1 if report.store_problem else 0)
     click.echo(f"cron doctor: {total} problem(s); fix them and run `indus cron doctor` again")
     raise click.exceptions.Exit(1)
+
+
+# -- suggested jobs (P24-46) ----------------------------------------------------------------------
+
+
+@cron_group.group("suggestions", invoke_without_command=True)
+@click.pass_context
+def suggestions_group(ctx: click.Context) -> None:
+    """Suggested jobs: nothing is scheduled until you accept one."""
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(suggestions_list_command)
+
+
+def _suggestions(verb: str, ref: str = "") -> None:
+    from indus.cron import suggestions
+    from indus.cron.errors import CronStoreBusy
+
+    scope = cli_state().scope
+    store = suggestions.SuggestionStore(scope)
+    try:
+        if verb == "list":
+            _say(suggestions.pending_lines(store.pending()))
+        elif verb == "refresh":
+            added = store.refresh()
+            click.echo(f"cron: {len(added)} new suggestion(s)")
+            _say(suggestions.pending_lines(store.pending()) if added else [])
+        elif verb == "dismiss":
+            record = store.dismiss(ref)
+            click.echo(f"cron: dismissed {record.id} ({record.title}); it will not come back")
+        else:
+            record, job = store.accept(ref, _backend(scope))
+            click.echo(f"cron: created {record.job_id} from suggestion {record.id}")
+            _say(job_lines(job, scope.clock.now()))
+    except suggestions.SuggestionNotFound:
+        _fail(f"no waiting suggestion {ref!r}; `indus cron suggestions` lists them")
+    except suggestions.SuggestionRefused as exc:
+        _fail(f"the job was not created ({exc}); the suggestion is still waiting")
+    except CronStoreBusy as exc:
+        _fail(str(exc))
+
+
+@suggestions_group.command("list")
+def suggestions_list_command() -> None:
+    """List the suggestions waiting for a yes or no."""
+    _suggestions("list")
+
+
+@suggestions_group.command("accept")
+@click.argument("ref", metavar="N|ID")
+def suggestions_accept_command(ref: str) -> None:
+    """Create the suggested job (list number or id)."""
+    _suggestions("accept", ref)
+
+
+@suggestions_group.command("dismiss")
+@click.argument("ref", metavar="N|ID")
+def suggestions_dismiss_command(ref: str) -> None:
+    """Never suggest this one again."""
+    _suggestions("dismiss", ref)
+
+
+@suggestions_group.command("refresh")
+def suggestions_refresh_command() -> None:
+    """Offer the starter jobs and the jobs your skills suggest."""
+    _suggestions("refresh")

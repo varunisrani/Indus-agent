@@ -20,7 +20,16 @@ const profileName = z.string().min(1).max(64);
 const absPath = z.string().min(1).max(4096);
 const id = z.string().min(1).max(256);
 
-export const windowKind = z.enum(["main", "secondary", "instance", "hud", "quick", "hidden"]);
+export const windowKind = z.enum([
+  "main",
+  "secondary",
+  "instance",
+  "hud",
+  "quick",
+  "pet",
+  "wake",
+  "hidden",
+]);
 
 export const launchFacts = z.object({
   platform: z.string(),
@@ -37,6 +46,42 @@ export const launchFacts = z.object({
   titleBarHeight: z.number(),
   deepLinkScheme: z.string(),
 });
+
+// -- P24-19 pet, P24-20 wake indicator, P24-33 marketplace themes ---------------------------------
+
+/** A mood picture: an image data URI (PNG, JPEG or WebP), at most 12 MiB of text. */
+const moodPicture = z
+  .string()
+  .max(12 * 1024 * 1024)
+  .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/);
+
+export const petView = z.object({
+  visible: z.boolean(),
+  name: z.string().nullable(),
+  /** 0.25-3 (`pet.scale`). */
+  scale: z.number(),
+  revision: z.string().nullable(),
+  moods: z.record(z.string(), z.string()),
+  /** A short status line in the speech bubble, or null. */
+  bubble: z.string().nullable(),
+});
+
+export const wakeIndicatorState = z.enum(["hidden", "listening", "heard", "capturing"]);
+
+export const marketplaceItem = z.object({
+  publisher: z.string(),
+  extension: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  version: z.string(),
+  installs: z.number(),
+});
+
+const marketplaceName = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
 
 export const bootPhase = z.enum([
   "resolve",
@@ -124,6 +169,63 @@ export const remoteTestResult = z.object({
 });
 
 /** `url` is normalised by main (a bare `host:port` gets `http://`); a bad one is `bad-request`. */
+const connectionLeg = z.enum(["ok", "unauthorized", "unreachable", "error"]);
+const connectionTest = z.object({
+  ok: z.boolean(),
+  http: connectionLeg,
+  ws: connectionLeg,
+  nativeSignIn: z.boolean(),
+  message: z.string().optional(),
+});
+const sshTarget = z.strictObject({
+  host: z.string().min(1).max(255),
+  user: z.string().min(1).max(64).optional(),
+  port: z.number().int().min(1).max(65_535).optional(),
+  keyPath: z.string().min(1).max(4096).optional(),
+  remoteProfile: z.string().min(1).max(64).optional(),
+});
+const connectionInput = z.strictObject({
+  id: z.string().min(1).max(64).optional(),
+  kind: z.enum(["remote", "ssh"]),
+  label: z.string().max(64).optional(),
+  url: z.string().max(2048).optional(),
+  authMode: z.enum(["token", "oauth", "basic"]).optional(),
+  ssh: sshTarget.optional(),
+  token: z.string().max(4096).optional(),
+  username: z.string().max(256).optional(),
+  password: z.string().max(4096).optional(),
+  headers: z.record(z.string().max(128), z.string().max(4096)).optional(),
+});
+const connectionsView = z.object({
+  connections: z.array(
+    z.object({
+      id: z.string(),
+      kind: z.enum(["local", "remote", "ssh"]),
+      label: z.string(),
+      url: z.string().optional(),
+      authMode: z.enum(["token", "oauth", "basic"]).optional(),
+      ssh: z
+        .object({
+          host: z.string(),
+          user: z.string().optional(),
+          port: z.number().optional(),
+          keyPath: z.string().optional(),
+          remoteProfile: z.string().optional(),
+        })
+        .optional(),
+      primary: z.boolean(),
+      lastUsed: z.boolean(),
+      hasCredential: z.boolean(),
+      signedIn: z.boolean(),
+      headerNames: z.array(z.string()),
+    }),
+  ),
+  primaryId: z.string(),
+  launchMode: z.enum(["primary", "last-used"]),
+  quarantined: z.number().int(),
+});
+const connectionId = z.strictObject({ id: z.string().min(1).max(64) });
+
 const remoteInput = z.strictObject({
   url: z.string().min(1).max(2048),
   token: z.string().min(1).max(8192),
@@ -384,6 +486,33 @@ type SchemaTable = {
   readonly [N in ChannelName]: SchemasFor<Extract<Channel, { name: N }>["kind"]>;
 };
 
+// -- desktop plugins (P24-32) and uninstall (P24-34) --------------------------------------------
+
+export const pluginFile = z.object({
+  id: z.string(),
+  kind: z.enum(["disk", "package"]),
+  file: z.string(),
+  size: z.number().int().min(0),
+  /** The module's name under `indus-plugin://disk/<hash>.js`; "" when refused. */
+  hash: z.string(),
+  status: z.enum(["ready", "refused"]),
+  reason: z.string().optional(),
+  packageName: z.string().optional(),
+});
+
+export const uninstallLevel = z.enum(["gui", "keep-data", "full"]);
+
+export const uninstallSummary = z.object({
+  /** False hides every option (`reason` says why). */
+  allowed: z.boolean(),
+  levels: z.array(uninstallLevel),
+  reason: z.string().optional(),
+  installKind: z.string(),
+  home: z.string(),
+  /** The exact words "Everything" asks the person to type. */
+  confirmPhrase: z.string(),
+});
+
 export const SCHEMAS = {
   "indus:facts": { response: launchFacts },
 
@@ -425,6 +554,39 @@ export const SCHEMAS = {
     response: remoteTestResult.extend({ saved: z.boolean() }),
   },
   "indus:remote:forget": { request: none, response: ok },
+
+  "indus:connections:list": { request: none, response: connectionsView },
+  "indus:connections:test": { request: connectionInput, response: connectionTest },
+  "indus:connections:save": {
+    request: connectionInput,
+    response: z.object({
+      saved: z.boolean(),
+      id: z.string().optional(),
+      test: connectionTest.nullable(),
+      droppedHeaders: z.array(z.string()),
+      message: z.string().optional(),
+    }),
+  },
+  "indus:connections:remove": { request: connectionId, response: connectionsView },
+  "indus:connections:set-primary": { request: connectionId, response: connectionsView },
+  "indus:connections:set-launch-mode": {
+    request: z.strictObject({ mode: z.enum(["primary", "last-used"]) }),
+    response: connectionsView,
+  },
+  "indus:connections:sign-in": {
+    request: connectionId,
+    response: z.object({ ok: z.boolean(), message: z.string().optional() }),
+  },
+  "indus:connections:sign-out": { request: connectionId, response: ok },
+
+  "indus:artifacts:download": {
+    request: z.strictObject({
+      path: z.string().min(1).max(4096),
+      profile: profileName.nullable(),
+      sessionId: id,
+    }),
+    response: z.object({ savedTo: z.string() }),
+  },
 
   "indus:api": { request: apiRequest, response: apiResult },
 
@@ -850,6 +1012,55 @@ export const SCHEMAS = {
     request: z.strictObject({
       items: z.array(z.strictObject({ id, label: z.string().max(256) })).max(64),
     }),
+  },
+
+  "indus:pet:show": {
+    request: z.strictObject({
+      name: z.string().min(1).max(64),
+      scale: z.number().min(0.25).max(3),
+      revision: z.string().max(64),
+      moods: z.record(z.string().regex(/^[a-z]{1,16}$/), moodPicture),
+    }),
+    response: z.object({ visible: z.boolean() }),
+  },
+  "indus:pet:hide": { request: none, response: z.object({ visible: z.boolean() }) },
+  "indus:pet:say": { request: z.strictObject({ text: z.string().max(200) }) },
+  "indus:pet:get": { request: none, response: petView },
+  "indus:pet:state": { payload: petView },
+  "indus:pet:pointer": { request: z.strictObject({ over: z.boolean() }) },
+
+  "indus:wake:indicator": { request: z.strictObject({ state: wakeIndicatorState }) },
+  "indus:wake:indicator-get": {
+    request: none,
+    response: z.object({ state: wakeIndicatorState }),
+  },
+  "indus:wake:indicator-state": { payload: z.object({ state: wakeIndicatorState }) },
+
+  "indus:themes:search": {
+    request: z.strictObject({ query: z.string().max(200) }),
+    response: z.object({ items: z.array(marketplaceItem) }),
+  },
+  "indus:themes:download": {
+    request: z.strictObject({
+      publisher: marketplaceName,
+      extension: marketplaceName,
+      version: z.string().regex(/^[0-9A-Za-z.+-]{1,40}$/),
+    }),
+    /** The extension package (a zip), base64. */
+    response: z.object({ vsixBase64: z.string() }),
+  },
+
+  "indus:plugins:list": { request: none, response: z.object({ files: z.array(pluginFile) }) },
+  "indus:plugins:rescan": { request: none, response: z.object({ files: z.array(pluginFile) }) },
+  "indus:plugins:changed": { payload: z.object({ files: z.array(pluginFile) }) },
+
+  "indus:uninstall:summary": { request: none, response: uninstallSummary },
+  "indus:uninstall:run": {
+    request: z.strictObject({ level: uninstallLevel, typed: z.string().max(64).optional() }),
+    response: z.union([
+      z.object({ ok: z.literal(true) }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
   },
 } as const satisfies SchemaTable;
 

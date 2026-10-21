@@ -94,6 +94,14 @@ OUTLINE_JS = r"""
     }
     return null;
   };
+  // P24-40: a field holding a secret (a password, card data, a one-time code, or a value
+  // browser_vault filled) never shows its value in an outline.
+  const secretField = (el) => {
+    const t = (el.getAttribute('type') || '').toLowerCase();
+    const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
+    return t === 'password' || ac.startsWith('cc-') || ac === 'one-time-code' ||
+      el.hasAttribute('data-indus-filled');
+  };
   const shown = (el) => {
     const style = getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
@@ -137,7 +145,8 @@ OUTLINE_JS = r"""
           row.ref = 'e' + count;
           el.setAttribute(attr, row.ref);
           if ('value' in el && (FIELDS.has(role) || role === 'slider')) {
-            row.value = squash(String(el.value), 200);
+            const raw = String(el.value);
+            row.value = secretField(el) ? (raw ? '[hidden]' : '') : squash(raw, 200);
           }
           if (role === 'checkbox' || role === 'radio' || role === 'switch') {
             row.checked = !!el.checked || el.getAttribute('aria-checked') === 'true';

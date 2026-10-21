@@ -76,6 +76,8 @@ class DashboardState:
         """Is the WebSocket feature behind ``purpose`` on?"""
         if purpose == "web-console":
             return self.console_enabled
+        if purpose == "web-plugin":
+            return True  # the plugin-route gate decides whether the plugin is on (P24-37)
         return self.embedded_chat
 
     def resolve_profile(self, name: str | None) -> ProfileRef | None:

@@ -143,6 +143,12 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "Add, list, remove and test webhook routes of the gateway.",
     ),
     (
+        "kanban",
+        "indus.cli.commands.kanban:kanban_group",
+        "The task board: create, list and move tasks.",
+    ),
+    ("project", "indus.cli.commands.project:project_group", "Create, list and switch projects."),
+    (
         "dashboard",
         "indus.web.command:dashboard_command",
         "Serve the web dashboard (127.0.0.1:9119 by default).",
@@ -173,6 +179,40 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "indus.cli.commands.update:update_command",
         "Update this install to the newest release of its channel.",
     ),
+    (
+        "peer",
+        "indus.cli.commands.peer:peer_group",
+        "Register peer gateways and message their bots.",
+    ),
+    ("lsp", "indus.cli.commands.lsp:lsp_group", "Language servers that check edits."),
+    ("verify", "indus.cli.commands.verify:verify_command", "Build and test this workspace."),
+    (
+        "import-agent",
+        "indus.cli.commands.import_agent:import_agent_command",
+        "Bring over another coding agent's setup (Claude Code, Codex).",
+    ),
+    ("pm", "indus.cli.commands.pm:pm_group", "Install and check the helper programs Indus uses."),
+    (
+        "egress",
+        "indus.cli.commands.egress:egress_group",
+        "The credential-injection proxy for Docker sandboxes.",
+    ),
+    (
+        "vault",
+        "indus.cli.commands.vault:vault_group",
+        "Saved logins and cards the agent fills without seeing them.",
+    ),
+    (
+        "blueprint",
+        "indus.cli.commands.blueprint:blueprint_group",
+        "Job templates: a fixed schedule with a few blanks to fill.",
+    ),
+    ("pet", "indus.cli.commands.pet:pet_group", "Make and show the desktop pet."),  # P24-19
+    (
+        "console",
+        "indus.cli.console_engine:console_command",
+        "The admin console: curated indus commands, one per line.",
+    ),  # P24-36
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases
 append in the order of research 04 §3.2.4."""

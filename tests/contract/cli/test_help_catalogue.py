@@ -60,12 +60,24 @@ GOLDEN_ORDER = [
     "pairing",  # P15-09
     "send",  # P15-20
     "webhook",  # P15-32
+    "kanban",  # P24-13 (research 04: after webhook and peer)
+    "project",  # P24-14
     "dashboard",  # P18-01
     "serve",  # P18-01
     "research",
     "uninstall",  # P23-20
     "acp",  # P19-01
     "update",  # P23-19
+    "peer",  # P24-07
+    "lsp",  # P24-15
+    "verify",  # P24-17
+    "import-agent",  # P24-18
+    "pm",  # P24-24
+    "egress",  # P24-42
+    "vault",  # P24-40
+    "blueprint",  # P24-46
+    "pet",  # P24-19
+    "console",  # P24-36
 ]
 
 SHARED_IMPORTS: dict[str, set[str]] = {

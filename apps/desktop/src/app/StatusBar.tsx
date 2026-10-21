@@ -7,6 +7,7 @@ import type { SessionInfo, UsageNumbers } from "@indus/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StorageLike } from "../chat/inflightJournal.ts";
 import { errorMessage } from "../chat/rpcErrors.ts";
+import { ContributionArea } from "../contrib/react.tsx";
 import type { ChatConnection, SessionEvent } from "../gateway/connectionStore.ts";
 import { useGatewayConnection, useOpenServerRequests } from "../gateway/react.tsx";
 import type { OpenServerRequest } from "../gateway/serverRequests.ts";
@@ -429,6 +430,7 @@ export function StatusBar(props: StatusBarProps) {
           ))}
         </div>
       ) : null}
+      <ContributionArea area="status-bar" />
     </footer>
   );
 }
