@@ -83,8 +83,11 @@ Turn: AGENT_1 (took it back at 05:56 UTC 2026-10-21, owner request). In flight (
   verify19 (brief `.agents/wip/w36/integrator-brief.md`, D-16.740..769). Owner item: I2's first `uv run` wrote into
   /root/.cache/uv.
 - Wave 37 (brief `.agents/wip/w37/brief.md`, P24 backend first half): M1 P24-01..04, R1 05..07, R2 08..10, B1 11..14, L1
-  15..17, X1 18/23/24 in scratchpad wt-w37*. Next: P24-38..47 (browser, egress, packs, hub, suggestions, broker); P24-19/20/
-  25..37 after P20 lands; P24-21/22 if capacity.
+  15..17, X1 18/23/24 — ALL parked in `.agents/wip/w37/` (README lists the daemon/loop/registry wiring each owes).
+- Wave 38 (brief `.agents/wip/w38/brief.md`): W1 P24-38..41 + 47 (browser), S1 P24-42..46 (egress proxy, memory caps,
+  packs, hub, suggestions) building in scratchpad wt-w38*.
+- NEXT: P24 desktop / dashboard / TUI builders (P24-19 pet, 20 wake word, 25..37 desktop + dashboard pages) — P20 has landed
+  (52deb8b); then one P24 integrator for w37 + w38 + the UI wave (wire the daemon/loop seams); P24-21/22 if capacity; then P25.
 - Last landings: P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
