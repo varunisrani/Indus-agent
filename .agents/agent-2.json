@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "PAUSED",
-  "usage_pct": 90,
-  "remaining_pct": 10,
-  "resets_at": "2026-10-21T17:30:00+00:00",
-  "last_check": "2026-10-21T17:25:00+00:00",
-  "current_step": "Handed the turn to Agent 1 at 90%; P24 integration parked in .agents/wip/w40",
-  "last_commit": "fd44e16"
+  "state": "ACTIVE",
+  "usage_pct": 3,
+  "remaining_pct": 97,
+  "resets_at": "2026-10-22T01:50:00+00:00",
+  "last_check": "2026-10-21T20:56:00+00:00",
+  "current_step": "Took the turn; landing P24 (w40) and starting D-16.799 wiring",
+  "last_commit": "150e93e"
 }

@@ -22,7 +22,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
   UI wave (w39 U1 U2 U3) + B4 (P24-45..47); integrated all of P24 (w40, unverified Python gate).
 
 ## Usage at last stop
-📊 Agent 2 usage: 90% used, 10% left (reading 17:21 UTC) — resets 17:30 UTC — PAUSED (handed off)
+📊 Agent 2 usage: 3% used, 97% left (reading 20:54 UTC) — resets 01:50 UTC — ACTIVE (took the turn back 20:56 UTC)
 📊 Agent 1 usage: last recorded 2026-10-21 10:17 (91%, reset 13:10) — expected fresh — READY
 
 ## Handoff history
@@ -76,7 +76,7 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 (handed over by Agent 2 at 17:25 UTC 2026-10-21, usage guard). Main `fd44e16`+status commits, green.
+Turn: AGENT_2 ACTIVE (taken back 20:56 UTC on the owner's request; Agent 1 had not started). In flight: P24 landing (w40) + D-16.799 wiring. Main `fd44e16`+status commits, green.
 Done: P00–P22 complete; P23 21/23 (`fd44e16`; P23-15/16 desktop signing open). 575/648 landed (89%).
 1. **Land P24** from `.agents/wip/w40/p24-int-wip.patch` (base 823caff; read w40/README.md + landing-p24.md first). Expected
    union conflicts with P23 listed in the README; re-lock uv; then run the Python FULL suite + perf to completion (the
