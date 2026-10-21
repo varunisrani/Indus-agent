@@ -40,7 +40,7 @@ acceptance, done when. Paths and conventions come from
 | P17 | [P17-daemon-shared-backend.md](P17-daemon-shared-backend.md) | 2.5 | 27 | 65 | 17 | 2 | 27 | M5 | done (`d1b05df`; M5 dual-host matrix + shared-backend demo) |
 | P18 | [P18-web-dashboard.md](P18-web-dashboard.md) | 2.5 | 30 | 148 | 11 | 6 | 30 | — | done (01–22 earlier; 23–30 in this commit; P18-27 projects/repos route owed; web-e2e lane not yet run in CI) |
 | P19 | [P19-acp-mcp-serve.md](P19-acp-mcp-serve.md) | 1.5 | 18 | 54 | 10 | 4 | 18 | M6 | done (01–07 `3ade87c`; 08–18 + D-16.602 daemon side in this commit; live Zed lane skips) |
-| P20 | [P20-desktop-demo4.md](P20-desktop-demo4.md) | 3.5 | 40 | 183 | 8 | 5 | 40 | **Demo 4** (M7) | in progress (01–07 `86f44f7`) |
+| P20 | [P20-desktop-demo4.md](P20-desktop-demo4.md) | 3.5 | 40 | 183 | 8 | 5 | 40 | **Demo 4** (M7) | in progress (01–07 `86f44f7`; 08–24 `2a1991b`, P20-11 partial: remote WS dial D-16.691) |
 | P21 | [P21-remaining-backends.md](P21-remaining-backends.md) | 1.5 | 16 | 40 | 7 | 3 | 17 | — | done (`6f04798`; live vendor smoke + ACC-D5-2 need real credentials/Apptainer) |
 | P22 | [P22-research-tooling.md](P22-research-tooling.md) | 1 | 15 | 36 | 6 | 4 | 15 | — | done (`6f04798`) |
 | P23 | [P23-packaging-release.md](P23-packaging-release.md) | 2 | 23 | 78 | 8 | 4 | 24 | — | planned |

@@ -77,7 +77,7 @@ README for reference. Nothing uncommitted on main.
 
 ## NEXT STEP (start here)
 Turn: AGENT_1 (took it back at 05:56 UTC 2026-10-21, owner request). In flight (Agent 1):
-- Landing P20-08..24: w34-int-wip.patch applied on main in scratchpad verify17; full gate running (log scratchpad/gate-p20.log).
+- P20-08..24 LANDED `2a1991b` (w34 pruned; notes appended to LEAD-NOTES).
 - Wave 35 builders (brief `.agents/wip/w35/brief.md`, local base c3891d6 = main 454e486 + w34 patch): D1 P20-25..27,
   D2 P20-28..31, D3 P20-32..34, D4 P20-35..37, D5 P20-38..39 in scratchpad wt-w35d1..d5. P20-40 at integration.
 Agent 2's handoff text (still valid for the owner questions and follow-ups) follows:
