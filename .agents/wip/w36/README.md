@@ -119,3 +119,40 @@
   only between exact markers; declined named profiles keep <root>/profiles, -y never removes them; running gateway stopped
   by SIGTERM to its recorded pid; --data refuses while this profile's gateway runs; cancel exits 0.
 - Follow-ups: pwsh tests + Windows install-e2e lane; PowerShell 5.1/7 in tool-versions.md.
+
+## w36-u1.patch: P23-17..19 update (kinds/channels/plan, apply/verify/rollback, finish/restart/receipts/CLI) + P23-21 versioning + P23-22 release command + P23-23 release workflow — done (base d5e575e)
+- Builder checks: ruff, format, pyright 0 (incl. scripts/release), lint-imports; own dirs + contract cli + test_entry 634
+  passed; broad `pytest tests -m "not perf" --ignore=tests/e2e` 15582 passed / 87 skipped / 0 failed (before a last small
+  apply.py hardening; affected dirs rerun green); tooling.checks ok (4 similarity runs rewritten); credential scan clean; no
+  stand-ins. `release.py --commit HEAD --dry-run` prints the plan, creates nothing, exits 1 (empty contributor map).
+  actionlint not available — workflows unchecked.
+- New: src/indus/foundation/versions.py (one version/tag/attempt-ref grammar + RELEASE_REPOSITORY constant),
+  src/indus/cli/update/{__init__,channels,apply,finish}.py, src/indus/cli/commands/update.py, scripts/release/{__init__,
+  versioning, claims, changelog, github, release, publish}.py, .github/workflows/{release,canary}.yml,
+  contributors/README.md, tests unit/cli/update, unit/cli/commands/test_update.py, integration/update, unit/release,
+  unit/ci/test_release_workflow.py, fakes updater + release/{fake_github, fake_registry}, fixtures/update/make_repo.py; notes
+  update-channels, update-apply, update-finish, versioning, release-cli, release-workflow.
+- Shared: cli/app.py (update after acp — I2 adds uninstall before acp: merge), cli/version.py ("Update available" from
+  <root>/cache/update-check.json), schema UpdatesSection (check, pre_update_backup, backup_keep=5, installs), contract cli
+  golden order + non_tty_table (update: 1), traps R04.24, R10.18, R10.23, R10.24 (K1 also), R10.26, R10.27, R10.29; ACC-I41-1..4,
+  I45-1/2, I21-2, S10-1..3, S16-1.
+- RECONCILE at integration: (1) ONE release base: RELEASE_REPOSITORY in indus.foundation.versions vs I1/I2 pins.json
+  release.repository vs K1 docker/pins.json images vs N1 container.image — pick one source and derive the rest (owner decides
+  D-16.690); (2) install config key: U1 uses `updates.installs.<id16>.channel/.extras` (schema row), I1/I2 write
+  `update.installs.<id16>.channel/.skip` — make installers write U1's key (and agree skip vs extras); (3) docker.yml
+  workflow_call: U1 assumed inputs commit + release-ref, K1 built commit + attempt_ref + phase test|publish with digest
+  outputs — align release.yml to K1; (4) desktop lanes call `pnpm --filter @indus/desktop run dist:mac|win|linux` and upload
+  apps/desktop/release/* — D5 built dist:unsigned into apps/desktop/build/release: align with P20-38 / P23-15/16;
+  (5) pinned action SHAs (checkout, setup-uv, install-nix-action, setup-node, upload/download-artifact) unverified offline —
+  merge into tool-versions.md; actionlint lane resolves them. Also: N1's nix refusal ("Nix owns updates…") in channels.py.
+- Owner setup (names only): protected `release` environment; secrets APPLE_ID, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD,
+  MAC_CERTIFICATE, MAC_CERTIFICATE_PASSWORD, WIN_CERTIFICATE, WIN_CERTIFICATE_PASSWORD.
+- Decisions (D-ids): canary X.Y.Z-canary.<stamp> on the next patch; channels.json on a fixed `channels` release updated by CAS on
+  the asset SHA-256, never backwards; non-TTY `indus update` needs -y (checked before any fetch); managed installs refused with
+  exit 1 (reference 2); git clone in a container = source checkout; relocatable .venv-next swapped by rename, .venv-prev
+  kept; local edits re-applied after the swap (conflict keeps the stash, finish exits 1 naming it); exec the new code's
+  --finish; gateway not paused before the move; hand-started gateway gets `stop {restart: true}` over the control socket then a
+  detached start, never killed; contributor map files named by the first 16 hex of SHA-256 of the email (no addresses in the
+  repo), canaries only warn on unmapped authors; publication order receipt tag → aliases → channel record → release public last
+  (read back first, idempotent); failed attempts stay open until `abandon`, `--if-new` canary no-op.
+- Follow-ups: actionlint in CI; update.log rotation; owner canary rehearsal.
