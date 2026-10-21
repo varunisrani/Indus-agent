@@ -55,9 +55,10 @@ LOGIN_PUBLIC_PREFIXES: Final[tuple[str, ...]] = (
 )
 """Gated mode only: exact path, or a prefix when the entry ends with ``/``."""
 
-TICKET_PATHS: Final[frozenset[str]] = frozenset({"/api/files/download"})
+TICKET_PATHS: Final[frozenset[str]] = frozenset({"/api/files/download", "/api/backups/download"})
 """REST routes that authenticate by their own single-use, path-bound ticket in the query (a
-download opened in a new tab cannot set a header; ``auth.download_ticket``, P18-16). The loopback
+download opened in a new tab cannot set a header; ``auth.download_ticket``, P18-16: files and
+backup archives). The loopback
 gate hands them to their handler, which refuses anything without a good ticket; the gated mode
 still wants the session cookie as well. No route takes the session token in the URL: ``?token=``
 is refused on every ``/api`` path."""

@@ -77,8 +77,10 @@ from indus.protocol.methods import ProtocolError, SessionCreateParams
 from indus.protocol.server_requests import ServerRequest, ServerRequestBase
 from indus.providers.route import RuntimeRoute
 from indus.service.broker import ServerRequestBroker
+from indus.service.session_mutations import stored_pick
 from indus.service.session_service import AgentFactory, SessionService, usage_numbers
 from indus.state import rewind, sessions, titles
+from indus.state import usage as usage_rows
 
 __all__ = ["PLATFORM", "SOURCE", "LocalHost", "ServiceBuilder", "build_service", "window_guard"]
 
@@ -226,9 +228,29 @@ class LocalHost:
             editor_servers=connected,
             no_mcp=self.no_mcp,
         )
-        return await service._make_agent(  # pyright: ignore[reportPrivateUsage]
+        agent = await service._make_agent(  # pyright: ignore[reportPrivateUsage]
             session_id, sink, broker, options, chosen
         )
+        await self._restore_route(agent, session_id)
+        return agent
+
+    async def _restore_route(self, agent: Agent, session_id: str) -> None:
+        """A stored session comes back on the model its row names (a switch made before the
+        editor restarted); a new session has no row yet."""
+        try:
+            row = await run_blocking(
+                store_view.session_row, self.scope, session_id, label="acp session row"
+            )
+            pick = stored_pick(row, agent.binding.state.route)
+            if pick is None:
+                return
+            model, provider = pick
+            route = await run_blocking(
+                lambda: self.resolve_route(model, provider), label="acp model route"
+            )
+            await agent.binding.apply(route)
+        except Exception as exc:
+            log.info("the stored model of %s is not used (%s)", session_id, type(exc).__name__)
 
     # -- editor MCP servers (P19-13) --------------------------------------------------------------
 
@@ -514,7 +536,25 @@ class LocalHost:
             return MutationResult(
                 "confirm", {"message": warning, "model": after.model, "provider": after.provider}
             )
+        await self._record_route(service, sid, after.route)
         return MutationResult("applied", {"model": after.model, "provider": after.provider})
+
+    async def _record_route(self, service: SessionService, sid: str, route: RuntimeRoute) -> None:
+        """The session row names the switched route, so a later resume runs it."""
+        try:
+            handle = self._handle(service)
+            await run_blocking(
+                lambda: usage_rows.set_route(
+                    handle,
+                    sid,
+                    billing_provider=route.provider,
+                    billing_base_url=route.base_url,
+                    model=route.model,
+                ),
+                label="acp session route",
+            )
+        except Exception:
+            log.warning("the new model of %s was not written to its row", sid, exc_info=True)
 
     async def _apply_pick(self, sid: str) -> None:
         """The turn ended: apply a model picked while it ran (refusals become a notice)."""

@@ -12,8 +12,9 @@ connection attached, an operation, its payload, the client's ``request_id`` and,
 - ``branch`` — a stored copy of the session; the child gets the named servers or a copy of the
   parent's, recorded at once, connected when the child is attached. Idle only.
 - ``workspace`` — the session's folder (row and agent). Idle only.
-- ``model`` — the session's route; ``confirm`` when the target window cannot hold the context in
-  use (until ``payload.confirm``); ``deferred`` while a turn runs.
+- ``model`` — the session's route, also written to its row (``model``, billing provider and base
+  URL) so a resume runs it; ``confirm`` when the target window cannot hold the context in use
+  (until ``payload.confirm``); ``deferred`` while a turn runs.
 - ``rewind`` / ``reset`` — user turns taken back / the whole conversation emptied, the agent
   rebuilt from the store. Idle only.
 - ``rename`` — the title (the row is written first when no reply came yet), and ``session.title``.
@@ -32,8 +33,11 @@ session and operation answers it again, also while the first call still runs; fo
 is ``IDEMPOTENCY_CONFLICT``. A call that failed with an error is not kept.
 
 **Agents.** ``shape`` is the service's ``agent_shaper``: before a session's agent is built it gives
-an ACP session the editor toolset when the client chose none (``editor_mcp.acp_selection``), its
-stored folder, and — when it has editor servers — their registry and toolsets.
+an ACP session the editor toolset when the client chose none (``editor_mcp.acp_selection``, plus
+the umbrella ``mcp`` toolset), leaves the profile's configured MCP servers out when
+``platform_toolsets.acp`` says ``no_mcp`` (the service runs its MCP step before the shaper), its
+stored folder and stored model (bound before its first turn), and — when it has editor servers —
+their registry and toolsets.
 """
 
 from __future__ import annotations
@@ -63,10 +67,11 @@ from indus.service import editor_mcp
 from indus.service.editor_mcp import EditorRecord, EditorServers, SpecError
 from indus.service.session_service import SessionService, usage_numbers
 from indus.state import rewind, sessions, titles
+from indus.state import usage as usage_rows
 from indus.state.registry import StoreHandle
 from indus.tools.session_registry import SessionRegistry
 
-__all__ = ["ACP_SOURCE", "COMMANDS", "SessionMutations", "window_guard"]
+__all__ = ["ACP_SOURCE", "COMMANDS", "SessionMutations", "stored_pick", "window_guard"]
 
 log = logging.getLogger(__name__)
 
@@ -114,6 +119,23 @@ class _State:
     record: EditorRecord | None = None
     route: RuntimeRoute | None = None
     deferred: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
+
+
+def stored_pick(
+    row: Mapping[str, Any] | None, route: RuntimeRoute
+) -> tuple[str, str | None] | None:
+    """``(model, provider)`` a stored session row names when it differs from ``route`` (a switch
+    made earlier, ``model`` / ``billing_provider``); None when the row names nothing else."""
+    if row is None:
+        return None
+    model = row.get("model")
+    if not isinstance(model, str) or not model.strip():
+        return None
+    raw = row.get("billing_provider")
+    provider = raw.strip() if isinstance(raw, str) and raw.strip() else None
+    if model == route.model and provider in (None, route.provider):
+        return None
+    return model, provider
 
 
 @dataclass
@@ -326,6 +348,11 @@ class SessionMutations:
         state.acp = state.acp or acp
         if acp and chosen is None:
             chosen = editor_mcp.acp_selection(self.scope)
+            upkeep = self.service.mcp
+            if upkeep is not None:
+                chosen = upkeep.selection(chosen)
+        if acp and chosen is not None and editor_mcp.acp_no_mcp(self.scope):
+            chosen = editor_mcp.without_config_servers(chosen)
         cwd = state.cwd
         if cwd is None and acp and options.source != ACP_SOURCE:
             row = row if row is not None else await self._row(session_id)
@@ -334,6 +361,11 @@ class SessionMutations:
         if cwd:
             fields = {**options.session_fields, "cwd": cwd}
             options = replace(options, cwd=Path(cwd), session_fields=fields)
+        if acp and options.source != ACP_SOURCE and state.route is None:
+            # A stored ACP session comes back on the model its row names (a switch made before a
+            # restart); ``before_turn`` binds it, as it does a pick a rebuild lost.
+            row = row if row is not None else await self._row(session_id)
+            await self._restore_route(state, row)
         base = (
             [n for n in chosen if not n.startswith(_EDITOR_TOOLSET_PREFIX)]
             if chosen is not None
@@ -357,6 +389,18 @@ class SessionMutations:
         if base is not None:
             base = list(dict.fromkeys([*base, *servers.toolsets()]))
         return options, base
+
+    async def _restore_route(self, state: _State, row: Mapping[str, Any] | None) -> None:
+        pick = stored_pick(row, self.service.route)
+        if pick is None:
+            return
+        model, provider = pick
+        try:
+            state.route = await run_blocking(
+                lambda: self.resolve_route(model, provider), label="model route"
+            )
+        except Exception as exc:
+            log.info("the stored model %s is not used (%s)", model, type(exc).__name__)
 
     def _freeze(self, state: _State) -> list[str]:
         """Frozen schemas for first listings; the names whose listing differs."""
@@ -623,7 +667,26 @@ class SessionMutations:
         self._state(key).route = after.route
         fields = {**agent.options.session_fields, "model": after.model}
         agent.options = replace(agent.options, session_fields=fields)
+        await self._record_route(sid, after.route)
         return SessionMutateResult(status="applied", model=after.model, provider=after.provider)
+
+    async def _record_route(self, sid: str, route: RuntimeRoute) -> None:
+        """The session row names the switched route, so a later resume runs it (a row not
+        written yet takes the model from the session fields)."""
+
+        def write() -> bool:
+            return usage_rows.set_route(
+                self.store,
+                sid,
+                billing_provider=route.provider,
+                billing_base_url=route.base_url,
+                model=route.model,
+            )
+
+        try:
+            await run_blocking(write, label="session route")
+        except Exception:
+            log.warning("the new model of %s was not written to its row", sid, exc_info=True)
 
     # -- commands ---------------------------------------------------------------------------------
 

@@ -1657,7 +1657,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/acp/test_attached_host.py::test_a_killed_transport_fails_the_waiter_and_the_reconnect_resumes_from_the_last_seq`
   - `tests/contract/acp/test_attached_host.py::test_reconnect_reattaches_editor_mcp`
   - `tests/contract/acp/test_attached_host.py::test_a_lost_turn_is_announced_once`
-  - Review: a reattach test against a real `indus gateway run` process (the daemon serves `session.mutate` and `acp.editor_policy` since D-16.638; only the in-loop endpoint is tested)
+  - `tests/e2e/acp/test_acp_daemon.py::test_a_second_editor_process_loads_the_session_on_its_switched_model` (a real `indus gateway run`; a new `indus acp` process loads the session after the first exits)
 - **ACC-M8-3** ACP refuses a prompt while a turn of the session is lost (outcome unknown) and never resends it
   - `tests/contract/acp/test_prompt.py::test_a_lost_turn_refuses_the_prompt_without_sending_it`
   - `tests/contract/acp/test_prompt.py::test_a_lost_ack_and_the_same_prompt_reuse_one_admission`

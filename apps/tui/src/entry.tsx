@@ -1,6 +1,6 @@
 // The TUI's entry: terminal checks and mode hygiene first, then the link to the agent (by default an
-// attach to the profile's daemon over its WebSocket, P17-19; `--local`: the bridge child), the app
-// runtime (P12-27) and Ink.
+// attach to the profile's daemon over its WebSocket, P17-19; `--local`: the bridge child), the
+// dashboard feed when the dashboard started us (P18-09), the app runtime (P12-27) and Ink.
 //
 // Order matters: truecolor and NODE_ENV are set before React or any colour library loads, the
 // mode reset is written before the first frame, and every exit path goes through `Lifecycle`.
@@ -42,6 +42,7 @@ const [
   { App },
   { splitCommand },
   attach,
+  dashboardFeed,
 ] = await Promise.all([
   import("@indus/client"),
   import("@indus/client/stdio"),
@@ -60,7 +61,12 @@ const [
   import("./app/App.tsx"),
   import("./composer/externalEditor.ts"),
   import("./transport/attach.ts"),
+  import("./transport/dashboardFeed.ts"),
 ]);
+
+// Started by the dashboard's Chat tab: its publish URL and credential. The credential leaves the
+// environment here, before any child (the bridge, the grant helper) is started.
+const feedPlan = dashboardFeed.takeFeedPlan(process.env);
 
 // The first frame paints the cached theme (no flash); detection refines it after.
 const cachePath = bootCachePath(process.env);
@@ -136,7 +142,13 @@ const client = new IndusClient({
   // Cursors drop an event delivered twice across a reconnect (the daemon numbers per run).
   replay: plan.mode !== "local",
 });
+const feed = feedPlan === null ? null : new dashboardFeed.DashboardFeed(feedPlan);
+if (feed !== null) {
+  client.subscribe((event) => feed.publish(event));
+  feed.start();
+}
 lifecycle.setBridgeStopper(() => {
+  feed?.close();
   void client.close();
   if (bridgePid === undefined) return;
   try {

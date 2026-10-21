@@ -354,7 +354,8 @@ class PromptBuilder:
                 stable=parts[0],
                 context=parts[1],
                 volatile=parts[2],
-                text=join_parts(parts),
+                # The fourth item only says whether a persona loaded; it is not prompt text.
+                text=join_parts(parts[:3]),
                 warnings=tuple(warnings),
                 persona_loaded=parts[3] == "persona",
             )

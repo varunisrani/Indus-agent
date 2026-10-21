@@ -53,6 +53,7 @@ __all__ = [
     "PREVIEW_BYTES",
     "ROUTE_LIST",
     "FilesPolicy",
+    "download_tickets",
     "is_sensitive",
     "router",
 ]
@@ -311,7 +312,8 @@ def _cut_text(head: bytes) -> str | None:
     return None
 
 
-def _downloads(request: Request) -> DownloadTickets:
+def download_tickets(request: Request) -> DownloadTickets:
+    """This dashboard process's download-ticket book (files and backup archives share it)."""
     extras = dashboard_state(request.app).extras
     book = extras.get(DOWNLOADS_KEY)
     if not isinstance(book, DownloadTickets):
@@ -323,7 +325,7 @@ def _downloads(request: Request) -> DownloadTickets:
 def mint_download_ticket(request: Request, body: PathBody) -> JSONResponse:
     _policy, target, _size = _readable_file(request, body.path)
     try:
-        minted = _downloads(request).mint(str(target))
+        minted = download_tickets(request).mint(str(target))
     except DownloadRefused:
         _fail(429, "too_many_downloads", "Too many downloads are waiting; try again.")
     return JSONResponse(
@@ -338,7 +340,7 @@ def download_file(request: Request, path: str = "", ticket: str = "") -> FileRes
     # the ticket is checked before the path is looked at: nothing about the file system answers a
     # caller without a good ticket.
     try:
-        bound = _downloads(request).redeem(ticket)
+        bound = download_tickets(request).redeem(ticket)
     except DownloadRefused as refused:
         log.info("download ticket refused (%s)", refused.reason)
         _fail(401, "download_ticket_invalid", "That download link is not valid; open it again.")

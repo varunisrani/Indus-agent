@@ -15,18 +15,26 @@ operations, action status and shell hooks. Everything is per profile (``read_sco
   ``DELETE …/{provider}/{index}`` (1-based, as listed). An env-held key is hidden from the pool
   rather than deleted, as ``indus auth remove`` does.
 - Operations, each a background action (``web.actions``): doctor, backup (+ download of an
-  archive it wrote, confined to ``<home>/backups``), import of an archive path or an uploaded zip,
+  archive it wrote, confined to ``<home>/backups``: with the session header, or — for a link the
+  browser opens itself — ``POST /api/ops/backup/download-ticket {archive}`` then
+  ``GET /api/backups/download?archive=&ticket=``, a ticket route bound to that one archive in the
+  same single-use book as file downloads), import of an archive path or an uploaded zip,
   checkpoint prune (+ a size listing). ``GET /api/actions/{name}/status?lines=`` tails one.
+- ``GET /api/ops/prompt-size?session_id=&platform=``: how large the profile's (or one stored
+  session's) system prompt and tool schemas are, per P04 tier and per part, in characters and
+  estimated tokens (``service.prompt_size``); built locally, no model call, so answered at once.
 - ``/api/ops/hooks``: configured shell hooks with their approval; create needs ``consent: true``
   (it also records the approval, so the hook runs) and remove drops the entry and its approval.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import importlib
 import importlib.util
 import json
+import logging
 import os
 import re
 import shutil
@@ -40,7 +48,7 @@ from pathlib import Path
 from typing import Annotated, Any, Final, NoReturn, cast
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 import indus
@@ -68,11 +76,18 @@ from indus.providers.auth.store import AuthStore
 from indus.providers.profile import ProviderProfile
 from indus.providers.registry import Registry
 from indus.providers.route import is_placeholder
+from indus.service import prompt_size
+from indus.state import sessions as session_rows
 from indus.web.actions import ActionBusy, Actions, Say, actions_of
+from indus.web.auth.download_ticket import DownloadRefused
+from indus.web.routes.files import download_tickets
+from indus.web.routes.sessions_store import reading
 from indus.web.scope import read_scope, write_scope
 from indus.web.state import dashboard_state
 
 __all__ = ["ACTION_NAMES", "ROUTE_LIST", "add_pool_secret", "provider_profile", "router"]
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -88,10 +103,13 @@ ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
     ("POST", "/api/ops/doctor", True),
     ("POST", "/api/ops/backup", True),
     ("GET", "/api/ops/backup/download", True),
+    ("POST", "/api/ops/backup/download-ticket", True),
+    ("GET", "/api/backups/download", False),
     ("POST", "/api/ops/import", True),
     ("POST", "/api/ops/import-upload", True),
     ("GET", "/api/ops/checkpoints", True),
     ("POST", "/api/ops/checkpoints/prune", True),
+    ("GET", "/api/ops/prompt-size", True),
     ("GET", "/api/ops/hooks", True),
     ("POST", "/api/ops/hooks", True),
     ("DELETE", "/api/ops/hooks", True),
@@ -588,8 +606,12 @@ def run_backup(request: Request, scope: WriteScope) -> dict[str, Any]:
     return {**answer, "archive": str(archive)}
 
 
-@router.get("/api/ops/backup/download")
-def download_backup(archive: str, scope: ReadScope) -> FileResponse:
+BACKUP_TICKET_PREFIX: Final = "backup:"
+"""What a backup ticket is bound to: this prefix and the archive's resolved path, so it can never
+be redeemed for a file (``/api/files/download`` compares a bare path), nor a file ticket here."""
+
+
+def _backup_archive(scope: Scope, archive: str) -> Path:
     folder = _backups(scope).resolve(strict=False)
     try:
         target = Path(archive).resolve(strict=True)
@@ -597,6 +619,10 @@ def download_backup(archive: str, scope: ReadScope) -> FileResponse:
         _fail(404, "not_found", "There is no such backup.")
     if folder not in target.parents or target.suffix != ".zip" or not target.is_file():
         _fail(403, "outside_backups", "Only archives in this profile's backups folder.")
+    return target
+
+
+def _archive_response(target: Path) -> FileResponse:
     return FileResponse(
         path=str(target),
         media_type="application/zip",
@@ -604,6 +630,56 @@ def download_backup(archive: str, scope: ReadScope) -> FileResponse:
         content_disposition_type="attachment",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/api/ops/backup/download")
+def download_backup(archive: str, scope: ReadScope) -> FileResponse:
+    return _archive_response(_backup_archive(scope, archive))
+
+
+class ArchiveBody(BaseModel):
+    archive: str = Field(min_length=1)
+
+
+@router.post("/api/ops/backup/download-ticket")
+def mint_backup_ticket(request: Request, body: ArchiveBody, scope: WriteScope) -> JSONResponse:
+    target = _backup_archive(scope, body.archive)
+    try:
+        minted = download_tickets(request).mint(BACKUP_TICKET_PREFIX + str(target))
+    except DownloadRefused:
+        _fail(429, "too_many_downloads", "Too many downloads are waiting; try again.")
+    return JSONResponse(
+        {"ticket": minted.ticket, "expires_in": minted.expires_in},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _ticket_refused() -> NoReturn:
+    _fail(401, "download_ticket_invalid", "That download link is not valid; open it again.")
+
+
+@router.get("/api/backups/download")
+def download_backup_by_ticket(request: Request, archive: str = "", ticket: str = "") -> Any:
+    # A ticket route (the gate lets it through without the session token): the ticket is spent
+    # and checked before the archive is looked at, so a caller without one learns nothing.
+    try:
+        bound = download_tickets(request).redeem(ticket)
+    except DownloadRefused as refused:
+        log.info("backup download ticket refused (%s)", refused.reason)
+        _ticket_refused()
+    if not bound.startswith(BACKUP_TICKET_PREFIX):
+        log.info("backup download ticket refused (not a backup ticket)")
+        _ticket_refused()
+    try:
+        target = Path(archive).resolve(strict=True)
+    except (OSError, RuntimeError):
+        _ticket_refused()
+    # The path the ticket was minted for (inside that profile's backups folder, checked then);
+    # resolving again catches a link swapped in since.
+    if str(target) != bound.removeprefix(BACKUP_TICKET_PREFIX) or not target.is_file():
+        log.info("backup download ticket refused (another archive)")
+        _ticket_refused()
+    return _archive_response(target)
 
 
 class ImportBody(BaseModel):
@@ -706,6 +782,31 @@ def prune_checkpoints(request: Request, scope: WriteScope, body: PruneBody | Non
         "--force",
     ]
     return _start_command(request, scope, "checkpoints-prune", args)
+
+
+_PLATFORM_NAME: Final = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+
+
+@router.get("/api/ops/prompt-size")
+def get_prompt_size(
+    scope: ReadScope, session_id: str | None = None, platform: str | None = None
+) -> dict[str, Any]:
+    wanted = (platform or "").strip().lower() or None
+    if wanted is not None and not _PLATFORM_NAME.fullmatch(wanted):
+        _fail(400, "bad_platform", "That is not a platform name.")
+    facts: prompt_size.SessionFacts | None = None
+    if session_id:
+        with reading(scope) as view:
+            row = session_rows.get(view.as_handle(), session_id) if view is not None else None
+        if row is None:
+            _fail(404, "session_not_found", "No such session.")
+        facts = prompt_size.session_facts(row)
+    try:
+        measured = asyncio.run(prompt_size.measure(scope, platform=wanted, session=facts))
+    except Exception as exc:
+        log.warning("prompt-size breakdown failed: %s", type(exc).__name__)
+        _fail(500, "prompt_size_failed", "The prompt could not be built for measuring.")
+    return measured.to_json()
 
 
 @router.get("/api/actions/{name}/status")

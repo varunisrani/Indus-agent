@@ -382,6 +382,9 @@ def test_persona_replaces_identity_once(scope: Scope, tmp_path: Path) -> None:
     assert parts.text.startswith("You are Mira, terse and exact.")
     assert parts.text.count("You are Mira") == 1
     assert texts.DEFAULT_IDENTITY not in parts.text
+    # The prompt is the three tiers and nothing else: the "persona loaded" flag is not text.
+    assert parts.text == b.join_parts([parts.stable, parts.context, parts.volatile])
+    assert parts.text.endswith(texts.RUNTIME_END)
 
 
 def test_persona_switches(scope: Scope, tmp_path: Path) -> None:

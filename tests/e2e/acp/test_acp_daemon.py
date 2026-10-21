@@ -10,6 +10,9 @@ and reading its stdout.
   the editor's model picker (``session/set_config_option``, P19-12 → ``session.mutate model``,
   D-16.602), answers a command on the daemon (``/usage`` → ``session.mutate command``) and forks
   it.
+- Reattach (ACC-M8-2): the editor process exits and a new one loads the same session from the
+  daemon — the history is replayed and the session keeps the model the first editor picked (the
+  daemon wrote it to the session row).
 - ``--local``: the same profile, the same frames, a session is created in process.
 """
 
@@ -18,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import sqlite3
 import subprocess
 import threading
 from pathlib import Path
@@ -44,8 +48,8 @@ class Editor:
     """An ``indus acp`` child and the frames it wrote, read on a thread. Permission cards the
     agent asks for are allowed once; ``updates`` keeps every ``session/update``."""
 
-    def __init__(self, profile: ProfileHome, *args: str) -> None:
-        self.err_path = profile.root / f"acp-{len(args)}.err"
+    def __init__(self, profile: ProfileHome, *args: str, name: str = "") -> None:
+        self.err_path = profile.root / f"acp-{name or len(args)}.err"
         self._err = self.err_path.open("w", encoding="utf-8")
         self.proc = subprocess.Popen(
             profile.argv("acp", *args),
@@ -201,6 +205,61 @@ def test_an_attached_editor_session_prompts_switches_model_and_forks_on_the_daem
 
             assert editor.close() == 0, editor.stderr()
             assert "Traceback" not in editor.stderr()
+            assert daemon.proc.poll() is None
+        finally:
+            profile.stop_all()
+    assert profile.stray_processes() == []
+
+
+def _row(profile: ProfileHome, sid: str) -> tuple[str, str]:
+    db = profile.home / "state.db"
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        found = conn.execute(
+            "SELECT model, COALESCE(billing_provider, '') FROM sessions WHERE id = ?", (sid,)
+        ).fetchone()
+    assert found is not None, sid
+    return str(found[0]), str(found[1])
+
+
+def test_a_second_editor_process_loads_the_session_on_its_switched_model(tmp_path: Path) -> None:
+    script = steps_script([{"text": "the first reply"}], [{"text": "after the reattach"}])
+    with serving(script) as model:
+        seen: list[dict[str, Any]] = []
+        model.on_request = seen.append
+        profile = ProfileHome(tmp_path / "acp", model.port)
+        try:
+            daemon: RunningDaemon = profile.start_daemon()
+            daemon.attachable()
+            first = Editor(profile, name="first")
+            first.call("initialize", INIT)
+            created = first.call("session/new", {"cwd": str(profile.work), "mcpServers": []})
+            sid = created["result"]["sessionId"]
+            _prompt(first, sid, "say something")
+            switched = first.call(
+                "session/set_config_option",
+                {"sessionId": sid, "configId": "model", "value": "other-model"},
+            )
+            assert "error" not in switched, switched
+            assert _row(profile, sid)[0] == "other-model"  # the daemon wrote the switch
+            assert first.close() == 0, first.stderr()  # the editor process is gone
+
+            second = Editor(profile, name="second")  # the editor restarted
+            second.call("initialize", INIT)
+            listed = second.call("session/list", {"cwd": str(profile.work)})
+            assert sid in [s["sessionId"] for s in listed["result"]["sessions"]], listed
+            loaded = second.call(
+                "session/load", {"sessionId": sid, "cwd": str(profile.work), "mcpServers": []}
+            )
+            assert "error" not in loaded, loaded
+            assert "the first reply" in _said(second, sid)  # the history is replayed
+            [picker] = [o for o in loaded["result"]["configOptions"] if o["id"] == "model"]
+            assert str(picker["currentValue"]).endswith("other-model")
+            _prompt(second, sid, "and again")
+            assert "after the reattach" in _said(second, sid)
+            asked = [r for r in seen if r.get("kind") == "model"]
+            assert asked[-1]["model"] == "other-model"  # the same session, on its switched model
+            assert second.close() == 0, second.stderr()
+            assert "Traceback" not in first.stderr() + second.stderr()
             assert daemon.proc.poll() is None
         finally:
             profile.stop_all()

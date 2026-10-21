@@ -13,6 +13,7 @@ export interface GeneratedRoute {
 export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
   { method: "GET", path: "/api/actions/{name}/status", scoped: true },
   { method: "GET", path: "/api/analytics/usage", scoped: true },
+  { method: "GET", path: "/api/backups/download", scoped: false },
   { method: "GET", path: "/api/config", scoped: true },
   { method: "PUT", path: "/api/config", scoped: true },
   { method: "GET", path: "/api/config/defaults", scoped: false },
@@ -69,6 +70,7 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
   { method: "POST", path: "/api/model/set", scoped: true },
   { method: "POST", path: "/api/ops/backup", scoped: true },
   { method: "GET", path: "/api/ops/backup/download", scoped: true },
+  { method: "POST", path: "/api/ops/backup/download-ticket", scoped: true },
   { method: "GET", path: "/api/ops/checkpoints", scoped: true },
   { method: "POST", path: "/api/ops/checkpoints/prune", scoped: true },
   { method: "POST", path: "/api/ops/doctor", scoped: true },
@@ -77,6 +79,7 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
   { method: "POST", path: "/api/ops/hooks", scoped: true },
   { method: "POST", path: "/api/ops/import", scoped: true },
   { method: "POST", path: "/api/ops/import-upload", scoped: true },
+  { method: "GET", path: "/api/ops/prompt-size", scoped: true },
   { method: "GET", path: "/api/pairing", scoped: true },
   { method: "POST", path: "/api/pairing/approve", scoped: true },
   { method: "POST", path: "/api/pairing/clear-pending", scoped: true },

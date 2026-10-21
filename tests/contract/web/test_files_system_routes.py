@@ -96,6 +96,7 @@ def test_route_lists_are_pinned(rest: RestApp) -> None:
         "/api/credentials",
         "/api/ops",
         "/api/actions",
+        "/api/backups",
     )
     assert route_table(rest.app, prefixes) == set(system.ROUTE_LIST)
     assert unscoped_writes(rest.app, prefixes) == []

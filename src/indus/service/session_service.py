@@ -67,8 +67,9 @@ would start on its own — host injections, background-subagent results, undeliv
 is handed to the door (the daemon's admission ledger) instead; ``start_admitted`` starts a turn
 the door admitted under the ledger's generation; ``reload`` rebuilds a session's agent from the
 store (another process ran it meanwhile); an ``agent_shaper``, when set, adjusts a session's
-options and toolset selection right before its agent is built, on attach and on reload (the daemon
-gives an editor session its own tool registry and folder there, ``service.session_mutations``).
+options and toolset selection right before its agent is built (after the MCP step, before the
+plugins' step), on attach and on reload (the daemon gives an editor session its own tool registry
+and folder there, ``service.session_mutations``).
 ``events_since`` and ``receipt`` have trivial in-process forms: one replay epoch per service over
 the kept events, and no admissions.
 """
@@ -569,11 +570,12 @@ class SessionService:
         try:
             sink = EventSink(session_id)
             broker = self._new_broker(session_id, sink)
-            if self.agent_shaper is not None:
-                options, selection = await self.agent_shaper(session_id, options, selection)
             if self.mcp is not None:
                 await self.mcp.start()
                 selection = self.mcp.selection(selection)
+            # After the MCP step, so the shaper sees (and may narrow) the final MCP toolsets.
+            if self.agent_shaper is not None:
+                options, selection = await self.agent_shaper(session_id, options, selection)
             if self.plugins is not None:
                 await self.plugins.start()
                 selection = self.plugins.selection(selection)

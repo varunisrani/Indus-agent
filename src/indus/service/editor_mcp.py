@@ -19,7 +19,9 @@ runs them for that session alone:
   session's folder; a move restarts them there.
 
 ``acp_selection`` is the toolset choice of an ACP session the client gave none for:
-``platform_toolsets.acp`` (without its ``no_mcp`` marker) or the ``indus-acp`` bundle.
+``platform_toolsets.acp`` (without its ``no_mcp`` marker) or the ``indus-acp`` bundle;
+``acp_no_mcp`` reads the marker, and ``without_config_servers`` takes the profile's configured MCP
+servers out of a selection for it.
 """
 
 from __future__ import annotations
@@ -50,12 +52,14 @@ __all__ = [
     "EditorRecord",
     "EditorServers",
     "SpecError",
+    "acp_no_mcp",
     "acp_selection",
     "editor_toolset",
     "load_record",
     "save_record",
     "spec_fingerprint",
     "valid_specs",
+    "without_config_servers",
 ]
 
 log = logging.getLogger(__name__)
@@ -68,6 +72,7 @@ MAX_LIST_BYTES: Final = 65536
 """The largest server list (as compact JSON) an editor may send."""
 ACP_BUNDLE: Final = "indus-acp"
 _NO_MCP: Final = "no_mcp"
+_MCP_UMBRELLA: Final = "mcp"
 _KINDS: Final = frozenset({"stdio", "http", "sse"})
 
 
@@ -93,6 +98,30 @@ def acp_selection(scope: Scope) -> list[str]:
         if chosen:
             return chosen
     return [ACP_BUNDLE]
+
+
+def acp_no_mcp(scope: Scope) -> bool:
+    """``no_mcp`` in ``platform_toolsets.acp``: ACP sessions get none of the profile's configured
+    MCP servers (their editor's own servers stay)."""
+    config = scope.config
+    try:
+        saved = config.get("platform_toolsets.acp") if config is not None else None
+    except Exception:
+        saved = None
+    if not isinstance(saved, list):
+        return False
+    return _NO_MCP in [str(n).strip() for n in cast(list[object], saved)]
+
+
+def without_config_servers(selection: Sequence[str]) -> list[str]:
+    """``selection`` without the umbrella ``mcp`` and the configured servers' ``mcp-<name>``
+    toolsets; the editor's ``mcp-editor-<name>`` toolsets stay."""
+    editor = f"mcp-{EDITOR_PREFIX}"
+    return [
+        name
+        for name in selection
+        if name != _MCP_UMBRELLA and (not name.startswith("mcp-") or name.startswith(editor))
+    ]
 
 
 # -- specs -----------------------------------------------------------------------------------------
