@@ -24,3 +24,30 @@
   credentials); receiving bot in a JSON sidecar <launch home>/gateway/receiving_bots.json (≤ 20,000 rows) because
   Source.model_validate forbids extra keys — move to a transport_profile column at the next schema change; malformed route ids
   skip the route with a problem line; no periodic rescan / config-change rescan / --replace / standalone shim.
+
+## w37-x1.patch: P24-18 `indus import-agent` + P24-23 `indus pm` lock, store, ensure + P24-24 `indus pm` commands — done
+- Builder checks: ruff, format (repo clean), pyright 0, lint-imports; unit pm + unit cli + contract cli + foundation config
+  2082 passed / 3 skipped (final narrower rerun 813 passed / 2 skipped); tooling.checks ok. No packages (httpx + stdlib).
+- New: src/indus/cli/importers/{__init__,agents}.py, cli/commands/import_agent.py, fixtures import_agent/{claude_code_home,
+  codex_home,README.md}, test_import_agent.py (33); src/indus/pm/{lock,store,fetch,core}.py + packages.toml,
+  pm/commands.py, cli/commands/pm.py, tests/fakes/pm_origin.py, tests/unit/pm/*, tests/unit/cli/commands/test_pm.py; notes
+  import-agent.md, pm-core.md, pm-commands.md.
+- Shared (unions): src/indus/pm/__init__.py (lazy facade ensure / tool_path / env_for / manager), cli/app.py (import-agent + pm
+  rows at the end of REGISTRY), contract help catalogue + non_tty_table (+4 with_arguments rows), schema PmSection
+  (pm.mirror_url "", pm.timeout_s 60) + test, pyproject ruff banned-api for indus.pm.{fetch,store,lock} + per-file TID251
+  ignores, traps R02.22, R02.4, R04.19 (no ACC-I46 / S9 rows exist).
+- Wiring: consumers call indus.pm.ensure(scope, name) → Runner; runner.env(scope, child_env) with
+  indus.safety.child_env.child_env (pm cannot import safety: sibling layer); tool_path() never installs (P24-39 uses it);
+  no lock ships: `indus pm lock --yes` writes <root>/pm/lock.json (network); a packaged indus/pm/lock.json is picked up
+  automatically — the P23 release pipeline could build it.
+- Decisions (D-ids): import-agent puts home CLAUDE.md / AGENTS.md into a marked per-agent block in PERSONA.md (seeded with
+  DEFAULT_IDENTITY when missing); project instruction files reported, never copied; project files only with --project DIR;
+  committed .claude/settings.json allow rules NOT imported (deny rules are), settings.local.json allow + deny imported; project
+  MCP servers imported disabled; MCP env values become ${NAME}; credential headers dropped + reported by name; servers whose
+  URL/args look like a credential refused; Bash(x:*) → `x` and `x *`; --sync re-applies changed sources only; non-TTY without
+  --yes exits 1 after the preview. pm: hash mismatch at the primary falls back to the mirror (reference stops); store entries
+  <name>-<version>-<sha[:16]>; declined defaults in facts.json, receipt <root>/pm/receipt.json; `pm env` prints package exports
+  only; lock/update need --yes without a TTY. OWNER NOTE: ffmpeg comes from a third-party static build (GPL binary, only run as
+  a separate process) — owner may prefer another origin.
+- Follow-ups: multi-archive targets, --target staging, progress, .previous-* restore points, sealed-install lazy policy,
+  release-built lock, packages.toml versions unverified offline; import-agent doesn't read ~/.claude/projects memories.
