@@ -24,6 +24,7 @@ from indus.backends.docker.probe import (
 )
 from indus.backends.docker.settings import DockerConfigError, settings_for
 from indus.foundation.config.schema import default_for
+from indus.foundation.versions import SANDBOX_IMAGE
 from tests.fakes.backend.docker_cli import FakeDocker
 from tests.fakes.clock import FakeClock
 from tests.unit.backends.docker.conftest import IMAGE, docker_scope
@@ -274,7 +275,8 @@ def test_quick_check_with_the_fake_client(
 
 
 def test_container_defaults() -> None:
-    assert default_for("terminal.docker_image") == "ghcr.io/indus-agent/indus-sandbox:slim"
+    # Our own sandbox image (D-16.64) under the one release base (D-16.690), stable channel, slim.
+    assert default_for("terminal.docker_image") == f"{SANDBOX_IMAGE}:stable-slim"
     assert default_for("terminal.container_cpu") == 1.0
     assert default_for("terminal.container_memory_mb") == 5120
     assert default_for("terminal.container_disk_mb") == 51200

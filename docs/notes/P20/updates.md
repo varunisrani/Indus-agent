@@ -112,7 +112,9 @@ Readers judge it by pid + start time (± 2 s); nobody but the owner removes it.
   in-process flag wait ceiling 20 min; start-time tolerance 2 s; empty-marker grace 5 s; legacy
   ceiling 20 min.
 - Default releases API: `https://api.github.com/repos/varunisrani/indus-agent/releases` (owner-open,
-  same question as D-16.690); override `INDUS_DESKTOP_UPDATE_FEED`.
+  same question as D-16.690); override `INDUS_DESKTOP_UPDATE_FEED`. Since the P23 landing (D-16.768)
+  it is built from `RELEASE_REPOSITORY` in `electron/releaseBase.ts` (`indusagi/indus-agent`, held
+  equal to `src/indus/foundation/versions.py`).
 - `electron-updater` is loaded by its package name at run time (not bundled into `main.js`): it
   must ship in the packaged app's `node_modules` (it is a production dependency; P20-38 packaging).
 - `sax` (reached through electron-updater's `builder-util-runtime`) moved to BlueOak-1.0.0 after

@@ -231,6 +231,9 @@ commands:
 
   serve discover: 1       # no headless backend runs (P18-01)
 
+  uninstall: 1            # no terminal to confirm on: says to pass -y or --dry-run (P23-20)
+  update: 1               # needs -y without a terminal; refused before any fetch (P23-19)
+
 # `long_running`: commands that run until they are stopped (a daemon loop). They cannot meet the
 # watchdog with no arguments, so the contract only checks that `--help` answers (exit 0) in time.
 long_running:

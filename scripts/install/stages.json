@@ -1,0 +1,67 @@
+{
+  "note": "The installer stage ladder shared by install.sh and install.ps1 (P23-03, P23-06). The desktop's in-app runner (P20-09, apps/desktop/electron/installer/stageProtocol.ts) drives exactly this manifest shape: change it there too. Rendered into the built scripts by scripts/install/build.py.",
+  "protocol_version": 1,
+  "stages": [
+    {
+      "name": "prerequisites",
+      "title": "Check the system",
+      "category": "system",
+      "needs_user_input": false
+    },
+    {
+      "name": "repository",
+      "title": "Download Indus Agent",
+      "category": "runtime",
+      "needs_user_input": false
+    },
+    {
+      "name": "runtime",
+      "title": "Install uv and Python",
+      "category": "runtime",
+      "needs_user_input": false
+    },
+    {
+      "name": "dependencies",
+      "title": "Install the Python packages",
+      "category": "runtime",
+      "needs_user_input": false
+    },
+    {
+      "name": "config",
+      "title": "Prepare the settings",
+      "category": "configuration",
+      "needs_user_input": false
+    },
+    {
+      "name": "products",
+      "title": "Install the indus command",
+      "title_with_desktop": "Install the indus command and the desktop app",
+      "category": "runtime",
+      "needs_user_input": false
+    },
+    {
+      "name": "setup",
+      "title": "Set up a model provider",
+      "category": "configuration",
+      "needs_user_input": true
+    },
+    {
+      "name": "gateway",
+      "title": "Set up the messaging gateway",
+      "category": "configuration",
+      "needs_user_input": true
+    },
+    {
+      "name": "complete",
+      "title": "Finish the install",
+      "category": "runtime",
+      "needs_user_input": false
+    }
+  ],
+  "dispatch_only": ["desktop"],
+  "extras": {
+    "always": ["web", "docs", "pty", "dashboard", "acp", "messaging"],
+    "unless_skip_browser": ["browser"],
+    "unless_skip_computer_use": []
+  }
+}

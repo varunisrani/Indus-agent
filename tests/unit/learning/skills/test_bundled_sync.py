@@ -399,10 +399,11 @@ def test_duplicate_shipped_name_keeps_first(tmp_path: Path) -> None:
 
 
 def test_wheel_ships_the_skills_where_bundled_source_looks() -> None:
-    """pyproject force-includes ``skills/`` as ``indus/_bundled_skills`` (integration)."""
+    """pyproject force-includes ``skills/`` as ``indus/_bundled_skills`` (integration); other
+    package data (P23-01's locales) may sit beside it."""
     with (REPO / "pyproject.toml").open("rb") as fh:
         wheel = tomllib.load(fh)["tool"]["hatch"]["build"]["targets"]["wheel"]
-    assert wheel["force-include"] == {bs.SKILLS_DIR: "indus/_bundled_skills"}
+    assert wheel["force-include"][bs.SKILLS_DIR] == "indus/_bundled_skills"
     module = Path(bs.__file__).resolve()
     packaged = module.parents[2] / "_bundled_skills"
     assert packaged.relative_to(module.parents[3]).as_posix() == "indus/_bundled_skills"

@@ -43,7 +43,7 @@ acceptance, done when. Paths and conventions come from
 | P20 | [P20-desktop-demo4.md](P20-desktop-demo4.md) | 3.5 | 40 | 183 | 8 | 5 | 40 | **Demo 4** (M7) | done (01–07 `86f44f7`; 08–24 `2a1991b`; 25–40 `52deb8b`; Linux E2E + Demo 4 suite; macOS/Windows lanes and remote chat D-16.691 open) |
 | P21 | [P21-remaining-backends.md](P21-remaining-backends.md) | 1.5 | 16 | 40 | 7 | 3 | 17 | — | done (`6f04798`; live vendor smoke + ACC-D5-2 need real credentials/Apptainer) |
 | P22 | [P22-research-tooling.md](P22-research-tooling.md) | 1 | 15 | 36 | 6 | 4 | 15 | — | done (`6f04798`) |
-| P23 | [P23-packaging-release.md](P23-packaging-release.md) | 2 | 23 | 78 | 8 | 4 | 24 | — | planned |
+| P23 | [P23-packaging-release.md](P23-packaging-release.md) | 2 | 23 | 78 | 8 | 4 | 24 | — | in progress (21/23 in this commit; P23-15/16 desktop signing open; Docker / Nix / installer-E2E lanes not yet run in CI) |
 | P24 | [P24-multiplex-extras.md](P24-multiplex-extras.md) | 3.5 | 47 | 218 | 27 | 11 | 47 | M8 | planned |
 | P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | planned |
 

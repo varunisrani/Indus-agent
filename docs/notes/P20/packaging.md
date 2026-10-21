@@ -47,7 +47,8 @@ Inputs → outputs:
   `Indus-<version>-win-<arch>.zip`, `Indus-<version>-linux-<arch>.AppImage`; `--dir` = unpacked).
 - `node scripts/write-build-stamp.mjs --out FILE [--channel stable|canary] [--platform P]
   [--version V] [--commit SHA] [--update-owner electron-updater|manual]` → stamp JSON; env
-  fallbacks `INDUS_DESKTOP_CHANNEL`, `INDUS_DESKTOP_VERSION`, `GITHUB_SHA`, `SOURCE_DATE_EPOCH`.
+  fallbacks `INDUS_DESKTOP_CHANNEL`, `INDUS_DESKTOP_VERSION`, `INDUS_DESKTOP_COMMIT`, `SOURCE_DATE_EPOCH`
+  (`GITHUB_SHA` is not read since the P23 landing, D-16.769).
 - `node scripts/check-asar.mjs <release-dir|resources-dir>...` → listing summary; exit 1 on a
   problem, 2 on usage.
 - `installLinuxLauncher(win, deps)` (main, P20-38) → desktop entry + icon on the first show.
@@ -68,7 +69,8 @@ Edge cases / failure modes:
 - a signing variable set in the caller's shell (CSC_*, APPLE_*, AZURE_*, WIN_CSC_*) → removed from
   the builder's environment; `GH_TOKEN`/`GITHUB_TOKEN` removed too (no publish provider can fire);
 - a version that is not SemVer, an unknown channel or update owner → the stamp writer fails;
-- no git and no `GITHUB_SHA` → commit `unknown` (a local tarball build still packs);
+- no git and no `INDUS_DESKTOP_COMMIT` → commit `unknown` (a local tarball build still packs);
+- `INDUS_DESKTOP_COMMIT` set but the checkout is another commit → the stamp writer fails (D-16.769);
 - node-pty declared but not built (no compiler) → staging fails naming it (an app whose terminal
   pane cannot load must not ship);
 - a `.ts`, `.tsx`, `.mts` or `.cts` file in the archive, or a node-pty `.node` file packed inside
@@ -119,7 +121,8 @@ Tests we will write:
   nothing is published to a release or a feed. Drop that step if "no uploads" includes them.
 - Default channel for a build without `--channel` is `canary` (a test build is never stable by
   accident); release jobs pass `stable` explicitly.
-- Version comes from `INDUS_DESKTOP_VERSION`, else the root `pyproject.toml` version, so the app and
+- Version comes from `INDUS_DESKTOP_VERSION`, else `__version__` in `src/indus/__init__.py` (was the
+  root `pyproject.toml` version until P23-01 made it dynamic; D-16.769), so the app and
   the runtime it installs carry one version (P20-37's skew check compares them).
 - `electron/linuxLauncher.ts` is an extra main-process file (the row asks for the behaviour, not
   the file); one install line for `main.ts` is in the report.

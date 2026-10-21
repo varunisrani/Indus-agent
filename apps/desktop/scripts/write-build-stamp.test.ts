@@ -25,16 +25,17 @@ const m = stampModule as {
   makeBuildStamp(options?: Record<string, string>, deps?: Deps): Stamp;
   validateBuildStamp(stamp: unknown): Stamp;
   updateOwnerFor(platform: string): string;
-  pyprojectVersion(text: string): string | null;
+  packageVersion(text: string): string | null;
   parseArgs(argv: string[]): Record<string, string>;
   STAMP_FILE: string;
 };
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "write-build-stamp.mjs");
+const REPO_ROOT = path.resolve(path.dirname(SCRIPT), "..", "..", "..");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const quiet: Deps = {
   env: {},
-  readText: () => '[project]\nversion = "0.4.2"\n',
+  readText: () => '"""Indus Agent."""\n\n__version__ = "0.4.2"\n',
   commitOf: () => SHA,
 };
 const dirs: string[] = [];
@@ -75,7 +76,7 @@ describe("build stamp", () => {
         env: {
           INDUS_DESKTOP_CHANNEL: "stable",
           INDUS_DESKTOP_VERSION: "1.2.3-canary.20261021",
-          GITHUB_SHA: SHA.toUpperCase(),
+          INDUS_DESKTOP_COMMIT: SHA.toUpperCase(),
           SOURCE_DATE_EPOCH: "1700000000",
         },
       },
@@ -97,16 +98,62 @@ describe("build stamp", () => {
     expect(() => m.makeBuildStamp({ updateOwner: "app-installer" }, quiet)).toThrow(/updateOwner/);
     expect(() => m.makeBuildStamp({ commit: "main; rm" }, quiet)).toThrow(/commit/);
     expect(() =>
-      m.makeBuildStamp({}, { ...quiet, readText: () => "[tool.x]\nversion = '1'\n" }),
+      m.makeBuildStamp({}, { ...quiet, readText: () => '[project]\nversion = "1.0.0"\n' }),
     ).toThrow(/no version/);
     expect(() => m.validateBuildStamp({ schema: 2 })).toThrow(/schema/);
   });
 
-  it("reads only the [project] version of pyproject.toml", () => {
+  it("reads the version from __version__ in src/indus/__init__.py, not the dynamic pyproject", () => {
+    const files: string[] = [];
+    const stamp = m.makeBuildStamp(
+      { platform: "linux" },
+      {
+        ...quiet,
+        readText: (file) => {
+          files.push(file);
+          return '__version__ = "0.7.1"  # stamped by a release\n';
+        },
+      },
+    );
+    expect(stamp.version).toBe("0.7.1");
+    expect(files.map((file) => path.relative(REPO_ROOT, file))).toEqual([
+      path.join("src", "indus", "__init__.py"),
+    ]);
+    expect(m.packageVersion("__version__ = '0.0.1'\n")).toBe("0.0.1");
+    expect(m.packageVersion('x = 1\n# __version__ = "9.9.9"\n')).toBeNull();
+    expect(m.packageVersion("__version__ = \"0.0.1'\n")).toBeNull();
+  });
+
+  it("this checkout's version source parses", () => {
+    const text = fs.readFileSync(path.join(REPO_ROOT, "src", "indus", "__init__.py"), "utf8");
+    expect(m.packageVersion(text)).toMatch(/^\d+\.\d+\.\d+/);
+    const pyproject = fs.readFileSync(path.join(REPO_ROOT, "pyproject.toml"), "utf8");
+    expect(pyproject).toMatch(/dynamic = \["version"\]/);
+  });
+
+  it("stamps the admitted commit, never GITHUB_SHA, and refuses a checkout of another commit", () => {
+    const other = "fedcba9876543210fedcba9876543210fedcba98";
+    const admitted = m.makeBuildStamp(
+      { platform: "linux" },
+      { ...quiet, env: { INDUS_DESKTOP_COMMIT: SHA, GITHUB_SHA: other } },
+    );
+    expect(admitted.commit).toBe(SHA);
+    const head = m.makeBuildStamp({ platform: "linux" }, { ...quiet, env: { GITHUB_SHA: other } });
+    expect(head.commit).toBe(SHA);
+    expect(() =>
+      m.makeBuildStamp({ platform: "linux" }, { ...quiet, env: { INDUS_DESKTOP_COMMIT: other } }),
+    ).toThrow(/not the admitted commit/);
+    const outside = m.makeBuildStamp(
+      { platform: "linux" },
+      { ...quiet, commitOf: () => null, env: { INDUS_DESKTOP_COMMIT: other } },
+    );
+    expect(outside.commit).toBe(other);
     expect(
-      m.pyprojectVersion('[tool.a]\nversion = "9.9.9"\n[project]\nname = "x"\nversion = "0.0.1"\n'),
-    ).toBe("0.0.1");
-    expect(m.pyprojectVersion("[project]\nname = 'x'\n")).toBeNull();
+      m.makeBuildStamp(
+        { platform: "linux", commit: other },
+        { ...quiet, env: { INDUS_DESKTOP_COMMIT: SHA } },
+      ).commit,
+    ).toBe(other);
   });
 
   it("parses flags and refuses unknown ones", () => {

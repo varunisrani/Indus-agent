@@ -1,0 +1,6 @@
+#!/bin/sh
+# Exit 125 tells s6-supervise not to restart a service that is switched off.
+case "${INDUS_DASHBOARD:-}" in
+    1 | true | yes | on) exit 0 ;;
+    *) exit 125 ;;
+esac

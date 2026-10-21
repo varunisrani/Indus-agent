@@ -158,10 +158,20 @@ REGISTRY: tuple[tuple[str, str, str], ...] = (
         "Batch runs, toolset distributions and trajectory tools.",
     ),
     (
+        "uninstall",
+        "indus.cli.uninstall:uninstall_command",
+        "Remove Indus Agent (keeps your data unless asked).",
+    ),
+    (
         "acp",
         # P19-01: lives with the adapter (layer rule, as `tui-bridge`), loaded by name
         "indus.acp.command:acp_command",
         "Run Indus Agent inside an editor (Agent Client Protocol).",
+    ),
+    (
+        "update",
+        "indus.cli.commands.update:update_command",
+        "Update this install to the newest release of its channel.",
     ),
 )
 """Top-level commands in ``--help`` order: ``(name, "module:attr", one-line help)``. Later phases

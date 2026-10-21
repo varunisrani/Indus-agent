@@ -1,0 +1,49 @@
+# Build context for docker/Dockerfile and docker/sandbox/Dockerfile (P23-08, P23-09).
+# The images take only what they build from; everything else stays out of the context so it can
+# neither bloat the upload nor leak into a layer.
+
+# Version control, agent mailbox, editor and OS files
+.git
+.github
+.agents
+.idea
+.vscode
+**/.DS_Store
+**/*.swp
+
+# Local environments, caches and secrets
+.venv
+**/.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+**/.cache
+.uv-cache
+.mypy_cache
+.coverage
+htmlcov
+**/.env
+**/.env.*
+
+# Build output and installed packages (the images build their own)
+**/node_modules
+**/dist
+**/build
+**/*.egg-info
+src/indus/web/static
+apps/web/test-results
+apps/web/playwright-report
+
+# Tests, plans, notes and agent docs are not part of the product
+tests
+tooling
+docs
+nix
+HANDOFF.md
+AGENTS.md
+CLAUDE.md
+
+# Clean room: reference checkouts and analysis material never enter an image
+reference
+rea-lab

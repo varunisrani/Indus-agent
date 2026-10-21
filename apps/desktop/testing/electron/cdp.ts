@@ -28,9 +28,18 @@ export class Cdp {
   private readonly socket: WebSocket;
   private serial = 0;
   private readonly pending = new Map<number, Pending>();
+  private closedBy: string | null = null;
 
   private constructor(socket: WebSocket) {
     this.socket = socket;
+    // Chromium can drop a session it has just answered (seen on a reused <webview> guest right
+    // after it navigates: the socket closes with 1006). Fail every waiting and later call at once
+    // instead of letting each one run into its own timeout.
+    socket.addEventListener("close", (event) => {
+      this.closedBy = `devtools socket closed (${event.code})`;
+      for (const waiter of this.pending.values()) waiter.reject(new Error(this.closedBy));
+      this.pending.clear();
+    });
     socket.onmessage = (message) => {
       const frame = JSON.parse(String(message.data)) as {
         id?: number;
@@ -54,12 +63,21 @@ export class Cdp {
     return new Cdp(socket);
   }
 
-  /** One DevTools call; a target that went away (navigated, crashed) fails it after `timeoutMs`. */
+  /** True once the DevTools socket is gone (closed by us or by the browser). */
+  get closed(): boolean {
+    return this.closedBy !== null;
+  }
+
+  /**
+   * One DevTools call; a target that went away (navigated, crashed) fails it after `timeoutMs`,
+   * a closed session at once.
+   */
   send(
     method: string,
     params: Record<string, unknown> = {},
     timeoutMs = 30_000,
   ): Promise<Record<string, unknown>> {
+    if (this.closedBy !== null) return Promise.reject(new Error(this.closedBy));
     this.serial += 1;
     const id = this.serial;
     this.socket.send(JSON.stringify({ id, method, params }));
@@ -111,6 +129,7 @@ export class Cdp {
     const until = Date.now() + timeoutMs;
     for (;;) {
       if (await this.evalWithin<boolean>(expression, 5_000).catch(() => false)) return;
+      if (this.closedBy !== null) throw new Error(`${this.closedBy} while waiting for ${what}`);
       if (Date.now() > until) {
         const text = await this.eval<string>("document.body.innerText").catch(() => "?");
         throw new Error(`timed out waiting for ${what}; the page shows:\n${text}`);

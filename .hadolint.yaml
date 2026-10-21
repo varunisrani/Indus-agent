@@ -1,0 +1,14 @@
+# hadolint policy for docker/Dockerfile and docker/sandbox/Dockerfile (P23-11).
+# Any warning fails the lint; each ignored rule below says why it does not apply to these images.
+failure-threshold: warning
+
+ignored:
+  # DL3008 (pin apt package versions): the base image is pinned by digest (docker/pins.json) and
+  # Debian's stable archive only carries security fixes; pinning each package would freeze those
+  # fixes out and break whenever the archive moves on.
+  - DL3008
+
+# Every base image comes from these registries only.
+trustedRegistries:
+  - docker.io
+  - ghcr.io

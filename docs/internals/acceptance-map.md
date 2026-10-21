@@ -927,6 +927,8 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-I18-2** `.env` written from the CLI only through the locked writer and its denylist
   - `tests/unit/cli/commands/test_config_write.py::test_upper_snake_goes_to_env_file`
   - `tests/unit/cli/commands/test_config_write.py::test_denied_env_names_refused`
+- **ACC-I21-2** `indus update` refused on Docker and Nix installs with the package manager's instruction
+  - `tests/unit/cli/commands/test_update.py::test_managed_install_refused_with_its_instruction`
 - **ACC-I22-1** Auth store (`auth.json`) with cross-process lock and safe handling of unreadable or corrupt files
   - `tests/unit/providers/auth/test_store.py::test_two_processes_writing_at_once_both_land`
   - `tests/unit/providers/auth/test_store.py::test_lock_timeout_names_the_holder_pid`
@@ -1007,9 +1009,35 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/commands/test_logs.py::test_follow_survives_rotation_and_truncation`
   - `tests/unit/cli/commands/test_logs.py::test_since_uses_the_scope_clock`
 - **ACC-I41-1** `indus update`: git channel (stable tags / main), syntax check and rollback, dependency sync …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/update/test_update_apply.py::test_success_swaps_venvs_and_execs_finish`
+  - `tests/unit/cli/update/test_channels.py::test_stable_picks_the_newest_release_tag`
+  - `tests/unit/cli/update/test_channels.py::test_checkout_ahead_of_the_release_is_not_moved`
+  - `tests/unit/cli/update/test_channels.py::test_canary_user_is_offered_a_newer_stable`
+  - `tests/unit/cli/commands/test_update.py::test_check_exit_codes_and_cache`
+- **ACC-I41-2** A broken pull (a startup file that does not compile, a lock that cannot resolve) is rolled back
+  - `tests/integration/update/test_update_apply.py::test_syntax_error_in_the_new_release_rolls_back`
+  - `tests/integration/update/test_update_apply.py::test_unresolvable_lock_keeps_the_old_venv`
+  - `tests/integration/update/test_update_apply.py::test_interrupt_during_the_build_restores_everything`
+- **ACC-I41-3** This profile's gateway is restarted on the new code (service manager, or asked over the control socket)
+  - `tests/unit/cli/update/test_finish.py::test_systemd_service_is_restarted_through_its_manager`
+  - `tests/unit/cli/update/test_finish.py::test_manual_gateway_is_asked_over_the_control_socket`
+  - `tests/unit/cli/update/test_finish.py::test_no_gateway_restart_defers`
+- **ACC-I41-4** Managed installs (Docker, Nix, desktop runtime, packages) are refused with their own instruction
+  - `tests/unit/cli/update/test_channels.py::test_managed_installs_are_refused`
+  - `tests/unit/cli/commands/test_update.py::test_managed_install_refused_with_its_instruction`
 - **ACC-I42-1** `indus uninstall` (keep data / full / desktop only / data only, dry run)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_uninstall.py::test_keep_data_removes_code_and_tools_and_keeps_the_home`
+  - `tests/unit/cli/test_uninstall.py::test_keep_data_removes_only_the_marked_blocks`
+  - `tests/unit/cli/test_uninstall.py::test_gui_removes_only_the_desktop_pieces`
+  - `tests/unit/cli/test_uninstall.py::test_data_level_works_on_a_managed_install`
+  - `tests/unit/cli/test_uninstall.py::test_interactive_default_is_keep_data_after_typed_yes`
+- **ACC-I42-2** `indus uninstall --full` removes the home and this home's keychain entries; named profiles only when asked
+  - `tests/unit/cli/test_uninstall.py::test_full_without_named_profiles_removes_the_home`
+  - `tests/unit/cli/test_uninstall.py::test_unattended_full_never_removes_named_profiles`
+  - `tests/unit/cli/test_uninstall.py::test_interactive_full_with_profiles_removed_on_request`
+  - `tests/unit/cli/test_uninstall.py::test_keychain_is_emptied_on_full_only`
+- **ACC-I42-3** `indus uninstall --dry-run` removes nothing
+  - `tests/unit/cli/test_uninstall.py::test_dry_run_changes_nothing`
 - **ACC-I43-1** Shell completion scripts (bash, zsh, fish) from the live command tree, with profile, session and toolset values
   - `tests/unit/cli/commands/test_completion.py::test_script_heads`
   - `tests/unit/cli/commands/test_completion.py::test_profile_completion_from_root`
@@ -1017,7 +1045,9 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-I45-1** Version output naming install method and update availability
   - `tests/unit/cli/test_entry.py::test_version_fast_path_prints_the_block`
   - `tests/unit/cli/test_entry.py::test_install_method_order`
-  - Review: update availability line (P23)
+- **ACC-I45-2** `indus --version` names the install kind and, after a recent check, update availability
+  - `tests/unit/cli/commands/test_update.py::test_check_exit_codes_and_cache`
+  - `tests/unit/cli/commands/test_update.py::test_check_respects_passive_notice_setting`
 - **ACC-I51-1** In-session info commands: `/status`, `/context`, `/whoami`, `/usage`, `/insights`, `/help` …
   - `tests/unit/cli/slash/test_control_cmds.py::test_status_whoami_version_usage_context`
   - `tests/unit/cli/slash/test_control_cmds.py::test_help_groups_and_filters`
@@ -1765,19 +1795,64 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/foundation/test_secret_probe.py::test_blocking_keychain_falls_back_at_the_deadline`
   - `tests/contract/foundation/test_secret_store_contract.py::test_file_backend_is_owner_only`
 - **ACC-S1-1** POSIX installer: stage ladder with manifest and JSON frames, pinned `uv` bootstrap verified by …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/install/test_install_sh_runtime.py::test_a_full_non_interactive_install_ends_with_a_working_command`
+  - `tests/integration/install/test_install_sh_core.py::test_manifest_json`
+  - `tests/integration/install/test_install_sh_core.py::test_the_desktop_parser_reads_the_real_manifest_and_frames`
+  - Review: fresh-VM install on Ubuntu and macOS runs in the release workflow's install-e2e lane (P23-23)
+- **ACC-S1-2** POSIX installer: an interrupted or failed clone is never published as the install directory
+  - `tests/integration/install/test_install_sh_repository.py::test_clone_failure_midway_leaves_no_target`
+  - `tests/integration/install/test_install_sh_repository.py::test_pin_must_be_on_the_branch`
+- **ACC-S1-3** POSIX installer: a bootstrap download whose SHA-256 differs from its pin is refused
+  - `tests/integration/install/test_install_sh_runtime.py::test_a_bad_body_with_exit_0_is_a_digest_mismatch_and_no_mirror`
+  - `tests/integration/install/test_install_sh_runtime.py::test_provisional_pins_download_nothing`
+- **ACC-S1-4** POSIX installer: one local receipt per run, written once (first writer wins)
+  - `tests/integration/install/test_install_sh_core.py::test_second_receipt_write_is_a_no_op`
+  - `tests/integration/install/test_install_sh_core.py::test_a_full_ladder_writes_one_success_receipt`
+- **ACC-S2-1** PowerShell installer: a fresh Windows install of the desktop's runtime through the shared stage ladder
+  - Review: needs a Windows host; the install-e2e lane of the release workflow runs it (P23-06, P23-23)
+  - `tests/integration/install/test_install_ps1.py::test_receipt_is_first_writer_wins_and_the_finally_records_interrupted`
+  - `tests/integration/install/test_install_ps1_bootstrap.py::test_mirror_only_after_a_network_class_failure_and_digest_always_checked`
+  - `tests/integration/install/test_install_ps1_bootstrap.py::test_cmd_shim_calls_the_latest_release_installer`
+- **ACC-S2-2** PowerShell installer manifest equals the shell installer's (one shared stage table)
+  - `tests/integration/install/test_install_ps1.py::test_embedded_tables_equal_their_json_files`
+  - `tests/integration/install/test_install_ps1.py::test_manifest_from_the_table_passes_the_desktop_parser`
+  - `tests/integration/install/test_install_ps1.py::test_manifest_equals_the_shell_scripts`
 - **ACC-S3-1** Docker image with dispatcher, UID/GID remap and a data volume; Compose file with gateway and …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/packaging/test_dockerfile.py::test_final_stage_user_volume_entrypoint_and_env`
+  - `tests/integration/docker/test_entry_scripts.py::test_pid_1_hands_over_to_s6_init_with_the_wrapper`
+  - `tests/integration/docker/test_entry_scripts.py::test_remap_changes_the_ids_and_only_touches_the_data_folder`
+  - `tests/docker/test_image_build.py::test_version_prints_the_product_and_the_docker_install`
+  - `tests/docker/test_image_build.py::test_programs_run_as_uid_10000_after_stage2`
+- **ACC-S3-2** A `docker run --user` start is refused with guidance to pass INDUS_UID / INDUS_GID (R10.25)
+  - `tests/integration/docker/test_entry_scripts.py::test_a_docker_run_user_start_is_refused_with_guidance`
+  - `tests/docker/test_image_build.py::test_a_docker_run_user_start_is_refused`
+- **ACC-S3-3** Compose brings up the gateway and the dashboard from one image (Windows: login provider required)
+  - `tests/unit/packaging/test_compose.py::test_two_services_from_one_image`
+  - `tests/unit/packaging/test_compose.py::test_windows_dashboard_without_a_login_provider_refuses_to_start`
+  - `tests/unit/packaging/test_compose.py::test_windows_dashboard_with_a_login_provider_serves`
+  - Review: `docker compose up` on a host with Docker, shown at the M8 demo (P23-11)
 - **ACC-S7-1** No PyPI: wheel/sdist builds blocked outside Nix; editable installs work. Kept (P5 decision)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/packaging/test_no_wheel.py::test_decision_table`
+  - `tests/unit/packaging/test_no_wheel.py::test_uv_build_wheel_refused_then_allowed`
 - **ACC-S8-1** Dependency policy: exact or bounded pins, lock file, extras for optional backends installed lazily
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/packaging/test_metadata.py::test_no_interpreter_markers_or_open_ranges`
+  - `tests/unit/packaging/test_metadata.py::test_messaging_and_all_are_unions_of_their_members`
+  - Review: lazy extra installs at runtime are not part of this task (P23-01)
+- **ACC-S10-1** A release dry run plans a release (checks, version, attempt ref, claim, notes) and writes nothing
+  - `tests/unit/release/test_release_cli.py::test_dry_run_prints_the_plan_and_creates_nothing`
+- **ACC-S10-2** Publication is idempotent: a rerun after a partial failure completes without duplicates
+  - `tests/unit/release/test_publish.py::test_rerun_after_alias_failure_completes_without_duplicates`
+  - `tests/unit/release/test_publish.py::test_rerun_after_a_failure_making_it_public`
+- **ACC-S10-3** Image aliases move only from the receipt, and the release is made public last
+  - `tests/unit/release/test_publish.py::test_release_is_made_public_after_the_aliases`
 - **ACC-S11-1** CI with fail-open change classifier, one aggregate gate, lint diff, lock freshness, supply-chain …
   - Review: not yet planned (phase TBD)
 - **ACC-S13-1** Canonical test runner: one process per file, retry-once flaky report, deterministic slices …
   - Review: not yet planned (phase TBD)
 - **ACC-S14-1** Golden prompt-surface fixtures (rendered prompt plus tool array per surface) that fail CI when stale
   - Review: not yet planned (phase TBD)
+- **ACC-S16-1** A release whose commits have an author missing from the contributor map is refused
+  - `tests/unit/release/test_release_cli.py::test_unmapped_author_fails_a_release_and_warns_a_canary`
 - **ACC-S17-1** Clean-room guards in CI (banned identifiers, code and text similarity, asset hashes, licences). …
   - Review: not yet planned (phase TBD)
 - **ACC-S18-1** `THIRD_PARTY_NOTICES.md` crediting the reference and every dependency. Added by Indus (licence …

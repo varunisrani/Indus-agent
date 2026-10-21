@@ -63,7 +63,9 @@ GOLDEN_ORDER = [
     "dashboard",  # P18-01
     "serve",  # P18-01
     "research",
+    "uninstall",  # P23-20
     "acp",  # P19-01
+    "update",  # P23-19
 ]
 
 SHARED_IMPORTS: dict[str, set[str]] = {

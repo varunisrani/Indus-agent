@@ -1,0 +1,16 @@
+#!/bin/sh
+# Supervised dashboard (P23-10): on when INDUS_DASHBOARD is 1/true/yes/on, as the `indus` user.
+# It binds loopback unless INDUS_DASHBOARD_HOST says otherwise; a non-loopback bind needs a login
+# provider in the settings (D-16.25) or the dashboard refuses to start.
+case "${INDUS_DASHBOARD:-}" in
+    1 | true | yes | on) ;;
+    *) exit 0 ;;
+esac
+exec 2>&1
+HOME="${INDUS_HOME:-/opt/data}"
+export HOME
+cd "$HOME"
+exec s6-setuidgid indus indus dashboard \
+    --host "${INDUS_DASHBOARD_HOST:-127.0.0.1}" \
+    --port "${INDUS_DASHBOARD_PORT:-9119}" \
+    --no-open

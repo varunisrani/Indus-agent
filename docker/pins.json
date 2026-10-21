@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "images": {
+    "registry": "ghcr.io",
+    "namespace": "indusagi",
+    "product": "indus-agent",
+    "sandbox": "indus-agent-sandbox"
+  },
+  "base": {
+    "image": "debian",
+    "tag": "trixie-slim",
+    "digest": "sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
+  },
+  "bundles": {
+    "s6-overlay": {
+      "version": "3.2.1.0",
+      "licence": "ISC",
+      "url": "https://github.com/just-containers/s6-overlay/releases/download/v{version}/{file}",
+      "files": {
+        "noarch": {
+          "file": "s6-overlay-noarch.tar.xz",
+          "sha256": "42e038a9a00fc0fef70bf0bc42f625a9c14f8ecdfe77d4ad93281edf717e10c5"
+        },
+        "symlinks": {
+          "file": "s6-overlay-symlinks-noarch.tar.xz",
+          "sha256": "5c0a28acc0aca6c86d90c9cd752361e0b69b0d57789064fbc8b066b2e21264d4"
+        },
+        "amd64": {
+          "file": "s6-overlay-x86_64.tar.xz",
+          "sha256": "8bcbc2cada58426f976b159dcc4e06cbb1454d5f39252b3bb0c778ccf71c9435"
+        },
+        "arm64": {
+          "file": "s6-overlay-aarch64.tar.xz",
+          "sha256": "c8fd6b1f0380d399422fc986a1e6799f6a287e2cfa24813ad0b6a4fb4fa755cc"
+        }
+      }
+    },
+    "node": {
+      "version": "24.21.0",
+      "licence": "MIT",
+      "url": "https://nodejs.org/dist/v{version}/{file}",
+      "files": {
+        "amd64": {
+          "file": "node-v{version}-linux-x64.tar.xz",
+          "sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6"
+        },
+        "arm64": {
+          "file": "node-v{version}-linux-arm64.tar.xz",
+          "sha256": "6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2"
+        }
+      }
+    },
+    "hadolint": {
+      "version": "2.12.0",
+      "licence": "GPL-3.0-only (CI tool only, never shipped)",
+      "url": "https://github.com/hadolint/hadolint/releases/download/v{version}/{file}",
+      "files": {
+        "amd64": {
+          "file": "hadolint-Linux-x86_64",
+          "sha256": "56de6d5e5ec427e17b74fa48d51271c7fc0d61244bf5c90e828aab8362d55010"
+        },
+        "arm64": {
+          "file": "hadolint-Linux-arm64",
+          "sha256": "5798551bf19f33951881f15eb238f90aef023f11e7ec7e9f4c37961cb87c5df6"
+        }
+      }
+    },
+    "actionlint": {
+      "version": "1.7.7",
+      "licence": "MIT (CI tool only, never shipped)",
+      "url": "https://github.com/rhysd/actionlint/releases/download/v{version}/{file}",
+      "files": {
+        "amd64": {
+          "file": "actionlint_{version}_linux_amd64.tar.gz",
+          "sha256": "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+        },
+        "arm64": {
+          "file": "actionlint_{version}_linux_arm64.tar.gz",
+          "sha256": "401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
+        }
+      }
+    }
+  }
+}

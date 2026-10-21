@@ -1,0 +1,307 @@
+# Container images (P23-12): the product image and the sandbox image, slim and browser, amd64 and
+# arm64 on native runners.
+#
+# - pull requests: lint, build and test every image; nothing is pushed;
+# - pushes to main: the same, then the tested images go to GHCR as :main / :main-browser (product)
+#   and :main-slim / :main-browser (sandbox);
+# - releases (called by the release workflow, P23-23): phase `test` builds and tests the admitted
+#   commit and keeps each image as an artifact; phase `publish` pushes those very archives (nothing
+#   is rebuilt) under the attempt ref and returns the manifest digests.
+#
+# Channel aliases (latest, stable, canary; with the variant suffix: `-browser` on the product,
+# `-slim` / `-browser` on the sandbox) are never written here: only the publication controller
+# (scripts/release/publish.py) moves them, from the digests a release receipt binds (R10.23).
+# Every job checks out `inputs.commit || github.sha` explicitly: in a release run the workflow's own
+# SHA is not the commit under test (R10.24).
+
+name: Docker
+
+on:
+  workflow_call:
+    inputs:
+      commit:
+        description: The admitted commit to build (full 40-hex SHA).
+        required: true
+        type: string
+      attempt_ref:
+        description: The attempt ref under release (rc.<N>-vX.Y.Z); the images are tagged with it.
+        required: true
+        type: string
+      phase:
+        description: "test: build, test and keep the images; publish: push the kept images."
+        required: true
+        type: string
+    outputs:
+      product-digest:
+        description: Digest of the product image index (slim).
+        value: ${{ jobs.digests.outputs.product-slim }}
+      product-browser-digest:
+        description: Digest of the product image index (browser).
+        value: ${{ jobs.digests.outputs.product-browser }}
+      sandbox-digest:
+        description: Digest of the sandbox image index (slim).
+        value: ${{ jobs.digests.outputs.sandbox-slim }}
+      sandbox-browser-digest:
+        description: Digest of the sandbox image index (browser).
+        value: ${{ jobs.digests.outputs.sandbox-browser }}
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ inputs.attempt_ref || github.ref }}-${{ inputs.phase || 'ci' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  COMMIT: ${{ inputs.commit || github.sha }}
+  ATTEMPT_REF: ${{ inputs.attempt_ref }}
+  PHASE: ${{ inputs.phase }}
+
+jobs:
+  lint:
+    name: Lint Dockerfiles, pins and workflows
+    if: ${{ inputs.phase != 'publish' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+
+      - name: Check the release inputs
+        if: ${{ inputs.phase }}
+        run: |
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "commit must be a full SHA: $COMMIT" >&2; exit 1; }
+          [[ "$ATTEMPT_REF" =~ ^rc\.[0-9]+-v[0-9]+\.[0-9]+\.[0-9]+(-canary\.[0-9]{8}T[0-9]{6}Z)?$ ]] \
+            || { echo "not an attempt ref: $ATTEMPT_REF" >&2; exit 1; }
+          [[ "$PHASE" == test || "$PHASE" == publish ]] || { echo "unknown phase: $PHASE" >&2; exit 1; }
+
+      - name: Every pin filled and every Dockerfile on the pinned base
+        run: python3 scripts/docker/pins.py check --strict
+
+      - name: Fetch the pinned linters
+        run: |
+          python3 scripts/docker/pins.py fetch hadolint actionlint --arch amd64 --out "$RUNNER_TEMP/tools"
+          mkdir -p "$RUNNER_TEMP/bin"
+          install -m 0755 "$RUNNER_TEMP/tools/hadolint-Linux-x86_64" "$RUNNER_TEMP/bin/hadolint"
+          tar -xzf "$RUNNER_TEMP"/tools/actionlint_*_linux_amd64.tar.gz -C "$RUNNER_TEMP/bin" actionlint
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: hadolint
+        run: hadolint docker/Dockerfile docker/sandbox/Dockerfile
+
+      - name: actionlint
+        run: actionlint .github/workflows/*.yml
+
+  build:
+    name: Build and test ${{ matrix.image }}/${{ matrix.variant }}/${{ matrix.arch }}
+    if: ${{ inputs.phase != 'publish' }}
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [product, sandbox]
+        variant: [slim, browser]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      IMAGE: ${{ matrix.image }}
+      VARIANT: ${{ matrix.variant }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+
+      - name: Build
+        run: |
+          if [ "$IMAGE" = product ]; then
+            set -- -f docker/Dockerfile --target product --build-arg "VARIANT=$VARIANT"
+          else
+            set -- -f docker/sandbox/Dockerfile --target "$VARIANT"
+          fi
+          docker build --platform "linux/$ARCH" --pull "$@" \
+            --label "org.opencontainers.image.revision=$COMMIT" \
+            -t "indus-$IMAGE:test" .
+          mkdir -p "$RUNNER_TEMP/image"
+          docker save -o "$RUNNER_TEMP/image/image.tar" "indus-$IMAGE:test"
+          docker image inspect --format '{{.Id}}' "indus-$IMAGE:test" > "$RUNNER_TEMP/image/image.id"
+          (cd "$RUNNER_TEMP/image" && sha256sum image.tar > image.tar.sha256)
+
+      - name: Set up the pinned uv
+        run: |
+          python3 scripts/docker/pins.py fetch uv --arch "$ARCH" --out "$RUNNER_TEMP/uv-dl"
+          mkdir -p "$RUNNER_TEMP/uv"
+          tar -xzf "$RUNNER_TEMP"/uv-dl/*.tar.gz -C "$RUNNER_TEMP/uv" --strip-components=1
+          echo "$RUNNER_TEMP/uv" >> "$GITHUB_PATH"
+
+      - name: Image tests
+        run: |
+          uv sync --locked
+          if [ "$IMAGE" = product ]; then
+            export INDUS_TEST_IMAGE="indus-$IMAGE:test" INDUS_TEST_IMAGE_VARIANT="$VARIANT"
+          else
+            export INDUS_TEST_SANDBOX_IMAGE="indus-$IMAGE:test" INDUS_TEST_IMAGE_VARIANT="$VARIANT"
+          fi
+          uv run pytest -q -m docker tests/docker
+
+      - name: Keep the tested image
+        if: ${{ github.event_name == 'push' || inputs.phase == 'test' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-${{ matrix.image }}-${{ matrix.variant }}-${{ matrix.arch }}-${{ inputs.attempt_ref || 'main' }}
+          path: ${{ runner.temp }}/image/
+          retention-days: 7
+          if-no-files-found: error
+
+  push:
+    name: Push ${{ matrix.image }}/${{ matrix.variant }}/${{ matrix.arch }} by digest
+    needs: build
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'push' || inputs.phase == 'publish') }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [product, sandbox]
+        variant: [slim, browser]
+        arch: [amd64, arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      IMAGE: ${{ matrix.image }}
+      VARIANT: ${{ matrix.variant }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+
+      - name: Fetch the tested image
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-${{ matrix.image }}-${{ matrix.variant }}-${{ matrix.arch }}-${{ inputs.attempt_ref || 'main' }}
+          path: ${{ runner.temp }}/image
+
+      - name: Push the tested bytes
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd "$RUNNER_TEMP/image"
+          sha256sum -c image.tar.sha256
+          repo="$(python3 "$GITHUB_WORKSPACE/scripts/docker/pins.py" image "$IMAGE")"
+          if [ -n "$ATTEMPT_REF" ]; then base="$ATTEMPT_REF"; else base=main; fi
+          if [ "$IMAGE" = sandbox ] || [ "$VARIANT" != slim ]; then base="$base-$VARIANT"; fi
+          tag="$base-$ARCH"
+          printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --digestfile digest.txt "docker-archive:image.tar" "docker://$repo:$tag"
+          mkdir -p "$RUNNER_TEMP/out"
+          printf '%s@%s\n' "$repo" "$(cat digest.txt)" > "$RUNNER_TEMP/out/$IMAGE-$VARIANT-$ARCH"
+          echo "pushed $repo:$tag ($(cat digest.txt)) image id $(cat image.id)"
+
+      - name: Record the digest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pushed-${{ matrix.image }}-${{ matrix.variant }}-${{ matrix.arch }}-${{ inputs.attempt_ref || 'main' }}
+          path: ${{ runner.temp }}/out/
+          retention-days: 7
+          if-no-files-found: error
+
+  manifest:
+    name: Multi-arch ${{ matrix.image }}/${{ matrix.variant }}
+    needs: push
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'push' || inputs.phase == 'publish') }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [product, sandbox]
+        variant: [slim, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      IMAGE: ${{ matrix.image }}
+      VARIANT: ${{ matrix.variant }}
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+
+      - name: Collect the per-arch digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: pushed-${{ matrix.image }}-${{ matrix.variant }}-*-${{ inputs.attempt_ref || 'main' }}
+          path: ${{ runner.temp }}/pushed
+          merge-multiple: true
+
+      - name: Tag the multi-arch index
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo="$(python3 scripts/docker/pins.py image "$IMAGE")"
+          if [ -n "$ATTEMPT_REF" ]; then tag="$ATTEMPT_REF"; else tag=main; fi
+          if [ "$IMAGE" = sandbox ] || [ "$VARIANT" != slim ]; then tag="$tag-$VARIANT"; fi
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create -t "$repo:$tag" \
+            "$(cat "$RUNNER_TEMP/pushed/$IMAGE-$VARIANT-amd64")" \
+            "$(cat "$RUNNER_TEMP/pushed/$IMAGE-$VARIANT-arm64")"
+          digest="$(docker buildx imagetools inspect "$repo:$tag" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          mkdir -p "$RUNNER_TEMP/out"
+          printf '%s\n' "$digest" > "$RUNNER_TEMP/out/$IMAGE-$VARIANT"
+          echo "$repo:$tag -> $digest"
+
+      - name: Record the index digest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: index-${{ matrix.image }}-${{ matrix.variant }}-${{ inputs.attempt_ref || 'main' }}
+          path: ${{ runner.temp }}/out/
+          retention-days: 7
+          if-no-files-found: error
+
+  digests:
+    name: Digests for the publication controller
+    needs: manifest
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'push' || inputs.phase == 'publish') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      product-slim: ${{ steps.read.outputs.product-slim }}
+      product-browser: ${{ steps.read.outputs.product-browser }}
+      sandbox-slim: ${{ steps.read.outputs.sandbox-slim }}
+      sandbox-browser: ${{ steps.read.outputs.sandbox-browser }}
+    steps:
+      - name: Collect the index digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: index-*-${{ inputs.attempt_ref || 'main' }}
+          path: ${{ runner.temp }}/index
+          merge-multiple: true
+
+      - name: Read them
+        id: read
+        run: |
+          for name in product-slim product-browser sandbox-slim sandbox-browser; do
+            digest="$(cat "$RUNNER_TEMP/index/$name")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad digest for $name: $digest" >&2; exit 1; }
+            echo "$name=$digest" >> "$GITHUB_OUTPUT"
+          done

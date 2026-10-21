@@ -36,3 +36,9 @@ apps/web/playwright-report/
 reference/
 !docs/user/reference/
 rea-lab/
+
+# Built TUI bundle copied into the package for wheels (P23-01)
+src/indus/_tui_dist/
+
+# The installer marker inside a checkout (P23-05)
+/.indus-bootstrap.json

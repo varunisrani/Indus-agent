@@ -16,7 +16,7 @@ from tooling.checks.common import CHECKS_DIR, Context, Result, read_text, rel, w
 
 NAME = "banned"
 PATTERNS_FILE = CHECKS_DIR / "banned_patterns.json"
-SCAN_DIRS = ("src", "apps", "packages", "scripts", "tests", "tooling", "skills")
+SCAN_DIRS = ("src", "apps", "packages", "scripts", "tests", "tooling", "skills", "docker", "nix")
 EXEMPT = (
     "tooling/checks/banned_patterns.json",
     "tooling/checks/reference.json",

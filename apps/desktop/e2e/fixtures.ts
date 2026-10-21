@@ -33,6 +33,8 @@ export const REPO = path.resolve(APP_ROOT, "..", "..");
 export const PYTHON = path.join(REPO, ".venv", "bin", "python");
 export const REAL_INDUS = path.join(REPO, ".venv", "bin", "indus");
 export const GUEST_PAGES = path.join(APP_ROOT, "testing", "guestPages");
+/** How long a fresh DevTools session must stay open before `attach` hands it out. */
+const SESSION_SETTLE_MS = 250;
 
 /** The dev build's deep-link scheme (`singleInstance.ts`). */
 export const DEV_SCHEME = "indus-dev";
@@ -211,12 +213,17 @@ export class RunningApp {
       const target = (await this.targets()).find(match);
       if (target !== undefined) {
         // A guest caught mid-navigation (the preview reuses its guest for the next address) can
-        // leave the first session unanswered: drop it and attach again.
+        // leave the first session unanswered, or answer it and then close it (1006): drop it and
+        // attach again. A session is handed out only once the document has loaded and the socket
+        // is still open a moment later.
         const cdp = await Cdp.open(target.webSocketDebuggerUrl).catch(() => null);
         if (cdp !== null) {
           try {
             await cdp.send("Runtime.enable", {}, 5_000);
-            return cdp;
+            await cdp.waitFor(`document.readyState === "complete"`, `${what} loaded`, 5_000);
+            await sleep(SESSION_SETTLE_MS);
+            if (!cdp.closed) return cdp;
+            last = "the session closed after it attached";
           } catch (error) {
             last = error instanceof Error ? error.message : String(error);
             cdp.close();

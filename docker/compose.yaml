@@ -1,0 +1,32 @@
+# Indus Agent on Linux with Docker Compose (P23-11): the gateway and the dashboard from one image.
+#
+#   INDUS_UID="$(id -u)" INDUS_GID="$(id -g)" docker compose -f docker/compose.yaml up -d
+#
+# Both services share your ~/.indus folder (INDUS_DATA_DIR overrides it), mounted at /opt/data.
+# INDUS_UID / INDUS_GID give the container's `indus` user your ids, so the files it writes stay
+# yours. Host networking: the dashboard listens on 127.0.0.1:9119 of this machine only, which needs
+# no login; reach it from elsewhere through an SSH tunnel (`ssh -L 9119:127.0.0.1:9119 host`).
+# INDUS_IMAGE picks another image (a local build, a pinned digest).
+
+name: indus
+
+x-indus: &indus
+  image: ${INDUS_IMAGE:-ghcr.io/indusagi/indus-agent:stable}
+  restart: unless-stopped
+  network_mode: host
+  volumes:
+    - ${INDUS_DATA_DIR:-~/.indus}:/opt/data
+  environment:
+    INDUS_UID: ${INDUS_UID:-10000}
+    INDUS_GID: ${INDUS_GID:-10000}
+
+services:
+  gateway:
+    <<: *indus
+    command: ["gateway", "run"]
+
+  dashboard:
+    <<: *indus
+    depends_on:
+      - gateway
+    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]

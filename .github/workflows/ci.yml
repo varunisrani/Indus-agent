@@ -84,6 +84,17 @@ jobs:
       - name: Repo guards
         run: uv run python -m tooling.checks --require-ref
 
+      # P23-02/03/06: the built install.sh and install.ps1 equal their fragments + pins.json +
+      # stages.json, and the pins are well formed and name the release base (release lanes add
+      # --strict: no provisional digests). The image pins (P23-08) and the Nix pins (P23-13) are
+      # checked the same way; the image lint itself runs in docker.yml.
+      - name: Installer scripts fresh, pins valid
+        run: |
+          uv run python scripts/install/build.py --check
+          uv run python scripts/install/pins.py --check
+          python3 scripts/docker/pins.py check
+          uv run python scripts/nix/pins.py --check
+
       - name: PR body has Reference and Task note lines
         if: github.event_name == 'pull_request'
         env:
@@ -339,6 +350,50 @@ jobs:
           CI: "true"
         run: pnpm --filter @indus/desktop e2e --exclude core/packaged.electron.test.ts
 
+  # The Nix flake (P23-13/14): lock, check (packages, devshell, module evaluation cases) and run
+  # the default package, on Linux and macOS. Until flake.lock is committed the lane locks the
+  # inputs itself and keeps the file as an artifact for review; the pnpm store hash the build
+  # prints goes into nix/pins.json with `scripts/nix/pins.py --pnpm-hash`.
+  nix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+
+      - name: Lock the inputs (first run only)
+        id: lock
+        run: |
+          if [ -f flake.lock ]; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            nix flake lock
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Keep the new flake.lock for review
+        if: steps.lock.outputs.created == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flake-lock-${{ matrix.os }}
+          path: flake.lock
+          retention-days: 7
+
+      - name: Flake check
+        run: nix flake check -L
+
+      - name: Run the default package
+        run: nix run .#default -- --version
+
   # The only required status. It needs every other job and is green only when each of them
   # succeeded: skipped, cancelled and failed all fail the gate (R10.18).
   gate:
@@ -351,6 +406,7 @@ jobs:
       - web-e2e
       - desktop-package
       - desktop-e2e
+      - nix
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

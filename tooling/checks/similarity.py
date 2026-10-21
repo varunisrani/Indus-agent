@@ -39,7 +39,18 @@ PROBE = {"tokens": 20, "lines": 3, "prose": 6}
 MAX_BYTES = 2 * 1024 * 1024
 ALLOW_FILE = CHECKS_DIR / "similarity_allow.json"
 
-PRODUCT_DIRS = ("src", "apps", "packages", "tooling", "scripts", "tests", "skills")
+PRODUCT_DIRS = (
+    "src",
+    "apps",
+    "packages",
+    "tooling",
+    "scripts",
+    "tests",
+    "skills",
+    "docker",
+    "nix",
+    ".github",
+)
 PRODUCT_EXCLUDE = ("tooling/checks/tests/fixtures/",)
 IDENT_FILTER_PREFIX = "docs/plan/"
 

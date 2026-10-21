@@ -10,18 +10,34 @@ Install method, first match wins:
 3. ``docker`` when the process runs inside a container;
 4. ``git`` for a source tree that is a git checkout, ``dev`` for a source tree without one;
 5. ``package`` for an installed wheel.
+
+When ``indus update --check`` ran in the last 24 hours and found a newer release (and passive
+notices are on, ``updates.check``), one more line names it. That is read from the small cache file
+the check writes (``<root>/cache/update-check.json``); ``--version`` itself never goes to the
+network (P23-19, I45).
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-__all__ = ["INSTALL_STAMP", "install_dir", "install_method", "version_lines"]
+__all__ = [
+    "INSTALL_STAMP",
+    "UPDATE_CACHE",
+    "install_dir",
+    "install_method",
+    "update_line",
+    "version_lines",
+]
 
 INSTALL_STAMP = ".install_method"
+UPDATE_CACHE = ("cache", "update-check.json")
+_CHECK_FRESH = timedelta(hours=24)
 _CONTAINER_MARKERS = ("/.dockerenv", "/run/.containerenv")
 
 
@@ -68,13 +84,51 @@ def install_method(
     return "package"
 
 
-def version_lines(package_dir: Path | None = None) -> list[str]:
+def _default_root() -> Path | None:
+    from indus.foundation.home import resolve_home, root_of
+
+    try:
+        return root_of(resolve_home())
+    except Exception:
+        return None
+
+
+def update_line(root: Path | None = None, *, now: datetime | None = None) -> str | None:
+    """ "Update available: ..." from a recent ``indus update --check``, else None."""
+    base = root if root is not None else _default_root()
+    if base is None:
+        return None
+    try:
+        data = json.loads(base.joinpath(*UPDATE_CACHE).read_text(encoding="utf-8"))
+        checked = datetime.fromisoformat(str(data["checked_at"]))
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    if not isinstance(data, dict) or data.get("schema") != 1:
+        return None
+    if data.get("available") is not True or data.get("notices") is False:
+        return None
+    if checked.tzinfo is None:
+        checked = checked.replace(tzinfo=UTC)
+    moment = now if now is not None else datetime.now(UTC)
+    if not timedelta(0) <= moment - checked <= _CHECK_FRESH:
+        return None
+    target, channel = data.get("target"), data.get("channel")
+    if not isinstance(target, str) or not isinstance(channel, str):
+        return None
+    return f"Update available: {target} on {channel} (run `indus update`)"
+
+
+def version_lines(package_dir: Path | None = None, *, root: Path | None = None) -> list[str]:
     """The lines ``indus --version`` prints."""
     from indus import __version__
 
-    return [
+    lines = [
         f"Indus Agent {__version__}",
         f"Install method: {install_method(package_dir)}",
         f"Install directory: {install_dir(package_dir)}",
         f"Python: {sys.version.split()[0]}",
     ]
+    notice = update_line(root)
+    if notice is not None:
+        lines.append(notice)
+    return lines

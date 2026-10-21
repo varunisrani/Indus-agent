@@ -11,9 +11,10 @@
 
 import { execFile } from "node:child_process";
 import type { Timers } from "../ambient/hud.ts";
+import { RELEASES_API } from "../releaseBase.ts";
 import { compareVersions, parseReleaseTag, plainVersion } from "./version.ts";
 
-export const DEFAULT_RELEASES_API = "https://api.github.com/repos/varunisrani/indus-agent/releases";
+export const DEFAULT_RELEASES_API = RELEASES_API;
 export const FEED_TIMEOUT_MS = 15_000;
 export const GH_CLI_TIMEOUT_MS = 3_000;
 export const TOKEN_ENV_NAMES = ["INDUS_DESKTOP_UPDATE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] as const;

@@ -1,0 +1,23 @@
+{
+  "note": "Bare skipif(sys.platform ...) marks that predate the platforms marker (P23-01, R10.21). New tests use @pytest.mark.platforms(...); this list may only shrink. Count per file.",
+  "files": {
+    "tests/contract/web/test_pty_route.py": 1,
+    "tests/integration/research/test_batch_run.py": 1,
+    "tests/integration/state/test_vacuum_holders.py": 1,
+    "tests/integration/web/test_pty_bridge.py": 1,
+    "tests/unit/backends/test_sandbox_records.py": 1,
+    "tests/unit/cli/test_tui_launch.py": 1,
+    "tests/unit/cron/test_ledger.py": 1,
+    "tests/unit/cron/test_store.py": 2,
+    "tests/unit/cron/test_store_health.py": 1,
+    "tests/unit/gateway/adapters/photon/test_sidecar.py": 1,
+    "tests/unit/gateway/daemon/test_liveness.py": 1,
+    "tests/unit/gateway/test_token_locks.py": 1,
+    "tests/unit/learning/memory/test_store.py": 2,
+    "tests/unit/learning/skills/test_bundled_sync.py": 1,
+    "tests/unit/service/remote/test_profile_guard.py": 1,
+    "tests/unit/state/test_connection.py": 2,
+    "tests/unit/state/test_maintenance.py": 2,
+    "tests/unit/web/pty/test_channels.py": 1
+  }
+}

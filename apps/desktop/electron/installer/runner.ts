@@ -15,6 +15,7 @@ import path from "node:path";
 import type { Readable } from "node:stream";
 import { writeFileAtomic } from "../fsSecure.ts";
 import { redactSecrets } from "../redact.ts";
+import { RELEASE_DOWNLOAD_BASE } from "../releaseBase.ts";
 import {
   cleanLine,
   LineSplitter,
@@ -31,7 +32,7 @@ export const PIPE_DRAIN_GRACE_MS = 20_000;
 export const LOG_RING_LINES = 500;
 export const MARKER_FILE = ".indus-bootstrap-complete";
 export const MARKER_SCHEMA = 1;
-export const DEFAULT_RELEASE_BASE = "https://github.com/indusagi/indus-agent/releases/download";
+export const DEFAULT_RELEASE_BASE = RELEASE_DOWNLOAD_BASE;
 const MAX_LINE = 4_000;
 const MAX_STDOUT_KEPT = 1024 * 1024;
 

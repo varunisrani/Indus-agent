@@ -54,6 +54,19 @@ async function sessionShownOnce(running: RunningApp): Promise<string[]> {
   return checkTranscriptOnce(persisted, await shownMessages(running.cdp));
 }
 
+/** Admissions still queued or running in the store, after waiting up to `timeoutMs` for none. */
+async function openAdmissions(current: Stack, timeoutMs = 30_000): Promise<number> {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const [row] = await current.sql<[number]>(
+      `SELECT count(*) FROM runtime_admissions WHERE state IN ('queued', 'started')`,
+    );
+    const open = Number(row?.[0] ?? -1);
+    if (open === 0 || Date.now() > until) return open;
+    await sleep(100);
+  }
+}
+
 function launch(): Promise<RunningApp> {
   const current = stack as Stack;
   return launchApp({
@@ -106,6 +119,10 @@ describe.skipIf(realSkip !== "")(
       const current = stack as Stack;
       const [pid] = daemonPids(current.home);
       expect(pid).toBeDefined();
+      // The first turn must be over in the store, not only on screen: its text streams before the
+      // admission turns terminal, and one still `started` at the kill is lost by design (the
+      // restart marks it `unknown`, and the next prompt waits behind it for a Discard).
+      expect(await openAdmissions(current)).toBe(0);
       // every frame from the kill until the recovered conversation: nothing shown twice, ever
       const frames: ShownMessage[][] = [];
       let sampling = true;

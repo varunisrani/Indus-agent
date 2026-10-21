@@ -16,6 +16,7 @@ from typing import Any, Literal, Union, cast
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from indus.foundation import yamlio
+from indus.foundation.versions import SANDBOX_IMAGE
 
 CURRENT_VERSION = 1
 VERSION_KEY = "_config_version"
@@ -123,7 +124,7 @@ class TerminalSection(_Section):
         default="", description="docker or podman client path; empty = docker, then podman on PATH"
     )
     docker_image: str = Field(
-        default="ghcr.io/indus-agent/indus-sandbox:slim",
+        default=f"{SANDBOX_IMAGE}:stable-slim",
         description="image the Docker sandbox runs (Indus's own sandbox image by default)",
     )
     docker_image_pinned: bool = Field(
@@ -1507,6 +1508,27 @@ class DashboardSection(_Section):
         return _refuse_open_proxies(value)
 
 
+class UpdatesSection(_Section):
+    """``indus update`` (P23-17..19)."""
+
+    check: bool = Field(
+        default=True,
+        description="show passive update notices (indus --version); explicit `indus update "
+        "--check` always works",
+    )
+    pre_update_backup: Literal["quick", "full", "off"] = Field(
+        default="quick", description="what `indus update` saves first: quick, full or off"
+    )
+    backup_keep: int = Field(
+        default=5, ge=0, description="full pre-update backups kept in the backup folder"
+    )
+    installs: dict[str, dict[str, Any]] = Field(
+        default_factory=dict[str, dict[str, Any]],
+        description="per install id (`indus update --install-id`): channel (stable, canary or "
+        "main) and extras",
+    )
+
+
 class AcpSection(_Section):
     """The editor agent (``indus acp``, P19)."""
 
@@ -1694,6 +1716,9 @@ class ConfigModel(BaseModel):
         default_factory=DashboardSection, description="the web dashboard (indus dashboard)"
     )
     acp: AcpSection = Field(default_factory=AcpSection, description="the editor agent (indus acp)")
+    updates: UpdatesSection = Field(
+        default_factory=UpdatesSection, description="updating this install (indus update)"
+    )
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 

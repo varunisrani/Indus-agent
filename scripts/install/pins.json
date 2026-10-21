@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "provisional": false,
+  "release": {
+    "repository": "indusagi/indus-agent",
+    "mirror_tag": "bootstrap-mirror"
+  },
+  "python": {
+    "provision": "3.14",
+    "floor": "3.13"
+  },
+  "uv": {
+    "version": "0.11.32",
+    "targets": {
+      "linux-x64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "aab924fd522efd06f1c5f3b93a243864fc453132c94b2dc49f1371b528a4b967"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-aarch64-unknown-linux-gnu.tar.gz",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "4d4fa08d95b06642e5800df6a22bd71455f23f988269e18da2847971d8c0bf31"
+      },
+      "linux-x64-musl": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-unknown-linux-musl.tar.gz",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "1fd052f196108d87e61fc3d98fe06b4ec758c9a1eb1466a6fd1a436fe45885f2"
+      },
+      "linux-arm64-musl": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-aarch64-unknown-linux-musl.tar.gz",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-aarch64-unknown-linux-musl.tar.gz",
+        "sha256": "d70cdae687feb6aad9a09fe8d686df8c8efaf69a1007fa581379a2025adc10a5"
+      },
+      "darwin-x64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-apple-darwin.tar.gz",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-x86_64-apple-darwin.tar.gz",
+        "sha256": "77f5ca26c0de20e992a3677a174fe1121ee25c36f9b1434a863f75bf077a05eb"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-aarch64-apple-darwin.tar.gz",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-aarch64-apple-darwin.tar.gz",
+        "sha256": "ed336d0ba49db8ef89b2b41fffa372ce63bd032f22a56f001c265891aec32829"
+      },
+      "windows-x64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-pc-windows-msvc.zip",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-x86_64-pc-windows-msvc.zip",
+        "sha256": "acfde570451cfdb8689fa159a138ee805ba4e241c466432750302c86254b0984"
+      },
+      "windows-arm64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-aarch64-pc-windows-msvc.zip",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/uv-0.11.32-aarch64-pc-windows-msvc.zip",
+        "sha256": "a7427ea0440bb826b6716d1837ff3d173b8e7d496cb09ee8f456b4e023a2fdcd"
+      }
+    }
+  },
+  "git_for_windows": {
+    "version": "2.51.0.windows.1",
+    "targets": {
+      "windows-x64": {
+        "url": "https://github.com/git-for-windows/git/releases/download/v2.51.0.windows.1/PortableGit-2.51.0-64-bit.7z.exe",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/PortableGit-2.51.0-64-bit.7z.exe",
+        "sha256": "a09b275d51ed3e829128e04cf4168fb54896cf6234bb30fecb8dc96a2bd321fa"
+      },
+      "windows-arm64": {
+        "url": "https://github.com/git-for-windows/git/releases/download/v2.51.0.windows.1/PortableGit-2.51.0-arm64.7z.exe",
+        "mirror": "https://github.com/indusagi/indus-agent/releases/download/bootstrap-mirror/PortableGit-2.51.0-arm64.7z.exe",
+        "sha256": "0aacd4edf0c1715334a18725a947584652e1b34bddab63ac3f4a82c9f7c78e38"
+      }
+    }
+  }
+}

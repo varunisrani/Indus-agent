@@ -1,0 +1,36 @@
+# Indus Agent on Windows (Docker Desktop) with Docker Compose (P23-11).
+#
+#   docker compose -f docker/compose.windows.yaml up -d
+#
+# Docker Desktop has no host networking, so the dashboard has to listen on the container's own
+# interface. That is not loopback, so the dashboard starts only once a login provider is set up in
+# the settings on the volume (a username and password, or OIDC; `indus dashboard` on a terminal
+# offers to set the password, the Docker page of the user guide shows both) — there is no switch
+# that skips the login. On this machine the port is published on 127.0.0.1 only.
+#
+# The data folder is %USERPROFILE%\.indus (INDUS_DATA_DIR overrides it), mounted at /opt/data.
+# INDUS_IMAGE picks another image.
+
+name: indus
+
+x-indus: &indus
+  image: ${INDUS_IMAGE:-ghcr.io/indusagi/indus-agent:stable}
+  restart: unless-stopped
+  volumes:
+    - ${INDUS_DATA_DIR:-${USERPROFILE}/.indus}:/opt/data
+  environment:
+    INDUS_UID: ${INDUS_UID:-10000}
+    INDUS_GID: ${INDUS_GID:-10000}
+
+services:
+  gateway:
+    <<: *indus
+    command: ["gateway", "run"]
+
+  dashboard:
+    <<: *indus
+    depends_on:
+      - gateway
+    ports:
+      - "127.0.0.1:9119:9119"
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open"]

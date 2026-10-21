@@ -1,0 +1,12 @@
+#!/bin/sh
+# Supervised gateway (P23-10): on when INDUS_GATEWAY is 1/true/yes/on, as the `indus` user.
+# Off: exit at once; ./finish then keeps the slot down instead of restarting it.
+case "${INDUS_GATEWAY:-}" in
+    1 | true | yes | on) ;;
+    *) exit 0 ;;
+esac
+exec 2>&1
+HOME="${INDUS_HOME:-/opt/data}"
+export HOME
+cd "$HOME"
+exec s6-setuidgid indus indus gateway run

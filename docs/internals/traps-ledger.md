@@ -600,7 +600,11 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/commands/test_backup.py::test_browser_profile_found_by_content`
   - `tests/unit/cli/commands/test_backup.py::test_database_copied_while_a_writer_holds_a_transaction`
 - **R04.24** Update self-modification
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/update/test_update_apply.py::test_syntax_error_in_the_new_release_rolls_back`
+  - `tests/integration/update/test_update_apply.py::test_success_swaps_venvs_and_execs_finish`
+  - `tests/integration/update/test_update_apply.py::test_unresolvable_lock_keeps_the_old_venv`
+  - `tests/integration/update/test_update_apply.py::test_interrupt_during_the_build_restores_everything`
+  - `tests/unit/cli/update/test_finish.py::test_dist_build_failure_keeps_the_old_bundle_and_exits_0`
 - **R04.25** Profile deletion and marker-less dirs
   - `tests/unit/foundation/test_profiles.py::test_tombstoned_profile`
   - `tests/unit/foundation/test_profiles.py::test_mkdir_in_missing_profile_refused`
@@ -1377,43 +1381,80 @@ Checked by `python -m tooling.checks traps`.
 - **R10.11** Contradictory pinning policy docs
   - `tooling/checks/tests/test_pins.py::test_exact_pin_passes`
   - `tooling/checks/tests/test_pins.py::test_open_range_fails`
+  - `tests/unit/packaging/test_metadata.py::test_no_interpreter_markers_or_open_ranges`
+  - `tests/unit/packaging/test_metadata.py::test_console_script_and_build_backend`
 - **R10.12** Interpreter bridge markers
   - `tooling/checks/tests/test_pins.py::test_interpreter_marker_fails`
+  - `tests/unit/packaging/test_metadata.py::test_one_interpreter_line`
+  - `tests/unit/packaging/test_metadata.py::test_no_interpreter_markers_or_open_ranges`
 - **R10.13** Shadowed lint config
   - Review: not yet planned (P00-guards)
 - **R10.14** Installer repository stage is the riskiest code
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/install/test_install_sh_repository.py::test_clone_failure_midway_leaves_no_target`
+  - `tests/integration/install/test_install_sh_repository.py::test_broken_checkout_is_moved_aside`
+  - `tests/integration/install/test_install_sh_repository.py::test_non_checkout_dir_is_refused`
+  - `tests/integration/install/test_install_sh_repository.py::test_tag_lookup_ends_with_the_remote_tags`
+  - `tests/integration/install/test_install_sh_repository.py::test_diverged_commit_is_saved_before_the_reset`
+  - `tests/integration/install/test_install_sh_repository.py::test_unmerged_index_is_cleared_before_the_stash`
+  - `tests/integration/install/test_install_sh_repository.py::test_saved_channel_is_honoured`
+  - `tests/integration/install/test_install_sh_repository.py::test_a_release_never_moves_a_checkout_backwards`
 - **R10.15** Receipts and signals
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/install/test_install_sh_core.py::test_sigint_during_a_stage_that_succeeds_continues`
+  - `tests/integration/install/test_install_sh_core.py::test_sigint_then_failure_is_interrupted_and_dies_by_the_signal`
+  - `tests/integration/install/test_install_sh_core.py::test_sigterm_after_a_passing_stage_stops_before_the_next`
+  - `tests/integration/install/test_install_sh_core.py::test_second_receipt_write_is_a_no_op`
+  - `tests/integration/install/test_install_ps1.py::test_receipt_is_first_writer_wins_and_the_finally_records_interrupted`
+  - `tests/integration/install/test_install_ps1.py::test_pwsh_receipt_is_written_once`
+  - `tests/integration/install/test_install_ps1.py::test_pwsh_existing_receipt_file_is_never_overwritten`
+  - `tests/integration/install/test_install_ps1.py::test_pwsh_failed_ladder_records_one_failed_receipt`
 - **R10.16** Mirror fallback only on network errors
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/install/test_install_sh_runtime.py::test_network_failure_uses_the_mirror`
+  - `tests/integration/install/test_install_sh_runtime.py::test_a_bad_body_with_exit_0_is_a_digest_mismatch_and_no_mirror`
+  - `tests/integration/install/test_install_sh_runtime.py::test_other_curl_failures_never_try_the_mirror`
+  - `tests/integration/install/test_install_sh_runtime.py::test_a_mirror_with_bad_bytes_is_refused_too`
 - **R10.17** Fail-open change classification
   - Review: not yet planned (P00-guards)
 - **R10.18** Strict aggregate gate
   - `tooling/checks/tests/test_pins.py::test_ci_gate_needs_every_job`
   - `tooling/checks/tests/test_pins.py::test_ci_gate_fails_on_anything_but_success`
+  - `tests/unit/release/test_publish.py::test_gate_counts_a_skipped_selected_job_as_failed`
+  - `tests/unit/ci/test_release_workflow.py::test_gate_needs_every_job_and_always_runs`
 - **R10.19** Deterministic slicing
   - Review: not yet planned (P00-guards)
 - **R10.20** Flake retry rules
   - Review: not yet planned (P00-guards)
 - **R10.21** Host gating via one marker
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/packaging/test_platform_marks.py::test_two_platforms_marks_fail_collection`
+  - `tests/unit/packaging/test_platform_marks.py::test_other_hosts_are_deselected`
+  - `tests/unit/packaging/test_platform_marks.py::test_no_new_bare_platform_skipifs`
 - **R10.22** Ratchet config read from main
   - `tooling/checks/tests/test_policy.py::test_widened_allow_list_in_pr_still_fails`
 - **R10.23** Release = tested bytes only
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/ci/test_docker_workflow.py::test_no_job_moves_a_channel_alias`
+  - `tests/unit/ci/test_docker_workflow.py::test_publishing_never_rebuilds`
+  - `tests/unit/release/test_publish.py::test_release_is_made_public_after_the_aliases`
+  - `tests/unit/release/test_publish.py::test_rerun_after_alias_failure_completes_without_duplicates`
+  - `tests/unit/release/test_publish.py::test_upload_sends_artefacts_and_manifest_once`
+  - `tests/unit/release/test_publish.py::test_older_green_claim_is_published_first`
 - **R10.24** Workflow SHA is not the commit under test
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/ci/test_docker_workflow.py::test_every_checkout_takes_the_commit_under_test`
+  - `tests/unit/ci/test_docker_workflow.py::test_release_inputs_are_validated_before_building`
+  - `tests/unit/ci/test_release_workflow.py::test_every_build_job_uses_the_admitted_commit`
+  - `tests/unit/release/test_publish.py::test_admit_outputs_the_claimed_commit`
 - **R10.25** Docker `--user` breaks bootstrap
-  - Review: not yet planned (P00-guards)
+  - `tests/integration/docker/test_entry_scripts.py::test_a_docker_run_user_start_is_refused_with_guidance`
+  - `tests/integration/docker/test_entry_scripts.py::test_a_leading_flag_is_always_an_indus_option`
+  - `tests/docker/test_image_build.py::test_a_docker_run_user_start_is_refused`
 - **R10.26** Canary versions must sort below stable
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/release/test_versioning.py::test_canary_ordering_property`
+  - `tests/unit/release/test_versioning.py::test_grammar_is_defined_once_and_imported_by_every_caller`
 - **R10.27** Termux/stable naming drift
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/release/test_versioning.py::test_channel_words_are_exactly_three`
+  - `tests/unit/release/test_versioning.py::test_one_word_per_channel_in_release_and_update_files`
 - **R10.28** Translation parity
   - `tooling/checks/tests/test_locales.py::test_missing_key_fails`
 - **R10.29** Personal data in the repo
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/release/test_release_cli.py::test_unmapped_author_fails_a_release_and_warns_a_canary`
 - **R10.30** Supply-chain scans are heuristics
   - Review: not yet planned (P00-guards)
   - `tests/unit/safety/test_content_scan.py::test_code_spans_and_fences_scan_at_least_as_strictly_as_prose`

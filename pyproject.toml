@@ -1,6 +1,8 @@
 [project]
 name = "indus-agent"
-version = "0.0.1"
+# The version lives in src/indus/__init__.py (0.0.0 in source); a release stamps the real one into
+# its build tree only (P23-01, P23-21).
+dynamic = ["version"]
 description = "Indus Agent: a self-improving AI agent (pre-alpha)."
 readme = "README.md"
 requires-python = ">=3.13,<3.15"
@@ -110,6 +112,39 @@ yuanbao = ["httpx-ws==0.9.0"]
 # Editor agent over the Agent Client Protocol (P19-01; agent-client-protocol Apache-2.0, LICENSE read
 # at the 0.12.1 sdist; needs pydantic only). Imported lazily by `indus acp` only.
 acp = ["agent-client-protocol==0.12.1"]
+# Every messaging adapter that installs from wheels on Linux, macOS and Windows (P23-01): what the
+# installer, the Docker image and the Nix `messaging` package carry so the gateway can start any of
+# them without a lazy install. Matrix E2EE (source build, Linux only) and Discord voice (system
+# libraries) stay opt-in. Kept equal to the union of its member extras by
+# tests/unit/packaging/test_metadata.py.
+messaging = [
+    "aiohttp==3.14.3",
+    "coincurve==21.0.0",
+    "cryptography==50.0.2",
+    "discord.py==2.7.1",
+    "httpx-ws==0.9.0",
+    "slack-bolt==1.30.0",
+    "slack-sdk==3.44.1",
+]
+# The common extras together (P23-01): web, docs, pty, dashboard, browser, acp and messaging. The
+# pins guard accepts only exact pins, so the union is written out; the same test keeps it equal.
+all = [
+    "agent-client-protocol==0.12.1",
+    "aiohttp==3.14.3",
+    "coincurve==21.0.0",
+    "cryptography==50.0.2",
+    "ddgs==9.16.0",
+    "discord.py==2.7.1",
+    "httpx-ws==0.9.0",
+    "openpyxl==3.1.5",
+    "playwright==1.63.0",
+    "ptyprocess==0.7.0",
+    "pypdf==6.19.0",
+    "python-docx==1.2.0",
+    "pywinpty==3.0.5; sys_platform == 'win32'",
+    "slack-bolt==1.30.0",
+    "slack-sdk==3.44.1",
+]
 
 [project.scripts]
 indus = "indus.cli.entry:main"
@@ -127,18 +162,29 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/indus/__init__.py"
+
+# No PyPI (P23-01, S7): wheel and sdist builds are refused unless INDUS_NIX_BUILD=1 (the Nix
+# derivation); editable installs (`uv sync`) are untouched.
+[tool.hatch.build.hooks.custom]
+path = "scripts/build_hooks/no_wheel.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/indus"]
 # P18-29: the built dashboard pages (`python -m indus.web.bundle publish`) are git-ignored, so the
-# wheel names them as artifacts to ship them (indus.web.bundle.locate finds them installed).
-artifacts = ["src/indus/web/static/"]
+# wheel names them as artifacts to ship them (indus.web.bundle.locate finds them installed). The
+# built TUI bundle is copied to src/indus/_tui_dist/ the same way (indus.cli.tui_launch reads it).
+artifacts = ["src/indus/web/static/", "src/indus/_tui_dist/"]
 
 [tool.hatch.build.targets.wheel.force-include]
 # P09-21: the starter skills ship inside the package (bundled_sync.bundled_source).
 "skills" = "indus/_bundled_skills"
+# The message catalogue the surfaces mirror (P23-01 package data).
+"locales" = "indus/_locales"
 
 [tool.uv]
 # 14-day age window (D-16.52): nothing uploaded after this instant is locked. Checked against
@@ -174,6 +220,7 @@ markers = [
     "docker: needs a reachable Docker daemon (live backend lanes, P11-21)",
     "live: talks to a real provider with a real key (INDUS_LIVE=1); skips cleanly without one",
     "browser: drives a real Chromium (the browser extra); skips cleanly without one",
+    "platforms(*specs): run only on hosts matching at least one spec (linux, macos, windows, posix, or 'not X'); other hosts deselect the test (P23-01, R10.21)",
 ]
 
 [tool.importlinter]

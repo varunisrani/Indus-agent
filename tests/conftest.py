@@ -17,8 +17,15 @@ import pytest
 
 from indus.foundation.scope import EnvView, Scope, make_scope
 from indus.foundation.secrets import open_secret_store
+from tests import platform_marks
 from tests.fakes.clock import FakeClock
 from tests.fakes.model import Script, load_script
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Host gating (P23-01, R10.21): bad ``platforms`` marks are a usage error; tests this host
+    does not match are deselected (`tests.platform_marks`)."""
+    platform_marks.apply(config, items)
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:

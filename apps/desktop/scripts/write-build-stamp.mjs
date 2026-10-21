@@ -5,8 +5,12 @@
 //   node scripts/write-build-stamp.mjs --out FILE [--channel stable|canary] [--platform P]
 //        [--version V] [--commit SHA] [--update-owner electron-updater|manual]
 //
-// Fallbacks: INDUS_DESKTOP_CHANNEL, INDUS_DESKTOP_VERSION (else the root pyproject.toml version),
-// GITHUB_SHA (else `git rev-parse HEAD`, else "unknown"), SOURCE_DATE_EPOCH for the build time.
+// Fallbacks: INDUS_DESKTOP_CHANNEL; INDUS_DESKTOP_VERSION, else `__version__` in
+// src/indus/__init__.py (the one version source since P23-01 made pyproject's version dynamic);
+// INDUS_DESKTOP_COMMIT (the release workflow's admitted commit), else `git rev-parse HEAD`, else
+// "unknown"; SOURCE_DATE_EPOCH for the build time. GITHUB_SHA is never read: in a release run it is
+// the default branch's tip, not the commit being built (R10.24). When INDUS_DESKTOP_COMMIT is set
+// and the checkout is another commit, the stamp is refused.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -36,18 +40,11 @@ export function updateOwnerFor(platform) {
   return "manual";
 }
 
-/** The `[project] version` of a pyproject.toml text, or null. */
-export function pyprojectVersion(text) {
-  let inProject = false;
+/** The `__version__ = "…"` of a Python module text (src/indus/__init__.py), or null. */
+export function packageVersion(text) {
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line.startsWith("[")) {
-      inProject = line === "[project]";
-      continue;
-    }
-    if (!inProject) continue;
-    const match = /^version\s*=\s*"([^"]+)"/.exec(line);
-    if (match) return match[1] ?? null;
+    const match = /^__version__\s*=\s*(["'])([^"']+)\1\s*(?:#.*)?$/.exec(raw.trim());
+    if (match) return match[2] ?? null;
   }
   return null;
 }
@@ -65,6 +62,11 @@ function gitCommit(cwd) {
   } catch {
     return null;
   }
+}
+
+/** Two hex SHAs name the same commit when one is a prefix of the other. */
+function sameCommit(a, b) {
+  return a.startsWith(b) || b.startsWith(a);
 }
 
 function fail(message) {
@@ -104,19 +106,21 @@ export function makeBuildStamp(options = {}, deps = {}) {
   let version = options.version ?? (env.INDUS_DESKTOP_VERSION || null);
   if (version === null) {
     try {
-      version = pyprojectVersion(readText(path.join(REPO_ROOT, "pyproject.toml")));
+      version = packageVersion(readText(path.join(REPO_ROOT, "src", "indus", "__init__.py")));
     } catch {
       version = null;
     }
   }
   if (version === null) fail("no version (pass --version or set INDUS_DESKTOP_VERSION)");
 
-  const commit = (
-    options.commit ??
-    (env.GITHUB_SHA || null) ??
-    commitOf(REPO_ROOT) ??
-    "unknown"
-  ).toLowerCase();
+  const admitted = (env.INDUS_DESKTOP_COMMIT || "").trim().toLowerCase() || null;
+  let commit = options.commit?.toLowerCase() ?? null;
+  if (commit === null) {
+    const checkout = commitOf(REPO_ROOT)?.toLowerCase() ?? null;
+    if (admitted !== null && checkout !== null && !sameCommit(admitted, checkout))
+      fail(`the checkout is ${checkout}, not the admitted commit ${admitted}`);
+    commit = admitted ?? checkout ?? "unknown";
+  }
 
   const epoch = env.SOURCE_DATE_EPOCH;
   const builtAt =
