@@ -138,3 +138,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-21 09:52 UTC | 84% | 16% | 13:10 UTC | told W1, S1 to wrap up; P23 integrator keeps running; hand off to Agent 2 at 90%
 2026-10-21 10:05 UTC | 88% | 12% | 13:10 UTC | W1 parked; S1 wrapping up; P23 integrator running; hand off at 90%
 2026-10-21 10:14 UTC | 88% | 12% | 13:10 UTC | all builders parked; only the P23 integrator running
+2026-10-21 10:20 UTC | 91% | 9% | 13:10 UTC | handed the turn to Agent 2; P23 integration parked green (needs rebase onto P20)

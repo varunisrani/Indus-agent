@@ -13,19 +13,16 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 2** | At: 2026-10-21 03:45 UTC | Branch: `main` (pushed to origin)
-- Why now: the owner asked to hand the turn to Agent 1 (Agent 2 at 83%, resets 04:20 UTC). Nothing is running: no
-  builders, no integrators, no gate. The one unfinished integration (P20 wave 34) is saved as a patch in `.agents/wip/w34/`.
-- Last fully verified code commit: `71389d4` (P18 complete; integrator full run 15684 passed / 0 failed; rebased tree:
-  targeted 1280 passed, vitest 1485 passed, pyright 0, lint-imports kept, tooling.checks ok). Earlier combined-main full
-  gates this turn: `768118a` 15646 passed / 0 failed; `59c12c4` 15652 / 0; `385c32a` 15696 / 0.
-- Agent 2's code landings this turn (since 2026-10-20 16:27): P16 complete, P18 complete, P19 complete (+ D-16.602 daemon
-  side), P20-01..07, P18/P19 follow-ups, load-failure root-cause fixes (drive hold, clock quiesce, backstop reap) — see
-  "Last landings" below.
+- By: **Agent 1** | At: 2026-10-21 10:20 UTC | Branch: `main` (pushed to origin)
+- Why now: Agent 1 at 91% of its window (resets 13:10 UTC). Nothing is running: no builders, no integrators, no gate.
+- Last verified code commit: `52deb8b` (P20 complete: pytest "not perf" 15735 passed; pnpm test 2453; Electron E2E 37;
+  pyright 0; lint-imports kept; tooling.checks ok).
+- Agent 1's code landings this turn (since 2026-10-21 05:56): P20-08..24 (`2a1991b`), P20-25..40 (`52deb8b`, P20 COMPLETE).
+  Parked this turn: P23 (integrated, green on its base — see NEXT STEP 1), P24 w37 (6 slices) and w38 (2 slices).
 
 ## Usage at last stop
-📊 Agent 2 usage: 83% used, 17% left (reading 03:40 UTC) — resets 04:20 UTC — PAUSED (handed off)
-📊 Agent 1 usage: last recorded 2026-10-20 16:14 (86%, long since reset) — expected fresh — READY
+📊 Agent 1 usage: 91% used, 9% left (reading 10:17 UTC) — resets 13:10 UTC — PAUSED (handed off)
+📊 Agent 2 usage: last recorded 2026-10-21 03:40 (83%, long since reset) — expected fresh — READY
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
@@ -35,6 +32,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 | 3 | Agent 2 → Agent 1 | 2026-10-19 10:15 | P10-19/20 (P10 done), P12 all (Demo 2), P13-01..04, 13..17, 20, 24; CI gate without extras | Agent 2 at 78%; wave boundary; Agent 1 fresh |
 | 4 | Agent 1 → Agent 2 | 2026-10-20 16:25 | P13 wave 2, P14, P15 (Demo 3), P16 31/36, P17 (M5), P21, P22; parked P16-25/33..36, P18-01..10/17..22, P19-01..07 | Agent 1 at 86%; owner asked to hand over; nothing in flight |
 | 5 | Agent 2 → Agent 1 | 2026-10-21 03:45 | P16 (36/36), P18 (30/30, M6 web demo), P19 (18/18, attached ACP on a real daemon), P20-01..07; load-failure root causes; P20-08..24 integrated but unverified (wip patch) | Owner asked to hand over; Agent 2 at 83% |
+| 6 | Agent 1 → Agent 2 | 2026-10-21 10:20 | P20-08..40 landed (P20 complete); P23 integrated (green, needs rebase onto P20); P24-01..18, 23, 24, 38..44 built + parked; 45 partial | Agent 1 at 91%; nothing in flight |
 
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
@@ -76,18 +74,33 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 (took it back at 05:56 UTC 2026-10-21, owner request). In flight (Agent 1):
-- P20-08..24 LANDED `2a1991b` (w34 pruned; notes appended to LEAD-NOTES).
-- P20-25..40 LANDED `52deb8b` (P20 COMPLETE on Linux; LEAD-NOTES "P20 wave 35 landing notes (integrator)").
-- Wave 36 (P23 except 15/16): I1, I2, K1, N1, U1 all parked in `.agents/wip/w36/`; P23 integrator running in scratchpad
-  verify19 (brief `.agents/wip/w36/integrator-brief.md`, D-16.740..769). Owner item: I2's first `uv run` wrote into
-  /root/.cache/uv.
-- Wave 37 (brief `.agents/wip/w37/brief.md`, P24 backend first half): M1 P24-01..04, R1 05..07, R2 08..10, B1 11..14, L1
-  15..17, X1 18/23/24 — ALL parked in `.agents/wip/w37/` (README lists the daemon/loop/registry wiring each owes).
-- Wave 38 (brief `.agents/wip/w38/brief.md`): W1 P24-38..41 + 47 (browser), S1 P24-42..46 (egress proxy, memory caps,
-  packs, hub, suggestions) building in scratchpad wt-w38*.
-- NEXT: P24 desktop / dashboard / TUI builders (P24-19 pet, 20 wake word, 25..37 desktop + dashboard pages) — P20 has landed
-  (52deb8b); then one P24 integrator for w37 + w38 + the UI wave (wire the daemon/loop seams); P24-21/22 if capacity; then P25.
+Turn: AGENT_2 (handed over by Agent 1 at 10:20 UTC 2026-10-21). Main `52deb8b`+status commits, green.
+Done: P00–P22 complete (P20 `52deb8b`). 554/648 landed (85%). Built and parked: 21 (P23) + 30 (P24).
+1. **Land P23** from `.agents/wip/w36/p23-integration-green.patch` (base 7cd4273; the P23 integrator's full gate was green
+   there: pytest 16313 passed, pnpm 1807, pins/build checks strict; LEAD-NOTES "P23 wave 36 landing notes (integrator)" is
+   INSIDE the patch). On main (which now has P20 `52deb8b`) `git apply --3way` conflicts in 3 files, all unions:
+   `.github/workflows/ci.yml` (P20's desktop-e2e / desktop-package jobs + P23's Nix lane / pin checks — keep all jobs in the
+   gate's needs), `docs/plan/16-what-we-change.md` (P20 D-16.700..727 + P23 D-16.740..767), `docs/plan/phases/LEAD-NOTES.md`
+   (both landing-notes sections). THEN fix the two clashes the integrator predicted: (a) `test_release_base` scans the desktop
+   app — D4's update-feed default repo (`varunisrani/indus-agent` in apps/desktop/electron/updates) must derive from / equal
+   `RELEASE_REPOSITORY` (value still `indusagi/indus-agent`, owner D-16.690); (b) P20-38's build stamp
+   (apps/desktop/scripts/write-build-stamp.mjs) falls back to the pyproject version, which P23-01 made dynamic — read
+   `src/indus/__init__.py` instead, and use the admitted commit, not GITHUB_SHA, in release runs. Full gate (Python + pnpm +
+   Electron E2E lane if Electron is available), commit "[Agent 2] P23 …", push; phase table P23 21/23 (15/16 desktop signing
+   open). Owner items from the integrator are in its LEAD-NOTES section.
+2. **P24 remaining builds:** P24-46 suggested jobs + blueprints (note `docs/notes/P24/suggestions-blueprints.md`), P24-47
+   browser-control broker (note `browser-broker.md`), snapshot tests for P24-45 (w38-s1), and the UI wave now unblocked by P20:
+   P24-19 desktop pet + /pet, P24-20 wake word, P24-25..37 desktop + dashboard pages; P24-21/22 (Termux, MSIX) if capacity.
+   Briefs to copy: `.agents/wip/w37/brief.md`, `.agents/wip/w38/brief.md` (ENV RULE: two export statements, TMPDIR unset).
+3. **P24 integrator** for `.agents/wip/w37/` (M1, R1, R2, B1, L1, X1) + `.agents/wip/w38/` (W1, S1) + the UI wave: the READMEs list
+   the daemon / loop / registry / protocol wiring each slice owes (nothing is called from `gateway run` or the agent loop yet),
+   union files (cli/app.py, contract help catalogue + non_tty_table, schema, toolsets, delivery/router.py, control_socket),
+   and two order-dependent failures B1 saw (test_schema patience, test_backup_ticket log record) to root-cause.
+4. P23-15/16 desktop signing; then P25 (hardening, parity, v1.0).
+Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
+(--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**' — never exclude git-ignored paths), CHECK the
+patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree; one integrator per
+group runs the full gate; the lead commits, rebases, fast-forwards, pushes, updates the phase table and this file.
 - Last landings: P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
