@@ -6,7 +6,7 @@
   "remaining_pct": 61,
   "resets_at": "2026-10-21T08:10:00+00:00",
   "last_check": "2026-10-21T06:56:00+00:00",
-  "current_step": "w35 D4 (P20-35..37) building; D1 D2 D3 D5 parked; wave 36 P23 builders I1 I2 K1 N1 U1 running",
+  "current_step": "P20-25..40 integrator (verify18); wave 36 P23 builders I1 I2 K1 N1 U1 running",
   "last_commit": "2a1991b",
   "updated_at": "2026-10-21T06:05:00Z"
 }

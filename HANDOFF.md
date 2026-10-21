@@ -79,9 +79,8 @@ README for reference. Nothing uncommitted on main.
 Turn: AGENT_1 (took it back at 05:56 UTC 2026-10-21, owner request). In flight (Agent 1):
 - P20-08..24 LANDED `2a1991b` (w34 pruned; notes appended to LEAD-NOTES).
 - Wave 35 (brief `.agents/wip/w35/brief.md`, base c3891d6 = tree of 2a1991b): D1 P20-25..27, D2 P20-28..31, D3 P20-32..34,
-  D5 P20-38..39 DONE and parked in `.agents/wip/w35/` (README: wiring incl. four main.ts edits + D5's main-ts wiring patch,
-  D1/D2 pane-registry ctx reconcile, licence ruling owed for build-only BlueOak/WTFPL); D4 P20-35..37 building
-  (wt-w35d4). Next: one P20-25..40 integrator (adds P20-40 Electron E2E + Demo 4; no Electron binary here — fetch it).
+  D4 P20-35..37, D5 P20-38..39 all DONE and parked in `.agents/wip/w35/`. P20-25..40 integrator running in scratchpad
+  verify18 (brief `.agents/wip/w35/integrator-brief.md`, D-16.700..739; builds P20-40 Electron E2E + Demo 4).
 - Wave 36 (brief `.agents/wip/w36/brief.md`, P23 except 15/16): I1 P23-01..05, I2 P23-06/07/20, K1 P23-08..12, N1
   P23-13/14, U1 P23-17..19 + 21..23 in scratchpad wt-w36*.
 Agent 2's handoff text (still valid for the owner questions and follow-ups) follows:
