@@ -58,3 +58,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-21 03:16 UTC | Agent 2 | Account 2 | 79% (reading 03:13) | 21% | 04:20 UTC | P20 integrator running; no new agents |
 | 2026-10-21 03:27 UTC | Agent 2 | Account 2 | 81% (reading 03:26) | 19% | 04:20 UTC | P20 integrator running; no new agents |
 | 2026-10-21 03:45 UTC | Agent 2 | Account 2 | 83% (reading 03:40) | 17% | 04:20 UTC | handed turn to Agent 1 (owner request); P20-08..24 parked as w34-int-wip.patch |
+| 2026-10-21 12:32 UTC | Agent 2 | Account 2 | ~2% (last reading 05:53; window idle since) | ~98% | new window | took turn from Agent 1; P23 landing + P24 |

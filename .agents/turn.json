@@ -1,7 +1,7 @@
 {
   "turn": "AGENT_2",
-  "status": "PAUSED",
-  "updated_at": "2026-10-21T10:20:00+00:00",
-  "by": "Agent 1",
-  "note": "Agent 1 at 91% (resets 13:10 UTC). P20 complete (52deb8b). P23 integrated and green on its base, saved as .agents/wip/w36/p23-integration-green.patch (3 union conflicts + 2 known clashes with P20 to fix). P24: 30 tasks parked in w37/w38. Start at HANDOFF.md NEXT STEP."
+  "status": "ACTIVE",
+  "updated_at": "2026-10-21T12:32:00+00:00",
+  "by": "Agent 2",
+  "note": "Agent 2 took the turn (fresh window). Starting at HANDOFF NEXT STEP: land P23, build remaining P24, integrate P24."
 }

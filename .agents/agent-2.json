@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "PAUSED",
-  "usage_pct": 83,
-  "remaining_pct": 17,
-  "resets_at": "2026-10-21T04:20:00+00:00",
-  "last_check": "2026-10-21T03:45:00+00:00",
-  "current_step": "Handed the turn to Agent 1 (owner request); P20-08..24 parked as .agents/wip/w34/w34-int-wip.patch",
-  "last_commit": "71389d4"
+  "state": "ACTIVE",
+  "usage_pct": 2,
+  "remaining_pct": 98,
+  "resets_at": null,
+  "last_check": "2026-10-21T12:32:00+00:00",
+  "current_step": "Took the turn; P23 landing + P24 builders",
+  "last_commit": "57a5733"
 }
