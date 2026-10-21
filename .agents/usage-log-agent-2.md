@@ -52,3 +52,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-21 01:58 UTC | Agent 2 | Account 2 | 61% (reading 01:58) | 39% | 04:20 UTC | F1 landed 385c32a; wave 34 M/R/C + P18 integrator running; 75% expected ~02:20 |
 | 2026-10-21 02:14 UTC | Agent 2 | Account 2 | 69% (reading 02:14) | 31% | 04:20 UTC | w34-c parked; R, M, P18 integrator running |
 | 2026-10-21 02:25 UTC | Agent 2 | Account 2 | 72% (reading 02:22) | 28% | 04:20 UTC | P18 complete 71389d4; w34 parked; P20 integrator started (last agent before 75%) |
+| 2026-10-21 02:42 UTC | Agent 2 | Account 2 | 74% (reading 02:39) | 26% | 04:20 UTC | P20 integrator running; no new agents |
