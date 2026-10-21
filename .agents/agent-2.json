@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 48,
-  "remaining_pct": 52,
+  "usage_pct": 56,
+  "remaining_pct": 44,
   "resets_at": "2026-10-21T17:30:00+00:00",
-  "last_check": "2026-10-21T14:01:00+00:00",
-  "current_step": "P23 lander, U1, U3, B4 running; w39-u2 parked",
-  "last_commit": "23f1d34"
+  "last_check": "2026-10-21T14:22:00+00:00",
+  "current_step": "P23 lander + B4 running; w39 u1/u2/u3 parked; tui_publish test fix 19ced11",
+  "last_commit": "19ced11"
 }
