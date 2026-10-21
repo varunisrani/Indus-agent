@@ -79,3 +79,31 @@
   approval refused); not built: LS auto-install (hints only), multi-root sharing, lsp.exclude_roots, --save recipe file;
   `indus lsp restart` affects only its own process (daemon verb follow-up); pull diagnostics only from servers advertising
   diagnosticProvider.
+
+## w37-r2.patch: P24-08 relay connector transport, P24-09 relay adapter + ops, P24-10 A2A adapter (both directions) — done
+- Builder checks: ruff, format, pyright 0, lint-imports; relay + a2a + delivery + contract gateway + config + gateway
+  test_config + unit tools 2054 passed / 2 skipped; config + tools + unit cli 2622 passed / 3 skipped; tooling.checks ok. No
+  packages (httpx-ws 0.9.0 already locked — suggested extra `relay = ["httpx-ws==0.9.0"]`; A2A needs no extra: drop the
+  phase file's `a2a` extra row).
+- New: src/indus/gateway/relay/{__init__ (build_front, relay_settings), descriptor, transport, adapter}.py,
+  gateway/adapters/a2a/{__init__ (A2A_ENTRY, create_adapter), adapter, protocol, tools}.py, tests/fakes/platform/relay_wire.py,
+  tests/fixtures/a2a/schema/a2a-v1-subset.json (OUR subset — replace with the vendor A2A v1.0.x schema, Apache-2.0), tests unit
+  gateway/relay + adapters/a2a; notes relay-transport.md, relay-adapter.md, a2a.md; docs/user/relay-contract.md.
+- Shared (unions): gateway/delivery/router.py (attach/detach via_relay=True, native_state= lookup, sender_for relay rule — R1
+  also edits this file); tools/toolsets.py (a2a set + indus-a2a bundle); schema gateway.relay.*, a2a.* (a2a.peers.<name>),
+  platforms.a2a + tests; ACC-K12-12, ACC-K37-1; traps R06.24.
+- WIRING OWED: registry A2A_ENTRY in builtin_entries / BUILTIN_NAMES + NON_CHAT row in test_adapter_matrix.py (→
+  tests/unit/gateway/adapters/a2a/test_adapter.py) + setup-wizard step + target-parser rule +
+  BuiltinModule("indus.gateway.adapters.a2a.tools") in BUILTIN_MODULES; daemon: build_front(scope, clock) →
+  transport.start(); create_relay_adapter per descriptor + router.attach(name, sender, via_relay=True); native_state= to
+  DeliveryRouter; RelayFront.on_interrupt stops the chat's turn; idle-exit calls go_dormant(). Relay adapters are not
+  registry entries (their contract run is tests/unit/gateway/relay/test_adapter.py).
+- Security: signed hello HMAC-SHA256 (stdlib hmac) over gateway id + timestamp + nonce, ±300 s window, replayed nonces refused;
+  auth refusal final; A2A JSON-RPC loopback by default, bearer per inbound peer INDUS_A2A_TOKEN_<PEER> (no token → 401 even on
+  loopback); inbound text framed untrusted, never runs commands; per-peer 60 calls/min → 429; dm_is_private false; a2a_call
+  privacy note + credential masking; private/loopback/link-local URLs refused unless peer trusted, cloud metadata always
+  refused; approval cards never shown to A2A peers.
+- Decisions (D-ids): our own relay wire contract (not the reference connector's); fresh timestamp + nonce per dial; dormant waits
+  for wake() / next start; A2A fail-closed without tokens; input-required from the clarify card; not built: A2A push +
+  SubscribeToTask, multi-agent routes, a2a_discover / list / history / orchestrate, relay passthrough plane.
+- Follow-ups: vendor schema fixture; 👀→✅ processing reactions via relay `react`; live lanes (owner); stop() fake-clock note.
