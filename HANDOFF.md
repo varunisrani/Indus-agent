@@ -80,15 +80,16 @@ Test follow-ups: all four load failures root-caused and fixed (D-04.1 backstop n
 msgraph waits quiesce) — see docs/notes/testing/load-failures-wave32.md. Remaining: the backends conftest `drive` cannot
 hold (a command's output reader is an awaited pool call for its whole life); `turn.drive` can still move the clock
 between steps of a long on-loop chain on a starved machine.
-Owed product follow-ups: P18-16 prompt-size breakdown; ACP no_mcp on the daemon, model switch not written to the
-session row, real-daemon reattach test (ACC-M8-2), MCP-only approval (register mcp serve as a viewer), mcp-serve user doc.
+Owed product follow-ups: MCP-only approval (register mcp serve as a viewer); the SPA's backup download should mint a
+ticket (backend route landed); prompt-size does not measure MCP/plugin tools or the external memory provider.
 Then: P18-23..30 (pages, chat host, login, build/serve, e2e M6), P20, P23, P24, P25. Brief to copy from: `.agents/wip/w29/brief.md`.
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
 (--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**'), scan (credential regexes, /root or ~
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
 per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
 in docs/plan/phases/README.md and this file.
-- Last landings: P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
+- Last landings: P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
+  dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
   load-failure fixes + clock quiesce helpers (full gate 15652 passed / 0 failed), P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
   daemon; `indus mcp serve`; D-16.626..642), P18-11..16 dashboard REST (`9786b32`; download tickets, no tokens in URLs, daemon `stop` verb,
   generated route list; D-16.596..598, 610..622), drive-harness fix (`155ef32`), learning/prefetch test fixes (`0e9a538`,
