@@ -146,3 +146,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-21 22:20 UTC | 36% | 64% | 02:00 UTC | P24 LANDED (5c0cff8); started P25 w41 integrator + wiring builders WA WB WC
 2026-10-21 22:26 UTC | 43% | 57% | 02:00 UTC | P25 w41 integrator + WA WB WC running; 19 GB free
 2026-10-21 22:53 UTC | 58% | 42% | 02:00 UTC | P25 w41 integrator + WA WB WC running; ~0.55%/min
+2026-10-21 23:14 UTC | 66% | 34% | 02:00 UTC | WC parked; P25 w41 integrator + WA WB running
