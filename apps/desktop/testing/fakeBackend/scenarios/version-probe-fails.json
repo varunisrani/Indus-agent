@@ -1,0 +1,5 @@
+{
+  "description": "`indus --version` exits 3 (a broken install): the resolver must skip this rung.",
+  "version": "0.20.0",
+  "versionExitCode": 3
+}

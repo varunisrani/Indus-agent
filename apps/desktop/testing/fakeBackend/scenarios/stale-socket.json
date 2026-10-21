@@ -1,0 +1,5 @@
+{
+  "description": "The first ticket mint answers stale_socket (the desktop restarts the daemon once and redials).",
+  "version": "0.20.0",
+  "tickets": { "failFirst": 1, "failError": "stale_socket" }
+}

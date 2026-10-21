@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- Hostile guest: tries to open windows and drive the OS browser without any user gesture.
+     Expected under the desktop policy: every call returns null, no window, no external open. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>guest: window.open</title>
+  </head>
+  <body>
+    <script>
+      window.__results = { opened: [] };
+      for (const url of [
+        "https://example.invalid/popup",
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "indus://open/settings",
+        "about:blank",
+      ]) {
+        let handle = "threw";
+        try {
+          handle = window.open(url, "_blank") === null ? "null" : "window";
+        } catch {
+          handle = "threw";
+        }
+        window.__results.opened.push([url, handle]);
+      }
+      setTimeout(() => {
+        window.__results.late = window.open("https://example.invalid/late") === null ? "null" : "window";
+        window.__results.done = true;
+      }, 50);
+    </script>
+  </body>
+</html>

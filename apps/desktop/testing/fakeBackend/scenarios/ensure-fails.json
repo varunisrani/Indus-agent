@@ -1,0 +1,11 @@
+{
+  "description": "gateway ensure exits 1 with a verdict (bad config); serve ensure fails too.",
+  "version": "0.20.0",
+  "ensure": {
+    "exitCode": 1,
+    "state": "exited",
+    "reason": "bad_config",
+    "detail": "the daemon exited with code 78"
+  },
+  "serve": { "exitCode": 1, "reason": "bad_config" }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- Hostile guest: links to file:, our own indus: scheme and javascript:, clicked from script.
+     Expected: no external open, no navigation of the app, no file shown. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>guest: file and scheme links</title>
+  </head>
+  <body>
+    <a id="file" href="file:///etc/passwd" target="_blank">passwd</a>
+    <a id="indus" href="indus://open/settings" target="_blank">settings</a>
+    <a id="js" href="#placeholder" target="_blank">js</a>
+    <a id="same" href="file:///etc/hosts">same-window file link</a>
+    <script>
+      window.__results = {};
+      // Set from script so the page source carries no script URL.
+      document.getElementById("js").setAttribute("href", ["javascript", ":void(window.__results.js = 'ran')"].join(""));
+      for (const id of ["file", "indus", "js", "same"]) document.getElementById(id).click();
+      setTimeout(() => {
+        window.__results.href = location.href;
+        window.__results.done = true;
+      }, 50);
+    </script>
+  </body>
+</html>

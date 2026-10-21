@@ -1,0 +1,6 @@
+{
+  "description": "gateway ensure answers after 1.5 s; the daemon itself takes 0.5 s to listen.",
+  "version": "0.20.0",
+  "ensure": { "delayMs": 1500 },
+  "startupDelayMs": 500
+}

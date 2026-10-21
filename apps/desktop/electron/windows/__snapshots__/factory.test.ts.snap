@@ -1,0 +1,251 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`window factory > hidden (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "document-user-activation-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > hidden (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "document-user-activation-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > hud (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": true,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > hud (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > instance (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": true,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": true,
+}
+`;
+
+exports[`window factory > instance (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": true,
+}
+`;
+
+exports[`window factory > main (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": true,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": true,
+}
+`;
+
+exports[`window factory > main (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": true,
+}
+`;
+
+exports[`window factory > quick (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": true,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > quick (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": false,
+}
+`;
+
+exports[`window factory > secondary (dev) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": true,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": true,
+}
+`;
+
+exports[`window factory > secondary (packaged) preferences 1`] = `
+{
+  "allowRunningInsecureContent": false,
+  "autoplayPolicy": "no-user-gesture-required",
+  "contextIsolation": true,
+  "devTools": false,
+  "enableWebSQL": false,
+  "focusOnNavigation": false,
+  "navigateOnDragDrop": false,
+  "nodeIntegration": false,
+  "nodeIntegrationInSubFrames": false,
+  "nodeIntegrationInWorker": false,
+  "preload": "/app/preload.cjs",
+  "safeDialogs": true,
+  "sandbox": true,
+  "spellcheck": false,
+  "webSecurity": true,
+  "webviewTag": true,
+}
+`;

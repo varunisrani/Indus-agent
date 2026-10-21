@@ -1,0 +1,16 @@
+{
+  "description": "REST failures: a 503 twice then 200, a slow route, and a 401-only route.",
+  "version": "0.20.0",
+  "rest": {
+    "routes": {
+      "GET /api/sessions": {
+        "status": 200,
+        "body": { "sessions": [] },
+        "failTimes": 2,
+        "failStatus": 503
+      },
+      "GET /api/slow": { "status": 200, "body": {}, "delayMs": 2000 },
+      "GET /api/forbidden": { "status": 403, "body": { "detail": "forbidden" } }
+    }
+  }
+}

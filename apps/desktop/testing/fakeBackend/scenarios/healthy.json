@@ -1,0 +1,17 @@
+{
+  "description": "Everything works: version probe, ensure, tickets, WS JSON-RPC and REST.",
+  "version": "0.20.0",
+  "rpc": {
+    "readyOnConnect": true,
+    "methods": {
+      "session.create": { "result": { "session_id": "s-fake-1" } },
+      "session.list": { "result": { "sessions": [] } }
+    }
+  },
+  "rest": {
+    "routes": {
+      "GET /api/sessions": { "status": 200, "body": { "sessions": [] } },
+      "GET /api/config": { "status": 200, "body": { "model": { "default": "fake-model" } } }
+    }
+  }
+}

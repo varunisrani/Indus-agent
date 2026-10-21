@@ -1,0 +1,5 @@
+{
+  "description": "`indus --version` answers only after 10 s: the resolver's 5 s probe timeout must skip it.",
+  "version": "0.20.0",
+  "versionDelayMs": 10000
+}

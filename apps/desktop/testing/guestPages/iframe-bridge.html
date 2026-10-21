@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- Hostile content in a sandboxed iframe without allow-popups (R08.8): it
+     tries window.open with no gesture, the top window's bridge, and navigating the top window.
+     Expected: no window, no bridge (frames get no preload), top stays put. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>guest: sandboxed iframe</title>
+  </head>
+  <body>
+    <iframe
+      id="frame"
+      title="hostile frame"
+      sandbox="allow-scripts"
+      srcdoc="<script>
+        const r = {};
+        try { r.open = window.open('https://example.invalid/from-iframe') === null ? 'null' : 'window'; } catch { r.open = 'threw'; }
+        try { r.bridge = typeof window.top.indusDesktop; } catch { r.bridge = 'blocked'; }
+        try { r.ownBridge = typeof window.indusDesktop; } catch { r.ownBridge = 'blocked'; }
+        try { window.top.location = 'https://example.invalid/top'; r.top = 'assigned'; } catch { r.top = 'blocked'; }
+        parent.postMessage(r, '*');
+      </script>"
+    ></iframe>
+    <script>
+      window.__results = {};
+      window.addEventListener("message", (event) => {
+        window.__results.frame = event.data;
+        window.__results.done = true;
+      });
+    </script>
+  </body>
+</html>

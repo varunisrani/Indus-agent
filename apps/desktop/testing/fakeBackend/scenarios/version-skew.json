@@ -1,0 +1,5 @@
+{
+  "description": "The first daemon reports an older code version; ensure restarts it once and the next one matches.",
+  "version": "0.20.0",
+  "daemonVersions": ["0.19.0", "0.20.0"]
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Hostile guest: clicks its own target=_blank links from script (untrusted events) and submits a
+     form to a new window. Expected: nothing opens; the page stays where it is. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>guest: synthetic click</title>
+  </head>
+  <body>
+    <a id="blank" href="https://example.invalid/blank" target="_blank">blank</a>
+    <a id="dispatch" href="https://example.invalid/dispatch" target="_blank">dispatch</a>
+    <form id="form" action="https://example.invalid/form" method="post" target="_blank"></form>
+    <script>
+      window.__results = {};
+      document.getElementById("blank").click();
+      document.getElementById("dispatch").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+      try {
+        document.getElementById("form").submit();
+      } catch {
+        window.__results.formThrew = true;
+      }
+      setTimeout(() => {
+        window.__results.href = location.href;
+        window.__results.done = true;
+      }, 50);
+    </script>
+  </body>
+</html>
