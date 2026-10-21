@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 84,
-  "remaining_pct": 16,
+  "usage_pct": 88,
+  "remaining_pct": 12,
   "resets_at": "2026-10-21T13:10:00+00:00",
-  "last_check": "2026-10-21T09:52:00+00:00",
+  "last_check": "2026-10-21T10:05:00+00:00",
   "current_step": "P20 complete (52deb8b); P23 integrator (verify19); P24 W1 S1 building; w37 parked",
   "last_commit": "52deb8b",
   "updated_at": "2026-10-21T06:05:00Z"
