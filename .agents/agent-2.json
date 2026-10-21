@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "ACTIVE",
-  "usage_pct": 81,
-  "remaining_pct": 19,
+  "state": "PAUSED",
+  "usage_pct": 83,
+  "remaining_pct": 17,
   "resets_at": "2026-10-21T04:20:00+00:00",
-  "last_check": "2026-10-21T03:27:00+00:00",
-  "current_step": "P18 complete 71389d4; w34 m/r/c parked; P20 integrator (int-p20a) running; no new agents from 75%",
-  "last_commit": "62a2df8"
+  "last_check": "2026-10-21T03:45:00+00:00",
+  "current_step": "Handed the turn to Agent 1 (owner request); P20-08..24 parked as .agents/wip/w34/w34-int-wip.patch",
+  "last_commit": "71389d4"
 }

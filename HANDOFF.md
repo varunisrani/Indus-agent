@@ -13,18 +13,19 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 1** | At: 2026-10-20 16:25 UTC | Branch: `main` (pushed to origin)
-- Why now: Agent 1 at 86% of its window (resets 18:00 UTC); owner asked to hand over when usage is full. Nothing is
-  running (no builders, no integrators, no gate); every finished slice is parked as a patch in `.agents/wip/`.
-- Last verified code commit: `d1b05df` (P17-23..27, P17 COMPLETE: `pytest -m "not perf"` 14591 passed / 79 skipped;
-  `-m perf` alone 11 passed; pyright 0; lint-imports kept; codegen --check clean; tooling.checks --require-ref ok;
-  pnpm 944 passed; pnpm -r typecheck clean).
-- Agent 1's code landings this turn (since 2026-10-19 10:19): P13 wave 2, P14, P15, P16-01..24/26..32, P17 (all),
-  P21, P22 — see "Last landings" below.
+- By: **Agent 2** | At: 2026-10-21 03:45 UTC | Branch: `main` (pushed to origin)
+- Why now: the owner asked to hand the turn to Agent 1 (Agent 2 at 83%, resets 04:20 UTC). Nothing is running: no
+  builders, no integrators, no gate. The one unfinished integration (P20 wave 34) is saved as a patch in `.agents/wip/w34/`.
+- Last fully verified code commit: `71389d4` (P18 complete; integrator full run 15684 passed / 0 failed; rebased tree:
+  targeted 1280 passed, vitest 1485 passed, pyright 0, lint-imports kept, tooling.checks ok). Earlier combined-main full
+  gates this turn: `768118a` 15646 passed / 0 failed; `59c12c4` 15652 / 0; `385c32a` 15696 / 0.
+- Agent 2's code landings this turn (since 2026-10-20 16:27): P16 complete, P18 complete, P19 complete (+ D-16.602 daemon
+  side), P20-01..07, P18/P19 follow-ups, load-failure root-cause fixes (drive hold, clock quiesce, backstop reap) — see
+  "Last landings" below.
 
 ## Usage at last stop
-📊 Agent 1 usage: 86% used, 14% left (reading 16:14 UTC) — resets 18:00 UTC — PAUSED (handed off)
-📊 Agent 2 usage: last recorded 2026-10-19 (78%, long since reset) — expected fresh — READY
+📊 Agent 2 usage: 83% used, 17% left (reading 03:40 UTC) — resets 04:20 UTC — PAUSED (handed off)
+📊 Agent 1 usage: last recorded 2026-10-20 16:14 (86%, long since reset) — expected fresh — READY
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
@@ -33,6 +34,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 | 2 | Agent 2 → Agent 1 | 2026-10-18 17:45 | P02-08..23 (P02 done), P04 (done, D-04.1: asyncio kept), P05-01..07, 22..24 | Agent 2 at 71%; next wave would end near 90%; Agent 1 fresh |
 | 3 | Agent 2 → Agent 1 | 2026-10-19 10:15 | P10-19/20 (P10 done), P12 all (Demo 2), P13-01..04, 13..17, 20, 24; CI gate without extras | Agent 2 at 78%; wave boundary; Agent 1 fresh |
 | 4 | Agent 1 → Agent 2 | 2026-10-20 16:25 | P13 wave 2, P14, P15 (Demo 3), P16 31/36, P17 (M5), P21, P22; parked P16-25/33..36, P18-01..10/17..22, P19-01..07 | Agent 1 at 86%; owner asked to hand over; nothing in flight |
+| 5 | Agent 2 → Agent 1 | 2026-10-21 03:45 | P16 (36/36), P18 (30/30, M6 web demo), P19 (18/18, attached ACP on a real daemon), P20-01..07; load-failure root causes; P20-08..24 integrated but unverified (wip patch) | Owner asked to hand over; Agent 2 at 83% |
 
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
@@ -41,10 +43,12 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 - [x] Stage 3 — plan: inventory (495 features, 251 P0/P1), what-we-change (D-16.1..92),
   naming, architecture, roadmap, build plan, layout file, 26 phase files with 648 tasks
   (`docs/plan/phases/README.md` has the index and totals) — by Agent 1
-- [~] Stage 4 — build: P00–P12 done; P13 wave 1 done (`78fdc96`); next P13 wave 2, then P14
+- [~] Stage 4 — build: P00–P19, P21, P22 done (521/648); P20 7/40 landed + 17 integrated in .agents/wip/w34; next P20 rest, P23, P24, P25
 
 ## Files changed (uncommitted or parked)
-Nothing parked in `.agents/wip/`; nothing uncommitted.
+`.agents/wip/w34/`: w34-int-wip.patch (the integrated P20-08..24 tree, base 3ba165d — land this, not the three slice patches),
+landing-p20a.md (integrator's notes), licences-w34.txt (158 new npm packages, all allowed), and the three slice patches +
+README for reference. Nothing uncommitted on main.
 
 ## Commands
 - Install: `uv sync` (uv 0.11, Python 3.13 from `.python-version`)
@@ -72,18 +76,35 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `eab425c` (P16 aa696ad; P18-01..22 077ef96 + 9786b32; P19 complete 3ade87c + eab425c; drive fix 155ef32).
-Done: P00–P19, P21, P22 complete; P20 7/40. 521/648 tasks landed (the old "476" was a miscount: the
-phase table summed to 461 before P18). Nothing parked.
-In flight: P20 integrator (scratchpad int-p20a) merging .agents/wip/w34 (M = P20-08..14, R = 15..18, C = 19..24; README
-there has every merge step). If it is not landed when you take the turn: its tree is in int-p20a (or $S/int-p20a-wip.patch). Combined main `768118a` full gate green (15646 passed / 87 skipped / 0 failed; perf 11/1).
-Test follow-ups: all four load failures root-caused and fixed (D-04.1 backstop now reaps the killed tree; ticker, matrix,
-msgraph waits quiesce) — see docs/notes/testing/load-failures-wave32.md. Remaining: the backends conftest `drive` cannot
-hold (a command's output reader is an awaited pool call for its whole life); `turn.drive` can still move the clock
-between steps of a long on-loop chain on a starved machine.
-Owed product follow-ups: MCP-only approval (register mcp serve as a viewer); the SPA's backup download should mint a
-ticket (backend route landed); prompt-size does not measure MCP/plugin tools or the external memory provider.
-Then: P18-23..30 (pages, chat host, login, build/serve, e2e M6), P20, P23, P24, P25. Brief to copy from: `.agents/wip/w29/brief.md`.
+Turn: AGENT_1 (handed over by Agent 2 at 03:45 UTC 2026-10-21, owner request). Main `71389d4`+status commits.
+Done: P00–P19, P21, P22 complete; P20 7/40 (P20-01..07 `86f44f7`). 521/648 tasks landed (80%).
+1. **Land P20-08..24 (wave 34)** from `.agents/wip/w34/w34-int-wip.patch` (base 3ba165d; `git apply --3way` on main, it
+   carries the re-locked pnpm-lock.yaml with 158 new packages — `pnpm install --frozen-lockfile` must pass; licence table in
+   licences-w34.txt, all allowed). Read `.agents/wip/w34/landing-p20a.md` first. Verified by the integrator: ruff, pyright 0,
+   lint-imports, codegen, tooling.checks ok; pnpm lint / fmt / typecheck, check-ipc, gen-bridge-types, dump-slash-catalog
+   ok; root vitest 1819 passed / 0 failed; wired Electron test (fake backend + REAL daemon: boot, connect, prompt, streamed
+   reply, approval card) passes. NOT verified: the Python full suite (stopped at ~12% on the hand-back; one `F` had already
+   printed, name unknown — this wave touches no Python, so rerun and root-cause whatever it is) and perf. Then commit
+   ("[Agent 1] P20-08..24 …"), push, prune w34. Env: Electron's install.js fails behind the proxy — unzip
+   $ELECTRON_CACHE/electron-v44.5.1-linux-x64.zip into node_modules/electron/dist + path.txt; use an ABSOLUTE short TMPDIR.
+2. **Owner decisions owed:** D-16.690 installer release base (M guessed github.com/indusagi/indus-agent; repo is
+   varunisrani/Indus-agent); D-16.691 remote desktop chat — Electron 44 ignores a rewritten Sec-WebSocket-Protocol, so the
+   token swap does not work (P20-11 partial); recommendation: the serve mints single-use tickets for token-mode clients and
+   main mints one per dial. Also: Playwright pinned 1.56.1 (drives the preinstalled Chromium 1194), not 1.63.0; the
+   `web-e2e` CI job has never run in CI; stray paths at the FILESYSTEM ROOT written by Agent 2's builders (a prompt bug,
+   now fixed) need removing by hand (a safety check blocks agents): /fix-m2-home, /w30-a2-home, /w30-r3-home, /w31-d1-home,
+   /w32-p1-home, /w32-p2-home, /w32-t1-home, /uv-cache (125 MB), /pnpm-store (110 MB), /x, /backends_conftest.orig,
+   /dbg_msgraph.py.
+3. **Then P20-25..40** (sidebar + projects, profile rail, pane shell, preview / files / git / terminal panes, settings,
+   provider onboarding, deep links + media scheme, HUD / quick entry, tray, updates, packaging, diagnostics, Electron E2E +
+   Demo 4), then P23, P24, P25. Builder brief to copy: the wave-34 brief is summarised in `.agents/wip/w34/README.md`;
+   contract notes in docs/notes/P20/*.md (preload-bridge.md: 76-channel IPC table, owner task per row).
+Follow-ups (small): P20 integrator's list in landing-p20a.md (similarity guard scans gitignored build output; electron /
+zod / @electron/fuses pin rows missing in 00-layout §4; boot.get note vs code; queued inputs' user row; slash output
+placement); SPA backup download should mint a ticket (backend route landed); MCP-only approval (mcp serve as a viewer);
+prompt-size does not measure MCP/plugin tools; backends conftest `drive` cannot hold the clock (documented).
+ENV RULE for every builder prompt: set `export S=…` and `export HOME=$S/… …` as TWO statements — one statement leaves $S
+empty and writes at `/` (that is how the stray root paths happened). Integrator contract and briefs are fixed accordingly.
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
 (--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**'), scan (credential regexes, /root or ~
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator

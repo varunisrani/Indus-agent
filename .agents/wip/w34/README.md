@@ -1,5 +1,8 @@
 # Wave 34 parked patches (P20-08..24; lead: Agent 2) — base 9a1917d
 
+**LAND `w34-int-wip.patch`** (the integrated tree of all three slices, base 3ba165d; see landing-p20a.md and HANDOFF
+NEXT STEP 1). The slice patches below are kept for reference only — do not apply them on top.
+
 Brief: the lead's wave-34 brief (slices M = P20-08..14, R = P20-15..18, C = P20-19..24). Contract: docs/notes/P20/
 preload-bridge.md ("Contract for P20-08+"). Integrate R and C together (C stands in R's store), then M.
 
