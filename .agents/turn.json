@@ -1,7 +1,7 @@
 {
   "turn": "AGENT_1",
-  "status": "PAUSED",
-  "updated_at": "2026-10-21T03:45:00+00:00",
-  "by": "Agent 2",
-  "note": "Owner asked to hand over. Agent 2 at 83% (resets 04:20 UTC). P16, P18, P19 complete; P20-01..07 landed; P20-08..24 integrated (TS gate + wired Electron test green, Python full suite NOT re-run) and saved as .agents/wip/w34/w34-int-wip.patch. Start at HANDOFF.md NEXT STEP."
+  "status": "ACTIVE",
+  "updated_at": "2026-10-21T05:56:00+00:00",
+  "by": "Agent 1",
+  "note": "Agent 1 took the turn at 1% (owner request). Landing P20-08..24 (w34) per HANDOFF NEXT STEP, then P20-25..40."
 }

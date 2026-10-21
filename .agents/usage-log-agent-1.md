@@ -123,3 +123,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-20 16:14 UTC | 86% | 14% | 18:00 UTC | P17 landed (d1b05df); nothing running; waiting for reset (18:04 step scheduled)
 2026-10-20 16:25 UTC | 86% | 14% | 18:00 UTC | handed the turn to Agent 2 (owner request); nothing in flight
 2026-10-20 18:06 UTC | 1% | 99% | 23:00 UTC | window reset; Agent 2 holds the turn and is working; Agent 1 READY
+2026-10-21 05:56 UTC | 1% | 99% | ~08:10 UTC | took the turn from Agent 2 (owner request); landing P20-08..24
