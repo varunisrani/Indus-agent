@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 
 from indus.gateway.adapters.base import Adapter
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, quiesce
 from tests.fakes.platform.core import FakeChatPlatform
 
 CLOCK_START = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
@@ -71,7 +71,7 @@ async def settle[T](env: CaseEnv, awaitable: Awaitable[T], *, step: float = 0.5)
     """Await ``awaitable`` while moving the fake clock past any sleeps it takes."""
     task = asyncio.ensure_future(awaitable)
     for _ in range(2000):
-        await env.clock.run_until_idle()
+        await quiesce(env.clock)  # never move the clock under an awaited off-loop call
         if task.done():
             return task.result()
         env.clock.advance(step)

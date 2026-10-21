@@ -8,6 +8,13 @@ tasks for one loop iteration.
 Threads: ``advance()`` may be called from any thread. ``sleep_sync()`` blocks the calling thread
 until another thread advances the clock, so it refuses to run until ``allow_threaded_advance()``
 has been called; on a single thread it would block forever.
+
+Driving loops: a test helper that moves the clock "whenever the work waits" must not move it while
+the work only looks idle because it awaits a call running on another thread (a blocking-pool
+call, work under ``awaiting_off_loop``): every deadline on the clock would race that real work.
+``may_advance(clock)`` says whether such a call is in flight; ``hold_for_off_loop(clock)`` waits
+(real time) until none is and lets the loop run what that made ready; ``quiesce(clock)`` also
+runs every ready callback first, so the clock moves only once every task is parked.
 """
 
 from __future__ import annotations
@@ -19,9 +26,14 @@ import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from indus.foundation.blocking import awaited_calls
+
 # A blocked ``sleep_sync`` gives up after this much real time so a broken test fails instead of
 # hanging the run.
 SYNC_SLEEP_SAFETY_SECONDS = 30.0
+# Real seconds one uninterrupted hold of ``hold_for_off_loop`` may last before a stuck call fails.
+HOLD_LIMIT_S = 30.0
+HOLD_POLL_S = 0.0005
 
 
 async def checkpoint() -> None:
@@ -183,6 +195,52 @@ class FakeClock:
         released = self.advance(seconds)
         await self.run_until_idle()
         return released
+
+
+def may_advance(clock: FakeClock) -> bool:
+    """False while an off-loop call some caller still awaits is in flight
+    (``indus.foundation.blocking.awaited_calls``) beyond the threads parked in
+    ``clock.sleep_sync`` (those wait on the clock itself and must still see it move)."""
+    return awaited_calls() <= clock.sync_sleepers
+
+
+async def hold_for_off_loop(clock: FakeClock, *, limit: float = HOLD_LIMIT_S) -> None:
+    """Return at once when ``may_advance(clock)``; otherwise wait in short real-time steps until
+    it holds, then let the loop run what the returning calls made ready, so their callers reach
+    their next wait before the clock moves. Raises ``AssertionError`` after ``limit`` real
+    seconds of holding (a stuck call fails the test instead of hanging it)."""
+    if may_advance(clock):
+        return
+    loop = asyncio.get_running_loop()
+    end = loop.time() + limit
+    while True:
+        pause = loop.create_future()
+        await asyncio.wait({pause}, timeout=HOLD_POLL_S)
+        pause.cancel()
+        await _drain_ready(loop)
+        if may_advance(clock):
+            return
+        if loop.time() > end:
+            raise AssertionError(
+                f"{awaited_calls()} off-loop call(s) kept the fake clock still for over "
+                f"{limit:g} real seconds"
+            )
+
+
+async def quiesce(clock: FakeClock, *, limit: float = HOLD_LIMIT_S) -> None:
+    """Run every ready callback, then ``hold_for_off_loop``: afterwards every task is parked on
+    something other than the loop or an awaited off-loop call (usually the clock)."""
+    await clock.run_until_idle()
+    await hold_for_off_loop(clock, limit=limit)
+
+
+async def _drain_ready(loop: asyncio.AbstractEventLoop, rounds: int = 10_000) -> None:
+    """Give way until no callback is ready (at most ``rounds`` iterations; never raises)."""
+    ready = getattr(loop, "_ready", None)
+    for _ in range(rounds):
+        await checkpoint()
+        if ready is None or len(ready) == 0:
+            return
 
 
 def _resolve(future: asyncio.Future[None]) -> None:

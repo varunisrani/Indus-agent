@@ -8,8 +8,12 @@ real time, a few seconds per test."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
 import shutil
+import signal
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -30,6 +34,9 @@ pytestmark = pytest.mark.skipif(
 
 TIMEOUT = 1
 MAX_LOOP_GAP_S = 0.25
+# How late a TERM/KILL takes effect in the slow-scheduler test (a loaded machine runs a woken,
+# killed child only when it gets a CPU).
+LATE_SIGNAL_S = 0.3
 
 
 async def _approve(request: GateRequest) -> GateVerdict:
@@ -133,3 +140,29 @@ def test_tool_answers_through_the_backstop_when_the_wait_is_wedged(
     assert TIMEOUT + 2 <= elapsed < TIMEOUT + 2 + 1
     assert gap < MAX_LOOP_GAP_S
     assert _gone(int(pid_file.read_text()))
+
+
+def test_backstop_answers_only_once_the_killed_child_is_gone(
+    scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A SIGKILL acts when the child next runs, which a loaded scheduler can delay: the backstop's
+    answer waits (bounded) for the tree to be gone. Every TERM/KILL here takes effect
+    ``LATE_SIGNAL_S`` after it is sent; the answer must still come with the child gone."""
+    real_kill, real_killpg = os.kill, os.killpg
+
+    def late(send: Callable[[int, int], None]) -> Callable[[int, int], None]:
+        def deliver(pid: int, sig: int) -> None:
+            def fire() -> None:
+                with contextlib.suppress(OSError):  # already gone
+                    send(pid, sig)
+
+            if sig in (signal.SIGTERM, signal.SIGKILL):
+                threading.Timer(LATE_SIGNAL_S, fire).start()
+            else:
+                send(pid, sig)
+
+        return deliver
+
+    monkeypatch.setattr(os, "kill", late(real_kill))
+    monkeypatch.setattr(os, "killpg", late(real_killpg))
+    test_tool_answers_through_the_backstop_when_the_wait_is_wedged(scope, tmp_path, monkeypatch)

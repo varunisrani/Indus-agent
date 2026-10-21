@@ -26,7 +26,7 @@ from indus.mcp.connect import (  # pyright: ignore[reportPrivateUsage]
     LiveSession,
     _note_raw_hints,
 )
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, hold_for_off_loop
 
 UNSET: Any = object()
 
@@ -192,6 +192,7 @@ async def run_for(clock: FakeClock, seconds: float, step: float = 1.0) -> None:
     await clock.run_until_idle()
     moved = 0.0
     while moved < seconds:
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
         await clock.advance_and_settle(step)
         moved += step
 
@@ -204,6 +205,9 @@ async def drive[T](
     await clock.run_until_idle()
     moved = 0.0
     while not task.done() and moved < limit:
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
+        if task.done():
+            break
         await clock.advance_and_settle(step)
         moved += step
     return await task

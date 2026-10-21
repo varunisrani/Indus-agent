@@ -18,7 +18,7 @@ from indus.mcp.lifecycle import RetryPolicy
 from indus.mcp.reload import ConfigWatcher, ToolSurfaceChanged, reconcile, reload_mcp
 from indus.tools.definitions import definitions
 from indus.tools.registry import ToolRegistry
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, hold_for_off_loop
 from tests.fakes.mcp.scripted import FakeFleet, FakeServer, drive, run_for, tool
 from tests.fakes.terminal import terminal_scope
 
@@ -55,6 +55,7 @@ async def pump(clock: FakeClock, done: Callable[[], bool], steps: int = 80) -> N
     for _ in range(steps):
         if done():
             return
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
         await clock.advance_and_settle(0.5)
         idle = loop.create_future()
         await asyncio.wait({idle}, timeout=0.01)

@@ -38,9 +38,11 @@ from indus.backends.contract import (
 )
 from indus.backends.sudo import SudoRun, SudoSupport
 from indus.backends.wait import (
+    BACKSTOP_REAP_S,
     EXITING_NOTE,
     FOREGROUND,
     INTERRUPTED_RC,
+    REAP_POLL_S,
     TERMINAL_POOL,
     ProcessHandle,
     run_bounded,
@@ -135,6 +137,13 @@ class SpawnedEnvironment(ABC):
     @abstractmethod
     def _force_kill(self, handle: ProcessHandle) -> None:
         """Stop the process tree now, without waiting (hard exit, backstop)."""
+
+    async def _await_killed(self, handle: ProcessHandle, within: float) -> None:
+        """After ``_force_kill``: wait (at most ``within``) until the process has exited. SIGKILL
+        takes effect only when the target next runs, which on a loaded machine is not at once."""
+        until = self.clock.monotonic() + within
+        while handle.poll() is None and self.clock.monotonic() < until:
+            await self.clock.sleep(REAP_POLL_S)
 
     def _excluded_names(self) -> Iterable[str]:
         """Extra variable names that must never be frozen into the snapshot."""
@@ -311,8 +320,17 @@ class SpawnedEnvironment(ABC):
             for handle in spawned:
                 self._force_kill(handle)
 
+        async def reap() -> None:
+            for handle in spawned:
+                await self._await_killed(handle, BACKSTOP_REAP_S)
+
         return await run_bounded(
-            spawn_and_wait, timeout=timeout, clock=self.clock, on_expiry=expire, capture=capture
+            spawn_and_wait,
+            timeout=timeout,
+            clock=self.clock,
+            on_expiry=expire,
+            capture=capture,
+            reap=reap,
         )
 
     def _take_cwd(self, result: ExecResult, *, adopt: bool = True) -> ExecResult:

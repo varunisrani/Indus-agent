@@ -33,7 +33,7 @@ from indus.gateway.adapters.weixin.api import ROUTES as CLIENT_ROUTES
 from indus.gateway.config import AdapterConfig, PlatformSettings
 from indus.gateway.core.events import Attachment, InboundEvent, MessageKind
 from indus.gateway.core.send import ErrorKind, SendResult
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, hold_for_off_loop, quiesce
 from tests.fakes.platform.weixin_wire import BOT_ACCOUNT, BOT_NAME, ROUTES, WeixinWire, fake_token
 
 ANA = "wxid_ana01"
@@ -62,7 +62,7 @@ async def drive[T](clock: FakeClock, awaitable: Awaitable[T]) -> T:
     task = asyncio.ensure_future(awaitable)
     for _ in range(2000):
         await asyncio.to_thread(threading.Event().wait, 0.001)
-        await clock.run_until_idle()
+        await quiesce(clock)  # never move the clock under an awaited off-loop call
         if task.done():
             return task.result()
         clock.advance(0.5)
@@ -73,6 +73,7 @@ async def drive[T](clock: FakeClock, awaitable: Awaitable[T]) -> T:
 async def settle(clock: FakeClock, rounds: int = 6, step: float = 1.0) -> None:
     for _ in range(rounds):
         await asyncio.to_thread(threading.Event().wait, 0.005)  # the io pool's file work
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
         await clock.advance_and_settle(step)
 
 

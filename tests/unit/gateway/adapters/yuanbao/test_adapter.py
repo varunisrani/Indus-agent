@@ -39,7 +39,7 @@ from indus.gateway.adapters.yuanbao.stickers import find_sticker
 from indus.gateway.config import AdapterConfig, PlatformSettings
 from indus.gateway.core.events import Attachment, InboundEvent, MessageKind
 from indus.gateway.core.send import ErrorKind
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, hold_for_off_loop
 from tests.fakes.platform.core import FailureKind, FakeChatPlatform
 from tests.fakes.platform.yuanbao_wire import (
     API_HOST,
@@ -72,6 +72,7 @@ async def drive[T](clock: FakeClock, awaitable: Awaitable[T], *, step: float = 0
     for _ in range(4000):
         await clock.run_until_idle()
         await asyncio.wait({task}, timeout=0.002)
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
         if task.done():
             return task.result()
         clock.advance(step)
@@ -91,6 +92,7 @@ async def until(
     while not test():
         if clock.monotonic() - start > limit:
             raise AssertionError("condition never held on the fake clock")
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
         await clock.advance_and_settle(step)
 
 

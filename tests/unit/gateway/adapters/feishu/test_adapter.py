@@ -31,7 +31,7 @@ from indus.gateway.core.send import ErrorKind
 from indus.gateway.core.session_keys import build_session_key
 from indus.gateway.delivery import send_command
 from indus.gateway.registry import PlatformEntry, PlatformRegistry
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, quiesce
 from tests.fakes.platform.core import FailureKind
 from tests.fakes.platform.feishu_wire import (
     BOT_OPEN_ID,
@@ -63,7 +63,7 @@ def _clock() -> FakeClock:
 async def drive[T](clock: FakeClock, awaitable: Awaitable[T], *, step: float = 0.5) -> T:
     task = asyncio.ensure_future(awaitable)
     for _ in range(4000):
-        await clock.run_until_idle()
+        await quiesce(clock)  # never move the clock under an awaited off-loop call
         if task.done():
             return task.result()
         clock.advance(step)

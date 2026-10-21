@@ -24,7 +24,7 @@ from indus.gateway.adapters.qqbot.upload import (
     file_hashes,
     parse_prepare,
 )
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, hold_for_off_loop
 from tests.fakes.platform.core import FakeChatPlatform
 from tests.fakes.platform.qqbot_wire import QQWire
 
@@ -39,6 +39,7 @@ async def drive[T](clock: FakeClock, awaitable: Awaitable[T], *, step: float = 0
         await clock.run_until_idle()
         # File reads and hashing run on a worker thread: give it real time before moving on.
         await asyncio.wait({task}, timeout=0.002)
+        await hold_for_off_loop(clock)  # and never move the clock while one is still awaited
         if task.done():
             return task.result()
         clock.advance(step)

@@ -34,7 +34,7 @@ from indus.cron.ticker import (
 from indus.foundation.clock import SystemClock
 from indus.foundation.scope import Scope
 from tests.fakes.agent import DictConfig, run_driven
-from tests.fakes.clock import FakeClock, checkpoint
+from tests.fakes.clock import FakeClock, checkpoint, quiesce
 from tests.unit.cron.world import World, make_world
 
 KEYS_OK = PreflightProbes(key=lambda *_: None)
@@ -419,8 +419,10 @@ def test_daemon_fires_an_every_30m_job_twice_in_an_hour(
         daemon = asyncio.ensure_future(ticker.run_daemon(stop))
         # An interval steps from the end of the last run (drift kept, P14-02), so the second
         # slot lands a little after the hour; the 60 s tick fires it within the next minute.
+        # The clock moves only once the daemon is parked: real time the loop spends between a
+        # wake and the next wait (or a cleanup thread's work) must not shift the ticks.
         while fake_clock.now() < start + timedelta(minutes=61, seconds=30):
-            await asyncio.wait({daemon}, timeout=0.0005)
+            await quiesce(fake_clock)
             fake_clock.advance(10)
         stop.set()
         await run_driven(_wrap(daemon), fake_clock, step=1.0)

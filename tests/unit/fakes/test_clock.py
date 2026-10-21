@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from tests.fakes.clock import FakeClock, checkpoint
+from indus.foundation.blocking import BlockingPool, awaiting_off_loop
+from tests.fakes import clock as clock_module
+from tests.fakes.clock import FakeClock, checkpoint, hold_for_off_loop, may_advance, quiesce
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -130,3 +132,64 @@ def test_advance_from_foreign_thread_wakes_async_sleeper() -> None:
         await asyncio.wait_for(task, 5)
 
     asyncio.run(main())
+
+
+# -- holding the clock for off-loop work ---------------------------------------------------------
+
+
+def test_may_advance_is_false_while_an_awaited_call_runs() -> None:
+    clock = FakeClock(START)
+    assert may_advance(clock)
+    with awaiting_off_loop():
+        assert not may_advance(clock)
+    assert may_advance(clock)
+
+
+def test_a_thread_parked_on_the_clock_does_not_hold_it() -> None:
+    clock = FakeClock(START)
+    clock.allow_threaded_advance()
+    with awaiting_off_loop():
+        thread = threading.Thread(target=clock.sleep_sync, args=(5,))
+        thread.start()
+        assert clock.wait_for_sleepers(1)
+        assert may_advance(clock)  # the awaited work waits on the clock itself
+        clock.advance(5)
+        thread.join(5)
+
+
+def test_hold_waits_for_the_call_and_its_caller_to_park_again() -> None:
+    clock = FakeClock(START)
+    pool = BlockingPool("clock-hold", 1)
+    order: list[str] = []
+
+    async def caller() -> None:
+        await pool.run(threading.Event().wait, 0.2)  # real work on the worker
+        order.append("back")
+        await clock.sleep(60)  # the caller's next wait, on the clock
+
+    async def main() -> None:
+        task = asyncio.ensure_future(caller())
+        await checkpoint()
+        await quiesce(clock)
+        order.append("held until here")
+        assert clock.pending == 1  # parked on its clock sleep before anyone moves the clock
+        clock.advance(60)
+        await task
+
+    try:
+        asyncio.run(main())
+    finally:
+        pool.shutdown()
+    assert order == ["back", "held until here"]
+
+
+def test_a_stuck_call_fails_the_hold(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = FakeClock(START)
+    monkeypatch.setattr(clock_module, "HOLD_POLL_S", 0.001)
+
+    async def main() -> None:
+        with awaiting_off_loop():
+            await hold_for_off_loop(clock, limit=0.05)
+
+    with pytest.raises(AssertionError, match="kept the fake clock still"):
+        asyncio.run(main())

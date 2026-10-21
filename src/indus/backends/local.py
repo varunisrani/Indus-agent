@@ -356,6 +356,16 @@ def force_kill_tree(proc: LocalProcess, tree: list[ProcInfo] | None = None) -> N
             proc.popen.kill()
 
 
+async def _await_group_gone(proc: LocalProcess, *, clock: Clock, within: float) -> None:
+    """After ``force_kill_tree``: wait (at most ``within``) until the leader has exited and no
+    member of its group still runs. SIGKILL takes effect only when the target next runs."""
+    until = clock.monotonic() + within
+    while (
+        proc.poll() is None or _group_alive(proc.pgid, proc.leader_start)
+    ) and clock.monotonic() < until:
+        await clock.sleep(KILL_POLL_S)
+
+
 # -- environment assembly -------------------------------------------------------------------------
 
 
@@ -614,6 +624,9 @@ class LocalEnvironment(SpawnedEnvironment):
 
     def _force_kill(self, handle: ProcessHandle) -> None:
         force_kill_tree(cast(LocalProcess, handle))
+
+    async def _await_killed(self, handle: ProcessHandle, within: float) -> None:
+        await _await_group_gone(cast(LocalProcess, handle), clock=self.clock, within=within)
 
     def _remove_files(self) -> None:
         snapshot = Path(self.snapshot_path)

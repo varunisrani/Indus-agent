@@ -9,7 +9,9 @@ command that itself exits 124 is not flagged); is an activity callback due (ever
 
 ``run_bounded`` is the hard backstop (R02.3): the spawn and the wait run as their own task, raced
 against ``timeout + 2 s`` on the clock. If the inner wait never returns, the process tree is
-force-killed and the result is rc 124 with whatever output was captured.
+force-killed, the answer waits (at most ``BACKSTOP_REAP_S``) until the killed tree has really
+exited (SIGKILL acts only once a loaded scheduler runs the target), and the result is rc 124 with
+whatever output was captured.
 
 ``FOREGROUND`` tracks every running foreground command in the process. ``fence_and_kill`` (hard
 exit) stops new spawns and force-kills every live tree within half a second.
@@ -31,6 +33,8 @@ from indus.foundation.clock import Clock
 
 __all__ = [
     "BACKSTOP_GRACE_S",
+    "BACKSTOP_REAP_S",
+    "REAP_POLL_S",
     "FOREGROUND",
     "TERMINAL_POOL",
     "ForegroundTable",
@@ -53,6 +57,10 @@ DEADLINE_KILL_BUDGET_S = 1.5
 DRAIN_GRACE_S = 2.0  # how long the output reader may lag behind the process exit
 STDIN_GRACE_S = 5.0
 HARD_KILL_BUDGET_S = 0.5
+# After the backstop's SIGKILL: how long the answer may wait for the tree to be gone, and how often
+# it looks.
+BACKSTOP_REAP_S = 0.5
+REAP_POLL_S = 0.05
 INTERRUPTED_RC = 130
 TIMED_OUT_RC = 124
 
@@ -259,11 +267,13 @@ async def run_bounded(
     clock: Clock,
     on_expiry: Callable[[], None],
     capture: OutputCapture,
+    reap: Callable[[], Awaitable[None]] | None = None,
 ) -> ExecResult:
     """Run ``work`` (spawn + wait) under the hard bound ``timeout + 2 s`` (R02.3).
 
-    ``on_expiry`` force-kills whatever ``work`` spawned; the result is then rc 124 with
-    ``timed_out=True`` and the output ``capture`` holds so far.
+    ``on_expiry`` force-kills whatever ``work`` spawned and ``reap`` (bounded by the caller) waits
+    until that has really exited; the result is then rc 124 with ``timed_out=True`` and the output
+    ``capture`` holds so far.
     """
     inner = asyncio.ensure_future(work())
     timer = asyncio.ensure_future(clock.sleep(timeout + BACKSTOP_GRACE_S))
@@ -282,6 +292,11 @@ async def run_bounded(
         on_expiry()
     except Exception:
         log.warning("backstop kill failed", exc_info=True)
+    if reap is not None:
+        try:
+            await reap()
+        except Exception:
+            log.warning("waiting for the killed process tree failed", exc_info=True)
     text = capture.render(suffix=timed_out_note(timeout))
     if capture.total_chars == 0:
         text = text.lstrip()

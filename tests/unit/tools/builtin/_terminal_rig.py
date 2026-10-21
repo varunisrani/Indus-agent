@@ -24,7 +24,7 @@ from indus.tools.builtin.terminal import (
     TerminalRuntime,
     TerminalTool,
 )
-from tests.fakes.clock import FakeClock, checkpoint
+from tests.fakes.clock import FakeClock, checkpoint, hold_for_off_loop
 from tests.fakes.terminal import FakeJob, Inbox, ScriptedEnv, terminal_scope
 
 
@@ -94,12 +94,17 @@ class Rig:
         text = await self.manage(args, scope=self.scope, session_id=conversation)
         return json.loads(text)
 
-    def run(self, work: Awaitable[Any]) -> Any:
-        return asyncio.run(_drive(self.clock, work))
+    def run(self, work: Awaitable[Any], *, hold: bool = True) -> Any:
+        return asyncio.run(_drive(self.clock, work, hold=hold))
 
 
-async def _drive(clock: FakeClock, work: Awaitable[Any], step: float = 0.5) -> Any:
-    """Run ``work``; whenever it is parked on the fake clock, move the clock on."""
+async def _drive(
+    clock: FakeClock, work: Awaitable[Any], step: float = 0.5, *, hold: bool = True
+) -> Any:
+    """Run ``work``; whenever it is parked on the fake clock, move the clock on. With ``hold``
+    the clock never moves while an awaited off-loop call (a guard on its pool, file work) is in
+    flight; a test that simulates a call stuck in real time past a clock deadline passes
+    ``hold=False``."""
     task = asyncio.ensure_future(work)
     for _ in range(100_000):
         for _ in range(20):
@@ -107,6 +112,8 @@ async def _drive(clock: FakeClock, work: Awaitable[Any], step: float = 0.5) -> A
         if task.done():
             return task.result()
         await asyncio.wait({task}, timeout=0.002)  # let worker threads hand results back
+        if hold:
+            await hold_for_off_loop(clock)
         if not task.done() and clock.pending:
             clock.advance(step)
     task.cancel()

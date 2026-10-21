@@ -255,7 +255,8 @@ def test_guard_deadline_overrun_refuses(tmp_path: Path) -> None:
 
     rig = Rig(tmp_path, guards=[stuck])
     try:
-        body = rig.run(rig.call(command="ls", timeout=5))
+        # The guard is stuck in real time: the clock must move past its deadline meanwhile.
+        body = rig.run(rig.call(command="ls", timeout=5), hold=False)
     finally:
         release.set()
     assert "did not finish within 30s" in body["error"] and "again" in body["error"]

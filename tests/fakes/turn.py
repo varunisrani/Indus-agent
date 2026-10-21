@@ -30,7 +30,7 @@ from indus.foundation.scope import Scope
 from indus.protocol.events import EventBase
 from indus.tools.definitions import definitions
 from indus.tools.registry import ToolRegistry
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, may_advance
 from tests.fakes.model import FakeModelServer, Script, Turn, fake_route
 from tests.fakes.tools import FakeBroker, FakeTools
 
@@ -155,8 +155,8 @@ async def drive(task: asyncio.Future[Any], clock: FakeClock, step: float = 1.0) 
         done, _ = await asyncio.wait({task}, timeout=0.0005)
         if done:
             return
-        in_flight = awaited_calls()
-        if in_flight > clock.sync_sleepers:
+        if not may_advance(clock):
+            in_flight = awaited_calls()
             now = loop.time()
             if held_since is None:
                 held_since = now

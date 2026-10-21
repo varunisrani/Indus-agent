@@ -240,6 +240,38 @@ def test_backstop_bounds_a_wait_that_never_returns(fake_clock: FakeClock) -> Non
     assert 5.0 <= fake_clock.monotonic() < 5.2  # timeout + 2 s
 
 
+def test_backstop_answers_after_the_killed_tree_is_reaped(fake_clock: FakeClock) -> None:
+    order: list[str] = []
+
+    async def wedged() -> ExecResult:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    async def reap() -> None:
+        order.append("reap")
+        await fake_clock.sleep(0.3)  # the killed child takes a while to be scheduled and die
+        order.append("gone")
+
+    async def go() -> ExecResult:
+        return await drive(
+            fake_clock,
+            run_bounded(
+                wedged,
+                timeout=3,
+                clock=fake_clock,
+                on_expiry=lambda: order.append("kill"),
+                capture=OutputCapture(None),
+                reap=reap,
+            ),
+            step=0.1,
+        )
+
+    result = asyncio.run(go())
+    assert result.returncode == 124 and result.timed_out
+    assert order == ["kill", "reap", "gone"]
+    assert 5.3 <= fake_clock.monotonic() < 5.5  # timeout + 2 s, then the reap
+
+
 def test_backstop_passes_a_normal_result_through(fake_clock: FakeClock) -> None:
     async def quick() -> ExecResult:
         return ExecResult(output="ok", returncode=0)

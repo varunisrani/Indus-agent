@@ -24,7 +24,7 @@ from indus.gateway.adapters.wecom.stream import MAX_FRAME_BYTES, SAFE_AGE_S, cut
 from indus.gateway.config import AdapterConfig, PlatformSettings
 from indus.gateway.core.events import InboundEvent, MessageKind
 from indus.gateway.core.send import ErrorKind
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, quiesce
 from tests.fakes.platform.core import FailureKind, FakeChatPlatform
 from tests.fakes.platform.wecom_wire import WeComWire
 
@@ -50,7 +50,7 @@ def _clock() -> FakeClock:
 async def drive[T](clock: FakeClock, awaitable: Awaitable[T], *, step: float = 0.5) -> T:
     task = asyncio.ensure_future(awaitable)
     for _ in range(4000):
-        await clock.run_until_idle()
+        await quiesce(clock)  # never move the clock under an awaited off-loop call
         if task.done():
             return task.result()
         clock.advance(step)

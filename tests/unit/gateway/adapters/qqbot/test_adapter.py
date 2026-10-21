@@ -35,7 +35,7 @@ from indus.gateway.adapters.qqbot.gateway import INTENTS, MAX_ATTEMPTS
 from indus.gateway.config import AdapterConfig, PlatformSettings
 from indus.gateway.core.events import Attachment, InboundEvent, MessageKind
 from indus.gateway.core.send import ErrorKind
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, hold_for_off_loop
 from tests.fakes.platform.core import FailureKind, FakeChatPlatform
 from tests.fakes.platform.qqbot_wire import GUILD, HEARTBEAT_MS, MEDIA_HOST, QQWire
 
@@ -63,6 +63,7 @@ async def drive[T](clock: FakeClock, awaitable: Awaitable[T], *, step: float = 0
         await clock.run_until_idle()
         # Uploads read and hash files on a worker thread: give it real time before moving on.
         await asyncio.wait({task}, timeout=0.002)
+        await hold_for_off_loop(clock)  # and never move the clock while one is still awaited
         if task.done():
             return task.result()
         clock.advance(step)
@@ -80,6 +81,7 @@ async def until(clock: FakeClock, test: Callable[[], bool], limit: float = 600.0
     while not test():
         if clock.monotonic() - start > limit:
             raise AssertionError("condition never held on the fake clock")
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
         await clock.advance_and_settle(0.5)
 
 

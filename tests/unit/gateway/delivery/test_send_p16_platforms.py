@@ -22,7 +22,7 @@ from indus.gateway.config import PlatformSettings, load_gateway_settings
 from indus.gateway.core.send import SendResult
 from indus.gateway.delivery import send_command
 from indus.gateway.registry import PlatformRegistry
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, hold_for_off_loop
 from tests.fakes.platform.core import FakeChatPlatform
 
 
@@ -31,6 +31,7 @@ async def _drive[T](clock: FakeClock, awaitable: Awaitable[T]) -> T:
     for _ in range(2000):
         await clock.run_until_idle()
         await asyncio.wait({task}, timeout=0.001)
+        await hold_for_off_loop(clock)  # never move the clock under an awaited off-loop call
         if task.done():
             return task.result()
         clock.advance(0.5)

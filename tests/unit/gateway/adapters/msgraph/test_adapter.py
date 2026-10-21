@@ -31,7 +31,7 @@ from indus.gateway.adapters.msgraph.subscriptions import SubscriptionSpec, parse
 from indus.gateway.config import AdapterConfig, PlatformSettings
 from indus.gateway.core.events import InboundEvent
 from indus.gateway.core.send import SendResult
-from tests.fakes.clock import FakeClock
+from tests.fakes.clock import FakeClock, quiesce
 from tests.fakes.platform.msgraph_wire import (
     APP,
     PATH,
@@ -61,6 +61,9 @@ def run(coro: Awaitable[Any]) -> Any:
 
 
 async def until(check: Callable[[], object], clock: FakeClock, seconds: float = 5.0) -> None:
+    """Wait until ``check()`` holds, then until every task is parked again: a side effect (the
+    store file) can show before the task that caused it has reached its next clock wait, and a
+    test that moves the clock in that gap moves it under that task's feet."""
     loop = asyncio.get_running_loop()
     end = loop.time() + seconds
     while not check():
@@ -71,6 +74,7 @@ async def until(check: Callable[[], object], clock: FakeClock, seconds: float = 
         idle = loop.create_future()
         await asyncio.wait({idle}, timeout=0.002)
         idle.cancel()
+    await quiesce(clock)
 
 
 class Rig:

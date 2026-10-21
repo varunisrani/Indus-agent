@@ -10,7 +10,7 @@ from indus.gateway.delivery.ledger import DeliveryLedger
 from indus.gateway.outbound.sender import OutboundSender
 from indus.state.delivery_ledger import Owner
 from indus.state.registry import StoreHandle
-from tests.fakes.clock import FakeClock, checkpoint
+from tests.fakes.clock import FakeClock, checkpoint, hold_for_off_loop
 from tests.unit.gateway.outbound.recording import RecordingAdapter, recording_adapter
 
 US: Owner = (4242, 777)
@@ -28,6 +28,7 @@ async def until(check: Callable[[], object], clock: FakeClock | None = None) -> 
         await asyncio.wait({idle}, timeout=0.002)
         idle.cancel()
         if clock is not None:
+            await hold_for_off_loop(clock)  # never move the clock under an awaited call
             clock.advance(0.01)
 
 
