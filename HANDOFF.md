@@ -76,7 +76,7 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 ACTIVE. Main `5c0cff8` (P24 landed) + status commits. In flight (22:20 UTC): P25 wave-41 integrator
+Turn: AGENT_1 ACTIVE. Main `08bcf51` (P24 `5c0cff8`, P25-05..19 `08bcf51`) + status commits. In flight (22:20 UTC): P25 wave-41 integrator
 (scratchpad verify21, brief `.agents/wip/w41/integrator-brief.md`); wave-42 wiring builders WA (gateway/daemon), WB (agent
 loop + tools), WC (UI surfaces) in wt-w42* (brief `.agents/wip/w42/brief-wiring.md`).
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built (`5c0cff8`; wiring owed); P25 15/24 built and parked
@@ -99,7 +99,7 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree AND its $S dir; one
 integrator per group runs the full gate (pytest --basetemp short); the lead commits, rebases, fast-forwards, pushes, updates the
 phase table and this file.
-- Last landings: P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+- Last landings: P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
   P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
