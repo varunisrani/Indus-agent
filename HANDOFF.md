@@ -88,7 +88,8 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
 per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
 in docs/plan/phases/README.md and this file.
-- Last landings: load-failure fixes + clock quiesce helpers (full gate 15652 passed / 0 failed), P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
+- Last landings: P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
+  load-failure fixes + clock quiesce helpers (full gate 15652 passed / 0 failed), P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
   daemon; `indus mcp serve`; D-16.626..642), P18-11..16 dashboard REST (`9786b32`; download tickets, no tokens in URLs, daemon `stop` verb,
   generated route list; D-16.596..598, 610..622), drive-harness fix (`155ef32`), learning/prefetch test fixes (`0e9a538`,
   `ca2860b`), P16-25, 33–36 Photon (disabled), native draft streams, Telegram topics/stickers, Discord voice, adapter matrix
