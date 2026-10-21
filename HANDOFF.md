@@ -76,15 +76,10 @@ Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `eab425c` (P16 aa696ad; 
 Done: P00–P17, P19, P21, P22 complete; P18 22/30 (16 partly: prompt-size breakdown owed). 506/648 tasks landed (the old "476" was a miscount: the
 phase table summed to 461 before P18). Nothing parked.
 In flight: nothing. Combined main `768118a` full gate green (15646 passed / 87 skipped / 0 failed; perf 11/1).
-Open test follow-ups (root-cause, never re-run to green): (a) tests/integration/core/test_d04_1_terminal_tool_backstop.py::
-test_tool_answers_through_the_backstop_when_the_wait_is_wedged failed once in the REST full run (hypothesis: SIGKILL
-without a bounded wait for exit); (b) tests/unit/cron/test_ticker.py::test_daemon_fires_an_every_30m_job_twice_in_an_hour
-failed once ("cron cleanup output pruning took longer than 10 s", 1 call not 2) — its hand-rolled clock loop advances 10 s
-per 0.5 ms and does not hold for off-loop work (tests/fakes/turn.drive does since 155ef32: copy its awaited_calls() check);
-not reproduced with writer/prune delays; (c) ~30 helpers with own clock loops (backends conftest, gateway adapters,
-providers, terminal rig) should read awaited_calls() the same way; (d) matrix adapter
-`test_media_over_the_cap_is_refused_before_upload` (helper counts fake-clock steps while a file stat runs on a thread —
-same class as (c)); (e) msgraph `test_renewal_fires_at_eighty_percent_of_the_lifetime` (failed once, not root-caused).
+Test follow-ups: all four load failures root-caused and fixed (D-04.1 backstop now reaps the killed tree; ticker, matrix,
+msgraph waits quiesce) — see docs/notes/testing/load-failures-wave32.md. Remaining: the backends conftest `drive` cannot
+hold (a command's output reader is an awaited pool call for its whole life); `turn.drive` can still move the clock
+between steps of a long on-loop chain on a starved machine.
 Owed product follow-ups: P18-16 prompt-size breakdown; ACP no_mcp on the daemon, model switch not written to the
 session row, real-daemon reattach test (ACC-M8-2), MCP-only approval (register mcp serve as a viewer), mcp-serve user doc.
 Then: P18-23..30 (pages, chat host, login, build/serve, e2e M6), P20, P23, P24, P25. Brief to copy from: `.agents/wip/w29/brief.md`.
@@ -93,7 +88,7 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
 per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
 in docs/plan/phases/README.md and this file.
-- Last landings: P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
+- Last landings: load-failure fixes + clock quiesce helpers (full gate 15652 passed / 0 failed), P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
   daemon; `indus mcp serve`; D-16.626..642), P18-11..16 dashboard REST (`9786b32`; download tickets, no tokens in URLs, daemon `stop` verb,
   generated route list; D-16.596..598, 610..622), drive-harness fix (`155ef32`), learning/prefetch test fixes (`0e9a538`,
   `ca2860b`), P16-25, 33–36 Photon (disabled), native draft streams, Telegram topics/stickers, Discord voice, adapter matrix
