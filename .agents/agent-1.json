@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 71,
-  "remaining_pct": 29,
+  "usage_pct": 77,
+  "remaining_pct": 23,
   "resets_at": "2026-10-21T08:10:00+00:00",
-  "last_check": "2026-10-21T07:35:00+00:00",
+  "last_check": "2026-10-21T07:48:00+00:00",
   "current_step": "P20-25..40 integrator (verify18); wave 36 P23 builders I1 I2 K1 N1 U1 running",
   "last_commit": "2a1991b",
   "updated_at": "2026-10-21T06:05:00Z"
