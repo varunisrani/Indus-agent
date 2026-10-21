@@ -51,3 +51,31 @@
   a separate process) — owner may prefer another origin.
 - Follow-ups: multi-archive targets, --target staging, progress, .previous-* restore points, sealed-install lazy policy,
   release-built lock, packages.toml versions unverified offline; import-agent doesn't read ~/.claude/projects memories.
+
+## w37-l1.patch: P24-15 LSP client + manager, P24-16 edit diagnostics + LSP stop gate, P24-17 verify + verify-on-stop — done
+- Builder checks: ruff, format, pyright 0 (incl. tools/core/cli), lint-imports; lsp/verify/stop-gate/config/lint 312 passed /
+  2 skipped; wider tools/core/contract cli/foundation/test_layers 3361 passed (non-TTY table rows then added, rerun green);
+  unit cli + contract cli 1763 passed; tooling.checks ok (13 similarity spans rewritten; pins check: invalid package.json
+  fixture now built in-test). No packages.
+- New: src/indus/tools/lsp/{__init__,servers,client,manager,diagnostics}.py, tools/verify/{__init__,recipes,runner}.py,
+  core/stop_gates.py (registry, verify-on-stop, pre_verify), core/stop_gates_lsp.py, cli/commands/{lsp,verify}.py,
+  tests/fakes/lsp_server.py (scriptable stdio fake), tests/fixtures/verify/workspaces/ (10), tests unit tools/lsp,
+  tools/verify, core/test_stop_gates_lsp.py; notes lsp-client.md, lsp-diagnostics.md, verify.md.
+- Shared (unions): schema LspSection (lsp.*) + VerifySection (verify.*) + tests; cli/app.py (lsp, verify rows), contract help
+  catalogue + non_tty_table (lsp, lsp status, lsp install-hint, lsp restart, verify); tools/builtin/lint.py (P05-20 update: LSP
+  tier only when a checker is installed via sys.modules; skips container paths); ACC-C14-2, A28-1, A28-2 (C14-1 Review line
+  removed); traps R02.22.
+- WIRING OWED (exact steps in lsp-diagnostics.md): per host process LspManager(scope=…) + diagnostics.install_active(
+  EditDiagnostics(manager)), manager.trust(<work tree>) per session, await manager.release(path) before removing a worktree,
+  await manager.close() at exit; wrap the dispatcher hook seam with LspToolHooks(inner=<plugin seam>) EVEN WHEN LSP IS OFF
+  (verify-on-stop reads diagnostics.turn_edits); in core/loop.py::_handle_answer run StopGates.run(StopContext(session_id,
+  turn_id, final, tuple(turn_edits(owner, turn)), task_id=…)) before accepting a text answer, on a decision add
+  continuation_rows(decision, final), flush, keep final as the budget fallback, continue; register LspStopGate(),
+  VerifyOnStopGate(host_for, enabled=lambda: verify.on_stop), PreVerifyGate(plugin_hooks.pre_verify,
+  limit=verify.max_hook_nudges); host_for returns the session's terminal environment.
+- Decisions (D-ids): only error-severity diagnostics; LSP gate message durable row, verify / pre_verify nudges scaffold rows;
+  verify-on-stop runs the workspace build + test phases and returns failing output (≤ 2 per turn) — reference only nudges;
+  recipe start commands bind 127.0.0.1; `indus verify` runs commands through the approval rules with nobody to ask (needs-
+  approval refused); not built: LS auto-install (hints only), multi-root sharing, lsp.exclude_roots, --save recipe file;
+  `indus lsp restart` affects only its own process (daemon verb follow-up); pull diagnostics only from servers advertising
+  diagnosticProvider.
