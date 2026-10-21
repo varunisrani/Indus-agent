@@ -103,7 +103,8 @@ async def test_a_refused_credential_stops_the_feed_at_once(scope: Scope) -> None
         assert link is not None
         url = link.publish_url("chat-7") or ""
         wrong = "not" + "-the-" + "credential"
-        code, out, err = await run_driver(_env(url, wrong, EVENTS))
+        env = {**_env(url, wrong, EVENTS), "FEED_WAIT_STATE": "stopped"}
+        code, out, err = await run_driver(env)
         assert code == 0, err
         # The upgrade is accepted and closed 4401 at once, so the frames handed over die with the
         # socket; the feed stops for good (no redial).
