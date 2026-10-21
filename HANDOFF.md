@@ -81,44 +81,12 @@ Turn: AGENT_1 (took it back at 05:56 UTC 2026-10-21, owner request). In flight (
 - Wave 35 (brief `.agents/wip/w35/brief.md`, base c3891d6 = tree of 2a1991b): D1 P20-25..27, D2 P20-28..31, D3 P20-32..34,
   D4 P20-35..37, D5 P20-38..39 all DONE and parked in `.agents/wip/w35/`. P20-25..40 integrator running in scratchpad
   verify18 (brief `.agents/wip/w35/integrator-brief.md`, D-16.700..739; builds P20-40 Electron E2E + Demo 4).
-- Wave 36 (brief `.agents/wip/w36/brief.md`, P23 except 15/16): I1, K1, N1 parked; I2 (P23-06/07/20) restoring its files
-  in wt-w36i2 after a lead error removed its worktree; U1 (P23-17..19, 21..23) building. Owner item: I2's first `uv run`
-  wrote into /root/.cache/uv (editable build + a few cache entries).
-Agent 2's handoff text (still valid for the owner questions and follow-ups) follows:
-Turn: AGENT_1 (handed over by Agent 2 at 03:45 UTC 2026-10-21, owner request). Main `71389d4`+status commits.
-Done: P00–P19, P21, P22 complete; P20 7/40 (P20-01..07 `86f44f7`). 521/648 tasks landed (80%).
-1. **Land P20-08..24 (wave 34)** from `.agents/wip/w34/w34-int-wip.patch` (base 3ba165d; `git apply --3way` on main, it
-   carries the re-locked pnpm-lock.yaml with 158 new packages — `pnpm install --frozen-lockfile` must pass; licence table in
-   licences-w34.txt, all allowed). Read `.agents/wip/w34/landing-p20a.md` first. Verified by the integrator: ruff, pyright 0,
-   lint-imports, codegen, tooling.checks ok; pnpm lint / fmt / typecheck, check-ipc, gen-bridge-types, dump-slash-catalog
-   ok; root vitest 1819 passed / 0 failed; wired Electron test (fake backend + REAL daemon: boot, connect, prompt, streamed
-   reply, approval card) passes. NOT verified: the Python full suite (stopped at ~12% on the hand-back; one `F` had already
-   printed, name unknown — this wave touches no Python, so rerun and root-cause whatever it is) and perf. Then commit
-   ("[Agent 1] P20-08..24 …"), push, prune w34. Env: Electron's install.js fails behind the proxy — unzip
-   $ELECTRON_CACHE/electron-v44.5.1-linux-x64.zip into node_modules/electron/dist + path.txt; use an ABSOLUTE short TMPDIR.
-2. **Owner decisions owed:** D-16.690 installer release base (M guessed github.com/indusagi/indus-agent; repo is
-   varunisrani/Indus-agent); D-16.691 remote desktop chat — Electron 44 ignores a rewritten Sec-WebSocket-Protocol, so the
-   token swap does not work (P20-11 partial); recommendation: the serve mints single-use tickets for token-mode clients and
-   main mints one per dial. Also: Playwright pinned 1.56.1 (drives the preinstalled Chromium 1194), not 1.63.0; the
-   `web-e2e` CI job has never run in CI; stray paths at the FILESYSTEM ROOT written by Agent 2's builders (a prompt bug,
-   now fixed) need removing by hand (a safety check blocks agents): /fix-m2-home, /w30-a2-home, /w30-r3-home, /w31-d1-home,
-   /w32-p1-home, /w32-p2-home, /w32-t1-home, /uv-cache (125 MB), /pnpm-store (110 MB), /x, /backends_conftest.orig,
-   /dbg_msgraph.py.
-3. **Then P20-25..40** (sidebar + projects, profile rail, pane shell, preview / files / git / terminal panes, settings,
-   provider onboarding, deep links + media scheme, HUD / quick entry, tray, updates, packaging, diagnostics, Electron E2E +
-   Demo 4), then P23, P24, P25. Builder brief to copy: the wave-34 brief is summarised in `.agents/wip/w34/README.md`;
-   contract notes in docs/notes/P20/*.md (preload-bridge.md: 76-channel IPC table, owner task per row).
-Follow-ups (small): P20 integrator's list in landing-p20a.md (similarity guard scans gitignored build output; electron /
-zod / @electron/fuses pin rows missing in 00-layout §4; boot.get note vs code; queued inputs' user row; slash output
-placement); SPA backup download should mint a ticket (backend route landed); MCP-only approval (mcp serve as a viewer);
-prompt-size does not measure MCP/plugin tools; backends conftest `drive` cannot hold the clock (documented).
-ENV RULE for every builder prompt: set `export S=…` and `export HOME=$S/… …` as TWO statements — one statement leaves $S
-empty and writes at `/` (that is how the stray root paths happened). Integrator contract and briefs are fixed accordingly.
-Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
-(--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**'), scan (credential regexes, /root or ~
-writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
-per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
-in docs/plan/phases/README.md and this file.
+- Wave 36 (P23 except 15/16): I1, I2, K1, N1, U1 all parked in `.agents/wip/w36/`; P23 integrator running in scratchpad
+  verify19 (brief `.agents/wip/w36/integrator-brief.md`, D-16.740..769). Owner item: I2's first `uv run` wrote into
+  /root/.cache/uv.
+- Wave 37 (brief `.agents/wip/w37/brief.md`, P24 backend first half): M1 P24-01..04, R1 05..07, R2 08..10, B1 11..14, L1
+  15..17, X1 18/23/24 in scratchpad wt-w37*. Next: P24-38..47 (browser, egress, packs, hub, suggestions, broker); P24-19/20/
+  25..37 after P20 lands; P24-21/22 if capacity.
 - Last landings: P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),

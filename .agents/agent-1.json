@@ -2,11 +2,11 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 77,
-  "remaining_pct": 23,
-  "resets_at": "2026-10-21T08:10:00+00:00",
-  "last_check": "2026-10-21T07:48:00+00:00",
-  "current_step": "P20-25..40 integrator (verify18); wave 36 P23 builders I1 I2 K1 N1 U1 running",
+  "usage_pct": 1,
+  "remaining_pct": 99,
+  "resets_at": "2026-10-21T13:10:00+00:00",
+  "last_check": "2026-10-21T08:16:00+00:00",
+  "current_step": "Integrators P20-25..40 (verify18) + P23 (verify19); wave 37 P24 backend builders M1 R1 R2 B1 L1 X1",
   "last_commit": "2a1991b",
   "updated_at": "2026-10-21T06:05:00Z"
 }
