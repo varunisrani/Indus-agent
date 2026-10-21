@@ -76,3 +76,44 @@ preload-bridge.md ("Contract for P20-08+"). Integrate R and C together (C stands
   override INDUS_DESKTOP_INSTALL_SCRIPT) — confirm the release org/repo (repo today: varunisrani/Indus-agent).
 - Follow-ups: update gate stub until P20-37; control-socket client cannot check the listener uid (no SO_PEERCRED in Node);
   Windows PowerShell installer discovery waits for P23.
+
+## w34-r.patch: P20-15 renderer entry / routes / shell, 16 boot overlay + first-run chooser + failure overlay, 17 gateway connection store, 18 transcript — done
+- Builder checks: pnpm lint / fmt:check / -r typecheck clean; check-ipc, gen-bridge-types --check ok; apps/desktop vitest
+  375 passed (33 files; real-window Electron tests ran with the cached zip unpacked into node_modules); packages/client 93
+  passed; apps/tui 757 passed (uses the changed WS transport); tooling.checks ok; manual Electron 44.5.1 smoke from file://:
+  shell renders, eval blocked, Shiki/KaTeX/Mermaid render under the strict CSP.
+- New: apps/desktop/{index.html, vite.config.ts (calls injectCspMeta in dev and build — D1 follow-up fixed; no
+  React-refresh plugin), src/main.tsx, src/styles.css, src/test/setup.ts}, src/app/{routes, Shell, App, pages, theme,
+  Loader, bridge, ErrorBoundary}, src/i18n/{index.tsx, en.ts}, src/boot/{BootOverlay, FirstRunChooser, bootRetry,
+  bootState}, src/gateway/{connectionStore, replay, serverRequests, timing, react, testSupport}, src/chat/{Transcript,
+  ToolRow, Timeline, Markdown, RichBlocks, ErrorCard, ChatView, messageStream, transcriptStore, failure, toolSummary,
+  markdown, transcriptReact}, tests, testing/fixtures/streams/ (7), testing/{oracle (shared with P20-40), seeded}.ts, notes
+  docs/notes/P20/{renderer-shell, boot-overlay, connection-store, transcript}.md ("Contract for slice C" sections).
+- Shared: apps/desktop/{package.json, tsconfig.json, vitest.config.ts} (C edits the same three), root biome.json (Tailwind
+  directives for apps/desktop/src/**/*.css), pnpm-lock.yaml (re-lock), packages/client (DESKTOP_BACKOFF; answerTimeoutMs
+  option — answers wait 330 s; ws-transport accepts the indus-dashboard-v1 / indus-dashboard-ticket. family and requires the
+  server to echo the first offered protocol; exports; tests).
+- New packages: shiki 4.5.0, katex 0.19.0, mermaid 11.17.2, lucide-react 1.52.0 (+ already-locked react/react-dom 19.3.0,
+  react-router 8.4.0, @radix-ui/react-dialog 1.1.23, tailwindcss + @tailwindcss/vite 4.3.3, testing-library, @types/react,
+  axe-core 4.13.0, jsdom 29.1.1, @indus/ui) — integrator verifies licences (mermaid's transitive tree!) and publish ages.
+- MERGE with w34-c: drop C's four STAND-IN files (gateway/connectionStore.ts, gateway/serverRequests.ts, i18n/index.ts,
+  i18n/en.ts) and use R's; R added aliases for C's names (GatewayConnection.mode/.codeVersion/.reconnect(),
+  useGatewayConnection = usePrimaryConnection, useOpenServerRequests(sessionId?), `t` beside useT/translate);
+  ServerRequestStore methods are list(sessionId?), get, subscribe, answer(id, answer) → boolean, decline(id) → boolean,
+  isAnswered — C called `handlers()` and `OpenServerRequest.answer(a)`: reconcile; R's en.ts is one flat record — add
+  `...CHAT_STRINGS` from src/chat/strings.en.ts. Slots: ChatView {composer, cards}, Transcript {footer, onFailureAction}
+  (Retry is C's), Shell/AppRoutes {statusBar}; transcript store API addLocalUser / bindLocalUser / dropLocalUser;
+  SessionTranscript {running, turnId, generation}.
+- MERGE with w34-m: connection.ticket read as {wsUrl, protocols, expiresInMs} (store casts the bridge until M's table lands
+  — drop the cast); boot-* rejection → store `failed`, redial when the overlay reports ready; the overlay looks for
+  indusDesktop.backend.onNotice or indusDesktop.boot.onBackendNotice — point it at M's `indus:backend:notice` row
+  (boot.onNotice); surface: "gui" goes on whoever creates sessions (C's composer session.create).
+- Decisions (number at integration): file:// CSP meta connect-src adds loopback ws:/http: any port + wss:/https: (main's
+  header, where it applies, narrows to exact origins); replay via session.subscribe from the cursor, watchdog via
+  events.since, "cap 256" = at most 256 replay cursors; answer timeout 330 s (reference 300 s), liveness probe 5 s;
+  reasoning hidden by default until P20-32 reads display.show_reasoning; no OFL font vendored yet; packages/ui has no React
+  primitives.
+- Env notes: electron's install.js fails behind the proxy (undici assertion) — unzip $ELECTRON_CACHE's
+  electron-v44.5.1-linux-x64.zip into node_modules/electron/dist and write path.txt; relative TMPDIR breaks fakeBackend
+  tests (use absolute, e.g. $S/rt). Dev: `pnpm --filter @indus/desktop dev` on 127.0.0.1:5174 +
+  INDUS_DESKTOP_DEV_SERVER=http://127.0.0.1:5174.
