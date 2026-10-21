@@ -201,14 +201,12 @@ def run_server(app: FastAPI, sock: socket.socket) -> None:
 
 
 def _maybe_build(launch: Launch) -> None:
-    import indus
-    from indus.web import spa
+    from indus.web import bundle, spa
 
-    bundle = spa.default_bundle_dir()
-    if (bundle / "index.html").is_file():
+    if bundle.locate().found:
         return
-    repo = Path(indus.__file__).resolve().parents[2]
-    plan = spa.build_plan(repo, launch.scope.env)
+    repo = bundle.source_checkout()
+    plan = spa.build_plan(repo, launch.scope.env) if repo is not None else None
     if plan is None:
         err(
             "The dashboard pages are not built; the API still works.",

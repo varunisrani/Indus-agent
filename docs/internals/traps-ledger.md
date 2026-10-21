@@ -1112,6 +1112,11 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
   - `apps/web/src/App.test.tsx::does not mount the chat host before the first visit`
+  - `apps/web/src/chat/ChatRail.test.tsx::a rail that throws leaves the terminal mounted and connected`
+  - `apps/web/src/chat/ChatRail.test.tsx::a 4403 on the feed shows the reload notice and the terminal stays open`
+  - `apps/web/src/chat/ChatRail.test.tsx::the reasoning picker types the TUI's own command`
+  - `apps/web/e2e/chat.spec.ts::chat: a prompt and its approval in the terminal; Logs and back keeps the PTY; reload reattaches; a dead child offers a new session`
+  - `tests/integration/web/test_dashboard_daemon.py::test_the_dashboard_chat_and_a_cli_share_one_daemon_session`
 - **R09.2** WebSocket auth differs from REST auth
   - Review: not yet planned (P00-guards)
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_subprotocol_is_accepted_once`
@@ -1129,10 +1134,13 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/web/test_files_system_routes.py::test_a_download_ticket_is_good_once_for_its_path`
   - `tests/contract/web/test_files_system_routes.py::test_tickets_never_reach_a_log_or_the_audit_file`
   - `apps/web/src/pages/FilesPage.test.tsx::downloads through a minted ticket, never the session token in the URL`
+  - `apps/web/e2e/auth.spec.ts::gated: login, the loopback token refused, single-use WS tickets, logout`
+  - `tests/integration/web/test_dashboard_daemon.py::test_the_dashboard_chat_and_a_cli_share_one_daemon_session`
 - **R09.3** Non-loopback must fail closed
   - Review: not yet planned (P00-guards)
   - `tests/unit/web/auth/test_gate.py::test_gate_table`
   - `tests/unit/web/test_app_modes.py::test_non_interactive_gated_start_without_provider_lists_reasons`
+  - `apps/web/e2e/auth.spec.ts::a gated bind without a login provider refuses to start`
 - **R09.4** Middleware ordering leaks
   - Review: not yet planned (P00-guards)
   - `tests/unit/web/auth/test_gate.py::test_the_allowlist_is_one_object_in_both_gates`
@@ -1148,6 +1156,7 @@ Checked by `python -m tooling.checks traps`.
   - `apps/web/src/lib/api.test.ts::reloads once on a loopback 401, then surfaces the error`
   - `apps/web/src/lib/api.test.ts::re-arms the reload guard after a 2xx`
   - `apps/web/src/lib/api.test.ts::never reloads in gated mode, and sends no token header`
+  - `apps/web/e2e/auth.spec.ts::a stale token after a dashboard restart reloads the page once and goes on`
 - **R09.6** PTY lifetime and supersession
   - `tests/unit/web/pty/test_registry.py::test_second_attach_supersedes_and_replays_then_redraws`
   - `tests/unit/web/pty/test_registry.py::test_child_exit_closes_the_viewer_4410`
@@ -1157,13 +1166,22 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/web/test_pty_route.py::test_reattach_supersedes_replays_and_redraws`
   - `tests/contract/web/test_pty_route.py::test_resize_frames_are_applied_never_written`
   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
-  - Review: the client half (hidden chat host, Web Lock, 20 s keepalive) (P18-26)
+  - `apps/web/src/chat/attachToken.test.ts::a duplicated tab (same storage copy, lock held by the first) mints its own`
+  - `apps/web/src/chat/ptySocket.test.ts::a redial with the same token reattaches the PTY: ring replayed, then a redraw`
+  - `apps/web/src/chat/ptySocket.test.ts::another socket with the same key supersedes this one (4409, quiet, no retry)`
+  - `apps/web/src/chat/ptySocket.test.ts::sends a keep-alive after 20 s of silence only`
+  - `apps/web/src/chat/ptySocket.test.ts::parks while hidden or on another page and dials once when back, throttled to 1 s`
+  - `apps/web/e2e/chat.spec.ts::chat: a prompt and its approval in the terminal; Logs and back keeps the PTY; reload reattaches; a dead child offers a new session`
 - **R09.7** Resize escape is in-band
   - `tests/unit/web/pty/test_resize.py::test_only_an_exact_frame_is_a_resize`
   - `tests/unit/web/pty/test_resize.py::test_sizes_are_clamped`
   - `tests/contract/web/test_pty_route.py::test_a_real_child_never_sees_the_resize_escape`
 - **R09.8** Resume replay garbage
-  - Review: not yet planned (P00-guards)
+  - `apps/web/src/chat/resumeSanitizer.test.ts::folds 80 blank lines into one inside the 30 s window and not after`
+  - `apps/web/src/chat/resumeSanitizer.test.ts::collects a flood split across frames, CR and LF split too`
+  - `apps/web/src/chat/ptySocket.test.ts::an announced resume reports the id and sanitises for 30 s`
+  - `apps/web/src/chat/resumeSanitizer.test.ts::keeps erase sequences outside a flood (live repaints), inside the window too`
+  - `apps/web/src/chat/resumeSanitizer.test.ts::drops the erase codes inside a flood with the flood`
 - **R09.9** ACP history replay must finish before the load/resume response
   - `tests/contract/acp/test_session_load.py::test_the_whole_history_streams_before_the_response`
   - `tests/contract/acp/test_session_new.py::test_the_response_frame_comes_before_the_post_attach_updates`
@@ -1264,6 +1282,7 @@ Checked by `python -m tooling.checks traps`.
   - Review: not yet planned (P00-guards)
   - `tests/unit/web/test_prefix.py::test_same_build_at_root_and_under_a_prefix`
   - `tests/unit/web/test_prefix.py::test_callback_ignores_the_prefix_when_a_public_url_is_set`
+  - `tests/unit/web/auth/test_login_page.py::test_both_providers_render_with_next_and_prefix`
 - **R10.1** Crash-durable batch results
   - `tests/unit/research/test_batch_io.py::test_fsync_happens_before_the_completion_callback`
   - `tests/unit/research/test_batch_io.py::test_a_crash_before_the_fsync_leaves_the_prompt_not_done`

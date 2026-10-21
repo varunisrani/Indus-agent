@@ -1,5 +1,5 @@
-// The dashboard's route table (P18-17). One row per page; later page tasks (P18-23..25) replace
-// their `pending(...)` loader with the real page import, one line each.
+// The dashboard's route table (P18-17). One row per page; every page is lazy. A page that is not
+// built yet uses the `pending(...)` loader until its task swaps in the real import.
 
 import { type ComponentType, createElement, type LazyExoticComponent, lazy } from "react";
 
@@ -37,7 +37,8 @@ export const DOCS_LINK: ExternalLink = {
   href: "https://github.com/varunisrani/indus-agent/tree/main/docs",
 };
 
-function pending(title: string): PageComponent {
+/** A placeholder page for a route whose page is not part of this build yet. */
+export function pending(title: string): PageComponent {
   return lazy(() =>
     import("./PendingPage.tsx").then((m) => ({
       default: () => createElement(m.PendingPage, { title }),
@@ -67,26 +68,47 @@ const ConfigPage = lazy(() =>
   import("../pages/ConfigPage.tsx").then((m) => ({ default: m.ConfigPage })),
 );
 const EnvPage = lazy(() => import("../pages/EnvPage.tsx").then((m) => ({ default: m.EnvPage })));
+const ModelsPage = lazy(() =>
+  import("../pages/ModelsPage.tsx").then((m) => ({ default: m.ModelsPage })),
+);
+const ChannelsPage = lazy(() =>
+  import("../pages/ChannelsPage.tsx").then((m) => ({ default: m.ChannelsPage })),
+);
+const WebhooksPage = lazy(() =>
+  import("../pages/WebhooksPage.tsx").then((m) => ({ default: m.WebhooksPage })),
+);
+const PairingPage = lazy(() =>
+  import("../pages/PairingPage.tsx").then((m) => ({ default: m.PairingPage })),
+);
+const ProfilesPage = lazy(() =>
+  import("../pages/ProfilesPage.tsx").then((m) => ({ default: m.ProfilesPage })),
+);
+const ProfileBuilderPage = lazy(() =>
+  import("../pages/ProfileBuilderPage.tsx").then((m) => ({ default: m.ProfileBuilderPage })),
+);
+const SystemPage = lazy(() =>
+  import("../pages/SystemPage.tsx").then((m) => ({ default: m.SystemPage })),
+);
 
 export const ROUTES: readonly PageRoute[] = [
   { path: CHAT_PATH, title: "Chat", nav: "main", page: null },
   { path: "/sessions", title: "Sessions", nav: "main", page: SessionsPage },
   { path: "/files", title: "Files", nav: "main", page: FilesPage },
   { path: "/analytics", title: "Analytics", nav: "analytics-flag", page: AnalyticsPage },
-  { path: "/models", title: "Models", nav: "main", page: pending("Models") },
+  { path: "/models", title: "Models", nav: "main", page: ModelsPage },
   { path: "/logs", title: "Logs", nav: "main", page: LogsPage },
   { path: "/cron", title: "Cron", nav: "main", page: CronPage },
   { path: "/skills", title: "Skills", nav: "main", page: SkillsPage },
   { path: "/plugins", title: "Plugins", nav: "main", page: PluginsPage },
   { path: "/mcp", title: "MCP", nav: "main", page: McpPage },
-  { path: "/channels", title: "Channels", nav: "main", page: pending("Channels") },
-  { path: "/webhooks", title: "Webhooks", nav: "main", page: pending("Webhooks") },
-  { path: "/pairing", title: "Pairing", nav: "main", page: pending("Pairing") },
-  { path: "/profiles", title: "Profiles", nav: "main", page: pending("Profiles") },
-  { path: "/profiles/new", title: "New profile", nav: "hidden", page: pending("New profile") },
+  { path: "/channels", title: "Channels", nav: "main", page: ChannelsPage },
+  { path: "/webhooks", title: "Webhooks", nav: "main", page: WebhooksPage },
+  { path: "/pairing", title: "Pairing", nav: "main", page: PairingPage },
+  { path: "/profiles", title: "Profiles", nav: "main", page: ProfilesPage },
+  { path: "/profiles/new", title: "New profile", nav: "hidden", page: ProfileBuilderPage },
   { path: "/config", title: "Config", nav: "main", page: ConfigPage },
   { path: "/env", title: "Keys", nav: "main", page: EnvPage },
-  { path: "/system", title: "System", nav: "main", page: pending("System") },
+  { path: "/system", title: "System", nav: "main", page: SystemPage },
 ];
 
 /** The route for a pathname (exact match), if any. */

@@ -1,7 +1,9 @@
 // Our filter in front of Ink's stdin: modifyOtherKeys reports become the CSI-u form Ink decodes,
-// SGR mouse reports leave the key stream as mouse events, and bracketed paste bodies pass
-// through untouched. A sequence cut across reads waits for the rest; a lone ESC goes on after
-// a short pause (it is the Escape key).
+// SGR mouse reports leave the key stream as mouse events, operating-system-command replies (a
+// colour answer to our OSC 11 probe that arrives after the probe gave up — the dashboard's
+// browser terminal answers over a WebSocket) are dropped, since no key ever types one, and
+// bracketed paste bodies pass through untouched. A sequence cut across reads waits for the rest;
+// a lone ESC goes on after a short pause (it is the Escape key).
 
 import { PassThrough } from "node:stream";
 
@@ -22,9 +24,13 @@ const PASTE_END = `${ESC}[201~`;
 const OTHER_KEYS_RE = /\u001b\[27;(\d+);(\d+)~/g;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is escape sequences
 const SGR_MOUSE_RE = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
-/** A tail that could be the start of a sequence we rewrite or a paste bracket. */
+/** A complete OSC reply: ESC ] … ended by BEL or ST (ESC \\). */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is escape sequences
-const OPEN_TAIL_RE = /\u001b(?:\[(?:<[\d;]*|27(?:;[\d;]*)?|2?|20[01]?)?)?$/;
+const OSC_REPLY_RE = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
+/** A tail that could be the start of a sequence we rewrite or a paste bracket. */
+const OPEN_TAIL_RE =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is escape sequences
+  /\u001b(?:\[(?:<[\d;]*|27(?:;[\d;]*)?|2?|20[01]?)?|\][^\u0007\u001b]{0,512}\u001b?)?$/;
 export const LONE_ESC_MS = 15;
 
 export function decodeMouse(code: number, col: number, row: number, final: string): MouseEvent {
@@ -39,6 +45,7 @@ export function decodeMouse(code: number, col: number, row: number, final: strin
 /** Rewrite one complete piece of input outside a paste. */
 export function rewriteInput(text: string, onMouse: (event: MouseEvent) => void): string {
   return text
+    .replace(OSC_REPLY_RE, "")
     .replace(SGR_MOUSE_RE, (_all, code: string, col: string, row: string, final: string) => {
       onMouse(decodeMouse(Number(code), Number(col), Number(row), final));
       return "";

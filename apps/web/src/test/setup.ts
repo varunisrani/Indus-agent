@@ -4,6 +4,8 @@ import { afterEach } from "vitest";
 import { setSelectedProfile } from "../lib/api.ts";
 
 afterEach(() => {
+  // Build-tool tests (vite.*.test.ts) run in the node environment: no browser state to reset.
+  if (typeof window === "undefined") return;
   cleanup();
   setSelectedProfile("");
   window.sessionStorage.clear();

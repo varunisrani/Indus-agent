@@ -187,6 +187,51 @@ jobs:
       - name: Tests
         run: pnpm test
 
+  # The dashboard's browser suite (P18-30, the M6 demo's browser half): Chromium against a real
+  # `indus dashboard` and daemon in temp homes with the fake model; traces of failures uploaded.
+  web-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv sync --locked
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Browser
+        run: pnpm --filter @indus/web exec playwright install --with-deps chromium
+
+      - name: Build the TUI
+        run: pnpm tui:build
+
+      - name: Browser suite
+        run: pnpm web:e2e
+
+      - name: Traces of failed specs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-traces
+          path: apps/web/test-results/
+          retention-days: 7
+
   # The only required status. It needs every other job and is green only when each of them
   # succeeded: skipped, cancelled and failed all fail the gate (R10.18).
   gate:
@@ -196,6 +241,7 @@ jobs:
       - adapters
       - e2e
       - ts
+      - web-e2e
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

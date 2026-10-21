@@ -10,6 +10,7 @@ import { embeddedChatEnabled } from "./lib/bootstrap.ts";
 import type { ConfigObject } from "./lib/restTypes.ts";
 import { type ChatHostProps, ChatHostSlot, ChatPending } from "./shell/ChatHostSlot.tsx";
 import { PageHeader } from "./shell/PageHeader.tsx";
+import { PressureBanner } from "./shell/PressureBanner.tsx";
 import {
   ProfileBanner,
   ProfileKeyed,
@@ -18,12 +19,13 @@ import {
 } from "./shell/ProfileScope.tsx";
 import { CHAT_PATH, DEFAULT_PATH, type PageRoute, ROUTES, routeFor } from "./shell/routes.ts";
 import { readCollapsed, Sidebar, useWideScreen, writeCollapsed } from "./shell/Sidebar.tsx";
+import { StatusStrip } from "./shell/StatusStrip.tsx";
 import { ToastProvider } from "./shell/Toasts.tsx";
 
 export interface AppProps {
   /** The chat terminal host (P18-26); a placeholder until it lands. */
   chatHost?: ComponentType<ChatHostProps>;
-  /** Sidebar footer: status strip (P18-25) and auth widget (P18-28). */
+  /** Sidebar footer below the status strip (the auth widget, P18-28). */
   sidebarFooter?: ReactNode;
 }
 
@@ -105,11 +107,17 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
         onToggleCollapsed={toggleCollapsed}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
-        footer={sidebarFooter}
+        footer={
+          <>
+            <StatusStrip />
+            {sidebarFooter}
+          </>
+        }
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <PageHeader title={title} start={menuButton}>
           <ProfileBanner />
+          <PressureBanner />
           <main className="flex min-h-0 flex-1 flex-col overflow-auto">
             <ProfileKeyed>
               <Suspense fallback={<RouteFallback />}>

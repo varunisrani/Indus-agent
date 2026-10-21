@@ -17,9 +17,10 @@ origins on 9119, 5173 and the chosen port) → service-bearer seam → login gat
 Host guard → auth body limit (``auth.gate`` explains each). Routers come from
 ``indus.web.routes.ROUTERS`` plus ``options.routers``, then the Chat tab's WebSocket routes
 (``/api/pty``, ``/api/pub``, ``/api/events``, ``/api/ws``; ``ws.chat_routes``, in both modes); the
-SPA catch-alls go last. The profile resolver (``web.scope``) is installed over the backend's own
-scope. The lifespan starts the PTY reaper and, at stop, ends every PTY and removes the channel
-files.
+SPA catch-alls go last. The pages served are the ones ``web.bundle.locate`` finds (the checkout's
+``apps/web/dist``, else the package's ``web/static``). The profile resolver (``web.scope``) is
+installed over the backend's own scope. The lifespan starts the PTY reaper and, at stop, ends
+every PTY and removes the channel files.
 
 ``DaemonLink`` attaches the dashboard to the profile daemon through P17's ensure (in a background
 thread at start-up, never fatal: chat and live views report the verdict) and mints a single-use
@@ -72,9 +73,10 @@ from indus.web.auth.proxy import (
 )
 from indus.web.auth.service_bearer import BearerSeam, register_drain
 from indus.web.auth.token import SessionToken
+from indus.web.bundle import locate as locate_bundle
 from indus.web.routes import ROUTERS
 from indus.web.scope import install as install_scopes
-from indus.web.spa import SpaBundle, default_bundle_dir, mount_spa
+from indus.web.spa import SpaBundle, mount_spa
 from indus.web.state import DashboardState, Mode, dashboard_state
 from indus.web.ws.chat_routes import ChatSeams, build_chat
 
@@ -257,7 +259,7 @@ def create_app(scope: Scope, mode: Mode, *, options: AppOptions | None = None) -
     tickets = TicketBook.for_home(scope.home, purposes=DASHBOARD_PURPOSES, monotonic=opts.monotonic)
     bundle = None
     if mode == "dashboard":
-        bundle = SpaBundle(opts.bundle_dir or default_bundle_dir())
+        bundle = SpaBundle(opts.bundle_dir or locate_bundle().directory)
     theme = str(settings.get("theme") or "system")
     state = DashboardState(
         mode=mode,

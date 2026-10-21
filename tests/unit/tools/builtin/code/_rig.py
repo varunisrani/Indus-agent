@@ -18,6 +18,7 @@ from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope
 from indus.tools.builtin.code import ExecuteCodeTool, kernel, remote
 from indus.tools.registry import ToolRegistry
+from tests.fakes.clock import FakeClock
 from tests.fakes.terminal import terminal_scope
 from tests.unit.tools.builtin._file_env import FakeRegistry, ShellEnv
 
@@ -155,9 +156,32 @@ def live_children() -> set[int]:
     return found
 
 
+def _fake_clocks(pool: Any) -> list[FakeClock]:
+    found: list[FakeClock] = []
+    for key in pool.live_keys():
+        clock = getattr(pool.get(key), "clock", None)
+        if isinstance(clock, FakeClock) and clock not in found:
+            found.append(clock)
+    return found
+
+
+async def _close_pool(pool: Any) -> None:
+    """Close every pooled kernel, moving the fake clocks some of them were made with: closing
+    waits on the kernel's own clock while its child is still running (``stop_tree``), and in a
+    teardown nothing else moves a test's fake clock."""
+    clocks = _fake_clocks(pool)
+    task = asyncio.ensure_future(pool.shutdown())
+    while not task.done():
+        await asyncio.wait({task}, timeout=0.01)
+        for clock in clocks:
+            if clock.pending:
+                clock.advance(0.05)
+    await task
+
+
 def shutdown_pools() -> None:
-    asyncio.run(kernel.POOL.shutdown())
-    asyncio.run(remote.POOL.shutdown())
+    asyncio.run(_close_pool(kernel.POOL))
+    asyncio.run(_close_pool(remote.POOL))
 
 
 def no_stray(before: set[int]) -> Iterator[None]:

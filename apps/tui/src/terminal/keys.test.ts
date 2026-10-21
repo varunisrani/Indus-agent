@@ -85,6 +85,21 @@ describe("input filter", () => {
     expect(mice.map((m) => m.kind)).toEqual(["drag"]);
   });
 
+  it("drops a late OSC colour reply, whole or split across reads, and keeps the keys around it", async () => {
+    const { PassThrough } = await import("node:stream");
+    const filter = new InputFilter(new PassThrough(), () => {});
+    let seen = "";
+    filter.stream.on("data", (chunk: Buffer) => {
+      seen += String(chunk);
+    });
+    filter.push("a\u001b]11;rgb:eded/ebeb/e8e8\u001b\\b");
+    filter.push("c\u001b]11;rgb:00");
+    filter.push("00/0000/0000\u0007d");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(seen).toBe("abcd");
+    expect(rewriteInput("\u001b]10;rgb:1/2/3\u0007x", () => {})).toBe("x");
+  });
+
   it("lets a lone ESC through after a short pause", async () => {
     vi.useFakeTimers();
     const { PassThrough } = await import("node:stream");

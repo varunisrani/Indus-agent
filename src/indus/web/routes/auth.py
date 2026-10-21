@@ -18,13 +18,14 @@ redirect login keeps its verifier, state, nonce, provider and landing path only 
 the callback trusts nothing else (the IdP echoes back only the code and the state). Every outcome is
 written to the audit log without tokens, codes or passwords.
 
-The login page is deliberately bare (no script, a strict CSP); P18-28 replaces ``render_login``.
+The login page itself is ``auth.login_page`` (no script, a strict CSP). A browser form post that
+fails comes back to it with an error code (``1`` for wrong credentials, ``rate_limited``,
+``unavailable``); JSON clients get the 401 / 429 / 503 bodies.
 """
 
 from __future__ import annotations
 
 import hmac
-import html
 import json
 import logging
 import threading
@@ -41,17 +42,17 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from indus.web.auth import cookies
 from indus.web.auth.audit import AuditEvent
 from indus.web.auth.gate import request_prefix, safe_next, session_of
+from indus.web.auth.login_page import login_headers, render_login_page
 from indus.web.auth.providers import (
     BadCredentials,
     LoginRejected,
-    Provider,
     ProviderUnavailable,
     Session,
 )
 from indus.web.auth.proxy import callback_url, client_ip
 from indus.web.state import DashboardState, dashboard_state
 
-__all__ = ["LOGIN_LIMIT", "LOGIN_WINDOW_S", "LoginLimiter", "render_login", "router"]
+__all__ = ["LOGIN_LIMIT", "LOGIN_WINDOW_S", "LoginLimiter", "router"]
 
 log = logging.getLogger(__name__)
 
@@ -62,10 +63,6 @@ LOGIN_WINDOW_S: Final = 60.0
 MAX_BUCKETS: Final = 4096
 MAX_FORM_BYTES: Final = 16 * 1024
 _NO_STORE: Final = {"cache-control": "no-store"}
-_LOGIN_CSP: Final = (
-    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
-    "frame-ancestors 'none'; base-uri 'none'"
-)
 _GENERIC_401: Final = {"error": "invalid_credentials", "detail": "Wrong username or password."}
 
 
@@ -153,46 +150,6 @@ def _landing(request: Request, raw: str) -> str:
     return target or f"{prefix}/"
 
 
-def render_login(*, providers: list[Provider], prefix: str, next_path: str, error: str = "") -> str:
-    """The plain sign-in page (no script)."""
-    parts = [
-        '<!doctype html><html lang="en"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width,initial-scale=1">',
-        "<title>Sign in · Indus Agent</title>",
-        "<style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;"
-        "padding:0 1rem}label,input,button{display:block;width:100%;margin:.4rem 0}"
-        "input,button{padding:.5rem;font-size:1rem}.err{color:#b00020}</style>",
-        "</head><body><h1>Sign in to Indus Agent</h1>",
-    ]
-    if error:
-        parts.append(f'<p class="err">{html.escape(error)}</p>')
-    if not providers:
-        parts.append("<p>No sign-in method is configured.</p>")
-    for provider in providers:
-        name = html.escape(provider.name, quote=True)
-        label = html.escape(provider.display_name)
-        if provider.kind == "password":
-            action = html.escape(f"{prefix}/auth/password-login", quote=True)
-            parts.append(
-                f'<form method="post" action="{action}">'
-                f'<input type="hidden" name="provider" value="{name}">'
-                f'<input type="hidden" name="next" value="{html.escape(next_path, quote=True)}">'
-                '<label>Username<input name="username" autocomplete="username" required></label>'
-                '<label>Password<input name="password" type="password" '
-                'autocomplete="current-password" required></label>'
-                f'<button type="submit">Sign in ({label})</button></form>'
-            )
-        else:
-            href = f"{prefix}/auth/login?provider={quote(provider.name, safe='')}"
-            if next_path:
-                href += f"&next={quote(next_path, safe='')}"
-            parts.append(
-                f'<p><a href="{html.escape(href, quote=True)}">Sign in with {label}</a></p>'
-            )
-    parts.append("</body></html>")
-    return "".join(parts)
-
-
 @router.get("/login", include_in_schema=False)
 async def login_page(request: Request) -> Response:
     state = _state(request)
@@ -206,19 +163,13 @@ async def login_page(request: Request) -> Response:
     if not state.gated:
         return RedirectResponse(f"{prefix}/", status_code=302)
     next_path = safe_next(unquote(request.query_params.get("next", "")))
-    error = "Wrong username or password." if request.query_params.get("error") == "1" else ""
-    page = render_login(
-        providers=state.auth.registry.interactive(), prefix=prefix, next_path=next_path, error=error
+    page = render_login_page(
+        providers=state.auth.registry.interactive(),
+        prefix=prefix,
+        next_path=next_path,
+        error=request.query_params.get("error", ""),
     )
-    return HTMLResponse(
-        page,
-        headers={
-            **_NO_STORE,
-            "content-security-policy": _LOGIN_CSP,
-            "x-frame-options": "DENY",
-            "referrer-policy": "no-referrer",
-        },
-    )
+    return HTMLResponse(page, headers=login_headers())
 
 
 @router.get("/api/auth/providers")
@@ -353,6 +304,15 @@ async def _login_body(request: Request) -> tuple[dict[str, str], bool] | None:
     return fields, False
 
 
+def _back_to_login(prefix: str, code: str, raw_next: str) -> RedirectResponse:
+    """A failed browser form post: back to the login page with a fixed error code."""
+    target = f"{prefix}/login?error={code}"
+    landing = safe_next(raw_next)
+    if landing:
+        target += f"&next={quote(landing, safe='')}"
+    return RedirectResponse(target, status_code=303, headers=_NO_STORE)
+
+
 @router.post("/auth/password-login", include_in_schema=False)
 async def password_login(request: Request) -> Response:
     state = _state(request)
@@ -370,6 +330,8 @@ async def password_login(request: Request) -> Response:
     name = fields.get("provider") or "basic"
     if not _limiter(state).allow(client_ip(request.scope)):
         _audit(request, AuditEvent.LOGIN_FAILURE, provider=name, reason="rate_limited")
+        if is_form:
+            return _back_to_login(prefix, "rate_limited", fields.get("next", ""))
         return JSONResponse(
             {"error": "rate_limited", "detail": "Too many sign-in attempts; wait a minute."},
             status_code=429,
@@ -390,14 +352,12 @@ async def password_login(request: Request) -> Response:
     except BadCredentials:
         _audit(request, AuditEvent.LOGIN_FAILURE, provider=name, reason="invalid_credentials")
         if is_form:
-            target = f"{prefix}/login?error=1"
-            landing = safe_next(fields.get("next", ""))
-            if landing:
-                target += f"&next={quote(landing, safe='')}"
-            return RedirectResponse(target, status_code=303, headers=_NO_STORE)
+            return _back_to_login(prefix, "1", fields.get("next", ""))
         return JSONResponse(_GENERIC_401, status_code=401, headers=_NO_STORE)
     except ProviderUnavailable:
         _audit(request, AuditEvent.LOGIN_FAILURE, provider=name, reason="provider_unavailable")
+        if is_form:
+            return _back_to_login(prefix, "unavailable", fields.get("next", ""))
         return JSONResponse(
             {"error": "provider_unavailable", "detail": "Try again shortly."},
             status_code=503,

@@ -19,6 +19,8 @@ interface ProfileScope {
   select(name: string): void;
   /** `?profile=<name>` (or "") to keep the scope on links. */
   search: string;
+  /** Fetch the profile list again (after a create, rename or delete). */
+  refresh(): void;
 }
 
 const ProfileContext = createContext<ProfileScope>({
@@ -28,6 +30,7 @@ const ProfileContext = createContext<ProfileScope>({
   defaultName: "",
   select: () => {},
   search: "",
+  refresh: () => {},
 });
 
 export function useProfileScope(): ProfileScope {
@@ -68,6 +71,7 @@ export function ProfileScopeProvider({ children }: { children: ReactNode }) {
     defaultName,
     select,
     search: selected ? `?profile=${encodeURIComponent(selected)}` : "",
+    refresh: () => void profiles.refetch(),
   };
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }

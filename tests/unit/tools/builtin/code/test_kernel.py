@@ -14,7 +14,7 @@ from indus.foundation.clock import SystemClock
 from indus.tools.builtin.code import ExecuteCodeTool, kernel
 from indus.tools.builtin.code.kernel import KernelKey, KernelPool, child_owner
 from tests.fakes.clock import FakeClock, checkpoint
-from tests.unit.tools.builtin.code._rig import call, code_scope, fake_tools, run
+from tests.unit.tools.builtin.code._rig import call, code_scope, fake_tools, run, shutdown_pools
 
 KERNEL = {"code_execution": {"kernel": "auto"}}
 
@@ -309,6 +309,34 @@ def test_timeout_kills_the_kernel_and_the_next_call_starts_fresh(tmp_path: Path)
     assert not _alive(pid)
     assert fresh["output"] == "False\n"
     assert fresh["kernel"]["state_lost"] is True and "not here" in fresh["kernel"]["note"]
+
+
+def test_teardown_closes_a_fake_clock_kernel_whose_child_has_not_exited(tmp_path: Path) -> None:
+    # A kernel made under a test's fake clock is closed by the teardown (`shutdown_pools`) with
+    # that clock: `stop_tree` waits on it while the child is still running. Nothing advanced it
+    # there, so a child slower to exit than the pipe close (a loaded machine) hung the whole
+    # suite. Held stopped here, the child cannot exit until it is killed.
+    clock = _clock()
+    scope = code_scope(tmp_path, KERNEL, clock=clock)
+    registry, _ = fake_tools(tmp_path)
+
+    async def scenario() -> None:
+        await _drive(
+            clock, call(ExecuteCodeTool(), scope, "x = 1", registry=registry, cwd=tmp_path)
+        )
+
+    asyncio.run(scenario())
+    pid = _kernel_pid()
+    os.kill(pid, signal.SIGSTOP)
+    done = threading.Event()
+
+    def teardown() -> None:
+        shutdown_pools()
+        done.set()
+
+    threading.Thread(target=teardown, daemon=True).start()
+    assert done.wait(30), "the pools never closed"
+    assert len(kernel.POOL) == 0 and not _alive(pid)
 
 
 def test_interrupt_kills_the_kernel(tmp_path: Path) -> None:

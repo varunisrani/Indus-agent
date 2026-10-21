@@ -4,28 +4,46 @@
 // once P18-11..16 land), so a page and its mock cannot drift apart silently.
 
 import type {
+  ActionStatus,
+  AuxiliaryResponse,
+  CheckpointsResponse,
   ConfigObject,
   ConfigSchema,
+  CredentialPoolResponse,
   CronJob,
   CronJobInput,
+  DaemonInfo,
   DeliveryTarget,
   EffectiveEntry,
   EnvKeys,
   FileEntry,
+  HostStats,
   HubResult,
   LogFile,
+  LoginStarted,
+  LoginStatus,
   McpServer,
   McpServerCreate,
   McpTool,
+  MemoryInfo,
+  MessagingPlatform,
+  ModelInfo,
+  ModelOptions,
   MutationSnapshot,
+  PairingResponse,
+  PlatformTestResult,
   PluginInfo,
   ProfilesResponse,
   SessionInfo,
   SessionMessage,
   SessionStats,
+  ShellHook,
   SkillInfo,
+  StatusResponse,
   ToolsetInfo,
+  UpdateInfo,
   UsageDay,
+  WebhookRoute,
 } from "../lib/restTypes.ts";
 
 export interface MockState {
@@ -58,6 +76,40 @@ export interface MockState {
   mcpServers: McpServer[];
   /** Server name → tools its test lists, or an error string. */
   mcpTools: Record<string, McpTool[] | string>;
+  /** Profile name → PERSONA.md text. */
+  personas: Record<string, string>;
+  status: StatusResponse;
+  daemon: DaemonInfo;
+  /**
+   * Action name → the answers its status route gives, one per poll (the last repeats). Actions
+   * with no script answer one finished run.
+   */
+  actionScripts: Record<string, ActionStatus[]>;
+  /** Every action a POST started, in order. */
+  actionsStarted: string[];
+  platforms: MessagingPlatform[];
+  /** What the secret store and `.env` hold for platform fields; never answered as such. */
+  platformValues: Record<string, string>;
+  platformTests: Record<string, PlatformTestResult>;
+  pairing: PairingResponse;
+  /** Pairing code → the person it pairs. */
+  pairingCodes: Record<string, { platform: string; user_id: string; user_name: string | null }>;
+  webhookReceiver: boolean;
+  webhooks: WebhookRoute[];
+  modelInfo: ModelInfo;
+  modelOptions: ModelOptions;
+  auxiliary: AuxiliaryResponse;
+  /** The device-code grant a sign-in start answers; null → 400 `no_device_flow`. */
+  deviceGrant: Omit<LoginStarted, "session_id" | "provider" | "status" | "message"> | null;
+  /** Statuses successive polls of a sign-in answer (the last repeats). */
+  loginPolls: LoginStatus[];
+  hostStats: HostStats;
+  update: UpdateInfo;
+  memory: MemoryInfo;
+  pool: CredentialPoolResponse;
+  checkpoints: CheckpointsResponse;
+  hooks: ShellHook[];
+  hookEvents: string[];
 }
 
 export interface MockCall {
@@ -204,6 +256,75 @@ export function defaultMockState(): MockState {
     plugins: [],
     mcpServers: [],
     mcpTools: {},
+    personas: {},
+    status: {
+      version: "0.1.0",
+      daemon: { state: "running", heartbeat_age_s: 4 },
+      overall: "ok",
+      platforms: [],
+      active_sessions: 0,
+      recent_sessions: 0,
+      auth_required: false,
+      auth_providers: [],
+      memory: { pressure: "ok", available_percent: 60 },
+      disk: { pressure: "ok", used_percent: 40, free_gb: 120 },
+    },
+    daemon: { running: true, state: "running", pid: 4242, profile: "default", draining: false },
+    actionScripts: {},
+    actionsStarted: [],
+    platforms: [],
+    platformValues: {},
+    platformTests: {},
+    pairing: { pending: [], approved: [] },
+    pairingCodes: {},
+    webhookReceiver: true,
+    webhooks: [],
+    modelInfo: {
+      model: "fake-model",
+      provider: "fake",
+      config_context_length: null,
+      family_context_length: 128_000,
+      effective_context_length: 128_000,
+    },
+    modelOptions: {
+      providers: [
+        {
+          name: "fake",
+          label: "Fake provider",
+          description: "Answers from a script",
+          family: "openai",
+          auth_type: "api_key",
+          configured: true,
+          device_login: false,
+          supports_model_listing: false,
+        },
+      ],
+      current: { provider: "fake", model: "fake-model" },
+    },
+    auxiliary: { tasks: [], main: { provider: "fake", model: "fake-model" } },
+    deviceGrant: null,
+    loginPolls: ["pending"],
+    hostStats: {
+      cpu_count: 4,
+      load: [0.5, 0.4, 0.3],
+      memory: { total: 8 * 1024 ** 3, available: 4 * 1024 ** 3 },
+      disk: { total: 100 * 1024 ** 3, free: 60 * 1024 ** 3, used: 40 * 1024 ** 3 },
+    },
+    update: {
+      install_method: "git",
+      current_version: "0.1.0",
+      can_apply: true,
+      behind: 0,
+      update_available: false,
+      message: "Up to date.",
+      checked_at: 1_760_000_000,
+      cached: false,
+    },
+    memory: { active: "", providers: [], builtin_files: { "MEMORY.md": 0, "USER.md": 0 } },
+    pool: { providers: [] },
+    checkpoints: { projects: [], total_bytes: 0 },
+    hooks: [],
+    hookEvents: ["pre_tool_call", "post_tool_call", "on_session_start"],
   };
 }
 
@@ -738,6 +859,578 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
       (_call, m) => {
         const name = decodeURIComponent(m[1] ?? "");
         state.mcpServers = state.mcpServers.filter((s) => s.name !== name);
+        return ok();
+      },
+    ],
+    ...adminRoutes(state),
+  ];
+}
+
+// -- admin routes (P18-23..25): channels, webhooks, pairing, daemon, profiles, models, system ----
+
+const PROFILE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+function finishedRun(name: string): ActionStatus {
+  return {
+    name,
+    state: "done",
+    running: false,
+    exit_code: 0,
+    lines: [`=== ${name} started ===`, `=== ${name} done (0) ===`],
+  };
+}
+
+function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
+  const polls: Record<string, number> = {};
+  const logins: Record<string, number> = {};
+  let nextLogin = 1;
+  let nextPool = 1;
+
+  const started = (name: string, extra: Record<string, unknown> = {}): MockReply => {
+    state.actionsStarted.push(name);
+    polls[name] = 0;
+    return { status: 202, body: { ok: true, action: name, profile: "default", ...extra } };
+  };
+  const findPlatform = (id: string) => state.platforms.find((p) => p.id === id);
+  const findProfile = (name: string) => state.profiles.profiles.find((p) => p.name === name);
+  const findHook = (body: Record<string, unknown>) =>
+    state.hooks.findIndex((h) => h.event === body.event && h.command === body.command);
+  const platformState = (p: MessagingPlatform): string => {
+    if (p.explicitly_disabled) return "disabled";
+    if (!p.enabled) return "not_configured";
+    return state.daemon.running ? "pending_restart" : "daemon_stopped";
+  };
+
+  return [
+    ["GET", /^\/api\/status$/, () => ok(state.status)],
+    ["GET", /^\/api\/daemon$/, () => ok(state.daemon)],
+    ["POST", /^\/api\/daemon\/(start|stop|restart)$/, (_call, m) => started(`daemon-${m[1]}`)],
+    [
+      "GET",
+      /^\/api\/actions\/([^/]+)\/status$/,
+      (_call, m) => {
+        const name = decodeURIComponent(m[1] ?? "");
+        const script = state.actionScripts[name];
+        if (!script?.length) return ok(finishedRun(name));
+        const at = polls[name] ?? 0;
+        polls[name] = at + 1;
+        return ok(script[Math.min(at, script.length - 1)]);
+      },
+    ],
+
+    [
+      "GET",
+      /^\/api\/messaging\/platforms$/,
+      () => ok({ platforms: state.platforms, daemon_running: state.daemon.running }),
+    ],
+    [
+      "PUT",
+      /^\/api\/messaging\/platforms\/([^/]+)$/,
+      (call, m) => {
+        const platform = findPlatform(decodeURIComponent(m[1] ?? ""));
+        if (!platform) return fail(404, "unknown_platform", "No such messaging platform.");
+        const body = asRecord(call.body);
+        const env = asRecord(body.env) as Record<string, unknown>;
+        const clear = Array.isArray(body.clear_env) ? body.clear_env.map(String) : [];
+        for (const key of [...clear, ...Object.keys(env)]) {
+          if (!platform.fields.some((f) => f.key === key)) {
+            return fail(400, "unknown_field", `${key} is not a setting of ${platform.name}.`);
+          }
+        }
+        for (const [key, raw] of Object.entries(env)) {
+          const field = platform.fields.find((f) => f.key === key);
+          if (field?.is_secret && field.preview !== null && raw === field.preview) {
+            return fail(400, "redacted_value", `${key} was sent as its masked preview.`);
+          }
+        }
+        for (const key of clear) {
+          delete state.platformValues[`${platform.id}.${key}`];
+          const field = platform.fields.find((f) => f.key === key);
+          if (field) Object.assign(field, { is_set: false, preview: null, value: null });
+        }
+        for (const [key, raw] of Object.entries(env)) {
+          const value = text(raw).trim();
+          if (!value) continue;
+          state.platformValues[`${platform.id}.${key}`] = value;
+          const field = platform.fields.find((f) => f.key === key);
+          if (!field) continue;
+          field.is_set = true;
+          if (field.is_secret) field.preview = redact(value);
+          else field.value = value;
+        }
+        if (typeof body.enabled === "boolean") {
+          platform.enabled = body.enabled;
+          platform.explicitly_disabled = !body.enabled;
+        }
+        platform.state = platformState(platform);
+        return ok({ ok: true, platform: platform.id, restart_needed: true });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/messaging\/platforms\/([^/]+)\/test$/,
+      (_call, m) => {
+        const id = decodeURIComponent(m[1] ?? "");
+        const platform = findPlatform(id);
+        if (!platform) return fail(404, "unknown_platform", "No such messaging platform.");
+        return ok(
+          state.platformTests[id] ?? {
+            ok: platform.state === "connected",
+            state: platform.state,
+            message: `${platform.name}: ${platform.state}`,
+          },
+        );
+      },
+    ],
+
+    ["GET", /^\/api\/pairing$/, () => ok(state.pairing)],
+    [
+      "POST",
+      /^\/api\/pairing\/approve$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const platform = text(body.platform);
+        if (!platform) return fail(422, "invalid", "platform is required");
+        const requestId = text(body.request_id);
+        const code = text(body.code);
+        if (code === "LOCKED") return fail(429, "locked_out", "Too many wrong codes.");
+        let user: { user_id: string; user_name: string | null } | undefined;
+        if (requestId) {
+          const at = state.pairing.pending.findIndex(
+            (p) => p.platform === platform && p.request_id === requestId,
+          );
+          const found = state.pairing.pending[at];
+          if (found) {
+            state.pairing.pending.splice(at, 1);
+            user = { user_id: found.user_id, user_name: found.user_name };
+          }
+        } else if (code) {
+          const found = state.pairingCodes[code];
+          if (found?.platform === platform) {
+            delete state.pairingCodes[code];
+            user = { user_id: found.user_id, user_name: found.user_name };
+          }
+        } else {
+          return fail(400, "code_required", "Give the pairing code (or the request id).");
+        }
+        if (!user)
+          return fail(404, "no_such_code", "That code or request is unknown or has expired.");
+        state.pairing.approved.push({ platform, ...user, approved_at: 1_760_000_000 });
+        return ok({ ok: true, user });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/pairing\/revoke$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const before = state.pairing.approved.length;
+        state.pairing.approved = state.pairing.approved.filter(
+          (a) => !(a.platform === body.platform && a.user_id === body.user_id),
+        );
+        if (state.pairing.approved.length === before) {
+          return fail(404, "not_approved", "That user is not approved on this platform.");
+        }
+        return ok();
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/pairing\/clear-pending$/,
+      () => {
+        const cleared = state.pairing.pending.length;
+        state.pairing.pending = [];
+        return ok({ ok: true, cleared });
+      },
+    ],
+
+    [
+      "GET",
+      /^\/api\/webhooks$/,
+      () =>
+        ok({
+          receiver_enabled: state.webhookReceiver,
+          base_url: "http://127.0.0.1:8644",
+          routes: state.webhooks,
+        }),
+    ],
+    [
+      "POST",
+      /^\/api\/webhooks$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const name = text(body.name).trim().toLowerCase();
+        if (!/^[a-z0-9][a-z0-9_-]*$/.test(name)) {
+          return fail(400, "bad_name", "Use lower-case letters, digits, '-' and '_' for the name.");
+        }
+        if (state.webhooks.some((w) => w.name === name)) {
+          return fail(409, "route_exists", "A route with that name already exists.");
+        }
+        const route: WebhookRoute = {
+          name,
+          source: "subscribed",
+          url: `http://127.0.0.1:8644/webhooks/${name}`,
+          auth: text(body.auth) || "auto",
+          events: Array.isArray(body.events) ? body.events.map(String) : [],
+          prompt: text(body.prompt),
+          deliver: text(body.deliver) || null,
+          deliver_only: body.deliver_only === true,
+          description: text(body.description) || `Added from the dashboard: ${name}`,
+          created_at: "2026-10-20T12:00:00+00:00",
+          enabled: true,
+          secret_set: true,
+        };
+        state.webhooks.push(route);
+        // Built at runtime: never a credential-shaped literal in the source.
+        const secret = ["whsec", "mock", name, "0123456789"].join("-");
+        return { status: 201, body: { ...route, secret } };
+      },
+    ],
+    [
+      "PUT",
+      /^\/api\/webhooks\/receiver$/,
+      (call) => {
+        state.webhookReceiver = asRecord(call.body).enabled === true;
+        return ok({ ok: true, receiver_enabled: state.webhookReceiver, restart_needed: true });
+      },
+    ],
+    [
+      "PUT",
+      /^\/api\/webhooks\/([^/]+)\/enabled$/,
+      (call, m) => {
+        const route = state.webhooks.find((w) => w.name === decodeURIComponent(m[1] ?? ""));
+        if (!route) return fail(404, "no_such_route", "No such webhook route.");
+        if (route.source === "config") return fail(409, "config_route", "Set in the config file.");
+        route.enabled = asRecord(call.body).enabled === true;
+        return ok({ ok: true, name: route.name, enabled: route.enabled });
+      },
+    ],
+    [
+      "DELETE",
+      /^\/api\/webhooks\/([^/]+)$/,
+      (_call, m) => {
+        const name = decodeURIComponent(m[1] ?? "");
+        const route = state.webhooks.find((w) => w.name === name);
+        if (!route) return fail(404, "no_such_route", "No such webhook route.");
+        if (route.source === "config") return fail(409, "config_route", "Set in the config file.");
+        state.webhooks = state.webhooks.filter((w) => w.name !== name);
+        return ok({ ok: true, name });
+      },
+    ],
+
+    [
+      "POST",
+      /^\/api\/profiles$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const name = text(body.name).trim().toLowerCase();
+        if (!PROFILE_ID.test(name) || name === "default") {
+          return fail(400, "bad_name", "Use 1-64 lowercase letters, digits, '-' or '_'.");
+        }
+        if (findProfile(name))
+          return fail(409, "profile_exists", "A profile with that name exists.");
+        state.profiles.profiles.push({
+          name,
+          is_default: false,
+          is_sticky: false,
+          is_current: false,
+          model: null,
+          provider: null,
+          description: text(body.description) || null,
+          has_persona: false,
+        });
+        return { status: 201, body: { ok: true, name, message: `created ${name}` } };
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/profiles\/active$/,
+      (call) => {
+        const name = text(asRecord(call.body).name);
+        if (!findProfile(name)) return fail(404, "profile_not_found", "No such profile.");
+        state.profiles.active = name;
+        for (const p of state.profiles.profiles) p.is_sticky = p.name === name;
+        return ok({ ok: true, active: name });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/profiles\/import$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const name = text(body.name) || "imported";
+        state.profiles.profiles.push({ name, is_default: false });
+        return { status: 201, body: { ok: true, name, path: `/profiles/${name}` } };
+      },
+    ],
+    [
+      "PATCH",
+      /^\/api\/profiles\/([^/]+)$/,
+      (call, m) => {
+        const profile = findProfile(decodeURIComponent(m[1] ?? ""));
+        if (!profile) return fail(404, "profile_not_found", "No such profile.");
+        if (profile.is_default)
+          return fail(400, "default_profile", "The default cannot be renamed.");
+        const next = text(asRecord(call.body).new_name).trim().toLowerCase();
+        if (!PROFILE_ID.test(next)) return fail(400, "bad_name", "Not a valid profile name.");
+        profile.name = next;
+        return ok({ ok: true, name: next, message: "" });
+      },
+    ],
+    [
+      "DELETE",
+      /^\/api\/profiles\/([^/]+)$/,
+      (_call, m) => {
+        const name = decodeURIComponent(m[1] ?? "");
+        const profile = findProfile(name);
+        if (!profile) return fail(404, "profile_not_found", "No such profile.");
+        if (profile.is_default) return fail(400, "default_profile", "The default cannot go.");
+        state.profiles.profiles = state.profiles.profiles.filter((p) => p.name !== name);
+        return ok({ ok: true, name, message: `deleted ${name}` });
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/profiles\/([^/]+)\/persona$/,
+      (_call, m) => {
+        const name = decodeURIComponent(m[1] ?? "");
+        if (!findProfile(name)) return fail(404, "profile_not_found", "No such profile.");
+        const content = state.personas[name];
+        return ok({ content: content ?? "", exists: content !== undefined });
+      },
+    ],
+    [
+      "PUT",
+      /^\/api\/profiles\/([^/]+)\/(persona|description|model)$/,
+      (call, m) => {
+        const profile = findProfile(decodeURIComponent(m[1] ?? ""));
+        if (!profile) return fail(404, "profile_not_found", "No such profile.");
+        const body = asRecord(call.body);
+        if (m[2] === "persona") {
+          state.personas[profile.name] = text(body.content);
+          profile.has_persona = true;
+        } else if (m[2] === "description") {
+          profile.description = text(body.description).trim() || null;
+        } else {
+          if (!text(body.provider) || !text(body.model)) return fail(422, "invalid", "both needed");
+          profile.provider = text(body.provider);
+          profile.model = text(body.model);
+        }
+        return ok();
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/profiles\/([^/]+)\/export$/,
+      (_call, m) => {
+        const name = decodeURIComponent(m[1] ?? "");
+        if (!findProfile(name)) return fail(404, "profile_not_found", "No such profile.");
+        return started("profile-export", {
+          profile: name,
+          archive: `/profiles/${name}/backups/profile-${name}.zip`,
+        });
+      },
+    ],
+
+    ["GET", /^\/api\/model\/info$/, () => ok(state.modelInfo)],
+    ["GET", /^\/api\/model\/options$/, () => ok(state.modelOptions)],
+    ["GET", /^\/api\/model\/auxiliary$/, () => ok(state.auxiliary)],
+    [
+      "POST",
+      /^\/api\/model\/set$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const provider = text(body.provider);
+        const model = text(body.model);
+        if (body.scope === "main") {
+          if (!model) return fail(400, "model_required", "Name the model.");
+          state.modelInfo.model = model;
+          if (provider) state.modelInfo.provider = provider;
+          state.modelOptions.current = { provider: provider || null, model };
+        } else if (body.scope === "auxiliary") {
+          const task = state.auxiliary.tasks.find((t) => t.task === body.task);
+          if (!task) return fail(400, "unknown_task", "Unknown side task.");
+          task.provider = provider || "auto";
+          task.model = model;
+        } else {
+          return fail(400, "bad_scope", "scope must be main or auxiliary.");
+        }
+        return ok({
+          ok: true,
+          scope: body.scope,
+          provider: provider || null,
+          model: model || null,
+        });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/providers\/login\/start$/,
+      (call) => {
+        const provider = text(asRecord(call.body).provider);
+        if (!state.deviceGrant) {
+          return fail(400, "no_device_flow", "This provider documents no device sign-in.");
+        }
+        const id = `login-${nextLogin++}`;
+        logins[id] = 0;
+        return ok({
+          session_id: id,
+          provider,
+          status: "pending",
+          message: "",
+          ...state.deviceGrant,
+        });
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/providers\/login\/([^/]+)$/,
+      (_call, m) => {
+        const id = decodeURIComponent(m[1] ?? "");
+        const at = logins[id];
+        if (at === undefined) return fail(404, "no_such_session", "No such sign-in session.");
+        logins[id] = at + 1;
+        const status = state.loginPolls[Math.min(at, state.loginPolls.length - 1)] ?? "pending";
+        const message = status === "approved" ? "Signed in; the credential was added." : "";
+        return ok({ session_id: id, provider: "fake", status, message });
+      },
+    ],
+    [
+      "DELETE",
+      /^\/api\/providers\/login\/([^/]+)$/,
+      (_call, m) => {
+        const id = decodeURIComponent(m[1] ?? "");
+        if (logins[id] === undefined) return fail(404, "no_such_session", "No such session.");
+        return ok({ session_id: id, provider: "fake", status: "cancelled", message: "Cancelled." });
+      },
+    ],
+
+    ["GET", /^\/api\/system\/stats$/, () => ok(state.hostStats)],
+    ["GET", /^\/api\/system\/update$/, () => ok(state.update)],
+    [
+      "POST",
+      /^\/api\/system\/update$/,
+      () =>
+        state.update.can_apply
+          ? started("update")
+          : fail(409, "update_not_in_place", "This install is not a git checkout."),
+    ],
+    ["GET", /^\/api\/memory$/, () => ok(state.memory)],
+    [
+      "PUT",
+      /^\/api\/memory\/provider$/,
+      (call) => {
+        const name = text(asRecord(call.body).provider).trim().toLowerCase();
+        if (name && !state.memory.providers.includes(name)) {
+          return fail(400, "unknown_memory_provider", "That memory provider is not installed.");
+        }
+        state.memory.active = name;
+        return ok({ ok: true, active: name });
+      },
+    ],
+    ["GET", /^\/api\/credentials\/pool$/, () => ok(state.pool)],
+    [
+      "POST",
+      /^\/api\/credentials\/pool$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const provider = text(body.provider);
+        const key = text(body.api_key).trim();
+        if (!key || key === "changeme") {
+          return fail(400, "placeholder_key", "That does not look like a real key.");
+        }
+        let group = state.pool.providers.find((p) => p.provider === provider);
+        if (!group) {
+          group = { provider, label: provider, inherited: false, entries: [] };
+          state.pool.providers.push(group);
+        }
+        const index = group.entries.length + 1;
+        const id = `entry-${nextPool++}`;
+        group.entries.push({
+          index,
+          id,
+          label: text(body.label) || `api-key-${index}`,
+          status: "ok",
+          auth_type: "api_key",
+          source: "manual",
+          env_var: null,
+          expires_at: null,
+          priority: 0,
+          request_count: 0,
+          preview: redact(key),
+        });
+        return { status: 201, body: { ok: true, provider, index, id } };
+      },
+    ],
+    [
+      "DELETE",
+      /^\/api\/credentials\/pool\/([^/]+)\/(\d+)$/,
+      (_call, m) => {
+        const group = state.pool.providers.find(
+          (p) => p.provider === decodeURIComponent(m[1] ?? ""),
+        );
+        const index = Number(m[2]);
+        const entry = group?.entries[index - 1];
+        if (!group || !entry) return fail(404, "no_such_entry", "There is no credential there.");
+        group.entries.splice(index - 1, 1);
+        group.entries.forEach((e, i) => {
+          e.index = i + 1;
+        });
+        if (!group.entries.length) {
+          state.pool.providers = state.pool.providers.filter((p) => p !== group);
+        }
+        return ok({ ok: true, provider: group.provider, removed: entry.label, env_var_kept: null });
+      },
+    ],
+    ["POST", /^\/api\/ops\/doctor$/, () => started("doctor")],
+    [
+      "POST",
+      /^\/api\/ops\/backup$/,
+      () => started("backup", { archive: "/home/user/.indus/backups/indus-backup-1.zip" }),
+    ],
+    [
+      "POST",
+      /^\/api\/ops\/(import|import-upload)$/,
+      (call) => started("import", { archive: text(asRecord(call.body).archive) || "upload.zip" }),
+    ],
+    ["GET", /^\/api\/ops\/checkpoints$/, () => ok(state.checkpoints)],
+    ["POST", /^\/api\/ops\/checkpoints\/prune$/, () => started("checkpoints-prune")],
+    [
+      "GET",
+      /^\/api\/ops\/hooks$/,
+      () => ok({ hooks: state.hooks, events: state.hookEvents, warnings: [] }),
+    ],
+    [
+      "POST",
+      /^\/api\/ops\/hooks$/,
+      (call) => {
+        const body = asRecord(call.body);
+        if (body.consent !== true) {
+          return fail(400, "consent_required", "A shell hook runs your command; confirm it.");
+        }
+        if (!state.hookEvents.includes(text(body.event))) {
+          return fail(400, "unknown_event", "Unknown event.");
+        }
+        if (findHook(body) >= 0) return fail(409, "hook_exists", "That hook exists.");
+        state.hooks.push({
+          event: text(body.event),
+          command: text(body.command),
+          matcher: text(body.matcher) || null,
+          timeout: typeof body.timeout === "number" ? body.timeout : null,
+          approved: true,
+          grant_id: `grant-${state.hooks.length + 1}`,
+          executable: true,
+        });
+        return { status: 201, body: { ok: true, approved: true } };
+      },
+    ],
+    [
+      "DELETE",
+      /^\/api\/ops\/hooks$/,
+      (call) => {
+        const at = findHook(asRecord(call.body));
+        if (at < 0) return fail(404, "no_such_hook", "No such hook.");
+        state.hooks.splice(at, 1);
         return ok();
       },
     ],

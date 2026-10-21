@@ -14,6 +14,13 @@ htmlcov/
 # Node (apps/ later)
 node_modules/
 
+# Built dashboard pages published into the package (P18-29, python -m indus.web.bundle publish)
+src/indus/web/static/
+
+# Playwright output of the dashboard's browser suite (P18-30): traces of failed runs
+apps/web/test-results/
+apps/web/playwright-report/
+
 # Editors and OS
 .idea/
 .vscode/

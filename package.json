@@ -13,7 +13,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "tui:build": "pnpm --filter @indus/tui run build",
-    "tui:e2e": "pnpm --filter @indus/tui run e2e"
+    "tui:e2e": "pnpm --filter @indus/tui run e2e",
+    "web:e2e": "pnpm --filter @indus/web run e2e"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

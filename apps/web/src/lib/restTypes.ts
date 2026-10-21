@@ -5,11 +5,374 @@
 export interface ProfileSummary {
   name: string;
   is_default: boolean;
+  /** The sticky profile new CLI runs pick up (`indus profile use`). */
+  is_sticky?: boolean;
+  /** The profile this dashboard backend itself serves. */
+  is_current?: boolean;
+  model?: string | null;
+  provider?: string | null;
+  description?: string | null;
+  has_persona?: boolean;
 }
 
 export interface ProfilesResponse {
   profiles: ProfileSummary[];
+  /** The sticky profile. */
   active: string;
+  /** The profile this backend serves. */
+  current?: string;
+}
+
+export interface ProfileCreate {
+  name: string;
+  clone_from?: string;
+  clone_all?: boolean;
+  description?: string;
+  no_skills?: boolean;
+  alias?: boolean;
+}
+
+/** Create / rename / delete run `indus profile …`; `message` is its (masked) output. */
+export interface ProfileCommandResponse {
+  ok: boolean;
+  name: string;
+  message: string;
+}
+
+export interface PersonaResponse {
+  content: string;
+  exists: boolean;
+}
+
+export interface ProfileExportResponse {
+  ok: boolean;
+  action: string;
+  profile: string;
+  archive: string;
+}
+
+// -- background actions (doctor, backup, daemon start/stop/restart, update, export) ------------
+
+export interface ActionStarted {
+  ok: boolean;
+  action: string;
+  profile: string;
+  /** Backup / import: the archive the run writes or reads. */
+  archive?: string;
+}
+
+export type ActionState = "idle" | "unknown" | "running" | "done" | "failed";
+
+export interface ActionStatus {
+  name: string;
+  state: ActionState;
+  running: boolean;
+  exit_code: number | null;
+  started_at?: number;
+  /** The last lines of the run's log, secrets masked by the server. */
+  lines: string[];
+}
+
+// -- daemon -------------------------------------------------------------------------------------
+
+/** `GET /api/daemon`: what the control socket says (a stopped daemon has only the first three). */
+export interface DaemonInfo {
+  running: boolean;
+  state: string;
+  pid: number | null;
+  profile?: string | null;
+  code_version?: string | null;
+  draining?: boolean;
+}
+
+// -- messaging platforms and pairing ----------------------------------------------------------
+
+export type PlatformFieldKind = "credential" | "setting" | "policy";
+
+export interface PlatformField {
+  key: string;
+  kind: PlatformFieldKind;
+  required: boolean;
+  is_set: boolean;
+  is_secret: boolean;
+  /** Credentials: a masked preview when set; never the value. */
+  preview: string | null;
+  /** Settings and policy values, shown as they are (not secrets). */
+  value: string | null;
+}
+
+export interface MessagingPlatform {
+  id: string;
+  name: string;
+  description: string;
+  installed: boolean;
+  install_hint: string | null;
+  enabled: boolean;
+  explicitly_disabled: boolean;
+  configured: boolean;
+  /** disabled, not_configured, daemon_stopped, pending_restart, or the daemon's own report. */
+  state: string;
+  reason: string | null;
+  daemon_running: boolean;
+  fields: PlatformField[];
+}
+
+export interface MessagingPlatformsResponse {
+  platforms: MessagingPlatform[];
+  daemon_running: boolean;
+}
+
+/** Blank values keep what is stored; `clear_env` removes names; `enabled` goes to the config. */
+export interface PlatformUpdate {
+  enabled?: boolean;
+  env?: Record<string, string>;
+  clear_env?: string[];
+}
+
+export interface PlatformUpdateResponse {
+  ok: boolean;
+  platform: string;
+  restart_needed: boolean;
+}
+
+export interface PlatformTestResult {
+  ok: boolean;
+  state: string;
+  message: string;
+}
+
+export interface PairingPending {
+  platform: string;
+  request_id: string;
+  user_id: string;
+  user_name: string | null;
+  age_seconds: number;
+}
+
+export interface PairingApproved {
+  platform: string;
+  user_id: string;
+  user_name: string | null;
+  approved_at: number | string | null;
+}
+
+export interface PairingResponse {
+  pending: PairingPending[];
+  approved: PairingApproved[];
+}
+
+export interface PairingApproveRequest {
+  platform: string;
+  code?: string;
+  request_id?: string;
+}
+
+// -- webhooks ---------------------------------------------------------------------------------
+
+export const WEBHOOK_AUTHS = ["auto", "github", "gitlab", "hmac", "hmac_ts"] as const;
+export type WebhookAuth = (typeof WEBHOOK_AUTHS)[number];
+
+export interface WebhookRoute {
+  name: string;
+  /** `subscribed` routes are managed here; `config` routes live in config.yaml (read-only). */
+  source: "subscribed" | "config";
+  url: string;
+  auth: WebhookAuth | "insecure" | string;
+  events: string[];
+  prompt: string;
+  deliver: string | null;
+  deliver_only: boolean;
+  description: string;
+  created_at: string | null;
+  enabled: boolean;
+  secret_set: boolean;
+}
+
+export interface WebhooksResponse {
+  receiver_enabled: boolean;
+  base_url: string;
+  routes: WebhookRoute[];
+}
+
+export interface WebhookCreate {
+  name: string;
+  events?: string[];
+  prompt?: string;
+  deliver?: string;
+  deliver_only?: boolean;
+  auth?: WebhookAuth;
+  description?: string;
+}
+
+/** The create answer: the only response that ever carries the signing secret. */
+export interface WebhookCreated extends WebhookRoute {
+  secret: string;
+}
+
+// -- models and provider sign-in --------------------------------------------------------------
+
+export interface ModelInfo {
+  model: string | null;
+  provider: string | null;
+  config_context_length: number | null;
+  family_context_length: number | null;
+  effective_context_length: number | null;
+}
+
+export interface ProviderOption {
+  name: string;
+  label: string;
+  description: string;
+  family: string;
+  auth_type: string;
+  /** A key or sign-in exists for it. */
+  configured: boolean;
+  /** A documented device-code sign-in exists. */
+  device_login: boolean;
+  supports_model_listing: boolean;
+}
+
+export interface ModelOptions {
+  providers: ProviderOption[];
+  current: { provider: string | null; model: string | null };
+}
+
+export interface ModelAssignment {
+  scope: "main" | "auxiliary";
+  task?: string;
+  provider: string;
+  model: string;
+  base_url?: string;
+}
+
+export interface AuxiliaryTask {
+  task: string;
+  provider: string;
+  model: string;
+  base_url: string;
+  description: string;
+}
+
+export interface AuxiliaryResponse {
+  tasks: AuxiliaryTask[];
+  main: { provider: string; model: string };
+}
+
+export type LoginStatus = "pending" | "approved" | "denied" | "expired" | "failed" | "cancelled";
+
+export interface LoginSessionInfo {
+  session_id: string;
+  provider: string;
+  status: LoginStatus;
+  message: string;
+}
+
+export interface LoginStarted extends LoginSessionInfo {
+  user_code: string;
+  verification_url: string;
+  expires_in: number;
+  /** Seconds between polls, as the provider asked. */
+  interval: number;
+}
+
+// -- system -----------------------------------------------------------------------------------
+
+export interface HostStats {
+  cpu_count: number | null;
+  load: number[] | null;
+  cpu_percent?: number;
+  memory: { total: number; available: number | null } | null;
+  disk: { total: number; free: number; used: number } | null;
+}
+
+export interface UpdateInfo {
+  install_method: string;
+  current_version: string;
+  /** Only a git checkout can be updated from here. */
+  can_apply: boolean;
+  behind: number | null;
+  update_available: boolean;
+  message: string | null;
+  checked_at: number | null;
+  cached: boolean;
+}
+
+export interface MemoryInfo {
+  /** "" = the built-in memory only. */
+  active: string;
+  providers: string[];
+  builtin_files: Record<string, number>;
+}
+
+export interface PoolEntryRow {
+  /** 1-based, as listed; the delete route takes it. */
+  index: number;
+  id: string;
+  label: string;
+  status: string;
+  auth_type: string;
+  source: string;
+  env_var: string | null;
+  expires_at: string | null;
+  priority: number;
+  request_count: number;
+  /** Masked; never the value. */
+  preview: string;
+}
+
+export interface PoolProvider {
+  provider: string;
+  label: string;
+  inherited: boolean;
+  entries: PoolEntryRow[];
+}
+
+export interface CredentialPoolResponse {
+  providers: PoolProvider[];
+}
+
+export interface PoolAddRequest {
+  provider: string;
+  api_key: string;
+  label?: string;
+}
+
+export interface CheckpointProject {
+  key: string;
+  workdir: string;
+  commits: number;
+  bytes: number;
+  last_touch: number | null;
+  exists: boolean;
+}
+
+export interface CheckpointsResponse {
+  projects: CheckpointProject[];
+  total_bytes: number;
+}
+
+export interface ShellHook {
+  event: string;
+  command: string;
+  matcher: string | null;
+  timeout: number | null;
+  approved: boolean;
+  grant_id: string;
+  executable: boolean;
+}
+
+export interface ShellHooksResponse {
+  hooks: ShellHook[];
+  events: string[];
+  warnings: string[];
+}
+
+export interface ShellHookCreate {
+  event: string;
+  command: string;
+  matcher?: string;
+  timeout?: number;
+  consent: boolean;
 }
 
 // -- status (public probe, P18-13) ------------------------------------------------------------

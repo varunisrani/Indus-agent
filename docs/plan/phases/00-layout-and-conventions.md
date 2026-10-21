@@ -348,7 +348,7 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | @biomejs/biome | 2.5.15 | 2026-09-30 | MIT OR Apache-2.0 | dev | P00-08 |
 | vitest | 5.0.3 | 2026-09-30 | MIT | dev | P00-08 |
 | @types/node | 24.19.1 | 2026-10-01 | MIT | dev | P00-08 |
-| @playwright/test | 1.63.0 | 2026-09-04 | Apache-2.0 | dev | P18 (pinned here for reference) |
+| @playwright/test | 1.56.1 | 2025-10-17 | Apache-2.0 (pulls `playwright` / `playwright-core` 1.56.1, Apache-2.0, and optional macOS-only `fsevents` 2.3.2, MIT) | `@indus/web` dev: the browser suite (P18-30). 1.63.0 (2026-09-04, the earlier reference pin) needs a newer Chromium than the revision 1194 preinstalled where the suite is built; CI installs 1194 with `playwright install chromium` | P18-30 |
 | react-dom | 19.3.0 | 2026-09-09 | MIT | `@indus/web` runtime | P18-17..22 |
 | react-router | 8.4.0 | 2026-09-15 | MIT | `@indus/web` runtime | P18-17..22 |
 | @tanstack/react-query | 5.104.1 | 2026-10-02 | MIT | `@indus/web` runtime | P18-17..22 |
@@ -362,6 +362,11 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | @types/react-dom | 19.3.0 | 2026-09-09 | MIT | `@indus/web` dev | P18-17..22 |
 | axe-core | 4.13.0 | 2026-08-05 | MPL-2.0 (unmodified) | `@indus/web` dev | P18-17..22 |
 | jsdom | 29.1.1 | 2026-04-30 | MIT (pulls dev-only MIT-0 `@csstools/*` and BlueOak-1.0.0 `lru-cache`; 30.x needs Node >= 22.22.2) | `@indus/web` dev | P18-17..22 |
+| @xterm/xterm | 6.0.0 | 2025-12-22 | MIT | `@indus/web` runtime (the Chat tab's terminal; no dependencies) | P18-26 |
+| @xterm/addon-fit | 0.11.0 | 2025-12-22 | MIT | `@indus/web` runtime | P18-26 |
+| @xterm/addon-unicode11 | 0.9.0 | 2025-12-22 | MIT | `@indus/web` runtime | P18-26 |
+| @xterm/addon-web-links | 0.12.0 | 2025-12-22 | MIT | `@indus/web` runtime | P18-26 |
+| @xterm/addon-webgl | 0.19.0 | 2025-12-22 | MIT | `@indus/web` runtime (off on software renderers) | P18-26 |
 
 If a pin cannot be installed (yanked, platform wheel missing), the builder takes the newest
 version that is at least 14 days old, records the swap in the task note and in this table.

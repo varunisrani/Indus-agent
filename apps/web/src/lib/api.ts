@@ -4,10 +4,16 @@
 
 import { authRequired, basePath, servingProfile, sessionToken } from "./bootstrap.ts";
 import type {
+  ActionStarted,
+  ActionStatus,
+  AuxiliaryResponse,
+  CheckpointsResponse,
   ConfigObject,
   ConfigSchema,
+  CredentialPoolResponse,
   CronJob,
   CronJobInput,
+  DaemonInfo,
   DeliveryTarget,
   DownloadTicket,
   EffectiveConfig,
@@ -15,20 +21,38 @@ import type {
   EnvWriteResponse,
   FileContent,
   FileListing,
+  HostStats,
   HubSearchResponse,
   LogComponent,
   LogFile,
+  LoginSessionInfo,
+  LoginStarted,
   LogLevel,
   LogsResponse,
   LogTail,
   McpServerCreate,
   McpServersResponse,
   McpTestResult,
+  MemoryInfo,
+  MessagingPlatformsResponse,
+  ModelAssignment,
+  ModelInfo,
+  ModelOptions,
   MutationIdentity,
   MutationSnapshot,
   OkResponse,
+  PairingApproveRequest,
+  PairingResponse,
+  PersonaResponse,
+  PlatformTestResult,
+  PlatformUpdate,
+  PlatformUpdateResponse,
   PluginInstallRequest,
   PluginsResponse,
+  PoolAddRequest,
+  ProfileCommandResponse,
+  ProfileCreate,
+  ProfileExportResponse,
   ProfilesResponse,
   PruneResponse,
   SessionInfo,
@@ -36,10 +60,16 @@ import type {
   SessionMessagesResponse,
   SessionSearchResponse,
   SessionStats,
+  ShellHookCreate,
+  ShellHooksResponse,
   SkillInfo,
   StatusResponse,
   ToolsetInfo,
+  UpdateInfo,
   UsageResponse,
+  WebhookCreate,
+  WebhookCreated,
+  WebhooksResponse,
 } from "./restTypes.ts";
 
 export const SESSION_HEADER = "X-Indus-Session-Token";
@@ -130,6 +160,11 @@ export function setBrowserNavigation(next: BrowserNavigation): () => void {
   return () => {
     navigation = realNavigation;
   };
+}
+
+/** Full-page navigation through the same seam the 401 flow uses (sign-out, P18-28). */
+export function assignLocation(url: string): void {
+  navigation.assign(url);
 }
 
 type FailureListener = (error: ApiError) => void;
@@ -428,6 +463,36 @@ export async function downloadFile(path: string): Promise<void> {
   link.click();
 }
 
+/**
+ * `url` aimed at one named profile instead of the selected one (the profile builder writes into the
+ * profile it just made; a profile's export runs under that profile). No name → `url` unchanged.
+ */
+export function forProfile(url: string, profile?: string): string {
+  const name = profile?.trim();
+  if (!name) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}profile=${encodeURIComponent(name)}`;
+}
+
+/** Fetch an authenticated attachment (the session header rides along) and offer it as a file. */
+export async function saveAttachment(url: string, filename: string): Promise<void> {
+  const res = await rawRequest(url);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const { message, code } = errorParts(parseBody(text), res.statusText || `HTTP ${res.status}`);
+    throw new ApiError(res.status, message, `GET ${url} → ${res.status}`, code);
+  }
+  const blob = await res.blob();
+  if (typeof URL.createObjectURL !== "function") return;
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  link.rel = "noopener";
+  link.click();
+  URL.revokeObjectURL(href);
+}
+
 export interface SessionListQuery {
   sources?: readonly string[];
   excludeSources?: readonly string[];
@@ -447,6 +512,162 @@ export interface LogsQuery {
 export const api = {
   profiles: () => request<ProfilesResponse>("/api/profiles"),
   status: () => request<StatusResponse>("/api/status"),
+
+  profile: {
+    create: (body: ProfileCreate) =>
+      request<ProfileCommandResponse>("/api/profiles", { json: body }),
+    setSticky: (name: string) =>
+      request<{ ok: boolean; active: string }>("/api/profiles/active", { json: { name } }),
+    rename: (name: string, newName: string) =>
+      request<ProfileCommandResponse>(`/api/profiles/${segment(name)}`, {
+        method: "PATCH",
+        json: { new_name: newName },
+      }),
+    remove: (name: string) =>
+      request<ProfileCommandResponse>(`/api/profiles/${segment(name)}`, { method: "DELETE" }),
+    persona: (name: string) => request<PersonaResponse>(`/api/profiles/${segment(name)}/persona`),
+    setPersona: (name: string, content: string) =>
+      request<OkResponse>(`/api/profiles/${segment(name)}/persona`, {
+        method: "PUT",
+        json: { content },
+      }),
+    setDescription: (name: string, description: string) =>
+      request<OkResponse>(`/api/profiles/${segment(name)}/description`, {
+        method: "PUT",
+        json: { description },
+      }),
+    setModel: (name: string, provider: string, model: string) =>
+      request<OkResponse>(`/api/profiles/${segment(name)}/model`, {
+        method: "PUT",
+        json: { provider, model },
+      }),
+    exportArchive: (name: string) =>
+      request<ProfileExportResponse>(`/api/profiles/${segment(name)}/export`, { method: "POST" }),
+    importArchive: (archive: string, name?: string) =>
+      request<{ ok: boolean; name: string; path: string }>("/api/profiles/import", {
+        json: name ? { archive, name } : { archive },
+      }),
+  },
+
+  actions: {
+    /** `profile` names the profile the run belongs to when it is not the selected one. */
+    status: (name: string, lines = 400, profile?: string) =>
+      request<ActionStatus>(
+        forProfile(withQuery(`/api/actions/${segment(name)}/status`, { lines }), profile),
+      ),
+  },
+
+  daemon: {
+    get: () => request<DaemonInfo>("/api/daemon"),
+    start: () => request<ActionStarted>("/api/daemon/start", { method: "POST" }),
+    stop: () => request<ActionStarted>("/api/daemon/stop", { method: "POST" }),
+    restart: () => request<ActionStarted>("/api/daemon/restart", { method: "POST" }),
+  },
+
+  messaging: {
+    platforms: () => request<MessagingPlatformsResponse>("/api/messaging/platforms"),
+    update: (platform: string, body: PlatformUpdate) =>
+      request<PlatformUpdateResponse>(`/api/messaging/platforms/${segment(platform)}`, {
+        method: "PUT",
+        json: body,
+      }),
+    test: (platform: string) =>
+      request<PlatformTestResult>(`/api/messaging/platforms/${segment(platform)}/test`, {
+        method: "POST",
+      }),
+  },
+
+  pairing: {
+    list: () => request<PairingResponse>("/api/pairing"),
+    approve: (body: PairingApproveRequest) =>
+      request<{ ok: boolean; user: { user_id: string; user_name: string | null } }>(
+        "/api/pairing/approve",
+        { json: body },
+      ),
+    revoke: (platform: string, userId: string) =>
+      request<OkResponse>("/api/pairing/revoke", { json: { platform, user_id: userId } }),
+    clearPending: () =>
+      request<{ ok: boolean; cleared: number }>("/api/pairing/clear-pending", { json: {} }),
+  },
+
+  webhooks: {
+    list: () => request<WebhooksResponse>("/api/webhooks"),
+    create: (body: WebhookCreate) => request<WebhookCreated>("/api/webhooks", { json: body }),
+    remove: (name: string) =>
+      request<OkResponse>(`/api/webhooks/${segment(name)}`, { method: "DELETE" }),
+    setEnabled: (name: string, enabled: boolean) =>
+      request<OkResponse>(`/api/webhooks/${segment(name)}/enabled`, {
+        method: "PUT",
+        json: { enabled },
+      }),
+    setReceiver: (enabled: boolean) =>
+      request<OkResponse>("/api/webhooks/receiver", { method: "PUT", json: { enabled } }),
+  },
+
+  model: {
+    info: () => request<ModelInfo>("/api/model/info"),
+    options: () => request<ModelOptions>("/api/model/options"),
+    auxiliary: () => request<AuxiliaryResponse>("/api/model/auxiliary"),
+    set: (body: ModelAssignment) => request<OkResponse>("/api/model/set", { json: body }),
+  },
+
+  providerLogin: {
+    start: (provider: string) =>
+      request<LoginStarted>("/api/providers/login/start", { json: { provider } }),
+    poll: (sessionId: string) =>
+      request<LoginSessionInfo>(`/api/providers/login/${segment(sessionId)}`),
+    cancel: (sessionId: string) =>
+      request<LoginSessionInfo>(`/api/providers/login/${segment(sessionId)}`, {
+        method: "DELETE",
+      }),
+  },
+
+  system: {
+    stats: () => request<HostStats>("/api/system/stats"),
+    update: (force = false) =>
+      request<UpdateInfo>(withQuery("/api/system/update", { force: force ? 1 : undefined })),
+    applyUpdate: () => request<ActionStarted>("/api/system/update", { method: "POST" }),
+    memory: () => request<MemoryInfo>("/api/memory"),
+    setMemoryProvider: (provider: string) =>
+      request<{ ok: boolean; active: string }>("/api/memory/provider", {
+        method: "PUT",
+        json: { provider },
+      }),
+    pool: () => request<CredentialPoolResponse>("/api/credentials/pool"),
+    addToPool: (body: PoolAddRequest) =>
+      request<{ ok: boolean; provider: string; index: number; id: string }>(
+        "/api/credentials/pool",
+        { json: body },
+      ),
+    removeFromPool: (provider: string, index: number) =>
+      request<OkResponse>(`/api/credentials/pool/${segment(provider)}/${index}`, {
+        method: "DELETE",
+      }),
+    doctor: () => request<ActionStarted>("/api/ops/doctor", { method: "POST" }),
+    backup: () => request<ActionStarted>("/api/ops/backup", { method: "POST" }),
+    downloadBackup: (archive: string) =>
+      saveAttachment(
+        withQuery("/api/ops/backup/download", { archive }),
+        archive.slice(archive.lastIndexOf("/") + 1) || "backup.zip",
+      ),
+    importArchive: (archive: string, force: boolean) =>
+      request<ActionStarted>("/api/ops/import", { json: { archive, force } }),
+    importUpload: (file: File, force: boolean) => {
+      const form = new FormData();
+      form.set("file", file);
+      form.set("force", force ? "true" : "false");
+      return request<ActionStarted>("/api/ops/import-upload", { method: "POST", body: form });
+    },
+    checkpoints: () => request<CheckpointsResponse>("/api/ops/checkpoints"),
+    pruneCheckpoints: (retentionDays: number, maxSizeMb: number) =>
+      request<ActionStarted>("/api/ops/checkpoints/prune", {
+        json: { retention_days: retentionDays, max_size_mb: maxSizeMb },
+      }),
+    hooks: () => request<ShellHooksResponse>("/api/ops/hooks"),
+    addHook: (body: ShellHookCreate) => request<OkResponse>("/api/ops/hooks", { json: body }),
+    removeHook: (event: string, command: string) =>
+      request<OkResponse>("/api/ops/hooks", { method: "DELETE", json: { event, command } }),
+  },
 
   sessions: {
     list: (query: SessionListQuery = {}) =>
@@ -552,9 +773,12 @@ export const api = {
   },
 
   skills: {
-    list: () => request<{ skills: SkillInfo[] }>("/api/skills"),
-    toggle: (name: string, enabled: boolean) =>
-      request<OkResponse>("/api/skills/toggle", { json: { name, enabled } }),
+    list: (profile?: string) =>
+      request<{ skills: SkillInfo[] }>(forProfile("/api/skills", profile)),
+    toggle: (name: string, enabled: boolean, profile?: string) =>
+      request<OkResponse>(forProfile("/api/skills/toggle", profile), {
+        json: { name, enabled },
+      }),
     toolsets: () => request<{ toolsets: ToolsetInfo[] }>("/api/tools/toolsets"),
     hubSearch: (q: string) =>
       request<HubSearchResponse>(withQuery("/api/skills/hub/search", { q })),
@@ -577,7 +801,8 @@ export const api = {
 
   mcp: {
     servers: () => request<McpServersResponse>("/api/mcp/servers"),
-    add: (body: McpServerCreate) => request<OkResponse>("/api/mcp/servers", { json: body }),
+    add: (body: McpServerCreate, profile?: string) =>
+      request<OkResponse>(forProfile("/api/mcp/servers", profile), { json: body }),
     test: (name: string) =>
       request<McpTestResult>(`/api/mcp/servers/${segment(name)}/test`, { method: "POST" }),
     setEnabled: (name: string, enabled: boolean) =>

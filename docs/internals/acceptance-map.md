@@ -1567,6 +1567,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/web/test_spa.py::test_unknown_api_path_is_a_json_404_for_every_method`
   - `apps/web/src/lib/api.test.ts::sends the session token header and the base path`
   - `tests/unit/web/auth/test_gate.py::test_no_route_takes_the_token_in_the_query`
+  - `tests/unit/web/test_bundle_locate.py::test_the_app_serves_the_located_bundle`
+  - `tests/unit/web/test_bundle_locate.py::test_catch_alls_come_after_every_api_route`
+  - `apps/web/e2e/auth.spec.ts::loopback: the token rides a header on every API call, never the URL`
+  - `apps/web/e2e/auth.spec.ts::a stale token after a dashboard restart reloads the page once and goes on`
+  - `apps/web/e2e/auth.spec.ts::a gated bind without a login provider refuses to start`
+  - `apps/web/e2e/auth.spec.ts::gated: login, the loopback token refused, single-use WS tickets, logout`
+  - `tests/unit/web/auth/test_login_page.py::test_the_form_post_keeps_its_origin`
 - **ACC-L3-1** Sessions page: list, search with snippets, view as markdown, rename, export, prune, delete, resume …
   - Review: not yet planned (phase TBD)
   - `apps/web/src/pages/SessionsPage.test.tsx::renders search snippets with marks and scrolls the opened hit to its first match`
@@ -1577,11 +1584,17 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/web/test_sessions_routes.py::test_search_marks_matches`
   - `tests/contract/web/test_sessions_routes.py::test_delete_fence_codes`
   - `tests/contract/web/test_sessions_routes.py::test_prune_dry_run_then_real`
+  - `apps/web/e2e/dashboard.spec.ts::Sessions: search finds a message with its snippet; delete removes the session`
 - **ACC-L4-1** Chat tab embedding the real TUI over a PTY and xterm → keep-alive attach across tabs, live tool …
   - `tests/contract/web/test_pty_route.py::test_reattach_supersedes_replays_and_redraws`
   - `tests/contract/web/test_events_fanout.py::test_a_child_s_three_events_reach_both_subscribers`
   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
-  - Review: the xterm host and the M6 browser run (P18-30)
+  - `apps/web/src/chat/ChatRail.test.tsx::lists recent chats and a click resumes in place with a new PTY URL`
+  - `apps/web/src/chat/ChatRail.test.tsx::shows the configured model until the feed names the model answering`
+  - `apps/web/src/chat/ptySocket.test.ts::a redial with the same token reattaches the PTY: ring replayed, then a redraw`
+  - `apps/web/e2e/chat.spec.ts::chat: a prompt and its approval in the terminal; Logs and back keeps the PTY; reload reattaches; a dead child offers a new session`
+  - `apps/web/e2e/chat.spec.ts::M6: the browser chat and a classic CLI share one daemon session, each sees the other's turns, and the CLI's approval is answered in the browser`
+  - `tests/integration/web/test_dashboard_daemon.py::test_the_dashboard_chat_and_a_cli_share_one_daemon_session`
 - **ACC-L5-1** Config page from a schema; Keys page with redacted previews
   - Review: not yet planned (phase TBD)
   - `apps/web/src/pages/ConfigPage.test.tsx::renders the right control for each schema type, grouped by category`
@@ -1590,12 +1603,14 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/web/test_config_env_routes.py::test_schema_and_defaults_are_public`
   - `tests/contract/web/test_config_env_routes.py::test_put_round_trips_comments_and_writes_only_changes`
   - `tests/contract/web/test_config_env_routes.py::test_credential_goes_to_the_secret_store_and_is_never_echoed`
+  - `apps/web/e2e/dashboard.spec.ts::Config: a saved value lands in config.yaml and survives a reload`
 - **ACC-L6-1** Logs page with file, level and component filters
   - Review: not yet planned (phase TBD)
   - `apps/web/src/pages/LogsPage.test.tsx::sends the chosen file, level, component and length`
   - `apps/web/src/pages/LogsPage.test.tsx::refreshes every 5 s, and not while the tab is hidden`
   - `tests/contract/web/test_logs_analytics_routes.py::test_level_component_and_tail_filters`
   - `tests/contract/web/test_logs_analytics_routes.py::test_log_lines_with_a_key_are_redacted`
+  - `apps/web/e2e/dashboard.spec.ts::Logs: the gateway log's tail as the daemon wrote it`
 - **ACC-L20-1** Dashboard fonts and imagery are our own; the reference's brand fonts are not shipped (lead default)
   - Review: not yet planned (phase TBD)
   - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`

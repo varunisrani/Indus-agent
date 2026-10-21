@@ -46,6 +46,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from indus.web.auth.gate import request_prefix
+from indus.web.bundle import runtime_bundle_dir
 from indus.web.prefix import rewrite_css, rewrite_index_html
 from indus.web.state import DashboardState
 
@@ -78,8 +79,8 @@ MAX_HEAP_MIB: Final = 4096
 
 
 def default_bundle_dir() -> Path:
-    """Where a release build puts the SPA (P18-29 owns the full locator)."""
-    return Path(__file__).resolve().parent / "static"
+    """The package's runtime tree, ``indus/web/static`` (``web.bundle.locate`` chooses)."""
+    return runtime_bundle_dir()
 
 
 @dataclass(frozen=True, slots=True)

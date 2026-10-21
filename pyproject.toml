@@ -132,6 +132,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/indus"]
+# P18-29: the built dashboard pages (`python -m indus.web.bundle publish`) are git-ignored, so the
+# wheel names them as artifacts to ship them (indus.web.bundle.locate finds them installed).
+artifacts = ["src/indus/web/static/"]
 
 [tool.hatch.build.targets.wheel.force-include]
 # P09-21: the starter skills ship inside the package (bundled_sync.bundled_source).
