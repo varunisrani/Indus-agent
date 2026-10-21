@@ -59,6 +59,32 @@ describe("composer", () => {
     expect(box.value).toBe("");
   });
 
+  it("a fresh draft creates its session in the folder the sidebar chose (P20-25)", async () => {
+    const connection = chatDaemon().on("session.create", () => ({ session_id: "s-new" }));
+    const created = vi.fn();
+    const { box } = mount(connection, {
+      sessionId: null,
+      newSessionCwd: "/work/repo",
+      onSessionCreated: created,
+    });
+    type(box, "start here");
+    await act(async () => {
+      fireEvent.keyDown(box, { key: "Enter" });
+    });
+    expect(connection.called("session.create")[0]?.params).toMatchObject({ cwd: "/work/repo" });
+    expect(created).toHaveBeenCalledWith("s-new");
+  });
+
+  it("without a folder the new chat stays detached (no cwd sent)", async () => {
+    const connection = chatDaemon().on("session.create", () => ({ session_id: "s-new" }));
+    const { box } = mount(connection, { sessionId: null });
+    type(box, "detached");
+    await act(async () => {
+      fireEvent.keyDown(box, { key: "Enter" });
+    });
+    expect(connection.called("session.create")[0]?.params).not.toHaveProperty("cwd");
+  });
+
   it("history recall works only in an empty composer", async () => {
     const connection = chatDaemon();
     const history = new PromptHistory();

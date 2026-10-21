@@ -58,7 +58,7 @@ Tests we will write:
 
 The renderer codes against `window.indusDesktop` (type `IndusDesktopBridge`, `src/global.d.ts`,
 generated); main codes against `registry.handle / on / sync / emit` with payloads typed from
-`electron/ipc/schemas.ts`. Both come from one table, `electron/ipc/channels.ts` (76 channels).
+`electron/ipc/schemas.ts`. Both come from one table, `electron/ipc/channels.ts` (76 channels at P20-07; 111 after P20-39, table below).
 
 Rules every slice follows:
 - Add or change a channel = one row in `channels.ts` (name `indus:<group>:<action>`, kind, bridge
@@ -101,7 +101,9 @@ Channels by owner (kind, bridge method):
 - P20-13 `indus:work:active` (send `work.report({items})`).
 - P20-14 `indus:api` (`api.request({method, path:/api/…, body?, profile?, timeoutMs?})`).
 - P20-20 `indus:journal:list|prepare|retire`.
-- P20-26 `indus:profile:get|set|set-default` (invoke), `indus:profile:changed` (event).
+- P20-26 `indus:profile:get|set|set-default|prepare-change|commit-change` (invoke),
+  `indus:profile:changed` (event); the state carries `launch` (the boot attempt's profile).
+  P20-25 added the launch fact `homeDir` (the repo scan's default root). 78 channels now.
 - P20-28 `indus:preview:capture|watch-file|unwatch-file` (invoke), `indus:preview:file-changed` (event);
   P20-34 `indus:preview:close-requested` (event), `indus:deep-link` (event), `indus:deep-link:ready` (send).
 - P20-29 `indus:fs:read-dir|read-text|read-data-url|rename|trash|reveal|select-paths|watch|unwatch`,
@@ -112,6 +114,38 @@ Channels by owner (kind, bridge method):
 - P20-36 `indus:notify` (invoke `notifications.show`), `indus:notification:action` (event).
 - P20-37 `indus:updates:status|check|apply|set-channel` (invoke), `indus:updates:progress` (event).
 - P20-39 `indus:logs:recent|reveal` (invoke), `indus:logs:renderer-error` (send).
+
+**Channel table at the P20-25..39 integration (wave 35): 111 channels** (generated from
+`electron/ipc/channels.ts`; `scripts/check-ipc.mjs` and `gen-bridge-types --check` keep the code and
+`src/global.d.ts` in step). Every invoke/send handler is registered through the registry in one
+`install…` step of `electron/main.ts` and validates its payload with the channel's zod schema in
+main; events are checked against their schema before they leave main.
+
+| Owner | # | Channels (kind, bridge method) |
+|---|---|---|
+| P20-02 | 1 | `indus:external:open` (invoke, `external.open`) |
+| P20-05 | 1 | `indus:facts` (sync, `facts`) |
+| P20-06 | 10 | `indus:window:control` (send, `windows.control`), `indus:window:painted` (send, `windows.painted`), `indus:window:theme` (send, `windows.setTheme`), `indus:window:state` (event, `windows.onState`), `indus:window:open-session` (invoke, `windows.openSession`), `indus:window:open-instance` (invoke, `windows.openInstance`), `indus:zoom:get` (invoke, `zoom.get`), `indus:zoom:set` (invoke, `zoom.set`), `indus:zoom:step` (invoke, `zoom.step`), `indus:zoom:changed` (event, `zoom.onChanged`) |
+| P20-07 | 2 | `indus:secrets:policy:get` (invoke, `secrets.getPolicy`), `indus:secrets:policy:set` (invoke, `secrets.setPolicy`) |
+| P20-09 | 2 | `indus:installer:event` (event, `boot.onInstaller`), `indus:installer:cancel` (invoke, `boot.cancelInstall`) |
+| P20-10 | 3 | `indus:connection:get` (invoke, `connection.get`), `indus:connection:ticket` (invoke, `connection.ticket`), `indus:connection:changed` (event, `connection.onChanged`) |
+| P20-11 | 4 | `indus:remote:get` (invoke, `connection.getRemote`), `indus:remote:test` (invoke, `connection.testRemote`), `indus:remote:save` (invoke, `connection.saveRemote`), `indus:remote:forget` (invoke, `connection.forgetRemote`) |
+| P20-12 | 4 | `indus:boot:get` (invoke, `boot.get`), `indus:boot:progress` (event, `boot.onProgress`), `indus:boot:retry` (invoke, `boot.retry`), `indus:boot:choose` (invoke, `boot.choose`) |
+| P20-13 | 2 | `indus:backend:notice` (event, `boot.onNotice`), `indus:work:active` (send, `work.report`) |
+| P20-14 | 1 | `indus:api` (invoke, `api.request`) |
+| P20-20 | 3 | `indus:journal:list` (invoke, `journal.list`), `indus:journal:prepare` (invoke, `journal.prepare`), `indus:journal:retire` (invoke, `journal.retire`) |
+| P20-26 | 6 | `indus:profile:get` (invoke, `profile.get`), `indus:profile:set` (invoke, `profile.set`), `indus:profile:set-default` (invoke, `profile.setDefault`), `indus:profile:prepare-change` (invoke, `profile.prepareChange`), `indus:profile:commit-change` (invoke, `profile.commitChange`), `indus:profile:changed` (event, `profile.onChanged`) |
+| P20-28 | 4 | `indus:preview:capture` (invoke, `preview.capture`), `indus:preview:watch-file` (invoke, `preview.watchFile`), `indus:preview:unwatch-file` (invoke, `preview.unwatchFile`), `indus:preview:file-changed` (event, `preview.onFileChanged`) |
+| P20-29 | 14 | `indus:fs:read-dir` (invoke, `fs.readDir`), `indus:fs:read-text` (invoke, `fs.readText`), `indus:fs:read-data-url` (invoke, `fs.readDataUrl`), `indus:fs:rename` (invoke, `fs.rename`), `indus:fs:trash` (invoke, `fs.trash`), `indus:fs:reveal` (invoke, `fs.reveal`), `indus:fs:select-paths` (invoke, `fs.selectPaths`), `indus:fs:watch` (invoke, `fs.watch`), `indus:fs:unwatch` (invoke, `fs.unwatch`), `indus:fs:changed` (event, `fs.onChanged`), `indus:fs:set-roots` (invoke, `fs.setRoots`), `indus:fs:stat` (invoke, `fs.stat`), `indus:fs:limits:get` (invoke, `fs.getLimits`), `indus:fs:limits:set` (invoke, `fs.setLimits`) |
+| P20-30 | 9 | `indus:git:status` (invoke, `git.status`), `indus:git:diff` (invoke, `git.diff`), `indus:git:stage` (invoke, `git.stage`), `indus:git:unstage` (invoke, `git.unstage`), `indus:git:revert` (invoke, `git.revert`), `indus:git:commit` (invoke, `git.commit`), `indus:git:create-pr` (invoke, `git.createPr`), `indus:git:changes` (invoke, `git.changes`), `indus:git:commit-context` (invoke, `git.commitContext`) |
+| P20-31 | 6 | `indus:terminal:start` (invoke, `terminal.start`), `indus:terminal:write` (send, `terminal.write`), `indus:terminal:resize` (send, `terminal.resize`), `indus:terminal:dispose` (invoke, `terminal.dispose`), `indus:terminal:data` (event, `terminal.onData`), `indus:terminal:exit` (event, `terminal.onExit`) |
+| P20-32 | 3 | `indus:prefs:get` (invoke, `prefs.get`), `indus:prefs:set` (invoke, `prefs.set`), `indus:prefs:changed` (event, `prefs.onChanged`) |
+| P20-34 | 3 | `indus:preview:close-requested` (event, `preview.onCloseRequested`), `indus:deep-link` (event, `deepLinks.onLink`), `indus:deep-link:ready` (send, `deepLinks.ready`) |
+| P20-35 | 13 | `indus:hud:open` (invoke, `hud.open`), `indus:hud:close` (invoke, `hud.close`), `indus:hud:reset-layout` (invoke, `hud.resetLayout`), `indus:hud:drag` (send, `hud.drag`), `indus:hud:changed` (event, `hud.onChanged`), `indus:quick:submit` (invoke, `quick.submit`), `indus:quick:dismiss` (send, `quick.dismiss`), `indus:quick:shown` (event, `quick.onShown`), `indus:quick:deliver` (event, `quick.onDeliver`), `indus:quick:ack` (send, `quick.ack`), `indus:shortcuts:get` (invoke, `shortcuts.get`), `indus:shortcuts:set` (invoke, `shortcuts.set`), `indus:session:active` (send, `windows.reportSession`) |
+| P20-36 | 7 | `indus:ambient:get` (invoke, `ambient.get`), `indus:ambient:set` (invoke, `ambient.set`), `indus:ambient:changed` (event, `ambient.onChanged`), `indus:keep-awake:offer` (event, `ambient.onKeepAwakeOffer`), `indus:links:preview` (invoke, `links.preview`), `indus:notify` (invoke, `notifications.show`), `indus:notification:action` (event, `notifications.onAction`) |
+| P20-37 | 6 | `indus:updates:status` (invoke, `updates.status`), `indus:updates:check` (invoke, `updates.check`), `indus:updates:apply` (invoke, `updates.apply`), `indus:updates:set-channel` (invoke, `updates.setChannel`), `indus:updates:progress` (event, `updates.onProgress`), `indus:updates:skew` (event, `updates.onSkew`) |
+| P20-39 | 7 | `indus:logs:recent` (invoke, `logs.recent`), `indus:logs:reveal` (invoke, `logs.reveal`), `indus:logs:renderer-error` (send, `logs.rendererError`), `indus:diagnostics:copy` (invoke, `diagnostics.copy`), `indus:clipboard:read-text` (invoke, `clipboard.readText`), `indus:clipboard:write-text` (invoke, `clipboard.writeText`), `indus:find:open` (event, `find.onOpen`) |
+
 
 Shapes for P20-08+ channels are first drafts from the phase rows; the owning task may change them
 (table + schema + regenerate) — the renderer then fails typecheck where it must follow.

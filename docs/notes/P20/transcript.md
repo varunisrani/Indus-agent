@@ -159,3 +159,5 @@ Compare checklist (filled after the rewrite; reopened the files in `Read:`):
 Done (2026-10-21). New fixture folder `apps/desktop/testing/fixtures/streams/` (7 files) and the
 shared oracle `apps/desktop/testing/oracle.ts` for P20-40. Slots for slice C: `ChatView` `composer`/`cards`,
 `Transcript` `footer`/`onFailureAction` (ChatView supplies defaults: reconnect, open logs, settings, new chat).
+
+Integration (wave 35, P20-40 findings): stored history is read over REST (`GET /api/sessions/{id}/messages` through main's proxy, `src/chat/restHistory.ts`) because the daemon's WebSocket does not serve `session.history` (D-16.718); a session opened before the connection is ready loads when it becomes ready; `applyHistory` no longer keeps a finished live reply the snapshot already holds when its user row was bound to another turn id (D-16.719, `messageStream.test.ts::a finished reply whose user row is bound elsewhere is not shown twice by the snapshot`).

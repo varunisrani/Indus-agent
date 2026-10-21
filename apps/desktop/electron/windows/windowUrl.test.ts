@@ -19,6 +19,13 @@ describe("window URLs", () => {
     );
   });
 
+  it("a HUD carries its session in the hash and its profile in the query (P20-35)", () => {
+    expect(windowUrl(DEV, "hud", { sessionId: "s-1", profile: "work" })).toBe(
+      "http://localhost:5173/?win=hud&profile=work#/s-1",
+    );
+    expect(windowUrl(DEV, "hud")).toBe("http://localhost:5173/?win=hud");
+  });
+
   it("parses the flags back", () => {
     expect(
       parseWindowQuery("http://localhost:5173/?win=secondary&watch=1&profile=work#/s"),

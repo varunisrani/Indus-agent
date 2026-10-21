@@ -110,6 +110,7 @@ export class WindowManager {
   private readonly deps: WindowManagerDeps;
   private readonly byContents = new Map<number, Managed>();
   private readonly sessions = new Map<string, Managed>();
+  private readonly createdListeners = new Set<(win: BrowserWindowLike, kind: WindowKind) => void>();
   private main: Managed | null = null;
   private readonly crashBudget: CrashReloadBudget;
   readonly zoom: ZoomKeeper;
@@ -197,6 +198,38 @@ export class WindowManager {
 
   openInstance(options: { profile?: string } = {}): BrowserWindowLike {
     return this.create("instance", options, this.cascade(1280, 860)).win;
+  }
+
+  /** The floating HUD for one conversation (P20-35); bounds are the HUD controller's. */
+  openHud(
+    options: { sessionId?: string; profile?: string | null },
+    bounds: Rect,
+  ): BrowserWindowLike {
+    return this.create("hud", options, bounds).win;
+  }
+
+  /** The quick-entry composer (P20-35). */
+  openQuick(bounds: Rect): BrowserWindowLike {
+    return this.create("quick", {}, bounds).win;
+  }
+
+  /** Called for every window this manager creates (tray, ambient wiring). */
+  onWindowCreated(listener: (win: BrowserWindowLike, kind: WindowKind) => void): () => void {
+    this.createdListeners.add(listener);
+    return () => {
+      this.createdListeners.delete(listener);
+    };
+  }
+
+  /** The kind of the window showing `contentsId`, or null. */
+  kindOf(contentsId: number): WindowKind | null {
+    return this.byContents.get(contentsId)?.kind ?? null;
+  }
+
+  /** The live window showing `contentsId`, or null. */
+  windowOf(contentsId: number): BrowserWindowLike | null {
+    const managed = this.byContents.get(contentsId);
+    return managed === undefined || managed.win.isDestroyed() ? null : managed.win;
   }
 
   /** The renderer of `contentsId` painted its first themed frame. */
@@ -352,6 +385,14 @@ export class WindowManager {
       }
     }, REVEAL_FALLBACK_MS);
     win.on("closed", () => this.deps.timers.clearTimeout(fallback));
+
+    for (const listener of this.createdListeners) {
+      try {
+        listener(win, kind);
+      } catch {
+        this.deps.log(`[windows] a window-created listener failed for a ${kind} window`);
+      }
+    }
 
     win.loadURL(windowUrl(this.deps.appOrigin, kind, options)).catch(() => {
       this.deps.log(`[windows] ${kind} window failed to load the app`);

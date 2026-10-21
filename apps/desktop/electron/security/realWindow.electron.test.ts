@@ -121,7 +121,8 @@ describe.skipIf(skipReason !== "")(
     it("IPC: handled channel answers; missing handler is not-available; bad payload is bad-request", () => {
       const app = results?.app as Record<string, unknown>;
       expect(app.zoom).toEqual({ level: 0, percent: 100 });
-      expect(String(app.git)).toMatch(/^not-available:/);
+      // P20-30 registers git: a repository outside the window's folders is refused by its guard.
+      expect(String(app.git)).toMatch(/^(not-available|outside-roots):/);
       expect(String(app.bad)).toMatch(/^bad-request:/);
     });
 

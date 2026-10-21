@@ -7,6 +7,7 @@ export interface MenuItem {
   role?: string;
   type?: "separator" | "submenu" | "normal";
   accelerator?: string;
+  enabled?: boolean;
   click?: () => void;
   submenu?: MenuItem[];
 }
@@ -17,6 +18,8 @@ export interface AppMenuInput {
   dev: boolean;
   zoom: (direction: "in" | "out" | "reset") => void;
   newWindow: () => void;
+  /** Help submenu items (P20-39: Copy Diagnostics, Show Log File). */
+  help?: MenuItem[];
 }
 
 const separator: MenuItem = { type: "separator" };
@@ -77,5 +80,8 @@ export function appMenuTemplate(input: AppMenuInput): MenuItem[] {
       ? [{ role: "minimize" }, { role: "zoom" }, separator, { role: "front" }]
       : [{ role: "minimize" }, { role: "close" }],
   });
+  if (input.help !== undefined && input.help.length > 0) {
+    menu.push({ label: "Help", role: "help", submenu: input.help });
+  }
   return menu;
 }

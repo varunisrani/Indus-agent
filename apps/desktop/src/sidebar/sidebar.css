@@ -1,0 +1,229 @@
+/* Sessions sidebar (P20-25). Tokens only, as in styles.css. */
+
+.sidebar-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-2);
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  padding: 0 var(--indus-space-2);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-md);
+  background: var(--indus-color-bg);
+  color: var(--indus-color-fg-muted);
+}
+
+.sidebar-search input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--indus-space-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--indus-color-fg);
+  font: inherit;
+  outline: none;
+}
+
+.sidebar-views {
+  align-self: stretch;
+}
+
+.sidebar-views .segmented-option {
+  flex: 1;
+  justify-content: center;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sidebar-section + .sidebar-section {
+  margin-top: var(--indus-space-3);
+}
+
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--indus-space-2);
+}
+
+.sidebar-section-header h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: var(--indus-font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--indus-color-fg-muted);
+}
+
+.sidebar-error {
+  margin: 0;
+  padding: 0 var(--indus-space-2);
+  font-size: 12px;
+  color: var(--indus-color-danger);
+}
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.session-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--indus-radius-md);
+}
+
+.session-row:hover,
+.session-row[data-current="true"] {
+  background: var(--indus-color-code-bg);
+}
+
+.session-open {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  flex: 1;
+  min-width: 0;
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--indus-color-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-time {
+  font-size: 11px;
+  color: var(--indus-color-fg-muted);
+}
+
+.session-dots {
+  display: inline-flex;
+  width: 8px;
+}
+
+.session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--indus-radius-full);
+  background: var(--indus-color-accent);
+}
+
+.session-dot[data-kind="running"] {
+  background: var(--indus-color-success);
+  animation: session-pulse 1.4s var(--indus-easing-standard) infinite;
+}
+
+.session-branch {
+  color: var(--indus-color-fg-muted);
+}
+
+.session-actions {
+  display: none;
+}
+
+.session-row:hover .session-actions,
+.session-row:focus-within .session-actions {
+  display: inline-flex;
+}
+
+.project-group {
+  margin-top: var(--indus-space-1);
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  padding: 0 var(--indus-space-2);
+}
+
+.project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--indus-font-weight-medium);
+}
+
+.project-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-2);
+  padding: var(--indus-space-2);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-md);
+}
+
+.project-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.project-form input,
+.project-form textarea {
+  font: inherit;
+  color: var(--indus-color-fg);
+  background: var(--indus-color-bg);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-sm);
+  padding: var(--indus-space-1);
+}
+
+.project-form-actions {
+  display: flex;
+  gap: var(--indus-space-2);
+}
+
+.repo-list {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-sm);
+  font-size: 12px;
+}
+
+.repo-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@keyframes session-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-dot[data-kind="running"] {
+    animation: none;
+  }
+}

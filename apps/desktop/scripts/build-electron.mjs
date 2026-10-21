@@ -1,5 +1,6 @@
-// Bundle the main process (one ESM file) and the sandboxed preload (one plain-JS CommonJS file)
-// into dist-electron/ with the workspace's Vite. `electron` and Node built-ins stay external;
+// Bundle the main process (one ESM file), the sandboxed preload and the preview guest's preload
+// (plain-JS CommonJS files) into dist-electron/ with the workspace's Vite. `electron`, Node
+// built-ins and the native `node-pty` (loaded on first use, unpacked by packaging) stay external;
 // everything else (zod, @indus/client, our modules) is inlined. The env defaults table
 // (`INDUS_DESKTOP_ENV_DEFAULTS`, JSON) is validated and baked into the main bundle.
 //
@@ -18,7 +19,7 @@ function envDefaultsJson() {
   return JSON.stringify(validateEnvDefaults(JSON.parse(raw)));
 }
 
-const BUILTINS = /^(node:|electron$)/;
+const BUILTINS = /^(node:|electron$|node-pty$)/;
 
 export async function buildElectron(outDir = path.join(APP_DIR, "dist-electron")) {
   const common = {
@@ -26,7 +27,7 @@ export async function buildElectron(outDir = path.join(APP_DIR, "dist-electron")
     root: APP_DIR,
     logLevel: "warn",
     publicDir: false,
-    ssr: { noExternal: true, external: ["electron"] },
+    ssr: { noExternal: true, external: ["electron", "node-pty"] },
   };
   await build({
     ...common,
@@ -56,6 +57,21 @@ export async function buildElectron(outDir = path.join(APP_DIR, "dist-electron")
       rolldownOptions: {
         external: (id) => id === "electron",
         output: { format: "cjs", entryFileNames: "preload.cjs" },
+      },
+    },
+  });
+  await build({
+    ...common,
+    build: {
+      ssr: path.join(APP_DIR, "electron/preview/guestPreloadEntry.ts"),
+      outDir,
+      emptyOutDir: false,
+      target: "chrome130",
+      minify: false,
+      sourcemap: false,
+      rolldownOptions: {
+        external: (id) => id === "electron",
+        output: { format: "cjs", entryFileNames: "preview-guest.cjs" },
       },
     },
   });

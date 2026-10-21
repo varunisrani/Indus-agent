@@ -343,6 +343,29 @@ describe("applyHistory", () => {
   });
 });
 
+describe("applyHistory after a reconnect (P20-40 finding)", () => {
+  it("a finished reply whose user row is bound elsewhere is not shown twice by the snapshot", () => {
+    // the optimistic row bound to an admission id, the reply streamed under the turn's own id
+    let t = addLocalUser(emptyTranscript("s1"), "L1", "hello");
+    t = bindLocalUser(t, "L1", "admission-1");
+    t = started(t);
+    for (const event of [
+      { type: "message.delta", seq: 2, turn_id: "t1", text: "First " },
+      { type: "message.delta", seq: 3, turn_id: "t1", text: "answer." },
+      { type: "message.complete", seq: 4, turn_id: "t1", text: "First answer." },
+      { type: "turn.done", seq: 5, turn_id: "t1", outcome: "completed" },
+    ]) {
+      t = applyEvent(t, { session_id: "s1", ...event } as ClientEvent);
+    }
+    const stored: HistoryMessage[] = [
+      { role: "user", text: "hello", row_id: 1 },
+      { role: "assistant", text: "First answer.", row_id: 2 },
+    ];
+    const after = applyHistory(t, stored, 1);
+    expect(checkTranscriptOnce(persistedMessages(stored), shown(after.items))).toEqual([]);
+  });
+});
+
 describe("tool rows", () => {
   it("summarises with a verb and a target", () => {
     expect(toolSummary("terminal", { command: "ls -la" })).toEqual({

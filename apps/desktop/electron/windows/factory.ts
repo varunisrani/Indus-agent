@@ -124,6 +124,18 @@ export function windowOptionsFor(
     options.frame = false;
     options.backgroundColor = "#00000000";
     options.hasShadow = false;
+    // Floating helpers (P20-35): above other apps, out of the taskbar off macOS, and sized by the
+    // app (the HUD's edges are drawn by its renderer; the OS edge zone of a transparent window
+    // would turn every drag into a resize on Windows).
+    options.alwaysOnTop = true;
+    options.skipTaskbar = input.platform !== "darwin";
+    options.resizable = false;
+    options.movable = true;
+    options.minimizable = false;
+    options.maximizable = false;
+    options.fullscreenable = false;
+    // macOS clamps programmatic bounds to the current display unless this is on.
+    if (kind === "hud") options.enableLargerThanScreen = true;
   } else {
     options.backgroundColor = input.backgroundColor;
   }

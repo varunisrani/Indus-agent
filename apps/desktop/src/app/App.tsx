@@ -3,19 +3,30 @@
 
 import type { ReactNode } from "react";
 import { HashRouter, Navigate, useLocation, useNavigate } from "react-router";
+import { AmbientHost } from "../ambient/AmbientHost.tsx";
 import { BootOverlay, type BootOverlayProps } from "../boot/BootOverlay.tsx";
 import { ChatView } from "../chat/ChatView.tsx";
 import type { ErrorItem } from "../chat/messageStream.ts";
 import { TranscriptStoreProvider } from "../chat/transcriptReact.tsx";
-import type { TranscriptStore } from "../chat/transcriptStore.ts";
 import type { ConnectionStore } from "../gateway/connectionStore.ts";
-import { ConnectionStoreProvider } from "../gateway/react.tsx";
+import {
+  ConnectionStoreProvider,
+  GatewayConnectionProvider,
+  ServerRequestStoreProvider,
+} from "../gateway/react.tsx";
+import { Hud } from "../hud/Hud.tsx";
 import { I18nProvider } from "../i18n/index.tsx";
+import {
+  SwitcherProvider,
+  useForeground,
+  type WindowSwitcher,
+} from "../profiles/switcherReact.tsx";
+import { QuickEntry } from "../quick/QuickEntry.tsx";
 import { hasShell, type WindowQuery } from "./bridge.ts";
 import { RootErrorBoundary } from "./ErrorBoundary.tsx";
 import { ComingLaterPage, LaterWindow, OverlayCard } from "./pages.tsx";
-import { backgroundOf, classifyPath, closeTarget } from "./routes.ts";
-import { Shell } from "./Shell.tsx";
+import { backgroundOf, classifyPath, closeTarget, type OverlayId } from "./routes.ts";
+import { Shell, type ShellChrome, ShellChromeProvider } from "./Shell.tsx";
 import { ThemeProvider } from "./theme.tsx";
 
 /** Slots the chat slices fill (slice C: Composer, CardStack, StatusBar). */
@@ -25,6 +36,10 @@ export interface AppSlots {
   /** The error card's Retry for a session's failed turn. */
   retry?: (sessionId: string, item: ErrorItem) => void;
   statusBar?: ReactNode;
+  /** Built overlays (P20-32 Settings); the others keep their "coming later" card. */
+  overlays?: Partial<Record<OverlayId, (onClose: () => void) => ReactNode>>;
+  /** Window-wide layers inside the router (P20-33 onboarding, P20-34 deep links). */
+  layers?: ReactNode;
 }
 
 export function AppRoutes(props: { slots?: AppSlots }) {
@@ -52,27 +67,97 @@ export function AppRoutes(props: { slots?: AppSlots }) {
     );
   }
   return (
-    <Shell statusBar={slots.statusBar}>
+    <Shell
+      statusBar={slots.statusBar}
+      sessionId={background.kind === "chat" ? background.sessionId : null}
+    >
       {main}
-      {view.kind === "overlay" && (
-        <OverlayCard
-          overlay={view.overlay}
-          onClose={() => navigate(closeTarget(location.state), { replace: true })}
-        />
-      )}
+      {view.kind === "overlay" &&
+        (slots.overlays?.[view.overlay]?.(() =>
+          navigate(closeTarget(location.state), { replace: true }),
+        ) ?? (
+          <OverlayCard
+            overlay={view.overlay}
+            onClose={() => navigate(closeTarget(location.state), { replace: true })}
+          />
+        ))}
+      {slots.layers}
     </Shell>
   );
 }
 
 export interface RootProps {
   connections: ConnectionStore;
-  transcripts: TranscriptStore;
   window: WindowQuery;
-  slots?: AppSlots;
+  /** The window's profiles (P20-26); the foreground one's stores fill the chat. */
+  switcher: WindowSwitcher;
+  /** The sidebar's per-profile stores and the pane layout (P20-25, P20-27). */
+  chrome?: ShellChrome;
   boot?: Omit<BootOverlayProps, "onReady">;
 }
 
+/** The HUD (P20-35) shows the foreground profile's conversation with its chat slots. */
+function ForegroundHud(props: { switcher: WindowSwitcher }) {
+  const workspace = useForeground(props.switcher);
+  if (workspace === null) return null;
+  return (
+    <TranscriptStoreProvider store={workspace.transcripts}>
+      <GatewayConnectionProvider value={workspace.connection}>
+        <ServerRequestStoreProvider value={workspace.connection.serverRequests}>
+          <Hud slots={workspace.slots} />
+        </ServerRequestStoreProvider>
+      </GatewayConnectionProvider>
+    </TranscriptStoreProvider>
+  );
+}
+
+/** The foreground profile's stores under the chat surfaces; re-renders on a swap or a wipe. */
+function ForegroundRoutes(props: { switcher: WindowSwitcher; boot?: RootProps["boot"] }) {
+  const workspace = useForeground(props.switcher);
+  if (workspace === null) return null;
+  return (
+    <TranscriptStoreProvider store={workspace.transcripts}>
+      <GatewayConnectionProvider value={workspace.connection}>
+        <ServerRequestStoreProvider value={workspace.connection.serverRequests}>
+          <AppRoutes slots={workspace.slots} />
+          <AmbientHost connection={workspace.connection} transcripts={workspace.transcripts} />
+          <BootOverlay
+            {...props.boot}
+            onReady={() => props.switcher.foreground().connection.start()}
+          />
+        </ServerRequestStoreProvider>
+      </GatewayConnectionProvider>
+    </TranscriptStoreProvider>
+  );
+}
+
 export function Root(props: RootProps) {
+  if (props.window.kind === "quick") {
+    return (
+      <I18nProvider>
+        <ThemeProvider>
+          <QuickEntry />
+        </ThemeProvider>
+      </I18nProvider>
+    );
+  }
+  if (props.window.kind === "hud") {
+    return (
+      <RootErrorBoundary>
+        <I18nProvider>
+          <ThemeProvider>
+            <ConnectionStoreProvider store={props.connections}>
+              <SwitcherProvider switcher={props.switcher}>
+                <HashRouter useTransitions={false}>
+                  <ForegroundHud switcher={props.switcher} />
+                </HashRouter>
+              </SwitcherProvider>
+            </ConnectionStoreProvider>
+          </ThemeProvider>
+        </I18nProvider>
+      </RootErrorBoundary>
+    );
+  }
   if (!hasShell(props.window.kind)) {
     return (
       <I18nProvider>
@@ -87,12 +172,16 @@ export function Root(props: RootProps) {
       <I18nProvider>
         <ThemeProvider>
           <ConnectionStoreProvider store={props.connections}>
-            <TranscriptStoreProvider store={props.transcripts}>
-              <HashRouter useTransitions={false}>
-                <AppRoutes {...(props.slots === undefined ? {} : { slots: props.slots })} />
-                <BootOverlay {...props.boot} onReady={() => props.connections.primary().start()} />
-              </HashRouter>
-            </TranscriptStoreProvider>
+            <SwitcherProvider switcher={props.switcher}>
+              <ShellChromeProvider value={props.chrome ?? null}>
+                <HashRouter useTransitions={false}>
+                  <ForegroundRoutes
+                    switcher={props.switcher}
+                    {...(props.boot === undefined ? {} : { boot: props.boot })}
+                  />
+                </HashRouter>
+              </ShellChromeProvider>
+            </SwitcherProvider>
           </ConnectionStoreProvider>
         </ThemeProvider>
       </I18nProvider>

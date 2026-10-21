@@ -104,3 +104,10 @@ Sec-WebSocket-Version, Accept-*), so the marker lookup never matched and the dae
 desktop's `file://` Origin (4403). `DialReservations.rewrite` now matches a local dial by window and
 exact URL when the header is absent (oldest live reservation, single use); test
 `tickets.test.ts::inside Electron (no subprotocol header) a local dial is matched by window and exact URL`.
+
+Integration (wave 35): overlapping `gateway ensure` runs share one (D-16.727). After a `kill -9`
+the supervisor's respawn and the reconnect's ticket mint (`REENSURE_ERRORS`) both ensured; the
+backend's "is one starting?" check is not atomic, so two daemons could start and the one that lost
+the home exited seconds later (seen as two `gateway run` processes, and once as a reply that never
+came). Test: `localAttach.test.ts::overlapping ensures (supervisor respawn + a mint that found the daemon gone) share one run`
+(fails without the change); the lifecycle E2E asserts exactly one daemon right after recovery.

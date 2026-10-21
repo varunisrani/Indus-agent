@@ -76,4 +76,23 @@ describe("window factory", () => {
       });
     }
   });
+
+  it("floating kinds stay above other apps and are sized by the app (P20-35)", () => {
+    for (const kind of ["hud", "quick"] as const) {
+      const linux = windowOptionsFor(kind, { ...input, platform: "linux" });
+      expect(linux).toMatchObject({
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+      });
+      expect(linux).not.toHaveProperty("minWidth");
+      expect(windowOptionsFor(kind, { ...input, platform: "darwin" }).skipTaskbar).toBe(false);
+    }
+    expect(windowOptionsFor("main", { ...input, platform: "linux" })).not.toHaveProperty(
+      "alwaysOnTop",
+    );
+  });
 });

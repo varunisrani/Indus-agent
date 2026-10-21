@@ -13,6 +13,8 @@ import type { ErrorItem, TranscriptItem } from "../chat/messageStream.ts";
 import { useTranscriptStore } from "../chat/transcriptReact.tsx";
 import type { TranscriptStore } from "../chat/transcriptStore.ts";
 import type { ChatConnection } from "../gateway/connectionStore.ts";
+import { browserStorage } from "../profiles/storageFamilies.ts";
+import { newChatTarget } from "../sidebar/projects.ts";
 import type { AppSlots } from "./App.tsx";
 import { backgroundOf, classifyPath, NEW_CHAT_PATH, sessionPath } from "./routes.ts";
 import { StatusBar } from "./StatusBar.tsx";
@@ -59,7 +61,13 @@ function ComposerSlot(props: {
         profile={props.profile}
         inflight={props.inflight}
         localRows={transcripts}
-        onSessionCreated={(id) => navigate(sessionPath(id))}
+        newSessionCwd={
+          props.sessionId === null ? newChatTarget.get(browserStorage(), props.profile) : null
+        }
+        onSessionCreated={(id) => {
+          newChatTarget.take(browserStorage(), props.profile);
+          navigate(sessionPath(id));
+        }}
         onSessionGone={() => navigate(NEW_CHAT_PATH, { replace: true })}
         onNewChat={() => navigate(NEW_CHAT_PATH)}
         onReasoningDisplay={(show) => transcripts.setShowReasoning(show)}

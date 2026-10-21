@@ -438,6 +438,12 @@ async function serveRequest(request, response) {
     return;
   }
   const key = `${request.method} ${url.pathname}`;
+  // every authorised call is written down for the end-to-end suite (P20-40)
+  try {
+    fs.appendFileSync(path.join(home, "fake-rest.log"), `${key}${url.search}\n`);
+  } catch {
+    // the home went away: nothing to record
+  }
   const route = scenario.rest?.routes?.[key];
   if (route === undefined) {
     send(404, { detail: "not found" });

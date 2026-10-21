@@ -214,6 +214,50 @@ PyPI for packages of other platforms).
 | slack-bolt | 1.30.0 | MIT | extra `slack`: the Slack adapter's Bolt app and Socket Mode handler | P15-35 |
 | slack-sdk | 3.44.1 | MIT | extra `slack`: the Slack Web API client, via slack-bolt and directly | P15-35 |
 
+## Desktop app: packages inside the packaged app
+
+The desktop's renderer and main bundles inline their JavaScript dependencies (their licences are in
+the lock and `docs/plan/phases/00-layout-and-conventions.md` §4). These packages are copied into the
+packaged app's own `node_modules` because main loads them by name at run time;
+`apps/desktop/scripts/stage-app.mjs` refuses to stage any package whose licence is not on
+`tooling/checks/licenses_allow.json` (D-16.715).
+
+| Package | Version | Licence | Why | Added by |
+|---|---|---|---|---|
+| node-pty | 1.1.0 | MIT | the terminal pane's pseudo-terminals (native binding, unpacked from the archive) | P20-31 |
+| node-addon-api | 7.1.1 | MIT | via node-pty | P20-31 |
+| electron-updater | 6.8.9 | MIT | in-app updates of the macOS bundle and the Linux AppImage (only in builds whose stamp names it) | P20-37 |
+| builder-util-runtime | 9.7.0 | MIT | via electron-updater | P20-37 |
+| fs-extra / jsonfile / universalify / graceful-fs | 10.1.0 / 6.2.1 / 2.0.1 / 4.2.11 | MIT / MIT / MIT / ISC | via electron-updater | P20-37 |
+| js-yaml / argparse | 4.3.2 / 2.0.1 | MIT / Python-2.0 | via electron-updater (update feed files) | P20-37 |
+| lazy-val, lodash.escaperegexp, lodash.isequal, tiny-typed-emitter | 1.0.5, 4.1.2, 4.5.0, 2.1.0 | MIT | via electron-updater | P20-37 |
+| semver | 7.7.4 | ISC | via electron-updater | P20-37 |
+| debug / ms | 4.4.3 / 2.1.3 | MIT | via builder-util-runtime | P20-37 |
+| sax | 1.4.1 | ISC | via builder-util-runtime; pinned by a workspace override to the last ISC release (1.5+ is BlueOak-1.0.0) | P20-37 |
+
+## Build tools (never shipped)
+
+`electron-builder` 26.17.0 (MIT) is a development dependency of `apps/desktop` that turns the staged
+app into DMG/ZIP, NSIS/ZIP and AppImage files (P20-38). Nothing of it is copied into the packaged
+app (the staging step above copies only the listed packages and checks their licences; the archive
+check runs on every build). Its tree includes packages under licences that are not on our allow
+list; the licence guard gates production dependencies only, so they are recorded here, and the
+owner's ruling on build-only licences is pending (D-16.715):
+
+| Package | Version | Licence |
+|---|---|---|
+| minimatch | 10.2.6 | BlueOak-1.0.0 |
+| tar | 7.5.22 | BlueOak-1.0.0 |
+| minipass | 7.1.3 | BlueOak-1.0.0 |
+| chownr | 3.0.0 | BlueOak-1.0.0 |
+| yallist | 5.0.0 | BlueOak-1.0.0 |
+| isexe | 3.1.5, 4.0.0 | BlueOak-1.0.0 |
+| truncate-utf8-bytes | 1.0.2 | WTFPL |
+
+(`sax`, which electron-builder's tree also reaches, resolves to the ISC 1.4.1 through the same
+override; `sanitize-filename` and `utf8-byte-length` are `WTFPL OR ISC` / `WTFPL OR MIT` and are
+taken under the permissive alternative.)
+
 ## Test fixtures
 
 Vendor files kept verbatim as test fixtures (never shipped in the package).

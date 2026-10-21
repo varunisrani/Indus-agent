@@ -15,6 +15,7 @@ export const DEFAULT_FACTS: IndusLaunchFacts = {
   windowKind: "main",
   watch: false,
   profile: null,
+  homeDir: "",
   titleBarHeight: 0,
   deepLinkScheme: "indus",
 };

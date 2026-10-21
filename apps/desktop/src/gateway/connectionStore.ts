@@ -740,6 +740,7 @@ export class ConnectionStore {
   private readonly clock: Clock;
   private readonly connections = new Map<string, GatewayConnection>();
   private readonly unsubscribeChanged: () => void;
+  private primaryProfile: string | null | undefined;
 
   constructor(options: ConnectionStoreOptions = {}) {
     this.options = options;
@@ -780,13 +781,30 @@ export class ConnectionStore {
     return connection;
   }
 
-  /** The window's own profile. */
+  /** The window's own profile (its foreground profile once the switcher set one). */
   primary(): GatewayConnection {
-    return this.connection(this.options.defaultProfile ?? null);
+    return this.connection(
+      this.primaryProfile !== undefined
+        ? this.primaryProfile
+        : (this.options.defaultProfile ?? null),
+    );
+  }
+
+  /** The window now shows `profile` (P20-26 live swap): `primary()` follows it. */
+  setPrimary(profile: string | null): void {
+    this.primaryProfile = profile;
   }
 
   all(): GatewayConnection[] {
     return [...this.connections.values()];
+  }
+
+  /** Close and forget one profile's connection (its profile was renamed or deleted, P20-26). */
+  async release(profile: string | null): Promise<void> {
+    const key = profile ?? "default";
+    const connection = this.connections.get(key);
+    this.connections.delete(key);
+    await connection?.close();
   }
 
   async closeAll(): Promise<void> {

@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import { FakeTimers } from "../../testing/fakeTimers.ts";
 import { seeded } from "../../testing/seeded.ts";
 import type { IndusBootProgress, IndusInstallerEvent } from "../global.d.ts";
-import { type BackendNotice, type BootBridge, BootOverlay } from "./BootOverlay.tsx";
+import {
+  type BackendNotice,
+  type BootBridge,
+  BootOverlay,
+  RESTARTED_TOAST_MS,
+} from "./BootOverlay.tsx";
 import { BOOT_RETRY_CAP_MS, BOOT_RETRY_MAX_ATTEMPTS } from "./bootRetry.ts";
 
 function progress(phase: IndusBootProgress["phase"], extra: Partial<IndusBootProgress> = {}) {
@@ -187,6 +192,38 @@ describe("BootOverlay", () => {
     );
     expect(screen.getByText("Indus keeps stopping (exit code 3)")).toBeTruthy();
     expect(screen.getByText(/Traceback: boom/)).toBeTruthy();
+  });
+
+  it("a restart reported after recovery shows once as a toast over the ready window, then goes", async () => {
+    let push: ((notice: BackendNotice) => void) | null = null;
+    const timers = new FakeTimers();
+    const boot = fakeBoot(progress("ready", { running: false, progress: 1 }));
+    render(
+      <MemoryRouter>
+        <BootOverlay
+          bridge={boot.bridge}
+          clock={{
+            now: () => timers.now,
+            setTimeout: (run: () => void, ms: number) => timers.setTimeout(run, ms),
+            clearTimeout: (handle: unknown) => timers.clearTimeout(handle),
+          }}
+          notices={(listener) => {
+            push = listener;
+            return () => undefined;
+          }}
+        />
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const message = "Indus stopped working in the background and was restarted.";
+    act(() => push?.({ kind: "restarted", message }));
+    expect(screen.getAllByText(message).length).toBe(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => timers.advance(RESTARTED_TOAST_MS));
+    expect(screen.queryByText(message)).toBeNull();
   });
 
   it("a refused credential (401) asks to sign in again", async () => {

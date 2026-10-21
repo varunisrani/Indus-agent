@@ -85,6 +85,8 @@ export interface ElectronHooks {
   execPath: string;
   homeDir: string;
   isWsl: boolean;
+  /** P20-37's update gate (`updates/install.ts` → `gateHooks`); absent: no update ever waits. */
+  updateGate?: { waitForUpdate(): Promise<void>; updateRunning(): boolean };
 }
 
 const GPU_MARKER = "gpu-relaunch.json";
@@ -144,7 +146,16 @@ export interface BackendHandle {
   proxy: ApiProxy;
 }
 
-export function installBackend(context: MainContext, electron: ElectronHooks): BackendHandle {
+export interface BackendOptions {
+  /** The profile a request that names none runs (P20-26's launch decision). */
+  launchProfile?: () => string | null;
+}
+
+export function installBackend(
+  context: MainContext,
+  electron: ElectronHooks,
+  options: BackendOptions = {},
+): BackendHandle {
   const { registry, windows, log, paths } = context;
   const line = (text: string) => log.write(text);
   const broadcast = <N extends EventChannel>(name: N, payload: PayloadOf<N>) => {
@@ -343,7 +354,10 @@ export function installBackend(context: MainContext, electron: ElectronHooks): B
     attachLocal,
     savedRemote: () => remote.saved(),
     connectRemote,
-    waitForUpdate: async () => {}, // P20-37 supplies the update gate
+    waitForUpdate: async () => {
+      await electron.updateGate?.waitForUpdate();
+    },
+    updateRunning: () => electron.updateGate?.updateRunning() ?? false,
     broadcast: (progress) => broadcast("indus:boot:progress", progress),
     onConnection: (connection) => {
       if (connection === null) {
@@ -405,7 +419,7 @@ export function installBackend(context: MainContext, electron: ElectronHooks): B
 
   registry.handle("indus:connection:get", async ({ profile }) => {
     try {
-      return (await orchestrator.start(profile ?? null)).descriptor;
+      return (await orchestrator.start(profile ?? options.launchProfile?.() ?? null)).descriptor;
     } catch (error) {
       throw asIpcError(error);
     }

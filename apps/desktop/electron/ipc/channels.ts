@@ -126,6 +126,20 @@ export const CHANNELS = [
     owner: "P20-26",
   },
   {
+    name: "indus:profile:prepare-change",
+    kind: "invoke",
+    group: "profile",
+    method: "prepareChange",
+    owner: "P20-26",
+  },
+  {
+    name: "indus:profile:commit-change",
+    kind: "invoke",
+    group: "profile",
+    method: "commitChange",
+    owner: "P20-26",
+  },
+  {
     name: "indus:profile:changed",
     kind: "event",
     group: "profile",
@@ -221,6 +235,22 @@ export const CHANNELS = [
   { name: "indus:fs:watch", kind: "invoke", group: "fs", method: "watch", owner: "P20-29" },
   { name: "indus:fs:unwatch", kind: "invoke", group: "fs", method: "unwatch", owner: "P20-29" },
   { name: "indus:fs:changed", kind: "event", group: "fs", method: "onChanged", owner: "P20-29" },
+  { name: "indus:fs:set-roots", kind: "invoke", group: "fs", method: "setRoots", owner: "P20-29" },
+  { name: "indus:fs:stat", kind: "invoke", group: "fs", method: "stat", owner: "P20-29" },
+  {
+    name: "indus:fs:limits:get",
+    kind: "invoke",
+    group: "fs",
+    method: "getLimits",
+    owner: "P20-29",
+  },
+  {
+    name: "indus:fs:limits:set",
+    kind: "invoke",
+    group: "fs",
+    method: "setLimits",
+    owner: "P20-29",
+  },
 
   // git
   { name: "indus:git:status", kind: "invoke", group: "git", method: "status", owner: "P20-30" },
@@ -234,6 +264,14 @@ export const CHANNELS = [
     kind: "invoke",
     group: "git",
     method: "createPr",
+    owner: "P20-30",
+  },
+  { name: "indus:git:changes", kind: "invoke", group: "git", method: "changes", owner: "P20-30" },
+  {
+    name: "indus:git:commit-context",
+    kind: "invoke",
+    group: "git",
+    method: "commitContext",
     owner: "P20-30",
   },
 
@@ -354,6 +392,83 @@ export const CHANNELS = [
     method: "onProgress",
     owner: "P20-37",
   },
+  {
+    name: "indus:updates:skew",
+    kind: "event",
+    group: "updates",
+    method: "onSkew",
+    owner: "P20-37",
+  },
+
+  // HUD, quick entry, global shortcuts, last-active session (P20-35)
+  { name: "indus:hud:open", kind: "invoke", group: "hud", method: "open", owner: "P20-35" },
+  { name: "indus:hud:close", kind: "invoke", group: "hud", method: "close", owner: "P20-35" },
+  {
+    name: "indus:hud:reset-layout",
+    kind: "invoke",
+    group: "hud",
+    method: "resetLayout",
+    owner: "P20-35",
+  },
+  { name: "indus:hud:drag", kind: "send", group: "hud", method: "drag", owner: "P20-35" },
+  { name: "indus:hud:changed", kind: "event", group: "hud", method: "onChanged", owner: "P20-35" },
+  { name: "indus:quick:submit", kind: "invoke", group: "quick", method: "submit", owner: "P20-35" },
+  { name: "indus:quick:dismiss", kind: "send", group: "quick", method: "dismiss", owner: "P20-35" },
+  { name: "indus:quick:shown", kind: "event", group: "quick", method: "onShown", owner: "P20-35" },
+  {
+    name: "indus:quick:deliver",
+    kind: "event",
+    group: "quick",
+    method: "onDeliver",
+    owner: "P20-35",
+  },
+  { name: "indus:quick:ack", kind: "send", group: "quick", method: "ack", owner: "P20-35" },
+  {
+    name: "indus:shortcuts:get",
+    kind: "invoke",
+    group: "shortcuts",
+    method: "get",
+    owner: "P20-35",
+  },
+  {
+    name: "indus:shortcuts:set",
+    kind: "invoke",
+    group: "shortcuts",
+    method: "set",
+    owner: "P20-35",
+  },
+  {
+    name: "indus:session:active",
+    kind: "send",
+    group: "windows",
+    method: "reportSession",
+    owner: "P20-35",
+  },
+
+  // tray, keep awake, notification settings, link previews (P20-36)
+  { name: "indus:ambient:get", kind: "invoke", group: "ambient", method: "get", owner: "P20-36" },
+  { name: "indus:ambient:set", kind: "invoke", group: "ambient", method: "set", owner: "P20-36" },
+  {
+    name: "indus:ambient:changed",
+    kind: "event",
+    group: "ambient",
+    method: "onChanged",
+    owner: "P20-36",
+  },
+  {
+    name: "indus:keep-awake:offer",
+    kind: "event",
+    group: "ambient",
+    method: "onKeepAwakeOffer",
+    owner: "P20-36",
+  },
+  {
+    name: "indus:links:preview",
+    kind: "invoke",
+    group: "links",
+    method: "preview",
+    owner: "P20-36",
+  },
 
   // notifications
   { name: "indus:notify", kind: "invoke", group: "notifications", method: "show", owner: "P20-36" },
@@ -386,6 +501,30 @@ export const CHANNELS = [
     owner: "P20-39",
   },
 
+  // diagnostics, clipboard, find in page
+  {
+    name: "indus:diagnostics:copy",
+    kind: "invoke",
+    group: "diagnostics",
+    method: "copy",
+    owner: "P20-39",
+  },
+  {
+    name: "indus:clipboard:read-text",
+    kind: "invoke",
+    group: "clipboard",
+    method: "readText",
+    owner: "P20-39",
+  },
+  {
+    name: "indus:clipboard:write-text",
+    kind: "invoke",
+    group: "clipboard",
+    method: "writeText",
+    owner: "P20-39",
+  },
+  { name: "indus:find:open", kind: "event", group: "find", method: "onOpen", owner: "P20-39" },
+
   // secrets policy
   {
     name: "indus:secrets:policy:get",
@@ -417,6 +556,17 @@ export const CHANNELS = [
     group: "journal",
     method: "retire",
     owner: "P20-20",
+  },
+
+  // desktop preferences (settings held by main)
+  { name: "indus:prefs:get", kind: "invoke", group: "prefs", method: "get", owner: "P20-32" },
+  { name: "indus:prefs:set", kind: "invoke", group: "prefs", method: "set", owner: "P20-32" },
+  {
+    name: "indus:prefs:changed",
+    kind: "event",
+    group: "prefs",
+    method: "onChanged",
+    owner: "P20-32",
   },
 
   // app-owned work (quit guard)

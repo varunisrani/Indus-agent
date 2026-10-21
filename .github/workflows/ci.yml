@@ -232,6 +232,113 @@ jobs:
           path: apps/web/test-results/
           retention-days: 7
 
+  # Unsigned desktop artefacts on each OS (P20-38): macOS DMG + ZIP, Windows NSIS + ZIP, Linux
+  # AppImage. electron-builder's afterPack flips the fuses and checks the archive; the two
+  # verifiers run again over the output. No signing, no publishing (P23 owns both); the artefacts
+  # stay with this run for a week. On Linux the packaged smoke test (P20-40) then starts the
+  # unpacked build against the fake backend: interactive within 60 s, CSP enforced.
+  desktop-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      INDUS_DESKTOP_CHANNEL: canary
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Unsigned package
+        run: pnpm --filter @indus/desktop dist:unsigned
+
+      - name: Fuses
+        run: node apps/desktop/scripts/verify-fuses.mjs apps/desktop/build/release
+
+      - name: Archive contents
+        run: node apps/desktop/scripts/check-asar.mjs apps/desktop/build/release
+
+      - name: Electron binary (packaged smoke)
+        if: runner.os == 'Linux'
+        run: node apps/desktop/node_modules/electron/install.js
+
+      - name: Display (packaged smoke)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Packaged smoke
+        if: runner.os == 'Linux'
+        run: pnpm --filter @indus/desktop e2e core/packaged
+
+      - name: Keep the unsigned artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: indus-desktop-unsigned-${{ matrix.os }}
+          path: |
+            apps/desktop/build/release/*.dmg
+            apps/desktop/build/release/*.zip
+            apps/desktop/build/release/*.exe
+            apps/desktop/build/release/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
+
+  # The Electron end-to-end lane (P20-40): the built app in real Electron windows (xvfb on Linux),
+  # driven over the DevTools protocol, against the fake backend and a real daemon with only the
+  # model scripted (boot, chat, lifecycle, security, surfaces; packaged runs in desktop-package).
+  # Linux runs the core suite; elsewhere the specs skip with their reason (the OS browser is
+  # stood in for by an xdg-open recorder, the fake daemon's control socket is POSIX): the macOS
+  # and Windows lanes are follow-up. 1 retry on CI, reported in the summary (R10.20).
+  desktop-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv sync --locked
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Electron binary
+        run: node apps/desktop/node_modules/electron/install.js
+
+      - name: Display and D-Bus tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb dbus python3-gi
+
+      - name: Electron suite
+        env:
+          CI: "true"
+        run: pnpm --filter @indus/desktop e2e --exclude core/packaged.electron.test.ts
+
   # The only required status. It needs every other job and is green only when each of them
   # succeeded: skipped, cancelled and failed all fail the gate (R10.18).
   gate:
@@ -242,6 +349,8 @@ jobs:
       - e2e
       - ts
       - web-e2e
+      - desktop-package
+      - desktop-e2e
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -1,7 +1,16 @@
 // IPC for windows, zoom and launch facts (P20-05, P20-06).
 
+import os from "node:os";
 import type { MainContext } from "../context.ts";
 import { TITLE_BAR_HEIGHT } from "./factory.ts";
+
+function safeHomeDir(): string {
+  try {
+    return os.homedir();
+  } catch {
+    return "";
+  }
+}
 
 export function installWindowIpc(context: MainContext): void {
   const { registry, windows } = context;
@@ -16,6 +25,7 @@ export function installWindowIpc(context: MainContext): void {
       windowKind: described?.kind ?? "main",
       watch: described?.watch ?? false,
       profile: described?.profile ?? null,
+      homeDir: safeHomeDir(),
       titleBarHeight: TITLE_BAR_HEIGHT,
       deepLinkScheme: context.deepLinkScheme,
     };

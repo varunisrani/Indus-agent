@@ -63,7 +63,27 @@ const SCENARIO = {
       "commands.catalog": { result: { commands: [] } },
     },
   },
-  rest: { routes: { "GET /api/sessions": { status: 200, body: { sessions: [] } } } },
+  rest: {
+    routes: {
+      "GET /api/sessions": { status: 200, body: { sessions: [] } },
+      // one provider is set up, so the onboarding overlay (P20-33) stays away
+      "GET /api/model/options": {
+        status: 200,
+        body: {
+          providers: [
+            {
+              name: "fake",
+              label: "Fake",
+              auth_type: "api_key",
+              configured: true,
+              device_login: false,
+            },
+          ],
+          current: { provider: "fake", model: "fake-model" },
+        },
+      },
+    },
+  },
 };
 
 let work = "";
@@ -138,6 +158,15 @@ async function sendPrompt(cdp: Cdp, prompt: string): Promise<void> {
   await cdp.pressEnter();
   await cdp.waitFor(`location.hash.length > 2`, "the new session's route", 20_000);
   await cdp.waitFor(`${TRANSCRIPT_TEXT}.includes(${JSON.stringify(prompt)})`, "the prompt's row");
+}
+
+/**
+ * The real runtime's main model is a custom OpenAI-compatible endpoint (the scripted model) that
+ * needs no key: a usable setup, so the onboarding overlay (P20-33) must not cover the chat.
+ */
+async function expectNoOnboarding(cdp: Cdp): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 3_000)); // the overlay's own check runs first
+  expect(await cdp.eval<boolean>(hasButton("Choose later"))).toBe(false);
 }
 
 /** The first message of a fresh chat is never offered back as "not confirmed" while it runs. */
@@ -287,6 +316,12 @@ describe.skipIf(skipReason !== "")(
             INDUS_DESKTOP_INDUS: path.join(REPO, ".venv", "bin", "indus"),
           });
           const { cdp } = app;
+          await cdp.waitFor(
+            `document.querySelector('.connection-badge')?.dataset.phase === 'open'`,
+            "the connection",
+            60_000,
+          );
+          await expectNoOnboarding(cdp);
           await sendPrompt(cdp, "Please clean up");
           await cdp.waitFor(
             `${TRANSCRIPT_TEXT}.includes('Streaming from the daemon.')`,

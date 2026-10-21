@@ -1,12 +1,36 @@
-// The window shell (P20-15): left sidebar, the central pane area, the bottom status bar. The
-// status bar is a slot (slice C's StatusBar); without one it shows the connection state.
+// The window shell (P20-15; P20-25..27): the profile rail, the left sidebar (new chat, pages,
+// the sessions sidebar, overlay entries, theme), the pane shell in the middle (the route's
+// content is its chat pane) and the bottom status bar. The interface mode (Advanced / Simple)
+// decides which surfaces show; the tab and window shortcuts are handled here.
 
 import { Monitor, Moon, PenSquare, Sun } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
+import { draftOf, FRESH, setDraft, windowDrafts } from "../chat/composer/goneSession.ts";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
 import { type MessageKey, useT } from "../i18n/index.tsx";
+import { previewTargets } from "../panes/d2Panes.tsx";
+import { LayoutStore } from "../panes/layoutStore.ts";
+import { focusedPane, PaneShell, paneRegistry, useLayout } from "../panes/PaneShell.tsx";
+import { CHAT_PANE, isHidden, zones } from "../panes/paneTree.ts";
+import { surfaceShown } from "../panes/presets.ts";
+import type { PreviewTarget } from "../panes/preview/target.ts";
+import { type PaneAction, usePaneShortcuts } from "../panes/shortcuts.ts";
+import { ProfileRail, type ProfilesApi, useProfileNames } from "../profiles/ProfileRail.tsx";
+import { useSwitcher, useSwitcherState } from "../profiles/switcherReact.tsx";
+import { newChatTarget } from "../sidebar/projects.ts";
+import { beginNewChat, Sidebar, SidebarModel } from "../sidebar/Sidebar.tsx";
+import { desktopBridge, launchFacts } from "./bridge.ts";
 import { OVERLAY_ICONS, OVERLAY_TEXT, PAGE_ICONS, PAGE_TEXT } from "./pages.tsx";
 import {
   NEW_CHAT_PATH,
@@ -15,8 +39,43 @@ import {
   overlayStateFrom,
   PAGES,
   pagePath,
+  sessionPath,
 } from "./routes.ts";
 import { type ThemeMode, useTheme } from "./theme.tsx";
+
+// -- chrome: the window's sidebar model and pane layout ------------------------------------------
+
+export interface ShellChrome {
+  readonly sidebar: SidebarModel;
+  readonly layout: LayoutStore;
+}
+
+const ChromeContext = createContext<ShellChrome | null>(null);
+
+export function ShellChromeProvider(props: { value: ShellChrome | null; children: ReactNode }) {
+  return <ChromeContext.Provider value={props.value}>{props.children}</ChromeContext.Provider>;
+}
+
+/** The provided chrome, or null (Settings reads the sidebar's per-profile project stores). */
+export function useProvidedShellChrome(): ShellChrome | null {
+  return useContext(ChromeContext);
+}
+
+/** The provided chrome, else one made for this shell (previews and tests). */
+function useChrome(): ShellChrome {
+  const provided = useContext(ChromeContext);
+  const [own] = useState<ShellChrome | null>(() =>
+    provided === null
+      ? {
+          sidebar: new SidebarModel(),
+          layout: new LayoutStore({ available: () => paneRegistry.ids() }),
+        }
+      : null,
+  );
+  return provided ?? (own as ShellChrome);
+}
+
+// -- small pieces --------------------------------------------------------------------------------
 
 const THEME_OPTIONS: ReadonlyArray<{ mode: ThemeMode; key: MessageKey; icon: ReactNode }> = [
   { mode: "light", key: "theme.light", icon: <Sun aria-hidden="true" size={14} /> },
@@ -56,18 +115,30 @@ function ThemeControl() {
   );
 }
 
-function Sidebar() {
+function LeftSidebar(props: {
+  chrome: ShellChrome;
+  profile: string;
+  sessionId: string | null;
+  connection: GatewayConnection | null;
+  switchError: string | null;
+}) {
   const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
+  const newChat = () => {
+    beginNewChat(props.chrome.sidebar, props.profile, null);
+    navigate(NEW_CHAT_PATH);
+  };
+  // The list's first load may run before the backend is up: load again each time it is ready.
+  const ready = useOptionalConnectionState(props.connection)?.ready ?? false;
+  const sessions = props.chrome.sidebar.sessions(props.profile);
+  useEffect(() => {
+    if (ready) void sessions.refresh();
+  }, [ready, sessions]);
   return (
     <aside className="sidebar">
       <nav aria-label={t("nav.label")}>
-        <button
-          type="button"
-          className="nav-item nav-primary"
-          onClick={() => navigate(NEW_CHAT_PATH)}
-        >
+        <button type="button" className="nav-item nav-primary" onClick={newChat}>
           <PenSquare aria-hidden="true" size={16} />
           <span>{t("nav.newChat")}</span>
         </button>
@@ -81,7 +152,23 @@ function Sidebar() {
             </li>
           ))}
         </ul>
-        <p className="sidebar-note">{t("nav.sessionsLater")}</p>
+      </nav>
+      {props.switchError !== null && (
+        <p className="switch-error" role="alert">
+          {t("profiles.switchFailed", { error: props.switchError })}
+        </p>
+      )}
+      <Sidebar
+        model={props.chrome.sidebar}
+        profile={props.profile}
+        activeSessionId={props.sessionId}
+        onOpenSession={(id) => navigate(sessionPath(id))}
+        onPopOut={(id) => void desktopBridge()?.hud.open({ sessionId: id, profile: props.profile })}
+        onNewChat={() => navigate(NEW_CHAT_PATH)}
+        events={props.connection}
+        homeDir={launchFacts().homeDir || null}
+      />
+      <nav aria-label={t("nav.more")}>
         <ul className="nav-list nav-bottom">
           {OVERLAYS.map((overlay) => (
             <li key={overlay}>
@@ -128,27 +215,262 @@ function ConnectionWarning(props: { connection: GatewayConnection }) {
   );
 }
 
-export function Shell(props: { statusBar?: ReactNode; children: ReactNode }) {
-  const t = useT();
+/** Local or remote, from the connection's descriptor (null until the first boot answers). */
+function useConnectionMode(connection: GatewayConnection | null): "local" | "remote" | null {
   const store = useMaybeConnectionStore();
-  const connection = store?.primary() ?? null;
+  const fallback = connection ?? store?.primary() ?? null;
+  const state = useOptionalConnectionState(fallback);
+  return state?.descriptor?.mode ?? null;
+}
+
+function useOptionalConnectionState(connection: GatewayConnection | null) {
+  return useSyncExternalStore(
+    (listener) => (connection === null ? () => undefined : connection.subscribe(listener)),
+    () => (connection === null ? null : connection.getState()),
+  );
+}
+
+/** The desktop's default profile (main's remembered state), kept current. */
+function useDefaultProfile(): string | null {
+  const [value, setValue] = useState<string | null>(null);
+  useEffect(() => {
+    const profile = desktopBridge()?.profile;
+    if (profile === undefined) return;
+    let live = true;
+    profile.get().then(
+      (state) => {
+        if (live) setValue(state.defaultProfile);
+      },
+      () => undefined,
+    );
+    const off = profile.onChanged((state) => setValue(state.defaultProfile));
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  return value;
+}
+
+function bridgeProfilesApi(): ProfilesApi | null {
+  const api = desktopBridge()?.api;
+  return api === undefined ? null : (payload) => api.request(payload);
+}
+
+// -- what the tool panes get (P20-28..31) ---------------------------------------------------------
+
+/**
+ * The working folder of the route's conversation: its row's `cwd` in the sidebar list, or for a
+ * fresh draft the folder its session will be created in (project or default directory).
+ */
+function useWorkspaceFolder(
+  chrome: ShellChrome,
+  profile: string,
+  sessionId: string | null,
+): string | null {
+  const list = chrome.sidebar.sessions(profile);
+  const projects = chrome.sidebar.projects(profile);
+  const rows = useSyncExternalStore(
+    (listener) => list.subscribe(listener),
+    () => list.getState().rows,
+  );
+  useSyncExternalStore(
+    (listener) => projects.subscribe(listener),
+    () => projects.getPrefs(),
+  );
+  if (sessionId !== null) return rows.find((row) => row.ids.includes(sessionId))?.cwd ?? null;
+  return newChatTarget.get(chrome.sidebar.storage, profile) ?? projects.getPrefs().defaultDirectory;
+}
+
+/** Append `text` to the composer draft of the conversation (a fresh draft when null). */
+export function addToComposer(sessionId: string | null, text: string): void {
+  const key = sessionId ?? FRESH;
+  windowDrafts.update((state) => {
+    const current = draftOf(state, key);
+    const joined = current.trim() === "" ? text : `${current.replace(/\s+$/, "")}\n\n${text}`;
+    return setDraft(state, key, joined);
+  });
+}
+
+// -- the shell -----------------------------------------------------------------------------------
+
+export function Shell(props: {
+  statusBar?: ReactNode;
+  /** The route's conversation (null: a new chat or a page). */
+  sessionId?: string | null;
+  children: ReactNode;
+}) {
+  const t = useT();
+  const navigate = useNavigate();
+  const chrome = useChrome();
+  const store = useMaybeConnectionStore();
+  const switcher = useSwitcher();
+  const switchState = useSwitcherState(switcher);
+  const profile = switchState?.foreground ?? "default";
+  const connection = switcher?.foreground().connection ?? store?.primary() ?? null;
+  const layout = useLayout(chrome.layout);
+  const mode = layout.mode;
+  const api = useMemo(() => bridgeProfilesApi(), []);
+  // asked again whenever the backend becomes ready (the first ask may beat the boot)
+  const backendReady = useOptionalConnectionState(connection)?.ready ?? false;
+  const profiles = useProfileNames(api, `${profile}|${backendReady}`);
+  const defaultProfile = useDefaultProfile();
+  const [leftOpen, setLeftOpen] = useState(true);
+  const platform = launchFacts().platform;
+  const sessionId = props.sessionId ?? null;
+  const workspace = useWorkspaceFolder(chrome, profile, sessionId);
+  const connectionMode = useConnectionMode(connection);
+  const openPreview = useCallback(
+    (target: PreviewTarget) => {
+      previewTargets.set(target);
+      if (chrome.layout.open("preview")) chrome.layout.activate("preview");
+    },
+    [chrome],
+  );
+  const addToChat = useCallback((text: string) => addToComposer(sessionId, text), [sessionId]);
+
+  // The window's folders for the fs, git and terminal handlers in main (P20-29): the route's
+  // working folder, the profile's project folders and its default folder. Main refuses system
+  // folders and anything above the home; everything else stays confined to these and the home.
+  const projectPrefs = useSyncExternalStore(
+    (listener) => chrome.sidebar.projects(profile).subscribe(listener),
+    () => chrome.sidebar.projects(profile).getPrefs(),
+  );
+  const rootsKey = [
+    workspace,
+    projectPrefs.defaultDirectory,
+    ...projectPrefs.projects.flatMap((project) => project.folders),
+  ]
+    .filter((folder): folder is string => typeof folder === "string" && folder.trim() !== "")
+    .filter((folder, index, all) => all.indexOf(folder) === index)
+    .join("\n");
+  useEffect(() => {
+    const fs = desktopBridge()?.fs;
+    if (fs?.setRoots === undefined || connectionMode === "remote") return;
+    void fs.setRoots({ roots: rootsKey === "" ? [] : rootsKey.split("\n") }).catch(() => {});
+  }, [rootsKey, connectionMode]);
+
+  // Ctrl/Cmd+Shift+W inside the preview, or an `indus://close-preview` link (P20-28, P20-34)
+  useEffect(
+    () => desktopBridge()?.preview?.onCloseRequested?.(() => chrome.layout.close("preview")),
+    [chrome],
+  );
+
+  // a popped-out session window has no global sidebar or rail
+  const secondary = launchFacts().windowKind === "secondary";
+  const surface = { profileCount: profiles.length };
+  const showRail = !secondary && profiles.length > 0 && surfaceShown(mode, "profileRail", surface);
+  const showStatus = surfaceShown(mode, "statusBar", surface);
+
+  const onAction = (action: PaneAction): boolean => {
+    const panes = chrome.layout;
+    switch (action.kind) {
+      case "new-chat":
+        beginNewChat(chrome.sidebar, profile, null);
+        navigate(NEW_CHAT_PATH);
+        return true;
+      case "cycle":
+        panes.cycle(action.step);
+        return true;
+      case "jump":
+        panes.jump(action.slot);
+        return true;
+      case "close": {
+        const active = focusedPane(panes);
+        const inTerminal =
+          active === "terminal" ||
+          (document.activeElement?.closest('[data-pane="terminal"]') ?? null) !== null;
+        if (inTerminal || active === null || active === CHAT_PANE) return false;
+        panes.close(active);
+        return true;
+      }
+      case "reopen":
+        return panes.reopenLast() !== null;
+      case "new-window":
+        void desktopBridge()?.windows.openInstance({ profile });
+        return true;
+      case "toggle-left":
+        setLeftOpen((open) => !open);
+        return true;
+      case "toggle-right": {
+        const snapshot = panes.layout();
+        const tools = zones(snapshot.root).filter((z) => !z.tabs.includes(CHAT_PANE));
+        const showing = tools.some(
+          (z) => !z.minimized && z.tabs.some((pane) => !isHidden(snapshot, pane)),
+        );
+        for (const z of tools) {
+          const stateful = z.tabs.filter((pane) => paneRegistry.isStateful(pane));
+          if (stateful.length === 0) panes.setMinimized(z.id, showing);
+          for (const pane of stateful) panes.setHidden(pane, showing);
+        }
+        return tools.length > 0;
+      }
+    }
+  };
+  const showSlots = usePaneShortcuts(platform, { onAction });
+
+  const selectProfile = (next: string) => {
+    if (switcher === null) return;
+    void switcher.select(next, { explicit: true }).then((result) => {
+      if (result.ok && result.freshDraft) navigate(NEW_CHAT_PATH);
+    });
+  };
+
   return (
-    <div className="shell">
-      <Sidebar />
-      <main className="pane-area">{props.children}</main>
-      {props.statusBar === undefined ? (
-        <footer className="status-bar">
-          <section className="status-items" aria-label={t("status.label")}>
-            {connection !== null && <ConnectionBadge connection={connection} />}
-          </section>
-        </footer>
-      ) : (
-        // The slot brings its own footer (slice C's StatusBar); the badge stays beside it.
-        <div className="status-bar status-bar-host">
-          {connection !== null && <ConnectionBadge connection={connection} />}
-          <div className="status-slot">{props.statusBar}</div>
-        </div>
+    <div
+      className="shell"
+      data-interface-mode={mode}
+      data-rail={showRail ? "true" : "false"}
+      data-left={leftOpen ? "open" : "closed"}
+    >
+      {showRail && (
+        <ProfileRail
+          profiles={profiles}
+          foreground={profile}
+          pending={switchState?.pending ?? null}
+          defaultProfile={defaultProfile}
+          onSelect={selectProfile}
+          onOpenInWindow={(name) => void desktopBridge()?.windows.openInstance({ profile: name })}
+          onSetDefault={(name) => void desktopBridge()?.profile.setDefault({ profile: name })}
+        />
       )}
+      {leftOpen && !secondary && (
+        <LeftSidebar
+          chrome={chrome}
+          profile={profile}
+          sessionId={sessionId}
+          connection={connection}
+          switchError={switchState?.status === "error" ? switchState.error : null}
+        />
+      )}
+      <main className="pane-area">
+        <PaneShell
+          store={chrome.layout}
+          chat={props.children}
+          sessionId={sessionId}
+          profile={profile}
+          showSlots={showSlots}
+          workspace={workspace}
+          mode={connectionMode}
+          connection={connection}
+          openPreview={openPreview}
+          addToChat={addToChat}
+        />
+      </main>
+      {showStatus &&
+        (props.statusBar === undefined ? (
+          <footer className="status-bar">
+            <section className="status-items" aria-label={t("status.label")}>
+              {connection !== null && <ConnectionBadge connection={connection} />}
+            </section>
+          </footer>
+        ) : (
+          // The slot brings its own footer (slice C's StatusBar); the badge stays beside it.
+          <div className="status-bar status-bar-host">
+            {connection !== null && <ConnectionBadge connection={connection} />}
+            <div className="status-slot">{props.statusBar}</div>
+          </div>
+        ))}
       {connection !== null && <ConnectionWarning connection={connection} />}
     </div>
   );

@@ -229,6 +229,9 @@ def info_from_summary(
         "cwd": row.cwd,
         "git_branch": row.git_branch,
         "parent_session_id": row.parent_session_id,
+        # A compressed conversation shows its newest tip; pins, archive and unread key on the
+        # chain's root, which is the row these flags are read from (P20-25).
+        "lineage_root": row.root_id,
     }
 
 

@@ -26,6 +26,7 @@ export const FALLBACK_FACTS = Object.freeze({
   windowKind: "main",
   watch: false,
   profile: null,
+  homeDir: "",
   titleBarHeight: 34,
   deepLinkScheme: "indus",
 });

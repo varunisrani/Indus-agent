@@ -686,6 +686,21 @@ export function applyHistory(
       continue;
     }
     if (group.user === null && live !== null && !live.streaming) {
+      // The reply may already be on screen from the snapshot: its user's group (a different
+      // turn binding, e.g. an optimistic row) flushed the whole stored segment just before.
+      let shown = false;
+      for (let i = out.length - 1; i >= 0; i -= 1) {
+        const item = out[i];
+        if (item === undefined || item.kind === "user") break;
+        if (item.kind === "assistant" && item.persisted && sameReply(assistantText(item), live)) {
+          shown = true;
+          break;
+        }
+      }
+      if (shown) {
+        out.push(...group.extras);
+        continue;
+      }
       let found = -1;
       for (let i = Math.max(cursor, floor); i < base.length; i += 1) {
         const item = base[i];

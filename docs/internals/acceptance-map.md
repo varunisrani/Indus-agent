@@ -1706,6 +1706,59 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/mcp_serve/test_approvals.py::test_an_open_prompt_is_listed_answered_once_and_announced`
   - `tests/contract/mcp_serve/test_approvals.py::test_a_prompt_answered_elsewhere_first_is_settled_here`
   - `tests/e2e/mcp_serve/test_mcp_serve_daemon.py::test_mcp_serve_reads_the_store_and_sends_only_through_a_running_daemon`
+- **ACC-N1-1** Single instance: a second launch hands its argv (a deep link) to the running app and exits
+  - `apps/desktop/e2e/core/chat.electron.test.ts::a deep link opens Settings where the default folder for new chats is set`
+- **ACC-N3-1** Foreign sender rejected: a window the manager did not create, an iframe and a preview guest cannot use the bridge
+  - `apps/desktop/electron/security/realWindow.electron.test.ts::a window the manager did not create is refused on every call (sender check)`
+  - `apps/desktop/e2e/core/security.electron.test.ts::hostile guest %s: nothing opens, no window, no bridge`
+- **ACC-N3-2** Strict CSP in the app page (dev window and packaged build)
+  - `apps/desktop/electron/security/realWindow.electron.test.ts::CSP blocks eval, new Function and the inline script; the 'self' script runs`
+  - `apps/desktop/e2e/core/security.electron.test.ts::CSP: an injected inline script does not run in the app page`
+  - `apps/desktop/e2e/core/packaged.electron.test.ts::the packaged app is interactive within 60 s and its CSP refuses an inline script`
+- **ACC-N3-3** Electron fuses set and verified on the packaged build
+  - `apps/desktop/e2e/core/packaged.electron.test.ts::packs (or reuses CI's build), flips the fuses and passes the archive check`
+- **ACC-N3-4** Guest content cannot open a URL: window.open, untrusted clicks, file: links; a trusted https click opens once
+  - `apps/desktop/e2e/core/security.electron.test.ts::hostile guest %s: nothing opens, no window, no bridge`
+  - `apps/desktop/e2e/core/security.electron.test.ts::a trusted click opens exactly that https link; a trusted click on file: opens nothing`
+- **ACC-N5-1** Clean-machine first run: the chooser, the in-app installer's stages, then the installed runtime is attached
+  - `apps/desktop/e2e/core/boot.electron.test.ts::first run on a clean machine: chooser → in-app installer (live log) → attached`
+- **ACC-N6-1** A boot that cannot succeed shows the failure overlay latched (Repair, no retry loop)
+  - `apps/desktop/e2e/core/boot.electron.test.ts::a boot that cannot succeed shows the failure overlay, latched (Repair, no retry loop)`
+- **ACC-N7-1** kill -9 of an app-started daemon: one supervised restart, one notice, the conversation back without duplicates
+  - `apps/desktop/e2e/core/lifecycle.electron.test.ts::kill -9 of the daemon: one notice, recovered without duplicates, next prompt answered`
+- **ACC-N7-2** Quit leaves none of the app's own processes; the same home relaunches three times
+  - `apps/desktop/e2e/core/lifecycle.electron.test.ts::quit stops the app's own processes; the shared daemon keeps running`
+  - `apps/desktop/e2e/core/lifecycle.electron.test.ts::relaunching the same home three times attaches every time`
+- **ACC-N9-1** Transcript-once oracle on a real daemon: after reload and after a restart (every frame sampled)
+  - `apps/desktop/e2e/core/chat.electron.test.ts::transcript-once: after a reload every persisted message shows exactly once, in order`
+  - `apps/desktop/src/chat/messageStream.test.ts::a finished reply whose user row is bound elsewhere is not shown twice by the snapshot`
+- **ACC-N9-3** Approval card answered once; the reply continues after it (real daemon)
+  - `apps/desktop/e2e/core/chat.electron.test.ts::chat: streamed reply, tool row, approval card, the reply after it`
+- **ACC-N10-1** Sidebar on a real daemon: a second chat, then the first again from the list
+  - `apps/desktop/e2e/core/chat.electron.test.ts::sidebar: a second chat, then back to the first from the list`
+- **ACC-N12-1** Working panes on a real daemon: git review lists the agent's edit, files shows it, preview shows a local page
+  - `apps/desktop/e2e/core/chat.electron.test.ts::panes: git review lists the edit, files shows it, the preview shows a local page`
+- **ACC-N13-1** Settings: search over the real schema lands on the owning page; a deep link opens a page
+  - `apps/desktop/e2e/core/chat.electron.test.ts::settings search over the real schema: "proxy" lands on the owning page, field outlined`
+- **ACC-N14-1** Onboarding: an API key reaches the backend only; a custom endpoint is tested by the real route
+  - `apps/desktop/e2e/core/surfaces.electron.test.ts::first-run onboarding: an API key goes to the backend only, then the model is confirmed`
+  - `apps/desktop/e2e/core/chat.electron.test.ts::Settings › Providers re-runs onboarding: a custom endpoint tested by the real route`
+- **ACC-N19-1** Profile rail switch to another profile (its own daemon) and back
+  - `apps/desktop/e2e/core/chat.electron.test.ts::profile rail: switch to another profile (its own daemon, empty list) and back`
+  - `apps/desktop/src/profiles/switching.test.ts::leaves no session store entry from the old connection`
+- **ACC-N20-1** The HUD opens a conversation in a floating window from the sidebar
+  - `apps/desktop/e2e/core/surfaces.electron.test.ts::HUD: the sidebar's pop-out opens the conversation in a floating window`
+- **ACC-N24-1** Tray with a StatusNotifier host hides on close and comes back when the host leaves; without a host it is refused
+  - `apps/desktop/e2e/core/surfaces.electron.test.ts::tray with a host: closing hides to the tray; the host going away brings windows back`
+  - `apps/desktop/e2e/core/surfaces.electron.test.ts::tray without a StatusNotifier host: switched on, it stays unavailable and Settings says why`
+- **ACC-N26-1** Deep links never run a program and never install without a confirmation; media serves only allowed roots
+  - `apps/desktop/e2e/core/security.electron.test.ts::deep links: a program-running MCP link is refused; others only ask; Cancel installs nothing`
+  - `apps/desktop/e2e/core/security.electron.test.ts::media: an image under the home loads, one outside the roots does not`
+- **ACC-N29-1** Update check against a loopback releases feed finds the newer release
+  - `apps/desktop/e2e/core/surfaces.electron.test.ts::update check against a loopback releases feed: the newer release is found`
+- **ACC-N30-1** Unsigned --dir package: archive checked (no sources, native modules unpacked, stamps), fuses verified, packaged app interactive
+  - `apps/desktop/e2e/core/packaged.electron.test.ts::packs (or reuses CI's build), flips the fuses and passes the archive check`
+  - `apps/desktop/e2e/core/packaged.electron.test.ts::the packaged app is interactive within 60 s and its CSP refuses an inline script`
 - **ACC-N31-1** Secrets at rest (desktop and CLI: provider keys, auth tokens, platform credentials) go to the OS …
   - `tests/contract/foundation/test_secret_store_contract.py::test_round_trip`
   - `tests/contract/foundation/test_secret_store_contract.py::test_profile_isolation`

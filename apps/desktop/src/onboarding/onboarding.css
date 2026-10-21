@@ -1,0 +1,123 @@
+/* Provider onboarding overlay (P20-33). Above route overlays, below the boot overlay. */
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-overlay) + 10);
+  display: grid;
+  place-items: center;
+  padding: var(--indus-space-4);
+  background: var(--indus-color-bg);
+}
+
+.onboarding-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-3);
+  width: min(640px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--indus-space-4);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-lg);
+  background: var(--indus-color-bg-raised);
+  box-shadow: var(--indus-shadow-high);
+}
+
+.onboarding-card:focus {
+  outline: none;
+}
+
+.onboarding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.onboarding-header h2,
+.onboarding-picker h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.onboarding-picker h3 {
+  margin-bottom: var(--indus-space-1);
+  font-size: 12px;
+  color: var(--indus-color-fg-muted);
+}
+
+.onboarding-lead {
+  margin: 0;
+  color: var(--indus-color-fg-muted);
+}
+
+.onboarding-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-3);
+}
+
+.onboarding-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: var(--indus-space-2) var(--indus-space-3);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-md);
+  background: transparent;
+  color: var(--indus-color-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.onboarding-option-title {
+  font-weight: var(--indus-font-weight-semibold);
+}
+
+.onboarding-option-hint {
+  font-size: 12px;
+  color: var(--indus-color-fg-muted);
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--indus-space-2);
+}
+
+.onboarding-status {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-2);
+  color: var(--indus-color-fg-muted);
+}
+
+.onboarding-form,
+.onboarding-device,
+.onboarding-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-2);
+}
+
+.onboarding-code {
+  align-self: center;
+  padding: var(--indus-space-2) var(--indus-space-4);
+  border-radius: var(--indus-radius-md);
+  background: var(--indus-color-code-bg);
+  font-family: var(--indus-font-mono);
+  font-size: 24px;
+  letter-spacing: 0.2em;
+  user-select: all;
+}

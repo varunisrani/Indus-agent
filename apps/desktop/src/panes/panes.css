@@ -1,0 +1,230 @@
+/* Pane shell (P20-27). Tokens only, as in styles.css. */
+
+.pane-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-2);
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border-bottom: 1px solid var(--indus-color-border);
+  font-size: 12px;
+  color: var(--indus-color-fg-muted);
+}
+
+.pane-toolbar-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+}
+
+.pane-toolbar select {
+  font: inherit;
+  color: var(--indus-color-fg);
+  background: var(--indus-color-bg);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-sm);
+}
+
+.pane-toolbar .segmented {
+  margin-left: auto;
+}
+
+.segmented-text {
+  font: inherit;
+  font-size: 12px;
+}
+
+.pane-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--indus-space-1);
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border-bottom: 1px solid var(--indus-color-border);
+}
+
+.pane-rail-item {
+  font: inherit;
+  font-size: 12px;
+  padding: 0 var(--indus-space-2);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-md);
+  background: var(--indus-color-bg-raised);
+  color: var(--indus-color-fg);
+  cursor: pointer;
+}
+
+.pane-root {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-split[data-orientation="column"] {
+  flex-direction: column;
+}
+
+.pane-cell {
+  display: flex;
+  flex-basis: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-cell[hidden],
+.pane-zone[hidden],
+.pane-body[hidden] {
+  display: none;
+}
+
+.pane-separator {
+  flex: 0 0 4px;
+  background: var(--indus-color-border);
+  cursor: col-resize;
+}
+
+.pane-separator[data-orientation="column"] {
+  cursor: row-resize;
+}
+
+.pane-zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-zone-header {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  min-height: 28px;
+  padding: 0 var(--indus-space-1);
+  border-bottom: 1px solid var(--indus-color-border);
+  background: var(--indus-color-bg-raised);
+}
+
+.pane-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.pane-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--indus-color-fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pane-tab[aria-selected="true"] {
+  color: var(--indus-color-fg);
+  border-bottom-color: var(--indus-color-accent);
+}
+
+.pane-tab[data-hidden="true"] {
+  opacity: 0.6;
+}
+
+.pane-slot {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: var(--indus-radius-sm);
+  background: var(--indus-color-accent);
+  color: var(--indus-color-accent-fg);
+  font-size: 10px;
+}
+
+.pane-zone-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.pane-bodies {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  transition: filter var(--indus-duration-quick) var(--indus-easing-standard);
+}
+
+/* Unfocused zones lose 20 % saturation (only when there is more than one zone to tell apart). */
+.pane-split .pane-zone[data-focused="false"] .pane-bodies {
+  filter: saturate(0.8);
+}
+
+.pane-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-drop {
+  position: absolute;
+  pointer-events: none;
+  background: var(--indus-color-accent);
+  opacity: 0.18;
+  inset: 28px 0 0 0;
+}
+
+.pane-drop[data-edge="left"] {
+  right: 50%;
+}
+
+.pane-drop[data-edge="right"] {
+  left: 50%;
+}
+
+.pane-drop[data-edge="top"] {
+  bottom: 50%;
+}
+
+.pane-drop[data-edge="bottom"] {
+  top: calc(50% + 14px);
+}
+
+/* Simple mode: the technical tool view and inline diffs are hidden, thinking stays collapsed. */
+[data-interface-mode="simple"] .tool-detail,
+[data-interface-mode="simple"] .inline-diff {
+  display: none;
+}
+
+[data-interface-mode="simple"] details.reasoning[open] > :not(summary) {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-bodies {
+    transition: none;
+  }
+}

@@ -7,6 +7,7 @@ import {
   LocalAttach,
   type LocalAttachDeps,
   newSessionToken,
+  profileArgs,
   profileHome,
   SESSION_TOKEN_HEADER,
 } from "./localAttach.ts";
@@ -80,6 +81,15 @@ describe.skipIf(!posix)("local attach (fake backend)", () => {
     expect(s.calls[0]?.slice(0, 2)).toEqual(["-p", "work"]);
     expect(attach.home()).toBe(path.join(s.home, "profiles", "work"));
     expect(profileHome(s.home, "default")).toBe(s.home);
+  });
+
+  it("the default profile is named explicitly (the CLI's sticky profile never decides)", async () => {
+    const s = setup();
+    const attach = s.attach({ profile: "default" });
+    await attach.attachGateway();
+    expect(s.calls[0]?.slice(0, 2)).toEqual(["-p", "default"]);
+    expect(attach.home()).toBe(s.home);
+    expect(profileArgs(null)).toEqual([]);
   });
 
   it("serve ensure: the token goes in the environment only and opens the REST API", async () => {
@@ -220,6 +230,24 @@ describe.skipIf(!posix)("local attach (fake backend)", () => {
     expect(minted.ok).toBe(true);
     expect(minted.ok && minted.instanceId).not.toBe(before.instanceId);
     expect(verbs(s.calls, "gateway restart")).toBe(0);
+  });
+
+  it("overlapping ensures (supervisor respawn + a mint that found the daemon gone) share one run", async () => {
+    const s = setup();
+    const attach = s.attach();
+    await attach.attachGateway();
+    await runCommand(s.backend, ["gateway", "stop"], {
+      env: { ...process.env, INDUS_HOME: s.home },
+      timeoutMs: 10_000,
+    });
+    const before = verbs(s.calls, "gateway ensure");
+    const [respawned, minted] = await Promise.all([attach.ensureGateway(), attach.mint()]);
+    expect(minted.ok).toBe(true);
+    expect(minted.ok && minted.instanceId).toBe(respawned.instanceId);
+    expect(verbs(s.calls, "gateway ensure") - before).toBe(1);
+    // once settled, the next ensure runs again
+    await attach.ensureGateway();
+    expect(verbs(s.calls, "gateway ensure") - before).toBe(2);
   });
 
   it("session tokens are 43 URL-safe characters and differ", () => {

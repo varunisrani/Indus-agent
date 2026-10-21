@@ -32,6 +32,8 @@ export const launchFacts = z.object({
   watch: z.boolean(),
   /** The profile this window boots against, null for the app's active profile. */
   profile: z.string().nullable(),
+  /** The person's home folder (the default root of the repo scan, P20-25); "" when unknown. */
+  homeDir: z.string(),
   titleBarHeight: z.number(),
   deepLinkScheme: z.string(),
 });
@@ -145,7 +147,11 @@ export const apiResult = z.discriminatedUnion("kind", [
 export const profileState = z.object({
   active: z.string().nullable(),
   defaultProfile: z.string().nullable(),
+  /** The profile main's boot attempt runs (P20-26: one decision per attempt). */
+  launch: z.string().nullable(),
 });
+
+const profileChange = z.enum(["rename", "delete"]);
 
 export const windowState = z.object({
   maximized: z.boolean(),
@@ -174,21 +180,128 @@ const fsEntry = z.object({
   name: z.string(),
   path: z.string(),
   kind: z.enum(["file", "dir", "symlink", "other"]),
+  /** For a symlink: what it points at (`missing` when broken). */
+  target: z.enum(["file", "dir", "other", "missing"]).optional(),
   size: z.number().optional(),
   mtimeMs: z.number().optional(),
+  /** A key store or `.env`-like file: listed, never read into a renderer (P20-29). */
+  sensitive: z.boolean().optional(),
 });
 
-const gitFile = z.object({ path: z.string(), index: z.string(), worktree: z.string() });
+export const fsLimits = z.object({
+  /** The Settings value for preview data-URL reads, in MiB. */
+  dataUrlMaxMb: z.number().int(),
+  dataUrlDefaultMb: z.number().int(),
+  dataUrlMinMb: z.number().int(),
+  dataUrlCeilingMb: z.number().int(),
+  /** Attachments (bytes uploaded or a path handed to the agent). */
+  attachMaxBytes: z.number().int(),
+  /** Text previews. */
+  textPreviewMaxBytes: z.number().int(),
+});
+
+/** One changed file. `index` / `worktree` are porcelain codes (`M`, `A`, `D`, `R`, `?`, `U`, ` `). */
+const gitFile = z.object({
+  path: z.string(),
+  /** The path before a rename or copy. */
+  from: z.string().optional(),
+  index: z.string(),
+  worktree: z.string(),
+  added: z.number().int().optional(),
+  removed: z.number().int().optional(),
+});
+
+const gitScope = z.enum(["uncommitted", "branch", "last-turn"]);
+/** A commit id: the last-turn baseline (never a ref name, so never an option). */
+const commitId = z.string().regex(/^[0-9a-f]{7,64}$/);
+const repoRelPath = z.string().min(1).max(4096);
+
+export const updateChannel = z.enum(["stable", "canary"]);
 
 export const updateStatus = z.object({
+  /** Declared by the build stamp (P20-38); never inferred at run time. */
   owner: z.enum(["electron-updater", "manual"]),
-  channel: z.enum(["stable", "canary"]),
-  state: z.enum(["idle", "checking", "available", "downloading", "ready", "error", "manual"]),
+  channel: updateChannel,
+  /**
+   * idle: nothing newer (or not checked yet); available: `version` can be applied; manual: a newer
+   * `version` exists and `manualHint` / `downloadUrl` say how to get it; ready: downloaded and
+   * accepted; installing: quitting to install.
+   */
+  state: z.enum([
+    "idle",
+    "checking",
+    "available",
+    "downloading",
+    "ready",
+    "installing",
+    "error",
+    "manual",
+  ]),
+  currentVersion: z.string(),
   version: z.string().optional(),
   progress: z.number().min(0).max(100).optional(),
   error: z.string().optional(),
-  /** For the manual owner: the command or link to show. */
+  /** For the manual owner: the command to run. */
   manualHint: z.string().optional(),
+  /** For the manual owner: the release page (opened through `external.open` by a click). */
+  downloadUrl: z.string().optional(),
+  /** When the last check finished (ms since the epoch). */
+  checkedAt: z.number().optional(),
+});
+
+/** A renderer, bundle or runtime generation mismatch: offer update/reinstall (R08.14). */
+export const updateSkew = z.object({
+  kind: z.enum(["mixed-generations", "app-behind-runtime", "renderer-stale"]),
+  detail: z.string(),
+});
+
+export const hudState = z.object({
+  open: z.boolean(),
+  sessionId: z.string().nullable(),
+  profile: z.string().nullable(),
+});
+
+export const shortcutAction = z.enum(["hud-toggle", "hud-snap", "quick-entry"]);
+
+export const shortcutRefusal = z.enum([
+  "empty",
+  "no-modifier",
+  "no-key",
+  "invalid-key",
+  "invalid-modifier",
+  "reserved",
+]);
+
+export const shortcutsView = z.object({
+  shortcuts: z.array(
+    z.object({
+      action: shortcutAction,
+      accelerator: z.string(),
+      enabled: z.boolean(),
+      /** True when the OS accepted the chord (the hud-snap chord only while a HUD is open). */
+      registered: z.boolean(),
+      error: z.enum(["invalid", "taken", "conflict", "failed"]).nullable(),
+      /** Set with `conflict`: the action that already holds the chord. */
+      conflictWith: shortcutAction.optional(),
+    }),
+  ),
+  /** A `set` whose accelerator was refused (nothing saved). */
+  rejected: z.object({ action: shortcutAction, reason: shortcutRefusal }).optional(),
+});
+
+export const keepAwakeMode = z.enum(["never", "while-working", "always"]);
+
+export const ambientState = z.object({
+  tray: z.object({
+    /** The person's choice (per device, off by default). */
+    enabled: z.boolean(),
+    /** A tray is really shown (Linux: a StatusNotifier host is registered). */
+    available: z.boolean(),
+    reason: z.string().nullable(),
+  }),
+  keepAwake: keepAwakeMode,
+  notifications: z.boolean(),
+  sounds: z.boolean(),
 });
 
 export const secretsPolicyView = z.object({
@@ -211,6 +324,45 @@ const journalEntry = z.object({
   /** The daemon's admission id, once an answer named one. */
   admissionId: id.optional(),
   payload: z.unknown(),
+});
+
+const accelerator = z.string().max(128);
+
+/** Settings main holds for this device (P20-32); P20-35/36 read them in main. */
+export const prefsSnapshot = z.object({
+  /** Closing or minimising hides to the tray (off by default, per device). */
+  minimizeToTray: z.boolean(),
+  keepAwake: z.enum(["never", "while-working", "always"]),
+  /** Global shortcuts; an empty string turns one off. */
+  quickEntryShortcut: accelerator,
+  hudSnapShortcut: accelerator,
+  hudToggleShortcut: accelerator,
+  notifications: z.object({
+    turnComplete: z.boolean(),
+    approvals: z.boolean(),
+    sounds: z.boolean(),
+  }),
+  /** In-app shortcut overrides: action id → accelerator ("" = unbound). */
+  keybindings: z.record(z.string().max(64), accelerator),
+  /** Chat text size in percent of the UI size. */
+  chatTextScale: z.number().int().min(80).max(160),
+});
+
+export const prefsPatch = z.strictObject({
+  minimizeToTray: z.boolean().optional(),
+  keepAwake: z.enum(["never", "while-working", "always"]).optional(),
+  quickEntryShortcut: accelerator.optional(),
+  hudSnapShortcut: accelerator.optional(),
+  hudToggleShortcut: accelerator.optional(),
+  notifications: z
+    .strictObject({
+      turnComplete: z.boolean().optional(),
+      approvals: z.boolean().optional(),
+      sounds: z.boolean().optional(),
+    })
+    .optional(),
+  keybindings: z.record(z.string().max(64), accelerator).optional(),
+  chatTextScale: z.number().int().min(80).max(160).optional(),
 });
 
 // -- the table -----------------------------------------------------------------------------------
@@ -285,6 +437,18 @@ export const SCHEMAS = {
     request: z.strictObject({ profile: profileName.nullable() }),
     response: profileState,
   },
+  "indus:profile:prepare-change": {
+    request: z.strictObject({ action: profileChange, profile: profileName }),
+    response: ok,
+  },
+  "indus:profile:commit-change": {
+    request: z.strictObject({
+      action: profileChange,
+      profile: profileName,
+      to: profileName.optional(),
+    }),
+    response: profileState,
+  },
   "indus:profile:changed": { payload: profileState },
 
   "indus:window:control": {
@@ -337,12 +501,21 @@ export const SCHEMAS = {
   },
 
   "indus:fs:read-dir": {
-    request: z.strictObject({ path: absPath, workspace: absPath.optional() }),
-    response: z.object({ entries: z.array(fsEntry) }),
+    request: z.strictObject({ path: absPath }),
+    response: z.object({ path: z.string(), entries: z.array(fsEntry), truncated: z.boolean() }),
   },
   "indus:fs:read-text": {
-    request: z.strictObject({ path: absPath, maxBytes: z.number().int().positive().optional() }),
-    response: z.object({ text: z.string(), truncated: z.boolean(), size: z.number() }),
+    request: z.strictObject({
+      path: absPath,
+      maxBytes: z.number().int().positive().max(16_777_216).optional(),
+    }),
+    response: z.object({
+      text: z.string(),
+      truncated: z.boolean(),
+      size: z.number(),
+      /** Not text (a NUL byte in the first bytes); `text` is empty. */
+      binary: z.boolean(),
+    }),
   },
   "indus:fs:read-data-url": {
     request: z.strictObject({ path: absPath, purpose: z.enum(["preview", "attach"]) }),
@@ -375,35 +548,62 @@ export const SCHEMAS = {
       kind: z.enum(["add", "change", "unlink"]),
     }),
   },
+  "indus:fs:set-roots": {
+    /** The workspace folders this window works in (replaces the previous set; home is implicit). */
+    request: z.strictObject({ roots: z.array(absPath).max(32) }),
+    response: z.object({ roots: z.array(z.string()), refused: z.array(z.string()) }),
+  },
+  "indus:fs:stat": {
+    request: z.strictObject({ path: absPath, purpose: z.enum(["preview", "attach"]) }),
+    response: z.object({
+      path: z.string(),
+      name: z.string(),
+      kind: z.enum(["file", "dir", "other"]),
+      size: z.number(),
+      mimeType: z.string(),
+    }),
+  },
+  "indus:fs:limits:get": { request: none, response: fsLimits },
+  "indus:fs:limits:set": {
+    request: z.strictObject({ dataUrlMaxMb: z.number().finite() }),
+    response: fsLimits,
+  },
 
   "indus:git:status": {
     request: z.strictObject({ repo: absPath }),
     response: z.object({
+      /** The repository's top level (what every other call should pass as `repo`). */
+      root: z.string(),
       branch: z.string().nullable(),
       upstream: z.string().nullable(),
       ahead: z.number().int(),
       behind: z.number().int(),
+      /** HEAD's commit id; null before the first commit. */
+      head: z.string().nullable(),
       files: z.array(gitFile),
+      truncated: z.boolean(),
     }),
   },
   "indus:git:diff": {
     request: z.strictObject({
       repo: absPath,
-      scope: z.enum(["uncommitted", "branch", "last-turn"]),
-      path: z.string().max(4096).optional(),
+      scope: gitScope,
+      path: repoRelPath.optional(),
+      base: commitId.optional(),
+      staged: z.boolean().optional(),
     }),
-    response: z.object({ diff: z.string(), readOnly: z.boolean() }),
+    response: z.object({ diff: z.string(), readOnly: z.boolean(), truncated: z.boolean() }),
   },
   "indus:git:stage": {
-    request: z.strictObject({ repo: absPath, paths: z.array(z.string().max(4096)) }),
+    request: z.strictObject({ repo: absPath, paths: z.array(repoRelPath).max(2000) }),
     response: ok,
   },
   "indus:git:unstage": {
-    request: z.strictObject({ repo: absPath, paths: z.array(z.string().max(4096)) }),
+    request: z.strictObject({ repo: absPath, paths: z.array(repoRelPath).max(2000) }),
     response: ok,
   },
   "indus:git:revert": {
-    request: z.strictObject({ repo: absPath, paths: z.array(z.string().max(4096)) }),
+    request: z.strictObject({ repo: absPath, paths: z.array(repoRelPath).max(2000) }),
     response: ok,
   },
   "indus:git:commit": {
@@ -422,6 +622,24 @@ export const SCHEMAS = {
     }),
     response: z.object({ url: z.string().nullable(), ghAvailable: z.boolean() }),
   },
+  "indus:git:changes": {
+    request: z.strictObject({ repo: absPath, scope: gitScope, base: commitId.optional() }),
+    response: z.object({
+      files: z.array(gitFile),
+      /** The commit the scope compares against (null: none found / uncommitted). */
+      base: z.string().nullable(),
+      readOnly: z.boolean(),
+      truncated: z.boolean(),
+    }),
+  },
+  "indus:git:commit-context": {
+    request: z.strictObject({ repo: absPath }),
+    response: z.object({
+      diff: z.string(),
+      untracked: z.array(z.string()),
+      recent: z.array(z.string()),
+    }),
+  },
 
   "indus:terminal:start": {
     request: z.strictObject({
@@ -429,7 +647,13 @@ export const SCHEMAS = {
       cols: z.number().int().min(1).max(1000),
       rows: z.number().int().min(1).max(1000),
     }),
-    response: z.object({ terminalId: z.string(), pid: z.number().int() }),
+    response: z.object({
+      terminalId: z.string(),
+      pid: z.number().int(),
+      /** The shell's name (`zsh`, `bash`, `pwsh`…). */
+      shell: z.string(),
+      cwd: z.string(),
+    }),
   },
   "indus:terminal:write": {
     request: z.strictObject({ terminalId: id, data: z.string().max(1_048_576) }),
@@ -467,10 +691,85 @@ export const SCHEMAS = {
   "indus:updates:check": { request: none, response: updateStatus },
   "indus:updates:apply": { request: none, response: accepted },
   "indus:updates:set-channel": {
-    request: z.strictObject({ channel: z.enum(["stable", "canary"]) }),
+    request: z.strictObject({ channel: updateChannel }),
     response: updateStatus,
   },
   "indus:updates:progress": { payload: updateStatus },
+  "indus:updates:skew": { payload: updateSkew },
+
+  "indus:hud:open": {
+    request: z
+      .strictObject({ sessionId: id.nullable().optional(), profile: profileName.optional() })
+      .default({}),
+    response: hudState,
+  },
+  "indus:hud:close": { request: none, response: hudState },
+  "indus:hud:reset-layout": { request: none, response: z.object({ reset: z.boolean() }) },
+  "indus:hud:drag": {
+    request: z.strictObject({
+      phase: z.enum(["start", "end"]),
+      /** `move`, or the edge / corner being dragged. */
+      mode: z.enum(["move", "n", "s", "e", "w", "ne", "nw", "se", "sw"]),
+    }),
+  },
+  "indus:hud:changed": { payload: hudState },
+  "indus:quick:submit": {
+    request: z.strictObject({ text: z.string().max(100_000) }),
+    response: z.union([
+      z.object({ ok: z.literal(true), sessionId: z.string().nullable() }),
+      z.object({
+        ok: z.literal(false),
+        /** `unconfirmed`: no answer yet — it may still arrive; never resend by itself. */
+        code: z.enum(["empty", "no-target", "unconfirmed", "failed", "busy"]),
+        message: z.string(),
+      }),
+    ]),
+  },
+  "indus:quick:dismiss": { request: none },
+  "indus:quick:shown": { payload: z.object({}) },
+  "indus:quick:deliver": {
+    payload: z.object({
+      requestId: z.string(),
+      text: z.string(),
+      /** The window's last-active session, null for a new chat. */
+      sessionId: z.string().nullable(),
+    }),
+  },
+  "indus:quick:ack": {
+    request: z.strictObject({
+      requestId: id,
+      ok: z.boolean(),
+      sessionId: id.nullable().optional(),
+      error: z.string().max(512).optional(),
+    }),
+  },
+  "indus:shortcuts:get": { request: none, response: shortcutsView },
+  "indus:shortcuts:set": {
+    request: z.strictObject({
+      action: shortcutAction,
+      accelerator: z.string().max(128).optional(),
+      enabled: z.boolean().optional(),
+    }),
+    response: shortcutsView,
+  },
+  "indus:session:active": { request: z.strictObject({ sessionId: id.nullable() }) },
+
+  "indus:ambient:get": { request: none, response: ambientState },
+  "indus:ambient:set": {
+    request: z.strictObject({
+      minimizeToTray: z.boolean().optional(),
+      keepAwake: keepAwakeMode.optional(),
+      notifications: z.boolean().optional(),
+      sounds: z.boolean().optional(),
+    }),
+    response: ambientState,
+  },
+  "indus:ambient:changed": { payload: ambientState },
+  "indus:keep-awake:offer": { payload: z.object({}) },
+  "indus:links:preview": {
+    request: z.strictObject({ url: z.string().min(1).max(2048) }),
+    response: z.object({ title: z.string().nullable(), favicon: z.string().nullable() }),
+  },
 
   "indus:notify": {
     request: z.strictObject({
@@ -510,6 +809,17 @@ export const SCHEMAS = {
     }),
   },
 
+  "indus:diagnostics:copy": {
+    request: none,
+    response: z.object({ copied: z.boolean(), bytes: z.number().int().min(0) }),
+  },
+  "indus:clipboard:read-text": { request: none, response: z.object({ text: z.string() }) },
+  "indus:clipboard:write-text": {
+    request: z.strictObject({ text: z.string().max(1024 * 1024) }),
+    response: ok,
+  },
+  "indus:find:open": { payload: z.object({}) },
+
   "indus:secrets:policy:get": { request: none, response: secretsPolicyView },
   "indus:secrets:policy:set": {
     request: z.strictObject({ store: z.enum(["keychain", "file"]) }),
@@ -531,6 +841,10 @@ export const SCHEMAS = {
     }),
     response: z.object({ retired: z.boolean() }),
   },
+
+  "indus:prefs:get": { request: none, response: prefsSnapshot },
+  "indus:prefs:set": { request: prefsPatch, response: prefsSnapshot },
+  "indus:prefs:changed": { payload: prefsSnapshot },
 
   "indus:work:active": {
     request: z.strictObject({

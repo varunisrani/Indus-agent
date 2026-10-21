@@ -1057,6 +1057,7 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/boot/orchestrator.test.ts::overlapping starts: the older finishing last publishes nothing and keeps the newer pin`
   - `apps/desktop/electron/boot/orchestrator.test.ts::an older attempt failing late does not clear the newer pin or publish an error`
 - **R08.2** Failure latching rules
+  - `apps/desktop/e2e/core/boot.electron.test.ts::a boot that cannot succeed shows the failure overlay, latched (Repair, no retry loop)`
   - `apps/desktop/electron/boot/orchestrator.test.ts::a local failure latches: a retried start rethrows silently without running anything`
   - `apps/desktop/electron/boot/orchestrator.test.ts::an installer failure: Retry never re-runs the installer (spy) until Repair`
   - `apps/desktop/src/boot/BootOverlay.test.tsx::a latched failure shows Repair at once and is not retried automatically`
@@ -1076,13 +1077,30 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/backend/remote.test.ts::HTTP ok + WS 4401 → not saved, error shown`
   - `apps/desktop/electron/backend/remote.test.ts::both legs pass → saved; the token goes to the secrets store, not the file`
 - **R08.6** Soft vs hard re-home
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/e2e/core/chat.electron.test.ts::profile rail: switch to another profile (its own daemon, empty list) and back`
+  - `apps/desktop/src/profiles/switching.test.ts::leaves no session store entry from the old connection`
+  - `apps/desktop/src/profiles/switching.test.ts::applies and reloads the window`
+  - `apps/desktop/src/profiles/switching.test.ts::commits once the other socket is ready and keeps the old one streaming`
+  - `apps/desktop/src/profiles/switching.test.ts::trips on a forced mismatch between the profile and its socket`
+  - `apps/desktop/src/profiles/switching.test.ts::a mode change seen from main wipes that profile's stores (safety net)`
+  - `apps/desktop/electron/profiles/routing.test.ts::one decision per attempt: a remember during the attempt applies to the next`
+  - `apps/desktop/electron/backend/localAttach.test.ts::the default profile is named explicitly (the CLI's sticky profile never decides)`
 - **R08.7** Profile-keyed storage on rename
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/src/profiles/storageFamilies.test.ts::every storage key in the renderer's sources is registered (lint)`
+  - `apps/desktop/src/profiles/storageFamilies.test.ts::rename migrates every registered family and leaves the rest`
+  - `apps/desktop/src/profiles/storageFamilies.test.ts::delete drops every registered family's entry and nothing else`
+  - `apps/desktop/src/profiles/switching.test.ts::rename: main detaches first, then the backend, then every family moves`
+  - `apps/desktop/electron/profiles/routing.test.ts::prepare leaves the profile main is attached to (re-homes to default first)`
 - **R08.8** Guest content opening the OS browser
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/e2e/core/security.electron.test.ts::hostile guest %s: nothing opens, no window, no bridge`
+  - `apps/desktop/e2e/core/security.electron.test.ts::a trusted click opens exactly that https link; a trusted click on file: opens nothing`
+  - `apps/desktop/electron/preview/guestPreload.test.ts::drops synthetic, non-primary and plain-link clicks`
+  - `apps/desktop/electron/preview/guestPreload.test.ts::a page's own click() on a _blank link sends nothing to the host`
+  - `apps/desktop/electron/preview/guest.test.ts::an untrusted guest click cannot open; a trusted one can, http/https only`
+  - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::a file: hand-off from the guest is refused before main`
 - **R08.9** Cookie partition naming on Windows
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::renders the webview on the preview partition without popups`
+  - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::the renderer's constants equal main's`
 - **R08.10** Keychain prompts
   - `tests/unit/foundation/test_secret_probe.py::test_blocking_keychain_falls_back_at_the_deadline`
   - `tests/unit/foundation/test_secret_probe.py::test_unusable_result_is_cached_and_warned_once`
@@ -1094,9 +1112,17 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/src/chat/slash.test.ts::a new skill command appears in both completion paths`
   - `apps/desktop/src/chat/slash.test.ts::hides only known built-ins without a desktop surface`
 - **R08.13** Update concurrency
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/updates/marker.test.ts::a live owner holds backend starts until its marker goes; the clear is announced`
+  - `apps/desktop/electron/updates/marker.test.ts::a stale marker (pid reused) does not hold anything and stays on disk`
+  - `apps/desktop/electron/updates/marker.test.ts::the in-process flag holds starts too, at most 20 minutes`
+  - `apps/desktop/electron/updates/marker.test.ts::real processes: a live owner is live, the same pid with another start time is stale`
+  - `apps/desktop/electron/updates/updater.test.ts::refused while another owner's live marker holds the runtime, and while one runs here`
+  - `apps/desktop/electron/updates/updater.test.ts::a download failure leaves everything running (app work never stopped)`
 - **R08.14** New runtime under an old renderer
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/src/updates/skew.test.ts::a lazy-chunk 404 (Vite's preload error) → one skew notice, the error consumed`
+  - `apps/desktop/src/quick/QuickEntry.test.tsx::a stale renderer (lazy chunk 404) offers a reload instead of crashing`
+  - `apps/desktop/electron/updates/skew.test.ts::mixed asar/unpacked generations after a broken update → offer reinstall`
+  - `apps/desktop/electron/updates/skew.test.ts::an app behind the runtime it attached to → offer the app update`
 - **R08.15** Electron zoom drift
   - Review: not yet planned (P00-guards)
 - **R08.16** GUI PATH
@@ -1117,12 +1143,18 @@ Checked by `python -m tooling.checks traps`.
 - **R08.20** Background focus theft
   - Review: not yet planned (P00-guards)
 - **R08.21** Deep links during boot
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/e2e/core/security.electron.test.ts::deep links: a program-running MCP link is refused; others only ask; Cancel installs nothing`
+  - `apps/desktop/electron/deepLinks.test.ts::two links before ready: only the latest is delivered, exactly once`
+  - `apps/desktop/electron/deepLinks.test.ts::a reload or crash waits for a fresh ready signal`
+  - `apps/desktop/electron/deepLinks.test.ts::close-preview is handled in main: restore, show, focus, leave full screen, close the pane`
+  - `apps/desktop/electron/deepLinks.test.ts::delivery shows a tray-hidden window inactive and never focuses it (R08.21)`
+  - `apps/desktop/src/deepLinks/DeepLinkHost.test.tsx::listens before it tells main it is ready`
 - **R08.22** Code signing order
   - Review: not yet planned (P00-guards)
 - **R08.23** Remote execution boundary
   - `apps/desktop/src/chat/composer/Composer.test.tsx::remote mode uploads bytes: no client path reaches the remote host`
 - **R08.24** Quit semantics with attached gateways
+  - `apps/desktop/e2e/core/lifecycle.electron.test.ts::quit stops the app's own processes; the shared daemon keeps running`
   - `apps/desktop/electron/quitGuard.test.ts::attached local daemon with running turns → informational prompt, nothing is stopped`
   - `apps/desktop/electron/backend/supervisor.test.ts::a daemon this app only attached to is never restarted`
 - **R09.1** Do not rebuild the chat in React

@@ -12,6 +12,7 @@
     "src",
     "scripts/**/*.ts",
     "testing/**/*.ts",
+    "e2e/**/*.ts",
     "vitest.config.ts",
     "vite.config.ts"
   ]

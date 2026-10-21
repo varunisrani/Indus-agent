@@ -9,6 +9,13 @@ export type IndusBridgeErrorCode =
   | "internal"
   | (string & {});
 
+export type IndusAmbientState = {
+  tray: { enabled: boolean; available: boolean; reason: string | null };
+  keepAwake: IndusKeepAwakeMode;
+  notifications: boolean;
+  sounds: boolean;
+};
+
 export type IndusApiRequest = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
@@ -61,6 +68,17 @@ export type IndusExternalOpenResult =
       reason: "invalid" | "scheme" | "credentials" | "too-long" | "no-user-activation" | "failed";
     };
 
+export type IndusFsLimits = {
+  dataUrlMaxMb: number;
+  dataUrlDefaultMb: number;
+  dataUrlMinMb: number;
+  dataUrlCeilingMb: number;
+  attachMaxBytes: number;
+  textPreviewMaxBytes: number;
+};
+
+export type IndusHudState = { open: boolean; sessionId: string | null; profile: string | null };
+
 export type IndusInstallerEvent =
   | {
       type: "manifest";
@@ -77,6 +95,8 @@ export type IndusInstallerEvent =
   | { type: "complete"; marker: string }
   | { type: "failed"; stage?: string; error: string };
 
+export type IndusKeepAwakeMode = "never" | "while-working" | "always";
+
 export type IndusLaunchFacts = {
   platform: string;
   appVersion: string;
@@ -85,11 +105,38 @@ export type IndusLaunchFacts = {
   windowKind: IndusWindowKind;
   watch: boolean;
   profile: string | null;
+  homeDir: string;
   titleBarHeight: number;
   deepLinkScheme: string;
 };
 
-export type IndusProfileState = { active: string | null; defaultProfile: string | null };
+export type IndusPrefsPatch = {
+  minimizeToTray?: boolean;
+  keepAwake?: "never" | "while-working" | "always";
+  quickEntryShortcut?: string;
+  hudSnapShortcut?: string;
+  hudToggleShortcut?: string;
+  notifications?: { turnComplete?: boolean; approvals?: boolean; sounds?: boolean };
+  keybindings?: Record<string, string>;
+  chatTextScale?: number;
+};
+
+export type IndusPrefsSnapshot = {
+  minimizeToTray: boolean;
+  keepAwake: "never" | "while-working" | "always";
+  quickEntryShortcut: string;
+  hudSnapShortcut: string;
+  hudToggleShortcut: string;
+  notifications: { turnComplete: boolean; approvals: boolean; sounds: boolean };
+  keybindings: Record<string, string>;
+  chatTextScale: number;
+};
+
+export type IndusProfileState = {
+  active: string | null;
+  defaultProfile: string | null;
+  launch: string | null;
+};
 
 export type IndusRemoteTestResult = {
   ok: boolean;
@@ -105,14 +152,54 @@ export type IndusSecretsPolicyView = {
   reason: string;
 };
 
+export type IndusShortcutAction = "hud-toggle" | "hud-snap" | "quick-entry";
+
+export type IndusShortcutRefusal =
+  | "empty"
+  | "no-modifier"
+  | "no-key"
+  | "invalid-key"
+  | "invalid-modifier"
+  | "reserved";
+
+export type IndusShortcutsView = {
+  shortcuts: Array<{
+    action: IndusShortcutAction;
+    accelerator: string;
+    enabled: boolean;
+    registered: boolean;
+    error: "invalid" | "taken" | "conflict" | "failed" | null;
+    conflictWith?: IndusShortcutAction;
+  }>;
+  rejected?: { action: IndusShortcutAction; reason: IndusShortcutRefusal };
+};
+
+export type IndusUpdateChannel = "stable" | "canary";
+
+export type IndusUpdateSkew = {
+  kind: "mixed-generations" | "app-behind-runtime" | "renderer-stale";
+  detail: string;
+};
+
 export type IndusUpdateStatus = {
   owner: "electron-updater" | "manual";
-  channel: "stable" | "canary";
-  state: "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "manual";
+  channel: IndusUpdateChannel;
+  state:
+    | "idle"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "ready"
+    | "installing"
+    | "error"
+    | "manual";
+  currentVersion: string;
   version?: string;
   progress?: number;
   error?: string;
   manualHint?: string;
+  downloadUrl?: string;
+  checkedAt?: number;
 };
 
 export type IndusWindowKind = "main" | "secondary" | "instance" | "hud" | "quick" | "hidden";
@@ -180,6 +267,14 @@ export interface IndusDesktopProfile {
   set(payload: { profile: string | null }): Promise<IndusProfileState>;
   /** `indus:profile:set-default` (P20-26) */
   setDefault(payload: { profile: string | null }): Promise<IndusProfileState>;
+  /** `indus:profile:prepare-change` (P20-26) */
+  prepareChange(payload: { action: "rename" | "delete"; profile: string }): Promise<{ ok: true }>;
+  /** `indus:profile:commit-change` (P20-26) */
+  commitChange(payload: {
+    action: "rename" | "delete";
+    profile: string;
+    to?: string;
+  }): Promise<IndusProfileState>;
   /** `indus:profile:changed` (P20-26) */
   onChanged(listener: (payload: IndusProfileState) => void): () => void;
 }
@@ -204,6 +299,8 @@ export interface IndusDesktopWindows {
   }): Promise<{ opened: boolean }>;
   /** `indus:window:open-instance` (P20-06) */
   openInstance(payload?: { profile?: string }): Promise<{ opened: boolean }>;
+  /** `indus:session:active` (P20-35) */
+  reportSession(payload: { sessionId: string | null }): void;
 }
 
 export interface IndusDesktopZoom {
@@ -224,20 +321,24 @@ export interface IndusDesktopExternal {
 
 export interface IndusDesktopFs {
   /** `indus:fs:read-dir` (P20-29) */
-  readDir(payload: { path: string; workspace?: string }): Promise<{
+  readDir(payload: { path: string }): Promise<{
+    path: string;
     entries: Array<{
       name: string;
       path: string;
       kind: "file" | "dir" | "symlink" | "other";
+      target?: "file" | "dir" | "other" | "missing";
       size?: number;
       mtimeMs?: number;
+      sensitive?: boolean;
     }>;
+    truncated: boolean;
   }>;
   /** `indus:fs:read-text` (P20-29) */
   readText(payload: {
     path: string;
     maxBytes?: number;
-  }): Promise<{ text: string; truncated: boolean; size: number }>;
+  }): Promise<{ text: string; truncated: boolean; size: number; binary: boolean }>;
   /** `indus:fs:read-data-url` (P20-29) */
   readDataUrl(payload: {
     path: string;
@@ -268,23 +369,51 @@ export interface IndusDesktopFs {
       kind: "add" | "change" | "unlink";
     }) => void,
   ): () => void;
+  /** `indus:fs:set-roots` (P20-29) */
+  setRoots(payload: {
+    roots: Array<string>;
+  }): Promise<{ roots: Array<string>; refused: Array<string> }>;
+  /** `indus:fs:stat` (P20-29) */
+  stat(payload: { path: string; purpose: "preview" | "attach" }): Promise<{
+    path: string;
+    name: string;
+    kind: "file" | "dir" | "other";
+    size: number;
+    mimeType: string;
+  }>;
+  /** `indus:fs:limits:get` (P20-29) */
+  getLimits(payload?: Record<string, never>): Promise<IndusFsLimits>;
+  /** `indus:fs:limits:set` (P20-29) */
+  setLimits(payload: { dataUrlMaxMb: number }): Promise<IndusFsLimits>;
 }
 
 export interface IndusDesktopGit {
   /** `indus:git:status` (P20-30) */
   status(payload: { repo: string }): Promise<{
+    root: string;
     branch: string | null;
     upstream: string | null;
     ahead: number;
     behind: number;
-    files: Array<{ path: string; index: string; worktree: string }>;
+    head: string | null;
+    files: Array<{
+      path: string;
+      from?: string;
+      index: string;
+      worktree: string;
+      added?: number;
+      removed?: number;
+    }>;
+    truncated: boolean;
   }>;
   /** `indus:git:diff` (P20-30) */
   diff(payload: {
     repo: string;
     scope: "uncommitted" | "branch" | "last-turn";
     path?: string;
-  }): Promise<{ diff: string; readOnly: boolean }>;
+    base?: string;
+    staged?: boolean;
+  }): Promise<{ diff: string; readOnly: boolean; truncated: boolean }>;
   /** `indus:git:stage` (P20-30) */
   stage(payload: { repo: string; paths: Array<string> }): Promise<{ ok: true }>;
   /** `indus:git:unstage` (P20-30) */
@@ -303,6 +432,28 @@ export interface IndusDesktopGit {
     title: string;
     body?: string;
   }): Promise<{ url: string | null; ghAvailable: boolean }>;
+  /** `indus:git:changes` (P20-30) */
+  changes(payload: {
+    repo: string;
+    scope: "uncommitted" | "branch" | "last-turn";
+    base?: string;
+  }): Promise<{
+    files: Array<{
+      path: string;
+      from?: string;
+      index: string;
+      worktree: string;
+      added?: number;
+      removed?: number;
+    }>;
+    base: string | null;
+    readOnly: boolean;
+    truncated: boolean;
+  }>;
+  /** `indus:git:commit-context` (P20-30) */
+  commitContext(payload: {
+    repo: string;
+  }): Promise<{ diff: string; untracked: Array<string>; recent: Array<string> }>;
 }
 
 export interface IndusDesktopTerminal {
@@ -311,7 +462,7 @@ export interface IndusDesktopTerminal {
     cwd?: string;
     cols: number;
     rows: number;
-  }): Promise<{ terminalId: string; pid: number }>;
+  }): Promise<{ terminalId: string; pid: number; shell: string; cwd: string }>;
   /** `indus:terminal:write` (P20-31) */
   write(payload: { terminalId: string; data: string }): void;
   /** `indus:terminal:resize` (P20-31) */
@@ -351,9 +502,81 @@ export interface IndusDesktopUpdates {
   /** `indus:updates:apply` (P20-37) */
   apply(payload?: Record<string, never>): Promise<{ accepted: boolean }>;
   /** `indus:updates:set-channel` (P20-37) */
-  setChannel(payload: { channel: "stable" | "canary" }): Promise<IndusUpdateStatus>;
+  setChannel(payload: { channel: IndusUpdateChannel }): Promise<IndusUpdateStatus>;
   /** `indus:updates:progress` (P20-37) */
   onProgress(listener: (payload: IndusUpdateStatus) => void): () => void;
+  /** `indus:updates:skew` (P20-37) */
+  onSkew(listener: (payload: IndusUpdateSkew) => void): () => void;
+}
+
+export interface IndusDesktopHud {
+  /** `indus:hud:open` (P20-35) */
+  open(payload?: { sessionId?: string | null; profile?: string }): Promise<IndusHudState>;
+  /** `indus:hud:close` (P20-35) */
+  close(payload?: Record<string, never>): Promise<IndusHudState>;
+  /** `indus:hud:reset-layout` (P20-35) */
+  resetLayout(payload?: Record<string, never>): Promise<{ reset: boolean }>;
+  /** `indus:hud:drag` (P20-35) */
+  drag(payload: {
+    phase: "start" | "end";
+    mode: "move" | "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+  }): void;
+  /** `indus:hud:changed` (P20-35) */
+  onChanged(listener: (payload: IndusHudState) => void): () => void;
+}
+
+export interface IndusDesktopQuick {
+  /** `indus:quick:submit` (P20-35) */
+  submit(payload: { text: string }): Promise<
+    | { ok: true; sessionId: string | null }
+    | {
+        ok: false;
+        code: "empty" | "no-target" | "unconfirmed" | "failed" | "busy";
+        message: string;
+      }
+  >;
+  /** `indus:quick:dismiss` (P20-35) */
+  dismiss(payload?: Record<string, never>): void;
+  /** `indus:quick:shown` (P20-35) */
+  onShown(listener: (payload: Record<string, never>) => void): () => void;
+  /** `indus:quick:deliver` (P20-35) */
+  onDeliver(
+    listener: (payload: { requestId: string; text: string; sessionId: string | null }) => void,
+  ): () => void;
+  /** `indus:quick:ack` (P20-35) */
+  ack(payload: { requestId: string; ok: boolean; sessionId?: string | null; error?: string }): void;
+}
+
+export interface IndusDesktopShortcuts {
+  /** `indus:shortcuts:get` (P20-35) */
+  get(payload?: Record<string, never>): Promise<IndusShortcutsView>;
+  /** `indus:shortcuts:set` (P20-35) */
+  set(payload: {
+    action: IndusShortcutAction;
+    accelerator?: string;
+    enabled?: boolean;
+  }): Promise<IndusShortcutsView>;
+}
+
+export interface IndusDesktopAmbient {
+  /** `indus:ambient:get` (P20-36) */
+  get(payload?: Record<string, never>): Promise<IndusAmbientState>;
+  /** `indus:ambient:set` (P20-36) */
+  set(payload: {
+    minimizeToTray?: boolean;
+    keepAwake?: IndusKeepAwakeMode;
+    notifications?: boolean;
+    sounds?: boolean;
+  }): Promise<IndusAmbientState>;
+  /** `indus:ambient:changed` (P20-36) */
+  onChanged(listener: (payload: IndusAmbientState) => void): () => void;
+  /** `indus:keep-awake:offer` (P20-36) */
+  onKeepAwakeOffer(listener: (payload: Record<string, never>) => void): () => void;
+}
+
+export interface IndusDesktopLinks {
+  /** `indus:links:preview` (P20-36) */
+  preview(payload: { url: string }): Promise<{ title: string | null; favicon: string | null }>;
 }
 
 export interface IndusDesktopNotifications {
@@ -392,6 +615,23 @@ export interface IndusDesktopLogs {
   rendererError(payload: { message: string; stack?: string; source?: string }): void;
 }
 
+export interface IndusDesktopDiagnostics {
+  /** `indus:diagnostics:copy` (P20-39) */
+  copy(payload?: Record<string, never>): Promise<{ copied: boolean; bytes: number }>;
+}
+
+export interface IndusDesktopClipboard {
+  /** `indus:clipboard:read-text` (P20-39) */
+  readText(payload?: Record<string, never>): Promise<{ text: string }>;
+  /** `indus:clipboard:write-text` (P20-39) */
+  writeText(payload: { text: string }): Promise<{ ok: true }>;
+}
+
+export interface IndusDesktopFind {
+  /** `indus:find:open` (P20-39) */
+  onOpen(listener: (payload: Record<string, never>) => void): () => void;
+}
+
 export interface IndusDesktopSecrets {
   /** `indus:secrets:policy:get` (P20-07) */
   getPolicy(payload?: Record<string, never>): Promise<IndusSecretsPolicyView>;
@@ -425,6 +665,15 @@ export interface IndusDesktopJournal {
   }): Promise<{ retired: boolean }>;
 }
 
+export interface IndusDesktopPrefs {
+  /** `indus:prefs:get` (P20-32) */
+  get(payload?: Record<string, never>): Promise<IndusPrefsSnapshot>;
+  /** `indus:prefs:set` (P20-32) */
+  set(payload: IndusPrefsPatch): Promise<IndusPrefsSnapshot>;
+  /** `indus:prefs:changed` (P20-32) */
+  onChanged(listener: (payload: IndusPrefsSnapshot) => void): () => void;
+}
+
 export interface IndusDesktopWork {
   /** `indus:work:active` (P20-13) */
   report(payload: { items: Array<{ id: string; label: string }> }): void;
@@ -444,11 +693,20 @@ export interface IndusDesktopBridge {
   readonly terminal: IndusDesktopTerminal;
   readonly preview: IndusDesktopPreview;
   readonly updates: IndusDesktopUpdates;
+  readonly hud: IndusDesktopHud;
+  readonly quick: IndusDesktopQuick;
+  readonly shortcuts: IndusDesktopShortcuts;
+  readonly ambient: IndusDesktopAmbient;
+  readonly links: IndusDesktopLinks;
   readonly notifications: IndusDesktopNotifications;
   readonly deepLinks: IndusDesktopDeepLinks;
   readonly logs: IndusDesktopLogs;
+  readonly diagnostics: IndusDesktopDiagnostics;
+  readonly clipboard: IndusDesktopClipboard;
+  readonly find: IndusDesktopFind;
   readonly secrets: IndusDesktopSecrets;
   readonly journal: IndusDesktopJournal;
+  readonly prefs: IndusDesktopPrefs;
   readonly work: IndusDesktopWork;
 }
 

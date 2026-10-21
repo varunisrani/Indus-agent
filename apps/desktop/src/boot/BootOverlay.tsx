@@ -8,6 +8,7 @@ import { AlertTriangle, KeyRound } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useReducer,
@@ -154,6 +155,26 @@ function InstallView(props: { installer: InstallerState; onCancel: () => void })
   );
 }
 
+/** How long the "restarted in the background" toast stays (it can be closed sooner). */
+export const RESTARTED_TOAST_MS = 15_000;
+
+function RestartedToast(props: { message: string; onDone: () => void; clock: Clock }) {
+  const t = useT();
+  const { onDone, clock } = props;
+  useEffect(() => {
+    const handle = clock.setTimeout(onDone, RESTARTED_TOAST_MS);
+    return () => clock.clearTimeout(handle);
+  }, [onDone, clock]);
+  return (
+    <div className="toast boot-restarted" role="status">
+      <span>{props.message}</span>
+      <button type="button" className="text-button" onClick={onDone}>
+        {t("common.close")}
+      </button>
+    </div>
+  );
+}
+
 function CrashNotice(props: { notice: Extract<BackendNotice, { kind: "crashing" }> }) {
   const t = useT();
   const { notice } = props;
@@ -180,6 +201,7 @@ export function BootOverlay(props: BootOverlayProps) {
   const notices = props.notices === undefined ? defaultNotices() : props.notices;
   const [notice, setNotice] = useState<BackendNotice | null>(null);
   useEffect(() => (notices === null ? undefined : notices(setNotice)), [notices]);
+  const dismissNotice = useCallback(() => setNotice(null), []);
   const view = bootView(progress, installer);
   const clock = props.clock ?? systemClock;
   const random = props.random;
@@ -228,7 +250,13 @@ export function BootOverlay(props: BootOverlayProps) {
     if (view.kind !== "ready") root.current?.focus();
   }, [view.kind]);
 
-  if (view.kind === "ready") return null;
+  if (view.kind === "ready") {
+    // The supervisor tells after the daemon is back (P20-13): the overlay is gone by then, so the
+    // notice shows as a toast over the recovered window (Demo 4: one notice, no duplicate chat).
+    return notice?.kind === "restarted" ? (
+      <RestartedToast message={notice.message} onDone={dismissNotice} clock={clock} />
+    ) : null;
+  }
   // The Settings button opens the settings overlay above everything; give it the window.
   const route = classifyPath(location.pathname);
   if (route.kind === "overlay" && route.overlay === "settings") return null;

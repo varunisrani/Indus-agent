@@ -4,7 +4,7 @@
 //   main       <base>/
 //   secondary  <base>/?win=secondary[&watch=1][&profile=NAME]#/<sessionId>
 //   instance   <base>/?win=instance[&profile=NAME]
-//   hud        <base>/?win=hud[&profile=NAME]
+//   hud        <base>/?win=hud[&profile=NAME][#/<sessionId>]
 //   quick      <base>/?win=quick
 
 import { type AppOrigin, appEntryUrl } from "../appOrigin.ts";
@@ -31,7 +31,9 @@ export function windowUrl(
   options: WindowUrlOptions = {},
 ): string {
   const hash =
-    kind === "secondary" && options.sessionId ? `#/${encodeURIComponent(options.sessionId)}` : "";
+    (kind === "secondary" || kind === "hud") && options.sessionId
+      ? `#/${encodeURIComponent(options.sessionId)}`
+      : "";
   return appEntryUrl(origin, windowQuery(kind, options), hash);
 }
 

@@ -9,6 +9,11 @@
 - ``POST /api/model/set {scope: main|auxiliary, task?, provider, model, base_url?}``: through the
   config writer; a side task must be one the schema knows.
 - ``GET /api/model/auxiliary``: each side task's provider, model and base URL, and the main model.
+- ``POST /api/model/test-endpoint {base_url, api_key?, key_env?}`` (P20-32/33): asks an
+  OpenAI-compatible endpoint for its ``/models`` from here (where the agent runs, so a remote
+  desktop tests the remote's view) and answers ``{ok, status, models, message}``; the key is the
+  one given, else the stored ``key_env``. Never raises for the endpoint's trouble, never echoes a
+  key.
 - Provider sign-in by device code (documented flows only, D-16.11): ``POST
   /api/providers/login/start {provider}`` asks the provider for a code and answers ``{session_id,
   user_code, verification_url, expires_in, interval}``; a dashboard thread then polls the token
@@ -32,18 +37,21 @@ from concurrent.futures import Future
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Final, NoReturn, cast
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from indus.foundation import config as config_module
 from indus.foundation.config.schema import AuxiliarySection
 from indus.foundation.errors import ConfigError, IndusError
+from indus.foundation.redact import redact_text
 from indus.foundation.scope import Scope
 from indus.providers.auth import device_code
 from indus.providers.auth.flows import flows_for
 from indus.providers.auth.pool_model import PoolEntry, env_entries, load_pool, new_entry_id
 from indus.providers.auth.store import AuthStore
 from indus.providers.context_length import family_length
+from indus.providers.model_list import LIST_TIMEOUT_SECONDS, parse_models
 from indus.providers.registry import Registry
 from indus.web.routes.system import add_pool_secret, provider_profile
 from indus.web.scope import read_scope, write_scope
@@ -58,6 +66,7 @@ ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
     ("GET", "/api/model/options", True),
     ("POST", "/api/model/set", True),
     ("GET", "/api/model/auxiliary", True),
+    ("POST", "/api/model/test-endpoint", True),
     ("POST", "/api/providers/login/start", True),
     ("GET", "/api/providers/login/{session_id}", True),
     ("DELETE", "/api/providers/login/{session_id}", True),
@@ -211,6 +220,93 @@ def auxiliary(scope: ReadScope) -> dict[str, Any]:
             "provider": str(model.get("provider") or ""),
             "model": str(model.get("default") or ""),
         },
+    }
+
+
+# -- endpoint test --------------------------------------------------------------------------------
+
+ENDPOINT_MODELS_SHOWN: Final = 200
+_ENDPOINT_CLIENT_KEY: Final = "providers.endpoint_client"
+
+
+class EndpointTest(BaseModel):
+    base_url: str = Field(min_length=1, max_length=2000)
+    api_key: str | None = Field(default=None, max_length=16384)
+    key_env: str | None = Field(default=None, max_length=128)
+
+
+def _endpoint_client(request: Request) -> Callable[[], httpx.Client]:
+    """A sync HTTP client factory (tests put a mock transport under extras)."""
+    found = dashboard_state(request.app).extras.get(_ENDPOINT_CLIENT_KEY)
+    if callable(found):
+        return cast(Callable[[], httpx.Client], found)
+    return lambda: httpx.Client(timeout=LIST_TIMEOUT_SECONDS, follow_redirects=False)
+
+
+def _stored_key(scope: Scope, name: str) -> str | None:
+    try:
+        if scope.secrets is not None:
+            found = scope.secrets.get(name)
+            if found:
+                return found
+    except Exception:
+        pass
+    return (scope.env.get(name) or "").strip() or None
+
+
+@router.post("/api/model/test-endpoint")
+def endpoint_test(body: EndpointTest, request: Request, scope: WriteScope) -> dict[str, Any]:
+    base = body.base_url.strip().rstrip("/")
+    try:
+        parsed = httpx.URL(base)
+    except (httpx.InvalidURL, ValueError):
+        _fail(400, "invalid_url", "The endpoint URL is not valid.")
+    if parsed.scheme not in ("http", "https") or not parsed.host:
+        _fail(400, "invalid_url", "The endpoint URL must be http:// or https://.")
+    if parsed.userinfo:
+        _fail(400, "invalid_url", "Put the key in the key field, not in the URL.")
+    key = (body.api_key or "").strip() or None
+    if key is None and body.key_env:
+        key = _stored_key(scope, body.key_env.strip())
+    headers = {"Accept": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    try:
+        with _endpoint_client(request)() as client:
+            answer = client.get(f"{base}/models", headers=headers, timeout=LIST_TIMEOUT_SECONDS)
+    except httpx.HTTPError as exc:
+        return {
+            "ok": False,
+            "status": None,
+            "models": [],
+            "message": f"The endpoint did not answer ({type(exc).__name__}).",
+        }
+    if answer.status_code in (401, 403):
+        message = "The endpoint refused the key." if key else "The endpoint needs a key."
+        return {"ok": False, "status": answer.status_code, "models": [], "message": message}
+    if answer.status_code >= 400:
+        return {
+            "ok": False,
+            "status": answer.status_code,
+            "models": [],
+            "message": f"The endpoint answered HTTP {answer.status_code}.",
+        }
+    try:
+        payload = answer.json()
+    except (ValueError, UnicodeDecodeError):
+        return {
+            "ok": False,
+            "status": answer.status_code,
+            "models": [],
+            "message": "The endpoint's answer is not a model list.",
+        }
+    found = parse_models(payload)
+    names = [redact_text(m.id) for m in found[:ENDPOINT_MODELS_SHOWN]]
+    return {
+        "ok": True,
+        "status": answer.status_code,
+        "models": names,
+        "message": f"The endpoint offers {len(found)} models.",
     }
 
 

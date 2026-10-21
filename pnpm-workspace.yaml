@@ -14,3 +14,11 @@ onlyBuiltDependencies:
   - node-pty
 allowBuilds:
   node-pty: true
+  # electron-builder's tree pulls electron-winstaller (Squirrel.Windows, unused: our Windows targets
+  # are NSIS and ZIP); its vendor install script is not needed and stays off (P20-38).
+  electron-winstaller: false
+
+# electron-updater (P20-37) reaches sax through builder-util-runtime; sax moved to BlueOak-1.0.0
+# (not on licenses_allow.json) after 1.4.1, the last ISC release, which still satisfies `^1.2.4`.
+overrides:
+  builder-util-runtime>sax: 1.4.1

@@ -61,15 +61,24 @@ body {
 
 /* -- shell ------------------------------------------------------------------------------- */
 
+/* columns: profile rail (P20-26) · sidebar · pane area (P20-27); absent columns take no space */
 .shell {
   display: grid;
-  grid-template-columns: 240px 1fr;
-  grid-template-rows: 1fr auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
 }
 
-.sidebar {
+.shell > .profile-rail {
+  grid-column: 1;
   grid-row: 1 / span 2;
+}
+
+.sidebar {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 260px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -117,6 +126,7 @@ body {
 }
 
 .pane-area {
+  grid-column: 3;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -124,6 +134,7 @@ body {
 }
 
 .status-bar {
+  grid-column: 3;
   display: flex;
   align-items: center;
   gap: var(--indus-space-3);
@@ -773,4 +784,87 @@ body {
 
 .error-title {
   font-weight: var(--indus-font-weight-semibold);
+}
+
+/* -- find in page, logs viewer (P20-39) ---------------------------------------------------- */
+
+.find-bar {
+  position: fixed;
+  top: calc(var(--indus-space-2) + 34px);
+  right: var(--indus-space-4);
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  padding: var(--indus-space-1) var(--indus-space-2);
+  background: var(--indus-color-bg-raised);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-md);
+  box-shadow: var(--indus-shadow-mid);
+}
+
+.find-input {
+  width: 16rem;
+  background: transparent;
+  border: 0;
+  color: var(--indus-color-fg);
+  font: inherit;
+}
+
+.find-input:focus-visible {
+  outline: none;
+}
+
+.find-count {
+  min-width: 5rem;
+  color: var(--indus-color-fg-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+::highlight(indus-find) {
+  background-color: var(--indus-color-selection);
+}
+
+::highlight(indus-find-active) {
+  background-color: var(--indus-color-accent);
+  color: var(--indus-color-accent-fg);
+}
+
+.logs-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-2);
+}
+
+.logs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--indus-space-2);
+}
+
+.logs-actions h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.logs-lines {
+  max-height: 24rem;
+  margin: 0;
+  overflow: auto;
+  padding: var(--indus-space-2);
+  background: var(--indus-color-code-bg);
+  border-radius: var(--indus-radius-sm);
+  font-family: var(--indus-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.logs-empty,
+.logs-notice {
+  margin: 0;
+  color: var(--indus-color-fg-muted);
 }

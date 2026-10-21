@@ -1,0 +1,197 @@
+/* Ambient surfaces (P20-35..37): toasts of app windows, the HUD and the quick-entry composer.
+   Tokens only (`--indus-*`); transparent windows paint nothing outside their card. */
+
+.ambient-toasts {
+  position: fixed;
+  right: var(--indus-space-4);
+  bottom: calc(28px + var(--indus-space-4));
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-2);
+  pointer-events: none;
+}
+
+.ambient-toast {
+  position: static;
+  pointer-events: auto;
+}
+
+.ambient-toast p {
+  margin: 0 0 var(--indus-space-2);
+}
+
+.ambient-toast progress {
+  width: 100%;
+}
+
+.ambient-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--indus-space-2);
+}
+
+/* -- floating windows -------------------------------------------------------------------- */
+
+html[data-window="hud"],
+html[data-window="hud"] body,
+html[data-window="quick"],
+html[data-window="quick"] body {
+  background: transparent;
+  overflow: hidden;
+}
+
+.hud,
+.quick {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-lg, 12px);
+  background: var(--indus-color-bg-raised);
+  box-shadow: var(--indus-shadow-mid);
+  overflow: hidden;
+}
+
+.hud-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border-bottom: 1px solid var(--indus-color-border);
+  color: var(--indus-color-fg-muted);
+  font-size: 12px;
+  user-select: none;
+}
+
+.hud-grip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  cursor: grab;
+  min-height: 24px;
+}
+
+.hud-grip[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.hud-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--indus-space-2) var(--indus-space-3);
+}
+
+.hud-row {
+  margin: 0 0 var(--indus-space-2);
+  white-space: pre-wrap;
+}
+
+.hud-row[data-role="user"] {
+  color: var(--indus-color-fg-muted);
+}
+
+.hud-composer {
+  border-top: 1px solid var(--indus-color-border);
+  padding: var(--indus-space-2);
+}
+
+.hud-edge {
+  position: absolute;
+  z-index: 2;
+}
+
+.hud-edge[data-edge="n"],
+.hud-edge[data-edge="s"] {
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.hud-edge[data-edge="e"],
+.hud-edge[data-edge="w"] {
+  top: 8px;
+  bottom: 8px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.hud-edge[data-edge="n"] {
+  top: 0;
+}
+.hud-edge[data-edge="s"] {
+  bottom: 0;
+}
+.hud-edge[data-edge="e"] {
+  right: 0;
+}
+.hud-edge[data-edge="w"] {
+  left: 0;
+}
+
+.hud-edge[data-edge="ne"],
+.hud-edge[data-edge="nw"],
+.hud-edge[data-edge="se"],
+.hud-edge[data-edge="sw"] {
+  width: 10px;
+  height: 10px;
+}
+
+.hud-edge[data-edge="ne"] {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.hud-edge[data-edge="sw"] {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.hud-edge[data-edge="nw"] {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.hud-edge[data-edge="se"] {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.quick {
+  padding: var(--indus-space-3);
+  gap: var(--indus-space-2);
+}
+
+.quick textarea {
+  flex: 1;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--indus-color-fg);
+  font: inherit;
+  font-size: 15px;
+}
+
+.quick-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-2);
+  color: var(--indus-color-fg-muted);
+  font-size: 12px;
+}
+
+.quick-footer .quick-hint {
+  flex: 1;
+}
+
+.quick-error {
+  margin: 0;
+  color: var(--indus-color-danger);
+  font-size: 12px;
+}

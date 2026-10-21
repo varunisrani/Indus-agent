@@ -68,6 +68,7 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
   { method: "GET", path: "/api/model/info", scoped: true },
   { method: "GET", path: "/api/model/options", scoped: true },
   { method: "POST", path: "/api/model/set", scoped: true },
+  { method: "POST", path: "/api/model/test-endpoint", scoped: true },
   { method: "POST", path: "/api/ops/backup", scoped: true },
   { method: "GET", path: "/api/ops/backup/download", scoped: true },
   { method: "POST", path: "/api/ops/backup/download-ticket", scoped: true },

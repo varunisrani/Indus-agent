@@ -23,6 +23,7 @@ export interface QuitPrompt {
 
 export class QuitGuard {
   private readonly reports = new Map<number, WorkItem[]>();
+  private readonly listeners = new Set<() => void>();
 
   /** A window's current list (replaces its previous report). */
   report(senderId: number, items: readonly WorkItem[]): void {
@@ -32,11 +33,30 @@ export class QuitGuard {
         senderId,
         items.map((item) => ({ id: item.id, label: item.label.trim() })),
       );
+    this.changed();
   }
 
   /** A closed window stops counting. */
   forget(senderId: number): void {
-    this.reports.delete(senderId);
+    if (this.reports.delete(senderId)) this.changed();
+  }
+
+  /** Called after every report (keep awake follows the work picture, P20-36). */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        // A listener's failure never stops the quit guard.
+      }
+    }
   }
 
   /** Every window's items, each id once (windows can show the same session). */

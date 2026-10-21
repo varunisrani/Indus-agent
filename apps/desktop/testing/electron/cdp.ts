@@ -54,11 +54,31 @@ export class Cdp {
     return new Cdp(socket);
   }
 
-  send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  /** One DevTools call; a target that went away (navigated, crashed) fails it after `timeoutMs`. */
+  send(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs = 30_000,
+  ): Promise<Record<string, unknown>> {
     this.serial += 1;
     const id = this.serial;
     this.socket.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`devtools ${method} got no answer in ${timeoutMs} ms`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+    });
   }
 
   async eval<T = unknown>(expression: string): Promise<T> {
@@ -73,11 +93,24 @@ export class Cdp {
     return answer.result?.value as T;
   }
 
+  /** `eval` that gives up after `timeoutMs` (a page between documents may not answer). */
+  async evalWithin<T = unknown>(expression: string, timeoutMs: number): Promise<T> {
+    const answer = (await this.send(
+      "Runtime.evaluate",
+      { expression, awaitPromise: true, returnByValue: true },
+      timeoutMs,
+    )) as { result?: { value?: T }; exceptionDetails?: unknown };
+    if (answer.exceptionDetails !== undefined) {
+      throw new Error(`page threw: ${JSON.stringify(answer.exceptionDetails).slice(0, 300)}`);
+    }
+    return answer.result?.value as T;
+  }
+
   /** Poll `expression` until truthy; on timeout the error carries the page's text. */
   async waitFor(expression: string, what: string, timeoutMs = 30_000): Promise<void> {
     const until = Date.now() + timeoutMs;
     for (;;) {
-      if (await this.eval<boolean>(expression).catch(() => false)) return;
+      if (await this.evalWithin<boolean>(expression, 5_000).catch(() => false)) return;
       if (Date.now() > until) {
         const text = await this.eval<string>("document.body.innerText").catch(() => "?");
         throw new Error(`timed out waiting for ${what}; the page shows:\n${text}`);

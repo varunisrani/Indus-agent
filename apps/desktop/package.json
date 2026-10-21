@@ -9,18 +9,29 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
+    "e2e": "vitest run --config e2e/vitest.config.ts",
     "build:electron": "node scripts/build-electron.mjs",
     "check:ipc": "node scripts/check-ipc.mjs",
     "gen:bridge-types": "node scripts/gen-bridge-types.mjs",
     "verify:fuses": "node scripts/verify-fuses.mjs",
     "dump:slash": "node scripts/dump-slash-catalog.mjs",
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "stamp": "node scripts/write-build-stamp.mjs --out build/desktop-build-stamp.json",
+    "icons": "node scripts/make-icons.mjs",
+    "dist:unsigned": "node scripts/dist-unsigned.mjs",
+    "pack:unsigned": "node scripts/dist-unsigned.mjs --dir",
+    "check:asar": "node scripts/check-asar.mjs build/release"
   },
   "dependencies": {
     "@indus/client": "workspace:*",
     "@indus/ui": "workspace:*",
     "@radix-ui/react-dialog": "1.1.23",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-unicode11": "0.9.0",
+    "@xterm/addon-webgl": "0.19.0",
+    "@xterm/xterm": "6.0.0",
+    "electron-updater": "6.8.9",
     "katex": "0.19.0",
     "lucide-react": "1.52.0",
     "mermaid": "11.17.2",
@@ -40,7 +51,11 @@
     "@types/react-dom": "19.3.0",
     "axe-core": "4.13.0",
     "electron": "44.5.1",
+    "electron-builder": "26.17.0",
     "jsdom": "29.1.1",
     "tailwindcss": "4.3.3"
+  },
+  "optionalDependencies": {
+    "node-pty": "1.1.0"
   }
 }

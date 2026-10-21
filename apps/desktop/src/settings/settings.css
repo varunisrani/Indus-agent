@@ -1,0 +1,296 @@
+/* Settings overlay (P20-32). Tokens only (`--indus-*`); no raw colours. */
+
+:root {
+  /* The chat text size the Appearance page sets (110 % by default). */
+  --indus-chat-text-scale: 1.1;
+}
+
+.transcript {
+  font-size: calc(1em * var(--indus-chat-text-scale));
+}
+
+.settings-overlay {
+  position: fixed;
+  z-index: var(--z-overlay);
+  inset: 6% 6%;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  overflow: hidden;
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-lg);
+  background: var(--indus-color-bg-raised);
+  box-shadow: var(--indus-shadow-high);
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-2);
+  padding: var(--indus-space-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--indus-color-border);
+}
+
+.settings-search {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-md);
+  color: var(--indus-color-fg-muted);
+}
+
+.settings-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--indus-color-fg);
+  font: inherit;
+}
+
+.settings-views,
+.settings-pages,
+.settings-hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.settings-pages {
+  padding-left: var(--indus-space-3);
+}
+
+.settings-view,
+.settings-page-link,
+.settings-hit {
+  display: block;
+  width: 100%;
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border: 0;
+  border-radius: var(--indus-radius-md);
+  background: transparent;
+  color: var(--indus-color-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-page-link {
+  color: var(--indus-color-fg-muted);
+}
+
+.settings-view[aria-current="page"],
+.settings-page-link[aria-current="page"] {
+  background: var(--indus-color-code-bg);
+  color: var(--indus-color-fg);
+}
+
+.settings-hit-label {
+  display: block;
+}
+
+.settings-hit-context {
+  display: block;
+  font-size: 12px;
+  color: var(--indus-color-fg-muted);
+}
+
+.settings-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--indus-space-3) var(--indus-space-4);
+  border-bottom: 1px solid var(--indus-color-border);
+}
+
+.settings-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  font-weight: var(--indus-font-weight-semibold);
+}
+
+.settings-breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--indus-space-1);
+}
+
+.settings-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--indus-space-2);
+  padding: var(--indus-space-2) var(--indus-space-4);
+  border-bottom: 1px solid var(--indus-color-border);
+}
+
+.settings-scope-label {
+  font-size: 12px;
+  color: var(--indus-color-fg-muted);
+}
+
+.settings-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--indus-space-1);
+}
+
+.settings-chip {
+  padding: 2px var(--indus-space-2);
+  border: 1px solid var(--indus-color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--indus-color-fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-chip[aria-checked="true"] {
+  background: var(--indus-color-code-bg);
+  color: var(--indus-color-fg);
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--indus-space-3) var(--indus-space-4);
+}
+
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--indus-space-2);
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: var(--indus-space-3);
+  padding: var(--indus-space-2);
+  border-radius: var(--indus-radius-md);
+}
+
+.settings-row[data-highlighted="true"] {
+  outline: 2px solid var(--indus-color-focus-ring);
+}
+
+.settings-row-label {
+  font-weight: var(--indus-font-weight-semibold);
+}
+
+.settings-row-desc,
+.settings-row-note,
+.settings-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--indus-color-fg-muted);
+}
+
+.settings-row-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--indus-color-danger);
+}
+
+.settings-row-key,
+.settings-code {
+  font-family: var(--indus-font-mono);
+  font-size: 11px;
+  color: var(--indus-color-fg-muted);
+}
+
+.settings-row-control,
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--indus-space-1);
+}
+
+.settings-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--indus-space-1);
+}
+
+.settings-input {
+  min-width: 12rem;
+  padding: var(--indus-space-1) var(--indus-space-2);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-md);
+  background: var(--indus-color-bg);
+  color: var(--indus-color-fg);
+  font: inherit;
+}
+
+.settings-input[aria-invalid="true"] {
+  border-color: var(--indus-color-danger);
+}
+
+.settings-textarea {
+  width: 100%;
+  font-family: var(--indus-font-mono);
+  font-size: 12px;
+}
+
+.settings-wide {
+  min-width: 100%;
+}
+
+.settings-switch {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--indus-color-accent);
+}
+
+.settings-badge {
+  font-size: 12px;
+  color: var(--indus-color-fg-muted);
+}
+
+.settings-badge[data-on="true"] {
+  color: var(--indus-color-success);
+}
+
+.settings-banner {
+  margin: 0;
+  padding: var(--indus-space-2);
+  border-radius: var(--indus-radius-md);
+  background: var(--indus-color-code-bg);
+}
+
+.settings-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--indus-space-1) var(--indus-space-3);
+  margin: 0;
+}
+
+.settings-facts dd {
+  margin: 0;
+}
+
+.settings-accelerator {
+  font-family: var(--indus-font-mono);
+  font-size: 12px;
+}
+
+.settings-segment {
+  padding: var(--indus-space-1) var(--indus-space-2);
+}

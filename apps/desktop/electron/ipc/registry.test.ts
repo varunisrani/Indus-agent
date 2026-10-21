@@ -250,6 +250,7 @@ describe("answers", () => {
       windowKind: "main" as const,
       watch: false,
       profile: null,
+      homeDir: "",
       titleBarHeight: 34,
       deepLinkScheme: "indus",
     }));

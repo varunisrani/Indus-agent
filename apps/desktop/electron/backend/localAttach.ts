@@ -73,8 +73,13 @@ export function newSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-function profileArgs(profile: string | null): string[] {
-  return profile === null || profile === "default" ? [] : ["-p", profile];
+/**
+ * The profile flag. A named profile — `default` included — is always passed explicitly: without
+ * a flag the CLI would pick its own sticky profile (`indus profile use`), so the window could show
+ * "default" while the daemon serves another one (P20-26). `null` (no decision) passes nothing.
+ */
+export function profileArgs(profile: string | null): string[] {
+  return profile === null ? [] : ["-p", profile];
 }
 
 export function profileHome(home: string, profile: string | null): string {
@@ -127,6 +132,8 @@ export class LocalAttach {
   readonly sessionToken: string;
   private gateway: GatewayDescriptor | null = null;
   private skewRestarted = false;
+  /** The `gateway ensure` in flight: concurrent callers share it (one daemon start, not two). */
+  private ensuring: Promise<GatewayDescriptor> | null = null;
   /** Whether this app started the daemon (no daemon answered before the first ensure). */
   startedByApp = false;
 
@@ -156,8 +163,21 @@ export class LocalAttach {
     return env;
   }
 
-  /** `gateway ensure --json`: attach to or start the profile daemon. */
-  async ensureGateway(): Promise<GatewayDescriptor> {
+  /**
+   * `gateway ensure --json`: attach to or start the profile daemon. Callers that overlap (the
+   * supervisor's respawn after a crash and a ticket mint that found the daemon gone) share one
+   * run: two concurrent ensures could each start a daemon, and the loser would exit on its own.
+   */
+  ensureGateway(): Promise<GatewayDescriptor> {
+    if (this.ensuring === null) {
+      this.ensuring = this.ensureOnce().finally(() => {
+        this.ensuring = null;
+      });
+    }
+    return this.ensuring;
+  }
+
+  private async ensureOnce(): Promise<GatewayDescriptor> {
     const before = await (this.deps.identify ?? identify)(this.home());
     const result = await this.run(
       this.deps.backend,

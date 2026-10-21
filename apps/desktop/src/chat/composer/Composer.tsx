@@ -87,6 +87,8 @@ export interface ComposerProps {
   localRows?: LocalRows | null;
   /** The session's folder (uploads land below it). */
   cwd?: string | null;
+  /** The folder a fresh draft's session is created in (P20-25; null: detached). */
+  newSessionCwd?: string | null;
   /** The fresh draft became a session. */
   onSessionCreated?(sessionId: string): void;
   /** The daemon confirmed the session is gone: show the fresh draft. */
@@ -308,7 +310,11 @@ export function Composer(props: ComposerProps) {
     if (props.sessionId !== null) return props.sessionId;
     if (request === null) return null;
     try {
-      const created = await request("session.create", { idempotency_key: createKey.current });
+      const folder = props.newSessionCwd ?? null;
+      const created = await request("session.create", {
+        idempotency_key: createKey.current,
+        ...(folder === null ? {} : { cwd: folder }),
+      });
       createKey.current = newKey();
       const sticky = prefs.sticky(props.profile ?? null);
       if (sticky !== null) {

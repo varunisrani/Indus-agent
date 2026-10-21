@@ -79,3 +79,5 @@ Compare checklist (filled after the rewrite; reopened the files in `Read:`):
 
 Done (2026-10-21). New event channel `indus:backend:notice` (`boot.onNotice`) for P20-16 to show.
 `INDUS_DESKTOP_SKIP_QUIT_PROMPT=1` skips the quit prompt (P20-40's E2E).
+
+Integration (wave 35): the "restarted" notice arrives after the daemon is ready again, when the boot overlay is gone; it now shows once as a toast over the recovered window (15 s, closable; D-16.720, `BootOverlay.test.tsx::a restart reported after recovery shows once as a toast over the ready window, then goes`).

@@ -229,3 +229,38 @@ describe("Transcript", () => {
     expect(screen.queryByRole("button", { name: "this" })).toBeNull();
   });
 });
+
+describe("TranscriptStore history before the connection is ready", () => {
+  it("a session opened while the connection dials loads its history once it is ready", async () => {
+    const listeners = new Set<() => void>();
+    let ready = false;
+    let calls = 0;
+    const source: TranscriptSource = {
+      onEvent: () => () => undefined,
+      request: (async () => {
+        calls += 1;
+        if (!ready) throw new Error("not connected");
+        return { messages: conversation(1) };
+      }) as unknown as TranscriptSource["request"],
+      watchSession: async () => undefined,
+      unwatchSession: () => undefined,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getState: () => ({ ready }) as ReturnType<NonNullable<TranscriptSource["getState"]>>,
+    };
+    const store = new TranscriptStore(source, { clock: immediate });
+    await store.open("s1");
+    expect(calls).toBe(1);
+    expect(store.get("s1").items.length).toBe(0);
+    ready = true;
+    for (const listener of listeners) listener();
+    await vi.waitFor(() => expect(store.get("s1").items.length).toBe(2));
+    expect(calls).toBe(2);
+    // a later state change while still ready loads nothing again
+    for (const listener of listeners) listener();
+    expect(calls).toBe(2);
+    store.dispose();
+  });
+});

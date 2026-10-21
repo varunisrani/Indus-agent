@@ -1,7 +1,14 @@
 // English strings (D-16.51: English only in 1.0, every visible string through `useT`).
 // One flat record; keys are `area.thing`. Other slices append their own block at the end.
 
+import { AMBIENT_STRINGS } from "../ambient/strings.en.ts";
 import { CHAT_STRINGS } from "../chat/strings.en.ts";
+import { DEEP_LINK_STRINGS } from "../deepLinks/strings.en.ts";
+import { ONBOARDING_STRINGS } from "../onboarding/strings.en.ts";
+import { PANE_STRINGS } from "../panes/strings.en.ts";
+import { PROFILE_STRINGS } from "../profiles/strings.en.ts";
+import { SETTINGS_STRINGS } from "../settings/strings.en.ts";
+import { SIDEBAR_STRINGS } from "../sidebar/strings.en.ts";
 
 export const en = {
   "app.name": "Indus",
@@ -24,7 +31,7 @@ export const en = {
   "nav.cron": "Scheduled tasks",
   "nav.profiles": "Profiles",
   "nav.agents": "Agents",
-  "nav.sessionsLater": "Your conversations will be listed here.",
+  "nav.more": "More",
 
   "page.capabilities.body": "Skills, tools and connectors arrive in a later release.",
   "page.messaging.body": "Messaging platforms arrive in a later release.",
@@ -143,6 +150,38 @@ export const en = {
   "boot.chooser.local": "Install on this computer",
   "boot.chooser.localHint": "Downloads and sets up Indus for you.",
 
+  // find in page, logs viewer (P20-39)
+  "find.label": "Find in conversation",
+  "find.placeholder": "Find",
+  "find.count": "{current} of {total}",
+  "find.none": "No results",
+  "find.previous": "Previous match",
+  "find.next": "Next match",
+  "logs.title": "Desktop log",
+  "logs.refresh": "Refresh",
+  "logs.reveal": "Show log file",
+  "logs.copyDiagnostics": "Copy diagnostics",
+  "logs.copied": "Diagnostics copied. Secrets were removed before copying.",
+  "logs.copyFailed": "Diagnostics could not be copied.",
+  "logs.loadFailed": "The log could not be read.",
+  "logs.empty": "Nothing logged yet in this session.",
+  "logs.unavailable": "The log is available in the desktop app only.",
+
   // chat surfaces (P20-19..24: composer, queue, cards, model picker, status bar, slash)
   ...CHAT_STRINGS,
+
+  // sessions sidebar (P20-25), profile rail and switching (P20-26)
+  ...SIDEBAR_STRINGS,
+  ...PROFILE_STRINGS,
+
+  // pane shell (P20-27) and working panes (P20-28..31: preview, files, git review, terminal)
+  ...PANE_STRINGS,
+
+  // settings, onboarding, deep links (P20-32..34)
+  ...SETTINGS_STRINGS,
+  ...ONBOARDING_STRINGS,
+  ...DEEP_LINK_STRINGS,
+
+  // HUD, quick entry, tray, keep awake, notifications, updates (P20-35..37)
+  ...AMBIENT_STRINGS,
 } as const satisfies Record<string, string>;

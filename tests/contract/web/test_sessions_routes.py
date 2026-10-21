@@ -228,6 +228,19 @@ def test_a_compressed_conversation_reads_as_one(
     rows = rest.client.get("/api/sessions", params={"limit": 100}).json()["sessions"]
     ids = [r["id"] for r in rows]
     assert "s-tip" in ids and "s-root" not in ids  # one row, carrying the tip's id
+    tip = next(r for r in rows if r["id"] == "s-tip")
+    assert tip["lineage_root"] == "s-root"  # the durable id the desktop pins and PATCHes
+    plain = next(r for r in rows if r["id"] not in {"s-tip"})
+    assert plain["lineage_root"] is None
+    snap = _snapshot(rest, "s-root")
+    pinned = rest.client.patch(
+        "/api/sessions/s-root",
+        params={"profile": scope.profile_id},
+        json={"pinned": True, **_identity(snap)},
+    )
+    assert pinned.status_code == 200
+    rows = rest.client.get("/api/sessions", params={"limit": 100}).json()["sessions"]
+    assert next(r for r in rows if r["id"] == "s-tip")["pinned"] is True
     page = rest.client.get("/api/sessions/s-tip/messages").json()
     assert [m["content"] for m in page["messages"]] == ["first half", "second half"]
 
