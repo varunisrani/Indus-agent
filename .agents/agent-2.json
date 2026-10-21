@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 77,
-  "remaining_pct": 23,
+  "usage_pct": 79,
+  "remaining_pct": 21,
   "resets_at": "2026-10-21T04:20:00+00:00",
-  "last_check": "2026-10-21T03:04:00+00:00",
+  "last_check": "2026-10-21T03:16:00+00:00",
   "current_step": "P18 complete 71389d4; w34 m/r/c parked; P20 integrator (int-p20a) running; no new agents from 75%",
   "last_commit": "62a2df8"
 }
