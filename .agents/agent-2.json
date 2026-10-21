@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 80,
-  "remaining_pct": 20,
+  "usage_pct": 81,
+  "remaining_pct": 19,
   "resets_at": "2026-10-21T17:30:00+00:00",
-  "last_check": "2026-10-21T16:36:00+00:00",
+  "last_check": "2026-10-21T16:48:00+00:00",
   "current_step": "75% guard: no new agents; P24 integrator running",
   "last_commit": "fd44e16"
 }
