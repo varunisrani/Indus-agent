@@ -76,7 +76,9 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_2 ACTIVE (taken back 20:56 UTC on the owner's request; Agent 1 had not started). In flight: P24 landing (w40) + D-16.799 wiring. Main `fd44e16`+status commits, green.
+Turn: AGENT_1 ACTIVE (owner gave it to Agent 1 at 21:05 UTC; Agent 2 being stopped by the owner). In flight (Agent 1):
+P24 lander in scratchpad verify20 (brief `.agents/wip/w41/p24-lander-brief.md`); P25 tooling builders Q1 (P25-05..09 parity),
+D1 (P25-14..17 docs + notices), G1 (P25-10..13, 18, 19 gates + perf) in wt-w41* (brief `.agents/wip/w41/brief-p25.md`). Main `fd44e16`+status commits, green.
 Done: P00–P22 complete; P23 21/23 (`fd44e16`; P23-15/16 desktop signing open). 575/648 landed (89%).
 1. **Land P24** from `.agents/wip/w40/p24-int-wip.patch` (base 823caff; read w40/README.md + landing-p24.md first). Expected
    union conflicts with P23 listed in the README; re-lock uv; then run the Python FULL suite + perf to completion (the
