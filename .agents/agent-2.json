@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 61,
-  "remaining_pct": 39,
+  "usage_pct": 69,
+  "remaining_pct": 31,
   "resets_at": "2026-10-21T04:20:00+00:00",
-  "last_check": "2026-10-21T01:58:00+00:00",
-  "current_step": "P20-01..07 landed 86f44f7; wave 34 builders M (P20-08..14), R (15..18), C (19..24) + P18 integrator running; F1 follow-ups in full gate",
-  "last_commit": "ba91bbd"
+  "last_check": "2026-10-21T02:14:00+00:00",
+  "current_step": "w34-c parked; R (P20-15..18), M (P20-08..14), P18 integrator running; no new agents from 75%",
+  "last_commit": "5c8a0d7"
 }
