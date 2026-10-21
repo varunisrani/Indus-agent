@@ -135,3 +135,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-21 09:13 UTC | 62% | 38% | 13:10 UTC | M1 X1 L1 R2 parked; 2 integrators + R1 B1 running; ~0.6%/min
 2026-10-21 09:25 UTC | 71% | 29% | 13:10 UTC | P20 LANDED (52deb8b); w37 all parked; P23 integrator + W1 S1 running; no new agents (P24 UI wave waits)
 2026-10-21 09:35 UTC | 76% | 24% | 13:10 UTC | P23 integrator + W1 S1 running; no new agents
+2026-10-21 09:52 UTC | 84% | 16% | 13:10 UTC | told W1, S1 to wrap up; P23 integrator keeps running; hand off to Agent 2 at 90%
