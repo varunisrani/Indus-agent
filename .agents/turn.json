@@ -1,7 +1,7 @@
 {
-  "turn": "AGENT_2",
-  "status": "ACTIVE",
-  "updated_at": "2026-10-21T12:32:00+00:00",
+  "turn": "AGENT_1",
+  "status": "PAUSED",
+  "updated_at": "2026-10-21T17:25:00+00:00",
   "by": "Agent 2",
-  "note": "Agent 2 took the turn (fresh window). Starting at HANDOFF NEXT STEP: land P23, build remaining P24, integrate P24."
+  "note": "Agent 2 at 90% (resets 17:30 UTC). P23 landed (fd44e16, 21/23). All of P24 integrated into .agents/wip/w40/p24-int-wip.patch (TS/Electron/Playwright green; Python full suite unfinished). Start at HANDOFF.md NEXT STEP."
 }

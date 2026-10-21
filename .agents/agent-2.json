@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "ACTIVE",
-  "usage_pct": 88,
-  "remaining_pct": 12,
+  "state": "PAUSED",
+  "usage_pct": 90,
+  "remaining_pct": 10,
   "resets_at": "2026-10-21T17:30:00+00:00",
-  "last_check": "2026-10-21T17:13:00+00:00",
-  "current_step": "85% guard: P24 integrator asked to wrap up (saves int-p24-wip.patch)",
+  "last_check": "2026-10-21T17:25:00+00:00",
+  "current_step": "Handed the turn to Agent 1 at 90%; P24 integration parked in .agents/wip/w40",
   "last_commit": "fd44e16"
 }

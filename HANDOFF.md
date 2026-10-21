@@ -13,16 +13,17 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 1** | At: 2026-10-21 10:20 UTC | Branch: `main` (pushed to origin)
-- Why now: Agent 1 at 91% of its window (resets 13:10 UTC). Nothing is running: no builders, no integrators, no gate.
-- Last verified code commit: `52deb8b` (P20 complete: pytest "not perf" 15735 passed; pnpm test 2453; Electron E2E 37;
-  pyright 0; lint-imports kept; tooling.checks ok).
-- Agent 1's code landings this turn (since 2026-10-21 05:56): P20-08..24 (`2a1991b`), P20-25..40 (`52deb8b`, P20 COMPLETE).
-  Parked this turn: P23 (integrated, green on its base — see NEXT STEP 1), P24 w37 (6 slices) and w38 (2 slices).
+- By: **Agent 2** | At: 2026-10-21 17:25 UTC | Branch: `main` (pushed to origin)
+- Why now: Agent 2 at 90% of its window (resets 17:30 UTC) — the hand-back guard. Nothing is running. The P24 integration
+  is parked mid-gate in `.agents/wip/w40/` (see NEXT STEP 1).
+- Last fully verified code commit: `fd44e16` (P23: pytest "not perf" 16321 passed / 0 failed; perf 11/1; vitest 2455;
+  Electron lane 35; pyright 0; lint-imports kept; tooling.checks ok).
+- Agent 2's landings this turn (since 12:32): P23 (`fd44e16`), test_tui_publish race fix (`19ced11`); built and parked: P24
+  UI wave (w39 U1 U2 U3) + B4 (P24-45..47); integrated all of P24 (w40, unverified Python gate).
 
 ## Usage at last stop
-📊 Agent 1 usage: 91% used, 9% left (reading 10:17 UTC) — resets 13:10 UTC — PAUSED (handed off)
-📊 Agent 2 usage: last recorded 2026-10-21 03:40 (83%, long since reset) — expected fresh — READY
+📊 Agent 2 usage: 90% used, 10% left (reading 17:21 UTC) — resets 17:30 UTC — PAUSED (handed off)
+📊 Agent 1 usage: last recorded 2026-10-21 10:17 (91%, reset 13:10) — expected fresh — READY
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
@@ -33,6 +34,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 | 4 | Agent 1 → Agent 2 | 2026-10-20 16:25 | P13 wave 2, P14, P15 (Demo 3), P16 31/36, P17 (M5), P21, P22; parked P16-25/33..36, P18-01..10/17..22, P19-01..07 | Agent 1 at 86%; owner asked to hand over; nothing in flight |
 | 5 | Agent 2 → Agent 1 | 2026-10-21 03:45 | P16 (36/36), P18 (30/30, M6 web demo), P19 (18/18, attached ACP on a real daemon), P20-01..07; load-failure root causes; P20-08..24 integrated but unverified (wip patch) | Owner asked to hand over; Agent 2 at 83% |
 | 6 | Agent 1 → Agent 2 | 2026-10-21 10:20 | P20-08..40 landed (P20 complete); P23 integrated (green, needs rebase onto P20); P24-01..18, 23, 24, 38..44 built + parked; 45 partial | Agent 1 at 91%; nothing in flight |
+| 7 | Agent 2 → Agent 1 | 2026-10-21 17:25 | P23 landed (21/23); P24 all 47 built except 21/22 (post-1.0) and integrated into one patch (w40, Python full gate unfinished) | Agent 2 at 90% (guard) |
 
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
@@ -74,21 +76,22 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_2 (ACTIVE since 12:32 UTC 2026-10-21). Main `fd44e16` (P23 landed).
+Turn: AGENT_1 (handed over by Agent 2 at 17:25 UTC 2026-10-21, usage guard). Main `fd44e16`+status commits, green.
 Done: P00–P22 complete; P23 21/23 (`fd44e16`; P23-15/16 desktop signing open). 575/648 landed (89%).
-In flight (Agent 2): **P24 integrator** (scratchpad int-p24, base main before P23 — rebase onto fd44e16 at landing) applying
-.agents/wip/w37 (M1 R1 R2 B1 L1 X1), w38 (S1 W1), w39 (B4, U1 U2 U3): 47 P24 tasks built (P24-32 partial; P24-21/22
-Termux / MSIX not built — post-1.0 per D-16.15 unless capacity). Its wrap-up patch, if any: $S/int-p24-wip.patch.
-Then: P23-15/16 desktop signing (needs the owner's certificates — see P23 owner items), P25 (hardening, parity, v1.0).
-Owner items now: D-16.690 release base (`indusagi/indus-agent` vs varunisrani/Indus-agent: edit versions.py +
-apps/desktop/electron/releaseBase.ts, rerun pins scripts); protected `release` environment + its secrets (APPLE_ID,
-APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD, MAC_CERTIFICATE(_PASSWORD), WIN_CERTIFICATE(_PASSWORD)); contributor-map
-entries for 3 unmapped authors; hadolint GPL-3.0 (CI only); image third-party notices; bootstrap-mirror assets; canary
-rehearsal; wake-word engine (openWakeWord can't lock on Python 3.13 → sherpa-onnx default?) and Porcupine (§2.8?);
-Playwright 1.56.1 pin; stray paths at / (see .agents/wip history: /fix-m2-home, /w30-a2-home, /w30-r3-home, /w31-d1-home,
-/w32-p1-home, /w32-p2-home, /w32-t1-home, /uv-cache, /pnpm-store, /x, /backends_conftest.orig, /dbg_msgraph.py).
-D-16.691 (remote desktop dial) is fixed in w39-u2 (server-minted single-use tickets) — pending the P24 landing + an Electron
-run against a real serve.
+1. **Land P24** from `.agents/wip/w40/p24-int-wip.patch` (base 823caff; read w40/README.md + landing-p24.md first). Expected
+   union conflicts with P23 listed in the README; re-lock uv; then run the Python FULL suite + perf to completion (the
+   integrator's second run was stopped at ~88%) and root-cause anything red. TS / Electron / Playwright were green. Commit
+   "[Agent 1] P24 …", push, prune w37/w38/w39/w40. Phase table: P24 built 45/47 (21/22 post-1.0), "Done when" not met.
+2. **P24 owed wiring** (D-16.799): multiplex in `gateway run`; room loop; relay front in the daemon; LSP manager + hooks +
+   stop gates in the agent loop; register message_agent and a2a_call from the gateway host; suggestion offers from the review
+   step; preview automation server requests; desktop plugin consumers + plugins inventory page; TUI wake → voice mode;
+   `indus dashboard --console`; profile_rows in profiles.list. Then the P24 demos (two profiles, room, LSP stop gate).
+3. P23-15/16 desktop signing (owner certificates), then **P25** (hardening, security review, parity, v1.0).
+Owner items: D-16.690 release base (indusagi/indus-agent vs varunisrani/Indus-agent); release environment + signing
+secrets; 3 unmapped contributors; D-16.800 wake engine; D-16.801 ffmpeg source for `indus pm`; D-16.802 pm catalogue
+exclusions; Playwright 1.56.1 pin; stray paths at / (list in the w39 era HANDOFF: /fix-m2-home, /w30-a2-home, /w30-r3-home,
+/w31-d1-home, /w32-p1-home, /w32-p2-home, /w32-t1-home, /uv-cache, /pnpm-store, /x, /backends_conftest.orig,
+/dbg_msgraph.py). D-16.691 remote desktop dial: fixed and E2E-verified inside the w40 patch.
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
 (--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**' — never exclude git-ignored paths), CHECK the
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree; one integrator per
