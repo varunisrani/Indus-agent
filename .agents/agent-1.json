@@ -5,8 +5,8 @@
   "usage_pct": 66,
   "remaining_pct": 34,
   "resets_at": "2026-10-22T02:00:00+00:00",
-  "last_check": "2026-10-21T23:14:00+00:00",
-  "current_step": "P25-05..19 landed (08bcf51); WA wiring running; WB WC parked (w42)",
+  "last_check": "2026-10-21T23:25:00+00:00",
+  "current_step": "WA wiring; SEC1 SEC2 security; WB WC parked; P25-05..19 landed",
   "last_commit": "08bcf51",
   "updated_at": "2026-10-21T21:06:00Z"
 }
