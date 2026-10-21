@@ -137,3 +137,29 @@
   config.yaml; peer remove deletes the stored key; peer dm reads stdin only for `-`; redirects refused; rename needs room
   authority; not taken: legacy room adoption, RoomLink grants / peer room members, replicas, groups.approve, run idempotency keys,
   desktop courier.
+
+## w37-b1.patch: P24-11 task board store, P24-12 dispatcher + worker lanes, P24-13 board tools + review + `indus kanban`, P24-14 projects — done
+- Builder checks: ruff, format, pyright 0, lint-imports; own dirs 76 passed; full unit + contract 15,285 passed / 2 failed
+  (tests/unit/state/test_schema.py::test_init_gives_up_after_the_patience and tests/contract/web/test_backup_ticket.py::
+  test_tickets_never_reach_a_log_record — both pass alone, the second also on base; order-dependent, NOT root-caused:
+  integrator must root-cause); tooling.checks ok. No packages.
+- New: src/indus/state/{board,projects}.py, src/indus/board/{dispatcher,watchers}.py, tools/builtin/{board,project}.py,
+  cli/commands/{kanban,project}.py, service/projects_rpc.py, protocol/projects.py (projects.* models + PROJECT_METHODS, not
+  wired); tests unit state/test_board + test_projects, unit/board, integration/board/test_worker_lane, tools/builtin/
+  test_board, cli/commands/test_kanban + test_project; notes board-store, board-dispatcher, board-tools, projects.
+- Shared (unions): board/__init__.py; tools/toolsets.py (NEW Toolset.opt_in flag; opt-in kanban-worker, kanban, project;
+  "all" skips opt-in sets); tools/builtin/__init__.py (board + project modules); cli/app.py (kanban + project after webhook);
+  schema kanban.* + projects.* (unknown-section test example renamed to "whiteboard"); foundation/errors.py (board.*,
+  projects.*); acp/tool_kinds.py (16 tools); contract non_tty_table + help catalogue; contract tools test_reachability (a tool
+  is reachable from "all" or a named opt-in set — check R1's gated `bots` / X1 / R2 a2a against this rule); traps R02.17,
+  R02.22, R02.25, R04.19.
+- WIRING OWED: gateway/daemon/process.py starts BoardWatchers(store, deliver=router send, dispatcher=Dispatcher(...)).run(stop)
+  only when kanban.dispatch_in_gateway, every kanban.dispatch_interval_seconds; kanban_create gets delivery_origin like the
+  cron tool; PROJECT_METHODS into protocol.methods.METHODS + bridge/daemon tables (projects_rpc.register) + codegen; session
+  creation calls ProjectStore.join_session(session_id, cwd).
+- Decisions (D-ids): boards at <root>/boards/<slug>.db (not <home>); no new statuses (escalation = blocked + escalated flag;
+  scheduling = blocked + scheduled + wake_at); escalate on the 3rd same-kind block (reference 2nd); unknown memory → cap 2 workers
+  (reference uncapped); breaker-blocked tasks need explicit unblock; exit 75 cools the assignee's lane (reference cools the
+  task); opt-in toolsets, workers get core,kanban-worker.
+- Follow-ups: headless `indus kanban dispatch` can't read an earlier pass's worker exit code (worker should write it next to
+  its log); not built: respawn guard, goal mode, swarms, phantom-card checks.
