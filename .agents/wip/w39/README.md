@@ -127,3 +127,33 @@ Brief: `brief.md` (slices U1 = P24-19/20/25/26/33, U2 = P24-27..31, U3 = P24-32/
   uninstall phrase "uninstall everything", the helper only runs the CLI and never deletes a packaged bundle itself.
 - Follow-ups: plugin-route gate refuses a socket to a switched-off plugin before the upgrade (403) — an anonymous caller can
   tell off from on for plugin sockets (R09.4 holds for HTTP only); Windows uninstall may need a system Python.
+
+## w39-b4.patch: P24-46 suggested jobs + blueprints, P24-47 browser-control broker (K39), P24-45 finish (snapshot tests, Compare) — done
+- BASE: main f16f343 + .agents/wip/w38/w38-s1.patch + w38-w1.patch (apply those first; their cli/app.py REGISTRY and
+  tests/contract/cli/test_help_catalogue.py conflict is a union: `egress` row then `vault` row).
+- Builder checks: ruff / format clean; pyright 0; lint-imports kept; pytest unit/cron, gateway/browser_broker (68),
+  learning/skills/hub (93), service/commands, ws_auth, cli cron/skills_hub/slash/test_app, contract/cli, contract/gateway,
+  gateway/daemon, gateway/core/test_commands, tui_bridge/test_methods_slash: 2007 passed / 54 skipped; tooling.checks ok.
+  No packages.
+- New: src/indus/cron/{blueprints, suggestions}.py, cli/commands/blueprint.py, gateway/browser_broker/{__init__, broker,
+  artifacts, routes}.py; tests unit/cron/test_{blueprints, suggestions}.py, unit/gateway/browser_broker/*, unit/learning/
+  skills/hub/test_snapshot.py; notes (suggestions-blueprints, browser-broker, P24-45).
+- Shared: cli/commands/cron.py (suggestions group), cli/slash/cron_cmds.py, service/commands/registry.py (suggestions,
+  blueprint rows), locales/en.yaml, cli/app.py (blueprint row), service/ws_auth.py (BROWSER_CONTROLLER purpose;
+  authenticate_upgrade / offered_tickets take subprotocol / ticket_prefix, defaults unchanged), gateway/http/api_server.py
+  (ApiContext.browser_broker; routes + uvicorn WS only when set; closed in aclose), S1's hub/snapshot.py (1 line),
+  hub/sources_extra.py (owner check) + test, contract cli tables, service/commands/test_registry.py, traps R07.26.
+- WIRING OWED (integrator): daemon builds BrowserBroker(book, clock, developer_mode=…, enabled=…, artifacts=ArtifactStore(
+  <home>/cache/browser-control)) over its TicketBook when browser_broker.control_enabled(scope) and sets
+  ApiContext.browser_broker; callers (browser tools; W1's vault `broker` extra) use broker.lane(session, principal,
+  transport_family="api") then await broker.call(identity, capability, args, call_id=…); gateway / TUI call
+  cron.suggestions.handle_suggestions(scope, args, backend, surface="gateway", origin={platform, chat_id, thread_id}) and
+  cron.blueprints.handle_blueprint(...) — send reply.seed as the next turn; P09 review fork + integrations call
+  cron.suggestions.offer(scope, dedup_key, title, spec, source="usage"|"integration"); dashboard / desktop forms use
+  blueprints.form(bp) (no route yet).
+- Decisions (number at integration): broker register route + socket loopback-only (403 / 4403), controller Origin must be
+  in gateway.api_server.cors_origins; artefact bytes over the controller socket (artifact.put + one binary frame; fetch one
+  binary frame back); explicit cancel works offline (kept for reconnect); blueprint jobs deliver to origin by default;
+  accept runs the cron prompt scan + deliver check first; `/blueprint name word` refused; no /suggestions clear (refresh).
+- Follow-ups: ClawHub / LobeHub / browse.sh API shapes vs vendor docs (no network); Compare owed for P24-42..44; ACC C22 /
+  C24 / C25 / D15 / D16 / G7 rows + traps R02.20, R07.19 open from wave 38; desktop + gateway surfaces for H18.
