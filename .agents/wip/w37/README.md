@@ -107,3 +107,33 @@
   for wake() / next start; A2A fail-closed without tokens; input-required from the clarify card; not built: A2A push +
   SubscribeToTask, multi-agent routes, a2a_discover / list / history / orchestrate, relay passthrough plane.
 - Follow-ups: vendor schema fixture; 👀→✅ processing reactions via relay `react`; live lanes (owner); stop() fake-clock note.
+
+## w37-r1.patch: P24-05 group room store, P24-06 group room driver, P24-07 bot-to-bot messaging + peer gateways — done
+- Builder checks: ruff, format, pyright 0, lint-imports; own dirs + delivery + contract cli/tools 761 passed; wider unit
+  state/gateway/tools/cli-commands/cron/foundation/service + contract cli/tools/gateway 7619 passed / 68 skipped (before two small
+  fixes; affected tests rerun green); tooling.checks ok. No packages.
+- New: src/indus/state/rooms.py (<root>/rooms.db via the single Writer; RoomLimits; control reserve 64 events / 1 MiB;
+  authority epoch CAS; disbanded pruned 90 d / 512 tombstones, ids retired), src/indus/gateway/rooms/{__init__, driver
+  (lease + fenced task state machine; indeterminate never re-run on its own, R03.21), rpc (GroupsRpc, 13 groups.* methods),
+  peers}.py, src/indus/state/bot_chat.py, src/indus/service/peers.py (both for the layer rule), tools/builtin/
+  message_agent.py, cli/commands/peer.py, tests unit state/test_rooms + test_bot_chat, gateway/rooms/*, tools/builtin/
+  test_message_agent, cli/commands/test_peer; notes room-store.md, room-driver.md, bots-and-peers.md.
+- Shared (unions): foundation/errors.py (rooms.*, peers.failed), tools/toolsets.py (gated `bots` + `indus-bots`), cli/app.py
+  (peer row), cron/targets.py (self-chat in KNOWN_PLATFORMS), gateway/delivery/router.py (self-chat deliverer, lazy import,
+  ref-counted — R2 also edits router.py), contract help catalogue + non_tty_table (peer), traps R08.11, R03.21, ACC-K38-1/2,
+  H11-1.
+- WIRING OWED: build_api_app includes gateway.rooms.peers.bots_router(ctx) (api_server.py is M1's; /v1/bots/* 404 until
+  then); daemon calls message_agent.register_tools(registry) + install_transport(scope, LocalBotTransport(scope)) (not in
+  BUILTIN_MODULES: gated tool would fail the "all" contract); canonical-chat turns + /v1/bots/dm via SessionDesk run with
+  indus-bots + platform bots (desk gives indus-api-server today); declare groups.* in indus.protocol.methods + TS codegen, mount
+  GroupsRpc.handlers(); daemon room loop (acquire lease → recover → start → member turn → settle, expire_turns, prune) NOT
+  built; CLI `indus cron tick` needs install_self_chat in the CLI cron host; P17-23 idle exit treats live room tasks as busy.
+- Security: peer key in SecretStore INDUS_PEER_<NAME>_KEY via stdin / hidden prompt, never argv; <home>/peers.json 0600 holds no
+  key; no redirects followed; SSRF policy unless --lan; peer/profile → /p/<profile>; 10-min relay cap; LocalBotTransport one-
+  shot `indus -p X -z … --resume <canonical>` with child-env builder, killed past the cap; message_agent only in indus-bots
+  ("all" never includes it), ≤ 1 retry on listed reasons, replies capped.
+- Decisions (D-ids): rooms in their own <root>/rooms.db; canonical title "Bot chat" (unique index; adopt before mint; created
+  hidden; ambiguous lineage fails closed); our reason names; synchronous delivery with the 10-min cap; peers in a state file not
+  config.yaml; peer remove deletes the stored key; peer dm reads stdin only for `-`; redirects refused; rename needs room
+  authority; not taken: legacy room adoption, RoomLink grants / peer room members, replicas, groups.approve, run idempotency keys,
+  desktop courier.
