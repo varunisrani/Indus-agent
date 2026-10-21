@@ -54,3 +54,27 @@
   3.45.1 falls back to DELETE journaling — a store issue if the budget is per row); traps placeholder Review lines warn
   outside --strict (make them always fail after P24 lands?); TS skip check is static (.skipIf/.runIf runnable); similarity
   region score = sum of runs.
+
+## w41-q1.patch: P25-05 parity runner, P25-06 scripted model server, P25-07 scenarios, P25-08 obligation ledger — done; P25-09 compare/classify/report — tooling done, comparison owed
+- Builder checks: ruff, format, pyright 0, lint-imports; tests/unit/parity 100 passed ×3; tooling.checks ok. No packages.
+- Product-side runs: all 8 terminal/stdio/gateway flows pass (first-run-setup, cli-chat-approve, cli-resume-search,
+  tui-stream-interrupt, tui-model-picker, gateway-telegram-approve (loopback Bot API fake), cron-schedule-run, acp-session);
+  dashboard-sessions (6/6) + dashboard-chat-tab (10/10) passed through REA capture_browser_scenario against our dashboard;
+  2 desktop flows valid but not run (packaged app + REA connect mode). Reference app never run or installed.
+- Ledger: 18 obligations — with the REA dashboard captures verified 0, open 16 (reference captures owed), not run 2.
+- New: scripts/parity/{__init__, runner, terminal_driver, scripted_model_server (scripts echo / approve_or_decline / clarify /
+  edit_file / long_stream / hang; picked by model id or /<script>/v1; tools matched by parameters), scenarios, telegram_fake,
+  ledger, compare}.py, parity/*.indus.json (12), parity/ledger/{obligations, manifest, rules (starts EMPTY)}.json, tests/unit/
+  parity/*, tests/fixtures/parity/captures (3 synthetic), docs/internals/parity-report-v1.md, notes scripted-model,
+  parity-runner, parity-scenarios, obligation-ledger, parity-compare, rea-version. Shared: .gitignore (.cache/parity/).
+- Wiring: `runner.py --list | FLOW… | --all [--dry-run] [--ref DIR] [--ledger]`, `--serve FLOW` / `--import FLOW RESULT` for
+  REA runs (no MCP client in the runner); `ledger.py --check | --ledger`; `compare.py PRODUCT REF`; CI / release gates can call
+  `ledger.py --check` and `runner.py --all --dry-run`. Terminal flows use `indus --local` (D-16.487) and pin INDUS_TERMINAL_ID;
+  the runner stops only its own process groups.
+- OWNER: reference captures for all 12 flows in the REA sandbox (~/rea-lab), then `runner.py --all --ref … --ledger` and the lead
+  classifies divergences.
+- Decisions (D-ids): scripted model scripts are code (two branch on tool results), shared by both apps; approval command `git
+  reset --hard HEAD`; data-testid and data-ui both count as hooks, 9 desktop hooks owed (scenarios.OWED_HOOKS; add as data-ui
+  after P24); wait_for_timeout refused; rules.json written from measured divergences only.
+- Follow-ups: 9 desktop hooks + desktop lane flows; TRIAGE: TUI model picker says "this provider lists no models" for a custom
+  endpoint whose /v1/models lists six (indus setup offers them; typing an id works).
