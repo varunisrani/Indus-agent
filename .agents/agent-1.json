@@ -1,12 +1,12 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "READY",
+  "state": "ACTIVE",
   "usage_pct": 0,
   "remaining_pct": 100,
   "resets_at": "2026-10-21T18:10:00+00:00",
-  "last_check": "2026-10-21T13:16:00+00:00",
-  "current_step": "Window reset; Agent 2 holds the turn (P23 lander + wave 39 P24 UI running); READY to take it back",
+  "last_check": "2026-10-21T21:06:00+00:00",
+  "current_step": "Took the turn (owner request); landing P24 from w40",
   "last_commit": "52deb8b",
-  "updated_at": "2026-10-21T13:16:00Z"
+  "updated_at": "2026-10-21T21:06:00Z"
 }

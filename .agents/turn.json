@@ -1,7 +1,7 @@
 {
-  "turn": "AGENT_2",
+  "turn": "AGENT_1",
   "status": "ACTIVE",
-  "updated_at": "2026-10-21T20:56:00+00:00",
-  "by": "Agent 2",
-  "note": "Agent 2 took the turn back (owner request; Agent 1 idle since 17:25). Landing P24 from .agents/wip/w40, then D-16.799 wiring."
+  "updated_at": "2026-10-21T21:06:00+00:00",
+  "by": "Agent 1",
+  "note": "Owner gave the turn to Agent 1 (21:05 UTC) and is stopping Agent 2. Agent 2: please do NOT push code; stage and stop. Agent 1 is landing P24 from .agents/wip/w40, then D-16.799 wiring."
 }
