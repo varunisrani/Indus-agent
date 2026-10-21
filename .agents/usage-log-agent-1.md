@@ -126,3 +126,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-21 05:56 UTC | 1% | 99% | ~08:10 UTC | took the turn from Agent 2 (owner request); landing P20-08..24
 2026-10-21 06:28 UTC | 29% | 71% | 08:10 UTC | P20-08..24 TS gate running (Python gate green apart from 3 TMPDIR-length artifacts); wave 35 D1-D5 building
 2026-10-21 06:56 UTC | 39% | 61% | 08:10 UTC | P20-08..24 landed; w35 D1/D2/D3/D5 parked, D4 building; starting wave 36 (P23) builders I1 I2 K1 N1 U1
+2026-10-21 07:20 UTC | 61% | 39% | 08:10 UTC | P20-25..40 integrator + P23 I1 I2 K1 U1 running; N1 parked; ~1%/min
