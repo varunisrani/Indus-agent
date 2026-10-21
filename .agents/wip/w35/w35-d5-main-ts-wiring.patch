@@ -1,0 +1,81 @@
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index e19f563..da880b4 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -16,6 +16,7 @@ import {
+   app,
+   BrowserWindow,
+   type BrowserWindowConstructorOptions,
++  clipboard,
+   dialog,
+   ipcMain,
+   Menu,
+@@ -32,10 +33,13 @@ import { appMenuTemplate } from "./appMenu.ts";
+ import { type AppOrigin, devServerOrigin, fileAppOrigin } from "./appOrigin.ts";
+ import { type ElectronHooks, installBackend } from "./backend/install.ts";
+ import type { MainContext } from "./context.ts";
++import { installContextMenus, type MenuContentsLike } from "./contextMenu.ts";
++import { installDiagnostics } from "./diagnostics.ts";
+ import { applyEnvDefaults, parseBakedEnvDefaults } from "./envDefaults.ts";
+ import { type IpcMainLike, IpcRegistry } from "./ipc/registry.ts";
+ import { installJournalIpc, PreparedSubmissions } from "./journal/preparedSubmissions.ts";
+ import { chooseOzonePlatform, planSwitches, readLaunchConfig } from "./launchConfig.ts";
++import { installLinuxLauncher } from "./linuxLauncher.ts";
+ import { DesktopLog } from "./log.ts";
+ import { desktopPaths, resolveIndusHome, userDataOverride } from "./paths.ts";
+ import {
+@@ -332,6 +336,32 @@ async function boot(): Promise<void> {
+       process.platform === "linux" &&
+       (process.env.WSL_DISTRO_NAME !== undefined || /microsoft/i.test(os.release())),
+   }); // P20-08..14
++  const diagnostics = installDiagnostics(context, {
++    clipboard,
++    revealPath: (file) => shell.showItemInFolder(file),
++    facts: { arch: process.arch, versions: process.versions, locale: app.getLocale() },
++    homeDir: os.homedir(),
++    env: process.env,
++    resourcesPath: app.isPackaged ? process.resourcesPath : null,
++  }); // P20-39
++  installContextMenus({
++    dev,
++    platform: process.platform,
++    onWebContentsCreated: (listener) =>
++      app.on("web-contents-created", (_event, contents) =>
++        listener(contents as unknown as MenuContentsLike),
++      ),
++    popup: (template, contents) => {
++      const owner = BrowserWindow.fromWebContents(contents as unknown as WebContents);
++      Menu.buildFromTemplate(template as MenuItemConstructorOptions[]).popup(
++        owner === null ? {} : { window: owner },
++      );
++    },
++    writeText: (text) => clipboard.writeText(text),
++    isAppWindow: (id) => windows.isKnownWebContents(id),
++    emitFindOpen: (contents) =>
++      registry.emit(contents as unknown as WebContents, "indus:find:open", {}),
++  }); // P20-39
+   registry.seal();
+ 
+   Menu.setApplicationMenu(
+@@ -342,11 +372,20 @@ async function boot(): Promise<void> {
+         dev,
+         zoom: (direction) => windows.stepZoomBy(direction),
+         newWindow: () => windows.openInstance(),
++        help: diagnostics.menuItems, // P20-39
+       }) as MenuItemConstructorOptions[],
+     ),
+   );
+ 
+-  windows.openMain();
++  installLinuxLauncher(windows.openMain(), {
++    platform: process.platform,
++    packaged: app.isPackaged,
++    env: process.env,
++    homeDir: os.homedir(),
++    resourcesPath: process.resourcesPath,
++    scheme: instance.scheme,
++    log: logLine,
++  }); // P20-38
+   app.on("activate", () => {
+     const main = windows.mainWindow();
+     if (main === null) windows.openMain();
