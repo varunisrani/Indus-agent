@@ -74,34 +74,27 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_2 (handed over by Agent 1 at 10:20 UTC 2026-10-21). Main `52deb8b`+status commits, green.
-Done: P00–P22 complete (P20 `52deb8b`). 554/648 landed (85%). Built and parked: 21 (P23) + 30 (P24).
-1. **Land P23** from `.agents/wip/w36/p23-integration-green.patch` (base 7cd4273; the P23 integrator's full gate was green
-   there: pytest 16313 passed, pnpm 1807, pins/build checks strict; LEAD-NOTES "P23 wave 36 landing notes (integrator)" is
-   INSIDE the patch). On main (which now has P20 `52deb8b`) `git apply --3way` conflicts in 3 files, all unions:
-   `.github/workflows/ci.yml` (P20's desktop-e2e / desktop-package jobs + P23's Nix lane / pin checks — keep all jobs in the
-   gate's needs), `docs/plan/16-what-we-change.md` (P20 D-16.700..727 + P23 D-16.740..767), `docs/plan/phases/LEAD-NOTES.md`
-   (both landing-notes sections). THEN fix the two clashes the integrator predicted: (a) `test_release_base` scans the desktop
-   app — D4's update-feed default repo (`varunisrani/indus-agent` in apps/desktop/electron/updates) must derive from / equal
-   `RELEASE_REPOSITORY` (value still `indusagi/indus-agent`, owner D-16.690); (b) P20-38's build stamp
-   (apps/desktop/scripts/write-build-stamp.mjs) falls back to the pyproject version, which P23-01 made dynamic — read
-   `src/indus/__init__.py` instead, and use the admitted commit, not GITHUB_SHA, in release runs. Full gate (Python + pnpm +
-   Electron E2E lane if Electron is available), commit "[Agent 2] P23 …", push; phase table P23 21/23 (15/16 desktop signing
-   open). Owner items from the integrator are in its LEAD-NOTES section.
-2. **P24 remaining builds:** P24-46 suggested jobs + blueprints (note `docs/notes/P24/suggestions-blueprints.md`), P24-47
-   browser-control broker (note `browser-broker.md`), snapshot tests for P24-45 (w38-s1), and the UI wave now unblocked by P20:
-   P24-19 desktop pet + /pet, P24-20 wake word, P24-25..37 desktop + dashboard pages; P24-21/22 (Termux, MSIX) if capacity.
-   Briefs to copy: `.agents/wip/w37/brief.md`, `.agents/wip/w38/brief.md` (ENV RULE: two export statements, TMPDIR unset).
-3. **P24 integrator** for `.agents/wip/w37/` (M1, R1, R2, B1, L1, X1) + `.agents/wip/w38/` (W1, S1) + the UI wave: the READMEs list
-   the daemon / loop / registry / protocol wiring each slice owes (nothing is called from `gateway run` or the agent loop yet),
-   union files (cli/app.py, contract help catalogue + non_tty_table, schema, toolsets, delivery/router.py, control_socket),
-   and two order-dependent failures B1 saw (test_schema patience, test_backup_ticket log record) to root-cause.
-4. P23-15/16 desktop signing; then P25 (hardening, parity, v1.0).
+Turn: AGENT_2 (ACTIVE since 12:32 UTC 2026-10-21). Main `fd44e16` (P23 landed).
+Done: P00–P22 complete; P23 21/23 (`fd44e16`; P23-15/16 desktop signing open). 575/648 landed (89%).
+In flight (Agent 2): **P24 integrator** (scratchpad int-p24, base main before P23 — rebase onto fd44e16 at landing) applying
+.agents/wip/w37 (M1 R1 R2 B1 L1 X1), w38 (S1 W1), w39 (B4, U1 U2 U3): 47 P24 tasks built (P24-32 partial; P24-21/22
+Termux / MSIX not built — post-1.0 per D-16.15 unless capacity). Its wrap-up patch, if any: $S/int-p24-wip.patch.
+Then: P23-15/16 desktop signing (needs the owner's certificates — see P23 owner items), P25 (hardening, parity, v1.0).
+Owner items now: D-16.690 release base (`indusagi/indus-agent` vs varunisrani/Indus-agent: edit versions.py +
+apps/desktop/electron/releaseBase.ts, rerun pins scripts); protected `release` environment + its secrets (APPLE_ID,
+APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD, MAC_CERTIFICATE(_PASSWORD), WIN_CERTIFICATE(_PASSWORD)); contributor-map
+entries for 3 unmapped authors; hadolint GPL-3.0 (CI only); image third-party notices; bootstrap-mirror assets; canary
+rehearsal; wake-word engine (openWakeWord can't lock on Python 3.13 → sherpa-onnx default?) and Porcupine (§2.8?);
+Playwright 1.56.1 pin; stray paths at / (see .agents/wip history: /fix-m2-home, /w30-a2-home, /w30-r3-home, /w31-d1-home,
+/w32-p1-home, /w32-p2-home, /w32-t1-home, /uv-cache, /pnpm-store, /x, /backends_conftest.orig, /dbg_msgraph.py).
+D-16.691 (remote desktop dial) is fixed in w39-u2 (server-minted single-use tickets) — pending the P24 landing + an Electron
+run against a real serve.
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
 (--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**' — never exclude git-ignored paths), CHECK the
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree; one integrator per
 group runs the full gate; the lead commits, rebases, fast-forwards, pushes, updates the phase table and this file.
-- Last landings: P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
+- Last landings: P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+  P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
   load-failure fixes + clock quiesce helpers (full gate 15652 passed / 0 failed), P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
