@@ -367,6 +367,10 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | @xterm/addon-unicode11 | 0.9.0 | 2025-12-22 | MIT | `@indus/web` runtime | P18-26 |
 | @xterm/addon-web-links | 0.12.0 | 2025-12-22 | MIT | `@indus/web` runtime | P18-26 |
 | @xterm/addon-webgl | 0.19.0 | 2025-12-22 | MIT | `@indus/web` runtime (off on software renderers) | P18-26 |
+| shiki | 4.5.0 | 2026-10-01 | MIT (with `@shikijs/*` 4.5.0, MIT) | `@indus/desktop` runtime: code highlighting in the transcript, JavaScript regex engine, loaded lazily | P20-18 |
+| katex | 0.19.0 | 2026-10-01 | MIT | `@indus/desktop` runtime: maths in the transcript, loaded lazily | P20-18 |
+| mermaid | 11.17.2 | 2026-08-25 | MIT | `@indus/desktop` runtime: diagrams in the transcript, loaded lazily. Its tree (checked one by one at the wave-34 merge; the newest is `package-manager-detector` 1.9.0 of 2026-10-05, inside the 14-day rule for 2026-10-20): MIT, ISC, BSD-3-Clause, Apache-2.0 and Unlicense packages (d3 7.9.0 and its modules, cytoscape 3.34.3, dagre-d3-es, roughjs, `@mermaid-js/parser`, `@chevrotain/types`, katex 0.16.47, marked 16.4.2, dayjs, lodash-es, uuid 14.0.2, …); `dompurify` 3.4.16 is `MPL-2.0 OR Apache-2.0` (taken as Apache-2.0); `khroma` 2.1.0 has no licence field, its `license` file is MIT | P20-18 |
+| lucide-react | 1.52.0 | 2026-10-04 | ISC | `@indus/desktop` runtime: icons | P20-15 |
 
 If a pin cannot be installed (yanked, platform wheel missing), the builder takes the newest
 version that is at least 14 days old, records the swap in the task note and in this table.

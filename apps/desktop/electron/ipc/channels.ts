@@ -56,6 +56,13 @@ export const CHANNELS = [
     owner: "P20-09",
   },
   {
+    name: "indus:backend:notice",
+    kind: "event",
+    group: "boot",
+    method: "onNotice",
+    owner: "P20-13",
+  },
+  {
     name: "indus:connection:get",
     kind: "invoke",
     group: "connection",

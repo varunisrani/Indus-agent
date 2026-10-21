@@ -11,6 +11,8 @@ import { FakeServer } from "./testing/fakeServer.ts";
 import {
   attachUrlProblem,
   closeReason,
+  DASHBOARD_SUBPROTOCOL,
+  DASHBOARD_TICKET_PREFIX,
   GATEWAY_SUBPROTOCOL,
   protocolsProblem,
   TICKET_SUBPROTOCOL_PREFIX,
@@ -135,6 +137,10 @@ describe("WsTransport", () => {
     expect(attachUrlProblem("ws://127.0.0.1:1/ws#x")).toMatch(/fragment/);
     expect(attachUrlProblem("http://127.0.0.1:1/ws")).toMatch(/ws:/);
     expect(protocolsProblem([GATEWAY_SUBPROTOCOL])).toBeNull();
+    expect(protocolsProblem([DASHBOARD_SUBPROTOCOL, `${DASHBOARD_TICKET_PREFIX}r1`])).toBeNull();
+    expect(protocolsProblem([DASHBOARD_SUBPROTOCOL, `${TICKET_SUBPROTOCOL_PREFIX}r1`])).toMatch(
+      /unexpected/,
+    );
     expect(protocolsProblem(["other"])).toMatch(/first/);
     expect(protocolsProblem([GATEWAY_SUBPROTOCOL, "x", "y"])).toMatch(/at most one/);
     expect(protocolsProblem([GATEWAY_SUBPROTOCOL, TICKET_SUBPROTOCOL_PREFIX])).toMatch(

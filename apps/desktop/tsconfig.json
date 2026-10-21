@@ -2,7 +2,17 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "erasableSyntaxOnly": true
+    "jsx": "react-jsx",
+    "erasableSyntaxOnly": true,
+    "resolveJsonModule": true,
+    "types": ["node", "vite/client"]
   },
-  "include": ["electron", "src", "scripts/**/*.ts", "testing/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "electron",
+    "src",
+    "scripts/**/*.ts",
+    "testing/**/*.ts",
+    "vitest.config.ts",
+    "vite.config.ts"
+  ]
 }

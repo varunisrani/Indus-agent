@@ -132,8 +132,33 @@ export function installCspHeaders(
 }
 
 /**
- * The live policy: fixed at boot except for `connect-src`, which grows as the backend origins
- * become known (P20-10 adds the daemon's WS origin and the serve REST origin).
+ * Where a renderer may connect before main knows the backend: the daemon and the serve REST port
+ * are on loopback with ports chosen at run time, and a remote connection is any TLS host. A loaded
+ * page keeps the policy it was loaded with, and the main window loads before the boot finds the
+ * backend, so both the meta tag and main's header carry these.
+ */
+export const RUNTIME_CONNECT_SOURCES = [
+  "ws://127.0.0.1:*",
+  "http://127.0.0.1:*",
+  "ws://localhost:*",
+  "http://localhost:*",
+  "wss:",
+  "https:",
+] as const;
+
+/** `policy` with `RUNTIME_CONNECT_SOURCES` appended to its `connect-src`. */
+export function withRuntimeConnect(policy: string): string {
+  return policy.replace(
+    /(^|; )connect-src ([^;]*)/,
+    (_whole, lead: string, sources: string) =>
+      `${lead}connect-src ${sources} ${RUNTIME_CONNECT_SOURCES.join(" ")}`,
+  );
+}
+
+/**
+ * The live policy (main's header on app URLs): fixed at boot except for `connect-src`, which
+ * grows as the backend origins become known (P20-10 adds the daemon's WS origin and the serve
+ * REST origin), on top of `RUNTIME_CONNECT_SOURCES`.
  */
 export class CspState {
   private readonly input: CspInput;
@@ -153,7 +178,9 @@ export class CspState {
   }
 
   current(): string {
-    this.cached ??= buildCsp({ ...this.input, connectOrigins: [...this.origins] });
+    this.cached ??= withRuntimeConnect(
+      buildCsp({ ...this.input, connectOrigins: [...this.origins] }),
+    );
     return this.cached;
   }
 }

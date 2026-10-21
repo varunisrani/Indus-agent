@@ -89,6 +89,18 @@ export const installerEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("failed"), stage: z.string().optional(), error: z.string() }),
 ]);
 
+/** The local daemon was restarted after it stopped, or keeps crashing (P20-13). */
+export const backendNotice = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("restarted"), message: z.string() }),
+  z.object({
+    kind: z.literal("crashing"),
+    message: z.string(),
+    exitCode: z.number().int().nullable(),
+    /** The last lines the daemon wrote (redacted). */
+    recentOutput: z.array(z.string()).max(40),
+  }),
+]);
+
 /** Credential-free: tickets come only from `indus:connection:ticket`, tokens never. */
 export const connectionDescriptor = z.object({
   mode: z.enum(["local", "remote"]),
@@ -109,7 +121,11 @@ export const remoteTestResult = z.object({
   message: z.string().optional(),
 });
 
-const remoteInput = z.strictObject({ url: z.url().max(2048), token: z.string().min(1).max(8192) });
+/** `url` is normalised by main (a bare `host:port` gets `http://`); a bad one is `bad-request`. */
+const remoteInput = z.strictObject({
+  url: z.string().min(1).max(2048),
+  token: z.string().min(1).max(8192),
+});
 
 export const apiRequest = z.strictObject({
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
@@ -185,9 +201,15 @@ export const secretsPolicyView = z.object({
 });
 
 const journalEntry = z.object({
-  admissionId: id,
+  /** The client's id for the input (`request_id` on `prompt.submit`). */
+  requestId: id,
   sessionId: id,
   createdAt: z.number(),
+  updatedAt: z.number(),
+  /** `uncertain`: the last send had no definite answer; offer Retry / Dismiss. */
+  state: z.enum(["prepared", "uncertain"]),
+  /** The daemon's admission id, once an answer named one. */
+  admissionId: id.optional(),
   payload: z.unknown(),
 });
 
@@ -225,13 +247,20 @@ export const SCHEMAS = {
   },
   "indus:installer:event": { payload: installerEvent },
   "indus:installer:cancel": { request: none, response: accepted },
+  "indus:backend:notice": { payload: backendNotice },
   "indus:connection:get": {
     request: z.strictObject({ profile: profileName.optional() }).default({}),
     response: connectionDescriptor,
   },
   "indus:connection:ticket": {
     request: z.strictObject({ profile: profileName.optional() }).default({}),
-    response: z.object({ ticket: z.string(), wsUrl: z.string(), expiresInMs: z.number() }),
+    response: z.object({
+      ticket: z.string(),
+      wsUrl: z.string(),
+      expiresInMs: z.number(),
+      /** Offer exactly these WebSocket subprotocols, in order (the URL carries no credential). */
+      protocols: z.array(z.string()).min(1).max(4),
+    }),
   },
   "indus:connection:changed": { payload: connectionDescriptor.nullable() },
   "indus:remote:get": {
@@ -489,13 +518,16 @@ export const SCHEMAS = {
 
   "indus:journal:list": { request: none, response: z.object({ entries: z.array(journalEntry) }) },
   "indus:journal:prepare": {
-    request: z.strictObject({ admissionId: id, sessionId: id, payload: z.unknown() }),
+    request: z.strictObject({ requestId: id, sessionId: id, payload: z.unknown() }),
     response: ok,
   },
   "indus:journal:retire": {
     request: z.strictObject({
-      admissionId: id,
-      receipt: z.strictObject({ outcome: z.enum(["accepted", "rejected", "unknown"]) }),
+      requestId: id,
+      receipt: z.strictObject({
+        outcome: z.enum(["accepted", "rejected", "unknown"]),
+        admissionId: id.optional(),
+      }),
     }),
     response: z.object({ retired: z.boolean() }),
   },

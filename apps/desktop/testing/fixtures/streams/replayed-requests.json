@@ -1,0 +1,76 @@
+{
+  "name": "replayed-requests",
+  "description": "An approval offered live, offered again after a reconnect (replayed) and once more after the answer; exactly one answer may reach the wire.",
+  "session_id": "s1",
+  "frames": [
+    {
+      "op": "offer",
+      "request": {
+        "request_id": "srq-000000000001",
+        "session_id": "s1",
+        "kind": "approval",
+        "turn_id": "t1",
+        "command": "rm -rf build",
+        "description": "deletes the build folder",
+        "choices": ["once", "session", "always", "deny"]
+      },
+      "replayed": false,
+      "generation": 1
+    },
+    {
+      "op": "reconnect"
+    },
+    {
+      "op": "offer",
+      "request": {
+        "request_id": "srq-000000000001",
+        "session_id": "s1",
+        "kind": "approval",
+        "turn_id": "t1",
+        "command": "rm -rf build",
+        "description": "deletes the build folder",
+        "choices": ["once", "session", "always", "deny"]
+      },
+      "replayed": true,
+      "generation": 1
+    },
+    {
+      "op": "answer",
+      "request_id": "srq-000000000001",
+      "answer": {
+        "kind": "approval",
+        "choice": "once"
+      }
+    },
+    {
+      "op": "answer",
+      "request_id": "srq-000000000001",
+      "answer": {
+        "kind": "approval",
+        "choice": "deny"
+      }
+    },
+    {
+      "op": "offer",
+      "request": {
+        "request_id": "srq-000000000001",
+        "session_id": "s1",
+        "kind": "approval",
+        "turn_id": "t1",
+        "command": "rm -rf build",
+        "description": "deletes the build folder",
+        "choices": ["once", "session", "always", "deny"]
+      },
+      "replayed": true,
+      "generation": 1
+    }
+  ],
+  "expect": {
+    "cards_max": 1,
+    "answers_on_wire": 1,
+    "answer": {
+      "kind": "approval",
+      "choice": "once"
+    }
+  }
+}

@@ -7,6 +7,7 @@ import {
   cspOrigin,
   injectCspMeta,
   installCspHeaders,
+  RUNTIME_CONNECT_SOURCES,
   withCspHeader,
 } from "./csp.ts";
 
@@ -63,6 +64,15 @@ describe("CSP", () => {
     state.addConnectOrigin("ws://127.0.0.1:41000");
     state.addConnectOrigin("ws://127.0.0.1:41000/");
     expect(state.current().match(/ws:\/\/127\.0\.0\.1:41000/g)).toHaveLength(1);
+  });
+
+  it("CspState's header lets a page loaded before the boot reach the backend it finds", () => {
+    const connect = new CspState({ dev: false })
+      .current()
+      .split("; ")
+      .find((directive) => directive.startsWith("connect-src "));
+    for (const source of RUNTIME_CONNECT_SOURCES) expect(connect).toContain(` ${source}`);
+    expect(new CspState({ dev: false }).current()).toMatch(/script-src 'self';/);
   });
 
   it("meta injection: one tag, first in head", () => {

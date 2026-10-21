@@ -11,6 +11,18 @@ export interface BackoffOptions {
   random?: () => number;
 }
 
+/** The desktop's ladder (P20-17): full jitter, base 300 ms, cap 15 s; the desktop resets it only
+ * after a socket stayed open 5 s, so a flapping link keeps backing off. */
+export const DESKTOP_BACKOFF: Readonly<
+  Required<Pick<BackoffOptions, "baseMs" | "capMs" | "jitter">>
+> &
+  Readonly<{ resetAfterOpenMs: number }> = {
+  baseMs: 300,
+  capMs: 15_000,
+  jitter: "full",
+  resetAfterOpenMs: 5_000,
+};
+
 /** Wait before attempt `attempt` (1-based): base · 2^(attempt−1), capped; jittered if asked. */
 export function backoffDelay(attempt: number, options: BackoffOptions = {}): number {
   const base = options.baseMs ?? BACKOFF_BASE_MS;

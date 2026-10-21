@@ -94,6 +94,8 @@ export interface ChannelOptions {
   clock?: Clock;
   /** Default call timeout (already resolved from env by the host). */
   timeoutMs?: number;
+  /** Deadline for sending a server-request answer or decline (default: `timeoutMs`). */
+  answerTimeoutMs?: number;
   /** Every inbound notification that is not a server request (events). */
   onNotification?: (method: string, params: unknown) => void;
   /** Called for every inbound frame of the current transport (liveness). */
@@ -254,9 +256,11 @@ export class RpcChannel {
     if (entry.request.via === "server_request" && this.serverCapabilities.has(DECLINE_CAPABILITY)) {
       if (!this.finish(requestId)) return false;
       const payload = entry.payload as ServerRequest;
-      this.call(DECLINE_METHOD, { session_id: payload.session_id, request_id: requestId }).catch(
-        (error: unknown) => this.undelivered(requestId, error, "decline"),
-      );
+      this.call(
+        DECLINE_METHOD,
+        { session_id: payload.session_id, request_id: requestId },
+        this.answerOptions(),
+      ).catch((error: unknown) => this.undelivered(requestId, error, "decline"));
       entry.controller.abort();
       return true;
     }
@@ -556,12 +560,16 @@ export class RpcChannel {
       return;
     }
     const payload = entry.payload as ServerRequest;
-    this.call(ANSWER_METHOD, {
-      session_id: payload.session_id,
-      request_id: payload.request_id,
-      answer: value,
-      ...(generation === undefined ? {} : { generation }),
-    }).catch((error: unknown) => this.undelivered(request.id, error, "answer"));
+    this.call(
+      ANSWER_METHOD,
+      {
+        session_id: payload.session_id,
+        request_id: payload.request_id,
+        answer: value,
+        ...(generation === undefined ? {} : { generation }),
+      },
+      this.answerOptions(),
+    ).catch((error: unknown) => this.undelivered(request.id, error, "answer"));
   }
 
   /**
@@ -661,6 +669,12 @@ export class RpcChannel {
     }
     this.held = [];
     this.diagnose(`connection ${why}`);
+  }
+
+  private answerOptions(): CallOptions {
+    return this.options.answerTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: this.options.answerTimeoutMs };
   }
 
   private diagnose(line: string): void {

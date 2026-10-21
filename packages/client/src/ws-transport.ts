@@ -16,6 +16,15 @@ import { parseFrameLine, preview } from "./ndjson.ts";
 export const GATEWAY_SUBPROTOCOL = "indus-gateway-v1";
 /** The prefix of the single-use ticket subprotocol. */
 export const TICKET_SUBPROTOCOL_PREFIX = "indus-gateway-ticket.";
+/** The remote (`indus serve`) dashboard socket's protocol and its ticket prefix (P20-11). */
+export const DASHBOARD_SUBPROTOCOL = "indus-dashboard-v1";
+export const DASHBOARD_TICKET_PREFIX = "indus-dashboard-ticket.";
+
+/** Accepted protocol families: the protocol first, then at most one ticket of the same family. */
+const FAMILIES: ReadonlyArray<readonly [string, string]> = [
+  [GATEWAY_SUBPROTOCOL, TICKET_SUBPROTOCOL_PREFIX],
+  [DASHBOARD_SUBPROTOCOL, DASHBOARD_TICKET_PREFIX],
+];
 /** How long the opening handshake may take (research 08 §3.9: connect 15,000 ms). */
 export const WS_OPEN_TIMEOUT_MS = 15_000;
 
@@ -85,15 +94,12 @@ export function attachUrlProblem(url: string): string | null {
 
 /** Why a subprotocol list may not be offered, or null when it may. */
 export function protocolsProblem(protocols: readonly string[]): string | null {
-  if (protocols[0] !== GATEWAY_SUBPROTOCOL)
-    return `the first subprotocol must be ${GATEWAY_SUBPROTOCOL}`;
+  const family = FAMILIES.find(([name]) => name === protocols[0]);
+  if (family === undefined) return `the first subprotocol must be ${GATEWAY_SUBPROTOCOL}`;
+  const prefix = family[1];
   const rest = protocols.slice(1);
   if (rest.length > 1) return "at most one ticket subprotocol";
-  if (
-    rest.some((p) => !p.startsWith(TICKET_SUBPROTOCOL_PREFIX) || p === TICKET_SUBPROTOCOL_PREFIX)
-  ) {
-    return "unexpected subprotocol";
-  }
+  if (rest.some((p) => !p.startsWith(prefix) || p === prefix)) return "unexpected subprotocol";
   return null;
 }
 
@@ -225,7 +231,7 @@ export class WsTransport implements Transport {
     if (this.closed) return;
     this.clearOpenTimer();
     const chosen = this.socket?.protocol ?? "";
-    if (chosen !== GATEWAY_SUBPROTOCOL) {
+    if (chosen !== this.options.protocols[0]) {
       this.log(`[lifecycle] the server chose another subprotocol; closing`);
       this.abandon("unexpected subprotocol", true);
       return;

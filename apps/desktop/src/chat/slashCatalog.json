@@ -1,0 +1,485 @@
+{
+  "source": "src/indus/service/commands/registry.py via scripts/dump-slash-catalog.mjs",
+  "commands": [
+    {
+      "name": "new",
+      "aliases": ["reset"],
+      "description": "Start a fresh session; add a name to title it, 'now' or -y to skip the question",
+      "category": "session",
+      "argsHint": "[name] [now|-y]",
+      "desktop": true
+    },
+    {
+      "name": "clear",
+      "aliases": [],
+      "description": "Clear the screen and start a fresh session",
+      "category": "session",
+      "argsHint": "",
+      "desktop": false
+    },
+    {
+      "name": "history",
+      "aliases": [],
+      "description": "Show this conversation so far",
+      "category": "session",
+      "argsHint": "",
+      "desktop": false
+    },
+    {
+      "name": "title",
+      "aliases": [],
+      "description": "Show or set the title of this session",
+      "category": "session",
+      "argsHint": "[name]",
+      "desktop": true
+    },
+    {
+      "name": "resume",
+      "aliases": [],
+      "description": "Switch to an earlier session by title, id or list number",
+      "category": "session",
+      "argsHint": "[name|number]",
+      "desktop": true
+    },
+    {
+      "name": "sessions",
+      "aliases": [],
+      "description": "List recent sessions to pick one to resume",
+      "category": "session",
+      "argsHint": "[name|number]",
+      "desktop": true
+    },
+    {
+      "name": "retry",
+      "aliases": [],
+      "description": "Take back your last message and send it again",
+      "category": "session",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "undo",
+      "aliases": [],
+      "description": "Take back your last N messages and their replies (default 1)",
+      "category": "session",
+      "argsHint": "[N]",
+      "desktop": true
+    },
+    {
+      "name": "save",
+      "aliases": [],
+      "description": "Write this conversation to a file as JSON lines, Markdown or HTML",
+      "category": "session",
+      "argsHint": "json|md|html [file]",
+      "desktop": true
+    },
+    {
+      "name": "branch",
+      "aliases": ["fork"],
+      "description": "Copy this conversation into a new session and continue there",
+      "category": "session",
+      "argsHint": "[name]",
+      "desktop": true
+    },
+    {
+      "name": "stop",
+      "aliases": [],
+      "description": "Stop the running reply and this session's background processes",
+      "category": "session",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "steer",
+      "aliases": ["s"],
+      "description": "Add guidance to the running reply after its next tool call",
+      "category": "session",
+      "argsHint": "<text>",
+      "desktop": true
+    },
+    {
+      "name": "queue",
+      "aliases": ["q"],
+      "description": "Line up a message for after the current reply; list, clear or remove queued ones",
+      "category": "session",
+      "argsHint": "<text>|add <text>|list|clear|rm N",
+      "desktop": true
+    },
+    {
+      "name": "compress",
+      "aliases": ["compact"],
+      "description": "Summarise older turns to free context",
+      "category": "session",
+      "argsHint": "[focus]",
+      "desktop": true
+    },
+    {
+      "name": "status",
+      "aliases": [],
+      "description": "Show the session, model and approval state",
+      "category": "session",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "context",
+      "aliases": ["ctx"],
+      "description": "Show how much of the context window is in use",
+      "category": "session",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "btw",
+      "aliases": [],
+      "description": "Ask a side question without changing the conversation",
+      "category": "session",
+      "argsHint": "<question>",
+      "desktop": true
+    },
+    {
+      "name": "goal",
+      "aliases": [],
+      "description": "Set a standing goal the agent keeps working towards",
+      "category": "session",
+      "argsHint": "<objective> [--max-turns N] [--gate \"cmd\"]|status|pause|resume|clear",
+      "desktop": true
+    },
+    {
+      "name": "subgoal",
+      "aliases": [],
+      "description": "Add, tick off or list extra criteria of the current goal",
+      "category": "session",
+      "argsHint": "add <text>|done N|list",
+      "desktop": true
+    },
+    {
+      "name": "loop",
+      "aliases": ["proactive"],
+      "description": "Repeat a prompt in this session on an interval",
+      "category": "session",
+      "argsHint": "<interval|auto> <prompt> [--times N] [--until \"condition\"]|list|stop [id]",
+      "desktop": true
+    },
+    {
+      "name": "heartbeat",
+      "aliases": ["hb"],
+      "description": "Send a recurring prompt into this session while it is idle",
+      "category": "session",
+      "argsHint": "every <interval> <prompt>|list|pause [id]|resume [id]|stop [id]",
+      "desktop": true
+    },
+    {
+      "name": "moa",
+      "aliases": [],
+      "description": "Answer with the advice of several models (this prompt, or on/off for the session)",
+      "category": "session",
+      "argsHint": "[preset] <prompt>|on [preset]|off|status",
+      "desktop": true
+    },
+    {
+      "name": "agents",
+      "aliases": ["tasks"],
+      "description": "Show running helper agents and background tasks",
+      "category": "session",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "refine",
+      "aliases": [],
+      "description": "Review this conversation now and keep what was learned",
+      "category": "session",
+      "argsHint": "[focus]",
+      "desktop": true
+    },
+    {
+      "name": "journey",
+      "aliases": ["learning"],
+      "description": "Browse what the agent has learned over time",
+      "category": "session",
+      "argsHint": "[list|delete <id>|edit <id>]",
+      "desktop": false
+    },
+    {
+      "name": "rollback",
+      "aliases": [],
+      "description": "List or restore file checkpoints",
+      "category": "session",
+      "argsHint": "[N [file]|diff N|--all]",
+      "desktop": true
+    },
+    {
+      "name": "worktree",
+      "aliases": [],
+      "description": "Create, list or prune isolated git worktrees",
+      "category": "session",
+      "argsHint": "[list|new [name]|prune [--dry-run]]",
+      "desktop": false
+    },
+    {
+      "name": "approve",
+      "aliases": [],
+      "description": "Approve the command waiting for an answer",
+      "category": "session",
+      "argsHint": "[session|always]",
+      "desktop": false
+    },
+    {
+      "name": "deny",
+      "aliases": [],
+      "description": "Refuse the command waiting for an answer",
+      "category": "session",
+      "argsHint": "[reason]",
+      "desktop": false
+    },
+    {
+      "name": "bg",
+      "aliases": ["background"],
+      "description": "Run a prompt in a separate background session and post the result here",
+      "category": "session",
+      "argsHint": "<prompt>",
+      "desktop": false
+    },
+    {
+      "name": "model",
+      "aliases": [],
+      "description": "Show or switch the model; --global also saves it",
+      "category": "config",
+      "argsHint": "[provider:model] [--provider name] [--global]",
+      "desktop": true
+    },
+    {
+      "name": "reasoning",
+      "aliases": [],
+      "description": "Show or set reasoning effort, or show/hide reasoning text",
+      "category": "config",
+      "argsHint": "[level|show|hide] [--global]",
+      "desktop": true
+    },
+    {
+      "name": "yolo",
+      "aliases": [],
+      "description": "Turn auto-approval of risky commands on or off for this session",
+      "category": "config",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "approvals",
+      "aliases": [],
+      "description": "Show or save how risky commands are approved",
+      "category": "config",
+      "argsHint": "[manual|smart|off]",
+      "desktop": true
+    },
+    {
+      "name": "fast",
+      "aliases": [],
+      "description": "Ask the provider for faster processing",
+      "category": "config",
+      "argsHint": "[normal|fast|auto|status] [--global]",
+      "desktop": true
+    },
+    {
+      "name": "config",
+      "aliases": [],
+      "description": "Show the effective settings with secrets masked",
+      "category": "config",
+      "argsHint": "",
+      "desktop": false
+    },
+    {
+      "name": "sethome",
+      "aliases": [],
+      "description": "Make this chat the home channel for scheduled results and notices",
+      "category": "config",
+      "argsHint": "",
+      "desktop": false
+    },
+    {
+      "name": "platform",
+      "aliases": [],
+      "description": "List messaging platforms, or pause / resume one",
+      "category": "config",
+      "argsHint": "[list|pause|resume] [name]",
+      "desktop": false
+    },
+    {
+      "name": "verbose",
+      "aliases": [],
+      "description": "Change how much tool activity this chat shows",
+      "category": "config",
+      "argsHint": "[off|new|all|verbose]",
+      "desktop": false
+    },
+    {
+      "name": "personality",
+      "aliases": [],
+      "description": "Show or pick the agent's personality",
+      "category": "config",
+      "argsHint": "[name]",
+      "desktop": false
+    },
+    {
+      "name": "voice",
+      "aliases": [],
+      "description": "Turn voice input and spoken replies on or off",
+      "category": "config",
+      "argsHint": "[on|off|status]",
+      "desktop": true
+    },
+    {
+      "name": "tools",
+      "aliases": [],
+      "description": "List tools, or enable/disable toolsets (starts a fresh session)",
+      "category": "tools",
+      "argsHint": "[list|enable|disable] [name...]",
+      "desktop": false
+    },
+    {
+      "name": "skills",
+      "aliases": [],
+      "description": "Find, install and manage skills",
+      "category": "tools",
+      "argsHint": "[list|view|reload|pending|approve|reject|search|install] [name|id|query]",
+      "desktop": true
+    },
+    {
+      "name": "reload-skills",
+      "aliases": [],
+      "description": "Rescan skill folders and refresh skill commands (the prompt stays as it is)",
+      "category": "tools",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "bundles",
+      "aliases": [],
+      "description": "List skill bundles (each runs as its own /command)",
+      "category": "tools",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "memory",
+      "aliases": [],
+      "description": "Review memory writes waiting for approval",
+      "category": "tools",
+      "argsHint": "[pending|approve|reject|approval|status] [id|all|on|off]",
+      "desktop": true
+    },
+    {
+      "name": "learn",
+      "aliases": [],
+      "description": "Turn something you describe into a reusable skill",
+      "category": "tools",
+      "argsHint": "<what to learn from>",
+      "desktop": true
+    },
+    {
+      "name": "curator",
+      "aliases": [],
+      "description": "Background upkeep of skills",
+      "category": "tools",
+      "argsHint": "[status|run|pause|resume]",
+      "desktop": true
+    },
+    {
+      "name": "browser",
+      "aliases": [],
+      "description": "Connect the browser tools to a running browser",
+      "category": "tools",
+      "argsHint": "[connect <cdp-url>|disconnect|status|use local]",
+      "desktop": false
+    },
+    {
+      "name": "checkpoints",
+      "aliases": [],
+      "description": "Turn file checkpoints on or off",
+      "category": "tools",
+      "argsHint": "[on|off|status]",
+      "desktop": true
+    },
+    {
+      "name": "mcp",
+      "aliases": [],
+      "description": "Show connected MCP servers",
+      "category": "tools",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "reload-mcp",
+      "aliases": ["reload_mcp"],
+      "description": "Reconnect MCP servers from the config",
+      "category": "tools",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "plugins",
+      "aliases": [],
+      "description": "List plugins, or enable/disable one for this profile",
+      "category": "tools",
+      "argsHint": "[list|enable|disable] [name]",
+      "desktop": false
+    },
+    {
+      "name": "cron",
+      "aliases": [],
+      "description": "Manage scheduled jobs",
+      "category": "tools",
+      "argsHint": "[subcommand]",
+      "desktop": false
+    },
+    {
+      "name": "help",
+      "aliases": [],
+      "description": "List commands; add a word to filter them",
+      "category": "info",
+      "argsHint": "[filter]",
+      "desktop": true
+    },
+    {
+      "name": "commands",
+      "aliases": [],
+      "description": "List every command you can run here, names only",
+      "category": "info",
+      "argsHint": "",
+      "desktop": false
+    },
+    {
+      "name": "usage",
+      "aliases": [],
+      "description": "Show token use and cost of this session",
+      "category": "info",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "whoami",
+      "aliases": [],
+      "description": "Show the profile, home and session you are on",
+      "category": "info",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "version",
+      "aliases": ["v"],
+      "description": "Show the Indus Agent version",
+      "category": "info",
+      "argsHint": "",
+      "desktop": true
+    },
+    {
+      "name": "quit",
+      "aliases": ["exit"],
+      "description": "Leave Indus Agent",
+      "category": "exit",
+      "argsHint": "",
+      "desktop": false
+    }
+  ]
+}

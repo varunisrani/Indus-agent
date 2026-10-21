@@ -58,6 +58,8 @@ export interface IndusClientOptions {
   clock?: Clock;
   /** Default call timeout (resolve `INDUS_TUI_RPC_TIMEOUT_MS` with `rpcTimeoutFromEnv`). */
   timeoutMs?: number;
+  /** Deadline for sending a server-request answer (default: `timeoutMs`). */
+  answerTimeoutMs?: number;
   /** Redial after an unexpected close; off by default (the TUI app owns child restarts). */
   reconnect?: false | BackoffOptions;
   heartbeat?: { intervalMs?: number; deadlineMs?: number; maxOutstanding?: number };
@@ -101,6 +103,9 @@ export class IndusClient {
       onClose: (info: CloseInfo) => this.onTransportClosed(info),
       onDiagnostic: (line: string) => this.logs.push(line),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.answerTimeoutMs === undefined
+        ? {}
+        : { answerTimeoutMs: options.answerTimeoutMs }),
       ...(options.onUnknownErrorCode === undefined
         ? {}
         : { onUnknownErrorCode: options.onUnknownErrorCode }),

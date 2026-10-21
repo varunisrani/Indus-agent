@@ -1,0 +1,134 @@
+{
+  "name": "basic",
+  "description": "One streamed turn, then the stored conversation is loaded.",
+  "session_id": "s1",
+  "steps": [
+    {
+      "op": "local_user",
+      "local": "L1",
+      "text": "say hello"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 1,
+        "type": "turn.started",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "generation": 1
+      }
+    },
+    {
+      "op": "bind",
+      "local": "L1",
+      "turn_id": "t1"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 2,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "Hel"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 3,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "lo, "
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 4,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "world"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 5,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "!"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 6,
+        "type": "message.complete",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "Hello, world!",
+        "reason": "completed"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 7,
+        "type": "turn.done",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "reason": "completed"
+      }
+    },
+    {
+      "op": "hydrate",
+      "id": "h1",
+      "rows": [
+        {
+          "role": "user",
+          "text": "say hello",
+          "row_id": 1
+        },
+        {
+          "role": "assistant",
+          "text": "Hello, world!",
+          "row_id": 2
+        }
+      ]
+    },
+    {
+      "op": "resolve",
+      "id": "h1"
+    }
+  ],
+  "streamed": {
+    "t1": {
+      "text": "Hello, world!",
+      "reasoning": "",
+      "final": "Hello, world!"
+    }
+  },
+  "history_after": [
+    {
+      "role": "user",
+      "text": "say hello",
+      "row_id": 1
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, world!",
+      "row_id": 2
+    }
+  ]
+}

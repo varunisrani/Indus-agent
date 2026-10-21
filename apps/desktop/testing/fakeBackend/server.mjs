@@ -65,7 +65,16 @@ function digest(ticket) {
 function mintTicket(purpose) {
   if (purpose !== "ws-interactive")
     return { ok: false, error: "bad_purpose", detail: "unknown ticket purpose" };
+  // Counted per home, across daemon starts: "the first N mints for this profile fail" (a restart
+  // does not re-arm the failure).
+  const counter = path.join(home, "fake-ticket-mints.json");
+  try {
+    mints = JSON.parse(fs.readFileSync(counter, "utf8")).count ?? mints;
+  } catch {
+    // first mint for this home
+  }
   mints += 1;
+  writeState(counter, { count: mints });
   const failFirst = scenario.tickets?.failFirst ?? 0;
   if (mints <= failFirst) {
     return {

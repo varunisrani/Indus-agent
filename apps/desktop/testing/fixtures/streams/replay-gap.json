@@ -1,0 +1,115 @@
+{
+  "name": "replay-gap",
+  "description": "The daemon restarted (new epoch): a replay gap forces a fresh snapshot that holds a turn another window finished.",
+  "session_id": "s1",
+  "steps": [
+    {
+      "op": "hydrate",
+      "id": "h0",
+      "rows": [
+        {
+          "role": "user",
+          "text": "first question",
+          "row_id": 1
+        },
+        {
+          "role": "assistant",
+          "text": "First answer.",
+          "row_id": 2
+        }
+      ]
+    },
+    {
+      "op": "resolve",
+      "id": "h0"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 7,
+        "type": "turn.started",
+        "replay_epoch": "e1",
+        "turn_id": "t9",
+        "generation": 9
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 8,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t9",
+        "text": "Partial"
+      }
+    },
+    {
+      "op": "reconnect"
+    },
+    {
+      "op": "event",
+      "event": {
+        "type": "session.replay_gap",
+        "session_id": "s1",
+        "replay_epoch": "e2",
+        "last_seq": 3,
+        "reason": "epoch_changed"
+      }
+    },
+    {
+      "op": "hydrate",
+      "id": "h1",
+      "rows": [
+        {
+          "role": "user",
+          "text": "first question",
+          "row_id": 1
+        },
+        {
+          "role": "assistant",
+          "text": "First answer.",
+          "row_id": 2
+        },
+        {
+          "role": "user",
+          "text": "from another window",
+          "row_id": 3
+        },
+        {
+          "role": "assistant",
+          "text": "Partial reply, finished elsewhere.",
+          "row_id": 4
+        }
+      ]
+    },
+    {
+      "op": "resolve",
+      "id": "h1"
+    }
+  ],
+  "streamed": {},
+  "history_after": [
+    {
+      "role": "user",
+      "text": "first question",
+      "row_id": 1
+    },
+    {
+      "role": "assistant",
+      "text": "First answer.",
+      "row_id": 2
+    },
+    {
+      "role": "user",
+      "text": "from another window",
+      "row_id": 3
+    },
+    {
+      "role": "assistant",
+      "text": "Partial reply, finished elsewhere.",
+      "row_id": 4
+    }
+  ]
+}

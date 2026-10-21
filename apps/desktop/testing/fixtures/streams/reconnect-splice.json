@@ -1,0 +1,211 @@
+{
+  "name": "reconnect-splice",
+  "description": "The link drops after seq 5; the replay re-sends seq 3 to 10 (3 to 5 are duplicates).",
+  "session_id": "s1",
+  "steps": [
+    {
+      "op": "local_user",
+      "local": "L1",
+      "text": "count to seven"
+    },
+    {
+      "op": "bind",
+      "local": "L1",
+      "turn_id": "t1"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 1,
+        "type": "turn.started",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "generation": 1
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 2,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "One "
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 3,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "two "
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 4,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "three "
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 5,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "four "
+      }
+    },
+    {
+      "op": "reconnect"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 3,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "two "
+      },
+      "replayed": true
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 4,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "three "
+      },
+      "replayed": true
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 5,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "four "
+      },
+      "replayed": true
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 6,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "five "
+      },
+      "replayed": true
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 7,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "six "
+      },
+      "replayed": true
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 8,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "seven."
+      },
+      "replayed": true
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 9,
+        "type": "message.complete",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "One two three four five six seven.",
+        "reason": "completed"
+      },
+      "replayed": true
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 10,
+        "type": "turn.done",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "reason": "completed"
+      },
+      "replayed": true
+    },
+    {
+      "op": "hydrate",
+      "id": "h1",
+      "rows": [
+        {
+          "role": "user",
+          "text": "count to seven",
+          "row_id": 1
+        },
+        {
+          "role": "assistant",
+          "text": "One two three four five six seven.",
+          "row_id": 2
+        }
+      ]
+    },
+    {
+      "op": "resolve",
+      "id": "h1"
+    }
+  ],
+  "streamed": {
+    "t1": {
+      "text": "One two three four five six seven.",
+      "reasoning": "",
+      "final": "One two three four five six seven."
+    }
+  },
+  "history_after": [
+    {
+      "role": "user",
+      "text": "count to seven",
+      "row_id": 1
+    },
+    {
+      "role": "assistant",
+      "text": "One two three four five six seven.",
+      "row_id": 2
+    }
+  ]
+}

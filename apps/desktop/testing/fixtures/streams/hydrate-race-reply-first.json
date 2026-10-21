@@ -1,0 +1,148 @@
+{
+  "name": "hydrate-race-reply-first",
+  "description": "The reply completes before a history load asked mid-turn resolves (stale snapshot).",
+  "session_id": "s1",
+  "steps": [
+    {
+      "op": "hydrate",
+      "id": "h0",
+      "rows": [
+        {
+          "role": "user",
+          "text": "first question",
+          "row_id": 1
+        },
+        {
+          "role": "assistant",
+          "text": "First answer.",
+          "row_id": 2
+        }
+      ]
+    },
+    {
+      "op": "resolve",
+      "id": "h0"
+    },
+    {
+      "op": "local_user",
+      "local": "L2",
+      "text": "second question"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 1,
+        "type": "turn.started",
+        "replay_epoch": "e1",
+        "turn_id": "t2",
+        "generation": 2
+      }
+    },
+    {
+      "op": "bind",
+      "local": "L2",
+      "turn_id": "t2"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 2,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t2",
+        "text": "Second answer"
+      }
+    },
+    {
+      "op": "hydrate",
+      "id": "h1",
+      "rows": [
+        {
+          "role": "user",
+          "text": "first question",
+          "row_id": 1
+        },
+        {
+          "role": "assistant",
+          "text": "First answer.",
+          "row_id": 2
+        },
+        {
+          "role": "user",
+          "text": "second question",
+          "row_id": 3
+        }
+      ]
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 3,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t2",
+        "text": ", complete."
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 4,
+        "type": "message.complete",
+        "replay_epoch": "e1",
+        "turn_id": "t2",
+        "text": "Second answer, complete.",
+        "reason": "completed"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 5,
+        "type": "turn.done",
+        "replay_epoch": "e1",
+        "turn_id": "t2",
+        "reason": "completed"
+      }
+    },
+    {
+      "op": "resolve",
+      "id": "h1"
+    }
+  ],
+  "streamed": {
+    "t2": {
+      "text": "Second answer, complete.",
+      "reasoning": "",
+      "final": "Second answer, complete."
+    }
+  },
+  "history_after": [
+    {
+      "role": "user",
+      "text": "first question",
+      "row_id": 1
+    },
+    {
+      "role": "assistant",
+      "text": "First answer.",
+      "row_id": 2
+    },
+    {
+      "role": "user",
+      "text": "second question",
+      "row_id": 3
+    },
+    {
+      "role": "assistant",
+      "text": "Second answer, complete.",
+      "row_id": 4
+    }
+  ],
+  "final_hydrate": true
+}

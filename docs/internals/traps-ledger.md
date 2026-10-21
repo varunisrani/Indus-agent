@@ -409,6 +409,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/service/test_fences.py::test_stop_of_an_unknown_admission_changes_nothing`
   - `tests/unit/service/test_admissions.py::test_discard_closes_the_lost_turn_in_its_transcript`
   - `tests/integration/gateway/test_boot_recovery.py::test_resolve_unknown_discards_the_lost_admission_and_closes_its_transcript`
+  - `apps/desktop/src/chat/busyActions.test.ts::an unknown turn shows one Discard, blocks the queue and is never resubmitted`
 - **R03.22** Deleted ids must stay dead
   - `tests/unit/state/test_deletion.py::test_deleted_id_cannot_be_recreated`
   - `tests/unit/state/test_deletion.py::test_sweep_never_weakens_a_user_tombstone`
@@ -1053,20 +1054,27 @@ Checked by `python -m tooling.checks traps`.
 - **R07.30** Reference doc drift
   - Review: not yet planned (P00-guards)
 - **R08.1** Attempt fencing on backend start
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/boot/orchestrator.test.ts::overlapping starts: the older finishing last publishes nothing and keeps the newer pin`
+  - `apps/desktop/electron/boot/orchestrator.test.ts::an older attempt failing late does not clear the newer pin or publish an error`
 - **R08.2** Failure latching rules
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/boot/orchestrator.test.ts::a local failure latches: a retried start rethrows silently without running anything`
+  - `apps/desktop/electron/boot/orchestrator.test.ts::an installer failure: Retry never re-runs the installer (spy) until Repair`
+  - `apps/desktop/src/boot/BootOverlay.test.tsx::a latched failure shows Repair at once and is not retried automatically`
 - **R08.3** Single-instance lock before any process machinery
   - Review: not yet planned (P00-guards)
 - **R08.4** One-use credentials
-  - Review: not yet planned (P00-guards)
   - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
   - `tests/unit/service/test_ws_auth.py::test_a_ticket_from_another_daemon_start_is_unknown`
   - `tests/unit/service/test_ws_auth.py::test_upgrade_accepts_once_and_echoes_only_the_base_protocol`
   - `tests/unit/gateway/daemon/test_attach_verbs.py::test_round_trip_describe_ticket_upgrade`
   - `tests/unit/service/remote/test_channel.py::test_each_reconnect_mints_a_new_ticket`
+  - `apps/desktop/electron/backend/tickets.test.ts::two dials get two distinct tickets; the fake refuses a reused one`
+  - `apps/desktop/electron/backend/tickets.test.ts::inside Electron (no subprotocol header) a local dial is matched by window and exact URL`
+  - `apps/desktop/src/gateway/connectionStore.test.ts::dials with a fresh single-use ticket offered only as a subprotocol`
+  - `apps/desktop/testing/electron/wiredApp.electron.test.ts::fake backend: boot, connect, prompt, streamed reply, one approval answered once`
 - **R08.5** Connection test must cover the used leg
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/backend/remote.test.ts::HTTP ok + WS 4401 → not saved, error shown`
+  - `apps/desktop/electron/backend/remote.test.ts::both legs pass → saved; the token goes to the secrets store, not the file`
 - **R08.6** Soft vs hard re-home
   - Review: not yet planned (P00-guards)
 - **R08.7** Profile-keyed storage on rename
@@ -1083,7 +1091,8 @@ Checked by `python -m tooling.checks traps`.
 - **R08.11** Canonical bot chat identity
   - Review: not yet planned (P00-guards)
 - **R08.12** Slash curation hiding user extensions
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/src/chat/slash.test.ts::a new skill command appears in both completion paths`
+  - `apps/desktop/src/chat/slash.test.ts::hides only known built-ins without a desktop surface`
 - **R08.13** Update concurrency
   - Review: not yet planned (P00-guards)
 - **R08.14** New runtime under an old renderer
@@ -1093,11 +1102,18 @@ Checked by `python -m tooling.checks traps`.
 - **R08.16** GUI PATH
   - Review: not yet planned (P00-guards)
 - **R08.17** Sandbox/GPU crash loops
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/quitGuard.test.ts::a known GPU crash signature → one relaunch with the GPU disabled`
+  - `apps/desktop/electron/quitGuard.test.ts::the relaunch never turns the sandbox off`
 - **R08.18** Installer stage host deaths
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/installer/runner.test.ts::host death without a result frame is retried 3 times, then the run fails`
+  - `apps/desktop/electron/installer/runner.test.ts::a grandchild holding stdout: the run finishes once the 20 s grace runs out (fake clock)`
+  - `apps/desktop/electron/installer/runner.test.ts::the script is fetched fresh on every run; stage hosts are claimed and released`
 - **R08.19** Stale async results in the renderer
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/src/gateway/serverRequests.test.ts::a re-offered approval stays one card and is answered once on the wire`
+  - `apps/desktop/src/gateway/react.test.tsx::open requests come bound to the store: the first answer wins, a second is refused`
+  - `apps/desktop/src/chat/cards/CardStack.test.tsx::a real click or the keyboard answers, once`
+  - `apps/desktop/src/gateway/connectionStore.test.ts::drops a replay result that belongs to an older connection`
+  - `apps/desktop/src/chat/slash.test.ts::late results after a session switch are dropped`
 - **R08.20** Background focus theft
   - Review: not yet planned (P00-guards)
 - **R08.21** Deep links during boot
@@ -1105,9 +1121,10 @@ Checked by `python -m tooling.checks traps`.
 - **R08.22** Code signing order
   - Review: not yet planned (P00-guards)
 - **R08.23** Remote execution boundary
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/src/chat/composer/Composer.test.tsx::remote mode uploads bytes: no client path reaches the remote host`
 - **R08.24** Quit semantics with attached gateways
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/quitGuard.test.ts::attached local daemon with running turns → informational prompt, nothing is stopped`
+  - `apps/desktop/electron/backend/supervisor.test.ts::a daemon this app only attached to is never restarted`
 - **R09.1** Do not rebuild the chat in React
   - Review: not yet planned (P00-guards)
   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`

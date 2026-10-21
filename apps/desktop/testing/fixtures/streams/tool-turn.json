@@ -1,0 +1,209 @@
+{
+  "name": "tool-turn",
+  "description": "Reasoning, an interim message, one tool call and the closing reply.",
+  "session_id": "s1",
+  "steps": [
+    {
+      "op": "local_user",
+      "local": "L1",
+      "text": "list the files"
+    },
+    {
+      "op": "bind",
+      "local": "L1",
+      "turn_id": "t1"
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 1,
+        "type": "turn.started",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "generation": 3
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 2,
+        "type": "reasoning.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "The user wants "
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 3,
+        "type": "reasoning.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "a listing."
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 4,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "Let me look."
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 5,
+        "type": "tool.started",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "call_id": "c1",
+        "name": "terminal",
+        "arguments": {
+          "command": "ls"
+        }
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 6,
+        "type": "tool.progress",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "call_id": "c1",
+        "message": "running"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 7,
+        "type": "tool.completed",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "call_id": "c1",
+        "name": "terminal",
+        "ok": true,
+        "duration_ms": 12,
+        "result": "a.txt\nb.txt"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 8,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "There are "
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 9,
+        "type": "message.delta",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "two files."
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 10,
+        "type": "message.complete",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "text": "There are two files.",
+        "reason": "completed"
+      }
+    },
+    {
+      "op": "event",
+      "event": {
+        "session_id": "s1",
+        "seq": 11,
+        "type": "turn.done",
+        "replay_epoch": "e1",
+        "turn_id": "t1",
+        "reason": "completed"
+      }
+    },
+    {
+      "op": "hydrate",
+      "id": "h1",
+      "rows": [
+        {
+          "role": "user",
+          "text": "list the files",
+          "row_id": 1
+        },
+        {
+          "role": "assistant",
+          "text": "Let me look.",
+          "row_id": 2
+        },
+        {
+          "role": "tool",
+          "text": "a.txt\nb.txt",
+          "name": "terminal",
+          "row_id": 3
+        },
+        {
+          "role": "assistant",
+          "text": "There are two files.",
+          "row_id": 4
+        }
+      ]
+    },
+    {
+      "op": "resolve",
+      "id": "h1"
+    }
+  ],
+  "streamed": {
+    "t1": {
+      "text": "Let me look.There are two files.",
+      "reasoning": "The user wants a listing.",
+      "final": "There are two files."
+    }
+  },
+  "history_after": [
+    {
+      "role": "user",
+      "text": "list the files",
+      "row_id": 1
+    },
+    {
+      "role": "assistant",
+      "text": "Let me look.",
+      "row_id": 2
+    },
+    {
+      "role": "tool",
+      "text": "a.txt\nb.txt",
+      "name": "terminal",
+      "row_id": 3
+    },
+    {
+      "role": "assistant",
+      "text": "There are two files.",
+      "row_id": 4
+    }
+  ]
+}

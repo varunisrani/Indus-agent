@@ -4,6 +4,7 @@
 export {
   type BackoffOptions,
   backoffDelay,
+  DESKTOP_BACKOFF,
   type ReconnectingEvent,
   Reconnector,
 } from "./backoff.ts";
@@ -60,6 +61,8 @@ export {
   attachUrlProblem,
   CLOSE_REASONS,
   closeReason,
+  DASHBOARD_SUBPROTOCOL,
+  DASHBOARD_TICKET_PREFIX,
   GATEWAY_SUBPROTOCOL,
   protocolsProblem,
   TERMINAL_CLOSE_CODES,

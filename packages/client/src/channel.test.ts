@@ -349,6 +349,32 @@ describe("RpcChannel server requests (our server_request wire)", () => {
     });
   });
 
+  it("sends answers with their own deadline when one is set (answerTimeoutMs)", async () => {
+    vi.useFakeTimers();
+    try {
+      const link = new MemoryTransport();
+      const diagnostics: string[] = [];
+      const channel = new RpcChannel({
+        timeoutMs: 1_000,
+        answerTimeoutMs: 5_000,
+        onDiagnostic: (line) => diagnostics.push(line),
+      });
+      channel.attach(link);
+      channel.setHandlers({
+        serverRequests: { approval: () => ({ kind: "approval", choice: "once" }) },
+      });
+      link.feed({ method: "server_request", params: { ...approval("r9") } });
+      await tick();
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(channel.pendingCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(channel.pendingCount).toBe(0);
+      expect(diagnostics.some((line) => line.includes("answer for r9 not delivered"))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("declines a kind it cannot answer, and a crashing handler, without waiting", async () => {
     const link = new MemoryTransport();
     const channel = new RpcChannel();

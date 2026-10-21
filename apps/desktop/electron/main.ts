@@ -16,9 +16,11 @@ import {
   app,
   BrowserWindow,
   type BrowserWindowConstructorOptions,
+  dialog,
   ipcMain,
   Menu,
   type MenuItemConstructorOptions,
+  powerMonitor,
   protocol,
   safeStorage,
   screen,
@@ -28,9 +30,11 @@ import {
 } from "electron";
 import { appMenuTemplate } from "./appMenu.ts";
 import { type AppOrigin, devServerOrigin, fileAppOrigin } from "./appOrigin.ts";
+import { type ElectronHooks, installBackend } from "./backend/install.ts";
 import type { MainContext } from "./context.ts";
 import { applyEnvDefaults, parseBakedEnvDefaults } from "./envDefaults.ts";
 import { type IpcMainLike, IpcRegistry } from "./ipc/registry.ts";
+import { installJournalIpc, PreparedSubmissions } from "./journal/preparedSubmissions.ts";
 import { chooseOzonePlatform, planSwitches, readLaunchConfig } from "./launchConfig.ts";
 import { DesktopLog } from "./log.ts";
 import { desktopPaths, resolveIndusHome, userDataOverride } from "./paths.ts";
@@ -309,6 +313,25 @@ async function boot(): Promise<void> {
   installWindowIpc(context); // P20-05, P20-06
   installExternalOpenIpc({ registry, opener: context.externalOpener, isGuestOf: () => false }); // P20-02
   installSecretsIpc(registry, secrets); // P20-07
+  installJournalIpc(
+    registry,
+    new PreparedSubmissions({
+      dir: path.join(paths.userData, "prepared-submissions"),
+      log: logLine,
+    }),
+  ); // P20-20
+  installBackend(context, {
+    app: app as unknown as ElectronHooks["app"],
+    webRequest: session.defaultSession.webRequest as unknown as ElectronHooks["webRequest"],
+    powerMonitor,
+    showMessageBox: (options) => dialog.showMessageBox(options),
+    argv: process.argv.slice(1),
+    execPath: process.execPath,
+    homeDir: os.homedir(),
+    isWsl:
+      process.platform === "linux" &&
+      (process.env.WSL_DISTRO_NAME !== undefined || /microsoft/i.test(os.release())),
+  }); // P20-08..14
   registry.seal();
 
   Menu.setApplicationMenu(
@@ -332,7 +355,8 @@ async function boot(): Promise<void> {
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
+    if (event.defaultPrevented) return; // the quit guard is asking first (P20-13)
     windows.saveNow();
     log.close();
   });

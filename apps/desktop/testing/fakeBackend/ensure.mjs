@@ -10,7 +10,7 @@
 //   indus [-p NAME] serve ensure --json      → {url, port, pid, profile_id, code_version}
 //                                              (token from INDUS_DASHBOARD_SESSION_TOKEN; a serve
 //                                              running with another token is replaced)
-//   indus [-p NAME] gateway stop | serve stop
+//   indus [-p NAME] gateway stop | gateway restart | serve stop
 //
 // Environment: INDUS_HOME (required: the profile home; `-p NAME` → <home>/profiles/NAME),
 // INDUS_FAKE_SCENARIO (a name under scenarios/ or a path; default "healthy").
@@ -233,6 +233,10 @@ async function main(argv) {
   if (group === "gateway" && verb === "ensure") return gatewayEnsure(home, flags);
   if (group === "serve" && verb === "ensure") return serveEnsure(home, flags);
   if (group === "gateway" && verb === "stop") return (await stopServer(home, "daemon")) ? 0 : 1;
+  if (group === "gateway" && verb === "restart") {
+    await stopServer(home, "daemon");
+    return (await spawnServer(home, "daemon")) === null ? 1 : 0;
+  }
   if (group === "serve" && verb === "stop") return (await stopServer(home, "serve")) ? 0 : 1;
   process.stderr.write(`fake indus: unsupported command: ${argv.join(" ")}\n`);
   return 2;

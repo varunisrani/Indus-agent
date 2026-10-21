@@ -21,6 +21,10 @@ export type IndusApiResult =
   | { kind: "response"; status: number; body: unknown }
   | { kind: "not-found"; status: 404; body: unknown };
 
+export type IndusBackendNotice =
+  | { kind: "restarted"; message: string }
+  | { kind: "crashing"; message: string; exitCode: number | null; recentOutput: Array<string> };
+
 export type IndusBootPhase =
   | "resolve"
   | "runtime"
@@ -135,6 +139,8 @@ export interface IndusDesktopBoot {
   onInstaller(listener: (payload: IndusInstallerEvent) => void): () => void;
   /** `indus:installer:cancel` (P20-09) */
   cancelInstall(payload?: Record<string, never>): Promise<{ accepted: boolean }>;
+  /** `indus:backend:notice` (P20-13) */
+  onNotice(listener: (payload: IndusBackendNotice) => void): () => void;
 }
 
 export interface IndusDesktopConnection {
@@ -143,7 +149,7 @@ export interface IndusDesktopConnection {
   /** `indus:connection:ticket` (P20-10) */
   ticket(payload?: {
     profile?: string;
-  }): Promise<{ ticket: string; wsUrl: string; expiresInMs: number }>;
+  }): Promise<{ ticket: string; wsUrl: string; expiresInMs: number; protocols: Array<string> }>;
   /** `indus:connection:changed` (P20-10) */
   onChanged(listener: (payload: IndusConnectionDescriptor | null) => void): () => void;
   /** `indus:remote:get` (P20-11) */
@@ -396,18 +402,26 @@ export interface IndusDesktopSecrets {
 export interface IndusDesktopJournal {
   /** `indus:journal:list` (P20-20) */
   list(payload?: Record<string, never>): Promise<{
-    entries: Array<{ admissionId: string; sessionId: string; createdAt: number; payload: unknown }>;
+    entries: Array<{
+      requestId: string;
+      sessionId: string;
+      createdAt: number;
+      updatedAt: number;
+      state: "prepared" | "uncertain";
+      admissionId?: string;
+      payload: unknown;
+    }>;
   }>;
   /** `indus:journal:prepare` (P20-20) */
   prepare(payload: {
-    admissionId: string;
+    requestId: string;
     sessionId: string;
     payload: unknown;
   }): Promise<{ ok: true }>;
   /** `indus:journal:retire` (P20-20) */
   retire(payload: {
-    admissionId: string;
-    receipt: { outcome: "accepted" | "rejected" | "unknown" };
+    requestId: string;
+    receipt: { outcome: "accepted" | "rejected" | "unknown"; admissionId?: string };
   }): Promise<{ retired: boolean }>;
 }
 
