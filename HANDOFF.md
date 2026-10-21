@@ -78,9 +78,7 @@ README for reference. Nothing uncommitted on main.
 ## NEXT STEP (start here)
 Turn: AGENT_1 (took it back at 05:56 UTC 2026-10-21, owner request). In flight (Agent 1):
 - P20-08..24 LANDED `2a1991b` (w34 pruned; notes appended to LEAD-NOTES).
-- Wave 35 (brief `.agents/wip/w35/brief.md`, base c3891d6 = tree of 2a1991b): D1 P20-25..27, D2 P20-28..31, D3 P20-32..34,
-  D4 P20-35..37, D5 P20-38..39 all DONE and parked in `.agents/wip/w35/`. P20-25..40 integrator running in scratchpad
-  verify18 (brief `.agents/wip/w35/integrator-brief.md`, D-16.700..739; builds P20-40 Electron E2E + Demo 4).
+- P20-25..40 LANDED `52deb8b` (P20 COMPLETE on Linux; LEAD-NOTES "P20 wave 35 landing notes (integrator)").
 - Wave 36 (P23 except 15/16): I1, I2, K1, N1, U1 all parked in `.agents/wip/w36/`; P23 integrator running in scratchpad
   verify19 (brief `.agents/wip/w36/integrator-brief.md`, D-16.740..769). Owner item: I2's first `uv run` wrote into
   /root/.cache/uv.

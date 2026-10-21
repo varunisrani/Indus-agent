@@ -6,7 +6,7 @@
   "remaining_pct": 38,
   "resets_at": "2026-10-21T13:10:00+00:00",
   "last_check": "2026-10-21T09:13:00+00:00",
-  "current_step": "Integrators P20-25..40 (verify18) + P23 (verify19); P24 R1, B1 building; M1 X1 L1 R2 parked",
-  "last_commit": "2a1991b",
+  "current_step": "P20 complete (52deb8b); P23 integrator (verify19); P24 W1 S1 building; w37 parked",
+  "last_commit": "52deb8b",
   "updated_at": "2026-10-21T06:05:00Z"
 }
