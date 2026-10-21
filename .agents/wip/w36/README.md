@@ -59,3 +59,34 @@
   via plain docker / skopeo / buildx imagetools, uv from our pins.
 - Follow-ups: pins refresh + action SHAs; CI image builds + slim sandbox size (≤ 600 MB); notices for shipped image
   contents; root-drop shim for `docker exec … indus`; P25-16 docs on the Windows login provider; extras on Python 3.14.
+
+## w36-i1.patch: P23-01 no-PyPI guard + metadata, P23-02 bootstrap pins, P23-03 install.sh core, P23-04 repository stage, P23-05 runtime stages — done; pins PROVISIONAL (base d5e575e)
+- Builder checks: ruff, format, pyright 0, lint-imports; tests/unit/packaging + tests/integration/install + smoke 159 passed;
+  wider cli/contract/integration cli/tooling 2060 passed / 1 skipped; full collect 15983 with no usage errors;
+  tooling.checks ok (3 comments reworded, 1 table restructured for similarity). shellcheck not installed (directives added,
+  scripts unchecked). End-to-end non-interactive ladder test ends with `indus --version` from the published launcher.
+- PINS: uv 0.11.32 for 8 targets + Git for Windows 2.51.0.windows.1 for 2 targets, digests null; installer refuses unknown
+  digests; `pins.py --check --strict` fails until `uv run python scripts/install/pins.py update --uv 0.11.32 --git
+  2.51.0.windows.1` (network) — confirm the Git for Windows version + arm64 asset. `--open-pr` opens a draft PR only.
+- RE-LOCK owed: uv.lock (dynamic version 0.0.0 from src/indus/__init__.py, new extras `messaging` + `all` written as exact
+  pins with a union test, hatchling==1.32.4 MIT build pin); CI `uv sync --locked` fails until relocked.
+- New: scripts/build_hooks/no_wheel.py, scripts/install/{pins.json, pins.py, build.py, stages.json (SHARED with I2 —
+  install.ps1 reads the same file via build.py TARGETS; pins.render_ps1() ready)}, scripts/install/sh/{00-core,
+  10-repository, 20-runtime}.sh, scripts/install.sh (generated), tests/platform_marks.py (platforms(*specs) marker + lint
+  against bare skipif(sys.platform…); 22 existing bare marks in 18 files baselined in platform_skip_baseline.json, may only
+  shrink), tests unit/packaging + integration/install + fakes/install, notes no-wheel, pins, install-sh-core,
+  install-sh-repository, install-sh-runtime, tool-versions (merge with N1 and K1).
+- Shared: pyproject.toml, src/indus/__init__.py, tests/conftest.py, tests/test_smoke.py, .gitignore (src/indus/_tui_dist/,
+  /.indus-bootstrap.json), ci.yml (build.py --check + pins.py --check step), traps R10.11/12/14/15/16/21, ACC-S1-1, S7-1,
+  S8-1 + new S1-2/3/4. tests/unit/packaging/__init__.py also from N1/K1.
+- Wiring: release base in pins.json release.repository = indusagi/indus-agent (D-16.690; owner says varunisrani/Indus-agent?
+  one constant for installer, Docker, Nix, desktop); installer writes update.installs.<id16>.channel / .skip for U1's
+  schema; K1: no `gateway` extra — use `--extra messaging` (+ web) and fix K1's INDUS_EXTRAS default + uv_artefact() keys
+  against this pins.json shape.
+- Decisions (D-ids): extras messaging + all; default installer extras web docs pty dashboard acp messaging (+browser unless
+  --skip-browser; --skip-computer-use recorded only); receipts in <home>/logs/install_receipts/ (success|failed|interrupted,
+  full-ladder runs only); saved/explicit channel moves a checkout forward only; version-API/redirect lookups only for our own
+  repo URL, canary from remote tags; uv + Python under <home>/tools; PATH in each shell rc once inside an exact marker block;
+  gateway stage asks y/N; channel save failure warns; CI/GITHUB_ACTIONS turns on --verbose.
+- Follow-ups: real digests; shellcheck in CI; web/TUI pages from a release payload (P23-23 artefact manifest);
+  --include-desktop only warns; migrate baseline skipifs; fresh-VM install lane (P23-23).
