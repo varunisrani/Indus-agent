@@ -84,3 +84,46 @@ Brief: `brief.md` (slices U1 = P24-19/20/25/26/33, U2 = P24-27..31, U3 = P24-32/
 - Follow-ups: REST DELETE /api/plugins/{name} and per-tool MCP enable; TUI /wake on needs a 180 s per-call deadline; terminal
   pane per-profile font; TUI theme sync colours; pet availability probe; wake busy-mic resume retry; /pet and /wake into the
   Python command registry; full-screen detection for other apps on Linux/Windows.
+
+## w39-u3.patch: P24-32 desktop plugin SDK (PARTIAL), 34 uninstall from Settings, 35 desktop voice (daemon methods stood in), 36 dashboard admin console, 37 dashboard plugins — done otherwise
+- Builder checks: pnpm lint / fmt / -r typecheck clean; desktop vitest 1310 passed (131 files; incl. plugin-scheme
+  real-window test + realWindow security 8 passed); web vitest 275 passed (33 files); Python ruff / format clean, pyright 0,
+  lint-imports kept; contract/cli + contract/web + unit/web + console 1170 passed / 1 failed = the same
+  test_tui_publish.py::test_a_refused_credential_stops_the_feed_at_once (fails with all U3 src reverted too); tooling.checks
+  ok (two similarity hits restructured). No packages.
+- P24-36: engine in src/indus/service/console.py (layer rule; row says cli/console_engine.py, which holds the `indus console`
+  REPL + `--run LINE`; no -c, the argv rewrite owns -c/--continue); each command a child process (python -m indus …,
+  child_env, new process group); cancel/timeout kill the tree. P24-37: backend routes under /api/ext/<name>/ (D-16.587
+  prefix; row says /api/plugins/<name>/); new `web-plugin` WS purpose. P24-34: offered only on confirmed ownership (CLI
+  --gui-summary + success install receipt + not under /nix/store); typed phrase "uninstall everything" checked in main.
+  P24-35: mic / talk buttons appear only when a VoicePort is passed to the Composer. P24-32 done: registry (transaction
+  rollback, 200 contributions / plugin), SDK + context, disk plugins (load-time check, indus-plugin: scheme, hot reload),
+  loader, host, status-bar area; NOT done: consumers for the other 13 shell areas, Settings → Plugins inventory page.
+- New: apps/desktop/electron/plugins/{diskPlugins, importScan, sdkNames}.ts (+tests, pluginScheme.electron.test.ts),
+  electron/uninstall.ts (+test), src/contrib/{registry, sdk, loader, host, react, testHost}.ts(x) (+tests),
+  src/chat/voice/{dictation, conversation, VoiceButtons, strings.en} (+tests), src/settings/{UninstallSection.tsx (+test),
+  uninstallStrings.en.ts}; apps/web/src/console/ConsoleModal.tsx (+test), apps/web/src/plugins/{registry, sdk, slots,
+  usePluginState} (+tests); src/indus/service/console.py, src/indus/cli/console_engine.py, src/indus/web/{console,
+  plugins}.py; tests contract/web/test_{console_socket, dashboard_plugins}.py, unit/cli/test_console_engine.py,
+  tests/fixtures/web/plugins/ (4 sample plugins, ours); notes docs/notes/P24/{desktop-plugin-sdk, desktop-uninstall,
+  desktop-voice, admin-console, dashboard-plugins}.md.
+- Shared: electron/{main.ts, ipc/channels.ts, ipc/schemas.ts (+5: indus:plugins:{list, rescan, changed},
+  indus:uninstall:{summary, run}), security/csp.ts (+test; script-src adds indus-plugin: only — the scheme must be registered
+  corsEnabled), scripts/viteConfig.test.ts; renderer src/{global.d.ts, main.tsx, app/StatusBar.tsx, chat/composer/
+  Composer.tsx, i18n/en.ts, profiles/storageFamilies.ts, settings/{context.tsx, customPages.tsx, pages.ts}}; apps/web/src/
+  {App.tsx, main.tsx, lib/bootstrap.ts, shell/routes.ts, test/setup.ts, test/routes.generated.ts}; Python cli/app.py (console
+  row), service/ws_auth.py (WEB_PLUGIN), web/{app.py, state.py, spa.py, routes/__init__.py}; tests contract/cli (help
+  catalogue, non_tty_table), contract/web/test_route_list.py, unit/web/test_spa.py, unit/web/ws/test_ws_auth.py.
+- STAND-IN: apps/desktop/src/test/_stubs_u3.ts — daemon voice.transcribe {session_id, audio_b64, mime} → {text},
+  voice.speak {text} → {audio_b64, mime} (to be added on the daemon).
+- Wiring owed: dashboard CLI flag for AppOptions.console_enabled; chatSlots passes voice={rpcVoicePort(...)} once the daemon
+  has the voice methods; desktop plugin consumers (panes → paneRegistry, routes, sidebar, palette, keybinds, themes, composer,
+  decorations, settings pages, transcript directives) + inventory page over PluginLoader.inventory(); desktop plugin sockets
+  need a ticketed /api/ext/ route in main; dashboard header/footer plugin slots have no render point. U1's _stubs_u1.ts
+  (DesktopPluginSource) and U2's _stubs_u2.ts (register({id, routes, nav})) map onto U3's registry/loader — reconcile.
+- Decisions (number at integration): disk plugins one file per plugin <home>/desktop-plugins/<id>.js|.mjs; isolation: plugins
+  still run in the page (not a sandbox, R07.19) — main checks every file before load (only SDK / React imports; refuses
+  indusDesktop, require, process, eval, Function, __proto__), the SDK holds no bridge object, its RPC door is read-only;
+  uninstall phrase "uninstall everything", the helper only runs the CLI and never deletes a packaged bundle itself.
+- Follow-ups: plugin-route gate refuses a socket to a switched-off plugin before the upgrade (403) — an anonymous caller can
+  tell off from on for plugin sockets (R09.4 holds for HTTP only); Windows uninstall may need a system Python.
