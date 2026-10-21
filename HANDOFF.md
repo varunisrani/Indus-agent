@@ -81,8 +81,9 @@ Turn: AGENT_1 (took it back at 05:56 UTC 2026-10-21, owner request). In flight (
 - Wave 35 (brief `.agents/wip/w35/brief.md`, base c3891d6 = tree of 2a1991b): D1 P20-25..27, D2 P20-28..31, D3 P20-32..34,
   D4 P20-35..37, D5 P20-38..39 all DONE and parked in `.agents/wip/w35/`. P20-25..40 integrator running in scratchpad
   verify18 (brief `.agents/wip/w35/integrator-brief.md`, D-16.700..739; builds P20-40 Electron E2E + Demo 4).
-- Wave 36 (brief `.agents/wip/w36/brief.md`, P23 except 15/16): I1 P23-01..05, I2 P23-06/07/20, K1 P23-08..12, N1
-  P23-13/14, U1 P23-17..19 + 21..23 in scratchpad wt-w36*.
+- Wave 36 (brief `.agents/wip/w36/brief.md`, P23 except 15/16): I1, K1, N1 parked; I2 (P23-06/07/20) restoring its files
+  in wt-w36i2 after a lead error removed its worktree; U1 (P23-17..19, 21..23) building. Owner item: I2's first `uv run`
+  wrote into /root/.cache/uv (editable build + a few cache entries).
 Agent 2's handoff text (still valid for the owner questions and follow-ups) follows:
 Turn: AGENT_1 (handed over by Agent 2 at 03:45 UTC 2026-10-21, owner request). Main `71389d4`+status commits.
 Done: P00–P19, P21, P22 complete; P20 7/40 (P20-01..07 `86f44f7`). 521/648 tasks landed (80%).
@@ -158,6 +159,9 @@ untimestamped generic signature (replay after the 1 h delivery-id window) — de
 timestamped form.
 
 ## Watch out for
+- Parking a builder: run extract-patch, CHECK the patch file exists and is non-empty, and only then remove the worktree
+  (never chain the removal with `;`). Do not pass --exclude for paths git already ignores (e.g. `.venv/**`): `git add`
+  fails and the script exits without a patch. (2026-10-21: the I2 worktree was lost this way and rebuilt by its builder.)
 - Clean room: never copy reference code, comments or docs; task note before code; reopen the
   reference only for the Compare step. Evidence and captures stay in `~/rea-lab/`.
 - `THIRD_PARTY_NOTICES.md` and `LICENSE` are allow-listed in `tooling/checks/similarity_allow.json`
