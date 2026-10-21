@@ -2,11 +2,11 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 33,
-  "remaining_pct": 67,
+  "usage_pct": 36,
+  "remaining_pct": 64,
   "resets_at": "2026-10-22T02:00:00+00:00",
-  "last_check": "2026-10-21T21:59:00+00:00",
-  "current_step": "P24 landed (5c0cff8); next P25 w41 integrator + D-16.799 wiring builders",
+  "last_check": "2026-10-21T22:20:00+00:00",
+  "current_step": "P25 w41 integrator (verify21); wiring builders WA WB WC (wt-w42*)",
   "last_commit": "5c0cff8",
   "updated_at": "2026-10-21T21:06:00Z"
 }

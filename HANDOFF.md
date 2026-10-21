@@ -76,7 +76,9 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 ACTIVE. Main `5c0cff8` (P24 landed) + status commits.
+Turn: AGENT_1 ACTIVE. Main `5c0cff8` (P24 landed) + status commits. In flight (22:20 UTC): P25 wave-41 integrator
+(scratchpad verify21, brief `.agents/wip/w41/integrator-brief.md`); wave-42 wiring builders WA (gateway/daemon), WB (agent
+loop + tools), WC (UI surfaces) in wt-w42* (brief `.agents/wip/w42/brief-wiring.md`).
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built (`5c0cff8`; wiring owed); P25 15/24 built and parked
 (`.agents/wip/w41/`: d1 docs + notices, g1 gates + perf, q1 parity — README lists the post-landing steps).
 1. **P25 wave-41 integrator**: land w41-d1, w41-g1, w41-q1 on main (now with P24): regenerate notices (`uv sync --all-extras`,
