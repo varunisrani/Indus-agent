@@ -142,3 +142,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 2026-10-21 13:16 UTC | 0% | 100% | 18:10 UTC | window reset; Agent 2 holds the turn (P23 lander + P24 UI wave); Agent 1 READY
 2026-10-21 21:06 UTC | ~0% | ~100% | — | owner gave the turn to Agent 1 (Agent 2 being stopped by the owner); landing P24 (w40)
 2026-10-21 21:32 UTC | 17% | 83% | 02:00 UTC | disk freed (20 GB free); P24 lander resumed; Q1 D1 G1 running; Agent 2 has not pushed since 21:06
+2026-10-21 21:59 UTC | 33% | 67% | 02:00 UTC | P24 lander gating; Q1 D1 G1 running; 17 GB free

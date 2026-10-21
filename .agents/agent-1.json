@@ -2,10 +2,10 @@
   "agent": "AGENT_1",
   "account": "Account 1",
   "state": "ACTIVE",
-  "usage_pct": 17,
-  "remaining_pct": 83,
+  "usage_pct": 33,
+  "remaining_pct": 67,
   "resets_at": "2026-10-22T02:00:00+00:00",
-  "last_check": "2026-10-21T21:32:00+00:00",
+  "last_check": "2026-10-21T21:59:00+00:00",
   "current_step": "P24 lander (verify20); P25 builders Q1 D1 G1 (wt-w41*)",
   "last_commit": "52deb8b",
   "updated_at": "2026-10-21T21:06:00Z"
