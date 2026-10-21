@@ -34,3 +34,28 @@
   256 KiB cap, to the clipboard, renderer gets {copied, bytes}; renderer errors rate-limited (20/window/min); Copy
   Diagnostics under Help.
 - Follow-ups: green desktop-package run on all three OSes; serve token + boot state into diagnostics; preload-bridge.md rows.
+
+## w35-d3.patch: P20-32 settings overlay + P20-33 provider onboarding + P20-34 deep links and media scheme — done
+- Builder checks: lint, fmt:check (587 files), -r typecheck clean; check-ipc, gen-bridge-types --check,
+  dump-slash-catalog --check ok; root pnpm test 1908 passed / 12 skipped; ruff, pyright 0, lint-imports; pytest
+  tests/contract/web 264 passed (one earlier failure in test_tui_publish.py::test_a_refused_credential_stops_the_feed_at_once,
+  not this slice, passed alone + rerun — integrator: watch it); tooling.checks ok. No packages. No stand-ins.
+- New: electron/{deepLinks,mediaProtocol,prefs}.ts (+tests); src/settings/* (13 views, search, schema pages via
+  /api/config/schema + PUT /api/config, keys via /api/env), src/onboarding/* (state machine), src/deepLinks/*,
+  src/app/settingsSlots.tsx; tests/contract/web/test_model_endpoint_route.py; notes settings.md, onboarding.md,
+  deep-links-media.md.
+- Shared: ipc channels/schemas (indus:prefs:get|set|changed) + global.d.ts; electron/main.ts (deep-link router before
+  ready; second instance delivers links without raising the window; installPrefsIpc, installMediaProtocol, installDeepLinks;
+  installBackend's return captured; startDeepLinks() after openMain()) — D5's main-ts wiring patch also edits main.ts;
+  src/app/App.tsx (AppSlots.overlays / layers); src/main.tsx; en.ts; src/indus/web/routes/models.py (NEW route POST
+  /api/model/test-endpoint); apps/web/src/test/routes.generated.ts; traps R08.21.
+- Wiring: P20-35/36 read tray/keep-awake/quick-entry/HUD shortcuts from the DesktopPrefs installPrefsIpc returns; P20-28
+  listens on preview.onCloseRequested; P20-29 adds workspaces via MediaRoots.add (roots: home, <home>/media, <home>/cache);
+  Settings › Providers opens onboarding via requestOnboarding(); D5's <LogsViewer/> goes in Settings › About/Advanced.
+- Decisions (D-ids): config writes via REST PUT /api/config (daemon config.set takes live keys only); new
+  /api/model/test-endpoint; prefs in <userData>/desktop-prefs.json; reveal shows only what the person typed, no route
+  returns stored values; "Choose later" not saved; deep links add only https / loopback-http MCP servers, never command
+  servers, skill links never force install; deep-link delivery shows without focus (close-preview focuses); media serves
+  images (not SVG), one stream host for local and remote (remote via single-use download ticket minted in main).
+- Follow-ups: repo-scan settings page (P20-25); config export/import/reset not built; keybinding overrides read through
+  effectiveBindings by their owners; onboarding in the main window only?
