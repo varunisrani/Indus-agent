@@ -76,9 +76,9 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 ACTIVE. Main `08bcf51` (P24 `5c0cff8`, P25-05..19 `08bcf51`) + status commits. In flight (23:25 UTC): wiring builder WA (gateway/daemon, wt-w42wa); WB + WC parked in `.agents/wip/w42/`; security builders
-SEC1 (P25-01/02) + SEC2 (P25-03/04) in wt-w43* (brief `.agents/wip/w43/brief-security.md`). Next: one wiring integrator for
-w42 (WA + WB + WC: root-cause the DeliveryRouter self-chat leak), then P25-20..24 release work.
+Turn: AGENT_1 ACTIVE. Main `08bcf51` (P24 `5c0cff8`, P25-05..19 `08bcf51`) + status commits. In flight (23:35 UTC): wave-42 wiring integrator in scratchpad verify22 (brief `.agents/wip/w42/integrator-brief.md`; WA + WB +
+WC; D-16.542 served-profile attach; DeliveryRouter self-chat leak; demos; D-16.860..889); security builders SEC1 (P25-01/02) +
+SEC2 (P25-03/04) in wt-w43* (brief `.agents/wip/w43/brief-security.md`). Next: P25-20..24 release work.
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built (`5c0cff8`; wiring owed); P25 15/24 built and parked
 (`.agents/wip/w41/`: d1 docs + notices, g1 gates + perf, q1 parity — README lists the post-landing steps).
 1. **P25 wave-41 integrator**: land w41-d1, w41-g1, w41-q1 on main (now with P24): regenerate notices (`uv sync --all-extras`,
