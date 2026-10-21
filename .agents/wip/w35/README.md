@@ -59,3 +59,36 @@
   images (not SVG), one stream host for local and remote (remote via single-use download ticket minted in main).
 - Follow-ups: repo-scan settings page (P20-25); config export/import/reset not built; keybinding overrides read through
   effectiveBindings by their owners; onboarding in the main window only?
+
+## w35-d2.patch: P20-28 preview pane + P20-29 files pane and fs IPC + P20-30 git review pane + P20-31 terminal pane — done
+- Builder checks: lint (586 files), fmt:check, -r typecheck (8 projects) clean; desktop vitest 690 passed / 12 skipped
+  (Electron-binary tests + one real-PTY test needing a built node-pty); check-ipc, gen-bridge-types --check ok;
+  tooling.checks ok; root pnpm test NOT run. No Python.
+- New (apps/desktop): electron/fs/{pathGuard,fsIpc}.ts, electron/preview/{guestPreload,guestPreloadEntry,fileWatch,guest}.ts,
+  electron/git/gitOps.ts, electron/terminal/{ptyHost,terminalEnv}.ts (+tests), electron/panesInstall.ts, testing/paneIpc.ts,
+  src/panes/{strings.en.ts, d2Panes.tsx, preview/*, files/*, review/*, terminal/*} (+tests); notes preview-pane.md,
+  files-pane.md, git-review.md, terminal-pane.md.
+- STAND-IN: src/panes/_stubs_d2.ts (D1's pane registry; interface at the top: context sessionId, workspace, mode, hidden,
+  connection, openPreview?, addToChat?; preview + terminal stateful). d2Panes.tsx registerWorkingPanes() must be called by
+  the shell at startup.
+- Shared: ipc channels (+6: indus:fs:set-roots, fs:stat, fs:limits:get|set, git:changes, git:commit-context) and RESHAPED
+  schemas for fs/git/terminal/preview (fs.readDir drops workspace, answers truncated, entries sensitive/target; fs.readText
+  answers binary; git.status root/head/counts/truncated; git.diff base?/staged?; terminal.start answers shell + cwd) +
+  global.d.ts; electron/main.ts (guest preload path, did-attach-webview → guests.adopt, isGuestOf, installPanes before
+  seal(), paneElectron() helper) — D3 and D5 also edit main.ts; scripts/build-electron.mjs (3rd bundle preview-guest.cjs,
+  node-pty external); en.ts; apps/desktop/package.json + pnpm-lock (+16 importer lines; @xterm/* 6.0.0 / addons, node-pty
+  1.1.0 optional — already in the lock for apps/web / apps/tui); realWindow.electron.test.ts (outside-roots); traps R08.8,
+  R08.9.
+- Wiring: composer can use fs.stat {purpose:"attach"} and accept application/x-indus-path drags; preview onAttachCapture
+  needs an image hand-off in the composer; settings use fs.getLimits/setLimits; Ctrl/Cmd+Shift+W in preview sends
+  indus:preview:close-requested (D3's deep links listen); node-pty asarUnpack + spawn-helper +x in D5's packaging.
+- Decisions (D-ids): per-window allowed roots (home + fs.setRoots folders + dialog-picked files; system folders / fs root /
+  above home refused; checked before and after symlink resolution); sensitive files listed with a lock, never read
+  (.env.example still refused); git without a shell, -c core.fsmonitor=false, --no-ext-diff, GIT_DIR-style env dropped,
+  relative in-repo paths never starting with '-', last-turn base a commit id recorded at turn.started; "Write it for me"
+  commit message via prompt.background + side session message.complete (VERIFY on a real daemon); terminal env mirrors
+  child_env.py's floor (test compares) + drops *_API_KEY, INDUS_*, npm settings, colour-disabling vars; only the starting
+  window can write/resize/close; remote mode: files via REST /api/files (no rename/reveal, delete confirms), terminal + git
+  review show "not available here"; preview pop-out is a prop; file-watch storm breaker on all platforms.
+- Follow-ups: real PTY run + hostile guest E2E (P20-40); remote terminals via the serve PTY bridge (P18-07); PR badges / gh
+  auth; restart terminal in the last folder.
