@@ -46,3 +46,41 @@ Brief: `brief.md` (slices U1 = P24-19/20/25/26/33, U2 = P24-27..31, U3 = P24-32/
   history over REST; protocol + daemon mounting for bots.* / groups.*; profile_rows into profiles.list; R1 adapters; register
   the bots contribution with U3's registry; preview pane uses SshBackends.previewPort; remote / SSH Electron E2E spec; QR
   image for Telegram setup; preload-bridge.md channel count → 120. No packages, no lock change.
+
+## w39-u1.patch: P24-19 desktop pet + `/pet`, 20 wake word, 25 preview annotate + agent-driven automation, 26 capabilities page, 33 themes + locale plumbing — done (wiring owed below; 26 lacks two REST routes)
+- Builder checks: Python ruff / pyright 0 / lint-imports; pytest own + foundation/config + contract/cli 746 passed / 2 skipped;
+  neighbours (unit/service, tools/builtin/media, cli/setup, tui_bridge, contract/web) 921 passed; pnpm lint / fmt / -r
+  typecheck (8 packages) clean; check-ipc, gen-bridge-types ok; desktop vitest 1296 passed (132 files); TUI 778 passed;
+  @indus/ui 80 passed; tooling.checks ok. Not run: apps/web tests (untouched), Electron real-window E2E.
+- New package: sherpa-onnx==1.13.8 (Apache-2.0, 2026-09-10, no deps) in a new `wake-sherpa` extra — integrator re-locks
+  (uv.lock excluded from the patch).
+- New: Python service/{pets, pets_rpc, wake_rpc, capabilities_rpc}.py, cli/commands/pet.py, tools/builtin/media/
+  wake_word.py, tools/builtin/preview.py (+ tests; tests/fixtures/desktop/vscode_theme.json ours); electron/windows/
+  {petWindow, wakeIndicator}.ts, electron/theme/marketplace.ts (+tests); renderer src/pet/*, src/wake/*,
+  src/panes/preview/{annotate, automation}.ts, src/app/capabilities/*, src/theme/{vscodeImport, themeStore,
+  AppearancePage}.ts(x), src/i18n/packs.ts (+tests); packages/ui/src/tokens/presets.ts (+test); apps/tui/src/commands/{wake,
+  pet}.ts (+tests); notes docs/notes/P24/{pet, wake-word, preview-annotate, capabilities-page, themes}.md.
+- Shared: pyproject.toml (wake-sherpa extra), cli/app.py (pet row), foundation/config/schema.py (pet, wake_word sections),
+  contract cli non_tty_table + help catalogue; electron windows/{factory, manager, windowUrl}.ts (kinds pet, wake) + factory
+  snapshot, ipc/{channels, schemas}.ts (+14: indus:pet:{show, hide, get, say, pointer, state}, indus:wake:{indicator,
+  indicator-get, indicator-state}, indus:themes:{search, download}; each also checks the sender's window kind),
+  src/global.d.ts, electron/main.ts (3 installs); renderer src/app/{App, bridge, theme}.tsx, i18n/en.ts, panes/{d2Panes,
+  preview/PreviewPane}.tsx, profiles/storageFamilies.ts, settings/customPages.tsx; apps/tui/src/slash/localCommands.ts;
+  packages/ui/src/index.ts; ledgers ACC-J22-1, J23-1, N12-2, N15-1, N20-2, N28-1, N34-1, R09.22.
+- STAND-IN: src/test/_stubs_u1.ts for U3 (P24-32): DesktopPluginSource.list() → {id, name, version?, enabled}[] (app-level).
+- WIRING OWED (integrator): protocol rows + TS codegen for pet.*, wake.*, capabilities.summary (declared beside their
+  handlers); register on the daemon table, merge PET_DEADLINES / WAKE_DEADLINES; one daemon WakeRpc whose emit sends
+  wake.detected to the owning connection + connection_closed on disconnect; preview.* server-request kinds in protocol +
+  @indus/client, desktop routes them to windowPreviewAutomation.handle, `preview` port offered to tool handlers,
+  preview.register_tools(registry, surface=…) for desktop-created sessions; wake.detected → TUI voice mode and desktop
+  WakeController.attach with handOff = U3's dictation (P24-35); U3's voice settings page mounts WakeToggle;
+  CapabilitiesRoute gets summary + U3's plugin source, delete the stand-in.
+- OWNER DECISIONS: openWakeWord (the D-16.52 default) cannot be locked on Python 3.13 (tflite-runtime has no 3.13 wheels) —
+  no `wake` extra; wait, or make sherpa-onnx the default engine; Porcupine left out (vendor key + vendor terms) — §2.8 entry?
+- Decisions (number at integration): one picture per mood (no sprite sheet, no image lib), no gallery (D-16.23); pet CLI adds
+  use / off / list; consent its own setting wake_word.consent, indicator always shows "listening"; annotation pins batch by
+  shared container / containment, annotate_preview = agent-to-person notes; presets paint only once picked; per-profile
+  appearance its own storage key.
+- Follow-ups: REST DELETE /api/plugins/{name} and per-tool MCP enable; TUI /wake on needs a 180 s per-call deadline; terminal
+  pane per-profile font; TUI theme sync colours; pet availability probe; wake busy-mic resume retry; /pet and /wake into the
+  Python command registry; full-screen detection for other apps on Linux/Windows.
