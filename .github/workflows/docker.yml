@@ -158,6 +158,12 @@ jobs:
           fi
           uv run pytest -q -m docker tests/docker
 
+      # P25-19: the saved image (every layer, the config and its labels) swept for reference
+      # names, vendor hosts and build-machine paths. This workflow does not fetch the reference
+      # (docker files never spell its location), so reference media hashes are not compared here.
+      - name: Clean-room sweep of the image archive
+        run: uv run python -m tooling.checks artifacts --artifact "$RUNNER_TEMP/image/image.tar"
+
       - name: Keep the tested image
         if: ${{ github.event_name == 'push' || inputs.phase == 'test' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

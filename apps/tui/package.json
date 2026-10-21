@@ -10,6 +10,7 @@
     "spike:app": "vite build --ssr spike/inkSpike.tsx --outDir node_modules/.spike --emptyOutDir --logLevel warn && node node_modules/.spike/inkSpike.js",
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "bench": "vitest run --config bench/vitest.config.ts",
     "e2e": "pnpm run build && pnpm run typecheck:e2e && pnpm run test:e2e",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json"
   },

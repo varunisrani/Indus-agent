@@ -1,0 +1,121 @@
+{
+  "browser": {
+    "mode": "connect",
+    "cdp_endpoint": "http://127.0.0.1:9222",
+    "target_id": "indus-renderer"
+  },
+  "start_url": {
+    "url": "http://127.0.0.1:24000/",
+    "query": []
+  },
+  "environment": {
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "device_scale_factor": 1
+    },
+    "locale": "en-US",
+    "timezone": "UTC",
+    "color_scheme": "light",
+    "reduced_motion": "reduce",
+    "service_workers": "block"
+  },
+  "capture": {
+    "after_each_step": ["url", "accessibility", "screenshot"],
+    "at_end": ["url", "dom"],
+    "events": ["console", "page-errors", "network"]
+  },
+  "actions": [
+    {
+      "step_id": "wait-composer",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"composer\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "type-ask",
+      "action": "fill",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"composer\"] textarea"
+      },
+      "value": {
+        "source": "literal",
+        "value": "write the note"
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "send-ask",
+      "action": "press",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"composer\"] textarea"
+      },
+      "key": "Enter",
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-tool-row",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-ui=\"transcript-tool-row\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "open-files-pane",
+      "action": "click",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-ui=\"pane-toggle-files\"]"
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-files-pane",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"files-pane\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "open-review-pane",
+      "action": "click",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-ui=\"pane-toggle-review\"]"
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-review-pane",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"review-pane\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "wait-review-diff",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"review-diff\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "bindings": [
+    {
+      "obligation": "OBL-SETUP-001",
+      "owner": {
+        "module": "indus.cli.setup.wizard",
+        "symbol": "run_setup"
+      },
+      "tests": ["tests/integration/cli/test_setup_first_run.py::test_clean_home_to_first_answer"]
+    },
+    {
+      "obligation": "OBL-SETUP-002",
+      "owner": {
+        "module": "indus.cli.oneshot",
+        "symbol": "oneshot_exit_code"
+      },
+      "tests": ["tests/e2e/test_demo1.py::test_oneshot_exit_codes_from_the_real_entry"]
+    },
+    {
+      "obligation": "OBL-CLI-001",
+      "owner": {
+        "module": "indus.cli.repl.cards",
+        "symbol": "ApprovalCard"
+      },
+      "tests": [
+        "tests/unit/cli/repl/test_cards.py::test_each_digit_maps_to_its_answer",
+        "tests/e2e/test_demo1.py::test_demo1_create_run_quit_then_continue"
+      ]
+    },
+    {
+      "obligation": "OBL-CLI-002",
+      "owner": {
+        "module": "indus.safety.approvals.human",
+        "symbol": "ask_human"
+      },
+      "tests": [
+        "tests/unit/cli/repl/test_cards.py::test_four_denies_and_asks_for_a_reason",
+        "tests/unit/safety/approvals/test_human.py::test_deny_passes_reason_verbatim"
+      ]
+    },
+    {
+      "obligation": "OBL-CLI-003",
+      "owner": {
+        "module": "indus.cli.slash.control_cmds",
+        "symbol": "cmd_quit"
+      },
+      "tests": ["tests/unit/cli/slash/test_control_cmds.py::test_quit_and_exit"]
+    },
+    {
+      "obligation": "OBL-SESS-001",
+      "owner": {
+        "module": "indus.cli.resume",
+        "symbol": "resume_session"
+      },
+      "tests": [
+        "tests/unit/cli/test_resume.py::test_breadcrumb_per_terminal_id",
+        "tests/unit/cli/test_chat_select.py::test_breadcrumb_wins"
+      ]
+    },
+    {
+      "obligation": "OBL-SESS-002",
+      "owner": {
+        "module": "indus.cli.slash.session_cmds",
+        "symbol": "cmd_sessions"
+      },
+      "tests": ["tests/unit/cli/slash/test_dispatch.py::test_resume_picker_number_switches"]
+    },
+    {
+      "obligation": "OBL-TUI-001",
+      "owner": {
+        "module": "apps/tui/src/turn/controller.ts",
+        "symbol": "STATUS_INTERRUPTED"
+      },
+      "tests": [
+        "apps/tui/e2e/demo2.e2e.test.ts > Ctrl+C clears the draft, then interrupts the turn, then exits from an empty idle prompt"
+      ]
+    },
+    {
+      "obligation": "OBL-TUI-002",
+      "owner": {
+        "module": "apps/tui/src/pickers/ModelPicker.tsx",
+        "symbol": "ModelPicker"
+      },
+      "tests": [
+        "apps/tui/e2e/demo2.e2e.test.ts > Ctrl+O switches the model for the session; the next request uses it"
+      ]
+    },
+    {
+      "obligation": "OBL-DASH-001",
+      "owner": {
+        "module": "apps/web/src/pages/SessionsPage.tsx",
+        "symbol": "SessionsPage"
+      },
+      "tests": [
+        "apps/web/e2e/dashboard.spec.ts > Sessions: search finds a message with its snippet; delete removes the session"
+      ]
+    },
+    {
+      "obligation": "OBL-DASH-002",
+      "owner": {
+        "module": "apps/web/src/chat/ChatHost.tsx",
+        "symbol": "ChatHost"
+      },
+      "tests": [
+        "apps/web/e2e/chat.spec.ts > chat: a prompt and its approval in the terminal; Logs and back keeps the PTY; reload reattaches; a dead child offers a new session"
+      ]
+    },
+    {
+      "obligation": "OBL-DESK-001",
+      "owner": {
+        "module": "apps/desktop/src/onboarding/Onboarding.tsx",
+        "symbol": "Onboarding"
+      },
+      "tests": [
+        "apps/desktop/e2e/core/chat.electron.test.ts > Settings › Providers re-runs onboarding: a custom endpoint tested by the real route",
+        "apps/desktop/e2e/core/surfaces.electron.test.ts > first-run onboarding: an API key goes to the backend only, then the model is confirmed"
+      ]
+    },
+    {
+      "obligation": "OBL-DESK-002",
+      "owner": {
+        "module": "apps/desktop/src/panes/review/ReviewPane.tsx",
+        "symbol": "ReviewPane"
+      },
+      "tests": [
+        "apps/desktop/e2e/core/chat.electron.test.ts > chat: streamed reply, tool row, approval card, the reply after it",
+        "apps/desktop/e2e/core/chat.electron.test.ts > panes: git review lists the edit, files shows it, the preview shows a local page"
+      ]
+    },
+    {
+      "obligation": "OBL-GW-001",
+      "owner": {
+        "module": "indus.gateway.core.prompts",
+        "symbol": "ChatPrompts"
+      },
+      "tests": [
+        "tests/e2e/gateway/test_demo3.py::test_a_dangerous_command_is_approved_with_a_telegram_button",
+        "tests/unit/gateway/core/test_prompts.py::test_button_presses"
+      ]
+    },
+    {
+      "obligation": "OBL-GW-002",
+      "owner": {
+        "module": "indus.gateway.core.prompts",
+        "symbol": "approval_text"
+      },
+      "tests": [
+        "tests/unit/gateway/core/test_prompts.py::test_withdrawn_and_denied_are_reported_differently",
+        "tests/unit/gateway/core/test_prompts.py::test_deny_with_a_reason"
+      ]
+    },
+    {
+      "obligation": "OBL-CRON-001",
+      "owner": {
+        "module": "indus.cli.commands.cron",
+        "symbol": "create_command"
+      },
+      "tests": [
+        "tests/unit/cli/commands/test_cron.py::test_create_with_skills_and_defaults",
+        "tests/unit/cli/commands/test_cron.py::test_list_overdue_label_at_sixteen_minutes"
+      ]
+    },
+    {
+      "obligation": "OBL-CRON-002",
+      "owner": {
+        "module": "indus.cli.commands.cron",
+        "symbol": "run_lines"
+      },
+      "tests": [
+        "tests/unit/cli/commands/test_cron.py::test_run_now",
+        "tests/unit/cli/commands/test_cron.py::test_runs_and_history"
+      ]
+    },
+    {
+      "obligation": "OBL-ACP-001",
+      "owner": {
+        "module": "indus.acp.local_host",
+        "symbol": "LocalHost"
+      },
+      "tests": [
+        "tests/unit/acp/test_local_host.py::test_fallback_or_local_flag_runs_sessions_here",
+        "tests/unit/acp/test_entry.py::test_stdout_carries_frames_only_and_probes_are_quiet"
+      ]
+    }
+  ]
+}

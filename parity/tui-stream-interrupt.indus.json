@@ -1,0 +1,49 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "terminal",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-tui",
+      "action": "launch",
+      "argv": ["indus", "--tui", "--local"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-composer",
+      "action": "wait_for",
+      "locator": { "kind": "prompt" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "type-long-ask",
+      "action": "type",
+      "text": "tell me a long story",
+      "timeout_ms": 2000
+    },
+    { "step_id": "send-long-ask", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-streaming",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "word40\\b" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "interrupt", "action": "press", "key": "Ctrl+C", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-interrupted",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "interrupted" },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-ready-again",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "─ ready" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "type-follow-up", "action": "type", "text": "/quit", "timeout_ms": 2000 },
+    { "step_id": "send-follow-up", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    { "step_id": "wait-exit", "action": "wait_exit", "code": 0, "timeout_ms": 20000 }
+  ]
+}

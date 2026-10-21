@@ -320,6 +320,17 @@ def load_allow(path: Path = ALLOW_FILE) -> tuple[set[str], dict[str, dict], list
     return allow, exceptions, problems
 
 
+def load_obligations(path: Path = ALLOW_FILE) -> dict[str, str]:
+    """Copyleft licence id → what we must do when we ship it (``obligations``; shared with the
+    notices generator, P25-17). Unreadable or missing → empty."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    raw = data.get("obligations") or {}
+    return {str(k): str(v) for k, v in raw.items() if str(v).strip()}
+
+
 def run(ctx: Context, allow_path: Path = ALLOW_FILE) -> Result:
     result = Result(NAME)
     allow, exceptions, problems = load_allow(allow_path)

@@ -6,6 +6,13 @@ a list item or table row, bold or in backticks) count, so cross-references do no
 
 ``python -m tooling.checks.traps --write-skeleton`` creates the ledger, or appends rows for ids it
 lacks, each with ``Review: not yet planned``.
+
+Review lines (P25-11): every ``Review: <why> (<owner>)`` must name an owner task (``P<nn>`` or
+``P<nn>-<n>``) and a reason. The skeleton placeholder ``not yet planned`` is not a reason: it is a
+warning in the everyday check and a failure with ``--strict``. With ``--strict`` (the release
+gate) only reviews the lead accepted pass — ``Review: accepted by the lead <YYYY-MM-DD>: <why>
+(<owner>)``, for traps that cannot be tested — and cited tests must be collected and not skipped
+(``tooling.checks.collect``). Rows without any test reference are listed as "unpinned".
 """
 
 from __future__ import annotations
@@ -14,7 +21,7 @@ import re
 import sys
 from pathlib import Path
 
-from tooling.checks import ledger
+from tooling.checks import collect, ledger
 from tooling.checks.common import Context, Result, rel
 
 NAME = "traps"
@@ -25,6 +32,13 @@ DEFINITION = re.compile(
     r"^\s*(?:\d+[.)]|[-*]|\|)\s*(?:\*\*|`)(?P<id>[RT]\d{2}\.\d+[a-z]?)\b(?P<rest>.*)$"
 )
 TRAP_ID = re.compile(r"^[RT]\d{2}\.\d+[a-z]?$")
+RESEARCH = PLAN / "research"
+OWNER = re.compile(r"\((?P<inside>[^()]*)\)\s*$")
+TASK_ID = re.compile(r"\bP\d{2}(?:-\d+[a-z]?)?\b")
+PLACEHOLDER = re.compile(r"^not yet planned\b", re.IGNORECASE)
+ACCEPTED = re.compile(
+    r"^accepted by the lead (?P<date>\d{4}-\d{2}-\d{2})\s*:\s*(?P<why>.*)$", re.IGNORECASE
+)
 HEADER = """# Traps ledger
 
 Every trap from the plan (research specs `R<nn>.<n>`, phase docs `T<nn>.<n>`) has a row here.
@@ -76,6 +90,26 @@ def plan_traps(root: Path) -> dict[str, tuple[str, str]]:
     return found
 
 
+def review_problem(why: str, *, strict: bool) -> tuple[str, str] | None:
+    """(severity, message) for one Review line, or None when it is acceptable here.
+
+    Severity is "fail" or "warn"."""
+    owner = OWNER.search(why)
+    if owner is None or not TASK_ID.search(owner.group("inside")):
+        return "fail", "Review line names no owner task (P<nn> or P<nn>-<n>)"
+    reason = why[: owner.start()].strip()
+    accepted = ACCEPTED.match(reason)
+    if accepted:
+        if not accepted.group("why").strip():
+            return "fail", "accepted review gives no reason"
+        return None
+    if not reason or PLACEHOLDER.match(reason):
+        return ("fail" if strict else "warn"), "Review placeholder 'not yet planned' (no reason)"
+    if strict:
+        return "fail", "Review row (strict mode): only reviews accepted by the lead pass"
+    return None
+
+
 def run(ctx: Context) -> Result:
     result = Result(NAME)
     traps = plan_traps(ctx.root)
@@ -104,10 +138,40 @@ def run(ctx: Context) -> Result:
             result.fail(f"{LEDGER}:{row.line}: {rid} is not a trap id (R<nn>.<n> or T<nn>.<n>)")
         elif rid not in traps:
             result.warnings.append(f"{LEDGER}:{row.line}: {rid} is not in the plan any more")
-    for _, problem in ledger.check_rows(parsed, ledger.KnownTests(ctx.root), str(LEDGER)):
+    known = ledger.KnownTests(ctx.root)
+    for _, problem in ledger.check_rows(parsed, known, str(LEDGER)):
         result.fail(problem)
+    for rid, row in parsed.rows.items():
+        for cov in row.coverage:
+            if cov.kind != "review":
+                continue
+            found = review_problem(cov.value, strict=ctx.strict)
+            if found is None:
+                continue
+            severity, message = found
+            line = f"{LEDGER}:{cov.line}: {rid}: {message}"
+            if severity == "fail":
+                result.fail(line)
+            else:
+                result.warnings.append(line)
+    if ctx.strict:
+        for problem in collect.strict_problems(ctx.root, parsed, str(LEDGER), known):
+            result.fail(problem)
+    research = sorted(t for t, (where, _) in traps.items() if where.startswith(f"{RESEARCH}/"))
     reviews = sum(1 for r in parsed.rows.values() if any(c.kind == "review" for c in r.coverage))
-    result.data = {"traps": len(traps), "rows": len(parsed.rows), "review_rows": reviews}
+    unpinned = sorted(
+        rid for rid, r in parsed.rows.items() if not any(c.kind == "test" for c in r.coverage)
+    )
+    result.notes.append(f"{len(research)} research R-ids; {len(unpinned)} rows without a test")
+    if unpinned:
+        result.notes.append(f"unpinned: {', '.join(unpinned)}")
+    result.data = {
+        "traps": len(traps),
+        "research_ids": len(research),
+        "rows": len(parsed.rows),
+        "review_rows": reviews,
+        "unpinned": unpinned,
+    }
     return result
 
 

@@ -1,0 +1,72 @@
+# Performance budgets (P25-12, P25-13). Every number the perf checks enforce lives here.
+#
+# Python budgets are read by tests/perf (run with `uv run pytest -m perf tests/perf`, alone, on a
+# clean runner): each workload runs `runs` times and the `metric` of the samples is compared with
+# `limit_ms`. A value more than `regression` (a fraction) over its entry in
+# tooling/perf/baseline.json also fails; the baseline changes only with a note (see
+# docs/notes/P25/perf-python.md). TypeScript budgets are read by apps/web/scripts/check-bundle.mjs,
+# apps/tui/bench/stream-fps.bench.ts and apps/desktop/e2e/startup-budget.spec.ts.
+#
+# Keep this file to plain tables of `key = number | "string"` lines: the Node readers parse that
+# subset only.
+
+[settings]
+regression = 0.10
+runs = 5
+
+[python.cli_version]
+limit_ms = 150
+metric = "median"
+source = "D-04.4: `indus --version`"
+
+[python.oneshot_first_token]
+limit_ms = 1500
+metric = "median"
+source = "cold start of `indus -z` to the first fake-model token"
+
+[python.fifty_sessions_p99]
+limit_ms = 50
+metric = "median"
+source = "D-04.1 (c): 50 concurrent fake sessions, p99 frame-to-sink latency per run"
+
+[python.interrupt_close]
+limit_ms = 200
+metric = "median"
+source = "D-04.1 (a): interrupt closes the provider stream, worst of 5 interrupts per run"
+
+[python.store_append_10k]
+limit_ms = 3000
+metric = "median"
+source = "10,000 messages appended with FTS on (turn-sized batches of 50 rows)"
+
+[python.search_100k]
+limit_ms = 300
+metric = "median"
+source = "session search over 100,000 stored messages"
+
+[python.compress_200_turns]
+limit_ms = 2000
+metric = "median"
+source = "compression of a 200-turn session, summariser excluded (instant fake)"
+
+[web.initial_js]
+limit_kb_gzip = 350
+source = "web dashboard: JS loaded by index.html, gzip"
+
+[web.route_chunk]
+limit_kb_gzip = 200
+source = "web dashboard: any other JS chunk (route or lazy), gzip"
+
+[tui.stream_fps]
+min_fps = 30
+tokens = 10000
+source = "D-04.2: TUI streams a 10,000-token reply on the recorded stream"
+
+[tui.resize_storm]
+events = 100
+max_frames = 10
+source = "TUI: a resize storm of 100 events renders at most 10 frames"
+
+[desktop.cold_start]
+limit_ms = 3000
+source = "desktop cold start to interactive chat (packaged build, fake backend)"

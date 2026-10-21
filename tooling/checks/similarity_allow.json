@@ -6,5 +6,13 @@
   {
     "path": "LICENSE",
     "reason": "Standard MIT licence text (owner chose MIT for Indus Agent, 2026-10-18); the reference uses the same standard text"
+  },
+  {
+    "path": "docs/internals/notices-credit.md",
+    "reason": "The reference's MIT licence text and copyright line, reproduced verbatim as the credit its licence requires (D-16.40); the source of the credit section of the generated THIRD_PARTY_NOTICES.md (P25-17, 2026-10-21)"
+  },
+  {
+    "path": "scripts/release/licence_texts/*",
+    "reason": "Standard licence texts (the licences' canonical wording) that THIRD_PARTY_NOTICES.md must reproduce verbatim for the components we redistribute; they match any project that ships the same licence (P25-17, 2026-10-21)"
   }
 ]

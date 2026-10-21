@@ -27,8 +27,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root", default=str(DEFAULT_ROOT), help="repository root to check")
     p.add_argument("--json", action="store_true", help="print one JSON object")
     p.add_argument("--closest", type=int, default=0, metavar="N", help="rank top N similarity runs")
-    p.add_argument("--strict", action="store_true", help="acceptance: Review rows also fail")
+    p.add_argument(
+        "--strict",
+        action="store_true",
+        help="acceptance/traps release gate: Review rows fail, cited tests must be collected",
+    )
     p.add_argument("--body-file", help="prbody: file holding the pull request body")
+    p.add_argument(
+        "--artifact",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="artifacts: a built output to sweep (folder, .asar, image tar, zip); repeatable",
+    )
+    p.add_argument(
+        "--report",
+        action="store_true",
+        help="similarity with --closest: write docs/internals/similarity-report.md and gate on "
+        "its verdicts",
+    )
     p.add_argument(
         "--write-skeleton",
         action="store_true",
@@ -86,6 +103,8 @@ def main(argv: list[str] | None = None) -> int:
         strict=args.strict,
         body_file=args.body_file,
         write_skeleton=args.write_skeleton,
+        report=args.report,
+        artifacts=tuple(args.artifact),
     )
     results = [run_check(n, ctx) for n in names]
     worst = max((r.code for r in results), default=0)

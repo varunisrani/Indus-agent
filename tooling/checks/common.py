@@ -59,6 +59,8 @@ class Context:
     strict: bool = False
     body_file: str | None = None
     write_skeleton: bool = False
+    report: bool = False
+    artifacts: tuple[str, ...] = ()
 
 
 @dataclass

@@ -95,6 +95,29 @@ jobs:
           python3 scripts/docker/pins.py check
           uv run python scripts/nix/pins.py --check
 
+      # P25-15 / P25-14: the reference pages are generated from the code and the user docs site
+      # builds in strict mode (broken links and pages missing from the navigation fail). Pages
+      # are published by docs.yml.
+      - name: Docs reference fresh, site builds strict
+        env:
+          NO_MKDOCS_2_WARNING: "1"
+        run: |
+          uv run python scripts/docs/gen_reference.py --check
+          uv run mkdocs build --strict --site-dir "${RUNNER_TEMP}/docs-site"
+
+      # P25-17: THIRD_PARTY_NOTICES.md is generated from the locks and pins; stale or a licence
+      # off the allow-list fails.
+      - name: Third-party notices fresh
+        run: uv run python scripts/release/notices.py --check
+
+      # P25-08 / P25-05: the obligation ledger is consistent, and every parity flow's product side
+      # runs (terminal flows end to end against the scripted model; browser and desktop flows only
+      # prepare their input, their captures need REA). The reference side is the owner's lane.
+      - name: Parity ledger and product-side dry run
+        run: |
+          uv run python scripts/parity/ledger.py --check
+          uv run python scripts/parity/runner.py --all --dry-run
+
       - name: PR body has Reference and Task note lines
         if: github.event_name == 'pull_request'
         env:
@@ -198,6 +221,11 @@ jobs:
       - name: Tests
         run: pnpm test
 
+      # P25-13: the TUI renders the recorded 10,000-token stream at the budgeted frame rate and
+      # coalesces a resize storm (budgets in tooling/perf/budgets.toml).
+      - name: TUI stream and resize budgets
+        run: pnpm --filter @indus/tui bench
+
   # The dashboard's browser suite (P18-30, the M6 demo's browser half): Chromium against a real
   # `indus dashboard` and daemon in temp homes with the fake model; traces of failures uploaded.
   web-e2e:
@@ -234,6 +262,19 @@ jobs:
 
       - name: Browser suite
         run: pnpm web:e2e
+
+      # P25-13: the production build the browser suite just made stays within the initial-JS and
+      # per-chunk gzip budgets (tooling/perf/budgets.toml).
+      - name: Web bundle budget
+        run: node apps/web/scripts/check-bundle.mjs
+
+      - name: Keep the web build for the artefact sweep
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist/
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Traces of failed specs
         if: failure()
@@ -293,6 +334,15 @@ jobs:
       - name: Packaged smoke
         if: runner.os == 'Linux'
         run: pnpm --filter @indus/desktop e2e core/packaged
+
+      - name: Keep the unpacked Linux build for the artefact sweep
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-unpacked
+          path: apps/desktop/build/release/linux-unpacked/
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Keep the unsigned artefacts
         uses: actions/upload-artifact@v4
@@ -394,6 +444,63 @@ jobs:
       - name: Run the default package
         run: nix run .#default -- --version
 
+  # P25-19: the clean-room guards over BUILT outputs, not only sources: the web dist (from
+  # web-e2e), the unpacked Linux desktop build with its ASAR (from desktop-package), the docs site
+  # and the three installers. Reference names, vendor hosts, reference media and the build
+  # machine's home folder fail. Docker image archives are swept in docker.yml's build job.
+  artefacts:
+    needs:
+      - web-e2e
+      - desktop-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Fetch the pinned reference
+        working-directory: ${{ runner.temp }}
+        run: |
+          git init --quiet ref
+          git -C ref fetch --quiet --depth 1 "$REF_REPOSITORY_URL" "$REF_COMMIT"
+          git -C ref checkout --quiet --detach FETCH_HEAD
+          echo "INDUS_REF=${RUNNER_TEMP}/ref" >> "$GITHUB_ENV"
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: ${{ runner.temp }}/artefacts/web-dist
+
+      - name: Unpacked Linux desktop build
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux-unpacked
+          path: ${{ runner.temp }}/artefacts/linux-unpacked
+
+      - name: Docs site
+        env:
+          NO_MKDOCS_2_WARNING: "1"
+        run: uv run mkdocs build --strict --site-dir "${RUNNER_TEMP}/artefacts/docs-site"
+
+      - name: Sweep the built artefacts
+        run: >-
+          uv run python -m tooling.checks artifacts --require-ref
+          --artifact "${RUNNER_TEMP}/artefacts/web-dist"
+          --artifact "${RUNNER_TEMP}/artefacts/docs-site"
+          --artifact "${RUNNER_TEMP}/artefacts/linux-unpacked"
+          --artifact scripts/install.sh
+          --artifact scripts/install.ps1
+          --artifact scripts/install.cmd
+
   # The only required status. It needs every other job and is green only when each of them
   # succeeded: skipped, cancelled and failed all fail the gate (R10.18).
   gate:
@@ -407,6 +514,7 @@ jobs:
       - desktop-package
       - desktop-e2e
       - nix
+      - artefacts
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

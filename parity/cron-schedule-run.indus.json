@@ -1,0 +1,74 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "terminal",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-cron-create",
+      "action": "launch",
+      "argv": [
+        "indus",
+        "cron",
+        "create",
+        "every 1h",
+        "say hello from cron",
+        "--name",
+        "parity-job"
+      ],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-job-created",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "created" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "wait-create-exit", "action": "wait_exit", "code": 0, "timeout_ms": 30000 },
+    {
+      "step_id": "launch-cron-list",
+      "action": "launch",
+      "argv": ["indus", "cron", "list"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-job-listed",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "parity-job.*scheduled" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "wait-list-exit", "action": "wait_exit", "code": 0, "timeout_ms": 30000 },
+    {
+      "step_id": "launch-cron-run",
+      "action": "launch",
+      "argv": ["indus", "cron", "run", "parity-job"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-run-finished",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "finished: ok" },
+      "timeout_ms": 60000
+    },
+    {
+      "step_id": "wait-run-output",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "You said: .*" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "wait-run-exit", "action": "wait_exit", "code": 0, "timeout_ms": 30000 },
+    {
+      "step_id": "launch-cron-runs",
+      "action": "launch",
+      "argv": ["indus", "cron", "runs", "parity-job"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-run-recorded",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "kind=manual.*state=completed" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "wait-runs-exit", "action": "wait_exit", "code": 0, "timeout_ms": 30000 }
+  ]
+}

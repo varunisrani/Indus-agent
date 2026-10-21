@@ -15,7 +15,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/core/test_side_question.py::test_fork_answers_from_the_warm_prefix_and_writes_nothing`
   - `tests/unit/service/test_automation.py::test_goal_runs_until_the_judge_says_done`
 - **R01.2** Role alternation under every failure path
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/test_loop.py::test_random_turns_always_alternate`
+  - `tests/unit/core/test_repair.py::test_property_random_histories_come_out_alternating`
+  - `tests/unit/core/test_loop.py::test_open_calls_are_closed_when_an_error_escapes`
   - `tests/unit/core/subagents/test_batch.py::test_parent_interrupt_reaches_every_child_and_transcripts_stay_valid`
   - `tests/unit/core/test_moa.py::test_alternation_rejection_merges_and_is_remembered`
   - `tests/unit/core/test_moa.py::test_every_iteration_asks_again_and_tool_rounds_stay_paired`
@@ -99,11 +101,15 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/auth/test_pkce.py::test_only_documented_flows_are_registered`
   - `tests/unit/cli/commands/test_auth.py::test_oauth_add_for_a_provider_without_a_documented_flow`
 - **R01.13** Tool-definition list aliasing
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/test_definitions.py::test_appending_to_a_returned_list_never_changes_the_next`
+  - `tests/unit/tools/test_registry.py::test_registered_schema_is_a_private_copy`
 - **R01.14** Parallel tool safety
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/test_tool_plan.py::test_segment_table`
+  - `tests/unit/core/test_tool_plan.py::test_barrier_kinds`
+  - `tests/unit/core/test_tool_exec.py::test_nine_parallel_calls_never_exceed_eight`
 - **R01.15** Context-file trust
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/prompt/test_context_files.py::test_scan_hit_is_blocked`
+  - `tests/unit/core/prompt/test_context_files.py::test_persona_scan_hit_still_loads`
 - **R01.16** Thread/profile scope
   - `tests/unit/foundation/test_scope.py::test_thread_with_scope_vs_bare_thread`
   - `tests/unit/foundation/test_scope.py::test_bind_scope_in_executor`
@@ -111,9 +117,12 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/core/subagents/test_batch.py::test_cap_is_respected_and_results_keep_task_order`
   - `tests/unit/gateway/multiplex/test_scope.py::test_each_activity_runs_under_its_profile`
 - **R01.17** Empty and degenerate outputs
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/test_response_checks.py::test_empty_ladder_against_the_fake_model`
+  - `tests/unit/core/test_response_checks.py::test_terminal_empty_row_keeps_the_reasoning_out_of_the_answer`
+  - `tests/unit/core/test_loop.py::test_thinking_only_is_fed_back_as_prefill`
 - **R01.18** Exit-path completeness
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/core/test_loop.py::test_every_exit_passes_the_funnel`
+  - `tests/unit/protocol/test_models.py::test_exit_reason_is_the_closed_set`
 - **R02.1** Per-session variables leaking through the shared snapshot
   - `tests/contract/backends/test_docker_ssh_contract.py::test_session_values_are_never_frozen_into_the_snapshot`
   - `tests/unit/backends/docker/test_env.py::test_forwarded_values_stay_out_of_the_snapshot`
@@ -210,7 +219,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/tools/builtin/test_read_file.py::test_identical_reads_warn_at_three_and_block_at_four`
   - `tests/unit/tools/builtin/test_read_file.py::test_compaction_boundary_serves_full_content_once`
 - **R02.16** Spill files must outlive the cache mindset
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/test_spill.py::test_spill_file_content_equals_original`
+  - `tests/unit/tools/test_spill.py::test_nothing_writable_gives_inline_note`
   - `tests/unit/backends/test_stdin_payload.py::test_size_mismatch_is_a_stdin_error_and_the_file_is_removed`
 - **R02.17** Background completion only where it can be delivered
   - `tests/unit/backends/test_processes.py::test_notify_needs_a_registered_session`
@@ -291,7 +301,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/gateway/test_api_server_openai.py::test_a_flagged_command_is_denied_at_once`
   - `tests/contract/gateway/test_api_server_openai.py::test_clarify_and_tts_are_not_in_an_api_sessions_tools`
 - **R02.28** Handler signature drift breaks plugins
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tools/test_dispatch.py::test_narrow_signature_gets_only_declared_kwargs`
+  - `tests/unit/tools/test_dispatch.py::test_args_only_handler_gets_no_kwargs`
+  - `tests/unit/tools/test_dispatch.py::test_var_kwargs_handler_gets_everything`
 - **R02.29** Unscoped probes at boot
   - `tests/unit/backends/test_remote_probes.py::test_an_unscoped_probe_caches_nothing_and_the_first_scoped_call_checks`
   - `tests/unit/backends/test_remote_probes.py::test_a_check_that_loses_its_scope_is_quiet_and_not_remembered`
@@ -322,7 +334,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/state/test_journal.py::test_vulnerable_sqlite_uses_delete_for_new_and_keeps_existing_wal`
   - `tests/integration/state/test_multiprocess_daemon.py::test_daemon_writer_and_readers_share_the_store`
 - **R03.2** Stray open/close cancels SQLite's POSIX locks
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_registry.py::test_acquires_share_one_handle_and_the_last_release_closes`
+  - `tests/unit/state/test_registry.py::test_cold_concurrent_acquires_open_one_handle`
+  - `tests/unit/state/test_registry.py::test_many_handles_on_one_path_warn_once`
 - **R03.3** Checkpoint mode
   - `tests/unit/state/test_writer.py::test_fifty_writes_make_one_passive_checkpoint`
   - `tests/unit/state/test_registry.py::test_close_sequence_checkpoints_and_releases_the_header_descriptor`
@@ -455,12 +469,13 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/commands/test_sessions_maint.py::test_optimize_under_a_held_handle_skips_with_a_message`
   - `tests/unit/cli/commands/test_sessions_maint.py::test_prune_refuses_while_the_store_is_held`
 - **R03.26** Repair loops
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/state/test_connection.py::test_processes_racing_on_a_zeroed_file_make_one_backup`
+  - `tests/unit/state/test_connection.py::test_backup_names_are_numbered_on_clash`
 - **R03.27** macOS durability
   - `tests/unit/state/test_journal.py::test_macos_forces_full_and_fullfsync`
   - `tests/unit/state/test_journal.py::test_macos_barriers_on_every_wal_activation`
 - **R03.28** Startup watchdog vs slow I/O
-  - Review: not yet planned (P00-guards)
+  - Review: progress leases for long store phases are not built; P02 migrations are small today (unassigned: lead to place, P02 follow-up)
 - **R04.1** Classic chat is a gateway client
   - `tests/unit/cli/test_chat_select.py::test_frozen_flag_conflict_and_same_value`
   - `tests/unit/cli/test_chat_select.py::test_resume_restores_cwd_history_and_refuses_changed_flags`
@@ -665,7 +680,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/service/test_dual_host_matrix.py::test_bridge_event_shape`
   - `apps/tui/src/test/hosts.test.tsx::a prompt streams, settles into the transcript and the usage shows`
 - **R05.2** Events arrive before the UI subscribes
-  - Review: not yet planned (P00-guards)
+  - `packages/client/src/eventBuffer.test.ts::delivers live events after the first subscribe and never buffers again`
 - **R05.3** Server requests must not stall the agent
   - `tests/unit/service/test_request_redelivery.py::test_all_viewers_unrenderable_settles_undeliverable_at_once`
   - `tests/unit/service/test_request_redelivery.py::test_kind_no_viewer_renders_is_refused_up_front`
@@ -686,25 +701,28 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/cli/repl/test_cards.py::test_ctrl_c_on_the_card_denies_with_cancel_and_keeps_running`
   - Review: TUI composer (P12)
 - **R05.6** Never replace the stream buffer with a rendered fragment
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/events/handleEvent.test.ts::appends raw text and never takes a rendered field`
 - **R05.7** Terminal mode leakage
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/terminal/modes.test.ts::turns off every mode the terminal might have on`
+  - `apps/tui/src/terminal/modes.test.ts::survives a stream that throws`
 - **R05.8** Dead PTY loop
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/terminal/deadStream.test.ts::does not exit on the fourth EPIPE`
+  - `apps/tui/src/terminal/deadStream.test.ts::stops the bridge and exits 1 on the fifth`
 - **R05.9** Heartbeat false positives
   - `tests/unit/service/remote/test_channel.py::test_a_server_streaming_without_pongs_stays_connected`
   - `tests/unit/service/remote/test_channel.py::test_a_silent_server_is_closed_at_45_s`
   - `packages/client/src/ws-transport.test.ts::counts any inbound frame as liveness on a WebSocket (R05.9)`
 - **R05.10** Stale async results
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/composer/completion.test.ts::drops a reply for text that changed while it was on its way`
+  - `apps/tui/src/state/stores.test.ts::treats a switch back to the same id as a new destination`
 - **R05.11** README key tables drift from code
   - `tests/unit/cli/repl/test_cards.py::test_each_digit_maps_to_its_answer`
   - `tests/unit/cli/repl/test_cards.py::test_typed_words_work_and_letters_do_not`
   - Review: TUI key tables (P12)
 - **R05.12** Slash fallback hides real errors
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/slash/dispatch.test.ts::a client-side timeout is shown as a timeout`
 - **R05.13** Path completion on remote backends
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/composer/completion.test.ts::asks path completion with the session folder, never this process's folder`
 - **R05.14** Profile scoping in the backend
   - `tests/unit/service/remote/test_profile_guard.py::test_every_daemon_rpc_runs_under_the_daemon_scope`
   - `tests/unit/service/remote/test_profile_guard.py::test_bind_daemon_scope_keeps_one_profile_together`
@@ -718,18 +736,20 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/protocol/test_attach_contract.py::test_product_codes_reach_their_one_row`
   - `tests/unit/protocol/test_error_table.py::test_codes_and_names_are_unique`
 - **R05.16** Resize storms
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/terminal/resize.test.ts::200 events in 1 s → the first at once, one per 32 ms, and a final one at the last size`
 - **R05.17** Synchronized output inside tmux
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/terminal/capabilities.test.ts::under tmux drops every 2026 marker Ink writes`
 - **R05.18** Busy-mode default differs by surface
   - `tests/unit/service/test_daemon_host.py::test_busy_default_per_surface`
   - `tests/unit/service/test_daemon_host.py::test_tui_input_queues_and_cli_input_interrupts`
 - **R05.19** Paste-to-attachment heuristics
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/composer/paste.test.ts::keeps the raw text when the user types while drop detection runs`
+  - `apps/tui/src/composer/paste.test.ts::unwraps quotes and file URLs and spots image suffixes`
 - **R05.20** Child stdin hijack (stdio mode)
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/tui_bridge/test_stdio_server.py::test_claimed_stdio_keeps_noise_and_children_off_the_channel`
+  - `tests/unit/tui_bridge/test_stdio_server.py::test_nonblocking_flip_is_recovered`
 - **R05.21** Session create must be idempotent
-  - Review: not yet planned (P00-guards)
+  - `apps/tui/src/app/sessionLifecycle.test.ts::a lost create answer is retried with the same idempotency key`
   - `tests/unit/service/remote/test_host.py::test_a_lost_create_reply_then_retry_makes_one_session`
 - **R05.22** Approval command redaction and wrapping
   - `tests/unit/safety/approvals/test_human.py::test_request_shows_redacted_wrapped_command`
@@ -1037,7 +1057,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/plugins/test_prompt_sections.py::test_no_sections_leave_the_prompt_unchanged`
   - `tests/integration/service/test_plugin_host.py::test_plugins_and_shell_hooks_run_in_a_cli_session`
 - **R07.21** MCP tool name length
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/mcp/test_naming.py::test_a_64_character_name_is_kept_as_is`
+  - `tests/unit/mcp/test_naming.py::test_long_names_get_a_hash_suffix_of_the_full_name`
+  - `tests/unit/mcp/test_naming.py::test_names_that_differ_only_at_the_end_stay_distinct`
 - **R07.22** MCP stdio env leakage and spawn storms
   - `tests/unit/mcp/test_discovery.py::test_never_more_than_four_servers_connect_at_once`
   - `tests/unit/mcp/test_discovery.py::test_the_whole_pass_ends_at_300_s`
@@ -1084,7 +1106,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/learning/skills/test_prompt_index.py::test_compaction_rebuild_lists_new_skill`
   - `tests/unit/learning/test_host.py::test_skills_delta_note_rides_the_next_user_message_once`
 - **R07.30** Reference doc drift
-  - Review: not yet planned (P00-guards)
+  - Review: doc drift: code is the source of truth, nothing to run; candidate for a lead-signed accepted review (P13-17)
 - **R08.1** Attempt fencing on backend start
   - `apps/desktop/electron/boot/orchestrator.test.ts::overlapping starts: the older finishing last publishes nothing and keeps the newer pin`
   - `apps/desktop/electron/boot/orchestrator.test.ts::an older attempt failing late does not clear the newer pin or publish an error`
@@ -1094,7 +1116,8 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/boot/orchestrator.test.ts::an installer failure: Retry never re-runs the installer (spy) until Repair`
   - `apps/desktop/src/boot/BootOverlay.test.tsx::a latched failure shows Repair at once and is not retried automatically`
 - **R08.3** Single-instance lock before any process machinery
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/singleInstance.test.ts::a loser stays inert: every guarded machinery call throws and nothing is registered`
+  - `apps/desktop/electron/singleInstance.test.ts::a lock call that throws counts as losing`
 - **R08.4** One-use credentials
   - `tests/unit/service/test_ws_auth.py::test_reuse_within_ttl_fails`
   - `tests/unit/service/test_ws_auth.py::test_a_ticket_from_another_daemon_start_is_unknown`
@@ -1171,9 +1194,10 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/updates/skew.test.ts::mixed asar/unpacked generations after a broken update → offer reinstall`
   - `apps/desktop/electron/updates/skew.test.ts::an app behind the runtime it attached to → offer the app update`
 - **R08.15** Electron zoom drift
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/windows/zoom.test.ts::re-applies the saved level after a simulated hash navigation`
 - **R08.16** GUI PATH
-  - Review: not yet planned (P00-guards)
+  - `apps/desktop/electron/shellPath.test.ts::a shell that hangs 5 s is abandoned at the 3 s deadline; PATH unchanged`
+  - `apps/desktop/electron/shellPath.test.ts::falls back to a plain login shell when -i is refused`
 - **R08.17** Sandbox/GPU crash loops
   - `apps/desktop/electron/quitGuard.test.ts::a known GPU crash signature → one relaunch with the GPU disabled`
   - `apps/desktop/electron/quitGuard.test.ts::the relaunch never turns the sandbox off`
@@ -1188,7 +1212,7 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/src/gateway/connectionStore.test.ts::drops a replay result that belongs to an older connection`
   - `apps/desktop/src/chat/slash.test.ts::late results after a session switch are dropped`
 - **R08.20** Background focus theft
-  - Review: not yet planned (P00-guards)
+  - Review: focus-on-navigation off for chat windows has no pinning test yet (P20-02)
 - **R08.21** Deep links during boot
   - `apps/desktop/e2e/core/security.electron.test.ts::deep links: a program-running MCP link is refused; others only ask; Cancel installs nothing`
   - `apps/desktop/electron/deepLinks.test.ts::two links before ready: only the latest is delivered, exactly once`
@@ -1197,7 +1221,7 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/deepLinks.test.ts::delivery shows a tray-hidden window inactive and never focuses it (R08.21)`
   - `apps/desktop/src/deepLinks/DeepLinkHost.test.tsx::listens before it tells main it is ready`
 - **R08.22** Code signing order
-  - Review: not yet planned (P00-guards)
+  - Review: signing order is verified on packaged builds in the release lane (P23-15)
 - **R08.23** Remote execution boundary
   - `apps/desktop/src/chat/composer/Composer.test.tsx::remote mode uploads bytes: no client path reaches the remote host`
   - `apps/desktop/electron/connections/ssh.test.ts::client-only files reach the remote as bytes, never as a client path (R08.23)`
@@ -1206,7 +1230,8 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/quitGuard.test.ts::attached local daemon with running turns → informational prompt, nothing is stopped`
   - `apps/desktop/electron/backend/supervisor.test.ts::a daemon this app only attached to is never restarted`
 - **R09.1** Do not rebuild the chat in React
-  - Review: not yet planned (P00-guards)
+  - `apps/web/src/chat/ptySocket.test.ts::puts channel, attach, profile and a fresh chat's folder in the query, the credential only in the subprotocols`
+  - `apps/web/src/chat/ChatRail.test.tsx::shows the configured model until the feed names the model answering`
   - `apps/web/src/App.test.tsx::keeps the same chat host node across tab switches`
   - `apps/web/src/App.test.tsx::does not mount the chat host before the first visit`
   - `apps/web/src/chat/ChatRail.test.tsx::a rail that throws leaves the terminal mounted and connected`
@@ -1215,12 +1240,13 @@ Checked by `python -m tooling.checks traps`.
   - `apps/web/e2e/chat.spec.ts::chat: a prompt and its approval in the terminal; Logs and back keeps the PTY; reload reattaches; a dead child offers a new session`
   - `tests/integration/web/test_dashboard_daemon.py::test_the_dashboard_chat_and_a_cli_share_one_daemon_session`
 - **R09.2** WebSocket auth differs from REST auth
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/web/ws/test_ws_auth.py::test_checks_run_in_order`
+  - `tests/unit/web/ws/test_ws_auth.py::test_tickets_are_single_use_and_expire`
+  - `tests/unit/web/ws/test_ws_auth.py::test_non_loopback_peer_is_4408_on_a_loopback_bind`
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_subprotocol_is_accepted_once`
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_ticket_in_the_url_is_never_used`
   - `tests/contract/gateway/test_ws_endpoint.py::test_a_foreign_origin_or_peer_is_refused_4403`
   - `tests/contract/gateway/test_ws_endpoint.py::test_logs_carry_no_ticket_params_or_query`
-  - `tests/unit/web/ws/test_ws_auth.py::test_checks_run_in_order`
   - `tests/unit/web/ws/test_ws_auth.py::test_gated_tickets_through_the_app`
   - `tests/unit/web/ws/test_ws_auth.py::test_every_websocket_route_goes_through_the_helper`
   - `tests/unit/web/ws/test_ws_auth.py::test_credentials_in_the_url_are_refused_and_spent`
@@ -1234,26 +1260,27 @@ Checked by `python -m tooling.checks traps`.
   - `apps/web/e2e/auth.spec.ts::gated: login, the loopback token refused, single-use WS tickets, logout`
   - `tests/integration/web/test_dashboard_daemon.py::test_the_dashboard_chat_and_a_cli_share_one_daemon_session`
 - **R09.3** Non-loopback must fail closed
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/web/test_app_modes.py::test_gated_app_without_provider_is_refused`
+  - `tests/unit/web/auth/test_gate.py::test_a_declared_public_url_engages_the_gate_on_a_loopback_bind`
+  - `tests/unit/web/auth/test_gate.py::test_session_token_is_rejected_in_gated_mode`
   - `tests/unit/web/auth/test_gate.py::test_gate_table`
   - `tests/unit/web/test_app_modes.py::test_non_interactive_gated_start_without_provider_lists_reasons`
   - `apps/web/e2e/auth.spec.ts::a gated bind without a login provider refuses to start`
 - **R09.4** Middleware ordering leaks
-  - Review: not yet planned (P00-guards)
-  - `tests/unit/web/auth/test_gate.py::test_the_allowlist_is_one_object_in_both_gates`
+  - `tests/unit/web/auth/test_gate.py::test_bad_host_is_400_after_auth`
   - `tests/unit/web/auth/test_gate.py::test_unknown_plugin_route_is_401_before_404`
+  - `tests/unit/web/auth/test_gate.py::test_the_allowlist_is_one_object_in_both_gates`
   - `tests/contract/web/test_status_routes.py::test_status_is_public_in_gated_mode_too`
   - `tests/contract/web/test_cron_skills_routes.py::test_fire_refuses_bad_tokens_with_one_answer`
   - `tests/contract/web/test_plugins_mcp_routes.py::test_oauth_callback_is_public_and_matches_state`
   - `tests/unit/web/auth/test_gate.py::test_no_route_takes_the_token_in_the_query`
   - `tests/contract/web/test_files_system_routes.py::test_without_a_ticket_the_route_says_nothing_about_the_disk`
 - **R09.5** Token rotation vs open tabs
-  - Review: not yet planned (P00-guards)
   - `tests/unit/web/test_spa.py::test_client_routes_get_the_index_with_no_store`
+  - `apps/web/e2e/auth.spec.ts::a stale token after a dashboard restart reloads the page once and goes on`
   - `apps/web/src/lib/api.test.ts::reloads once on a loopback 401, then surfaces the error`
   - `apps/web/src/lib/api.test.ts::re-arms the reload guard after a 2xx`
   - `apps/web/src/lib/api.test.ts::never reloads in gated mode, and sends no token header`
-  - `apps/web/e2e/auth.spec.ts::a stale token after a dashboard restart reloads the page once and goes on`
 - **R09.6** PTY lifetime and supersession
   - `tests/unit/web/pty/test_registry.py::test_second_attach_supersedes_and_replays_then_redraws`
   - `tests/unit/web/pty/test_registry.py::test_child_exit_closes_the_viewer_4410`
@@ -1372,14 +1399,15 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/web/test_sessions_routes.py::test_bulk_maintenance_refuses_while_the_daemon_holds_the_lock`
   - `tests/contract/web/test_sessions_routes.py::test_bulk_maintenance_refuses_while_a_daemon_answers`
 - **R09.22** Brand assets
-  - Review: not yet planned (P00-guards)
   - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`
+  - `packages/ui/src/tokens/tokens.test.ts::emits stable CSS with only --indus- custom properties`
   - `apps/web/src/shell/assets.test.ts::loads no web fonts from stylesheets`
   - `packages/ui/src/tokens/presets.test.ts::are twelve, with our own unique names`
   - `tests/unit/cli/commands/test_pet.py::test_no_reference_art_ships`
+  - `tooling/checks/tests/test_artifacts.py::test_a_reference_asset_inside_an_asar_fails`
 - **R09.23** Reverse-proxy prefix
-  - Review: not yet planned (P00-guards)
   - `tests/unit/web/test_prefix.py::test_same_build_at_root_and_under_a_prefix`
+  - `tests/unit/web/test_prefix.py::test_prefix_from_an_untrusted_peer_is_ignored`
   - `tests/unit/web/test_prefix.py::test_callback_ignores_the_prefix_when_a_public_url_is_set`
   - `tests/unit/web/auth/test_login_page.py::test_both_providers_render_with_next_and_prefix`
 - **R10.1** Crash-durable batch results
@@ -1434,7 +1462,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/packaging/test_metadata.py::test_one_interpreter_line`
   - `tests/unit/packaging/test_metadata.py::test_no_interpreter_markers_or_open_ranges`
 - **R10.13** Shadowed lint config
-  - Review: not yet planned (P00-guards)
+  - `tests/unit/test_layers.py::test_single_config_file`
 - **R10.14** Installer repository stage is the riskiest code
   - `tests/integration/install/test_install_sh_repository.py::test_clone_failure_midway_leaves_no_target`
   - `tests/integration/install/test_install_sh_repository.py::test_broken_checkout_is_moved_aside`
@@ -1459,16 +1487,16 @@ Checked by `python -m tooling.checks traps`.
   - `tests/integration/install/test_install_sh_runtime.py::test_other_curl_failures_never_try_the_mirror`
   - `tests/integration/install/test_install_sh_runtime.py::test_a_mirror_with_bad_bytes_is_refused_too`
 - **R10.17** Fail-open change classification
-  - Review: not yet planned (P00-guards)
+  - Review: the fail-open change classifier is not in ci.yml yet (P23)
 - **R10.18** Strict aggregate gate
   - `tooling/checks/tests/test_pins.py::test_ci_gate_needs_every_job`
   - `tooling/checks/tests/test_pins.py::test_ci_gate_fails_on_anything_but_success`
   - `tests/unit/release/test_publish.py::test_gate_counts_a_skipped_selected_job_as_failed`
   - `tests/unit/ci/test_release_workflow.py::test_gate_needs_every_job_and_always_runs`
 - **R10.19** Deterministic slicing
-  - Review: not yet planned (P00-guards)
+  - Review: deterministic CI slicing needs the per-file runner (S13), not built yet (P23)
 - **R10.20** Flake retry rules
-  - Review: not yet planned (P00-guards)
+  - Review: retry-once flaky reporting needs the per-file runner (S13), not built yet (P23)
 - **R10.21** Host gating via one marker
   - `tests/unit/packaging/test_platform_marks.py::test_two_platforms_marks_fail_collection`
   - `tests/unit/packaging/test_platform_marks.py::test_other_hosts_are_deselected`
@@ -1501,7 +1529,9 @@ Checked by `python -m tooling.checks traps`.
   - `tooling/checks/tests/test_locales.py::test_missing_key_fails`
 - **R10.29** Personal data in the repo
   - `tests/unit/release/test_release_cli.py::test_unmapped_author_fails_a_release_and_warns_a_canary`
+  - `tooling/checks/tests/test_artifacts.py::test_the_build_machines_home_folder_is_personal_data`
 - **R10.30** Supply-chain scans are heuristics
-  - Review: not yet planned (P00-guards)
+  - `tooling/checks/tests/test_pins.py::test_open_range_fails`
+  - `tooling/checks/tests/test_pins.py::test_bounded_range_needs_allow_entry`
   - `tests/unit/safety/test_content_scan.py::test_code_spans_and_fences_scan_at_least_as_strictly_as_prose`
   - `tests/unit/learning/skills/hub/test_install.py::test_commands_in_code_spans_and_fences_are_not_hidden_from_the_policy`

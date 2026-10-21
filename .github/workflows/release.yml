@@ -96,6 +96,13 @@ jobs:
         run: uv run pytest -q -m perf
       - name: Repo guards
         run: uv run python -m tooling.checks --require-ref
+      # P25-10 / P25-11: a release also needs every acceptance and trap row resolved: no Review
+      # rows but the lead-accepted ones, no test that resolves to a skip (hence every extra), no
+      # unknown feature id. The PR gate runs these two checks in their default mode only.
+      - name: Acceptance map and traps ledger (strict)
+        run: |
+          uv sync --locked --all-extras
+          uv run python -m tooling.checks acceptance traps --strict --require-ref
 
   docker:
     name: Images (built, tested, pushed by digest)

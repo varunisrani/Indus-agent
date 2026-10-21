@@ -1,0 +1,102 @@
+{
+  "normalized_result": {
+    "browser": {
+      "mode": "launch",
+      "product": "Chromium",
+      "version": "0"
+    },
+    "scenario": {
+      "start_origin": "http://127.0.0.1:24000"
+    },
+    "steps": [
+      {
+        "step_id": "scenario_start",
+        "action": "goto_start",
+        "status": "completed"
+      },
+      {
+        "step_index": 0,
+        "step_id": "wait-shell",
+        "action": "wait_for",
+        "status": "completed",
+        "error": null,
+        "elapsed_ms": 5,
+        "artifacts": {
+          "accessibility": {
+            "state": "captured",
+            "value": {
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "bytes": 164,
+              "text": "- document:\n  - navigation \"Main\":\n    - link \"Talk\":\n      - /url: /talk\n  - main:\n    - list \"All sessions\":\n      - listitem:\n        - button \"Expand this one\"\n"
+            }
+          }
+        }
+      },
+      {
+        "step_index": 0,
+        "step_id": "open-row",
+        "action": "click",
+        "status": "completed",
+        "error": null,
+        "elapsed_ms": 5,
+        "artifacts": {
+          "accessibility": {
+            "state": "captured",
+            "value": {
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "bytes": 109,
+              "text": "- document:\n  - navigation \"Main\":\n    - link \"Chat\"\n  - main:\n    - dialog \"Detail\":\n      - button \"Close\"\n"
+            }
+          }
+        }
+      },
+      {
+        "step_index": 0,
+        "step_id": "wait-detail",
+        "action": "wait_for",
+        "status": "completed",
+        "error": null,
+        "elapsed_ms": 5,
+        "artifacts": {
+          "accessibility": {
+            "state": "captured",
+            "value": {
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "bytes": 109,
+              "text": "- document:\n  - navigation \"Main\":\n    - link \"Chat\"\n  - main:\n    - dialog \"Detail\":\n      - button \"Close\"\n"
+            }
+          }
+        }
+      },
+      {
+        "step_index": 0,
+        "step_id": "ref-only",
+        "action": "click",
+        "status": "failed",
+        "error": "Analysis operation timed out",
+        "elapsed_ms": 5,
+        "artifacts": {
+          "accessibility": {
+            "state": "captured",
+            "value": {
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "bytes": 109,
+              "text": "- document:\n  - navigation \"Main\":\n    - link \"Chat\"\n  - main:\n    - dialog \"Detail\":\n      - button \"Close\"\n"
+            }
+          }
+        }
+      }
+    ],
+    "events": {
+      "items": [
+        {
+          "kind": "page-error",
+          "message": "boom",
+          "stack": null,
+          "sequence": 1,
+          "step_index": 2
+        }
+      ]
+    }
+  }
+}

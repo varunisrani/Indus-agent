@@ -1,0 +1,6 @@
+The Docker image is built on a Debian base image. Debian is a collection of
+separately licensed packages (mostly GPL, LGPL, BSD, MIT and similar free
+software licences). Each package installed in the image carries its own
+copyright and licence file at /usr/share/doc/<package>/copyright inside the
+image, and the matching source code is available from https://sources.debian.org
+and the Debian archive for the release named in the image tag.

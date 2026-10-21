@@ -1,0 +1,88 @@
+{
+  "browser": {
+    "mode": "launch",
+    "executable_path": "/usr/bin/chromium",
+    "headless": true
+  },
+  "start_url": {
+    "url": "http://127.0.0.1:24000/",
+    "query": []
+  },
+  "environment": {
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "device_scale_factor": 1
+    },
+    "locale": "en-US",
+    "timezone": "UTC",
+    "color_scheme": "light",
+    "reduced_motion": "reduce",
+    "service_workers": "block"
+  },
+  "capture": {
+    "after_each_step": ["url", "accessibility", "screenshot"],
+    "at_end": ["url", "dom"],
+    "events": ["console", "page-errors", "network"]
+  },
+  "actions": [
+    {
+      "step_id": "wait-shell",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"sidebar\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "wait-status-strip",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"status-sessions\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "open-sessions",
+      "action": "click",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"sidebar\"] a[href=\"/sessions\"]"
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-session-row",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid^=\"session-\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "open-session",
+      "action": "click",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid^=\"session-\"] button[aria-expanded]"
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-session-detail",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid^=\"detail-\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    }
+  ]
+}

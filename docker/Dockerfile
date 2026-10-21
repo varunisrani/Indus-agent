@@ -70,7 +70,7 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/indus/python \
     UV_CACHE_DIR=/tmp/uv-cache
 WORKDIR /opt/indus
 RUN uv python install "${PYTHON_VERSION}"
-COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY pyproject.toml uv.lock README.md LICENSE THIRD_PARTY_NOTICES.md ./
 # Dependencies first (cached until the lock changes), then the project itself (editable, so the
 # no-wheel build guard of P23-01 is not involved). The extras list is split into words on purpose.
 # hadolint ignore=SC2086

@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "obligations": [
+    {
+      "id": "OBL-SETUP-001",
+      "version": 1,
+      "title": "A first setup on an empty home reaches a custom OpenAI-compatible endpoint without a key and offers that endpoint's models",
+      "family": "setup",
+      "scenario": "first-run-setup",
+      "steps": [
+        "choose-custom-endpoint",
+        "wait-endpoint-url",
+        "send-endpoint-url",
+        "wait-api-key",
+        "skip-api-key",
+        "wait-model-list",
+        "choose-model"
+      ],
+      "required": true
+    },
+    {
+      "id": "OBL-SETUP-002",
+      "version": 1,
+      "title": "Setup ends with a summary and exit 0, and the next one-shot turn is answered by the chosen model",
+      "family": "setup",
+      "scenario": "first-run-setup",
+      "steps": ["wait-setup-done", "wait-setup-exit", "wait-first-answer", "wait-first-turn-exit"],
+      "required": true
+    },
+    {
+      "id": "OBL-CLI-001",
+      "version": 1,
+      "title": "A risky command waits for approval; allowing it once runs it and the answer reports its output",
+      "family": "approvals",
+      "scenario": "cli-chat-approve",
+      "steps": ["wait-approval-1", "allow-once", "wait-command-ran"],
+      "required": true
+    },
+    {
+      "id": "OBL-CLI-002",
+      "version": 1,
+      "title": "Deny asks for an optional reason; the model is told the command was refused and nothing runs",
+      "family": "approvals",
+      "scenario": "cli-chat-approve",
+      "steps": [
+        "wait-approval-2",
+        "deny",
+        "wait-deny-reason",
+        "skip-deny-reason",
+        "wait-declined-answer"
+      ],
+      "required": true
+    },
+    {
+      "id": "OBL-CLI-003",
+      "version": 1,
+      "title": "/quit leaves the classic CLI with exit code 0",
+      "family": "cli",
+      "scenario": "cli-chat-approve",
+      "steps": ["type-quit", "send-quit", "wait-exit"],
+      "required": true
+    },
+    {
+      "id": "OBL-SESS-001",
+      "version": 1,
+      "title": "`indus -c` continues this terminal's newest session and shows a recap of it",
+      "family": "sessions",
+      "scenario": "cli-resume-search",
+      "steps": ["launch-continue", "wait-resumed", "wait-recap-lunch"],
+      "required": true
+    },
+    {
+      "id": "OBL-SESS-002",
+      "version": 1,
+      "title": "/sessions lists recent sessions by title; a list number switches to that session and shows its recap",
+      "family": "sessions",
+      "scenario": "cli-resume-search",
+      "steps": [
+        "type-sessions",
+        "send-sessions",
+        "wait-session-list",
+        "type-pick-kite",
+        "send-pick-kite",
+        "wait-resumed-kite"
+      ],
+      "required": true
+    },
+    {
+      "id": "OBL-TUI-001",
+      "version": 1,
+      "title": "Ctrl+C during a streamed reply stops it, marks the turn interrupted and the composer is ready again",
+      "family": "tui",
+      "scenario": "tui-stream-interrupt",
+      "steps": ["wait-streaming", "interrupt", "wait-interrupted", "wait-ready-again"],
+      "required": true
+    },
+    {
+      "id": "OBL-TUI-002",
+      "version": 1,
+      "title": "The model picker opens from the keyboard; a typed model id switches this session's model and the next turn uses it",
+      "family": "tui",
+      "scenario": "tui-model-picker",
+      "steps": [
+        "open-model-picker",
+        "wait-provider-picker",
+        "choose-current-provider",
+        "wait-model-list",
+        "type-model-id",
+        "choose-model",
+        "wait-effort-picker",
+        "keep-effort",
+        "wait-model-switched",
+        "wait-long-answer"
+      ],
+      "required": true
+    },
+    {
+      "id": "OBL-DASH-001",
+      "version": 1,
+      "title": "The dashboard's Sessions page lists stored sessions and a row expands into its detail",
+      "family": "dashboard",
+      "scenario": "dashboard-sessions",
+      "steps": ["open-sessions", "wait-session-row", "open-session", "wait-session-detail"],
+      "required": true
+    },
+    {
+      "id": "OBL-DASH-002",
+      "version": 1,
+      "title": "The dashboard's Chat tab attaches a live terminal beside the model rail and stays connected while typing",
+      "family": "dashboard",
+      "scenario": "dashboard-chat-tab",
+      "steps": [
+        "open-chat",
+        "wait-chat-host",
+        "wait-chat-terminal",
+        "wait-chat-open",
+        "wait-chat-rail",
+        "wait-chat-model",
+        "type-in-terminal",
+        "send-in-terminal",
+        "wait-still-open"
+      ],
+      "required": true
+    },
+    {
+      "id": "OBL-DESK-001",
+      "version": 1,
+      "title": "The desktop app's first run asks how to reach a model; a tested custom endpoint and a chosen model lead to the composer",
+      "family": "desktop",
+      "scenario": "desktop-onboarding",
+      "steps": [
+        "wait-onboarding",
+        "choose-custom-endpoint",
+        "fill-base-url",
+        "test-endpoint",
+        "wait-model-choice",
+        "start-chatting",
+        "wait-composer"
+      ],
+      "required": true
+    },
+    {
+      "id": "OBL-DESK-002",
+      "version": 1,
+      "title": "A desktop turn that writes a file shows a tool row, and the files and review panes show the change",
+      "family": "desktop",
+      "scenario": "desktop-chat-panes",
+      "steps": [
+        "send-ask",
+        "wait-tool-row",
+        "open-files-pane",
+        "wait-files-pane",
+        "open-review-pane",
+        "wait-review-pane",
+        "wait-review-diff"
+      ],
+      "required": true
+    },
+    {
+      "id": "OBL-GW-001",
+      "version": 1,
+      "title": "A risky command asked for in a Telegram direct message shows approval buttons; Allow runs it and the reply says so",
+      "family": "gateway",
+      "scenario": "gateway-telegram-approve",
+      "steps": ["send-first-ask", "wait-approval-1", "press-allow-once", "wait-command-ran"],
+      "required": true
+    },
+    {
+      "id": "OBL-GW-002",
+      "version": 1,
+      "title": "Deny from the button tells the model the command was refused; nothing runs",
+      "family": "gateway",
+      "scenario": "gateway-telegram-approve",
+      "steps": ["wait-approval-2", "press-deny", "wait-declined-answer"],
+      "required": true
+    },
+    {
+      "id": "OBL-CRON-001",
+      "version": 1,
+      "title": "`indus cron create` stores a job with its schedule and `cron list` shows it with its next run",
+      "family": "cron",
+      "scenario": "cron-schedule-run",
+      "steps": ["wait-job-created", "wait-create-exit", "wait-job-listed", "wait-list-exit"],
+      "required": true
+    },
+    {
+      "id": "OBL-CRON-002",
+      "version": 1,
+      "title": "`indus cron run` runs the job now, prints where its output went and records a manual run",
+      "family": "cron",
+      "scenario": "cron-schedule-run",
+      "steps": ["wait-run-finished", "wait-run-output", "wait-run-exit", "wait-run-recorded"],
+      "required": true
+    },
+    {
+      "id": "OBL-ACP-001",
+      "version": 1,
+      "title": "An editor initializes over stdio, opens a session in its folder and gets a streamed answer that ends the turn",
+      "family": "acp",
+      "scenario": "acp-session",
+      "steps": [
+        "wait-initialized",
+        "wait-session-created",
+        "send-prompt",
+        "wait-message-chunk",
+        "wait-prompt-done",
+        "wait-exit"
+      ],
+      "required": true
+    }
+  ]
+}

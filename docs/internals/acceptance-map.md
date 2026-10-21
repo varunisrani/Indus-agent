@@ -6,19 +6,29 @@ Each P0/P1 feature of `docs/plan/03-feature-inventory.md` has at least one accep
 Checked by `python -m tooling.checks acceptance`.
 
 - **ACC-A1-1** One agent object turns a user message into a final answer by calling the model, running requested …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_loop.py::test_plain_answer`
+  - `tests/unit/core/test_loop.py::test_tool_loop_from_the_fixture_script`
 - **ACC-A2-1** Durable ordering: the user's message is saved before the first model call and each tool-call …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_prologue_finalize.py::test_user_row_is_stored_before_the_first_call`
+  - `tests/unit/core/test_prologue_finalize.py::test_a_failed_start_write_means_no_provider_call`
+  - `tests/unit/core/test_tool_round.py::test_call_row_is_committed_before_the_side_effect`
 - **ACC-A3-1** Strict role alternation is kept on every path (interrupt, timeout, bad tool name, crash); every …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_loop.py::test_random_turns_always_alternate`
+  - `tests/unit/core/test_repair.py::test_property_random_histories_come_out_alternating`
+  - `tests/unit/core/test_loop.py::test_open_calls_are_closed_when_an_error_escapes`
 - **ACC-A4-1** System prompt built in stable / context / volatile layers once per conversation, stored with the …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/prompt/test_builder.py::test_tiers_in_order_and_joined_by_blank_lines`
+  - `tests/unit/core/prompt/test_lifecycle.py::test_resume_reuses_stored_bytes_without_building`
+  - `tests/unit/core/prompt/test_builder.py::test_build_is_deterministic`
 - **ACC-A5-1** Persona: a persona file in the profile home (our name `PERSONA.md`, proposal in …
   - `tests/unit/foundation/test_layout.py::test_fresh_home_gets_every_dir_owner_only_and_a_persona`
   - `tests/unit/foundation/test_layout.py::test_customised_persona_survives_later_runs`
-  - Review: persona loading into the system prompt (P04)
+  - `tests/unit/core/prompt/test_builder.py::test_persona_replaces_identity_once`
+  - `tests/unit/core/prompt/test_builder.py::test_persona_switches`
 - **ACC-A6-1** Project context discovery: native `.indus.md`/`INDUS.md` nearest to cwd, else an `AGENTS.md` chain …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/prompt/test_context_files.py::test_category_priority`
+  - `tests/unit/core/prompt/test_context_files.py::test_native_file_walks_up_to_git_root_only`
+  - `tests/unit/core/prompt/test_context_files.py::test_agents_chain_order`
 - **ACC-A8-1** `@` references (`@file:`, `@folder:`, `@diff`, `@git:`, `@url:`, plugin prefixes) expand into the …
   - `tests/unit/core/test_references.py::test_file_line_range_inserts_exactly_those_lines`
   - `tests/unit/core/test_references.py::test_folder_caps_depth_and_count`
@@ -32,17 +42,25 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/core/test_references.py::test_indus_auth_store_refused`
   - `tests/unit/core/test_references.py::test_symlink_to_a_credential_is_refused`
 - **ACC-A9-1** Per-surface platform hint in the prompt (CLI, TUI, desktop, cron, API, each messaging platform) …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/prompt/test_builder.py::test_platform_hint_overrides`
+  - `tests/unit/core/prompt/test_builder.py::test_platform_hint_unknown_platform_and_config`
 - **ACC-A10-1** Model-family guidance blocks (act-don't-describe, execution discipline, developer-role models) …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/prompt/test_builder.py::test_family_gates_by_model`
+  - `tests/unit/core/prompt/test_builder.py::test_execution_guidance_is_its_own_gate`
 - **ACC-A11-1** Date-only timestamp line with zone, plus a runtime block naming OS, home and working directory (or …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/prompt/test_builder.py::test_date_line_has_zone_and_no_time`
+  - `tests/unit/core/prompt/test_builder.py::test_runtime_block_is_last`
+  - `tests/unit/core/prompt/test_builder.py::test_local_runtime_defaults`
 - **ACC-A13-1** Interrupt from any thread: the in-flight model call is abandoned without leaking partial text …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_interrupts.py::test_interrupt_mid_stream_closes_the_stream_quickly`
+  - `tests/unit/service/test_host_inprocess.py::test_a_sync_caller_interrupts_mid_stream_from_another_thread`
+  - `tests/unit/core/test_interrupts.py::test_interrupt_during_tools_cancels_running_and_skips_the_rest`
 - **ACC-A14-1** Steer: extra guidance typed during a turn is delivered as its own user message after the current …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_interrupts.py::test_steer_during_tools_becomes_its_own_row_after_the_results`
+  - `tests/unit/core/test_interrupts.py::test_concurrent_steers_keep_all_text`
 - **ACC-A15-1** Redirect: a correction during a model call cancels only that call, keeps finished work and retries …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_interrupts.py::test_redirect_keeps_partial_text_and_never_stores_reasoning`
+  - `tests/unit/core/test_interrupts.py::test_redirect_during_tools_becomes_steer`
 - **ACC-A16-1** Streaming by default with read/connect timeouts and stale-stream detection; a session flips to …
   - `tests/unit/providers/test_streaming.py::test_stall_before_first_delta_reconnects`
   - `tests/unit/providers/test_streaming.py::test_breaker_trips_after_five_stalls`
@@ -55,7 +73,8 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/providers/test_streaming.py::test_overflow_mid_stream_returns_empty_terminal_stub`
   - Review: continuation prompt after the stub (P04)
 - **ACC-A18-1** Think-tag scrubber across deltas and a repetition guard against runaway loops
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_response_checks.py::test_tags_split_across_three_deltas`
+  - `tests/unit/core/test_response_checks.py::test_repetition_dominated_text_aborts`
 - **ACC-A19-1** Error classifier with a closed set of reasons (auth, billing, rate limit, overloaded, context …
   - `tests/unit/providers/test_classify.py::test_cases`
   - `tests/unit/providers/test_classify.py::test_profile_hook_wins`
@@ -85,9 +104,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/core/test_fallback.py::test_an_unentitled_primary_is_not_restored`
   - `tests/unit/core/test_fallback.py::test_a_failed_activation_still_resets_the_index`
 - **ACC-A25-1** Output-length recovery: continuation nudges for cut-off text, larger output caps for cut-off tool …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_response_checks.py::test_text_cut_off_is_continued_and_stitched`
+  - `tests/unit/core/test_response_checks.py::test_cut_off_tool_call_is_requested_again_with_a_bigger_cap`
+  - `tests/unit/core/test_loop.py::test_length_ladder_continues_and_stitches`
 - **ACC-A26-1** Empty or thinking-only reply recovery ladder ending in a clear explanation instead of a blank …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_response_checks.py::test_empty_ladder_against_the_fake_model`
+  - `tests/unit/core/test_loop.py::test_thinking_only_is_fed_back_as_prefill`
+  - `tests/unit/core/test_response_checks.py::test_ceiling_without_any_text_explains`
 - **ACC-A28-1** LSP stop gate: language-server errors on this turn's edits that arrived after their tool results send the agent back once, as a durable row after the interim answer
   - `tests/unit/core/test_stop_gates_lsp.py::test_lsp_gate_re_enters_exactly_once_for_a_new_error`
   - `tests/unit/core/test_stop_gates_lsp.py::test_lsp_gate_fires_at_most_three_times_a_turn`
@@ -101,17 +124,27 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/core/test_stop_gates_lsp.py::test_pre_verify_hook_after_code_edits_only_and_capped`
   - `tests/unit/core/test_stop_gates_lsp.py::test_gate_order_lsp_then_verify_then_hook`
 - **ACC-A29-1** Tool round: unknown tool names auto-repaired or answered with valid names, duplicate calls dropped …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_tool_round.py::test_name_repair_table`
+  - `tests/unit/core/test_tool_round.py::test_misspelled_name_is_repaired_and_run`
+  - `tests/unit/core/test_tool_round.py::test_duplicates_and_extra_children_are_dropped`
 - **ACC-A30-1** Safe parallel tool execution: read-only tools and non-overlapping file paths run concurrently …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_tool_plan.py::test_segment_table`
+  - `tests/unit/core/test_tool_exec.py::test_nine_parallel_calls_never_exceed_eight`
+  - `tests/unit/core/test_tool_exec.py::test_results_keep_call_order_when_finishing_out_of_order`
 - **ACC-A31-1** Untrusted-content fencing for web, browser and MCP results so the model treats them as data
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_tool_round.py::test_web_results_are_fenced`
+  - `tests/unit/core/test_tool_round.py::test_fence_rules`
 - **ACC-A32-1** Tool-loop guardrails: repeated identical failures warn then block, per-turn caps on web searches …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_guardrails.py::test_exact_failure_warns_at_two_and_blocks_at_five`
+  - `tests/unit/core/test_guardrails.py::test_web_search_cap`
+  - `tests/unit/core/test_guardrails.py::test_subagent_cap_counts_tasks_in_a_batch_call`
 - **ACC-A33-1** Toolsets: named bundles with includes, a shared core list, per-platform bundles and posture sets …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/test_toolsets.py::test_named_sets`
+  - `tests/unit/tools/test_toolsets.py::test_core_list_is_the_p05_tool_set_plus_delegation`
+  - `tests/unit/tools/test_toolsets.py::test_platform_bundles`
 - **ACC-A34-1** Iteration cap (`max_turns`) and optional wall-clock run budget with a single wrap-up notice at 80 %
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/core/test_loop.py::test_cap_reached_gets_one_toolless_grace_call`
+  - `tests/unit/core/test_liveness.py::test_run_budget_wraps_up_once_then_ends_the_run`
 - **ACC-A34-2** Wall-clock run budget: one wrap-up notice at 80 % on the newest unstored tool result, `budget_exhausted` when spent, implicit timeouts capped
   - `tests/unit/core/test_liveness.py::test_run_budget_wraps_up_once_then_ends_the_run`
   - `tests/unit/core/test_liveness.py::test_wrap_up_only_on_unstored_tool_row`
@@ -201,7 +234,8 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/providers/test_route.py::test_openai_host_routes_to_responses`
   - `tests/unit/providers/test_registry.py::test_config_provider_on_openai_host_detects_responses`
 - **ACC-A52-1** In-place model switch mid-session that rolls back atomically on failure
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/slash/test_control_cmds.py::test_failed_switch_rolls_back`
+  - `tests/unit/cli/slash/test_control_cmds.py::test_model_switch_and_provider_forms`
 - **ACC-A53-1** Reasoning effort ladder `none … ultra` with per-model overrides, clamped to the strongest supported …
   - `tests/unit/providers/test_types.py::test_clamp_effort`
   - `tests/unit/providers/transports/test_chat_completions.py::test_reasoning_effort_clamped_to_profile`
@@ -214,7 +248,8 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-A55-1** Bundled provider catalogue of about forty vendors and gateways (key-based ones first)
   - `tests/unit/providers/test_bundled.py::test_catalogue_names_and_order`
   - `tests/unit/providers/test_bundled.py::test_every_profile_revalidates`
-  - Review: Gemini, Bedrock, Vertex, Azure, Fireworks, DeepInfra rows arrive with P08 transports (P08)
+  - `tests/unit/providers/transports/test_gemini.py::test_request_body_golden`
+  - `tests/unit/providers/transports/test_bedrock.py::test_credentials_come_from_the_scope`
 - **ACC-A56-1** Named custom OpenAI-compatible providers, with `ollama`/`vllm`/`llamacpp` as aliases for local …
   - `tests/unit/providers/test_registry.py::test_config_custom_provider_details`
   - `tests/unit/providers/test_registry.py::test_local_server_aliases`
@@ -253,7 +288,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/service/test_turn_liveness.py::test_long_approval_wait_is_not_aborted`
   - `tests/unit/service/test_admissions.py::test_a_stalled_turn_is_stopped`
 - **ACC-A64-1** Closed set of turn exit reasons logged for every turn
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/protocol/test_models.py::test_exit_reason_is_the_closed_set`
+  - `tests/unit/core/test_loop.py::test_every_exit_passes_the_funnel`
+  - `tests/unit/core/test_loop.py::test_one_log_line_per_turn`
 - **ACC-A65-1** Persistent goal: gates, then the judge after every finished turn; done ends it, otherwise an ordinary user message continues the work
   - `tests/unit/core/test_goals.py::test_done_on_turn_three_completes_with_no_fourth_continuation`
   - `tests/unit/core/test_goals.py::test_a_failing_gate_is_the_next_message_and_the_judge_waits`
@@ -299,15 +336,20 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/test_chat_select.py::test_breadcrumb_wins`
   - `tests/unit/cli/test_chat_select.py::test_workspace_fallback`
 - **ACC-B4-1** Session ids by surface and source tags; internal sources (subagent, tool, board) hidden from …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/commands/test_sessions.py::test_internal_sources_hidden_unless_named`
+  - `tests/unit/cron/test_runner.py::test_session_id_shape`
 - **ACC-B5-1** Titles: unique, sanitised, user > model > derived precedence, lineage numbering `name #2` …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/state/test_titles.py::test_sanitize_table`
+  - `tests/unit/state/test_titles.py::test_llm_title_does_not_replace_a_user_title`
+  - `tests/unit/state/test_titles.py::test_llm_title_replaces_a_derived_one_once`
 - **ACC-B6-1** Rich session listing with preview, last activity and filters (source, workspace, size)
   - `tests/unit/cli/commands/test_sessions.py::test_list_limit_and_workspace`
   - `tests/unit/cli/commands/test_sessions.py::test_internal_sources_hidden_unless_named`
   - `tests/unit/cli/commands/test_sessions.py::test_list_opens_read_only_and_changes_nothing`
 - **ACC-B7-1** Full-text search over all past messages with snippets → trigram and CJK bigram indexes, LIKE …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/state/test_search.py::test_exact_phrase_is_found`
+  - `tests/unit/state/test_search.py::test_substring_is_found_through_the_trigram_index`
+  - `tests/unit/state/test_search.py::test_sanitiser_table`
 - **ACC-B8-1** New session (`/new`, `/clear`), retry last turn (`/retry`), undo the last N turns (`/undo N`)
   - `tests/unit/cli/slash/test_dispatch.py::test_new_while_busy_interrupts_then_dispatches`
   - `tests/unit/cli/slash/test_dispatch.py::test_new_asks_first_when_there_is_history`
@@ -335,7 +377,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/commands/test_sessions_maint.py::test_filtered_prune_and_include_pinned`
   - Review: opt-in automatic prune and the low-disk prompt are P02 `auto_maintain` plus a surface prompt (phase TBD)
 - **ACC-B19-1** Resume size guard (20,000 messages) with stable refusal codes
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/state/test_messages.py::test_resume_guard_counts_past_the_limit`
+  - `tests/unit/state/test_messages.py::test_resume_guard_counts_live_rows_across_the_lineage`
+  - `tests/unit/state/test_messages.py::test_resume_guard_reads_the_scope_config`
 - **ACC-B20-1** Store safety: replaced-file detection, corruption quarantine, plain-language error buckets with a …
   - `tests/unit/state/test_guards.py::test_replaced_file_fences_every_later_write`
   - `tests/unit/state/test_guards.py::test_application_id_change_alone_is_detected`
@@ -375,11 +419,18 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/foundation/test_clock.py::test_invalid_zone_warns_once`
   - `tests/unit/foundation/test_clock.py::test_routed_scope_ignores_env`
 - **ACC-C1-1** Self-registering tool registry with cached availability probes; every handler returns a string and …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/test_registry.py::test_probe_cached_for_thirty_seconds`
+  - `tests/unit/tools/test_registry.py::test_rejects_schema_that_is_not_an_object`
+  - `tests/unit/tools/test_definitions.py::test_unavailable_tools_skipped_one_probe_per_pass`
 - **ACC-C2-1** Argument coercion and per-provider schema sanitising so one odd schema cannot break a request
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/test_coerce.py::test_coercion_table`
+  - `tests/unit/tools/test_dispatch.py::test_args_are_coerced_before_the_handler`
+  - `tests/unit/tools/test_definitions.py::test_definitions_apply_only_the_routes_quirks`
+  - `tests/unit/tools/test_definitions.py::test_well_formed_schema_unchanged_under_all_quirks`
 - **ACC-C3-1** Result size budget: per-result and per-turn caps scaled to the window, oversized output spilled to …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/test_budget.py::test_threshold_table_by_window`
+  - `tests/unit/core/test_tool_round.py::test_turn_budget_spills_the_largest_new_results`
+  - `tests/unit/tools/test_spill.py::test_spill_file_content_equals_original`
 - **ACC-C5-1** `terminal` foreground: timeout, exit-code meanings, failure hints, redaction, stable result shape
   - `tests/unit/tools/builtin/test_terminal_result.py::test_golden_finished_with_every_optional_field`
   - `tests/unit/tools/builtin/test_terminal_result.py::test_exit_code_meaning_table`
@@ -464,11 +515,18 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/backends/checkpoints/test_rollback.py::test_restore_file_touches_one_file`
   - `tests/unit/cli/slash/test_checkpoint_cmds.py::test_list_diff_restore_and_file`
 - **ACC-C17-1** `web_search` through pluggable backends (Exa, Tavily, Brave, SearXNG, DuckDuckGo, …) with a keyless …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_web.py::test_default_registry_order`
+  - `tests/unit/tools/builtin/test_web.py::test_searxng_adapter`
+  - `tests/unit/tools/builtin/test_web.py::test_brave_adapter`
+  - `tests/unit/tools/builtin/test_web.py::test_ddgs_provider_reads_rows`
 - **ACC-C18-1** `web_extract` with URL normalisation, SSRF checks, per-page truncation and stored full text
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_web.py::test_extract_secret_and_metadata_urls_never_reach_the_provider`
+  - `tests/unit/tools/builtin/test_web.py::test_extract_cuts_long_pages_with_a_footer_and_stores_them`
+  - `tests/unit/tools/builtin/test_web.py::test_extract_keeps_order_and_blocks_per_url`
 - **ACC-C19-1** SSRF policy (private and metadata ranges blocked after DNS) and a website blocklist
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/test_url_policy.py::test_blocklist_rules`
+  - `tests/unit/safety/test_url_policy.py::test_blocklist_reaches_check_url`
+  - `tests/unit/tools/builtin/test_web.py::test_direct_provider_fetches_through_the_safe_client`
 - **ACC-C21-1** Browser tools on local headless Chromium: open a page, take an accessibility snapshot, click, type …
   - `tests/integration/tools/test_browser_local.py::test_navigate_snapshot_click_type_back`
   - `tests/unit/tools/builtin/browser/test_tools.py::test_click_resolves_the_ref_to_the_session_attribute`
@@ -489,9 +547,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/tools/builtin/media/test_vision.py::test_non_vision_route_asks_the_side_model`
   - `tests/unit/tools/builtin/media/test_vision.py::test_fourth_embed_in_child_goes_to_text`
 - **ACC-C33-1** `todo_list` with statuses, merge/replace, a live panel, and re-injection after compression
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_todo.py::test_replace_and_read`
+  - `tests/unit/tools/builtin/test_todo.py::test_merge_updates_given_fields_and_appends`
 - **ACC-C34-1** `clarify`: 1–5 questions with choices and multi-select, answered on every surface
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/tools/builtin/test_clarify.py::test_answered_and_skipped_in_question_order`
+  - `tests/unit/tools/builtin/test_clarify.py::test_bad_questions_are_refused`
+  - `tests/unit/gateway/core/test_prompts.py::test_clarify_buttons_with_paging_and_other`
+  - `tests/contract/tui_bridge/test_server_requests.py::test_clarify_locks_resolve_on_the_last_answer`
 - **ACC-C35-1** `execute_code`: Python that calls allow-listed tools over RPC, per-call → persistent session …
   - `tests/unit/tools/builtin/code/test_runner.py::test_script_reads_a_file_through_rpc`
   - `tests/unit/tools/builtin/code/test_runner.py::test_fifty_first_call_is_refused_inside_the_script`
@@ -515,7 +577,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/integration/core/test_subagent_host.py::test_subagents_never_review_and_keep_out_of_the_learning_hooks`
   - `tests/unit/core/subagents/test_worktree.py::test_delegated_children_report_their_worktrees`
 - **ACC-C41-1** Child-process environment scrubbing so provider keys never reach model-written commands, plus …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/test_child_env.py::test_fake_registry_names_never_reach_children`
+  - `tests/unit/safety/test_child_env.py::test_custom_provider_key_env_from_config_is_blocked`
+  - `tests/unit/cron/test_script.py::test_env_lacks_provider_keys_and_keeps_passthrough`
 - **ACC-C42-1** Sudo support: cached password, masked prompt on interactive surfaces, clear advice on headless ones
   - `tests/unit/backends/test_sudo.py::test_rewrite_table`
   - `tests/unit/backends/test_sudo.py::test_prompt_via_broker_caches_the_answer`
@@ -526,7 +590,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/contract/backends/test_execution_contract.py::test_interrupt_gives_130`
   - `tests/contract/backends/test_docker_ssh_contract.py::test_background_job_starts_polls_and_is_killed_inside`
 - **ACC-D2-1** Local backend: process groups, scratch temp dir, PATH repair, persistent-shell switch
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/test_local.py::test_cd_persists_and_cwd_is_reported`
+  - `tests/unit/backends/test_local.py::test_exports_follow_the_persistent_shell_switch`
+  - `tests/unit/backends/test_local.py::test_snapshot_failure_falls_back_to_plain_bash`
 - **ACC-D3-1** Docker backend: dropped capabilities, resource limits, persistent per-task dirs, reuse by label …
   - `tests/unit/backends/docker/test_args.py::test_default_golden`
   - `tests/unit/backends/docker/test_env.py::test_values_only_in_the_client_env`
@@ -553,7 +619,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/backends/test_singularity.py::test_persistent_overlay_recorded_and_reused`
   - Review: files surviving a real overlay restart need a real Apptainer: `tests/integration/backends/test_remote_backends_live.py` (opt-in `INDUS_LIVE_APPTAINER=1`; P21-16)
 - **ACC-D11-1** Environment cache per key with creation lock, idle reaper, per-profile isolation, clean teardown at …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/backends/test_registry.py::test_one_creation_under_a_race`
+  - `tests/unit/backends/test_registry.py::test_idle_env_reaped_after_its_lifetime`
+  - `tests/unit/backends/test_registry.py::test_two_profiles_never_share`
 - **ACC-D12-1** Remote file sync: credential files and skills pushed before commands, changed files synced back on …
   - `tests/unit/backends/test_remote_sync.py::test_first_call_pushes_all_then_rate_limited`
   - `tests/unit/backends/test_remote_sync.py::test_racy_mtime_is_hashed_and_pushed_when_bytes_differ`
@@ -571,9 +639,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/backends/ssh/test_environment.py::test_refused_connection_is_degraded`
   - `tests/unit/backends/ssh/test_environment.py::test_probe_timeout_is_degraded`
 - **ACC-D14-1** Terminal settings: default and maximum timeouts, lifetime, env passthrough, credential files …
-  - Review: not yet planned (phase TBD)
+  - `tests/integration/core/test_d04_1_terminal_tool_backstop.py::test_tool_stops_a_command_at_its_timeout`
+  - `tests/unit/safety/test_child_env.py::test_passthrough_value_comes_from_scope_secrets`
+  - `tests/unit/safety/test_child_env.py::test_passthrough_of_blocked_name_is_refused`
 - **ACC-E1-1** Dangerous-command detection with normalisation (wrappers, interpreter `-c` payloads, quoting …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/approvals/test_detect.py::test_corpus_verdicts`
+  - `tests/unit/safety/approvals/test_detect.py::test_obfuscated_spellings_hit_the_floor`
+  - `tests/unit/safety/approvals/test_detect.py::test_lookalikes_stay_safe`
 - **ACC-E2-1** Hardline floor (disk wipes, fork bombs, deleting system roots) and user deny globs that nothing can …
   - `tests/unit/safety/approvals/test_policy.py::test_hardline_beats_every_bypass`
   - `tests/unit/safety/approvals/test_policy.py::test_hardline_refused_on_isolated_backend`
@@ -632,9 +704,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/tools/builtin/test_write_file.py::test_instruction_file_without_a_surface_is_blocked`
   - `tests/unit/tools/builtin/test_write_file.py::test_system_and_credential_paths_are_refused`
 - **ACC-E12-1** Secret redaction in logs, tool output, exports and deliveries (on by default)
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/test_redaction.py::test_shape_families_masked`
+  - `tests/unit/gateway/outbound/test_sender.py::test_redaction_applies_before_chunking`
+  - `tests/contract/web/test_logs_analytics_routes.py::test_log_lines_with_a_key_are_redacted`
 - **ACC-E13-1** Prompt-injection and exfiltration scanning of context files, memory writes, cron prompts and skills
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/safety/test_content_scan.py::test_positive_samples_are_flagged`
+  - `tests/unit/safety/test_content_scan.py::test_negative_samples_are_clean`
+  - `tests/unit/cron/test_prompt.py::test_injection_in_the_prompt_is_blocked`
 - **ACC-E18-1** Isolation launches: `--safe-mode`, `--ignore-rules`, `--ignore-user-config`
   - `tests/unit/cli/test_chat_select.py::test_launch_record_round_trip`
   - Review: --ignore-rules / --pass-session-id consumers in the prompt builder, plugins/MCP off for --safe-mode (P09, P13)
@@ -1101,44 +1177,65 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/test_attach_remote.py::test_a_session_behind_a_lost_turn_exits_3_and_discard_lets_it_go_on`
   - `tests/integration/cli/test_attach_daemon.py::test_chat_starts_a_daemon_when_none_runs_and_local_starts_nothing`
 - **ACC-J1-1** `indus --tui` launcher: TTY gate, cwd pinning, resume and one-shot options, heap flag, exit summary …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/cli/test_tui_launch.py::test_choice_order`
+  - `tests/unit/cli/test_tui_launch.py::test_piped_run_with_tui_setting_stays_classic`
+  - `tests/unit/cli/test_tui_launch.py::test_env_is_pinned_and_stale_names_are_cleared`
+  - `apps/tui/src/app/launchOptions.test.ts::maps every launcher variable to a creation option`
 - **ACC-J2-1** Transport: renderer spawns a Python child over JSON-RPC on stdin/stdout first. Changed (P1 …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/tui_bridge/test_bridge_process.py::test_real_child_speaks_ndjson`
+  - `tests/contract/tui_bridge/test_bridge_process.py::test_sigint_is_ignored_and_sigterm_closes_cleanly`
 - **ACC-J2-2** TUI attaches to the profile daemon by default over the loopback WebSocket (grant helper, ticket only in the subprotocol, describe then one ready); `--local` keeps the stdio child; an explicit URL never falls back
   - `tests/unit/cli/commands/test_gateway_grant.py::test_the_grant_carries_the_ticket_only_inside_protocols`
   - `apps/tui/src/transport/attach.test.ts::describe, then exactly one synthetic ready; send waits for it`
   - `apps/tui/src/transport/attach.test.ts::attaches, describes and opens a session on the daemon`
   - `apps/tui/src/transport/attach.test.ts::an explicit URL is only ever dialled: no helper, no daemon, no local child`
 - **ACC-J3-1** Declared wire contract with generated TypeScript types; error codes with one fixed meaning each. …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/protocol/test_codegen.py::test_two_runs_are_byte_identical`
+  - `tests/unit/protocol/test_codegen.py::test_check_is_clean_on_fresh_output`
+  - `tests/unit/protocol/test_codegen.py::test_schema_has_every_catalogue_type`
 - **ACC-J4-1** Layout: transcript with banner and session panel, live streaming row, tool trail, status rule with …
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/components/Transcript.test.tsx::renders only the visible rows of a 5,000-row transcript`
+  - `apps/tui/src/components/statusSegments.test.ts::uses the documented breakpoints`
+  - `apps/tui/src/components/ToolTrail.test.tsx::keeps the newest 8 entries`
 - **ACC-J5-1** Multiline composer: word motions, kill keys, undo/redo, mouse selection, external editor, paste …
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/composer/editorModel.test.ts::steps over emoji sequences, combining marks and CJK as single units`
+  - `apps/tui/src/composer/externalEditor.test.ts::submits the saved text when the editor exits 0, and clears the composer`
+  - `apps/tui/src/composer/paste.test.ts::strips bracketed-paste markers and unifies line endings without flattening`
 - **ACC-J6-1** Slash, skill and path completion with fuzzy ranking, completed through the session's backend
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/composer/completion.test.ts::routes a leading /word to slash completion`
+  - `apps/tui/src/composer/fuzzy.test.ts::takes the best of name and description tiers`
 - **ACC-J7-1** Input history file shared with the classic CLI format
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/composer/history.test.ts::reads the golden file the classic CLI tests also read`
+  - `apps/tui/src/composer/history.test.ts::writes the same bytes as the classic CLI, owner-only`
 - **ACC-J8-1** Busy-input modes (queue by default in the TUI, steer, interrupt) and queue editing
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/config/configSync.test.ts::busy: a missing or unknown value means queue in the TUI (R05.18)`
+  - `apps/tui/src/submit/queue.test.ts::promotes an edited item to the front and keeps an unchanged one as it was`
 - **ACC-J9-1** Streaming markdown with sealed segments, inline diffs, todo panel and detail modes per section
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/render/streamingMarkdown.test.tsx::returns after a fence closes`
+  - `apps/tui/src/events/handleEvent.test.ts::drops a repeated seq (a replay after resume)`
 - **ACC-J10-1** Interrupt rules: Ctrl+C clears a draft before interrupting before exiting; Esc Esc; double Enter …
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/input/routeKeys.test.ts::exits rather than interrupting when there is no session`
+  - `apps/tui/src/input/routeKeys.test.ts::clearing removes text, continuation lines and tokens together`
 - **ACC-J11-1** Blocking cards for approval, clarify, sudo, secret and confirm; a pager for long output
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/cards/ApprovalCard.test.tsx::always keeps deny`
+  - `apps/tui/src/cards/ClarifyCard.test.tsx::Other switches to free text`
+  - `apps/tui/src/cards/Pager.test.tsx::pages over 180 characters`
 - **ACC-J12-1** Model picker (provider → model → effort) with session or global scope
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/pickers/modelPickerState.test.ts::starts on the current provider`
+  - `apps/tui/src/pickers/modelPickerState.test.ts::typing filters, Backspace and Ctrl+U edit, q is just a letter`
 - **ACC-J13-1** Session switcher with live and stored sessions, new, close and delete
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/pickers/sessionSwitcherState.test.ts::puts + new first, then live, then stored, a live one shown once`
 - **ACC-J14-1** Themes from the backend with light/dark detection and a cached boot theme
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/theme/detect.test.ts::falls back to dark when the probe has no trusted answer`
+  - `apps/tui/src/theme/theme.test.ts::meets the contrast floor for every token pair in both defaults`
 - **ACC-J15-1** Config sync: display settings applied on start and re-read when the config changes
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/config/configSync.test.ts::status bar: booleans and positions`
 - **ACC-J16-1** Terminal hygiene: modes reset on every exit path, resize coalescing, synchronized output only where …
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/terminal/modes.test.ts::turns off every mode the terminal might have on`
+  - `apps/tui/src/terminal/resize.test.ts::a single event reflows once and nothing trails it`
 - **ACC-J17-1** Reconnect and crash recovery that reopens the same stored session and never resubmits a prompt
-  - Review: not yet planned (phase TBD)
+  - `apps/tui/src/app/bridgeChild.test.ts::kill mid-turn: the same stored session is reopened, the prompt not re-sent`
+  - `apps/tui/src/app/recovery.test.ts::grants three restarts inside one sliding window`
 - **ACC-J22-1** TUI wake word: `/wake on` sends consent from the explicit command, `off` persists, `status` shows the owner
   - `apps/tui/src/commands/wake.test.ts::on sends consent from the explicit command and says what happened`
   - `apps/tui/src/commands/wake.test.ts::off stops and persists; status shows the state`
@@ -1673,8 +1770,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/cli/wizards/test_gateway_setup.py::test_access_modes_are_explained`
   - `tests/unit/cli/wizards/test_gateway_setup.py::test_the_command_is_wired_under_gateway`
 - **ACC-L1-1** `indus dashboard`: SPA plus API on loopback, per-process session token in the page, Host-header …
-  - Review: not yet planned (phase TBD)
   - `tests/unit/web/auth/test_gate.py::test_token_is_needed_on_api_paths_in_loopback_mode`
+  - `tests/unit/web/auth/test_gate.py::test_bad_host_is_400_after_auth`
+  - `tests/unit/web/test_spa.py::test_client_routes_get_the_index_with_no_store`
   - `tests/unit/web/auth/test_host_guard.py::test_middleware_answers_400_for_a_rebound_name`
   - `tests/unit/web/test_spa.py::test_unknown_api_path_is_a_json_404_for_every_method`
   - `apps/web/src/lib/api.test.ts::sends the session token header and the base path`
@@ -1687,13 +1785,14 @@ Checked by `python -m tooling.checks acceptance`.
   - `apps/web/e2e/auth.spec.ts::gated: login, the loopback token refused, single-use WS tickets, logout`
   - `tests/unit/web/auth/test_login_page.py::test_the_form_post_keeps_its_origin`
 - **ACC-L3-1** Sessions page: list, search with snippets, view as markdown, rename, export, prune, delete, resume …
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/web/test_sessions_routes.py::test_list_row_shape_and_recent_order`
+  - `tests/contract/web/test_sessions_routes.py::test_search_marks_matches`
+  - `tests/contract/web/test_sessions_routes.py::test_bulk_and_empty_delete_when_stopped`
   - `apps/web/src/pages/SessionsPage.test.tsx::renders search snippets with marks and scrolls the opened hit to its first match`
   - `apps/web/src/pages/SessionsPage.test.tsx::sends the snapshot identity and removes the row`
   - `apps/web/src/pages/SessionsPage.test.tsx::shows the dry-run count before pruning`
   - `apps/web/src/pages/SessionsPage.test.tsx::resumes a session in Chat with its id`
   - `apps/web/src/pages/SessionsPage.test.tsx::renames with the mutation identity`
-  - `tests/contract/web/test_sessions_routes.py::test_search_marks_matches`
   - `tests/contract/web/test_sessions_routes.py::test_delete_fence_codes`
   - `tests/contract/web/test_sessions_routes.py::test_prune_dry_run_then_real`
   - `apps/web/e2e/dashboard.spec.ts::Sessions: search finds a message with its snippet; delete removes the session`
@@ -1708,24 +1807,24 @@ Checked by `python -m tooling.checks acceptance`.
   - `apps/web/e2e/chat.spec.ts::M6: the browser chat and a classic CLI share one daemon session, each sees the other's turns, and the CLI's approval is answered in the browser`
   - `tests/integration/web/test_dashboard_daemon.py::test_the_dashboard_chat_and_a_cli_share_one_daemon_session`
 - **ACC-L5-1** Config page from a schema; Keys page with redacted previews
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/web/test_config_env_routes.py::test_schema_and_defaults_are_public`
+  - `tests/contract/web/test_config_env_routes.py::test_references_stay_references_and_credentials_stay_hidden`
   - `apps/web/src/pages/ConfigPage.test.tsx::renders the right control for each schema type, grouped by category`
   - `apps/web/src/pages/ConfigPage.test.tsx::saves the edited values in one write`
   - `apps/web/src/pages/EnvPage.test.tsx::clears the input after save and shows only the redacted preview`
-  - `tests/contract/web/test_config_env_routes.py::test_schema_and_defaults_are_public`
   - `tests/contract/web/test_config_env_routes.py::test_put_round_trips_comments_and_writes_only_changes`
   - `tests/contract/web/test_config_env_routes.py::test_credential_goes_to_the_secret_store_and_is_never_echoed`
   - `apps/web/e2e/dashboard.spec.ts::Config: a saved value lands in config.yaml and survives a reload`
 - **ACC-L6-1** Logs page with file, level and component filters
-  - Review: not yet planned (phase TBD)
+  - `tests/contract/web/test_logs_analytics_routes.py::test_level_component_and_tail_filters`
+  - `tests/contract/web/test_logs_analytics_routes.py::test_other_files_and_a_missing_file`
   - `apps/web/src/pages/LogsPage.test.tsx::sends the chosen file, level, component and length`
   - `apps/web/src/pages/LogsPage.test.tsx::refreshes every 5 s, and not while the tab is hidden`
-  - `tests/contract/web/test_logs_analytics_routes.py::test_level_component_and_tail_filters`
   - `tests/contract/web/test_logs_analytics_routes.py::test_log_lines_with_a_key_are_redacted`
   - `apps/web/e2e/dashboard.spec.ts::Logs: the gateway log's tail as the daemon wrote it`
 - **ACC-L20-1** Dashboard fonts and imagery are our own; the reference's brand fonts are not shipped (lead default)
-  - Review: not yet planned (phase TBD)
   - `apps/web/src/shell/assets.test.ts::ships no font files or brand imagery`
+  - `apps/web/src/shell/assets.test.ts::loads no web fonts from stylesheets`
 - **ACC-M1-1** `indus acp` stdio server with `initialize`, `authenticate` (including a terminal setup method) …
   - `tests/contract/acp/test_initialize.py::test_capabilities_are_exact_and_valid`
   - `tests/contract/acp/test_initialize.py::test_without_credentials_only_setup_is_offered_and_it_fails_until_a_key_exists`
@@ -1984,13 +2083,43 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-S13-1** Canonical test runner: one process per file, retry-once flaky report, deterministic slices …
   - Review: not yet planned (phase TBD)
 - **ACC-S14-1** Golden prompt-surface fixtures (rendered prompt plus tool array per surface) that fail CI when stale
-  - Review: not yet planned (phase TBD)
+  - `tests/golden/prompt_surface/test_prompt_surface.py::test_surface_matches_golden`
+  - `tests/golden/prompt_surface/test_prompt_surface.py::test_stale_fixture_reports_a_diff`
+- **ACC-S15-1** The user docs site builds in strict mode: a broken link, a missing anchor or a page left out of the navigation fails the build
+  - `tests/unit/docs/test_docs_build.py::test_strict_build_of_the_real_tree`
+  - `tests/unit/docs/test_docs_build.py::test_a_broken_link_fails_the_build`
+  - `tests/unit/docs/test_docs_build.py::test_a_page_left_out_of_the_navigation_fails_the_build`
+  - `tests/unit/docs/test_gen_reference.py::test_committed_pages_are_fresh`
+  - `tests/unit/docs/test_examples.py::test_example_runs_green`
+- **ACC-S15-2** `llms.txt` and `llms-full.txt` are generated at build and list every page of the site
+  - `tests/unit/docs/test_docs_build.py::test_llms_index_lists_every_page`
+  - `tests/unit/docs/test_docs_build.py::test_llms_full_holds_every_page_in_order`
 - **ACC-S16-1** A release whose commits have an author missing from the contributor map is refused
   - `tests/unit/release/test_release_cli.py::test_unmapped_author_fails_a_release_and_warns_a_canary`
 - **ACC-S17-1** Clean-room guards in CI (banned identifiers, code and text similarity, asset hashes, licences). …
-  - Review: not yet planned (phase TBD)
+  - `tooling/checks/tests/test_banned.py::test_catches_every_seed_form`
+  - `tooling/checks/tests/test_similarity.py::test_window_hashes_are_rolling_and_stable`
+  - `tooling/checks/tests/test_assets.py::test_identical_media_fails_and_different_passes`
+  - `tooling/checks/tests/test_licenses.py::test_spdx`
+- **ACC-S17-3** Built artefacts (desktop ASAR, Docker image layers and labels, docs site, installers, web dist) are swept for reference names, hosts, assets and build-machine paths
+  - `tooling/checks/tests/test_artifacts.py::test_a_seeded_banned_name_inside_an_asar_fails`
+  - `tooling/checks/tests/test_artifacts.py::test_a_docker_image_tar_is_swept_layer_by_layer`
+  - `tooling/checks/tests/test_artifacts.py::test_a_reference_asset_inside_an_asar_fails`
+  - `tooling/checks/tests/test_artifacts.py::test_a_clean_build_passes`
+- **ACC-S17-4** The closest-regions similarity report has a verdict for every region; a missing or `fix` verdict fails the release gate
+  - `tooling/checks/tests/test_similarity_closest.py::test_report_has_one_row_per_region_and_fails_without_verdicts`
+  - `tooling/checks/tests/test_similarity_closest.py::test_fix_or_unknown_verdicts_fail`
+  - `tooling/checks/tests/test_similarity_closest.py::test_verdicts_survive_regeneration_and_pass_the_gate`
 - **ACC-S18-1** `THIRD_PARTY_NOTICES.md` crediting the reference and every dependency. Added by Indus (licence …
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/release/test_notices.py::test_real_file_is_fresh`
+  - `tests/unit/release/test_notices.py::test_real_file_lists_every_runtime_dependency`
+  - `tests/unit/release/test_notices.py::test_reference_credit_line_appears_exactly_once`
+  - `tests/unit/release/test_notices.py::test_check_fails_on_a_stale_file`
+  - `tests/unit/release/test_notices.py::test_docker_image_and_desktop_package_embed_the_same_file`
+- **ACC-S18-2** Notices generation fails on an unknown licence, a licence off the allow-list or a copyleft licence without an obligation note
+  - `tests/unit/release/test_notices.py::test_a_fixture_lock_with_an_unknown_licence_fails`
+  - `tests/unit/release/test_notices.py::test_a_licence_off_the_allow_list_fails_unless_excepted`
+  - `tests/unit/release/test_notices.py::test_copyleft_needs_an_obligation_note`
 - **ACC-Q1-1** Host facts without env input or subprocesses: OS, native and process architecture, CPU, RAM, GPU …
   - `tests/unit/platform/test_facts.py::test_gpu_nvidia_procfs`
   - `tests/unit/platform/test_facts.py::test_gpu_sysfs_priority_amd_over_intel`
@@ -2003,10 +2132,29 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/platform/test_lookup_ratchet.py::test_src_is_clean`
   - `tests/unit/platform/test_lookup_ratchet.py::test_planted_dir_literal_is_caught`
 - **ACC-Q5-1** Linux and macOS as first-class hosts
-  - Review: not yet planned (phase TBD)
+  - `tests/unit/packaging/test_platform_marks.py::test_host_matching`
+  - `tests/unit/platform/test_facts.py::test_os_family_is_normalised`
 - **ACC-Q7-2** ACP under WSL: an editor's Windows drive and `\\wsl.localhost` folders become POSIX paths, and list filters compare them
   - `tests/unit/acp/test_paths.py::test_drive_paths_become_mounts`
   - `tests/unit/acp/test_paths.py::test_wsl_unc_paths_become_posix`
   - `tests/contract/acp/test_session_new.py::test_a_windows_cwd_is_translated_under_wsl`
 - **ACC-Q9-1** Localisation: catalogue indirection everywhere with English → seventeen language catalogues with …
-  - Review: not yet planned (phase TBD)
+  - `tooling/checks/tests/test_locales.py::test_english_only_passes`
+  - `tooling/checks/tests/test_locales.py::test_missing_key_fails`
+  - `tooling/checks/tests/test_locales.py::test_placeholder_mismatch_fails`
+
+## Known gaps
+
+Parts of inventory rows that 1.0 ships without, each citing its row in §2.8 ("Not in 1.0") of
+`docs/plan/16-what-we-change.md`. Rows: `- **<feature>** what is left out (D-id)`.
+
+- **Q9** the seventeen non-English catalogues; English plus the catalogue mechanism and key-parity check ship (D-16.51)
+- **K12** the Teams meeting pipeline (D-16.87) and the Home Assistant adapter (D-16.86)
+- **G19** catalogue install from `indus mcp`; servers are added by hand or with `indus mcp add` (D-16.45)
+- **I46** OpenClaw migration (D-16.50)
+- **I48** telemetry and install-receipt upload (D-16.49)
+- **N30** the light (remote-only) desktop variant (D-16.48) and MSIX/Store bundles (D-16.15)
+- **N33** a separate native setup installer app (D-16.47)
+- **S5** the Termux APT channel (D-16.15)
+- **S6** MSIX and Store bundles (D-16.15)
+- **O9** the legacy single-query runner script (D-16.85)

@@ -1,0 +1,70 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "platform",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-gateway",
+      "action": "launch",
+      "argv": ["indus", "gateway", "run"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-connected",
+      "action": "wait_for",
+      "locator": { "kind": "platform", "op": "connect" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "send-first-ask",
+      "action": "inbound",
+      "message": { "chat": "dm-owner", "text": "please run the check" },
+      "timeout_ms": 2000
+    },
+    {
+      "step_id": "wait-approval-1",
+      "action": "wait_for",
+      "locator": { "kind": "platform", "op": "send", "buttons": true },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "press-allow-once",
+      "action": "press_button",
+      "button": { "index": 0 },
+      "timeout_ms": 2000
+    },
+    {
+      "step_id": "wait-command-ran",
+      "action": "wait_for",
+      "locator": { "kind": "platform", "op": "send", "has": "The command ran" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "send-second-ask",
+      "action": "inbound",
+      "message": { "chat": "dm-owner", "text": "run it once more" },
+      "timeout_ms": 2000
+    },
+    {
+      "step_id": "wait-approval-2",
+      "action": "wait_for",
+      "locator": { "kind": "platform", "op": "send", "buttons": true, "nth": 2 },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "press-deny",
+      "action": "press_button",
+      "button": { "label": "Deny" },
+      "timeout_ms": 2000
+    },
+    {
+      "step_id": "wait-declined-answer",
+      "action": "wait_for",
+      "locator": { "kind": "platform", "op": "send", "has": "declined, so nothing ran" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "stop-gateway", "action": "stop", "timeout_ms": 5000 },
+    { "step_id": "wait-exit", "action": "wait_exit", "code": 0, "timeout_ms": 30000 }
+  ]
+}

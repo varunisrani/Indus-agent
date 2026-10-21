@@ -1,0 +1,113 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "terminal",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-setup",
+      "action": "launch",
+      "argv": ["indus", "setup"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-start-mode",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "How do you want to start" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "choose-full-setup", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-provider-list",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Provider:" },
+      "timeout_ms": 20000
+    },
+    { "step_id": "move-to-custom-1", "action": "press", "key": "Up", "timeout_ms": 2000 },
+    { "step_id": "move-to-custom-2", "action": "press", "key": "Up", "timeout_ms": 2000 },
+    { "step_id": "move-to-custom-3", "action": "press", "key": "Up", "timeout_ms": 2000 },
+    { "step_id": "choose-custom-endpoint", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-endpoint-url",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Endpoint URL" },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "type-endpoint-url",
+      "action": "type",
+      "text": "${model_base_url}",
+      "timeout_ms": 2000
+    },
+    { "step_id": "send-endpoint-url", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-api-key",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "API key for this endpoint" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "skip-api-key", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-model-list",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Model:\\s*\\n> echo" },
+      "timeout_ms": 20000
+    },
+    { "step_id": "choose-model", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-reasoning-effort",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Reasoning effort:" },
+      "timeout_ms": 20000
+    },
+    { "step_id": "keep-reasoning-effort", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-backend",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Where should commands run\\?" },
+      "timeout_ms": 20000
+    },
+    { "step_id": "choose-local-backend", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-tools",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Space toggles" },
+      "timeout_ms": 20000
+    },
+    { "step_id": "keep-tools", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-turn-cap",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Model calls per turn" },
+      "timeout_ms": 20000
+    },
+    { "step_id": "keep-turn-cap", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-approval-mode",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Risky commands:" },
+      "timeout_ms": 20000
+    },
+    { "step_id": "keep-manual-approvals", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-setup-done",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Setup complete" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "wait-setup-exit", "action": "wait_exit", "code": 0, "timeout_ms": 20000 },
+    {
+      "step_id": "launch-first-turn",
+      "action": "launch",
+      "argv": ["indus", "--local", "-z", "hello after setup"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-first-answer",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "You said: hello after setup" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "wait-first-turn-exit", "action": "wait_exit", "code": 0, "timeout_ms": 20000 }
+  ]
+}

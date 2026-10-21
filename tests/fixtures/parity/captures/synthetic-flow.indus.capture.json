@@ -1,0 +1,49 @@
+{
+  "format": "indus-parity-capture/1",
+  "flow": "synthetic-flow",
+  "side": "indus",
+  "driver": "browser",
+  "status": "passed",
+  "reason": "",
+  "steps": [
+    {
+      "step_id": "wait-shell",
+      "action": "wait_for",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 5,
+      "observed": {
+        "accessibility": "- document:\n  - navigation \"Main\":\n    - link \"Chat\":\n      - /url: /chat\n  - main:\n    - list \"Sessions\":\n      - listitem:\n        - button \"Open\"\n"
+      }
+    },
+    {
+      "step_id": "open-row",
+      "action": "click",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 5,
+      "observed": {
+        "accessibility": "- document:\n  - navigation \"Main\":\n    - link \"Chat\":\n      - /url: /chat\n  - main:\n    - list \"Sessions\":\n      - listitem:\n        - button \"Open\"\n"
+      }
+    },
+    {
+      "step_id": "wait-detail",
+      "action": "wait_for",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 5,
+      "observed": {
+        "accessibility": "- document:\n  - navigation \"Main\":\n    - link \"Chat\":\n      - /url: /chat\n  - main:\n    - list \"Sessions\":\n      - listitem:\n        - button \"Open\"\n"
+      }
+    },
+    {
+      "step_id": "indus-only",
+      "action": "click",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 5
+    }
+  ],
+  "page_errors": [],
+  "origin": "http://127.0.0.1:24000"
+}

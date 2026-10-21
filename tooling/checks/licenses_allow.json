@@ -19,6 +19,39 @@
     "cffi": {
       "licence": "MIT-0",
       "reason": "MIT-0 is MIT without the attribution clause, so more permissive than MIT; cffi comes in through cryptography for keyring's Linux Secret Service backend (P01-16)."
+    },
+    "numpy": {
+      "licence": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "reason": "2026-10-21 (P25-17): extras voice and research; the Zlib part (bundled code) is not on the allow-list. Shipped today; owner ruling open (HANDOFF owner items, licences). Remove this entry if the owner rules against it."
+    },
+    "regex": {
+      "licence": "Apache-2.0 AND CNRI-Python",
+      "reason": "2026-10-21 (P25-17): extra research (via transformers); CNRI-Python part not on the allow-list. Owner ruling open (HANDOFF owner items). Remove if the owner rules against it."
+    },
+    "pyarrow": {
+      "licence": "Apache-2.0 AND Zlib AND BSL-1.0",
+      "reason": "2026-10-21 (P25-17): extra research (via datasets); its wheels bundle zlib (Zlib) and Boost (BSL-1.0), both permissive but not on the allow-list. Owner ruling open (HANDOFF owner items)."
+    },
+    "av": {
+      "licence": "BSD-3-Clause AND LGPL-2.1-or-later",
+      "reason": "2026-10-21 (P25-17): extra voice (via faster-whisper); its wheels bundle FFmpeg under LGPL-2.1-or-later as shared libraries (obligation note under `obligations`). Owner ruling open (HANDOFF owner items)."
+    },
+    "sherpa-onnx": {
+      "licence": "Apache-2.0 AND LGPL-2.1-or-later",
+      "reason": "2026-10-21 (P25 wave 41 landing): extra wake-sherpa (P24-29); its Linux wheels bundle alsa-lib (libasound) under LGPL-2.1-or-later as a shared library (obligation note under `obligations`). Owner ruling open (HANDOFF owner items). Remove if the owner rules against it."
+    },
+    "git-for-windows": {
+      "licence": "GPL-2.0-only",
+      "reason": "2026-10-21 (P25-17): the Windows installer downloads the unmodified PortableGit build (P23-06) and never links it; GPL-2.0 obligation (source offer) under `obligations`."
+    },
+    "debian": {
+      "licence": "LicenseRef-Debian-packages",
+      "reason": "2026-10-21 (P25-17): the Docker image's Debian base: a collection of separately licensed packages, each with its copyright file inside the image; corresponding source on sources.debian.org."
     }
+  },
+  "obligations": {
+    "MPL-2.0": "file-level copyleft. We ship MPL-2.0 packages unmodified; their source is available from the package index. If we ever change an MPL-2.0 file, the changed file stays MPL-2.0 and its source must be published.",
+    "LGPL-2.1-or-later": "the FFmpeg libraries inside the `av` wheels and alsa-lib (libasound) inside the `sherpa-onnx` Linux wheels are separate shared libraries that a user can replace; their source is available from the FFmpeg and ALSA projects and the PyAV and sherpa-onnx releases that built them. We do not modify them.",
+    "GPL-2.0-only": "Git for Windows is redistributed unmodified as the upstream PortableGit archive. Its corresponding source is published by the Git for Windows project for the same version tag; on request we provide the source for the exact build we pin (written offer, valid three years from the release that ships it)."
   }
 }

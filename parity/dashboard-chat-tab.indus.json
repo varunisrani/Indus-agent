@@ -1,0 +1,132 @@
+{
+  "browser": {
+    "mode": "launch",
+    "executable_path": "/usr/bin/chromium",
+    "headless": true
+  },
+  "start_url": {
+    "url": "http://127.0.0.1:24000/",
+    "query": []
+  },
+  "environment": {
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "device_scale_factor": 1
+    },
+    "locale": "en-US",
+    "timezone": "UTC",
+    "color_scheme": "light",
+    "reduced_motion": "reduce",
+    "service_workers": "block"
+  },
+  "capture": {
+    "after_each_step": ["url", "accessibility", "screenshot"],
+    "at_end": ["url", "dom"],
+    "events": ["console", "page-errors", "network"]
+  },
+  "actions": [
+    {
+      "step_id": "wait-shell",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"sidebar\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "open-chat",
+      "action": "click",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"sidebar\"] a[href=\"/chat\"]"
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-chat-host",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-host\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "wait-chat-terminal",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-terminal\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "wait-chat-open",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-layout\"][data-phase=\"open\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "wait-chat-rail",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-rail\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "wait-chat-model",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-model\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 15000
+    },
+    {
+      "step_id": "type-in-terminal",
+      "action": "fill",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-terminal\"] textarea"
+      },
+      "value": {
+        "source": "literal",
+        "value": "hello from the dashboard"
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "send-in-terminal",
+      "action": "press",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-terminal\"] textarea"
+      },
+      "key": "Enter",
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "wait-still-open",
+      "action": "wait_for",
+      "locator": {
+        "kind": "css",
+        "selector": "[data-testid=\"chat-layout\"][data-phase=\"open\"]"
+      },
+      "state": "visible",
+      "timeout_ms": 30000
+    }
+  ]
+}

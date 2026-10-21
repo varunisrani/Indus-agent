@@ -7,7 +7,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     root: import.meta.dirname,
-    include: ["core/**/*.electron.test.ts"],
+    include: ["core/**/*.electron.test.ts", "startup-budget.spec.ts"],
     environment: "node",
     fileParallelism: false,
     testTimeout: 90_000,

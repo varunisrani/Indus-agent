@@ -91,6 +91,8 @@ const config = {
   extraResources: [
     { from: "build/desktop-build-stamp.json", to: "desktop-build-stamp.json" },
     { from: "resources/icons/png/256x256.png", to: "icons/indus.png" },
+    // P25-17: the generated notices, the same file the Docker image and the repository carry.
+    { from: "../../THIRD_PARTY_NOTICES.md", to: "THIRD_PARTY_NOTICES.md" },
   ],
   asar: true,
   asarUnpack: ["**/*.node", "**/prebuilds/**", "node_modules/node-pty/**"],

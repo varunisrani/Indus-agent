@@ -1,0 +1,132 @@
+# The user docs site (P25-14). Build: `uv run mkdocs build` (strict is set below, so a broken link,
+# a missing anchor or a page left out of the navigation fails the build). Output goes to
+# build/docs-site/ (git-ignored) with llms.txt and llms-full.txt written by the hook.
+# Generated pages under reference/ come from `python scripts/docs/gen_reference.py`.
+site_name: Indus Agent
+site_description: An AI agent for your terminal, editor, desktop and chat apps that learns as you use it.
+docs_dir: docs/user
+site_dir: build/docs-site
+strict: true
+use_directory_urls: true
+# site_url: set once the owner picks the docs domain (P25-20); llms links are site-relative until then.
+
+theme:
+  name: material
+  # No web fonts: the site loads nothing from third-party hosts.
+  font: false
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Dark colours
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Light colours
+
+plugins:
+  - search
+
+hooks:
+  - scripts/docs/llms_txt.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install: getting-started/install.md
+      - Quickstart: getting-started/quickstart.md
+      - Windows and WSL2: getting-started/windows.md
+      - Updating and removing: getting-started/updating.md
+  - User guide:
+      - Classic CLI: user-guide/cli.md
+      - Terminal UI: user-guide/tui.md
+      - Desktop app: user-guide/desktop.md
+      - Web dashboard: user-guide/dashboard.md
+      - Docker: user-guide/docker.md
+      - Models and keys: user-guide/models.md
+      - Profiles: user-guide/profiles.md
+      - Sessions: user-guide/sessions.md
+      - Tools and backends: user-guide/tools-and-backends.md
+      - Approvals and security: user-guide/security.md
+      - Memory and skills: user-guide/memory-and-skills.md
+      - Plugins and MCP: user-guide/plugins-and-mcp.md
+      - Serving MCP: mcp-serve.md
+      - Editors (ACP): acp.md
+      - Scheduled jobs: user-guide/cron.md
+      - Research tooling: user-guide/research.md
+      - Evals: research/evals.md
+  - Messaging:
+      - Overview: messaging/index.md
+      - Telegram: messaging/telegram.md
+      - Discord: messaging/discord.md
+      - Slack: messaging/slack.md
+      - Signal: messaging/signal.md
+      - Matrix: messaging/matrix.md
+      - Mattermost: messaging/mattermost.md
+      - Email: messaging/email.md
+      - WhatsApp: messaging/whatsapp.md
+      - SMS: messaging/sms.md
+      - LINE: messaging/line.md
+      - ntfy: messaging/ntfy.md
+      - IRC: messaging/irc.md
+      - Microsoft Teams: messaging/teams.md
+      - Google Chat: messaging/google-chat.md
+      - Feishu / Lark: messaging/feishu.md
+      - DingTalk: messaging/dingtalk.md
+      - WeCom: messaging/wecom.md
+      - Weixin: messaging/weixin.md
+      - QQ Bot: messaging/qqbot.md
+      - Yuanbao: messaging/yuanbao.md
+      - iMessage: messaging/imessage.md
+      - SimpleX Chat: messaging/simplex.md
+      - Buzz: messaging/buzz.md
+      - Raft: messaging/raft.md
+      - API server and webhooks: messaging/api-and-webhooks.md
+  - Reference:
+      - Command line: reference/cli.md
+      - Slash commands: reference/slash-commands.md
+      - Configuration keys: reference/configuration.md
+      - Environment variables: reference/environment-variables.md
+      - Tools and toolsets: reference/tools.md
+      - Model providers: reference/providers.md
+      - Messaging platforms: reference/messaging-platforms.md
+      - Starter skills: reference/skills.md
+      - MCP server tools: reference/mcp-serve-tools.md
+      - Protocol: reference/protocol.md
+      - Trajectory format: reference/trajectory-format.md
+  - Developer guide:
+      - Architecture: developer/architecture.md
+      - The protocol: developer/protocol.md
+      - Adding a tool: developer/adding-a-tool.md
+      - Adding a terminal backend: developer/adding-a-backend.md
+      - Adding a messaging platform: developer/adding-a-platform.md
+      - Relay connector contract: relay-contract.md

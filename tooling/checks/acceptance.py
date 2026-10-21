@@ -4,7 +4,12 @@ Inventory: table rows ``| A1 | Feature | P0 | ... |`` inside the area sections (
 docs/plan/03-feature-inventory.md; a mixed tier ``P0 → P1`` is gated by its first tier, ``—`` is
 dropped.
 Map: rows ``- **ACC-A1-1** summary`` in docs/internals/acceptance-map.md, with coverage lines as in
-the traps ledger. ``--strict`` (release) also fails on Review lines.
+the traps ledger. Features 1.0 leaves out are listed after a ``## Known gaps`` heading as
+``- **A42** what is left out (D-16.41)``, each citing a §2.8 D-id of 16-what-we-change.md.
+
+``--strict`` (the release gate) also fails on Review lines, on ACC ids whose feature is no longer
+in the inventory, and on cited tests that ``pytest --collect-only`` (or, for TypeScript, a scan of
+the spec file) does not find or finds skipped (``tooling.checks.collect``).
 """
 
 from __future__ import annotations
@@ -13,12 +18,16 @@ import re
 import sys
 from pathlib import Path
 
-from tooling.checks import ledger
+from tooling.checks import collect, ledger
 from tooling.checks.common import Context, Result
 
 NAME = "acceptance"
 INVENTORY = Path("docs/plan/03-feature-inventory.md")
 MAP = Path("docs/internals/acceptance-map.md")
+DECISIONS = Path("docs/plan/16-what-we-change.md")
+GAPS_HEADING = re.compile(r"^##\s+Known gaps\b", re.IGNORECASE)
+GAP_ROW = re.compile(r"^[-*]\s+\*\*(?P<id>[^*\s]+)\*\*\s*(?P<text>.*)$")
+D_ID = re.compile(r"\bD-16\.\d+\b")
 FEATURE_ID = re.compile(r"^[A-Z]{1,3}\d{1,3}[a-z]?$")
 TIER = re.compile(r"^\**(?P<first>P[0-3]|—)\**(?:\s*(?:→|->)\s*\**(?:P[0-3]|—)\**)*(?:\s*\(.*\))?$")
 AREA_HEADING = re.compile(r"^##\s+([A-Z])\.\s")
@@ -72,6 +81,72 @@ def inventory(root: Path) -> dict[str, tuple[str, str, int]]:
     return out
 
 
+def not_in_1_0(root: Path) -> set[str]:
+    """D-ids of the "Not in 1.0" table (§2.8) of 16-what-we-change.md."""
+    path = root / DECISIONS
+    if not path.is_file():
+        return set()
+    out: set[str] = set()
+    inside = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#"):
+            inside = bool(re.match(r"^#{2,4}\s+2\.8\b", line))
+            continue
+        if inside and line.lstrip().startswith("|"):
+            first = line.strip().strip("|").split("|")[0]
+            out.update(D_ID.findall(first))
+    return out
+
+
+def split_gaps(text: str) -> tuple[str, list[tuple[int, str]]]:
+    """The map with its ``## Known gaps`` section blanked (line numbers kept), and that
+    section's numbered lines."""
+    lines = text.splitlines()
+    gaps: list[tuple[int, str]] = []
+    inside = False
+    for i, line in enumerate(lines):
+        if line.startswith("#"):
+            inside = bool(GAPS_HEADING.match(line))
+            if inside:
+                lines[i] = ""
+            continue
+        if inside:
+            gaps.append((i + 1, line))
+            lines[i] = ""
+    return "\n".join(lines) + "\n", gaps
+
+
+def check_gaps(
+    gaps: list[tuple[int, str]],
+    features: dict[str, tuple[str, str, int]],
+    allowed: set[str],
+    result: Result,
+) -> set[str]:
+    """Validate the Known gaps rows; returns the features they cover."""
+    covered: set[str] = set()
+    for no, raw in gaps:
+        m = GAP_ROW.match(raw)
+        if not m:
+            continue
+        fid = m.group("id")
+        cited = D_ID.findall(m.group("text"))
+        where = f"{MAP}:{no}"
+        if fid not in features:
+            result.fail(f"{where}: Known gap {fid} is not a feature of {INVENTORY}")
+            continue
+        if not cited:
+            result.fail(f"{where}: Known gap {fid} cites no D-16 id (§2.8 of {DECISIONS})")
+            continue
+        unknown = [d for d in cited if d not in allowed]
+        if unknown:
+            result.fail(
+                f"{where}: Known gap {fid} cites {', '.join(unknown)}, not in §2.8 of {DECISIONS}"
+            )
+            continue
+        covered.add(fid)
+    return covered
+
+
 def run(ctx: Context) -> Result:
     result = Result(NAME)
     if not (ctx.root / INVENTORY).is_file():
@@ -100,7 +175,8 @@ def run(ctx: Context) -> Result:
                 " `python -m tooling.checks.acceptance --write-skeleton`"
             )
         return result
-    parsed = ledger.parse(path.read_text(encoding="utf-8"), str(MAP))
+    body, gaps = split_gaps(path.read_text(encoding="utf-8"))
+    parsed = ledger.parse(body, str(MAP))
     for p in parsed.problems:
         result.fail(p)
     result.warnings.extend(parsed.warnings)
@@ -111,14 +187,31 @@ def run(ctx: Context) -> Result:
             result.fail(f"{MAP}:{row.line}: {rid} is not an ACC-<feature>-<n> id")
             continue
         if m.group("feature") not in features:
-            result.warnings.append(f"{MAP}:{row.line}: {rid} names an unknown feature")
+            message = f"{MAP}:{row.line}: {rid} names a feature not in {INVENTORY}"
+            if ctx.strict:
+                result.fail(message)
+            else:
+                result.warnings.append(message)
         covered.add(m.group("feature"))
+    gap_features = check_gaps(gaps, features, not_in_1_0(ctx.root), result)
     for fid, (_name, prio, line) in gated.items():
-        if fid not in covered:
+        if fid not in covered and fid not in gap_features:
             result.fail(f"{fid} ({prio}, {INVENTORY}:{line}) has no ACC id in {MAP}")
-    problems = ledger.check_rows(parsed, ledger.KnownTests(ctx.root), str(MAP), strict=ctx.strict)
+    known = ledger.KnownTests(ctx.root)
+    problems = ledger.check_rows(parsed, known, str(MAP), strict=ctx.strict)
     for _, problem in problems:
         result.fail(problem)
+    if ctx.strict:
+        for problem in collect.strict_problems(ctx.root, parsed, str(MAP), known):
+            result.fail(problem)
+    reviews = sum(1 for r in parsed.rows.values() if any(c.kind == "review" for c in r.coverage))
+    result.data = {
+        "features": len(features),
+        "gated": len(gated),
+        "rows": len(parsed.rows),
+        "review_rows": reviews,
+        "known_gaps": sorted(gap_features),
+    }
     return result
 
 

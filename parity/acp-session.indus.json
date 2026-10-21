@@ -1,0 +1,82 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "stdio",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-agent",
+      "action": "launch",
+      "argv": ["indus", "acp", "--local"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "send-initialize",
+      "action": "send",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientCapabilities": {
+            "fs": { "readTextFile": false, "writeTextFile": false },
+            "terminal": false
+          }
+        }
+      },
+      "timeout_ms": 2000
+    },
+    {
+      "step_id": "wait-initialized",
+      "action": "wait_for",
+      "locator": { "kind": "response", "to": "send-initialize" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "send-session-new",
+      "action": "send",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "session/new",
+        "params": { "cwd": "${work}", "mcpServers": [] }
+      },
+      "timeout_ms": 2000
+    },
+    {
+      "step_id": "wait-session-created",
+      "action": "wait_for",
+      "locator": { "kind": "response", "to": "send-session-new" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "send-prompt",
+      "action": "send",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "session/prompt",
+        "params": {
+          "sessionId": { "$result": "wait-session-created", "path": ["result", "sessionId"] },
+          "prompt": [{ "type": "text", "text": "hello over the editor protocol" }]
+        }
+      },
+      "timeout_ms": 2000
+    },
+    {
+      "step_id": "wait-message-chunk",
+      "action": "wait_for",
+      "locator": { "kind": "message", "method": "session/update", "has": "agent_message_chunk" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "wait-prompt-done",
+      "action": "wait_for",
+      "locator": { "kind": "response", "to": "send-prompt" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "close-input", "action": "close_input", "timeout_ms": 2000 },
+    { "step_id": "wait-exit", "action": "wait_exit", "code": 0, "timeout_ms": 20000 }
+  ]
+}

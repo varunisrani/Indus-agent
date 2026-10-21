@@ -1,0 +1,74 @@
+# The user docs site (P25-14): built in strict mode (a broken link, a missing anchor or a page left
+# out of the navigation fails), with the generated reference pages checked fresh first, then
+# published to GitHub Pages. Runs on pushes to main that touch the docs or what generates them, on
+# every published release, and by hand. Pull requests build the site in ci.yml without deploying.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/user/**"
+      - "mkdocs.yml"
+      - "scripts/docs/**"
+      - "src/indus/**"
+      - "skills/**"
+      - ".github/workflows/docs.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked
+
+      # The reference pages are generated from the code; a stale page fails here.
+      - name: Generated reference pages fresh
+        run: uv run python scripts/docs/gen_reference.py --check
+
+      - name: Build the site (strict)
+        env:
+          NO_MKDOCS_2_WARNING: "1"
+        run: uv run mkdocs build --strict --site-dir build/docs-site
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/docs-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

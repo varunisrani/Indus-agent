@@ -1,0 +1,7 @@
+{
+  "note": "Medians from a clean CI runner, written by `INDUS_PERF_RECORD=<note path> uv run pytest -m perf tests/perf`. Empty until the lead records the first run on the runner (docs/notes/P25/perf-python.md); only recorded names are compared.",
+  "runner": null,
+  "recorded": null,
+  "record_note": null,
+  "budgets": {}
+}

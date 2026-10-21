@@ -1,0 +1,70 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "terminal",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-chat",
+      "action": "launch",
+      "argv": ["indus", "--local"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-ready",
+      "action": "wait_for",
+      "locator": { "kind": "prompt" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "type-first-ask",
+      "action": "type",
+      "text": "please run the check",
+      "timeout_ms": 2000
+    },
+    { "step_id": "send-first-ask", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-approval-1",
+      "action": "wait_for",
+      "locator": { "kind": "card", "card": "approval" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "allow-once", "action": "press", "key": "1", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-command-ran",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "The command ran" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "type-second-ask",
+      "action": "type",
+      "text": "run it once more",
+      "timeout_ms": 2000
+    },
+    { "step_id": "send-second-ask", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-approval-2",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "(?s)Approval needed.*Approval needed" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "deny", "action": "press", "key": "4", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-deny-reason",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Tell the agent why" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "skip-deny-reason", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-declined-answer",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "declined, so nothing ran" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "type-quit", "action": "type", "text": "/quit", "timeout_ms": 2000 },
+    { "step_id": "send-quit", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    { "step_id": "wait-exit", "action": "wait_exit", "code": 0, "timeout_ms": 20000 }
+  ]
+}

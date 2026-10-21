@@ -1,0 +1,26 @@
+{
+  "format": "indus-parity-capture/1",
+  "flow": "synthetic-flow",
+  "side": "indus",
+  "driver": "browser",
+  "status": "passed",
+  "reason": "",
+  "steps": [
+    {
+      "step_id": "wait-shell",
+      "action": "wait_for",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 5
+    },
+    {
+      "step_id": "wait-shell",
+      "action": "wait_for",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 5
+    }
+  ],
+  "page_errors": [],
+  "origin": "http://127.0.0.1:24000"
+}

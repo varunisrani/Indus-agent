@@ -37,6 +37,9 @@ reference/
 !docs/user/reference/
 rea-lab/
 
+# Parity runs (P25-05): product captures and the prepared REA input stay in this local cache
+.cache/parity/
+
 # Built TUI bundle copied into the package for wheels (P23-01)
 src/indus/_tui_dist/
 

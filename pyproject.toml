@@ -173,6 +173,9 @@ dev = [
     # The ACP SDK for the adapter's tests (P19), so the gate runs them without the `acp` extra.
     "agent-client-protocol==0.12.1",
     "import-linter==2.15",
+    # The user docs site (P25-14): MkDocs (BSD-2-Clause) and its Material theme (MIT); dev only.
+    "mkdocs==1.6.1",
+    "mkdocs-material==9.7.7",
     "pexpect==4.9.0",
     "pyright==1.1.414",
     "pytest==9.1.1",

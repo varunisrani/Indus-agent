@@ -1,8 +1,8 @@
 """Shared parser for the Markdown ledgers (traps ledger, acceptance map).
 
 A row is ``- **ID** summary``. The indented lines under it are its coverage, each either a test
-reference in backticks (``path/to/test_x.py::test_name`` or ``path::Class::test_name``) or
-``Review: <why> (<task id>)``.
+reference in backticks (``path/to/test_x.py::test_name``, ``path::Class::test_name``, or for
+TypeScript ``path > describe > title``) or ``Review: <why> (<task id>)``.
 
 A cited test must exist and must not be skipped for good: ``@pytest.mark.skip`` on the test or
 its class, ``pytestmark`` holding ``pytest.mark.skip`` in the module, or ``pytest.skip(...)`` as
@@ -91,6 +91,13 @@ def parse(text: str, name: str) -> Ledger:
     return ledger
 
 
+def split_ref(ref: str) -> tuple[str, list[str]]:
+    """``path::a::b`` (or, without ``::``, ``path > a > b``) -> ``(path, [a, b])``."""
+    parts = ref.split("::") if "::" in ref else ref.split(" > ")
+    parts = [p.strip() for p in parts]
+    return parts[0], parts[1:]
+
+
 class KnownTests:
     """Answers "does this test exist?" by parsing test files with ``ast`` (no test run)."""
 
@@ -109,10 +116,10 @@ class KnownTests:
 
     def check(self, ref: str) -> str | None:
         """None when the referenced test exists, else the reason it does not."""
-        parts = [p.strip() for p in ref.split("::")]
-        if len(parts) < 2 or not all(parts):
+        relpath, raw_names = split_ref(ref)
+        if not raw_names or not relpath or not all(raw_names):
             return f"`{ref}` is not of the form path::test_name"
-        relpath, names = parts[0], [re.sub(r"\[.*\]$", "", n) for n in parts[1:]]
+        names = [re.sub(r"\[.*\]$", "", n) for n in raw_names]
         path = self.root / relpath
         if not path.is_file():
             return f"test file {relpath} does not exist"

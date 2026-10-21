@@ -4,5 +4,5 @@
     "jsx": "react-jsx",
     "erasableSyntaxOnly": true
   },
-  "include": ["spike", "src"]
+  "include": ["spike", "src", "bench"]
 }

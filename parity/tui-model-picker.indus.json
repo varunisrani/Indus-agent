@@ -1,0 +1,73 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "terminal",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-tui",
+      "action": "launch",
+      "argv": ["indus", "--tui", "--local"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-composer",
+      "action": "wait_for",
+      "locator": { "kind": "prompt" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "type-first-turn", "action": "type", "text": "hello picker", "timeout_ms": 2000 },
+    { "step_id": "send-first-turn", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-first-answer",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "You said: hello picker" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "open-model-picker", "action": "press", "key": "Ctrl+O", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-provider-picker",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Choose a provider" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "choose-current-provider", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-model-list",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Models of Custom endpoint" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "type-model-id", "action": "type", "text": "long_stream", "timeout_ms": 2000 },
+    { "step_id": "choose-model", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-effort-picker",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "Reasoning effort for long_stream" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "keep-effort", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-model-switched",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "─ ready │ long_stream" },
+      "timeout_ms": 10000
+    },
+    {
+      "step_id": "type-second-turn",
+      "action": "type",
+      "text": "and now a long one",
+      "timeout_ms": 2000
+    },
+    { "step_id": "send-second-turn", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-long-answer",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "The end\\." },
+      "timeout_ms": 30000
+    },
+    { "step_id": "type-quit", "action": "type", "text": "/quit", "timeout_ms": 2000 },
+    { "step_id": "send-quit", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    { "step_id": "wait-exit", "action": "wait_exit", "code": 0, "timeout_ms": 20000 }
+  ]
+}

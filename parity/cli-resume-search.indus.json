@@ -1,0 +1,102 @@
+{
+  "format": "indus-terminal-scenario/1",
+  "driver": "terminal",
+  "terminal": { "columns": 110, "rows": 40 },
+  "environment": { "locale": "en-US", "timezone": "UTC" },
+  "actions": [
+    {
+      "step_id": "launch-chat-1",
+      "action": "launch",
+      "argv": ["indus", "--local"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-ready-1",
+      "action": "wait_for",
+      "locator": { "kind": "prompt" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "type-kite",
+      "action": "type",
+      "text": "remember the blue kite",
+      "timeout_ms": 2000
+    },
+    { "step_id": "send-kite", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-answer-kite",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "You said: remember the blue kite" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "type-quit-1", "action": "type", "text": "/quit", "timeout_ms": 2000 },
+    { "step_id": "send-quit-1", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    { "step_id": "wait-exit-1", "action": "wait_exit", "code": 0, "timeout_ms": 20000 },
+    {
+      "step_id": "launch-chat-2",
+      "action": "launch",
+      "argv": ["indus", "--local"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-ready-2",
+      "action": "wait_for",
+      "locator": { "kind": "prompt" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "type-lunch", "action": "type", "text": "what is for lunch", "timeout_ms": 2000 },
+    { "step_id": "send-lunch", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-answer-lunch",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "You said: what is for lunch" },
+      "timeout_ms": 30000
+    },
+    { "step_id": "type-quit-2", "action": "type", "text": "/quit", "timeout_ms": 2000 },
+    { "step_id": "send-quit-2", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    { "step_id": "wait-exit-2", "action": "wait_exit", "code": 0, "timeout_ms": 20000 },
+    {
+      "step_id": "launch-continue",
+      "action": "launch",
+      "argv": ["indus", "--local", "-c"],
+      "timeout_ms": 5000
+    },
+    {
+      "step_id": "wait-resumed",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "resumed" },
+      "timeout_ms": 30000
+    },
+    {
+      "step_id": "wait-recap-lunch",
+      "action": "wait_for",
+      "locator": {
+        "kind": "text",
+        "pattern": "(?s)earlier in this conversation.*what is for lunch"
+      },
+      "timeout_ms": 10000
+    },
+    { "step_id": "type-sessions", "action": "type", "text": "/sessions", "timeout_ms": 2000 },
+    { "step_id": "send-sessions", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-session-list",
+      "action": "wait_for",
+      "locator": { "kind": "text", "pattern": "(?s)Recent sessions.*remember the blue kite" },
+      "timeout_ms": 10000
+    },
+    { "step_id": "type-pick-kite", "action": "type", "text": "2", "timeout_ms": 2000 },
+    { "step_id": "send-pick-kite", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    {
+      "step_id": "wait-resumed-kite",
+      "action": "wait_for",
+      "locator": {
+        "kind": "text",
+        "pattern": "(?s)Resumed .*kite.*earlier in this conversation.*remember the blue kite"
+      },
+      "timeout_ms": 15000
+    },
+    { "step_id": "type-quit-3", "action": "type", "text": "/quit", "timeout_ms": 2000 },
+    { "step_id": "send-quit-3", "action": "press", "key": "Enter", "timeout_ms": 2000 },
+    { "step_id": "wait-exit-3", "action": "wait_exit", "code": 0, "timeout_ms": 20000 }
+  ]
+}

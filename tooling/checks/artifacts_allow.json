@@ -1,0 +1,6 @@
+[
+  {
+    "path": "*/assets/javascripts/lunr/min/lunr.fr.min.js",
+    "reason": "2026-10-21 (P25 wave 41 landing): the docs site's search bundle from mkdocs-material ships lunr's French stemmer, whose stop-word list holds the French first-person plural pronoun, which the vendor-name pattern matches; third-party code, not a reference name"
+  }
+]
