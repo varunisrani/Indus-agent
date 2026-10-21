@@ -73,9 +73,10 @@ Nothing parked in `.agents/wip/`; nothing uncommitted.
 
 ## NEXT STEP (start here)
 Turn: AGENT_2 (ACTIVE since 16:27 UTC 2026-10-20). Main `eab425c` (P16 aa696ad; P18-01..22 077ef96 + 9786b32; P19 complete 3ade87c + eab425c; drive fix 155ef32).
-Done: P00–P17, P19, P21, P22 complete; P18 22/30 (16 partly: prompt-size breakdown owed). 506/648 tasks landed (the old "476" was a miscount: the
+Done: P00–P19, P21, P22 complete; P20 7/40. 521/648 tasks landed (the old "476" was a miscount: the
 phase table summed to 461 before P18). Nothing parked.
-In flight: nothing. Combined main `768118a` full gate green (15646 passed / 87 skipped / 0 failed; perf 11/1).
+In flight: P20 integrator (scratchpad int-p20a) merging .agents/wip/w34 (M = P20-08..14, R = 15..18, C = 19..24; README
+there has every merge step). If it is not landed when you take the turn: its tree is in int-p20a (or $S/int-p20a-wip.patch). Combined main `768118a` full gate green (15646 passed / 87 skipped / 0 failed; perf 11/1).
 Test follow-ups: all four load failures root-caused and fixed (D-04.1 backstop now reaps the killed tree; ticker, matrix,
 msgraph waits quiesce) — see docs/notes/testing/load-failures-wave32.md. Remaining: the backends conftest `drive` cannot
 hold (a command's output reader is an awaited pool call for its whole life); `turn.drive` can still move the clock
@@ -88,7 +89,8 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 writes, STAND-IN first lines, conflict markers), park in .agents/wip/<wave>/ with a README section, then one integrator
 per group runs the full gate; the lead commits ("[Agent 2] …"), rebases, fast-forwards, pushes, updates the phase table
 in docs/plan/phases/README.md and this file.
-- Last landings: P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
+- Last landings: P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
+  P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
   load-failure fixes + clock quiesce helpers (full gate 15652 passed / 0 failed), P19-08..18 + D-16.602 daemon side (`eab425c`; P19 COMPLETE; attached `indus acp` works against a real
   daemon; `indus mcp serve`; D-16.626..642), P18-11..16 dashboard REST (`9786b32`; download tickets, no tokens in URLs, daemon `stop` verb,
