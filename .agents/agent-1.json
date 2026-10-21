@@ -5,8 +5,8 @@
   "usage_pct": 1,
   "remaining_pct": 99,
   "resets_at": "2026-10-20T23:00:00+00:00",
-  "last_check": "2026-10-21T05:56:00+00:00",
-  "current_step": "Took the turn; landing P20-08..24 (w34)",
+  "last_check": "2026-10-21T06:05:00+00:00",
+  "current_step": "Gating P20-08..24 (verify17); wave 35 builders D1-D5 (P20-25..39) running",
   "last_commit": "d1b05df",
-  "updated_at": "2026-10-21T05:56:00Z"
+  "updated_at": "2026-10-21T06:05:00Z"
 }
