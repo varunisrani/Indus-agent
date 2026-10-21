@@ -62,3 +62,35 @@
   from a session); integration-connected suggestion offers (no "connected" event); gateway has no background review; LspUpkeep
   .release before worktree removal (P11); `indus lsp restart` for a running daemon; browser golden prompts / tool arrays check;
   DeliveryRouter self-chat leak in tests.
+
+## w42-wa.patch: gateway/daemon wiring — multiplex host in `gateway run` (P24-01..04), relay front (P24-08/09), room loop + idle exit (P24-06), BoardWatchers per host, bots_router test — done (served-profile attach WS gap)
+- Builder checks: ruff, format, pyright 0, lint-imports; unit + integration gateway 2770 passed / 8 skipped; contract 1885 /
+  55; other integration + unit service/remote 446 / 42; unit cli -k gateway 128; tooling.checks ok. New integration tests 6/6
+  runs green.
+- DEMOS: tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py (two profiles, isolated secrets / allowlists,
+  second `gateway run` attaches, restart keeps each chat on its bot; routed-message + shared-ingress /p/b/ tests);
+  test_room_two_members.py (alpha + beta alternate; stop directive + groups.stop; room goes quiet).
+- New: gateway/multiplex/serving.py (served profiles as embedded per-profile GatewayDaemons under ProfileScopeCache +
+  ScopeBinder; one AdapterTable; ProfileRouter.identify → right pipeline; replies via the receiving bot), gateway/relay/part.py
+  (RelayPart: build_front → start with retry/backoff; adapter per descriptor via GatewayDaemon.attach_relayed; native_state;
+  on_interrupt stops the turn; idle → go_dormant; FIX: RelayFront.hold/release so events replayed right after the handshake
+  are not acked + dropped before adapters attach), gateway/rooms/loop.py (lease → recover → expire_turns → admit → start →
+  member turn in the member's profile → settle/stop → prune), tests integration multiplex/{host_kit, two profiles, room},
+  test_relay_part, test_board_in_daemon, unit rooms/test_loop.
+- Shared: gateway/daemon/{process (decide_second_run before the per-home lock; host claim + record; identify served set;
+  *-profile control verbs; served tickets; ROOT_PART_FACTORIES boards + rooms once per host) — WB also edits process.py,
+  command, parts (DaemonPart.busy_reason), side_services, idle_exit (room turns busy; relay-only platforms don't block)},
+  delivery/parts.py, http/{__init__, part}.py (SharedIngress fronts API + webhook; served surfaces at /p/<profile>/),
+  outbound/replies.py (sender_for_reply), relay/{__init__ (relay_settings loads config), adapter}.py, rooms/driver.py
+  (mentioned_members); tests test_idle_exit, rooms/test_peers; 16-what-we-change D-16.17 flipped ("multiplex available, off by
+  default"); ACC K50-1/2/3, K38-1/2, K37-1, K47-1; Wiring + Status in 9 P24 notes.
+- Decisions (D-ids): served profiles = embedded per-profile daemons (own store, service, control socket, instance lock); host
+  serves every live profile at start (incl. default from a named launch); routes from the launch profile's config only;
+  D-16.542 refuses a routed scope at the attach WS → served profiles run attach_ws=False (DECIDE: amend D-16.542 to accept a
+  served profile's own scope, or route attach through the host); a served profile's HTTP surface needs the launch profile's
+  listener; room turn policy (mentioned first else first member, alternate, ≤ 8 member turns per person message, silence /
+  failure / stop / newer message ends the chain, stop holds until re-mentioned, no replay after restart, unserved member →
+  member.unavailable, fresh session per member turn with recent transcript); relayed platform still needs its registry entry;
+  served profiles use the host's credential-lock dir.
+- Follow-ups: D-16.799 row (mark WA done); attach for served profiles; approvals inside room turns have no answerer; room
+  events not pushed (groups.log only); callback-kit shared-listener mode; periodic profile rescan / late credentials.
