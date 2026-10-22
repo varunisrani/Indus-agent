@@ -81,6 +81,14 @@ integrator for waves 45 + 46 in scratchpad verify25: wave 45 (S45 SEC-14/15/18, 
 b re-lock incl. lockfiles + notices patch, c SEC-6/8, d desktop hooks + licences, e contribution areas, f TUI/CLI fixes,
 g CI/test hygiene, h user guide, k install pages + version) in `.agents/wip/w46/`; brief `.agents/wip/w46/integrator-brief.md`.
 UI screenshot agent in scratchpad wt-shots (PNGs in scratchpad/shots; re-run on the final tree).
+UI bugs seen while capturing screenshots (05:05 UTC; queue as wave 47 AFTER waves 45+46 land, each fail-first):
+  (1) desktop composer stays on Stop/Steer for minutes after a turn ends (intermittent; reload clears it);
+  (2) desktop tool rows lose path/command and Arguments after a window reload; (3) desktop file tools resolve relative paths
+  against the daemon's work folder, not the chat's default folder (the Terminal pane uses the right one); (4) TUI attached to
+  the daemon (default mode) gets "not served here" for complete.slash, model.options, session.list — slash menu, Ctrl+O and
+  Ctrl+X advertised but broken; (5) dashboard Chat tab light theme: TUI prompt/reply text nearly invisible; (6) small: TUI
+  slash-menu row leaves stray characters, desktop slash-menu highlighted description low contrast, session titles truncated.
+  Capture scripts: scratchpad/shots-tools (prepare.sh, run-all.sh <worktree>, cleanup.sh).
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 19/24 landed (01–19).
 1. **Land wave 44** when its integrator is green (P25-20..24). If it stopped mid-way, its staged diff is the work: save it.
 2. **Open security findings** (docs/internals/threat-model.md): SEC-4 needs the owner's design call (fencing what

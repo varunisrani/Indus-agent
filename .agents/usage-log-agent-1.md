@@ -176,3 +176,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 04:42 UTC: 67% (04:39; resets 07:00). After the 04:28 container restart both agents were resumed: w44 integrator fixing 2 failures; screenshot agent has web 11 + TUI 8, redoing desktop. 20 GB disk free.
 - 2026-10-22 04:55 UTC: landed P25-20..24 (b9a43a1); P25 24/24 built.
 - 2026-10-22 04:58 UTC: 69% (04:55; resets 07:00). P25-20..24 landed (b9a43a1). Running: waves 45+46 integrator (verify25), screenshot agent (20 PNGs so far). 20 GB disk free.
+- 2026-10-22 05:06 UTC: screenshot pass A done (31 PNGs sent to the owner); 6 UI bugs recorded for wave 47.
