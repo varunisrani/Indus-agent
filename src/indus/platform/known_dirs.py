@@ -60,6 +60,20 @@ def windows_user_program_dirs(family: str | None = None) -> tuple[str, ...]:
     )
 
 
+def git_for_windows_roots(family: str | None = None) -> tuple[str, ...]:
+    """Where Git for Windows is usually installed (machine-wide, per user, Scoop), in lookup order.
+    Each entry is an install root: ``bin/bash.exe`` and ``cmd/git.exe`` sit below it."""
+    if _family(family) != "win32":
+        return ()
+    return (
+        "%ProgramFiles%/Git",
+        "%ProgramW6432%/Git",
+        "%ProgramFiles(x86)%/Git",
+        "%LOCALAPPDATA%/Programs/Git",
+        "%USERPROFILE%/scoop/apps/git/current",
+    )
+
+
 def mac_application_dirs(family: str | None = None) -> tuple[str, ...]:
     return ("/Applications", "~/Applications") if _family(family) == "darwin" else ()
 
@@ -107,13 +121,17 @@ def all_literals() -> frozenset[str]:
         snap_bins,
         flatpak_bins,
         windows_user_program_dirs,
+        git_for_windows_roots,
         mac_application_dirs,
         mac_protected_dirs,
     )
     return frozenset(entry for fam in FAMILIES for table in tables for entry in table(fam))
 
 
-_VAR = re.compile(r"%(?P<win>[A-Za-z_][A-Za-z0-9_]*)%|\$(?:\{(?P<braced>\w+)\}|(?P<bare>\w+))")
+# ``%ProgramFiles(x86)%`` is the one Windows name with parentheses that the tables use.
+_VAR = re.compile(
+    r"%(?P<win>[A-Za-z_][A-Za-z0-9_]*(?:\(x86\))?)%|\$(?:\{(?P<braced>\w+)\}|(?P<bare>\w+))"
+)
 
 
 def expand(entry: str, env: Mapping[str, str], user_home: Callable[[], Path]) -> Path | None:

@@ -189,6 +189,32 @@ jobs:
       - name: End-to-end tests
         run: uv run pytest tests/e2e -q
 
+  # P25-24 (D-16.958): the Git Bash terminal backend on native Windows, best effort (D-16.55). The
+  # file's Windows-only cases (echo, cwd marker, timeout rc 124, interrupt rc 130, tree killed)
+  # run only here; the rest of it runs on Linux in `checks`. Advisory until it has been green: the
+  # install and test steps carry `continue-on-error`, so the job reports success to `gate` (which
+  # needs every job) while a red step stays visible in the run (D-16.963). Drop both flags once
+  # it has been green.
+  windows-local:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        continue-on-error: true
+        run: uv sync --locked
+
+      - name: Git Bash backend
+        continue-on-error: true
+        run: uv run pytest tests/unit/backends/test_local_windows.py -q
+
   # TypeScript workspace: Biome, tsc, vitest.
   ts:
     runs-on: ubuntu-latest
@@ -515,6 +541,7 @@ jobs:
       - desktop-e2e
       - nix
       - artefacts
+      - windows-local
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

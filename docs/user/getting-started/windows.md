@@ -32,6 +32,41 @@ system can differ. When something does not work natively, use WSL2.
 When the installer reaches the messaging gateway step on Windows it points you to WSL2: the gateway
 is a long-running service and is supported there.
 
+### Shell commands through Git Bash (best effort)
+
+When Indus Agent runs natively on Windows, the `local` terminal backend hands every shell command
+to Git Bash. Nothing needs configuring when Git for Windows is installed; the agent picks the first
+`bash.exe` it finds in this order:
+
+1. the file named by the `INDUS_GIT_BASH` environment variable (if that file is missing, the
+   backend reports it instead of guessing);
+2. the portable Git the PowerShell installer placed under `<home>\tools`, the newest version first;
+3. the Git installation that the `git.exe` on your `PATH` belongs to;
+4. the usual install folders: `Program Files\Git`, `Program Files (x86)\Git`, the per-user
+   `AppData\Local\Programs\Git`, and Scoop's `git` app;
+5. any other `bash.exe` on your `PATH`.
+
+The `bash.exe` in `System32` and the Store alias in `WindowsApps` start WSL instead and are never
+used. MinGit has no Bash and does not count either.
+
+What to expect:
+
+- **Paths.** The agent's tools keep Windows paths such as `C:\Users\you\project`; commands see the
+  same folder as `/c/Users/you/project`. A `cd` inside a command carries over to the next command,
+  as on Linux.
+- **Arguments to Windows programs** are passed as typed: Git Bash's automatic path rewriting is off
+  (`MSYS_NO_PATHCONV=1` and `MSYS2_ARG_CONV_EXCL=*`, unless you set them yourself), so options like
+  `/F` reach programs such as `tasklist` unchanged. Give Windows programs Windows paths.
+- **Stopping.** A command that runs too long or that you interrupt is stopped together with every
+  program it started. Programs a command started in the background (`some-server &`) keep running
+  after that command ends normally.
+- **Text.** Commands get a UTF-8 console and `PYTHONUTF8=1`, so accented and non-Latin output comes
+  through intact. Temporary files live under `<home>\cache\terminal`.
+- **Not available natively:** `sudo`, and the background-process, scheduled-job and code-execution
+  helpers that need a POSIX system. Use WSL2 for those.
+
+If a command misbehaves only on native Windows, try it in WSL2; that is the supported setup.
+
 ## The desktop app with WSL2
 
 The desktop app installs and looks after its own copy of Indus Agent on Windows. It can also

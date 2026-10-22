@@ -65,6 +65,7 @@ Variables can be set in the shell or in the profile's `.env` file (the shell win
 | `INDUS_GATEWAY_SUPERVISED` |  | `indus.cli.commands.gateway`, `indus.foundation.preparse`, `indus.gateway.control_socket` and 2 more |
 | `INDUS_GATEWAY_THREAD_ID` |  | `indus.gateway.core.admission` |
 | `INDUS_GATEWAY_USER_ID` |  | `indus.gateway.core.admission` |
+| `INDUS_GIT_BASH` | native Windows: the Git Bash `bash.exe` the terminal runs commands with | `indus.backends.local_windows` |
 | `INDUS_HOME` | the home folder (default `~/.indus`); profiles live under it | `indus.backends.docker.egress`, `indus.backends.wrapper`, `indus.cli.commands.gateway` and 9 more |
 | `INDUS_HOME_MODE` |  | `indus.foundation.home` |
 | `INDUS_IGNORE_RULES` |  | `indus.learning.skills.invoke`, `indus.service.creation_policy` |
@@ -385,6 +386,7 @@ Standard and vendor variables the program also reads (proxies, editors, cloud SD
 | `GIT_WORK_TREE` | `indus.backends.checkpoints.store` |
 | `HOME` | `indus.backends.checkpoints.store`, `indus.backends.credential_files`, `indus.backends.docker.environment` and 25 more |
 | `INVOCATION_ID` | `indus.gateway.control_socket` |
+| `LANG` | `indus.backends.local_windows` |
 | `LOCALAPPDATA` | `indus.cli.commands.profile`, `indus.gateway.token_locks`, `indus.state.connection` and 1 more |
 | `LOGNAME` | `indus.providers.auth.browser` |
 | `NODE_ENV` | `indus.cli.tui_launch` |
@@ -396,7 +398,7 @@ Standard and vendor variables the program also reads (proxies, editors, cloud SD
 | `PWD` | `indus.cli.tui_launch`, `indus.tools.builtin.project` |
 | `PYTHONDONTWRITEBYTECODE` | `indus.tools.builtin.code.launch` |
 | `PYTHONIOENCODING` | `indus.tools.builtin.code.launch` |
-| `PYTHONPATH` | `indus.backends.local`, `indus.tools.builtin.code.launch` |
+| `PYTHONPATH` | `indus.backends.local`, `indus.backends.local_windows`, `indus.tools.builtin.code.launch` |
 | `PYTHONUNBUFFERED` | `indus.backends.processes` |
 | `PYTHONUTF8` | `indus.tools.builtin.code.launch` |
 | `SIMPLEX_AUTO_ACCEPT` | `indus.gateway.adapters.simplex.adapter` |
@@ -409,7 +411,7 @@ Standard and vendor variables the program also reads (proxies, editors, cloud SD
 | `USERPROFILE` | `indus.cli.commands.import_agent`, `indus.cli.commands.profile`, `indus.service.projects_rpc` and 4 more |
 | `UV_PROJECT_ENVIRONMENT` | `indus.cli.update.apply` |
 | `UV_THREADPOOL_SIZE` | `indus.web.spa` |
-| `VIRTUAL_ENV` | `indus.backends.local`, `indus.cli.update.apply` |
+| `VIRTUAL_ENV` | `indus.backends.local`, `indus.backends.local_windows`, `indus.cli.update.apply` |
 | `VISUAL` | `indus.cli.commands.journey`, `indus.cli.commands.memory` |
 | `WECOM_WEBSOCKET_URL` | `indus.gateway.adapters.wecom.adapter` |
 | `WEIXIN_GROUP_ALLOWED_USERS` | `indus.gateway.adapters.weixin.adapter` |

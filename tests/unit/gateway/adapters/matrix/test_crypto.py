@@ -15,7 +15,7 @@ import os
 import socket
 import stat
 import threading
-from collections.abc import Awaitable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -81,6 +81,17 @@ async def long_polls(clock: FakeClock, count: int = 4) -> None:
     for _ in range(count):
         await asyncio.to_thread(threading.Event().wait, 0.005)  # the io pool's file work
         await clock.advance_and_settle(31.0)
+
+
+async def polls_until(clock: FakeClock, done: Callable[[], bool], *, rounds: int = 40) -> None:
+    """Long polls until ``done()``: the parked-key count is in syncs, but each sync and the
+    notice's send wait on the io pool's real-time worker thread, so a loaded host needs more than
+    the fixed ``long_polls`` (D-16.964)."""
+    for _ in range(rounds):
+        await long_polls(clock, 1)
+        if done():
+            return
+    raise AssertionError("the condition never came true")
 
 
 class FakeSecrets:
@@ -377,13 +388,13 @@ def test_an_undecryptable_event_gives_one_notice_per_session_and_no_event(tmp_pa
         rig.wire.push_event(ROOM, rig.encrypted(ANA, "LOST1", "first"))
         await settle(rig.clock)
         assert rig.notices() == []  # waiting a few syncs for the key first
-        await long_polls(rig.clock)
+        await polls_until(rig.clock, lambda: len(rig.notices()) >= 1)
         assert len(rig.notices()) == 1
         rig.wire.push_event(ROOM, rig.encrypted(ANA, "LOST1", "second"))
         await long_polls(rig.clock)
         assert len(rig.notices()) == 1  # one per session
         rig.wire.push_event(ROOM, rig.encrypted(BEN, "LOST2", "third"))
-        await long_polls(rig.clock)
+        await polls_until(rig.clock, lambda: len(rig.notices()) >= 2)
         assert len(rig.notices()) == 2
         assert rig.events == []  # never passed on, never as empty text
         # The notices themselves went out encrypted.

@@ -659,6 +659,7 @@ ENV_NOTES: Mapping[str, str] = {
     "INDUS_DASHBOARD_PASSWORD": "password for the dashboard's password login",
     "INDUS_DASHBOARD_OIDC_ISSUER": "issuer URL for the dashboard's single sign-on login",
     "INDUS_DASHBOARD_OIDC_CLIENT_ID": "client id for the dashboard's single sign-on login",
+    "INDUS_GIT_BASH": "native Windows: the Git Bash `bash.exe` the terminal runs commands with",
 }
 """One-line notes for names whose readers carry no description of their own."""
 

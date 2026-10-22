@@ -90,7 +90,12 @@ jobs:
           uv run ruff format --check .
           uv run lint-imports
           uv run pyright
+      # P25-22: the release lane also runs the `release`-marked end-to-end tests (a canary source
+      # install updated to the next stable, both releases built locally, uv offline from the
+      # cache the install step filled); the PR gate skips them.
       - name: Tests
+        env:
+          INDUS_RELEASE_LANE: "1"
         run: uv run pytest -q -m "not perf"
       - name: Perf bounds (serial, alone)
         run: uv run pytest -q -m perf
@@ -335,6 +340,24 @@ jobs:
           pattern: desktop-*
           path: ${{ runner.temp }}/artefacts
           merge-multiple: true
+      # The install guide and install.cmd download the installers from releases/latest/download
+      # (D-16.960): they ship from the admitted commit, beside the desktop artefacts, in the manifest.
+      - name: Check out the installers (admitted commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.admit.outputs.commit }}
+          path: admitted
+          sparse-checkout: |
+            scripts/install.sh
+            scripts/install.ps1
+            scripts/install.cmd
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Add the installers
+        run: |
+          mkdir -p "$RUNNER_TEMP/artefacts"
+          cp admitted/scripts/install.sh admitted/scripts/install.ps1 admitted/scripts/install.cmd \
+            "$RUNNER_TEMP/artefacts/"
       - name: Upload with the manifest
         env:
           GH_TOKEN: ${{ github.token }}

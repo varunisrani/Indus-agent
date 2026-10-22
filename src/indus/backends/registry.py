@@ -47,6 +47,7 @@ from indus.backends.wait import FOREGROUND
 from indus.foundation.clock import Clock, SystemClock
 from indus.foundation.config.schema import default_for
 from indus.foundation.scope import Scope, current_scope
+from indus.platform.facts import os_family
 
 __all__ = [
     "CLEANUP_BOUND_S",
@@ -141,6 +142,14 @@ def _no_background(key: EnvKey, /) -> bool:
 
 async def _create_local(request: CreateRequest) -> Environment:
     cwd = request.overrides.get("cwd")
+    if os_family() == "win32":  # Git Bash on native Windows, best effort (P25-24, D-16.950)
+        from indus.backends.local_windows import open_local_windows
+
+        return await open_local_windows(
+            request.scope,
+            session_id=request.session_id,
+            cwd=str(cwd) if cwd else None,
+        )
     return await open_local(
         request.scope,
         session_id=request.session_id,

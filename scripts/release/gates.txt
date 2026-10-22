@@ -1,0 +1,41 @@
+# P25-21: the release gates for the v1.0 candidate, run in order by
+#   scripts/release/release_gates.sh <repo> <sha> scripts/release/gates.txt
+# on a fresh clone of the candidate commit. One gate per line: `<name> <command>`; the name is
+# [a-z0-9][a-z0-9_-]* and becomes logs/<name>.log; the command runs with `bash -c` from the clone's
+# root, stdin closed. Every gate runs even after a failure; a green release needs every line
+# `exit=0` in one run on the exact commit that gets the tag (docs/internals/release-checklist.md §1).
+#
+# The runner exports GATE, LOG_DIR, CLONE_DIR, WORK_DIR and RELEASE_SHA. Inputs the operator sets:
+#   INDUS_REF   the pinned reference checkout, outside the clone (clean room, similarity)
+#   PARITY_REF  the owner's reference captures (~/rea-lab/parity/ref), for the parity gate
+# Gates that need a Docker daemon, Nix or a display (dockerimage, nix, desktope2e) fail on a machine
+# without them; the checklist names the CI lane that stands in until a full machine runs them.
+
+install       uv sync --locked --all-extras && pnpm install --frozen-lockfile
+lint          uv run ruff check . && uv run lint-imports && pnpm lint
+format        uv run ruff format --check . && pnpm fmt:check
+types         uv run pyright && pnpm -r typecheck
+generated     uv run python -m indus.protocol.codegen --check && pnpm --filter @indus/desktop check:ipc && pnpm --filter @indus/desktop gen:bridge-types --check && pnpm --filter @indus/desktop dump:slash --check
+unit          uv run pytest -q -p no:cacheprovider -m "not perf" --ignore=tests/contract --ignore=tests/integration --ignore=tests/e2e --ignore=tests/security --ignore=tests/docker && CI=true pnpm test
+contract      uv run pytest -q -p no:cacheprovider -m "not perf" tests/contract
+integration   uv run pytest -q -p no:cacheprovider -m "not perf" tests/integration tests/e2e
+security      uv run pytest -q -p no:cacheprovider tests/security
+upgrade       INDUS_RELEASE_LANE=1 uv run pytest -q -p no:cacheprovider tests/e2e/upgrade
+webe2e        pnpm tui:build && CI=true pnpm web:e2e
+tuie2e        pnpm tui:e2e
+desktope2e    pnpm --filter @indus/desktop dist:unsigned && node apps/desktop/scripts/verify-fuses.mjs apps/desktop/build/release && node apps/desktop/scripts/check-asar.mjs apps/desktop/build/release && node apps/desktop/node_modules/electron/install.js && CI=true pnpm --filter @indus/desktop e2e
+cleanroom     uv run python -m tooling.checks --require-ref
+acceptance    uv run python -m tooling.checks acceptance --strict --require-ref
+traps         uv run python -m tooling.checks traps --strict --require-ref
+acpdrift      uv run pytest -q -p no:cacheprovider tests/contract/acp/test_schema_drift.py
+mcpdrift      uv run pytest -q -p no:cacheprovider tests/contract/mcp_serve/test_tool_list.py
+bundle        pnpm --filter @indus/web build && node apps/web/scripts/check-bundle.mjs
+perf          uv run pytest -q -p no:cacheprovider -m perf && pnpm --filter @indus/tui bench
+docs          uv run python scripts/docs/gen_reference.py --check && NO_MKDOCS_2_WARNING=1 uv run mkdocs build --strict --site-dir "$LOG_DIR/docs-site"
+notices       uv run python scripts/release/notices.py --check
+audit         uv run python -m tooling.checks.deps_audit --refresh --pnpm-audit --resolve-pins --no-write
+parity        uv run python scripts/parity/ledger.py --check && uv run python scripts/parity/runner.py --all --ref "${PARITY_REF:?set PARITY_REF to the reference captures folder}" --ledger
+similarity    uv run python -m tooling.checks similarity --require-ref --closest 20 --report
+installers    uv run python scripts/install/build.py --check && uv run python scripts/install/pins.py --check --strict && python3 scripts/docker/pins.py check --strict && uv run python scripts/nix/pins.py --check
+dockerimage   docker build -f docker/Dockerfile --target product --build-arg VARIANT=slim -t indus-product:gate . && docker build -f docker/sandbox/Dockerfile --target slim -t indus-sandbox:gate . && INDUS_TEST_IMAGE=indus-product:gate INDUS_TEST_SANDBOX_IMAGE=indus-sandbox:gate INDUS_TEST_IMAGE_VARIANT=slim uv run pytest -q -p no:cacheprovider -m docker tests/docker
+nix           nix flake check -L && nix run .#default -- --version

@@ -15,4 +15,5 @@ NAMES = (
     "artifacts",
     "security_static",
     "deps_audit",
+    "checklist",
 )

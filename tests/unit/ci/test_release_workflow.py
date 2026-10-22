@@ -97,7 +97,43 @@ def test_script_jobs_never_build_the_default_branch(jobs: dict[str, dict[str, An
     for name in SCRIPT_JOBS:
         text = str(jobs[name])
         assert "pnpm" not in text and "docker build" not in text and "pytest" not in text, name
-        assert all(ref == "${{ github.sha }}" for ref in checkout_refs(jobs[name])), name
+        refs = checkout_refs(jobs[name])
+        if name == "upload":  # its second checkout is the admitted commit's installers only
+            assert refs[1:] == [ADMITTED]
+            refs = refs[:1]
+        assert all(ref == "${{ github.sha }}" for ref in refs), name
+
+
+INSTALLERS = ("scripts/install.sh", "scripts/install.ps1", "scripts/install.cmd")
+
+
+def test_upload_attaches_the_installers_from_the_admitted_commit(
+    jobs: dict[str, dict[str, Any]],
+) -> None:
+    """F-1 (D-16.960): the install guide and ``install.cmd`` download the installers from
+    ``releases/latest/download``, so every release carries them, taken from the admitted commit
+    (a sparse checkout of just those files) and listed in the manifest like any artefact."""
+    steps = jobs["upload"]["steps"]
+    names = [step.get("name") for step in steps]
+    checkout = steps[names.index("Check out the installers (admitted commit)")]
+    options = checkout["with"]
+    assert options["ref"] == ADMITTED and options["persist-credentials"] is False
+    assert options["sparse-checkout"].split() == list(INSTALLERS)
+    assert options["sparse-checkout-cone-mode"] is False
+    add = steps[names.index("Add the installers")]
+    for path in INSTALLERS:
+        assert f"{options['path']}/{path}" in add["run"]
+        assert (ROOT / path).is_file(), path
+    assert '"$RUNNER_TEMP/artefacts/"' in add["run"]
+    upload = steps[names.index("Upload with the manifest")]
+    assert names.index("Collect the tested artefacts") < names.index("Add the installers")
+    assert names.index("Add the installers") < names.index("Upload with the manifest")
+    assert '--dir "$RUNNER_TEMP/artefacts"' in upload["run"]
+    shipped = {Path(path).name for path in INSTALLERS}
+    guide = (ROOT / "docs/user/getting-started/install.md").read_text(encoding="utf-8")
+    shim = (ROOT / "scripts/install.cmd").read_text(encoding="utf-8")
+    wanted = set(re.findall(r"releases/latest/download/([\w.]+)", guide + shim))
+    assert wanted and wanted <= shipped
 
 
 def test_gate_needs_every_job_and_always_runs(jobs: dict[str, dict[str, Any]]) -> None:

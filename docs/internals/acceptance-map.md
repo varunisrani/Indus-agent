@@ -2167,6 +2167,12 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-Q5-1** Linux and macOS as first-class hosts
   - `tests/unit/packaging/test_platform_marks.py::test_host_matching`
   - `tests/unit/platform/test_facts.py::test_os_family_is_normalised`
+- **ACC-Q6-3** Native Windows terminal backend (best effort): Git Bash found without the WSL launcher, MSYS paths both ways, the contract subset (echo, cwd marker, timeout rc 124, interrupt rc 130, tree killed; on real Git Bash in the `windows-local` lane, D-16.958)
+  - `tests/unit/backends/test_local_windows.py::test_native_to_shell_table`
+  - `tests/unit/backends/test_local_windows.py::test_shell_to_native_table`
+  - `tests/unit/backends/test_local_windows.py::test_the_wsl_launcher_is_never_taken`
+  - `tests/unit/backends/test_local_windows.py::test_stand_in_runs_commands_from_script_files`
+  - `tests/unit/backends/test_local_windows.py::test_stand_in_deadline_kills_the_tree`
 - **ACC-Q7-2** ACP under WSL: an editor's Windows drive and `\\wsl.localhost` folders become POSIX paths, and list filters compare them
   - `tests/unit/acp/test_paths.py::test_drive_paths_become_mounts`
   - `tests/unit/acp/test_paths.py::test_wsl_unc_paths_become_posix`

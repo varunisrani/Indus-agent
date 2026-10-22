@@ -251,6 +251,7 @@ markers = [
     "docker: needs a reachable Docker daemon (live backend lanes, P11-21)",
     "live: talks to a real provider with a real key (INDUS_LIVE=1); skips cleanly without one",
     "browser: drives a real Chromium (the browser extra); skips cleanly without one",
+    "release: release-lane end-to-end (locally built releases, real uv, offline); runs only with INDUS_RELEASE_LANE=1 (P25-22)",
     "platforms(*specs): run only on hosts matching at least one spec (linux, macos, windows, posix, or 'not X'); other hosts deselect the test (P23-01, R10.21)",
 ]
 
