@@ -41,3 +41,13 @@
 - Checks: tooling.checks ok; ruff; lint-imports; notices fresh; pytest 2508; pnpm lint / fmt / -r typecheck clean; root
   vitest 2912 passed / 2 load timeouts in apps/web (App, FilesPage; pass alone and at --maxWorkers=1).
 - LEAD: scratchpad/wt-w48f is KEPT — its node_modules match the new lockfile (vite 8.3.3). The integrator hard-links them.
+
+## w48c.patch: desktop polish — folder-gone notice, card scroll, ResizeObserver error, localEcho binding (done)
+- 19 files, +539/-13. backends/task_overrides.py workdir_gone + core/tool_round.py one `notice` (warning, key
+  workdir_missing, loop_texts.WORKDIR_GONE_NOTICE) per turn; ApprovalCard/ClarifyCard useRevealOnOpen scrollIntoView once;
+  TerminalPane refit on next animation frame; app/errorForwarding.ts drops the benign ResizeObserver message, trims file:
+  URLs (shortenFileUrls); busyActions.namedTurn + localEcho re-binds the optimistic row when turn.started names the turn.
+- Fail-first for all four. pytest 3602; ruff/pyright/lint-imports/tooling.checks ok; biome/tsc ok; desktop vitest green
+  apart from one-off load flakes in untouched electron/updates/updater.test.ts and electron/backend/resolver.test.ts.
+- W48-c-1..5. MERGE NOTE: core/tool_round.py and backends/task_overrides.py were also touched by waves 46/47 (landed);
+  w48e/g touch startup only.

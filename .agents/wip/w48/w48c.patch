@@ -1,0 +1,866 @@
+diff --git a/apps/desktop/src/app/errorForwarding.test.tsx b/apps/desktop/src/app/errorForwarding.test.tsx
+index f4928a5..405834b 100644
+--- a/apps/desktop/src/app/errorForwarding.test.tsx
++++ b/apps/desktop/src/app/errorForwarding.test.tsx
+@@ -57,6 +57,69 @@ describe("renderer error forwarding", () => {
+     expect(send).toHaveBeenCalledTimes(REPORTS_PER_MINUTE + 1);
+   });
+ 
++  it("the browser's ResizeObserver loop notice is not an error (W48-c)", () => {
++    // Chromium reports it as an error event with no error object and no position; it says size
++    // changes were delivered in the next frame, nothing failed.
++    const target = new EventTarget();
++    const send = vi.fn();
++    installErrorForwarding(target, send, { source: "renderer:main", now: () => 0 });
++    for (const message of [
++      "ResizeObserver loop completed with undelivered notifications.",
++      "ResizeObserver loop limit exceeded",
++    ]) {
++      target.dispatchEvent(
++        new ErrorEvent("error", {
++          message,
++          filename: "file:///tmp/indus-e2e-app-0cLphi/app/dist/index.html",
++          lineno: 0,
++          colno: 0,
++        }),
++      );
++    }
++    expect(send).not.toHaveBeenCalled();
++    // a real error that mentions it still goes out
++    target.dispatchEvent(new ErrorEvent("error", { error: new Error("ResizeObserver loop") }));
++    expect(send).toHaveBeenCalledTimes(1);
++  });
++
++  it("no run folder in the log: no position, no location line; file URLs keep their file name", () => {
++    const target = new EventTarget();
++    const send = vi.fn();
++    installErrorForwarding(target, send, { source: "renderer:main", now: () => 0 });
++    target.dispatchEvent(
++      new ErrorEvent("error", {
++        message: "Script error.",
++        filename: "file:///tmp/indus-e2e-app-0cLphi/app/dist/index.html",
++        lineno: 0,
++        colno: 0,
++      }),
++    );
++    expect(send.mock.calls[0]?.[0]).toEqual({
++      message: "error: Script error.",
++      source: "renderer:main",
++    });
++    const error = new TypeError("boom");
++    error.stack = [
++      "TypeError: boom",
++      "    at render (file:///home/me/.cache/run-7/app/dist/assets/index-Ab12.js:120:33)",
++      "    at http://localhost:5173/src/main.tsx:4:1",
++    ].join("\n");
++    target.dispatchEvent(
++      new ErrorEvent("error", {
++        error,
++        message: error.message,
++        filename: "file:///home/me/.cache/run-7/app/dist/assets/index-Ab12.js",
++        lineno: 120,
++        colno: 33,
++      }),
++    );
++    const stack = String(send.mock.calls[1]?.[0].stack);
++    expect(stack).not.toContain("/home/me/.cache/run-7");
++    expect(stack).toContain("at render (index-Ab12.js:120:33)");
++    expect(stack).toContain("http://localhost:5173/src/main.tsx:4:1");
++    expect(stack.split("\n").at(-1)).toBe("at index-Ab12.js:120:33");
++  });
++
+   it("a throwing bridge never breaks the page", () => {
+     const target = new EventTarget();
+     installErrorForwarding(
+diff --git a/apps/desktop/src/app/errorForwarding.ts b/apps/desktop/src/app/errorForwarding.ts
+index 99dc944..fd82e7b 100644
+--- a/apps/desktop/src/app/errorForwarding.ts
++++ b/apps/desktop/src/app/errorForwarding.ts
+@@ -1,6 +1,11 @@
+ // Renderer error forwarding (P20-39): uncaught errors and unhandled promise rejections in this
+ // window go to main's desktop.log through `logs.rendererError` (main redacts and rate-limits too).
+ // The same error repeated within 5 s is sent once; at most 30 reports a minute leave the window.
++//
++// W48-c: the browser's "ResizeObserver loop …" notice is not an error (size changes that did not
++// fit in one frame are delivered in the next) and is not forwarded. Locations name the file only:
++// a `file:` URL's folders are where this copy of the app runs, which says nothing about the error,
++// and an event without a position (line 0) gets no location line at all.
+ 
+ import type { IndusDesktopBridge } from "../global.d.ts";
+ 
+@@ -14,6 +19,15 @@ export interface ForwardingTarget {
+   removeEventListener(type: string, listener: (event: Event) => void): void;
+ }
+ 
++/** Chromium's notice for size changes left over to the next frame (an error event, no error). */
++const RESIZE_OBSERVER_NOTICE =
++  /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/;
++
++/** `file:` URLs shortened to their file name (`…/dist/assets/index-Ab12.js:3:9` → `index-Ab12.js:3:9`). */
++export function shortenFileUrls(text: string): string {
++  return text.replace(/file:\/\/[^\s()]*\/([^\s()/]+)/g, "$1");
++}
++
+ function describe(reason: unknown): { message: string; stack?: string } {
+   if (reason instanceof Error) {
+     return {
+@@ -54,7 +68,9 @@ export function installErrorForwarding(
+     lastSent.set(text, at);
+     if (lastSent.size > 100) lastSent.delete(lastSent.keys().next().value as string);
+     sentThisMinute += 1;
+-    const fullStack = [stack, where].filter((part) => part !== undefined && part !== "").join("\n");
++    const fullStack = shortenFileUrls(
++      [stack, where].filter((part) => part !== undefined && part !== "").join("\n"),
++    );
+     try {
+       send({
+         message: text,
+@@ -68,9 +84,15 @@ export function installErrorForwarding(
+ 
+   const onError = (event: Event) => {
+     const error = event as ErrorEvent;
++    if (
++      (error.error === null || error.error === undefined) &&
++      RESIZE_OBSERVER_NOTICE.test(error.message ?? "")
++    ) {
++      return;
++    }
+     const where =
+-      typeof error.filename === "string" && error.filename !== ""
+-        ? `at ${error.filename}:${error.lineno ?? 0}:${error.colno ?? 0}`
++      typeof error.filename === "string" && error.filename !== "" && (error.lineno ?? 0) > 0
++        ? `at ${error.filename}:${error.lineno}:${error.colno ?? 0}`
+         : undefined;
+     forward("error", error.error ?? error.message ?? "unknown error", where);
+   };
+diff --git a/apps/desktop/src/chat/busyActions.ts b/apps/desktop/src/chat/busyActions.ts
+index f76bc55..d6ce98d 100644
+--- a/apps/desktop/src/chat/busyActions.ts
++++ b/apps/desktop/src/chat/busyActions.ts
+@@ -242,6 +242,11 @@ export class ChatActions {
+     if (generation !== null && generation > this.ended) this.ended = generation;
+   }
+ 
++  /** The daemon's own id of the turn that runs `generation`, once `turn.started` named it. */
++  namedTurn(generation: number): string | null {
++    return this.turnOf(generation);
++  }
++
+   /** The daemon's id of the turn running `generation`, when `turn.started` named it. */
+   private turnOf(generation: number): string | null {
+     let found: string | null = null;
+diff --git a/apps/desktop/src/chat/cards/ApprovalCard.tsx b/apps/desktop/src/chat/cards/ApprovalCard.tsx
+index 84a986e..c564b75 100644
+--- a/apps/desktop/src/chat/cards/ApprovalCard.tsx
++++ b/apps/desktop/src/chat/cards/ApprovalCard.tsx
+@@ -56,6 +56,18 @@ export function useArmed(armMs: number): boolean {
+   return armed;
+ }
+ 
++/**
++ * Bring a card into view once, when it opens (W48-c). It is rendered after the transcript's rows
++ * and can open below an expanded tool row, out of sight; "nearest" scrolls only as far as needed.
++ */
++export function useRevealOnOpen<T extends HTMLElement>() {
++  const host = useRef<T>(null);
++  useEffect(() => {
++    host.current?.scrollIntoView?.({ block: "nearest" });
++  }, []);
++  return host;
++}
++
+ /** Button props that fire `onActivate` only for an explicit click or keyboard activation. */
+ export function useExplicitPress(onActivate: () => void, armed: boolean) {
+   const pressedHere = useRef(false);
+@@ -105,6 +117,7 @@ export function ApprovalCard(props: { open: OpenServerRequest; armMs?: number })
+   const choices = allowedChoices(request);
+   const armed = useArmed(props.armMs ?? ARM_DELAY_MS);
+   const [reason, setReason] = useState("");
++  const host = useRevealOnOpen<HTMLElement>();
+ 
+   const choose = (choice: ApprovalChoice) => {
+     const trimmed = reason.trim();
+@@ -126,6 +139,7 @@ export function ApprovalCard(props: { open: OpenServerRequest; armMs?: number })
+ 
+   return (
+     <section
++      ref={host}
+       aria-label={t("approval.title")}
+       data-card="approval"
+       data-request-id={props.open.id}
+diff --git a/apps/desktop/src/chat/cards/CardStack.test.tsx b/apps/desktop/src/chat/cards/CardStack.test.tsx
+index 054d50c..e903873 100644
+--- a/apps/desktop/src/chat/cards/CardStack.test.tsx
++++ b/apps/desktop/src/chat/cards/CardStack.test.tsx
+@@ -2,7 +2,7 @@
+ import { type OutboundFrame, RpcChannel, type Transport } from "@indus/client";
+ import type { ApprovalRequest, ServerRequestAnswer } from "@indus/protocol";
+ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+-import { afterEach, describe, expect, it } from "vitest";
++import { afterEach, describe, expect, it, vi } from "vitest";
+ import { ServerRequestStoreProvider } from "../../gateway/react.tsx";
+ import { type OpenServerRequest, ServerRequestStore } from "../../gateway/serverRequests.ts";
+ import { FakeConnection } from "../testFakes.ts";
+@@ -76,6 +76,29 @@ describe("card stack", () => {
+     );
+   });
+ 
++  it("scrolls a newly opened card into view once (W48-c)", () => {
++    // The card can open below an expanded tool row, out of sight: it is brought into view when it
++    // appears, and not again when the transcript re-renders around it.
++    const seen: string[] = [];
++    const spy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function record(
++      this: Element,
++    ) {
++      seen.push(this.getAttribute("data-request-id") ?? this.tagName);
++    });
++    try {
++      const first = [approval([])];
++      const view = render(<Transcript tools={["terminal"]} requests={first} />);
++      expect(seen).toEqual(["r1"]);
++      view.rerender(<Transcript tools={["terminal", "read_file"]} requests={first} />);
++      expect(seen).toEqual(["r1"]);
++      const second = [...first, open("approval", { request_id: "r2", command: "ls" }, [])];
++      view.rerender(<Transcript tools={["terminal", "read_file"]} requests={second} />);
++      expect(seen).toEqual(["r1", "r2"]);
++    } finally {
++      spy.mockRestore();
++    }
++  });
++
+   it("shows exactly the backend's choices, deny always among them", () => {
+     render(<Transcript tools={[]} requests={[approval([])]} />);
+     const choices = [...document.querySelectorAll("[data-choice]")].map((b) =>
+diff --git a/apps/desktop/src/chat/cards/ClarifyCard.tsx b/apps/desktop/src/chat/cards/ClarifyCard.tsx
+index a6a3717..d6ba23b 100644
+--- a/apps/desktop/src/chat/cards/ClarifyCard.tsx
++++ b/apps/desktop/src/chat/cards/ClarifyCard.tsx
+@@ -8,7 +8,7 @@ import { useState } from "react";
+ import type { OpenServerRequest } from "../../gateway/serverRequests.ts";
+ import { useT } from "../../i18n/index.tsx";
+ import { errorMessage } from "../rpcErrors.ts";
+-import { useArmed, useExplicitPress } from "./ApprovalCard.tsx";
++import { useArmed, useExplicitPress, useRevealOnOpen } from "./ApprovalCard.tsx";
+ 
+ /** Lock one answer; resolves with the question ids still open. */
+ export type ClarifyLock = (questionId: string, answer: string[]) => Promise<string[]>;
+@@ -109,6 +109,7 @@ export function ClarifyCard(props: {
+   const [locked, setLocked] = useState<Record<string, string[]>>({});
+   const [error, setError] = useState<string | null>(null);
+   const [busy, setBusy] = useState<Set<string>>(new Set());
++  const host = useRevealOnOpen<HTMLElement>();
+ 
+   const lockOne = async (questionId: string, answer: string[]) => {
+     if (busy.has(questionId)) return;
+@@ -138,6 +139,7 @@ export function ClarifyCard(props: {
+ 
+   return (
+     <section
++      ref={host}
+       aria-label={t("clarify.title")}
+       data-card="clarify"
+       data-request-id={props.open.id}
+diff --git a/apps/desktop/src/chat/localEcho.test.ts b/apps/desktop/src/chat/localEcho.test.ts
+index ae68aa8..c67b753 100644
+--- a/apps/desktop/src/chat/localEcho.test.ts
++++ b/apps/desktop/src/chat/localEcho.test.ts
+@@ -1,6 +1,19 @@
++import type { ClientEvent } from "@indus/client";
++import type { HistoryMessage } from "@indus/protocol";
+ import { describe, expect, it } from "vitest";
++import type { SessionEvent } from "../gateway/connectionStore.ts";
+ import { ChatActions, type Request } from "./busyActions.ts";
+ import { type LocalRows, sendShown } from "./localEcho.ts";
++import {
++  addLocalUser,
++  applyEvent,
++  applyHistory,
++  assistantText,
++  bindLocalUser,
++  dropLocalUser,
++  emptyTranscript,
++  type SessionTranscript,
++} from "./messageStream.ts";
+ import { rpcError } from "./testFakes.ts";
+ 
+ function rows() {
+@@ -57,3 +70,83 @@ describe("the person's own message on screen", () => {
+     expect(log).toEqual([]);
+   });
+ });
++
++// W48-c: the submit answer names the input by its admission id; `turn.started` names the turn by
++// the daemon's own id. The row must end up bound to the turn's own id whichever comes first.
++describe("the optimistic row follows the turn's own id", () => {
++  const started = (turnId: string, generation: number) =>
++    ({ type: "turn.started", session_id: "s1", turn_id: turnId, generation }) as SessionEvent;
++
++  it("binds again to the turn's id when turn.started arrives after the answer", async () => {
++    const { log, port } = rows();
++    const run = actions(() => ({ turn_id: "adm-1", generation: 3, status: "started" }));
++    expect(await sendShown(run, port, "hi", "hi")).toBe("started");
++    expect(log).toEqual(["add s1 hi", "bind s1 l1 adm-1"]);
++    run.handleEvent(started("turn-1", 3));
++    expect(log).toEqual(["add s1 hi", "bind s1 l1 adm-1", "bind s1 l1 turn-1"]);
++    // a later turn never moves the row
++    run.handleEvent(started("turn-2", 4));
++    expect(log).toHaveLength(3);
++  });
++
++  it("binds once to the turn's id when turn.started arrived first", async () => {
++    const { log, port } = rows();
++    let run: ChatActions | null = null;
++    run = actions(() => {
++      run?.handleEvent(started("turn-1", 3));
++      return { turn_id: "adm-1", generation: 3, status: "started" };
++    });
++    expect(await sendShown(run, port, "hi", "hi")).toBe("started");
++    expect(log).toEqual(["add s1 hi", "bind s1 l1 turn-1"]);
++    run.handleEvent(started("turn-2", 4));
++    expect(log).toHaveLength(2);
++  });
++
++  it("stops waiting when the turn ends unnamed", async () => {
++    const { log, port } = rows();
++    const run = actions(() => ({ turn_id: "adm-1", generation: 3, status: "started" }));
++    await sendShown(run, port, "hi", "hi");
++    run.handleEvent({ type: "session.info", session_id: "s1", running: false } as SessionEvent);
++    run.handleEvent(started("turn-9", 3));
++    expect(log).toEqual(["add s1 hi", "bind s1 l1 adm-1"]);
++  });
++
++  it("a history reload mid-turn keeps the row and the reply in one group", async () => {
++    let t: SessionTranscript = emptyTranscript("s1");
++    const port: LocalRows = {
++      addLocalUser: (_sessionId, text) => {
++        t = addLocalUser(t, "l1", text);
++        return "l1";
++      },
++      bindLocalUser: (_sessionId, localId, turnId) => {
++        t = bindLocalUser(t, localId, turnId);
++      },
++      dropLocalUser: (_sessionId, localId) => {
++        t = dropLocalUser(t, localId);
++      },
++    };
++    const run = actions(() => ({ turn_id: "adm-1", generation: 3, status: "started" }));
++    const feed = (event: Record<string, unknown>) => {
++      const full = { session_id: "s1", ...event };
++      run.handleEvent(full as SessionEvent);
++      t = applyEvent(t, full as ClientEvent);
++    };
++    await sendShown(run, port, "Write the notes", "Write the notes");
++    feed({ type: "turn.started", seq: 1, turn_id: "turn-1", generation: 3 });
++    feed({ type: "message.delta", seq: 2, turn_id: "turn-1", text: "Working on " });
++    const stored: HistoryMessage[] = [
++      { role: "user", text: "Write the notes", row_id: 1 } as HistoryMessage,
++      { role: "assistant", text: "Working on ", row_id: 2 } as HistoryMessage,
++    ];
++    t = applyHistory(t, stored, 1);
++    feed({ type: "message.delta", seq: 3, turn_id: "turn-1", text: "it." });
++    const visible = t.items.map((item) =>
++      item.kind === "user"
++        ? `user ${item.text}`
++        : item.kind === "assistant"
++          ? `assistant ${assistantText(item)}`
++          : item.kind,
++    );
++    expect(visible).toEqual(["user Write the notes", "assistant Working on it."]);
++  });
++});
+diff --git a/apps/desktop/src/chat/localEcho.ts b/apps/desktop/src/chat/localEcho.ts
+index 25e5d37..4d7667c 100644
+--- a/apps/desktop/src/chat/localEcho.ts
++++ b/apps/desktop/src/chat/localEcho.ts
+@@ -4,6 +4,11 @@
+ // (the stored row replaces it on the next history load), removed otherwise — a queued input is
+ // shown by the queue panel, steering joins the running turn, a refused or uncertain one stays in
+ // the composer's own strip.
++//
++// The submit answer can arrive before `turn.started` (W48-c): the answer names the input by its
++// admission id, the transcript holds the turn by the daemon's own id. The row is then bound to the
++// admission id first and bound again once `turn.started` names the turn, so the row and its reply
++// stay one group, also across a history reload.
+ 
+ import type { ChatActions, SendOptions, SendOutcome } from "./busyActions.ts";
+ 
+@@ -29,9 +34,35 @@ export async function sendShown(
+   try {
+     outcome = await actions.send(text, options);
+   } finally {
+-    const turnId = actions.snapshot().turnId;
+-    if (outcome === "started" && turnId !== null) rows.bindLocalUser(sessionId, localId, turnId);
+-    else rows.dropLocalUser(sessionId, localId);
++    const { turnId, generation } = actions.snapshot();
++    if (outcome === "started" && turnId !== null) {
++      rows.bindLocalUser(sessionId, localId, turnId);
++      if (typeof generation === "number" && actions.namedTurn(generation) === null) {
++        bindWhenNamed(actions, rows, localId, generation);
++      }
++    } else {
++      rows.dropLocalUser(sessionId, localId);
++    }
+   }
+   return outcome;
+ }
++
++/** Bind the row to the turn's own id once `turn.started` names `generation`; give up when that
++ * turn ends unnamed or a later one runs. */
++function bindWhenNamed(
++  actions: ChatActions,
++  rows: LocalRows,
++  localId: string,
++  generation: number,
++): void {
++  const stop = actions.subscribe(() => {
++    const named = actions.namedTurn(generation);
++    if (named !== null) {
++      stop();
++      rows.bindLocalUser(actions.sessionId, localId, named);
++      return;
++    }
++    const now = actions.snapshot();
++    if (!now.running || (now.generation !== null && now.generation !== generation)) stop();
++  });
++}
+diff --git a/apps/desktop/src/panes/terminal/TerminalPane.test.tsx b/apps/desktop/src/panes/terminal/TerminalPane.test.tsx
+index 210ce15..cdb5624 100644
+--- a/apps/desktop/src/panes/terminal/TerminalPane.test.tsx
++++ b/apps/desktop/src/panes/terminal/TerminalPane.test.tsx
+@@ -205,4 +205,59 @@ describe("TerminalPane", () => {
+     view.unmount();
+     expect(terminal.dispose).toHaveBeenCalledWith({ terminalId: "t1" });
+   });
++
++  it("a resize refits on the next frame, not inside the observer callback (W48-c)", async () => {
++    // Fitting inside the ResizeObserver callback resizes the terminal's own elements while the
++    // browser is still delivering size changes, which logs "ResizeObserver loop completed with
++    // undelivered notifications". The refit waits for the next animation frame, once per frame.
++    const observers: Array<() => void> = [];
++    const frames = new Map<number, FrameRequestCallback>();
++    let nextFrame = 0;
++    vi.stubGlobal(
++      "ResizeObserver",
++      class {
++        constructor(callback: () => void) {
++          observers.push(callback);
++        }
++        observe(): void {}
++        unobserve(): void {}
++        disconnect(): void {}
++      },
++    );
++    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
++      nextFrame += 1;
++      frames.set(nextFrame, callback);
++      return nextFrame;
++    });
++    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
++    try {
++      const { terminal, bridge } = fakeTerminal();
++      const { createView } = fakeViews();
++      const view = render(
++        <TerminalPane cwd={null} mode="local" bridge={bridge} createView={createView} />,
++      );
++      await screen.findByRole("tab", { name: "bash" });
++      await waitFor(() => expect(observers.length).toBeGreaterThan(0));
++      const observed = observers.at(-1) as () => void;
++      terminal.resize.mockClear();
++      frames.clear();
++      observed();
++      observed();
++      expect(terminal.resize).not.toHaveBeenCalled();
++      expect(frames.size).toBe(1);
++      for (const [id, run] of [...frames]) {
++        frames.delete(id);
++        run(0);
++      }
++      expect(terminal.resize).toHaveBeenCalledTimes(1);
++      expect(terminal.resize).toHaveBeenCalledWith({ terminalId: "t1", cols: 90, rows: 30 });
++      // a frame still pending when the pane goes away is cancelled
++      observed();
++      expect(frames.size).toBe(1);
++      view.unmount();
++      expect(frames.size).toBe(0);
++    } finally {
++      vi.unstubAllGlobals();
++    }
++  });
+ });
+diff --git a/apps/desktop/src/panes/terminal/TerminalPane.tsx b/apps/desktop/src/panes/terminal/TerminalPane.tsx
+index 82b415a..204b0f9 100644
+--- a/apps/desktop/src/panes/terminal/TerminalPane.tsx
++++ b/apps/desktop/src/panes/terminal/TerminalPane.tsx
+@@ -160,7 +160,12 @@ function TerminalSlot(props: {
+   useEffect(() => {
+     const element = host.current;
+     if (element === null || typeof ResizeObserver === "undefined") return;
+-    const observer = new ResizeObserver(() => {
++    // W48-c: refit on the next frame, once per frame. Fitting inside the callback resizes the
++    // terminal's own elements while size changes are still being delivered, and the browser then
++    // reports "ResizeObserver loop completed with undelivered notifications".
++    let frame: number | null = null;
++    const refit = () => {
++      frame = null;
+       const view = viewRef.current;
+       const id = idRef.current;
+       if (view === null || id === null || !props.active || !props.visible) return;
+@@ -170,9 +175,15 @@ function TerminalSlot(props: {
+         cols: Math.max(2, size.cols),
+         rows: Math.max(2, size.rows),
+       });
++    };
++    const observer = new ResizeObserver(() => {
++      if (frame === null) frame = requestAnimationFrame(refit);
+     });
+     observer.observe(element);
+-    return () => observer.disconnect();
++    return () => {
++      observer.disconnect();
++      if (frame !== null) cancelAnimationFrame(frame);
++    };
+   }, [bridge, props.active, props.visible]);
+ 
+   return (
+diff --git a/docs/notes/P05/file-ops.md b/docs/notes/P05/file-ops.md
+index b1ec36d..895e0ad 100644
+--- a/docs/notes/P05/file-ops.md
++++ b/docs/notes/P05/file-ops.md
+@@ -160,3 +160,41 @@ Tests (fail-first on base `9a155bbb9a`):
+ - A notice when a chat's folder no longer exists (today it silently uses the fallback).
+ - Session rows written before this fix: a desktop chat started without a folder stored
+   the daemon's folder as its `cwd`; those chats stay there (the folder equals the host's own).
++
++## Wave 48 (W48-c): a notice when a chat's folder is gone
++
++Status: done (2026-10-22, wave-48 builder c; uncommitted, for the lead's `git apply --3way`).
++
++Read: none (a follow-up of W47-b-3 in our own code; no reference file or Evidence opened).
++
++What changes: W47-b-3 left the tools of a chat whose folder was deleted falling back to
++`terminal.cwd` (else the process folder) without a word. Now the tool round says so: when the
++session has its own folder, the local backend would use it, and it is not an existing directory,
++the turn emits one `notice` event (level `warning`, key `workdir_missing`) naming the folder:
++"This chat's folder no longer exists: <folder>. Its tools run in the default folder instead." The
++fallback itself is unchanged.
++
++- `backends/task_overrides.py`: `workdir_gone(scope, folder)`, the same conditions as
++  `with_workdir` turned around (absolute, local backend, not a directory). A relative or empty
++  folder is not "gone" (it was never used); a sandbox backend never uses the host folder.
++- `core/tool_round.py`: before `with_workdir`, at most once per turn (`TurnState.workdir_noticed`).
++  The notice comes only when tools run, i.e. when the fallback is actually used; a turn without
++  tool calls says nothing. The text is `loop_texts.WORKDIR_GONE_NOTICE`.
++- Every surface already shows `notice` events: the desktop transcript keeps one row per key
++  (`messageStream.ts` upserts by key) and the TUI shows its notice line (the web chat runs the
++  TUI). No protocol change.
++
++Tests (fail-first on base `1b6e711`):
++`tests/unit/service/test_session_workdir.py::test_a_chat_whose_folder_is_gone_says_so_once_per_turn`
++(failed on base: no notice; with the fix: two tool rounds, one warning naming the folder, the
++files land in the fallback folder; a chat whose folder exists gets none).
++
++### Decisions for the lead
++- **W48-c-1:** the "folder gone" notice is a turn event (`notice`, `warning`, key `workdir_missing`),
++  sent once per turn and only when a tool round runs, not a refusal: the person keeps working in
++  the default folder and sees why relative paths land there. Desktop rows upsert by key, so a
++  long chat shows the notice once (where it first appeared) until the window reloads.
++
++### Follow-ups
++- Moving a chat to another folder from the notice (a "Choose folder" action) needs a desktop
++  control over the workspace-move mutation; not built here.
+diff --git a/docs/notes/P20/approval-cards.md b/docs/notes/P20/approval-cards.md
+index caa79be..8c3f2b6 100644
+--- a/docs/notes/P20/approval-cards.md
++++ b/docs/notes/P20/approval-cards.md
+@@ -84,3 +84,29 @@ Done (2026-10-21).
+ 
+ Integration (wave-34 merge, D-16.679): the cards run on slice R's `ServerRequestStore`;
+ `OpenServerRequest.answer` is bound to `store.answer(id, …)` (first answer wins in the store).
++
++## Wave 48 (W48-c): a new card is scrolled into view
++
++Status: done (2026-10-22, wave-48 builder c).
++
++Read: none (a UI follow-up seen in the wave-47 screenshot pass; no reference file or Evidence).
++
++Bug: the card stack sits after the transcript's rows, inside the scroll area. The transcript
++follows the stream only when it re-renders itself; a card that opens re-renders only the stack,
++and a tool row expanded above it had already pushed the end out of sight. The card could open
++below the visible area with nothing pointing at it.
++
++Fix: `useRevealOnOpen` (`src/chat/cards/ApprovalCard.tsx`) scrolls the card's own section into
++view once, when it mounts (`scrollIntoView({ block: "nearest" })`: only as far as needed, nothing
++when it is already visible). The approval card and the clarify card use it; the sudo and secret
++dialogs are modal and need nothing. Cards are keyed by request id, so a re-render around a card
++(a tool row appearing later) never scrolls again.
++
++Tests: `src/chat/cards/CardStack.test.tsx` "scrolls a newly opened card into view once (W48-c)"
++(failed on base `1b6e711`: no scroll; passes with the fix: once for r1, not on re-render, once for
++a second card r2).
++
++### Decisions for the lead
++- **W48-c-2:** a card that opens is brought into view even when the reader had scrolled up: an
++  open approval or question blocks the turn, so it wins over the reading position (minimal
++  scroll, once per card).
+diff --git a/docs/notes/P20/busy-actions.md b/docs/notes/P20/busy-actions.md
+index 445cef4..e16e0a1 100644
+--- a/docs/notes/P20/busy-actions.md
++++ b/docs/notes/P20/busy-actions.md
+@@ -124,3 +124,31 @@ stop the next; shared actions hear events with no composer mounted).
+   fallback `turnId` until `turn.started` names the turn. No protocol change.
+ - W47-a-2 (D-16.1031): `sharedActions` holds one permanent session-event listener per (connection, session);
+   the per-composer subscription remains only for actions passed in as a prop (tests, embeds).
++
++## Wave 48 (W48-c): the optimistic row binds to the turn's own id
++
++Status: done (2026-10-22, wave-48 builder c).
++
++Read: none (the W47-a follow-up in our own code; no reference file or Evidence).
++
++Bug: `sendShown` (`src/chat/localEcho.ts`) binds the person's optimistic row to the snapshot's
++`turnId` when the submit answers. When the answer comes before `turn.started`, that is the
++admission id; the transcript holds the reply under the daemon's own turn id, so the row and the
++reply were two groups. A history reload mid-turn then flushed the stored part of the reply under
++the row and added the live reply again below (the reply's first part shown twice); later reloads
++could not match the reply to its prompt by turn id.
++
++Fix: `ChatActions.namedTurn(generation)` exposes the daemon's id for a generation once
++`turn.started` named it. After binding, `sendShown` keeps listening to the actions while that id
++is unknown and binds the row again when it arrives; it stops when the turn ends unnamed or a later
++generation runs. When `turn.started` came first the row is bound once, to the turn's id, as before.
++
++Tests (fail-first on base `1b6e711`): `src/chat/localEcho.test.ts` "the optimistic row follows the
++turn's own id": answer then `turn.started` binds again (failed on base); `turn.started` first binds
++once; the turn ending unnamed stops waiting; and, through the real reducer, "a history reload
++mid-turn keeps the row and the reply in one group" (failed on base: the stored partial reply and
++the live one were both shown).
++
++### Decisions for the lead
++- **W48-c-5:** the row's binding follows the generation (W47-a-1) on the client; no protocol
++  change (the submit answer keeps naming the admission id).
+diff --git a/docs/notes/P20/diagnostics.md b/docs/notes/P20/diagnostics.md
+index 2bf4bc1..1193f38 100644
+--- a/docs/notes/P20/diagnostics.md
++++ b/docs/notes/P20/diagnostics.md
+@@ -111,3 +111,40 @@ Compare checklist (filled after the rewrite; reopened the files in `Read:`):
+ 
+ Done (2026-10-21). Shared files changed: `electron/ipc/channels.ts`, `electron/ipc/schemas.ts`,
+ `src/global.d.ts`, `electron/appMenu.ts`, `src/i18n/en.ts`, `src/styles.css`, `src/main.tsx`.
++
++## Wave 48 (W48-c): the ResizeObserver line and run folders in the desktop log
++
++Status: done (2026-10-22, wave-48 builder c).
++
++Read: none (seen in About › Version during the wave-47 screenshot pass; no reference file or
++Evidence).
++
++What was logged: `ERROR desktop: [renderer] renderer:main (window 1): error: ResizeObserver loop
++completed with undelivered notifications.` plus a location line `at file:///tmp/<run folder>/app/
++dist/index.html:0:0`. Chromium raises that message as a window `error` event with no error object
++and no position when size changes are left over to the next frame; nothing failed.
++
++Cause and fix, three parts:
++- **The loop.** The terminal pane's `ResizeObserver` called `view.fit()` inside its callback; the
++  fit resizes xterm's elements (and the WebGL addon's own observed canvas) while the browser is
++  still delivering size changes. `TerminalPane.tsx` now refits on the next animation frame, at most
++  once per frame, and cancels a pending frame when the pane goes away.
++- **The classification.** `src/app/errorForwarding.ts` no longer forwards that notice
++  ("ResizeObserver loop completed with undelivered notifications" / "… limit exceeded") when the
++  event carries no error object; a real `Error` whose message says the same still goes out.
++- **Run folders.** An event without a position (line 0) gets no location line; `file:` URLs in the
++  location and the stack are cut to their file name (`index-Ab12.js:120:33`). The folders are where
++  this copy of the app runs (a temp folder in E2E, the install folder otherwise) and say nothing
++  about the error; the asset's hashed name still identifies the build. `http(s):` URLs (the dev
++  server) are kept.
++
++Tests (fail-first on base `1b6e711`): `src/app/errorForwarding.test.tsx` "the browser's
++ResizeObserver loop notice is not an error (W48-c)" and "no run folder in the log: …";
++`src/panes/terminal/TerminalPane.test.tsx` "a resize refits on the next frame, not inside the
++observer callback (W48-c)". All three failed on base and pass with the fix.
++
++### Decisions for the lead
++- **W48-c-3:** the ResizeObserver loop notice is dropped in the renderer (not forwarded at a lower
++  level): the `logs.rendererError` channel has no level, and the notice is not actionable.
++- **W48-c-4:** renderer error locations keep only the file name of `file:` URLs; the main side's
++  redaction is unchanged.
+diff --git a/src/indus/backends/task_overrides.py b/src/indus/backends/task_overrides.py
+index ca478a5..13ef807 100644
+--- a/src/indus/backends/task_overrides.py
++++ b/src/indus/backends/task_overrides.py
+@@ -21,7 +21,8 @@ default sandbox, and its factory is handed the override through ``plan``:
+ A session started in a folder of its own (a desktop chat's project folder or default directory,
+ W47-b) uses the same kind of overlay: ``with_workdir`` answers ``terminal.cwd`` with that folder on
+ the scope its tool calls get, so relative paths and new shells start there rather than in the
+-folder the serving process happens to run in.
++folder the serving process happens to run in. When that folder has been deleted since,
++``workdir_gone`` says so: the tools fall back to ``terminal.cwd`` and the turn shows a notice.
+ """
+ 
+ from __future__ import annotations
+@@ -49,6 +50,7 @@ __all__ = [
+     "register_row",
+     "reset_warnings",
+     "with_workdir",
++    "workdir_gone",
+ ]
+ 
+ log = logging.getLogger(__name__)
+@@ -266,6 +268,15 @@ def with_workdir(scope: Scope, folder: str | None) -> Scope:
+     return scope.with_config(LayeredConfig(scope.config, {"terminal.cwd": folder}))
+ 
+ 
++def workdir_gone(scope: Scope, folder: str | None) -> bool:
++    """True when ``with_workdir`` would use ``folder`` (an absolute folder on the local backend)
++    but it no longer exists, so the tools fall back to ``terminal.cwd`` (W48-c: a notice says
++    so)."""
++    if not folder or not os.path.isabs(folder) or os.path.isdir(folder):
++        return False
++    return backend_for(scope, TaskOverride()) == "local"
++
++
+ def register_row(scope: Scope, task_id: str, image: str | None, cwd: str | None) -> str | None:
+     """Register a dataset row's image and cwd for ``task_id`` (the batch runner's seam);
+     returns why it cannot, or None."""
+diff --git a/src/indus/core/loop_texts.py b/src/indus/core/loop_texts.py
+index cb0e373..efdb62a 100644
+--- a/src/indus/core/loop_texts.py
++++ b/src/indus/core/loop_texts.py
+@@ -85,6 +85,9 @@ GUARD_STUB = (
+     "[Same output as the earlier {tool} call{ref} this turn, byte for byte; read that result. "
+     "Arguments: {args}]"
+ )
++WORKDIR_GONE_NOTICE = (
++    "This chat's folder no longer exists: {folder}. Its tools run in the default folder instead."
++)
+ GUARD_HALT_REPLY = (
+     "I stopped because {tool} kept failing or repeating ({count} times) without getting "
+     "anywhere. The last result above shows where it got stuck. Tell me how to go on, or say "
+diff --git a/src/indus/core/tool_round.py b/src/indus/core/tool_round.py
+index 236b07e..b1d359e 100644
+--- a/src/indus/core/tool_round.py
++++ b/src/indus/core/tool_round.py
+@@ -45,7 +45,7 @@ from collections.abc import Callable, Sequence
+ from dataclasses import dataclass, replace
+ from typing import Any, Literal, cast
+ 
+-from indus.backends.task_overrides import with_workdir
++from indus.backends.task_overrides import with_workdir, workdir_gone
+ from indus.core import loop_texts as texts
+ from indus.core import untrusted
+ from indus.core.exit_reasons import ExitReason, Failure
+@@ -56,7 +56,7 @@ from indus.core.tool_exec import Executor, SlotOutcome
+ from indus.core.tool_plan import PlanCall, plan_segments, traits_for
+ from indus.core.transcript import TranscriptRow
+ from indus.core.turn_state import PersistFailed, TurnState
+-from indus.protocol.events import ToolCompleted, ToolStarted
++from indus.protocol.events import Notice, NoticeLevel, ToolCompleted, ToolStarted
+ from indus.providers.route import sees_tool_images
+ from indus.providers.types import NormalizedResponse
+ from indus.safety.redaction import redact_arguments
+@@ -71,6 +71,9 @@ __all__ = ["RoundAction", "handler_extras", "repair_name", "run_tool_round", "un
+ 
+ type RoundAction = Literal["continue", "retry", "end"]
+ 
++# The notice's key: a client shows one such notice and replaces it when it comes again.
++WORKDIR_NOTICE_KEY = "workdir_missing"
++
+ _NAME_CUT = re.compile(r"[\"'<>]")
+ _CAMEL = re.compile(r"(?<!^)(?=[A-Z])")
+ _SUFFIXES = ("_tool", "-tool", "tool")
+@@ -401,6 +404,15 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str])
+         extras["delivery_origin"] = origin
+     scope = runtime.scope
+     if scope is not None and runtime.workdir is not None:
++        if not state.workdir_noticed and workdir_gone(scope, runtime.workdir):
++            # W48-c: the tools fall back to the profile's folder; say so once per turn.
++            state.workdir_noticed = True
++            state.emit(
++                Notice,
++                level=NoticeLevel.WARNING,
++                text=texts.WORKDIR_GONE_NOTICE.format(folder=runtime.workdir),
++                key=WORKDIR_NOTICE_KEY,
++            )
+         scope = with_workdir(scope, runtime.workdir)  # the session's own folder (W47-b)
+     ctx = ToolContext(
+         scope=scope,
+diff --git a/src/indus/core/turn_state.py b/src/indus/core/turn_state.py
+index 6d15536..7acb3bc 100644
+--- a/src/indus/core/turn_state.py
++++ b/src/indus/core/turn_state.py
+@@ -300,6 +300,8 @@ class TurnState:
+     gated_answer: str | None = None
+     # Results that carry outside text under a trusted tool's name (SEC-4, ``core.untrusted``).
+     taint: Taint = field(default_factory=Taint)
++    # The "chat folder is gone" notice was sent this turn (W48-c, ``core.tool_round``).
++    workdir_noticed: bool = False
+ 
+     # -- views -----------------------------------------------------------------------------------
+ 
+diff --git a/tests/unit/service/test_session_workdir.py b/tests/unit/service/test_session_workdir.py
+index 808288d..00ad417 100644
+--- a/tests/unit/service/test_session_workdir.py
++++ b/tests/unit/service/test_session_workdir.py
+@@ -15,6 +15,7 @@ import pytest
+ 
+ from indus.core.persist import MemoryStore
+ from indus.foundation.scope import Scope
++from indus.protocol.events import EventBase, Notice, NoticeLevel
+ from indus.protocol.methods import SessionCreateParams
+ from indus.service.session_service import SessionService
+ from indus.tools.builtin import write_file
+@@ -142,6 +143,55 @@ def test_a_session_without_a_folder_keeps_the_profile_terminal_cwd(
+     assert not (chat / "plain.txt").exists()
+ 
+ 
++def _folder_notices(events: list[EventBase]) -> list[Notice]:
++    return [e for e in events if isinstance(e, Notice) and e.key == "workdir_missing"]
++
++
++def test_a_chat_whose_folder_is_gone_says_so_once_per_turn(
++    scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    """W48-c: the tools fall back to the profile's folder (W47-b-3), and the chat now says so."""
++    daemon, chat = _folders(tmp_path, monkeypatch)
++    kept = tmp_path / "kept-folder"
++    kept.mkdir()
++    model = FakeModelServer(
++        script_of(
++            tool_batch(("write_file", {"path": "one.txt", "content": "1"})),
++            tool_batch(("write_file", {"path": "two.txt", "content": "2"})),
++            text_turn("Written."),
++            tool_batch(("write_file", {"path": "three.txt", "content": "3"})),
++            text_turn("Written."),
++        )
++    )
++    seen: dict[str, list[Notice]] = {}
++
++    async def scenario() -> None:
++        svc = _service(scope, model, MemoryStore(), tmp_path / "locks")
++        try:
++            gone = await svc.create(SessionCreateParams(cwd=str(chat)))
++            chat.rmdir()  # the folder was deleted after the chat was made
++            ticket = await svc.submit(gone.session_id, "Write two files.")
++            await asyncio.wait_for(svc.wait(gone.session_id, ticket.turn_id), 30)
++            seen["gone"] = _folder_notices(svc.events(gone.session_id))
++            present = await svc.create(SessionCreateParams(cwd=str(kept)))
++            ticket = await svc.submit(present.session_id, "Write a file.")
++            await asyncio.wait_for(svc.wait(present.session_id, ticket.turn_id), 30)
++            seen["present"] = _folder_notices(svc.events(present.session_id))
++        finally:
++            await svc.aclose()
++
++    asyncio.run(scenario())
++
++    # two tool rounds, one notice: a warning that names the missing folder
++    assert len(seen["gone"]) == 1
++    notice = seen["gone"][0]
++    assert notice.level is NoticeLevel.WARNING
++    assert str(chat) in notice.text
++    assert (daemon / "one.txt").exists() and (daemon / "two.txt").exists()
++    assert seen["present"] == []
++    assert (kept / "three.txt").exists()
++
++
+ class _Config:
+     """A config source answering a few dotted keys."""
+ 
