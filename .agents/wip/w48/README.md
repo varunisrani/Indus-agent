@@ -30,3 +30,14 @@
   (third party), lazy cli.runtime imports (docker, browser, code kernel, cron.models, content_scan), measure on a quiet runner.
 - NOTE: builder [g] continues [e] in scratchpad wt-w48g on a LOCAL base 34c34d1 (= 1b6e711 + w48e.patch); its patch is
   relative to that base, so apply w48e.patch THEN w48g.patch.
+
+## w48f.patch: katex + sprintf-js advisories cleared, node_modules in line with the lockfile (done; pypdf too new)
+- 6 files: pnpm-workspace.yaml overrides `mermaid>katex: 0.19.0` (W48-f-1) and `"@electron/get>global-agent": 4.1.3`
+  (W48-f-2; sprintf-js has no fixed release), pnpm-lock.yaml (9 packages removed incl. katex 0.16.47 / sprintf-js / roarr;
+  global-agent 4.1.3, matcher 4.0.0, serialize-error 8.1.0, type-fest 0.20.2 — all MIT/BSD/ISC/CC0, all older than 14 days),
+  deps_audit snapshot refreshed via proxy (868 packages, 0 failing; pypdf warnings only), THIRD_PARTY_NOTICES.md +
+  notices_data.json regenerated (433). uv.lock unchanged.
+- pypdf (W48-f-3): fixed 6.20.1 becomes eligible at lock_date 2026-10-27 (all 4 moderates); re-lock then.
+- Checks: tooling.checks ok; ruff; lint-imports; notices fresh; pytest 2508; pnpm lint / fmt / -r typecheck clean; root
+  vitest 2912 passed / 2 load timeouts in apps/web (App, FilesPage; pass alone and at --maxWorkers=1).
+- LEAD: scratchpad/wt-w48f is KEPT — its node_modules match the new lockfile (vite 8.3.3). The integrator hard-links them.
