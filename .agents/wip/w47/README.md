@@ -63,3 +63,13 @@
   code 92, verify 33, security 89, contract 1893. ruff/pyright/lint-imports/security_static/tooling.checks ok.
 - W47-e-1..5. Follow-ups: platforms("windows") real-child cases in windows-local; terminal tool stops offering
   background=true on native Windows; check service/console.py's LocalProcess; update RL26 in the checklist.
+
+## w47b.patch: desktop file tools resolve relative paths in the chat's folder (done)
+- 14 files, +329/-8. AgentOptions/SessionRuntime.workdir; tool_round gives tools with_workdir(scope, workdir)
+  (backends/task_overrides.py; local backend only, folder must exist and be absolute); session_service _options_for +
+  _stored_folder on attach-again (cli/tui/gui/acp/web sources); session_mutations sets workdir with cwd; subagents inherit.
+  Desktop: freshDraftFolder in sidebar/projects.ts used by chatSlots.tsx and Shell.tsx useWorkspaceFolder.
+- Fail-first: tests/unit/service/test_session_workdir.py (2 failed on base), projects.test.ts. pytest 5683 passed;
+  ruff/pyright/lint-imports/security_static/tooling.checks ok; desktop biome/tsc ok; vitest 136.
+- W47-b-1..4. MERGE NOTE: P45 (w45) also edits service/session_service.py (bot_chats hook) — already in the snapshot base.
+  Follow-ups: notice when a chat's folder disappeared; older desktop chats keep the daemon's folder.
