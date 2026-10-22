@@ -76,21 +76,14 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 ACTIVE (window resets 12:00 UTC). Main `44c9a4f` = waves 45+46 landed (LEAD-NOTES "Waves 45 + 46 landing
-notes (integrator)"). Security findings SEC-1..18 are now fixed except owner acceptances (D-16.998 editor env, D-16.999
-GH_TOKEN no longer reaches the dashboard git update) and the certifi re-lock (RM7, before 2026-11-09).
-JS lanes of 44c9a4f ran on the pre-relock node_modules (vite 8.3.2): rerun `pnpm install --frozen-lockfile` with registry
-metadata (pnpm 12's policy check needs it; offline fails) and the JS gate once network for installs is allowed.
-Wave 47 PARKED (08:13 UTC): all 8 patches in `.agents/wip/w47/` (built on a LOCAL snapshot commit of the waves 45+46
-integration; apply with --3way onto the landed waves 45+46 per `.agents/wip/w47/integrator-brief.md`). They fix:
-UI bugs seen while capturing screenshots (05:05 UTC):
-  (1) desktop composer stays on Stop/Steer for minutes after a turn ends (intermittent; reload clears it);
-  (2) desktop tool rows lose path/command and Arguments after a window reload; (3) desktop file tools resolve relative paths
-  against the daemon's work folder, not the chat's default folder (the Terminal pane uses the right one); (4) TUI attached to
-  the daemon (default mode) gets "not served here" for complete.slash, model.options, session.list — slash menu, Ctrl+O and
-  Ctrl+X advertised but broken; (5) dashboard Chat tab light theme: TUI prompt/reply text nearly invisible; (6) small: TUI
-  slash-menu row leaves stray characters, desktop slash-menu highlighted description low contrast, session titles truncated.
-  Capture scripts: scratchpad/shots-tools (prepare.sh, run-all.sh <worktree>, cleanup.sh).
+Turn: AGENT_1 ACTIVE (window resets 12:00 UTC). Main `83104de` = wave 47 landed on top of waves 45+46 (`44c9a4f`)
+(LEAD-NOTES "Wave 47 landing notes (integrator)"). All 648 planned tasks except P23-15/16 (owner signing) and P24-21/22
+(post-1.0) are built; release checklist: 27 done, must 21 / should 14 open — almost all owner decisions or owner runs.
+Agent-doable follow-ups left: RS3 room views (desktop GroupRoom.tsx, TUI, web) on groups.watch + approval card; daemon
+serves complete.path / commands.catalog / config.get; notice when a chat's folder is gone; dashboard PTY child drops
+COLORFGBG/TERM_PROGRAM; desktop localEcho admission-id binding; Windows real runs (RL26, install.ps1); JS gate rerun on
+re-locked node_modules (needs pnpm registry metadata); oneshot_first_token budget on slow boxes; katex / sprintf-js advisories.
+UI screenshots: scratchpad/shots (pass A sent 05:05); pass B on the final tree in progress.
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 19/24 landed (01–19).
 1. **Land wave 44** when its integrator is green (P25-20..24). If it stopped mid-way, its staged diff is the work: save it.
 2. **Open security findings** (docs/internals/threat-model.md): SEC-4 needs the owner's design call (fencing what
@@ -108,7 +101,7 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree AND its $S dir; one
 integrator per group runs the full gate (pytest --basetemp short); the lead commits, rebases, fast-forwards, pushes, updates the
 phase table and this file.
-- Last landings: waves 45+46 (`44c9a4f`; D-16.970..1025; LEAD-NOTES "Waves 45 + 46 landing notes (integrator)"), P25-20..24 release prep wave 44 (`b9a43a1`; D-16.920..964; LEAD-NOTES "P25 wave 44 landing notes (integrator)"), P25-01..04 security wave 43 (`4945b48`; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes (integrator)"), P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+- Last landings: wave 47 (`83104de`; D-16.1030..1059; LEAD-NOTES "Wave 47 landing notes (integrator)"), waves 45+46 (`44c9a4f`; D-16.970..1025; LEAD-NOTES "Waves 45 + 46 landing notes (integrator)"), P25-20..24 release prep wave 44 (`b9a43a1`; D-16.920..964; LEAD-NOTES "P25 wave 44 landing notes (integrator)"), P25-01..04 security wave 43 (`4945b48`; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes (integrator)"), P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
   P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
