@@ -42,3 +42,15 @@
 - Checks: ruff, lint-imports, tooling.checks ok (deps_audit warn: pypdf, katex, sprintf-js); uv lock --check, pnpm
   --frozen-lockfile ok; slack/discord adapter tests 215 passed; nacl AEAD round trip; apps/web vite build + vitest 281;
   tooling/checks + packaging 562; contract + security 1964.
+
+## w46a.patch: RM2 / SEC-4 fence laundering fixed by taint (done)
+- 16 files, +490/-63. core/untrusted.py Taint + fence(tainted=) + fence_as; tools/calls.py TaintSink protocol (layers kept);
+  core/turn_state.py, finalize.py, tool_round.py; tools/builtin/code (script's untrusted RPC calls mark the run; sticky per
+  kernel owner until reset); core/subagents batch/child/delegation/background (child that read outside text → fenced summary,
+  background deliveries fenced, action=stop too). Threat model SEC-4 → fixed (B-INJECT-1), security-review.md "Wave 46".
+- Fail-first tests in tests/security, unit core tool_round, code kernel, subagents background. pytest: security 75, code 92,
+  subagents 52, core 946, integration/core 28, contract 1891 — all passed. ruff/pyright/lint-imports/security_static/
+  tooling.checks ok.
+- W46-a-1..4 (whole result fenced; sticky per owner; short/error untrusted runs count; lead files still say SEC-4 open —
+  integrator updates HANDOFF/LEAD-NOTES/phase table). Residuals: file write then read_file; model-copied text.
+- MERGE NOTE: S45 also edits core/untrusted.py (adds wrap(); _fence_text calls it) and threat-model.md (other rows).
