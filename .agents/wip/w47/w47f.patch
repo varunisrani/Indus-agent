@@ -1,0 +1,804 @@
+diff --git a/docs/notes/P18/build-serve.md b/docs/notes/P18/build-serve.md
+index 2a6fd96..6733f2b 100644
+--- a/docs/notes/P18/build-serve.md
++++ b/docs/notes/P18/build-serve.md
+@@ -186,3 +186,32 @@ workflow artefact; `upload` collects it beside the desktop artefacts and the ins
+ `tests/unit/ci/test_release_workflow.py::test_every_release_carries_the_dashboard_pages`; the
+ rehearsal row is in `docs/internals/rehearsal-log.md` §4. Decision D-16.1022.
+ - Optional: `locate()` could treat stamped pages of another release as stale.
++
++## Wave 47 (builder f, 2026-10-22): `locate()` treats pages of another release as stale
++
++Status: done (2026-10-22), not yet landed (the "Optional" item above).
++
++Read: no reference file. Files: `src/indus/web/bundle.py` (`installed_release`, `locate(...,
++release=)`, `BundleLocation.stamped`, kind `stale`, `stale_pages_hint`), `src/indus/web/command.py`
++(`_maybe_build` message), tests `tests/unit/web/test_bundle_locate.py` (five cases).
++
++A runtime tree carrying a `.indus-release` stamp (only `fetch_release` writes one) is compared with
++the release this install runs: in a checkout, the release HEAD is on, read with the stdlib-only
++file probes of `indus.cli.version.checkout_release` (tags, the installer's marker, update receipts;
++no git process), `0.0.0` when HEAD is on no release; elsewhere the package's own version. A
++different release makes the location `stale`: `found` is False, the directory is where a build
++lands (`apps/web/dist` in a checkout), so the old pages are not served, a checkout with pnpm builds
++its own on first launch, and without pnpm `indus dashboard` prints "The dashboard pages are from
++another release" with how to fetch this release's pages. Unstamped trees (the wheel's, `publish`)
++are never judged, nor is any tree when the probe fails.
++
++Fail-first: four of the five new tests fail on the base (`test_unstamped_runtime_pages_are_never_stale`
++is a guard and passes on both).
++
++Decisions for the lead:
++- W47-f-2: stale pages are not served (the server answers "not built" until a fetch or build), not
++  served with a warning: pages built for another release talk to an API they were not built for.
++- W47-f-3: `web.bundle` loads `indus.cli.version` by name (`importlib.import_module`) for the
++  checkout's release, the precedent `web.routes.system.install_info` set for the same stdlib-only
++  module; no import-linter exemption, and nothing moves. If the lead prefers, the F-4 probes can
++  move to `indus.foundation` later and both import them directly.
+diff --git a/docs/notes/P23/install-ps1.md b/docs/notes/P23/install-ps1.md
+index 97b1d64..c5b60e9 100644
+--- a/docs/notes/P23/install-ps1.md
++++ b/docs/notes/P23/install-ps1.md
+@@ -165,3 +165,29 @@ where `pwsh` is installed. Changed outside the task's files: `docs/internals/tra
+ ## Integration (wave 36)
+ 
+ Integration: the stand-in builder is removed — `scripts/install/build.py` builds `install.ps1` the way described above, `--check` covers it, and the committed script embeds the real `pins.json` (recorded digests). Settings key reconciled (D-16.748): `Get-IndusInstallSetting` reads `updates.installs.<id>.*` (lists too); the config stage writes `.extras` (the synced list) and the complete stage `.channel` for an explicit `-Channel`; `.skip` is gone.
++
++## Wave 47 (builder f, 2026-10-22): parity with install.sh for the pages step and marker `version`
++
++Status: done (2026-10-22), not yet landed. UNVERIFIED ON WINDOWS: no `pwsh` on the build host, so
++the new code is checked statically only (ASCII, PS 5.1 syntax guards, parity tests below).
++
++Read: no reference file. Files: `scripts/install/ps/20-stages.ps1` (`Install-IndusWebPages`,
++called from `Invoke-IndusProducts`; `Invoke-IndusComplete` record), rebuilt `scripts/install.ps1`
++(`python scripts/install/build.py`), tests `tests/integration/install/test_install_ps1.py`
++(`test_products_fetch_the_release_pages_like_install_sh`,
++`test_marker_carries_the_release_version_like_install_sh`).
++
++Products: like `ins_web_pages` (wave 46 k), a developer's `apps\web\dist\index.html` is kept;
++otherwise, with Git on PATH (`Use-IndusGit`), `Invoke-IndusLogged ... -MayFail` runs
++`<install>\.venv\Scripts\python.exe -m indus.web.bundle fetch --repo <install> --target
++<install>\src\indus\web\static`. Exit 0 → ok line, 3 → the pnpm hint, anything else → a warning
++with the child's error line; the stage never fails on the pages and `$LASTEXITCODE` is reset.
++Complete: the marker gains `version` between `channel` and `completed_at` (the key order of
++install.sh's printf): `git tag --points-at HEAD --list 'v*'`, filtered by the stable/canary tag
++patterns, newest by `Select-IndusNewestTag`, without the `v`; `''` off a release. The parity test
++reads the key list from both scripts and requires them equal.
++
++Fail-first: both parity tests fail against the base `install.ps1` and pass on the rebuilt one.
++
++Follow-up: run the `needs_pwsh` tests and a real ladder on Windows (rehearsal row, Windows source
++install) to confirm the fetch and the marker `version` there.
+diff --git a/docs/notes/P23/update-finish.md b/docs/notes/P23/update-finish.md
+index 180415a..89006b7 100644
+--- a/docs/notes/P23/update-finish.md
++++ b/docs/notes/P23/update-finish.md
+@@ -77,3 +77,35 @@ Done (2026-10-21). Shared files changed: `src/indus/cli/app.py` (registry row),
+ ## Integration (wave 36)
+ 
+ Integration: `--finish` removes the update marker its pid claimed before the hand-off, whatever the outcome (D-16.761).
++
++## Wave 47 (builder f, 2026-10-22): the finish step refreshes the fetched dashboard pages
++
++Status: done (2026-10-22), not yet landed; patch against the local snapshot `9a155bb`.
++
++Read: no reference file (F-3 is our own release gap; the reference rebuilds its web bundle with
++npm in its update and has no prebuilt pages). Files: `src/indus/cli/update/finish.py`
++(`_web_pages`, `FinishContext.python`, `WEB_PAGES_PHASE`), tests
++`tests/unit/cli/update/test_finish.py` (five new cases; `test_receipt_lists_every_phase` now
++expects `web_pages: skipped` beside a developer build).
++
++New phase `web_pages`, after the `dist:*` rebuilds: a checkout without its own
++`apps/web/dist/index.html` (a script install, where the installer fetched the pages) runs
++`<new venv python> -m indus.web.bundle fetch --repo <checkout> --target
++<checkout>/src/indus/web/static` as a child (300 s cap, the scope's env like the builds), the same
++command `install.sh` / `install.ps1` run in their products stage. The CLI layer never imports
++`indus.web` (layer rule, D-16.246), hence a child process. Exit 0 → `ok` (the child's last stdout
++line as detail: "Installed ..." or "already in ..."); exit 3 (HEAD on no release, the `main`
++channel) → `skipped`; any other exit, a timeout or a child that cannot start → owed, retry = the
++same fetch command, the run still exits 0 (R04.24). A checkout with a developer build gets
++`skipped` ("this checkout builds its own pages") and no fetch. The trust chain is unchanged: the
++fetch checks the release tag's `manifest_sha256` → `manifest.json` → archive digest (threat model
++B-SUPPLY-1); a tree already stamped with the new release is not downloaded again.
++
++Fail-first: on the base the five new finish tests fail (no `web_pages` phase, no fetch call) and
++pass with the fix.
++
++Decisions for the lead:
++- W47-f-1: the pages are fetched for every checkout without a developer build, not only one that
++  already holds a stamped tree, so an install whose first fetch failed gets its pages on the next
++  update (parity with the installer, which also always tries). Off a release the child answers 3
++  after one local `git tag` call: no network.
+diff --git a/scripts/install.ps1 b/scripts/install.ps1
+index 25aabda..26479c1 100644
+--- a/scripts/install.ps1
++++ b/scripts/install.ps1
+@@ -1542,8 +1542,40 @@ function Publish-IndusLauncher {
+     Write-IndusOk "indus command: $launcher"
+ }
+ 
++# A checkout serves its own built pages (apps\web\dist) when a developer built them; otherwise a
++# release install gets the pages its release was built with (F-3), as install.sh does: the
++# environment's python runs `-m indus.web.bundle fetch`, which checks them against the manifest
++# digest the release tag records and publishes them into src\indus\web\static. Exit 3 means HEAD
++# is on no release (a main install builds its own). Never fatal: the dashboard API still works.
++function Install-IndusWebPages {
++    $pgDir = $script:IndusPaths.InstallDir
++    $pgBuilt = Join-Path (Join-Path (Join-Path (Join-Path $pgDir 'apps') 'web') 'dist') 'index.html'
++    if (Test-Path -LiteralPath $pgBuilt -PathType Leaf) {
++        Write-IndusInfo 'the dashboard pages are built in this checkout (apps\web\dist)'
++        return
++    }
++    $pgPython = Get-IndusVenvPython
++    if (-not (Test-Path -LiteralPath $pgPython)) {
++        Write-IndusWarn "the dashboard pages were not fetched ($pgPython is missing); rerun the installer"
++        return
++    }
++    $pgTarget = Join-Path (Join-Path (Join-Path (Join-Path $pgDir 'src') 'indus') 'web') 'static'
++    Use-IndusGit | Out-Null
++    Invoke-IndusLogged 'Fetching the dashboard pages' { & $pgPython -m indus.web.bundle fetch --repo $pgDir --target $pgTarget } -MayFail
++    $pgCode = $LASTEXITCODE
++    $global:LASTEXITCODE = 0
++    if ($pgCode -eq 0) {
++        Write-IndusOk 'the dashboard pages of this release are in place'
++    } elseif ($pgCode -eq 3) {
++        Write-IndusInfo 'This checkout is not on a release, so it has no prebuilt dashboard pages; build them with: pnpm install && pnpm --filter @indus/web build'
++    } else {
++        Write-IndusWarn "the dashboard pages could not be fetched$(Get-IndusNativeDetail); the dashboard serves only its API until they are (rerun the installer, or build them with pnpm --filter @indus/web build)"
++    }
++}
++
+ function Invoke-IndusProducts {
+     Publish-IndusLauncher
++    Install-IndusWebPages
+     if ($script:IndusOpts.IncludeDesktop) { Invoke-IndusDesktop }
+ }
+ 
+@@ -1586,11 +1618,19 @@ function Invoke-IndusComplete {
+     $head = ([string](Invoke-IndusNative { git -C $codeDir rev-parse HEAD 2>$null })).Trim()
+     if ($LASTEXITCODE -or -not $head) { Stop-IndusStage "could not read the installed commit in $codeDir" 'other' }
+     $origin = ([string](Invoke-IndusNative { git -C $codeDir config --get remote.origin.url 2>$null })).Trim()
++    # The release HEAD is on (newest when several), for `indus --version` (F-4); '' on main.
++    $headTags = @(Invoke-IndusNative { git -C $codeDir tag --points-at HEAD --list 'v*' 2>$null } |
++        ForEach-Object { "$_".Trim() } |
++        Where-Object { $_ -cmatch $script:IndusStableTag -or $_ -cmatch $script:IndusCanaryTag })
++    $releaseTag = [string](Select-IndusNewestTag $headTags)
++    $global:LASTEXITCODE = 0
++    if ($releaseTag) { $releaseTag = $releaseTag.Substring(1) }
+     $record = [ordered]@{
+         schema       = 1
+         commit       = $head
+         branch       = Get-IndusBranch
+         channel      = Get-IndusEffectiveChannel $codeDir $origin
++        version      = $releaseTag
+         completed_at = Get-IndusUtcStamp
+     }
+     $marker = Join-Path $codeDir '.indus-bootstrap.json'
+diff --git a/scripts/install/ps/20-stages.ps1 b/scripts/install/ps/20-stages.ps1
+index 80f728c..9a13752 100644
+--- a/scripts/install/ps/20-stages.ps1
++++ b/scripts/install/ps/20-stages.ps1
+@@ -634,8 +634,40 @@ function Publish-IndusLauncher {
+     Write-IndusOk "indus command: $launcher"
+ }
+ 
++# A checkout serves its own built pages (apps\web\dist) when a developer built them; otherwise a
++# release install gets the pages its release was built with (F-3), as install.sh does: the
++# environment's python runs `-m indus.web.bundle fetch`, which checks them against the manifest
++# digest the release tag records and publishes them into src\indus\web\static. Exit 3 means HEAD
++# is on no release (a main install builds its own). Never fatal: the dashboard API still works.
++function Install-IndusWebPages {
++    $pgDir = $script:IndusPaths.InstallDir
++    $pgBuilt = Join-Path (Join-Path (Join-Path (Join-Path $pgDir 'apps') 'web') 'dist') 'index.html'
++    if (Test-Path -LiteralPath $pgBuilt -PathType Leaf) {
++        Write-IndusInfo 'the dashboard pages are built in this checkout (apps\web\dist)'
++        return
++    }
++    $pgPython = Get-IndusVenvPython
++    if (-not (Test-Path -LiteralPath $pgPython)) {
++        Write-IndusWarn "the dashboard pages were not fetched ($pgPython is missing); rerun the installer"
++        return
++    }
++    $pgTarget = Join-Path (Join-Path (Join-Path (Join-Path $pgDir 'src') 'indus') 'web') 'static'
++    Use-IndusGit | Out-Null
++    Invoke-IndusLogged 'Fetching the dashboard pages' { & $pgPython -m indus.web.bundle fetch --repo $pgDir --target $pgTarget } -MayFail
++    $pgCode = $LASTEXITCODE
++    $global:LASTEXITCODE = 0
++    if ($pgCode -eq 0) {
++        Write-IndusOk 'the dashboard pages of this release are in place'
++    } elseif ($pgCode -eq 3) {
++        Write-IndusInfo 'This checkout is not on a release, so it has no prebuilt dashboard pages; build them with: pnpm install && pnpm --filter @indus/web build'
++    } else {
++        Write-IndusWarn "the dashboard pages could not be fetched$(Get-IndusNativeDetail); the dashboard serves only its API until they are (rerun the installer, or build them with pnpm --filter @indus/web build)"
++    }
++}
++
+ function Invoke-IndusProducts {
+     Publish-IndusLauncher
++    Install-IndusWebPages
+     if ($script:IndusOpts.IncludeDesktop) { Invoke-IndusDesktop }
+ }
+ 
+@@ -678,11 +710,19 @@ function Invoke-IndusComplete {
+     $head = ([string](Invoke-IndusNative { git -C $codeDir rev-parse HEAD 2>$null })).Trim()
+     if ($LASTEXITCODE -or -not $head) { Stop-IndusStage "could not read the installed commit in $codeDir" 'other' }
+     $origin = ([string](Invoke-IndusNative { git -C $codeDir config --get remote.origin.url 2>$null })).Trim()
++    # The release HEAD is on (newest when several), for `indus --version` (F-4); '' on main.
++    $headTags = @(Invoke-IndusNative { git -C $codeDir tag --points-at HEAD --list 'v*' 2>$null } |
++        ForEach-Object { "$_".Trim() } |
++        Where-Object { $_ -cmatch $script:IndusStableTag -or $_ -cmatch $script:IndusCanaryTag })
++    $releaseTag = [string](Select-IndusNewestTag $headTags)
++    $global:LASTEXITCODE = 0
++    if ($releaseTag) { $releaseTag = $releaseTag.Substring(1) }
+     $record = [ordered]@{
+         schema       = 1
+         commit       = $head
+         branch       = Get-IndusBranch
+         channel      = Get-IndusEffectiveChannel $codeDir $origin
++        version      = $releaseTag
+         completed_at = Get-IndusUtcStamp
+     }
+     $marker = Join-Path $codeDir '.indus-bootstrap.json'
+diff --git a/src/indus/cli/update/finish.py b/src/indus/cli/update/finish.py
+index 1377144..defda1f 100644
+--- a/src/indus/cli/update/finish.py
++++ b/src/indus/cli/update/finish.py
+@@ -1,4 +1,5 @@
+-"""Finish an update in the new code: migrate, rebuild bundles, restart the gateway (P23-19).
++"""Finish an update in the new code: migrate, rebuild bundles and pages, restart the gateway
++(P23-19).
+ 
+ ``indus update --finish <request>`` is exec'd by the apply step (``apply.py``) from the new
+ environment, so everything here is the new release's own code. The checkout and environment have
+@@ -13,6 +14,12 @@ Phases:
+ - ``dist:<name>``: the web and TUI bundles a checkout already had are rebuilt by building into
+   ``<dist>.next``, checking the entry file is there and renaming it over the old one; a failure
+   keeps the old bundle;
++- ``web_pages`` (wave 47): a checkout without its own ``apps/web/dist`` (a script install) gets the
++  new release's prebuilt dashboard pages, as the installer's products stage does: ``<new python>
++  -m indus.web.bundle fetch --repo <checkout> --target <checkout>/src/indus/web/static`` as a child
++  process (the CLI layer never imports ``indus.web``, D-16.246). Exit 0 is ``ok``, 3 (HEAD on no
++  release) ``skipped``, anything else owed with the same command as its retry; the pages left
++  behind are then stamped with the old release, which ``web.bundle.locate`` treats as stale;
+ - ``gateway_restart``: this profile's gateway only (D-16.57). A systemd/launchd service is
+   restarted through its manager; a gateway started by hand is asked over the control socket to
+   stop for a restart (never killed), then started again detached on the new code;
+@@ -49,6 +56,9 @@ __all__ = [
+ _GATEWAY_GONE_WAIT_S = 60.0
+ _GATEWAY_START_TIMEOUT_S = 90.0
+ _BUILD_TIMEOUT_S = 900.0
++_FETCH_TIMEOUT_S = 300.0
++_NOT_ON_RELEASE = 3
++WEB_PAGES_PHASE = "web_pages"
+ 
+ type ChildRunner = Callable[..., subprocess.CompletedProcess[str]]
+ 
+@@ -284,6 +294,8 @@ class FinishContext:
+     """``dry_run`` → a ``MigrationReport`` (``from_version``, ``to_version``, ``steps``)."""
+     run: ChildRunner = subprocess.run
+     pnpm: str | None = None
++    python: str = sys.executable
++    """The new environment's interpreter (this process: the apply step exec'd it)."""
+     extra_env: dict[str, str] = field(default_factory=dict[str, str])
+ 
+ 
+@@ -339,6 +351,51 @@ def _bundles(ctx: FinishContext, checkout: Path, receipt: Receipt) -> None:
+             receipt.phase(phase, "ok", "rebuilt")
+ 
+ 
++def _last_line(*texts: str | None) -> str:
++    for text in texts:
++        lines = (text or "").strip().splitlines()
++        if lines:
++            return lines[-1].strip()
++    return ""
++
++
++def _web_pages(ctx: FinishContext, checkout: Path, receipt: Receipt) -> None:
++    """Refresh the prebuilt dashboard pages of a script install (see the module notes)."""
++    if (checkout / "apps" / "web" / "dist" / "index.html").is_file():
++        receipt.phase(WEB_PAGES_PHASE, "skipped", "this checkout builds its own pages")
++        return
++    target = checkout / "src" / "indus" / "web" / "static"
++    base = [ctx.python, "-m", "indus.web.bundle", "fetch", "--repo", str(checkout)]
++    retry = " ".join(base)
++    ctx.console.say("→ Fetching the dashboard pages of this release...")
++    env = {**ctx.scope.env.to_dict(), **ctx.extra_env}
++    try:
++        done = ctx.run(
++            [*base, "--target", str(target)],
++            cwd=str(checkout),
++            env=env,
++            capture_output=True,
++            text=True,
++            encoding="utf-8",
++            errors="replace",
++            timeout=_FETCH_TIMEOUT_S,
++            check=False,
++        )
++    except (OSError, subprocess.TimeoutExpired) as exc:
++        receipt.owe(WEB_PAGES_PHASE, f"could not run the fetch: {exc}", retry=retry)
++        ctx.console.warn(f"⚠ The dashboard pages were not refreshed: {exc}")
++        return
++    ctx.console.child_output(f"$ {' '.join(done.args)}\n{done.stdout}{done.stderr}")
++    if done.returncode == 0:
++        receipt.phase(WEB_PAGES_PHASE, "ok", _last_line(done.stdout))
++    elif done.returncode == _NOT_ON_RELEASE:
++        receipt.phase(WEB_PAGES_PHASE, "skipped", "this checkout is not on a release")
++    else:
++        why = _last_line(done.stderr, done.stdout) or f"exit {done.returncode}"
++        receipt.owe(WEB_PAGES_PHASE, why, retry=retry)
++        ctx.console.warn(f"⚠ The dashboard pages were not refreshed ({why}).")
++
++
+ def run_finish(request_path: Path, ctx: FinishContext, *, no_gateway_restart: bool) -> int:
+     """The finish step (see the module notes). Exit 0, or 1 for a stash conflict."""
+     data = load_request(request_path)
+@@ -352,6 +409,7 @@ def run_finish(request_path: Path, ctx: FinishContext, *, no_gateway_restart: bo
+     defer = no_gateway_restart or bool(data.get("no_gateway_restart"))
+     _migrate(ctx, receipt)
+     _bundles(ctx, paths.checkout, receipt)
++    _web_pages(ctx, paths.checkout, receipt)
+     if defer:
+         receipt.phase(
+             "gateway_restart", "deferred", "--no-gateway-restart: run `indus gateway restart`"
+diff --git a/src/indus/web/bundle.py b/src/indus/web/bundle.py
+index 2efa06c..7b1108c 100644
+--- a/src/indus/web/bundle.py
++++ b/src/indus/web/bundle.py
+@@ -14,6 +14,15 @@
+ 
+ A directory counts only when it holds ``index.html`` (a half-finished copy does not).
+ 
++Fetched pages carry a ``.indus-release`` stamp (below). A runtime tree stamped with another release
++than the one this install runs is ``stale`` (wave 47): it is not served, and the answer is the
++directory a build would fill, as for ``missing``, so ``indus dashboard`` builds or says how to
++refresh it instead of serving pages made for another API. The release this install runs
++(``installed_release``) is, in a checkout, the release its HEAD is on (the stdlib-only file probes
++of ``indus.cli.version``, loaded by name as ``web.routes.system`` does: ``cli`` is a sibling layer)
++or ``0.0.0`` off a release; elsewhere the package's own version. An unstamped tree (the wheel's, or
++one published from a build) is never judged, nor is any tree when the release cannot be read.
++
+ ``publish(source, target)`` copies a finished build into the runtime tree: it is copied next to the
+ target first and swapped in with two renames, so a failed copy leaves the old pages in place; a
+ leftover stage or old copy from an interrupted run is removed first. ``python -m indus.web.bundle
+@@ -38,6 +47,7 @@ from __future__ import annotations
+ 
+ import argparse
+ import hashlib
++import importlib
+ import io
+ import json
+ import re
+@@ -50,9 +60,15 @@ import urllib.request
+ from collections.abc import Callable, Sequence
+ from dataclasses import dataclass
+ from pathlib import Path
+-from typing import Final, Literal
+-
+-from indus.foundation.versions import RELEASE_REPOSITORY, Version, parse_tag, tag_record_text
++from typing import Any, Final, Literal
++
++from indus.foundation.versions import (
++    RELEASE_REPOSITORY,
++    SOURCE_VERSION,
++    Version,
++    parse_tag,
++    tag_record_text,
++)
+ from indus.platform.locate import which
+ 
+ __all__ = [
+@@ -67,6 +83,7 @@ __all__ = [
+     "asset_name",
+     "dev_bundle_dir",
+     "fetch_release",
++    "installed_release",
+     "locate",
+     "main",
+     "missing_pages_hint",
+@@ -74,6 +91,7 @@ __all__ = [
+     "publish",
+     "runtime_bundle_dir",
+     "source_checkout",
++    "stale_pages_hint",
+     "stamped_release",
+ ]
+ 
+@@ -92,7 +110,7 @@ _ORIGIN_FORMS: Final = (
+ )
+ _PACKAGE_DIR: Final = Path(__file__).resolve().parent.parent
+ 
+-type BundleKind = Literal["source", "installed", "missing"]
++type BundleKind = Literal["source", "installed", "stale", "missing"]
+ 
+ 
+ class PublishError(RuntimeError):
+@@ -105,12 +123,15 @@ class BundleLocation:
+ 
+     directory: Path
+     kind: BundleKind
+-    """``source`` (``apps/web/dist`` of a checkout), ``installed`` (the package's runtime tree) or
+-    ``missing`` (nothing built; ``directory`` is where a build would land)."""
++    """``source`` (``apps/web/dist`` of a checkout), ``installed`` (the package's runtime tree),
++    ``stale`` (the runtime tree holds another release's fetched pages) or ``missing`` (nothing
++    built); for the last two ``directory`` is where a build would land."""
++    stamped: str | None = None
++    """The release a ``stale`` tree was fetched for."""
+ 
+     @property
+     def found(self) -> bool:
+-        return self.kind != "missing"
++        return self.kind in ("source", "installed")
+ 
+ 
+ def _built(directory: Path) -> bool:
+@@ -135,20 +156,40 @@ def dev_bundle_dir(repo_root: Path) -> Path:
+     return repo_root / "apps" / "web" / "dist"
+ 
+ 
+-def locate(package_dir: Path = _PACKAGE_DIR) -> BundleLocation:
++def installed_release(package_dir: Path = _PACKAGE_DIR) -> str | None:
++    """The release this install runs (see the module notes); None when it cannot be read."""
++    repo = source_checkout(package_dir)
++    if repo is None:
++        from indus import __version__
++
++        return __version__
++    try:
++        probes: Any = importlib.import_module("indus.cli.version")
++        found = probes.checkout_release(repo)
++    except Exception:  # a probe that cannot read never hides the pages
++        return None
++    return str(found) if found else SOURCE_VERSION
++
++
++def locate(
++    package_dir: Path = _PACKAGE_DIR,
++    *,
++    release: Callable[[Path], str | None] = installed_release,
++) -> BundleLocation:
+     """The bundle to serve (see the module notes)."""
+     runtime = runtime_bundle_dir(package_dir)
+     repo = source_checkout(package_dir)
+-    if repo is not None:
+-        dev = dev_bundle_dir(repo)
+-        if _built(dev):
+-            return BundleLocation(dev, "source")
+-        if _built(runtime):
+-            return BundleLocation(runtime, "installed")
+-        return BundleLocation(dev, "missing")
+-    if _built(runtime):
+-        return BundleLocation(runtime, "installed")
+-    return BundleLocation(runtime, "missing")
++    unbuilt = dev_bundle_dir(repo) if repo is not None else runtime
++    if repo is not None and _built(unbuilt):
++        return BundleLocation(unbuilt, "source")
++    if not _built(runtime):
++        return BundleLocation(unbuilt, "missing")
++    stamp = stamped_release(runtime)
++    if stamp is not None:
++        running = release(package_dir)
++        if running is not None and running != stamp:
++            return BundleLocation(unbuilt, "stale", stamped=stamp)
++    return BundleLocation(runtime, "installed")
+ 
+ 
+ def _remove(path: Path) -> None:
+@@ -362,6 +403,16 @@ def fetch_release(
+     return version, True
+ 
+ 
++def stale_pages_hint(stamped: str | None) -> str:
++    """What to do when the runtime tree holds another release's fetched pages."""
++    return (
++        f"The dashboard pages here were fetched for release {stamped or '(unknown)'}, not the one "
++        "this install runs, so they are not served. Run `python -m indus.web.bundle fetch` with "
++        "this install's Python (or `indus update`, or rerun the installer) to fetch this "
++        "release's pages."
++    )
++
++
+ def missing_pages_hint(repo: Path | None) -> str:
+     """What to do when no pages are built and none can be built here (no ``pnpm``)."""
+     if repo is None:
+diff --git a/src/indus/web/command.py b/src/indus/web/command.py
+index 142d9c3..37d6bfa 100644
+--- a/src/indus/web/command.py
++++ b/src/indus/web/command.py
+@@ -23,8 +23,9 @@ is no flag that skips the login (D-16.25).
+ 
+ A missing SPA bundle in a source checkout with ``pnpm`` on PATH is built once before serving
+ (``indus.web.spa.build_plan``); without ``pnpm`` the command says how to get the release's prebuilt
+-pages or build them (``web.bundle.missing_pages_hint``, F-3). The dashboard attaches to the profile
+-daemon in the background.
++pages or build them (``web.bundle.missing_pages_hint``, F-3); runtime pages fetched for another
++release are not served and the command says how to refresh them (``stale_pages_hint``, wave 47).
++The dashboard attaches to the profile daemon in the background.
+ 
+ ``indus serve [--host] [--port 0]`` runs the headless backend (JSON and WebSocket only) and writes
+ ``<home>/serve.json``; ``indus serve discover --json [-p NAME]`` and ``indus serve ensure --json``
+@@ -208,11 +209,18 @@ def run_server(app: FastAPI, sock: socket.socket) -> None:
+ def _maybe_build(launch: Launch) -> None:
+     from indus.web import bundle, spa
+ 
+-    if bundle.locate().found:
++    where = bundle.locate()
++    if where.found:
+         return
+     repo = bundle.source_checkout()
+     plan = spa.build_plan(repo, launch.scope.env) if repo is not None else None
+     if plan is None:
++        if where.kind == "stale":
++            err(
++                "The dashboard pages are from another release; the API still works.",
++                bundle.stale_pages_hint(where.stamped),
++            )
++            return
+         err(
+             "The dashboard pages are not built; the API still works.",
+             bundle.missing_pages_hint(repo),
+diff --git a/tests/integration/install/test_install_ps1.py b/tests/integration/install/test_install_ps1.py
+index de7bf56..ad688b4 100644
+--- a/tests/integration/install/test_install_ps1.py
++++ b/tests/integration/install/test_install_ps1.py
+@@ -328,6 +328,58 @@ def test_manifest_equals_the_shell_scripts(tmp_path: Path) -> None:
+     assert _parse_manifest(done.stdout) == _manifest_from_table(_stages())["stages"]
+ 
+ 
++# -- static: parity with install.sh (wave 47, f) -------------------------------------------------
++
++SH_RUNTIME = ROOT / "scripts" / "install" / "sh" / "20-runtime.sh"
++
++
++def _ps_function(name: str) -> str:
++    """The body of one function of the built script (to its closing brace at column 0)."""
++    text = _built()
++    found = re.search(rf"^function {re.escape(name)}\b.*?^}}$", text, re.MULTILINE | re.DOTALL)
++    assert found is not None, f"{name} is not defined"
++    return found.group(0)
++
++
++def test_products_fetch_the_release_pages_like_install_sh() -> None:
++    products = _ps_function("Invoke-IndusProducts")
++    assert "Install-IndusWebPages" in products
++    pages = _ps_function("Install-IndusWebPages")
++    # A developer's own build is kept; otherwise the environment's python fetches the pages.
++    assert re.search(r"'dist'\)\s+'index\.html'", pages)
++    assert "Get-IndusVenvPython" in pages
++    fetch = re.search(r"Invoke-IndusLogged '[^']+' \{ (?P<cmd>[^}]*) \} -MayFail", pages)
++    assert fetch is not None, "the fetch is logged and never fails the stage"
++    assert re.fullmatch(
++        r"& \$pgPython -m indus\.web\.bundle fetch --repo \$pgDir --target \$pgTarget",
++        fetch.group("cmd"),
++    )
++    assert re.search(r"'src'\)\s+'indus'\)\s+'web'\)\s+'static'", pages)
++    # The same three answers as install.sh: 0 in place, 3 not a release, anything else warns.
++    assert "-eq 0" in pages and "-eq 3" in pages and "Write-IndusWarn" in pages
++    assert "Stop-IndusStage" not in pages
++    sh = SH_RUNTIME.read_text(encoding="utf-8")
++    assert "-m indus.web.bundle fetch --repo" in sh and "--target" in sh
++
++
++def test_marker_carries_the_release_version_like_install_sh() -> None:
++    sh = SH_RUNTIME.read_text(encoding="utf-8")
++    printf = re.search(r"printf '(\{\"schema\"[^']*)'", sh)
++    assert printf is not None
++    sh_keys = re.findall(r'"([a-z_]+)":', printf.group(1))
++    complete = _ps_function("Invoke-IndusComplete")
++    record = re.search(r"\$record = \[ordered\]@\{(?P<body>.*?)\n    \}", complete, re.DOTALL)
++    assert record is not None
++    ps_keys = re.findall(r"^\s+([a-z_]+)\s+=", record.group("body"), re.MULTILINE)
++    assert (
++        ps_keys == sh_keys == ["schema", "commit", "branch", "channel", "version", "completed_at"]
++    )
++    # HEAD's newest release tag (stable or canary), without the v; '' off a release.
++    assert "tag --points-at HEAD --list 'v*'" in complete
++    assert "$script:IndusStableTag" in complete and "$script:IndusCanaryTag" in complete
++    assert "Select-IndusNewestTag" in complete and ".Substring(1)" in complete
++
++
+ # -- pwsh: behaviour ------------------------------------------------------------------------------
+ 
+ 
+diff --git a/tests/unit/cli/update/test_finish.py b/tests/unit/cli/update/test_finish.py
+index 315a89a..3af5f3d 100644
+--- a/tests/unit/cli/update/test_finish.py
++++ b/tests/unit/cli/update/test_finish.py
+@@ -145,7 +145,7 @@ def test_receipt_lists_every_phase(scope: Scope, tmp_path: Path) -> None:
+     assert receipt["outcome"] == "ok" and receipt["owed"] == []
+     assert outcomes(receipt) == {
+         "snapshot": "skipped", "move": "ok", "venv": "ok", "config_migration": "ok",
+-        "dist:web": "ok", "dist:tui": "skipped", "gateway_restart": "ok",
++        "dist:web": "ok", "dist:tui": "skipped", "web_pages": "skipped", "gateway_restart": "ok",
+     }  # fmt: skip
+     assert (checkout / "apps/web/dist/index.html").read_text(encoding="utf-8") == "<html>new</html>"
+     assert not (checkout / "apps/web/dist.next").exists()
+@@ -206,6 +206,102 @@ def test_stage_and_swap_never_leaves_a_half_bundle(tmp_path: Path) -> None:
+     assert (target / "index.html").read_text() == "<html>new</html>"
+ 
+ 
++# -- the fetched dashboard pages (wave 47, f) ------------------------------------------------------
++
++
++def fetch_runner(code: int, out: str = "", err: str = "") -> tuple[Any, list[list[str]]]:
++    calls: list[list[str]] = []
++
++    def run(argv: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
++        calls.append(list(argv))
++        assert kw.get("timeout"), "the fetch is time-limited"
++        return subprocess.CompletedProcess(argv, code, out, err)
++
++    return run, calls
++
++
++def test_a_script_install_fetches_the_pages_of_the_new_release(
++    scope: Scope, tmp_path: Path
++) -> None:
++    checkout = tmp_path / "checkout"
++    checkout.mkdir()
++    builder, _ = web_builder()
++    run, calls = fetch_runner(0, "Installed the dashboard pages of v0.2.0 in x\n")
++    ctx = context(scope, builders=[builder], run=run, pnpm=None)
++    ctx.python = "/new/venv/bin/python"
++    path = request_file(tmp_path, scope.root, checkout)
++    assert run_finish(path, ctx, no_gateway_restart=True) == 0
++    # A child process: the CLI layer never imports indus.web (D-16.246).
++    assert calls == [
++        [
++            "/new/venv/bin/python", "-m", "indus.web.bundle", "fetch",
++            "--repo", str(checkout), "--target", str(checkout / "src/indus/web/static"),
++        ]
++    ]  # fmt: skip
++    receipt = final_receipt(scope.root)
++    assert outcomes(receipt)["web_pages"] == "ok" and receipt["owed"] == []
++    assert outcomes(receipt)["dist:web"] == "skipped"
++
++
++def test_pages_off_a_release_are_skipped(scope: Scope, tmp_path: Path) -> None:
++    checkout = tmp_path / "checkout"
++    checkout.mkdir()
++    run, calls = fetch_runner(3, "", "No prebuilt dashboard pages: not a release.\n")
++    ctx = context(scope, run=run)
++    assert (
++        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
++    )
++    receipt = final_receipt(scope.root)
++    assert len(calls) == 1 and outcomes(receipt)["web_pages"] == "skipped"
++    assert receipt["owed"] == []
++
++
++def test_a_failed_page_fetch_is_owed_with_its_retry(
++    scope: Scope, tmp_path: Path, capsys: pytest.CaptureFixture[str]
++) -> None:
++    checkout = tmp_path / "checkout"
++    checkout.mkdir()
++    run, _calls = fetch_runner(1, "", "Could not fetch the dashboard pages: download failed\n")
++    ctx = context(scope, run=run)
++    ctx.python = "/new/py"
++    assert (
++        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
++    )
++    receipt = final_receipt(scope.root)
++    assert receipt["outcome"] == "ok_with_followups"
++    [owed] = receipt["owed"]
++    assert owed["followup"] == "web_pages" and "download failed" in owed["detail"]
++    assert owed["retry"] == f"/new/py -m indus.web.bundle fetch --repo {checkout}"
++    assert "Owed: web_pages" in capsys.readouterr().out
++
++
++def test_a_page_fetch_that_cannot_start_is_owed(scope: Scope, tmp_path: Path) -> None:
++    checkout = tmp_path / "checkout"
++    checkout.mkdir()
++
++    def broken(argv: list[str], **_kw: Any) -> subprocess.CompletedProcess[str]:
++        raise subprocess.TimeoutExpired(argv, 1.0)
++
++    ctx = context(scope, run=broken)
++    assert (
++        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
++    )
++    assert outcomes(final_receipt(scope.root))["web_pages"] == "owed"
++
++
++def test_a_checkout_with_its_own_build_fetches_nothing(scope: Scope, tmp_path: Path) -> None:
++    checkout = tmp_path / "checkout"
++    (checkout / "apps/web/dist").mkdir(parents=True)
++    (checkout / "apps/web/dist/index.html").write_text("old", encoding="utf-8")
++    run, calls = fetch_runner(0)
++    ctx = context(scope, run=run, pnpm=None)
++    assert (
++        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
++    )
++    assert calls == []
++    assert outcomes(final_receipt(scope.root))["web_pages"] == "skipped"
++
++
+ # -- config migration ------------------------------------------------------------------------------
+ 
+ 
+diff --git a/tests/unit/web/test_bundle_locate.py b/tests/unit/web/test_bundle_locate.py
+index 61fe468..5c79987 100644
+--- a/tests/unit/web/test_bundle_locate.py
++++ b/tests/unit/web/test_bundle_locate.py
+@@ -88,6 +88,80 @@ def test_this_repository_is_a_source_checkout() -> None:
+     assert locate().directory in (dev_bundle_dir(REPO), runtime_bundle_dir(package))
+ 
+ 
++# -- Wave 47 (f): pages stamped with another release are stale ------------------------------------
++
++
++def _on_release(repo: Path, version: str | None) -> None:
++    """A checkout whose HEAD is a commit, tagged ``v<version>`` (no tag when None), from ``.git``
++    files only (the probes ``locate`` reads)."""
++    head = "ab" * 20
++    (repo / ".git" / "refs" / "tags").mkdir(parents=True, exist_ok=True)
++    (repo / ".git" / "HEAD").write_text(head + "\n", encoding="utf-8")
++    if version is not None:
++        (repo / ".git" / "refs" / "tags" / f"v{version}").write_text(head + "\n", encoding="utf-8")
++
++
++def _stamp(directory: Path, version: str) -> None:
++    write_bundle(directory)
++    (directory / bundle_module.RELEASE_STAMP).write_text(f"{version}\n", encoding="utf-8")
++
++
++def test_fetched_pages_of_another_release_are_stale_in_a_checkout(tmp_path: Path) -> None:
++    repo, package = _checkout(tmp_path)
++    _on_release(repo, "0.3.0")
++    _stamp(runtime_bundle_dir(package), "0.2.0")
++    stale = locate(package)
++    assert stale.kind == "stale" and not stale.found
++    # Never served: the answer is where a build lands, as when nothing is built.
++    assert stale.directory == dev_bundle_dir(repo)
++    assert stale.stamped == "0.2.0"
++    _stamp(runtime_bundle_dir(package), "0.3.0")
++    assert locate(package) == BundleLocation(runtime_bundle_dir(package), "installed")
++
++
++def test_fetched_pages_on_a_head_off_any_release_are_stale(tmp_path: Path) -> None:
++    repo, package = _checkout(tmp_path)
++    _on_release(repo, None)
++    _stamp(runtime_bundle_dir(package), "0.2.0")
++    assert locate(package).kind == "stale"
++    # A developer's own build still wins over everything.
++    write_bundle(dev_bundle_dir(repo))
++    assert locate(package).kind == "source"
++
++
++def test_unstamped_runtime_pages_are_never_stale(tmp_path: Path) -> None:
++    repo, package = _checkout(tmp_path)
++    _on_release(repo, "0.3.0")
++    write_bundle(runtime_bundle_dir(package))  # published by a build, not fetched
++    assert locate(package).kind == "installed"
++
++
++def test_an_installed_tree_compares_the_stamp_with_its_package_version(tmp_path: Path) -> None:
++    package = _installed(tmp_path)
++    _stamp(runtime_bundle_dir(package), "0.2.0")
++    assert locate(package, release=lambda _pkg: "0.2.0").kind == "installed"
++    stale = locate(package, release=lambda _pkg: "0.3.0")
++    assert stale == BundleLocation(runtime_bundle_dir(package), "stale", stamped="0.2.0")
++    assert locate(package, release=lambda _pkg: None).kind == "installed", "unknown: not judged"
++
++
++def test_first_launch_names_stale_pages(
++    scope: Scope,
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++    capsys: pytest.CaptureFixture[str],
++) -> None:
++    from indus.web import spa
++
++    stale = BundleLocation(tmp_path / "dist", "stale", stamped="0.2.0")
++    monkeypatch.setattr(bundle_module, "locate", lambda: stale)
++    monkeypatch.setattr(bundle_module, "source_checkout", lambda: tmp_path)
++    monkeypatch.setattr(spa, "build_plan", lambda repo, env: None)
++    _maybe_build(Launch(scope=scope, mode="dashboard", host="127.0.0.1", port=0))
++    said = capsys.readouterr().err
++    assert "0.2.0" in said and "indus.web.bundle fetch" in said
++
++
+ def test_publish_copies_and_replaces(tmp_path: Path) -> None:
+     source = write_bundle(tmp_path / "dist")
+     target = tmp_path / "pkg" / "web" / "static"
