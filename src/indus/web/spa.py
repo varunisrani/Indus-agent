@@ -25,6 +25,10 @@ mode only), ``__INDUS_BASE_PATH__``, ``__INDUS_AUTH_REQUIRED__``,
 ``&`` and the two JavaScript line separators escaped, so no value can close the script. The active
 theme's first-paint CSS goes in just before it.
 
+Framing: every answer from the bundle (index and files) carries ``FRAME_GUARD`` — no page may frame
+the dashboard (its loopback index holds the session token, so a framing site could otherwise drive
+it with a person's clicks), and no file is content-sniffed into another type.
+
 ``BuildPlan``: when the bundle is missing in a source checkout (``apps/web/package.json``) and
 ``pnpm`` is on PATH, the dashboard builds once before serving: ``pnpm --filter @indus/web build``
 with the Node heap capped at half the cgroup memory limit (at most 4 GiB, at least 512 MiB) and
@@ -53,6 +57,7 @@ from indus.web.state import DashboardState
 
 __all__ = [
     "BUILD_COMMAND",
+    "FRAME_GUARD",
     "IMMUTABLE",
     "NO_STORE",
     "BuildPlan",
@@ -70,6 +75,11 @@ log = logging.getLogger(__name__)
 BUILD_COMMAND: Final = "pnpm --filter @indus/web build"
 IMMUTABLE: Final = "public, max-age=31536000, immutable"
 NO_STORE: Final = "no-store"
+FRAME_GUARD: Final[Mapping[str, str]] = {
+    "content-security-policy": "frame-ancestors 'none'",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+}
 _ALL_METHODS: Final = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 _THEMES: Final[dict[str, tuple[str, str, str]]] = {
     "light": ("light", "#f7f7f5", "#1d1d1b"),
@@ -189,7 +199,7 @@ def _index(state: DashboardState, bundle: SpaBundle, request: Request) -> Respon
     text = rewrite_index_html(text, prefix)
     head = theme_css(state.theme) + bootstrap_script(state, prefix)
     text = text.replace("</head>", head + "</head>", 1) if "</head>" in text else head + text
-    return HTMLResponse(text, headers={"cache-control": NO_STORE})
+    return HTMLResponse(text, headers={"cache-control": NO_STORE, **FRAME_GUARD})
 
 
 def mount_spa(app: FastAPI, state: DashboardState) -> None:
@@ -230,9 +240,9 @@ def mount_spa(app: FastAPI, state: DashboardState) -> None:
             return Response(
                 css,
                 media_type="text/css",
-                headers={"cache-control": IMMUTABLE, "vary": "X-Forwarded-Prefix"},
+                headers={"cache-control": IMMUTABLE, "vary": "X-Forwarded-Prefix", **FRAME_GUARD},
             )
-        return FileResponse(found, headers={"cache-control": IMMUTABLE})
+        return FileResponse(found, headers={"cache-control": IMMUTABLE, **FRAME_GUARD})
 
     @app.get("/{rest:path}", include_in_schema=False)
     async def page(rest: str, request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
@@ -243,7 +253,7 @@ def mount_spa(app: FastAPI, state: DashboardState) -> None:
         if rest and rest != "index.html":
             found = bundle.inside(rest)
             if found is not None:
-                return FileResponse(found, headers={"cache-control": "no-cache"})
+                return FileResponse(found, headers={"cache-control": "no-cache", **FRAME_GUARD})
         return _index(state, bundle, request)
 
     @app.api_route(

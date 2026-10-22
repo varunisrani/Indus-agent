@@ -13,4 +13,6 @@ NAMES = (
     "protocol_stale",
     "no_raw_environ",
     "artifacts",
+    "security_static",
+    "deps_audit",
 )

@@ -1,0 +1,12 @@
+import shutil
+import tarfile
+import zipfile
+
+
+def unpack(path: str, dest: str) -> None:
+    with tarfile.open(path) as tar:
+        tar.extractall(dest)  # expect: archive
+        tar.extract("one", dest)  # expect: archive
+    with zipfile.ZipFile(path) as archive:
+        archive.extractall(dest)  # expect: archive
+    shutil.unpack_archive(path, dest)  # expect: archive

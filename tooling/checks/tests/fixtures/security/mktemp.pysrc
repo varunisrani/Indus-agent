@@ -1,0 +1,5 @@
+import tempfile
+from tempfile import mktemp
+
+A = tempfile.mktemp()  # expect: mktemp
+B = mktemp(suffix=".txt")  # expect: mktemp

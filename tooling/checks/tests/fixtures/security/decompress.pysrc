@@ -1,0 +1,15 @@
+import bz2
+import gzip
+import zlib
+from lzma import decompress
+
+
+def inflate(blob: bytes) -> list[bytes]:
+    bounded = zlib.decompressobj().decompress(blob, 1024)
+    return [
+        zlib.decompress(blob),  # expect: decompress
+        gzip.decompress(blob),  # expect: decompress
+        bz2.decompress(blob),  # expect: decompress
+        decompress(blob),  # expect: decompress
+        bounded,
+    ]

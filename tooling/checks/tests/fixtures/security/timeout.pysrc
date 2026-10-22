@@ -1,0 +1,13 @@
+import urllib.request
+
+import httpx
+import requests
+
+
+def fetch(url: str) -> None:
+    urllib.request.urlopen(url)  # expect: timeout
+    urllib.request.urlopen(url, timeout=10)
+    requests.get(url)  # expect: timeout
+    requests.post(url, timeout=5)
+    httpx.Client(timeout=None)  # expect: timeout
+    httpx.get(url, timeout=None)  # expect: timeout

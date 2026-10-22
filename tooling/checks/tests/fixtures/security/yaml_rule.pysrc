@@ -1,0 +1,11 @@
+import yaml
+from ruamel.yaml import YAML
+
+
+def load(text: str) -> object:
+    a = yaml.load(text)  # expect: yaml
+    b = yaml.load(text, Loader=yaml.Loader)  # expect: yaml
+    c = yaml.unsafe_load(text)  # expect: yaml
+    d = yaml.full_load(text)  # expect: yaml
+    e = YAML(typ="unsafe")  # expect: yaml
+    return a, b, c, d, e

@@ -150,6 +150,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/safety/approvals/test_policy.py::test_sudo_stdin_without_configured_password_is_a_floor`
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_with_mode_off`
   - `tests/unit/cli/commands/test_import_agent.py::test_permission_rules_map_and_the_floors_still_come_first`
+  - `tests/security/test_trust_boundaries.py::test_approve_floor_beats_every_bypass`
 - **R02.5** Silence is not consent; withdrawal is not refusal
   - `tests/unit/safety/approvals/test_human.py::test_timeout_blocks_with_timeout_outcome`
   - `tests/unit/safety/approvals/test_human.py::test_withdrawn_is_not_answered`
@@ -159,6 +160,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/gateway/core/test_prompts.py::test_a_timed_out_request_says_it_did_not_run_and_is_not_a_denial`
   - `tests/unit/gateway/core/test_prompts.py::test_withdrawn_and_denied_are_reported_differently`
   - `tests/unit/service/test_request_redelivery.py::test_all_viewers_unrenderable_settles_undeliverable_at_once`
+  - `tests/security/test_trust_boundaries.py::test_approve_timeout_is_not_a_denial`
 - **R02.6** Isolation is about mounts, not backend names
   - `tests/unit/safety/approvals/test_policy.py::test_deny_glob_blocks_on_isolated_backend`
   - `tests/unit/safety/approvals/test_policy.py::test_isolation_comes_from_the_flag_only`
@@ -300,6 +302,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/gateway/test_webhook.py::test_a_session_wider_than_the_floor_is_refused`
   - `tests/contract/gateway/test_api_server_openai.py::test_a_flagged_command_is_denied_at_once`
   - `tests/contract/gateway/test_api_server_openai.py::test_clarify_and_tts_are_not_in_an_api_sessions_tools`
+  - `tests/security/test_trust_boundaries.py::test_approve_unattended_denies_at_once`
 - **R02.28** Handler signature drift breaks plugins
   - `tests/unit/tools/test_dispatch.py::test_narrow_signature_gets_only_declared_kwargs`
   - `tests/unit/tools/test_dispatch.py::test_args_only_handler_gets_no_kwargs`
@@ -1158,6 +1161,8 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/preview/guestPreload.test.ts::a page's own click() on a _blank link sends nothing to the host`
   - `apps/desktop/electron/preview/guest.test.ts::an untrusted guest click cannot open; a trusted one can, http/https only`
   - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::a file: hand-off from the guest is refused before main`
+  - `apps/desktop/electron/security/audit.test.ts::window.open is denied for app windows and guests, whatever the URL, even if logging throws`
+  - `apps/desktop/electron/security/audit.test.ts::a webview attaches only on the preview partition, hardened, with our preload and no popups`
 - **R08.9** Cookie partition naming on Windows
   - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::renders the webview on the preview partition without popups`
   - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::the renderer's constants equal main's`
@@ -1249,6 +1254,7 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/gateway/test_ws_endpoint.py::test_logs_carry_no_ticket_params_or_query`
   - `tests/unit/web/ws/test_ws_auth.py::test_gated_tickets_through_the_app`
   - `tests/unit/web/ws/test_ws_auth.py::test_every_websocket_route_goes_through_the_helper`
+  - `apps/web/e2e/auth-gates.spec.ts::loopback: every socket path refuses no credential, a URL credential, a foreign Origin`
   - `tests/unit/web/ws/test_ws_auth.py::test_credentials_in_the_url_are_refused_and_spent`
   - `tests/unit/web/ws/test_ws_auth.py::test_refusals_never_log_or_audit_the_credential`
   - `tests/integration/web/test_chat_routes_gate.py::test_loopback_mode_credentials_per_route`
@@ -1259,6 +1265,7 @@ Checked by `python -m tooling.checks traps`.
   - `apps/web/src/pages/FilesPage.test.tsx::downloads through a minted ticket, never the session token in the URL`
   - `apps/web/e2e/auth.spec.ts::gated: login, the loopback token refused, single-use WS tickets, logout`
   - `tests/integration/web/test_dashboard_daemon.py::test_the_dashboard_chat_and_a_cli_share_one_daemon_session`
+  - `tests/security/test_trust_boundaries.py::test_web_every_socket_refuses_an_upgrade_without_a_credential`
 - **R09.3** Non-loopback must fail closed
   - `tests/unit/web/test_app_modes.py::test_gated_app_without_provider_is_refused`
   - `tests/unit/web/auth/test_gate.py::test_a_declared_public_url_engages_the_gate_on_a_loopback_bind`
@@ -1266,6 +1273,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/web/auth/test_gate.py::test_gate_table`
   - `tests/unit/web/test_app_modes.py::test_non_interactive_gated_start_without_provider_lists_reasons`
   - `apps/web/e2e/auth.spec.ts::a gated bind without a login provider refuses to start`
+  - `tests/security/test_trust_boundaries.py::test_web_non_loopback_bind_needs_a_login_provider`
+  - `apps/web/e2e/auth-gates.spec.ts::gated: cookie flags, CSRF refusals, 401 on protected paths, Host bound to the listener`
 - **R09.4** Middleware ordering leaks
   - `tests/unit/web/auth/test_gate.py::test_bad_host_is_400_after_auth`
   - `tests/unit/web/auth/test_gate.py::test_unknown_plugin_route_is_401_before_404`
@@ -1275,6 +1284,9 @@ Checked by `python -m tooling.checks traps`.
   - `tests/contract/web/test_plugins_mcp_routes.py::test_oauth_callback_is_public_and_matches_state`
   - `tests/unit/web/auth/test_gate.py::test_no_route_takes_the_token_in_the_query`
   - `tests/contract/web/test_files_system_routes.py::test_without_a_ticket_the_route_says_nothing_about_the_disk`
+  - `tests/security/test_trust_boundaries.py::test_web_credential_in_url_refused`
+  - `apps/web/e2e/auth-gates.spec.ts::loopback: a rebinding Host gets neither the page nor the API`
+  - `apps/web/e2e/auth-gates.spec.ts::loopback: protected API paths need the token; public ones do not`
 - **R09.5** Token rotation vs open tabs
   - `tests/unit/web/test_spa.py::test_client_routes_get_the_index_with_no_store`
   - `apps/web/e2e/auth.spec.ts::a stale token after a dashboard restart reloads the page once and goes on`
@@ -1535,3 +1547,5 @@ Checked by `python -m tooling.checks traps`.
   - `tooling/checks/tests/test_pins.py::test_bounded_range_needs_allow_entry`
   - `tests/unit/safety/test_content_scan.py::test_code_spans_and_fences_scan_at_least_as_strictly_as_prose`
   - `tests/unit/learning/skills/hub/test_install.py::test_commands_in_code_spans_and_fences_are_not_hidden_from_the_policy`
+  - `tooling/checks/tests/test_deps_audit.py::test_a_known_vulnerable_lock_fails`
+  - `tooling/checks/tests/test_deps_audit.py::test_an_expired_entry_fails`

@@ -1,7 +1,10 @@
 """Fencing tool output that an outsider controls (indirect prompt injection, A31).
 
-Web, browser and MCP tools return text written by whoever runs the page or server, and the Feishu
-document and comment tools (P16-15) text written by whoever edits the document. Such a result
+Web, browser and MCP tools return text written by whoever runs the page or server, the Feishu
+document and comment tools (P16-15) text written by whoever edits the document, ``a2a_call``
+(P24-10) the answer another organisation's agent wrote, ``message_agent`` (P24-07) the reply of
+another bot (a peer gateway's, or a local profile's that may have read outside text) and
+``drive_preview`` (P24-25) what a page in the desktop preview shows. Such a result
 (at least ``MIN_CHARS`` long) is wrapped in a fence that tells the model it is data. Every
 occurrence of the fence word inside the content is defused first, in any letter case, so the
 content cannot close the fence early or forge one. There is deliberately no "already fenced"
@@ -22,7 +25,9 @@ from indus.tools.budget import MCP_PREFIX
 __all__ = ["MIN_CHARS", "UNTRUSTED_NAMES", "UNTRUSTED_PREFIXES", "fence", "is_untrusted"]
 
 MIN_CHARS = 32
-UNTRUSTED_NAMES = frozenset({"web_search", "web_extract"})
+UNTRUSTED_NAMES = frozenset(
+    {"web_search", "web_extract", "a2a_call", "message_agent", "drive_preview"}
+)
 UNTRUSTED_PREFIXES = ("browser_", MCP_PREFIX, "feishu_", "yuanbao_")
 
 _WORD = re.compile(re.escape(texts.FENCE_WORD), re.IGNORECASE)

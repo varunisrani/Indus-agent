@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from indus.core.untrusted import is_untrusted
+from indus.foundation.scope import Scope
 from indus.tools.builtin import preview
 from indus.tools.builtin.preview import (
     PreviewDeclined,
@@ -120,3 +123,28 @@ def test_annotate_sends_pins() -> None:
     too_many = {"pins": [{"selector": "p", "note": "n"}] * 21}
     assert "at most 20" in run(annotate_preview(too_many, preview=port))
     assert len(port.calls) == 1
+
+
+def test_local_files_follow_the_read_guards(scope: Scope, tmp_path: Path) -> None:
+    """B-PREVIEW-1 (SEC-13): ``file:///`` addresses pass the file tools' read guards."""
+    store = scope.home / "auth.json"
+    store.write_text("{}", encoding="utf-8")
+    page = tmp_path / "index.html"
+    page.write_text("<p>ok</p>", encoding="utf-8")
+    port = FakePort({"ok": True})
+    refused = [store.as_uri(), "file:///dev/random", "file://localhost/etc/hosts"]
+    for url in refused:
+        out = run(drive_preview({"action": "navigate", "url": url}, preview=port, scope=scope))
+        assert "error" in json.loads(out), url
+    assert port.calls == []
+    ok = run(drive_preview({"action": "navigate", "url": page.as_uri()}, preview=port, scope=scope))
+    assert "error" not in json.loads(ok)
+    assert preview.file_refusal("http://localhost:5173/.env", scope) is None
+    shows = FakePort({"ok": True, "url": store.as_uri(), "text": "{}"})
+    out = json.loads(run(drive_preview({"action": "snapshot"}, preview=shows, scope=scope)))
+    assert "error" in out and "text" not in out
+
+
+def test_what_the_page_says_is_outside_text() -> None:
+    """SEC-12: the page's text reaches the model fenced (``core.untrusted``)."""
+    assert is_untrusted("drive_preview")

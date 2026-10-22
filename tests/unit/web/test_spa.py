@@ -118,6 +118,27 @@ def test_gated_index_carries_no_token(build: Builder) -> None:
     assert "window.__INDUS_AUTH_REQUIRED__=true" in index.text
 
 
+def test_no_bundle_answer_may_be_framed(build: Builder) -> None:
+    """SEC2-1 (P25-03): the loopback index holds the session token; a framing site must get
+    nothing it can drive, so every answer from the bundle refuses framing and sniffing."""
+    built = build()
+    for path in ("/", "/sessions", "/index.html", "/favicon.ico", "/assets/index-abc123.js"):
+        response = built.client.get(path)
+        assert response.status_code == 200, path
+        assert response.headers["x-frame-options"] == "DENY", path
+        assert response.headers["content-security-policy"] == "frame-ancestors 'none'", path
+        assert response.headers["x-content-type-options"] == "nosniff", path
+    css = built.client.get("/assets/index-abc123.css", headers={"X-Forwarded-Prefix": "/x"})
+    assert css.headers["x-frame-options"] == "DENY"
+    gated = build(host="0.0.0.0", config=basic_config())
+    gated.client.post(
+        "/auth/password-login", json={"username": "admin", "password": "correct horse"}
+    )
+    index = gated.client.get("/")
+    assert index.status_code == 200
+    assert index.headers["x-frame-options"] == "DENY"
+
+
 def test_missing_bundle_then_built_bundle_without_restart(build: Builder, tmp_path: Path) -> None:
     later = tmp_path / "later-dist"
     built = build(bundle=later)

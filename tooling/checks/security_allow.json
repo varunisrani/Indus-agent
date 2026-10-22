@@ -1,0 +1,44 @@
+{
+  "note": "Reviewed exceptions to tooling/checks/security_static.py. Each entry: \"<path>\": {\"<rule>\": \"YYYY-MM-DD: why this place may\"}. Rows of docs/internals/threat-model.md cite the boundary each one belongs to.",
+  "allow": {
+    "src/indus/cli/bang.py": {
+      "shell": "2026-10-21: the classic CLI's !command runs the text the person typed at their own prompt through their shell (never model output); env comes from indus.safety.child_env"
+    },
+    "src/indus/tui_bridge/methods_shell.py": {
+      "shell": "2026-10-21: the TUI's !command, the same as cli/bang.py: text typed by the owner of the bridge connection, env from the caller (child_env)"
+    },
+    "src/indus/gateway/core/commands.py": {
+      "shell": "2026-10-21: quick commands of type exec run the command string from the profile's own config.yaml; the chat message's arguments are never appended; env from child_env, output redacted, time-limited"
+    },
+    "src/indus/plugins/shell_hooks.py": {
+      "shell": "2026-10-21: shell hooks run commands the profile owner configured (consent recorded per command); the event payload goes on stdin as JSON, never into the command string; env from child_env"
+    },
+    "src/indus/gateway/adapters/email/adapter.py": {
+      "tls": "2026-10-21: email.tls_verify: false is an operator opt-in for a self-signed local mail server; it logs a warning at connect (P16 email review)"
+    },
+    "src/indus/gateway/daemon/recovery.py": {
+      "secret_log": "2026-10-21: the active-turn token is a fence id the operator passes back to resolve_unknown; it grants nothing outside the owner's own home"
+    },
+    "src/indus/tools/builtin/extract.py": {
+      "xml": "2026-10-21: document parts (pptx, odt, epub) parsed with ElementTree: the stdlib never fetches external entities and the bundled expat (>= 2.4.1) limits entity amplification; part sizes are capped before parsing (SEC-1)"
+    },
+    "src/indus/cli/commands/config_read.py": {
+      "inherit_env": "2026-10-21: `indus config edit` runs the person's own $VISUAL/$EDITOR in the foreground of their own terminal; it must see their environment"
+    },
+    "src/indus/cli/commands/memory.py": {
+      "inherit_env": "2026-10-21: `indus memory edit` runs the person's own editor in the foreground of their own terminal"
+    },
+    "src/indus/cli/doctor/checks.py": {
+      "inherit_env": "2026-10-21: doctor prints `<tool> --version` for tools the person has on PATH, run from their own shell session"
+    },
+    "src/indus/platform/locate.py": {
+      "inherit_env": "2026-10-21: diagnostic probe of a located executable, below foundation (no scope exists yet to build an env from); only run by doctor-style callers"
+    },
+    "src/indus/state/connection.py": {
+      "inherit_env": "2026-10-21: macOS `ps -o ppid= -o args= -p <pid>` probe for the test-isolation guard; fixed argv, nothing secret reaches it"
+    },
+    "src/indus/web/routes/system.py": {
+      "inherit_env": "2026-10-21: dashboard update of a git checkout install: fixed git argv on the install folder, which needs the person's git/ssh/proxy environment; owner-gated route (follow-up: pass a child_env once git network needs are listed)"
+    }
+  }
+}

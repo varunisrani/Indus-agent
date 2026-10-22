@@ -183,7 +183,10 @@ def verify_signature(
         return plain is not None and _same(plain, "sha256=" + _hex(secret, body))
     if scheme == "hmac_ts":
         raw_ts = headers.get("x-indus-timestamp", "").strip()
-        if stamped is None or not raw_ts.lstrip("-").isdigit():
+        digits = raw_ts.removeprefix("-")
+        # ASCII digits only and a sane length: str.isdigit() also accepts "²" or "①", which
+        # int() refuses, and a 5,000-digit value is over int()'s limit. Either would raise.
+        if stamped is None or not (digits.isascii() and digits.isdigit() and len(digits) <= 15):
             return False
         if abs(now - int(raw_ts)) > TIMESTAMP_WINDOW_S:
             return False

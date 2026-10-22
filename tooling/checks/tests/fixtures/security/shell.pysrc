@@ -1,0 +1,17 @@
+import asyncio
+import os
+import subprocess
+import subprocess as sp
+from subprocess import Popen
+
+
+def go(cmd: str, flag: bool) -> None:
+    subprocess.run(cmd, shell=True, env={})  # expect: shell
+    sp.call(cmd, shell=flag, env={})  # expect: shell
+    Popen(cmd, shell=True, env={})  # expect: shell
+    os.system(cmd)  # expect: shell
+    os.popen(cmd)  # expect: shell
+
+
+async def later(cmd: str) -> None:
+    await asyncio.create_subprocess_shell(cmd, env={})  # expect: shell

@@ -2100,6 +2100,10 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/packaging/test_metadata.py::test_no_interpreter_markers_or_open_ranges`
   - `tests/unit/packaging/test_metadata.py::test_messaging_and_all_are_unions_of_their_members`
   - Review: lazy extra installs at runtime are not part of this task (P23-01)
+- **ACC-S8-3** Dependency audit: every locked package against OSV (+ `pnpm audit`), failing on high/critical unless allow-listed with a reason and an unexpired date
+  - `tooling/checks/tests/test_deps_audit.py::test_a_known_vulnerable_lock_fails`
+  - `tooling/checks/tests/test_deps_audit.py::test_allow_listed_with_a_future_expiry_passes`
+  - `tooling/checks/tests/test_deps_audit.py::test_an_expired_entry_fails`
 - **ACC-S10-1** A release dry run plans a release (checks, version, attempt ref, claim, notes) and writes nothing
   - `tests/unit/release/test_release_cli.py::test_dry_run_prints_the_plan_and_creates_nothing`
 - **ACC-S10-2** Publication is idempotent: a rerun after a partial failure completes without duplicates

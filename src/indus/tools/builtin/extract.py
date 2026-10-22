@@ -15,6 +15,10 @@ its usual ``offset``/``limit``. Readers and their limits:
 - PowerPoint ``.pptx``, OpenDocument (``.odt``, ``.ods``, ``.odp``) and EPUB: zip files of XML,
   read with the standard library.
 - RTF: our own control-word stripper.
+- Zip-based formats (Word, Excel, PowerPoint, OpenDocument, EPUB) are checked before any reader
+  opens them: at most ``ZIP_MAX_MEMBERS`` members whose declared sizes add up to at most
+  ``ZIP_MAX_UNPACKED_BYTES``. ``zipfile`` never returns more than a member's declared size, so this
+  bounds what every reader below decompresses (a small "zip bomb" cannot fill memory).
 - SQLite (stdlib, read-only): each table's schema, row count and first ``SQLITE_PREVIEW_ROWS``
   rows, at most ``SQLITE_MAX_TABLES`` tables, cells cut at ``SQLITE_CELL_CHARS``.
 
@@ -60,6 +64,8 @@ SHEET_MAX_COLS = 256
 SQLITE_PREVIEW_ROWS = 5
 SQLITE_MAX_TABLES = 200
 SQLITE_CELL_CHARS = 80
+ZIP_MAX_MEMBERS = 10_000
+ZIP_MAX_UNPACKED_BYTES = 256 * 1024 * 1024
 INSTALL_HINT = "install the document readers with `uv sync --extra docs` (pip: indus-agent[docs])"
 
 
@@ -389,6 +395,28 @@ def _xlsx(data: bytes) -> str:
 
 # -- zip + XML formats -----------------------------------------------------------------------------
 
+_ZIP_FORMATS = frozenset({".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub"})
+
+
+def _check_zip_budget(data: bytes) -> None:
+    """Refuse a zip that would unpack past the budget (see the module notes). A file that is not
+    a zip passes: its reader reports that in its own words."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            members = archive.infolist()
+    except (zipfile.BadZipFile, ValueError, OSError):
+        return
+    if len(members) > ZIP_MAX_MEMBERS:
+        raise ExtractionError(
+            f"the document holds {len(members):,} parts; more than {ZIP_MAX_MEMBERS:,} are not read"
+        )
+    unpacked = sum(max(0, m.file_size) for m in members)
+    if unpacked > ZIP_MAX_UNPACKED_BYTES:
+        raise ExtractionError(
+            f"the document would unpack to {unpacked / 1048576:,.0f} MB; more than "
+            f"{ZIP_MAX_UNPACKED_BYTES // 1048576} MB is not extracted"
+        )
+
 
 def _open_zip(data: bytes, what: str) -> zipfile.ZipFile:
     try:
@@ -684,6 +712,8 @@ def extract(data: bytes, name: str, *, clock: Clock | None = None) -> str:
             f"the document is {len(data) / 1048576:.1f} MB; documents over "
             f"{MAX_DOCUMENT_BYTES // 1048576} MB are not extracted"
         )
+    if _ext(name) in _ZIP_FORMATS:
+        _check_zip_budget(data)
     try:
         return reader(data, clock if clock is not None else SystemClock())
     except ExtractionError:

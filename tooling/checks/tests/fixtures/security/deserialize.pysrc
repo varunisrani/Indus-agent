@@ -1,0 +1,6 @@
+import marshal  # expect: deserialize
+import pickle  # expect: deserialize
+import shelve as store  # expect: deserialize
+from dill import loads  # expect: deserialize
+
+VALUES = (marshal, pickle, store, loads)

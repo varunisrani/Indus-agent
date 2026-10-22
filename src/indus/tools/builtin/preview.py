@@ -13,6 +13,13 @@ it in that session's own registry, ``service.session_mutations``). The handler g
 preview channel as the ``preview`` keyword (``PreviewPort``), else builds ``BrokerPreview`` over the
 session's server-request broker (the ``broker`` keyword); without either it says so.
 
+Local files follow the file tools' read guards (``safety.path_guards``, threat model B-PREVIEW-1):
+``navigate`` to a ``file:///`` path a ``read_file`` would refuse (an Indus secret store or control
+file, a secret env file, a device or ``/proc`` leak, through any link) is refused before anything is
+sent, and a snapshot of a page whose address is such a file (a local page may navigate itself) comes
+back as a refusal without the page's text. What the page says reaches the model fenced as outside
+data (``core.untrusted``).
+
 ``PreviewPort.request(kind, payload, timeout)`` returns the window's answer as a mapping (``ok``,
 ``error`` and what the page reported), or raises ``PreviewDeclined`` (every attached window
 declined: none shows the preview), ``PreviewUndelivered`` (no desktop window is attached, or the
@@ -22,10 +29,13 @@ request was withdrawn) or ``TimeoutError``.
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Mapping
 from typing import Any, Literal, Protocol, cast
+from urllib.parse import unquote, urlsplit
 
+from indus.foundation.scope import Scope
 from indus.protocol.events import CancelReason
 from indus.protocol.requests_port import (
     NOT_SHOWN_INDUS_CODE,
@@ -33,6 +43,7 @@ from indus.protocol.requests_port import (
     RequestWithdrawn,
     ServerRequestPort,
 )
+from indus.safety import path_guards
 from indus.tools.calls import ToolResult
 from indus.tools.registry import ToolRegistry, ToolTraits
 
@@ -50,6 +61,7 @@ __all__ = [
     "PreviewUndelivered",
     "annotate_preview",
     "drive_preview",
+    "file_refusal",
     "register_tools",
 ]
 
@@ -175,6 +187,19 @@ def _drive_payload(args: Mapping[str, Any]) -> tuple[Kind, dict[str, Any]]:
     return "preview.act", payload
 
 
+def file_refusal(url: str, scope: Scope | None) -> str | None:
+    """Why the agent may not see the local file ``url`` names (the read guards of ``read_file``),
+    or None: not a ``file:`` address, or a file a read may show."""
+    if not url.strip().lower().startswith("file:"):
+        return None
+    path = unquote(urlsplit(url.strip()).path)
+    if not path.startswith("/"):
+        return f"{url} is not an absolute file:/// path"
+    if path_guards.blocked_device(path):
+        return f"{path} is a device or process file that never ends or leaks another process"
+    return path_guards.read_denial(os.path.realpath(path), scope)
+
+
 def _failure(exc: BaseException) -> str:
     if isinstance(exc, PreviewDeclined):
         return ToolResult.error(
@@ -188,7 +213,12 @@ def _failure(exc: BaseException) -> str:
     return ToolResult.error(f"The preview could not do that: {exc}").text
 
 
-async def _ask(preview: PreviewPort | None, kind: Kind, payload: dict[str, Any]) -> str:
+async def _ask(
+    preview: PreviewPort | None,
+    kind: Kind,
+    payload: dict[str, Any],
+    scope: Scope | None = None,
+) -> str:
     if preview is None:
         return ToolResult.error("There is no desktop preview in this session.").text
     try:
@@ -197,6 +227,10 @@ async def _ask(preview: PreviewPort | None, kind: Kind, payload: dict[str, Any])
         return _failure(exc)
     if answer.get("ok") is False:
         return ToolResult.error(str(answer.get("error") or "the page refused the action")).text
+    shown = answer.get("url")
+    refused = file_refusal(shown, scope) if isinstance(shown, str) else None
+    if refused:
+        return ToolResult.error(f"Access refused: the preview shows {refused}").text
     return json.dumps(dict(answer), ensure_ascii=False)
 
 
@@ -206,13 +240,17 @@ async def drive_preview(
     preview: PreviewPort | None = None,
     broker: ServerRequestPort | None = None,
     turn_id: str | None = None,
+    scope: Scope | None = None,
 ) -> str:
     """The ``drive_preview`` handler (see the module notes)."""
     try:
         kind, payload = _drive_payload(args)
     except ValueError as exc:
         return ToolResult.error(str(exc)).text
-    return await _ask(_port(preview, broker, turn_id), kind, payload)
+    refused = file_refusal(str(payload.get("url") or ""), scope)
+    if refused:
+        return ToolResult.error(f"Access refused: {refused}").text
+    return await _ask(_port(preview, broker, turn_id), kind, payload, scope)
 
 
 async def annotate_preview(

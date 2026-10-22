@@ -1,0 +1,26 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[[package]]
+name = "demo-app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "jinja2" },
+    { name = "tinylib" },
+]
+
+[[package]]
+name = "jinja2"
+version = "2.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.example.invalid/jinja2-2.4.1.tar.gz", hash = "sha256:00000000000000000000000000000000000000000000000000000000000000aa", size = 10, upload-time = "2010-05-01T00:00:00Z" }
+
+[[package]]
+name = "tinylib"
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.example.invalid/tinylib-1.2.3-py3-none-any.whl", hash = "sha256:00000000000000000000000000000000000000000000000000000000000000bb", size = 10, upload-time = "2026-09-01T00:00:00Z" },
+]

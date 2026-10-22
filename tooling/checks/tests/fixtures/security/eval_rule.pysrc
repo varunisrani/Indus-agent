@@ -1,0 +1,7 @@
+import builtins
+
+
+def run(text: str) -> object:
+    value = eval(text)  # expect: eval
+    exec(text)  # expect: eval
+    return builtins.eval(text), value  # expect: eval

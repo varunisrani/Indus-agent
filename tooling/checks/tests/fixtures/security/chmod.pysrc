@@ -1,0 +1,13 @@
+import os
+from pathlib import Path
+
+
+def perms(path: str) -> None:
+    os.chmod(path, 0o777)  # expect: chmod
+    os.chmod(path, 0o4755)  # expect: chmod
+    Path(path).chmod(0o666)  # expect: chmod
+    Path(path).mkdir(mode=0o777)  # expect: chmod
+    os.makedirs(path, 0o775)
+    os.umask(0)  # expect: chmod
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o646)  # expect: chmod
+    os.close(fd)

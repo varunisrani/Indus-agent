@@ -1,0 +1,5 @@
+import xml.etree.ElementTree as ET  # expect: xml
+from xml.dom import minidom  # expect: xml
+from lxml import etree  # expect: xml
+
+PARSERS = (ET, minidom, etree)

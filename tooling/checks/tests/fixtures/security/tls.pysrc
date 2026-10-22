@@ -1,0 +1,11 @@
+import ssl
+
+import httpx
+
+
+def client() -> object:
+    context = ssl.create_default_context()
+    context.check_hostname = False  # expect: tls
+    context.verify_mode = ssl.CERT_NONE  # expect: tls
+    raw = ssl._create_unverified_context()  # expect: tls
+    return httpx.Client(verify=False), context, raw  # expect: tls

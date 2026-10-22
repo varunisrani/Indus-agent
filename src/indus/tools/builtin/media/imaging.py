@@ -363,10 +363,31 @@ def _png_header(data: bytes) -> tuple[int, int, int, int, int]:
     return width, height, depth, color, interlace
 
 
+_ADAM7 = ((0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2),
+          (0, 1, 1, 2))  # fmt: skip
+
+
+def _png_raw_size(width: int, height: int, depth: int, color: int, interlace: int) -> int:
+    """The exact size of the inflated pixel stream the header declares (filter bytes included)."""
+    bits = _CHANNELS[color] * depth
+    if not interlace:
+        return height * ((width * bits + 7) // 8 + 1)
+    total = 0
+    for x0, y0, dx, dy in _ADAM7:
+        cols = (width - x0 + dx - 1) // dx if width > x0 else 0
+        rows = (height - y0 + dy - 1) // dy if height > y0 else 0
+        if cols and rows:
+            total += rows * ((cols * bits + 7) // 8 + 1)
+    return total
+
+
 def _png_inflate(data: bytes) -> bytes:
+    """The pixel stream, inflated no further than the size the header declares: a small file
+    whose stream inflates to gigabytes (a decompression bomb) is cut there, never held whole."""
+    limit = _png_raw_size(*_png_header(data))
     idat = b"".join(body for kind, body in _png_chunks(data) if kind == b"IDAT")
     try:
-        return zlib.decompress(idat)
+        return zlib.decompressobj().decompress(idat, max(1, limit))
     except zlib.error as exc:
         raise BadImage("the PNG pixel data is damaged or truncated") from exc
 
