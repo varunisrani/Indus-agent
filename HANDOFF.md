@@ -76,9 +76,10 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: see `.agents/turn.json`. At 01:15 UTC Agent 1 stopped at 90% (resets 02:00 UTC); nothing is running. Main `226a5ae` = P24
-wiring wave 42 landed (full gate green: pytest 18055/0, perf 18, vitest 2789, Electron E2E 36, web Playwright 9; D-16.860..879;
-LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)").
+Turn: AGENT_1 ACTIVE (took it back 02:07 UTC after the reset; window resets 07:00). Main `bee44d9`. In flight (02:15 UTC):
+w43 security integrator in scratchpad verify23 (brief `.agents/wip/w43/integrator-brief.md`, D-16.900..919); release builders
+R1 (P25-20/21, D-16.920..934), R2 (P25-22/23, D-16.935..949), R3 (P25-24, D-16.950..959) in scratchpad wt-w44r1..3 (brief
+`.agents/wip/w44/brief-release.md`). If a builder stops mid-way, its worktree work is lost unless parked: extract it.
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 15/24 landed (05–19).
 1. **w43 security integrator**: apply `.agents/wip/w43/w43-sec1.patch` (P25-01 threat model + `security_static` guard, P25-02
    `tests/security/`, fixes SEC-1/2/3/11) and `w43-sec2.patch` (P25-03 desktop/web security tests, P25-04 deps audit + workflow,

@@ -159,3 +159,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 01:03 UTC: 90% (resets 02:00, 57 min away). Asked the wave-42 integrator to finish web Playwright and report by ~01:15; if not, hand off with a parked in-progress patch. 21 GB disk free.
 - 2026-10-22 01:09 UTC: 90%. Landed P24 wiring wave 42 (226a5ae). Handed the turn to Agent 2 (PAUSED) per the guard; nothing running.
 - 2026-10-22 02:07 UTC: 0% (window reset; next reset 07:00). Turn was still AGENT_2 PAUSED; Agent 1 took it back.
+- 2026-10-22 02:15 UTC: started 4 agents (w43 integrator, R1, R2, R3).
