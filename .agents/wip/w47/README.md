@@ -53,3 +53,13 @@
   1967, service 584, contract+security 1983, attach integration 2, dual-host matrix 4. codegen/gen_reference fresh.
 - W47-g-1..3 (older daemons refuse the new key: fails closed). Integrator updates D-16.554/1010/1025 text, RS26 and the
   dual-host-matrix note; closes LEAD-NOTES' "attached -q deny" follow-up.
+
+## w47e.patch: RL26 native-Windows branches (done; not run on real Windows)
+- 9 files, +677/-59. local_windows.py git_bash_env, wsl2_refusal, start_windows_process(separate_stderr=); processes.py
+  refuses host background jobs on win32 (WSL2/foreground/Docker/SSH message); verify.py opens open_local_windows +
+  tools/verify/runner.py WindowsStarter; cron/script.py windows_launch (Git Bash only, job object); code/launch.py Windows
+  Child via job object, pass_fds refused; execute_code per-call scripts only on Windows.
+- Fail-first: tests/unit/backends/test_windows_rl26.py 8 tests (posix with win32 patched). pytest backends+cron 1316,
+  code 92, verify 33, security 89, contract 1893. ruff/pyright/lint-imports/security_static/tooling.checks ok.
+- W47-e-1..5. Follow-ups: platforms("windows") real-child cases in windows-local; terminal tool stops offering
+  background=true on native Windows; check service/console.py's LocalProcess; update RL26 in the checklist.

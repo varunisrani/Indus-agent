@@ -1,0 +1,1055 @@
+diff --git a/docs/notes/P25/windows-local.md b/docs/notes/P25/windows-local.md
+index 105cba1..a85a653 100644
+--- a/docs/notes/P25/windows-local.md
++++ b/docs/notes/P25/windows-local.md
+@@ -154,3 +154,55 @@ Compare checklist (filled after the rewrite; reopened the Windows branches of
+   Windows branch or a clear "use WSL2" refusal.
+ - The Windows guide says "Classic CLI and terminal UI: works, best effort"; recheck that row once
+   the lane is green.
++
++## Wave 47: RL26 Windows branches (builder e)
++
++Status: done, best effort (2026-10-22), not yet run on Windows. Each POSIX-only path from the
++follow-ups above now has a Windows branch through this backend's job objects or a "use WSL2"
++refusal; 8 fail-first tests in `tests/unit/backends/test_windows_rl26.py` run on Linux with the OS
++family patched to `win32` and the Win32 job calls replaced by a process-group stand-in (all 8 fail
++on the base, pass here). Read: none (no reference file; our own P25-24 code and note only).
++
++What changed (own words):
++- **Background processes** (`backends/processes.py`): a host job needs a readable descriptor in
++  the event loop, a pidfd or a poll plus POSIX group signals; a Windows pipe gives none of them, so
++  on native Windows a host job ends at once as `failed_start` with `WINDOWS_REFUSAL` (run inside
++  WSL2, run it in the foreground, or use a Docker/SSH backend). Jobs inside a non-local environment
++  are unchanged (they never touch a host pipe).
++- **`indus verify`** (`cli/commands/verify.py`, `tools/verify/runner.py`): on Windows the phases run
++  on `open_local_windows` (the backend the registry opens there), and the start command boots under
++  Git Bash in its own job object (`WindowsStarter`: output drained by a thread with this backend's
++  `drain`, stop = terminate the job). No Git Bash → "The local terminal backend is not available:
++  …" with the backend's hint, exit 1.
++- **Cron scripts** (`cron/script.py`): `.sh`/`.bash` run under `find_git_bash`'s bash with the script
++  path in MSYS form and Git Bash's PATH/UTF-8/MSYS defaults (`git_bash_env`, now shared with
++  `run_env`); every script starts suspended in a job object (`start_windows_process`, new
++  `separate_stderr` so stdout and stderr stay apart); time-out/cancel terminate the job; the job
++  handle is released after the readers join. No Git Bash → the run is refused with the reason.
++- **Code-execution launcher** (`tools/builtin/code/launch.py`): `Child` starts in a job object on
++  Windows; `stop` and `force_stop` terminate the job and release it; descriptor passing (the
++  session kernel's pipes) raises `BackendUnavailable` with the WSL2 message. `execute_code` runs
++  per-call scripts on Windows (`kernel: auto` behaves as `off` there), so the refusal is only a
++  safety belt; the RPC socket already uses TCP on Windows.
++
++Tests: `test_windows_rl26.py` (posix-only stand-in): background refusal; cron `.sh` under Git
++Bash with separate streams and MSYS defaults; cron time-out kills a background grandchild through
++the job; cron without Git Bash refused; code child in a job, stopped and released; kernel
++descriptors refused; `indus verify` opens the Windows host (never the POSIX one); `WindowsStarter`
++boots and stops the tree.
++
++### Decisions for the lead
++| Id | Decision |
++|---|---|
++| W47-e-1 | Native-Windows background processes: refusal (`failed_start` + WSL2 text), not a port. A port needs a thread reader per job, job-object exit polling, and a Windows story for PTY jobs, memory scopes and crash recovery (pid identity); out of the time box and best effort anyway (D-16.55) |
++| W47-e-2 | `indus verify` on Windows: Git Bash host + `WindowsStarter` (job object, immediate stop, no grace, as D-16.955) |
++| W47-e-3 | Cron scripts on Windows: Git Bash for shell scripts (MSYS path, `git_bash_env`), every script in a job object; missing Git Bash refuses the run (no fallback to a PATH `bash`, which may be the WSL launcher) |
++| W47-e-4 | `execute_code` on Windows: per-call scripts only (the kernel's fd passing has no Windows form); the launcher refuses `pass_fds` with the WSL2 message |
++| W47-e-5 | New shared helpers in `local_windows`: `git_bash_env` (PATH + UTF-8/MSYS defaults, now used by `run_env` too), `wsl2_refusal`, and `start_windows_process(..., separate_stderr=)` |
++
++### Follow-ups
++- Run the new branches on the `windows-local` lane (add `test_windows_rl26.py`'s intent as
++  `platforms("windows")` cases with real children: cron `.sh`, code child stop, verify start).
++- A native port of background processes (W47-e-1) if Windows demand appears; the `terminal`
++  tool could then stop offering `background=true` on Windows instead of failing the start.
++- `service/console.py` also builds a `LocalProcess` (not in RL26's list); check it on Windows.
+diff --git a/src/indus/backends/local_windows.py b/src/indus/backends/local_windows.py
+index 8170622..aa30365 100644
+--- a/src/indus/backends/local_windows.py
++++ b/src/indus/backends/local_windows.py
+@@ -80,12 +80,14 @@ __all__ = [
+     "WindowsProcess",
+     "drain_pipe",
+     "find_git_bash",
++    "git_bash_env",
+     "open_local_windows",
+     "start_windows_process",
+     "to_native_path",
+     "to_shell_path",
+     "windows_path_value",
+     "windows_temp_dir",
++    "wsl2_refusal",
+ ]
+ 
+ log = logging.getLogger(__name__)
+@@ -430,6 +432,28 @@ def _path_key(env: Mapping[str, str]) -> str:
+     return next((k for k in env if k.upper() == "PATH"), "PATH")
+ 
+ 
++def git_bash_env(env: Mapping[str, str], bash: GitBash) -> dict[str, str]:
++    """``env`` made ready for a Git Bash child: its tool folders first on PATH (D-16.957), the
++    UTF-8 and MSYS defaults and a UTF-8 ``LANG`` unless already set (D-16.956)."""
++    out = dict(env)
++    key = _path_key(out)
++    out[key] = windows_path_value(out.get(key, ""), front=bash.tool_dirs, own_bin=own_bin_dir())
++    for name, value in (*UTF8_DEFAULTS, *MSYS_DEFAULTS):
++        if not _env_get(out, name):
++            out[name] = value
++    if not (_env_get(out, "LANG") or _env_get(out, "LC_ALL")):
++        out["LANG"] = UTF8_LOCALE
++    return out
++
++
++def wsl2_refusal(what: str) -> str:
++    """The message for a feature native Windows does not have yet (RL26, D-16.55)."""
++    return (
++        f"{what} is not available on native Windows yet; run Indus Agent inside WSL2, the "
++        "supported way to use it on Windows"
++    )
++
++
+ # -- the process handle ---------------------------------------------------------------------------
+ 
+ 
+@@ -750,15 +774,17 @@ def start_windows_process(
+     stdin: str | None,
+     script_path: str | None = None,
+     api: JobApi | None = None,
++    separate_stderr: bool = False,
+ ) -> WindowsProcess:
+     """Start ``argv`` suspended, in a new process group with no console window, put it into its
+-    own job object and let it run (see ``WindowsProcess.attach_and_resume``)."""
++    own job object and let it run (see ``WindowsProcess.attach_and_resume``). stderr joins stdout
++    unless ``separate_stderr`` (then the caller reads ``popen.stderr`` itself)."""
+     jobs = api if api is not None else _platform_api()
+     popen = subprocess.Popen(  # noqa: S603 - the command is the user's, by design
+         argv,
+         stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+         stdout=subprocess.PIPE,
+-        stderr=subprocess.STDOUT,
++        stderr=subprocess.PIPE if separate_stderr else subprocess.STDOUT,
+         cwd=cwd,
+         env=dict(env),
+         creationflags=SPAWN_FLAGS,
+@@ -850,10 +876,7 @@ class LocalWindowsEnvironment(SpawnedEnvironment):
+         """The environment one command starts with (D-16.956, D-16.957)."""
+         env = child_env(self.scope, session_id=self.session_id)
+         env.update(self.env_overrides)
+-        key = _path_key(env)
+-        env[key] = windows_path_value(
+-            env.get(key, ""), front=self.bash.tool_dirs, own_bin=own_bin_dir()
+-        )
++        env = git_bash_env(env, self.bash)
+         python_path = _env_get(env, "PYTHONPATH")
+         for name in [k for k in env if k.upper() == "PYTHONPATH"]:
+             del env[name]
+@@ -865,11 +888,6 @@ class LocalWindowsEnvironment(SpawnedEnvironment):
+             with contextlib.suppress(OSError):
+                 if Path(venv).resolve() == Path(sys.prefix).resolve():
+                     del env["VIRTUAL_ENV"]
+-        for name, value in (*UTF8_DEFAULTS, *MSYS_DEFAULTS):
+-            if not _env_get(env, name):
+-                env[name] = value
+-        if not (_env_get(env, "LANG") or _env_get(env, "LC_ALL")):
+-            env["LANG"] = UTF8_LOCALE
+         return env
+ 
+     # -- scripts and the cwd ----------------------------------------------------------------------
+diff --git a/src/indus/backends/processes.py b/src/indus/backends/processes.py
+index dced018..1d7b437 100644
+--- a/src/indus/backends/processes.py
++++ b/src/indus/backends/processes.py
+@@ -34,6 +34,10 @@ goes out. The running jobs of each profile are listed in its crash checkpoint
+ (``process_checkpoint``, P11-14), rewritten when a job starts or ends; the first time a registry
+ serves a profile (``recover``) it adopts the jobs a crashed predecessor left running as
+ ``detached`` records and marks the rest ``lost``.
++
++Native Windows (RL26): host jobs need a readable descriptor, a pidfd or POSIX signals, none of which
++a Windows pipe or process has, so a host job there ends at once as ``failed_start`` with a "use
++WSL2" message (``WINDOWS_REFUSAL``); jobs inside a non-local environment (Docker, SSH) still run.
+ """
+ 
+ from __future__ import annotations
+@@ -82,6 +86,7 @@ from indus.foundation.clock import Clock, SystemClock
+ from indus.foundation.config.schema import default_for
+ from indus.foundation.scope import Scope
+ from indus.platform import locate
++from indus.platform.facts import os_family
+ from indus.safety.redaction import redact_output
+ 
+ __all__ = [
+@@ -119,6 +124,12 @@ STDIN_DEADLINE_S = 5.0
+ WAIT_SLICE_S = 1.0
+ PTY_SIZE = (30, 120)
+ 
++WINDOWS_REFUSAL = (
++    "Background processes on this machine are not available on native Windows yet; run Indus "
++    "Agent inside WSL2 (the supported way on Windows), run the command in the foreground, or "
++    "use a Docker or SSH terminal backend"
++)
++
+ PTY_MISSING_NOTE = (
+     "A pseudo-terminal needs the optional 'pty' extra (pip install 'indus-agent[pty]'); this "
+     "process runs with plain pipes instead."
+@@ -596,6 +607,9 @@ class ProcessRegistry:
+         if environment is not None and not environment.flags.host_local:
+             await self._spawn_remote(record, request, environment)
+             return record
++        if os_family() == "win32":  # RL26: no host job reader without POSIX descriptors
++            self._fail_start(record, WINDOWS_REFUSAL)
++            return record
+         env = dict(request.env)
+         env["PYTHONUNBUFFERED"] = "1"  # so poll shows progress, not one burst at the end
+         try:
+diff --git a/src/indus/cli/commands/verify.py b/src/indus/cli/commands/verify.py
+index 60ee4c0..12960d8 100644
+--- a/src/indus/cli/commands/verify.py
++++ b/src/indus/cli/commands/verify.py
+@@ -9,6 +9,10 @@ recipe's start command is booted and polled on 127.0.0.1 for up to ``verify.read
+ ``--phase`` (repeatable) picks phases (``bootstrap``, ``build``, ``test``, ``start``);
+ ``--detect-only`` prints the recipe; ``--json`` prints one JSON object. Exit 0 when everything
+ passed, 1 on a failure or when no recipe was found, 2 when PATH is not a folder.
++
++On native Windows (RL26) the phases run on the Git Bash local backend (``open_local_windows``, the
++backend the registry opens there) and the start command boots under Git Bash in a job object
++(``WindowsStarter``); with no Git Bash the command says so and exits 1.
+ """
+ 
+ from __future__ import annotations
+@@ -23,6 +27,7 @@ import click
+ from indus.cli.cmdkit import cli_state, config_of, err
+ from indus.foundation.config.schema import default_for
+ from indus.foundation.scope import Scope
++from indus.platform.facts import os_family
+ 
+ __all__ = ["report_lines", "run_for", "verify_command"]
+ 
+@@ -63,19 +68,30 @@ async def run_for(
+     ready_timeout: float,
+ ) -> tuple[Any, Any]:
+     """``(recipe, result)`` for ``root`` (``result`` None when no recipe was found)."""
+-    from indus.backends.local import open_local
+     from indus.safety.child_env import child_env
+     from indus.tools.verify.recipes import detect_recipe
+-    from indus.tools.verify.runner import LocalStarter, run_verify
++    from indus.tools.verify.runner import LocalStarter, ServiceStarter, WindowsStarter, run_verify
+ 
+     recipe = detect_recipe(root)
+     if recipe is None:
+         return None, None
+-    host = await open_local(scope, cwd=str(root), timeout=phase_timeout)
++    wants_start = not skip_start and (not phases or "start" in phases)
++    starter: ServiceStarter | None = None
++    if os_family() == "win32":  # Git Bash, best effort (RL26, D-16.950)
++        from indus.backends.local_windows import open_local_windows
++
++        windows_host = await open_local_windows(scope, cwd=str(root), timeout=phase_timeout)
++        host: Any = windows_host
++        if wants_start:
++            starter = WindowsStarter(child_env(scope), windows_host.bash, clock=scope.clock)
++    else:
++        from indus.backends.local import open_local
++
++        host = await open_local(scope, cwd=str(root), timeout=phase_timeout)
++        if wants_start:
++            starter = LocalStarter(child_env(scope), clock=scope.clock)
+     try:
+         selected = phases or None
+-        wants_start = not skip_start and (not phases or "start" in phases)
+-        starter = LocalStarter(child_env(scope), clock=scope.clock) if wants_start else None
+         result = await run_verify(
+             host,
+             str(root),
+@@ -180,17 +196,24 @@ def verify_command(
+         }
+         click.echo(json.dumps(payload, indent=None if as_json else 2))
+         return 0 if recipe is not None else 1
+-    recipe, result = asyncio.run(
+-        run_for(
+-            scope,
+-            root,
+-            phases=phases,
+-            skip_start=skip_start,
+-            port=port,
+-            phase_timeout=float(phase_timeout or _setting(scope, "verify.phase_timeout")),
+-            ready_timeout=float(ready_timeout or _setting(scope, "verify.ready_timeout")),
++    from indus.backends.contract import BackendUnavailable
++
++    try:
++        recipe, result = asyncio.run(
++            run_for(
++                scope,
++                root,
++                phases=phases,
++                skip_start=skip_start,
++                port=port,
++                phase_timeout=float(phase_timeout or _setting(scope, "verify.phase_timeout")),
++                ready_timeout=float(ready_timeout or _setting(scope, "verify.ready_timeout")),
++            )
+         )
+-    )
++    except BackendUnavailable as exc:  # e.g. no Git Bash on native Windows
++        hint = f" ({exc.hint})" if exc.hint else ""
++        err(f"The local terminal backend is not available: {exc}{hint}")
++        return 1
+     if recipe is None:
+         if as_json:
+             click.echo(json.dumps({"ok": False, "error": "no_recipe", "root": str(root)}))
+diff --git a/src/indus/cron/script.py b/src/indus/cron/script.py
+index 32f3bc6..6ecc35d 100644
+--- a/src/indus/cron/script.py
++++ b/src/indus/cron/script.py
+@@ -16,6 +16,11 @@ capped (``STREAM_CAP`` bytes kept each) and redacted before they leave.
+ Wake gate: when the last non-empty stdout line is a JSON object with a boolean ``wake``,
+ ``{"wake": false}`` skips this tick and ``{"wake": true, "context": {...}}`` hands the context to
+ the prompt. The gate line is removed from the output.
++
++Native Windows (RL26): ``.sh``/``.bash`` scripts run under Git Bash (the terminal backend's lookup,
++``find_git_bash``, with its PATH and UTF-8/MSYS defaults; no Git Bash refuses the run); every
++script starts suspended in its own job object, and a stop terminates the job, the whole tree at
++once (no grace step on Windows, as in that backend).
+ """
+ 
+ from __future__ import annotations
+@@ -35,12 +40,21 @@ from dataclasses import dataclass
+ from pathlib import Path
+ from typing import IO, Any, cast
+ 
++from indus.backends.contract import BackendError
+ from indus.backends.local import LocalProcess, force_kill_tree, stop_tree
++from indus.backends.local_windows import (
++    WindowsProcess,
++    find_git_bash,
++    git_bash_env,
++    start_windows_process,
++    to_shell_path,
++)
+ from indus.cron import settings
+ from indus.cron.ports import JobSpec
+ from indus.foundation.blocking import run_blocking
+ from indus.foundation.clock import Clock
+ from indus.foundation.scope import Scope
++from indus.platform.facts import os_family
+ from indus.platform.locate import which
+ from indus.safety.child_env import child_env
+ from indus.safety.redaction import redact_output
+@@ -55,6 +69,7 @@ __all__ = [
+     "resolve_script",
+     "run_script",
+     "script_argv",
++    "windows_launch",
+ ]
+ 
+ log = logging.getLogger(__name__)
+@@ -179,6 +194,20 @@ def script_argv(path: Path, interpreter: str | None) -> list[str]:
+     return [sys.executable, str(path)]
+ 
+ 
++def windows_launch(
++    scope: Scope, path: Path, interpreter: str | None, env: Mapping[str, str]
++) -> tuple[list[str], dict[str, str]]:
++    """``(argv, env)`` on native Windows: shell scripts through Git Bash (an MSYS script path and
++    Git Bash's PATH), anything else as on POSIX."""
++    if path.suffix.lower() not in SHELL_SUFFIXES:
++        return script_argv(path, interpreter), dict(env)
++    try:
++        shell = find_git_bash(env, home=scope.home)
++    except BackendError as exc:
++        raise ScriptRefused(f"cannot run {path.name}: {exc}") from None
++    return [shell.bash, to_shell_path(str(path))], git_bash_env(env, shell)
++
++
+ # -- the wake gate --------------------------------------------------------------------------------
+ 
+ 
+@@ -259,6 +288,20 @@ def _workdir(job: JobSpec, script_path: Path) -> Path:
+     return script_path.parent
+ 
+ 
++async def _stop(proc: LocalProcess | WindowsProcess, clock: Clock) -> None:
++    if isinstance(proc, WindowsProcess):
++        proc.terminate_tree()  # no grace step on Windows (D-16.955)
++    else:
++        await stop_tree(proc, clock=clock, grace=KILL_GRACE_S)
++
++
++def _force_stop(proc: LocalProcess | WindowsProcess) -> None:
++    if isinstance(proc, WindowsProcess):
++        proc.terminate_tree()
++    else:
++        force_kill_tree(proc)
++
++
+ async def run_script(
+     scope: Scope,
+     job: JobSpec,
+@@ -274,25 +317,38 @@ async def run_script(
+     value = script if script is not None else job.script
+     if not value:
+         return ScriptResult(ok=False, error="the job has no script")
++    windows = os_family() == "win32"
++    env = child_env(scope)
+     try:
+         path = resolve_script(scope.home, value)
+-        argv = script_argv(path, job.interpreter)
++        if windows:
++            argv, env = windows_launch(scope, path, job.interpreter, env)
++        else:
++            argv = script_argv(path, job.interpreter)
+     except ScriptRefused as exc:
+         return ScriptResult(ok=False, error=str(exc))
+     limit = timeout if timeout is not None else settings.script_timeout(scope)
++    workdir = str(_workdir(job, path))
++    proc: LocalProcess | WindowsProcess
+     try:
+-        popen = subprocess.Popen(
+-            argv,
+-            stdin=subprocess.DEVNULL,
+-            stdout=subprocess.PIPE,
+-            stderr=subprocess.PIPE,
+-            cwd=str(_workdir(job, path)),
+-            env=child_env(scope),
+-            start_new_session=True,
+-        )
+-    except OSError as exc:
++        if windows:
++            proc = start_windows_process(
++                argv, cwd=workdir, env=env, stdin=None, separate_stderr=True
++            )
++            popen = proc.popen
++        else:
++            popen = subprocess.Popen(
++                argv,
++                stdin=subprocess.DEVNULL,
++                stdout=subprocess.PIPE,
++                stderr=subprocess.PIPE,
++                cwd=workdir,
++                env=env,
++                start_new_session=True,
++            )
++            proc = LocalProcess(popen)
++    except (OSError, BackendError) as exc:
+         return ScriptResult(ok=False, error=f"the script could not start: {exc}")
+-    proc = LocalProcess(popen)
+     out = _Reader(popen.stdout, f"cron script stdout {job.id}")
+     err = _Reader(popen.stderr, f"cron script stderr {job.id}")
+     timed_out = cancelled = False
+@@ -307,11 +363,13 @@ async def run_script(
+                 break
+             await clock.sleep(POLL_S)
+         if popen.poll() is None:
+-            await stop_tree(proc, clock=clock, grace=KILL_GRACE_S)
++            await _stop(proc, clock)
+     finally:
+         if popen.poll() is None:
+-            force_kill_tree(proc)
++            _force_stop(proc)
+         await _join_readers(out, err)
++        if isinstance(proc, WindowsProcess):
++            proc.release()
+     stdout, stderr = _clean(out.text(), scope), _clean(err.text(), scope)
+     if timed_out:
+         return ScriptResult(
+diff --git a/src/indus/tools/builtin/code/__init__.py b/src/indus/tools/builtin/code/__init__.py
+index eae1cfe..329d3db 100644
+--- a/src/indus/tools/builtin/code/__init__.py
++++ b/src/indus/tools/builtin/code/__init__.py
+@@ -8,7 +8,8 @@ dispatcher that runs each in-script call through ``tools.dispatch`` with this ca
+ run it:
+ 
+ - on this machine: in the session kernel (``kernel``, the default) or as a fresh script
+-  (``runner``, ``code_execution.kernel: off``);
++  (``runner``, ``code_execution.kernel: off``, and always on native Windows, where the kernel's
++  descriptor passing has no equivalent: RL26);
+ - elsewhere (Docker, SSH, …): ``remote`` (a remote kernel when one starts, else one shipped
+   script).
+ 
+@@ -41,6 +42,7 @@ from indus.backends.local import nearest_usable_dir
+ from indus.backends.registry import EnvironmentRegistry
+ from indus.foundation.clock import Clock
+ from indus.foundation.scope import Scope, scope_or_none
++from indus.platform.facts import os_family
+ from indus.tools.builtin.code import gate, kernel, launch, remote, runner, schema
+ from indus.tools.builtin.code.rpc import RpcPipeline, ToolInvoker
+ from indus.tools.builtin.code.settings import (
+@@ -285,7 +287,7 @@ class ExecuteCodeTool:
+         mode: Mode = settings.mode
+         interpreter = await launch.choose_interpreter(scope, mode)
+         cwd = _session_cwd(scope, session_id, env_cwd) if mode == "project" else None
+-        if settings.kernel == "off":
++        if settings.kernel == "off" or os_family() == "win32":
+             return await runner.run_script(
+                 runner.ScriptJob(
+                     code=code,
+diff --git a/src/indus/tools/builtin/code/launch.py b/src/indus/tools/builtin/code/launch.py
+index 90b5533..5295551 100644
+--- a/src/indus/tools/builtin/code/launch.py
++++ b/src/indus/tools/builtin/code/launch.py
+@@ -12,6 +12,10 @@
+ - ``spawn``: a new session and process group, stdin closed unless asked, stdout and stderr on
+   pipes pumped into ``ByteCapture`` objects by daemon threads. ``stop`` is the local backend's
+   ordered tree kill (SIGTERM, then SIGKILL after ``KILL_GRACE_S``); ``force_stop`` kills at once.
++- Native Windows (RL26): the child starts suspended in its own job object (the Git Bash backend's
++  ``start_windows_process``) and both stops terminate the job, the whole tree at once (no grace,
++  as in that backend). Passing descriptors (the session kernel's pipes) has no Windows form: such a
++  start is refused with a "use WSL2" message, and ``execute_code`` runs per-call scripts there.
+ """
+ 
+ from __future__ import annotations
+@@ -27,10 +31,13 @@ from collections.abc import Mapping, Sequence
+ from pathlib import Path
+ from typing import IO
+ 
++from indus.backends.contract import BackendUnavailable
+ from indus.backends.local import LocalProcess, force_kill_tree, stop_tree, strip_app_pythonpath
++from indus.backends.local_windows import WindowsProcess, start_windows_process, wsl2_refusal
+ from indus.foundation.blocking import run_blocking
+ from indus.foundation.clock import Clock, resolve_zone
+ from indus.foundation.scope import Scope
++from indus.platform.facts import os_family
+ from indus.safety.child_env import child_env
+ from indus.tools.builtin.code.output import ByteCapture
+ from indus.tools.builtin.code.settings import KILL_GRACE_S, Mode
+@@ -181,18 +188,29 @@ class Child:
+         stderr: ByteCapture,
+         pass_fds: Sequence[int] = (),
+     ) -> None:
+-        popen = subprocess.Popen(  # noqa: S603 - the interpreter and our staged file
+-            list(argv),
+-            cwd=cwd,
+-            env=dict(env),
+-            stdin=subprocess.DEVNULL,
+-            stdout=subprocess.PIPE,
+-            stderr=subprocess.PIPE,
+-            start_new_session=True,
+-            close_fds=True,
+-            pass_fds=tuple(pass_fds),
+-        )
+-        self.process = LocalProcess(popen)
++        self.process: LocalProcess | None = None
++        self.job: WindowsProcess | None = None
++        if os_family() == "win32":
++            if pass_fds:
++                raise BackendUnavailable(wsl2_refusal("The persistent Python kernel"))
++            self.job = start_windows_process(
++                list(argv), cwd=cwd, env=env, stdin=None, separate_stderr=True
++            )
++            popen = self.job.popen
++        else:
++            popen = subprocess.Popen(  # noqa: S603 - the interpreter and our staged file
++                list(argv),
++                cwd=cwd,
++                env=dict(env),
++                stdin=subprocess.DEVNULL,
++                stdout=subprocess.PIPE,
++                stderr=subprocess.PIPE,
++                start_new_session=True,
++                close_fds=True,
++                pass_fds=tuple(pass_fds),
++            )
++            self.process = LocalProcess(popen)
++        self.popen = popen
+         self.stdout, self.stderr = stdout, stderr
+         assert popen.stdout is not None and popen.stderr is not None
+         self._readers = [
+@@ -204,28 +222,38 @@ class Child:
+ 
+     @property
+     def pid(self) -> int:
+-        return self.process.popen.pid
++        return self.popen.pid
+ 
+     def poll(self) -> int | None:
+-        return self.process.poll()
++        return self.popen.poll()
+ 
+     def alive(self) -> bool:
+-        return self.process.poll() is None
++        return self.popen.poll() is None
+ 
+     async def stop(self, clock: Clock, grace: float = KILL_GRACE_S) -> None:
+-        if self.alive():
++        if self.process is None:
++            self.force_stop()
++        elif self.alive():
+             await stop_tree(self.process, clock=clock, grace=grace)
+         else:
+             force_kill_tree(self.process)  # leftovers of an exited leader's group
+ 
+     def force_stop(self) -> None:
+-        force_kill_tree(self.process)
++        if self.job is not None:
++            self.job.terminate_tree()  # the whole job, background grandchildren included
++            with contextlib.suppress(OSError, subprocess.TimeoutExpired):
++                self.popen.wait(timeout=KILL_GRACE_S)
++            self.job.release()
++        elif self.process is not None:
++            force_kill_tree(self.process)
+ 
+     async def finish_reading(self, clock: Clock, within: float = 2.0) -> None:
+         """Give the reader threads a moment to take what is left in the pipes."""
+         deadline = clock.monotonic() + within
+         while any(r.is_alive() for r in self._readers) and clock.monotonic() < deadline:
+             await clock.sleep(0.02)
++        if self.job is not None and not self.alive():
++            self.job.release()  # the job handle; its leftovers were stopped or live on, as on POSIX
+ 
+ 
+ __all__ = [
+diff --git a/src/indus/tools/verify/runner.py b/src/indus/tools/verify/runner.py
+index b35a53a..33b8c86 100644
+--- a/src/indus/tools/verify/runner.py
++++ b/src/indus/tools/verify/runner.py
+@@ -15,6 +15,10 @@ A compose recipe refuses to build or start while that compose project has runnin
+ (``docker compose ps``): rebuilding would replace them and lose what lives inside. When docker
+ itself is missing the run goes on (the build then fails on its own); when the probe fails or
+ hangs the run is refused, since running containers cannot be ruled out.
++
++On native Windows (RL26) the CLI boots the start command with ``WindowsStarter``: Git Bash in its
++own job object (the terminal backend's ``start_windows_process``), output drained by a thread,
++stopped by terminating the job (the whole tree at once).
+ """
+ 
+ from __future__ import annotations
+@@ -24,10 +28,17 @@ import contextlib
+ import logging
+ import os
+ import signal
++import threading
+ from collections.abc import Awaitable, Callable, Mapping, Sequence
+ from dataclasses import dataclass, field
+ from typing import Any, Protocol
+ 
++from indus.backends.local_windows import (
++    GitBash,
++    WindowsProcess,
++    git_bash_env,
++    start_windows_process,
++)
+ from indus.foundation.clock import Clock, SystemClock
+ from indus.tools.builtin.exec_host import ExecHost
+ from indus.tools.verify.recipes import Recipe
+@@ -43,6 +54,7 @@ __all__ = [
+     "Readiness",
+     "ServiceStarter",
+     "VerifyResult",
++    "WindowsStarter",
+     "http_probe",
+     "run_verify",
+     "tail",
+@@ -381,3 +393,46 @@ class LocalStarter:
+         except TimeoutError:
+             return ""
+         return data.decode("utf-8", errors="replace")
++
++
++@dataclass
++class _WindowsService:
++    process: WindowsProcess
++    chunks: list[str]
++    reader: threading.Thread
++    halt: threading.Event
++
++
++class WindowsStarter:
++    """Native Windows (RL26): boots a start command with Git Bash (``bash``) in its own job
++    object; stopping terminates the job, the whole tree at once (no grace step on Windows)."""
++
++    def __init__(
++        self, env: Mapping[str, str], bash: GitBash, *, clock: Clock | None = None
++    ) -> None:
++        self.env = git_bash_env(env, bash)
++        self.bash = bash
++        self.clock: Clock = clock or SystemClock()
++
++    async def start(self, command: str, cwd: str) -> object:
++        process = start_windows_process(
++            [self.bash.bash, "-c", command], cwd=cwd, env=self.env, stdin=None
++        )
++        chunks: list[str] = []
++        halt = threading.Event()
++        reader = threading.Thread(
++            target=process.drain, args=(chunks.append, halt), name="verify-start", daemon=True
++        )
++        reader.start()
++        return _WindowsService(process, chunks, reader, halt)
++
++    async def stop(self, handle: object) -> str:
++        if not isinstance(handle, _WindowsService):
++            return ""
++        handle.process.terminate_tree()
++        deadline = self.clock.monotonic() + STOP_GRACE_S
++        while handle.reader.is_alive() and self.clock.monotonic() < deadline:
++            await self.clock.sleep(0.05)
++        handle.halt.set()
++        handle.process.release()
++        return "".join(handle.chunks)
+diff --git a/tests/unit/backends/test_windows_rl26.py b/tests/unit/backends/test_windows_rl26.py
+new file mode 100644
+index 0000000..6beed86
+--- /dev/null
++++ b/tests/unit/backends/test_windows_rl26.py
+@@ -0,0 +1,368 @@
++"""Native Windows branches outside the terminal backend (RL26, wave 47).
++
++Background jobs refuse with a "use WSL2" message; cron scripts, the code-execution child and
++``indus verify`` (its host and its start command) go through the Git Bash backend's job objects.
++Every case here runs on Linux with the OS family patched to ``win32`` and the Win32 job calls
++replaced by a stand-in that starts the child in its own POSIX process group and kills that group
++when "the job" is terminated; real Windows children are covered by ``test_local_windows.py``'s
++``platforms("windows")`` cases.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import os
++import shutil
++import signal
++import subprocess
++import sys
++from collections.abc import Mapping
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from indus.backends import local_windows as lw
++from indus.backends import processes
++from indus.backends.contract import BackendUnavailable, ExecResult
++from indus.backends.local_windows import GitBash, WindowsProcess
++from indus.backends.processes import ProcessRegistry, SpawnRequest
++from indus.cli.commands import verify as verify_cli
++from indus.cron import script as cron_script
++from indus.cron.ports import JobSpec
++from indus.foundation.clock import SystemClock
++from indus.foundation.scope import Scope
++from indus.safety.child_env import child_env
++from indus.tools.builtin.code import launch
++from indus.tools.builtin.code.output import ByteCapture
++from indus.tools.verify import runner as verify_runner
++from tests.fakes.terminal import terminal_scope
++
++pytestmark = pytest.mark.platforms("posix")
++
++
++@pytest.fixture
++def scope(tmp_path: Path) -> Scope:
++    return terminal_scope(tmp_path)
++
++
++class GroupJobs:
++    """The Win32 job calls over a POSIX process group (the stand-in's child leads its own)."""
++
++    def __init__(self) -> None:
++        self.pgid = 0
++        self.terminated = 0
++        self.closed = 0
++
++    def open_process(self, pid: int) -> int | None:
++        self.pgid = pid
++        return pid
++
++    def create_job(self) -> int | None:
++        return 1
++
++    def assign(self, job: int, process: int) -> bool:
++        return True
++
++    def resume(self, process: int) -> bool:
++        return True
++
++    def terminate_job(self, job: int, code: int) -> bool:
++        self.terminated += 1
++        with contextlib.suppress(ProcessLookupError):
++            os.killpg(self.pgid, signal.SIGKILL)
++        return True
++
++    def active_processes(self, job: int) -> int | None:
++        try:
++            os.killpg(self.pgid, 0)
++        except ProcessLookupError:
++            return 0
++        return 1
++
++    def close(self, handle: int) -> None:
++        self.closed += 1
++
++    def pipe_available(self, fd: int) -> int | None:
++        import fcntl
++        import termios
++
++        waiting = bytearray(4)
++        try:
++            fcntl.ioctl(fd, termios.FIONREAD, waiting)
++        except OSError:
++            return None
++        count = int.from_bytes(waiting, sys.byteorder)
++        if count == 0:
++            import select
++
++            readable, _, _ = select.select([fd], [], [], 0)
++            if readable:
++                return None  # readable with nothing waiting: every writer closed it
++        return count
++
++
++class StandIn:
++    """Replaces ``start_windows_process``: same arguments, a POSIX child, ``GroupJobs``."""
++
++    def __init__(self) -> None:
++        self.calls: list[dict[str, Any]] = []
++        self.jobs = GroupJobs()
++
++    def __call__(
++        self,
++        argv: list[str],
++        *,
++        cwd: str,
++        env: Mapping[str, str],
++        stdin: str | None,
++        script_path: str | None = None,
++        api: Any = None,
++        separate_stderr: bool = False,
++    ) -> WindowsProcess:
++        self.calls.append({"argv": list(argv), "env": dict(env), "separate": separate_stderr})
++        popen = subprocess.Popen(
++            argv,
++            stdin=subprocess.DEVNULL,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE if separate_stderr else subprocess.STDOUT,
++            cwd=cwd,
++            env=dict(env),
++            start_new_session=True,
++        )
++        proc = WindowsProcess(popen, self.jobs, script_path=script_path)
++        proc.attach_and_resume()
++        return proc
++
++
++def _gone(pid: int) -> bool:
++    try:
++        os.kill(pid, 0)
++    except ProcessLookupError:
++        return True
++    stat_file = Path(f"/proc/{pid}/stat")
++    return stat_file.exists() and stat_file.read_text().rsplit(")", 1)[-1].split()[0] in "ZX"
++
++
++def _bash() -> GitBash:
++    found = shutil.which("bash")
++    if found is None:
++        pytest.skip("needs bash")
++    return GitBash(bash=found, root=None, tool_dirs=(), source="test")
++
++
++# -- background processes: a clear refusal ---------------------------------------------------------
++
++
++def test_background_job_on_native_windows_is_refused_with_wsl2(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    launched: list[Any] = []
++
++    def launcher(spec: Any) -> Any:
++        launched.append(spec)
++        raise AssertionError("nothing may start on native Windows")
++
++    monkeypatch.setattr(processes, "os_family", lambda: "win32")
++    registry = ProcessRegistry(launcher=launcher, receipts=None, checkpoints=False)
++    request = SpawnRequest("sleep 5", scope, "s1", "k", str(scope.home), child_env(scope))
++
++    record = asyncio.run(registry.spawn(request))
++
++    assert not launched
++    assert record.exited and record.reason == "failed_start" and record.exit_code == -1
++    assert "WSL2" in record.tail(2000) and record.tail(2000).strip() == processes.WINDOWS_REFUSAL
++
++
++# -- cron scripts ----------------------------------------------------------------------------------
++
++
++def _install(scope: Scope, name: str, text: str) -> Path:
++    folder = scope.home / "scripts"
++    folder.mkdir(parents=True, exist_ok=True)
++    path = folder / name
++    path.write_text(text)
++    return path
++
++
++def test_cron_shell_script_runs_under_git_bash_in_a_job(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    stand_in, bash = StandIn(), _bash()
++    monkeypatch.setattr(cron_script, "os_family", lambda: "win32")
++    monkeypatch.setattr(cron_script, "start_windows_process", stand_in)
++    monkeypatch.setattr(cron_script, "find_git_bash", lambda env, home: bash)
++    _install(scope, "hello.sh", 'printf "out:%s" "$MSYS_NO_PATHCONV"; printf oops >&2\n')
++
++    result = asyncio.run(
++        cron_script.run_script(scope, JobSpec(id="a1b2c3d4e5f6", script="hello.sh"))
++    )
++
++    assert result.ok, result.failure_text
++    assert result.stdout == "out:1" and result.stderr == "oops"
++    (call,) = stand_in.calls
++    assert call["argv"][0] == bash.bash and call["argv"][1].endswith("/scripts/hello.sh")
++    assert call["separate"] is True and call["env"]["PYTHONUTF8"] == "1"
++    assert stand_in.jobs.closed >= 1  # the job handle is released
++
++
++def test_cron_timeout_terminates_the_whole_job(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    stand_in, bash = StandIn(), _bash()
++    monkeypatch.setattr(cron_script, "os_family", lambda: "win32")
++    monkeypatch.setattr(cron_script, "start_windows_process", stand_in)
++    monkeypatch.setattr(cron_script, "find_git_bash", lambda env, home: bash)
++    pid_file = scope.home / "child.pid"
++    _install(scope, "slow.sh", f"sleep 30 & echo $! > {pid_file}; wait\n")
++
++    result = asyncio.run(
++        cron_script.run_script(scope, JobSpec(id="a1b2c3d4e5f6", script="slow.sh"), timeout=1.0)
++    )
++
++    assert result.timed_out and not result.ok
++    assert stand_in.jobs.terminated >= 1
++    assert _gone(int(pid_file.read_text().strip()))  # the grandchild went with the job
++
++
++def test_cron_shell_script_without_git_bash_is_refused(
++    scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    def missing(env: Mapping[str, str], home: Path) -> GitBash:
++        raise BackendUnavailable("Git Bash was not found")
++
++    monkeypatch.setattr(cron_script, "os_family", lambda: "win32")
++    monkeypatch.setattr(cron_script, "find_git_bash", missing)
++    _install(scope, "hello.sh", "echo hi\n")
++
++    result = asyncio.run(
++        cron_script.run_script(scope, JobSpec(id="a1b2c3d4e5f6", script="hello.sh"))
++    )
++
++    assert not result.ok and result.error is not None and "Git Bash" in result.error
++
++
++# -- the code-execution child ----------------------------------------------------------------------
++
++
++def test_code_child_runs_in_a_job_and_stop_terminates_it(
++    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    stand_in = StandIn()
++    monkeypatch.setattr(launch, "os_family", lambda: "win32")
++    monkeypatch.setattr(launch, "start_windows_process", stand_in)
++    code = "import os, sys, time; print('up', flush=True); sys.stderr.write('e'); time.sleep(30)"
++    out, err = ByteCapture(1 << 16), ByteCapture(1 << 16)
++
++    async def go() -> None:
++        child = launch.Child(
++            [sys.executable, "-c", code],
++            cwd=str(tmp_path),
++            env=dict(os.environ),
++            stdout=out,
++            stderr=err,
++        )
++        clock = SystemClock()
++        deadline = clock.monotonic() + 10
++        while b"up" not in out.last(100) and clock.monotonic() < deadline:
++            await clock.sleep(0.05)
++        assert child.alive() and child.job is not None and child.process is None
++        await child.stop(clock)
++        await child.finish_reading(clock)
++        assert not child.alive() and _gone(child.pid)
++
++    asyncio.run(go())
++    assert stand_in.calls[0]["separate"] is True
++    assert stand_in.jobs.terminated >= 1 and stand_in.jobs.closed >= 1
++    assert err.last(10) == b"e"
++
++
++def test_code_kernel_descriptors_are_refused_on_windows(
++    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    stand_in = StandIn()
++    monkeypatch.setattr(launch, "os_family", lambda: "win32")
++    monkeypatch.setattr(launch, "start_windows_process", stand_in)
++    with pytest.raises(BackendUnavailable, match="WSL2"):
++        launch.Child(
++            [sys.executable, "-c", "pass"],
++            cwd=str(tmp_path),
++            env={},
++            stdout=ByteCapture(64),
++            stderr=ByteCapture(64),
++            pass_fds=(5,),
++        )
++    assert not stand_in.calls
++
++
++# -- indus verify ----------------------------------------------------------------------------------
++
++
++class FakeHost:
++    def __init__(self, bash: GitBash) -> None:
++        self.bash = bash
++        self.commands: list[str] = []
++        self.cleaned = False
++
++    async def execute(self, command: str, **kwargs: Any) -> ExecResult:
++        self.commands.append(command)
++        return ExecResult(output="ok\n", returncode=0)
++
++    async def cleanup(self) -> None:
++        self.cleaned = True
++
++
++def test_verify_uses_the_git_bash_host_on_windows(
++    scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from indus.backends import local
++
++    host = FakeHost(_bash())
++    opened: list[dict[str, Any]] = []
++
++    async def open_windows(scope: Scope, **kwargs: Any) -> FakeHost:
++        opened.append(kwargs)
++        return host
++
++    async def open_posix(*args: Any, **kwargs: Any) -> Any:
++        raise AssertionError("the POSIX local backend is not for native Windows")
++
++    monkeypatch.setattr(verify_cli, "os_family", lambda: "win32")
++    monkeypatch.setattr(lw, "open_local_windows", open_windows)
++    monkeypatch.setattr(local, "open_local", open_posix)
++    root = tmp_path / "ws"
++    root.mkdir()
++    (root / "Makefile").write_text("test:\n\techo ok\n")
++
++    recipe, result = asyncio.run(
++        verify_cli.run_for(
++            scope,
++            root,
++            phases=("test",),
++            skip_start=True,
++            port=None,
++            phase_timeout=30,
++            ready_timeout=1,
++        )
++    )
++
++    assert recipe is not None and result is not None and result.ok
++    assert opened == [{"cwd": str(root), "timeout": 30}]
++    assert host.commands and host.cleaned
++
++
++def test_windows_starter_boots_and_stops_the_tree(monkeypatch: pytest.MonkeyPatch) -> None:
++    stand_in = StandIn()
++    monkeypatch.setattr(verify_runner, "start_windows_process", stand_in)
++    starter = verify_runner.WindowsStarter(dict(os.environ), _bash(), clock=SystemClock())
++
++    async def go() -> str:
++        handle = await starter.start("echo $$; sleep 30 & wait", os.getcwd())
++        await SystemClock().sleep(0.5)
++        return await starter.stop(handle)
++
++    output = asyncio.run(go())
++    assert stand_in.calls[0]["argv"][1:] == ["-c", "echo $$; sleep 30 & wait"]
++    assert stand_in.calls[0]["env"]["MSYS_NO_PATHCONV"] == "1"
++    assert stand_in.jobs.terminated == 1 and _gone(int(output.split()[0]))
