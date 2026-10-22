@@ -1,0 +1,739 @@
+diff --git a/docs/notes/P25/docs-guide.md b/docs/notes/P25/docs-guide.md
+index 223ad94..8328f1d 100644
+--- a/docs/notes/P25/docs-guide.md
++++ b/docs/notes/P25/docs-guide.md
+@@ -62,3 +62,31 @@ Compare checklist (filled after the rewrite; reopened only the listing of `websi
+ ## Status
+ 
+ Done (2026-10-21). See the final report.
++
++## Wave 46 (RS10, builder h, 2026-10-22)
++
++Read: no reference file (user pages written from our code and the P24 task notes only; no
++reference prose opened). Evidence: none.
++
++What changed: user-guide pages for the P24 features wired in waves 40–42, each checked against the
++code it describes (CLI docstrings and options, config schema rows, the desktop strings and RPC
++calls): `user-guide/board.md` (`indus kanban`, dispatcher, worker outcomes, board toolsets),
++`user-guide/bots-and-peers.md` (bot chat, `self-chat` delivery, the Bots page, `indus peer`),
++`user-guide/rooms.md` (group rooms: where they run, turn policy, stop words, indeterminate turns,
++disband, limits), `messaging/relay.md` (gateway side of the relay; links the connector contract),
++`user-guide/themes.md` (desktop presets, accent, per-profile, VS Code import, TUI sync),
++`user-guide/pets.md`, `user-guide/vault.md` (`browser_vault` sources, `indus vault`),
++`user-guide/egress.md`, `user-guide/helper-programs.md` (`indus pm`), `user-guide/lsp.md`,
++`user-guide/verify.md`. All in the mkdocs nav (user guide; relay under messaging).
++
++Left out on purpose (not confirmed as reachable for a person today): `message_agent` (bot chats do
++not run with the `bots` platform yet; P45 is wiring it), room creation from a UI (the desktop has
++no create button; the page names `groups.create`), room approvals, plugin locale packs.
++
++## Decisions for the lead
++- W46-h-1: the pages document current behaviour only; when P45 lands (`message_agent` in bot chat,
++  `indus lsp restart` against a running daemon), `bots-and-peers.md` and `lsp.md` need a paragraph
++  each (today `indus lsp restart` acts on its own process, as its help says).
++- W46-h-2: no `<!-- test -->` examples were added: every new command either needs a daemon, a
++  terminal for hidden prompts, the network or an image service; the fake-model harness cannot run
++  them. The pages' command lines were checked against the generated CLI reference instead.
+diff --git a/docs/user/messaging/relay.md b/docs/user/messaging/relay.md
+new file mode 100644
+index 0000000..7418a0c
+--- /dev/null
++++ b/docs/user/messaging/relay.md
+@@ -0,0 +1,52 @@
++# Relay
++
++A relay lets a gateway without a public address answer on chat platforms. A relay connector is a
++service on the internet that holds the platform connections (bot tokens, webhooks); your gateway
++dials **out** to it over one WebSocket, and messages travel both ways on that connection. Nothing
++has to reach your machine from outside.
++
++The connector speaks Indus's own relay protocol. If you run or write one, its side is described in
++the [relay connector contract](../relay-contract.md).
++
++## Setting it up
++
++```bash
++indus config set gateway.relay.url https://relay.example.com
++indus config set gateway.relay.gateway_id my-gateway
++indus config set INDUS_RELAY_SECRET <the shared secret the connector gave you>
++indus gateway restart
++```
++
++The secret is stored like any other credential, never in `config.yaml`. With `gateway.relay.url`
++empty (the default) there is no relay. A wrong URL, id or secret is reported once and not
++retried; a connection that fails for other reasons is tried again (below).
++
++On connect, the gateway proves who it is with the shared secret, and the connector says which
++platforms it fronts for this gateway. Each becomes an ordinary platform to the rest of Indus:
++Telegram through the relay is still `telegram` for access rules, delivery targets and scheduled
++jobs. The connector decides who may write to the bot, but a relayed platform still needs its usual
++access settings (see [who may talk to the bot](index.md#who-may-talk-to-the-bot)).
++
++## What works through a relay
++
++Text, edits and typing always work. Files (up to 25 MB), buttons (approvals and choices),
++reactions and threads work when the connector says the platform supports them; otherwise Indus
++falls back as it does on a platform without that feature. A stop sent from the chat stops the
++running turn.
++
++When a platform has its own adapter turned on in this profile, that adapter is used and the relay
++is not.
++
++## Dropped connections and idle gateways
++
++A dropped connection is dialled again after 1 second, then 2, 4 … up to 60 seconds between tries.
++When an automatically started gateway goes idle, it asks the connector to hold its messages and
++closes the connection; the connector replays them, in order, on the next connect, and each is
++acknowledged only once the gateway has taken it, so nothing is lost or handled twice.
++
++| Setting | Default | Meaning |
++|---|---|---|
++| `gateway.relay.url` | empty | the connector's base URL; empty means no relay |
++| `gateway.relay.gateway_id` | empty | this gateway's id at the connector |
++| `gateway.relay.connect_timeout_seconds` | `30` | seconds to connect and finish the handshake |
++| `gateway.relay.request_timeout_seconds` | `30` | seconds to wait for the answer to one operation |
+diff --git a/docs/user/user-guide/board.md b/docs/user/user-guide/board.md
+new file mode 100644
+index 0000000..e9c22e2
+--- /dev/null
++++ b/docs/user/user-guide/board.md
+@@ -0,0 +1,80 @@
++# Task board
++
++The task board is a shared to-do list your profiles hand work to each other on. You (or an agent)
++create a task and give it to a profile; a dispatcher starts a one-shot worker for that profile in
++the task's workspace, and the worker ends its run by completing the task, blocking it with a
++reason, or asking for review.
++
++```bash
++indus kanban create "Update the changelog" --assignee writer --body "Cover every merged PR since 1.2"
++indus kanban                     # list the tasks, highest priority first
++indus kanban show <task-id>      # links, comments, runs and recent events
++```
++
++## Boards and tasks
++
++Every profile under the same Indus root shares the boards. A board is one file,
++`<root>/boards/<slug>.db`; the first one is `default`. `indus kanban board` lists the boards,
++`indus kanban board <slug>` makes another one current (creating it when new), and
++`--board <slug>` before a verb uses another board for one command.
++
++A task has a title, an optional body, an assignee (a profile name), a priority (higher runs first)
++and a workspace:
++
++| `--workspace` | Where the worker runs |
++|---|---|
++| `scratch` (default) | a folder of the task's own under the board's folder |
++| `worktree:REPO` | a new git worktree of the repository at `REPO` |
++| `dir:PATH` | an existing folder |
++
++Tasks can depend on others (`--parent <id>`, repeatable). A task whose parents are not all done
++waits in `todo` and becomes `ready` once they are. The other statuses are `running` (a worker
++holds it), `blocked` (needs a person), `review`, `done` and `archived`.
++
++## Working on tasks by hand
++
++| Command | What it does |
++|---|---|
++| `indus kanban move <id> ready\|todo\|blocked\|done\|archived [--reason TEXT]` | move a task yourself |
++| `indus kanban assign <id> <profile>` | give a task to a profile (`none` takes it away) |
++| `indus kanban comment <id> "text"` | add a comment |
++| `indus kanban attach <id> <file>` | attach a file (at most 25 MiB) |
++| `indus kanban review <id> --approve` | accept work waiting in review: the task is done |
++| `indus kanban review <id> --changes "what to fix"` | send it back with the changes |
++| `indus kanban archive <id>` | archive a task (a running worker's run is closed) |
++
++Nothing here asks a question, so every verb works the same in scripts; `--json` prints
++machine-readable output on the verbs that show data.
++
++## Workers
++
++The gateway daemon runs a dispatcher pass every `kanban.dispatch_interval_seconds` (60) while
++`kanban.dispatch_in_gateway` is on (the default). Without a running gateway, `indus kanban dispatch`
++runs one pass by hand (`--dry-run` only says what would start).
++
++A pass starts a worker for each `ready` task that has an assignee, by priority. Tasks without an
++assignee, or whose assignee is not a profile on this machine, are skipped. A worker is a one-shot
++`indus chat` run of the assignee's profile with the board tools; it never gets the dispatching
++profile's provider keys. At most `kanban.max_in_progress` workers run at once; `0` (the default)
++works it out from memory: one per 512 MB, between 2 and 8.
++
++How a run ends decides what happens next:
++
++- the worker completed, blocked or asked for review: the task moves on;
++- the worker exited without doing any of those: the third time in a row the task is blocked;
++- the provider was rate limited or overloaded: the task goes back to the queue and that profile
++  waits five minutes, without counting a failure;
++- the provider refused the key or model: the task is blocked at once;
++- any other failure counts; `kanban.failure_limit` (2) failures in a row block the task.
++
++A claim lasts 15 minutes unless the worker reports it is still working. Each task keeps one log
++file under `<root>/boards/<slug>/`.
++
++## The agent and the board
++
++The board tools come in two toolsets. `kanban-worker` (show, complete, block, comment, attach,
++create and the like) is what workers get. `kanban` adds `kanban_list` and `kanban_unblock` for an
++agent that organises the work; turn it on with `indus tools enable kanban` (`--platform` for a chat platform). When a chat on a
++messaging platform creates a task, that chat is subscribed to it and hears when the task is done,
++blocked or waiting for review. See [Tools and toolsets](../reference/tools.md) for every tool and
++[`indus kanban`](../reference/cli.md#indus-kanban) for every option.
+diff --git a/docs/user/user-guide/bots-and-peers.md b/docs/user/user-guide/bots-and-peers.md
+new file mode 100644
+index 0000000..8d25180
+--- /dev/null
++++ b/docs/user/user-guide/bots-and-peers.md
+@@ -0,0 +1,67 @@
++# Bots and peers
++
++Each profile can act as a bot: a named agent with its own settings, memory and keys. Bots on the
++same machine can share a [group room](rooms.md), and bots on other machines are reached through
++peers: other Indus gateways you register by URL and key.
++
++## The bot chat
++
++Every profile has one long-running conversation of its own, titled `Bot chat`. It is hidden from the
++session list and found again by its title, so it stays the same conversation even after it is
++compressed. Messages that arrive "for the bot" rather than in a particular session land here:
++
++- a peer's [`indus peer dm`](#messaging-a-peer) runs one turn in it;
++- a scheduled job with `--deliver self-chat` adds its result to it as an incoming message (no turn
++  runs), so the bot sees it the next time you talk to it there.
++
++The desktop app's **Bots** page lists the profiles as bots (with their scheduled jobs), lets you
++hide one or give it a new picture, and shows the [group rooms](rooms.md).
++
++## Peers
++
++A peer is another Indus gateway whose [API server](../messaging/api-and-webhooks.md#api-server) you
++may call. On the other machine, turn the API server on and make a key for you:
++
++```bash
++indus config set gateway.api_server.enabled true
++indus gateway api-key create --label peer-laptop      # prints the key once
++indus gateway restart
++```
++
++Then register it here:
++
++```bash
++indus peer add office --url https://office.example.com --note "office desktop"
++# asks for the key (hidden); or pipe it in with --key-stdin
++indus peer list
++```
++
++The key is never a command-line argument. It is stored in this profile's secret store under
++`INDUS_PEER_<NAME>_KEY`; for a headless setup you can put it in the profile's environment under the
++same name. `indus peer list` shows the peers (name, URL, note) and whether each has a key; the peer
++list itself never holds a key. `indus peer remove <name>` forgets a peer and its stored key.
++
++Requests to a peer refuse private and loopback addresses, and never follow a redirect. For a peer on
++your own network, add it with `--lan`; that allows its private address. A URL with a user name or
++password in it is refused.
++
++## Messaging a peer
++
++```bash
++indus peer dm office "What changed in the build today?"     # one turn, prints the reply
++indus peer dm office/research "Summarise the open issues"   # a named profile on the peer
++echo "a long question" | indus peer dm office -              # the message from stdin
++```
++
++The target is `peer` (the peer's default profile) or `peer/profile`. `dm` runs one turn in that
++bot's [bot chat](#the-bot-chat) on the peer, waits up to 10 minutes and prints the answer.
++
++For longer work, `indus peer run <target> "message"` starts the turn and prints a run id at once;
++`indus peer status <target> <run-id>` shows how it is going (and the output when it finished), and
++`indus peer stop <target> <run-id>` stops only that run. `--json` prints machine-readable output.
++
++Exit codes: `0` done, `1` a peer or delivery problem (the message says what to do), `2` a usage
++error. If the request went out but no answer came back in time, the turn is still running on the
++peer: do not send it again.
++
++See [`indus peer`](../reference/cli.md#indus-peer) for every option.
+diff --git a/docs/user/user-guide/egress.md b/docs/user/user-guide/egress.md
+new file mode 100644
+index 0000000..8bb14c5
+--- /dev/null
++++ b/docs/user/user-guide/egress.md
+@@ -0,0 +1,57 @@
++# Egress proxy
++
++With the Docker terminal backend, the egress proxy keeps your provider keys out of the sandbox. The
++container gets a stand-in token instead of each key; a small proxy on your machine swaps the token
++for the real key on the way out, only for the hosts that key belongs to.
++
++```bash
++indus egress enable        # turn it on for this profile, make its certificate, start the proxy
++indus egress status        # on or off, the proxy, its hosts and the key names it fills in
++indus egress disable       # turn it off and stop the proxy
++```
++
++It needs the `egress` [extra](../getting-started/install.md#what-gets-installed). `enable` starts a background process, so without a terminal it needs
++`--yes`.
++
++## What a sandbox gets
++
++Each new container is pointed at the proxy (`HTTPS_PROXY` and friends) and trusts the proxy's own
++certificate authority (mounted read-only). Where a real key would be, it gets a token made for that
++container alone. The proxy opens the encrypted traffic only for hosts on its list, and there
++replaces the token with the real key, read from your secret store at that moment. Traffic to any
++other host passes through untouched: the token is useless there. With
++`egress.block_other_hosts` on, other hosts are refused instead. Addresses that are not public
++(loopback, private networks, cloud metadata) are always refused.
++
++The list starts with the model providers Indus knows: each provider's host and the header its API
++reads, for every provider whose key you have set. Add your own:
++
++```bash
++indus egress allow api.example.com --secret EXAMPLE_API_KEY            # fills Authorization
++indus egress allow api.example.com --secret EXAMPLE_API_KEY --header X-Api-Key
++indus egress allow "*.example.com"                                     # open TLS, fill nothing
++```
++
++Status output and logs show key names only, never values or tokens.
++
++## Settings that would get around it
++
++With `egress.enforce` on (the default), a sandbox refuses to start when your Docker settings would
++bypass the proxy: forwarding or setting a proxy, certificate or filled-in key variable
++(`terminal.docker_forward_env`, `terminal.docker_env`), extra `docker run` arguments that set one,
++any `--env-file`, or a `--network` flag. With it off, each of those is a warning and your setting
++wins. A sandbox with `terminal.docker_network: false` has no network at all and gets nothing from
++the proxy.
++
++Containers made with the proxy are never reused without it, and the other way round: after
++`enable` or `disable` the next sandbox is a new one.
++
++| Setting | Default | Meaning |
++|---|---|---|
++| `egress.enabled` | `false` | route Docker sandboxes through the proxy |
++| `egress.enforce` | `true` | refuse a sandbox whose settings would bypass the proxy |
++| `egress.port` | `47900` | the proxy's port (0 = any) |
++| `egress.bind` | `auto` | listen address: the Docker bridge on Linux, else loopback |
++| `egress.hosts` | `[]` | extra hosts whose traffic the proxy opens (nothing filled in) |
++| `egress.rules` | `[]` | your fill-in rules, `{host, secret, header}` (what `allow --secret` adds) |
++| `egress.block_other_hosts` | `false` | refuse hosts that are not on the list |
+diff --git a/docs/user/user-guide/helper-programs.md b/docs/user/user-guide/helper-programs.md
+new file mode 100644
+index 0000000..5f9c34c
+--- /dev/null
++++ b/docs/user/user-guide/helper-programs.md
+@@ -0,0 +1,55 @@
++# Helper programs (`indus pm`)
++
++Some tools use programs outside Python: ripgrep and uv (required), Node, ffmpeg and Chromium
++(installed by default), and gh, whisper.cpp and llama.cpp (optional). `indus pm` installs them into
++Indus's own folder, `<root>/pm/`, checks each download against a pinned SHA-256, and never touches
++your system's copies.
++
++```bash
++indus pm lock --yes        # pin a download URL and SHA-256 for every package (first time)
++indus pm install           # the required packages plus the default ones
++indus pm doctor            # check what is installed
++```
++
++## Pins
++
++`indus pm lock` writes `<root>/pm/lock.json`: for each package a version and, for every kind of
++machine, a URL and its SHA-256. It downloads every file to hash it, so without a terminal it needs
++`--yes`. `install` refuses until something is locked.
++
++`indus pm update` moves pins to the newest release that is at least 14 days old and installs what
++changed; `--check` only reports (exit 1 when updates exist), `--yes` applies without asking.
++
++## Installing
++
++| Command | What it does |
++|---|---|
++| `indus pm install [NAMES]` | install the named packages, or the required plus default ones |
++| `indus pm install --without ffmpeg` | leave a default package out, now and later (name it in `install` again to opt back in) |
++| `indus pm env [NAMES]` | print, as JSON, the folders installed packages add to `PATH` |
++| `indus pm doctor` | compare what is installed with the pins: ok, not installed, outdated, missing program, or changed on disk |
++| `indus pm repair` | rebuild damaged packages at their recorded versions (the pins are not changed) |
++| `indus pm gc` | remove downloads and installed folders nothing refers to any more |
++| `indus pm status [--json]` | what the last `pm` command did, step by step |
++
++A default package that fails to install is a warning, not a failure. `doctor` exits 1 when a
++required package is not usable or any package was changed on disk.
++
++## Offline machines
++
++```bash
++indus pm bundle --out /media/usb/indus-pm          # on a connected machine
++indus pm install --from /media/usb/indus-pm        # on the offline one
++```
++
++`bundle` copies the pins, the install records and the downloaded files into an empty folder;
++`install --from` installs from it without the network.
++
++## Settings
++
++| Setting | Default | Meaning |
++|---|---|---|
++| `pm.mirror_url` | empty | a mirror tried after a file's own URL (`<mirror_url>/sha256/<hash>`); every file must still match its pin |
++| `pm.timeout_s` | `60` | seconds one network request may take |
++
++Interrupted downloads resume where they stopped.
+diff --git a/docs/user/user-guide/lsp.md b/docs/user/user-guide/lsp.md
+new file mode 100644
+index 0000000..e047bc6
+--- /dev/null
++++ b/docs/user/user-guide/lsp.md
+@@ -0,0 +1,56 @@
++# Language servers
++
++When the agent edits a file, a language server can check the edit, the same way your editor would.
++If the edit introduced errors, the agent hears about them, in the next tool result or before its
++answer is final, and fixes them. Errors that were already in the file are not reported, and
++warnings stay quiet.
++
++Indus never installs a language server for you. A server is used when its program is on the `PATH`
++(or set in `lsp.servers`); `indus lsp status` shows which are found.
++
++```bash
++indus lsp status                  # settings, running servers, and the catalogue with what is installed
++indus lsp install-hint pyright    # how to install one
++indus lsp restart                 # stop this process's servers and forget their failures
++```
++
++## Which servers
++
++The catalogue covers Python (pyright or basedpyright), TypeScript and JavaScript, Go (gopls), Rust
++(rust-analyzer), C and C++ (clangd), Bash, YAML, Dockerfiles, PHP, Lua, Svelte, Vue, Terraform, Zig,
++Gleam, Elixir, Kotlin, Java, OCaml, Haskell, Clojure, Nix and Dart. `indus lsp status` lists them by
++id.
++
++Some servers run code the project ships (build scripts, compiler plugins, the project's own
++packages): rust-analyzer and gopls, for example. Those start only in a trusted folder: the
++session's own git work tree, or a folder listed in `lsp.trusted_workspaces`. The others only read
++files and run anywhere. Servers never get your provider keys in their environment.
++
++A server that fails to start is not tried again until `indus lsp restart`, or after
++`lsp.broken_retry_s` seconds when you set it. An unused server stops after `lsp.idle_timeout`.
++
++## Settings
++
++| Setting | Default | Meaning |
++|---|---|---|
++| `lsp.enabled` | `true` | check edits when a server is installed |
++| `lsp.wait_timeout` | `5.0` | seconds to wait for a server's verdict on an edit |
++| `lsp.idle_timeout` | `600` | seconds an unused server keeps running (under 30 counts as 30; 0 never stops it) |
++| `lsp.broken_retry_s` | `0` | seconds before a failed server is tried again (0: only after `indus lsp restart`) |
++| `lsp.trusted_workspaces` | `[]` | extra folders where code-running servers may start |
++| `lsp.servers` | `{}` | per-server changes or new servers |
++
++`lsp.servers.<id>` can set `command` (the program and its arguments), `extensions`,
++`root_markers`, `language_id`, `env`, `initialization_options` or `disabled: true`. An entry with
++`extensions` and an id the catalogue does not know adds a new server, which counts as running
++project code:
++
++```yaml
++lsp:
++  servers:
++    pyright:
++      disabled: true
++    mylang:
++      command: [mylang-lsp, --stdio]
++      extensions: [.ml2]
++```
+diff --git a/docs/user/user-guide/pets.md b/docs/user/user-guide/pets.md
+new file mode 100644
+index 0000000..44eb772
+--- /dev/null
++++ b/docs/user/user-guide/pets.md
+@@ -0,0 +1,47 @@
++# Pets
++
++A pet is a small companion figure you design yourself. It is drawn by the image service set up in
++your profile (`image_gen.*`), shown on the desktop as a small figure that wanders over your work
++area, and as a card in the terminal UI. Nothing is downloaded: every pet is drawn for you.
++
++## Making a pet
++
++```bash
++indus pet generate "a small red fox with a blue scarf"
++```
++
++This draws up to four looks (`--count 1` to `4`) and prints a token and the numbered drafts. Drafts
++are kept for an hour. Pick one and hatch it:
++
++```bash
++indus pet hatch <token> --pick 2 --name Pip --use
++```
++
++Hatching draws the pet once for each of its six moods (resting, walking, talking, thinking, sleeping,
++cheering), using the draft as the reference, and saves the pictures under `<home>/pets/<slug>/`.
++Generating may take up to 7 minutes and hatching up to an hour, depending on the image service.
++Without `--use` the new pet is not shown yet.
++
++## Showing and managing pets
++
++| Command | What it does |
++|---|---|
++| `indus pet list` | the pets of this profile; the shown one is marked |
++| `indus pet show [SLUG]` | one pet's idea, scale, folder and pictures |
++| `indus pet use SLUG` | show this pet on the desktop and in the TUI |
++| `indus pet off` | hide the pet everywhere |
++| `indus pet rename SLUG NEW NAME` | give it a new name |
++| `indus pet remove SLUG [-y]` | delete a pet and its pictures |
++
++In the TUI, `/pet` shows the shown pet's card; `/pet list`, `/pet use <slug>` and `/pet off` work
++there too.
++
++On the desktop the pet lives in its own see-through window: clicks pass through everywhere except
++the figure itself, it says short status lines in a bubble, and it hides while a full-screen window
++is in front.
++
++| Setting | Default | Meaning |
++|---|---|---|
++| `pet.enabled` | `false` | show the pet (`use` turns it on, `off` turns it off) |
++| `pet.active` | empty | the slug of the pet to show |
++| `pet.scale` | `1.0` | size on every surface, from 0.25 to 3 |
+diff --git a/docs/user/user-guide/rooms.md b/docs/user/user-guide/rooms.md
+new file mode 100644
+index 0000000..5239e59
+--- /dev/null
++++ b/docs/user/user-guide/rooms.md
+@@ -0,0 +1,55 @@
++# Group rooms
++
++A group room is a lasting chat in which several of your [bots](bots-and-peers.md) (profiles) talk
++with you and with each other. The gateway keeps the room's history, decides whose turn it is and
++runs each member's turn, so a room keeps going while no app is open.
++
++## Where rooms live
++
++Rooms belong to the Indus root, not to one profile: every room is kept in `<root>/rooms.db`. The
++gateway daemon drives them, so the gateway must be running (`indus gateway start`). A member's turn
++runs in that member's own profile, which this gateway must serve: when the members are different
++profiles, turn on `gateway.multiplex_profiles` so one gateway serves every profile under the root.
++A member whose profile is not served fails its turn with a message saying so.
++
++In the desktop app, the **Bots** page lists the rooms under *Group rooms*. Open one to read it,
++write to it (**Send**), stop the turns in progress (**Stop**), retry a turn that needs a decision,
++or **Disband** it. Programs reach the same actions through the `groups.*` methods of the
++[protocol](../reference/protocol.md); a room is created with `groups.create`, naming its members by
++profile.
++
++## Whose turn it is
++
++- Your message gives a turn to each member it @mentions (`@all` or `@everyone` names every member),
++  or to the first member when it mentions nobody.
++- When every member that was asked has answered, the member after the last speaker (in room order)
++  goes next, so members can answer each other.
++- One message of yours leads to at most 8 member turns. A member that says nothing, a failed turn,
++  a stop, or a new message from you ends the chain.
++- Members take turns one at a time. A member that stops reporting progress for 3 minutes loses its
++  turn; no turn runs longer than 3 hours.
++
++## Stopping
++
++**Stop** cancels every queued turn and asks the running one to stop. In a message, a stop word
++(`stop`, `halt` or `pause`) right next to a member's @mention holds that member: `stop @writer`,
++`@writer stop`, `@writer please pause`. `@all stop` holds everyone. A held member takes no turn
++until a later message of yours @mentions it again. The same words elsewhere in a message, or inside
++code, quotes or block quotes, are ordinary text.
++
++## Turns that need a decision
++
++When you stop the gateway, the turns in progress end as failed. If the gateway dies in the middle
++of a turn instead (a crash, a killed process), nobody knows how far the turn got, so it is never
++started again on its own: running it twice could repeat what it did. The room shows it as waiting
++for you; **Retry turn** runs it again once you have decided that is safe.
++
++## Disbanding
++
++Disbanding ends a room for every member. Its history stays readable, and its id is never used
++again: a new room with the same name is a fresh room. Disbanded rooms are removed after 90 days.
++
++## Limits
++
++A room holds at most 128 members and 50,000 events (256 MiB); at most 256 rooms are active at
++once. A full room still accepts a stop or a disband.
+diff --git a/docs/user/user-guide/themes.md b/docs/user/user-guide/themes.md
+new file mode 100644
+index 0000000..254425a
+--- /dev/null
++++ b/docs/user/user-guide/themes.md
+@@ -0,0 +1,36 @@
++# Themes
++
++## Desktop app
++
++Open **Settings → Appearance → Theme**.
++
++- **Colour theme** picks light, dark, or following the system.
++- **Colours** picks one of twelve built-in themes (Indus, Monsoon, Laterite, Saffron, Indigo,
++  Basalt, Lotus, Mangrove, Dune, Harbour, Terrace, Jade). Each has a light and a dark side, and
++  every one keeps text readable (WCAG AA contrast) in both.
++- **Accent hue** changes the accent colour; the app adjusts it as needed so text on it stays
++  readable. **Use the theme's accent** undoes it.
++- **For this profile only** gives the foreground profile its own theme, chat font and terminal font,
++  so you can tell profiles apart at a glance.
++
++### VS Code themes
++
++**Import a VS Code theme** searches the VS Code Marketplace (an empty search shows the most
++installed), downloads the extension you pick, converts its colours to an Indus theme and installs
++it as one of yours, marked *(yours)* in the list. Installing one you already have switches back to
++it; **Remove** deletes it. Imported themes are kept per device. The app talks only to the
++Marketplace's own hosts for this.
++
++## Terminal UI
++
++The TUI reads `tui.theme`: `auto` (the default) detects a light or dark terminal, or set a theme
++name. In the desktop app, **Use this light or dark choice in the terminal UI too** writes the
++desktop's current light or dark choice to `tui.theme` for the foreground profile.
++
++## Web dashboard
++
++`dashboard.theme` is `system`, `light` or `dark`; see [Web dashboard](dashboard.md).
++
++## Languages
++
++Indus Agent ships in English only for now.
+diff --git a/docs/user/user-guide/vault.md b/docs/user/user-guide/vault.md
+new file mode 100644
+index 0000000..5c65779
+--- /dev/null
++++ b/docs/user/user-guide/vault.md
+@@ -0,0 +1,47 @@
++# Saved logins (vault)
++
++The browser tools can sign in, pay and fill addresses for you without the agent ever seeing the
++password, card number or address. The agent works with handles; the values are looked up on your
++machine and typed straight into the page.
++
++## Where the values come from
++
++`browser.vault_sources` lists the sources the agent may use (all three by default):
++
++| Source | What it needs |
++|---|---|
++| `local` | the local vault, managed with `indus vault` (needs the `vault` [extra](../getting-started/install.md#what-gets-installed)) |
++| `onepassword` | the 1Password command-line tool (`op`, version 2) installed |
++| `bitwarden` | the Bitwarden command-line tool (`bw`) installed |
++
++A command-line source is used only when its program is installed. When a password manager is
++locked, the agent can ask you to unlock it: you type the master password into a hidden prompt, and
++it is handed to the manager's program, never to the model.
++
++## The local vault
++
++```bash
++indus vault add --kind login --origin https://shop.example.com --label "Shop account"
++indus vault list
++indus vault remove <handle>
++```
++
++`add` saves a login (the site, a label, the user name, then the password and an optional
++authenticator key), a payment card or an address. Values are only ever typed into hidden prompts,
++never given as arguments, so `add` needs a terminal. `list` shows handles and labels, never values.
++
++The vault is one encrypted file, `<home>/vault/local.vault`, readable only by you; its key is kept
++in the profile's secret store (the system keychain when it works). `indus vault lock` stops the
++agent from using it until `indus vault unlock`, or until you approve an unlock request in a chat.
++
++## How filling stays safe
++
++- An item is filled only on the exact site (origin) it is saved for. The page's address is checked
++  before filling and again at the moment of filling, so a page that redirected in between gets
++  nothing.
++- Card details are filled only after you approve a request in the chat.
++- The agent can ask to save the login of the current page: you type the user name and password
++  yourself, and they are stored in the local vault for that site.
++- One-time codes come from the item's authenticator key when it has one, otherwise you are asked.
++- Every value that was filled is masked if it later shows up in a page snapshot, and tool results
++  carry only handles, counts, sites and outcomes.
+diff --git a/docs/user/user-guide/verify.md b/docs/user/user-guide/verify.md
+new file mode 100644
+index 0000000..e331907
+--- /dev/null
++++ b/docs/user/user-guide/verify.md
+@@ -0,0 +1,46 @@
++# Checking a project (`indus verify`)
++
++`indus verify` works out how to build, test and start a project from its files, then does it.
++
++```bash
++indus verify                    # the current folder
++indus verify ~/src/app --detect-only     # only show what it found
++indus verify --phase test       # only the tests
++```
++
++## What it finds
++
++The first lockfile decides the package manager (pnpm, bun, yarn or npm; uv, poetry or pipenv). A
++`package.json` gives a Node recipe from its scripts; otherwise it looks for a Python project
++(Django, FastAPI, Flask or plain), Go, Rust, Maven or Gradle, a `Makefile`'s targets, or a compose
++file.
++
++## What it runs
++
++Phases run in order, stopping at the first failure: `bootstrap` (install dependencies), `build`,
++`test`, then `start`, which boots the start command on 127.0.0.1 and waits for it to answer, then
++stops it. `--skip-start` leaves `start` out; `--phase` (repeatable) picks phases.
++
++Commands run on the local terminal backend with the same environment and approval rules as the
++agent's commands, but with nobody to ask: a command that would need your approval is refused, not run. Each command may
++run `verify.phase_timeout` seconds (600; `--timeout` for one run) and the service gets
++`verify.ready_timeout` seconds (60; `--ready-timeout`) to answer; `--port` names its port. For a
++compose project, `verify` refuses to build or start while that project already has running
++containers. The report keeps the last 2,000 characters of each command's output; `--json` prints it
++as one JSON object.
++
++Exit codes: `0` everything passed, `1` something failed or no recipe was found, `2` the path is not
++a folder.
++
++## Checking before the agent finishes
++
++With `verify.on_stop` on, the agent runs the project's `build` and `test` before its answer is
++final whenever the turn edited code files. If they fail, the agent gets the failing command's
++output and goes back to work, at most `verify.max_stop_attempts` times (2) per turn.
++
++```bash
++indus config set verify.on_stop true
++```
++
++A plugin can also check the work at that point (the `pre_verify` hook); it may send the agent back
++at most `verify.max_hook_nudges` times (3) per turn.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index e7a801e..bf4ca46 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -72,16 +72,26 @@ nav:
+       - Desktop app: user-guide/desktop.md
+       - Web dashboard: user-guide/dashboard.md
+       - Docker: user-guide/docker.md
++      - Themes: user-guide/themes.md
++      - Pets: user-guide/pets.md
+       - Models and keys: user-guide/models.md
+       - Profiles: user-guide/profiles.md
+       - Sessions: user-guide/sessions.md
+       - Tools and backends: user-guide/tools-and-backends.md
++      - Language servers: user-guide/lsp.md
++      - Checking a project: user-guide/verify.md
++      - Helper programs: user-guide/helper-programs.md
++      - Egress proxy: user-guide/egress.md
+       - Approvals and security: user-guide/security.md
++      - Saved logins (vault): user-guide/vault.md
+       - Memory and skills: user-guide/memory-and-skills.md
+       - Plugins and MCP: user-guide/plugins-and-mcp.md
+       - Serving MCP: mcp-serve.md
+       - Editors (ACP): acp.md
+       - Scheduled jobs: user-guide/cron.md
++      - Task board: user-guide/board.md
++      - Bots and peers: user-guide/bots-and-peers.md
++      - Group rooms: user-guide/rooms.md
+       - Research tooling: user-guide/research.md
+       - Evals: research/evals.md
+   - Messaging:
+@@ -110,6 +120,7 @@ nav:
+       - SimpleX Chat: messaging/simplex.md
+       - Buzz: messaging/buzz.md
+       - Raft: messaging/raft.md
++      - Relay: messaging/relay.md
+       - API server and webhooks: messaging/api-and-webhooks.md
+   - Reference:
+       - Command line: reference/cli.md
