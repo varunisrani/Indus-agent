@@ -51,3 +51,13 @@
   apart from one-off load flakes in untouched electron/updates/updater.test.ts and electron/backend/resolver.test.ts.
 - W48-c-1..5. MERGE NOTE: core/tool_round.py and backends/task_overrides.py were also touched by waves 46/47 (landed);
   w48e/g touch startup only.
+
+## w48b.patch: TUI default mode — session picker rows; complete.path, commands.catalog, config.get served (done)
+- 20 files, +949/-412. Protocol SessionRow.model (codegen regenerated); TUI sessionSwitcherState fills live rows from stored
+  rows; new service/path_completion.py and service/client_settings.py (bridge re-exports), picker_reads.command_catalog;
+  gateway/ws/methods.py serves the three (session-scoped calls need Subscriptions.require; config.set still -32601).
+- Fail-first: test_ws_tui_reads.py 5/5 failed on base; sessionSwitcherState 2/12. pytest 5837 (2 fixed/env); TUI vitest 790;
+  tsc/biome ok; dual-host matrix 6.
+- W48-b-1..4. Integrator updates D-16.549 / D-16.1040 text (W48-b-3). MERGE NOTE: w48b and the wave-47 picker_reads are in
+  main already; packages/protocol/src/generated changes — regenerate with codegen after applying.
+- Follow-ups: serve slash.exec / command.dispatch; daemon session.info / session.title (D-16.550) for the attached status bar.

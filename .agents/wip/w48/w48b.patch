@@ -1,0 +1,1768 @@
+diff --git a/apps/tui/src/pickers/SessionSwitcher.tsx b/apps/tui/src/pickers/SessionSwitcher.tsx
+index e990452..2452713 100644
+--- a/apps/tui/src/pickers/SessionSwitcher.tsx
++++ b/apps/tui/src/pickers/SessionSwitcher.tsx
+@@ -60,12 +60,12 @@ function rowText(row: SwitcherRow, draft: string, now: number): { main: string;
+     case "live":
+       return {
+         main: `${STATUS_MARK[row.status]} ${row.title}${row.current ? " (open)" : ""}`,
+-        side: row.model,
++        side: [row.model, row.source].filter(Boolean).join(" · "),
+       };
+     case "stored":
+       return {
+         main: row.preview ? `${row.title} — ${row.preview}` : row.title,
+-        side: [relativeAge(row.when, now), row.source].filter(Boolean).join(" · "),
++        side: [relativeAge(row.when, now), row.model, row.source].filter(Boolean).join(" · "),
+       };
+   }
+ }
+diff --git a/apps/tui/src/pickers/sessionSwitcherState.test.ts b/apps/tui/src/pickers/sessionSwitcherState.test.ts
+index 67189a4..e1c5566 100644
+--- a/apps/tui/src/pickers/sessionSwitcherState.test.ts
++++ b/apps/tui/src/pickers/sessionSwitcherState.test.ts
+@@ -65,6 +65,30 @@ describe("rows", () => {
+     expect(rows[1]).toMatchObject({ current: true, model: "m-1" });
+   });
+ 
++  it("a live row without session.info takes title, model and source from its stored row", () => {
++    // Attached to the daemon (the default) no session.info arrives: the listing fills the row.
++    const bare = { id: "a", title: null, model: null, status: "idle" as const };
++    const rows = buildRows([bare], [stored("a", { model: "vendor/m-2", source: "cli" })], "a");
++    expect(rows[1]).toMatchObject({
++      kind: "live",
++      title: "title a",
++      model: "m-2",
++      source: "cli",
++      current: true,
++    });
++    // What session.info says wins over the listing.
++    const told = buildRows([live("a")], [stored("a", { model: "vendor/m-2" })], "a");
++    expect(told[1]).toMatchObject({ title: "live a", model: "m-1", source: "tui" });
++    // No stored row yet (a brand-new session): the id stands in for the title.
++    expect(buildRows([bare], [], "a")[1]).toMatchObject({ title: "a", model: "", source: "" });
++  });
++
++  it("stored rows carry their model and source", () => {
++    const rows = buildRows([], [stored("b", { model: "vendor/m-3" }), stored("c")], null);
++    expect(rows[1]).toMatchObject({ kind: "stored", model: "m-3", source: "tui" });
++    expect(rows[2]).toMatchObject({ kind: "stored", model: "" });
++  });
++
+   it("clips titles to 64 characters and starts on the open session", () => {
+     const rows = buildRows([], [stored("x", { title: "t".repeat(100) })], null);
+     expect((rows[1] as { title: string }).title).toHaveLength(64);
+diff --git a/apps/tui/src/pickers/sessionSwitcherState.ts b/apps/tui/src/pickers/sessionSwitcherState.ts
+index 88189b6..63b4b54 100644
+--- a/apps/tui/src/pickers/sessionSwitcherState.ts
++++ b/apps/tui/src/pickers/sessionSwitcherState.ts
+@@ -22,6 +22,7 @@ export type SwitcherRow =
+       readonly id: string;
+       readonly title: string;
+       readonly model: string;
++      readonly source: string;
+       readonly status: LiveStatus;
+       readonly current: boolean;
+     }
+@@ -32,6 +33,7 @@ export type SwitcherRow =
+       readonly preview: string;
+       /** Epoch seconds of the newest activity. */
+       readonly when: number;
++      readonly model: string;
+       readonly source: string;
+     };
+ 
+@@ -96,21 +98,28 @@ export function relativeAge(when: number, nowMs: number): string {
+   return `${Math.floor(days / 7)}w`;
+ }
+ 
+-/** Rows in display order; a stored row that is also live is shown once, as live. */
++/**
++ * Rows in display order; a stored row that is also live is shown once, as live. A live row
++ * takes what `session.info` said, else its stored row's title, model and source: attached to the
++ * daemon no `session.info` arrives, so the listing is what names it (W48-b).
++ */
+ export function buildRows(
+   live: readonly LiveInput[],
+   stored: readonly SessionRow[],
+   currentId: string | null,
+ ): SwitcherRow[] {
+   const rows: SwitcherRow[] = [{ kind: "new", id: NEW_ROW_ID }];
++  const listed = new Map(stored.map((row) => [row.session_id, row]));
+   const liveIds = new Set<string>();
+   for (const session of live) {
+     liveIds.add(session.id);
++    const row = listed.get(session.id);
+     rows.push({
+       kind: "live",
+       id: session.id,
+-      title: clip(session.title || session.id, TITLE_MAX),
+-      model: shortModel(session.model),
++      title: clip(session.title || row?.title || row?.preview || session.id, TITLE_MAX),
++      model: shortModel(session.model || row?.model || null),
++      source: row?.source ?? "",
+       status: session.status,
+       current: session.id === currentId,
+     });
+@@ -123,6 +132,7 @@ export function buildRows(
+       title: clip(row.title || row.preview || row.session_id, TITLE_MAX),
+       preview: row.title ? clip(row.preview ?? "", TITLE_MAX) : "",
+       when: row.last_active ?? row.started_at,
++      model: shortModel(row.model ?? null),
+       source: row.source ?? "",
+     });
+   }
+diff --git a/docs/internals/threat-model.md b/docs/internals/threat-model.md
+index 028ee6b..47c825e 100644
+--- a/docs/internals/threat-model.md
++++ b/docs/internals/threat-model.md
+@@ -89,7 +89,7 @@ shapes this review found out of `src/` and `scripts/` (row B-STATIC-1).
+ | B-DAEMON-2 | a WS client → A-CRED | tickets: 32 random bytes, digest only, 30 s, single use, purpose- and profile-bound; a failed redemption spends; capacity bounded | `tests/unit/service/test_ws_auth.py`, `tests/security/test_trust_boundaries.py::test_daemon_ticket_single_use_and_bound` | held |
+ | B-DAEMON-3 | T-NET / T-WEB → the daemon WS | loopback peers only; credentials only in `Sec-WebSocket-Protocol`; a query-string ticket is spent and refused | `tests/contract/gateway/test_ws_endpoint.py`, `tests/integration/gateway/test_ws_listener.py` | held |
+ | B-DAEMON-4 | the launching shell → a shared daemon | launch env scrubbed (`scrub_launch_env`) | `tests/unit/service/test_creation_policy.py`, `tests/integration/gateway/test_ensure.py` | held |
+-| B-DAEMON-5 | one connection → another surface's sessions | events and session operations only for sessions this connection attached | `tests/unit/service/test_subscriptions.py`, `tests/contract/gateway/test_ws_session_mutate.py`, `tests/contract/gateway/test_ws_pickers.py` (wave 47: the TUI picker reads) | held |
++| B-DAEMON-5 | one connection → another surface's sessions | events and session operations only for sessions this connection attached | `tests/unit/service/test_subscriptions.py`, `tests/contract/gateway/test_ws_session_mutate.py`, `tests/contract/gateway/test_ws_pickers.py` (wave 47: the TUI picker reads), `tests/contract/gateway/test_ws_tui_reads.py` (wave 48: path completion, catalogue, settings read) | held |
+ | B-MUX-1 | one served profile → another's secrets (wave-42 WA multiplex) | each served profile's scope is built from OS names only plus its own `.env`/config; `ScopedReader` fails closed; children get that scope's env | `tests/unit/gateway/multiplex/test_scope.py`, `tests/contract/gateway/multiplex/test_shared_ingress.py`, `tests/security/test_trust_boundaries.py::test_mux_profile_scopes_do_not_leak` | held |
+ | B-MUX-2 | tickets across served profiles | a book mints and redeems only for served profiles; an unreadable served set refuses | `tests/security/test_trust_boundaries.py::test_daemon_ticket_only_for_served_profiles` | held |
+ | B-MUX-3 | a client → a served profile's own attach endpoint (wave 42, D-16.877) | the served daemon's WebSocket binds only that profile's routed scope (its home is the ticket book's profile, its secret store inside that home); every other routed scope is refused; tickets come from that profile's own control socket | `tests/unit/service/remote/test_profile_guard.py::test_a_served_profiles_own_routed_scope_may_serve_its_daemon`, `tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_a_served_profile_is_attached_over_its_own_websocket`, `tests/security/test_trust_boundaries.py::test_mux_served_profile_attach_stays_in_its_own_home` | held |
+diff --git a/docs/notes/P17/dual-host-matrix.md b/docs/notes/P17/dual-host-matrix.md
+index ecdcefe..f8332f1 100644
+--- a/docs/notes/P17/dual-host-matrix.md
++++ b/docs/notes/P17/dual-host-matrix.md
+@@ -105,9 +105,10 @@ Allow-listed (D-ids for the lead; details in the YAML):
+   daemon finishes the turn.
+ - `bridge.event_shape/session events` (D-?): no `session.info` after create/resume, no
+   `session.title` when the title lands.
+-- `bridge.settings/settings` (D-16.549): `config.get`, `config.set` are not served by the
+-  daemon (-32601). `model.options`, `complete.slash` and `session.list` are served since wave 47
+-  (D-16.1038, D-16.1039).
++- `bridge.settings/settings` (D-16.549): `config.set` is not served by the daemon (-32601).
++  `model.options`, `complete.slash` and `session.list` are served since wave 47
++  (D-16.1038, D-16.1039); `config.get`, `complete.path` and `commands.catalog` since wave 48
++  (W48-b), so only the write differs.
+ 
+ ## Decisions for the lead
+ - D-? (proposed): the daemon serves the session methods only; the TUI's settings/picker methods
+diff --git a/docs/notes/P17/ws-endpoint.md b/docs/notes/P17/ws-endpoint.md
+index a91e4be..59b68dc 100644
+--- a/docs/notes/P17/ws-endpoint.md
++++ b/docs/notes/P17/ws-endpoint.md
+@@ -237,3 +237,63 @@ Decisions for the lead:
+ - W47-c-3 (D-16.1040): next candidates for the daemon table, same pattern: `complete.path` (needs the
+   session's backend and cwd), `commands.catalog`, `config.get` (read-only; then `bridge.settings`
+   narrows to `config.set`).
++
++## Wave 48 (builder b, 2026-10-22): the TUI's other reads, and named session rows
++
++Status: done. An attached TUI (the default) got `-32601` for `complete.path`, `commands.catalog` and
++`config.get`, and its sessions picker showed the open session as a bare id with no model (the
++daemon sends no `session.info`, D-16.550, and `session.list` rows had no model). Now the daemon
++serves the three reads with the bridge's answers, `session.list` rows carry the model, and the
++picker fills a live row from its stored row.
++
++Read: no reference file (our own attach path; the bridge handlers are the spec). Our
++`tui_bridge/methods_complete.py`, `methods_config.py`, `methods_slash.py`, `service/picker_reads.py`,
++`apps/tui/src/pickers/sessionSwitcherState.ts`, `SessionSwitcher.tsx`, the screenshot
++`tui-08-sessions.png`, threat model B-DAEMON-5.
++
++What changed (own words):
++- One definition per read, under `indus.service` (the gateway may not import `tui_bridge`):
++  `service/path_completion.py` (moved from the bridge: reference hints, fuzzy `@word`, folder
++  listings through a non-local backend; `session_folder(service, id)` is the session's folder),
++  `service/client_settings.py` (`read_config`, `needs_session`, `session_switches`, the settings
++  helpers and `ToolMode` / `TOOL_MODES`, re-exported by the bridge modules for their callers) and
++  `picker_reads.command_catalog` with `SERVER_COMMANDS` / `CLIENT_COMMANDS` (the bridge's
++  `HANDLERS` / `CLIENT`; a test keeps them equal). The bridge's handlers now call these.
++- Daemon (`gateway/ws/methods.py`): a named `session_id` must be attached by this connection
++  (`Subscriptions.require`, then `service.current_id`). `complete.path` uses the client's `cwd`,
++  else the attached session's folder, through the process's terminal registry (the one the
++  daemon's agents use). `commands.catalog` follows the connection's surface like `complete.slash`.
++  `config.get` reads the live switches on the loop and the settings file off it; `verbose` for a
++  session is the profile's `tui.tool_progress` (the daemon keeps no per-viewer mode).
++  `config.set` stays unserved.
++- Protocol: `SessionRow.model` (optional; regenerated `packages/protocol`); `picker_reads.session_row`
++  fills it from the listing.
++- TUI: `buildRows` gives a live row `session.info`'s title and model, else its stored row's title
++  (or preview), model and source; stored rows carry model too. The switcher shows
++  `model · source` beside live rows and `age · model · source` beside stored rows.
++
++Tests (fail-first; on the base the three methods answered `-32601`, `served()` lacked them and
++rows had no `model`): `tests/contract/gateway/test_ws_tui_reads.py` (each read over the socket
++equals the in-process bridge's for the same profile: path words incl. `@`, fuzzy and hidden, the
++session's folder; catalogue with a quick command; `config.get` for `full`, client keys, dotted
++keys, `mtime`, a session's `full` and `model`; a foreign session → `SESSION_NOT_FOUND`;
++`config.set` → `-32601`; session rows carry title, model, source),
++`tests/contract/tui_bridge/test_methods_slash.py::test_the_shared_catalogue_names_what_the_bridge_runs`,
++vitest `sessionSwitcherState.test.ts` (two new cases failed on the base). Dual-host matrix
++`bridge.settings` still differs (only `config.set` now); its allow-list text updated.
++
++Not done here: `slash.exec` / `command.dispatch` are still not served, so a catalogue entry
++marked `runs: server` cannot be run by an attached TUI (it answers `-32601`, as before);
++`session.info` / `session.title` from the daemon (D-16.550) would also give the status bar the
++model and folder.
++
++Decisions for the lead:
++- W48-b-1: `config.get` and `commands.catalog` over the daemon answer exactly what `--local`
++  answers, including `runs: server` for the bridge's handlers although the daemon does not serve
++  `slash.exec` yet (the TUI reads only names, aliases and descriptions from the catalogue).
++  Proposed: keep; serve `slash.exec` next or mark those entries `later` when attached.
++- W48-b-2: an attached session's `verbose` in `config.get` is the profile's tool-progress mode.
++- W48-b-3: D-16.549 / D-16.1040 text: `config.get`, `complete.path`, `commands.catalog` served
++  since wave 48; `bridge.settings` narrows to `config.set` (allow-list YAML and
++  `dual-host-matrix.md` already say so).
++- W48-b-4: `SessionRow.model` (optional field, protocol addition; generated files regenerated).
+diff --git a/packages/protocol/src/generated/schema.json b/packages/protocol/src/generated/schema.json
+index 593c7e3..7f81510 100644
+--- a/packages/protocol/src/generated/schema.json
++++ b/packages/protocol/src/generated/schema.json
+@@ -3771,6 +3771,11 @@
+           "minimum": 0,
+           "type": "integer"
+         },
++        "model": {
++          "anyOf": [{"type": "string"}, {"type": "null"}],
++          "default": null,
++          "description": "The model it last ran on, when one is stored."
++        },
+         "preview": {
+           "default": "",
+           "description": "The start of its first user message.",
+diff --git a/packages/protocol/src/generated/types.ts b/packages/protocol/src/generated/types.ts
+index 8d52732..7dd4b5e 100644
+--- a/packages/protocol/src/generated/types.ts
++++ b/packages/protocol/src/generated/types.ts
+@@ -2017,6 +2017,8 @@ export interface SessionRow {
+   preview?: string;
+   /** Where it was started (`cli`, `tui`, a platform name). */
+   source?: string;
++  /** The model it last ran on, when one is stored. */
++  model?: string | null;
+   /** Start time, epoch seconds. */
+   started_at: number;
+   /** Newest activity, epoch seconds. */
+diff --git a/src/indus/gateway/ws/methods.py b/src/indus/gateway/ws/methods.py
+index b05e4c7..f94918f 100644
+--- a/src/indus/gateway/ws/methods.py
++++ b/src/indus/gateway/ws/methods.py
+@@ -42,7 +42,15 @@ the client's ``request_id``.
+ The TUI's pickers (W47-c): ``complete.slash``, ``model.options`` and ``session.list`` answer what
+ the in-process bridge answers for the profile (``service.picker_reads``). A named ``session_id``
+ must be one this connection attached (another's reads as unknown); ``session.list`` lists the
+-profile's stored conversations, as ``--local`` does (every attached client is the owner).
++profile's stored conversations, as ``--local`` does (every attached client is the owner); its rows
++carry the title, the source and the model the session last ran on.
++
++The TUI's other reads (W48-b): ``complete.path`` (``service.path_completion``: the client's folder,
++else the attached session's, listed through the profile's terminal backend), ``commands.catalog``
++(``picker_reads.command_catalog`` for the connection's surface) and ``config.get``
++(``service.client_settings``; the session keys read the attached session's live switches, and
++``verbose`` is the profile's tool-progress mode: the daemon keeps none per viewer) answer what the
++bridge answers. ``config.set`` is not served (D-16.549).
+ 
+ ``runtime.describe`` answers what the control socket's ``describe`` does, plus the replay epoch.
+ ``maintenance.run`` runs one bulk store operation on the daemon's own store handle
+@@ -53,7 +61,7 @@ from __future__ import annotations
+ 
+ import contextlib
+ import secrets
+-from typing import TYPE_CHECKING, Final
++from typing import TYPE_CHECKING, Any, Final
+ 
+ from indus.foundation.blocking import run_blocking
+ from indus.gateway.control_socket import code_version
+@@ -81,8 +89,13 @@ from indus.protocol.attach import (
+     SessionUnsubscribeResult,
+ )
+ from indus.protocol.bridge import (
++    CommandsCatalogParams,
++    CommandsCatalogResult,
++    CompletePathParams,
+     CompleteResult,
+     CompleteSlashParams,
++    ConfigGetParams,
++    ConfigGetResult,
+     GatewayPingParams,
+     GatewayPingResult,
+     ModelOptionsParams,
+@@ -127,7 +140,7 @@ from indus.protocol.methods import (
+     SubmitStatus,
+     negotiate_features,
+ )
+-from indus.service import picker_reads
++from indus.service import client_settings, path_completion, picker_reads
+ from indus.service.admissions import Receipt, close_lost_turn
+ from indus.service.commands.registry import Surface
+ from indus.service.event_log import ReplayGap
+@@ -521,6 +534,54 @@ async def list_sessions(conn: WsConnection, params: SessionListParams) -> Sessio
+     )
+ 
+ 
++# -- the TUI's other reads (W48-b) ----------------------------------------------------------------
++
++
++def _attached_id(conn: WsConnection, session_id: str | None) -> str | None:
++    """The live id of a session this connection attached (None when none is named)."""
++    if session_id is None:
++        return None
++    return conn.host.service.current_id(conn.subs.require(session_id))
++
++
++@methods.method("complete.path")
++async def complete_path(conn: WsConnection, params: CompletePathParams) -> CompleteResult:
++    sid = _attached_id(conn, params.session_id)
++    folder = path_completion.session_folder(conn.host.service, sid)
++    named = params if sid is None else params.model_copy(update={"session_id": sid})
++    return await path_completion.complete_path(conn.scope, named, folder=folder)
++
++
++@methods.method("commands.catalog")
++async def commands_catalog(
++    conn: WsConnection, params: CommandsCatalogParams
++) -> CommandsCatalogResult:
++    sid = _attached_id(conn, params.session_id)
++    surface = _COMMAND_SURFACE.get(conn.subs.surface, "tui")
++    return await run_blocking(
++        lambda: picker_reads.command_catalog(
++            conn.scope, surface=surface, skills=picker_reads.skill_table(conn.scope, sid)
++        ),
++        label="command catalogue",
++    )
++
++
++@methods.method("config.get")
++async def config_get(conn: WsConnection, params: ConfigGetParams) -> ConfigGetResult:
++    """Read-only: ``config.set`` stays with the in-process bridge (D-16.549)."""
++    sid = _attached_id(conn, params.session_id)
++    live: dict[str, Any] | None = None
++    if sid is not None and client_settings.needs_session(params):
++        # The daemon keeps no per-viewer tool-progress mode: the profile's applies.
++        verbose = await run_blocking(
++            client_settings.default_tool_mode, conn.scope, label="settings read"
++        )
++        live = client_settings.session_switches(conn.scope, conn.host.service, sid, verbose)
++    return await run_blocking(
++        client_settings.read_config, conn.scope, params, live, label="settings read"
++    )
++
++
+ def served() -> list[str]:
+     """Method names the daemon's WebSocket serves."""
+     return methods.names()
+diff --git a/src/indus/protocol/bridge.py b/src/indus/protocol/bridge.py
+index 9ae5c1f..739547c 100644
+--- a/src/indus/protocol/bridge.py
++++ b/src/indus/protocol/bridge.py
+@@ -94,6 +94,8 @@ class SessionRow(ProtocolModel):
+     """The start of its first user message."""
+     source: str = ""
+     """Where it was started (``cli``, ``tui``, a platform name)."""
++    model: str | None = None
++    """The model it last ran on, when one is stored."""
+     started_at: float
+     """Start time, epoch seconds."""
+     last_active: float | None = None
+diff --git a/src/indus/service/client_settings.py b/src/indus/service/client_settings.py
+new file mode 100644
+index 0000000..3a303bf
+--- /dev/null
++++ b/src/indus/service/client_settings.py
+@@ -0,0 +1,161 @@
++"""``config.get``: the client's settings, read the same way on every transport (W48-b).
++
++The in-process bridge (``--local``) and the daemon's WebSocket (an attached TUI) both answer
++``config.get`` with ``read_config``, so an attached TUI starts with what ``--local`` shows:
++
++- ``mtime`` → the settings file's change stamp (cheap polling);
++- ``full`` → every setting the client shows, plus the session's live switches when one is named;
++- a client key (``busy``, ``theme``, ``verbose``, ``model``, …) → that value; the session keys
++  (``model``, ``reasoning``, ``fast``, ``yolo``, ``verbose``) read the named session's live value;
++- a dotted ``display.*`` / ``tui.*`` path → that setting, read fresh, else its built-in default.
++
++Anything else is refused (``INVALID_PARAMS``): this is not a general settings reader. Writing
++(``config.set``) stays with the bridge. Who may name which session is the transport's rule: the
++daemon checks that the connection attached it before it calls in here.
++"""
++
++from __future__ import annotations
++
++import logging
++from collections.abc import Mapping
++from typing import TYPE_CHECKING, Any, Literal, cast
++
++from pydantic import JsonValue
++
++from indus.foundation.config import loader, schema
++from indus.foundation.scope import Scope
++from indus.protocol.bridge import ConfigGetParams, ConfigGetResult, ConfigKey
++from indus.protocol.errors import INVALID_PARAMS
++from indus.protocol.methods import ProtocolError
++
++if TYPE_CHECKING:
++    from indus.service.session_service import SessionService
++
++__all__ = [
++    "SESSION_KEYS",
++    "TOOL_MODES",
++    "ToolMode",
++    "client_settings",
++    "default_tool_mode",
++    "needs_session",
++    "read_config",
++    "read_setting",
++    "session_switches",
++    "settings_mtime",
++    "tui_setting",
++]
++
++log = logging.getLogger(__name__)
++
++type ToolMode = Literal["off", "new", "all", "verbose"]
++TOOL_MODES: tuple[ToolMode, ...] = ("off", "new", "all", "verbose")
++SESSION_KEYS = frozenset({ConfigKey.YOLO, ConfigKey.REASONING, ConfigKey.FAST, ConfigKey.MODEL})
++"""Keys whose value is the named session's (``verbose`` too, when a session is named)."""
++_READABLE_PREFIXES = ("display.", "tui.")
++
++
++def read_setting(scope: Scope, key: str) -> Any:
++    """``key`` from the profile's settings file, read fresh, else the built-in default."""
++    value: Any = None
++    try:
++        value = loader.load(scope).get(key)
++    except Exception:
++        log.debug("settings unreadable", exc_info=True)
++    return schema.default_for(key) if value is None else value
++
++
++def tui_setting(scope: Scope, name: str) -> Any:
++    """One ``tui.*`` setting."""
++    return read_setting(scope, f"tui.{name}")
++
++
++def default_tool_mode(scope: Scope) -> ToolMode:
++    """The profile's tool-progress mode (``all`` when unset or unknown)."""
++    value = str(tui_setting(scope, "tool_progress") or "all").strip().lower()
++    return value if value in TOOL_MODES else "all"
++
++
++def settings_mtime(scope: Scope) -> float | None:
++    """The settings file's change stamp (None when it does not exist)."""
++    try:
++        return loader.config_path(scope).stat().st_mtime
++    except OSError:
++        return None
++
++
++def _stored_setting(scope: Scope, key: str) -> Any:
++    """``key`` only when the settings file sets it (``None`` otherwise, no built-in default)."""
++    try:
++        view = loader.load(scope)
++        return view.get(key) if view.is_set(key) else None
++    except Exception:
++        log.debug("settings unreadable", exc_info=True)
++        return None
++
++
++def client_settings(scope: Scope) -> dict[str, Any]:
++    """The settings the client shows (no session)."""
++    return {
++        # Unset stays null: the TUI's own default (queue) differs from the classic one (R05.18).
++        "busy": _stored_setting(scope, "display.busy_input_mode"),
++        "show_reasoning": read_setting(scope, "display.show_reasoning"),
++        "theme": tui_setting(scope, "theme"),
++        "indicator": tui_setting(scope, "indicator"),
++        "details": tui_setting(scope, "details"),
++        "statusbar": tui_setting(scope, "statusbar"),
++        "mouse": tui_setting(scope, "mouse"),
++        "verbose": tui_setting(scope, "tool_progress"),
++    }
++
++
++def session_switches(
++    scope: Scope, service: SessionService, session_id: str, verbose: ToolMode
++) -> dict[str, Any]:
++    """A live session's model, provider, reasoning, fast and yolo, plus its ``verbose`` mode."""
++    from indus.core import fast_mode
++    from indus.safety.approvals.decision import APPROVALS, session_key
++
++    agent = service.agent(session_id)
++    state = agent.binding.state
++    return {
++        "model": state.model,
++        "provider": state.provider,
++        "reasoning": state.reasoning_effort,
++        "fast": fast_mode.FAST_MODES.get(fast_mode.session_key(scope, agent.session_id)),
++        "yolo": APPROVALS.auto_approve(session_key(scope, agent.session_id)),
++        "verbose": verbose,
++    }
++
++
++def needs_session(params: ConfigGetParams) -> bool:
++    """Whether answering ``params`` reads the named session's live switches."""
++    if params.session_id is None:
++        return False
++    if params.key == "full":
++        return True
++    known = {k.value for k in ConfigKey}
++    return params.key in known and (
++        ConfigKey(params.key) in SESSION_KEYS or params.key == ConfigKey.VERBOSE.value
++    )
++
++
++def read_config(
++    scope: Scope, params: ConfigGetParams, live: Mapping[str, Any] | None = None
++) -> ConfigGetResult:
++    """``config.get`` (blocking: it reads the settings file); ``live`` is the named session's
++    switches (``session_switches``), read by the caller when ``needs_session`` says so."""
++    key = params.key
++    if key == "mtime":
++        return ConfigGetResult(key=key, value=settings_mtime(scope))
++    if key == "full":
++        values = client_settings(scope)
++        if live is not None:
++            values.update(live)
++        return ConfigGetResult(key=key, value=cast(JsonValue, values))
++    if key in {k.value for k in ConfigKey}:
++        if live is not None and needs_session(params):
++            return ConfigGetResult(key=key, value=cast(JsonValue, live.get(key)))
++        return ConfigGetResult(key=key, value=cast(JsonValue, client_settings(scope).get(key)))
++    if key.startswith(_READABLE_PREFIXES):
++        return ConfigGetResult(key=key, value=cast(JsonValue, read_setting(scope, key)))
++    raise ProtocolError(INVALID_PARAMS, f"{key} is not a setting the client can read", path="key")
+diff --git a/src/indus/service/path_completion.py b/src/indus/service/path_completion.py
+new file mode 100644
+index 0000000..8c302be
+--- /dev/null
++++ b/src/indus/service/path_completion.py
+@@ -0,0 +1,288 @@
++"""``complete.path``: the composer's path and ``@`` completion, one definition for every transport.
++
++The in-process bridge (``--local``) and the daemon's WebSocket (an attached TUI, W48-b) both call
++``complete_path``, so the same word in the same folder completes the same way. It completes the
++word under the cursor:
++
++- a bare ``@`` → the reference forms (``@file:``, ``@folder:``, ``@diff``, ``@git:``, ``@url:``);
++- ``@file:…`` / ``@folder:…`` → entries of that kind only; other ``@kind:`` forms → nothing;
++- a bare ``@word`` of at least ``FUZZY_MIN`` characters (no slash) on a local backend → a fuzzy
++  search of base names under the folder (``MAX_ITEMS`` best; folders first among equals);
++- anything else → the entries of the folder the typed path points into whose names start with
++  its last part (at most ``MAX_ITEMS``).
++
++The folder is the one the client names, else the session's (``session_folder``), else this
++process's working folder on a local backend. Listings run where the session's commands run: when
++the terminal backend is not local the folder is listed through that backend (one short ``sh``
++script), never on this host, whose same-named tree would look right and be wrong (R05.13). An
++unreachable backend gives no items. Hidden entries show only when the typed part starts with a
++dot; tool and cache folders are skipped after ``@``.
++
++Who may name which session is the transport's rule: the daemon checks that the connection attached
++it before it calls in here.
++"""
++
++from __future__ import annotations
++
++import logging
++import os
++import posixpath
++import shlex
++from collections.abc import Iterator
++from pathlib import Path
++from typing import TYPE_CHECKING
++
++from indus.backends.registry import EnvironmentRegistry
++from indus.foundation.blocking import run_blocking
++from indus.foundation.home import expand_path_text
++from indus.foundation.scope import Scope
++from indus.protocol.bridge import CompletePathParams, CompleteResult, CompletionItem
++from indus.protocol.methods import ProtocolError
++
++if TYPE_CHECKING:
++    from indus.service.session_service import SessionService
++
++__all__ = [
++    "FUZZY_MIN",
++    "LISTING_SCRIPT",
++    "MAX_ITEMS",
++    "REFERENCE_HINTS",
++    "SKIPPED",
++    "complete_path",
++    "fuzzy_rank",
++    "session_folder",
++]
++
++log = logging.getLogger(__name__)
++
++MAX_ITEMS = 30
++FUZZY_MIN = 2
++WALK_LIMIT = 20_000
++REMOTE_TIMEOUT_S = 3.0
++REFERENCE_HINTS: tuple[tuple[str, str], ...] = (
++    ("@file:", "attach a file"),
++    ("@folder:", "attach a folder listing"),
++    ("@diff", "the working-tree diff"),
++    ("@git:", "one commit"),
++    ("@url:", "a web page"),
++)
++SKIPPED = frozenset(
++    {
++        ".git",
++        ".hg",
++        ".svn",
++        "node_modules",
++        "__pycache__",
++        ".venv",
++        "venv",
++        ".mypy_cache",
++        ".pytest_cache",
++        ".ruff_cache",
++        ".tox",
++        "dist",
++        "build",
++    }
++)
++LISTING_SCRIPT = (
++    'where=$1; case "$where" in "~") where=$HOME ;; "~/"*) where="$HOME/${where#??}" ;; esac; '
++    '[ -d "$where" ] || exit 0; cd "$where" || exit 0; '
++    "for entry in * .*; do "
++    'case "$entry" in .|..) continue ;; esac; '
++    '[ -e "$entry" ] || [ -L "$entry" ] || continue; '
++    'if [ -d "$entry" ]; then printf "%s/\\n" "$entry"; else printf "%s\\n" "$entry"; fi; '
++    "done"
++)
++"""Lists one folder as ``name`` / ``name/`` lines (runs inside a non-local backend)."""
++
++
++def _item(text: str, display: str, meta: str = "") -> CompletionItem:
++    return CompletionItem(text=text, display=display, meta=meta)
++
++
++def fuzzy_rank(name: str, query: str) -> int | None:
++    """0 exact, 1 prefix, 2 substring, 3 letters in order; None when ``name`` does not match."""
++    low, want = name.lower(), query.lower()
++    if low == want:
++        return 0
++    if low.startswith(want):
++        return 1
++    if want in low:
++        return 2
++    letters = iter(low)
++    if all(char in letters for char in want):
++        return 3
++    return None
++
++
++def _walk(root: Path, show_hidden: bool) -> Iterator[tuple[str, bool]]:
++    """``(relative path, is folder)`` under ``root``, at most ``WALK_LIMIT`` entries."""
++    seen = 0
++    for folder, dirs, files in os.walk(root):
++        dirs[:] = sorted(
++            d for d in dirs if d not in SKIPPED and (show_hidden or not d.startswith("."))
++        )
++        base = Path(folder).relative_to(root)
++        for name in dirs:
++            yield (base / name).as_posix(), True
++            seen += 1
++        for name in sorted(files):
++            if not show_hidden and name.startswith("."):
++                continue
++            yield (base / name).as_posix(), False
++            seen += 1
++        if seen >= WALK_LIMIT:
++            return
++
++
++def _fuzzy(root: Path, query: str, tag: str) -> list[CompletionItem]:
++    ranked: list[tuple[int, bool, int, str, bool]] = []
++    for rel, is_dir in _walk(root, query.startswith(".")):
++        if tag == "file" and is_dir:
++            continue
++        rank = fuzzy_rank(posixpath.basename(rel), query)
++        if rank is not None:
++            ranked.append((rank, not is_dir, len(rel), rel, is_dir))
++    ranked.sort()
++    items: list[CompletionItem] = []
++    for _rank, _file, _size, rel, is_dir in ranked[:MAX_ITEMS]:
++        name = posixpath.basename(rel)
++        if is_dir:
++            items.append(_item(f"@folder:{rel}/", name + "/", "dir"))
++        else:
++            items.append(_item(f"@{tag or 'file'}:{rel}", name, posixpath.dirname(rel)))
++    return items
++
++
++def _local_entries(folder: str) -> list[tuple[str, bool]]:
++    try:
++        names = sorted(os.listdir(folder))
++    except OSError:
++        return []
++    return [(name, os.path.isdir(os.path.join(folder, name))) for name in names]
++
++
++async def _remote_entries(
++    scope: Scope,
++    environments: EnvironmentRegistry | None,
++    session_id: str | None,
++    folder: str,
++) -> list[tuple[str, bool]]:
++    if environments is None:
++        from indus.tools.builtin import terminal
++
++        environments = terminal.runtime().environments
++    try:
++        _key, env = await environments.acquire(scope, session_id=session_id)
++        command = f"sh -c {shlex.quote(LISTING_SCRIPT)} sh {shlex.quote(folder)}"
++        result = await env.execute(command, timeout=REMOTE_TIMEOUT_S, bounded=False)
++    except Exception:
++        log.info("the terminal backend could not list %s", folder, exc_info=True)
++        return []
++    if result.returncode != 0 or result.timed_out:
++        return []
++    entries: list[tuple[str, bool]] = []
++    for line in result.output.splitlines():
++        is_dir = line.endswith("/")
++        name = line.rstrip("/")
++        if name and "/" not in name:
++            entries.append((name, is_dir))
++    return sorted(entries)
++
++
++def session_folder(service: SessionService | None, session_id: str | None) -> str | None:
++    """The folder a session's commands run in, when the session is live here and names one."""
++    if service is None or not session_id:
++        return None
++    try:
++        agent = service.agent(session_id)
++    except ProtocolError:
++        return None
++    found = agent.options.cwd or agent.options.session_fields.get("cwd")
++    return str(found) if found else None
++
++
++async def complete_path(
++    scope: Scope,
++    params: CompletePathParams,
++    *,
++    folder: str | None,
++    environments: EnvironmentRegistry | None = None,
++) -> CompleteResult:
++    """``complete.path`` for ``params``; ``folder`` is the session's (``session_folder``)."""
++    word = params.word
++    if not word:
++        return CompleteResult(items=[])
++    local = EnvironmentRegistry.backend_name(scope) == "local"
++    root = params.cwd or folder or (os.getcwd() if local else ".")
++    is_ref = word.startswith("@")
++    query = word[1:] if is_ref else word
++    if is_ref and not query:
++        return CompleteResult(items=[_item(text, text, meta) for text, meta in REFERENCE_HINTS])
++    tag, path_part = "", query
++    if is_ref and (query in ("file", "folder") or query.startswith(("file:", "folder:"))):
++        tag, _, path_part = query.partition(":")
++    elif is_ref and ":" in query:
++        return CompleteResult(items=[])
++    bare = is_ref and bool(path_part) and "/" not in path_part
++    if local and bare and len(path_part.strip()) >= FUZZY_MIN and tag != "folder":
++        found = await run_blocking(_fuzzy, Path(root), path_part.strip(), tag, label="fuzzy paths")
++        return CompleteResult(items=found)
++    listing = _Listing(scope, environments, params.session_id, local)
++    return CompleteResult(items=await listing.items(root, path_part, tag, is_ref))
++
++
++class _Listing:
++    """Entries of the folder a typed path points into, listed where the session's commands run."""
++
++    def __init__(
++        self,
++        scope: Scope,
++        environments: EnvironmentRegistry | None,
++        session_id: str | None,
++        local: bool,
++    ) -> None:
++        self.scope = scope
++        self.environments = environments
++        self.session_id = session_id
++        self.local = local
++
++    async def items(
++        self, root: str, path_part: str, tag: str, is_ref: bool
++    ) -> list[CompletionItem]:
++        """Each candidate keeps what was typed before the last part, so the word is completed
++        in place."""
++        local = self.local
++        paths = os.path if local else posixpath
++        if path_part.endswith("/") or path_part in ("", ".", "~"):
++            stem = ""
++        else:
++            stem = paths.basename(path_part)
++        prefix = path_part[: len(path_part) - len(stem)]
++        if path_part == "~":
++            prefix = "~/"
++        folder = prefix or "."
++        if local and folder.startswith("~"):
++            folder = str(expand_path_text(folder, self.scope.env))
++        if not (paths.isabs(folder) or folder.startswith("~")):
++            folder = paths.normpath(paths.join(root, folder))
++        if local:
++            entries = await run_blocking(_local_entries, folder, label="path listing")
++        else:
++            entries = await _remote_entries(self.scope, self.environments, self.session_id, folder)
++        items: list[CompletionItem] = []
++        for name, is_dir in entries:
++            if stem and not name.lower().startswith(stem.lower()):
++                continue
++            if name.startswith(".") and not stem.startswith("."):
++                continue
++            if is_ref and name in SKIPPED:
++                continue
++            if tag and (tag == "folder") != is_dir:
++                continue
++            suffix = "/" if is_dir else ""
++            body = f"{prefix}{name}{suffix}"
++            text = f"@{tag or ('folder' if is_dir else 'file')}:{body}" if is_ref else body
++            items.append(_item(text, name + suffix, "dir" if is_dir else ""))
++            if len(items) >= MAX_ITEMS:
++                break
++        return items
+diff --git a/src/indus/service/picker_reads.py b/src/indus/service/picker_reads.py
+index 2ce51db..090c906 100644
+--- a/src/indus/service/picker_reads.py
++++ b/src/indus/service/picker_reads.py
+@@ -12,7 +12,11 @@ WebSocket (an attached TUI, the default). Both call these functions, so an attac
+   endpoint the model ids its ``/models`` lists (a failure leaves the list empty);
+   ``session_choice(service, session_id)`` is a session's current provider, model, route and client;
+   ``profile_choice(scope)`` the profile's resolved route (empty when none resolves);
+-- ``stored_sessions(handle, params)``: the store's picker listing (blocking; run it off the loop).
++- ``stored_sessions(handle, params)``: the store's picker listing (blocking; run it off the loop);
++  each row carries the title, source and the model the session last ran on (W48-b);
++- ``command_catalog(scope, surface=, skills=)``: ``commands.catalog``, the surface's built-in
++  commands (who runs each: ``SERVER_COMMANDS`` / ``CLIENT_COMMANDS``), then the quick commands and
++  the runnable skills and bundles (blocking; W48-b).
+ 
+ Who may name which session is the transport's rule, not this module's: the daemon checks that the
+ connection attached it before it calls in here.
+@@ -29,6 +33,10 @@ import httpx
+ from indus.foundation.config import loader, schema
+ from indus.foundation.scope import Scope
+ from indus.protocol.bridge import (
++    CatalogEntry,
++    CommandKind,
++    CommandRunner,
++    CommandsCatalogResult,
+     CompleteResult,
+     CompletionItem,
+     ModelOptionsResult,
+@@ -41,7 +49,7 @@ from indus.providers import bundled
+ from indus.providers.model_list import list_models
+ from indus.providers.profile import ProviderProfile
+ from indus.providers.route import RuntimeRoute, resolve
+-from indus.service.commands.registry import REGISTRY, Surface
++from indus.service.commands.registry import REGISTRY, CommandDef, Surface
+ from indus.state import listing
+ from indus.state.registry import StoreHandle
+ 
+@@ -50,9 +58,12 @@ if TYPE_CHECKING:
+     from indus.service.session_service import SessionService
+ 
+ __all__ = [
++    "CLIENT_COMMANDS",
+     "MAX_SLASH_ITEMS",
+     "QUICK_KEY",
++    "SERVER_COMMANDS",
+     "SKILL_PLATFORM",
++    "command_catalog",
+     "profile_choice",
+     "provider_option",
+     "provider_options",
+@@ -70,6 +81,32 @@ QUICK_KEY = "quick_commands"
+ SKILL_PLATFORM = "tui"
+ """The platform skills are listed for (the terminal UI's catalogue)."""
+ MAX_SLASH_ITEMS = 200
++SERVER_COMMANDS = frozenset(
++    {
++        "title",
++        "undo",
++        "retry",
++        "branch",
++        "compress",
++        "stop",
++        "steer",
++        "queue",
++        "status",
++        "usage",
++        "history",
++        "help",
++        "version",
++        "yolo",
++        "reasoning",
++        "fast",
++        "tools",
++    }
++)
++"""Built-in commands the agent side runs (``slash.exec``; the bridge's ``HANDLERS``)."""
++CLIENT_COMMANDS = frozenset(
++    {"new", "clear", "resume", "sessions", "model", "config", "quit", "save"}
++)
++"""Built-in commands the terminal UI runs itself."""
+ 
+ type Choice = tuple[str, str, RuntimeRoute | None, httpx.AsyncClient | None]
+ """``(provider, model, route, client)``: what the picker marks current and may list live."""
+@@ -223,6 +260,7 @@ def session_row(summary: listing.SessionSummary) -> SessionRow:
+         title=summary.title,
+         preview=summary.preview,
+         source=summary.source,
++        model=summary.model or None,
+         started_at=summary.started_at,
+         last_active=summary.last_active,
+         message_count=max(0, summary.message_count),
+@@ -234,3 +272,62 @@ def stored_sessions(handle: StoreHandle, params: SessionListParams) -> SessionLi
+     filters = listing.ListFilters(include_subagents=params.include_subagents, query=params.query)
+     found = listing.list_sessions(handle, filters, params.limit)
+     return SessionListResult(sessions=[session_row(s) for s in found])
++
++
++# -- the command catalogue -------------------------------------------------------------------------
++
++
++def _runner(cmd: CommandDef) -> CommandRunner:
++    if cmd.name in SERVER_COMMANDS:
++        return CommandRunner.SERVER
++    if cmd.name in CLIENT_COMMANDS:
++        return CommandRunner.CLIENT
++    return CommandRunner.LATER
++
++
++def command_catalog(
++    scope: Scope, *, surface: Surface, skills: CommandTable | None
++) -> CommandsCatalogResult:
++    """``commands.catalog``: built-ins, then quick commands, then the skills and bundles of
++    ``skills`` (``skill_table``; None when they cannot be listed). Blocking."""
++    entries = [
++        CatalogEntry(
++            name=cmd.name,
++            aliases=list(cmd.aliases),
++            description=cmd.description,
++            category=cmd.category,
++            args_hint=cmd.args_hint,
++            kind=CommandKind.BUILTIN,
++            runs=_runner(cmd),
++        )
++        for cmd in REGISTRY.commands(surface)
++    ]
++    taken = {key for cmd in REGISTRY for key in cmd.keys}
++    for name, spec in sorted(quick_command_table(scope).items()):
++        if name in taken:
++            continue
++        kind = str(spec.get("type", "exec"))
++        entries.append(
++            CatalogEntry(
++                name=name,
++                description=str(spec.get("description") or f"quick command ({kind})"),
++                category="custom",
++                kind=CommandKind.QUICK,
++                runs=CommandRunner.SERVER,
++            )
++        )
++        taken.add(name)
++    if skills is not None:
++        for name, note in sorted(skills.names().items()):
++            if name in taken:
++                continue
++            entries.append(
++                CatalogEntry(
++                    name=name,
++                    description=note,
++                    category="custom",
++                    kind=CommandKind.SKILL,
++                    runs=CommandRunner.SERVER,
++                )
++            )
++    return CommandsCatalogResult(commands=entries)
+diff --git a/src/indus/tui_bridge/bridge.py b/src/indus/tui_bridge/bridge.py
+index 667f64e..f227c93 100644
+--- a/src/indus/tui_bridge/bridge.py
++++ b/src/indus/tui_bridge/bridge.py
+@@ -14,13 +14,14 @@ from collections import deque
+ from collections.abc import Awaitable, Callable, Mapping
+ from dataclasses import dataclass, field
+ from pathlib import Path
+-from typing import Any, Literal, Protocol, cast
++from typing import Any, Protocol, cast
+ 
+ from indus.core.persist import StateStore
+ from indus.foundation.clock import Clock
+ from indus.foundation.scope import Scope
+ from indus.protocol.errors import INTERNAL_ERROR, PROVIDER_UNAVAILABLE
+ from indus.protocol.methods import ProtocolError
++from indus.service.client_settings import TOOL_MODES, ToolMode, default_tool_mode
+ from indus.service.rpc.dispatch import ContractViolation
+ from indus.service.session_service import SessionService, protocol_error_for
+ from indus.state.registry import StoreHandle
+@@ -37,9 +38,6 @@ __all__ = [
+ 
+ log = logging.getLogger(__name__)
+ 
+-type ToolMode = Literal["off", "new", "all", "verbose"]
+-TOOL_MODES: tuple[ToolMode, ...] = ("off", "new", "all", "verbose")
+-
+ 
+ class Emitter(Protocol):
+     """Writes one notification frame; False when the client is gone."""
+@@ -170,10 +168,7 @@ class Bridge:
+     # -- sessions ---------------------------------------------------------------------------------
+ 
+     def default_tool_mode(self) -> ToolMode:
+-        from indus.tui_bridge.methods_config import tui_setting
+-
+-        value = str(tui_setting(self.scope, "tool_progress") or "all").strip().lower()
+-        return cast(ToolMode, value) if value in TOOL_MODES else "all"
++        return default_tool_mode(self.scope)
+ 
+     def view(self, session_id: str) -> SessionView | None:
+         service = self._service
+diff --git a/src/indus/tui_bridge/methods_complete.py b/src/indus/tui_bridge/methods_complete.py
+index 8c24b2b..c09d65f 100644
+--- a/src/indus/tui_bridge/methods_complete.py
++++ b/src/indus/tui_bridge/methods_complete.py
+@@ -3,41 +3,19 @@
+ ``complete.slash`` asks the shared registry (``indus.service.commands``) with the names this
+ surface offers plus the user's quick commands and the runnable skills and bundles.
+ 
+-``complete.path`` completes the word under the cursor:
+-
+-- a bare ``@`` → the reference forms (``@file:``, ``@folder:``, ``@diff``, ``@git:``, ``@url:``);
+-- ``@file:…`` / ``@folder:…`` → entries of that kind only; other ``@kind:`` forms → nothing;
+-- a bare ``@word`` of at least ``FUZZY_MIN`` characters (no slash) on a local backend → a fuzzy
+-  search of base names under the folder (``MAX_ITEMS`` best; folders first among equals);
+-- anything else → the entries of the folder the typed path points into whose names start with
+-  its last part (at most ``MAX_ITEMS``).
+-
+-Listings run where the session's commands run: when the terminal backend is not local the folder
+-is listed through that backend (one short ``sh`` script), never on this host, whose same-named
+-tree would look right and be wrong (R05.13). An unreachable backend gives no items. Hidden entries
+-show only when the typed part starts with a dot; tool and cache folders are skipped after ``@``.
++``complete.path`` completes the word under the cursor in the client's folder, else the session's;
++the rules (reference forms, fuzzy ``@word`` search, folder listings run where the session's
++commands run) live in ``indus.service.path_completion``, which the daemon's WebSocket calls too
++(W48-b), so an attached TUI completes what ``--local`` completes.
+ """
+ 
+ from __future__ import annotations
+ 
+-import logging
+-import os
+-import posixpath
+-import shlex
+-from collections.abc import Iterator
+-from pathlib import Path
+ from typing import TYPE_CHECKING
+ 
+-from indus.backends.registry import EnvironmentRegistry
+-from indus.foundation.blocking import run_blocking
+-from indus.foundation.home import expand_path_text
+-from indus.protocol.bridge import (
+-    CompletePathParams,
+-    CompleteResult,
+-    CompleteSlashParams,
+-    CompletionItem,
+-)
+-from indus.protocol.methods import ProtocolError
++from indus.protocol.bridge import CompletePathParams, CompleteResult, CompleteSlashParams
++from indus.service import path_completion
++from indus.service.path_completion import FUZZY_MIN, LISTING_SCRIPT, MAX_ITEMS, fuzzy_rank
+ from indus.service.picker_reads import slash_completions
+ from indus.tui_bridge import methods_slash
+ 
+@@ -47,54 +25,6 @@ if TYPE_CHECKING:
+ 
+ __all__ = ["FUZZY_MIN", "LISTING_SCRIPT", "MAX_ITEMS", "fuzzy_rank", "register"]
+ 
+-log = logging.getLogger(__name__)
+-
+-MAX_ITEMS = 30
+-FUZZY_MIN = 2
+-WALK_LIMIT = 20_000
+-REMOTE_TIMEOUT_S = 3.0
+-REFERENCE_HINTS: tuple[tuple[str, str], ...] = (
+-    ("@file:", "attach a file"),
+-    ("@folder:", "attach a folder listing"),
+-    ("@diff", "the working-tree diff"),
+-    ("@git:", "one commit"),
+-    ("@url:", "a web page"),
+-)
+-SKIPPED = frozenset(
+-    {
+-        ".git",
+-        ".hg",
+-        ".svn",
+-        "node_modules",
+-        "__pycache__",
+-        ".venv",
+-        "venv",
+-        ".mypy_cache",
+-        ".pytest_cache",
+-        ".ruff_cache",
+-        ".tox",
+-        "dist",
+-        "build",
+-    }
+-)
+-LISTING_SCRIPT = (
+-    'where=$1; case "$where" in "~") where=$HOME ;; "~/"*) where="$HOME/${where#??}" ;; esac; '
+-    '[ -d "$where" ] || exit 0; cd "$where" || exit 0; '
+-    "for entry in * .*; do "
+-    'case "$entry" in .|..) continue ;; esac; '
+-    '[ -e "$entry" ] || [ -L "$entry" ] || continue; '
+-    'if [ -d "$entry" ]; then printf "%s/\\n" "$entry"; else printf "%s\\n" "$entry"; fi; '
+-    "done"
+-)
+-"""Lists one folder as ``name`` / ``name/`` lines (runs inside a non-local backend)."""
+-
+-
+-def _item(text: str, display: str, meta: str = "") -> CompletionItem:
+-    return CompletionItem(text=text, display=display, meta=meta)
+-
+-
+-# -- slash -----------------------------------------------------------------------------------------
+-
+ 
+ async def complete_slash(bridge: Bridge, params: CompleteSlashParams) -> CompleteResult:
+     return slash_completions(
+@@ -102,180 +32,13 @@ async def complete_slash(bridge: Bridge, params: CompleteSlashParams) -> Complet
+     )
+ 
+ 
+-# -- paths -----------------------------------------------------------------------------------------
+-
+-
+-def fuzzy_rank(name: str, query: str) -> int | None:
+-    """0 exact, 1 prefix, 2 substring, 3 letters in order; None when ``name`` does not match."""
+-    low, want = name.lower(), query.lower()
+-    if low == want:
+-        return 0
+-    if low.startswith(want):
+-        return 1
+-    if want in low:
+-        return 2
+-    letters = iter(low)
+-    if all(char in letters for char in want):
+-        return 3
+-    return None
+-
+-
+-def _walk(root: Path, show_hidden: bool) -> Iterator[tuple[str, bool]]:
+-    """``(relative path, is folder)`` under ``root``, at most ``WALK_LIMIT`` entries."""
+-    seen = 0
+-    for folder, dirs, files in os.walk(root):
+-        dirs[:] = sorted(
+-            d for d in dirs if d not in SKIPPED and (show_hidden or not d.startswith("."))
+-        )
+-        base = Path(folder).relative_to(root)
+-        for name in dirs:
+-            yield (base / name).as_posix(), True
+-            seen += 1
+-        for name in sorted(files):
+-            if not show_hidden and name.startswith("."):
+-                continue
+-            yield (base / name).as_posix(), False
+-            seen += 1
+-        if seen >= WALK_LIMIT:
+-            return
+-
+-
+-def _fuzzy(root: Path, query: str, tag: str) -> list[CompletionItem]:
+-    ranked: list[tuple[int, bool, int, str, bool]] = []
+-    for rel, is_dir in _walk(root, query.startswith(".")):
+-        if tag == "file" and is_dir:
+-            continue
+-        rank = fuzzy_rank(posixpath.basename(rel), query)
+-        if rank is not None:
+-            ranked.append((rank, not is_dir, len(rel), rel, is_dir))
+-    ranked.sort()
+-    items: list[CompletionItem] = []
+-    for _rank, _file, _size, rel, is_dir in ranked[:MAX_ITEMS]:
+-        name = posixpath.basename(rel)
+-        if is_dir:
+-            items.append(_item(f"@folder:{rel}/", name + "/", "dir"))
+-        else:
+-            items.append(_item(f"@{tag or 'file'}:{rel}", name, posixpath.dirname(rel)))
+-    return items
+-
+-
+-def _local_entries(folder: str) -> list[tuple[str, bool]]:
+-    try:
+-        names = sorted(os.listdir(folder))
+-    except OSError:
+-        return []
+-    return [(name, os.path.isdir(os.path.join(folder, name))) for name in names]
+-
+-
+-async def _remote_entries(
+-    bridge: Bridge, session_id: str | None, folder: str
+-) -> list[tuple[str, bool]]:
+-    from indus.tools.builtin import terminal
+-
+-    environments: EnvironmentRegistry = (
+-        bridge.environments if bridge.environments is not None else terminal.runtime().environments
+-    )
+-    try:
+-        _key, env = await environments.acquire(bridge.scope, session_id=session_id)
+-        command = f"sh -c {shlex.quote(LISTING_SCRIPT)} sh {shlex.quote(folder)}"
+-        result = await env.execute(command, timeout=REMOTE_TIMEOUT_S, bounded=False)
+-    except Exception:
+-        log.info("the terminal backend could not list %s", folder, exc_info=True)
+-        return []
+-    if result.returncode != 0 or result.timed_out:
+-        return []
+-    entries: list[tuple[str, bool]] = []
+-    for line in result.output.splitlines():
+-        is_dir = line.endswith("/")
+-        name = line.rstrip("/")
+-        if name and "/" not in name:
+-            entries.append((name, is_dir))
+-    return sorted(entries)
+-
+-
+-def _session_folder(bridge: Bridge, session_id: str | None) -> str | None:
+-    service = bridge.built
+-    if service is None or not session_id:
+-        return None
+-    try:
+-        agent = service.agent(session_id)
+-    except ProtocolError:
+-        return None
+-    folder = agent.options.cwd or agent.options.session_fields.get("cwd")
+-    return str(folder) if folder else None
+-
+-
+ async def complete_path(bridge: Bridge, params: CompletePathParams) -> CompleteResult:
+-    word = params.word
+-    if not word:
+-        return CompleteResult(items=[])
+-    local = EnvironmentRegistry.backend_name(bridge.scope) == "local"
+-    root = (
+-        params.cwd or _session_folder(bridge, params.session_id) or (os.getcwd() if local else ".")
++    return await path_completion.complete_path(
++        bridge.scope,
++        params,
++        folder=path_completion.session_folder(bridge.built, params.session_id),
++        environments=bridge.environments,
+     )
+-    is_ref = word.startswith("@")
+-    query = word[1:] if is_ref else word
+-    if is_ref and not query:
+-        return CompleteResult(items=[_item(text, text, meta) for text, meta in REFERENCE_HINTS])
+-    tag, path_part = "", query
+-    if is_ref and (query in ("file", "folder") or query.startswith(("file:", "folder:"))):
+-        tag, _, path_part = query.partition(":")
+-    elif is_ref and ":" in query:
+-        return CompleteResult(items=[])
+-    bare = is_ref and bool(path_part) and "/" not in path_part
+-    if local and bare and len(path_part.strip()) >= FUZZY_MIN and tag != "folder":
+-        found = await run_blocking(_fuzzy, Path(root), path_part.strip(), tag, label="fuzzy paths")
+-        return CompleteResult(items=found)
+-    return CompleteResult(
+-        items=await _listing(bridge, params.session_id, root, path_part, tag, is_ref, local)
+-    )
+-
+-
+-async def _listing(
+-    bridge: Bridge,
+-    session_id: str | None,
+-    root: str,
+-    path_part: str,
+-    tag: str,
+-    is_ref: bool,
+-    local: bool,
+-) -> list[CompletionItem]:
+-    """Entries of the folder ``path_part`` points into; each candidate keeps what was typed
+-    before the last part, so the word is completed in place."""
+-    paths = os.path if local else posixpath
+-    if path_part.endswith("/") or path_part in ("", ".", "~"):
+-        stem = ""
+-    else:
+-        stem = paths.basename(path_part)
+-    prefix = path_part[: len(path_part) - len(stem)]
+-    if path_part == "~":
+-        prefix = "~/"
+-    folder = prefix or "."
+-    if local and folder.startswith("~"):
+-        folder = str(expand_path_text(folder, bridge.scope.env))
+-    if not (paths.isabs(folder) or folder.startswith("~")):
+-        folder = paths.normpath(paths.join(root, folder))
+-    if local:
+-        entries = await run_blocking(_local_entries, folder, label="path listing")
+-    else:
+-        entries = await _remote_entries(bridge, session_id, folder)
+-    items: list[CompletionItem] = []
+-    for name, is_dir in entries:
+-        if stem and not name.lower().startswith(stem.lower()):
+-            continue
+-        if name.startswith(".") and not stem.startswith("."):
+-            continue
+-        if is_ref and name in SKIPPED:
+-            continue
+-        if tag and (tag == "folder") != is_dir:
+-            continue
+-        suffix = "/" if is_dir else ""
+-        body = f"{prefix}{name}{suffix}"
+-        text = f"@{tag or ('folder' if is_dir else 'file')}:{body}" if is_ref else body
+-        items.append(_item(text, name + suffix, "dir" if is_dir else ""))
+-        if len(items) >= MAX_ITEMS:
+-            break
+-    return items
+ 
+ 
+ def register(table: MethodTable) -> None:
+diff --git a/src/indus/tui_bridge/methods_config.py b/src/indus/tui_bridge/methods_config.py
+index 6d2733a..07ab849 100644
+--- a/src/indus/tui_bridge/methods_config.py
++++ b/src/indus/tui_bridge/methods_config.py
+@@ -2,7 +2,8 @@
+ 
+ ``config.get`` reads ``full`` (every setting the client shows, plus the session's live switches
+ when a session is named), ``mtime`` (the settings file's change stamp, for cheap polling) or one
+-key (a client key, or a dotted ``display.*`` / ``tui.*`` path).
++key (a client key, or a dotted ``display.*`` / ``tui.*`` path); the reading is
++``indus.service.client_settings``, which the daemon's WebSocket answers with too (W48-b).
+ 
+ ``config.set`` changes one client key:
+ 
+@@ -32,7 +33,7 @@ from typing import TYPE_CHECKING, Any, cast
+ from pydantic import JsonValue
+ 
+ from indus.foundation.blocking import run_blocking
+-from indus.foundation.config import loader, schema, writer
++from indus.foundation.config import writer
+ from indus.foundation.scope import Scope
+ from indus.protocol.bridge import (
+     ConfigApplied,
+@@ -58,9 +59,16 @@ from indus.providers import bundled
+ from indus.providers.profile import ProviderProfile
+ from indus.providers.route import resolve
+ from indus.providers.types import normalize_effort
+-from indus.service import picker_reads
++from indus.service import client_settings, picker_reads
++from indus.service.client_settings import (
++    SESSION_KEYS,
++    TOOL_MODES,
++    ToolMode,
++    read_setting,
++    tui_setting,
++)
+ from indus.service.session_service import SessionService
+-from indus.tui_bridge.bridge import TOOL_MODES, SessionView, ToolMode
++from indus.tui_bridge.bridge import SessionView
+ 
+ if TYPE_CHECKING:
+     from indus.tui_bridge.bridge import Bridge
+@@ -80,95 +88,23 @@ _SAVED: dict[ConfigKey, str] = {
+     ConfigKey.STATUSBAR: "tui.statusbar",
+     ConfigKey.MOUSE: "tui.mouse",
+ }
+-_SESSION_KEYS = frozenset({ConfigKey.YOLO, ConfigKey.REASONING, ConfigKey.FAST, ConfigKey.MODEL})
+-_READABLE_PREFIXES = ("display.", "tui.")
+ 
+ 
+ # -- reading ---------------------------------------------------------------------------------------
+ 
+ 
+-def read_setting(scope: Scope, key: str) -> Any:
+-    """``key`` from the profile's settings file, read fresh, else the built-in default."""
+-    value: Any = None
+-    try:
+-        value = loader.load(scope).get(key)
+-    except Exception:
+-        log.debug("settings unreadable", exc_info=True)
+-    return schema.default_for(key) if value is None else value
+-
+-
+-def tui_setting(scope: Scope, name: str) -> Any:
+-    """One ``tui.*`` setting."""
+-    return read_setting(scope, f"tui.{name}")
+-
+-
+-def _mtime(scope: Scope) -> float | None:
+-    try:
+-        return loader.config_path(scope).stat().st_mtime
+-    except OSError:
+-        return None
+-
+-
+-def _stored_setting(scope: Scope, key: str) -> Any:
+-    """``key`` only when the settings file sets it (``None`` otherwise, no built-in default)."""
+-    try:
+-        view = loader.load(scope)
+-        return view.get(key) if view.is_set(key) else None
+-    except Exception:
+-        log.debug("settings unreadable", exc_info=True)
+-        return None
+-
+-
+-def _client_settings(scope: Scope) -> dict[str, Any]:
+-    return {
+-        # Unset stays null: the TUI's own default (queue) differs from the classic one (R05.18).
+-        "busy": _stored_setting(scope, "display.busy_input_mode"),
+-        "show_reasoning": read_setting(scope, "display.show_reasoning"),
+-        "theme": tui_setting(scope, "theme"),
+-        "indicator": tui_setting(scope, "indicator"),
+-        "details": tui_setting(scope, "details"),
+-        "statusbar": tui_setting(scope, "statusbar"),
+-        "mouse": tui_setting(scope, "mouse"),
+-        "verbose": tui_setting(scope, "tool_progress"),
+-    }
+-
+-
+ def session_settings(bridge: Bridge, service: SessionService, session_id: str) -> dict[str, Any]:
+-    from indus.core import fast_mode
+-    from indus.safety.approvals.decision import APPROVALS, session_key
+-
+-    agent = service.agent(session_id)
+-    state = agent.binding.state
++    """The session's live switches, with the tool-progress mode of this bridge's view of it."""
+     view = bridge.view(session_id)
+-    return {
+-        "model": state.model,
+-        "provider": state.provider,
+-        "reasoning": state.reasoning_effort,
+-        "fast": fast_mode.FAST_MODES.get(fast_mode.session_key(bridge.scope, agent.session_id)),
+-        "yolo": APPROVALS.auto_approve(session_key(bridge.scope, agent.session_id)),
+-        "verbose": view.tool_mode if view is not None else bridge.default_tool_mode(),
+-    }
++    verbose = view.tool_mode if view is not None else bridge.default_tool_mode()
++    return client_settings.session_switches(bridge.scope, service, session_id, verbose)
+ 
+ 
+ async def get(bridge: Bridge, params: ConfigGetParams) -> ConfigGetResult:
+-    scope = bridge.scope
+-    key = params.key
+-    if key == "mtime":
+-        return ConfigGetResult(key=key, value=_mtime(scope))
+-    if key == "full":
+-        values = _client_settings(scope)
+-        if params.session_id is not None:
+-            values.update(session_settings(bridge, await bridge.service(), params.session_id))
+-        return ConfigGetResult(key=key, value=cast(JsonValue, values))
+-    if key in {k.value for k in ConfigKey}:
+-        live_key = ConfigKey(key) in _SESSION_KEYS or key == ConfigKey.VERBOSE.value
+-        if live_key and params.session_id is not None:
+-            live = session_settings(bridge, await bridge.service(), params.session_id)
+-            return ConfigGetResult(key=key, value=cast(JsonValue, live.get(key)))
+-        return ConfigGetResult(key=key, value=cast(JsonValue, _client_settings(scope).get(key)))
+-    if key.startswith(_READABLE_PREFIXES):
+-        return ConfigGetResult(key=key, value=cast(JsonValue, read_setting(scope, key)))
+-    raise ProtocolError(INVALID_PARAMS, f"{key} is not a setting the client can read", path="key")
++    live: dict[str, Any] | None = None
++    if params.session_id is not None and client_settings.needs_session(params):
++        live = session_settings(bridge, await bridge.service(), params.session_id)
++    return client_settings.read_config(bridge.scope, params, live)
+ 
+ 
+ # -- writing ---------------------------------------------------------------------------------------
+@@ -294,7 +230,7 @@ async def _set_session(
+ 
+ async def set_value(bridge: Bridge, params: ConfigSetParams) -> ConfigSetResult:
+     key, value = params.key, params.value
+-    if key in _SESSION_KEYS:
++    if key in SESSION_KEYS:
+         if params.session_id is None:
+             raise ProtocolError(INVALID_PARAMS, f"{key.value} needs a session", path="session_id")
+         service = await bridge.service()
+diff --git a/src/indus/tui_bridge/methods_slash.py b/src/indus/tui_bridge/methods_slash.py
+index d22f023..261b42d 100644
+--- a/src/indus/tui_bridge/methods_slash.py
++++ b/src/indus/tui_bridge/methods_slash.py
+@@ -24,12 +24,10 @@ from collections.abc import Awaitable, Callable, Mapping
+ from importlib import metadata
+ from typing import TYPE_CHECKING, Any
+ 
++from indus.foundation.blocking import run_blocking
+ from indus.protocol.bridge import (
+-    CatalogEntry,
+     CommandDispatchParams,
+     CommandDispatchResult,
+-    CommandKind,
+-    CommandRunner,
+     CommandsCatalogParams,
+     CommandsCatalogResult,
+     ConfigKey,
+@@ -74,7 +72,7 @@ log = logging.getLogger(__name__)
+ SURFACE = "tui"
+ MIN_TIMEOUT_S = 5.0
+ MAX_ALIAS_HOPS = 5
+-CLIENT = frozenset({"new", "clear", "resume", "sessions", "model", "config", "quit", "save"})
++CLIENT = picker_reads.CLIENT_COMMANDS
+ 
+ type SlashHandler = Callable[[Bridge, SessionService, str, str], Awaitable[SlashExecResult]]
+ 
+@@ -309,60 +307,16 @@ def skill_table(bridge: Bridge, session_id: str | None) -> CommandTable | None:
+     return picker_reads.skill_table(bridge.scope, session_id)
+ 
+ 
+-def _runner(cmd: CommandDef) -> CommandRunner:
+-    if cmd.name in HANDLERS:
+-        return CommandRunner.SERVER
+-    if cmd.name in CLIENT:
+-        return CommandRunner.CLIENT
+-    return CommandRunner.LATER
+-
+-
+ # -- handlers --------------------------------------------------------------------------------------
+ 
+ 
+ async def catalog(bridge: Bridge, params: CommandsCatalogParams) -> CommandsCatalogResult:
+-    entries = [
+-        CatalogEntry(
+-            name=cmd.name,
+-            aliases=list(cmd.aliases),
+-            description=cmd.description,
+-            category=cmd.category,
+-            args_hint=cmd.args_hint,
+-            kind=CommandKind.BUILTIN,
+-            runs=_runner(cmd),
+-        )
+-        for cmd in REGISTRY.commands(SURFACE)
+-    ]
+-    taken = {key for cmd in REGISTRY for key in cmd.keys}
+-    for name, spec in sorted(quick_commands(bridge).items()):
+-        if name in taken:
+-            continue
+-        kind = str(spec.get("type", "exec"))
+-        entries.append(
+-            CatalogEntry(
+-                name=name,
+-                description=str(spec.get("description") or f"quick command ({kind})"),
+-                category="custom",
+-                kind=CommandKind.QUICK,
+-                runs=CommandRunner.SERVER,
+-            )
+-        )
+-        taken.add(name)
+-    table = skill_table(bridge, params.session_id)
+-    if table is not None:
+-        for name, note in sorted(table.names().items()):
+-            if name in taken:
+-                continue
+-            entries.append(
+-                CatalogEntry(
+-                    name=name,
+-                    description=note,
+-                    category="custom",
+-                    kind=CommandKind.SKILL,
+-                    runs=CommandRunner.SERVER,
+-                )
+-            )
+-    return CommandsCatalogResult(commands=entries)
++    return await run_blocking(
++        lambda: picker_reads.command_catalog(
++            bridge.scope, surface=SURFACE, skills=skill_table(bridge, params.session_id)
++        ),
++        label="command catalogue",
++    )
+ 
+ 
+ async def _run(
+diff --git a/tests/contract/gateway/test_ws_tui_reads.py b/tests/contract/gateway/test_ws_tui_reads.py
+new file mode 100644
+index 0000000..6274cad
+--- /dev/null
++++ b/tests/contract/gateway/test_ws_tui_reads.py
+@@ -0,0 +1,169 @@
++"""W48-b: the TUI's other reads over the attach socket.
++
++An attached TUI (the default) asks the daemon for ``complete.path`` (the composer's path and ``@``
++completion), ``commands.catalog`` (the slash catalogue) and ``config.get`` (its settings at start
++and their polling). They answer what the in-process bridge (``--local``) answers for the same
++profile; a named session must be one this connection attached. ``config.set`` stays unserved
++(D-16.549). The sessions picker's rows carry the session's model as well as its title and source.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++from typing import Any
++
++from indus.foundation.scope import Scope
++from indus.protocol.errors import METHOD_NOT_FOUND, SESSION_NOT_FOUND
++from indus.state.registry import StoreHandle
++from tests.contract.gateway.test_ws_endpoint import done, error_of, rig, store
++from tests.contract.tui_bridge._harness import open_rig
++from tests.fakes.clock import FakeClock
++from tests.fakes.model import text_turn
++from tests.unit.backends._aio import aio
++
++__all__ = ["store"]  # the fixture, imported for pytest
++
++CONFIG_KEYS = ("full", "theme", "busy", "verbose", "tui.theme", "display.show_reasoning")
++
++
++def result_of(frame: dict[str, Any]) -> Any:
++    assert "result" in frame, frame
++    return frame["result"]
++
++
++def folder(tmp_path: Path) -> Path:
++    work = tmp_path / "work"
++    (work / "alpine").mkdir(parents=True)
++    (work / "alpine" / "notes.md").write_text("x", encoding="utf-8")
++    (work / "alpha.txt").write_text("a", encoding="utf-8")
++    (work / "beta.md").write_text("b", encoding="utf-8")
++    (work / ".hidden").write_text("h", encoding="utf-8")
++    return work
++
++
++@aio
++async def test_path_completion_over_the_socket_matches_local(
++    scope: Scope, store: StoreHandle, fake_clock: FakeClock, tmp_path: Path
++) -> None:
++    work = folder(tmp_path)
++    words = ("al", "@", "@al", "@folder:al", "./b", "alpine/", ".h", "@url:x")
++    r = await rig(scope, store, tmp_path)
++    tui = await r.attached("tui")
++    attached: dict[str, Any] = {}
++    for word in words:
++        frame = await tui.request("complete.path", {"word": word, "cwd": str(work)})
++        attached[word] = result_of(frame)
++    sid = result_of(await tui.request("session.create", {"cwd": str(work)}))["session_id"]
++    in_session = result_of(await tui.request("complete.path", {"word": "al", "session_id": sid}))
++    other = await r.attached("tui")
++    foreign = await other.request("complete.path", {"word": "al", "session_id": sid})
++    assert error_of(foreign) == SESSION_NOT_FOUND.code
++    await other.close()
++    await tui.close()
++    await r.close()
++
++    assert [i["text"] for i in attached["al"]["items"]] == ["alpha.txt", "alpine/"]
++    assert {i["text"] for i in attached["@al"]["items"]} >= {"@file:alpha.txt", "@folder:alpine/"}
++    # The session's own folder counts when the client names none.
++    assert in_session == attached["al"]
++    async with open_rig(scope, fake_clock, tmp_path) as local:
++        for word in words:
++            here = await local.ok("complete.path", word=word, cwd=str(work))
++            assert here == attached[word], word
++        local_sid = (await local.ok("session.create", cwd=str(work)))["session_id"]
++        assert await local.ok("complete.path", word="al", session_id=local_sid) == in_session
++
++
++@aio
++async def test_command_catalog_over_the_socket_matches_local(
++    scope: Scope, store: StoreHandle, fake_clock: FakeClock, tmp_path: Path
++) -> None:
++    (scope.home / "config.yaml").write_text(
++        "quick_commands:\n  gs:\n    type: exec\n    command: git status\n", encoding="utf-8"
++    )
++    r = await rig(scope, store, tmp_path)
++    tui = await r.attached("tui")
++    profile_wide = result_of(await tui.request("commands.catalog", {}))
++    sid = result_of(await tui.request("session.create", {}))["session_id"]
++    for_session = result_of(await tui.request("commands.catalog", {"session_id": sid}))
++    other = await r.attached("tui")
++    foreign = await other.request("commands.catalog", {"session_id": sid})
++    assert error_of(foreign) == SESSION_NOT_FOUND.code
++    await other.close()
++    await tui.close()
++    await r.close()
++
++    by_name = {entry["name"]: entry for entry in profile_wide["commands"]}
++    assert by_name["help"]["runs"] == "server" and by_name["model"]["runs"] == "client"
++    assert by_name["gs"]["kind"] == "quick"
++    assert for_session == profile_wide
++    async with open_rig(scope, fake_clock, tmp_path) as local:
++        assert await local.ok("commands.catalog") == profile_wide
++
++
++@aio
++async def test_config_get_over_the_socket_matches_local(
++    scope: Scope, store: StoreHandle, fake_clock: FakeClock, tmp_path: Path
++) -> None:
++    (scope.home / "config.yaml").write_text(
++        "display:\n  busy_input_mode: steer\ntui:\n  theme: light\n  tool_progress: new\n",
++        encoding="utf-8",
++    )
++    r = await rig(scope, store, tmp_path)
++    tui = await r.attached("tui")
++    attached = {k: result_of(await tui.request("config.get", {"key": k})) for k in CONFIG_KEYS}
++    stamp = result_of(await tui.request("config.get", {"key": "mtime"}))
++    sid = result_of(await tui.request("session.create", {}))["session_id"]
++    live = result_of(await tui.request("config.get", {"key": "full", "session_id": sid}))
++    model = result_of(await tui.request("config.get", {"key": "model", "session_id": sid}))
++    unknown = await tui.request("config.get", {"key": "model.api_key"})
++    write = await tui.request("config.set", {"key": "busy", "value": "queue"})
++    other = await r.attached("tui")
++    foreign = await other.request("config.get", {"key": "full", "session_id": sid})
++    assert error_of(foreign) == SESSION_NOT_FOUND.code
++    await other.close()
++    await tui.close()
++    await r.close()
++
++    assert attached["full"]["value"]["busy"] == "steer"
++    assert attached["theme"]["value"] == "light"
++    assert isinstance(stamp["value"], float)
++    assert live["value"]["model"] and live["value"]["verbose"] == "new"
++    assert model["value"] == live["value"]["model"]
++    assert error_of(unknown) != METHOD_NOT_FOUND.code  # refused as a key, not as a method
++    assert error_of(write) == METHOD_NOT_FOUND.code  # config.set stays unserved (D-16.549)
++    async with open_rig(scope, fake_clock, tmp_path) as local:
++        for key in CONFIG_KEYS:
++            assert await local.ok("config.get", key=key) == attached[key], key
++        local_sid = (await local.ok("session.create"))["session_id"]
++        here = await local.ok("config.get", key="full", session_id=local_sid)
++        assert here == live
++
++
++@aio
++async def test_session_rows_carry_title_model_and_source(
++    scope: Scope, store: StoreHandle, fake_clock: FakeClock, tmp_path: Path
++) -> None:
++    r = await rig(scope, store, tmp_path, text_turn("the reply"))
++    tui = await r.attached("tui")
++    sid = result_of(await tui.request("session.create", {"title": "Release notes"}))["session_id"]
++    await tui.request("prompt.submit", {"session_id": sid, "text": "draft the notes"})
++    await tui.until(done(sid))
++    listed = result_of(await tui.request("session.list", {"limit": 50}))
++    await tui.close()
++    await r.close()
++
++    row = next(row for row in listed["sessions"] if row["session_id"] == sid)
++    assert row["title"] == "Release notes"
++    assert row["model"]
++    assert row["source"]
++    async with open_rig(scope, fake_clock, tmp_path) as local:
++        assert await local.ok("session.list", limit=50) == listed
++
++
++def test_the_endpoint_serves_the_tui_reads_but_not_config_set() -> None:
++    from indus.gateway.ws.methods import served
++
++    names = set(served())
++    assert {"complete.path", "commands.catalog", "config.get"} <= names
++    assert "config.set" not in names
+diff --git a/tests/contract/tui_bridge/test_methods_slash.py b/tests/contract/tui_bridge/test_methods_slash.py
+index 9eee476..e0e69f4 100644
+--- a/tests/contract/tui_bridge/test_methods_slash.py
++++ b/tests/contract/tui_bridge/test_methods_slash.py
+@@ -207,3 +207,11 @@ def test_handlers_never_import_the_cli() -> None:
+         [sys.executable, "-c", code], capture_output=True, text=True, check=True, timeout=60
+     )
+     assert out.stdout.strip() == "[]"
++
++
++def test_the_shared_catalogue_names_what_the_bridge_runs() -> None:
++    """W48-b: the catalogue (also served by the daemon) says ``server`` for exactly HANDLERS."""
++    from indus.service import picker_reads
++
++    assert set(methods_slash.HANDLERS) == picker_reads.SERVER_COMMANDS
++    assert methods_slash.CLIENT == picker_reads.CLIENT_COMMANDS
+diff --git a/tests/fixtures/service/dual_host_allowlist.yaml b/tests/fixtures/service/dual_host_allowlist.yaml
+index 1603534..deefa1d 100644
+--- a/tests/fixtures/service/dual_host_allowlist.yaml
++++ b/tests/fixtures/service/dual_host_allowlist.yaml
+@@ -29,6 +29,7 @@ differences:
+     host: attached
+     d_id: D-16.549
+     why: >-
+-      The daemon does not serve `config.get` and `config.set` (what the TUI reads at start and
+-      changes from its settings): they answer -32601 over the attach socket. `model.options`,
+-      `complete.slash` and `session.list` are served since wave 47 (W47-c, D-16.1039).
++      The daemon does not serve `config.set` (what the TUI changes from its settings): it answers
++      -32601 over the attach socket, so the saved value stays as it was. `model.options`,
++      `complete.slash` and `session.list` are served since wave 47 (W47-c, D-16.1039);
++      `config.get`, `complete.path` and `commands.catalog` since wave 48 (W48-b).
