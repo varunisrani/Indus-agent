@@ -74,3 +74,16 @@
 - Fail-first tests; pytest 7813 passed, 1 load flake (ssh deadline contract; passes alone). gen_reference/notices fresh.
 - W46-g-1..3. MERGE NOTE: ci.yml also edited by w44 (windows-local job); the committed notices_data.json layout is
   unchanged by RS7, so w46b-notices.patch should still apply.
+
+## w46k.patch: F-3 prebuilt dashboard pages for script installs, F-4 `indus --version` on a source install (done)
+- 11 files, +1018/-21. web/bundle.py `fetch` (HEAD's release tag → tag record manifest_sha256 → manifest.json →
+  indus-web-<version>.tar.gz digest-checked, tarfile filter="data", staged swap into src/indus/web/static with a
+  .indus-release stamp; https only, size caps, 60 s); web/command.py clear message when no pages and no pnpm;
+  cli/version.py reads the release for HEAD from tags / installer marker / update receipts (file reads only);
+  install fragment 20-runtime.sh `ins_web_pages` + marker `version` (install.sh rebuilt).
+- Fail-first test for F-4; pytest unit web/cli + smoke + contract + security 3854 passed; integration/install 128 passed.
+  ruff/pyright/lint-imports/security_static/build.py --check/tooling.checks ok. shellcheck not available.
+- RELEASE.YML MUST ADD (integrator, after w44 lands): before `publish.py upload`, `pnpm install --frozen-lockfile`,
+  `pnpm --filter @indus/web build`, `tar -C apps/web/dist -czf <upload-dir>/indus-web-${VERSION}.tar.gz .` (VERSION without
+  v); scan that dist with the artefact/reference-host scan; rehearsal row "script install without Node serves the pages".
+- W46-k-1..5. Follow-ups: `indus update --finish` refresh of fetched pages; install.ps1 parity; stale-stamp handling.
