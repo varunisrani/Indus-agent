@@ -63,3 +63,15 @@
 - Follow-ups: serve slash.exec / command.dispatch; daemon session.info / session.title (D-16.550) for the attached status bar.
 - NOTE: builder [h] continues [b] in scratchpad wt-w48h on a LOCAL base 0992fb4 (= 1b6e711 + w48b.patch): daemon
   session.info/session.title events and slash.exec/command.dispatch over the socket. Apply w48b.patch THEN w48h.patch.
+
+## w48g.patch: more one-shot startup cuts (partial; relative to LOCAL base 34c34d1 — apply w48e first)
+- 17 files, +2467/-47. W48-g-1 pricing JSON twin (providers/pricing_table.json + pricing_twin.py --check; YAML stays the source,
+  stale twin → falls back to YAML); W48-g-2 field_docs.json twin replaces use_attribute_docstrings (0 ast.parse at import;
+  238 models' descriptions and model_json_schema byte-identical; codegen --check clean); W48-g-3 lazy docker liveness
+  (backends/docker/liveness.py), cron store, content_scan.
+- Before/after on the same box (alternating, 9 samples, 3 rounds): ~80–140 ms lower per round; perf test median 1975 ms vs
+  1500 ms budget (unchanged). This box runs the base at ~1.8 s even at load ~0 (P25-12 recorded 1313 ms on its own box):
+  judge the budget on a quiet CI runner (RM25).
+- Fail-first: pricing twin 4, field docs 3, one-shot import guard. pytest 3627 + 2378 + 3924 + 236; all guards ok.
+- Follow-ups: config defaults twin (~100 ms), shipped-skills front-matter twin (~25–50 ms), httpx._main (third party).
+- NOTE: two new generated twins need their --check wired into tooling.checks or CI (integrator: add to the gate).
