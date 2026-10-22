@@ -12,6 +12,10 @@
 - ``spawn``: a new session and process group, stdin closed unless asked, stdout and stderr on
   pipes pumped into ``ByteCapture`` objects by daemon threads. ``stop`` is the local backend's
   ordered tree kill (SIGTERM, then SIGKILL after ``KILL_GRACE_S``); ``force_stop`` kills at once.
+- Native Windows (RL26): the child starts suspended in its own job object (the Git Bash backend's
+  ``start_windows_process``) and both stops terminate the job, the whole tree at once (no grace,
+  as in that backend). Passing descriptors (the session kernel's pipes) has no Windows form: such a
+  start is refused with a "use WSL2" message, and ``execute_code`` runs per-call scripts there.
 """
 
 from __future__ import annotations
@@ -27,10 +31,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import IO
 
+from indus.backends.contract import BackendUnavailable
 from indus.backends.local import LocalProcess, force_kill_tree, stop_tree, strip_app_pythonpath
+from indus.backends.local_windows import WindowsProcess, start_windows_process, wsl2_refusal
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock, resolve_zone
 from indus.foundation.scope import Scope
+from indus.platform.facts import os_family
 from indus.safety.child_env import child_env
 from indus.tools.builtin.code.output import ByteCapture
 from indus.tools.builtin.code.settings import KILL_GRACE_S, Mode
@@ -181,18 +188,29 @@ class Child:
         stderr: ByteCapture,
         pass_fds: Sequence[int] = (),
     ) -> None:
-        popen = subprocess.Popen(  # noqa: S603 - the interpreter and our staged file
-            list(argv),
-            cwd=cwd,
-            env=dict(env),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-            close_fds=True,
-            pass_fds=tuple(pass_fds),
-        )
-        self.process = LocalProcess(popen)
+        self.process: LocalProcess | None = None
+        self.job: WindowsProcess | None = None
+        if os_family() == "win32":
+            if pass_fds:
+                raise BackendUnavailable(wsl2_refusal("The persistent Python kernel"))
+            self.job = start_windows_process(
+                list(argv), cwd=cwd, env=env, stdin=None, separate_stderr=True
+            )
+            popen = self.job.popen
+        else:
+            popen = subprocess.Popen(  # noqa: S603 - the interpreter and our staged file
+                list(argv),
+                cwd=cwd,
+                env=dict(env),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                close_fds=True,
+                pass_fds=tuple(pass_fds),
+            )
+            self.process = LocalProcess(popen)
+        self.popen = popen
         self.stdout, self.stderr = stdout, stderr
         assert popen.stdout is not None and popen.stderr is not None
         self._readers = [
@@ -204,28 +222,38 @@ class Child:
 
     @property
     def pid(self) -> int:
-        return self.process.popen.pid
+        return self.popen.pid
 
     def poll(self) -> int | None:
-        return self.process.poll()
+        return self.popen.poll()
 
     def alive(self) -> bool:
-        return self.process.poll() is None
+        return self.popen.poll() is None
 
     async def stop(self, clock: Clock, grace: float = KILL_GRACE_S) -> None:
-        if self.alive():
+        if self.process is None:
+            self.force_stop()
+        elif self.alive():
             await stop_tree(self.process, clock=clock, grace=grace)
         else:
             force_kill_tree(self.process)  # leftovers of an exited leader's group
 
     def force_stop(self) -> None:
-        force_kill_tree(self.process)
+        if self.job is not None:
+            self.job.terminate_tree()  # the whole job, background grandchildren included
+            with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+                self.popen.wait(timeout=KILL_GRACE_S)
+            self.job.release()
+        elif self.process is not None:
+            force_kill_tree(self.process)
 
     async def finish_reading(self, clock: Clock, within: float = 2.0) -> None:
         """Give the reader threads a moment to take what is left in the pipes."""
         deadline = clock.monotonic() + within
         while any(r.is_alive() for r in self._readers) and clock.monotonic() < deadline:
             await clock.sleep(0.02)
+        if self.job is not None and not self.alive():
+            self.job.release()  # the job handle; its leftovers were stopped or live on, as on POSIX
 
 
 __all__ = [

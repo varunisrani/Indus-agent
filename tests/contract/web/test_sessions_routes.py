@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -243,6 +244,32 @@ def test_a_compressed_conversation_reads_as_one(
     assert next(r for r in rows if r["id"] == "s-tip")["pinned"] is True
     page = rest.client.get("/api/sessions/s-tip/messages").json()
     assert [m["content"] for m in page["messages"]] == ["first half", "second half"]
+
+
+def test_tool_call_arguments_are_masked_for_display(
+    rest: RestApp, store: DashboardStore, scope: Scope
+) -> None:
+    """W47-a: the desktop rebuilds tool rows (summary and Arguments) from this route after a
+    reload; the arguments are masked as the live ``tool.started`` masks them."""
+    secret = "sk-" + "live" + "B" * 30
+    calls = [
+        {
+            "id": "c1",
+            "type": "function",
+            "function": {"name": "terminal", "arguments": f'{{"command": "echo {secret}"}}'},
+        },
+        {"id": "c2", "type": "function", "function": {"name": "odd", "arguments": f"x {secret}"}},
+    ]
+    with registry.open_unshared(scope) as handle:
+        sessions.create(handle, "s-tools", "cli", started_at=store.now - 300)
+        messages.append(
+            handle, "s-tools", {"role": "assistant", "content": "", "tool_calls": calls}
+        )
+    page = rest.client.get("/api/sessions/s-tools/messages").json()
+    shown = page["messages"][0]["tool_calls"]
+    assert [call["name"] for call in shown] == ["terminal", "odd"]
+    assert all(secret not in call["arguments"] for call in shown)
+    assert json.loads(shown[0]["arguments"])["command"].startswith("echo ")
 
 
 def test_reads_never_write_the_store(rest: RestApp, store: DashboardStore) -> None:

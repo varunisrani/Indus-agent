@@ -541,6 +541,8 @@ async def build_child(
         pools=parent.pools,
         only_tools=names,
         delegation_depth=depth,
+        # The parent's own folder (W47-b); a worktree child's scope already names its tree.
+        workdir=parent.options.workdir if tree is None else None,
     )
     agent = await Agent.start(child_scope, route, None, options)
     agent.runtime.run_context = runtime.run_context

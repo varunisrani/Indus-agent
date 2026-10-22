@@ -76,6 +76,9 @@ class HistoryMessage(ProtocolModel):
     """The text; image parts show as ``[image]``."""
     name: str | None = None
     """For tool rows: the tool's name."""
+    arguments: dict[str, JsonValue] | None = None
+    """For tool rows: the call's parsed arguments, masked as ``tool.started`` masks them (absent
+    when the stored call has none that parse to an object)."""
     row_id: int | None = None
     """The stored row's id (undo and branch points)."""
 

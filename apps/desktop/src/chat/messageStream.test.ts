@@ -388,6 +388,44 @@ describe("tool rows", () => {
     expect(toolOutcome(false, "exit code 2")).toBe("failed");
   });
 
+  it("rows rebuilt from history carry the live rows' summary and arguments (W47-a)", () => {
+    const sid = "s-tools";
+    let live = emptyTranscript(sid);
+    for (const event of [
+      { type: "turn.started", turn_id: "t1", generation: 1 },
+      {
+        type: "tool.started",
+        turn_id: "t1",
+        call_id: "c1",
+        name: "terminal",
+        arguments: { command: "ls -la" },
+      },
+      { type: "tool.completed", turn_id: "t1", call_id: "c1", name: "terminal", ok: true },
+      { type: "turn.done", turn_id: "t1", reason: "completed" },
+    ]) {
+      live = applyEvent(live, { session_id: sid, ...event } as ClientEvent);
+    }
+    const rows: HistoryMessage[] = [
+      { role: "user", text: "list it", row_id: 1 },
+      { role: "tool", text: "a b", name: "terminal", arguments: { command: "ls -la" }, row_id: 2 },
+      { role: "tool", text: "x", name: "read_file", row_id: 3 },
+    ];
+    const reloaded = applyHistory(emptyTranscript(sid), rows, 1);
+    const tools = (t: SessionTranscript) =>
+      t.items.flatMap((item) =>
+        item.kind === "assistant" ? item.parts.filter((part) => part.type === "tool") : [],
+      );
+    const [before] = tools(live);
+    const [after, bare] = tools(reloaded);
+    expect(after?.args).toEqual(before?.args);
+    expect(toolSummary(after?.name ?? "", after?.args ?? null)).toEqual({
+      verb: "run",
+      target: "ls -la",
+    });
+    // a row stored without arguments still shows, with no Arguments section
+    expect(bare?.args).toBeNull();
+  });
+
   it("finds images in a result", () => {
     expect(toolImages("see indus-media://shot/1.png and data:image/png;base64,AAAA")).toEqual([
       "indus-media://shot/1.png",

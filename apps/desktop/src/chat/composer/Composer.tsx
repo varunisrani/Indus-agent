@@ -165,12 +165,15 @@ function useSessionActions(
         }),
     );
   }, [props.actions, connection, sessionId, journal, inflight]);
+  const given = props.actions !== undefined;
   useEffect(() => {
     if (made === null || connection === null) return;
-    const stop = connection.onSessionEvent(made.sessionId, (event) => made.handleEvent(event));
     void made.recoverPrepared();
-    return stop;
-  }, [made, connection]);
+    // Shared actions hear their session's events for their whole life (`sharedActions`); only
+    // actions handed in from outside are fed while this composer shows them.
+    if (!given) return;
+    return connection.onSessionEvent(made.sessionId, (event) => made.handleEvent(event));
+  }, [made, connection, given]);
   return made;
 }
 
@@ -640,7 +643,17 @@ export function Composer(props: ComposerProps) {
                 }}
               >
                 <span className="font-mono">{item.display}</span>
-                {item.meta ? <span className="truncate text-muted">{item.meta}</span> : null}
+                {item.meta ? (
+                  // the highlighted row sits on the accent fill: its note takes the accent's ink
+                  // (muted grey on the accent is unreadable)
+                  <span
+                    className={`truncate ${
+                      index === completion.selected ? "text-accent-fg" : "text-muted"
+                    }`}
+                  >
+                    {item.meta}
+                  </span>
+                ) : null}
               </div>
             ))}
           </div>

@@ -76,3 +76,15 @@ Compare checklist (filled after the rewrite; reopened `useCompletion.ts`, `fuzzy
 ## Status
 
 Done (2026-10-19).
+
+## Wave 47 (builder d): stray characters at the end of slash-menu rows
+
+Status: done (`src/composer/CompletionList.test.tsx`, fail-first: the first row showed
+`… are approveds` and the highlighted `/agents` row was gone).
+Read: none.
+
+- Cause: the list got `rows` = the box height (8) and drew `rows` items plus the `n/total` count
+  line, nine lines in an eight-line box; the layout squeezed one row to nothing and the next row
+  was drawn over it, leaving the tail of the longer row behind. The count line now takes one of the
+  rows (items = rows − 1 when they do not all fit), and a row never wraps (`truncate-end`), so a long
+  note cannot add a line either.

@@ -465,19 +465,35 @@ TITLE_PROMPT = (
     "seven plain words, no quotes, no ending punctuation, in the language the user wrote in."
 )
 _TITLE_INPUT_CHARS = 2000
-_TITLE_WORDS = 7
+TITLE_MAX_CHARS = 60
+"""A title longer than this is cut at a word boundary and ends in an ellipsis (W47: a fixed word
+count cut a model's title mid-phrase with no sign it was cut)."""
+_TITLE_MIN_CUT = 20
 _LEAD_IN = re.compile(r"^(?:title|name)\s*[:\-]\s*", re.IGNORECASE)
+
+
+def _fit_title(text: str) -> str:
+    """``text`` on one line; past ``TITLE_MAX_CHARS`` cut at the last word boundary that keeps
+    a useful length (else mid-word) and ended with ``…``."""
+    line = " ".join(text.split())
+    if len(line) <= TITLE_MAX_CHARS:
+        return line
+    cut = line[: TITLE_MAX_CHARS - 1]
+    space = cut.rfind(" ")
+    if space >= _TITLE_MIN_CUT:
+        cut = cut[:space]
+    return cut.rstrip(" .,;:-") + "…"
 
 
 def clean_title(raw: str) -> str | None:
     """The first line, without quotes, markdown marks, a ``Title:`` lead-in or end punctuation,
-    cut to seven words; ``None`` when nothing usable is left."""
+    whole up to ``TITLE_MAX_CHARS`` (longer: cut with an ellipsis); ``None`` when nothing usable
+    is left."""
     for line in raw.splitlines():
         line = _LEAD_IN.sub("", line.strip().strip("#*`_ ").strip())
         line = line.strip("\"'“”‘’ ").rstrip(".!?;:,").strip()
         if line:
-            words = line.split()
-            return " ".join(words[:_TITLE_WORDS])
+            return _fit_title(line)
     return None
 
 

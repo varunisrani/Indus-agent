@@ -161,3 +161,38 @@ shared oracle `apps/desktop/testing/oracle.ts` for P20-40. Slots for slice C: `C
 `Transcript` `footer`/`onFailureAction` (ChatView supplies defaults: reconnect, open logs, settings, new chat).
 
 Integration (wave 35, P20-40 findings): stored history is read over REST (`GET /api/sessions/{id}/messages` through main's proxy, `src/chat/restHistory.ts`) because the daemon's WebSocket does not serve `session.history` (D-16.718); a session opened before the connection is ready loads when it becomes ready; `applyHistory` no longer keeps a finished live reply the snapshot already holds when its user row was bound to another turn id (D-16.719, `messageStream.test.ts::a finished reply whose user row is bound elsewhere is not shown twice by the snapshot`).
+
+## Wave 47 (builder a, 2026-10-22): tool rows rebuilt from history keep summary and Arguments
+
+Status: done (fail-first tests below fail on the snapshot base and pass with the fix).
+
+Read: no reference file and no Evidence (our own display projection).
+
+Bug: after a window reload the transcript is rebuilt from stored rows, and tool rows lost their
+verb target (path / command) and the expanded row's Arguments: `HistoryMessage` carried only the
+tool's name and output, and both the desktop's REST flattening (`restHistory.ts`) and the daemon's
+`display_messages` dropped the call's arguments.
+
+Fix:
+- Protocol: `HistoryMessage.arguments` (optional object, tool rows only), codegen regenerated
+  (`packages/protocol/src/generated/`).
+- `indus.tui_bridge.methods_session.display_messages` gives each tool row its call's arguments,
+  parsed (stored as JSON text or an object; anything that is not an object is left out) and masked
+  with `redact_arguments`, as `tool.started` masks them (B-REDACT-1).
+- `GET /api/sessions/{id}/messages` (`web/routes/sessions_store.py`) masks each call's `arguments`
+  the same way before sending them (JSON text kept; text that does not parse is masked whole).
+- Desktop: `restHistory.displayRows` attaches the parsed arguments of the row's call;
+  `messageStream.historyItems` puts them on the rebuilt `ToolPart`, so `toolSummary` and `ToolRow`
+  show what the live row showed.
+
+Tests: `tests/contract/tui_bridge/test_methods_session.py::test_display_projection_gives_tool_rows_their_arguments`,
+`tests/contract/web/test_sessions_routes.py::test_tool_call_arguments_are_masked_for_display`,
+`src/chat/restHistory.test.ts` "gives tool rows their call's arguments…",
+`src/chat/messageStream.test.ts` "rows rebuilt from history carry the live rows' summary and arguments".
+
+### Decisions for the lead
+- W47-a-3 (D-16.1032): arguments travel on `HistoryMessage` (an additive protocol field) rather than being
+  re-derived by each surface; empty arguments (`"{}"`) come through as `{}` (the row then shows no
+  Arguments section, as live).
+- W47-a-4 (D-16.1033): the REST messages route now masks tool-call arguments for every client (the web SPA
+  included); before, it sent them as stored.

@@ -387,6 +387,28 @@ async def test_submit_answers_real_generations_and_carries_unattended(
 
 
 @aio
+async def test_submit_carries_single_query_into_the_admission(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    """W47 g (D-16.487): ``single_query`` (an attached finite ``chat -q``) is kept with the
+    input, so the daemon's turn runs ``single_query``; a later plain input does not carry it."""
+    r = await rig(scope, store, tmp_path, text_turn("done"), text_turn("next"))
+    client = await r.attached()
+    sid = (await client.request("session.create", {}))["result"]["session_id"]
+    first = await client.request(
+        "prompt.submit", {"session_id": sid, "text": "work", "single_query": True}
+    )
+    row = ledger.get(store, first["result"]["turn_id"])
+    assert row is not None and row.payload.get("single_query") is True
+    await client.until(done(sid))
+    later = await client.request("prompt.submit", {"session_id": sid, "text": "more"})
+    plain = ledger.get(store, later["result"]["turn_id"])
+    assert plain is not None and "single_query" not in plain.payload
+    await client.close()
+    await r.close()
+
+
+@aio
 async def test_a_queued_input_is_cancelled_by_admission_and_a_started_one_is_not(
     scope: Scope, store: StoreHandle, tmp_path: Path
 ) -> None:

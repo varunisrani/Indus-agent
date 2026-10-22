@@ -359,3 +359,104 @@ describe("busy actions", () => {
     expect(journal.log.at(-1)).toBe("retire req-1 rejected");
   });
 });
+
+// W47-a: the daemon's turn ids (`turn.started` / `turn.done`) are not the admission ids the submit
+// answer and `admission.state` carry; the two arrive in either order.
+describe("busy state ends with the turn, whatever order the answers arrive in", () => {
+  /** The daemon starts the turn under its own id while the submit is still answering. */
+  function racing(events: ReadonlyArray<Record<string, unknown>>) {
+    const { daemon, actions } = setup();
+    daemon.handlers.set("prompt.submit", () => {
+      for (const event of events) daemon.emit(event);
+      return { turn_id: "adm-1", generation: 7, status: "streaming" };
+    });
+    return { daemon, actions };
+  }
+
+  it("turn.done ends it when the submit answer came after turn.started", async () => {
+    const { daemon, actions } = racing([
+      { type: "turn.started", turn_id: "turn-a", generation: 7 },
+    ]);
+    expect(await actions.send("hi")).toBe("started");
+    expect(actions.snapshot().running).toBe(true);
+    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
+    expect(actions.snapshot()).toMatchObject({ running: false, generation: null });
+  });
+
+  it("a submit answer that arrives after the turn ended does not bring Stop back", async () => {
+    const { actions } = racing([
+      { type: "turn.started", turn_id: "turn-a", generation: 7 },
+      { type: "turn.done", turn_id: "turn-a", reason: "completed" },
+    ]);
+    expect(await actions.send("hi")).toBe("started");
+    expect(actions.snapshot().running).toBe(false);
+    // the optimistic row still binds to the turn the transcript knows
+    expect(actions.snapshot().turnId).toBe("turn-a");
+  });
+
+  it("admission started after turn.started keeps the turn's own id", () => {
+    const { daemon, actions } = setup();
+    daemon.emit({ type: "turn.started", turn_id: "turn-a", generation: 7 });
+    daemon.emit({
+      type: "admission.state",
+      admission_id: "adm-1",
+      state: "started",
+      generation: 7,
+    });
+    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
+    expect(actions.snapshot().running).toBe(false);
+  });
+
+  it("admission started after turn.done changes nothing", () => {
+    const { daemon, actions } = setup();
+    daemon.emit({ type: "turn.started", turn_id: "turn-a", generation: 7 });
+    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
+    daemon.emit({
+      type: "admission.state",
+      admission_id: "adm-1",
+      state: "started",
+      generation: 7,
+    });
+    expect(actions.snapshot().running).toBe(false);
+  });
+
+  it("turn.done of an unseen turn ends a turn known only by its admission", async () => {
+    const { daemon, actions } = setup();
+    expect(await actions.send("hi")).toBe("started");
+    daemon.emit({ type: "turn.done", turn_id: "turn-z", reason: "completed" });
+    expect(actions.snapshot().running).toBe(false);
+  });
+
+  it("an earlier turn's end does not stop the next turn", () => {
+    const { daemon, actions } = setup();
+    daemon.emit({ type: "turn.started", turn_id: "turn-a", generation: 7 });
+    daemon.emit({ type: "turn.started", turn_id: "turn-b", generation: 8 });
+    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
+    expect(actions.snapshot()).toMatchObject({ running: true, turnId: "turn-b", generation: 8 });
+  });
+
+  it("the shared actions hear the session's events with no composer mounted", async () => {
+    const listeners = new Set<(event: SessionEvent) => void>();
+    const connection = {
+      onSessionEvent(sessionId: string, listener: (event: SessionEvent) => void) {
+        expect(sessionId).toBe(SID);
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const { daemon, actions } = setup();
+    daemon.actions = null; // nothing feeds it but the connection
+    const shared = sharedActions(connection, SID, () => actions);
+    expect(await shared.send("from the fresh draft")).toBe("started");
+    for (const event of [
+      { type: "turn.started", turn_id: "turn-a", generation: 7 },
+      { type: "turn.done", turn_id: "turn-a", reason: "completed" },
+    ]) {
+      for (const listener of listeners) listener({ session_id: SID, ...event } as SessionEvent);
+    }
+    expect(shared.snapshot().running).toBe(false);
+    // asking again does not subscribe twice
+    sharedActions(connection, SID, () => actions);
+    expect(listeners.size).toBe(1);
+  });
+});

@@ -46,7 +46,7 @@ from indus.protocol.errors import (
     UNKNOWN_PARAM_KEY,
     ErrorCode,
 )
-from indus.protocol.groups import GROUP_METHODS
+from indus.protocol.groups import GROUP_METHODS, GROUPS_EVENT, GroupsEvent
 from indus.protocol.pets import PET_METHODS
 from indus.protocol.projects import PROJECT_METHODS
 from indus.protocol.server_requests import ServerRequest, ServerRequestAnswer
@@ -139,6 +139,11 @@ class PromptSubmitParams(ProtocolModel):
     """A finite run nobody watches (``indus -z``; daemon): this input's turn auto-approves risky
     commands as the in-process run does (the hard floors still refuse). In-process hosts take the
     run's approval policy from its launch and ignore it."""
+    single_query: bool = False
+    """A finite run (an attached ``indus chat -q`` or ``indus -z``; daemon): this input's turn
+    runs one-shot, as ``--local`` runs it: approvals follow ``approvals.single_query_mode`` (or
+    ``unattended``'s auto-approve) and no question is asked of anyone. In-process hosts take the
+    run context from the run's launch and ignore it."""
 
 
 class PromptSubmitResult(ProtocolModel):
@@ -390,7 +395,12 @@ METHODS: Mapping[str, MethodSpec] = MappingProxyType(
 
 
 NOTIFICATIONS: Mapping[str, type[ProtocolModel]] = MappingProxyType(
-    {**BRIDGE_NOTIFICATIONS, **ATTACH_NOTIFICATIONS, WAKE_DETECTED_EVENT: WakeDetected}
+    {
+        **BRIDGE_NOTIFICATIONS,
+        **ATTACH_NOTIFICATIONS,
+        WAKE_DETECTED_EVENT: WakeDetected,
+        GROUPS_EVENT: GroupsEvent,
+    }
 )
 """Notifications that are neither events nor server requests (``gateway.ready`` and the daemon's
 unnumbered frames): method → params model."""

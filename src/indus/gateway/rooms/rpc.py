@@ -7,12 +7,19 @@ protocol (wiring for the lead).
 
 Methods: ``groups.capabilities``, ``groups.list``, ``groups.create``, ``groups.state``,
 ``groups.log``, ``groups.send``, ``groups.rename``, ``groups.disband``, ``groups.stop``,
-``groups.retry``, ``groups.status``, ``groups.promote``, ``groups.demote``.
+``groups.retry``, ``groups.status``, ``groups.promote``, ``groups.demote``, ``groups.approve``.
 
 ``groups.send`` stores the person's message under an id derived from the client's retry key (a
 retried send is a no-op) and, unless ``detect_stop`` is false, holds every member a stop directive
 names (``member.held`` event, its queued turns cancelled). ``groups.stop`` logs
 ``room.stop_requested``, cancels queued turns and asks running ones to stop (two-phase).
+
+``groups.approve`` (wave 47, RS3) is the person's answer to an approval a member's turn asked
+(``approval.requested``, logged by the room loop): it is stored as ``approval.answered`` (a person
+event: neither a member nor the gateway may write one) and the room loop hands it to the member's
+session. Only a request that is open (asked, not yet ``approval.settled``) takes an answer, only a
+choice the request offered, and only the first answer: the same answer again is a no-op, a
+different one ``rooms.event_conflict``.
 
 Authority transfer is an **operator recovery procedure, not an atomic hand-over**:
 
@@ -32,7 +39,7 @@ from __future__ import annotations
 import hashlib
 from collections import Counter
 from collections.abc import Callable, Mapping
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -52,7 +59,14 @@ from indus.state.rooms import (
     user_event_id,
 )
 
-__all__ = ["METHODS", "ConfirmRequired", "GroupsRpc", "GroupsRpcError"]
+__all__ = [
+    "METHODS",
+    "ApprovalNotOpen",
+    "ConfirmRequired",
+    "GroupsRpc",
+    "GroupsRpcError",
+    "approval_event_id",
+]
 
 RETRY_LEASE_S: Final = 60.0
 _LIVE: Final = ("queued", "running", "stopping")
@@ -67,6 +81,17 @@ class ConfirmRequired(RoomError):
     """Promotion needs the operator's ``confirm: true``."""
 
     default_code = "rooms.confirm_required"
+
+
+class ApprovalNotOpen(RoomError):
+    """``groups.approve`` named no open approval of the room, or a choice it did not offer."""
+
+    default_code = "rooms.approval_not_open"
+
+
+def approval_event_id(kind: str, request_id: str) -> str:
+    """The room event id of ``approval.<kind>`` for one request (one event of each per request)."""
+    return f"approval.{kind}:{request_id}"
 
 
 class _Params(BaseModel):
@@ -129,6 +154,13 @@ class _Demote(_Room):
     observed_epoch: int
 
 
+class _Approve(_Room):
+    request_id: str
+    choice: Literal["once", "session", "always", "deny"]
+    reason: str | None = Field(default=None, max_length=2000)
+    author: str = "person"
+
+
 def _handle(member: Mapping[str, Any]) -> str | None:
     for key in ("handle", "profile", "id"):
         value = member.get(key)
@@ -162,6 +194,7 @@ class GroupsRpc:
             "groups.status": (_Room, self._status),
             "groups.promote": (_Promote, self._promote),
             "groups.demote": (_Demote, self._demote),
+            "groups.approve": (_Approve, self._approve),
         }
 
     # -- dispatch --------------------------------------------------------------------------------
@@ -372,6 +405,39 @@ class GroupsRpc:
         )
         return {"authority": room.authority, "epoch": room.epoch, "idempotent": room.idempotent}
 
+    def _approve(self, p: _Approve) -> dict[str, Any]:
+        """The person's answer to a member turn's approval (see the module notes)."""
+        authority, epoch = self._own_authority(p.room_id)
+        asked = self.store.find_event(p.room_id, approval_event_id("requested", p.request_id))
+        if asked is None or asked.kind != "approval.requested":
+            raise ApprovalNotOpen("no approval request has this id in this room")
+        answered = approval_event_id("answered", p.request_id)
+        if self.store.find_event(p.room_id, approval_event_id("settled", p.request_id)) and (
+            self.store.find_event(p.room_id, answered) is None
+        ):
+            raise ApprovalNotOpen("this approval request is no longer open")
+        offered = asked.payload.get("choices")
+        if not isinstance(offered, list) or p.choice not in offered:
+            raise ApprovalNotOpen(f"this approval request does not offer {p.choice!r}")
+        payload: dict[str, Any] = {
+            "request_id": p.request_id,
+            "task_id": asked.payload.get("task_id"),
+            "member": asked.payload.get("member"),
+            "choice": p.choice,
+        }
+        if p.choice == "deny" and p.reason:
+            payload["reason"] = p.reason
+        event = self.store.append_event(
+            p.room_id,
+            answered,
+            "approval.answered",
+            {"kind": "user", "id": p.author},
+            payload,
+            authority=authority,
+            epoch=epoch,
+        )
+        return {"event": event.to_dict(), "idempotent": event.idempotent}
+
 
 METHODS: Final = (
     "groups.capabilities",
@@ -387,4 +453,5 @@ METHODS: Final = (
     "groups.status",
     "groups.promote",
     "groups.demote",
+    "groups.approve",
 )

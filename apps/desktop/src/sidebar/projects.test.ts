@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REPO_SCAN,
   type DirEntry,
+  freshDraftFolder,
   groupByProject,
   isUnder,
   newChatCwd,
@@ -220,5 +221,19 @@ describe("the per-profile store", () => {
     expect(newChatTarget.take(storage, "work")).toBe("/work/a");
     expect(newChatTarget.take(storage, "work")).toBeNull();
     expect(storage.getItem("indus.desktop.new-chat-target")).toBeNull();
+  });
+
+  it("a fresh draft not started from the sidebar opens in the default directory (W47-b)", () => {
+    // App start, Ctrl+N, /new and the command center open a draft without a sidebar choice: its
+    // session must still be created in the folder the Terminal pane uses, not the daemon's.
+    const storage = new MemoryStorage();
+    expect(freshDraftFolder(storage, "work")).toBeNull();
+    new ProjectStore("work", storage).setDefaultDirectory("/work/default");
+    expect(freshDraftFolder(storage, "work")).toBe("/work/default");
+    expect(freshDraftFolder(storage, "home")).toBeNull();
+    newChatTarget.set(storage, "work", "/work/project");
+    expect(freshDraftFolder(storage, "work")).toBe("/work/project");
+    newChatTarget.take(storage, "work");
+    expect(freshDraftFolder(storage, "work")).toBe("/work/default");
   });
 });

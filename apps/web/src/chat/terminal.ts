@@ -8,9 +8,11 @@
 // tab in the background) and loaded again on return.
 //
 // Colours come from the @indus/ui tokens of the active theme (CSS variables plus the 16-colour ANSI
-// map), re-read when `data-theme` on <html> changes.
+// map), re-read when `data-theme` on <html> changes. The program inside (the TUI) is told about the
+// switch through colour-scheme reports (colourScheme.ts, W47), so it re-picks readable colours.
 
 import { ansi, type ThemeName } from "@indus/ui";
+import { SchemeReporter } from "./colourScheme.ts";
 
 export interface TermSize {
   cols: number;
@@ -167,13 +169,36 @@ export const createXtermTerminal: TerminalFactory = async () => {
     }
   };
 
-  const themeWatch = new MutationObserver(() => {
+  const schemes = new SchemeReporter(
+    () => themeName() === "indus-light",
+    (report) => term.input(report, false),
+  );
+  const parserHooks = [
+    term.parser.registerCsiHandler({ prefix: "?", final: "n" }, (params) =>
+      schemes.deviceStatus(params),
+    ),
+    term.parser.registerCsiHandler({ prefix: "?", final: "h" }, (params) =>
+      schemes.setMode(params, true),
+    ),
+    term.parser.registerCsiHandler({ prefix: "?", final: "l" }, (params) =>
+      schemes.setMode(params, false),
+    ),
+  ];
+  const restyle = () => {
     term.options.theme = terminalColours();
-  });
+    schemes.themeChanged();
+  };
+  const themeWatch = new MutationObserver(restyle);
   themeWatch.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["data-theme"],
   });
+  // with no `data-theme` the page follows the system scheme
+  const systemScheme =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: dark)")
+      : null;
+  systemScheme?.addEventListener?.("change", restyle);
 
   return {
     open(parent) {
@@ -213,6 +238,8 @@ export const createXtermTerminal: TerminalFactory = async () => {
     input: () => term.textarea,
     dispose() {
       themeWatch.disconnect();
+      systemScheme?.removeEventListener?.("change", restyle);
+      for (const hook of parserHooks) hook.dispose();
       releaseGpu();
       term.dispose();
     },

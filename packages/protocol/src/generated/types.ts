@@ -583,6 +583,28 @@ export interface GoalUpdate {
   reason?: string;
 }
 
+/** The person's answer to an approval a member's turn put to the room. */
+export interface GroupsApproveParams {
+  /** The room's id. */
+  room_id: string;
+  /** The `request_id` of the room's `approval.requested` event. */
+  request_id: string;
+  /** One of the choices the request offered. */
+  choice: "once" | "session" | "always" | "deny";
+  /** Why the person denied (passed to the member unchanged); ignored for other choices. */
+  reason?: string | null;
+  /** Who answered. */
+  author?: string;
+}
+
+/** The stored answer. */
+export interface GroupsApproveResult {
+  /** The `approval.answered` event. */
+  event: { [key: string]: JsonValue };
+  /** True when the same answer was stored already. */
+  idempotent: boolean;
+}
+
 /** The room's authority after a promote or demote. */
 export interface GroupsAuthorityResult {
   /** The gateway that holds the room. */
@@ -637,6 +659,14 @@ export interface GroupsDisbandResult {
   disbanded_at: number;
   /** True when it was disbanded already. */
   idempotent: boolean;
+}
+
+/** `groups.event`: a new event of a room this connection watches (in order, once). */
+export interface GroupsEvent {
+  /** The room's id. */
+  room_id: string;
+  /** The event (the room store's `to_dict` shape). */
+  event: { [key: string]: JsonValue };
 }
 
 /** A page of rooms. */
@@ -805,6 +835,28 @@ export interface GroupsStopResult {
   stopping: string[];
 }
 
+/** The watch is off. */
+export interface GroupsUnwatchResult {
+  /** False: this connection no longer receives the room's events. */
+  watching: boolean;
+}
+
+/** Receive a room's new events as `groups.event` notifications on this connection. */
+export interface GroupsWatchParams {
+  /** The room's id. */
+  room_id: string;
+  /** Also send the events after this sequence number; absent means only new ones. */
+  since_seq?: number | null;
+}
+
+/** The watch is on. */
+export interface GroupsWatchResult {
+  /** The room's id. */
+  room_id: string;
+  /** The room's newest sequence number when the watch began. */
+  latest_seq: number;
+}
+
 /** A heartbeat sent its recurring instruction into the session (shown as a "wake" row). */
 export interface HeartbeatFired {
   /** The session the event belongs to. */
@@ -829,6 +881,11 @@ export interface HistoryMessage {
   text: string;
   /** For tool rows: the tool's name. */
   name?: string | null;
+  /**
+   * For tool rows: the call's parsed arguments, masked as `tool.started` masks them (absent
+   * when the stored call has none that parse to an object).
+   */
+  arguments?: { [key: string]: JsonValue } | null;
   /** The stored row's id (undo and branch points). */
   row_id?: number | null;
 }
@@ -1461,6 +1518,13 @@ export interface PromptSubmitParams {
    * run's approval policy from its launch and ignore it.
    */
   unattended?: boolean;
+  /**
+   * A finite run (an attached `indus chat -q` or `indus -z`; daemon): this input's turn
+   * runs one-shot, as `--local` runs it: approvals follow `approvals.single_query_mode` (or
+   * `unattended`'s auto-approve) and no question is asked of anyone. In-process hosts take the
+   * run context from the run's launch and ignore it.
+   */
+  single_query?: boolean;
 }
 
 /** The ticket for the started turn. */

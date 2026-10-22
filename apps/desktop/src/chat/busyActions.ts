@@ -12,9 +12,16 @@
 // Every input goes through the prepared-submission journal (P20-20): prepare → submit with the
 // journal's request id → retire with the receipt. An uncertain answer keeps the entry; the person
 // retries (same request id: the daemon runs it at most once) or dismisses it.
+//
+// Turn identity (W47-a): the submit answer and `admission.state` name an input by its admission id,
+// `turn.started` / `turn.done` by the daemon's own turn id; only the generation is common to both,
+// and the answer can arrive before `turn.started` or after `turn.done`. Busy state is therefore
+// kept by generation: a turn whose end was seen never shows Stop again, and `turn.done` ends the
+// busy state unless a later turn has started since.
 
 import type { MethodName, MethodTypes, PromptSubmitResult } from "@indus/protocol";
 import {
+  type ChatConnection,
   REQUEST_TIMEOUTS,
   type RequestOptions,
   type SessionEvent,
@@ -64,6 +71,8 @@ export interface UncertainSubmission {
 
 export interface BusySnapshot {
   readonly running: boolean;
+  /** The running (or just ended) turn: its own id once `turn.started` named it, else the
+   * admission id from the submit answer. */
   readonly turnId: string | null;
   readonly generation: number | null;
   readonly queue: readonly QueueEntry[];
@@ -145,6 +154,10 @@ export class ChatActions {
   private readonly sending = new Set<string>();
   private readonly settled = new Set<string>();
   private pendingSubmit: Promise<unknown> | null = null;
+  /** The daemon's turn ids seen in `turn.started` → their generation (the latest few). */
+  private readonly turns = new Map<string, number>();
+  /** The newest generation whose end this window saw (-1: none). */
+  private ended = -1;
   private state: BusySnapshot = {
     running: false,
     turnId: null,
@@ -193,15 +206,17 @@ export class ChatActions {
     if (event.session_id !== this.sessionId) return;
     switch (event.type) {
       case "turn.started":
+        this.remember(event.turn_id, event.generation);
+        // a renumbered ledger (a new daemon) starts below what ended before
+        if (event.generation <= this.ended) this.ended = event.generation - 1;
         this.set({ running: true, turnId: event.turn_id, generation: event.generation });
         return;
       case "turn.done":
-        if (this.state.turnId === null || this.state.turnId === event.turn_id) {
-          this.set({ running: false, turnId: null, generation: null });
-        }
+        this.onTurnDone(event.turn_id);
         return;
       case "session.info":
         if (event.running === false && this.state.running) {
+          this.markEnded(this.state.generation);
           this.set({ running: false, turnId: null, generation: null });
         }
         return;
@@ -211,6 +226,53 @@ export class ChatActions {
       default:
         return;
     }
+  }
+
+  private remember(turnId: string, generation: number): void {
+    this.turns.delete(turnId);
+    this.turns.set(turnId, generation);
+    while (this.turns.size > 16) {
+      const [oldest] = this.turns.keys();
+      if (oldest === undefined) break;
+      this.turns.delete(oldest);
+    }
+  }
+
+  private markEnded(generation: number | null): void {
+    if (generation !== null && generation > this.ended) this.ended = generation;
+  }
+
+  /** The daemon's id of the turn running `generation`, when `turn.started` named it. */
+  private turnOf(generation: number): string | null {
+    let found: string | null = null;
+    for (const [turnId, own] of this.turns) if (own === generation) found = turnId;
+    return found;
+  }
+
+  private onTurnDone(turnId: string): void {
+    const { running, generation, turnId: current } = this.state;
+    const own = this.turns.get(turnId) ?? (current === turnId ? generation : null);
+    this.markEnded(own);
+    if (!running) return;
+    // One turn runs at a time: only a later turn that already started keeps the busy state.
+    const later =
+      current !== turnId &&
+      current !== null &&
+      this.turns.has(current) &&
+      (own === null || (generation !== null && generation > own));
+    if (later) return;
+    this.markEnded(generation);
+    this.set({ running: false, turnId: null, generation: null });
+  }
+
+  /** A turn is claimed for `generation` (submit answer or `admission.state` started). */
+  private claimed(admissionId: string, generation: number | null): Partial<BusySnapshot> {
+    const turnId = generation === null ? null : this.turnOf(generation);
+    if (generation !== null && generation <= this.ended) {
+      // its end already arrived: nothing runs (the turn id still binds the optimistic row)
+      return { running: false, turnId: turnId ?? admissionId, generation: null };
+    }
+    return { running: true, turnId: turnId ?? admissionId, generation };
   }
 
   private onAdmission(
@@ -239,12 +301,12 @@ export class ChatActions {
       return;
     }
     // started or terminal: it left the queue
-    const patch: { -readonly [K in keyof BusySnapshot]?: BusySnapshot[K] } = { queue: others };
-    if (state === "terminal" && this.state.lost?.admissionId === admissionId) patch.lost = null;
-    if (state === "started" && typeof generation === "number") {
-      patch.running = true;
-      patch.generation = generation;
-      patch.turnId = admissionId;
+    let patch: Partial<BusySnapshot> = { queue: others };
+    if (state === "terminal" && this.state.lost?.admissionId === admissionId) {
+      patch = { ...patch, lost: null };
+    }
+    if (state === "started" && typeof generation === "number" && generation > this.ended) {
+      patch = { ...patch, ...this.claimed(admissionId, generation) };
     }
     this.set(patch);
   }
@@ -351,11 +413,9 @@ export class ChatActions {
       return "queued";
     }
     if (result.status === "steered" || result.status === "redirected") return "steered";
-    this.set({
-      running: true,
-      turnId: result.turn_id,
-      generation: typeof result.generation === "number" ? result.generation : this.state.generation,
-    });
+    const generation =
+      typeof result.generation === "number" ? result.generation : this.state.generation;
+    this.set(this.claimed(result.turn_id, generation));
     return "started";
   }
 
@@ -604,8 +664,16 @@ export function sharedActions(
   }
   let actions = bySession.get(sessionId);
   if (actions === undefined) {
-    actions = make();
-    bySession.set(sessionId, actions);
+    const made = make();
+    actions = made;
+    bySession.set(sessionId, made);
+    // W47-a: it hears the session's events for as long as it lives, not only while a composer
+    // shows the session (a fresh draft's first send, quick entry and Retry run with none mounted,
+    // and a turn that ends meanwhile would otherwise keep Stop/Steer up).
+    const source = connection as Partial<Pick<ChatConnection, "onSessionEvent">>;
+    if (typeof source.onSessionEvent === "function") {
+      source.onSessionEvent.call(connection, sessionId, (event) => made.handleEvent(event));
+    }
   }
   return actions;
 }

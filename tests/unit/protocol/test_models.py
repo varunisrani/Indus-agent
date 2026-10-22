@@ -258,7 +258,7 @@ def test_catalogue_names() -> None:
             for row in group
         ),
     ]
-    assert len(METHODS) == 90  # + voice.listen (P24-20 wiring)
+    assert len(METHODS) == 93  # + groups.approve, groups.watch, groups.unwatch (wave 47)
     for spec in METHODS.values():
         assert spec.summary
 

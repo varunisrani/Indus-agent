@@ -744,3 +744,51 @@ async def test_an_unattended_input_auto_approves_only_its_own_turn(
     finally:
         APPROVALS.set_auto_approve(key, False)
         await host.aclose()
+
+
+@aio
+async def test_a_single_query_input_runs_its_turn_as_single_query_and_asks_nobody(
+    scope: Scope, store: StoreHandle, tmp_path: Path
+) -> None:
+    """W47 g (D-16.487): an input submitted ``single_query`` (an attached finite ``chat -q``)
+    runs its turn with the run context ``--local`` gives it and no answerable kind (clarify,
+    sudo and the rest are unsupported, as ``--local`` passes none), for that turn only."""
+    from indus.protocol.requests_port import RequestUnsupported
+    from indus.service.broker import ServerRequestBroker
+
+    seen: list[tuple[str | None, bool]] = []
+
+    async def probe(call: ToolCall, state: TurnState) -> ToolResult:
+        broker = state.control.broker
+        assert isinstance(broker, ServerRequestBroker)
+        can_ask = "clarify" in broker.answerable_kinds
+        seen.append((state.runtime.run_context, can_ask))
+        if not can_ask:
+            with pytest.raises(RequestUnsupported):
+                await broker.ask("clarify", {"questions": [{"id": "q", "text": "which?"}]})
+        return ToolResult("looked")
+
+    host = await open_host(
+        scope,
+        store,
+        tmp_path,
+        tool_batch(("probe", {})),
+        text_turn("ran once"),
+        tool_batch(("probe", {})),
+        text_turn("ran attended"),
+        tools={"probe": probe},
+    )
+    tui = Watcher("t1", "tui", kinds=("approval", "clarify"))
+    sid = (await host.create(viewer=tui.viewer)).session_id
+    try:
+        lone = await host.submit(sid, "q run", principal="p", request_id="r1", single_query=True)
+        assert (await host.wait(lone.admission_id)).outcome == "completed"
+        assert seen == [("single_query", False)]
+        row = ledger.get(store, lone.admission_id)
+        assert row is not None and row.payload == {"text": "q run", "single_query": True}
+        assert host.service.agent(sid).runtime.run_context is None  # put back after the turn
+        plain = await host.submit(sid, "chat", principal="p", request_id="r2")
+        assert (await host.wait(plain.admission_id)).outcome == "completed"
+        assert seen[1] == (None, True)  # the next input runs as the session always does
+    finally:
+        await host.aclose()

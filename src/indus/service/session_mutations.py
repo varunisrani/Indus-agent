@@ -388,7 +388,8 @@ class SessionMutations:
             cwd = stored if isinstance(stored, str) and stored else None
         if cwd:
             fields = {**options.session_fields, "cwd": cwd}
-            options = replace(options, cwd=Path(cwd), session_fields=fields)
+            # The tools follow the folder too, not only the prompt (W47-b).
+            options = replace(options, cwd=Path(cwd), workdir=Path(cwd), session_fields=fields)
         if acp and options.source != ACP_SOURCE and state.route is None:
             # A stored ACP session comes back on the model its row names (a switch made before a
             # restart); ``before_turn`` binds it, as it does a pick a rebuild lost.

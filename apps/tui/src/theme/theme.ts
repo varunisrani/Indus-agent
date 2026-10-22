@@ -312,6 +312,22 @@ export function setDetected(light: boolean, background: string | null): void {
   themeStore.setState({ detected: { light, background } });
 }
 
+/**
+ * The terminal reported its colours changed (W47: the dashboard's Chat tab switching between its
+ * light and dark themes): detect again and re-apply `requested` (the theme name the server or
+ * `/theme` asked for, `auto` by default), so an automatic theme follows the terminal.
+ */
+export function followTerminalScheme(
+  light: boolean,
+  background: string | null,
+  requested: string,
+): Theme {
+  const { detected } = themeStore.getState();
+  // A report without a colour keeps the known background only when the polarity is unchanged.
+  setDetected(light, background ?? (detected.light === light ? detected.background : null));
+  return applyThemePayload(requested);
+}
+
 /** Apply a server theme (ready frame or a change event) as the committed theme. */
 export function applyThemePayload(payload: ThemePayload): Theme {
   const theme = themeFromPayload(payload, themeStore.getState().detected);

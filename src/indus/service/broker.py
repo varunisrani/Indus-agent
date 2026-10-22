@@ -125,6 +125,9 @@ class ServerRequestBroker:
         self._new_id = new_id
         self._answerable: frozenset[str] = frozenset()
         self.set_answerable_kinds(answerable_kinds)
+        self.asks_nobody = False
+        """While true no kind is answerable (``RequestUnsupported`` at once): a one-shot turn of
+        the daemon, which asks nobody as the in-process one-shot run does."""
         self._open: dict[str, _Open] = {}
         self._closed = False
         self._wait_total = 0.0
@@ -137,7 +140,10 @@ class ServerRequestBroker:
 
     @property
     def answerable_kinds(self) -> frozenset[str]:
-        """Kinds that may be asked now: the attached viewers' kinds when a book is used."""
+        """Kinds that may be asked now: the attached viewers' kinds when a book is used, none
+        while ``asks_nobody`` is set."""
+        if self.asks_nobody:
+            return frozenset()
         if self._book is not None:
             return self._book.answerable_kinds()
         return self._answerable

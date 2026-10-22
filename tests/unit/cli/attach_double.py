@@ -9,7 +9,8 @@ It answers like ``RemoteAttached``:
 
 - ``create(params, *, source, policy)`` / ``resume(session_id, *, policy)``; a changed frozen value
   raises an error whose ``reason`` is ``policy_conflict`` and whose ``fields`` lists the fields;
-- ``submit(session_id, text, *, unattended=False)`` (``turn_id`` = the admission id);
+- ``submit(session_id, text, *, unattended=False, single_query=False)`` (``turn_id`` = the
+  admission id);
 - ``wait(session_id, turn_id)``; raises with ``reason`` ``outcome_unknown`` /
   ``blocked_by_unknown``;
 - ``pending(session_id)`` rows (``admission_id``, ``state``, ``generation``, ``text``);
@@ -135,11 +136,21 @@ class StubRemote:
         return SessionResumeResult(session_id=session_id, message_count=0, last_seq=0)
 
     async def submit(
-        self, session_id: str, text: str, *, unattended: bool = False
+        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
     ) -> PromptSubmitResult:
         self.generation += 1
         turn = f"adm-{self.generation}"
-        self.calls.append(("submit", {"text": text, "unattended": unattended, "turn": turn}))
+        self.calls.append(
+            (
+                "submit",
+                {
+                    "text": text,
+                    "unattended": unattended,
+                    "single_query": single_query,
+                    "turn": turn,
+                },
+            )
+        )
         for listener in self.listeners.get(session_id, []):
             listener(
                 TurnStarted(

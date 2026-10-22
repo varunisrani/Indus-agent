@@ -177,3 +177,59 @@ follow-up.
 Tests: `tests/security/test_trust_boundaries.py::test_room_a_member_reply_cannot_forge_a_speaker`
 (fails on the old prompt: the forged `person:` line stood at a line start),
 `tests/unit/gateway/rooms/test_loop.py::test_transcript_entries_are_framed_so_none_can_pass_for_another`.
+
+## Wave 47 (builder h — RS3: approvals in room turns, room events pushed)
+
+Status: done for the daemon side (2026-10-22); the desktop / TUI / web room views do not use the
+push or show an approval card yet (follow-up W47-h-3). Read: no reference file (our own design;
+the reference's `groups.approve` was recorded "not taken" above, only its name is reused).
+
+Approvals. Each member turn gets a `TurnRequests` (`gateway.rooms.loop`). `daemon_runner` attaches
+a `messaging` viewer that renders `approval` to the turn's fresh session (connection
+`room:<room>:<task>:<attempt>`), so the session's request book offers the approval instead of
+refusing it at once (no viewer → `RequestUnsupported` → "not_answered"). The offer becomes the room
+event `approval.requested` (gateway actor; `task_id`, `member`, `room_name`, `source_seq`,
+`request_id`, redacted `command`, `description`, `choices`), so every surface reading or watching
+the room shows it with the room and member named. The person answers with `groups.approve
+{room_id, request_id, choice, reason?}`: only an open request (asked, not settled), only a choice it
+offered, first answer wins (same answer again is idempotent, another one `rooms.event_conflict`);
+it is stored as `approval.answered`, which only a person actor may write (a member or the gateway
+cannot: `ACTOR_EVENT_KINDS`). The loop's next pass (≤ 1 s) hands it to the session
+(`host.respond` with the offer's generation), exactly like a viewer's `server_request.answer`.
+`approval.settled` records how each request ended (`request.settled` from the session: answered,
+withdrawn / timed_out, undeliverable); one still open when the turn ends, fails, is stopped or
+expires is settled `withdrawn` / `turn_ended`, and these writes land before the turn's
+`turn.*` end event. SEC-15: approval events never enter a member's prompt (the planner feeds only
+`message.*`), and nothing a member writes can answer one. The approval wait is the profile's
+`approvals.timeout` (default 5 min); the turn keeps its heartbeat meanwhile.
+
+Push. `groups.watch {room_id, since_seq?}` / `groups.unwatch {room_id}` are served by `WsExtras`
+(daemon WebSocket only): `gateway.rooms.watch.RoomWatch` sends the connection every new room event
+(person messages, `turn.*`, member replies, stops, approvals) as a `groups.event {room_id, event}`
+notification, in order and once per connection (per-connection cursor; one poll at a time). It
+reads the log (every 0.5 s while anyone watches, at once after a `groups.*` write through the same
+endpoint) rather than hooking a store, so writes by the room loop's own store reach it too. A
+closing connection's watches end. Protocol: `groups.approve`, `groups.watch`, `groups.unwatch`,
+notification `groups.event`; codegen and `docs/user/reference/protocol.md` regenerated.
+
+Tests (fail-first: the three loop tests failed on the base with `'MemberTurn' object has no
+attribute 'requests'`; `test_watch.py` failed to import `GroupsWatchParams`):
+`tests/unit/gateway/rooms/test_loop.py::test_a_member_turn_approval_is_put_to_the_room_and_the_person_answers_it`,
+`::test_groups_approve_takes_only_an_open_request_and_the_first_answer`,
+`::test_an_open_approval_is_withdrawn_in_the_room_when_the_turn_is_stopped`,
+`tests/unit/gateway/rooms/test_watch.py::test_watchers_get_every_new_room_event_in_order_once`,
+`tests/security/test_trust_boundaries.py::test_room_approvals_are_answered_only_by_the_person`.
+`tests/integration/gateway/multiplex/test_room_two_members.py` passed 5 runs out of 5.
+
+## Decisions for the lead (wave 47, h)
+- W47-h-1 (D-16.1054): room approvals travel through the room log (`approval.requested` / `.answered` /
+  `.settled`) rather than an in-process registry: auditable, survives the endpoint/loop split (the
+  WS endpoint's `GroupsRpc` and the loop's `RoomPart` hold different stores), and the actor table
+  keeps members from answering. Cost: up to one loop pass (1 s) between the answer and the session.
+- W47-h-2 (D-16.1055): only `approval` is put to the room; clarify / sudo / secret in a room turn are still
+  refused at once (`RequestUnsupported`), as before. The non-shared runner path
+  (`pipeline.service`, no daemon host) keeps the old behaviour.
+- W47-h-3 (D-16.1056, follow-up): desktop `GroupRoom.tsx` (and the TUI / web room views) still poll
+  `groups.log`; switch them to `groups.watch` + `groups.event` and render `approval.requested`
+  as a card answering with `groups.approve`. Release-checklist RS3 can move to Done once that
+  lands (daemon side done here).

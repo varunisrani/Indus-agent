@@ -27,6 +27,7 @@ from fastapi import HTTPException
 
 from indus.foundation.errors import IndusError, StoreUnavailable
 from indus.foundation.scope import Scope
+from indus.safety.redaction import redact_arguments, redact_output
 from indus.state import browse, deletion, listing, messages, runtime_ledger
 from indus.state.errors import Bucket, classify
 from indus.state.registry import StoreHandle
@@ -325,10 +326,27 @@ def _calls(raw: object) -> list[dict[str, str]]:
         fn_map = cast(dict[str, Any], fn) if isinstance(fn, dict) else {}
         name = fn_map.get("name", call.get("name", ""))
         args: object = fn_map.get("arguments", call.get("arguments", ""))
-        if not isinstance(args, str):
-            args = json.dumps(args, ensure_ascii=False, default=str)
-        out.append({"id": str(call.get("id") or ""), "name": str(name or ""), "arguments": args})
+        out.append(
+            {"id": str(call.get("id") or ""), "name": str(name or ""), "arguments": _shown(args)}
+        )
     return out
+
+
+def _shown(args: object) -> str:
+    """A stored call's arguments as display JSON text, masked as ``tool.started`` masks them
+    (the desktop rebuilds its tool rows from these after a reload, W47-a)."""
+    parsed: object = args
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args)
+        except ValueError:
+            return redact_output(args)
+    if isinstance(parsed, dict):
+        parsed = redact_arguments(cast(dict[str, Any], parsed))
+        return json.dumps(parsed, ensure_ascii=False, default=str)
+    if isinstance(args, str):
+        return redact_output(args)
+    return redact_output(json.dumps(parsed, ensure_ascii=False, default=str))
 
 
 def message_json(row: Mapping[str, Any]) -> dict[str, Any]:

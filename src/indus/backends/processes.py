@@ -34,6 +34,10 @@ goes out. The running jobs of each profile are listed in its crash checkpoint
 (``process_checkpoint``, P11-14), rewritten when a job starts or ends; the first time a registry
 serves a profile (``recover``) it adopts the jobs a crashed predecessor left running as
 ``detached`` records and marks the rest ``lost``.
+
+Native Windows (RL26): host jobs need a readable descriptor, a pidfd or POSIX signals, none of which
+a Windows pipe or process has, so a host job there ends at once as ``failed_start`` with a "use
+WSL2" message (``WINDOWS_REFUSAL``); jobs inside a non-local environment (Docker, SSH) still run.
 """
 
 from __future__ import annotations
@@ -82,6 +86,7 @@ from indus.foundation.clock import Clock, SystemClock
 from indus.foundation.config.schema import default_for
 from indus.foundation.scope import Scope
 from indus.platform import locate
+from indus.platform.facts import os_family
 from indus.safety.redaction import redact_output
 
 __all__ = [
@@ -118,6 +123,12 @@ FINAL_DRAIN_MAX = 4 * 1024 * 1024
 STDIN_DEADLINE_S = 5.0
 WAIT_SLICE_S = 1.0
 PTY_SIZE = (30, 120)
+
+WINDOWS_REFUSAL = (
+    "Background processes on this machine are not available on native Windows yet; run Indus "
+    "Agent inside WSL2 (the supported way on Windows), run the command in the foreground, or "
+    "use a Docker or SSH terminal backend"
+)
 
 PTY_MISSING_NOTE = (
     "A pseudo-terminal needs the optional 'pty' extra (pip install 'indus-agent[pty]'); this "
@@ -595,6 +606,9 @@ class ProcessRegistry:
         environment = request.environment
         if environment is not None and not environment.flags.host_local:
             await self._spawn_remote(record, request, environment)
+            return record
+        if os_family() == "win32":  # RL26: no host job reader without POSIX descriptors
+            self._fail_start(record, WINDOWS_REFUSAL)
             return record
         env = dict(request.env)
         env["PYTHONUNBUFFERED"] = "1"  # so poll shows progress, not one burst at the end

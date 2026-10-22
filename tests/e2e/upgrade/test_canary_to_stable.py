@@ -127,10 +127,18 @@ def test_a_canary_install_updates_to_the_next_stable_with_its_data(
     )
     receipts = sorted((world.home / "logs" / "update_receipts").glob("*.json"))
     receipt = json.loads(receipts[-1].read_text(encoding="utf-8"))
-    assert receipt["outcome"] == "ok" and receipt["channel"] == "canary", receipt
+    # The rehearsal's releases are plain annotated tags: no release record, so no manifest digest
+    # and no published dashboard pages. A real release tag carries `manifest_sha256`
+    # (`scripts/release/publish.py`), so the page refresh (wave 47, `web_pages`) is the one
+    # follow-up owed here, and only for that reason.
+    assert receipt["outcome"] == "ok_with_followups" and receipt["channel"] == "canary", receipt
     assert receipt["to_version"] == str(stable), receipt
+    [owed] = receipt["owed"]
+    assert owed["followup"] == "web_pages", receipt
+    assert f"the v{stable} tag records no release manifest digest" in owed["detail"], receipt
     phases = {row["phase"]: row["outcome"] for row in receipt["phases"]}
     assert phases["snapshot"] == "ok" and phases["swap"] == "ok", receipt
+    assert phases["web_pages"] == "owed", receipt
     assert not (world.home / ".indus-update-in-progress").exists()
 
     # -- after: same channel, version reported, data intact -------------------------------------

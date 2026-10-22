@@ -167,6 +167,10 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
+# Sources of sessions a person starts from a surface in a folder of their choosing (the
+# daemon's creatable surfaces); a stored one attached again keeps working there (W47-b).
+_FOLDER_SOURCES = frozenset({"cli", "tui", "gui", "acp", "web"})
+
 # User-facing copy for a busy session; mirrored by ``errors.session.busy`` in locales/en.yaml
 # (a test keeps them equal).
 BUSY_COPY: dict[str, str] = {
@@ -550,7 +554,8 @@ class SessionService:
             options = replace(options, source=source)
         fields = dict(options.session_fields)
         if params.cwd:
-            options = replace(options, cwd=Path(params.cwd))
+            # The tools work there too, not only the prompt (W47-b).
+            options = replace(options, cwd=Path(params.cwd), workdir=Path(params.cwd))
             fields["cwd"] = params.cwd
         if params.model:
             fields["model"] = params.model
@@ -572,7 +577,35 @@ class SessionService:
     async def _attach_existing(self, session_id: str) -> _Attached:
         if not session_id or not await self._exists(session_id):
             raise ProtocolError(SESSION_NOT_FOUND, f"no session {session_id}", path="session_id")
-        return await self._attach(session_id, options=self.options, selection=self.toolsets)
+        options = await self._stored_folder(session_id, self.options)
+        return await self._attach(session_id, options=options, selection=self.toolsets)
+
+    async def _stored_folder(self, session_id: str, options: AgentOptions) -> AgentOptions:
+        """``options`` for a stored session attached again (a daemon restart, another process):
+        a session a person started from a surface in a folder of its own keeps working there
+        (W47-b). Messaging chats and sessions in the host's own folder keep the host's options."""
+        row: Mapping[str, Any] | None = None
+        store = self.store
+        try:
+            if isinstance(store, StateStore):
+                row = await run_blocking(
+                    sessions.get, store.handle, session_id, label="session folder"
+                )
+            elif isinstance(store, MemoryStore):
+                row = store.sessions.get(session_id)
+        except Exception:
+            log.warning("could not read the folder of session %s", session_id, exc_info=True)
+            return options
+        if row is None or row.get("source") not in _FOLDER_SOURCES:
+            return options
+        folder = row.get("cwd")
+        if not isinstance(folder, str) or not folder.strip():
+            return options
+        own = options.cwd if options.cwd is not None else options.session_fields.get("cwd")
+        if own is not None and str(own) == folder:
+            return options
+        fields = {**options.session_fields, "cwd": folder}
+        return replace(options, cwd=Path(folder), workdir=Path(folder), session_fields=fields)
 
     async def _attach(
         self, session_id: str, *, options: AgentOptions, selection: list[str] | None

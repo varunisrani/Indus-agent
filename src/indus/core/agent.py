@@ -216,6 +216,9 @@ class AgentOptions:
     pre_verify: PreVerifyHook | None = None
     # The chat a gateway session answers in, offered to tools as ``delivery_origin`` (P24-13).
     delivery_origin: OriginLookup | None = None
+    # The folder the session's tools work in when the session was started in one (W47-b; see
+    # ``SessionRuntime.workdir``). ``cwd`` alone only tells the prompt where the session is.
+    workdir: Path | None = None
 
 
 @dataclass
@@ -676,6 +679,7 @@ class Agent:
             aux=self.aux,
             subagent=options.delegation_depth > 0,
             delivery_origin=options.delivery_origin,
+            workdir=str(options.workdir) if options.workdir is not None else None,
         )
         gates = options.stop_gates
         if gates is None:

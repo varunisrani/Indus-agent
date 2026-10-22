@@ -92,3 +92,11 @@ Integration (wave-34 merge, D-16.682): mounted by `src/app/chatSlots.tsx` (navig
 gone and `/new`; `/reasoning show|hide`; slash output above the composer); the person's message is
 shown at once through the transcript's local rows (`localRows`, `src/chat/localEcho.ts`); the
 connection is a `ChatConnection`; an unknown mode (no descriptor yet) counts as remote.
+
+## Wave 47 (builder d): highlighted completion row contrast
+
+Status: done (`Composer.test.tsx` "the highlighted row's note uses the accent's ink", fail-first).
+Read: none.
+
+- The note (description) of the highlighted slash/path row kept `text-muted` on the accent fill,
+  grey on teal. It now takes `text-accent-fg` like the label; other rows keep the muted note.

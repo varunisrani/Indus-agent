@@ -14,6 +14,15 @@
 
 A directory counts only when it holds ``index.html`` (a half-finished copy does not).
 
+Fetched pages carry a ``.indus-release`` stamp (below). A runtime tree stamped with another release
+than the one this install runs is ``stale`` (wave 47): it is not served, and the answer is the
+directory a build would fill, as for ``missing``, so ``indus dashboard`` builds or says how to
+refresh it instead of serving pages made for another API. The release this install runs
+(``installed_release``) is, in a checkout, the release its HEAD is on (the stdlib-only file probes
+of ``indus.cli.version``, loaded by name as ``web.routes.system`` does: ``cli`` is a sibling layer)
+or ``0.0.0`` off a release; elsewhere the package's own version. An unstamped tree (the wheel's, or
+one published from a build) is never judged, nor is any tree when the release cannot be read.
+
 ``publish(source, target)`` copies a finished build into the runtime tree: it is copied next to the
 target first and swapped in with two renames, so a failed copy leaves the old pages in place; a
 leftover stage or old copy from an interrupted run is removed first. ``python -m indus.web.bundle
@@ -38,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import io
 import json
 import re
@@ -50,9 +60,15 @@ import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
-from indus.foundation.versions import RELEASE_REPOSITORY, Version, parse_tag, tag_record_text
+from indus.foundation.versions import (
+    RELEASE_REPOSITORY,
+    SOURCE_VERSION,
+    Version,
+    parse_tag,
+    tag_record_text,
+)
 from indus.platform.locate import which
 
 __all__ = [
@@ -67,6 +83,7 @@ __all__ = [
     "asset_name",
     "dev_bundle_dir",
     "fetch_release",
+    "installed_release",
     "locate",
     "main",
     "missing_pages_hint",
@@ -74,6 +91,7 @@ __all__ = [
     "publish",
     "runtime_bundle_dir",
     "source_checkout",
+    "stale_pages_hint",
     "stamped_release",
 ]
 
@@ -92,7 +110,7 @@ _ORIGIN_FORMS: Final = (
 )
 _PACKAGE_DIR: Final = Path(__file__).resolve().parent.parent
 
-type BundleKind = Literal["source", "installed", "missing"]
+type BundleKind = Literal["source", "installed", "stale", "missing"]
 
 
 class PublishError(RuntimeError):
@@ -105,12 +123,15 @@ class BundleLocation:
 
     directory: Path
     kind: BundleKind
-    """``source`` (``apps/web/dist`` of a checkout), ``installed`` (the package's runtime tree) or
-    ``missing`` (nothing built; ``directory`` is where a build would land)."""
+    """``source`` (``apps/web/dist`` of a checkout), ``installed`` (the package's runtime tree),
+    ``stale`` (the runtime tree holds another release's fetched pages) or ``missing`` (nothing
+    built); for the last two ``directory`` is where a build would land."""
+    stamped: str | None = None
+    """The release a ``stale`` tree was fetched for."""
 
     @property
     def found(self) -> bool:
-        return self.kind != "missing"
+        return self.kind in ("source", "installed")
 
 
 def _built(directory: Path) -> bool:
@@ -135,20 +156,40 @@ def dev_bundle_dir(repo_root: Path) -> Path:
     return repo_root / "apps" / "web" / "dist"
 
 
-def locate(package_dir: Path = _PACKAGE_DIR) -> BundleLocation:
+def installed_release(package_dir: Path = _PACKAGE_DIR) -> str | None:
+    """The release this install runs (see the module notes); None when it cannot be read."""
+    repo = source_checkout(package_dir)
+    if repo is None:
+        from indus import __version__
+
+        return __version__
+    try:
+        probes: Any = importlib.import_module("indus.cli.version")
+        found = probes.checkout_release(repo)
+    except Exception:  # a probe that cannot read never hides the pages
+        return None
+    return str(found) if found else SOURCE_VERSION
+
+
+def locate(
+    package_dir: Path = _PACKAGE_DIR,
+    *,
+    release: Callable[[Path], str | None] = installed_release,
+) -> BundleLocation:
     """The bundle to serve (see the module notes)."""
     runtime = runtime_bundle_dir(package_dir)
     repo = source_checkout(package_dir)
-    if repo is not None:
-        dev = dev_bundle_dir(repo)
-        if _built(dev):
-            return BundleLocation(dev, "source")
-        if _built(runtime):
-            return BundleLocation(runtime, "installed")
-        return BundleLocation(dev, "missing")
-    if _built(runtime):
-        return BundleLocation(runtime, "installed")
-    return BundleLocation(runtime, "missing")
+    unbuilt = dev_bundle_dir(repo) if repo is not None else runtime
+    if repo is not None and _built(unbuilt):
+        return BundleLocation(unbuilt, "source")
+    if not _built(runtime):
+        return BundleLocation(unbuilt, "missing")
+    stamp = stamped_release(runtime)
+    if stamp is not None:
+        running = release(package_dir)
+        if running is not None and running != stamp:
+            return BundleLocation(unbuilt, "stale", stamped=stamp)
+    return BundleLocation(runtime, "installed")
 
 
 def _remove(path: Path) -> None:
@@ -360,6 +401,16 @@ def fetch_release(
     finally:
         _remove(work)
     return version, True
+
+
+def stale_pages_hint(stamped: str | None) -> str:
+    """What to do when the runtime tree holds another release's fetched pages."""
+    return (
+        f"The dashboard pages here were fetched for release {stamped or '(unknown)'}, not the one "
+        "this install runs, so they are not served. Run `python -m indus.web.bundle fetch` with "
+        "this install's Python (or `indus update`, or rerun the installer) to fetch this "
+        "release's pages."
+    )
 
 
 def missing_pages_hint(repo: Path | None) -> str:

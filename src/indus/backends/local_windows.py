@@ -80,12 +80,14 @@ __all__ = [
     "WindowsProcess",
     "drain_pipe",
     "find_git_bash",
+    "git_bash_env",
     "open_local_windows",
     "start_windows_process",
     "to_native_path",
     "to_shell_path",
     "windows_path_value",
     "windows_temp_dir",
+    "wsl2_refusal",
 ]
 
 log = logging.getLogger(__name__)
@@ -430,6 +432,28 @@ def _path_key(env: Mapping[str, str]) -> str:
     return next((k for k in env if k.upper() == "PATH"), "PATH")
 
 
+def git_bash_env(env: Mapping[str, str], bash: GitBash) -> dict[str, str]:
+    """``env`` made ready for a Git Bash child: its tool folders first on PATH (D-16.957), the
+    UTF-8 and MSYS defaults and a UTF-8 ``LANG`` unless already set (D-16.956)."""
+    out = dict(env)
+    key = _path_key(out)
+    out[key] = windows_path_value(out.get(key, ""), front=bash.tool_dirs, own_bin=own_bin_dir())
+    for name, value in (*UTF8_DEFAULTS, *MSYS_DEFAULTS):
+        if not _env_get(out, name):
+            out[name] = value
+    if not (_env_get(out, "LANG") or _env_get(out, "LC_ALL")):
+        out["LANG"] = UTF8_LOCALE
+    return out
+
+
+def wsl2_refusal(what: str) -> str:
+    """The message for a feature native Windows does not have yet (RL26, D-16.55)."""
+    return (
+        f"{what} is not available on native Windows yet; run Indus Agent inside WSL2, the "
+        "supported way to use it on Windows"
+    )
+
+
 # -- the process handle ---------------------------------------------------------------------------
 
 
@@ -750,15 +774,17 @@ def start_windows_process(
     stdin: str | None,
     script_path: str | None = None,
     api: JobApi | None = None,
+    separate_stderr: bool = False,
 ) -> WindowsProcess:
     """Start ``argv`` suspended, in a new process group with no console window, put it into its
-    own job object and let it run (see ``WindowsProcess.attach_and_resume``)."""
+    own job object and let it run (see ``WindowsProcess.attach_and_resume``). stderr joins stdout
+    unless ``separate_stderr`` (then the caller reads ``popen.stderr`` itself)."""
     jobs = api if api is not None else _platform_api()
     popen = subprocess.Popen(  # noqa: S603 - the command is the user's, by design
         argv,
         stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE if separate_stderr else subprocess.STDOUT,
         cwd=cwd,
         env=dict(env),
         creationflags=SPAWN_FLAGS,
@@ -850,10 +876,7 @@ class LocalWindowsEnvironment(SpawnedEnvironment):
         """The environment one command starts with (D-16.956, D-16.957)."""
         env = child_env(self.scope, session_id=self.session_id)
         env.update(self.env_overrides)
-        key = _path_key(env)
-        env[key] = windows_path_value(
-            env.get(key, ""), front=self.bash.tool_dirs, own_bin=own_bin_dir()
-        )
+        env = git_bash_env(env, self.bash)
         python_path = _env_get(env, "PYTHONPATH")
         for name in [k for k in env if k.upper() == "PYTHONPATH"]:
             del env[name]
@@ -865,11 +888,6 @@ class LocalWindowsEnvironment(SpawnedEnvironment):
             with contextlib.suppress(OSError):
                 if Path(venv).resolve() == Path(sys.prefix).resolve():
                     del env["VIRTUAL_ENV"]
-        for name, value in (*UTF8_DEFAULTS, *MSYS_DEFAULTS):
-            if not _env_get(env, name):
-                env[name] = value
-        if not (_env_get(env, "LANG") or _env_get(env, "LC_ALL")):
-            env["LANG"] = UTF8_LOCALE
         return env
 
     # -- scripts and the cwd ----------------------------------------------------------------------

@@ -21,7 +21,10 @@ the same call shapes with the daemon's rules:
   returns its receipt; every move of an input after that (queued, claimed, settled, lost) is
   appended to the session's events as ``admission.state``. An input submitted ``unattended`` (a
   finite ``-z`` run) runs its turn with the session's auto-approve switched on for that turn only
-  (the hard floors still refuse), as the in-process ``-z`` run approves for its run. When a turn
+  (the hard floors still refuse), as the in-process ``-z`` run approves for its run. An input
+  submitted ``single_query`` (a finite ``chat -q`` or ``-z``) runs its turn with the run context
+  ``single_query`` and asks nobody (the session's broker answers no kind), for that turn only, as
+  the in-process one-shot run does (D-16.487). When a turn
   runs and the caller names no busy mode, the submitting surface decides (R05.18): the TUI
   queues, every other surface interrupts the running turn — after the new input is admitted, so
   it is never lost. Turns the service would start on its own (host
@@ -168,6 +171,8 @@ _PERSON_STOPS: Final = frozenset({CANCELLED, INTERRUPTED})
 ADMISSION_EVENT: Final = "admission.state"
 UNATTENDED: Final = "unattended"
 """Payload flag of an input from a finite unattended run (``-z``): auto-approve for its turn."""
+SINGLE_QUERY: Final = "single_query"
+"""Payload flag of an input from a finite run (``chat -q``, ``-z``): its turn runs one-shot."""
 
 
 async def _io_pool[T](fn: Callable[[], T]) -> T:
@@ -258,6 +263,8 @@ class DaemonSessionHost:
         self._done: dict[str, tuple[str, str]] = {}
         self._auto: dict[str, set[str]] = {}
         """Session ids whose auto-approve this host switched on for an unattended turn, by key."""
+        self._one_shot: dict[str, str | None] = {}
+        """Keys whose running turn is one-shot, with the run context to put back after it."""
         self._closed = False
         self.mutations = SessionMutations(
             service, store, running=self._running_generation, key_of=self._any_key
@@ -511,10 +518,12 @@ class DaemonSessionHost:
         surface: str | None = None,
         busy: BusyMode | None = None,
         unattended: bool = False,
+        single_query: bool = False,
     ) -> Receipt:
         """Admit ``text`` into the session's queue; the receipt says where it stands. Refusals
         leave as ``LedgerRefusal``. ``unattended``: the input's turn auto-approves (floors still
-        apply), for that turn only."""
+        apply), for that turn only. ``single_query``: the input's turn runs one-shot (run context
+        ``single_query``, nobody asked), for that turn only."""
         self._check_open()
         if not text or not text.strip():
             raise ProtocolError(TEXT_EMPTY, path="text")
@@ -530,6 +539,8 @@ class DaemonSessionHost:
         payload: dict[str, Any] = {"text": text}
         if unattended:
             payload[UNATTENDED] = True
+        if single_query:
+            payload[SINGLE_QUERY] = True
         receipt = await self.admissions.admit(principal, key, request_id, payload)
         if mode == "interrupt" and running is not None and receipt.state == "queued":
             applied = self.fences.interrupt(key, running.generation)
@@ -777,6 +788,8 @@ class DaemonSessionHost:
                     return _not_started(ticket)
                 if ticket.admission.payload.get(UNATTENDED) is True:
                     self._auto_approve(key, self.service.current_id(key))
+                if ticket.admission.payload.get(SINGLE_QUERY) is True:
+                    self._begin_one_shot(key)
                 running = await self.service.start_admitted(
                     key, ticket.text, generation=ticket.generation
                 )
@@ -797,6 +810,7 @@ class DaemonSessionHost:
             return _outcome(ticket, result)
         finally:
             self._end_auto_approve(key)
+            self._end_one_shot(key)
             if self._tickets.get(key) is ticket:
                 del self._tickets[key]
             self._spawn(self._after_turn(key, ticket.admission.admission_id))
@@ -813,6 +827,27 @@ class DaemonSessionHost:
     def _end_auto_approve(self, key: str) -> None:
         for session_id in self._auto.pop(key, set()):
             APPROVALS.set_auto_approve(session_key(self.store.scope, session_id), False)
+
+    def _begin_one_shot(self, key: str) -> None:
+        """Run this turn as the in-process one-shot run does: the run context ``single_query``
+        (approvals follow ``approvals.single_query_mode``, sudo stays headless) and a broker that
+        asks nobody (clarify, secrets and the rest are unsupported)."""
+        runtime = self.service.agent(self.service.current_id(key)).runtime
+        self._one_shot.setdefault(key, runtime.run_context)
+        runtime.run_context = "single_query"
+        live = self._live.get(key)
+        if live is not None:
+            live.broker.asks_nobody = True
+
+    def _end_one_shot(self, key: str) -> None:
+        if key not in self._one_shot:
+            return
+        before = self._one_shot.pop(key)
+        live = self._live.get(key)
+        if live is not None:
+            live.broker.asks_nobody = False
+        with contextlib.suppress(Exception):  # the session may be gone with its turn
+            self.service.agent(self.service.current_id(key)).runtime.run_context = before
 
     def _stop_turn(self, key: str, generation: int, reason: str) -> None:
         """The ticket's interrupt hook: soft for a person's interrupt, hard (subagents too) for a
@@ -894,6 +929,9 @@ class DaemonSessionHost:
         self._keys[new] = key
         if key in self._auto:  # the unattended turn goes on under the child id
             self._auto_approve(key, new)
+        if key in self._one_shot:  # so does a one-shot turn
+            with contextlib.suppress(Exception):
+                self.service.agent(new).runtime.run_context = "single_query"
         live = self._live.get(key)
         book = live.book if live is not None else None
         if book is None and key in self._fresh:

@@ -6,9 +6,15 @@ the method catalogue and the generated TypeScript include them. The handlers are
 answers plain JSON; the daemon's WebSocket validates that JSON against the result models below.
 Rooms, events and tasks travel as JSON objects (their keys are the room store's ``to_dict``
 shapes, documented in ``docs/notes/P24/room-store.md``).
+
+Wave 47 (RS3): ``groups.approve`` answers an approval a member's turn asked (the room's
+``approval.requested`` event); ``groups.watch`` / ``groups.unwatch`` (daemon WebSocket only) make
+the connection receive every new event of a room as a ``groups.event`` notification.
 """
 
 from __future__ import annotations
+
+from typing import Final, Literal
 
 from pydantic import Field, JsonValue
 
@@ -139,6 +145,30 @@ class GroupsDemoteParams(ProtocolModel):
     """Its epoch."""
 
 
+class GroupsApproveParams(ProtocolModel):
+    """The person's answer to an approval a member's turn put to the room."""
+
+    room_id: str
+    """The room's id."""
+    request_id: str
+    """The ``request_id`` of the room's ``approval.requested`` event."""
+    choice: Literal["once", "session", "always", "deny"]
+    """One of the choices the request offered."""
+    reason: str | None = Field(default=None, max_length=2000)
+    """Why the person denied (passed to the member unchanged); ignored for other choices."""
+    author: str = "person"
+    """Who answered."""
+
+
+class GroupsWatchParams(ProtocolModel):
+    """Receive a room's new events as ``groups.event`` notifications on this connection."""
+
+    room_id: str
+    """The room's id."""
+    since_seq: int | None = Field(default=None, ge=0)
+    """Also send the events after this sequence number; absent means only new ones."""
+
+
 class GroupsCapabilitiesResult(ProtocolModel):
     """What this gateway's room service offers."""
 
@@ -260,6 +290,42 @@ class GroupsAuthorityResult(ProtocolModel):
     """The promote's reason."""
 
 
+class GroupsApproveResult(ProtocolModel):
+    """The stored answer."""
+
+    event: dict[str, JsonValue]
+    """The ``approval.answered`` event."""
+    idempotent: bool
+    """True when the same answer was stored already."""
+
+
+class GroupsWatchResult(ProtocolModel):
+    """The watch is on."""
+
+    room_id: str
+    """The room's id."""
+    latest_seq: int
+    """The room's newest sequence number when the watch began."""
+
+
+class GroupsUnwatchResult(ProtocolModel):
+    """The watch is off."""
+
+    watching: bool
+    """False: this connection no longer receives the room's events."""
+
+
+class GroupsEvent(ProtocolModel):
+    """``groups.event``: a new event of a room this connection watches (in order, once)."""
+
+    room_id: str
+    """The room's id."""
+    event: dict[str, JsonValue]
+    """The event (the room store's ``to_dict`` shape)."""
+
+
+GROUPS_EVENT: Final = "groups.event"
+
 type _Row = tuple[str, type[ProtocolModel], type[ProtocolModel], tuple[ErrorCode, ...]]
 
 GROUP_METHODS: tuple[_Row, ...] = (
@@ -276,5 +342,8 @@ GROUP_METHODS: tuple[_Row, ...] = (
     ("groups.status", GroupsRoomParams, GroupsStatusResult, ()),
     ("groups.promote", GroupsPromoteParams, GroupsAuthorityResult, ()),
     ("groups.demote", GroupsDemoteParams, GroupsAuthorityResult, ()),
+    ("groups.approve", GroupsApproveParams, GroupsApproveResult, ()),
+    ("groups.watch", GroupsWatchParams, GroupsWatchResult, ()),
+    ("groups.unwatch", GroupsRoomParams, GroupsUnwatchResult, ()),
 )
 """``(name, params, result, extra errors)`` for the group-room methods, in declaration order."""

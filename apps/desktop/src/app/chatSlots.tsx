@@ -15,7 +15,7 @@ import type { TranscriptStore } from "../chat/transcriptStore.ts";
 import { rpcVoicePort, type VoicePort } from "../chat/voice/dictation.ts";
 import type { ChatConnection } from "../gateway/connectionStore.ts";
 import { browserStorage } from "../profiles/storageFamilies.ts";
-import { newChatTarget } from "../sidebar/projects.ts";
+import { freshDraftFolder, newChatTarget } from "../sidebar/projects.ts";
 import type { AppSlots } from "./App.tsx";
 import { backgroundOf, classifyPath, NEW_CHAT_PATH, sessionPath } from "./routes.ts";
 import { StatusBar } from "./StatusBar.tsx";
@@ -65,7 +65,7 @@ function ComposerSlot(props: {
         localRows={transcripts}
         voice={props.voice}
         newSessionCwd={
-          props.sessionId === null ? newChatTarget.get(browserStorage(), props.profile) : null
+          props.sessionId === null ? freshDraftFolder(browserStorage(), props.profile) : null
         }
         onSessionCreated={(id) => {
           newChatTarget.take(browserStorage(), props.profile);

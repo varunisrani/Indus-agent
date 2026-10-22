@@ -235,6 +235,18 @@ export const METHODS = deepFreeze({
     "params": "GatewayPingParams",
     "result": "GatewayPingResult"
   },
+  "groups.approve": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsApproveParams",
+    "result": "GroupsApproveResult"
+  },
   "groups.capabilities": {
     "errors": [
       "PARSE_ERROR",
@@ -390,6 +402,30 @@ export const METHODS = deepFreeze({
     ],
     "params": "GroupsStopParams",
     "result": "GroupsStopResult"
+  },
+  "groups.unwatch": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsRoomParams",
+    "result": "GroupsUnwatchResult"
+  },
+  "groups.watch": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY"
+    ],
+    "params": "GroupsWatchParams",
+    "result": "GroupsWatchResult"
   },
   "image.attach": {
     "errors": [
@@ -1213,6 +1249,7 @@ export interface MethodTypes {
   "config.set": { params: T.ConfigSetParams; result: T.ConfigSetResult };
   "events.since": { params: T.EventsSinceParams; result: T.EventsSinceResult };
   "gateway.ping": { params: T.GatewayPingParams; result: T.GatewayPingResult };
+  "groups.approve": { params: T.GroupsApproveParams; result: T.GroupsApproveResult };
   "groups.capabilities": { params: T.GroupsNoParams; result: T.GroupsCapabilitiesResult };
   "groups.create": { params: T.GroupsCreateParams; result: T.GroupsRoomResult };
   "groups.demote": { params: T.GroupsDemoteParams; result: T.GroupsAuthorityResult };
@@ -1226,6 +1263,8 @@ export interface MethodTypes {
   "groups.state": { params: T.GroupsStateParams; result: T.GroupsStateResult };
   "groups.status": { params: T.GroupsRoomParams; result: T.GroupsStatusResult };
   "groups.stop": { params: T.GroupsStopParams; result: T.GroupsStopResult };
+  "groups.unwatch": { params: T.GroupsRoomParams; result: T.GroupsUnwatchResult };
+  "groups.watch": { params: T.GroupsWatchParams; result: T.GroupsWatchResult };
   "image.attach": { params: T.ImageAttachParams; result: T.ImageAttachResult };
   "input.detect_drop": { params: T.InputDetectDropParams; result: T.InputDetectDropResult };
   "maintenance.run": { params: T.MaintenanceRunParams; result: T.MaintenanceRunResult };
@@ -1344,6 +1383,7 @@ export interface EventTypes {
 /** Other notification method → params type name (the stdio ready frame). */
 export const NOTIFICATIONS = deepFreeze({
   "gateway.ready": "BridgeReady",
+  "groups.event": "GroupsEvent",
   "session.replay_gap": "SessionReplayGap",
   "session.updated": "SessionUpdated",
   "sessions.resync": "SessionsResync",
@@ -1354,6 +1394,7 @@ export type NotificationName = keyof typeof NOTIFICATIONS;
 
 export interface NotificationTypes {
   "gateway.ready": T.BridgeReady;
+  "groups.event": T.GroupsEvent;
   "session.replay_gap": T.SessionReplayGap;
   "session.updated": T.SessionUpdated;
   "sessions.resync": T.SessionsResync;

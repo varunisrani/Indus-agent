@@ -34,6 +34,7 @@ from indus.protocol.events import (
     TurnFailure,
     TurnStarted,
 )
+from indus.protocol.groups import GroupsEvent
 from indus.protocol.methods import (
     ClientCapabilitiesParams,
     ClientCapabilitiesResult,
@@ -216,3 +217,4 @@ SAMPLES: list[ProtocolModel] = [
 SAMPLES += BRIDGE_SAMPLES
 SAMPLES += ATTACH_SAMPLES
 SAMPLES += [WakeDetected(phrase="hey indus", surface="gui")]  # P24-20 notification
+SAMPLES += [GroupsEvent(room_id="r1", event={"seq": 1, "kind": "message.user"})]  # wave 47

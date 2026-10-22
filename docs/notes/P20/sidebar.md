@@ -128,3 +128,17 @@ Done (2026-10-21). Shared changes: `src/i18n/en.ts` (spreads `SIDEBAR_STRINGS`),
 `src/global.d.ts`, `src/indus/web/routes/sessions_store.py` + `tests/contract/web/test_sessions_routes.py`.
 
 Integration (wave 35, D-16.717, D-16.724): each row has a pop-out button that opens the HUD on that conversation; the list loads again when the connection becomes ready (the first load usually beats the boot).
+
+## Wave 47 (W47-b): the folder of a fresh draft
+
+Status: done (2026-10-22, wave-47 builder b). Read: none (our own wiring).
+
+`newChatTarget` was set only by the sidebar's "new chat" (`beginNewChat`). A draft opened from app
+start, Ctrl+N, `/new` or the command center had no target, so the composer created its session
+with no `cwd` and the daemon ran its tools in its own work folder. The Shell's tool panes already
+fell back to the profile's default directory, so the Terminal opened in the right folder while the
+file tools did not. `freshDraftFolder(storage, profile, store?)` in `projects.ts` is now the one
+rule (the sidebar's choice, else the default directory, else none), used by the composer slot
+(`chatSlots.tsx`) and by the Shell's `useWorkspaceFolder`. The daemon half (the tools follow the
+session's folder) is in `docs/notes/P05/file-ops.md`, "Wave 47". Test: `projects.test.ts` "a
+fresh draft not started from the sidebar opens in the default directory (W47-b)" (fail-first).

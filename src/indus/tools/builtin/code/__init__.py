@@ -8,7 +8,8 @@ dispatcher that runs each in-script call through ``tools.dispatch`` with this ca
 run it:
 
 - on this machine: in the session kernel (``kernel``, the default) or as a fresh script
-  (``runner``, ``code_execution.kernel: off``);
+  (``runner``, ``code_execution.kernel: off``, and always on native Windows, where the kernel's
+  descriptor passing has no equivalent: RL26);
 - elsewhere (Docker, SSH, …): ``remote`` (a remote kernel when one starts, else one shipped
   script).
 
@@ -41,6 +42,7 @@ from indus.backends.local import nearest_usable_dir
 from indus.backends.registry import EnvironmentRegistry
 from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope, scope_or_none
+from indus.platform.facts import os_family
 from indus.tools.builtin.code import gate, kernel, launch, remote, runner, schema
 from indus.tools.builtin.code.rpc import RpcPipeline, ToolInvoker
 from indus.tools.builtin.code.settings import (
@@ -285,7 +287,7 @@ class ExecuteCodeTool:
         mode: Mode = settings.mode
         interpreter = await launch.choose_interpreter(scope, mode)
         cwd = _session_cwd(scope, session_id, env_cwd) if mode == "project" else None
-        if settings.kernel == "off":
+        if settings.kernel == "off" or os_family() == "win32":
             return await runner.run_script(
                 runner.ScriptJob(
                     code=code,

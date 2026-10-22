@@ -77,3 +77,41 @@ Done (2026-10-21). Shared files changed: `src/indus/cli/app.py` (registry row),
 ## Integration (wave 36)
 
 Integration: `--finish` removes the update marker its pid claimed before the hand-off, whatever the outcome (D-16.761).
+
+## Wave 47 (builder f, 2026-10-22): the finish step refreshes the fetched dashboard pages
+
+Status: done (2026-10-22), not yet landed; patch against the local snapshot `9a155bb`.
+
+Read: no reference file (F-3 is our own release gap; the reference rebuilds its web bundle with
+npm in its update and has no prebuilt pages). Files: `src/indus/cli/update/finish.py`
+(`_web_pages`, `FinishContext.python`, `WEB_PAGES_PHASE`), tests
+`tests/unit/cli/update/test_finish.py` (five new cases; `test_receipt_lists_every_phase` now
+expects `web_pages: skipped` beside a developer build).
+
+New phase `web_pages`, after the `dist:*` rebuilds: a checkout without its own
+`apps/web/dist/index.html` (a script install, where the installer fetched the pages) runs
+`<new venv python> -m indus.web.bundle fetch --repo <checkout> --target
+<checkout>/src/indus/web/static` as a child (300 s cap, the scope's env like the builds), the same
+command `install.sh` / `install.ps1` run in their products stage. The CLI layer never imports
+`indus.web` (layer rule, D-16.246), hence a child process. Exit 0 → `ok` (the child's last stdout
+line as detail: "Installed ..." or "already in ..."); exit 3 (HEAD on no release, the `main`
+channel) → `skipped`; any other exit, a timeout or a child that cannot start → owed, retry = the
+same fetch command, the run still exits 0 (R04.24). A checkout with a developer build gets
+`skipped` ("this checkout builds its own pages") and no fetch. The trust chain is unchanged: the
+fetch checks the release tag's `manifest_sha256` → `manifest.json` → archive digest (threat model
+B-SUPPLY-1); a tree already stamped with the new release is not downloaded again.
+
+Fail-first: on the base the five new finish tests fail (no `web_pages` phase, no fetch call) and
+pass with the fix.
+
+Decisions for the lead:
+- W47-f-1 (D-16.1048): the pages are fetched for every checkout without a developer build, not only one that
+  already holds a stamped tree, so an install whose first fetch failed gets its pages on the next
+  update (parity with the installer, which also always tries). Off a release the child answers 3
+  after one local `git tag` call: no network.
+
+Integration (wave 47, D-16.1059): the release-lane rehearsal `tests/e2e/upgrade/test_canary_to_stable.py`
+expected the update receipt's outcome `ok`; its releases are plain annotated tags (no release record,
+no pages), so `web_pages` now owes one follow-up ("the v… tag records no release manifest digest")
+and the outcome is `ok_with_followups`. The test now asserts exactly that follow-up and nothing else;
+the product is unchanged (a real release tag carries `manifest_sha256`).

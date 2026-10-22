@@ -1,4 +1,5 @@
-"""Finish an update in the new code: migrate, rebuild bundles, restart the gateway (P23-19).
+"""Finish an update in the new code: migrate, rebuild bundles and pages, restart the gateway
+(P23-19).
 
 ``indus update --finish <request>`` is exec'd by the apply step (``apply.py``) from the new
 environment, so everything here is the new release's own code. The checkout and environment have
@@ -13,6 +14,12 @@ Phases:
 - ``dist:<name>``: the web and TUI bundles a checkout already had are rebuilt by building into
   ``<dist>.next``, checking the entry file is there and renaming it over the old one; a failure
   keeps the old bundle;
+- ``web_pages`` (wave 47): a checkout without its own ``apps/web/dist`` (a script install) gets the
+  new release's prebuilt dashboard pages, as the installer's products stage does: ``<new python>
+  -m indus.web.bundle fetch --repo <checkout> --target <checkout>/src/indus/web/static`` as a child
+  process (the CLI layer never imports ``indus.web``, D-16.246). Exit 0 is ``ok``, 3 (HEAD on no
+  release) ``skipped``, anything else owed with the same command as its retry; the pages left
+  behind are then stamped with the old release, which ``web.bundle.locate`` treats as stale;
 - ``gateway_restart``: this profile's gateway only (D-16.57). A systemd/launchd service is
   restarted through its manager; a gateway started by hand is asked over the control socket to
   stop for a restart (never killed), then started again detached on the new code;
@@ -49,6 +56,9 @@ __all__ = [
 _GATEWAY_GONE_WAIT_S = 60.0
 _GATEWAY_START_TIMEOUT_S = 90.0
 _BUILD_TIMEOUT_S = 900.0
+_FETCH_TIMEOUT_S = 300.0
+_NOT_ON_RELEASE = 3
+WEB_PAGES_PHASE = "web_pages"
 
 type ChildRunner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -284,6 +294,8 @@ class FinishContext:
     """``dry_run`` → a ``MigrationReport`` (``from_version``, ``to_version``, ``steps``)."""
     run: ChildRunner = subprocess.run
     pnpm: str | None = None
+    python: str = sys.executable
+    """The new environment's interpreter (this process: the apply step exec'd it)."""
     extra_env: dict[str, str] = field(default_factory=dict[str, str])
 
 
@@ -339,6 +351,51 @@ def _bundles(ctx: FinishContext, checkout: Path, receipt: Receipt) -> None:
             receipt.phase(phase, "ok", "rebuilt")
 
 
+def _last_line(*texts: str | None) -> str:
+    for text in texts:
+        lines = (text or "").strip().splitlines()
+        if lines:
+            return lines[-1].strip()
+    return ""
+
+
+def _web_pages(ctx: FinishContext, checkout: Path, receipt: Receipt) -> None:
+    """Refresh the prebuilt dashboard pages of a script install (see the module notes)."""
+    if (checkout / "apps" / "web" / "dist" / "index.html").is_file():
+        receipt.phase(WEB_PAGES_PHASE, "skipped", "this checkout builds its own pages")
+        return
+    target = checkout / "src" / "indus" / "web" / "static"
+    base = [ctx.python, "-m", "indus.web.bundle", "fetch", "--repo", str(checkout)]
+    retry = " ".join(base)
+    ctx.console.say("→ Fetching the dashboard pages of this release...")
+    env = {**ctx.scope.env.to_dict(), **ctx.extra_env}
+    try:
+        done = ctx.run(
+            [*base, "--target", str(target)],
+            cwd=str(checkout),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_FETCH_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        receipt.owe(WEB_PAGES_PHASE, f"could not run the fetch: {exc}", retry=retry)
+        ctx.console.warn(f"⚠ The dashboard pages were not refreshed: {exc}")
+        return
+    ctx.console.child_output(f"$ {' '.join(done.args)}\n{done.stdout}{done.stderr}")
+    if done.returncode == 0:
+        receipt.phase(WEB_PAGES_PHASE, "ok", _last_line(done.stdout))
+    elif done.returncode == _NOT_ON_RELEASE:
+        receipt.phase(WEB_PAGES_PHASE, "skipped", "this checkout is not on a release")
+    else:
+        why = _last_line(done.stderr, done.stdout) or f"exit {done.returncode}"
+        receipt.owe(WEB_PAGES_PHASE, why, retry=retry)
+        ctx.console.warn(f"⚠ The dashboard pages were not refreshed ({why}).")
+
+
 def run_finish(request_path: Path, ctx: FinishContext, *, no_gateway_restart: bool) -> int:
     """The finish step (see the module notes). Exit 0, or 1 for a stash conflict."""
     data = load_request(request_path)
@@ -352,6 +409,7 @@ def run_finish(request_path: Path, ctx: FinishContext, *, no_gateway_restart: bo
     defer = no_gateway_restart or bool(data.get("no_gateway_restart"))
     _migrate(ctx, receipt)
     _bundles(ctx, paths.checkout, receipt)
+    _web_pages(ctx, paths.checkout, receipt)
     if defer:
         receipt.phase(
             "gateway_restart", "deferred", "--no-gateway-restart: run `indus gateway restart`"

@@ -45,6 +45,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
+from indus.backends.task_overrides import with_workdir
 from indus.core import loop_texts as texts
 from indus.core import untrusted
 from indus.core.exit_reasons import ExitReason, Failure
@@ -398,8 +399,11 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
     origin = await _delivery_origin(state)
     if origin is not None:
         extras["delivery_origin"] = origin
+    scope = runtime.scope
+    if scope is not None and runtime.workdir is not None:
+        scope = with_workdir(scope, runtime.workdir)  # the session's own folder (W47-b)
     ctx = ToolContext(
-        scope=runtime.scope,
+        scope=scope,
         task_id=state.session_id,
         session_id=state.session_id,
         turn_id=state.turn_id,

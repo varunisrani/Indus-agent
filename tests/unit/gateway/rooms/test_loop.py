@@ -328,3 +328,152 @@ def test_transcript_entries_are_framed_so_none_can_pass_for_another() -> None:
     assert person.splitlines() == ["owner: first", "  alpha: yes", "  beta: no"]
     assert transcript_entry("ow\nner: x", "", False) == "ow ner x: "
     assert transcript_entry("", "", False) == "unknown: "
+
+
+# -- approvals inside room turns (wave 47, RS3) ---------------------------------------------------
+
+APPROVAL = {
+    "kind": "approval",
+    "request_id": "srq-0123456789ab",
+    "command": "rm -rf build",
+    "description": "deletes files",
+    "choices": ["once", "deny"],
+}
+
+
+def _asking(answers: list[tuple[str, dict[str, Any]]], *, settle: bool = True) -> Any:
+    """A member turn whose session asks one approval and waits for the person's answer."""
+
+    async def turn(turn: MemberTurn) -> str:
+        assert turn.requests is not None
+        got: asyncio.Future[tuple[str, dict[str, Any]]] = asyncio.get_running_loop().create_future()
+
+        def answer(request_id: str, body: Any) -> bool:
+            answers.append((request_id, dict(body)))
+            if not got.done():
+                got.set_result((request_id, dict(body)))
+            return True
+
+        turn.requests.bind(answer)
+        turn.requests.asked(APPROVAL)
+        request_id, body = await got
+        if settle:
+            turn.requests.settled(request_id, "answered")
+        return f"done ({body['choice']})"
+
+    return turn
+
+
+async def _until(room: Room, kind: str, passes: int = 50) -> None:
+    for _ in range(passes):
+        if room.log(kind):
+            return
+        await room.loop.tick()
+        await room.loop.settle_side_work()
+        await checkpoint()
+    raise AssertionError(f"no {kind} event in the room")
+
+
+def test_a_member_turn_approval_is_put_to_the_room_and_the_person_answers_it(
+    store: RoomStore, fake_clock: FakeClock
+):
+    answers: list[tuple[str, dict[str, Any]]] = []
+    room = Room(store, fake_clock, Script(_asking(answers)))
+    room.create()
+    room.send("clean the build folder")
+
+    async def main() -> None:
+        await room.loop.tick()
+        await _until(room, "approval.requested")
+        asked = room.log("approval.requested")[0]["payload"]
+        assert asked["member"] == "alpha" and asked["command"] == "rm -rf build"
+        assert asked["request_id"] == APPROVAL["request_id"] and asked["choices"] == [
+            "once",
+            "deny",
+        ]
+        assert asked["room_name"] == "Planning" and asked["task_id"] == "turn-1-0"
+        assert answers == []  # nobody answered for the person
+        took = room.rpc.call(
+            "groups.approve",
+            {"room_id": "r1", "request_id": APPROVAL["request_id"], "choice": "once"},
+        )
+        assert took["event"]["kind"] == "approval.answered"
+        await room.drive()
+
+    run(main())
+    assert answers == [(APPROVAL["request_id"], {"kind": "approval", "choice": "once"})]
+    settled = room.log("approval.settled")
+    assert [e["payload"]["outcome"] for e in settled] == ["answered"]
+    assert room.said() == [("alpha", "done (once)")]
+    kinds = [e["kind"] for e in room.log() if e["kind"].startswith(("approval.", "turn."))]
+    assert kinds.index("approval.settled") < kinds.index("turn.settled")
+
+
+def test_groups_approve_takes_only_an_open_request_and_the_first_answer(
+    store: RoomStore, fake_clock: FakeClock
+):
+    from indus.gateway.rooms.rpc import GroupsRpcError
+    from indus.state.rooms import RoomError
+
+    answers: list[tuple[str, dict[str, Any]]] = []
+    room = Room(store, fake_clock, Script(_asking(answers)))
+    room.create()
+    with pytest.raises(GroupsRpcError):
+        room.rpc.call("groups.approve", {"room_id": "r1", "request_id": "srq-x", "choice": "maybe"})
+    with pytest.raises(RoomError):
+        room.rpc.call("groups.approve", {"room_id": "r1", "request_id": "srq-x", "choice": "once"})
+    room.send("clean the build folder")
+
+    async def main() -> None:
+        await room.loop.tick()
+        await _until(room, "approval.requested")
+        rid = APPROVAL["request_id"]
+        with pytest.raises(RoomError):  # not offered by the request
+            room.rpc.call(
+                "groups.approve", {"room_id": "r1", "request_id": rid, "choice": "always"}
+            )
+        first = {"room_id": "r1", "request_id": rid, "choice": "deny", "reason": "not now"}
+        room.rpc.call("groups.approve", first)
+        again = room.rpc.call("groups.approve", first)
+        assert again["idempotent"] is True
+        with pytest.raises(RoomError):
+            room.rpc.call("groups.approve", {"room_id": "r1", "request_id": rid, "choice": "once"})
+        await room.drive()
+        with pytest.raises(RoomError):  # settled
+            room.rpc.call(
+                "groups.approve",
+                {"room_id": "r1", "request_id": rid, "choice": "deny", "reason": "x"},
+            )
+
+    run(main())
+    assert answers == [
+        (APPROVAL["request_id"], {"kind": "approval", "choice": "deny", "reason": "not now"})
+    ]
+
+
+def test_an_open_approval_is_withdrawn_in_the_room_when_the_turn_is_stopped(
+    store: RoomStore, fake_clock: FakeClock
+):
+    async def forever(turn: MemberTurn) -> str:
+        assert turn.requests is not None
+        turn.requests.bind(lambda _rid, _body: True)
+        turn.requests.asked(APPROVAL)
+        await asyncio.Event().wait()
+        return "never"
+
+    room = Room(store, fake_clock, Script(forever))
+    room.create()
+    room.send("clean the build folder")
+
+    async def main() -> None:
+        await room.loop.tick()
+        await _until(room, "approval.requested")
+        room.rpc.call("groups.stop", {"room_id": "r1", "cancel_id": "s1"})
+        await room.loop.tick()
+        await room.loop.settle_side_work()
+
+    run(main())
+    settled = room.log("approval.settled")
+    assert [e["payload"]["outcome"] for e in settled] == ["withdrawn"]
+    assert settled[0]["payload"]["reason"] == "turn_ended"
+    assert room.statuses() == ["cancelled"]

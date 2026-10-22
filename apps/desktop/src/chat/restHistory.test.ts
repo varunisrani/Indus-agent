@@ -20,8 +20,34 @@ describe("REST history", () => {
   it("shows user, assistant and tool rows; drops system and tool-call-only rows; names tools", () => {
     expect(displayRows(ROWS)).toEqual([
       { role: "user", text: "Please write the notes", row_id: 2 },
-      { role: "tool", text: "wrote 1 file", name: "write_file", row_id: 4 },
+      { role: "tool", text: "wrote 1 file", name: "write_file", arguments: {}, row_id: 4 },
       { role: "assistant", text: "Done.", row_id: 5 },
+    ]);
+  });
+
+  it("gives tool rows their call's arguments, as the live rows have them (W47-a)", () => {
+    const rows = [
+      {
+        id: 1,
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { id: "c1", name: "read_file", arguments: '{"path": "notes.md"}' },
+          { id: "c2", function: { name: "terminal", arguments: '{"command": "ls"}' } },
+          { id: "c3", name: "odd", arguments: "not json" },
+          { id: "c4", name: "list", arguments: "[1, 2]" },
+        ],
+      },
+      { id: 2, role: "tool", content: "text", tool_call_id: "c1" },
+      { id: 3, role: "tool", content: "ran", tool_call_id: "c2" },
+      { id: 4, role: "tool", content: "?", tool_call_id: "c3" },
+      { id: 5, role: "tool", content: "?", tool_call_id: "c4" },
+    ];
+    expect(displayRows(rows)).toEqual([
+      { role: "tool", text: "text", name: "read_file", arguments: { path: "notes.md" }, row_id: 2 },
+      { role: "tool", text: "ran", name: "terminal", arguments: { command: "ls" }, row_id: 3 },
+      { role: "tool", text: "?", name: "odd", row_id: 4 },
+      { role: "tool", text: "?", name: "list", row_id: 5 },
     ]);
   });
 

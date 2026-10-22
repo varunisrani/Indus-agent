@@ -134,11 +134,14 @@ Paste each summary (the `<step> PASS|FAIL|SKIP <detail>` lines) under its OS:
 Script install without Node (F-3, wave 46): on a Linux or macOS machine with neither `node` nor
 `pnpm` on PATH, `install.sh --channel canary` fetches the release's dashboard pages
 (`indus-web-<version>.tar.gz`, checked against the tag's manifest digest); `indus dashboard` then
-serves `index.html`.
+serves `index.html`. Since wave 47 `install.ps1` fetches them the same way on Windows (never run on
+a real Windows machine yet), and `indus update --finish` fetches the new release's pages (pages
+stamped for another release are not served).
 
 | OS | Installer said "the dashboard pages of this release are in place" | `indus dashboard` serves the pages (not only the API) | Outcome |
 |---|---|---|---|
 | `<Linux or macOS>` | `<yes/no>` | `<yes/no>` | `<>` |
+| `<Windows>` (`install.ps1`) | `<yes/no>` | `<yes/no>` | `<>` |
 
 ## 5. Findings
 
@@ -149,9 +152,9 @@ Every failure or surprise gets a row; its triage id comes from the release check
 |---|---|---|---|
 | F-1 | P25-23 builder (reading release.yml, 2026-10-22) | The release workflow uploads only the desktop artefacts: `install.sh`, `install.ps1` and `install.cmd` are not attached to releases, yet the install guide and `install.cmd` download them from `releases/latest/download/…`. The smoke's `install` step fails until they are attached (for example: copy them from the admitted commit into the uploaded artefacts). | RM30 (done at the wave 44 integration, D-16.960) |
 | F-2 | P25-23 builder | The desktop app has no licences screen; the notices file ships inside each package (the smoke checks the file). | RS23, done at the waves 45 + 46 integration (Settings → About → Licences, D-16.1002) |
-| F-3 | P25-23 builder | A script install has no built dashboard pages: `indus dashboard` builds them on first launch only when pnpm and Node are on the machine, otherwise only the API answers (`dashboard-login` fails). | RS24, done at the waves 45 + 46 integration (pages fetched from the release, D-16.1016, D-16.1022) |
+| F-3 | P25-23 builder | A script install has no built dashboard pages: `indus dashboard` builds them on first launch only when pnpm and Node are on the machine, otherwise only the API answers (`dashboard-login` fails). | RS24, done at the waves 45 + 46 integration (pages fetched from the release, D-16.1016, D-16.1022); wave 47 added the refresh on `indus update --finish`, `install.ps1` parity and stale-page refusal (D-16.1048 – D-16.1050) |
 | F-4 | P25-22 builder | A source install's `indus --version` prints the source tree's `0.0.0` (releases stamp the version into build trees only); the release it is on shows in `indus update --check` / `--plan`. | RS25, done at the waves 45 + 46 integration (`indus --version` shows the release, D-16.1019) |
-| F-5 | P25-23 builder | Without a terminal, `indus chat -q` refuses a risky command when run `--local` (`approvals.single_query_mode`) but, attached to the daemon, leaves it waiting for an approval ("Resume the session in a terminal to answer it") and exits 3. Both are safe; the smoke accepts either. Decide whether the two should agree. | RS26 (lead), done at the waves 45 + 46 integration (attached `chat -q` denies like `--local`, D-16.1010) |
+| F-5 | P25-23 builder | Without a terminal, `indus chat -q` refuses a risky command when run `--local` (`approvals.single_query_mode`) but, attached to the daemon, leaves it waiting for an approval ("Resume the session in a terminal to answer it") and exits 3. Both are safe; the smoke accepts either. Decide whether the two should agree. | RS26 (lead), done at the waves 45 + 46 integration (attached `chat -q` denies like `--local`, D-16.1010); since wave 47 the daemon runs the turn single-query itself (D-16.1051 – D-16.1053) |
 | `<F-n>` | `<>` | `<>` | `<>` |
 
 ## 6. Sign-off

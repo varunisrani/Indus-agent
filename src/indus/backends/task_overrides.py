@@ -17,11 +17,17 @@ default sandbox, and its factory is handed the override through ``plan``:
 
 ``cwd`` and ``backend`` become call overrides of the same names. Every planned mapping carries
 ``task`` so the call is keyed per task even when nothing else is left.
+
+A session started in a folder of its own (a desktop chat's project folder or default directory,
+W47-b) uses the same kind of overlay: ``with_workdir`` answers ``terminal.cwd`` with that folder on
+the scope its tool calls get, so relative paths and new shells start there rather than in the
+folder the serving process happens to run in.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -42,6 +48,7 @@ __all__ = [
     "plan",
     "register_row",
     "reset_warnings",
+    "with_workdir",
 ]
 
 log = logging.getLogger(__name__)
@@ -244,6 +251,19 @@ def plan(scope: Scope, task_id: str, override: TaskOverride) -> TaskPlan:
     value = _singularity_ref(image) if backend == "singularity" else image
     layered = LayeredConfig(scope.config, {key: value})
     return TaskPlan(scope.with_config(layered), calls)
+
+
+def with_workdir(scope: Scope, folder: str | None) -> Scope:
+    """``scope`` with ``terminal.cwd`` answered by a session's own ``folder`` (module notes).
+
+    Only the local backend reads ``terminal.cwd`` as a host folder; a sandbox's cwd is a path
+    inside the sandbox, so other backends keep their own. A folder that is not an existing
+    absolute directory leaves the scope unchanged (the profile's ``terminal.cwd`` still applies)."""
+    if not folder or not os.path.isabs(folder) or not os.path.isdir(folder):
+        return scope
+    if backend_for(scope, TaskOverride()) != "local":
+        return scope
+    return scope.with_config(LayeredConfig(scope.config, {"terminal.cwd": folder}))
 
 
 def register_row(scope: Scope, task_id: str, image: str | None, cwd: str | None) -> str | None:

@@ -143,3 +143,16 @@ Done (2026-10-20) as prework against the fake PTY server; real-server E2E is P18
 `apps/web/src/main.tsx` (lazy host), `apps/web/package.json` / `pnpm-lock.yaml` (five xterm packages).
 
 Integration (wave 32, P18c integrator, 2026-10-21): decisions numbered D-16.652 (close codes and timers) and D-16.653 (sanitiser). The browser run (P18-30) showed the sanitiser's "drop every erase code for 30 s" leaving stale text after every resume or reload — Ink repaints each line with `ESC [ 2 K` — so erase codes are now dropped only inside a flood (a run of breaks and erase codes with 50+ breaks), the trailing run held back includes erase codes between its breaks, and the regexes have unambiguous CR/LF alternatives (the first rewrite backtracked exponentially on long runs). Tests changed: `resumeSanitizer.test.ts` (two new, three updated), `ptySocket.test.ts` (the two resume cases). Real-server coverage: `apps/web/e2e/chat.spec.ts`.
+
+## Wave 47 (builder d): light/dark reports to the embedded TUI
+
+Status: done (`src/chat/colourScheme.test.ts`, fail-first: the reporter did not exist; the TUI side
+is in P12/themes.md, Wave 47).
+Read: none.
+
+- The Chat tab's xterm already re-coloured itself on a `data-theme` change, but the TUI inside kept
+  its dark-theme ink. `SchemeReporter` (colourScheme.ts) gives the terminal the colour-scheme
+  report protocol: `CSI ? 996 n` is answered with `CSI ? 997 ; 1|2 n` (dark/light) as terminal
+  input, `CSI ? 2031 h/l` turns unasked change reports on/off, and a theme switch (the `data-theme`
+  observer, or the system scheme when no `data-theme` is set) sends one report when it really
+  changed. Hooked in through xterm's parser handlers; other DSRs and modes are left to xterm.

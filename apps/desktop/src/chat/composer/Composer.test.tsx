@@ -124,6 +124,26 @@ describe("composer", () => {
     expect(box.value).toBe("/usage ");
   });
 
+  it("the highlighted row's note uses the accent's ink, not the muted grey (W47 d)", async () => {
+    const connection = chatDaemon().on("complete.slash", () => ({
+      items: [
+        { text: "/agents", display: "/agents", meta: "background tasks" },
+        { text: "/usage", display: "/usage", meta: "token use" },
+      ],
+    }));
+    const { box } = mount(connection);
+    await act(async () => {
+      type(box, "/");
+    });
+    const options = await screen.findAllByRole("option");
+    const note = (option: HTMLElement | undefined) =>
+      option?.querySelector("span:last-child")?.className.split(/\s+/) ?? [];
+    expect(options[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(note(options[0])).toContain("text-accent-fg");
+    expect(note(options[0])).not.toContain("text-muted");
+    expect(note(options[1])).toContain("text-muted");
+  });
+
   it("a slow answer for an older word never replaces the newer list", async () => {
     const releases: Array<() => void> = [];
     const connection = chatDaemon().on(

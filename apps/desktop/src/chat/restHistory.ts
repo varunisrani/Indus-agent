@@ -3,8 +3,9 @@
 // events; stored rows are read through `indus serve`, P17 / P18-11), so the desktop reads
 // `GET /api/sessions/{id}/messages` through main's REST proxy and flattens the rows the way the
 // daemon's display projection does: user, assistant and tool rows only, an assistant row that is
-// only tool calls dropped, tool rows named by their call. A backend without the route (the fake
-// test daemon) answers not-found, and the caller falls back to `session.history`.
+// only tool calls dropped, tool rows named by their call and carrying its arguments (the route
+// masks them; W47-a). A backend without the route (the fake test daemon) answers not-found, and
+// the caller falls back to `session.history`.
 
 import type { HistoryMessage } from "@indus/protocol";
 import type { IndusApiRequest, IndusApiResult } from "../global.d.ts";
@@ -25,9 +26,27 @@ interface StoredRow {
 
 const SHOWN = new Set(["user", "assistant", "tool"]);
 
+type Arguments = NonNullable<HistoryMessage["arguments"]>;
+
+/** A call's arguments as an object (the route sends JSON text); null when they are not one. */
+function parseArguments(raw: unknown): Arguments | null {
+  let value = raw;
+  if (typeof raw === "string") {
+    try {
+      value = raw.trim() === "" ? {} : JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Arguments)
+    : null;
+}
+
 /** Stored rows (oldest first) → what the transcript shows. */
 export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
   const names = new Map<string, string>();
+  const calls = new Map<string, unknown>();
   const out: HistoryMessage[] = [];
   for (const row of rows) {
     const role = typeof row.role === "string" ? row.role : "";
@@ -39,6 +58,7 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
         const name = typeof call?.name === "string" ? call.name : fn?.name;
         if (typeof call?.id === "string" && typeof name === "string" && name !== "")
           names.set(call.id, name);
+        if (typeof call?.id === "string") calls.set(call.id, call.arguments ?? fn?.arguments);
       }
     }
     const text = typeof row.content === "string" ? row.content : "";
@@ -49,7 +69,14 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
         (typeof row.tool_name === "string" && row.tool_name !== "" ? row.tool_name : null) ??
         names.get(callId) ??
         "tool";
-      out.push({ role: "tool", text, name, row_id: rowId });
+      const args = parseArguments(calls.get(callId));
+      out.push({
+        role: "tool",
+        text,
+        name,
+        ...(args === null ? {} : { arguments: args }),
+        row_id: rowId,
+      });
       continue;
     }
     if (text.trim() === "") continue; // an assistant row with only tool calls

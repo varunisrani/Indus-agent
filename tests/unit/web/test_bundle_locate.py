@@ -88,6 +88,80 @@ def test_this_repository_is_a_source_checkout() -> None:
     assert locate().directory in (dev_bundle_dir(REPO), runtime_bundle_dir(package))
 
 
+# -- Wave 47 (f): pages stamped with another release are stale ------------------------------------
+
+
+def _on_release(repo: Path, version: str | None) -> None:
+    """A checkout whose HEAD is a commit, tagged ``v<version>`` (no tag when None), from ``.git``
+    files only (the probes ``locate`` reads)."""
+    head = "ab" * 20
+    (repo / ".git" / "refs" / "tags").mkdir(parents=True, exist_ok=True)
+    (repo / ".git" / "HEAD").write_text(head + "\n", encoding="utf-8")
+    if version is not None:
+        (repo / ".git" / "refs" / "tags" / f"v{version}").write_text(head + "\n", encoding="utf-8")
+
+
+def _stamp(directory: Path, version: str) -> None:
+    write_bundle(directory)
+    (directory / bundle_module.RELEASE_STAMP).write_text(f"{version}\n", encoding="utf-8")
+
+
+def test_fetched_pages_of_another_release_are_stale_in_a_checkout(tmp_path: Path) -> None:
+    repo, package = _checkout(tmp_path)
+    _on_release(repo, "0.3.0")
+    _stamp(runtime_bundle_dir(package), "0.2.0")
+    stale = locate(package)
+    assert stale.kind == "stale" and not stale.found
+    # Never served: the answer is where a build lands, as when nothing is built.
+    assert stale.directory == dev_bundle_dir(repo)
+    assert stale.stamped == "0.2.0"
+    _stamp(runtime_bundle_dir(package), "0.3.0")
+    assert locate(package) == BundleLocation(runtime_bundle_dir(package), "installed")
+
+
+def test_fetched_pages_on_a_head_off_any_release_are_stale(tmp_path: Path) -> None:
+    repo, package = _checkout(tmp_path)
+    _on_release(repo, None)
+    _stamp(runtime_bundle_dir(package), "0.2.0")
+    assert locate(package).kind == "stale"
+    # A developer's own build still wins over everything.
+    write_bundle(dev_bundle_dir(repo))
+    assert locate(package).kind == "source"
+
+
+def test_unstamped_runtime_pages_are_never_stale(tmp_path: Path) -> None:
+    repo, package = _checkout(tmp_path)
+    _on_release(repo, "0.3.0")
+    write_bundle(runtime_bundle_dir(package))  # published by a build, not fetched
+    assert locate(package).kind == "installed"
+
+
+def test_an_installed_tree_compares_the_stamp_with_its_package_version(tmp_path: Path) -> None:
+    package = _installed(tmp_path)
+    _stamp(runtime_bundle_dir(package), "0.2.0")
+    assert locate(package, release=lambda _pkg: "0.2.0").kind == "installed"
+    stale = locate(package, release=lambda _pkg: "0.3.0")
+    assert stale == BundleLocation(runtime_bundle_dir(package), "stale", stamped="0.2.0")
+    assert locate(package, release=lambda _pkg: None).kind == "installed", "unknown: not judged"
+
+
+def test_first_launch_names_stale_pages(
+    scope: Scope,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from indus.web import spa
+
+    stale = BundleLocation(tmp_path / "dist", "stale", stamped="0.2.0")
+    monkeypatch.setattr(bundle_module, "locate", lambda: stale)
+    monkeypatch.setattr(bundle_module, "source_checkout", lambda: tmp_path)
+    monkeypatch.setattr(spa, "build_plan", lambda repo, env: None)
+    _maybe_build(Launch(scope=scope, mode="dashboard", host="127.0.0.1", port=0))
+    said = capsys.readouterr().err
+    assert "0.2.0" in said and "indus.web.bundle fetch" in said
+
+
 def test_publish_copies_and_replaces(tmp_path: Path) -> None:
     source = write_bundle(tmp_path / "dist")
     target = tmp_path / "pkg" / "web" / "static"

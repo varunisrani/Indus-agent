@@ -98,12 +98,16 @@ Allow-listed (D-ids for the lead; details in the YAML):
 - `cli.q.denies/outcome` (D-16.487): a finite attached `chat -q` that meets a question detaches with
   exit 3 instead of denying it. Removed at the waves 45 + 46 integration (D-16.1025): wave 46's F-5
   fix (D-16.1010) makes the attached client deny like the in-process host, so the entry was stale.
+  Since wave 47 (D-16.1051 – D-16.1053) the daemon itself runs a finite attached turn single-query
+  (`prompt.submit.single_query`), so both hosts decide on the same `--local` route; the client-side
+  answer is gone and no `cli.q` entry is needed.
 - `bridge.lost_mid_turn/lost turn finished` (D-16.10): closing an attached client only detaches; the
   daemon finishes the turn.
 - `bridge.event_shape/session events` (D-?): no `session.info` after create/resume, no
   `session.title` when the title lands.
-- `bridge.settings/settings` (D-?): `model.options`, `config.get`, `config.set` are not served by the
-  daemon (-32601).
+- `bridge.settings/settings` (D-16.549): `config.get`, `config.set` are not served by the
+  daemon (-32601). `model.options`, `complete.slash` and `session.list` are served since wave 47
+  (D-16.1038, D-16.1039).
 
 ## Decisions for the lead
 - D-? (proposed): the daemon serves the session methods only; the TUI's settings/picker methods

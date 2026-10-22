@@ -17,6 +17,11 @@ export const seq = {
   focusOff: dec(1004, false),
   cursorShow: dec(25, true),
   cursorHide: dec(25, false),
+  /** Light/dark change reports (`CSI ? 997 ; 1|2 n`, W47); unknown modes are ignored. */
+  schemeReportsOn: dec(2031, true),
+  schemeReportsOff: dec(2031, false),
+  /** Ask for one light/dark report now. */
+  schemeQuery: `${CSI}?996n`,
   /** Kitty keyboard is a stack: every push needs exactly one pop. */
   kittyPush: (flags = 1): string => `${CSI}>${flags}u`,
   kittyPop: `${CSI}<u`,
@@ -41,6 +46,7 @@ export const MODE_RESET: string = [
   seq.locatorOff,
   ...MOUSE_MODES.map((mode) => dec(mode, false)),
   seq.focusOff,
+  seq.schemeReportsOff,
   seq.pasteOff,
   seq.altScreenOff,
   seq.kittyPop,

@@ -165,3 +165,29 @@ where `pwsh` is installed. Changed outside the task's files: `docs/internals/tra
 ## Integration (wave 36)
 
 Integration: the stand-in builder is removed — `scripts/install/build.py` builds `install.ps1` the way described above, `--check` covers it, and the committed script embeds the real `pins.json` (recorded digests). Settings key reconciled (D-16.748): `Get-IndusInstallSetting` reads `updates.installs.<id>.*` (lists too); the config stage writes `.extras` (the synced list) and the complete stage `.channel` for an explicit `-Channel`; `.skip` is gone.
+
+## Wave 47 (builder f, 2026-10-22): parity with install.sh for the pages step and marker `version`
+
+Status: done (2026-10-22), not yet landed. UNVERIFIED ON WINDOWS: no `pwsh` on the build host, so
+the new code is checked statically only (ASCII, PS 5.1 syntax guards, parity tests below).
+
+Read: no reference file. Files: `scripts/install/ps/20-stages.ps1` (`Install-IndusWebPages`,
+called from `Invoke-IndusProducts`; `Invoke-IndusComplete` record), rebuilt `scripts/install.ps1`
+(`python scripts/install/build.py`), tests `tests/integration/install/test_install_ps1.py`
+(`test_products_fetch_the_release_pages_like_install_sh`,
+`test_marker_carries_the_release_version_like_install_sh`).
+
+Products: like `ins_web_pages` (wave 46 k), a developer's `apps\web\dist\index.html` is kept;
+otherwise, with Git on PATH (`Use-IndusGit`), `Invoke-IndusLogged ... -MayFail` runs
+`<install>\.venv\Scripts\python.exe -m indus.web.bundle fetch --repo <install> --target
+<install>\src\indus\web\static`. Exit 0 → ok line, 3 → the pnpm hint, anything else → a warning
+with the child's error line; the stage never fails on the pages and `$LASTEXITCODE` is reset.
+Complete: the marker gains `version` between `channel` and `completed_at` (the key order of
+install.sh's printf): `git tag --points-at HEAD --list 'v*'`, filtered by the stable/canary tag
+patterns, newest by `Select-IndusNewestTag`, without the `v`; `''` off a release. The parity test
+reads the key list from both scripts and requires them equal.
+
+Fail-first: both parity tests fail against the base `install.ps1` and pass on the rebuilt one.
+
+Follow-up: run the `needs_pwsh` tests and a real ladder on Windows (rehearsal row, Windows source
+install) to confirm the fetch and the marker `version` there.

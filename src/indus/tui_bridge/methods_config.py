@@ -29,7 +29,6 @@ import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
-import httpx
 from pydantic import JsonValue
 
 from indus.foundation.blocking import run_blocking
@@ -50,17 +49,16 @@ from indus.protocol.bridge import (
     ModelOptionsResult,
     ModelSaveKeyParams,
     ModelSaveKeyResult,
-    ProviderOption,
     ReloadMcpParams,
     ReloadMcpResult,
 )
 from indus.protocol.errors import CONFIRM_REQUIRED, INVALID_PARAMS, PROVIDER_UNAVAILABLE
 from indus.protocol.methods import PROTOCOL_VERSION, ProtocolError
 from indus.providers import bundled
-from indus.providers.model_list import list_models
 from indus.providers.profile import ProviderProfile
-from indus.providers.route import RuntimeRoute, resolve
+from indus.providers.route import resolve
 from indus.providers.types import normalize_effort
+from indus.service import picker_reads
 from indus.service.session_service import SessionService
 from indus.tui_bridge.bridge import TOOL_MODES, SessionView, ToolMode
 
@@ -331,30 +329,6 @@ async def set_value(bridge: Bridge, params: ConfigSetParams) -> ConfigSetResult:
 # -- models ----------------------------------------------------------------------------------------
 
 
-def _stored(bridge: Bridge, profile: ProviderProfile) -> bool:
-    secrets = bridge.scope.secrets
-    for name in profile.env_vars:
-        try:
-            if secrets is not None and secrets.get(name):
-                return True
-        except Exception:
-            log.debug("secret store unreadable", exc_info=True)
-        if bridge.scope.env.get(name, "").strip():
-            return True
-    return False
-
-
-def _option(bridge: Bridge, profile: ProviderProfile, current: str) -> ProviderOption:
-    return ProviderOption(
-        slug=profile.name,
-        name=profile.display_name or profile.name,
-        auth_type=profile.auth_type,
-        # A provider whose key is optional (local servers, custom endpoints) works without one.
-        authenticated=profile.auth_type in ("none", "api_key_optional") or _stored(bridge, profile),
-        current=profile.name == current,
-    )
-
-
 def _profile(slug: str) -> ProviderProfile:
     found = bundled.by_name().get(slug.strip().lower())
     if found is None:
@@ -362,52 +336,12 @@ def _profile(slug: str) -> ProviderProfile:
     return found
 
 
-def _lists_live(route: RuntimeRoute | None) -> bool:
-    """A custom or local endpoint's own list is the only one the picker can offer (RS4)."""
-    if route is None:
-        return False
-    profile = route.profile or bundled.by_name().get(route.provider.strip().lower())
-    return profile is not None and profile.is_custom and profile.supports_model_listing
-
-
-async def _listed_ids(
-    bridge: Bridge, route: RuntimeRoute, client: httpx.AsyncClient | None
-) -> list[str]:
-    try:
-        if client is not None:
-            found = await list_models(route, client=client, scope=bridge.scope)
-        else:
-            async with httpx.AsyncClient() as own:
-                found = await list_models(route, client=own, scope=bridge.scope)
-    except Exception:
-        log.debug("could not list the models of %s", route.provider, exc_info=True)
-        return []
-    return list(dict.fromkeys(m.id for m in found if m.id))
-
-
 async def model_options(bridge: Bridge, params: ModelOptionsParams) -> ModelOptionsResult:
-    provider, model = "", ""
-    route: RuntimeRoute | None = None
-    client: httpx.AsyncClient | None = None
     if params.session_id is not None:
-        service = await bridge.service()
-        state = service.agent(params.session_id).binding.state
-        provider, model = state.provider, state.model
-        route, client = getattr(state, "route", None), getattr(state, "client", None)
+        choice = picker_reads.session_choice(await bridge.service(), params.session_id)
     else:
-        try:
-            route = resolve(bridge.scope)
-            provider, model = route.provider, route.model
-        except Exception:
-            log.debug("no route resolves for this profile", exc_info=True)
-    options = [_option(bridge, p, provider) for p in bundled.PROFILES if not p.hidden]
-    if route is not None and _lists_live(route):
-        listed = await _listed_ids(bridge, route, client)
-        options = [
-            o.model_copy(update={"models": listed}) if o.slug == route.provider else o
-            for o in options
-        ]
-    return ModelOptionsResult(provider=provider, model=model, providers=options)
+        choice = picker_reads.profile_choice(bridge.scope)
+    return await picker_reads.provider_options(bridge.scope, choice)
 
 
 async def save_key(bridge: Bridge, params: ModelSaveKeyParams) -> ModelSaveKeyResult:
@@ -426,7 +360,7 @@ async def save_key(bridge: Bridge, params: ModelSaveKeyParams) -> ModelSaveKeyRe
     service = bridge.built
     if service is not None:
         current = service.route.provider
-    return ModelSaveKeyResult(provider=_option(bridge, profile, current))
+    return ModelSaveKeyResult(provider=picker_reads.provider_option(bridge.scope, profile, current))
 
 
 async def disconnect(bridge: Bridge, params: ModelDisconnectParams) -> ModelDisconnectResult:

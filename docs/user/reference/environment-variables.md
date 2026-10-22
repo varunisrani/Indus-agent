@@ -386,7 +386,6 @@ Standard and vendor variables the program also reads (proxies, editors, cloud SD
 | `GIT_WORK_TREE` | `indus.backends.checkpoints.store` |
 | `HOME` | `indus.backends.checkpoints.store`, `indus.backends.credential_files`, `indus.backends.docker.environment` and 25 more |
 | `INVOCATION_ID` | `indus.gateway.control_socket` |
-| `LANG` | `indus.backends.local_windows` |
 | `LOCALAPPDATA` | `indus.cli.commands.profile`, `indus.gateway.token_locks`, `indus.state.connection` and 1 more |
 | `LOGNAME` | `indus.providers.auth.browser` |
 | `NODE_ENV` | `indus.cli.tui_launch` |

@@ -443,6 +443,22 @@ export const newChatTarget = {
   },
 };
 
+/**
+ * The folder a fresh draft's session is created in, and the folder the window's tool panes use
+ * for it: the sidebar's choice for the next new chat, else the profile's default directory, else
+ * none (a detached chat). A draft opened another way (app start, Ctrl+N, `/new`) has no sidebar
+ * choice and still starts in the default directory, so its tools work where its Terminal does.
+ * `store` is the profile's live store when the caller holds one.
+ */
+export function freshDraftFolder(
+  storage: StorageLike | null,
+  profile: string | null,
+  store?: ProjectStore,
+): string | null {
+  const prefs = (store ?? new ProjectStore(profile, storage)).getPrefs();
+  return newChatTarget.get(storage, profile) ?? prefs.defaultDirectory;
+}
+
 function readTargets(storage: StorageLike | null): Record<string, string> {
   try {
     const raw = storage?.getItem(NEW_CHAT.key);

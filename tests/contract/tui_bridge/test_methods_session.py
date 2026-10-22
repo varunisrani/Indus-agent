@@ -126,6 +126,37 @@ def test_display_projection_drops_scaffold_and_names_tools() -> None:
     assert flatten_content([{"type": "input_image"}, "x"]) == "[image]\nx"
 
 
+def test_display_projection_gives_tool_rows_their_arguments() -> None:
+    """W47-a: a transcript rebuilt from history shows the same summary and Arguments as live
+    rows, masked as ``tool.started`` masks them."""
+    secret = "sk-" + "live" + "A" * 30
+    command = f"curl -H 'Authorization: Bearer {secret}' https://example.invalid"
+    rows = [
+        TranscriptRow(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                {"id": "c1", "function": {"name": "read_file", "arguments": '{"path": "a.py"}'}},
+                {"id": "c2", "function": {"name": "terminal", "arguments": {"command": command}}},
+                {"id": "c3", "function": {"name": "odd", "arguments": "not json"}},
+            ],
+        ),
+        TranscriptRow(role="tool", content="data", tool_call_id="c1"),
+        TranscriptRow(role="tool", content="ran", tool_call_id="c2"),
+        TranscriptRow(role="tool", content="?", tool_call_id="c3"),
+        TranscriptRow(role="tool", content="orphan", tool_call_id="c9", name="x"),
+        TranscriptRow(role="assistant", content="done"),
+    ]
+    shown = display_messages(rows)
+    assert shown[0].arguments == {"path": "a.py"}
+    ran = shown[1].arguments
+    assert ran is not None and secret not in str(ran)
+    assert str(ran["command"]).startswith("curl ")
+    assert shown[2].arguments is None and shown[3].arguments is None
+    assert shown[4].arguments is None  # only tool rows carry them
+    assert "arguments" not in shown[4].model_dump(exclude_none=True)
+
+
 def test_list_and_most_recent_hide_machine_sessions(
     scope: Scope, fake_clock: FakeClock, tmp_path: Path
 ) -> None:

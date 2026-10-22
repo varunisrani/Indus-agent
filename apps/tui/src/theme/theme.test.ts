@@ -14,6 +14,7 @@ import {
   commitPreview,
   contrastReport,
   currentTheme,
+  followTerminalScheme,
   previewTheme,
   setDetected,
   type Theme,
@@ -93,6 +94,22 @@ describe("server payloads and preview", () => {
     expect(applyThemePayload("auto").light).toBe(true);
     expect(applyThemePayload("indus-dark").light).toBe(false);
     expect(applyThemePayload("dark").name).toBe("indus-dark");
+  });
+
+  it("follows the terminal's light/dark changes for an automatic theme only (W47 d)", () => {
+    applyThemePayload("auto");
+    expect(currentTheme().light).toBe(false);
+    // the dashboard switched to its light theme: the terminal reports light with its background
+    const light = followTerminalScheme(true, "#f6f5f2", "auto");
+    expect(light.light).toBe(true);
+    expect(light.background).toBe("#f6f5f2");
+    assertFloors(light);
+    // back to dark (a bare report names no colour): the light background is not kept
+    const dark = followTerminalScheme(false, null, "auto");
+    expect(dark.light).toBe(false);
+    expect(dark.background).not.toBe("#f6f5f2");
+    // a theme the person named stays as named
+    expect(followTerminalScheme(true, null, "indus-dark").light).toBe(false);
   });
 
   it("previews live while browsing, then commits or reverts", () => {

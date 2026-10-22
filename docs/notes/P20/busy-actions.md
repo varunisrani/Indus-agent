@@ -84,3 +84,43 @@ Integration (wave-34 merge, D-16.682): `sharedActions(connection, sessionId, mak
 session and the transcript's Retry use it); `recoverPrepared()` skips inputs this object is sending or
 has settled — the wired run showed the first message of a new chat as "Not confirmed" while it ran
 (test `busyActions.test.ts::listing the journal mid-submit never offers the input being sent`).
+
+## Wave 47 (builder a, 2026-10-22): Stop/Steer stuck after a turn ended
+
+Status: done (fail-first tests below fail on the snapshot base and pass with the fix).
+
+Read: no reference file and no Evidence (a bug in our own busy state, found while capturing
+screenshots: the composer kept Stop/Steer for minutes after the model went idle; a window reload
+cleared it).
+
+Cause, two parts:
+- **Two ids for one turn.** The submit answer and `admission.state` name an input by its admission
+  id; `turn.started` / `turn.done` carry the daemon's own turn id (`agent.start_turn` mints it). The
+  busy state stored whichever came last as `turnId` and `turn.done` ended the busy state only when its
+  id matched. When `turn.started` arrived before the submit answer (or before `admission.state
+  started`), `turnId` became the admission id and `turn.done` was ignored; when the answer arrived
+  after `turn.done`, it switched the busy state back on. Only a later `session.info { running:
+  false }` (a reattach, i.e. a reload) cleared it. The old tests hid this by using the admission id
+  as the turn id in `turn.started`.
+- **Nobody listening.** `sharedActions` objects were fed events only while a composer showing their
+  session was mounted. The fresh draft's first send, quick entry and Retry use them with no such
+  composer, so a turn that ended before the session's composer mounted left Stop up.
+
+Fix (`src/chat/busyActions.ts`): busy state is kept by generation, the one number both ids share. The
+object remembers the daemon's turn ids seen in `turn.started` with their generation (the latest 16)
+and the newest generation whose end it saw. `turn.done` ends the busy state unless a later turn that
+already started is running; a submit answer or `admission.state started` for a generation that
+already ended never shows Stop again (its `turnId` is still the turn's own id when known, so the
+optimistic row binds to the turn the transcript holds). `sharedActions` subscribes the object to its
+session's events for its whole life; the composer subscribes only actions handed in from outside.
+
+Tests: `src/chat/busyActions.test.ts` "busy state ends with the turn, whatever order the answers
+arrive in" (answer after `turn.started`; answer after `turn.done`; admission started after
+`turn.started` and after `turn.done`; `turn.done` of an unseen turn; an earlier turn's end does not
+stop the next; shared actions hear events with no composer mounted).
+
+### Decisions for the lead
+- W47-a-1 (D-16.1030): busy state follows the generation, not the turn id; the admission id is kept only as a
+  fallback `turnId` until `turn.started` names the turn. No protocol change.
+- W47-a-2 (D-16.1031): `sharedActions` holds one permanent session-event listener per (connection, session);
+  the per-composer subscription remains only for actions passed in as a prop (tests, embeds).

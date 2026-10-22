@@ -154,3 +154,55 @@ Compare checklist (filled after the rewrite; reopened the Windows branches of
   Windows branch or a clear "use WSL2" refusal.
 - The Windows guide says "Classic CLI and terminal UI: works, best effort"; recheck that row once
   the lane is green.
+
+## Wave 47: RL26 Windows branches (builder e)
+
+Status: done, best effort (2026-10-22), not yet run on Windows. Each POSIX-only path from the
+follow-ups above now has a Windows branch through this backend's job objects or a "use WSL2"
+refusal; 8 fail-first tests in `tests/unit/backends/test_windows_rl26.py` run on Linux with the OS
+family patched to `win32` and the Win32 job calls replaced by a process-group stand-in (all 8 fail
+on the base, pass here). Read: none (no reference file; our own P25-24 code and note only).
+
+What changed (own words):
+- **Background processes** (`backends/processes.py`): a host job needs a readable descriptor in
+  the event loop, a pidfd or a poll plus POSIX group signals; a Windows pipe gives none of them, so
+  on native Windows a host job ends at once as `failed_start` with `WINDOWS_REFUSAL` (run inside
+  WSL2, run it in the foreground, or use a Docker/SSH backend). Jobs inside a non-local environment
+  are unchanged (they never touch a host pipe).
+- **`indus verify`** (`cli/commands/verify.py`, `tools/verify/runner.py`): on Windows the phases run
+  on `open_local_windows` (the backend the registry opens there), and the start command boots under
+  Git Bash in its own job object (`WindowsStarter`: output drained by a thread with this backend's
+  `drain`, stop = terminate the job). No Git Bash → "The local terminal backend is not available:
+  …" with the backend's hint, exit 1.
+- **Cron scripts** (`cron/script.py`): `.sh`/`.bash` run under `find_git_bash`'s bash with the script
+  path in MSYS form and Git Bash's PATH/UTF-8/MSYS defaults (`git_bash_env`, now shared with
+  `run_env`); every script starts suspended in a job object (`start_windows_process`, new
+  `separate_stderr` so stdout and stderr stay apart); time-out/cancel terminate the job; the job
+  handle is released after the readers join. No Git Bash → the run is refused with the reason.
+- **Code-execution launcher** (`tools/builtin/code/launch.py`): `Child` starts in a job object on
+  Windows; `stop` and `force_stop` terminate the job and release it; descriptor passing (the
+  session kernel's pipes) raises `BackendUnavailable` with the WSL2 message. `execute_code` runs
+  per-call scripts on Windows (`kernel: auto` behaves as `off` there), so the refusal is only a
+  safety belt; the RPC socket already uses TCP on Windows.
+
+Tests: `test_windows_rl26.py` (posix-only stand-in): background refusal; cron `.sh` under Git
+Bash with separate streams and MSYS defaults; cron time-out kills a background grandchild through
+the job; cron without Git Bash refused; code child in a job, stopped and released; kernel
+descriptors refused; `indus verify` opens the Windows host (never the POSIX one); `WindowsStarter`
+boots and stops the tree.
+
+### Decisions for the lead
+| Id | Decision |
+|---|---|
+| W47-e-1 (D-16.1043) | Native-Windows background processes: refusal (`failed_start` + WSL2 text), not a port. A port needs a thread reader per job, job-object exit polling, and a Windows story for PTY jobs, memory scopes and crash recovery (pid identity); out of the time box and best effort anyway (D-16.55) |
+| W47-e-2 (D-16.1044) | `indus verify` on Windows: Git Bash host + `WindowsStarter` (job object, immediate stop, no grace, as D-16.955) |
+| W47-e-3 (D-16.1045) | Cron scripts on Windows: Git Bash for shell scripts (MSYS path, `git_bash_env`), every script in a job object; missing Git Bash refuses the run (no fallback to a PATH `bash`, which may be the WSL launcher) |
+| W47-e-4 (D-16.1046) | `execute_code` on Windows: per-call scripts only (the kernel's fd passing has no Windows form); the launcher refuses `pass_fds` with the WSL2 message |
+| W47-e-5 (D-16.1047) | New shared helpers in `local_windows`: `git_bash_env` (PATH + UTF-8/MSYS defaults, now used by `run_env` too), `wsl2_refusal`, and `start_windows_process(..., separate_stderr=)` |
+
+### Follow-ups
+- Run the new branches on the `windows-local` lane (add `test_windows_rl26.py`'s intent as
+  `platforms("windows")` cases with real children: cron `.sh`, code child stop, verify start).
+- A native port of background processes (W47-e-1) if Windows demand appears; the `terminal`
+  tool could then stop offering `background=true` on Windows instead of failing the start.
+- `service/console.py` also builds a `LocalProcess` (not in RL26's list); check it on Windows.

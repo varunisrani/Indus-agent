@@ -1542,8 +1542,40 @@ function Publish-IndusLauncher {
     Write-IndusOk "indus command: $launcher"
 }
 
+# A checkout serves its own built pages (apps\web\dist) when a developer built them; otherwise a
+# release install gets the pages its release was built with (F-3), as install.sh does: the
+# environment's python runs `-m indus.web.bundle fetch`, which checks them against the manifest
+# digest the release tag records and publishes them into src\indus\web\static. Exit 3 means HEAD
+# is on no release (a main install builds its own). Never fatal: the dashboard API still works.
+function Install-IndusWebPages {
+    $pgDir = $script:IndusPaths.InstallDir
+    $pgBuilt = Join-Path (Join-Path (Join-Path (Join-Path $pgDir 'apps') 'web') 'dist') 'index.html'
+    if (Test-Path -LiteralPath $pgBuilt -PathType Leaf) {
+        Write-IndusInfo 'the dashboard pages are built in this checkout (apps\web\dist)'
+        return
+    }
+    $pgPython = Get-IndusVenvPython
+    if (-not (Test-Path -LiteralPath $pgPython)) {
+        Write-IndusWarn "the dashboard pages were not fetched ($pgPython is missing); rerun the installer"
+        return
+    }
+    $pgTarget = Join-Path (Join-Path (Join-Path (Join-Path $pgDir 'src') 'indus') 'web') 'static'
+    Use-IndusGit | Out-Null
+    Invoke-IndusLogged 'Fetching the dashboard pages' { & $pgPython -m indus.web.bundle fetch --repo $pgDir --target $pgTarget } -MayFail
+    $pgCode = $LASTEXITCODE
+    $global:LASTEXITCODE = 0
+    if ($pgCode -eq 0) {
+        Write-IndusOk 'the dashboard pages of this release are in place'
+    } elseif ($pgCode -eq 3) {
+        Write-IndusInfo 'This checkout is not on a release, so it has no prebuilt dashboard pages; build them with: pnpm install && pnpm --filter @indus/web build'
+    } else {
+        Write-IndusWarn "the dashboard pages could not be fetched$(Get-IndusNativeDetail); the dashboard serves only its API until they are (rerun the installer, or build them with pnpm --filter @indus/web build)"
+    }
+}
+
 function Invoke-IndusProducts {
     Publish-IndusLauncher
+    Install-IndusWebPages
     if ($script:IndusOpts.IncludeDesktop) { Invoke-IndusDesktop }
 }
 
@@ -1586,11 +1618,19 @@ function Invoke-IndusComplete {
     $head = ([string](Invoke-IndusNative { git -C $codeDir rev-parse HEAD 2>$null })).Trim()
     if ($LASTEXITCODE -or -not $head) { Stop-IndusStage "could not read the installed commit in $codeDir" 'other' }
     $origin = ([string](Invoke-IndusNative { git -C $codeDir config --get remote.origin.url 2>$null })).Trim()
+    # The release HEAD is on (newest when several), for `indus --version` (F-4); '' on main.
+    $headTags = @(Invoke-IndusNative { git -C $codeDir tag --points-at HEAD --list 'v*' 2>$null } |
+        ForEach-Object { "$_".Trim() } |
+        Where-Object { $_ -cmatch $script:IndusStableTag -or $_ -cmatch $script:IndusCanaryTag })
+    $releaseTag = [string](Select-IndusNewestTag $headTags)
+    $global:LASTEXITCODE = 0
+    if ($releaseTag) { $releaseTag = $releaseTag.Substring(1) }
     $record = [ordered]@{
         schema       = 1
         commit       = $head
         branch       = Get-IndusBranch
         channel      = Get-IndusEffectiveChannel $codeDir $origin
+        version      = $releaseTag
         completed_at = Get-IndusUtcStamp
     }
     $marker = Join-Path $codeDir '.indus-bootstrap.json'

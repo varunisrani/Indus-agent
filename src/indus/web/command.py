@@ -23,8 +23,9 @@ is no flag that skips the login (D-16.25).
 
 A missing SPA bundle in a source checkout with ``pnpm`` on PATH is built once before serving
 (``indus.web.spa.build_plan``); without ``pnpm`` the command says how to get the release's prebuilt
-pages or build them (``web.bundle.missing_pages_hint``, F-3). The dashboard attaches to the profile
-daemon in the background.
+pages or build them (``web.bundle.missing_pages_hint``, F-3); runtime pages fetched for another
+release are not served and the command says how to refresh them (``stale_pages_hint``, wave 47).
+The dashboard attaches to the profile daemon in the background.
 
 ``indus serve [--host] [--port 0]`` runs the headless backend (JSON and WebSocket only) and writes
 ``<home>/serve.json``; ``indus serve discover --json [-p NAME]`` and ``indus serve ensure --json``
@@ -208,11 +209,18 @@ def run_server(app: FastAPI, sock: socket.socket) -> None:
 def _maybe_build(launch: Launch) -> None:
     from indus.web import bundle, spa
 
-    if bundle.locate().found:
+    where = bundle.locate()
+    if where.found:
         return
     repo = bundle.source_checkout()
     plan = spa.build_plan(repo, launch.scope.env) if repo is not None else None
     if plan is None:
+        if where.kind == "stale":
+            err(
+                "The dashboard pages are from another release; the API still works.",
+                bundle.stale_pages_hint(where.stamped),
+            )
+            return
         err(
             "The dashboard pages are not built; the API still works.",
             bundle.missing_pages_hint(repo),

@@ -97,6 +97,9 @@ The JSON-RPC protocol between the agent host and its surfaces (TUI, desktop, das
 | [`groups.status`](#groupsstatus) | One room. |
 | [`groups.promote`](#groupspromote) | Claim a room's authority on this gateway (operator recovery; not atomic). |
 | [`groups.demote`](#groupsdemote) | Adopt a strictly newer authority lineage seen elsewhere. |
+| [`groups.approve`](#groupsapprove) | The person's answer to an approval a member's turn put to the room. |
+| [`groups.watch`](#groupswatch) | Receive a room's new events as ``groups.event`` notifications on this connection. |
+| [`groups.unwatch`](#groupsunwatch) | One room. |
 | [`voice.transcribe`](#voicetranscribe) | The text of one recorded clip. |
 | [`voice.speak`](#voicespeak) | Read a text aloud. |
 | [`voice.listen`](#voicelisten) | Record one take on this process's microphone and return its text. |
@@ -160,6 +163,7 @@ Parameters:
 | `when_busy` | BusyAction | no | While a turn runs: refuse (``SESSION_BUSY``), queue it, steer or redirect the turn. |
 | `request_id` | str or null | no | The client's id for this input (daemon): sending it again returns the first admission instead of running the text twice. |
 | `unattended` | bool | no | A finite run nobody watches (``indus -z``; daemon): this input's turn auto-approves risky commands as the in-process run does (the hard floors still refuse). In-process hosts take the run's approval policy from its launch and ignore it. |
+| `single_query` | bool | no | A finite run (an attached ``indus chat -q`` or ``indus -z``; daemon): this input's turn runs one-shot, as ``--local`` runs it: approvals follow ``approvals.single_query_mode`` (or ``unattended``'s auto-approve) and no question is asked of anyone. In-process hosts take the run context from the run's launch and ignore it. |
 
 Result:
 
@@ -1871,6 +1875,67 @@ Result:
 
 Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`.
 
+### groups.approve
+
+The person's answer to an approval a member's turn put to the room.
+
+Parameters:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `room_id` | str | yes | The room's id. |
+| `request_id` | str | yes | The ``request_id`` of the room's ``approval.requested`` event. |
+| `choice` | 'once' \| 'session' \| 'always' \| 'deny' | yes | One of the choices the request offered. |
+| `reason` | str or null | no | Why the person denied (passed to the member unchanged); ignored for other choices. |
+| `author` | str | no | Who answered. |
+
+Result:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `event` | dict[str, JsonValue] | yes | The ``approval.answered`` event. |
+| `idempotent` | bool | yes | True when the same answer was stored already. |
+
+Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`.
+
+### groups.watch
+
+Receive a room's new events as ``groups.event`` notifications on this connection.
+
+Parameters:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `room_id` | str | yes | The room's id. |
+| `since_seq` | int or null | no | Also send the events after this sequence number; absent means only new ones. |
+
+Result:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `room_id` | str | yes | The room's id. |
+| `latest_seq` | int | yes | The room's newest sequence number when the watch began. |
+
+Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`.
+
+### groups.unwatch
+
+One room.
+
+Parameters:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `room_id` | str | yes | The room's id. |
+
+Result:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `watching` | bool | yes | False: this connection no longer receives the room's events. |
+
+Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`.
+
 ### voice.transcribe
 
 The text of one recorded clip.
@@ -1938,6 +2003,7 @@ Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, 
 | `session.updated` | A session changed in a way list views show (sent to ``sessions.watch`` watchers). |
 | `sessions.resync` | List updates for this connection were dropped; reload the list (``session.list``). |
 | `wake.detected` | ``wake.detected``: the phrase was heard; start voice capture now. |
+| `groups.event` | ``groups.event``: a new event of a room this connection watches (in order, once). |
 
 ## Events
 

@@ -1,5 +1,8 @@
 // The completion rows under the composer (P12-18): at most 16 visible, the window following the
-// highlighted row; each row shows its label and a muted note.
+// highlighted row; each row shows its label and a muted note. `rows` is the whole height the list
+// may take: when the items do not all fit, one of those rows is the `n/total` count line, and a
+// row never wraps (a wrapped or extra line would be squeezed by the fixed-height box and the next
+// row drawn over it, leaving the end of the longer row behind).
 
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
@@ -23,7 +26,9 @@ export function CompletionList(props: CompletionListProps): ReactNode {
   const theme = useTheme();
   const { items, index } = target.completion;
   if (items.length === 0) return null;
-  const size = props.rows ?? COMPLETION_ROWS;
+  const height = Math.max(1, props.rows ?? COMPLETION_ROWS);
+  const counted = items.length > height && height > 1;
+  const size = counted ? height - 1 : height;
   const start = windowStart(index, items.length, size);
   const visible = items.slice(start, start + size);
   const width = Math.max(...visible.map((row) => row.display.length));
@@ -36,6 +41,7 @@ export function CompletionList(props: CompletionListProps): ReactNode {
         return (
           <Text
             key={`${row.text}\u0000${row.display}`}
+            wrap="truncate-end"
             {...(row.disabled ? { dimColor: true } : {})}
           >
             <Text inverse={picked} {...(picked && accent ? { color: accent } : {})}>
@@ -47,7 +53,7 @@ export function CompletionList(props: CompletionListProps): ReactNode {
           </Text>
         );
       })}
-      {items.length > size ? (
+      {counted ? (
         <Text {...(muted ? { color: muted } : { dimColor: true })}>
           {` ${index + 1}/${items.length}`}
         </Text>

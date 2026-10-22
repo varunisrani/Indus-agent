@@ -104,3 +104,59 @@ Merged in the P05 wave 2 integration (2026-10-18, lead's verify tree).
   `tests/unit/tools/builtin/test_file_ops.py::test_file_ops_for_picks_host_or_shell_and_caches`.
 - `environments` and `cancel` now reach handlers from the tool round when the session has them
   (`SessionRuntime.environments` is the P06 seam).
+
+## Wave 47 (W47-b): a session's own folder
+
+Status: done (2026-10-22, wave-47 builder b; uncommitted, for the lead's `git apply --3way`).
+
+Read: none (a wiring bug in our own code; no reference file or Evidence opened).
+
+Bug: a desktop chat's file tools resolved relative paths against the daemon's work folder, not
+the chat's folder (the window's Terminal pane used the right one). Two causes:
+1. Daemon side: `session.create {cwd}` set `AgentOptions.cwd`, which only reached the prompt
+   context. The tool round handed tools the host scope, so `paths.base_dir` and `open_local` fell
+   back to `terminal.cwd`, else the process folder. A stored session attached again
+   (`_attach_existing`: a daemon restart or another process) lost even that.
+2. Desktop side: only the sidebar's own "new chat" set the folder of the next draft. A draft
+   opened from app start, Ctrl+N, `/new` or the command center sent no `cwd`, while the tool
+   panes fell back to the profile's default directory (see `docs/notes/P20/sidebar.md`).
+
+Fix:
+- `AgentOptions.workdir` / `SessionRuntime.workdir`: the session's own folder. The tool round gives
+  tools `with_workdir(scope, workdir)` (in `backends/task_overrides.py`, beside `LayeredConfig`),
+  a scope whose config answers `terminal.cwd` with that folder. File tools (`ops_for_call` with
+  no live environment uses `paths.base_dir`), new local shells (`open_local`) and everything that
+  reads `terminal.cwd` start there. Subagents inherit it (a worktree child keeps its tree).
+- `SessionService._options_for` sets `workdir` with `cwd` when a session is created in a folder;
+  `_stored_folder` restores the stored row's `cwd` for a session attached again; the session
+  mutations shaper (workspace move, ACP) sets `workdir` with `cwd`.
+- Desktop: `freshDraftFolder` (sidebar `projects.ts`) is the one rule for a fresh draft's folder:
+  the sidebar's choice, else the profile's default directory. The composer slot creates the
+  session with it, and the Shell's tool-pane folder uses the same function.
+
+Tests (fail-first on base `9a155bbb9a`):
+- `tests/unit/service/test_session_workdir.py::test_a_relative_write_lands_in_the_chat_folder`
+  (failed on base: the file landed in the process folder) and
+  `::test_a_session_attached_again_keeps_its_folder` (failed on base); the control
+  `::test_a_session_without_a_folder_keeps_the_profile_terminal_cwd` passes on both.
+- `apps/desktop/src/sidebar/projects.test.ts` "a fresh draft not started from the sidebar opens in
+  the default directory (W47-b)" (failed on base).
+
+### Decisions for the lead
+- **W47-b-1 (D-16.1034):** a session's own folder beats the profile's `terminal.cwd` for host tools: the person
+  picked the folder for this chat. Only the local backend gets the overlay; a sandbox (docker,
+  ssh, cloud) reads `terminal.cwd` as a path inside it, so it keeps the profile's value.
+- **W47-b-2 (D-16.1035):** a stored session attached again gets its stored folder only when its source is a
+  surface a person starts sessions from (`cli`, `tui`, `gui`, `acp`, `web`) and the folder differs
+  from the host's own. Messaging chats keep the host's folder and `terminal.cwd` as before.
+- **W47-b-3 (D-16.1036):** a folder that is not an existing absolute directory (deleted since) leaves the
+  scope unchanged, so the tools fall back to `terminal.cwd`, else the process folder. No refusal
+  and no notice yet (follow-up below).
+- **W47-b-4 (D-16.1037):** no new attack surface. `session.create` already accepted `cwd` from an
+  authenticated client, and file tools already took absolute paths; only the relative-path anchor
+  moves. No threat-model row cites this path.
+
+### Follow-ups
+- A notice when a chat's folder no longer exists (today it silently uses the fallback).
+- Session rows written before this fix: a desktop chat started without a folder stored
+  the daemon's folder as its `cwd`; those chats stay there (the folder equals the host's own).

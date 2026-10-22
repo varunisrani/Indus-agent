@@ -4,8 +4,16 @@
 // browser terminal answers over a WebSocket) are dropped, since no key ever types one, and
 // bracketed paste bodies pass through untouched. A sequence cut across reads waits for the rest;
 // a lone ESC goes on after a short pause (it is the Escape key).
+//
+// Colour-scheme reports (W47): a background answer (OSC 11, however late) and the terminal's
+// light/dark report (`CSI ? 997 ; 1 n` dark, `; 2 n` light — the answer to `CSI ? 996 n`, and sent
+// unasked on a change once `CSI ? 2031 h` is on) are taken out of the key stream and handed to
+// `onScheme`, so the theme can follow a terminal whose colours change while we run (the
+// dashboard's Chat tab switching between its light and dark themes).
 
 import { PassThrough } from "node:stream";
+import { LIGHT_LUMINANCE, parseOscColour, trustedProbeColour } from "../theme/detect.ts";
+import { luminance } from "../theme/palette.ts";
 
 export interface MouseEvent {
   kind: "press" | "release" | "drag" | "wheel-up" | "wheel-down";
@@ -27,10 +35,22 @@ const SGR_MOUSE_RE = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
 /** A complete OSC reply: ESC ] … ended by BEL or ST (ESC \\). */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is escape sequences
 const OSC_REPLY_RE = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
+/** An OSC 11 (background) reply, captured: its payload. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is escape sequences
+const OSC_BACKGROUND_RE = /^\u001b\]11;([^\u0007\u001b]*)(?:\u0007|\u001b\\)$/;
+/** The terminal's colour-scheme report: `CSI ? 997 ; 1 n` (dark) or `; 2 n` (light). */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is escape sequences
+const SCHEME_REPORT_RE = /\u001b\[\?997;([12])n/g;
 /** A tail that could be the start of a sequence we rewrite or a paste bracket. */
 const OPEN_TAIL_RE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is escape sequences
-  /\u001b(?:\[(?:<[\d;]*|27(?:;[\d;]*)?|2?|20[01]?)?|\][^\u0007\u001b]{0,512}\u001b?)?$/;
+  /\u001b(?:\[(?:<[\d;]*|\?[\d;]*|27(?:;[\d;]*)?|2?|20[01]?)?|\][^\u0007\u001b]{0,512}\u001b?)?$/;
+
+/** What a colour-scheme report says: light or dark, and the background when one was named. */
+export interface SchemeReport {
+  light: boolean;
+  background: string | null;
+}
 export const LONE_ESC_MS = 15;
 
 export function decodeMouse(code: number, col: number, row: number, final: string): MouseEvent {
@@ -42,10 +62,31 @@ export function decodeMouse(code: number, col: number, row: number, final: strin
   return { kind: final === "m" ? "release" : "press", button, col, row, ...mods };
 }
 
+/** The scheme an OSC reply reports, or null (another OSC, or a colour we distrust). */
+export function schemeFromOsc(reply: string): SchemeReport | null {
+  const match = OSC_BACKGROUND_RE.exec(reply);
+  if (match === null) return null;
+  const background = trustedProbeColour(parseOscColour(match[1] ?? ""));
+  if (background === null) return null;
+  return { light: luminance(background) >= LIGHT_LUMINANCE, background };
+}
+
 /** Rewrite one complete piece of input outside a paste. */
-export function rewriteInput(text: string, onMouse: (event: MouseEvent) => void): string {
+export function rewriteInput(
+  text: string,
+  onMouse: (event: MouseEvent) => void,
+  onScheme?: (report: SchemeReport) => void,
+): string {
   return text
-    .replace(OSC_REPLY_RE, "")
+    .replace(OSC_REPLY_RE, (reply) => {
+      const report = schemeFromOsc(reply);
+      if (report !== null) onScheme?.(report);
+      return "";
+    })
+    .replace(SCHEME_REPORT_RE, (_all, mode: string) => {
+      onScheme?.({ light: mode === "2", background: null });
+      return "";
+    })
     .replace(SGR_MOUSE_RE, (_all, code: string, col: string, row: string, final: string) => {
       onMouse(decodeMouse(Number(code), Number(col), Number(row), final));
       return "";
@@ -61,9 +102,15 @@ export class InputFilter {
   private pasting = false;
   private escTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly onMouse: (event: MouseEvent) => void;
+  private readonly onScheme: ((report: SchemeReport) => void) | undefined;
 
-  constructor(source: Source, onMouse: (event: MouseEvent) => void) {
+  constructor(
+    source: Source,
+    onMouse: (event: MouseEvent) => void,
+    onScheme?: (report: SchemeReport) => void,
+  ) {
     this.onMouse = onMouse;
+    this.onScheme = onScheme;
     const out = new PassThrough();
     this.stream = Object.assign(out, {
       isTTY: true,
@@ -97,7 +144,11 @@ export class InputFilter {
       const plain = start < 0 ? rest : rest.slice(0, start);
       const tail = start < 0 ? OPEN_TAIL_RE.exec(plain) : null;
       if (tail !== null) this.held = tail[0];
-      out += rewriteInput(tail === null ? plain : plain.slice(0, tail.index), this.onMouse);
+      out += rewriteInput(
+        tail === null ? plain : plain.slice(0, tail.index),
+        this.onMouse,
+        this.onScheme,
+      );
       if (start < 0) break;
       out += PASTE_START;
       rest = rest.slice(start + PASTE_START.length);

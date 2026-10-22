@@ -203,14 +203,17 @@ class RemoteAttached:
         return result
 
     async def submit(
-        self, session_id: str, text: str, *, unattended: bool = False
+        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
     ) -> PromptSubmitResult:
         from indus.service.remote.host import OutcomeUnknown
 
         # ``unattended`` (``-z``): the daemon auto-approves this input's turn, as the in-process
-        # run does; any other question still detaches the finite run (exit 3).
+        # run does. ``single_query`` (``chat -q``, ``-z``): the daemon runs the turn one-shot, so
+        # approvals follow ``approvals.single_query_mode`` and nobody is asked (D-16.487).
         try:
-            return await self.service.submit(session_id, text, unattended=unattended)
+            return await self.service.submit(
+                session_id, text, unattended=unattended, single_query=single_query
+            )
         except OutcomeUnknown as lost:
             raise RemoteRefusal("outcome_unknown", lost.args[0] if lost.args else "") from None
 

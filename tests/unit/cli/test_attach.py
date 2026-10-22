@@ -24,7 +24,7 @@ from indus.cli.args import ChatArgs, CliState, GlobalArgs, HostOverrides
 from indus.cli.session_select import LaunchPolicy
 from indus.foundation.scope import Scope
 from indus.protocol.events import ExitReason, MessageDelta, TurnDone
-from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice, ApprovalRequest
+from indus.protocol.server_requests import ApprovalRequest
 from indus.state import registry
 from tests.fakes.agent import any_window
 from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn
@@ -162,6 +162,7 @@ def test_chat_q_attaches_by_default(scope: Scope, backend: StubBackend, tmp_path
     assert created["source"] == "cli"
     assert created["policy"]["cwd"] == str(Path.cwd())
     assert calls(backend.remote, "submit")[0]["unattended"] is False
+    assert calls(backend.remote, "submit")[0]["single_query"] is True
     assert backend.remote.closed
 
 
@@ -174,7 +175,12 @@ def test_z_attaches_by_default_and_prints_only_the_reply(
     assert ran.out == "hello from the daemon\n"
     assert ran.err == ""
     (submitted,) = calls(backend.remote, "submit")
-    assert submitted == {"text": "say hello", "unattended": True, "turn": "adm-1"}
+    assert submitted == {
+        "text": "say hello",
+        "unattended": True,
+        "single_query": True,
+        "turn": "adm-1",
+    }
     policy = calls(backend.remote, "create")[0]["policy"]
     assert policy["model"] == "m1" and policy["toolsets"] == ["web"]
     import json
@@ -385,45 +391,41 @@ def test_a_question_nobody_can_answer_detaches_a_finite_run_with_exit_3(
     assert calls(remote, "interrupt") == []  # detached without cancelling
 
 
-def _answered_run(scope: Scope, backend: StubBackend) -> Any:
-    remote = backend.remote
+def test_a_finite_chat_runs_its_turn_single_query_in_the_daemon(
+    scope: Scope, backend: StubBackend
+) -> None:
+    """W47 g (D-16.487): attached ``chat -q`` asks the daemon to run its turn ``single_query``
+    (approvals then follow ``approvals.single_query_mode`` there, as ``--local``); the client no
+    longer answers approvals itself (W46's ``one_shot_answer`` is retired)."""
+    ran = invoke(scope, "chat", "-q", "clean up")
+    assert ran.code == 0, ran.err
+    (submitted,) = calls(backend.remote, "submit")
+    assert submitted["single_query"] is True and submitted["unattended"] is False
+    assert not hasattr(attach, "one_shot_answer")
 
-    async def asks(session_id: str, turn_id: str) -> Any:
+
+def test_an_approval_offered_to_a_finite_chat_is_not_answered_here(
+    scope: Scope, backend: StubBackend
+) -> None:
+    """A daemon that still offers an approval (one that ignores the flag) gets no answer from
+    the client: the run detaches with exit 3 and the resume hint, never approving by itself."""
+    remote = backend.remote
+    done = threading.Event()
+
+    async def asks(session_id: str, _turn: str) -> Any:
         import asyncio
 
         remote.ask(session_id, _approval(session_id))
-        assert await asyncio.to_thread(remote.answered.wait, 10.0)
-        return turn_result(session_id, turn_id, "I left the build folder alone.")
+        await asyncio.to_thread(done.wait, 10.0)
 
     remote.wait_with = asks
-    return invoke(scope, "chat", "-q", "clean up")
-
-
-def test_an_approval_in_a_finite_chat_is_refused_as_local_does(
-    scope: Scope, backend: StubBackend
-) -> None:
-    """W46 F-5: with no terminal, attached ``chat -q`` refuses a risky command the way
-    ``--local`` does (``approvals.single_query_mode: deny``) and the turn ends normally."""
-    ran = _answered_run(scope, backend)
-    assert ran.code == 0, ran.err
-    assert "I left the build folder alone." in ran.out
-    (answer,) = backend.remote.answers
-    assert isinstance(answer, ApprovalAnswer)
-    assert answer.choice == ApprovalChoice.DENY and answer.reason == attach.ONE_SHOT_DENY
-    assert "approvals.single_query_mode" in attach.ONE_SHOT_DENY
-    assert "waiting for an answer" not in ran.err
-
-
-def test_single_query_mode_approve_approves_once_as_local_does(
-    scope: Scope, backend: StubBackend
-) -> None:
-    (scope.home / "config.yaml").write_text(
-        "approvals:\n  single_query_mode: approve\n", encoding="utf-8"
-    )
-    ran = _answered_run(scope, backend)
-    assert ran.code == 0, ran.err
-    (answer,) = backend.remote.answers
-    assert isinstance(answer, ApprovalAnswer) and answer.choice == ApprovalChoice.ONCE
+    try:
+        ran = invoke(scope, "chat", "-q", "clean up")
+    finally:
+        done.set()
+    assert ran.code == 3
+    assert "waiting for an answer" in ran.err
+    assert remote.answers == []
 
 
 def test_an_interrupt_without_a_reply_says_it_was_not_run_again(

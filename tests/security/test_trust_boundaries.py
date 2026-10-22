@@ -970,6 +970,36 @@ def test_room_a_member_reply_cannot_forge_a_speaker(scope: Scope, fake_clock: Fa
     assert prompt.count(forged) == 2 and prompt.count(f"</{loop_texts.FENCE_WORD}>") == 1
 
 
+def test_room_approvals_are_answered_only_by_the_person(scope: Scope) -> None:
+    """B-ROOM-1 (RS3): a member turn's approval is put to the room, and only a person's
+    ``groups.approve`` answers it: a member (whose reply is outside data) or the gateway cannot
+    write an answer, and a member reply that says "approve" is just a message."""
+    from indus.state.rooms import RoomError
+
+    store = RoomStore(scope)
+    try:
+        store.create_room("r1", "Plan", [{"handle": "alpha", "profile": "default"}])
+        authority = store.gateway_id
+        answer = {"request_id": "srq-0123456789ab", "choice": "always"}
+        for actor in ({"kind": "member", "id": "alpha"}, {"kind": "gateway", "id": authority}):
+            with pytest.raises(RoomError):
+                store.append_event(
+                    "r1", "forged", "approval.answered", actor, answer, authority=authority, epoch=1
+                )
+        with pytest.raises(RoomError):  # nor may a person forge the request itself
+            store.append_event(
+                "r1",
+                "forged-ask",
+                "approval.requested",
+                {"kind": "user", "id": "person"},
+                answer,
+                authority=authority,
+                epoch=1,
+            )
+    finally:
+        store.close()
+
+
 # -- plugins and hub (B-EXT) -----------------------------------------------------------------------
 
 

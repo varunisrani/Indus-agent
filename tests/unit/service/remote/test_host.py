@@ -137,6 +137,7 @@ async def test_an_accepted_submit_retires_its_entry(
     assert first.generation == 1  # the claimed turn's, never a 0 placeholder
     sent = [f for t in r.transports for f in t.sent if f.get("method") == "prompt.submit"]
     assert sent[-1]["params"]["unattended"] is True  # -z: the daemon auto-approves the turn
+    assert "single_query" not in sent[-1]["params"]
     await eventually(lambda: holder.entered)
     holder.gate.set()
     turn = await svc.wait(sid, first.turn_id)
@@ -323,7 +324,7 @@ async def test_controls_name_the_running_generation(
 
 
 def test_the_journal_is_private_and_retires_entries(scope: Scope) -> None:
-    journal = Journal(scope.home, wall=iter([1.0, 2.0, 3.0, 4.0]).__next__)
+    journal = Journal(scope.home, wall=iter([1.0, 2.0, 3.0, 4.0, 5.0]).__next__)
     first = journal.prepare("s1", "one")
     second = journal.prepare("s2", "two")
     folder = journal_dir(scope.home)
@@ -348,6 +349,11 @@ def test_the_journal_is_private_and_retires_entries(scope: Scope) -> None:
     kept = journal.mark_unknown(lone.request_id)
     assert kept is not None and kept.unattended and journal.get(lone.request_id) == kept
     assert not second.unattended and "unattended" not in second.to_json()
+    # So does a finite chat -q input's single-query flag (W47 g, D-16.487).
+    once = journal.prepare("s5", "five", single_query=True)
+    held = journal.mark_unknown(once.request_id)
+    assert held is not None and held.single_query and journal.get(once.request_id) == held
+    assert not second.single_query and "single_query" not in second.to_json()
 
 
 # -- the blocking facade --------------------------------------------------------------------------

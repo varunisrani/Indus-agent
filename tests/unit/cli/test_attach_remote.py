@@ -133,6 +133,77 @@ async def test_chat_q_runs_its_turn_in_the_daemon_and_prints_the_reply(
     assert rows(store) == [("attach:cli", "terminal", "completed")] * 2
 
 
+def _risky_tool(scope: Scope, decisions: list[Any]) -> Callable[..., Any]:
+    """An inline tool that asks the real approval pipeline about a risky command, the way the
+    terminal tool does (the turn's run context and broker), and records the decision."""
+    from indus.core.turn_state import TurnState
+    from indus.foundation.config import loader
+    from indus.safety.approvals.decision import ApprovalContext
+    from indus.safety.approvals.policy import decide
+    from indus.tools.calls import ToolCall, ToolResult
+
+    async def risky(call: ToolCall, state: TurnState) -> ToolResult:
+        read = scope.with_config(loader.load(scope))
+        ctx = ApprovalContext(
+            scope=read,
+            session_id="s-risky",
+            turn_id=state.turn_id,
+            run_context=cast(Any, state.runtime.run_context or "interactive"),
+            broker=state.control.broker,
+        )
+        decision = await decide("git reset --hard", ctx)
+        decisions.append(decision)
+        return ToolResult(decision.message or "ran")
+
+    return risky
+
+
+@aio
+@pytest.mark.parametrize("mode", ["deny", "approve"])
+async def test_an_attached_chat_q_decides_approvals_as_local_does(
+    scope: Scope,
+    store: StoreHandle,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    """W47 g (D-16.487; was W46 F-5's client-side answer): an attached finite ``chat -q`` runs its
+    turn ``single_query`` in the daemon, so a risky command is refused with ``--local``'s wording
+    (``approvals.single_query_mode: deny``, the default) or allowed when set to approve; nothing
+    waits for an answer, the turn ends normally and nobody is asked."""
+    from tests.fakes.model import tool_batch
+
+    if mode == "approve":
+        (scope.home / "config.yaml").write_text(
+            "approvals:\n  single_query_mode: approve\n", encoding="utf-8"
+        )
+    decisions: list[Any] = []
+    r = await rig(
+        scope,
+        store,
+        tmp_path,
+        tool_batch(("risky", {})),
+        text_turn("I left the build folder alone."),
+        tools={"risky": _risky_tool(scope, decisions)},
+    )
+    await listening(r, monkeypatch)
+    try:
+        ran = await asyncio.to_thread(invoke, scope, "chat", "-q", "clean up")
+    finally:
+        await r.close()
+    assert ran.code == 0, ran.err
+    assert "I left the build folder alone." in ran.out
+    assert "waiting for an answer" not in ran.err
+    (decision,) = decisions
+    if mode == "deny":
+        assert not decision.approved and decision.step == "unattended"
+        assert "a one-shot run has nobody present to approve it" in (decision.message or "")
+        assert "approvals.single_query_mode: approve" in (decision.message or "")
+    else:
+        assert decision.approved and decision.step == "unattended"
+    assert rows(store) == [("attach:cli", "terminal", "completed")]
+
+
 @aio
 async def test_a_session_behind_a_lost_turn_exits_3_and_discard_lets_it_go_on(
     scope: Scope, store: StoreHandle, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

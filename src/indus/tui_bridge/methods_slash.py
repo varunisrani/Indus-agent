@@ -22,7 +22,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from importlib import metadata
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from indus.protocol.bridge import (
     CatalogEntry,
@@ -49,6 +49,7 @@ from indus.protocol.errors import (
     UNSUPPORTED_COMMAND,
 )
 from indus.protocol.methods import ProtocolError
+from indus.service import picker_reads
 from indus.service.commands.registry import REGISTRY, CommandDef, command_word
 from indus.service.session_service import SessionService, usage_numbers
 from indus.tui_bridge import methods_config, methods_session
@@ -73,7 +74,6 @@ log = logging.getLogger(__name__)
 SURFACE = "tui"
 MIN_TIMEOUT_S = 5.0
 MAX_ALIAS_HOPS = 5
-QUICK_KEY = "quick_commands"
 CLIENT = frozenset({"new", "clear", "resume", "sessions", "model", "config", "quit", "save"})
 
 type SlashHandler = Callable[[Bridge, SessionService, str, str], Awaitable[SlashExecResult]]
@@ -301,30 +301,12 @@ HANDLERS: dict[str, SlashHandler] = {
 
 def quick_commands(bridge: Bridge) -> dict[str, Mapping[str, Any]]:
     """The user's ``quick_commands`` table, keyed by lowercase name."""
-    raw = methods_config.read_setting(bridge.scope, QUICK_KEY)
-    if not isinstance(raw, Mapping):
-        return {}
-    table: dict[str, Mapping[str, Any]] = {}
-    for name, spec in cast(Mapping[object, object], raw).items():
-        if isinstance(name, str) and name.strip() and isinstance(spec, Mapping):
-            table[name.strip().lstrip("/").lower()] = cast(Mapping[str, Any], spec)
-    return table
+    return picker_reads.quick_command_table(bridge.scope)
 
 
 def skill_table(bridge: Bridge, session_id: str | None) -> CommandTable | None:
     """The skills and bundles a slash word can run here (None when they cannot be listed)."""
-    try:
-        from indus.learning.skills.bundles import bundle_expanders
-        from indus.learning.skills.invoke import CommandTable, skill_command_names
-        from indus.learning.skills.resolver import load_catalog
-
-        catalog = load_catalog(bridge.scope, platform=SURFACE)
-        return CommandTable(
-            skills=skill_command_names(catalog), bundles=bundle_expanders(bridge.scope, session_id)
-        )
-    except Exception:
-        log.warning("skills could not be listed", exc_info=True)
-        return None
+    return picker_reads.skill_table(bridge.scope, session_id)
 
 
 def _runner(cmd: CommandDef) -> CommandRunner:

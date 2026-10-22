@@ -78,3 +78,26 @@ Compare checklist (filled after the rewrite; reopened `ui-tui/src/theme.ts`):
 Done (2026-10-19). `apps/tui/src/theme/{theme,detect,bootCache,palette}.ts`, tests `theme.test.ts`
 (13), `detect.test.ts` (21). Shared: `apps/tui/package.json` (workspace deps `@indus/ui`,
 `@indus/protocol`, `test` script), `pnpm-lock.yaml` regenerated locally.
+
+## Wave 47 (builder d): the theme follows the terminal's light/dark changes
+
+Status: done (fail-first tests in `src/terminal/keys.test.ts` and `src/theme/theme.test.ts`).
+Read: none (bug seen in the screenshot run: the dashboard Chat tab in the light theme showed the
+TUI's dark-theme text, light grey on the light background).
+
+- Cause: light/dark was decided once at start. Inside the dashboard the OSC 11 answer travels over
+  a WebSocket and often arrives after the 150 ms probe gave up (the input filter then dropped it),
+  and a later switch of the dashboard theme recoloured xterm under a TUI still painting for dark.
+  The probe result was also re-applied with the resolved theme name (`indus-dark`), which can never
+  turn light; it now re-applies the requested name (`uiStore.themeName`, `auto` by default).
+- The input filter now hands two reports to `onScheme` instead of the key stream: an OSC 11
+  background answer however late, and the colour-scheme report `CSI ? 997 ; 1 n` (dark) / `; 2 n`
+  (light). At start the TUI turns on change reports (`CSI ? 2031 h`, reset with the other modes on
+  exit) and asks once (`CSI ? 996 n`). `followTerminalScheme` re-detects and re-applies the
+  requested theme; an environment-pinned theme (INDUS_TUI_LIGHT/THEME/BACKGROUND, COLORFGBG,
+  TERM_PROGRAM) is left alone, and a probe that merely timed out never undoes an earlier report.
+
+Decisions for the lead:
+- W47-d-1 (D-16.1041): use the colour-scheme report protocol (DSR 996 / report 997, mode 2031) as the one
+  channel for light/dark changes, between our dashboard terminal and the TUI; terminals that speak
+  it natively get the same behaviour, others ignore the mode.

@@ -521,8 +521,12 @@ export function historyItems(rows: readonly HistoryMessage[]): TranscriptItem[] 
     if (row.role === "assistant") {
       if (row.text !== "") parts.push({ type: "text", text: row.text });
     } else {
+      // The stored call's arguments (W47-a): the same summary and Arguments as the live row.
+      const args =
+        row.arguments === undefined || row.arguments === null ? null : rec(row.arguments);
       parts.push({
         ...newTool(`row:${row.row_id ?? index}`, row.name ?? "tool"),
+        args,
         state: /^(error|failed)\b/i.test(row.text.trim()) ? "failed" : "ok",
         result: row.text,
       });

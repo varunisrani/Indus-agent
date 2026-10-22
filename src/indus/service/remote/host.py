@@ -325,13 +325,16 @@ class RemoteSessionService:
     # -- turns ------------------------------------------------------------------------------------
 
     async def submit(
-        self, session_id: str, text: str, *, unattended: bool = False
+        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
     ) -> PromptSubmitResult:
         """Admit ``text`` (see the module notes for the journal and ``OutcomeUnknown``).
-        ``unattended``: a finite run nobody watches (``-z``); the daemon auto-approves its turn."""
+        ``unattended``: a finite run nobody watches (``-z``); the daemon auto-approves its turn.
+        ``single_query``: a finite run (``chat -q``, ``-z``); the daemon runs its turn one-shot."""
         found = self._session(session_id)
         entry = await run_blocking(
-            lambda: self.journal.prepare(found.current, text, unattended=unattended),
+            lambda: self.journal.prepare(
+                found.current, text, unattended=unattended, single_query=single_query
+            ),
             label="journal",
         )
         return await self._send(found, entry)
@@ -358,6 +361,8 @@ class RemoteSessionService:
         }
         if entry.unattended:  # kept with the entry, so an explicit retry is an exact retry
             params["unattended"] = True
+        if entry.single_query:
+            params["single_query"] = True
         floor = max(found.by_generation, default=0)
         try:
             answer = await self.channel.request("prompt.submit", params)
@@ -805,8 +810,13 @@ class RemoteHost:
     def resume(self, session_id: str) -> SessionResumeResult:
         return self.call(self.service.resume(session_id))
 
-    def submit(self, session_id: str, text: str, *, unattended: bool = False) -> PromptSubmitResult:
-        return self.call(self.service.submit(session_id, text, unattended=unattended), timeout=None)
+    def submit(
+        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
+    ) -> PromptSubmitResult:
+        return self.call(
+            self.service.submit(session_id, text, unattended=unattended, single_query=single_query),
+            timeout=None,
+        )
 
     def wait(
         self, session_id: str, turn_id: str | None = None, *, timeout: float | None = -1.0

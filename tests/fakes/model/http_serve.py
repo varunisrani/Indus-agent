@@ -7,7 +7,8 @@ scripted server behind a small HTTP/1.1 listener on ``127.0.0.1``. Point a profi
 
 Two kinds of request never use up a script turn: ``GET …/models`` (the model list) and the
 automatic session title request (its system prompt is ``TITLE_PROMPT``); it is answered with
-``Chat:`` and the first three words of the user's first message. Every request is reported to
+``Chat:`` and the first line of the user's first message (the product's ``clean_title`` fits
+it to the title width). Every request is reported to
 ``on_request`` as a plain dict (``{"kind": "model" | "title" | "models", "turn": n, "path": ...,
 "user": last user text, "model": requested model}``).
 
@@ -57,9 +58,9 @@ def _last_user_text(body: Any) -> str:
 
 
 def title_for(exchange: str) -> str:
-    """A title that tells sessions apart: ``Chat:`` and the first three words the user wrote."""
+    """A title that tells sessions apart: ``Chat:`` and the first line the user wrote."""
     first = exchange.removeprefix("User:").strip().split("\n", 1)[0]
-    return " ".join([TITLE_PREFIX, *first.split()[:3]])
+    return " ".join([TITLE_PREFIX, *first.split()])
 
 
 def _is_title_request(body: Any) -> bool:

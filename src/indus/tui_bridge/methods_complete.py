@@ -38,7 +38,7 @@ from indus.protocol.bridge import (
     CompletionItem,
 )
 from indus.protocol.methods import ProtocolError
-from indus.service.commands.registry import REGISTRY
+from indus.service.picker_reads import slash_completions
 from indus.tui_bridge import methods_slash
 
 if TYPE_CHECKING:
@@ -97,15 +97,9 @@ def _item(text: str, display: str, meta: str = "") -> CompletionItem:
 
 
 async def complete_slash(bridge: Bridge, params: CompleteSlashParams) -> CompleteResult:
-    extra: dict[str, str] = {}
-    for name, spec in methods_slash.quick_commands(bridge).items():
-        extra[name] = str(spec.get("description") or "quick command")
-    table = methods_slash.skill_table(bridge, params.session_id)
-    if table is not None:
-        for name, note in table.names().items():
-            extra.setdefault(name, note)
-    found = REGISTRY.complete(params.text, REGISTRY.keys(methods_slash.SURFACE), extra=extra)
-    return CompleteResult(items=[_item(c.text, c.text, c.meta) for c in found[:200]])
+    return slash_completions(
+        bridge.scope, params.text, surface=methods_slash.SURFACE, session_id=params.session_id
+    )
 
 
 # -- paths -----------------------------------------------------------------------------------------

@@ -13,6 +13,7 @@ A title set before the session has a stored row is kept and written after its fi
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
@@ -34,7 +35,6 @@ from indus.protocol.bridge import (
     SessionListResult,
     SessionMostRecentParams,
     SessionMostRecentResult,
-    SessionRow,
     SessionTitleParams,
     SessionTitleResult,
     SessionUndoParams,
@@ -57,6 +57,8 @@ from indus.protocol.methods import (
     SessionResumeParams,
     SessionResumeResult,
 )
+from indus.safety.redaction import redact_arguments
+from indus.service import picker_reads
 from indus.service.session_service import SessionService, usage_numbers
 from indus.state import listing, rewind, titles
 from indus.state.registry import StoreHandle
@@ -102,9 +104,26 @@ def flatten_content(content: object) -> str:
     return str(content)
 
 
+def _call_arguments(raw: object) -> dict[str, Any] | None:
+    """A stored call's arguments as an object (stored as JSON text or already parsed), masked
+    for display the way ``tool.started`` masks them; None when they are not an object."""
+    value: object = raw
+    if isinstance(raw, str):
+        try:
+            value = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            return None
+    if not isinstance(value, dict):
+        return None
+    return redact_arguments(cast(dict[str, Any], value))
+
+
 def display_messages(rows: Iterable[TranscriptRow]) -> list[HistoryMessage]:
-    """The rows a person sees, in order (system, scaffold and hidden rows dropped)."""
+    """The rows a person sees, in order (system, scaffold and hidden rows dropped). A tool row
+    carries its call's arguments, so a transcript rebuilt from history shows the same summary and
+    Arguments as the live rows did (W47-a)."""
     names: dict[str, str] = {}
+    arguments: dict[str, object] = {}
     out: list[HistoryMessage] = []
     for row in rows:
         role = _SHOWN.get(row.role)
@@ -113,14 +132,22 @@ def display_messages(rows: Iterable[TranscriptRow]) -> list[HistoryMessage]:
         for call in row.tool_calls or ():
             function = call.get("function")
             if isinstance(function, dict) and call.get("id"):
-                names[str(call["id"])] = str(cast(dict[str, Any], function).get("name", ""))
+                spec = cast(dict[str, Any], function)
+                names[str(call["id"])] = str(spec.get("name", ""))
+                arguments[str(call["id"])] = spec.get("arguments")
         text = flatten_content(row.content)
         name = None
+        args = None
         if role is HistoryRole.TOOL:
-            name = row.name or names.get(row.tool_call_id or "") or "tool"
+            call_id = row.tool_call_id or ""
+            name = row.name or names.get(call_id) or "tool"
+            if call_id in arguments:
+                args = _call_arguments(arguments[call_id])
         elif not text.strip():
             continue  # an assistant row with only tool calls
-        out.append(HistoryMessage(role=role, text=text, name=name, row_id=row.row_id))
+        out.append(
+            HistoryMessage(role=role, text=text, name=name, arguments=args, row_id=row.row_id)
+        )
     return out
 
 
@@ -132,18 +159,6 @@ async def _handle(bridge: Bridge) -> StoreHandle:
     if handle is None:
         raise ProtocolError(STORE_FAILED, "this connection has no session store")
     return handle
-
-
-def _row(summary: listing.SessionSummary) -> SessionRow:
-    return SessionRow(
-        session_id=summary.id,
-        title=summary.title,
-        preview=summary.preview,
-        source=summary.source,
-        started_at=summary.started_at,
-        last_active=summary.last_active,
-        message_count=max(0, summary.message_count),
-    )
 
 
 def _busy_check(service: SessionService, session_id: str) -> None:
@@ -232,11 +247,7 @@ async def resume(bridge: Bridge, params: SessionResumeParams) -> SessionResumeRe
 
 async def list_sessions(bridge: Bridge, params: SessionListParams) -> SessionListResult:
     handle = await _handle(bridge)
-    filters = listing.ListFilters(include_subagents=params.include_subagents, query=params.query)
-    found = await run_blocking(
-        listing.list_sessions, handle, filters, params.limit, label="session list"
-    )
-    return SessionListResult(sessions=[_row(s) for s in found])
+    return await run_blocking(picker_reads.stored_sessions, handle, params, label="session list")
 
 
 async def most_recent(bridge: Bridge, params: SessionMostRecentParams) -> SessionMostRecentResult:
@@ -252,7 +263,7 @@ async def most_recent(bridge: Bridge, params: SessionMostRecentParams) -> Sessio
         return SessionMostRecentResult()
     for summary in found:
         if summary.source != "unknown":
-            return SessionMostRecentResult(session=_row(summary))
+            return SessionMostRecentResult(session=picker_reads.session_row(summary))
     return SessionMostRecentResult()
 
 

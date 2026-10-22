@@ -189,3 +189,55 @@ Read: none from the reference (rehearsal finding F-5, `.agents/wip/w44/w44-r2.pa
   answer is safe meanwhile (it only ever denies, or approves when the person configured approve).
 - F-5 row in the rehearsal log can move to Done with this (the smoke accepted either outcome; the
   integrator owns `rehearsal-log.md`).
+
+## Wave 47 (D-16.487: the daemon runs a finite attached turn `single_query`)
+
+Status: done (builder g, 2026-10-22). Supersedes wave 46's client-side answer (D-16.1010).
+
+Read: none from the reference (follow-up named by W46-f-3; our own `--local` route,
+`cli/oneshot.py`, `cli/chat.py`, `safety/approvals/policy.py`).
+
+- Before: the daemon ran every turn with the run context `interactive`, so an attached finite
+  `chat -q` saw an approval request and answered it itself (`one_shot_answer`, W46 F-5): only
+  approvals followed `--local`; clarify, sudo and secrets were still offered to the viewers and
+  detached the run with exit 3, and the allowlist/smart steps ran as for a person.
+- Now: `prompt.submit` carries `single_query` (protocol, codegen and the reference page
+  regenerated). `chat -q` and `-z` send it (the client journal keeps it with the entry, so a retry
+  is exact). The daemon keeps it in the input's ledger payload; when the worker starts that turn it
+  sets the session agent's run context to `single_query` and its broker's `asks_nobody` (no kind
+  answerable, `RequestUnsupported` at once), both put back when the turn ends, and re-applied to
+  the child id if a compaction moves the session mid-turn. So the approval pipeline itself takes the
+  `--local` route (floors, prepared decisions, auto-approve, allowlist, then
+  `approvals.single_query_mode`, deny by default with the same wording), sudo runs headless and
+  clarify answers "undelivered", exactly as an in-process one-shot run with no answerable kinds.
+  `-z` also sends `unattended`, so its auto-approve still decides approvals (step 4 comes before
+  the one-shot step).
+- The client never answers a server request now: `one_shot_answer`, `ONE_SHOT_DENY` and the
+  approval-answering wait are gone. A request that still reaches a finite run (a daemon that offers
+  one anyway) detaches with exit 3 and the resume hint, as before W46.
+- Tests (fail-first: each fails on the base snapshot `9a155bb`):
+  `tests/unit/cli/test_attach_remote.py::test_an_attached_chat_q_decides_approvals_as_local_does`
+  (`deny` / `approve`: the real CLI against the daemon's real WebSocket, a tool that asks the real
+  approval pipeline; on the base the decision came from step `human` — the client's answer — and
+  now from step `unattended` with `--local`'s wording; this keeps the intent of W46's two tests),
+  `tests/unit/service/test_daemon_host.py::test_a_single_query_input_runs_its_turn_as_single_query_and_asks_nobody`,
+  `tests/contract/gateway/test_ws_endpoint.py::test_submit_carries_single_query_into_the_admission`,
+  `tests/unit/service/remote/test_host.py::test_the_journal_is_private_and_retires_entries`
+  (the flag is kept), `tests/unit/cli/test_attach.py::test_a_finite_chat_runs_its_turn_single_query_in_the_daemon`,
+  `::test_an_approval_offered_to_a_finite_chat_is_not_answered_here`.
+
+### Decisions for the lead
+- W47-g-1 (D-16.1051): `-z` sends `single_query` as well as `unattended`: its `--local` run is `single_query`
+  with auto-approve, so attached it now also asks nobody (a clarify answers "undelivered" instead
+  of detaching with exit 3). D-16.554's "any other question still detaches a finite attached run"
+  then holds only for a daemon that still offers one.
+- W47-g-2 (D-16.1052): "asks nobody" is the whole broker for that turn (`asks_nobody`), not a filter on the
+  viewers: other surfaces watching the session (TUI, desktop) are not asked either while the
+  one-shot turn runs, as `--local` passes no answerable kinds. Their next turn is asked as usual.
+- W47-g-3 (D-16.1053): D-16.1010 is superseded (the client-side answer is removed). The new key is refused by
+  an older daemon (`ProtocolModel` refuses unknown keys): a version-skewed daemon fails the submit
+  rather than silently running the turn interactive (fail closed).
+- Doc rows the integrator owns that still describe the W46 answer: D-16.1010 / D-16.1025 and
+  D-16.554's wording (`docs/plan/16-what-we-change.md`), RS26 in
+  `docs/internals/release-checklist.md`, the `cli.q.denies` line in
+  `docs/notes/P17/dual-host-matrix.md`, LEAD-NOTES' "attached `-q` deny (D-16.487)" follow-up.

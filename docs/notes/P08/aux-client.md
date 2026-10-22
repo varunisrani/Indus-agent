@@ -81,3 +81,21 @@ Merged in the P08 wave 1 integration (2026-10-18, lead's verify tree, on top of 
   lookup (no `/models` probe for the route the session already resolved).
 - Compression summaries go through `Agent.aux` (`AuxSummarizer`, which reads `AuxResult.text` and
   `response.finish_reason`); an `AuxTimeout` counts as a stall, `AuxUnavailable` as unavailable.
+
+## Wave 47 (builder d): titles keep the whole first line
+
+Status: done (`tests/unit/providers/test_auxiliary.py::test_clean_title`, fail-first).
+Read: none.
+
+- `clean_title` cut a model's title after seven words with no sign it was cut. It now keeps the
+  whole first line up to `TITLE_MAX_CHARS` (60) and cuts a longer one at the last word boundary
+  (mid-word only when that would leave under 20 characters), ending it with `…`. The storage cap
+  (100, `state/titles.py`) is unchanged. The prompt still asks for three to seven words.
+- The screenshot's "Chat: How do I" came from the loopback fake model (`tests/fakes/model/
+  http_serve.py`), which answered title requests with `Chat:` and the first three words; it now
+  answers with `Chat:` and the user's whole first line, so captures show what a real title looks
+  like after `clean_title`.
+
+Decisions for the lead:
+- W47-d-2 (D-16.1042): titles are bounded by width (60 characters, word boundary, ellipsis) instead of a word
+  count; the 7-word cut is retired.

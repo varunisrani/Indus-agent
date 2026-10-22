@@ -186,3 +186,32 @@ workflow artefact; `upload` collects it beside the desktop artefacts and the ins
 `tests/unit/ci/test_release_workflow.py::test_every_release_carries_the_dashboard_pages`; the
 rehearsal row is in `docs/internals/rehearsal-log.md` §4. Decision D-16.1022.
 - Optional: `locate()` could treat stamped pages of another release as stale.
+
+## Wave 47 (builder f, 2026-10-22): `locate()` treats pages of another release as stale
+
+Status: done (2026-10-22), not yet landed (the "Optional" item above).
+
+Read: no reference file. Files: `src/indus/web/bundle.py` (`installed_release`, `locate(...,
+release=)`, `BundleLocation.stamped`, kind `stale`, `stale_pages_hint`), `src/indus/web/command.py`
+(`_maybe_build` message), tests `tests/unit/web/test_bundle_locate.py` (five cases).
+
+A runtime tree carrying a `.indus-release` stamp (only `fetch_release` writes one) is compared with
+the release this install runs: in a checkout, the release HEAD is on, read with the stdlib-only
+file probes of `indus.cli.version.checkout_release` (tags, the installer's marker, update receipts;
+no git process), `0.0.0` when HEAD is on no release; elsewhere the package's own version. A
+different release makes the location `stale`: `found` is False, the directory is where a build
+lands (`apps/web/dist` in a checkout), so the old pages are not served, a checkout with pnpm builds
+its own on first launch, and without pnpm `indus dashboard` prints "The dashboard pages are from
+another release" with how to fetch this release's pages. Unstamped trees (the wheel's, `publish`)
+are never judged, nor is any tree when the probe fails.
+
+Fail-first: four of the five new tests fail on the base (`test_unstamped_runtime_pages_are_never_stale`
+is a guard and passes on both).
+
+Decisions for the lead:
+- W47-f-2 (D-16.1049): stale pages are not served (the server answers "not built" until a fetch or build), not
+  served with a warning: pages built for another release talk to an API they were not built for.
+- W47-f-3 (D-16.1050): `web.bundle` loads `indus.cli.version` by name (`importlib.import_module`) for the
+  checkout's release, the precedent `web.routes.system.install_info` set for the same stdlib-only
+  module; no import-linter exemption, and nothing moves. If the lead prefers, the F-4 probes can
+  move to `indus.foundation` later and both import them directly.

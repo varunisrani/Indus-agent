@@ -13,12 +13,13 @@ gateway process under the root), never a profile's session store. It holds
 - ``room_meta``: this install's gateway id (minted on first open).
 
 Who may append is fixed per actor kind (``ACTOR_EVENT_KINDS``): a person writes only
-``message.user``, a member only ``message.member``, the gateway (which must be the room's current
-authority) the turn and stop events, the system the room and authority events. Every write names
-the authority it believes in (gateway id + epoch); a write under another authority is refused
-(``RoomAuthorityConflict``). ``claim_authority`` moves the epoch by one behind a compare-and-set,
-``record_authority_lost`` adopts a newer lineage another host proved; neither is a remote fence
-(the room driver documents the operator procedure).
+``message.user`` and ``approval.answered`` (the answer to a member turn's approval, wave 47), a
+member only ``message.member``, the gateway (which must be the room's current authority) the turn,
+stop and ``approval.requested`` / ``approval.settled`` events, the system the room and authority
+events. Every write names the authority it believes in (gateway id + epoch); a write under another
+authority is refused (``RoomAuthorityConflict``). ``claim_authority`` moves the epoch by one behind
+a compare-and-set, ``record_authority_lost`` adopts a newer lineage another host proved; neither is
+a remote fence (the room driver documents the operator procedure).
 
 Bounds (``RoomLimits``; research 06 §3.20): ids ≤ 128 characters, names ≤ 200, event kinds ≤ 64
 matching ``EVENT_KIND_RE``, ≤ 128 members (≤ 128 KiB of JSON), an event's payload ≤ 256 KiB, a log
@@ -88,7 +89,7 @@ CONTROL_KINDS: Final = frozenset(
     {"authority.claimed", "authority.lost", "room.disbanded", "room.stop_requested"}
 )
 ACTOR_EVENT_KINDS: Final[Mapping[str, frozenset[str]]] = {
-    "user": frozenset({"message.user"}),
+    "user": frozenset({"message.user", "approval.answered"}),
     "member": frozenset({"message.member"}),
     "gateway": frozenset(
         {
@@ -101,6 +102,8 @@ ACTOR_EVENT_KINDS: Final[Mapping[str, frozenset[str]]] = {
             "member.held",
             "member.released",
             "member.unavailable",
+            "approval.requested",
+            "approval.settled",
         }
     ),
     "system": frozenset(
@@ -759,6 +762,17 @@ class RoomStore:
         return self.write(run)
 
     # -- events ----------------------------------------------------------------------------------
+
+    def find_event(self, room_id: str, event_id: str) -> RoomEvent | None:
+        """The room's event with ``event_id``, or None (a disbanded room's too)."""
+        rid = self._id(room_id, "room id")
+        eid = self._id(event_id, "event id")
+
+        def run(conn: sqlite3.Connection) -> RoomEvent | None:
+            row = self._event_in(conn, rid, eid)
+            return None if row is None else _event_of(row)
+
+        return self.read(run)
 
     def append_event(
         self,

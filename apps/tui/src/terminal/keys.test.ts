@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { InputFilter, type MouseEvent, rewriteInput } from "./inputFilter.ts";
+import { InputFilter, type MouseEvent, rewriteInput, type SchemeReport } from "./inputFilter.ts";
 import { decodeKey, decodeModifiers, keyLabel } from "./keys.ts";
 
 const label = (bytes: string): string | null => {
@@ -98,6 +98,35 @@ describe("input filter", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(seen).toBe("abcd");
     expect(rewriteInput("\u001b]10;rgb:1/2/3\u0007x", () => {})).toBe("x");
+  });
+
+  it("hands late background answers and light/dark reports to onScheme, never to the keys (W47 d)", async () => {
+    const { PassThrough } = await import("node:stream");
+    const reports: SchemeReport[] = [];
+    const filter = new InputFilter(
+      new PassThrough(),
+      () => {},
+      (report) => reports.push(report),
+    );
+    let seen = "";
+    filter.stream.on("data", (chunk: Buffer) => {
+      seen += String(chunk);
+    });
+    // the dashboard's light terminal answers the OSC 11 probe after the probe gave up
+    filter.push("a\u001b]11;rgb:f6f6/f5f5/f2f2\u001b\\b");
+    // then the dashboard switches to dark: an unasked scheme report, split across reads
+    filter.push("c\u001b[?99");
+    filter.push("7;1nd");
+    filter.push("\u001b[?997;2n");
+    // pure black is an unset default: distrusted, no report
+    filter.push("\u001b]11;rgb:0000/0000/0000\u0007e");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(seen).toBe("abcde");
+    expect(reports).toEqual([
+      { light: true, background: "#f6f5f2" },
+      { light: false, background: null },
+      { light: true, background: null },
+    ]);
   });
 
   it("lets a lone ESC through after a short pause", async () => {

@@ -35,7 +35,7 @@ import type { PreviewTarget } from "../panes/preview/target.ts";
 import { type PaneAction, usePaneShortcuts } from "../panes/shortcuts.ts";
 import { ProfileRail, type ProfilesApi, useProfileNames } from "../profiles/ProfileRail.tsx";
 import { useSwitcher, useSwitcherState } from "../profiles/switcherReact.tsx";
-import { newChatTarget } from "../sidebar/projects.ts";
+import { freshDraftFolder } from "../sidebar/projects.ts";
 import { beginNewChat, Sidebar, SidebarModel } from "../sidebar/Sidebar.tsx";
 import { desktopBridge, launchFacts } from "./bridge.ts";
 import { OVERLAY_ICONS, OVERLAY_TEXT, PAGE_ICONS, PAGE_TEXT } from "./pages.tsx";
@@ -289,7 +289,7 @@ function useWorkspaceFolder(
     () => projects.getPrefs(),
   );
   if (sessionId !== null) return rows.find((row) => row.ids.includes(sessionId))?.cwd ?? null;
-  return newChatTarget.get(chrome.sidebar.storage, profile) ?? projects.getPrefs().defaultDirectory;
+  return freshDraftFolder(chrome.sidebar.storage, profile, projects);
 }
 
 /** Append `text` to the composer draft of the conversation (a fresh draft when null). */

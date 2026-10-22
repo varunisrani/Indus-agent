@@ -328,6 +328,58 @@ def test_manifest_equals_the_shell_scripts(tmp_path: Path) -> None:
     assert _parse_manifest(done.stdout) == _manifest_from_table(_stages())["stages"]
 
 
+# -- static: parity with install.sh (wave 47, f) -------------------------------------------------
+
+SH_RUNTIME = ROOT / "scripts" / "install" / "sh" / "20-runtime.sh"
+
+
+def _ps_function(name: str) -> str:
+    """The body of one function of the built script (to its closing brace at column 0)."""
+    text = _built()
+    found = re.search(rf"^function {re.escape(name)}\b.*?^}}$", text, re.MULTILINE | re.DOTALL)
+    assert found is not None, f"{name} is not defined"
+    return found.group(0)
+
+
+def test_products_fetch_the_release_pages_like_install_sh() -> None:
+    products = _ps_function("Invoke-IndusProducts")
+    assert "Install-IndusWebPages" in products
+    pages = _ps_function("Install-IndusWebPages")
+    # A developer's own build is kept; otherwise the environment's python fetches the pages.
+    assert re.search(r"'dist'\)\s+'index\.html'", pages)
+    assert "Get-IndusVenvPython" in pages
+    fetch = re.search(r"Invoke-IndusLogged '[^']+' \{ (?P<cmd>[^}]*) \} -MayFail", pages)
+    assert fetch is not None, "the fetch is logged and never fails the stage"
+    assert re.fullmatch(
+        r"& \$pgPython -m indus\.web\.bundle fetch --repo \$pgDir --target \$pgTarget",
+        fetch.group("cmd"),
+    )
+    assert re.search(r"'src'\)\s+'indus'\)\s+'web'\)\s+'static'", pages)
+    # The same three answers as install.sh: 0 in place, 3 not a release, anything else warns.
+    assert "-eq 0" in pages and "-eq 3" in pages and "Write-IndusWarn" in pages
+    assert "Stop-IndusStage" not in pages
+    sh = SH_RUNTIME.read_text(encoding="utf-8")
+    assert "-m indus.web.bundle fetch --repo" in sh and "--target" in sh
+
+
+def test_marker_carries_the_release_version_like_install_sh() -> None:
+    sh = SH_RUNTIME.read_text(encoding="utf-8")
+    printf = re.search(r"printf '(\{\"schema\"[^']*)'", sh)
+    assert printf is not None
+    sh_keys = re.findall(r'"([a-z_]+)":', printf.group(1))
+    complete = _ps_function("Invoke-IndusComplete")
+    record = re.search(r"\$record = \[ordered\]@\{(?P<body>.*?)\n    \}", complete, re.DOTALL)
+    assert record is not None
+    ps_keys = re.findall(r"^\s+([a-z_]+)\s+=", record.group("body"), re.MULTILINE)
+    assert (
+        ps_keys == sh_keys == ["schema", "commit", "branch", "channel", "version", "completed_at"]
+    )
+    # HEAD's newest release tag (stable or canary), without the v; '' off a release.
+    assert "tag --points-at HEAD --list 'v*'" in complete
+    assert "$script:IndusStableTag" in complete and "$script:IndusCanaryTag" in complete
+    assert "Select-IndusNewestTag" in complete and ".Substring(1)" in complete
+
+
 # -- pwsh: behaviour ------------------------------------------------------------------------------
 
 

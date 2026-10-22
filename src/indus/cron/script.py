@@ -16,6 +16,11 @@ capped (``STREAM_CAP`` bytes kept each) and redacted before they leave.
 Wake gate: when the last non-empty stdout line is a JSON object with a boolean ``wake``,
 ``{"wake": false}`` skips this tick and ``{"wake": true, "context": {...}}`` hands the context to
 the prompt. The gate line is removed from the output.
+
+Native Windows (RL26): ``.sh``/``.bash`` scripts run under Git Bash (the terminal backend's lookup,
+``find_git_bash``, with its PATH and UTF-8/MSYS defaults; no Git Bash refuses the run); every
+script starts suspended in its own job object, and a stop terminates the job, the whole tree at
+once (no grace step on Windows, as in that backend).
 """
 
 from __future__ import annotations
@@ -35,12 +40,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
 
+from indus.backends.contract import BackendError
 from indus.backends.local import LocalProcess, force_kill_tree, stop_tree
+from indus.backends.local_windows import (
+    WindowsProcess,
+    find_git_bash,
+    git_bash_env,
+    start_windows_process,
+    to_shell_path,
+)
 from indus.cron import settings
 from indus.cron.ports import JobSpec
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope
+from indus.platform.facts import os_family
 from indus.platform.locate import which
 from indus.safety.child_env import child_env
 from indus.safety.redaction import redact_output
@@ -55,6 +69,7 @@ __all__ = [
     "resolve_script",
     "run_script",
     "script_argv",
+    "windows_launch",
 ]
 
 log = logging.getLogger(__name__)
@@ -179,6 +194,20 @@ def script_argv(path: Path, interpreter: str | None) -> list[str]:
     return [sys.executable, str(path)]
 
 
+def windows_launch(
+    scope: Scope, path: Path, interpreter: str | None, env: Mapping[str, str]
+) -> tuple[list[str], dict[str, str]]:
+    """``(argv, env)`` on native Windows: shell scripts through Git Bash (an MSYS script path and
+    Git Bash's PATH), anything else as on POSIX."""
+    if path.suffix.lower() not in SHELL_SUFFIXES:
+        return script_argv(path, interpreter), dict(env)
+    try:
+        shell = find_git_bash(env, home=scope.home)
+    except BackendError as exc:
+        raise ScriptRefused(f"cannot run {path.name}: {exc}") from None
+    return [shell.bash, to_shell_path(str(path))], git_bash_env(env, shell)
+
+
 # -- the wake gate --------------------------------------------------------------------------------
 
 
@@ -259,6 +288,20 @@ def _workdir(job: JobSpec, script_path: Path) -> Path:
     return script_path.parent
 
 
+async def _stop(proc: LocalProcess | WindowsProcess, clock: Clock) -> None:
+    if isinstance(proc, WindowsProcess):
+        proc.terminate_tree()  # no grace step on Windows (D-16.955)
+    else:
+        await stop_tree(proc, clock=clock, grace=KILL_GRACE_S)
+
+
+def _force_stop(proc: LocalProcess | WindowsProcess) -> None:
+    if isinstance(proc, WindowsProcess):
+        proc.terminate_tree()
+    else:
+        force_kill_tree(proc)
+
+
 async def run_script(
     scope: Scope,
     job: JobSpec,
@@ -274,25 +317,38 @@ async def run_script(
     value = script if script is not None else job.script
     if not value:
         return ScriptResult(ok=False, error="the job has no script")
+    windows = os_family() == "win32"
+    env = child_env(scope)
     try:
         path = resolve_script(scope.home, value)
-        argv = script_argv(path, job.interpreter)
+        if windows:
+            argv, env = windows_launch(scope, path, job.interpreter, env)
+        else:
+            argv = script_argv(path, job.interpreter)
     except ScriptRefused as exc:
         return ScriptResult(ok=False, error=str(exc))
     limit = timeout if timeout is not None else settings.script_timeout(scope)
+    workdir = str(_workdir(job, path))
+    proc: LocalProcess | WindowsProcess
     try:
-        popen = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(_workdir(job, path)),
-            env=child_env(scope),
-            start_new_session=True,
-        )
-    except OSError as exc:
+        if windows:
+            proc = start_windows_process(
+                argv, cwd=workdir, env=env, stdin=None, separate_stderr=True
+            )
+            popen = proc.popen
+        else:
+            popen = subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=workdir,
+                env=env,
+                start_new_session=True,
+            )
+            proc = LocalProcess(popen)
+    except (OSError, BackendError) as exc:
         return ScriptResult(ok=False, error=f"the script could not start: {exc}")
-    proc = LocalProcess(popen)
     out = _Reader(popen.stdout, f"cron script stdout {job.id}")
     err = _Reader(popen.stderr, f"cron script stderr {job.id}")
     timed_out = cancelled = False
@@ -307,11 +363,13 @@ async def run_script(
                 break
             await clock.sleep(POLL_S)
         if popen.poll() is None:
-            await stop_tree(proc, clock=clock, grace=KILL_GRACE_S)
+            await _stop(proc, clock)
     finally:
         if popen.poll() is None:
-            force_kill_tree(proc)
+            _force_stop(proc)
         await _join_readers(out, err)
+        if isinstance(proc, WindowsProcess):
+            proc.release()
     stdout, stderr = _clean(out.text(), scope), _clean(err.text(), scope)
     if timed_out:
         return ScriptResult(

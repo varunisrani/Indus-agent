@@ -29,5 +29,6 @@ differences:
     host: attached
     d_id: D-16.549
     why: >-
-      The daemon serves the session methods only; `model.options`, `config.get` and `config.set`
-      (what the TUI reads at start and its pickers use) answer -32601 over the attach socket.
+      The daemon does not serve `config.get` and `config.set` (what the TUI reads at start and
+      changes from its settings): they answer -32601 over the attach socket. `model.options`,
+      `complete.slash` and `session.list` are served since wave 47 (W47-c, D-16.1039).

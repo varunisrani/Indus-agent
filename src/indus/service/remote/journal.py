@@ -67,6 +67,8 @@ class Prepared:
     created_at: float = 0.0
     unattended: bool = False
     """Sent as a finite unattended run's input (``-z``); a retry sends it the same way."""
+    single_query: bool = False
+    """Sent as a finite run's input (``chat -q``, ``-z``: its turn runs one-shot); kept likewise."""
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -78,6 +80,8 @@ class Prepared:
         }
         if self.unattended:
             out["unattended"] = True
+        if self.single_query:
+            out["single_query"] = True
         return out
 
     @classmethod
@@ -102,7 +106,15 @@ class Prepared:
             if isinstance(created, int | float) and not isinstance(created, bool)
             else 0.0
         )
-        return cls(request_id, session_id, text, state, when, body.get("unattended") is True)
+        return cls(
+            request_id,
+            session_id,
+            text,
+            state,
+            when,
+            body.get("unattended") is True,
+            body.get("single_query") is True,
+        )
 
 
 class Journal:
@@ -134,6 +146,7 @@ class Journal:
         *,
         request_id: str | None = None,
         unattended: bool = False,
+        single_query: bool = False,
     ) -> Prepared:
         """Write a new entry before the submit is sent."""
         entry = Prepared(
@@ -143,6 +156,7 @@ class Journal:
             "prepared",
             self._wall(),
             unattended,
+            single_query,
         )
         self._write(entry)
         return entry

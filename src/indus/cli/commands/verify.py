@@ -9,6 +9,10 @@ recipe's start command is booted and polled on 127.0.0.1 for up to ``verify.read
 ``--phase`` (repeatable) picks phases (``bootstrap``, ``build``, ``test``, ``start``);
 ``--detect-only`` prints the recipe; ``--json`` prints one JSON object. Exit 0 when everything
 passed, 1 on a failure or when no recipe was found, 2 when PATH is not a folder.
+
+On native Windows (RL26) the phases run on the Git Bash local backend (``open_local_windows``, the
+backend the registry opens there) and the start command boots under Git Bash in a job object
+(``WindowsStarter``); with no Git Bash the command says so and exits 1.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import click
 from indus.cli.cmdkit import cli_state, config_of, err
 from indus.foundation.config.schema import default_for
 from indus.foundation.scope import Scope
+from indus.platform.facts import os_family
 
 __all__ = ["report_lines", "run_for", "verify_command"]
 
@@ -63,19 +68,30 @@ async def run_for(
     ready_timeout: float,
 ) -> tuple[Any, Any]:
     """``(recipe, result)`` for ``root`` (``result`` None when no recipe was found)."""
-    from indus.backends.local import open_local
     from indus.safety.child_env import child_env
     from indus.tools.verify.recipes import detect_recipe
-    from indus.tools.verify.runner import LocalStarter, run_verify
+    from indus.tools.verify.runner import LocalStarter, ServiceStarter, WindowsStarter, run_verify
 
     recipe = detect_recipe(root)
     if recipe is None:
         return None, None
-    host = await open_local(scope, cwd=str(root), timeout=phase_timeout)
+    wants_start = not skip_start and (not phases or "start" in phases)
+    starter: ServiceStarter | None = None
+    if os_family() == "win32":  # Git Bash, best effort (RL26, D-16.950)
+        from indus.backends.local_windows import open_local_windows
+
+        windows_host = await open_local_windows(scope, cwd=str(root), timeout=phase_timeout)
+        host: Any = windows_host
+        if wants_start:
+            starter = WindowsStarter(child_env(scope), windows_host.bash, clock=scope.clock)
+    else:
+        from indus.backends.local import open_local
+
+        host = await open_local(scope, cwd=str(root), timeout=phase_timeout)
+        if wants_start:
+            starter = LocalStarter(child_env(scope), clock=scope.clock)
     try:
         selected = phases or None
-        wants_start = not skip_start and (not phases or "start" in phases)
-        starter = LocalStarter(child_env(scope), clock=scope.clock) if wants_start else None
         result = await run_verify(
             host,
             str(root),
@@ -180,17 +196,24 @@ def verify_command(
         }
         click.echo(json.dumps(payload, indent=None if as_json else 2))
         return 0 if recipe is not None else 1
-    recipe, result = asyncio.run(
-        run_for(
-            scope,
-            root,
-            phases=phases,
-            skip_start=skip_start,
-            port=port,
-            phase_timeout=float(phase_timeout or _setting(scope, "verify.phase_timeout")),
-            ready_timeout=float(ready_timeout or _setting(scope, "verify.ready_timeout")),
+    from indus.backends.contract import BackendUnavailable
+
+    try:
+        recipe, result = asyncio.run(
+            run_for(
+                scope,
+                root,
+                phases=phases,
+                skip_start=skip_start,
+                port=port,
+                phase_timeout=float(phase_timeout or _setting(scope, "verify.phase_timeout")),
+                ready_timeout=float(ready_timeout or _setting(scope, "verify.ready_timeout")),
+            )
         )
-    )
+    except BackendUnavailable as exc:  # e.g. no Git Bash on native Windows
+        hint = f" ({exc.hint})" if exc.hint else ""
+        err(f"The local terminal backend is not available: {exc}{hint}")
+        return 1
     if recipe is None:
         if as_json:
             click.echo(json.dumps({"ok": False, "error": "no_recipe", "root": str(root)}))

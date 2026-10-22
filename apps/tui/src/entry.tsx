@@ -43,6 +43,7 @@ const [
   { splitCommand },
   attach,
   dashboardFeed,
+  { uiStore },
 ] = await Promise.all([
   import("@indus/client"),
   import("@indus/client/stdio"),
@@ -62,6 +63,7 @@ const [
   import("./composer/externalEditor.ts"),
   import("./transport/attach.ts"),
   import("./transport/dashboardFeed.ts"),
+  import("./state/uiStore.ts"),
 ]);
 
 // Started by the dashboard's Chat tab: its publish URL and credential. The credential leaves the
@@ -191,7 +193,22 @@ const output = gateStdout(process.stdout, {
   onWriteError: (error) => deadStream.noteError(error),
   onWriteOk: () => deadStream.noteWrite(),
 });
-const input = new InputFilter(process.stdin, () => {});
+let schemeReported = false;
+// The terminal's later colour reports (a late OSC 11 answer, a light/dark change) re-detect the
+// theme unless the environment pinned it (W47).
+const input = new InputFilter(
+  process.stdin,
+  () => {},
+  (report) => {
+    if (themePinned) return;
+    schemeReported = true;
+    const requested = uiStore.getState().themeName || "auto";
+    writeBootTheme(
+      cachePath,
+      theme.followTerminalScheme(report.light, report.background, requested),
+    );
+  },
+);
 
 // Light/dark: env first, then one OSC 11 probe; the resolved theme is cached for the next start.
 void detect
@@ -199,15 +216,23 @@ void detect
     detect.probeBackground({ input: process.stdin, output: process.stdout }),
   )
   .then((decision) => {
+    // the terminal already reported its scheme: a probe that merely timed out must not undo it
+    if (decision.source === "default" && schemeReported) return;
     theme.setDetected(decision.light, decision.background);
+    // the requested name (`auto` unless the server or /theme named one), not the resolved one:
+    // a resolved `indus-dark` would keep the dark theme on a light terminal
     const resolved = theme.applyThemePayload(
-      themePinned ? "auto" : theme.themeStore.getState().theme.name,
+      themePinned ? "auto" : uiStore.getState().themeName || "auto",
     );
     writeBootTheme(cachePath, resolved);
   });
 
 process.stdout.write(
-  seq.pasteOn + caps.mouseOn(capabilities.mouse) + (capabilities.otherKeys ? seq.otherKeysOn : ""),
+  seq.pasteOn +
+    caps.mouseOn(capabilities.mouse) +
+    (capabilities.otherKeys ? seq.otherKeysOn : "") +
+    seq.schemeReportsOn +
+    seq.schemeQuery,
 );
 
 const hyperlinks = capabilities.multiplexer === null && caps.terminalFamily(process.env) !== null;

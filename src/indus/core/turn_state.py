@@ -197,6 +197,10 @@ class SessionRuntime:
     aux: object = None
     # True in a delegated child (P10-02), offered to tools as ``subagent``.
     subagent: bool = False
+    # The session's own folder (a chat started in a project folder or the profile's default
+    # directory, W47-b): its tool calls get a scope whose ``terminal.cwd`` names it, so relative
+    # paths and new shells start there. None: the profile's ``terminal.cwd``, else the process's.
+    workdir: str | None = None
     # Called by the compression glue after a compaction dropped the system prompt and before it
     # is rebuilt (P13-08: a host whose tool surface changed rebuilds the stored tool array
     # here, the one point besides a new session where it may change, R01.1). A failing hook is

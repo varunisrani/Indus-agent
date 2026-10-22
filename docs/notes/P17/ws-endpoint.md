@@ -186,3 +186,54 @@ Done (2026-10-20), except the daemon mount (wiring owed above, needs P17-22's ho
 `protocol/attach.py` (new), `packages/protocol/src/generated/*` (regenerated),
 `tests/unit/protocol/test_models.py`, `tests/unit/tui_bridge/test_dispatch.py`,
 `docs/internals/traps-ledger.md` (R09.2), `docs/internals/acceptance-map.md` (ACC-K51-4).
+
+## Wave 47 (builder c, 2026-10-22): the TUI's pickers over the attach socket
+
+Status: done. An attached TUI (the default) got `-32601` "… is not served here" for
+`complete.slash`, `model.options` and `session.list`, so the slash menu, the Ctrl+O model picker and
+the Ctrl+X sessions picker failed. The daemon's table (`gateway/ws/methods.py`) now serves all
+three.
+
+Read: no reference file (a bug in our own attach path; the bridge handlers are the spec). Our
+`tui_bridge/methods_complete.py`, `methods_config.py`, `methods_session.py`, `methods_slash.py`,
+`service/subscriptions.py::require`, threat model B-DAEMON-5 / B-MUX-3.
+
+What changed (own words):
+- One definition for both transports: `service/picker_reads.py` holds the slash candidates (the
+  registry's names for the surface, quick commands, runnable skills and bundles), the provider rows
+  (key stored in the secret store or the environment; a custom or local endpoint's live `/models`
+  list) and the stored-session listing. The bridge's handlers (`--local`) and the daemon's now call
+  it, so the answers are the same for the same profile; the bridge's private copies are gone
+  (`methods_slash.quick_commands` / `skill_table` stay as thin wrappers for its other callers).
+- Scope: a `session_id` on `complete.slash` or `model.options` must be a session this connection
+  attached (`Subscriptions.require`; another connection's reads as `SESSION_NOT_FOUND`, B-DAEMON-5).
+  `model.options` for a session reads that session's bound route (`service.current_id` follows a
+  compaction's new id); without one, the profile's resolved route. `session.list` reads the
+  daemon's own profile store (`DaemonSessionHost.store`, the served profile only, B-MUX-3) and
+  lists what `--local` lists: every attached client is the profile's owner (its ticket comes from
+  the owner-only control socket).
+- The command surface follows the connection's kind: `cli` → `cli`, `gui` → `desktop`, anything
+  else (the TUI) → `tui`. Blocking work (settings and skill catalogue reads, the store listing,
+  route resolution) runs off the loop.
+
+Tests (fail-first; all four failed on the base with `-32601` / not in `served()`):
+`tests/contract/gateway/test_ws_pickers.py` — each method over the socket equals the in-process
+bridge's answer for the same profile (`/he`, `/g` with a quick command, `/reasoning hig`, `/`;
+`model.options` with and without a session; `session.list` with a limit and a query), a foreign
+connection naming the session gets `SESSION_NOT_FOUND`, and `served()` lists the three.
+
+Not done here: `config.get` / `config.set` stay unserved (`bridge.settings` allow-list entry kept,
+its text updated); `complete.path`, `commands.catalog`, `slash.exec` and the other TUI-only methods
+are still `-32601` when attached.
+
+Decisions for the lead:
+- W47-c-1 (D-16.1038): `session.list` over the daemon lists every stored conversation of the profile to any
+  attached connection (as `--local` and `-c/-r` selection do); only session-addressed calls are
+  limited to attached sessions. Proposed: keep; B-DAEMON-5's evidence now lists
+  `tests/contract/gateway/test_ws_pickers.py`.
+- W47-c-2 (D-16.1039): the shared reads live in `indus.service.picker_reads` (the gateway may not import
+  `tui_bridge`). D-16.549's text in `16-what-we-change.md` should say "partly closed by W47-c:
+  `model.options`, `complete.slash`, `session.list` served; `config.*` still -32601".
+- W47-c-3 (D-16.1040): next candidates for the daemon table, same pattern: `complete.path` (needs the
+  session's backend and cwd), `commands.catalog`, `config.get` (read-only; then `bridge.settings`
+  narrows to `config.set`).

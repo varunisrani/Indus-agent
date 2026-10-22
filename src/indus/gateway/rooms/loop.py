@@ -29,16 +29,25 @@ multiplexing host runs it once) runs ``RoomLoop`` over ``<root>/rooms.db``. Ever
    runner stopped and the stop acknowledged (``complete_stop``); a result that won the race is
    kept (``settle_stopping``).
 5. **upkeep.** ``prune_terminal`` once an hour per room.
+6. **approvals** (wave 47, RS3). Each turn carries a ``TurnRequests``: an approval the member's
+   session asks is logged as ``approval.requested`` (member, room, command, description, choices,
+   request id), so every surface watching the room shows it with the room and member named; the
+   person answers with ``groups.approve`` (logged as ``approval.answered``, a person event no
+   member or gateway may write); the next pass hands that answer to the session (the first answer
+   wins there, as for any approval), and ``approval.settled`` records how it ended (answered,
+   withdrawn, timed out; a request still open when the turn ends, is stopped or expires is
+   settled ``withdrawn`` / ``turn_ended``). These events never enter a member's prompt.
 
-The production runner (``daemon_runner``) runs the member's turn in the member profile's own
-session service, when this process serves that profile (the daemon's own profile, or any served
-profile on a multiplexing host): a fresh session per turn with the room's recent messages in the
-prompt, closed afterwards. The transcript there is framed as data (``transcript_entry``, SEC-15):
-other members' replies sit inside ``core.untrusted``'s fence and a person's further lines are
-indented, so no message can forge a line in someone else's name. A member whose profile is not
-served here fails its turn with ``member.unavailable`` (the fix: serve every member from one
-gateway, ``gateway.multiplex_profiles``). ``RoomPart.busy_reason`` keeps an auto-started daemon up
-while a room turn is queued or running (idle exit).
+The production runner (``daemon_runner``) runs the member's turn in the member profile's own session
+service, when this process serves that profile (the daemon's own profile, or any served profile on a
+multiplexing host): a fresh session per turn with the room's recent messages in the prompt, closed
+afterwards; the loop watches that session for approval requests (a ``messaging`` viewer that renders
+approvals) and answers them from the room. The transcript there is framed as data
+(``transcript_entry``, SEC-15): other members' replies sit inside ``core.untrusted``'s fence and a
+person's further lines are indented, so no message can forge a line in someone else's name. A member
+whose profile is not served here fails its turn with ``member.unavailable`` (the fix: serve every
+member from one gateway, ``gateway.multiplex_profiles``). ``RoomPart.busy_reason`` keeps an
+auto-started daemon up while a room turn is queued or running (idle exit).
 """
 
 from __future__ import annotations
@@ -72,10 +81,13 @@ from indus.gateway.rooms.driver import (
     mentioned_members,
     stop_directives,
 )
+from indus.gateway.rooms.rpc import approval_event_id
 from indus.state.rooms import Room, RoomError, RoomEvent, RoomStore
 
 if TYPE_CHECKING:
     from indus.gateway.daemon.process import GatewayDaemon
+    from indus.service.daemon_host import DaemonSessionHost
+    from indus.service.request_redelivery import Offer
 
 __all__ = [
     "HEARTBEAT_S",
@@ -89,6 +101,7 @@ __all__ = [
     "RoomLoop",
     "RoomPart",
     "RoomPlanner",
+    "TurnRequests",
     "create",
     "daemon_runner",
     "member_handle",
@@ -138,6 +151,74 @@ def member_profile(member: Mapping[str, Any]) -> str | None:
     return handle if handle is not None and is_valid_id(handle) else None
 
 
+type RequestAnswer = Callable[[str, Mapping[str, Any]], bool]
+type RequestPost = Callable[[str, str, dict[str, Any]], None]
+
+
+class TurnRequests:
+    """The questions one member turn's session puts to the person, and the person's answers
+    (wave 47, RS3; see the module notes). The runner reports what the session asks (``asked``)
+    and how each request ended (``settled``), and ``bind``s how an answer reaches the session;
+    the loop logs both in the room and calls ``answer`` with the person's ``groups.approve``.
+    Only ``approval`` requests are put to the room."""
+
+    def __init__(self, post: RequestPost) -> None:
+        self._post = post
+        self._answer: RequestAnswer | None = None
+        self.open: dict[str, dict[str, Any]] = {}
+        self.closed = False
+
+    def bind(self, answer: RequestAnswer) -> None:
+        """How an answer reaches the session: ``(request_id, answer) -> accepted``."""
+        self._answer = answer
+
+    def asked(self, request: Mapping[str, Any]) -> bool:
+        """The session asks ``request`` (its wire form); False when it is not put to the room
+        (another kind, already open, or the turn is over)."""
+        request_id = request.get("request_id")
+        if self.closed or request.get("kind") != "approval" or not isinstance(request_id, str):
+            return False
+        if request_id in self.open:
+            return False  # a re-offer of a request the room already shows
+        raw_choices = request.get("choices")
+        choices = [str(c) for c in raw_choices] if isinstance(raw_choices, list) else ["deny"]
+        payload: dict[str, Any] = {
+            "request_id": request_id,
+            "command": str(request.get("command") or ""),
+            "description": str(request.get("description") or ""),
+            "choices": choices,
+        }
+        self.open[request_id] = payload
+        self._post("approval.requested", request_id, payload)
+        return True
+
+    def settled(self, request_id: str, outcome: str, reason: str | None = None) -> None:
+        """The session's request ended (answered here or elsewhere, withdrawn, undeliverable)."""
+        if self.open.pop(request_id, None) is None:
+            return
+        payload: dict[str, Any] = {"request_id": request_id, "outcome": outcome}
+        if reason:
+            payload["reason"] = reason
+        self._post("approval.settled", request_id, payload)
+
+    def answer(self, request_id: str, answer: Mapping[str, Any]) -> bool:
+        """Hand the person's answer to the session; False when nothing took it."""
+        respond = self._answer
+        if request_id not in self.open or respond is None:
+            return False
+        try:
+            return bool(respond(request_id, answer))
+        except Exception:
+            log.warning("an answer to %s did not reach the member's session", request_id)
+            return False
+
+    def close(self, reason: str = "turn_ended") -> None:
+        """The turn is over: every request still open is settled withdrawn; no more asks."""
+        for request_id in list(self.open):
+            self.settled(request_id, "withdrawn", reason)
+        self.closed = True
+
+
 @dataclass(frozen=True)
 class MemberTurn:
     """What the runner gets for one member turn."""
@@ -149,6 +230,8 @@ class MemberTurn:
     prompt: str
     task_id: str
     attempt: int
+    requests: TurnRequests | None = None
+    """Where the turn's approval requests go (the loop always gives one)."""
 
 
 type MemberRunner = Callable[[MemberTurn], Awaitable[str]]
@@ -328,6 +411,7 @@ class _Flight:
     task: Task
     attempt: TaskAttempt
     runner: asyncio.Task[None]
+    requests: TurnRequests | None = None
 
 
 @dataclass
@@ -367,6 +451,8 @@ class RoomLoop:
         self.heartbeat_s = heartbeat
         self.rooms: dict[str, _RoomState] = {}
         self._wake = asyncio.Event()
+        self._side: set[asyncio.Task[None]] = set()
+        self._side_tail: asyncio.Task[None] | None = None
 
     # -- facts -----------------------------------------------------------------------------------
 
@@ -380,6 +466,65 @@ class RoomLoop:
 
     def wake(self) -> None:
         self._wake.set()
+
+    async def settle_side_work(self) -> None:
+        """Wait until the approval events handed to the room log so far are written."""
+        while self._side:
+            await asyncio.wait(set(self._side))
+
+    def _later(self, write: Callable[[], Awaitable[None]]) -> None:
+        """Run ``write`` after every earlier one (the room log keeps their order); a turn being
+        stopped does not cancel it."""
+        before = self._side_tail
+
+        async def chained() -> None:
+            if before is not None and not before.done():
+                await asyncio.wait({before})
+            await write()
+
+        task = asyncio.ensure_future(chained())
+        self._side_tail = task
+        self._side.add(task)
+        task.add_done_callback(self._side.discard)
+
+    async def _written(self) -> None:
+        """Wait for the side writes queued so far (not for later ones)."""
+        tail = self._side_tail
+        if tail is not None and not tail.done():
+            await asyncio.wait({tail})
+
+    def _requests_for(self, room: Room, task: Task) -> TurnRequests:
+        def post(kind: str, request_id: str, payload: dict[str, Any]) -> None:
+            body = {
+                "task_id": task.key.task_id,
+                "member": task.payload.get("target"),
+                "room_name": room.name,
+                "source_seq": task.source_seq,
+                **payload,
+            }
+            event_id = approval_event_id(kind.removeprefix("approval."), request_id)
+
+            async def write() -> None:
+                try:
+                    current = await run_blocking(self.store.get_room, room.room_id, label="room")
+                    await run_blocking(
+                        lambda: self.store.append_event(
+                            room.room_id,
+                            event_id,
+                            kind,
+                            {"kind": "gateway", "id": current.authority},
+                            body,
+                            authority=current.authority,
+                            epoch=current.epoch,
+                        ),
+                        label="room approval",
+                    )
+                except RoomError as exc:
+                    log.warning("group room %s: %s not logged: %s", room.room_id, kind, exc)
+
+            self._later(write)
+
+        return TurnRequests(post)
 
     # -- running ---------------------------------------------------------------------------------
 
@@ -504,7 +649,25 @@ class RoomLoop:
         for event in events:
             state.cursor = event.seq
             state.planner.feed(event)
+            if event.kind == "approval.answered":
+                self._answered(room, state, event)
         await self._admit(room, state, state.planner.take())
+
+    def _answered(self, room: Room, state: _RoomState, event: RoomEvent) -> None:
+        """Hand the person's ``groups.approve`` to the turn whose session asked."""
+        flight = state.flight
+        request_id = event.payload.get("request_id")
+        choice = event.payload.get("choice")
+        if flight is None or flight.requests is None or not isinstance(request_id, str):
+            return
+        answer: dict[str, Any] = {"kind": "approval", "choice": choice}
+        reason = event.payload.get("reason")
+        if isinstance(reason, str) and reason:
+            answer["reason"] = reason
+        if not flight.requests.answer(request_id, answer):
+            log.info(
+                "group room %s: the answer to %s found no open request", room.room_id, request_id
+            )
 
     async def _admit(self, room: Room, state: _RoomState, planned: list[Planned]) -> None:
         for turn in planned:
@@ -550,9 +713,10 @@ class RoomLoop:
         except (StaleTask, DriverError) as exc:
             log.debug("group room %s: turn %s did not start: %s", room.room_id, head.key, exc)
             return
-        runner = asyncio.ensure_future(self._turn(room, state, head, attempt))
+        requests = self._requests_for(room, head)
+        runner = asyncio.ensure_future(self._turn(room, state, head, attempt, requests))
         runner.set_name(f"group room {room.room_id} turn {head.key.task_id}")
-        state.flight = _Flight(head, attempt, runner)
+        state.flight = _Flight(head, attempt, runner, requests)
 
     async def _stop_flight(self, state: _RoomState, task: Task) -> None:
         flight = state.flight
@@ -562,6 +726,7 @@ class RoomLoop:
         with contextlib.suppress(BaseException):
             await flight.runner
         state.flight = None
+        await self._written()
         if task.cancel_id is None:
             return
         cancel_id = task.cancel_id
@@ -583,6 +748,7 @@ class RoomLoop:
             with contextlib.suppress(BaseException):
                 await flight.runner
             state.flight = None
+            await self._written()
         task = await run_blocking(self.driver.get_task, key, label="room task")
         log.warning(
             "group room %s: %s's turn expired (%s)", room.room_id, task.payload.get("target"), why
@@ -591,7 +757,23 @@ class RoomLoop:
 
     # -- one member turn -------------------------------------------------------------------------
 
-    async def _turn(self, room: Room, state: _RoomState, task: Task, attempt: TaskAttempt) -> None:
+    async def _turn(
+        self,
+        room: Room,
+        state: _RoomState,
+        task: Task,
+        attempt: TaskAttempt,
+        requests: TurnRequests | None = None,
+    ) -> None:
+        requests = requests if requests is not None else self._requests_for(room, task)
+        try:
+            await self._run_turn(room, task, attempt, requests)
+        finally:
+            requests.close()  # a request still open is settled withdrawn (turn ended / stopped)
+
+    async def _run_turn(
+        self, room: Room, task: Task, attempt: TaskAttempt, requests: TurnRequests
+    ) -> None:
         target = str(task.payload.get("target"))
         member = next((m for m in room.members if member_handle(m) == target), {"handle": target})
         turn = MemberTurn(
@@ -602,12 +784,15 @@ class RoomLoop:
             prompt=str(task.payload.get("prompt") or ""),
             task_id=task.key.task_id,
             attempt=attempt.exec_gen,
+            requests=requests,
         )
         await self._log(room, task, "turn.started", {}, gen=attempt.exec_gen)
         beat = asyncio.ensure_future(self._heartbeats(attempt))
         try:
             reply = await self.runner(turn)
         except MemberUnavailable as exc:
+            requests.close()
+            await self._written()
             await self._log(
                 room, task, "member.unavailable", {"reason": str(exc)[:500]}, gen=attempt.exec_gen
             )
@@ -618,10 +803,14 @@ class RoomLoop:
         except Exception as exc:
             why = str(exc)[:500] or type(exc).__name__
             log.warning("group room %s: %s's turn failed: %s", room.room_id, target, why)
+            requests.close()
+            await self._written()
             await self._finish(room, task, attempt, "failed", {"reason": "error", "error": why})
             return
         finally:
             beat.cancel()
+        requests.close()
+        await self._written()  # the approval events land before the turn's end
         text = (reply or "").strip()
         silent = not text or is_silence(text)
         if not silent:
@@ -750,6 +939,7 @@ class RoomLoop:
                     )
                 except (RoomError, DriverError):
                     pass
+            await self.settle_side_work()
             lease = state.lease
             if lease is not None:
                 with contextlib.suppress(RoomError, DriverError):
@@ -791,6 +981,8 @@ def daemon_runner(daemon: GatewayDaemon) -> MemberRunner:
         )
         try:
             shared = pipeline.shared
+            if shared is not None and turn.requests is not None:
+                _put_requests_to_room(shared.host, sid, turn)
             if shared is not None:
                 # Shielded: a stop that lands while the input is being admitted still learns
                 # the admission, and stops exactly that turn.
@@ -830,6 +1022,54 @@ def daemon_runner(daemon: GatewayDaemon) -> MemberRunner:
                 await pipeline.close_session(sid)
 
     return run
+
+
+def _put_requests_to_room(host: DaemonSessionHost, sid: str, turn: MemberTurn) -> None:
+    """Watch the member turn's session as a ``messaging`` viewer that renders approvals: each one
+    is put to the room (``TurnRequests.asked``), its settlement logged, and the person's answer
+    from the room given back to the session as any viewer's answer would be."""
+    from indus.service.fences import Responded
+    from indus.service.viewers import Viewer
+
+    requests = turn.requests
+    key = host.key_of(sid)
+    if requests is None or key is None:
+        return
+    generations: dict[str, int] = {}
+
+    def offer(found: Offer) -> None:
+        wire = found.request.to_wire()
+        request_id = wire.get("request_id")
+        if isinstance(request_id, str) and found.generation is not None:
+            generations[request_id] = found.generation
+        requests.asked(wire)
+
+    def send(event: Mapping[str, Any]) -> None:
+        if event.get("type") != "request.settled":
+            return
+        reason = event.get("reason")
+        requests.settled(
+            str(event.get("request_id")),
+            str(event.get("outcome") or "withdrawn"),
+            reason if isinstance(reason, str) else None,
+        )
+
+    def answer(request_id: str, body: Mapping[str, Any]) -> bool:
+        generation = generations.get(request_id)
+        if generation is None:
+            return False
+        result = host.respond(sid, request_id, generation, body)
+        return isinstance(result, Responded) and result.accepted
+
+    requests.bind(answer)
+    viewer = Viewer.of(
+        f"room:{turn.room_id}:{turn.task_id}:{turn.attempt}",
+        "messaging",
+        ("approval",),
+        send=send,
+        offer=offer,
+    )
+    host.attach(key, viewer)
 
 
 # -- the daemon part ------------------------------------------------------------------------------

@@ -145,7 +145,7 @@ def test_receipt_lists_every_phase(scope: Scope, tmp_path: Path) -> None:
     assert receipt["outcome"] == "ok" and receipt["owed"] == []
     assert outcomes(receipt) == {
         "snapshot": "skipped", "move": "ok", "venv": "ok", "config_migration": "ok",
-        "dist:web": "ok", "dist:tui": "skipped", "gateway_restart": "ok",
+        "dist:web": "ok", "dist:tui": "skipped", "web_pages": "skipped", "gateway_restart": "ok",
     }  # fmt: skip
     assert (checkout / "apps/web/dist/index.html").read_text(encoding="utf-8") == "<html>new</html>"
     assert not (checkout / "apps/web/dist.next").exists()
@@ -204,6 +204,102 @@ def test_stage_and_swap_never_leaves_a_half_bundle(tmp_path: Path) -> None:
         == ""
     )
     assert (target / "index.html").read_text() == "<html>new</html>"
+
+
+# -- the fetched dashboard pages (wave 47, f) ------------------------------------------------------
+
+
+def fetch_runner(code: int, out: str = "", err: str = "") -> tuple[Any, list[list[str]]]:
+    calls: list[list[str]] = []
+
+    def run(argv: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        assert kw.get("timeout"), "the fetch is time-limited"
+        return subprocess.CompletedProcess(argv, code, out, err)
+
+    return run, calls
+
+
+def test_a_script_install_fetches_the_pages_of_the_new_release(
+    scope: Scope, tmp_path: Path
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    builder, _ = web_builder()
+    run, calls = fetch_runner(0, "Installed the dashboard pages of v0.2.0 in x\n")
+    ctx = context(scope, builders=[builder], run=run, pnpm=None)
+    ctx.python = "/new/venv/bin/python"
+    path = request_file(tmp_path, scope.root, checkout)
+    assert run_finish(path, ctx, no_gateway_restart=True) == 0
+    # A child process: the CLI layer never imports indus.web (D-16.246).
+    assert calls == [
+        [
+            "/new/venv/bin/python", "-m", "indus.web.bundle", "fetch",
+            "--repo", str(checkout), "--target", str(checkout / "src/indus/web/static"),
+        ]
+    ]  # fmt: skip
+    receipt = final_receipt(scope.root)
+    assert outcomes(receipt)["web_pages"] == "ok" and receipt["owed"] == []
+    assert outcomes(receipt)["dist:web"] == "skipped"
+
+
+def test_pages_off_a_release_are_skipped(scope: Scope, tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    run, calls = fetch_runner(3, "", "No prebuilt dashboard pages: not a release.\n")
+    ctx = context(scope, run=run)
+    assert (
+        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
+    )
+    receipt = final_receipt(scope.root)
+    assert len(calls) == 1 and outcomes(receipt)["web_pages"] == "skipped"
+    assert receipt["owed"] == []
+
+
+def test_a_failed_page_fetch_is_owed_with_its_retry(
+    scope: Scope, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    run, _calls = fetch_runner(1, "", "Could not fetch the dashboard pages: download failed\n")
+    ctx = context(scope, run=run)
+    ctx.python = "/new/py"
+    assert (
+        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
+    )
+    receipt = final_receipt(scope.root)
+    assert receipt["outcome"] == "ok_with_followups"
+    [owed] = receipt["owed"]
+    assert owed["followup"] == "web_pages" and "download failed" in owed["detail"]
+    assert owed["retry"] == f"/new/py -m indus.web.bundle fetch --repo {checkout}"
+    assert "Owed: web_pages" in capsys.readouterr().out
+
+
+def test_a_page_fetch_that_cannot_start_is_owed(scope: Scope, tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+
+    def broken(argv: list[str], **_kw: Any) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(argv, 1.0)
+
+    ctx = context(scope, run=broken)
+    assert (
+        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
+    )
+    assert outcomes(final_receipt(scope.root))["web_pages"] == "owed"
+
+
+def test_a_checkout_with_its_own_build_fetches_nothing(scope: Scope, tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    (checkout / "apps/web/dist").mkdir(parents=True)
+    (checkout / "apps/web/dist/index.html").write_text("old", encoding="utf-8")
+    run, calls = fetch_runner(0)
+    ctx = context(scope, run=run, pnpm=None)
+    assert (
+        run_finish(request_file(tmp_path, scope.root, checkout), ctx, no_gateway_restart=True) == 0
+    )
+    assert calls == []
+    assert outcomes(final_receipt(scope.root))["web_pages"] == "skipped"
 
 
 # -- config migration ------------------------------------------------------------------------------

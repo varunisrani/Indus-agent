@@ -11,7 +11,8 @@ the submitting surface decides what happens while a turn runs (TUI queues, other
 are refused — a steer names its generation through ``session.steer``. ``turn_id`` is the
 admission id. A ``request_id`` from the client is the admission request id (under one principal
 per surface), so sending the same input again returns its first admission. ``unattended`` (a
-finite ``-z`` run) makes the input's turn auto-approve (``DaemonSessionHost``). An input that
+finite ``-z`` run) makes the input's turn auto-approve and ``single_query`` (a finite ``chat -q`` or
+``-z``) runs it one-shot (``DaemonSessionHost``). An input that
 would start at once (idle session, nothing queued) is answered once the worker has claimed it
 (at most ``CLAIM_WAIT_S``), so ``generation`` names its turn; an input still unclaimed after that
 is answered ``queued`` with the running turn's generation, or none when no turn runs.
@@ -38,6 +39,11 @@ turn never comes back).
 title, history: ``service.session_mutations``), fenced against its running turn and idempotent by
 the client's ``request_id``.
 
+The TUI's pickers (W47-c): ``complete.slash``, ``model.options`` and ``session.list`` answer what
+the in-process bridge answers for the profile (``service.picker_reads``). A named ``session_id``
+must be one this connection attached (another's reads as unknown); ``session.list`` lists the
+profile's stored conversations, as ``--local`` does (every attached client is the owner).
+
 ``runtime.describe`` answers what the control socket's ``describe`` does, plus the replay epoch.
 ``maintenance.run`` runs one bulk store operation on the daemon's own store handle
 (``service.maintenance_gate.MaintenanceVerb``); a refusal is the result's ``refused``.
@@ -49,6 +55,7 @@ import contextlib
 import secrets
 from typing import TYPE_CHECKING, Final
 
+from indus.foundation.blocking import run_blocking
 from indus.gateway.control_socket import code_version
 from indus.protocol.attach import (
     AdmissionCancelParams,
@@ -74,12 +81,18 @@ from indus.protocol.attach import (
     SessionUnsubscribeResult,
 )
 from indus.protocol.bridge import (
+    CompleteResult,
+    CompleteSlashParams,
     GatewayPingParams,
     GatewayPingResult,
+    ModelOptionsParams,
+    ModelOptionsResult,
     ServerRequestDeclineParams,
     ServerRequestDeclineResult,
     SessionCloseParams,
     SessionCloseResult,
+    SessionListParams,
+    SessionListResult,
     SessionUsageParams,
     SessionUsageResult,
     UsageNumbers,
@@ -114,7 +127,9 @@ from indus.protocol.methods import (
     SubmitStatus,
     negotiate_features,
 )
+from indus.service import picker_reads
 from indus.service.admissions import Receipt, close_lost_turn
+from indus.service.commands.registry import Surface
 from indus.service.event_log import ReplayGap
 from indus.service.fences import ControlApplied, ControlStatus, Responded, StaleGeneration
 from indus.service.maintenance_gate import MaintenanceVerb
@@ -300,6 +315,7 @@ async def submit(conn: WsConnection, params: PromptSubmitParams) -> PromptSubmit
             surface=conn.subs.surface,
             busy=busy,
             unattended=params.unattended,
+            single_query=params.single_query,
         )
     except LedgerRefusal as refusal:
         raise ProtocolError(
@@ -465,6 +481,43 @@ async def maintenance(conn: WsConnection, params: MaintenanceRunParams) -> Maint
         refused=str(refused) if refused is not None else None,
         detail=str(detail) if detail is not None else None,
         report=answer,
+    )
+
+
+# -- the TUI's pickers (W47-c) --------------------------------------------------------------------
+
+_COMMAND_SURFACE: Final[dict[str, Surface]] = {"cli": "cli", "gui": "desktop"}
+"""The command registry's surface for a connection's surface kind (the TUI's otherwise)."""
+
+
+@methods.method("complete.slash")
+async def complete_slash(conn: WsConnection, params: CompleteSlashParams) -> CompleteResult:
+    if params.session_id is not None:
+        conn.subs.require(params.session_id)
+    surface = _COMMAND_SURFACE.get(conn.subs.surface, "tui")
+    return await run_blocking(
+        lambda: picker_reads.slash_completions(
+            conn.scope, params.text, surface=surface, session_id=params.session_id
+        ),
+        label="slash completion",
+    )
+
+
+@methods.method("model.options")
+async def model_options(conn: WsConnection, params: ModelOptionsParams) -> ModelOptionsResult:
+    if params.session_id is not None:
+        key = conn.subs.require(params.session_id)
+        service = conn.host.service
+        choice = picker_reads.session_choice(service, service.current_id(key))
+    else:
+        choice = await run_blocking(picker_reads.profile_choice, conn.scope, label="model route")
+    return await picker_reads.provider_options(conn.scope, choice)
+
+
+@methods.method("session.list")
+async def list_sessions(conn: WsConnection, params: SessionListParams) -> SessionListResult:
+    return await run_blocking(
+        picker_reads.stored_sessions, conn.host.store, params, label="session list"
     )
 
 

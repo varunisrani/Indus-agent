@@ -246,7 +246,17 @@ def test_small_window_warning_once(
         ('"Fixing the flaky login test."', "Fixing the flaky login test"),
         ("Title: Budget review for Q3", "Budget review for Q3"),
         ("**Deploy plan**\nextra words", "Deploy plan"),
-        ("one two three four five six seven eight nine", "one two three four five six seven"),
+        # W47 d: the whole first line is kept up to TITLE_MAX_CHARS, not cut after seven words
+        (
+            "How do I list every file in this folder and its subfolders",
+            "How do I list every file in this folder and its subfolders",
+        ),
+        (
+            "Summarise the repository layout and point out the modules that have no tests "
+            "and the ones that changed most",
+            "Summarise the repository layout and point out the modules…",
+        ),
+        ("x" * 80, "x" * 59 + "…"),
         ("  \n  ", None),
     ],
 )

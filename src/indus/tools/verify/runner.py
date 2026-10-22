@@ -15,6 +15,10 @@ A compose recipe refuses to build or start while that compose project has runnin
 (``docker compose ps``): rebuilding would replace them and lose what lives inside. When docker
 itself is missing the run goes on (the build then fails on its own); when the probe fails or
 hangs the run is refused, since running containers cannot be ruled out.
+
+On native Windows (RL26) the CLI boots the start command with ``WindowsStarter``: Git Bash in its
+own job object (the terminal backend's ``start_windows_process``), output drained by a thread,
+stopped by terminating the job (the whole tree at once).
 """
 
 from __future__ import annotations
@@ -24,10 +28,17 @@ import contextlib
 import logging
 import os
 import signal
+import threading
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from indus.backends.local_windows import (
+    GitBash,
+    WindowsProcess,
+    git_bash_env,
+    start_windows_process,
+)
 from indus.foundation.clock import Clock, SystemClock
 from indus.tools.builtin.exec_host import ExecHost
 from indus.tools.verify.recipes import Recipe
@@ -43,6 +54,7 @@ __all__ = [
     "Readiness",
     "ServiceStarter",
     "VerifyResult",
+    "WindowsStarter",
     "http_probe",
     "run_verify",
     "tail",
@@ -381,3 +393,46 @@ class LocalStarter:
         except TimeoutError:
             return ""
         return data.decode("utf-8", errors="replace")
+
+
+@dataclass
+class _WindowsService:
+    process: WindowsProcess
+    chunks: list[str]
+    reader: threading.Thread
+    halt: threading.Event
+
+
+class WindowsStarter:
+    """Native Windows (RL26): boots a start command with Git Bash (``bash``) in its own job
+    object; stopping terminates the job, the whole tree at once (no grace step on Windows)."""
+
+    def __init__(
+        self, env: Mapping[str, str], bash: GitBash, *, clock: Clock | None = None
+    ) -> None:
+        self.env = git_bash_env(env, bash)
+        self.bash = bash
+        self.clock: Clock = clock or SystemClock()
+
+    async def start(self, command: str, cwd: str) -> object:
+        process = start_windows_process(
+            [self.bash.bash, "-c", command], cwd=cwd, env=self.env, stdin=None
+        )
+        chunks: list[str] = []
+        halt = threading.Event()
+        reader = threading.Thread(
+            target=process.drain, args=(chunks.append, halt), name="verify-start", daemon=True
+        )
+        reader.start()
+        return _WindowsService(process, chunks, reader, halt)
+
+    async def stop(self, handle: object) -> str:
+        if not isinstance(handle, _WindowsService):
+            return ""
+        handle.process.terminate_tree()
+        deadline = self.clock.monotonic() + STOP_GRACE_S
+        while handle.reader.is_alive() and self.clock.monotonic() < deadline:
+            await self.clock.sleep(0.05)
+        handle.halt.set()
+        handle.process.release()
+        return "".join(handle.chunks)
