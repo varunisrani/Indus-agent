@@ -1,12 +1,12 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "PAUSED",
-  "usage_pct": 90,
-  "remaining_pct": 10,
-  "resets_at": "2026-10-22T02:00:00+00:00",
-  "last_check": "2026-10-22T01:02:00+00:00",
-  "current_step": "Stopped at the guard; nothing running. Next: w43 security integrator",
-  "last_commit": "226a5ae",
-  "updated_at": "2026-10-22T01:09:00+00:00"
+  "state": "ACTIVE",
+  "usage_pct": 0,
+  "remaining_pct": 100,
+  "resets_at": "2026-10-22T07:00:00+00:00",
+  "last_check": "2026-10-22T02:07:00+00:00",
+  "current_step": "w43 security integrator; P25-20..24 release",
+  "last_commit": "9902c45",
+  "updated_at": "2026-10-22T02:08:00Z"
 }

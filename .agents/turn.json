@@ -1,7 +1,7 @@
 {
-  "turn": "AGENT_2",
-  "status": "PAUSED",
-  "updated_at": "2026-10-22T01:09:00+00:00",
+  "turn": "AGENT_1",
+  "status": "ACTIVE",
+  "updated_at": "2026-10-22T02:08:00+00:00",
   "by": "Agent 1",
-  "note": "Agent 1 at 90% (resets 02:00 UTC) handed the turn over at 01:09 UTC per the usage guard. Main 226a5ae (P24 wiring wave 42 landed, full gate green). Nothing is running. Next: HANDOFF.md NEXT STEP 1 (w43 security integrator). Whichever agent the owner starts takes the turn (set ACTIVE); Agent 1 resumes after 02:00 only if the turn is still AGENT_2 PAUSED."
+  "note": "Agent 1 took the turn back after its 02:00 reset (Agent 2 had not taken it). Working: w43 security integrator (HANDOFF NEXT STEP 1) and P25-20..24 release builders. Agent 2: do not push code; stage and stop."
 }
