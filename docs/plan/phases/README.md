@@ -45,7 +45,7 @@ acceptance, done when. Paths and conventions come from
 | P22 | [P22-research-tooling.md](P22-research-tooling.md) | 1 | 15 | 36 | 6 | 4 | 15 | — | done (`6f04798`) |
 | P23 | [P23-packaging-release.md](P23-packaging-release.md) | 2 | 23 | 78 | 8 | 4 | 24 | — | in progress (21/23 in this commit; P23-15/16 desktop signing open; Docker / Nix / installer-E2E lanes not yet run in CI) |
 | P24 | [P24-multiplex-extras.md](P24-multiplex-extras.md) | 3.5 | 47 | 218 | 27 | 11 | 47 | M8 | in progress (45/47 built `5c0cff8`, wired in wave 42 `226a5ae`; Done-when holds except desktop SSH to a second gateway (unit tests only) and the partial items in D-16.878; 21/22 post-1.0) |
-| P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | in progress (05–19 `08bcf51`; 01–04 security, 20–24 release open; strict lanes need people: Review rows, similarity verdicts, parity captures) |
+| P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | in progress (01–19 landed: 01–04 security `4945b48`, 05–19 `08bcf51`; 20–24 release built and parked in .agents/wip/w44, integration next; open security findings SEC-4, SEC-14, SEC-15, SEC-18 and the SEC-17 re-lock due 2026-11-09; strict lanes need people: Review rows, similarity verdicts, parity captures) |
 
 ## How a phase runs
 

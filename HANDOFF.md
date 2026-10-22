@@ -76,31 +76,28 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 ACTIVE (took it back 02:07 UTC after the reset; window resets 07:00). Main `bee44d9`. In flight (02:15 UTC):
-w43 security integrator in scratchpad verify23 (brief `.agents/wip/w43/integrator-brief.md`, D-16.900..919); release builders
-R1 (P25-20/21, D-16.920..934), R2 (P25-22/23, D-16.935..949), R3 (P25-24, D-16.950..959) in scratchpad wt-w44r1..3 (brief
-`.agents/wip/w44/brief-release.md`). If a builder stops mid-way, its worktree work is lost unless parked: extract it.
-Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 15/24 landed (05–19).
-1. **w43 security integrator**: apply `.agents/wip/w43/w43-sec1.patch` (P25-01 threat model + `security_static` guard, P25-02
-   `tests/security/`, fixes SEC-1/2/3/11) and `w43-sec2.patch` (P25-03 desktop/web security tests, P25-04 deps audit + workflow,
-   SPA framing headers) on main with `git apply --3way`. Re-check the threat-model rows that cite w42 surfaces (B-LSP-1, preview
-   automation, served-profile attach); run `python -m tooling.checks security_static` against the w42 code and allow-list or fix
-   new hits (dated reasons); full gate (short pytest basetemp). README in `.agents/wip/w43/` has the details and open items
-   (SEC-4 execute_code/delegate_task fence needs a design call; SEC-5 message_agent fence).
-2. **P25-20..24 release**: checklist, fresh-clone gates, canary rehearsal, post-release smoke, Windows terminal best effort.
-3. Follow-ups from wave 42: bot-chat turns offering message_agent; suggestion offers on integration connect; the remaining
-   desktop contribution areas; RFC 8252 broker; approvals in room turns + room event push; LspUpkeep.release before worktree
-   removal and `indus lsp restart`; `oneshot_first_token` perf budget has only ~30 ms headroom (1471 ms vs 1500).
-   Older: re-locks (certifi, aiohttp, vite, pynacl), perf baseline on CI, 9 desktop data-ui hooks, TUI model picker bug.
-Owner items: see the list below (release base D-16.690, signing secrets, licence rulings incl. D1's dated exceptions and the
-Git for Windows source offer, D-16.800–802, similarity verdicts (20 regions), 58 ACC Review rows, parity reference captures,
-stray paths at / and /root, /tmp/pytest-of-root).
+Turn: AGENT_1 ACTIVE (window resets 07:00 UTC). Main `4945b48` = P25-01..04 security landed (full gate green: pytest
+18198/0, perf 18, vitest 2883, Electron E2E 41, web Playwright 14; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes
+(integrator)"). In flight: wave-44 integrator in scratchpad verify24 (brief `.agents/wip/w44/integrator-brief.md`; R1 P25-20/21,
+R2 P25-22/23, R3 P25-24 patches + README in `.agents/wip/w44/`; fixes F-1 installer scripts not attached to releases).
+Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 19/24 landed (01–19).
+1. **Land wave 44** when its integrator is green (P25-20..24). If it stopped mid-way, its staged diff is the work: save it.
+2. **Open security findings** (docs/internals/threat-model.md): SEC-4 needs the owner's design call (fencing what
+   execute_code / delegate_task pass back); SEC-14 per-profile LSP pool; SEC-15 frame room transcripts as data; SEC-18 small
+   desktop/web items; SEC-17 re-lock (certifi, aiohttp, vite, pynacl) before 2026-11-09, when deps_audit starts failing.
+3. Follow-ups from wave 42: bot-chat turns offering message_agent; suggestion offers on integration connect; remaining desktop
+   contribution areas; RFC 8252 broker; approvals in room turns + room event push; LspUpkeep.release and `indus lsp restart`;
+   `oneshot_first_token` perf budget headroom (~30 ms). Older: perf baseline on CI, 9 desktop data-ui hooks, TUI model picker bug.
+Owner items: see the list below and the release checklist's must rows once wave 44 lands (release base D-16.690, signing
+secrets, licence rulings incl. D1's dated exceptions and the Git for Windows source offer, D-16.800–802, similarity verdicts
+(20 regions), ACC Review rows, parity reference captures, stray paths at / and /root (also /root/.indus written during this
+session by an unattributed run), /tmp/pytest-of-root).
 Lead loop: builders in scratchpad worktrees never commit; extract with the clean-room-rebuild skill's extract-patch.sh
 (--exclude '**/__pycache__/**' --exclude uv.lock --exclude '**/node_modules/**' — never exclude git-ignored paths), CHECK the
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree AND its $S dir; one
 integrator per group runs the full gate (pytest --basetemp short); the lead commits, rebases, fast-forwards, pushes, updates the
 phase table and this file.
-- Last landings: P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+- Last landings: P25-01..04 security wave 43 (`4945b48`; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes (integrator)"), P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
   P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
