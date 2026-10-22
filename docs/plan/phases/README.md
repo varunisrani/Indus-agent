@@ -45,7 +45,7 @@ acceptance, done when. Paths and conventions come from
 | P22 | [P22-research-tooling.md](P22-research-tooling.md) | 1 | 15 | 36 | 6 | 4 | 15 | — | done (`6f04798`) |
 | P23 | [P23-packaging-release.md](P23-packaging-release.md) | 2 | 23 | 78 | 8 | 4 | 24 | — | in progress (21/23 in this commit; P23-15/16 desktop signing open; Docker / Nix / installer-E2E lanes not yet run in CI) |
 | P24 | [P24-multiplex-extras.md](P24-multiplex-extras.md) | 3.5 | 47 | 218 | 27 | 11 | 47 | M8 | in progress (45/47 built `5c0cff8`, wired in wave 42 `226a5ae`; Done-when holds except desktop SSH to a second gateway (unit tests only) and the partial items in D-16.878; 21/22 post-1.0) |
-| P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | built (24/24: 01–04 security `4945b48`, 05–19 `08bcf51`, 20–24 release prep `b9a43a1`); release blocked on the checklist's must-fix rows and the owner's §0 decisions; waves 45/46 (SEC-4/6/8/14/15/18 fixes, re-lock, desktop hooks, docs) parked for integration; owner runs: real gates, canary, smoke on 3 OSes |
+| P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | built (24/24: 01–04 `4945b48`, 05–19 `08bcf51`, 20–24 `b9a43a1`); waves 45+46 `44c9a4f` fixed SEC-4/6/8/14/15/18, re-locked aiohttp/pynacl/vite, closed RM2/4/8/21/28/29 and 14 should rows; wave 47 (UI bugs, Windows branches, single-query flag, room approvals) parked; release blocked on owner decisions (§0, certifi RM7, signing RM14, licences, people-strict lanes) and owner runs (real gates, canary, 3-OS smoke) |
 
 ## How a phase runs
 
