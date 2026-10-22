@@ -167,3 +167,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 03:15 UTC: started w44 integrator, S45 and P45 (3 agents).
 - 2026-10-22 03:19 UTC: 24% (resets 07:00). w44 integrator, S45 and P45 running. 21 GB disk free.
 - 2026-10-22 03:38 UTC: owner asked for 12+ agents. Started 9 wave-46 builders; 12 agents running.
+- 2026-10-22 03:40 UTC: 36% (resets 07:00; about 1%/min with 12 agents). 19 GB disk free.
