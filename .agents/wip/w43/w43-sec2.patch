@@ -1,0 +1,3606 @@
+diff --git a/.github/workflows/deps-audit.yml b/.github/workflows/deps-audit.yml
+new file mode 100644
+index 0000000..70f3edf
+--- /dev/null
++++ b/.github/workflows/deps-audit.yml
+@@ -0,0 +1,66 @@
++name: Dependency audit
++
++# P25-04: every locked package (uv.lock, pnpm-lock.yaml) against OSV, plus `pnpm audit --prod`, and
++# the pinned downloads / Docker base digest still resolving. A high or critical finding fails unless
++# tooling/checks/deps_audit_allow.json lists it with a reason and an expiry that has not passed.
++# Runs when a lock or the audit itself changes, weekly (new advisories appear without a commit), and
++# by hand. The offline guard in ci.yml reads the committed snapshot; this job asks the network.
++
++on:
++  pull_request:
++    paths:
++      - uv.lock
++      - pnpm-lock.yaml
++      - pyproject.toml
++      - "**/package.json"
++      - scripts/install/pins.json
++      - docker/pins.json
++      - tooling/checks/deps_audit*
++      - .github/workflows/deps-audit.yml
++  push:
++    branches: [main]
++    paths:
++      - uv.lock
++      - pnpm-lock.yaml
++      - tooling/checks/deps_audit*
++  schedule:
++    - cron: "17 5 * * 1"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: deps-audit-${{ github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  audit:
++    runs-on: ubuntu-latest
++    timeout-minutes: 20
++    steps:
++      - name: Check out
++        uses: actions/checkout@v4
++
++      - name: Set up uv
++        uses: astral-sh/setup-uv@v6
++
++      - name: Set up Node from .nvmrc
++        uses: actions/setup-node@v4
++        with:
++          node-version-file: .nvmrc
++
++      - name: Enable corepack
++        run: corepack enable
++
++      # No install: the audit reads the lock files only (pnpm audit works from the lock).
++      - name: Audit (OSV + pnpm audit + pinned downloads)
++        run: >-
++          uv run --no-project --python 3.13 python -m tooling.checks.deps_audit
++          --refresh --pnpm-audit --resolve-pins --no-write
++
++      - name: Report
++        if: always()
++        run: >-
++          uv run --no-project --python 3.13 python -m tooling.checks.deps_audit
++          --refresh --pnpm-audit --report --no-write >> "$GITHUB_STEP_SUMMARY"
+diff --git a/apps/desktop/e2e/security-audit.spec.ts b/apps/desktop/e2e/security-audit.spec.ts
+new file mode 100644
+index 0000000..d3e8e90
+--- /dev/null
++++ b/apps/desktop/e2e/security-audit.spec.ts
+@@ -0,0 +1,201 @@
++// P25-03 desktop security audit in a real Electron window (fake backend). The unit half, over the
++// whole IPC table and every policy module, is `electron/security/audit.test.ts`; the hostile guest
++// pages, fs confinement, deep links, media and diagnostics run in `core/security.electron.test.ts`.
++// This spec adds what only a live window shows:
++//
++//   csp        the app page has exactly one policy meta, scripts limited to the app and checked
++//              plugin modules, and (where the response has headers) main's header says the same;
++//   bridge     only the app's main frame has `window.indusDesktop`: a same-origin iframe of the app
++//              page has none, so a frame without the preload has no way to main at all;
++//   payloads   every invoke method of the live bridge refuses an unknown key (`bad-request`) or is
++//              not built yet (`not-available`) — no handler ever runs on a malformed payload;
++//   navigation the app window cannot be navigated away, and window.open opens nothing;
++//   fuses      read from the packaged binary when a package is there (CI's desktop-package job or
++//              `packaged.electron.test.ts`): RunAsNode, NODE_OPTIONS and inspect args off, ASAR
++//              integrity and only-load-from-ASAR on, cookie encryption on.
++
++import fs from "node:fs";
++import path from "node:path";
++import { afterAll, beforeAll, describe, expect, it } from "vitest";
++import { CHANNELS } from "../electron/ipc/channels.ts";
++import { cleanupFakes } from "../testing/fakeIndus.ts";
++import {
++  APP_ROOT,
++  type FakeBackend,
++  fakeBackend,
++  HEALTHY,
++  launchApp,
++  type RunningApp,
++  skipReason,
++  sleep,
++  tempDir,
++  waitConnected,
++} from "./fixtures.ts";
++
++const PACKAGED = path.join(APP_ROOT, "build", "release", "linux-unpacked");
++
++let work = "";
++let fake: FakeBackend | null = null;
++let app: RunningApp | null = null;
++
++beforeAll(async () => {
++  if (skipReason !== "") return;
++  work = tempDir("indus-e2e-audit-");
++  fake = fakeBackend(work, HEALTHY);
++  app = await launchApp({ work, home: fake.home, indus: fake.indus });
++  await waitConnected(app.cdp);
++}, 240_000);
++
++afterAll(async () => {
++  await app?.stop();
++  cleanupFakes();
++});
++
++/** One extra DevTools session that records the main document's response headers on a reload. */
++async function documentHeaders(running: RunningApp): Promise<Record<string, string> | null> {
++  const page = (await running.targets()).find(
++    (target) => target.type === "page" && target.url.startsWith("file:"),
++  );
++  if (page === undefined) return null;
++  const socket = new WebSocket(page.webSocketDebuggerUrl);
++  await new Promise<void>((resolve, reject) => {
++    socket.onopen = () => resolve();
++    socket.onerror = () => reject(new Error("devtools socket failed"));
++  });
++  try {
++    return await new Promise<Record<string, string> | null>((resolve) => {
++      const timer = setTimeout(() => resolve(null), 20_000);
++      socket.onmessage = (message) => {
++        const frame = JSON.parse(String(message.data)) as {
++          method?: string;
++          params?: { type?: string; response?: { headers?: Record<string, string> } };
++        };
++        if (frame.method === "Network.responseReceived" && frame.params?.type === "Document") {
++          clearTimeout(timer);
++          resolve(frame.params.response?.headers ?? {});
++        }
++      };
++      socket.send(JSON.stringify({ id: 1, method: "Network.enable", params: {} }));
++      socket.send(JSON.stringify({ id: 2, method: "Page.reload", params: {} }));
++    });
++  } finally {
++    socket.close();
++  }
++}
++
++describe.skipIf(skipReason !== "")(
++  `desktop security audit${skipReason ? ` (skipped: ${skipReason})` : ""}`,
++  () => {
++    it("the app page carries exactly one locked CSP meta", async () => {
++      const running = app as RunningApp;
++      const metas = await running.cdp.eval<string[]>(
++        `[...document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]')].map((m) => m.content)`,
++      );
++      expect(metas.length).toBe(1);
++      const policy = metas[0] ?? "";
++      expect(policy).toMatch(/(^|; )script-src 'self' indus-plugin:(;|$)/);
++      expect(policy).toMatch(/(^|; )object-src 'none'(;|$)/);
++      expect(policy).toMatch(/(^|; )base-uri 'none'(;|$)/);
++      expect(policy).not.toMatch(/unsafe-eval/);
++    });
++
++    it("only the app's main frame has the bridge", async () => {
++      const running = app as RunningApp;
++      const seen = await running.cdp.eval<{
++        top: string;
++        frame: string;
++      }>(`new Promise((resolve) => {
++        const frame = document.createElement("iframe");
++        frame.style.display = "none";
++        document.body.append(frame);
++        const inner = frame.contentWindow;
++        const answer = { top: typeof window.indusDesktop, frame: inner ? typeof inner.indusDesktop : "no window" };
++        frame.remove();
++        resolve(answer);
++      })`);
++      expect(seen).toEqual({ top: "object", frame: "undefined" });
++    });
++
++    it("every invoke method of the live bridge refuses a payload with an unknown key", async () => {
++      const running = app as RunningApp;
++      const calls = CHANNELS.filter((c) => c.kind === "invoke" && c.method !== null).map((c) => ({
++        name: c.name,
++        group: c.group,
++        method: c.method as string,
++      }));
++      const answers = await running.cdp.eval<
++        Array<{ name: string; outcome: string }>
++      >(`(async () => {
++        const calls = ${JSON.stringify(calls)};
++        const out = [];
++        for (const call of calls) {
++          const fn = window.indusDesktop?.[call.group]?.[call.method];
++          if (typeof fn !== "function") { out.push({ name: call.name, outcome: "missing" }); continue; }
++          try {
++            await fn({ __indus_audit_unknown_key__: 1 });
++            out.push({ name: call.name, outcome: "resolved" });
++          } catch (error) {
++            out.push({ name: call.name, outcome: String(error && error.message || error).split(":")[0] });
++          }
++        }
++        return out;
++      })()`);
++      expect(answers.length).toBe(calls.length);
++      const wrong = answers.filter(
++        (a) => a.outcome !== "bad-request" && a.outcome !== "not-available",
++      );
++      expect(wrong).toEqual([]);
++    });
++
++    it("the app window cannot be navigated away and window.open opens nothing", async () => {
++      const running = app as RunningApp;
++      const before = (await running.targets()).filter((t) => t.type === "page").length;
++      const opened = await running.cdp.eval<string>(
++        `window.open("https://example.invalid/popup") === null ? "null" : "window"`,
++      );
++      expect(opened).toBe("null");
++      await running.cdp.eval(`(() => { location.href = "https://example.invalid/away"; })()`);
++      await sleep(1_500);
++      expect(await running.cdp.eval<string>(`location.protocol`)).toBe("file:");
++      expect((await running.targets()).filter((t) => t.type === "page").length).toBe(before);
++      expect(running.recorder.opened()).toEqual([]);
++    });
++
++    it("main's CSP header on the app page (where file responses carry headers)", async () => {
++      const running = app as RunningApp;
++      const headers = await documentHeaders(running);
++      expect(headers).not.toBeNull();
++      const lower = Object.fromEntries(
++        Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
++      );
++      if (Object.keys(lower).length > 0) {
++        expect(lower["content-security-policy"] ?? "").toMatch(/script-src 'self' indus-plugin:/);
++      }
++      await waitConnected(running.cdp);
++    });
++  },
++);
++
++const packagedSkip =
++  skipReason !== ""
++    ? skipReason
++    : fs.existsSync(PACKAGED)
++      ? ""
++      : "no packaged build here (CI's desktop-package job makes one)";
++
++describe.skipIf(packagedSkip !== "")(
++  `fuses of the packaged binary${packagedSkip ? ` (skipped: ${packagedSkip})` : ""}`,
++  () => {
++    it("RunAsNode, NODE_OPTIONS and inspect off; ASAR integrity, ASAR-only and cookie encryption on", async () => {
++      // @ts-expect-error -- plain JS module without types
++      const fuses = (await import("../scripts/verify-fuses.mjs")) as {
++        binariesFor(args: string[]): string[];
++        verify(binaries: string[]): Promise<{ ok: boolean; lines: string[] }>;
++      };
++      const binaries = fuses.binariesFor([PACKAGED]);
++      expect(binaries.length).toBeGreaterThan(0);
++      const result = await fuses.verify(binaries);
++      expect(result.ok, result.lines.join("\n")).toBe(true);
++    });
++  },
++);
+diff --git a/apps/desktop/e2e/vitest.config.ts b/apps/desktop/e2e/vitest.config.ts
+index 9f7c5f0..2f254a8 100644
+--- a/apps/desktop/e2e/vitest.config.ts
++++ b/apps/desktop/e2e/vitest.config.ts
+@@ -7,7 +7,7 @@ import { defineConfig } from "vitest/config";
+ export default defineConfig({
+   test: {
+     root: import.meta.dirname,
+-    include: ["core/**/*.electron.test.ts", "startup-budget.spec.ts"],
++    include: ["core/**/*.electron.test.ts", "startup-budget.spec.ts", "security-audit.spec.ts"],
+     environment: "node",
+     fileParallelism: false,
+     testTimeout: 90_000,
+diff --git a/apps/desktop/electron/security/audit.test.ts b/apps/desktop/electron/security/audit.test.ts
+new file mode 100644
+index 0000000..4b466cd
+--- /dev/null
++++ b/apps/desktop/electron/security/audit.test.ts
+@@ -0,0 +1,731 @@
++// P25-03 desktop security audit (D-16.18, D-16.19, D-16.20; R08.4, R08.8): one file that pins every
++// desktop trust boundary against the real modules, so a change that weakens one fails here by name.
++// The real-window half is `e2e/security-audit.spec.ts` (Electron lane).
++//
++//   ipc          every channel of the table, from every kind of foreign frame, is refused before
++//                its handler runs; nothing listens on an event channel;
++//   schemas      every request is a strict object (no unknown key passes), with open values only
++//                where reviewed below;
++//   csp          the production policy keeps scripts to the app and checked plugin modules; every
++//                renderer page gets exactly one policy meta first in <head>; main's header replaces
++//                any page-sent policy on app URLs;
++//   navigation   app windows never leave the app; window.open is denied everywhere; a webview
++//                attaches only on the preview partition, with our preload and hardened settings;
++//   permissions  only the app's main frame, a short list, microphone-only media;
++//   external     only http/https without credentials, and only after a real input, once;
++//   media        `indus-media:` serves media files inside the roots only (links, traversal, NUL,
++//                sensitive names, other methods refused);
++//   deep links   foreign schemes and malformed links dropped; a link never starts a program and
++//                skills / servers always wait for the person.
++
++import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++import type { ResolvedConfig } from "vite";
++import { afterAll, describe, expect, it, vi } from "vitest";
++import type { z } from "zod";
++import { planLink } from "../../src/deepLinks/deepLinkActions.ts";
++import { cspMetaPlugin, rendererMetaCsp } from "../../vite.config.ts";
++import { fileAppOrigin } from "../appOrigin.ts";
++import { parseDeepLink } from "../deepLinks.ts";
++import { CHANNELS } from "../ipc/channels.ts";
++import { SENDER_REJECTED_MESSAGE } from "../ipc/envelope.ts";
++import { type IpcMainLike, IpcRegistry, type SyncEventLike } from "../ipc/registry.ts";
++import { SCHEMAS } from "../ipc/schemas.ts";
++import type { FrameLike, IpcEventLike } from "../ipc/senderCheck.ts";
++import { createMediaHandler, MediaRoots, mediaUrl } from "../mediaProtocol.ts";
++import { buildCsp, CspOriginError, CspState, withCspHeader } from "./csp.ts";
++import { ExternalOpener, externalUrlProblem, UserActivationTracker } from "./externalOpen.ts";
++import {
++  type GuardedContents,
++  hardenWebContents,
++  hardenWebviewAttach,
++  PREVIEW_PARTITION,
++  type PreventableEvent,
++} from "./navigation.ts";
++import { permissionAllowed } from "./permissions.ts";
++
++const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
++const INDEX = "/opt/Indus/app/dist/index.html";
++const APP_URL = `file://${INDEX}#/`;
++const ORIGIN = fileAppOrigin(INDEX, "linux");
++const KNOWN = 7;
++
++// -- ipc --------------------------------------------------------------------------------------------
++
++type Listener = (event: IpcEventLike, ...args: unknown[]) => unknown;
++
++function frame(url: string, id: number): FrameLike {
++  return { url, processId: 3, routingId: id, frameTreeNodeId: id };
++}
++
++/** Every way a frame that is not the app's own main frame can reach main. */
++const FOREIGN: Record<string, () => IpcEventLike> = {
++  "preview guest": () => {
++    const main = frame("https://evil.example/", 1);
++    return { sender: { id: 40, mainFrame: main, getType: () => "webview" }, senderFrame: main };
++  },
++  "guest showing an app URL": () => {
++    const main = frame(APP_URL, 1);
++    return { sender: { id: KNOWN, mainFrame: main, getType: () => "webview" }, senderFrame: main };
++  },
++  "iframe in the app page": () => ({
++    sender: { id: KNOWN, mainFrame: frame(APP_URL, 1), getType: () => "window" },
++    senderFrame: frame(APP_URL, 2),
++  }),
++  "foreign iframe in the app page": () => ({
++    sender: { id: KNOWN, mainFrame: frame(APP_URL, 1), getType: () => "window" },
++    senderFrame: frame("https://evil.example/", 3),
++  }),
++  "window navigated to another file": () => {
++    const main = frame("file:///tmp/evil.html", 1);
++    return { sender: { id: KNOWN, mainFrame: main, getType: () => "window" }, senderFrame: main };
++  },
++  "window main never registered": () => {
++    const main = frame(APP_URL, 1);
++    return { sender: { id: 9999, mainFrame: main, getType: () => "window" }, senderFrame: main };
++  },
++  "devtools page": () => {
++    const main = frame("devtools://devtools/bundled/inspector.html", 1);
++    return { sender: { id: KNOWN, mainFrame: main, getType: () => "window" }, senderFrame: main };
++  },
++  "destroyed sender": () => {
++    const main = frame(APP_URL, 1);
++    return {
++      sender: { id: KNOWN, mainFrame: main, isDestroyed: () => true, getType: () => "window" },
++      senderFrame: main,
++    };
++  },
++  "no frame": () => ({
++    sender: { id: KNOWN, mainFrame: frame(APP_URL, 1), getType: () => "window" },
++    senderFrame: null,
++  }),
++};
++
++function wiredRegistry() {
++  const handles = new Map<string, Listener>();
++  const ons = new Map<string, Listener>();
++  const ipc: IpcMainLike = {
++    handle: (channel, listener) => void handles.set(channel, listener as Listener),
++    on: (channel, listener) => {
++      ons.set(channel, listener as Listener);
++      return ipc;
++    },
++  };
++  const registry = new IpcRegistry({
++    ipc,
++    policy: { appOrigin: ORIGIN, isKnownWebContents: (id) => id === KNOWN },
++    log: () => {},
++  });
++  const ran = vi.fn();
++  for (const def of CHANNELS) {
++    const schemas = SCHEMAS[def.name] as { request?: z.ZodType };
++    if (def.kind === "invoke" || def.kind === "send") {
++      registry.registerIpc(def.name, schemas.request as z.ZodType, (payload) =>
++        ran(def.name, payload),
++      );
++    } else if (def.kind === "sync") {
++      registry.sync(def.name as Parameters<IpcRegistry["sync"]>[0], () => {
++        ran(def.name);
++        return {} as never;
++      });
++    }
++  }
++  registry.seal();
++  return { handles, ons, ran };
++}
++
++describe("ipc: every channel refuses every foreign frame (D-16.18)", () => {
++  const { handles, ons, ran } = wiredRegistry();
++
++  it("covers the whole table", () => {
++    expect(CHANNELS.length).toBeGreaterThanOrEqual(100);
++    for (const def of CHANNELS) {
++      if (def.kind === "event") continue;
++      const listener = def.kind === "invoke" ? handles.get(def.name) : ons.get(def.name);
++      expect(listener, def.name).toBeTypeOf("function");
++    }
++  });
++
++  for (const [label, make] of Object.entries(FOREIGN)) {
++    it(`${label}: refused on all channels, no handler runs`, async () => {
++      for (const def of CHANNELS) {
++        if (def.kind === "invoke") {
++          const answer = await (handles.get(def.name) as Listener)(make(), {});
++          expect(answer, def.name).toEqual({
++            ok: false,
++            code: "sender-rejected",
++            message: SENDER_REJECTED_MESSAGE,
++          });
++        } else if (def.kind === "send") {
++          (ons.get(def.name) as Listener)(make(), {});
++        } else if (def.kind === "sync") {
++          const event = { ...make(), returnValue: undefined } as SyncEventLike;
++          (ons.get(def.name) as Listener)(event);
++          expect(event.returnValue, def.name).toMatchObject({ ok: false, code: "sender-rejected" });
++        }
++      }
++      expect(ran).not.toHaveBeenCalled();
++    });
++  }
++
++  it("nothing in main listens on an event channel (main → renderer only)", () => {
++    for (const def of CHANNELS.filter((c) => c.kind === "event")) {
++      expect(handles.has(def.name) || ons.has(def.name), def.name).toBe(false);
++    }
++  });
++});
++
++// -- schemas ----------------------------------------------------------------------------------------
++
++/** The parts of zod 4's schema definitions the walk reads. */
++interface Def {
++  type: string;
++  shape?: Record<string, Walkable>;
++  catchall?: Walkable;
++  options?: Walkable[];
++  items?: Walkable[];
++  innerType?: Walkable;
++  element?: Walkable;
++  in?: Walkable;
++  out?: Walkable;
++  keyType?: Walkable;
++  valueType?: Walkable;
++  left?: Walkable;
++  right?: Walkable;
++}
++interface Walkable {
++  _zod?: { def?: Def };
++}
++
++/**
++ * Request values left open on purpose (each reviewed):
++ * - `indus:api` body: the JSON body of a REST call main forwards to the local serve, which
++ *   validates it itself; main adds the credential, the renderer never holds it;
++ * - `indus:journal:prepare` payload: the submission the journal stores verbatim so an
++ *   unknown-outcome turn can be shown again (never executed, size-capped by the journal).
++ */
++const OPEN_ON_PURPOSE = new Set(["indus:api.body", "indus:journal:prepare.payload"]);
++
++function looseParts(schema: Walkable, where: string, found: string[], seen = new Set<Def>()): void {
++  const def = schema._zod?.def;
++  if (def === undefined) {
++    found.push(`${where}: not a zod schema`);
++    return;
++  }
++  if (seen.has(def)) return;
++  seen.add(def);
++  const bare = where.replace(/<[^>]*>/g, "");
++  if ((def.type === "any" || def.type === "unknown") && !OPEN_ON_PURPOSE.has(bare)) {
++    found.push(`${where}: ${def.type}`);
++  }
++  if (def.type === "object") {
++    if (def.catchall?._zod?.def?.type !== "never") found.push(`${where}: object is not strict`);
++    for (const [key, value] of Object.entries(def.shape ?? {}))
++      looseParts(value, `${where}.${key}`, found, seen);
++  }
++  for (const key of [
++    "innerType",
++    "element",
++    "in",
++    "out",
++    "keyType",
++    "valueType",
++    "left",
++    "right",
++  ] as const) {
++    const inner = def[key];
++    if (inner !== undefined) looseParts(inner, `${where}<${key}>`, found, seen);
++  }
++  for (const option of def.options ?? []) looseParts(option, where, found, seen);
++  for (const item of def.items ?? []) looseParts(item, where, found, seen);
++}
++
++describe("schemas: every request is strict", () => {
++  it("no request object takes unknown keys; open values only where reviewed", () => {
++    const found: string[] = [];
++    let checked = 0;
++    for (const def of CHANNELS) {
++      if (def.kind !== "invoke" && def.kind !== "send") continue;
++      const request = (SCHEMAS[def.name] as { request: Walkable }).request;
++      looseParts(request, def.name, found);
++      checked += 1;
++    }
++    expect(checked).toBeGreaterThan(80);
++    expect(found).toEqual([]);
++  });
++
++  it("an extra key on a no-payload channel is a malformed payload", () => {
++    const none = (SCHEMAS["indus:boot:get"] as { request: z.ZodType }).request;
++    expect(none.safeParse(undefined).success).toBe(true);
++    expect(none.safeParse({ extra: 1 }).success).toBe(false);
++  });
++});
++
++// -- csp --------------------------------------------------------------------------------------------
++
++function directives(policy: string): Map<string, string[]> {
++  const map = new Map<string, string[]>();
++  for (const part of policy.split(";")) {
++    const [name, ...sources] = part.trim().split(/\s+/);
++    if (name) map.set(name, sources);
++  }
++  return map;
++}
++
++function assertLocked(policy: string): void {
++  const d = directives(policy);
++  expect(d.get("default-src")).toEqual(["'self'"]);
++  const scripts = d.get("script-src") ?? [];
++  expect(scripts.slice(0, 2)).toEqual(["'self'", "indus-plugin:"]);
++  for (const bad of [
++    "'unsafe-inline'",
++    "'unsafe-eval'",
++    "'wasm-unsafe-eval'",
++    "data:",
++    "blob:",
++    "*",
++  ])
++    expect(scripts, bad).not.toContain(bad);
++  expect(d.get("object-src")).toEqual(["'none'"]);
++  expect(d.get("base-uri")).toEqual(["'none'"]);
++  expect(d.get("form-action")).toEqual(["'none'"]);
++  expect(d.get("frame-src")).toEqual(["'none'"]);
++  const connect = d.get("connect-src") ?? [];
++  expect(connect).not.toContain("*");
++  expect(connect).not.toContain("http:");
++  expect(connect).not.toContain("ws:");
++}
++
++describe("csp (D-16.19)", () => {
++  it("the production meta and header policies keep scripts to the app", () => {
++    assertLocked(rendererMetaCsp({ dev: false }));
++    assertLocked(buildCsp({ dev: false }));
++    const live = new CspState({ dev: false });
++    live.addConnectOrigin("http://127.0.0.1:43123");
++    live.addConnectOrigin("ws://127.0.0.1:43124");
++    assertLocked(live.current());
++    expect(directives(live.current()).get("connect-src")).toContain("ws://127.0.0.1:43124");
++  });
++
++  it("a dev build adds only its own loopback server to scripts", () => {
++    const dev = directives(buildCsp({ dev: true, devServerOrigin: "http://127.0.0.1:5174" }));
++    expect(dev.get("script-src")).toEqual(["'self'", "indus-plugin:", "http://127.0.0.1:5174"]);
++  });
++
++  it.each([
++    "http://127.0.0.1:1/path",
++    "http://*.example",
++    "http://user:pw@127.0.0.1:1",
++    "javascript:alert(1)",
++    "file:///etc",
++    "http://127.0.0.1:1/?q=1",
++  ])("a connect origin with more than an origin is refused: %s", (raw) => {
++    expect(() => new CspState({ dev: false }).addConnectOrigin(raw)).toThrow(CspOriginError);
++  });
++
++  it("every renderer page gets exactly one policy, first in <head>, and has no inline script", () => {
++    const pages: string[] = [];
++    const walk = (dir: string) => {
++      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
++        if (
++          ["node_modules", "dist", "dist-electron", "build", "testing", "e2e", "release"].includes(
++            entry.name,
++          )
++        )
++          continue;
++        const full = path.join(dir, entry.name);
++        if (entry.isDirectory()) walk(full);
++        else if (entry.name.endsWith(".html")) pages.push(path.relative(APP_ROOT, full));
++      }
++    };
++    walk(APP_ROOT);
++    // A new renderer page must be added to the build's CSP plugin coverage (and here) on purpose.
++    expect(pages).toEqual(["index.html"]);
++    const plugin = cspMetaPlugin();
++    (plugin.configResolved as (config: ResolvedConfig) => void)({
++      command: "build",
++    } as ResolvedConfig);
++    const hook = plugin.transformIndexHtml as { handler: (html: string) => string };
++    for (const page of pages) {
++      const source = fs.readFileSync(path.join(APP_ROOT, page), "utf8");
++      for (const script of source.matchAll(/<script\b([^>]*)>/gi)) {
++        expect(script[1], `${page}: inline script`).toMatch(/\bsrc=/);
++      }
++      expect(source, `${page}: inline handler`).not.toMatch(/\son[a-z]+\s*=/i);
++      const built = hook.handler(source);
++      const metas = built.match(/<meta\s+http-equiv="Content-Security-Policy"/gi) ?? [];
++      expect(metas.length, page).toBe(1);
++      const head = built.slice(built.search(/<head[^>]*>/i));
++      expect(head.replace(/<head[^>]*>\s*/i, "")).toMatch(
++        /^<meta http-equiv="Content-Security-Policy"/,
++      );
++      const policy = /content="([^"]*)"/.exec(head)?.[1]?.replace(/&#39;|&apos;/g, "'") ?? "";
++      assertLocked(policy);
++    }
++  });
++
++  it("main's header replaces any policy an app page sent; other URLs are untouched", () => {
++    const policy = buildCsp({ dev: false });
++    const headers = withCspHeader(
++      {
++        url: APP_URL,
++        responseHeaders: {
++          "content-security-policy": ["script-src *"],
++          "Content-Security-Policy-Report-Only": ["default-src *"],
++          "x-other": ["kept"],
++        },
++      },
++      policy,
++      ORIGIN,
++    );
++    expect(headers).toEqual({ "x-other": ["kept"], "Content-Security-Policy": [policy] });
++    const foreign = { "content-security-policy": ["theirs"] };
++    expect(
++      withCspHeader({ url: "https://example.com/", responseHeaders: foreign }, policy, ORIGIN),
++    ).toBe(foreign);
++  });
++});
++
++// -- navigation and popups --------------------------------------------------------------------------
++
++function fakeContents(type: "window" | "webview") {
++  const listeners = new Map<string, (...args: unknown[]) => void>();
++  let openHandler: ((details: { url: string }) => { action: "deny" }) | null = null;
++  const contents: GuardedContents = {
++    id: type === "window" ? KNOWN : 40,
++    getType: () => type,
++    on: (event, listener) => {
++      listeners.set(event, listener as (...args: unknown[]) => void);
++      return contents;
++    },
++    setWindowOpenHandler: (handler) => {
++      openHandler = handler;
++    },
++  };
++  return {
++    contents,
++    emit: (event: string, ...args: unknown[]) => listeners.get(event)?.(...args),
++    has: (event: string) => listeners.has(event),
++    open: (url: string) => openHandler?.({ url }),
++  };
++}
++
++function navigationEvent(url: string, isMainFrame = true) {
++  const event: PreventableEvent & { prevented: boolean } = {
++    url,
++    isMainFrame,
++    prevented: false,
++    preventDefault() {
++      this.prevented = true;
++    },
++  };
++  return event;
++}
++
++const GUARD = {
++  appOrigin: ORIGIN,
++  guestPreloadPath: "/opt/Indus/app/preview-guest.cjs",
++  log: () => {},
++};
++
++describe("navigation and popups (D-16.20, R08.8)", () => {
++  it.each([
++    "https://evil.example/",
++    "http://127.0.0.1:9119/",
++    "file:///etc/passwd",
++    "file:///opt/Indus/app/dist/other.html",
++    "file:///opt/Indus/app/dist/index.html/../../../../etc/passwd",
++    "javascript:alert(1)",
++    "data:text/html,<script>1</script>",
++    "indus-media://stream/%2Fetc%2Fpasswd",
++    "about:blank",
++    "devtools://devtools/bundled/inspector.html",
++    "not a url",
++  ])("an app window never leaves the app: %s", (url) => {
++    const fake = fakeContents("window");
++    hardenWebContents(fake.contents, GUARD);
++    for (const name of ["will-navigate", "will-redirect"]) {
++      const event = navigationEvent(url);
++      fake.emit(name, event, url, false, true);
++      expect(event.prevented, `${name} ${url}`).toBe(true);
++    }
++  });
++
++  it("the app's own page (any route) may load", () => {
++    const fake = fakeContents("window");
++    hardenWebContents(fake.contents, GUARD);
++    for (const url of [APP_URL, `file://${INDEX}?window=hud#/settings`]) {
++      const event = navigationEvent(url);
++      fake.emit("will-navigate", event, url, false, true);
++      expect(event.prevented, url).toBe(false);
++    }
++  });
++
++  it("window.open is denied for app windows and guests, whatever the URL, even if logging throws", () => {
++    for (const type of ["window", "webview"] as const) {
++      const fake = fakeContents(type);
++      hardenWebContents(fake.contents, {
++        ...GUARD,
++        log: () => {
++          throw new Error("logger down");
++        },
++      });
++      for (const url of [
++        APP_URL,
++        "https://example.com/",
++        "javascript:1",
++        "file:///etc/hostname",
++        "",
++      ]) {
++        expect(fake.open(url), `${type} ${url}`).toEqual({ action: "deny" });
++      }
++    }
++  });
++
++  it("a webview attaches only on the preview partition, hardened, with our preload and no popups", () => {
++    const refusedPartitions = ["", "persist:other", "persist:indus-preview ", undefined];
++    for (const partition of refusedPartitions) {
++      const event = navigationEvent("");
++      const ok = hardenWebviewAttach(event, {}, { partition }, GUARD);
++      expect(ok, String(partition)).toBe(false);
++      expect(event.prevented).toBe(true);
++    }
++    const noPreload = navigationEvent("");
++    expect(
++      hardenWebviewAttach(
++        noPreload,
++        {},
++        { partition: PREVIEW_PARTITION },
++        { ...GUARD, guestPreloadPath: null },
++      ),
++    ).toBe(false);
++    const prefs: Record<string, unknown> = {
++      preload: "/tmp/evil.js",
++      preloadURL: "file:///tmp/evil.js",
++      nodeIntegration: true,
++      nodeIntegrationInSubFrames: true,
++      contextIsolation: false,
++      sandbox: false,
++      webSecurity: false,
++      allowRunningInsecureContent: true,
++    };
++    const params: Record<string, unknown> = { partition: PREVIEW_PARTITION, allowpopups: "true" };
++    const event = navigationEvent("");
++    expect(hardenWebviewAttach(event, prefs, params, GUARD)).toBe(true);
++    expect(prefs).toEqual({
++      preload: GUARD.guestPreloadPath,
++      nodeIntegration: false,
++      nodeIntegrationInSubFrames: false,
++      contextIsolation: true,
++      sandbox: true,
++      webSecurity: true,
++      allowRunningInsecureContent: false,
++    });
++    expect(params).not.toHaveProperty("allowpopups");
++  });
++
++  it("every web contents (guests included) gets the attach guard", () => {
++    for (const type of ["window", "webview"] as const) {
++      const fake = fakeContents(type);
++      hardenWebContents(fake.contents, GUARD);
++      expect(fake.has("will-attach-webview"), type).toBe(true);
++    }
++  });
++});
++
++// -- permissions ------------------------------------------------------------------------------------
++
++describe("permissions", () => {
++  const app = { isMainFrame: true };
++  it.each([
++    ["geolocation", APP_URL, app],
++    ["clipboard-read", APP_URL, app],
++    ["openExternal", APP_URL, app],
++    ["hid", APP_URL, app],
++    ["serial", APP_URL, app],
++    ["usb", APP_URL, app],
++    ["midi", APP_URL, app],
++    ["pointerLock", APP_URL, app],
++    ["display-capture", APP_URL, app],
++    ["media", APP_URL, { isMainFrame: true, mediaTypes: ["video"] }],
++    ["media", APP_URL, { isMainFrame: true, mediaTypes: ["audio", "video"] }],
++    ["media", APP_URL, { isMainFrame: true, mediaTypes: [] }],
++    ["notifications", "https://evil.example/", app],
++    ["media", "https://evil.example/", { isMainFrame: true, mediaTypes: ["audio"] }],
++    ["notifications", APP_URL, { isMainFrame: false }],
++    ["fullscreen", "file:///tmp/evil.html", app],
++  ])("%s for %s is refused", (permission, url, details) => {
++    expect(permissionAllowed(permission, url, details, ORIGIN)).toBe(false);
++  });
++
++  it("the app's main frame keeps its short list (microphone only for media)", () => {
++    for (const permission of ["clipboard-sanitized-write", "notifications", "fullscreen"])
++      expect(permissionAllowed(permission, APP_URL, app, ORIGIN), permission).toBe(true);
++    expect(
++      permissionAllowed("media", APP_URL, { isMainFrame: true, mediaTypes: ["audio"] }, ORIGIN),
++    ).toBe(true);
++  });
++});
++
++// -- external opener --------------------------------------------------------------------------------
++
++describe("external opener", () => {
++  it.each([
++    ["file:///etc/passwd", "scheme"],
++    ["javascript:alert(1)", "scheme"],
++    ["data:text/html,x", "scheme"],
++    ["indus://open/settings", "scheme"],
++    ["mailto:someone@example.com", "scheme"],
++    ["smb://host/share", "scheme"],
++    ["https://user:pw@example.com/", "credentials"],
++    [`https://example.com/${"a".repeat(9000)}`, "too-long"],
++    ["", "invalid"],
++    ["https://", "invalid"],
++  ])("%s → %s", (url, reason) => {
++    expect(externalUrlProblem(url)).toBe(reason);
++  });
++
++  it("opens only after a real input in that contents, once", async () => {
++    let now = 1_000;
++    const activation = new UserActivationTracker(() => now);
++    const opened: string[] = [];
++    const opener = new ExternalOpener({
++      openExternal: async (url) => void opened.push(url),
++      activation,
++      log: () => {},
++    });
++    const url = "https://example.com/docs";
++    expect(await opener.open({ url, contentsId: 3 })).toEqual({
++      ok: false,
++      reason: "no-user-activation",
++    });
++    activation.noteInput(3, "mouseMove");
++    expect((await opener.open({ url, contentsId: 3 })).ok).toBe(false);
++    activation.noteInput(4, "mouseUp");
++    expect((await opener.open({ url, contentsId: 3 })).ok).toBe(false);
++    activation.noteInput(3, "mouseUp");
++    now += 5_000;
++    expect((await opener.open({ url, contentsId: 3 })).ok).toBe(false);
++    activation.noteInput(3, "mouseUp");
++    expect(await opener.open({ url, contentsId: 3 })).toEqual({ ok: true });
++    expect((await opener.open({ url, contentsId: 3 })).ok).toBe(false);
++    expect(opened).toEqual([url]);
++  });
++});
++
++// -- media scheme -----------------------------------------------------------------------------------
++
++describe("media scheme confinement", () => {
++  const work = fs.mkdtempSync(path.join(os.tmpdir(), "indus-audit-media-"));
++  const root = path.join(work, "root");
++  fs.mkdirSync(root);
++  const PNG = Buffer.from("89504e470d0a1a0a", "hex");
++  fs.writeFileSync(path.join(root, "in.png"), PNG);
++  fs.writeFileSync(path.join(root, "notes.txt"), "text");
++  fs.writeFileSync(path.join(root, "id_ed25519"), "private");
++  fs.writeFileSync(path.join(root, "server.key"), "private");
++  fs.writeFileSync(path.join(work, "out.png"), PNG);
++  fs.symlinkSync(path.join(work, "out.png"), path.join(root, "link.png"));
++  fs.symlinkSync(work, path.join(root, "up"));
++  const handler = createMediaHandler({
++    roots: new MediaRoots([root], "linux"),
++    target: () => ({ mode: "local" }),
++  });
++  const get = (url: string, method = "GET") => handler(new Request(url, { method }));
++  afterAll(() => fs.rmSync(work, { recursive: true, force: true }));
++
++  it("a media file inside the roots is served", async () => {
++    expect((await get(mediaUrl(path.join(root, "in.png")))).status).toBe(200);
++  });
++
++  it.each([
++    ["outside the roots", () => mediaUrl(path.join(work, "out.png")), 403],
++    ["a link inside a root pointing out", () => mediaUrl(path.join(root, "link.png")), 403],
++    ["a linked folder pointing out", () => mediaUrl(path.join(root, "up", "out.png")), 403],
++    ["traversal", () => mediaUrl(`${root}/../out.png`), 403],
++    [
++      "encoded traversal",
++      () => `indus-media://stream/${encodeURIComponent(root)}%2F..%2Fout.png`,
++      403,
++    ],
++    ["a key file", () => mediaUrl(path.join(root, "id_ed25519")), 403],
++    ["a .key file", () => mediaUrl(path.join(root, "server.key")), 403],
++    ["not a media type", () => mediaUrl(path.join(root, "notes.txt")), 415],
++    ["a relative path", () => "indus-media://stream/in.png", 404],
++    [
++      "another host",
++      () => `indus-media://elsewhere/${encodeURIComponent(path.join(root, "in.png"))}`,
++      404,
++    ],
++    ["a NUL byte", () => mediaUrl(`${path.join(root, "in.png")}\0.png`), 404],
++    ["a system path (missing or not)", () => mediaUrl("/etc/indus-audit.png"), 403],
++    ["a system file of another type", () => mediaUrl("/etc/passwd"), 415],
++  ])("%s is refused", async (_label, url, status) => {
++    const answer = await get(url());
++    expect(answer.status).toBe(status);
++    expect(answer.status).not.toBe(200);
++  });
++
++  it("only GET and HEAD", async () => {
++    for (const method of ["POST", "PUT", "DELETE"]) {
++      expect((await get(mediaUrl(path.join(root, "in.png")), method)).status, method).toBe(405);
++    }
++  });
++
++  it("nothing is served before a backend is chosen", async () => {
++    const idle = createMediaHandler({ roots: new MediaRoots([root], "linux"), target: () => null });
++    expect((await idle(new Request(mediaUrl(path.join(root, "in.png"))))).status).toBe(503);
++  });
++});
++
++// -- deep links -------------------------------------------------------------------------------------
++
++describe("deep links", () => {
++  const SCHEMES = ["indus"];
++  it.each([
++    "https://open/settings",
++    "indus-evil://open/settings",
++    "indus://user@open/settings",
++    "indus://open:8080/settings",
++    "indus://run/rm",
++    "indus://open/\u0007bell",
++    `indus://open/x?${Array.from({ length: 17 }, (_, i) => `k${i}=v`).join("&")}`,
++    `indus://open/${"a".repeat(5000)}`,
++    "",
++    42,
++  ])("dropped before it reaches a window: %s", (raw) => {
++    expect(parseDeepLink(raw, SCHEMES)).toBeNull();
++  });
++
++  it("an MCP link never starts a program and never adds a plain-http remote", () => {
++    for (const params of [
++      { command: "rm", args: "-rf" },
++      { command: "node", url: "https://example.com/mcp" },
++      { args: "x", url: "https://example.com/mcp" },
++      { url: "http://example.com/mcp" },
++      { url: "file:///tmp/server" },
++      { url: "https://user:pw@example.com/mcp" },
++      {},
++    ]) {
++      const action = planLink({ kind: "mcp", name: "docs", params });
++      expect(action.kind, JSON.stringify(params)).toBe("refused");
++    }
++    expect(
++      planLink({ kind: "mcp", name: "../x", params: { url: "https://example.com" } }).kind,
++    ).toBe("refused");
++  });
++
++  it("skills and servers always wait for the person; app routes only", () => {
++    expect(
++      planLink({ kind: "mcp", name: "docs", params: { url: "https://example.com/mcp" } }).kind,
++    ).toBe("confirm-mcp");
++    expect(planLink({ kind: "skill", name: "demo-skill", params: {} }).kind).toBe("confirm-skill");
++    expect(planLink({ kind: "skill", name: "../../etc", params: {} }).kind).toBe("refused");
++    expect(planLink({ kind: "open", name: "no/such/route/at/all", params: {} }).kind).toBe(
++      "refused",
++    );
++    expect(planLink({ kind: "open", name: "settings?x=1", params: {} }).kind).toBe("refused");
++  });
++});
+diff --git a/apps/web/e2e/auth-gates.spec.ts b/apps/web/e2e/auth-gates.spec.ts
+new file mode 100644
+index 0000000..6d711d0
+--- /dev/null
++++ b/apps/web/e2e/auth-gates.spec.ts
+@@ -0,0 +1,404 @@
++// P25-03 web security audit against a real `indus dashboard` (R09.2–R09.4, D-16.25):
++//
++//   host guard   a rebinding name gets neither the page (which holds the loopback token) nor the API,
++//                over HTTP and over a WebSocket upgrade;
++//   sockets      every WebSocket path refuses an upgrade with no credential and with a credential in
++//                the URL; a good token from a foreign Origin is refused too;
++//   framing      no other site can frame the dashboard (SEC2-1);
++//   gated        session cookies are HttpOnly + SameSite=Lax on Path=/; unsafe methods from a foreign
++//                or `null` Origin are refused (login included); every protected path answers 401
++//                (unknown plugin routes too, never a 404 that names plugins); HTML goes to the login.
++//
++// Raw requests go out from Node (not the page), so a URL credential used as an attack input never
++// reaches the browser's URL log (the `urls` fixture still checks that the product never builds one).
++
++import { randomBytes } from "node:crypto";
++import http, { type IncomingHttpHeaders } from "node:http";
++import type { AddressInfo } from "node:net";
++import net from "node:net";
++import { expect, type Page, test } from "./fixtures.ts";
++
++const SESSION_HEADER = "x-indus-session-token";
++const PROTOCOL = "indus-dashboard-v1";
++/** Every WebSocket route the dashboard mounts (`indus.web.ws.websocket_routes`), plus a plugin one. */
++const SOCKET_PATHS = [
++  "/api/events?channel=audit",
++  "/api/ws",
++  "/api/pty",
++  "/api/pub",
++  "/api/console",
++  "/api/ext/no-such-plugin/socket",
++];
++/**
++ * A refused upgrade: accepted and closed with a 44xx code (what a browser can read), or, for an
++ * unknown plugin socket, no upgrade at all (the plugin gate answers before any accept).
++ */
++const REFUSED = /^(?:closed 44\d\d|http 403)$/;
++/** Protected API paths: refused without a credential whether or not a route answers them. */
++const PROTECTED = [
++  "/api/sessions",
++  "/api/config",
++  "/api/logs",
++  "/api/env",
++  "/api/status/extra",
++  "/api/ext/no-such-plugin/data",
++];
++
++interface Answer {
++  status: number;
++  headers: IncomingHttpHeaders;
++  body: string;
++}
++
++/** One HTTP request from Node with exactly these headers (`host` included when given). */
++function raw(
++  base: string,
++  path: string,
++  init: { method?: string; headers?: Record<string, string>; body?: string } = {},
++): Promise<Answer> {
++  const url = new URL(base);
++  return new Promise((done, fail) => {
++    const request = http.request(
++      {
++        host: url.hostname,
++        port: Number(url.port),
++        path,
++        method: init.method ?? "GET",
++        headers: init.headers ?? {},
++        agent: false,
++      },
++      (response) => {
++        const chunks: Buffer[] = [];
++        response.on("data", (chunk: Buffer) => chunks.push(chunk));
++        response.on("end", () =>
++          done({
++            status: response.statusCode ?? 0,
++            headers: response.headers,
++            body: Buffer.concat(chunks).toString("utf8"),
++          }),
++        );
++      },
++    );
++    request.on("error", fail);
++    if (init.body !== undefined) request.write(init.body);
++    request.end();
++  });
++}
++
++/**
++ * A WebSocket upgrade written by hand, so Host, Origin and the URL are exactly what an attacker
++ * would send: "open" (accepted and left open for 1.5 s), "closed <code>" (accepted, then the
++ * server's close frame), or "http <status>" (no upgrade at all).
++ */
++function upgrade(
++  base: string,
++  path: string,
++  options: { host?: string; origin?: string; protocols?: string[] } = {},
++): Promise<string> {
++  const url = new URL(base);
++  return new Promise((done) => {
++    const socket = net.connect(Number(url.port), url.hostname);
++    let buffer = Buffer.alloc(0);
++    let settled = false;
++    let quiet: ReturnType<typeof setTimeout> | null = null;
++    const finish = (how: string) => {
++      if (settled) return;
++      settled = true;
++      clearTimeout(limit);
++      if (quiet !== null) clearTimeout(quiet);
++      socket.destroy();
++      done(how);
++    };
++    const limit = setTimeout(() => finish("timeout"), 15_000);
++    socket.on("connect", () => {
++      const lines = [
++        `GET ${path} HTTP/1.1`,
++        `Host: ${options.host ?? url.host}`,
++        "Upgrade: websocket",
++        "Connection: Upgrade",
++        `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}`,
++        "Sec-WebSocket-Version: 13",
++      ];
++      if (options.origin !== undefined) lines.push(`Origin: ${options.origin}`);
++      if (options.protocols?.length) {
++        lines.push(`Sec-WebSocket-Protocol: ${options.protocols.join(", ")}`);
++      }
++      socket.write(`${lines.join("\r\n")}\r\n\r\n`);
++    });
++    socket.on("data", (chunk: Buffer) => {
++      buffer = Buffer.concat([buffer, chunk]);
++      const end = buffer.indexOf("\r\n\r\n");
++      if (end < 0) return;
++      const status = Number(buffer.subarray(0, end).toString("latin1").split(" ")[1]);
++      if (status !== 101) {
++        finish(`http ${status}`);
++        return;
++      }
++      quiet ??= setTimeout(() => finish("open"), 1_500);
++      const frame = buffer.subarray(end + 4);
++      if (frame.length < 2) return;
++      if (((frame[0] ?? 0) & 0x0f) !== 0x8) {
++        finish("open");
++        return;
++      }
++      if (frame.length >= 4) finish(`closed ${frame.readUInt16BE(2)}`);
++    });
++    socket.on("error", () => finish("error"));
++    socket.on("close", () => finish("ended"));
++  });
++}
++
++function tokenOffer(token: string): string[] {
++  return [PROTOCOL, `indus-dashboard-token.${token}`];
++}
++
++async function pageToken(page: Page, url: string): Promise<string> {
++  await page.goto(`${url}/sessions`);
++  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
++  return page.evaluate(() => window.__INDUS_SESSION_TOKEN__ ?? "");
++}
++
++function setCookies(headers: IncomingHttpHeaders): string[] {
++  const value = headers["set-cookie"];
++  return value === undefined ? [] : Array.isArray(value) ? value : [value];
++}
++
++test("loopback: a rebinding Host gets neither the page nor the API", async ({ launch, page }) => {
++  const stack = await launch({ turns: [[{ text: "Hello." }]] });
++  const token = await pageToken(page, stack.url);
++  expect(token.length).toBeGreaterThan(20);
++  const port = new URL(stack.url).port;
++
++  // The served page carries the token: only for a Host naming this listener.
++  const ours = await raw(stack.url, "/sessions", { headers: { host: `127.0.0.1:${port}` } });
++  expect(ours.status).toBe(200);
++  expect(ours.body).toContain(token);
++  expect((await raw(stack.url, "/", { headers: { host: `localhost:${port}` } })).status).toBe(200);
++  for (const host of [
++    `evil.example:${port}`,
++    "evil.example",
++    `127.0.0.1.evil.test:${port}`,
++    `user@127.0.0.1:${port}`,
++    `127.0.0.1:${port}/x`,
++  ]) {
++    const page = await raw(stack.url, "/sessions", { headers: { host } });
++    expect(page.status, host).toBe(400);
++    expect(page.body, host).not.toContain(token);
++    const api = await raw(stack.url, "/api/sessions", {
++      headers: { host, [SESSION_HEADER]: token },
++    });
++    expect(api.status, host).toBe(400);
++  }
++  // A socket with the right token but a rebinding Host is refused as well.
++  expect(
++    await upgrade(stack.url, "/api/events?channel=audit", {
++      host: `evil.example:${port}`,
++      protocols: tokenOffer(token),
++    }),
++  ).toBe("closed 4403");
++  expect(
++    await upgrade(stack.url, "/api/events?channel=audit", { protocols: tokenOffer(token) }),
++  ).toBe("open");
++});
++
++test("loopback: every socket path refuses no credential, a URL credential, a foreign Origin", async ({
++  launch,
++  page,
++}) => {
++  const stack = await launch({ turns: [[{ text: "Hello." }]] });
++  const token = await pageToken(page, stack.url);
++  for (const path of SOCKET_PATHS) {
++    const joiner = path.includes("?") ? "&" : "?";
++    const bare = await upgrade(stack.url, path, { protocols: [PROTOCOL] });
++    expect(bare, `${path} without a credential`).toMatch(REFUSED);
++    const none = await upgrade(stack.url, path);
++    expect(none, `${path} offering nothing`).toMatch(REFUSED);
++    for (const key of ["token", "ticket"]) {
++      const inUrl = await upgrade(stack.url, `${path}${joiner}${key}=${token}`, {
++        protocols: [PROTOCOL],
++      });
++      expect(inUrl, `${path} with ${key} in the URL`).toMatch(REFUSED);
++    }
++    // the URL credential is refused even beside a good subprotocol credential
++    const both = await upgrade(stack.url, `${path}${joiner}token=${token}`, {
++      protocols: tokenOffer(token),
++    });
++    expect(both, `${path} with a URL credential beside the header one`).toMatch(REFUSED);
++  }
++  for (const origin of [
++    "http://evil.example",
++    "https://evil.example",
++    "http://127.0.0.1.evil.test",
++  ]) {
++    expect(
++      await upgrade(stack.url, "/api/events?channel=audit", {
++        origin,
++        protocols: tokenOffer(token),
++      }),
++      origin,
++    ).toBe("closed 4403");
++  }
++  // From the dashboard's own page the same token opens the socket (the refusals above are real).
++  expect(
++    await upgrade(stack.url, "/api/events?channel=audit", {
++      origin: stack.url,
++      protocols: tokenOffer(token),
++    }),
++  ).toBe("open");
++});
++
++test("loopback: protected API paths need the token; public ones do not", async ({ launch }) => {
++  const stack = await launch({ turns: [[{ text: "Hello." }]] });
++  for (const path of PROTECTED) {
++    const answer = await raw(stack.url, path);
++    expect(answer.status, path).toBe(401);
++    expect(JSON.parse(answer.body).error, path).toBe("unauthenticated");
++  }
++  expect((await raw(stack.url, "/api/health")).status).toBe(200);
++});
++
++test("no other site can frame the dashboard (SEC2-1)", async ({ launch, page }) => {
++  const stack = await launch({ turns: [[{ text: "Hello." }]] });
++  for (const path of ["/", "/sessions"]) {
++    const answer = await raw(stack.url, path);
++    expect(answer.headers["x-frame-options"], path).toBe("DENY");
++    expect(answer.headers["content-security-policy"], path).toContain("frame-ancestors 'none'");
++    expect(answer.headers["x-content-type-options"], path).toBe("nosniff");
++  }
++  // A page on another origin frames it: the frame never becomes the dashboard.
++  const framer = http.createServer((_request, response) => {
++    response
++      .writeHead(200, { "content-type": "text/html" })
++      .end(
++        `<!doctype html><title>framer</title><iframe id="target" src="${stack.url}/sessions" width="800" height="600"></iframe>`,
++      );
++  });
++  await new Promise<void>((resolve) => framer.listen(0, "127.0.0.1", resolve));
++  try {
++    const port = (framer.address() as AddressInfo).port;
++    await page.goto(`http://127.0.0.1:${port}/`);
++    await page.waitForTimeout(3_000);
++    const child = page.frames().find((frame) => frame !== page.mainFrame());
++    expect(child).toBeDefined();
++    const inside = await child
++      ?.evaluate(() => typeof window.__INDUS_SESSION_TOKEN__)
++      .catch(() => "unreachable");
++    expect(inside).not.toBe("string");
++    expect(child?.url() ?? "").not.toBe(`${stack.url}/sessions`);
++  } finally {
++    await new Promise<void>((resolve) => framer.close(() => resolve()));
++  }
++});
++
++test("gated: cookie flags, CSRF refusals, 401 on protected paths, Host bound to the listener", async ({
++  launch,
++  page,
++}) => {
++  const password = ["e2e", "audit", String(Date.now())].join("-");
++  const stack = await launch({
++    turns: [[{ text: "Hello." }]],
++    dashboard: { host: "127.0.0.2" },
++    basicAuth: { username: "admin", password },
++  });
++  const url = stack.url;
++  const port = new URL(url).port;
++  const login = JSON.stringify({ username: "admin", password });
++  const json = { "content-type": "application/json" };
++
++  // Login CSRF: a foreign or null Origin cannot sign the browser in.
++  for (const origin of ["http://evil.example", "null", `http://127.0.0.1:${port}`]) {
++    const refused = await raw(url, "/auth/password-login", {
++      method: "POST",
++      headers: { ...json, origin },
++      body: login,
++    });
++    expect(refused.status, origin).toBe(403);
++    expect(setCookies(refused.headers), origin).toEqual([]);
++  }
++
++  // The session cookies: HttpOnly, SameSite=Lax, Path=/ (plain http here, so no Secure flag).
++  const signed = await raw(url, "/auth/password-login", {
++    method: "POST",
++    headers: { ...json, origin: url },
++    body: login,
++  });
++  expect(signed.status).toBe(200);
++  const cookies = setCookies(signed.headers).filter((line) => !/max-age=0/i.test(line));
++  expect(cookies.length).toBeGreaterThan(0);
++  for (const line of cookies) {
++    expect(line, line).toMatch(/;\s*HttpOnly/i);
++    expect(line, line).toMatch(/;\s*SameSite=lax/i);
++    expect(line, line).toMatch(/;\s*Path=\//i);
++  }
++  const jar = cookies.map((line) => line.split(";")[0]).join("; ");
++
++  // With the session: unsafe methods from a foreign or null Origin are refused; ours pass.
++  const mint = (origin: string | null) =>
++    raw(url, "/api/auth/ws-ticket", {
++      method: "POST",
++      headers: { ...json, cookie: jar, ...(origin === null ? {} : { origin }) },
++      body: JSON.stringify({ purpose: "web-events" }),
++    });
++  for (const origin of ["http://evil.example", "null", `${url}.evil.test`, "file://"]) {
++    const answer = await mint(origin);
++    expect(answer.status, origin).toBe(403);
++    expect(JSON.parse(answer.body).error, origin).toBe("forbidden_origin");
++  }
++  const minted = await mint(url);
++  expect(minted.status).toBe(200);
++  expect(minted.headers["cache-control"]).toBe("no-store");
++
++  // The Host must name this listener: 127.0.0.1 is loopback, but not what it is bound to.
++  for (const host of [`127.0.0.1:${port}`, `localhost:${port}`, `evil.example:${port}`]) {
++    const answer = await raw(url, "/api/sessions", { headers: { host, cookie: jar } });
++    expect(answer.status, host).toBe(400);
++  }
++  expect((await raw(url, "/api/sessions", { headers: { cookie: jar } })).status).toBe(200);
++
++  // Without a session: every protected API path is 401 with the login URL; HTML goes to login.
++  for (const path of PROTECTED) {
++    const answer = await raw(url, path);
++    expect(answer.status, path).toBe(401);
++    const body = JSON.parse(answer.body) as { error: string; login_url?: string };
++    expect(body.error, path).toBe("unauthenticated");
++    expect(body.login_url, path).toMatch(/\/login/);
++  }
++  const html = await raw(url, "/sessions");
++  expect(html.status).toBe(302);
++  expect(String(html.headers.location)).toMatch(/\/login/);
++  expect((await raw(url, "/api/health")).status).toBe(200);
++
++  // Sockets: a ticket only in the subprotocol; in the URL it is spent and refused.
++  const ticket = (JSON.parse(minted.body) as { ticket: string }).ticket;
++  expect(
++    await upgrade(url, `/api/events?channel=audit&ticket=${ticket}`, {
++      origin: url,
++      protocols: [PROTOCOL],
++    }),
++  ).toBe("closed 4401");
++  expect(
++    await upgrade(url, "/api/events?channel=audit", {
++      origin: url,
++      protocols: [PROTOCOL, `indus-dashboard-ticket.${ticket}`],
++    }),
++  ).toBe("closed 4401");
++  const fresh = JSON.parse((await mint(url)).body) as { ticket: string };
++  const offer = [PROTOCOL, `indus-dashboard-ticket.${fresh.ticket}`];
++  expect(
++    await upgrade(url, "/api/events?channel=audit", {
++      origin: "http://evil.example",
++      protocols: offer,
++    }),
++  ).toBe("closed 4403");
++  const last = JSON.parse((await mint(url)).body) as { ticket: string };
++  expect(
++    await upgrade(url, "/api/events?channel=audit", {
++      origin: url,
++      protocols: [PROTOCOL, `indus-dashboard-ticket.${last.ticket}`],
++    }),
++  ).toBe("open");
++
++  // The browser itself never saw a credential in a URL (checked by the `urls` fixture).
++  await page.goto(`${url}/sessions`);
++  await expect(page.getByLabel("Username")).toBeVisible();
++});
+diff --git a/docs/internals/acceptance-map.md b/docs/internals/acceptance-map.md
+index 58c333d..238b3fa 100644
+--- a/docs/internals/acceptance-map.md
++++ b/docs/internals/acceptance-map.md
+@@ -2071,6 +2071,10 @@ Checked by `python -m tooling.checks acceptance`.
+   - `tests/unit/packaging/test_metadata.py::test_no_interpreter_markers_or_open_ranges`
+   - `tests/unit/packaging/test_metadata.py::test_messaging_and_all_are_unions_of_their_members`
+   - Review: lazy extra installs at runtime are not part of this task (P23-01)
++- **ACC-S8-3** Dependency audit: every locked package against OSV (+ `pnpm audit`), failing on high/critical unless allow-listed with a reason and an unexpired date
++  - `tooling/checks/tests/test_deps_audit.py::test_a_known_vulnerable_lock_fails`
++  - `tooling/checks/tests/test_deps_audit.py::test_allow_listed_with_a_future_expiry_passes`
++  - `tooling/checks/tests/test_deps_audit.py::test_an_expired_entry_fails`
+ - **ACC-S10-1** A release dry run plans a release (checks, version, attempt ref, claim, notes) and writes nothing
+   - `tests/unit/release/test_release_cli.py::test_dry_run_prints_the_plan_and_creates_nothing`
+ - **ACC-S10-2** Publication is idempotent: a rerun after a partial failure completes without duplicates
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index 66e39c8..cbac423 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -1158,6 +1158,8 @@ Checked by `python -m tooling.checks traps`.
+   - `apps/desktop/electron/preview/guestPreload.test.ts::a page's own click() on a _blank link sends nothing to the host`
+   - `apps/desktop/electron/preview/guest.test.ts::an untrusted guest click cannot open; a trusted one can, http/https only`
+   - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::a file: hand-off from the guest is refused before main`
++  - `apps/desktop/electron/security/audit.test.ts::window.open is denied for app windows and guests, whatever the URL, even if logging throws`
++  - `apps/desktop/electron/security/audit.test.ts::a webview attaches only on the preview partition, hardened, with our preload and no popups`
+ - **R08.9** Cookie partition naming on Windows
+   - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::renders the webview on the preview partition without popups`
+   - `apps/desktop/src/panes/preview/PreviewPane.test.tsx::the renderer's constants equal main's`
+@@ -1249,6 +1251,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/contract/gateway/test_ws_endpoint.py::test_logs_carry_no_ticket_params_or_query`
+   - `tests/unit/web/ws/test_ws_auth.py::test_gated_tickets_through_the_app`
+   - `tests/unit/web/ws/test_ws_auth.py::test_every_websocket_route_goes_through_the_helper`
++  - `apps/web/e2e/auth-gates.spec.ts::loopback: every socket path refuses no credential, a URL credential, a foreign Origin`
+   - `tests/unit/web/ws/test_ws_auth.py::test_credentials_in_the_url_are_refused_and_spent`
+   - `tests/unit/web/ws/test_ws_auth.py::test_refusals_never_log_or_audit_the_credential`
+   - `tests/integration/web/test_chat_routes_gate.py::test_loopback_mode_credentials_per_route`
+@@ -1266,6 +1269,7 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/web/auth/test_gate.py::test_gate_table`
+   - `tests/unit/web/test_app_modes.py::test_non_interactive_gated_start_without_provider_lists_reasons`
+   - `apps/web/e2e/auth.spec.ts::a gated bind without a login provider refuses to start`
++  - `apps/web/e2e/auth-gates.spec.ts::gated: cookie flags, CSRF refusals, 401 on protected paths, Host bound to the listener`
+ - **R09.4** Middleware ordering leaks
+   - `tests/unit/web/auth/test_gate.py::test_bad_host_is_400_after_auth`
+   - `tests/unit/web/auth/test_gate.py::test_unknown_plugin_route_is_401_before_404`
+@@ -1275,6 +1279,8 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/contract/web/test_plugins_mcp_routes.py::test_oauth_callback_is_public_and_matches_state`
+   - `tests/unit/web/auth/test_gate.py::test_no_route_takes_the_token_in_the_query`
+   - `tests/contract/web/test_files_system_routes.py::test_without_a_ticket_the_route_says_nothing_about_the_disk`
++  - `apps/web/e2e/auth-gates.spec.ts::loopback: a rebinding Host gets neither the page nor the API`
++  - `apps/web/e2e/auth-gates.spec.ts::loopback: protected API paths need the token; public ones do not`
+ - **R09.5** Token rotation vs open tabs
+   - `tests/unit/web/test_spa.py::test_client_routes_get_the_index_with_no_store`
+   - `apps/web/e2e/auth.spec.ts::a stale token after a dashboard restart reloads the page once and goes on`
+@@ -1535,3 +1541,5 @@ Checked by `python -m tooling.checks traps`.
+   - `tooling/checks/tests/test_pins.py::test_bounded_range_needs_allow_entry`
+   - `tests/unit/safety/test_content_scan.py::test_code_spans_and_fences_scan_at_least_as_strictly_as_prose`
+   - `tests/unit/learning/skills/hub/test_install.py::test_commands_in_code_spans_and_fences_are_not_hidden_from_the_policy`
++  - `tooling/checks/tests/test_deps_audit.py::test_a_known_vulnerable_lock_fails`
++  - `tooling/checks/tests/test_deps_audit.py::test_an_expired_entry_fails`
+diff --git a/docs/notes/P25/deps-audit.md b/docs/notes/P25/deps-audit.md
+new file mode 100644
+index 0000000..7906d63
+--- /dev/null
++++ b/docs/notes/P25/deps-audit.md
+@@ -0,0 +1,93 @@
++# Task: Dependency audit (P25-04) Phase: P25 Owner: SEC2 (wave 43)
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `.github/workflows/supply-chain-audit.yml`
++(the scan and bounds steps, for scope only: a diff scan for obfuscated exec/subprocess payloads and a check
++that PyPI requirements carry an upper bound). Closed before writing.
++Evidence: none.
++
++What it does (own words): every package version the two lock files pin (`uv.lock`, `pnpm-lock.yaml`) is
++looked up in the OSV database (and the npm side also through `pnpm audit --prod`). A known vulnerability
++at or above the failing severity (high by default) fails the build unless `deps_audit_allow.json` lists that
++advisory for that package with a reason and an expiry date that has not passed; an expired, malformed or
++reason-less entry fails too, and an entry nothing matches any more is reported so it gets removed. The
++network lookup runs in a dedicated CI job (and by hand with `--refresh`); its answer is kept in
++`deps_audit_snapshot.json`, so the offline guard run (`python -m tooling.checks deps_audit`) evaluates the
++same findings without network and warns when the locks changed after the snapshot. The same pass checks
++provenance (every locked package from its registry with a hash; anything from git, a path or a bare URL is
++named) and reports pin age (upload times uv records). With `--resolve-pins` the job also checks that every
++pinned download in `scripts/install/pins.json` and `docker/pins.json` still answers and the Docker base
++digest still resolves in its registry.
++
++Inputs → outputs: lock files + OSV / pnpm-audit answers + allow file → pass/fail with one line per finding
++(advisory id, package@version, severity, fixed versions), a JSON snapshot, a markdown report (`--report`).
++
++Files: `tooling/checks/deps_audit.py`, `tooling/checks/deps_audit_allow.json`,
++`tooling/checks/deps_audit_snapshot.json`, `tooling/checks/tests/test_deps_audit.py`,
++`tooling/checks/tests/fixtures/deps/` (lock files with a known-vulnerable version), `tooling/checks/__init__.py`
++(register the check), `.github/workflows/deps-audit.yml` (the network job).
++
++Edge cases / failure modes:
++- OSV entries without a GHSA severity: CVSS v3 vectors are scored (base score → band); an entry with no
++  usable severity counts as `unknown`, which fails like `high` (fail closed; allow-list it with a reason);
++- an advisory with aliases (GHSA / PYSEC / CVE) is matched in the allow file by any of its ids;
++- the OSV batch API pages (`next_page_token`) and caps a batch at 1000 queries: chunks of 500;
++- the network is down / a 5xx: the refresh is a setup error (exit 2), never a silent pass;
++- `pnpm audit` not installed / no network: reported, the OSV result still stands;
++- pnpm lock has two YAML documents (the package-manager pin and the project lock): both are read.
++
++Our design differences / decisions:
++- The reference scans diffs with patterns and checks upper bounds; we pin exact versions already (P00 pins
++  check, D-16.52), so the audit is a vulnerability database lookup with an expiring allow-list instead.
++- No new package: OSV over `urllib` (stdlib) with timeouts; `pnpm audit` is pnpm's own.
++
++Tests we will write: fixture lock with a known-vulnerable version fails (offline, injected OSV answer);
++allow-listed with a future expiry passes; expired fails; reason-less fails; alias match; severity bands and
++CVSS scoring; pnpm lock parsing (scoped names, two documents, integrity); provenance refusals; snapshot
++staleness warning; pnpm-audit JSON parsing; pin resolution with an injected HEAD.
++
++## Decisions for the lead
++- Failing threshold `high` (and `unknown`) per the wave brief; `moderate`/`low` are warnings. The threshold
++  lives in the allow file (`fail_at`).
++- The offline guard evaluates the committed snapshot; a stale snapshot is a warning there and the CI job
++  (network) is the gate that refreshes and fails. The lead may prefer a stale snapshot to fail locally.
++- The network job is its own workflow (`deps-audit.yml`: lock changes, weekly schedule, manual) so a
++  database update can fail the audit without blocking every unrelated PR's main CI.
++
++Compare checklist (filled after the rewrite; reopened `supply-chain-audit.yml`):
++- [x] scope: the reference's diff-pattern scan targets malicious code in PRs, not known advisories — ours
++  is complementary (R10.30: heuristics paired with OSV); the static code patterns belong to SEC1's guards.
++- [x] the upper-bound rule: covered more strictly by `tooling/checks/pins.py` (exact pins only).
++- Deliberate differences: no PR-comment status assembly; our job fails with the finding lines in its log.
++- Not taken: `.pth` / install-hook file scanning (SEC1 static guards own code patterns).
++
++## Status
++
++Done (2026-10-21). Audit results recorded below.
++
++## Audit results (2026-10-21, through the agent proxy)
++
++Command: `python -m tooling.checks.deps_audit --refresh --pnpm-audit --report` (snapshot committed),
++then `--resolve-pins`. 877 locked packages (194 PyPI, 683 npm): all from their registry, all hashed.
++Pin age (uv upload times): newest filelock 4.0.10 (2026-10-03), median cffi 2.1.1 (2026-08-03), oldest
++toml 0.10.2 (2020-11-01); 10 uploads before 2023 (toml, ptyprocess, mergedeep, unpaddedbase64, base58,
++pynacl 1.5.0, ghp-import, types-certifi, mdurl, colorama).
++
++| Id | Package | Severity | Verdict |
++|---|---|---|---|
++| GHSA-6q48-6c7w-9gw2 | certifi 2026.7.22 (PyPI, runtime: httpx trust store) | critical | allow-listed to 2026-11-08 (SEC2-2): fix 2026.10.19 uploaded 2026-10-20, after exclude-newer and inside the 14-day rule |
++| GHSA-2g87-pp6c-29x5, GHSA-5wr8-gcqf-gqf3, GHSA-9xw5-w5jj-pvcg | aiohttp 3.14.3 (slack extra, client only) | high | allow-listed to 2026-11-15 (SEC2-3): fix 3.14.4 uploaded 2026-10-05, one day after exclude-newer |
++| 5 more aiohttp | aiohttp 3.14.3 | low/moderate | warnings (same bump) |
++| GHSA-587h-7wmj-h5pm | vite 8.3.2 (npm, dev only) | high | allow-listed to 2026-11-15 (SEC2-4): fix 8.3.3 (2026-10-06) passes the npm age rule; bump at the next re-lock |
++| 5 more vite | vite 8.3.2 | low/moderate | warnings (same bump) |
++| GHSA-mrfv-m5wm-5w6w | pynacl 1.5.0 | moderate | warning; 1.6.2 (2026-01-01) is lockable now |
++| 5 pypdf | pypdf 6.19.0 (docs extra) | low/moderate | warnings; fixes 6.20.0+ are after exclude-newer |
++| GHSA-238p-pmpm-9mq7 | katex 0.16.47 (via mermaid, prod) | low | warning (`pnpm audit --prod`'s only row) |
++| GHSA-hp3w-g68c-fv3c | sprintf-js 1.1.3 (electron-builder chain, dev) | moderate | warning; no fixed release |
++
++Pinned downloads: all 20 primary URLs in `scripts/install/pins.json` and the `docker/pins.json` bundles
++answer 200. The Docker Hub manifest HEAD for `debian@sha256:62bd…34ad` answered 429 here (rate limit
++through the proxy): reported as "not verified", not as a failure; the CI job checks it again.
++
++Licence re-check (`python -m tooling.checks licenses`, against `licenses_allow.json`): ok ("checked 79
++dependencies", 0 issues). No package added by this task: the audit uses only the standard library and
++pnpm's own `audit`.
+diff --git a/docs/notes/P25/security-ts.md b/docs/notes/P25/security-ts.md
+new file mode 100644
+index 0000000..d586b66
+--- /dev/null
++++ b/docs/notes/P25/security-ts.md
+@@ -0,0 +1,89 @@
++# Task: Security regression suite, desktop and web (P25-03) Phase: P25 Owner: SEC2 (wave 43)
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `apps/desktop/electron/window-open-policy.ts`
++(whole file: the deny-always handler and its one delegated exception), `apps/desktop/electron/hardening.ts`
++(the list of guarded operations only: secret-file modes, safe-storage use, sensitive-file and path refusals,
++fetch timeouts). Closed before writing.
++Evidence: none.
++
++What it does (own words): one place that proves each desktop and web trust boundary still holds, so a
++later change that weakens one fails a named test. The desktop half has two layers. A unit audit runs in
++the root vitest lane on every machine: every channel in the IPC table, sent from each kind of foreign
++frame (a `<webview>` guest, an iframe, a page that navigated away from the app, a window main never
++registered, a destroyed sender, an event with no frame), is refused before its handler runs; every request
++schema is a strict object with no open `unknown` outside a reviewed list; nothing listens on an event
++channel; the production CSP keeps scripts to the app and checked plugin modules; navigation and popups are
++denied; webview attach is forced to our hardened guest settings; the media scheme, external opener, deep
++links and permission policy refuse what they must. The Electron E2E layer (`security-audit.spec.ts`, the
++harness's lane) checks the same boundaries in a real window: the CSP is present as meta and as the header
++on the app page, frames without the preload see no bridge, the app window cannot navigate away or open a
++window, and (when a packaged build is there) the fuses read from the binary are the hardened set.
++The web half drives a real `indus dashboard` through Playwright: Host guard on HTML and API (the HTML
++carries the loopback token, so a rebinding page must not get it), every WebSocket path refusing an upgrade
++with no credential, with a credential in the URL, and from a foreign Origin; the dashboard not being
++frameable; gated mode's cookie flags, CSRF refusals (`Origin` foreign and `null`), and the 401 on every
++protected path including unknown plugin routes.
++
++Inputs → outputs: IPC events / HTTP requests / WS upgrades / framing attempts → refusal envelopes, status
++codes, close codes, response headers.
++
++Files: `apps/desktop/electron/security/audit.test.ts` (new), `apps/desktop/e2e/security-audit.spec.ts`
++(new), `apps/desktop/e2e/vitest.config.ts` (include the spec), `apps/web/e2e/auth-gates.spec.ts` (new),
++fix in `src/indus/web/spa.py` with `tests/unit/web/test_spa.py` (regression test).
++
++Edge cases / failure modes:
++- a channel added to the table later is covered automatically (the audit iterates the table);
++- a request schema loosened to `z.object` / `unknown` fails with the channel and path named;
++- sync channels answer through `returnValue`; a refusal must still set it (no hang in the preload);
++- WS refusals are accepted then closed with a 44xx code (a browser sees the code);
++- the gated stack binds `127.0.0.2` (still this machine), never an external interface.
++
++Our design differences / decisions:
++- The reference denies every window-open and delegates exactly one hub origin to its opener; we deny all
++  with no delegation (our trusted-click path goes through the guest preload's `sendToHost`), already so.
++- "Every channel from a foreign frame" is proven at the registry over the full table (unit) because in a
++  real Electron window no foreign frame gets an `ipcRenderer` at all (no preload in subframes or guests'
++  pages); the E2E layer proves that last part.
++
++Tests we will write: see Files; one `it` per boundary row, parametrized over channels/paths.
++
++## Decisions for the lead
++- Finding SEC2-1 (medium, fixed): the dashboard's HTML (index and bundle files) had no framing policy, so
++  any site could frame the loopback dashboard (which holds the session token in the page) and clickjack
++  it. Now `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and
++  `X-Content-Type-Options: nosniff` on every SPA response. No surface frames the dashboard (checked: no
++  iframe in apps/web or apps/desktop renderer; the desktop preview is a `<webview>`, which is not a frame
++  ancestor).
++- The SPA still has no full script CSP (its bootstrap is one inline script); a hash-based `script-src`
++  is a follow-up, not done here (it touches the bootstrap and the theme CSS).
++
++Compare checklist (filled after the rewrite; reopened `window-open-policy.ts`, `hardening.ts`):
++- [x] window-open always denied, no window created, log carries the origin only (test:
++  `audit.test.ts > navigation and popups`)
++- [x] a throwing logger cannot change the decision (existing `navigation.test.ts`; audit repeats it)
++- [x] sensitive files refused over IPC (existing E2E `security.electron.test.ts` fs case; audit pins
++  `sensitiveFiles` list via the fs E2E, not duplicated)
++- [x] path syntax refusals (NUL, traversal) on the media scheme (test: `audit.test.ts > media scheme`)
++- Deliberate differences: no delegated window-open exception (we have no embedded hub frame).
++- Not taken: secret-file mode tightening lives in `secrets.ts` with its own tests (not a P25-03 row).
++
++## Status
++
++Done (2026-10-21). `electron/security/audit.test.ts` 94 passed (root vitest lane); `apps/web/e2e/auth-gates
++.spec.ts` 5 passed against a real dashboard (Chromium from /opt/pw-browsers); the regression test
++`tests/unit/web/test_spa.py::test_no_bundle_answer_may_be_framed` fails on the old `spa.py` (no
++`x-frame-options`) and passes now; the framing spec failed with the fix removed and passes with it.
++`e2e/security-audit.spec.ts` is in the Electron lane (`pnpm --filter @indus/desktop e2e`) and skipped on
++this host (no Electron binary; downloading one is network the wave rules do not allow) — it type-checks
++and lints clean but has not run yet: the lead's Electron lane is its first run.
++
++Observations (no fix needed, recorded for the threat model):
++- `IpcRegistry.seal()` answers a sync channel nobody registered with `not-available` without the sender
++  check (no data leaves; every registered sync channel is checked).
++- Gated mode lets an unsafe request without any `Origin` through the CSRF check (non-browser clients);
++  browsers always send `Origin` on such requests and the session cookies are `SameSite=Lax`.
++- `cookies.read` also accepts the unprefixed cookie name on https (a sibling-subdomain cookie could plant a
++  session of the attacker's own, never read the person's); preferring only the `__Host-`/`__Secure-` name
++  when served over https is a small follow-up.
++- On a loopback bind a WebSocket from another loopback port's page passes the Origin rule; it still needs
++  the session token, which only the dashboard's own page has.
+diff --git a/src/indus/web/spa.py b/src/indus/web/spa.py
+index ed0636a..24e03e3 100644
+--- a/src/indus/web/spa.py
++++ b/src/indus/web/spa.py
+@@ -25,6 +25,10 @@ mode only), ``__INDUS_BASE_PATH__``, ``__INDUS_AUTH_REQUIRED__``,
+ ``&`` and the two JavaScript line separators escaped, so no value can close the script. The active
+ theme's first-paint CSS goes in just before it.
+ 
++Framing: every answer from the bundle (index and files) carries ``FRAME_GUARD`` — no page may frame
++the dashboard (its loopback index holds the session token, so a framing site could otherwise drive
++it with a person's clicks), and no file is content-sniffed into another type.
++
+ ``BuildPlan``: when the bundle is missing in a source checkout (``apps/web/package.json``) and
+ ``pnpm`` is on PATH, the dashboard builds once before serving: ``pnpm --filter @indus/web build``
+ with the Node heap capped at half the cgroup memory limit (at most 4 GiB, at least 512 MiB) and
+@@ -53,6 +57,7 @@ from indus.web.state import DashboardState
+ 
+ __all__ = [
+     "BUILD_COMMAND",
++    "FRAME_GUARD",
+     "IMMUTABLE",
+     "NO_STORE",
+     "BuildPlan",
+@@ -70,6 +75,11 @@ log = logging.getLogger(__name__)
+ BUILD_COMMAND: Final = "pnpm --filter @indus/web build"
+ IMMUTABLE: Final = "public, max-age=31536000, immutable"
+ NO_STORE: Final = "no-store"
++FRAME_GUARD: Final[Mapping[str, str]] = {
++    "content-security-policy": "frame-ancestors 'none'",
++    "x-frame-options": "DENY",
++    "x-content-type-options": "nosniff",
++}
+ _ALL_METHODS: Final = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+ _THEMES: Final[dict[str, tuple[str, str, str]]] = {
+     "light": ("light", "#f7f7f5", "#1d1d1b"),
+@@ -189,7 +199,7 @@ def _index(state: DashboardState, bundle: SpaBundle, request: Request) -> Respon
+     text = rewrite_index_html(text, prefix)
+     head = theme_css(state.theme) + bootstrap_script(state, prefix)
+     text = text.replace("</head>", head + "</head>", 1) if "</head>" in text else head + text
+-    return HTMLResponse(text, headers={"cache-control": NO_STORE})
++    return HTMLResponse(text, headers={"cache-control": NO_STORE, **FRAME_GUARD})
+ 
+ 
+ def mount_spa(app: FastAPI, state: DashboardState) -> None:
+@@ -230,9 +240,9 @@ def mount_spa(app: FastAPI, state: DashboardState) -> None:
+             return Response(
+                 css,
+                 media_type="text/css",
+-                headers={"cache-control": IMMUTABLE, "vary": "X-Forwarded-Prefix"},
++                headers={"cache-control": IMMUTABLE, "vary": "X-Forwarded-Prefix", **FRAME_GUARD},
+             )
+-        return FileResponse(found, headers={"cache-control": IMMUTABLE})
++        return FileResponse(found, headers={"cache-control": IMMUTABLE, **FRAME_GUARD})
+ 
+     @app.get("/{rest:path}", include_in_schema=False)
+     async def page(rest: str, request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
+@@ -243,7 +253,7 @@ def mount_spa(app: FastAPI, state: DashboardState) -> None:
+         if rest and rest != "index.html":
+             found = bundle.inside(rest)
+             if found is not None:
+-                return FileResponse(found, headers={"cache-control": "no-cache"})
++                return FileResponse(found, headers={"cache-control": "no-cache", **FRAME_GUARD})
+         return _index(state, bundle, request)
+ 
+     @app.api_route(
+diff --git a/tests/unit/web/test_spa.py b/tests/unit/web/test_spa.py
+index c47033a..663b545 100644
+--- a/tests/unit/web/test_spa.py
++++ b/tests/unit/web/test_spa.py
+@@ -118,6 +118,27 @@ def test_gated_index_carries_no_token(build: Builder) -> None:
+     assert "window.__INDUS_AUTH_REQUIRED__=true" in index.text
+ 
+ 
++def test_no_bundle_answer_may_be_framed(build: Builder) -> None:
++    """SEC2-1 (P25-03): the loopback index holds the session token; a framing site must get
++    nothing it can drive, so every answer from the bundle refuses framing and sniffing."""
++    built = build()
++    for path in ("/", "/sessions", "/index.html", "/favicon.ico", "/assets/index-abc123.js"):
++        response = built.client.get(path)
++        assert response.status_code == 200, path
++        assert response.headers["x-frame-options"] == "DENY", path
++        assert response.headers["content-security-policy"] == "frame-ancestors 'none'", path
++        assert response.headers["x-content-type-options"] == "nosniff", path
++    css = built.client.get("/assets/index-abc123.css", headers={"X-Forwarded-Prefix": "/x"})
++    assert css.headers["x-frame-options"] == "DENY"
++    gated = build(host="0.0.0.0", config=basic_config())
++    gated.client.post(
++        "/auth/password-login", json={"username": "admin", "password": "correct horse"}
++    )
++    index = gated.client.get("/")
++    assert index.status_code == 200
++    assert index.headers["x-frame-options"] == "DENY"
++
++
+ def test_missing_bundle_then_built_bundle_without_restart(build: Builder, tmp_path: Path) -> None:
+     later = tmp_path / "later-dist"
+     built = build(bundle=later)
+diff --git a/tooling/checks/__init__.py b/tooling/checks/__init__.py
+index 76bcf0f..a639ab0 100644
+--- a/tooling/checks/__init__.py
++++ b/tooling/checks/__init__.py
+@@ -13,4 +13,5 @@ NAMES = (
+     "protocol_stale",
+     "no_raw_environ",
+     "artifacts",
++    "deps_audit",
+ )
+diff --git a/tooling/checks/deps_audit.py b/tooling/checks/deps_audit.py
+new file mode 100644
+index 0000000..11e5187
+--- /dev/null
++++ b/tooling/checks/deps_audit.py
+@@ -0,0 +1,876 @@
++"""Dependency audit (P25-04): known vulnerabilities in every locked package, allow-list expiring.
++
++Every ``name@version`` in ``uv.lock`` and ``pnpm-lock.yaml`` is looked up in OSV
++(``api.osv.dev``); ``pnpm audit`` adds the npm registry's own advisories. A finding at or above
++``fail_at`` (in the allow file; ``high`` by default, and ``unknown`` severity counts as failing)
++fails unless ``deps_audit_allow.json`` lists one of its ids for that package with a reason and an
++expiry date that has not passed. Expired, reason-less or malformed entries fail; entries that match
++nothing are warned about so they get removed.
++
++The network lookup runs only on request (``--refresh``, the CI audit job). Its answer is stored in
++``deps_audit_snapshot.json``; the offline guard (``python -m tooling.checks deps_audit``) evaluates
++that snapshot against today's locks and allow file, and warns when the locks changed since. The same
++pass checks provenance: every locked package comes from its registry with a hash (git, path and bare
++URL sources are named). ``--report`` prints a markdown summary with pin ages; ``--resolve-pins``
++checks that the pinned downloads in ``scripts/install/pins.json`` and ``docker/pins.json`` still
++answer and that the Docker base digest still resolves.
++
++    python -m tooling.checks.deps_audit [--refresh] [--pnpm-audit] [--resolve-pins] [--report]
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import math
++import re
++import shutil
++import subprocess
++import sys
++import tomllib
++import urllib.error
++import urllib.request
++from collections.abc import Callable, Iterable, Mapping, Sequence
++from dataclasses import asdict, dataclass, field
++from datetime import UTC, date, datetime
++from pathlib import Path
++from typing import Any, cast
++
++from tooling.checks.common import CHECKS_DIR, DEFAULT_ROOT, Context, Result
++
++NAME = "deps_audit"
++ALLOW_FILE = CHECKS_DIR / "deps_audit_allow.json"
++SNAPSHOT_FILE = CHECKS_DIR / "deps_audit_snapshot.json"
++LOCKS = ("uv.lock", "pnpm-lock.yaml")
++OSV_BATCH = "https://api.osv.dev/v1/querybatch"
++OSV_VULN = "https://api.osv.dev/v1/vulns/"
++BATCH_SIZE = 500
++TIMEOUT = 60
++LEVELS = {"low": 1, "moderate": 2, "high": 3, "critical": 4, "unknown": 3}
++"""Severity order; ``unknown`` ranks with ``high`` so an unscored advisory fails closed."""
++PNPM_SEVERITY = {
++    "info": "low",
++    "low": "low",
++    "moderate": "moderate",
++    "high": "high",
++    "critical": "critical",
++}
++
++type Fetch = Callable[[str, bytes | None], Any]
++"""``fetch(url, body)``: the parsed JSON answer of a GET (body None) or a JSON POST."""
++
++
++@dataclass(frozen=True, slots=True)
++class Package:
++    ecosystem: str
++    name: str
++    version: str
++    source: str = "registry"
++    hashed: bool = True
++    uploaded: str | None = None
++
++
++@dataclass(frozen=True, slots=True)
++class Advisory:
++    id: str
++    ecosystem: str
++    package: str
++    version: str
++    severity: str
++    aliases: tuple[str, ...] = ()
++    summary: str = ""
++    fixed: tuple[str, ...] = ()
++    origin: str = "osv"
++
++    def ids(self) -> set[str]:
++        return {self.id, *self.aliases}
++
++
++@dataclass(slots=True)
++class AllowEntry:
++    id: str
++    package: str
++    ecosystem: str
++    expires: date
++    reason: str
++
++
++@dataclass(slots=True)
++class Policy:
++    fail_at: str = "high"
++    entries: list[AllowEntry] = field(default_factory=list[AllowEntry])
++    problems: list[str] = field(default_factory=list[str])
++
++
++class AuditUnavailable(RuntimeError):
++    """The advisory source could not be asked (network, HTTP error, bad answer)."""
++
++
++# -- lock files ------------------------------------------------------------------------------------
++
++
++def read_uv_lock(path: Path) -> list[Package]:
++    """Every package of a uv lock except the project itself (editable / virtual roots)."""
++    data = tomllib.loads(path.read_text(encoding="utf-8"))
++    found: list[Package] = []
++    for raw in cast(list[dict[str, Any]], data.get("package", [])):
++        source = cast(dict[str, Any], raw.get("source", {}))
++        if "editable" in source or "virtual" in source:
++            continue
++        kind = "registry" if "registry" in source else next(iter(source), "unknown")
++        files: list[dict[str, Any]] = []
++        sdist = raw.get("sdist")
++        if isinstance(sdist, dict):
++            files.append(cast(dict[str, Any], sdist))
++        files.extend(cast(list[dict[str, Any]], raw.get("wheels", [])))
++        hashed = bool(files) and all(
++            str(item.get("hash", "")).startswith("sha256:") for item in files
++        )
++        times = sorted(str(item["upload-time"]) for item in files if item.get("upload-time"))
++        found.append(
++            Package(
++                "PyPI",
++                str(raw["name"]),
++                str(raw.get("version", "")),
++                kind,
++                hashed,
++                times[-1] if times else None,
++            )
++        )
++    return found
++
++
++_PNPM_KEY = re.compile(r"^  '?(?P<name>(?:@[^@/\s']+/)?[^@/\s']+)@(?P<version>[^'\s(]+)'?:\s*$")
++_PNPM_SECTION = re.compile(r"^[A-Za-z]")
++
++
++def read_pnpm_lock(path: Path) -> list[Package]:
++    """Every entry of the ``packages:`` sections (all YAML documents of the file)."""
++    found: dict[tuple[str, str], Package] = {}
++    current: tuple[str, str] | None = None
++    in_packages = False
++    resolution = ""
++    lines = path.read_text(encoding="utf-8").splitlines()
++
++    def flush() -> None:
++        if current is None:
++            return
++        name, version = current
++        if "tarball:" in resolution:
++            source = "tarball"
++        elif "repo:" in resolution or "commit:" in resolution:
++            source = "git"
++        elif "directory:" in resolution:
++            source = "path"
++        else:
++            source = "registry"
++        hashed = "integrity: sha512-" in resolution
++        found[(name, version)] = Package("npm", name, version, source, hashed)
++
++    for line in lines:
++        if line == "---" or _PNPM_SECTION.match(line):
++            flush()
++            current = None
++            resolution = ""
++            in_packages = line.startswith("packages:")
++            continue
++        if not in_packages:
++            continue
++        match = _PNPM_KEY.match(line)
++        if match:
++            flush()
++            current = (match["name"], match["version"])
++            resolution = ""
++        elif current is not None and line.strip().startswith("resolution:"):
++            resolution = line.strip()
++    flush()
++    return sorted(found.values(), key=lambda p: (p.name, p.version))
++
++
++def read_locks(root: Path) -> list[Package]:
++    packages: list[Package] = []
++    if (root / "uv.lock").is_file():
++        packages.extend(read_uv_lock(root / "uv.lock"))
++    if (root / "pnpm-lock.yaml").is_file():
++        packages.extend(read_pnpm_lock(root / "pnpm-lock.yaml"))
++    return packages
++
++
++def lock_digests(root: Path) -> dict[str, str]:
++    return {
++        name: hashlib.sha256((root / name).read_bytes()).hexdigest()
++        for name in LOCKS
++        if (root / name).is_file()
++    }
++
++
++# -- severities ------------------------------------------------------------------------------------
++
++_CVSS3 = {
++    "AV": {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2},
++    "AC": {"L": 0.77, "H": 0.44},
++    "UI": {"N": 0.85, "R": 0.62},
++    "CIA": {"H": 0.56, "L": 0.22, "N": 0.0},
++}
++
++
++def _round_up(value: float) -> float:
++    whole = round(value * 100_000)
++    if whole % 10_000 == 0:
++        return whole / 100_000.0
++    return (math.floor(whole / 10_000) + 1) / 10.0
++
++
++def cvss3_score(vector: str) -> float | None:
++    """The CVSS 3.x base score of ``vector``, or None when it is not a complete 3.x vector."""
++    if not vector.startswith(("CVSS:3.0/", "CVSS:3.1/")):
++        return None
++    metrics = dict(part.split(":", 1) for part in vector.split("/")[1:] if ":" in part)
++    try:
++        changed = metrics["S"] == "C"
++        privileges = {"N": 0.85, "L": 0.68 if changed else 0.62, "H": 0.5 if changed else 0.27}
++        exploit = (
++            8.22
++            * _CVSS3["AV"][metrics["AV"]]
++            * _CVSS3["AC"][metrics["AC"]]
++            * privileges[metrics["PR"]]
++            * _CVSS3["UI"][metrics["UI"]]
++        )
++        c, i, a = (_CVSS3["CIA"][metrics[key]] for key in ("C", "I", "A"))
++    except KeyError:
++        return None
++    base = 1 - (1 - c) * (1 - i) * (1 - a)
++    impact = 7.52 * (base - 0.029) - 3.25 * (base - 0.02) ** 15 if changed else 6.42 * base
++    if impact <= 0:
++        return 0.0
++    total = 1.08 * (impact + exploit) if changed else impact + exploit
++    return _round_up(min(total, 10.0))
++
++
++def band(score: float) -> str:
++    if score >= 9.0:
++        return "critical"
++    if score >= 7.0:
++        return "high"
++    if score >= 4.0:
++        return "moderate"
++    return "low"
++
++
++def osv_severity(record: Mapping[str, Any]) -> str:
++    """A record's severity: its database label (GHSA style), else its CVSS 3 score, else unknown."""
++    specific = record.get("database_specific")
++    if isinstance(specific, dict):
++        label = str(cast(dict[str, Any], specific).get("severity", "")).lower()
++        if label == "medium":
++            label = "moderate"
++        if label in ("low", "moderate", "high", "critical"):
++            return label
++    scores = [
++        cvss3_score(str(item.get("score", "")))
++        for item in cast(list[dict[str, Any]], record.get("severity") or [])
++        if str(item.get("type", "")) == "CVSS_V3"
++    ]
++    known = [score for score in scores if score is not None]
++    return band(max(known)) if known else "unknown"
++
++
++def _fixed_versions(record: Mapping[str, Any], name: str) -> tuple[str, ...]:
++    fixed: list[str] = []
++    for affected in cast(list[dict[str, Any]], record.get("affected") or []):
++        package = cast(dict[str, Any], affected.get("package") or {})
++        if str(package.get("name", "")).lower() != name.lower():
++            continue
++        for span in cast(list[dict[str, Any]], affected.get("ranges") or []):
++            for event in cast(list[dict[str, Any]], span.get("events") or []):
++                if "fixed" in event:
++                    fixed.append(str(event["fixed"]))
++    return tuple(dict.fromkeys(fixed))
++
++
++# -- sources ---------------------------------------------------------------------------------------
++
++
++def http_fetch(url: str, body: bytes | None) -> Any:
++    """GET (or JSON POST) through the environment's proxy settings, with a timeout."""
++    request = urllib.request.Request(
++        url,
++        data=body,
++        method="POST" if body is not None else "GET",
++        headers={"Content-Type": "application/json", "User-Agent": "indus-deps-audit"},
++    )
++    try:
++        with urllib.request.urlopen(request, timeout=TIMEOUT) as answer:  # noqa: S310 (fixed https URLs)
++            return json.loads(answer.read().decode("utf-8"))
++    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
++        raise AuditUnavailable(f"{url}: {exc}") from exc
++
++
++def query_osv(packages: Sequence[Package], fetch: Fetch = http_fetch) -> list[Advisory]:
++    """OSV advisories for every package (batched), one ``Advisory`` per (record, package)."""
++    hits: dict[int, list[str]] = {}
++    for start in range(0, len(packages), BATCH_SIZE):
++        chunk = packages[start : start + BATCH_SIZE]
++        queries: list[dict[str, Any]] = [
++            {"package": {"name": p.name, "ecosystem": p.ecosystem}, "version": p.version}
++            for p in chunk
++        ]
++        pending = list(range(len(chunk)))
++        tokens: dict[int, str] = {}
++        while pending:
++            body = [
++                {**queries[i], **({"page_token": tokens[i]} if i in tokens else {})}
++                for i in pending
++            ]
++            answer = fetch(OSV_BATCH, json.dumps({"queries": body}).encode())
++            results = cast(list[dict[str, Any]], (answer or {}).get("results"))
++            if not isinstance(results, list) or len(results) != len(pending):
++                raise AuditUnavailable("OSV answered a batch with the wrong number of results")
++            again: list[int] = []
++            for index, result in zip(pending, results, strict=True):
++                for vuln in cast(list[dict[str, Any]], result.get("vulns") or []):
++                    hits.setdefault(start + index, []).append(str(vuln["id"]))
++                token = result.get("next_page_token")
++                if token:
++                    tokens[index] = str(token)
++                    again.append(index)
++            pending = again
++    records: dict[str, dict[str, Any]] = {}
++    for vuln_id in sorted({vid for ids in hits.values() for vid in ids}):
++        records[vuln_id] = cast(dict[str, Any], fetch(OSV_VULN + vuln_id, None))
++    found: list[Advisory] = []
++    for index, ids in sorted(hits.items()):
++        package = packages[index]
++        for vuln_id in dict.fromkeys(ids):
++            record = records[vuln_id]
++            found.append(
++                Advisory(
++                    id=vuln_id,
++                    ecosystem=package.ecosystem,
++                    package=package.name,
++                    version=package.version,
++                    severity=osv_severity(record),
++                    aliases=tuple(str(a) for a in record.get("aliases") or ()),
++                    summary=str(record.get("summary") or "")[:200],
++                    fixed=_fixed_versions(record, package.name),
++                )
++            )
++    return merge_aliases(found)
++
++
++def merge_aliases(found: Iterable[Advisory]) -> list[Advisory]:
++    """One advisory per (package, version, alias group), at the group's highest known severity."""
++    groups: list[list[Advisory]] = []
++    for advisory in found:
++        home = next(
++            (
++                group
++                for group in groups
++                if group[0].ecosystem == advisory.ecosystem
++                and group[0].package == advisory.package
++                and group[0].version == advisory.version
++                and any(advisory.ids() & other.ids() for other in group)
++            ),
++            None,
++        )
++        if home is None:
++            groups.append([advisory])
++        else:
++            home.append(advisory)
++    merged: list[Advisory] = []
++    for group in groups:
++        known = [a.severity for a in group if a.severity != "unknown"]
++        severity = max(known, key=LEVELS.__getitem__) if known else "unknown"
++        ids = sorted(
++            {i for a in group for i in a.ids()}, key=lambda i: (not i.startswith("GHSA"), i)
++        )
++        lead = next((a for a in group if a.id.startswith("GHSA")), group[0])
++        merged.append(
++            Advisory(
++                id=lead.id,
++                ecosystem=lead.ecosystem,
++                package=lead.package,
++                version=lead.version,
++                severity=severity,
++                aliases=tuple(i for i in ids if i != lead.id),
++                summary=next((a.summary for a in group if a.summary), ""),
++                fixed=tuple(dict.fromkeys(f for a in group for f in a.fixed)),
++                origin=lead.origin,
++            )
++        )
++    return sorted(merged, key=lambda a: (a.ecosystem, a.package, a.version, a.id))
++
++
++def parse_pnpm_audit(answer: Mapping[str, Any]) -> list[Advisory]:
++    """``pnpm audit --json`` advisories as ``Advisory`` rows (one per affected version)."""
++    found: list[Advisory] = []
++    advisories = cast(dict[str, dict[str, Any]], answer.get("advisories") or {})
++    for item in advisories.values():
++        ghsa = str(item.get("github_advisory_id") or "")
++        own = f"NPM-{item.get('id')}"
++        patched = str(item.get("patched_versions") or "")
++        for version in sorted({str(f.get("version")) for f in item.get("findings") or ()}):
++            found.append(
++                Advisory(
++                    id=ghsa or own,
++                    ecosystem="npm",
++                    package=str(item.get("module_name", "")),
++                    version=version,
++                    severity=PNPM_SEVERITY.get(str(item.get("severity", "")).lower(), "unknown"),
++                    aliases=(own,) if ghsa else (),
++                    summary=str(item.get("title") or "")[:200],
++                    fixed=(patched,) if patched and patched != "<0.0.0" else (),
++                    origin="pnpm-audit",
++                )
++            )
++    return found
++
++
++def run_pnpm_audit(root: Path) -> tuple[list[Advisory], str]:
++    """``pnpm audit --prod --json`` in ``root`` (advisories, note)."""
++    pnpm = shutil.which("pnpm")
++    if pnpm is None:
++        return [], "pnpm audit skipped: pnpm is not on PATH"
++    try:
++        out = subprocess.run(
++            [pnpm, "audit", "--prod", "--json"],
++            cwd=root,
++            capture_output=True,
++            text=True,
++            timeout=300,
++            check=False,
++        )
++        answer = cast(dict[str, Any], json.loads(out.stdout or "{}"))
++    except (OSError, subprocess.SubprocessError, ValueError) as exc:
++        raise AuditUnavailable(f"pnpm audit: {exc}") from exc
++    if "advisories" not in answer:
++        raise AuditUnavailable(f"pnpm audit gave no advisories table: {out.stderr.strip()[:300]}")
++    rows = parse_pnpm_audit(answer)
++    return rows, f"pnpm audit --prod: {len(rows)} advisory rows"
++
++
++# -- allow file ------------------------------------------------------------------------------------
++
++
++def read_policy(path: Path = ALLOW_FILE) -> Policy:
++    policy = Policy()
++    try:
++        data = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
++    except FileNotFoundError:
++        return policy
++    except ValueError as exc:
++        policy.problems.append(f"{path.name}: not JSON ({exc})")
++        return policy
++    fail_at = str(data.get("fail_at", "high"))
++    if fail_at not in ("low", "moderate", "high", "critical"):
++        policy.problems.append(f"{path.name}: fail_at {fail_at!r} is not a severity")
++    else:
++        policy.fail_at = fail_at
++    for number, raw in enumerate(cast(list[Any], data.get("allow", [])), start=1):
++        where = f"{path.name} entry {number}"
++        if not isinstance(raw, dict):
++            policy.problems.append(f"{where}: not an object")
++            continue
++        item = cast(dict[str, Any], raw)
++        missing = [
++            k for k in ("id", "package", "ecosystem", "expires", "reason") if not item.get(k)
++        ]
++        if missing:
++            policy.problems.append(f"{where}: missing {', '.join(missing)}")
++            continue
++        try:
++            expires = date.fromisoformat(str(item["expires"]))
++        except ValueError:
++            policy.problems.append(f"{where}: expires {item['expires']!r} is not a YYYY-MM-DD date")
++            continue
++        if len(str(item["reason"]).split()) < 4:
++            policy.problems.append(f"{where}: the reason must say why (a sentence, not a word)")
++            continue
++        policy.entries.append(
++            AllowEntry(
++                str(item["id"]),
++                str(item["package"]),
++                str(item["ecosystem"]),
++                expires,
++                str(item["reason"]),
++            )
++        )
++    return policy
++
++
++# -- evaluation ------------------------------------------------------------------------------------
++
++
++@dataclass(slots=True)
++class Verdict:
++    failures: list[str] = field(default_factory=list[str])
++    warnings: list[str] = field(default_factory=list[str])
++    notes: list[str] = field(default_factory=list[str])
++
++
++def _line(advisory: Advisory) -> str:
++    fixed = f"; fixed in {', '.join(advisory.fixed)}" if advisory.fixed else ""
++    aka = f" ({', '.join(advisory.aliases[:3])})" if advisory.aliases else ""
++    return (
++        f"{advisory.id}{aka} {advisory.ecosystem} {advisory.package}@{advisory.version} "
++        f"[{advisory.severity}] {advisory.summary}{fixed}"
++    )
++
++
++def evaluate(
++    packages: Sequence[Package],
++    advisories: Sequence[Advisory],
++    policy: Policy,
++    today: date,
++) -> Verdict:
++    verdict = Verdict()
++    verdict.failures.extend(policy.problems)
++    present = {(p.ecosystem, p.name, p.version) for p in packages}
++    threshold = LEVELS[policy.fail_at]
++    used: set[int] = set()
++    for advisory in merge_aliases(advisories):
++        if (advisory.ecosystem, advisory.package, advisory.version) not in present:
++            continue
++        match = next(
++            (
++                (index, entry)
++                for index, entry in enumerate(policy.entries)
++                if entry.ecosystem == advisory.ecosystem
++                and entry.package == advisory.package
++                and entry.id in advisory.ids()
++            ),
++            None,
++        )
++        if match is not None:
++            index, entry = match
++            used.add(index)
++            if entry.expires < today:
++                verdict.failures.append(
++                    f"allow-list entry for {entry.id} ({entry.package}) expired on "
++                    f"{entry.expires.isoformat()}: {_line(advisory)}"
++                )
++            else:
++                verdict.notes.append(
++                    f"allowed until {entry.expires.isoformat()}: {_line(advisory)} — {entry.reason}"
++                )
++            continue
++        if LEVELS[advisory.severity] >= threshold:
++            verdict.failures.append(_line(advisory))
++        else:
++            verdict.warnings.append(_line(advisory))
++    for index, entry in enumerate(policy.entries):
++        if index in used:
++            continue
++        if entry.expires < today:
++            verdict.failures.append(
++                f"allow-list entry for {entry.id} ({entry.package}) expired on "
++                f"{entry.expires.isoformat()} (and matches nothing: remove it)"
++            )
++        else:
++            verdict.warnings.append(
++                f"allow-list entry for {entry.id} ({entry.package}) matches no finding: remove it"
++            )
++    for package in packages:
++        if package.source != "registry":
++            verdict.failures.append(
++                f"{package.ecosystem} {package.name}@{package.version} comes from a "
++                f"{package.source} source, not its registry"
++            )
++        elif not package.hashed:
++            verdict.failures.append(
++                f"{package.ecosystem} {package.name}@{package.version} is locked without a hash"
++            )
++    return verdict
++
++
++# -- snapshot --------------------------------------------------------------------------------------
++
++
++def write_snapshot(
++    path: Path, root: Path, packages: Sequence[Package], advisories: Sequence[Advisory]
++) -> None:
++    data = {
++        "schema": 1,
++        "note": "Written by `python -m tooling.checks.deps_audit --refresh` (OSV, pnpm audit). "
++        "Do not edit by hand.",
++        "fetched_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
++        "locks": lock_digests(root),
++        "packages": len(packages),
++        "advisories": [
++            {**asdict(a), "aliases": list(a.aliases), "fixed": list(a.fixed)}
++            for a in merge_aliases(advisories)
++        ],
++    }
++    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
++
++
++def read_snapshot(path: Path) -> tuple[dict[str, Any], list[Advisory]] | None:
++    try:
++        data = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
++    except (OSError, ValueError):
++        return None
++    rows: list[Advisory] = []
++    for raw in cast(list[dict[str, Any]], data.get("advisories", [])):
++        rows.append(
++            Advisory(
++                id=str(raw["id"]),
++                ecosystem=str(raw["ecosystem"]),
++                package=str(raw["package"]),
++                version=str(raw["version"]),
++                severity=str(raw.get("severity", "unknown")),
++                aliases=tuple(str(a) for a in raw.get("aliases", ())),
++                summary=str(raw.get("summary", "")),
++                fixed=tuple(str(f) for f in raw.get("fixed", ())),
++                origin=str(raw.get("origin", "osv")),
++            )
++        )
++    return data, rows
++
++
++# -- pinned downloads ------------------------------------------------------------------------------
++
++type Probe = Callable[[str, Mapping[str, str]], int]
++"""``probe(url, headers)``: the HTTP status of a HEAD request (redirects followed)."""
++
++
++def http_probe(url: str, headers: Mapping[str, str]) -> int:
++    request = urllib.request.Request(url, method="HEAD", headers=dict(headers))
++    try:
++        with urllib.request.urlopen(request, timeout=TIMEOUT) as answer:  # noqa: S310 (pinned URLs)
++            return int(answer.status)
++    except urllib.error.HTTPError as exc:
++        return int(exc.code)
++    except (urllib.error.URLError, TimeoutError, OSError):
++        return 0
++
++
++def pinned_urls(root: Path) -> list[str]:
++    """Primary download URLs of the installer pins and the Docker bundles (mirrors excluded)."""
++    urls: list[str] = []
++
++    def walk(node: object) -> None:
++        if isinstance(node, dict):
++            for key, value in cast(dict[str, object], node).items():
++                if key == "url" and isinstance(value, str) and value.startswith("https://"):
++                    urls.append(value)
++                else:
++                    walk(value)
++        elif isinstance(node, list):
++            for item in cast(list[object], node):
++                walk(item)
++
++    install = root / "scripts" / "install" / "pins.json"
++    if install.is_file():
++        walk(json.loads(install.read_text(encoding="utf-8")))
++    docker = root / "docker" / "pins.json"
++    if docker.is_file():
++        data = cast(dict[str, Any], json.loads(docker.read_text(encoding="utf-8")))
++        for bundle in cast(dict[str, dict[str, Any]], data.get("bundles", {})).values():
++            template = str(bundle.get("url", ""))
++            for item in cast(dict[str, dict[str, Any]], bundle.get("files", {})).values():
++                url = template.replace("{file}", str(item.get("file", "")))
++                urls.append(url.replace("{version}", str(bundle.get("version", ""))))
++    return [u for u in dict.fromkeys(urls) if u.startswith("https://")]
++
++
++def docker_base(root: Path) -> tuple[str, str] | None:
++    """(repository, digest) of the Docker base image (Docker Hub library images only)."""
++    path = root / "docker" / "pins.json"
++    if not path.is_file():
++        return None
++    base = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")).get("base", {}))
++    image, digest = str(base.get("image", "")), str(base.get("digest", ""))
++    if not image or not digest.startswith("sha256:"):
++        return None
++    return (image if "/" in image else f"library/{image}"), digest
++
++
++UNVERIFIED = frozenset({0, 429, 500, 502, 503, 504})
++"""Statuses that say nothing about the pin (no answer, rate limit, server trouble)."""
++
++
++def resolve_pins(
++    root: Path, probe: Probe = http_probe, fetch: Fetch = http_fetch
++) -> tuple[list[str], list[str]]:
++    """(problems, unverified) for the pinned downloads and the base digest; a pin that answers
++    404 or another refusal is a problem, one the network could not check is only reported."""
++    problems: list[str] = []
++    unverified: list[str] = []
++
++    def judge(status: int, what: str) -> None:
++        if status == 200:
++            return
++        line = f"{what} ({status or 'no answer'})"
++        (unverified if status in UNVERIFIED else problems).append(line)
++
++    for url in pinned_urls(root):
++        judge(probe(url, {}), f"pinned download {url}")
++    found = docker_base(root)
++    if found is not None:
++        repository, digest = found
++        token_url = (
++            "https://auth.docker.io/token?service=registry.docker.io"
++            f"&scope=repository:{repository}:pull"
++        )
++        try:
++            token = str(cast(dict[str, Any], fetch(token_url, None)).get("token", ""))
++        except AuditUnavailable as exc:
++            unverified.append(f"docker base: no registry token ({exc})")
++            return problems, unverified
++        accept = ", ".join(
++            [
++                "application/vnd.oci.image.index.v1+json",
++                "application/vnd.docker.distribution.manifest.list.v2+json",
++                "application/vnd.oci.image.manifest.v1+json",
++                "application/vnd.docker.distribution.manifest.v2+json",
++            ]
++        )
++        status = probe(
++            f"https://registry-1.docker.io/v2/{repository}/manifests/{digest}",
++            {"Authorization": f"Bearer {token}", "Accept": accept},
++        )
++        judge(status, f"docker base {repository}@{digest}")
++    return problems, unverified
++
++
++# -- report ----------------------------------------------------------------------------------------
++
++
++def report(packages: Sequence[Package], advisories: Sequence[Advisory], verdict: Verdict) -> str:
++    lines = ["# Dependency audit", ""]
++    for ecosystem in ("PyPI", "npm"):
++        rows = [p for p in packages if p.ecosystem == ecosystem]
++        lines.append(
++            f"- {ecosystem}: {len(rows)} locked packages, "
++            f"{sum(p.source == 'registry' for p in rows)} from the registry, "
++            f"{sum(p.hashed for p in rows)} with a hash"
++        )
++    uploaded = sorted((p.uploaded, p.name, p.version) for p in packages if p.uploaded)
++    if uploaded:
++        newest, oldest = uploaded[-1], uploaded[0]
++        middle = uploaded[len(uploaded) // 2]
++        cutoff = f"{datetime.now(UTC).year - 3}"
++        stale = [u for u in uploaded if (u[0] or "") < cutoff]
++        lines += [
++            "",
++            "## Pin age (PyPI upload times in uv.lock)",
++            "",
++            f"- newest: {newest[1]} {newest[2]} ({newest[0]})",
++            f"- median: {middle[1]} {middle[2]} ({middle[0]})",
++            f"- oldest: {oldest[1]} {oldest[2]} ({oldest[0]})",
++            f"- uploaded before {cutoff}: {len(stale)} "
++            f"({', '.join(f'{n} {v}' for _, n, v in stale[:12])}{' …' if len(stale) > 12 else ''})",
++        ]
++    lines += ["", "## Findings", ""]
++    merged = merge_aliases(advisories)
++    if not merged:
++        lines.append("None.")
++    for advisory in merged:
++        lines.append(f"- {_line(advisory)}")
++    lines += ["", "## Verdict", ""]
++    lines += [f"- FAIL: {line}" for line in verdict.failures]
++    lines += [f"- warn: {line}" for line in verdict.warnings]
++    lines += [f"- {line}" for line in verdict.notes]
++    if not (verdict.failures or verdict.warnings or verdict.notes):
++        lines.append("- clean")
++    return "\n".join(lines) + "\n"
++
++
++# -- entry points ----------------------------------------------------------------------------------
++
++
++def run(ctx: Context) -> Result:
++    """The offline guard: today's locks against the committed snapshot and allow file."""
++    result = Result(NAME)
++    packages = read_locks(ctx.root)
++    if not packages:
++        result.notes.append("no lock files")
++        return result
++    found = read_snapshot(ctx.root / "tooling" / "checks" / SNAPSHOT_FILE.name)
++    if found is None:
++        result.setup(
++            f"{SNAPSHOT_FILE.name} missing or unreadable: run "
++            "`python -m tooling.checks.deps_audit --refresh`"
++        )
++        return result
++    data, advisories = found
++    if cast(dict[str, str], data.get("locks", {})) != lock_digests(ctx.root):
++        result.warnings.append(
++            f"the locks changed after the advisory snapshot of {data.get('fetched_at')}: the CI "
++            "audit job (or `python -m tooling.checks.deps_audit --refresh`) checks the new versions"
++        )
++    policy = read_policy(ctx.root / "tooling" / "checks" / ALLOW_FILE.name)
++    verdict = evaluate(packages, advisories, policy, date.today())
++    for line in verdict.failures:
++        result.fail(line)
++    result.warnings.extend(verdict.warnings)
++    result.notes.extend(verdict.notes)
++    result.notes.append(
++        f"{len(packages)} locked packages; snapshot {data.get('fetched_at')} "
++        f"({len(advisories)} advisories, fail at {policy.fail_at})"
++    )
++    return result
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(
++        prog="python -m tooling.checks.deps_audit", description=__doc__
++    )
++    parser.add_argument("--root", default=str(DEFAULT_ROOT))
++    parser.add_argument("--refresh", action="store_true", help="ask OSV now; write the snapshot")
++    parser.add_argument("--pnpm-audit", action="store_true", help="also run pnpm audit --prod")
++    parser.add_argument("--resolve-pins", action="store_true", help="check pinned downloads")
++    parser.add_argument("--report", action="store_true", help="print a markdown report")
++    parser.add_argument("--no-write", action="store_true", help="with --refresh: keep the snapshot")
++    args = parser.parse_args(argv)
++    root = Path(args.root).resolve()
++    packages = read_locks(root)
++    snapshot = root / "tooling" / "checks" / SNAPSHOT_FILE.name
++    notes: list[str] = []
++    problems: list[str] = []
++    try:
++        if args.refresh:
++            advisories = query_osv(packages)
++            if args.pnpm_audit:
++                rows, note = run_pnpm_audit(root)
++                advisories = [*advisories, *rows]
++                notes.append(note)
++            if not args.no_write:
++                write_snapshot(snapshot, root, packages, advisories)
++        else:
++            found = read_snapshot(snapshot)
++            if found is None:
++                print(f"no snapshot at {snapshot}; run with --refresh", file=sys.stderr)
++                return 2
++            advisories = found[1]
++        if args.resolve_pins:
++            problems, unverified = resolve_pins(root)
++            notes.extend(f"not verified (network): {line}" for line in unverified)
++            problems = [f"does not resolve: {line}" for line in problems]
++    except AuditUnavailable as exc:
++        print(f"advisory source unavailable: {exc}", file=sys.stderr)
++        return 2
++    verdict = evaluate(
++        packages,
++        advisories,
++        read_policy(root / "tooling" / "checks" / ALLOW_FILE.name),
++        date.today(),
++    )
++    verdict.failures.extend(problems)
++    verdict.notes.extend(notes)
++    if args.report:
++        print(report(packages, advisories, verdict), end="")
++    else:
++        for line in verdict.failures:
++            print(f"FAIL: {line}")
++        for line in verdict.warnings:
++            print(f"warning: {line}")
++        for line in verdict.notes:
++            print(f"note: {line}")
++        print(f"{len(packages)} packages; {len(verdict.failures)} failing")
++    return 1 if verdict.failures else 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tooling/checks/deps_audit_allow.json b/tooling/checks/deps_audit_allow.json
+new file mode 100644
+index 0000000..0ecb39e
+--- /dev/null
++++ b/tooling/checks/deps_audit_allow.json
+@@ -0,0 +1,46 @@
++{
++  "note": "Known advisories accepted for a limited time (P25-04). Each entry: id (any of the advisory's ids), package, ecosystem (PyPI | npm), expires (YYYY-MM-DD; an expired entry fails the audit), reason (why it does not bite us now and what ends it). Findings at or above fail_at fail unless listed; lower ones are warnings.",
++  "fail_at": "high",
++  "allow": [
++    {
++      "id": "GHSA-6q48-6c7w-9gw2",
++      "package": "certifi",
++      "ecosystem": "PyPI",
++      "expires": "2026-11-08",
++      "added": "2026-10-21",
++      "reason": "Fixed only in certifi 2026.10.19 (uploaded 2026-10-20), after uv exclude-newer 2026-10-04 and inside the 14-day age rule; the lead moves exclude-newer (or grants a dated security exception) and re-locks. Until then httpx trusts the emSign roots in the bundle (SEC2-2)."
++    },
++    {
++      "id": "GHSA-2g87-pp6c-29x5",
++      "package": "aiohttp",
++      "ecosystem": "PyPI",
++      "expires": "2026-11-15",
++      "added": "2026-10-21",
++      "reason": "aiohttp is only the optional slack extra's socket-mode client (no aiohttp server runs); fixed in 3.14.4, uploaded 2026-10-05, one day after uv exclude-newer 2026-10-04: bump at the next exclude-newer move (SEC2-3)."
++    },
++    {
++      "id": "GHSA-5wr8-gcqf-gqf3",
++      "package": "aiohttp",
++      "ecosystem": "PyPI",
++      "expires": "2026-11-15",
++      "added": "2026-10-21",
++      "reason": "Server-side header timeout; Indus runs no aiohttp server (the slack extra uses it as a client only). Fixed in 3.14.4 (after exclude-newer): bump at the next exclude-newer move (SEC2-3)."
++    },
++    {
++      "id": "GHSA-9xw5-w5jj-pvcg",
++      "package": "aiohttp",
++      "ecosystem": "PyPI",
++      "expires": "2026-11-15",
++      "added": "2026-10-21",
++      "reason": "Multipart request handling of an aiohttp server; Indus runs none (the slack extra uses aiohttp as a client). Fixed in 3.14.4 (after exclude-newer): bump at the next exclude-newer move (SEC2-3)."
++    },
++    {
++      "id": "GHSA-587h-7wmj-h5pm",
++      "package": "vite",
++      "ecosystem": "npm",
++      "expires": "2026-11-15",
++      "added": "2026-10-21",
++      "reason": "Dev-only (build and the loopback dev server; never shipped); the launch-editor path is Windows-only and needs a request to the dev server. Fixed in vite 8.3.3 (published 2026-10-06, passes minimumReleaseAge): bump at the next pnpm re-lock (SEC2-4)."
++    }
++  ]
++}
+diff --git a/tooling/checks/deps_audit_snapshot.json b/tooling/checks/deps_audit_snapshot.json
+new file mode 100644
+index 0000000..4fec973
+--- /dev/null
++++ b/tooling/checks/deps_audit_snapshot.json
+@@ -0,0 +1,378 @@
++{
++  "schema": 1,
++  "note": "Written by `python -m tooling.checks.deps_audit --refresh` (OSV, pnpm audit). Do not edit by hand.",
++  "fetched_at": "2026-10-21T23:44:47Z",
++  "locks": {
++    "uv.lock": "8bc7c79265f2d09be6c8b9aaec6d9d6e1b9e8c0cdb3ea1719405ee88f5212d20",
++    "pnpm-lock.yaml": "67428da84f07e31975cbf63c846f6a7dbb5d14a3197317fbe10042999746ccc1"
++  },
++  "packages": 877,
++  "advisories": [
++    {
++      "id": "GHSA-2g87-pp6c-29x5",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "high",
++      "aliases": [],
++      "summary": "aiohttp: Multiple instances of excessive or unbounded memory/CPU use",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-494j-54xm-rwp3",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "low",
++      "aliases": [
++        "CVE-2026-111063"
++      ],
++      "summary": "AIOHTTP: Secure attribute not enforced for shared cookie",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-5wr8-gcqf-gqf3",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "high",
++      "aliases": [
++        "CVE-2026-111064"
++      ],
++      "summary": "aiohttp server lacks an initial request/header timeout",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-6cjc-53gc-5rqm",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-111065"
++      ],
++      "summary": "AIOHTTP: Connector pool exhaustion via Max-Age overflow",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-9xw5-w5jj-pvcg",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "high",
++      "aliases": [
++        "CVE-2026-111066"
++      ],
++      "summary": "AIOHTTP: File descriptor exhaustion in multipart requests",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-f9xw-jh8m-3mwq",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-111748"
++      ],
++      "summary": "AIOHTTP: Absolute-form request targets can spoof Request.scheme",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-gx76-c99x-2c96",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "low",
++      "aliases": [
++        "CVE-2026-111749"
++      ],
++      "summary": "AIOHTTP: Cookie from subdomain can remove Host-Only Scope from existing cookies",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-pqxq-w44r-73xw",
++      "ecosystem": "PyPI",
++      "package": "aiohttp",
++      "version": "3.14.3",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-111750"
++      ],
++      "summary": "AIOHTTP: Pure-Python parser request smuggling",
++      "fixed": [
++        "3.14.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-6q48-6c7w-9gw2",
++      "ecosystem": "PyPI",
++      "package": "certifi",
++      "version": "2026.7.22",
++      "severity": "critical",
++      "aliases": [
++        "PYSEC-2026-4320"
++      ],
++      "summary": "certifi bundles emSign root CAs with compromised intermediate CA keys",
++      "fixed": [
++        "2026.10.19"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-mrfv-m5wm-5w6w",
++      "ecosystem": "PyPI",
++      "package": "pynacl",
++      "version": "1.5.0",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2025-69277",
++        "PYSEC-2026-1448",
++        "PYSEC-2026-3002"
++      ],
++      "summary": "libsodium has Incomplete List of Disallowed Inputs",
++      "fixed": [
++        "1.6.2"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-39mj-jf6j-2qj3",
++      "ecosystem": "PyPI",
++      "package": "pypdf",
++      "version": "6.19.0",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-113794"
++      ],
++      "summary": "pypdf: Possible infinite loop when hitting EOF in standard xref table",
++      "fixed": [
++        "6.20.0"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-5hx5-vpf9-5wcv",
++      "ecosystem": "PyPI",
++      "package": "pypdf",
++      "version": "6.19.0",
++      "severity": "low",
++      "aliases": [
++        "CVE-2026-113786"
++      ],
++      "summary": "pypdf: Unvalidated JPEG image data loading",
++      "fixed": [
++        "6.21.1"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-7mh2-4gg2-979f",
++      "ecosystem": "PyPI",
++      "package": "pypdf",
++      "version": "6.19.0",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-113795"
++      ],
++      "summary": "pypdf: Possible large memory usage for streams with multiple filters",
++      "fixed": [
++        "6.20.0"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-9mx8-4j7g-633p",
++      "ecosystem": "PyPI",
++      "package": "pypdf",
++      "version": "6.19.0",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-113793"
++      ],
++      "summary": "pypdf: Possible infinite loop when removing tree items",
++      "fixed": [
++        "6.20.1"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-qfv9-64jg-mh7p",
++      "ecosystem": "PyPI",
++      "package": "pypdf",
++      "version": "6.19.0",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-113792"
++      ],
++      "summary": "pypdf: Possible infinite loop in PdfWriter.find_outline_item",
++      "fixed": [
++        "6.20.1"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-238p-pmpm-9mq7",
++      "ecosystem": "npm",
++      "package": "katex",
++      "version": "0.16.47",
++      "severity": "low",
++      "aliases": [
++        "CVE-2026-103923",
++        "NPM-1241206"
++      ],
++      "summary": "KaTeX: Existing prototype pollution can bypass trust restrictions",
++      "fixed": [
++        "0.18.2",
++        ">=0.18.2"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-hp3w-g68c-fv3c",
++      "ecosystem": "npm",
++      "package": "sprintf-js",
++      "version": "1.1.3",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-97058"
++      ],
++      "summary": "sprintf-js vulnerable to denial of service through unbounded precision specifiers",
++      "fixed": [],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-587h-7wmj-h5pm",
++      "ecosystem": "npm",
++      "package": "vite",
++      "version": "8.3.2",
++      "severity": "high",
++      "aliases": [
++        "CVE-2026-112942"
++      ],
++      "summary": "launch-editor: `fs.existsSync()` existence check can be bypassed on Windows",
++      "fixed": [
++        "8.3.3",
++        "8.2.4",
++        "8.1.6",
++        "7.3.7",
++        "6.4.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-698v-4r3x-3vcv",
++      "ecosystem": "npm",
++      "package": "vite",
++      "version": "8.3.2",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-112943"
++      ],
++      "summary": "launch-editor: escapeCmdArgs() omits % escaping on Windows",
++      "fixed": [
++        "8.3.3",
++        "8.2.4",
++        "8.1.6",
++        "7.3.7",
++        "6.4.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-9jrq-w75r-8gcw",
++      "ecosystem": "npm",
++      "package": "vite",
++      "version": "8.3.2",
++      "severity": "low",
++      "aliases": [
++        "CVE-2026-112945"
++      ],
++      "summary": "Vite: Cross origin script execution through Vite custom middleware",
++      "fixed": [
++        "8.3.3",
++        "8.2.4",
++        "8.1.6",
++        "7.3.7",
++        "6.4.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-r825-w8mm-5pxw",
++      "ecosystem": "npm",
++      "package": "vite",
++      "version": "8.3.2",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-112944"
++      ],
++      "summary": "launch-editor: Editor CLI flag misinterpretation causing arbitrary command execution for some editors",
++      "fixed": [
++        "8.3.3",
++        "8.2.4",
++        "8.1.6",
++        "7.3.7",
++        "6.4.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-rq7h-c2jc-7f22",
++      "ecosystem": "npm",
++      "package": "vite",
++      "version": "8.3.2",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-112946"
++      ],
++      "summary": "Vite: Files outside `server.fs.allow` could be served when project paths match system paths on non-Windows machine",
++      "fixed": [
++        "8.3.3",
++        "8.2.4",
++        "8.1.6",
++        "7.3.7",
++        "6.4.4"
++      ],
++      "origin": "osv"
++    },
++    {
++      "id": "GHSA-vfpm-58rq-9qcg",
++      "ecosystem": "npm",
++      "package": "vite",
++      "version": "8.3.2",
++      "severity": "moderate",
++      "aliases": [
++        "CVE-2026-112947"
++      ],
++      "summary": "Vite: First 4 bytes of files outside of `server.fs` setting is exposed by `?vite-wasm-instance`",
++      "fixed": [
++        "8.3.3",
++        "8.2.4"
++      ],
++      "origin": "osv"
++    }
++  ]
++}
+diff --git a/tooling/checks/tests/fixtures/deps/pnpm-lock.yaml b/tooling/checks/tests/fixtures/deps/pnpm-lock.yaml
+new file mode 100644
+index 0000000..a09eeed
+--- /dev/null
++++ b/tooling/checks/tests/fixtures/deps/pnpm-lock.yaml
+@@ -0,0 +1,48 @@
++---
++lockfileVersion: '9.0'
++
++importers:
++
++  .:
++    packageManagerDependencies:
++      pnpm:
++        specifier: 12.9.1
++        version: 12.9.1
++
++packages:
++
++  pnpm@12.9.1:
++    resolution: {integrity: sha512-AAAA}
++    hasBin: true
++
++snapshots:
++
++  pnpm@12.9.1: {}
++
++---
++lockfileVersion: '9.0'
++
++settings:
++  autoInstallPeers: true
++
++importers:
++
++  .:
++    dependencies:
++      lodash:
++        specifier: 4.17.0
++        version: 4.17.0
++
++packages:
++
++  '@demo/scoped@2.0.0':
++    resolution: {integrity: sha512-BBBB}
++
++  lodash@4.17.0:
++    resolution: {integrity: sha512-CCCC}
++
++snapshots:
++
++  '@demo/scoped@2.0.0': {}
++
++  lodash@4.17.0: {}
+diff --git a/tooling/checks/tests/fixtures/deps/uv.lock b/tooling/checks/tests/fixtures/deps/uv.lock
+new file mode 100644
+index 0000000..4c0c97a
+--- /dev/null
++++ b/tooling/checks/tests/fixtures/deps/uv.lock
+@@ -0,0 +1,26 @@
++version = 1
++revision = 3
++requires-python = ">=3.13"
++
++[[package]]
++name = "demo-app"
++version = "0.1.0"
++source = { editable = "." }
++dependencies = [
++    { name = "jinja2" },
++    { name = "tinylib" },
++]
++
++[[package]]
++name = "jinja2"
++version = "2.4.1"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.example.invalid/jinja2-2.4.1.tar.gz", hash = "sha256:00000000000000000000000000000000000000000000000000000000000000aa", size = 10, upload-time = "2010-05-01T00:00:00Z" }
++
++[[package]]
++name = "tinylib"
++version = "1.2.3"
++source = { registry = "https://pypi.org/simple" }
++wheels = [
++    { url = "https://files.example.invalid/tinylib-1.2.3-py3-none-any.whl", hash = "sha256:00000000000000000000000000000000000000000000000000000000000000bb", size = 10, upload-time = "2026-09-01T00:00:00Z" },
++]
+diff --git a/tooling/checks/tests/test_deps_audit.py b/tooling/checks/tests/test_deps_audit.py
+new file mode 100644
+index 0000000..339f5c8
+--- /dev/null
++++ b/tooling/checks/tests/test_deps_audit.py
+@@ -0,0 +1,397 @@
++"""P25-04 dependency audit: lock parsing, OSV lookups (faked), the expiring allow-list, provenance,
++the offline snapshot guard and the pinned-download probe. No test touches the network."""
++
++from __future__ import annotations
++
++import json
++from collections.abc import Callable
++from datetime import date
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from tooling.checks import deps_audit
++from tooling.checks.common import Context
++from tooling.checks.deps_audit import (
++    OSV_BATCH,
++    OSV_VULN,
++    Advisory,
++    AuditUnavailable,
++    Package,
++    Policy,
++    cvss3_score,
++    evaluate,
++    osv_severity,
++    parse_pnpm_audit,
++    query_osv,
++    read_pnpm_lock,
++    read_policy,
++    read_uv_lock,
++    resolve_pins,
++    write_snapshot,
++)
++
++TODAY = date(2026, 10, 21)
++HIGH = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"  # 9.1 critical
++RECORDS: dict[str, dict[str, Any]] = {
++    "GHSA-demo-0001": {
++        "id": "GHSA-demo-0001",
++        "aliases": ["PYSEC-demo-1", "CVE-0000-0001"],
++        "summary": "template sandbox escape",
++        "database_specific": {"severity": "HIGH"},
++        "affected": [
++            {
++                "package": {"name": "jinja2", "ecosystem": "PyPI"},
++                "ranges": [{"events": [{"introduced": "0"}, {"fixed": "2.10.1"}]}],
++            }
++        ],
++    },
++    "PYSEC-demo-1": {"id": "PYSEC-demo-1", "aliases": ["GHSA-demo-0001"], "summary": ""},
++    "GHSA-demo-0002": {
++        "id": "GHSA-demo-0002",
++        "summary": "prototype pollution",
++        "database_specific": {"severity": "MODERATE"},
++    },
++}
++HITS = {
++    ("PyPI", "jinja2", "2.4.1"): ["GHSA-demo-0001", "PYSEC-demo-1"],
++    ("npm", "lodash", "4.17.0"): ["GHSA-demo-0002"],
++}
++
++
++def fake_osv(
++    hits: dict[tuple[str, str, str], list[str]] = HITS,
++    records: dict[str, dict[str, Any]] = RECORDS,
++    calls: list[str] | None = None,
++) -> Callable[[str, bytes | None], Any]:
++    def fetch(url: str, body: bytes | None) -> Any:
++        if calls is not None:
++            calls.append(url)
++        if url == OSV_BATCH:
++            assert body is not None
++            queries = json.loads(body)["queries"]
++            results: list[dict[str, Any]] = []
++            for query in queries:
++                key = (query["package"]["ecosystem"], query["package"]["name"], query["version"])
++                results.append({"vulns": [{"id": vid} for vid in hits.get(key, [])]})
++            return {"results": results}
++        assert url.startswith(OSV_VULN)
++        return records[url.removeprefix(OSV_VULN)]
++
++    return fetch
++
++
++@pytest.fixture
++def tree(copy_fixture: Callable[[str], Path]) -> Path:
++    root = copy_fixture("deps")
++    (root / "tooling" / "checks").mkdir(parents=True)
++    return root
++
++
++def snapshot(root: Path, fetch: Callable[[str, bytes | None], Any] | None = None) -> None:
++    packages = deps_audit.read_locks(root)
++    advisories = query_osv(packages, fetch or fake_osv())
++    write_snapshot(
++        root / "tooling" / "checks" / "deps_audit_snapshot.json", root, packages, advisories
++    )
++
++
++def allow(root: Path, entries: list[dict[str, Any]], fail_at: str = "high") -> None:
++    path = root / "tooling" / "checks" / "deps_audit_allow.json"
++    path.write_text(json.dumps({"fail_at": fail_at, "allow": entries}), encoding="utf-8")
++
++
++def entry(**overrides: str) -> dict[str, Any]:
++    base = {
++        "id": "GHSA-demo-0001",
++        "package": "jinja2",
++        "ecosystem": "PyPI",
++        "expires": "2099-01-01",
++        "reason": "only the build uses it, never with untrusted templates",
++    }
++    return {**base, **overrides}
++
++
++def check(root: Path) -> deps_audit.Result:
++    return deps_audit.run(Context(root=root))
++
++
++# -- lock files ------------------------------------------------------------------------------------
++
++
++def test_lock_parsers_read_both_ecosystems(tree: Path) -> None:
++    uv = read_uv_lock(tree / "uv.lock")
++    assert [(p.name, p.version, p.hashed) for p in uv] == [
++        ("jinja2", "2.4.1", True),
++        ("tinylib", "1.2.3", True),
++    ]  # the editable project itself is not a dependency
++    assert uv[0].uploaded == "2010-05-01T00:00:00Z"
++    npm = read_pnpm_lock(tree / "pnpm-lock.yaml")
++    assert [(p.name, p.version) for p in npm] == [
++        ("@demo/scoped", "2.0.0"),
++        ("lodash", "4.17.0"),
++        ("pnpm", "12.9.1"),
++    ]  # both YAML documents, scoped names, no snapshot duplicates
++    assert all(p.source == "registry" and p.hashed for p in npm)
++
++
++def test_real_locks_parse_with_hashes_from_their_registries() -> None:
++    packages = deps_audit.read_locks(deps_audit.DEFAULT_ROOT)
++    assert len([p for p in packages if p.ecosystem == "PyPI"]) > 100
++    assert len([p for p in packages if p.ecosystem == "npm"]) > 300
++    assert evaluate(packages, [], Policy(), TODAY).failures == []
++
++
++# -- the guard -------------------------------------------------------------------------------------
++
++
++def test_a_known_vulnerable_lock_fails(tree: Path) -> None:
++    """ACC-S8-3: a locked version with a high advisory fails, naming the id and the fix."""
++    snapshot(tree)
++    result = check(tree)
++    assert result.code == 1
++    (line,) = result.violations
++    assert "GHSA-demo-0001" in line and "jinja2@2.4.1" in line and "2.10.1" in line
++    assert "PYSEC-demo-1" in line  # one finding per alias group
++    assert any("lodash@4.17.0" in w and "[moderate]" in w for w in result.warnings)
++
++
++def test_allow_listed_with_a_future_expiry_passes(tree: Path) -> None:
++    snapshot(tree)
++    allow(tree, [entry()])
++    result = check(tree)
++    assert result.code == 0, result.violations
++    assert any(n.startswith("allowed until 2099-01-01") for n in result.notes)
++
++
++def test_an_alias_id_matches_too(tree: Path) -> None:
++    snapshot(tree)
++    allow(tree, [entry(id="CVE-0000-0001")])
++    assert check(tree).code == 0
++
++
++def test_an_expired_entry_fails(tree: Path) -> None:
++    snapshot(tree)
++    allow(tree, [entry(expires="2020-01-01")])
++    result = check(tree)
++    assert result.code == 1
++    assert any("expired on 2020-01-01" in v for v in result.violations)
++
++
++@pytest.mark.parametrize(
++    ("change", "problem"),
++    [
++        ({"reason": ""}, "missing reason"),
++        ({"reason": "fine"}, "the reason must say why"),
++        ({"expires": "soon"}, "is not a YYYY-MM-DD date"),
++        ({"package": ""}, "missing package"),
++    ],
++)
++def test_a_malformed_entry_fails(tree: Path, change: dict[str, str], problem: str) -> None:
++    snapshot(tree)
++    allow(tree, [entry(**change)])
++    result = check(tree)
++    assert result.code == 1
++    assert any(problem in v for v in result.violations), result.violations
++
++
++def test_an_entry_for_another_package_does_not_cover_the_finding(tree: Path) -> None:
++    snapshot(tree)
++    allow(tree, [entry(package="tinylib")])
++    result = check(tree)
++    assert any("jinja2@2.4.1" in v for v in result.violations)
++    assert any("matches no finding" in w for w in result.warnings)
++
++
++def test_the_threshold_comes_from_the_allow_file(tree: Path) -> None:
++    snapshot(tree)
++    allow(tree, [entry()], fail_at="moderate")
++    result = check(tree)
++    assert result.code == 1
++    assert any("lodash@4.17.0" in v for v in result.violations)
++
++
++def test_an_unscored_advisory_fails_closed(tree: Path) -> None:
++    records = {"PYSEC-only": {"id": "PYSEC-only", "summary": "no severity at all"}}
++    hits = {("PyPI", "tinylib", "1.2.3"): ["PYSEC-only"]}
++    snapshot(tree, fake_osv(hits, records))
++    result = check(tree)
++    assert any("PYSEC-only" in v and "[unknown]" in v for v in result.violations)
++
++
++def test_findings_for_versions_no_longer_locked_are_ignored() -> None:
++    old = Advisory("GHSA-demo-0001", "PyPI", "jinja2", "2.4.0", "critical")
++    now = [Package("PyPI", "jinja2", "3.1.6")]
++    assert evaluate(now, [old], Policy(), TODAY).failures == []
++
++
++def test_provenance_git_path_and_unhashed_packages_fail() -> None:
++    packages = [
++        Package("PyPI", "fromgit", "1.0", source="git"),
++        Package("npm", "tarred", "1.0", source="tarball"),
++        Package("PyPI", "bare", "1.0", hashed=False),
++    ]
++    failures = evaluate(packages, [], Policy(), TODAY).failures
++    assert len(failures) == 3
++    assert "git source" in failures[0] and "tarball source" in failures[1]
++    assert "without a hash" in failures[2]
++
++
++def test_a_stale_snapshot_warns_and_a_missing_one_is_a_setup_error(tree: Path) -> None:
++    assert check(tree).code == 2
++    snapshot(tree)
++    (tree / "uv.lock").write_text((tree / "uv.lock").read_text() + "\n", encoding="utf-8")
++    result = check(tree)
++    assert any("locks changed after the advisory snapshot" in w for w in result.warnings)
++
++
++# -- sources ---------------------------------------------------------------------------------------
++
++
++@pytest.mark.parametrize(
++    ("vector", "score"),
++    [
++        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8),
++        (HIGH, 9.1),
++        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N", 6.1),
++        ("CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N", 5.5),
++        ("CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0),
++        ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", None),
++        ("CVSS:3.1/AV:N", None),
++    ],
++)
++def test_cvss3_base_scores(vector: str, score: float | None) -> None:
++    assert cvss3_score(vector) == score
++
++
++def test_severity_prefers_the_database_label_then_cvss() -> None:
++    assert osv_severity({"database_specific": {"severity": "MEDIUM"}}) == "moderate"
++    assert osv_severity({"severity": [{"type": "CVSS_V3", "score": HIGH}]}) == "critical"
++    assert osv_severity({"severity": [{"type": "CVSS_V4", "score": "CVSS:4.0/AV:N"}]}) == "unknown"
++
++
++def test_osv_queries_are_batched_and_paged(monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setattr(deps_audit, "BATCH_SIZE", 2)
++    packages = [Package("npm", f"p{i}", "1.0") for i in range(5)]
++    seen: list[int] = []
++    pages = {"p3": 2}
++
++    def fetch(url: str, body: bytes | None) -> Any:
++        if url == OSV_BATCH:
++            queries = json.loads(body or b"{}")["queries"]
++            seen.append(len(queries))
++            out: list[dict[str, Any]] = []
++            for query in queries:
++                name = query["package"]["name"]
++                left = pages.get(name, 0)
++                if left:
++                    pages[name] = left - 1
++                    out.append({"vulns": [{"id": f"GHSA-page-{left}"}], "next_page_token": "t"})
++                else:
++                    out.append({"vulns": []})
++            return {"results": out}
++        vid = url.removeprefix(OSV_VULN)
++        return {"id": vid, "database_specific": {"severity": "LOW"}}
++
++    found = query_osv(packages, fetch)
++    assert seen == [2, 2, 1, 1, 1]
++    assert sorted(a.id for a in found) == ["GHSA-page-1", "GHSA-page-2"]
++
++
++def test_a_short_batch_answer_is_unavailable_not_clean() -> None:
++    with pytest.raises(AuditUnavailable):
++        query_osv([Package("npm", "x", "1.0")], lambda url, body: {"results": []})
++
++
++def test_pnpm_audit_rows() -> None:
++    rows = parse_pnpm_audit(
++        {
++            "advisories": {
++                "9": {
++                    "id": 9,
++                    "module_name": "vite",
++                    "severity": "high",
++                    "github_advisory_id": "GHSA-demo-vite",
++                    "patched_versions": ">=8.3.3",
++                    "title": "dev server issue",
++                    "findings": [{"version": "8.3.2"}, {"version": "8.3.2"}],
++                }
++            }
++        }
++    )
++    assert rows == [
++        Advisory(
++            id="GHSA-demo-vite",
++            ecosystem="npm",
++            package="vite",
++            version="8.3.2",
++            severity="high",
++            aliases=("NPM-9",),
++            summary="dev server issue",
++            fixed=(">=8.3.3",),
++            origin="pnpm-audit",
++        )
++    ]
++
++
++def test_the_shipped_allow_file_is_well_formed() -> None:
++    policy = read_policy()
++    assert policy.problems == []
++    assert policy.fail_at == "high"
++    for item in policy.entries:
++        assert item.expires > date(2026, 10, 20), item.id
++
++
++# -- pinned downloads ------------------------------------------------------------------------------
++
++
++def test_pinned_downloads_and_the_base_digest(tmp_path: Path) -> None:
++    (tmp_path / "scripts" / "install").mkdir(parents=True)
++    (tmp_path / "docker").mkdir()
++    (tmp_path / "scripts" / "install" / "pins.json").write_text(
++        json.dumps(
++            {
++                "uv": {
++                    "targets": {
++                        "a": {"url": "https://dl.example.invalid/uv-a", "mirror": "https://m/x"},
++                        "b": {"url": "https://dl.example.invalid/uv-b"},
++                    }
++                }
++            }
++        ),
++        encoding="utf-8",
++    )
++    (tmp_path / "docker" / "pins.json").write_text(
++        json.dumps(
++            {
++                "base": {"image": "debian", "digest": "sha256:" + "ab" * 32},
++                "bundles": {
++                    "tool": {
++                        "version": "1.2",
++                        "url": "https://dl.example.invalid/v{version}/{file}",
++                        "files": {"x": {"file": "tool_{version}_x.tgz"}},
++                    }
++                },
++            }
++        ),
++        encoding="utf-8",
++    )
++    assert deps_audit.pinned_urls(tmp_path) == [
++        "https://dl.example.invalid/uv-a",
++        "https://dl.example.invalid/uv-b",
++        "https://dl.example.invalid/v1.2/tool_1.2_x.tgz",
++    ]
++    statuses = {"https://dl.example.invalid/uv-b": 404, "https://dl.example.invalid/uv-a": 429}
++    asked: list[tuple[str, dict[str, str]]] = []
++
++    def probe(url: str, headers: Any) -> int:
++        asked.append((url, dict(headers)))
++        return statuses.get(url, 200)
++
++    problems, unverified = resolve_pins(tmp_path, probe, lambda url, body: {"token": "t0"})
++    assert problems == ["pinned download https://dl.example.invalid/uv-b (404)"]
++    assert unverified == ["pinned download https://dl.example.invalid/uv-a (429)"]
++    manifest_url, headers = asked[-1]
++    assert manifest_url.endswith("/v2/library/debian/manifests/sha256:" + "ab" * 32)
++    assert headers["Authorization"] == "Bearer t0"
