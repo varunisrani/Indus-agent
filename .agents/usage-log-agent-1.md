@@ -191,3 +191,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 08:57 UTC: 38% (08:46; resets 12:00). Waves 45+46 full run 3: 18452 passed, 2 failed (tests/e2e/test_demo1.py kill-after-approval and ctrl-c seal); integrator investigating. 20 GB disk free.
 - 2026-10-22 09:14 UTC: 40% (09:04; resets 12:00). Waves 45+46 integrator past pytest; Electron and web lanes running. 20 GB disk free.
 - 2026-10-22 09:14 UTC: landed waves 45+46 (44c9a4f).
+- 2026-10-22 09:36 UTC: 43% (09:32; resets 12:00). Wave-47 integrator applied 8 patches (113 paths) and started its full pytest at 09:32. 20 GB disk free.
