@@ -31,3 +31,18 @@
   https; IpcRegistry.seal() doesn't sender-check unregistered sync channels; gated mode lets a request with no Origin past CSRF
   (non-browser; SameSite=Lax limits it).
 - Slip: two early npx vitest probes wrote two npm debug logs under /root/.npm/_logs; the builder deleted exactly those two.
+
+## w43-sec1.patch (SEC1: P25-01 threat model + P25-02 Python security suite)
+
+Base: see `w43-sec1.patch.base` (7a5463a). 33 files, +2109/-5. Builder gates green on its slice:
+ruff, pyright, lint-imports, `tooling.checks --require-ref` (13 checks), pytest 4658 passed / 59 skipped.
+
+- `docs/internals/threat-model.md`: 67 boundary rows, 11 findings (SEC-1..11).
+- `tooling/checks/security_static.py`: 15 AST rules over src/ and scripts/, dated allow-list
+  `security_allow.json` (13 reviewed entries), fixtures as `.pysrc`.
+- `tests/security/`: trust boundaries, archives, threat-model doc cross-check (69 tests).
+- Fixes: SEC-1 zip bomb (`extract.py` zip budget), SEC-2 webhook timestamp crash, SEC-3 `a2a_call`
+  fenced, SEC-11 PNG inflate bounded (`imaging.py`).
+- Open: SEC-4 (execute_code / delegate_task fence, needs design), SEC-5 (message_agent fence),
+  SEC-6, SEC-8. Re-check B-LSP-1 and preview rows after w42-wb lands.
+- Integrate together with w43-sec2.patch, after w42 lands (the threat model cites w42 surfaces).
