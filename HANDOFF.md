@@ -81,8 +81,8 @@ integrator for waves 45 + 46 in scratchpad verify25: wave 45 (S45 SEC-14/15/18, 
 b re-lock incl. lockfiles + notices patch, c SEC-6/8, d desktop hooks + licences, e contribution areas, f TUI/CLI fixes,
 g CI/test hygiene, h user guide, k install pages + version) in `.agents/wip/w46/`; brief `.agents/wip/w46/integrator-brief.md`.
 UI screenshot agent in scratchpad wt-shots (PNGs in scratchpad/shots; re-run on the final tree).
-Wave 47 IN FLIGHT (07:10 UTC; 8 builders a–h in scratchpad wt-w47*, based on a LOCAL snapshot commit of the waves 45+46
-integration — re-apply their patches with --3way onto the landed waves 45+46; brief `.agents/wip/w47/brief.md`):
+Wave 47 PARKED (08:13 UTC): all 8 patches in `.agents/wip/w47/` (built on a LOCAL snapshot commit of the waves 45+46
+integration; apply with --3way onto the landed waves 45+46 per `.agents/wip/w47/integrator-brief.md`). They fix:
 UI bugs seen while capturing screenshots (05:05 UTC):
   (1) desktop composer stays on Stop/Steer for minutes after a turn ends (intermittent; reload clears it);
   (2) desktop tool rows lose path/command and Arguments after a window reload; (3) desktop file tools resolve relative paths
