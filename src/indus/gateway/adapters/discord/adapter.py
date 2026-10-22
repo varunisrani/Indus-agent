@@ -40,6 +40,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import (
     Adapter,
     AdapterConnectError,
@@ -858,7 +859,7 @@ class DiscordAdapter(Adapter):
         return await self._channel(wanted)
 
     def _reference(self, reply_to: str | None, channel: Any) -> Any:
-        if not reply_to or not str(reply_to).isdigit():
+        if not reply_to or not is_digits(str(reply_to)):
             return None
         channel_id = getattr(channel, "id", None)
         if str(channel_id) == str(reply_to):

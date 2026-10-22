@@ -15,7 +15,8 @@ verbs are built from the daemon's ``identity()``, ``status_snapshot()``, ``reque
 1. the control socket (``identify``, ``status`` from ``daemon.runtime_status()``, plus the verbs
    the daemon answers itself: ``drain``, ``reload-plugins``, ``pause-for-update``, the owner-only
    ``stop`` (``{reason, restart}``: the planned-stop record ``indus gateway stop`` writes, then the
-   normal shutdown; P18-15's dashboard buttons), and the attach
+   normal shutdown; P18-15's dashboard buttons), the owner-only ``lsp-restart`` / ``lsp-release``
+   (``service.lsp_control``, wave 45: the profile's language servers), and the attach
    verbs ``describe`` / ``session-ticket`` of P17-11 over a ticket book made for this daemon start);
    a socket that cannot be bound raises ``ControlSocketError`` and the startup fails;
 2. the reconnect watcher, connecting through ``daemon.connect_platform(name)`` and reporting each
@@ -45,6 +46,7 @@ from indus.gateway.daemon.bridge_verbs import BridgeVerbs
 from indus.gateway.daemon.parts import DaemonPart, Stage
 from indus.gateway.daemon.reconnect import ConnectOutcome, PlatformHealth, ReconnectWatcher
 from indus.gateway.hooks import GatewayHooks, bridge
+from indus.service.lsp_control import LspVerbs
 from indus.service.maintenance_gate import MaintenanceVerb
 from indus.service.ws_auth import TicketBook
 from indus.state.gateway_runtime import PlatformStatus, record_planned_stop
@@ -307,6 +309,9 @@ class DaemonBridge:
             **MaintenanceVerb(self.daemon.scope).handlers(),
             # P19-16/17: `indus mcp serve` sends and answers approvals through the daemon.
             **BridgeVerbs(self.daemon).handlers(),
+            # Wave 45: `indus lsp restart` and the CLI's worktree removals reach the profile's
+            # language servers here (owner-only by name).
+            **LspVerbs(self.daemon.scope).handlers(),
             # P24-01: the multiplex host's serve-profile / unserve-profile / rescan-profiles.
             **getattr(self.daemon, "control_verbs", {}),
         }

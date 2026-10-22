@@ -136,6 +136,43 @@ def test_upload_attaches_the_installers_from_the_admitted_commit(
     assert wanted and wanted <= shipped
 
 
+def test_every_release_carries_the_dashboard_pages(jobs: dict[str, dict[str, Any]]) -> None:
+    """F-3 (wave 46): ``web/bundle.py`` fetches ``indus-web-<version>.tar.gz`` from the release
+    of HEAD's tag, so every release builds the pages from the admitted commit (no lane: it always
+    runs), sweeps them with the clean-room artefact guard, keeps the tarball, and ``upload``
+    attaches it with the manifest after the installers' kin."""
+    from indus.web.bundle import RELEASE_ASSET
+
+    assert JOB_LANES["web-pages"] == frozenset()
+    job = jobs["web-pages"]
+    assert job["env"]["VERSION"] == "${{ needs.admit.outputs.version }}"
+    steps = job["steps"]
+    names = [step.get("name") for step in steps]
+    build = steps[names.index("Build the pages")]["run"]
+    assert "pnpm install --frozen-lockfile" in build and "pnpm --filter @indus/web build" in build
+    pack = steps[names.index("Pack the pages")]["run"]
+    tarball = '"$RUNNER_TEMP/web-pages/' + RELEASE_ASSET.format(version="${VERSION}") + '"'
+    assert f"tar -C apps/web/dist -czf {tarball} ." in pack
+    sweep = " ".join(steps[names.index("Sweep the pages")]["run"].split())
+    assert "tooling.checks artifacts --require-ref" in sweep
+    assert "--artifact apps/web/dist" in sweep and f"--artifact {tarball}" in sweep
+    assert (
+        "INDUS_REF="
+        in steps[names.index("Fetch the pinned reference (outside the workspace)")]["run"]
+    )
+    assert names.index("Build the pages") < names.index("Pack the pages")
+    assert names.index("Pack the pages") < names.index("Sweep the pages")
+    assert names.index("Sweep the pages") < names.index("Keep the pages")
+    kept = steps[names.index("Keep the pages")]["with"]
+    assert kept["name"] == "web-pages" and kept["if-no-files-found"] == "error"
+    upload = jobs["upload"]
+    assert "web-pages" in upload["needs"]
+    unames = [step.get("name") for step in upload["steps"]]
+    collect = upload["steps"][unames.index("Collect the dashboard pages")]["with"]
+    assert collect == {"name": "web-pages", "path": "${{ runner.temp }}/artefacts"}
+    assert unames.index("Collect the dashboard pages") < unames.index("Upload with the manifest")
+
+
 def test_gate_needs_every_job_and_always_runs(jobs: dict[str, dict[str, Any]]) -> None:
     gate = jobs["gate"]
     assert gate["if"] == "always()"

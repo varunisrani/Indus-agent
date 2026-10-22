@@ -82,6 +82,11 @@ export function AppearancePresets(props: {
       id: `user:${u.id}`,
       label: t("appearance.preset.user", { name: u.label }),
     })),
+    // the registry's `theme` area (P24-32): bundled and plugin themes, while their plugin is on
+    ...store.contributed().map((c) => ({
+      id: `contrib:${c.id}`,
+      label: t("appearance.preset.contributed", { name: c.label }),
+    })),
   ];
 
   const search = async (event: FormEvent) => {

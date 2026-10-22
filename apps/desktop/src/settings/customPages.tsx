@@ -40,6 +40,7 @@ import {
   KEY_ACTIONS,
   normalizeAccelerator,
 } from "./keybindings.ts";
+import { LicencesPage } from "./LicencesPage.tsx";
 import type { CustomPage } from "./pages.ts";
 import { patchFor, rest, valueAt } from "./settingsApi.ts";
 import { UninstallSection } from "./UninstallSection.tsx";
@@ -1564,6 +1565,7 @@ const PAGES: Readonly<Record<CustomPage, () => ReactNode>> = {
   profiles: () => <ProfilesPage />,
   plugins: () => <PluginsPage />, // P24-32: the desktop plugin inventory
   about: () => <AboutPage />,
+  "about-licences": () => <LicencesPage />, // W46 (F-2)
 };
 
 export function CustomSettingsPage(props: { page: CustomPage }) {

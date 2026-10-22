@@ -113,3 +113,43 @@ Decisions for the lead (wiring): the review never invents jobs itself (no new re
 what the skills it wrote declare. Not wired: `integration` offers — no product event says an
 integration was connected yet (follow-up with the connections work); the gateway host attaches no
 background review, so only CLI-hosted sessions offer.
+
+## Wave 45 (P45 — D-16.981): suggestion offers when an integration is connected
+
+Status: done (2026-10-22, wave 45 builder P45). Read (reference @
+`ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `cron/suggestions.py` (module notes: the sources),
+`cron/suggestion_catalog.py` (all), `website/docs/developer-guide/creating-skills.md` (the one line
+saying integration suggestions come "later"). The reference has no code that offers an
+`integration` suggestion, so the trigger and the matching rule below are ours.
+
+What it does (own words): connecting an integration offers the jobs that were waiting for it. Two
+kinds of integration exist here: an MCP server (`mcp`, named by its server name) and a messaging
+platform (`platform`, named by the platform). "Connected" means the person's own act of adding it:
+`indus mcp add NAME` saved the server (not the "saved turned off" path after a failed probe), the
+dashboard's `POST /api/mcp/servers` added one, `indus gateway setup` left a platform on, or the
+dashboard's `PUT /api/messaging/platforms/{name}` turned one on (`enabled: true`). Then
+`service.integration_offers.connected(scope, kind, name)` offers every blueprint (starter catalogue
+and skills) whose `integrations` list names it and that fills from its defaults alone, as a
+suggestion with source `integration` and the refresh's dedup key `blueprint:<key>` (so a dismissed
+or accepted one never returns, whichever way it was found first). Nothing is scheduled: the person
+accepts with `/suggestions` or `indus cron suggestions`. An offer never fails the connect (errors
+are logged); the CLI paths print one line per new suggestion, the dashboard answers unchanged.
+
+Matching: a blueprint's `integrations` entry matches the kind (`platform` = any messaging platform,
+`mcp` = any MCP server), the bare name (`telegram`, `github`) or `kind:name`. Skill blueprints
+declare `integrations: [..]` (short lowercase names; a bad entry skips the blueprint with a warning,
+as every other bad field does). The starter catalogue's morning briefing carries `platform`: once a
+chat platform is on, a briefing has somewhere to arrive (accepted from that chat it delivers there).
+
+Edge cases: a second connect of the same integration offers nothing new (dedup); the pending cap
+(20) drops offers past it; a blueprint needing a value with no default is never offered (its
+`/blueprint` form asks for it); an unknown kind offers nothing.
+
+Tests: `tests/unit/service/test_integration_offers.py` (matching, dedup and dismiss latch, the
+pending store untouched when nothing matches, errors swallowed), `tests/unit/cron/test_blueprints.py`
+(`test_integrations_are_short_lowercase_names`), and the four call sites:
+`tests/unit/cli/commands/test_mcp.py::test_a_saved_server_suggests_the_jobs_waiting_for_it`,
+`tests/contract/web/test_plugins_mcp_routes.py::test_mcp_add_suggests_the_jobs_waiting_for_the_server`,
+`tests/unit/cli/wizards/test_gateway_setup.py::test_a_platform_left_on_suggests_the_waiting_jobs_once`
+(and `::test_a_platform_that_stays_off_suggests_nothing`),
+`tests/contract/web/test_messaging_routes.py::test_turning_a_platform_on_suggests_the_waiting_jobs`.

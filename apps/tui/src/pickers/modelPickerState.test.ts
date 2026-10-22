@@ -18,7 +18,7 @@ import {
   windowOf,
 } from "./modelPickerState.ts";
 
-const provider = (slug: string, extra: Partial<ProviderOption> & { models?: string[] } = {}) => ({
+const provider = (slug: string, extra: Partial<ProviderOption> = {}) => ({
   slug,
   name: slug[0]?.toUpperCase() + slug.slice(1),
   auth_type: "api_key",

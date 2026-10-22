@@ -162,3 +162,30 @@ Done against the K6 stand-in (2026-10-20). Integration: delete `tests/unit/cli/_
   `tests/integration/cli/test_attach_daemon.py` (a real `indus gateway run`: CLI attach, a second
   client watching live, the TS client through `indus gateway grant`, maintenance through the
   daemon, cold start by the CLI, `--local` unchanged).
+
+## Wave 46 (F-5: attached `chat -q` with no terminal agrees with `--local`)
+
+Read: none from the reference (rehearsal finding F-5, `.agents/wip/w44/w44-r2.patch`).
+
+- Before: `--local` finite `chat -q` (`--oneshot`, `-Q` or no terminal) runs with `run_context`
+  `single_query`, so a risky command is refused by `approvals.single_query_mode` (deny by default);
+  attached, the approval request was left waiting ("Resume the session in a terminal") and the run
+  exited 3.
+- Now (lead's choice: refuse, matching `--local`): the attached finite `chat -q` answers each
+  approval request itself with `one_shot_answer(scope)`: `deny` with `ONE_SHOT_DENY` (the same
+  wording and setting name `--local`'s policy gives the model) unless
+  `approvals.single_query_mode: approve`, then `once`. The turn goes on and the run ends with the
+  usual finite exit code. Other questions (clarify, sudo, secret) still detach with exit 3 and the
+  resume hint. `-z` is unchanged (its input is `unattended`, auto-approved by the daemon).
+- Tests: `tests/unit/cli/test_attach.py::test_an_approval_in_a_finite_chat_is_refused_as_local_does`,
+  `::test_single_query_mode_approve_approves_once_as_local_does`; the exit-3 test now uses a clarify
+  request. Fail-first: on main the approval case exits 3.
+
+### Decisions for the lead
+- W46-f-3 (D-16.1010): the client answers from the profile's config as this process reads it (the daemon reads
+  the same profile file). The fuller fix is D-16.487: carry a single-query flag on `prompt.submit`
+  so the daemon's turn itself runs `single_query` (floors, allowlist and smart mode then apply the
+  same way, and clarify/sudo also follow `--local`). Recorded as the follow-up; the client-side
+  answer is safe meanwhile (it only ever denies, or approves when the person configured approve).
+- F-5 row in the rehearsal log can move to Done with this (the smoke accepted either outcome; the
+  integrator owns `rehearsal-log.md`).

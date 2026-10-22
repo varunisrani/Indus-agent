@@ -35,6 +35,7 @@ from indus.core.persist import TranscriptStore
 from indus.core.response_checks import ThinkScrubber, TurnChecks, scrubber_for
 from indus.core.tool_exec import ExecLimits
 from indus.core.transcript import TranscriptRow
+from indus.core.untrusted import Taint
 from indus.core.wire import ArgsMemo, HealLedger
 from indus.protocol.events import EventBase
 from indus.protocol.requests_port import ServerRequestPort
@@ -239,6 +240,8 @@ class TurnResult:
     guardrail: GuardDecision | None = None
     intervened: bool = False
     cleanup_errors: tuple[str, ...] = ()
+    # The turn saw outside text (an untrusted tool ran or a tainted result came back; SEC-4).
+    read_untrusted: bool = False
 
     @property
     def failure_reason(self) -> str | None:
@@ -291,6 +294,8 @@ class TurnState:
     moa: Any = None
     # The last answer a stop gate sent back (A28): the turn's answer if the budget runs out first.
     gated_answer: str | None = None
+    # Results that carry outside text under a trusted tool's name (SEC-4, ``core.untrusted``).
+    taint: Taint = field(default_factory=Taint)
 
     # -- views -----------------------------------------------------------------------------------
 

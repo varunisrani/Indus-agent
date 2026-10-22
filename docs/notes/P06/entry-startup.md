@@ -80,3 +80,24 @@ Done (2026-10-18). Also touched (shared): `src/indus/__main__.py`, `pyproject.to
   THIRD_PARTY_NOTICES rows: click, prompt_toolkit, rich (+ wcwidth, markdown-it-py, mdurl,
   Pygments), pexpect (dev), and the missing `web` extra rows ddgs and primp (lxml and ptyprocess
   rows note their extra users); licences from installed metadata.
+
+## Wave 46 (builder k, 2026-10-22): F-4 `--version` on a source install
+
+Read: no reference file (our release gap F-4). Files: `src/indus/cli/version.py`
+(`head_commit`, `checkout_release`, `version_lines`), `scripts/install/sh/20-runtime.sh`
+(`.indus-bootstrap.json` gains `version`), tests `tests/unit/cli/test_version_release.py`.
+
+A git checkout whose HEAD is a release prints that release on the first line instead of `0.0.0`.
+File probes only (the fast path's budget holds; `zlib` and `indus.foundation.versions` are imported
+lazily, only for a checkout): HEAD from `.git` (a linked worktree's `gitdir`/`commondir` followed),
+release tags from `packed-refs` (peeled lines) and loose `refs/tags/v*` (lightweight, or an
+annotated tag whose object is loose, peeled with `zlib`); then the installer marker's
+`version`+`commit` and the newest 20 update receipts' `to_version`+`to_commit`. Every candidate must
+name the HEAD commit; the newest version wins; malformed tags are ignored. A HEAD past or off a
+release keeps `0.0.0`. `indus.__version__` itself is unchanged (daemon/server `code_version`
+comparisons keep using it).
+
+Decisions for the lead:
+- W46-k-4 (D-16.1019): only `--version`'s display changes; `__version__` (code_version, User-Agent, ACP
+  agentInfo) stays the package's own. Owner may want those to follow; record if so.
+Follow-up: `install.ps1`'s marker should gain `version` the same way.

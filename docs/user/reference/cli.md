@@ -4013,7 +4013,7 @@ indus lsp [OPTIONS] [COMMAND] [ARGS]...
 |---|---|
 | [`indus lsp status`](#indus-lsp-status) | Settings, running servers and the catalogue. |
 | [`indus lsp install-hint`](#indus-lsp-install-hint) | How to install a language server. |
-| [`indus lsp restart`](#indus-lsp-restart) | Stop this process's language servers and forget their failures. |
+| [`indus lsp restart`](#indus-lsp-restart) | Stop the language servers (the gateway's, then this process's) and forget their failures. |
 
 ### indus lsp status
 
@@ -4041,7 +4041,7 @@ indus lsp install-hint [OPTIONS] SERVER
 
 ### indus lsp restart
 
-Stop this process's language servers and forget their failures.
+Stop the language servers (the gateway's, then this process's) and forget their failures.
 
 ```text
 indus lsp restart [OPTIONS]

@@ -78,8 +78,12 @@ def test_a_room_with_two_members_taking_turns(
             )
             await flight.until(lambda: len(said()) == 2)
             assert said() == [("alpha", "Four."), ("beta", "Agreed: four.")]
-            # alpha's third turn runs (the model stalls on it)
+            # alpha's third turn runs (the model stalls on it). The task reads "running" as soon as
+            # the driver claims it, before the member's turn has asked the model: wait for that
+            # third request too, or a stop could land first and beta's later turn would get the
+            # stalling script (D-16.1024).
             await flight.until(lambda: statuses() == ["settled", "settled", "running"])
+            await flight.until(lambda: len(server.model_requests) == 3)
             held = rpc.call(
                 "groups.send", {"room_id": "r1", "client_event_id": "c2", "text": "@alpha stop"}
             )

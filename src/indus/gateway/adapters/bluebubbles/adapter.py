@@ -48,6 +48,7 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters._http import (
     BadPayload,
     CallbackListener,
@@ -658,7 +659,7 @@ class BlueBubblesAdapter(Adapter):
             if resp.status_code != 200:
                 raise MediaRejected("it could not be downloaded")
             declared = resp.headers.get("content-length")
-            if declared and declared.isdigit() and int(declared) > MAX_ATTACHMENT_BYTES:
+            if declared and is_digits(declared) and int(declared) > MAX_ATTACHMENT_BYTES:
                 raise MediaRejected("it is larger than 100 MB")
             async for chunk in resp.aiter_bytes():
                 received += len(chunk)

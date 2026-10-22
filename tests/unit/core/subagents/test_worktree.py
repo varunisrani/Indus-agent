@@ -161,3 +161,32 @@ def test_docker_backend_delegation_notes_and_skips_the_tree(
     assert "worktree" not in entry
     assert "terminal backend is docker" in entry["note"]
     assert not (repo / ".worktrees").exists()
+
+
+def test_closing_a_child_tree_stops_its_language_servers_first(
+    scope: Scope, repo: Path, git: Git, tmp_path: Path
+) -> None:
+    """Wave 45 (D-16.982): the process's tier releases the tree before it is removed."""
+    from indus.tools.lsp import diagnostics
+    from indus.tools.lsp.diagnostics import EditDiagnostics
+    from tests.unit.tools.lsp import test_manager as fakes
+
+    fakes.FakeClient.created = []
+    lsp = fakes.manager(tmp_path)
+    diagnostics.install_active(EditDiagnostics(lsp))
+
+    async def main() -> tuple[bool, int, bool]:
+        tree, _ = await open_worktree(scope, repo, "sa-0-cccc", session_id="c1", git=git)
+        assert tree is not None
+        await lsp.client_for(str(Path(tree.path) / "a.fk"))
+        running = len(lsp.clients) == 1
+        result = dict(await close_worktree(scope, tree, git=git))
+        stopped = sum(c.stopped for c in fakes.FakeClient.created)
+        await lsp.close()
+        return running, stopped, bool(result["kept"])
+
+    try:
+        running, stopped, kept = asyncio.run(main())
+    finally:
+        diagnostics.install_active(None)
+    assert running and stopped == 1 and not kept

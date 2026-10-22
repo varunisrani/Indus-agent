@@ -160,3 +160,20 @@ Decisions for the lead:
 ## Status
 
 Done (2026-10-21); the room loop is wired in wave 42 (members answer in rooms).
+
+## Wave 45 (S45 — SEC-15, D-16.971)
+
+Status: done (2026-10-22). Read: no reference file (our own prompt framing).
+
+A member's turn prompt frames the room transcript as data (`gateway.rooms.loop.transcript_entry`):
+a member's reply is written after a `name (member):` line inside `core.untrusted`'s fence
+(`untrusted.wrap`: the same fence and preamble as outside tool output, at any length, a fence word
+inside defused), so its line breaks, a forged `person:` line or a forged closing tag stay inside the
+block; a person's message keeps its first line after `name:` and every further line is indented
+(`str.splitlines`, so `\r`, U+2028 and the other line breaks count); a speaker name loses control
+characters and colons. The prompt's lead-in says how to read it. Approvals in room turns stay a
+follow-up.
+
+Tests: `tests/security/test_trust_boundaries.py::test_room_a_member_reply_cannot_forge_a_speaker`
+(fails on the old prompt: the forged `person:` line stood at a line start),
+`tests/unit/gateway/rooms/test_loop.py::test_transcript_entries_are_framed_so_none_can_pass_for_another`.

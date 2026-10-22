@@ -17,7 +17,10 @@ import { managementSlots, rpcOf } from "./app/manage/managementSlots.tsx";
 import { settingsSlots } from "./app/settingsSlots.tsx";
 import { applyStoredTheme } from "./app/theme.tsx";
 import { BotsPage, BotsSurface, botsContribution, registryHost } from "./bots/BotsPage.tsx";
+import { mirrorThemeContributions } from "./contrib/areas.tsx";
 import { startDesktopPlugins } from "./contrib/host.ts";
+import { PluginsPage } from "./contrib/PluginsPage.tsx";
+import { contributions } from "./contrib/registry.ts";
 import { mirrorPaneContributions } from "./contrib/shell.tsx";
 import { ConnectionStore } from "./gateway/connectionStore.ts";
 import { translate } from "./i18n/index.tsx";
@@ -86,7 +89,19 @@ async function start(): Promise<void> {
   // the working panes (P20-28..31) join the pane registry before the layout reads it; contributed
   // panes (P24-32) follow the registry's `pane` area from then on
   registerWorkingPanes();
-  if (hasShell(query.kind)) mirrorPaneContributions();
+  if (hasShell(query.kind)) {
+    mirrorPaneContributions();
+    // contributed themes join Settings › Appearance (P24-32)
+    mirrorThemeContributions();
+    // the plugin inventory as a tool pane too (the layout's Open list), beside Settings › Plugins
+    contributions.register({
+      id: "app.plugins",
+      area: "pane",
+      source: "app",
+      title: translate("plugins.pane"),
+      render: () => <PluginsPage />,
+    });
+  }
   // The Bots surface (P24-31) is a bundled contribution in the app's registry (P24-32): its route
   // and its sidebar entry, both read by the shell. Registered before the first render so a link
   // to /bots opens it.

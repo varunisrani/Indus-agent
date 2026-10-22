@@ -101,12 +101,28 @@ def test_short_lifetimes_are_floored_and_sso_marker_is_60s() -> None:
     assert _one(marker, "indus_sso_attempt")["max-age"] == "60"
 
 
-def test_readers_accept_every_variant() -> None:
-    for name in ("__Host-indus_session_at", "__Secure-indus_session_at", "indus_session_at"):
-        scope = {"type": "http", "headers": [(b"cookie", f"{name}=abc".encode())]}
-        assert cookies.read(HTTPConnection(scope), cookies.AT_COOKIE) == "abc"
-    empty = {"type": "http", "headers": []}
-    assert cookies.read(HTTPConnection(empty), cookies.AT_COOKIE) is None
+def _http(scheme: str, cookie: bytes) -> dict[str, object]:
+    headers = [(b"host", b"127.0.0.1:9119"), (b"cookie", cookie)]
+    return {"type": "http", "scheme": scheme, "path": "/", "headers": headers}
+
+
+def test_readers_accept_every_variant_over_http_and_only_prefixed_ones_over_https() -> None:
+    for scheme, name, found in (
+        ("http", "__Host-indus_session_at", "abc"),
+        ("http", "__Secure-indus_session_at", "abc"),
+        ("http", "indus_session_at", "abc"),
+        ("https", "__Host-indus_session_at", "abc"),
+        ("https", "__Secure-indus_session_at", "abc"),
+        ("https", "indus_session_at", None),  # SEC-18: never the plain name over https
+    ):
+        scope = _http(scheme, f"{name}=abc".encode())
+        assert cookies.read(HTTPConnection(scope), cookies.AT_COOKIE) == found, (scheme, name)
+    both = b"indus_session_at=plain; __Secure-indus_session_at=sec; __Host-indus_session_at=host"
+    for scheme in ("http", "https"):
+        scope = _http(scheme, both)
+        assert cookies.read(HTTPConnection(scope), cookies.AT_COOKIE) == "host"
+    for scheme in ("http", "https"):
+        assert cookies.read(HTTPConnection(_http(scheme, b"")), cookies.AT_COOKIE) is None
 
 
 def test_payload_round_trip_and_garbage() -> None:

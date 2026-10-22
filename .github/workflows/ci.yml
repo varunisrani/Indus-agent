@@ -470,6 +470,36 @@ jobs:
       - name: Run the default package
         run: nix run .#default -- --version
 
+  # W46 RS9: shellcheck over the POSIX installer and the release shell scripts. The installer is
+  # checked as built: scripts/install.sh carries every fragment of scripts/install/sh/ verbatim,
+  # their shellcheck directives included, and checking a fragment alone would flag names another
+  # fragment defines. The version is pinned: the job fails when the runner's (signed) apt archive
+  # hands over another one, so move the pin and the runner image together.
+  shell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SHELLCHECK_VERSION: "0.9.0"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install the pinned shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends shellcheck
+          found="$(shellcheck --version | sed -n 's/^version: //p')"
+          if [ "$found" != "$SHELLCHECK_VERSION" ]; then
+            echo "::error::shellcheck $found installed, $SHELLCHECK_VERSION pinned"
+            exit 1
+          fi
+
+      - name: shellcheck the installer and the release scripts
+        run: |
+          shopt -s nullglob
+          release=(scripts/release/*.sh)
+          shellcheck scripts/install.sh "${release[@]}"
+
   # P25-19: the clean-room guards over BUILT outputs, not only sources: the web dist (from
   # web-e2e), the unpacked Linux desktop build with its ASAR (from desktop-package), the docs site
   # and the three installers. Reference names, vendor hosts, reference media and the build
@@ -540,6 +570,7 @@ jobs:
       - desktop-package
       - desktop-e2e
       - nix
+      - shell
       - artefacts
       - windows-local
     if: always()

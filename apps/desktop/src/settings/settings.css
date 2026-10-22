@@ -294,3 +294,21 @@
 .settings-segment {
   padding: var(--indus-space-1) var(--indus-space-2);
 }
+
+/* About → Licences (W46, F-2): the packaged notices as plain text in a scrolling block. */
+.settings-notices {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 60vh;
+  margin: 0;
+  padding: var(--indus-space-2);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--indus-font-mono);
+  font-size: 11px;
+  color: var(--indus-color-fg);
+  background: var(--indus-color-bg);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-sm);
+}

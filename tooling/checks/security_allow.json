@@ -28,17 +28,8 @@
     "src/indus/cli/commands/memory.py": {
       "inherit_env": "2026-10-21: `indus memory edit` runs the person's own editor in the foreground of their own terminal"
     },
-    "src/indus/cli/doctor/checks.py": {
-      "inherit_env": "2026-10-21: doctor prints `<tool> --version` for tools the person has on PATH, run from their own shell session"
-    },
-    "src/indus/platform/locate.py": {
-      "inherit_env": "2026-10-21: diagnostic probe of a located executable, below foundation (no scope exists yet to build an env from); only run by doctor-style callers"
-    },
     "src/indus/state/connection.py": {
       "inherit_env": "2026-10-21: macOS `ps -o ppid= -o args= -p <pid>` probe for the test-isolation guard; fixed argv, nothing secret reaches it"
-    },
-    "src/indus/web/routes/system.py": {
-      "inherit_env": "2026-10-21: dashboard update of a git checkout install: fixed git argv on the install folder, which needs the person's git/ssh/proxy environment; owner-gated route (follow-up: pass a child_env once git network needs are listed)"
     }
   }
 }

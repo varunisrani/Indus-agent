@@ -103,7 +103,7 @@ const FOREIGN: Record<string, () => IpcEventLike> = {
   }),
 };
 
-function wiredRegistry() {
+function wiredRegistry(wire = true) {
   const handles = new Map<string, Listener>();
   const ons = new Map<string, Listener>();
   const ipc: IpcMainLike = {
@@ -119,7 +119,7 @@ function wiredRegistry() {
     log: () => {},
   });
   const ran = vi.fn();
-  for (const def of CHANNELS) {
+  for (const def of wire ? CHANNELS : []) {
     const schemas = SCHEMAS[def.name] as { request?: z.ZodType };
     if (def.kind === "invoke" || def.kind === "send") {
       registry.registerIpc(def.name, schemas.request as z.ZodType, (payload) =>
@@ -173,6 +173,44 @@ describe("ipc: every channel refuses every foreign frame (D-16.18)", () => {
   it("nothing in main listens on an event channel (main → renderer only)", () => {
     for (const def of CHANNELS.filter((c) => c.kind === "event")) {
       expect(handles.has(def.name) || ons.has(def.name), def.name).toBe(false);
+    }
+  });
+});
+
+describe("ipc: channels left to seal() refuse every foreign frame too (SEC-18)", () => {
+  const { handles, ons } = wiredRegistry(false);
+
+  for (const [label, make] of Object.entries(FOREIGN)) {
+    it(`${label}: refused before not-available on every unwired channel`, async () => {
+      for (const def of CHANNELS) {
+        if (def.kind === "invoke") {
+          const answer = await (handles.get(def.name) as Listener)(make(), {});
+          expect(answer, def.name).toMatchObject({ ok: false, code: "sender-rejected" });
+        } else if (def.kind === "sync") {
+          const event = { ...make(), returnValue: undefined } as SyncEventLike;
+          (ons.get(def.name) as Listener)(event);
+          expect(event.returnValue, def.name).toEqual({
+            ok: false,
+            code: "sender-rejected",
+            message: SENDER_REJECTED_MESSAGE,
+          });
+        }
+      }
+    });
+  }
+
+  it("the app's own frame still hears not-available on an unwired sync channel", () => {
+    const sync = CHANNELS.filter((c) => c.kind === "sync");
+    expect(sync.length).toBeGreaterThan(0);
+    for (const def of sync) {
+      const main = frame(APP_URL, 1);
+      const event = {
+        sender: { id: KNOWN, mainFrame: main, getType: () => "window" },
+        senderFrame: main,
+        returnValue: undefined,
+      } as SyncEventLike;
+      (ons.get(def.name) as Listener)(event);
+      expect(event.returnValue, def.name).toMatchObject({ ok: false, code: "not-available" });
     }
   });
 });

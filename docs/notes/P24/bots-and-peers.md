@@ -175,3 +175,37 @@ platform, so `message_agent` is reachable only once that selection is made). The
 ## Status
 
 Done (2026-10-21); daemon side wired in wave 42.
+
+## Wave 45 (P45 — D-16.980): `message_agent` offered in canonical bot-chat turns
+
+Status: done (2026-10-22, wave 45 builder P45). Read: no reference file (the intent is this note's
+"Sessions that get the tool" and the wave-42 owed item).
+
+What it does (own words): a turn in a profile's canonical chat (the session titled `Bot chat`,
+or the live tip the canonical lookup follows its compression lineage to; never recency) runs as a bot turn: its agent
+is built with platform `bots` (the gate of the `bots` toolset opens) and the profile's own selection
+for that platform, `platform_toolsets.bots` when the person saved one with `indus tools`, else the
+`indus-bots` bundle (the shared core plus `bots`). The `no_mcp` marker is dropped from a saved list
+(it means something only to ACP). The shaping runs when the session is attached, before the MCP and
+plugin steps, so the umbrella `mcp` toolset and plugin toolsets join a bot chat like any other
+explicit selection; a reload keeps the shaped agent options. Every other session is untouched (a
+session that selects every toolset still never gets `message_agent`).
+
+Where it applies: `SessionService(bot_chats=…)` (the `service.bot_turns.BotChats` shaper over the
+service's store). The gateway daemon gives it to its chat service (desktop Bots page, attached CLI
+one-shots of `LocalBotTransport`, the shared host) and to the API server's service (peers'
+`/v1/bots/dm` turns); never the webhook surface (untrusted payloads keep the read-only floor). The
+CLI's in-process host, the TUI bridge and ACP do not apply it: `message_agent` is registered only
+by the daemon, which owns the bot transport; without a daemon a local delivery runs the target's
+turn in a one-shot whose registry has no `message_agent` (recorded, not a regression).
+
+Edge cases: a session row without a title, a store error while reading the row (logged, the
+session keeps the surface's selection), a non-`StateStore` service (no shaping), a saved
+`platform_toolsets.bots` that is empty (the bundle). Loops: the target's reply is fenced
+(`message_agent` is in `UNTRUSTED_NAMES`, D-16.909) and each delivery retries at most once.
+
+Tests: `tests/unit/service/test_bot_turns.py` (selection policy; the canonical chat's agent gets
+platform `bots` and `message_agent`, another session in the same service does not, even one
+selecting every toolset; a saved `platform_toolsets.bots` is honoured; a compressed chat's tip is
+still the bot chat; no shaping without the seam), `tests/unit/gateway/daemon/
+test_host_tools.py::test_the_daemon_shapes_bot_chats_on_chat_and_api_services_only`.

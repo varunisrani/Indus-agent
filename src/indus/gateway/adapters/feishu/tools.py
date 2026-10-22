@@ -29,6 +29,7 @@ from urllib.parse import urlsplit
 from indus.core import loop_texts as texts
 from indus.foundation import config as config_mod
 from indus.foundation.clock import SystemClock
+from indus.foundation.digits import is_digits
 from indus.foundation.scope import Scope
 from indus.gateway.adapters.feishu.adapter import APP_ID_ENV, APP_SECRET_ENV, DOMAIN_ENV
 from indus.gateway.adapters.feishu.client import FeishuClient, FeishuError, base_url_for
@@ -293,7 +294,7 @@ class FeishuTools:
         token = document_token(str(args.get("file_token") or ""))
         file_type = _file_type(args)
         comment_id = str(args.get("comment_id") or "").strip()
-        if token is None or file_type is None or not comment_id.isdigit():
+        if token is None or file_type is None or not is_digits(comment_id):
             return _error("file_token, file_type and a numeric comment_id are needed")
 
         async def work(client: FeishuClient) -> str:
@@ -330,7 +331,7 @@ class FeishuTools:
         file_type = _file_type(args)
         comment_id = str(args.get("comment_id") or "").strip()
         text = self._write_text(args)
-        if token is None or file_type is None or not comment_id.isdigit() or text is None:
+        if token is None or file_type is None or not is_digits(comment_id) or text is None:
             return _error(
                 f"file_token, file_type, a numeric comment_id and content (1-{WRITE_MAX} "
                 "characters of plain text) are needed"

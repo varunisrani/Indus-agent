@@ -447,3 +447,36 @@ def test_pool_reports_reset_and_lost() -> None:
         assert fourth.kernel.closed and len(pool) == 0
 
     asyncio.run(scenario())
+
+
+def test_a_kernel_that_read_outside_text_stays_tainted_until_reset(tmp_path: Path) -> None:
+    """SEC-4: a kernel keeps variables between calls, so a page fetched in one call and printed
+    in the next is still outside text: every later run of that kernel is marked, until reset."""
+    from indus.core.untrusted import Taint
+
+    scope = code_scope(tmp_path, KERNEL)
+    registry, _ = fake_tools(tmp_path)
+    tool = ExecuteCodeTool()
+    taint = Taint()
+
+    def go(code: str, call_id: str, **extra: Any) -> dict[str, Any]:
+        return run(
+            call(
+                tool,
+                scope,
+                code,
+                registry=registry,
+                cwd=tmp_path,
+                taint=taint,
+                tool_call_id=call_id,
+                **extra,
+            )
+        )
+
+    go("x = 1\nprint(x)", "c0")
+    go("from indus_tools import web_search\npage = web_search('q')\nprint('kept')", "c1")
+    go("print(page)", "c2")
+    go("print('fresh')", "c3", reset=True)
+    assert "c0" not in taint
+    assert "c1" in taint and "c2" in taint
+    assert "c3" not in taint

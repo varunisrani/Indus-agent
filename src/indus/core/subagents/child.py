@@ -20,6 +20,8 @@
 ``ChildAgent.run()`` sends the brief (goal, context, image references, the output contract when
 the task has a schema), checks a schema answer once more after one correction (P10-04), then
 cleans up through ``ChildResources`` (P10-06) and the worktree (P10-07) and closes the child.
+When any of its turns saw outside text (``TurnResult.read_untrusted``), the outcome says so and
+the parent fences the summary (SEC-4).
 ``interrupt``, ``steer`` and ``progress`` serve the batch runner and background control.
 """
 
@@ -286,6 +288,7 @@ class ChildAgent:
     ended_at: datetime | None = None
     outcome: ChildOutcome | None = None
     stopped_by: str = ""
+    read_untrusted: bool = False  # one of its turns saw outside text (SEC-4)
     _stop: bool = False
     _done: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -348,10 +351,13 @@ class ChildAgent:
         if self._stop:
             running.state.control.interrupt(running.generation, by_system=True)
         try:
-            return await asyncio.shield(running.task)
+            result = await asyncio.shield(running.task)
         except asyncio.CancelledError:
             running.state.control.interrupt(running.generation, by_system=True)
             raise
+        if result.read_untrusted:
+            self.read_untrusted = True
+        return result
 
     async def _work(self) -> ChildOutcome:
         result = await self._turn(brief_text(self.task, self.schema))
@@ -432,6 +438,7 @@ class ChildAgent:
             orphaned_processes=tuple(orphans),
             worktree=tree,
             iterations=self.iterations,
+            read_untrusted=outcome.read_untrusted or self.read_untrusted,
         )
         try:
             await self.agent.close()

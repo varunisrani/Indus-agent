@@ -9,13 +9,6 @@
 #   why   — one or two lines
 # An entry whose difference is gone fails the matrix as stale: remove it with the change.
 differences:
-  - case: cli.q.denies
-    facet: outcome
-    host: attached
-    d_id: D-16.487
-    why: >-
-      A finite attached `chat -q` that meets a question nobody here can answer detaches with exit 3
-      (the turn waits in the daemon for another surface) instead of denying it in process.
   - case: bridge.lost_mid_turn
     facet: lost turn finished
     host: attached

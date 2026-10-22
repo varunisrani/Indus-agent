@@ -971,6 +971,12 @@ export const SCHEMAS = {
     }),
   },
 
+  "indus:about:notices": {
+    request: none,
+    // null when the file is not beside the app (a development run) or cannot be read
+    response: z.object({ text: z.string().nullable() }),
+  },
+
   "indus:diagnostics:copy": {
     request: none,
     response: z.object({ copied: z.boolean(), bytes: z.number().int().min(0) }),

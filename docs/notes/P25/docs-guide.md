@@ -62,3 +62,36 @@ Compare checklist (filled after the rewrite; reopened only the listing of `websi
 ## Status
 
 Done (2026-10-21). See the final report.
+
+## Wave 46 (RS10, builder h, 2026-10-22)
+
+Read: no reference file (user pages written from our code and the P24 task notes only; no
+reference prose opened). Evidence: none.
+
+What changed: user-guide pages for the P24 features wired in waves 40–42, each checked against the
+code it describes (CLI docstrings and options, config schema rows, the desktop strings and RPC
+calls): `user-guide/board.md` (`indus kanban`, dispatcher, worker outcomes, board toolsets),
+`user-guide/bots-and-peers.md` (bot chat, `self-chat` delivery, the Bots page, `indus peer`),
+`user-guide/rooms.md` (group rooms: where they run, turn policy, stop words, indeterminate turns,
+disband, limits), `messaging/relay.md` (gateway side of the relay; links the connector contract),
+`user-guide/themes.md` (desktop presets, accent, per-profile, VS Code import, TUI sync),
+`user-guide/pets.md`, `user-guide/vault.md` (`browser_vault` sources, `indus vault`),
+`user-guide/egress.md`, `user-guide/helper-programs.md` (`indus pm`), `user-guide/lsp.md`,
+`user-guide/verify.md`. All in the mkdocs nav (user guide; relay under messaging).
+
+Left out on purpose (not confirmed as reachable for a person today): `message_agent` (bot chats do
+not run with the `bots` platform yet; P45 is wiring it), room creation from a UI (the desktop has
+no create button; the page names `groups.create`), room approvals, plugin locale packs.
+
+## Decisions for the lead
+- W46-h-1 (D-16.1014): the pages document current behaviour only; when P45 lands (`message_agent` in bot chat,
+  `indus lsp restart` against a running daemon), `bots-and-peers.md` and `lsp.md` need a paragraph
+  each (today `indus lsp restart` acts on its own process, as its help says).
+- W46-h-2 (D-16.1015): no `<!-- test -->` examples were added: every new command either needs a daemon, a
+  terminal for hidden prompts, the network or an image service; the fake-model harness cannot run
+  them. The pages' command lines were checked against the generated CLI reference instead.
+
+Integration (waves 45 + 46 integrator, 2026-10-22): with P45 landed, `bots-and-peers.md` gained
+"Bots that message other bots" (`message_agent` in a running gateway's bot chats, D-16.980) and
+`lsp.md` a paragraph on `indus lsp restart` asking the gateway first (D-16.983, per profile with
+D-16.1021); W46-h-1 is done.

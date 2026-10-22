@@ -8,39 +8,7 @@
       "ecosystem": "PyPI",
       "expires": "2026-11-08",
       "added": "2026-10-21",
-      "reason": "Fixed only in certifi 2026.10.19 (uploaded 2026-10-20), after uv exclude-newer 2026-10-04 and inside the 14-day age rule; the lead moves exclude-newer (or grants a dated security exception) and re-locks. Until then httpx trusts the emSign roots in the bundle (SEC2-2)."
-    },
-    {
-      "id": "GHSA-2g87-pp6c-29x5",
-      "package": "aiohttp",
-      "ecosystem": "PyPI",
-      "expires": "2026-11-15",
-      "added": "2026-10-21",
-      "reason": "aiohttp is only the optional slack extra's socket-mode client (no aiohttp server runs); fixed in 3.14.4, uploaded 2026-10-05, one day after uv exclude-newer 2026-10-04: bump at the next exclude-newer move (SEC2-3)."
-    },
-    {
-      "id": "GHSA-5wr8-gcqf-gqf3",
-      "package": "aiohttp",
-      "ecosystem": "PyPI",
-      "expires": "2026-11-15",
-      "added": "2026-10-21",
-      "reason": "Server-side header timeout; Indus runs no aiohttp server (the slack extra uses it as a client only). Fixed in 3.14.4 (after exclude-newer): bump at the next exclude-newer move (SEC2-3)."
-    },
-    {
-      "id": "GHSA-9xw5-w5jj-pvcg",
-      "package": "aiohttp",
-      "ecosystem": "PyPI",
-      "expires": "2026-11-15",
-      "added": "2026-10-21",
-      "reason": "Multipart request handling of an aiohttp server; Indus runs none (the slack extra uses aiohttp as a client). Fixed in 3.14.4 (after exclude-newer): bump at the next exclude-newer move (SEC2-3)."
-    },
-    {
-      "id": "GHSA-587h-7wmj-h5pm",
-      "package": "vite",
-      "ecosystem": "npm",
-      "expires": "2026-11-15",
-      "added": "2026-10-21",
-      "reason": "Dev-only (build and the loopback dev server; never shipped); the launch-editor path is Windows-only and needs a request to the dev server. Fixed in vite 8.3.3 (published 2026-10-06, passes minimumReleaseAge): bump at the next pnpm re-lock (SEC2-4)."
+      "reason": "Fixed only in certifi 2026.10.19 (uploaded 2026-10-20), after uv exclude-newer 2026-10-08 and inside the 14-day age rule; the lead moves exclude-newer (or grants a dated security exception) and re-locks. Until then httpx trusts the emSign roots in the bundle (SEC2-2)."
     }
   ]
 }

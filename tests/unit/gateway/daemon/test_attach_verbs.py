@@ -6,8 +6,6 @@ import asyncio
 import json
 import logging
 import os
-import shutil
-import tempfile
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
@@ -35,6 +33,7 @@ from indus.state import registry
 from indus.state.registry import StoreHandle
 from tests.fakes.agent import eventually
 from tests.fakes.model import text_turn, tool_batch
+from tests.short_paths import short_dir
 from tests.unit.service.test_daemon_host import Holder, open_host
 
 WS_URL = "ws://127.0.0.1:47011/ws"
@@ -49,11 +48,8 @@ def store(scope: Scope) -> Iterator[StoreHandle]:
 
 @pytest.fixture
 def short_home() -> Iterator[Path]:
-    home = Path(tempfile.mkdtemp(prefix="igw-", dir="/tmp"))
-    try:
+    with short_dir("igw-") as home:
         yield home
-    finally:
-        shutil.rmtree(home, ignore_errors=True)
 
 
 def verbs_for(home: Path, *, url: str | None = WS_URL, **kw: Any) -> AttachVerbs:

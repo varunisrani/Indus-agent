@@ -26,9 +26,12 @@ older unfinished check over: it diffs against the older check's ``before`` and c
 undelivered note, so an error the first edit made is still reported unless the second fixed it;
 if the newer check gets no verdict the older result (or note) is delivered instead.
 
-The process's checker is installed with ``install_active``; who is editing is bound per tool call
-(``bind_owner``, done by ``LspToolHooks.before``). The files a turn edited are kept per (owner,
-turn) for the stop gates (``turn_edits``).
+Checkers are installed per profile tier with ``install_active`` (wave 45, SEC-14: one per served
+profile's home, see the section notes); ``release_folder`` stops the servers of a folder about to
+be removed (a subagent's worktree, wave 45) in every installed tier. Who is editing, and under
+which profile, is bound per tool call (``bind_owner`` / ``bind_tier``, done by
+``LspToolHooks.before``). The files a turn edited are kept per (owner, turn) for the stop gates
+(``turn_edits``).
 """
 
 from __future__ import annotations
@@ -47,6 +50,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
 from indus.foundation.clock import Clock
+from indus.foundation.scope import Scope, scope_or_none
 from indus.tools.calls import ToolCall, ToolContext, ToolResult
 from indus.tools.hooks import NO_HOOKS, BeforeVerdict, ToolHooks
 from indus.tools.lsp.client import LspClient, as_synced, diagnostic_key, within
@@ -58,6 +62,7 @@ __all__ = [
     "CHECK_CEILING_S",
     "MAX_OWNERS",
     "MAX_PER_OWNER",
+    "PROCESS_WIDE",
     "TURN_END_WAIT_S",
     "WRITE_BUDGET_S",
     "CheckOutcome",
@@ -65,14 +70,18 @@ __all__ = [
     "LspToolHooks",
     "active",
     "bind_owner",
+    "bind_tier",
     "current_owner",
     "format_errors",
     "install_active",
+    "installed",
     "is_error",
     "line_map",
     "record_edit",
+    "release_folder",
     "shift_all",
     "shift_range",
+    "tier_key",
 ]
 
 log = logging.getLogger(__name__)
@@ -462,24 +471,81 @@ class EditDiagnostics:
             log.debug("LSP resync of %s failed", path, exc_info=True)
 
 
-# -- the process's checker and who edits ----------------------------------------------------------
+# -- the installed checkers and who edits ---------------------------------------------------------
+#
+# Checkers are installed per tier key: the home of the profile whose language servers they run
+# (``tier_key``; wave 45, SEC-14), so on a multiplex host one profile's edits never reach a server
+# started with another profile's child env or ``lsp.servers``. The key "" (``PROCESS_WIDE``) is a
+# checker for every profile (a single-scope host, tests). Which tier an edit uses: the key bound
+# for the running tool call (``LspToolHooks.before`` binds it from the call's scope), else the
+# scope the code runs under (``foundation.scope``); with neither, the process-wide checker, else
+# the only one installed.
 
-_ACTIVE: list[EditDiagnostics] = []
+PROCESS_WIDE = ""
+
+_ACTIVE: dict[str, EditDiagnostics] = {}
 _OWNER: ContextVar[tuple[str | None, str | None]] = ContextVar(
     "indus_lsp_owner", default=(None, None)
 )
+_TIER_KEY: ContextVar[str | None] = ContextVar("indus_lsp_tier", default=None)
 _EDITS: OrderedDict[tuple[str, str], list[str]] = OrderedDict()
 
 
-def install_active(checker: EditDiagnostics | None) -> None:
-    """Make ``checker`` the one ``lint.lint_edit`` consults (None: LSP checks off)."""
-    _ACTIVE.clear()
+def tier_key(scope: Scope | None) -> str | None:
+    """The tier key of ``scope``: its profile home as an absolute path (None without a scope)."""
+    return os.path.abspath(os.fspath(scope.home)) if scope is not None else None
+
+
+def install_active(checker: EditDiagnostics | None, *, key: str | None = None) -> None:
+    """Make ``checker`` the one consulted for edits under tier ``key`` (None there: remove that
+    tier's). Without ``key``: ``checker`` replaces every installed one as the process-wide
+    checker, and None turns LSP checks off for the whole process."""
+    if key is None:
+        _ACTIVE.clear()
+        key = PROCESS_WIDE
+    else:
+        _ACTIVE.pop(key, None)
     if checker is not None:
-        _ACTIVE.append(checker)
+        _ACTIVE[key] = checker
 
 
-def active() -> EditDiagnostics | None:
-    return _ACTIVE[0] if _ACTIVE else None
+def installed() -> dict[str, EditDiagnostics]:
+    """Every installed checker by tier key (a copy)."""
+    return dict(_ACTIVE)
+
+
+def bind_tier(scope: Scope | None) -> None:
+    """Bind the tier of ``scope`` for the running tool call (no scope: unbind)."""
+    _TIER_KEY.set(tier_key(scope))
+
+
+def active(key: str | None = None) -> EditDiagnostics | None:
+    """The checker for tier ``key`` (default: the bound tier, see the notes above)."""
+    if key is None:
+        key = _TIER_KEY.get() or tier_key(scope_or_none())
+    if key is not None:
+        return _ACTIVE.get(key) or _ACTIVE.get(PROCESS_WIDE)
+    found = _ACTIVE.get(PROCESS_WIDE)
+    if found is None and len(_ACTIVE) == 1:
+        found = next(iter(_ACTIVE.values()))
+    return found
+
+
+async def release_folder(folder: str) -> int:
+    """Stop this process's servers rooted at or below ``folder``, which is about to be removed (a
+    worktree), in every installed tier (a folder can be open in more than one profile's servers);
+    how many stopped. Nothing installed: 0. Never raises (wave 45)."""
+    stopped = 0
+    seen: set[int] = set()
+    for checker in list(_ACTIVE.values()):
+        if id(checker.manager) in seen:
+            continue
+        seen.add(id(checker.manager))
+        try:
+            stopped += await checker.manager.release(folder)
+        except Exception:
+            log.warning("releasing the language servers of %s failed", folder, exc_info=True)
+    return stopped
 
 
 def current_owner() -> tuple[str | None, str | None]:
@@ -574,6 +640,7 @@ class LspToolHooks:
 
     async def before(self, call: ToolCall, ctx: ToolContext) -> BeforeVerdict | None:
         set_owner(self.owner_of(ctx), ctx.turn_id)
+        bind_tier(ctx.scope or scope_or_none())
         try:
             return await self.inner.before(call, ctx)
         except Exception:
@@ -595,7 +662,7 @@ class LspToolHooks:
         except Exception:
             log.debug("inner transform hook failed", exc_info=True)
         current = replaced if isinstance(replaced, ToolResult) else result
-        checker = active()
+        checker = active(tier_key(ctx.scope))
         notes = checker.take_notes(self.owner_of(ctx)) if checker is not None else []
         if not notes:
             return replaced

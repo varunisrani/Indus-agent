@@ -35,6 +35,7 @@ from typing import Any, Final, Literal, Protocol, cast
 
 from indus.core.session_scheduler import MetaStore, SessionHost, TurnEnd
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.foundation.scope import Scope
 from indus.protocol.events import GoalUpdate, Notice, NoticeLevel
 
@@ -529,7 +530,7 @@ def parse_goal_args(text: str) -> tuple[str, int | None, list[str]] | str:
     found = _MAX_TURNS.search(rest)
     if found:
         raw = found.group(1)
-        if not raw.isdigit() or int(raw) < 1:
+        if not is_digits(raw) or int(raw) < 1:
             return f"--max-turns needs a whole number above 0, not {raw!r}"
         max_turns = int(raw)
         rest = rest[: found.start()] + rest[found.end() :]
@@ -699,7 +700,7 @@ class GoalDriver:
             )
             return reply
         if word == "done":
-            if not rest.isdigit() or not 1 <= int(rest) <= len(state.subgoals):
+            if not is_digits(rest) or not 1 <= int(rest) <= len(state.subgoals):
                 return CommandReply((f"Give a criterion number from 1 to {len(state.subgoals)}.",))
             met = state.subgoals.pop(int(rest) - 1)
             return await self._changed(session_id, state, f"Criterion met and removed: {met}")

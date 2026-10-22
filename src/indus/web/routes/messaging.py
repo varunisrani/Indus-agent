@@ -13,7 +13,9 @@ channel; ``.env``). ``PUT /api/messaging/platforms/{platform} {enabled?, env?, c
 the whole body before writing anything: every name must be one of that platform's fields, and a
 credential sent back as its own masked preview is refused. Then cleared names go (secret store and
 ``.env``), non-blank values are written (blank keeps what is stored) and ``enabled`` goes to
-``platforms.<name>.enabled`` through the config writer. No answer carries a credential.
+``platforms.<name>.enabled`` through the config writer. No answer carries a credential. Turning a
+platform on offers the jobs waiting for a chat platform as suggestions (wave 45,
+``service.integration_offers``; the answer is unchanged).
 
 ``state``: ``disabled`` (switched off in config), ``not_configured`` (credentials missing),
 ``daemon_stopped``, ``pending_restart`` (the running daemon has not reported it yet), or what the
@@ -41,6 +43,7 @@ from indus.foundation.envload import build_env, env_file_path
 from indus.foundation.errors import ConfigError, IndusError
 from indus.foundation.redact import mask
 from indus.foundation.scope import Scope
+from indus.service import integration_offers
 from indus.state.pairing import PairingStore
 from indus.web.routes.daemon import query_of
 from indus.web.scope import read_scope, write_scope
@@ -361,6 +364,9 @@ def update_platform(platform: str, body: PlatformUpdate, scope: WriteScope) -> d
         sorted(updates),
         sorted(body.clear_env),
     )
+    if body.enabled is True:
+        # Turned on: jobs waiting for a chat platform become suggestions (wave 45).
+        integration_offers.connected(scope, "platform", info.name)
     return {"ok": True, "platform": info.name, "restart_needed": True}
 
 

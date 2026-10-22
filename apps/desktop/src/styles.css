@@ -133,6 +133,91 @@ body {
   flex-direction: column;
 }
 
+/* the registry's title bar items (P24-32): in the window band, left of the window controls */
+.title-bar-items {
+  position: fixed;
+  top: 0;
+  right: 144px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--indus-space-2);
+  padding: 0 var(--indus-space-2);
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-items[data-platform="mac"],
+.title-bar-items[data-band="false"] {
+  right: var(--indus-space-2);
+}
+
+/* the command palette (P24-32): Ctrl/Cmd+Shift+P */
+.command-palette-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.command-palette-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--indus-color-bg) 40%, transparent);
+}
+
+.command-palette {
+  position: relative;
+  width: min(560px, 90vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--indus-color-border);
+  border-radius: 8px;
+  background: var(--indus-color-bg-raised);
+  color: var(--indus-color-fg);
+  overflow: hidden;
+}
+
+.command-palette input {
+  padding: var(--indus-space-3);
+  border: 0;
+  border-bottom: 1px solid var(--indus-color-border);
+  background: transparent;
+  color: inherit;
+}
+
+.command-palette [role="listbox"] {
+  padding: var(--indus-space-1) 0;
+  overflow-y: auto;
+}
+
+.command-palette-option {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--indus-space-3);
+  padding: var(--indus-space-2) var(--indus-space-3);
+  cursor: pointer;
+}
+
+.command-palette-option[aria-selected="true"] {
+  background: var(--indus-color-selection);
+}
+
+.command-palette-hint,
+.command-palette-empty {
+  color: var(--indus-color-fg-muted);
+  font-size: 12px;
+}
+
+.command-palette-empty {
+  padding: var(--indus-space-3);
+}
+
 .status-bar {
   grid-column: 3;
   display: flex;

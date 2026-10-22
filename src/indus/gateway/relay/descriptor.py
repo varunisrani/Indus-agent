@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, cast
 
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import Capabilities
 from indus.gateway.outbound.chunker import LenFn, code_points, utf16_units
 from indus.gateway.outbound.formatting import Markup
@@ -83,7 +84,7 @@ def _max_len(value: object) -> int:
         return DEFAULT_MAX_LEN
     if isinstance(value, int):
         return value if value > 0 else DEFAULT_MAX_LEN
-    if isinstance(value, str) and value.strip().isdigit():
+    if isinstance(value, str) and is_digits(value.strip()):
         number = int(value.strip())
         return number if number > 0 else DEFAULT_MAX_LEN
     return DEFAULT_MAX_LEN

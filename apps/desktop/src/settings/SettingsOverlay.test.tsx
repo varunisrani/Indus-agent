@@ -271,4 +271,47 @@ describe("settings overlay", () => {
     await settle();
     expect(screen.getByText("Not available in this build yet.")).toBeTruthy();
   });
+
+  it("About → Licences shows the packaged notices as plain text (W46, F-2)", async () => {
+    const text = "# Third-party notices\n\n<b>some-lib</b> MIT License\n";
+    const bridge: SettingsBridge = { about: { notices: async () => ({ text }) } };
+    render(<Harness initial="view=about" api={backend(["default"])} bridge={bridge} />);
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Licences" }));
+    });
+    await settle();
+    expect(screen.getByTestId("query").textContent).toBe("view=about&page=licences");
+    const block = document.querySelector('[data-ui="settings-licences-text"]') as HTMLElement;
+    expect(block.textContent).toBe(text);
+    expect(block.querySelector("b")).toBeNull(); // never parsed as markup
+  });
+
+  it("Licences without a notices file (a dev run or an old main) says why (W46, F-2)", async () => {
+    render(<Harness initial="view=about&page=licences" api={backend(["default"])} bridge={null} />);
+    await settle();
+    expect(screen.getByText(/The notices file ships inside the installed app/)).toBeTruthy();
+    const empty: SettingsBridge = { about: { notices: async () => ({ text: null }) } };
+    render(
+      <Harness initial="view=about&page=licences" api={backend(["default"])} bridge={empty} />,
+    );
+    await settle();
+    expect(screen.getAllByText(/The notices file ships inside the installed app/)).toHaveLength(2);
+  });
+
+  it('search "licenses" finds the licences page', async () => {
+    render(<Harness initial="" api={backend(["default"])} bridge={null} />);
+    await settle();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "licenses" },
+    });
+    const hit = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent?.includes("Third-party licences"));
+    await act(async () => {
+      fireEvent.click(hit as HTMLElement);
+    });
+    await settle();
+    expect(screen.getByTestId("query").textContent).toBe("view=about&page=licences&row=licences");
+  });
 });

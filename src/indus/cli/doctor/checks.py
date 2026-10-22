@@ -37,6 +37,7 @@ from indus.foundation.home import dir_mode, is_managed, secure_dir
 from indus.foundation.layout import SKELETON_DIRS
 from indus.foundation.secrets import probe_keychain
 from indus.platform.locate import which
+from indus.safety.child_env import child_env
 from indus.state import browse, fts
 from indus.state.errors import Bucket
 
@@ -517,11 +518,12 @@ def check_backend(ctx: DoctorContext) -> list[Finding]:
     ]
 
 
-def _version_of(path: str) -> str:
+def _version_of(path: str, env: dict[str, str]) -> str:
     try:
         done = subprocess.run(
             [path, "--version"],
             capture_output=True,
+            env=env,
             text=True,
             timeout=TOOL_TIMEOUT_SECONDS,
             check=False,
@@ -535,6 +537,7 @@ def _version_of(path: str) -> str:
 @register("external", "git and ripgrep", order=110)
 def check_external(ctx: DoctorContext) -> list[Finding]:
     found: list[Finding] = []
+    env = child_env(ctx.scope)  # SEC-8: no provider key reaches a `--version` probe
     for name, label, why in (
         ("git", "git", "needed for repository work"),
         ("rg", "ripgrep (rg)", "file search falls back to a slower scan"),
@@ -543,7 +546,7 @@ def check_external(ctx: DoctorContext) -> list[Finding]:
         if path is None:
             found.append(Finding(f"external.{name}", "info", f"{label} not found ({why})"))
         else:
-            version = _version_of(path)
+            version = _version_of(path, env)
             found.append(Finding(f"external.{name}", "ok", f"{label}: {version or path}"))
     return found
 

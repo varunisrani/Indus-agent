@@ -29,6 +29,7 @@ from typing import Any, Final, cast
 
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.foundation.fsio import atomic_write_json
 from indus.gateway.adapters.telegram.bot_api import (
     BotCommand,
@@ -182,7 +183,11 @@ def _load_receipts(path: Path) -> dict[int, float]:
     found: dict[int, float] = {}
     for key, at in cast(dict[object, object], ids).items():
         text = str(key)
-        if text.lstrip("-").isdigit() and isinstance(at, int | float) and not isinstance(at, bool):
+        if (
+            is_digits(text, signed=True)
+            and isinstance(at, int | float)
+            and not isinstance(at, bool)
+        ):
             found[int(text)] = float(at)
     return found
 

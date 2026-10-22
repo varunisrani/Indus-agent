@@ -1,23 +1,33 @@
 # pyright: strict
 """The host side of language servers for edits (P24-15/16 wiring, D-16.799).
 
-A process holds at most one language-server tier: one ``LspManager`` wrapped in one
-``EditDiagnostics`` and installed with ``tools.lsp.diagnostics.install_active`` (the checker
-``lint.lint_edit`` and the LSP stop gate consult). Every host that runs agents makes one
-``LspUpkeep`` per session service (``SessionService(lsp=...)``); the services of one process (the
-gateway's chat and surface services, several profiles) share the tier:
+A process holds one language-server tier per profile it serves (wave 45, SEC-14): one
+``LspManager`` wrapped in one ``EditDiagnostics``, installed with
+``tools.lsp.diagnostics.install_active`` under the profile's tier key (its home; the checker
+``lint.lint_edit`` and the LSP stop gate consult is the one of the edit's profile). Every host that
+runs agents makes one ``LspUpkeep`` per session service (``SessionService(lsp=...)``); the services
+of one profile in one process (the gateway's chat and surface services) share its tier:
 
-- ``start()``: the first upkeep whose profile has ``lsp.enabled`` builds and installs the tier;
-  later ones join it (a count of users). Nothing starts a server here: a server is spawned on the
-  first edit of a file it handles, inside a git work tree, when its binary is already installed.
+- ``start()``: the first upkeep of a profile with ``lsp.enabled`` builds and installs that
+  profile's tier from its own scope and settings; later ones of the same profile join it (a count
+  of users). Nothing starts a server here: a server is spawned on the first edit of a file it
+  handles, inside a git work tree, when its binary is already installed.
 - ``trust(cwd)``: a session's own work tree (the git root of its folder, else the folder) is
   trusted for servers that run project code (rust-analyzer, gopls, …).
 - ``release(folder)``: stop the servers of a folder about to disappear (a removed worktree).
-- ``shutdown()``: the last user out stops every server and uninstalls the tier.
+- ``shutdown()``: the last user of a tier stops its servers and uninstalls it.
 
-The tier's servers get their environment from the child-env builder of the profile that started
-it (R02.22: no provider key reaches a server). With ``lsp.enabled: false`` the upkeep does nothing;
-the edit seam and the stop gates still run (they record which files a turn edited for
+Entry points for a profile's daemon (wave 45, ``service.lsp_control``): ``restart_servers(scope)``
+stops every server of the tier serving ``scope``'s profile and forgets their failures (the next
+edit starts them again; ``indus lsp restart``), ``release_servers(scope, folder)`` stops its
+servers of a folder about to be removed (a worktree the CLI removes). Both reach only that
+profile's tier; another served profile's servers are left alone.
+
+A tier's servers get their environment from the child-env builder of its own profile (R02.22: no
+provider key reaches a server) and its own ``lsp.servers`` settings: on a multiplex host profile
+B's servers never run with profile A's passthrough values or settings. With ``lsp.enabled: false``
+the upkeep does nothing (that profile's edits are not checked, even when another served profile
+has a tier); the edit seam and the stop gates still run (they record which files a turn edited for
 verify-on-stop), they just never hear from a server.
 """
 
@@ -34,7 +44,7 @@ from indus.tools.lsp.diagnostics import EditDiagnostics
 from indus.tools.lsp.manager import LspManager, LspSettings
 from indus.tools.lsp.servers import find_git_root
 
-__all__ = ["LspUpkeep", "settings_for"]
+__all__ = ["LspUpkeep", "release_servers", "restart_servers", "settings_for"]
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +56,7 @@ class _Tier:
     users: int = 0
 
 
-_TIER: list[_Tier] = []
+_TIERS: dict[str, _Tier] = {}  # by tier key (the profile's home)
 
 
 def settings_for(scope: Scope) -> LspSettings:
@@ -55,29 +65,32 @@ def settings_for(scope: Scope) -> LspSettings:
 
 
 class LspUpkeep:
-    """One session service's share of the process's language-server tier (module notes)."""
+    """One session service's share of its profile's language-server tier (module notes)."""
 
     def __init__(self, scope: Scope, *, settings: LspSettings | None = None) -> None:
         self.scope = scope
         self.settings = settings or settings_for(scope)
+        self.key = diagnostics.tier_key(scope) or ""
         self._joined = False
 
     @property
     def manager(self) -> LspManager | None:
-        return _TIER[0].manager if self._joined and _TIER else None
+        tier = _TIERS.get(self.key) if self._joined else None
+        return tier.manager if tier is not None else None
 
     def start(self) -> None:
-        """Join (or build) the process's tier; once per upkeep, never raises."""
+        """Join (or build) this profile's tier; once per upkeep, never raises."""
         if self._joined or not self.settings.enabled:
             return
         try:
-            if not _TIER:
+            tier = _TIERS.get(self.key)
+            if tier is None:
                 manager = LspManager(self.settings, scope=self.scope)
-                checker = EditDiagnostics(manager)
-                diagnostics.install_active(checker)
-                _TIER.append(_Tier(manager, checker))
-                log.debug("language-server checks on for this process")
-            _TIER[0].users += 1
+                tier = _Tier(manager, EditDiagnostics(manager))
+                diagnostics.install_active(tier.checker, key=self.key)
+                _TIERS[self.key] = tier
+                log.debug("language-server checks on for profile %s", self.scope.profile_id)
+            tier.users += 1
             self._joined = True
         except Exception:
             log.warning("language-server checks could not start", exc_info=True)
@@ -96,20 +109,53 @@ class LspUpkeep:
         return await manager.release(str(folder)) if manager is not None else 0
 
     async def shutdown(self) -> None:
-        """Leave the tier; the last user stops every server and uninstalls it. Never raises."""
+        """Leave the tier; its last user stops its servers and uninstalls it. Never raises."""
         if not self._joined:
             return
         self._joined = False
-        if not _TIER:
+        tier = _TIERS.get(self.key)
+        if tier is None:
             return
-        tier = _TIER[0]
         tier.users -= 1
         if tier.users > 0:
             return
-        _TIER.clear()
-        if diagnostics.active() is tier.checker:
-            diagnostics.install_active(None)
+        del _TIERS[self.key]
+        if diagnostics.installed().get(self.key) is tier.checker:
+            diagnostics.install_active(None, key=self.key)
         try:
             await tier.manager.close()
         except Exception:
             log.warning("stopping the language servers failed", exc_info=True)
+
+
+def _manager_for(scope: Scope) -> LspManager | None:
+    """The manager of the tier serving ``scope``'s profile in this process, if one runs (one tier
+    per profile, keyed by its home: SEC-14; another profile's tier is never returned)."""
+    tier = _TIERS.get(diagnostics.tier_key(scope) or "")
+    return tier.manager if tier is not None else None
+
+
+async def restart_servers(scope: Scope) -> int | None:
+    """Stop every server of ``scope``'s tier and forget their failures; how many stopped, or None
+    when no tier runs here. Never raises."""
+    manager = _manager_for(scope)
+    if manager is None:
+        return None
+    try:
+        return await manager.restart()
+    except Exception:
+        log.warning("restarting the language servers failed", exc_info=True)
+        return 0
+
+
+async def release_servers(scope: Scope, folder: str | Path) -> int:
+    """Stop ``scope``'s tier's servers rooted at or below ``folder`` (call before removing it);
+    how many stopped. Never raises."""
+    manager = _manager_for(scope)
+    if manager is None:
+        return 0
+    try:
+        return await manager.release(str(folder))
+    except Exception:
+        log.warning("releasing the language servers of %s failed", folder, exc_info=True)
+        return 0

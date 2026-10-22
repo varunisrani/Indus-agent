@@ -6,7 +6,8 @@
   shown. A broken entry is listed with its problem.
 - ``POST /api/mcp/servers {name, command | url, args?, env?, auth?}``: validated as
   ``indus mcp add`` does (P13's model; a secret-looking literal is refused: store the value on the
-  Keys page and write ``${NAME}``), a duplicate name is 409, saved through the config writer.
+  Keys page and write ``${NAME}``), a duplicate name is 409, saved through the config writer;
+  jobs waiting for the server become suggestions (wave 45, ``service.integration_offers``).
 - ``POST /api/mcp/servers/{name}/test``: connect once, list the tools, disconnect, all within
   ``TEST_DEADLINE_S``; an ``auth: oauth`` server without a stored sign-in answers "sign-in needed"
   without connecting. Failures are ``{ok: false, error}`` (redacted), never a 500.
@@ -39,6 +40,7 @@ from indus.foundation.scope import Scope
 from indus.mcp import oauth, osv
 from indus.mcp.config import McpServer, parse_server, stdio_launch
 from indus.mcp.connect import Connection, ConnectOptions, first_cause
+from indus.service import integration_offers
 from indus.web.auth.gate import request_prefix
 from indus.web.routes import mcp_oauth
 from indus.web.routes.mcp_oauth import CALLBACK_PATH, FlowBusy, OAuthFlows
@@ -230,6 +232,8 @@ def add_server(body: ServerCreate, scope: WriteScope) -> dict[str, Any]:
         raw["mcp_servers"] = servers
 
     _save(scope, change)
+    # Jobs that were waiting for this server become suggestions (wave 45); never scheduled here.
+    integration_offers.connected(scope, "mcp", body.name)
     return server_row(body.name, entry)
 
 

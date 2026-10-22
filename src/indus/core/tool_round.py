@@ -15,8 +15,9 @@ Order (R01.2, R01.3, R01.14):
    ``(name, canonical args)`` pairs (first wins); dropped calls never reach the stored row;
 6. the assistant call row is stored **before** anything runs; a failed write ends the turn;
 7. the batch runs through the planner and executor; each result is built (guardrail stub and
-   guidance, spill, turn budget over results not stored yet, untrusted fence) and stored in call
-   order; then buffered steer text is delivered as its own row, and a guardrail stop ends the turn.
+   guidance, spill, turn budget over results not stored yet, untrusted fence — by the tool's
+   name, or because the call is tainted, ``core.untrusted``) and stored in call order; then
+   buffered steer text is delivered as its own row, and a guardrail stop ends the turn.
 
 Handlers may ask for these context keywords beyond the ``ToolContext`` fields (``extras``):
 ``broker`` (the session's server-request port), ``cancel`` (the turn's stop event) and
@@ -28,10 +29,11 @@ owner, P10-06) and ``aux`` (``SessionRuntime.aux``, the bound auxiliary client),
 only when the turn has one; always ``tool_registry``, ``tool_hooks`` and ``enabled_tools`` (the
 session's registry, hooks and tool names, for ``execute_code``), ``native_vision`` (the current
 route shows the main model images a tool returns, ``providers.route.sees_tool_images``) and
-``subagent`` (``SessionRuntime.subagent``: the session is a delegated child). ``delivery_origin``
-(``{platform, chat_id, thread_id}`` of the chat a gateway session answers in, asked of
-``SessionRuntime.delivery_origin`` once per round) is offered when the host knows one: the cron
-and board tools subscribe that chat.
+``subagent`` (``SessionRuntime.subagent``: the session is a delegated child) and ``taint``
+(``TurnState.taint``: a tool whose result carries outside text marks its call, SEC-4).
+``delivery_origin`` (``{platform, chat_id, thread_id}`` of the chat a gateway session answers
+in, asked of ``SessionRuntime.delivery_origin`` once per round) is offered when the host knows
+one: the cron and board tools subscribe that chat.
 """
 
 from __future__ import annotations
@@ -513,6 +515,8 @@ def handler_extras(state: TurnState) -> dict[str, Any]:
         extras["aux"] = state.runtime.aux
     extras["native_vision"] = sees_tool_images(state.runtime.route)
     extras["subagent"] = state.runtime.subagent
+    # SEC-4: a tool that passes outside text on under its own name (execute_code) marks its call.
+    extras["taint"] = state.taint
     return extras
 
 
@@ -572,7 +576,10 @@ async def _commit(
     _apply_turn_budget(state, budget, [m for _, m in built])
     for outcome, message in built:
         call = calls[outcome.index]
-        content = untrusted.fence(call.name, message["content"])
+        tainted = call.id in state.taint
+        content = untrusted.fence(call.name, message["content"], tainted=tainted)
+        if tainted or (outcome.started and untrusted.is_untrusted(call.name)):
+            state.taint.read = True
         state.turn_tool_chars += text_size(content)
         state.add(_result_row(call, content))
         if runtime.run_budget is not None:

@@ -588,8 +588,53 @@ def refresh(inputs: Inputs) -> tuple[dict[str, Any], list[str]]:
     return data, still_unknown
 
 
+JSON_INDENT = 2
+JSON_LINE_WIDTH = 100  # the repository's Biome ``lineWidth`` (biome.json)
+
+
+def _flat_json(value: Any) -> str | None:
+    """``value`` on one line as Biome writes it, or None when it holds a non-empty object."""
+    if isinstance(value, Mapping):
+        return "{}" if not value else None
+    if isinstance(value, list | tuple):
+        parts = [_flat_json(item) for item in cast(Sequence[Any], value)]
+        if any(part is None for part in parts):
+            return None
+        return "[" + ", ".join(cast(list[str], parts)) + "]"
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _layout_json(value: Any, depth: int, used: int, tail: int) -> str:
+    """``value`` starting ``used`` columns into its line with ``tail`` characters after it."""
+    pad = " " * (JSON_INDENT * (depth + 1))
+    if isinstance(value, Mapping):
+        items = list(cast(Mapping[str, Any], value).items())
+        if not items:
+            return "{}"
+        lines: list[str] = []
+        for index, (key, item) in enumerate(items):
+            comma = 1 if index < len(items) - 1 else 0
+            head = f"{pad}{json.dumps(key, ensure_ascii=False)}: "
+            lines.append(head + _layout_json(item, depth + 1, len(head), comma) + "," * comma)
+        return "{\n" + "\n".join(lines) + "\n" + pad[JSON_INDENT:] + "}"
+    if isinstance(value, list | tuple):
+        flat = _flat_json(value)
+        if flat is not None and used + len(flat) + tail <= JSON_LINE_WIDTH:
+            return flat
+        elements = list(cast(Sequence[Any], value))
+        rows = [
+            pad + _layout_json(item, depth + 1, len(pad), 1 if i < len(elements) - 1 else 0)
+            for i, item in enumerate(elements)
+        ]
+        return "[\n" + ",\n".join(rows) + "\n" + pad[JSON_INDENT:] + "]"
+    return json.dumps(value, ensure_ascii=False)
+
+
 def dump_json(data: Mapping[str, Any]) -> str:
-    return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    """``data`` in the layout Biome's formatter keeps (W46 RS7), so a refresh passes the lint gate
+    as written: objects one key per line, an array on one line when it fits the line width (its
+    trailing comma counted), else one element per line."""
+    return _layout_json(data, 0, 0, 0) + "\n"
 
 
 # -- entry --------------------------------------------------------------------------------------

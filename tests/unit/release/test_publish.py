@@ -137,7 +137,8 @@ def test_admit_refuses_bad_claims(remote: Remote) -> None:
 
 def needs(**results: str) -> dict[str, dict[str, str]]:
     base = {job: "success" for job in ("admit", "ci", "docker", "nix", "install-e2e",
-            "desktop-mac", "desktop-win", "desktop-linux", "upgrade", "upload")}  # fmt: skip
+            "desktop-mac", "desktop-win", "desktop-linux", "upgrade", "web-pages",
+            "upload")}  # fmt: skip
     base.update(results)
     return {job: {"result": result} for job, result in base.items()}
 

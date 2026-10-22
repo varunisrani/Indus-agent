@@ -4,8 +4,9 @@
   process (when it hosts any), the ones that failed or were skipped as untrusted, and the
   catalogue with which binaries are installed on the PATH children get;
 - ``install-hint SERVER``: how to install a server (nothing is ever installed for you);
-- ``restart``: stop this process's servers and forget their failures (the next edit starts them
-  again).
+- ``restart``: stop the servers and forget their failures (the next edit starts them again): the
+  profile's running gateway daemon first, where attached sessions run (the owner-only control verb
+  ``lsp-restart``, ``service.lsp_control``, wave 45), then this process's own, if any.
 """
 
 from __future__ import annotations
@@ -30,13 +31,14 @@ def _scoped(scope: Scope) -> Scope:
     return scope if scope.config is not None else scope.with_config(config_of(scope))
 
 
-def _active_manager() -> Any:
-    """This process's manager, when a host installed the LSP tier (never imported otherwise)."""
+def _active_manager(scope: Scope | None) -> Any:
+    """The manager of ``scope``'s tier in this process (None: the bound one), when a host
+    installed one (never imported otherwise; one tier per profile, SEC-14)."""
     if "indus.tools.lsp.diagnostics" not in sys.modules:
         return None
     from indus.tools.lsp import diagnostics
 
-    checker = diagnostics.active()
+    checker = diagnostics.active(diagnostics.tier_key(scope))
     return checker.manager if checker is not None else None
 
 
@@ -46,7 +48,7 @@ def status_payload(scope: Scope) -> dict[str, Any]:
     scoped = _scoped(scope)
     settings = LspSettings.from_scope(scoped)
     search_path = child_env(scoped).get("PATH")
-    manager = _active_manager()
+    manager = _active_manager(scope)
     running = manager.status().as_dict() if manager is not None else None
     return {
         "enabled": settings.enabled,
@@ -108,15 +110,29 @@ def hint_lines(scope: Scope, server: str) -> tuple[int, list[str]]:
     return 0, lines
 
 
-def restart_lines() -> list[str]:
-    manager = _active_manager()
-    if manager is None:
-        return [
+def restart_lines(scope: Scope, *, query: Any = None) -> list[str]:
+    from indus.service import lsp_control
+
+    lines: list[str] = []
+    daemon = lsp_control.restart_in_gateway(scope.home, query=query)
+    if daemon is not None:
+        stopped, running = daemon
+        lines.append(
+            f"Stopped {stopped} language server(s) in the gateway; the next edit starts them again."
+            if running
+            else "The gateway runs no language servers for this profile now; a session's first "
+            "edit there starts them."
+        )
+    manager = _active_manager(scope)
+    if manager is not None:
+        count = asyncio.run(manager.restart())
+        lines.append(f"Stopped {count} language server(s); the next edit starts them again.")
+    if not lines:
+        lines.append(
             "No language servers run in this process. A running session starts its own and "
             "stops them when it ends or after the idle timeout."
-        ]
-    count = asyncio.run(manager.restart())
-    return [f"Stopped {count} language server(s); the next edit starts them again."]
+        )
+    return lines
 
 
 @group(
@@ -158,7 +174,7 @@ def install_hint_command(server: str) -> int:
 
 @lsp_group.command("restart")
 def restart_command() -> int:
-    """Stop this process's language servers and forget their failures."""
-    for line in restart_lines():
+    """Stop the language servers (the gateway's, then this process's) and forget their failures."""
+    for line in restart_lines(cli_state().scope):
         click.echo(line)
     return 0

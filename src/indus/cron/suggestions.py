@@ -37,6 +37,7 @@ from indus.cron import ports
 from indus.cron import tool as checks
 from indus.cron.blueprints import Blueprint, BlueprintError, fill, list_blueprints
 from indus.cron.errors import CronStoreBusy
+from indus.foundation.digits import is_digits
 from indus.foundation.fsio import FileLock, LockTimeout, atomic_write_json
 from indus.foundation.profiles import mkdir_in_profile
 from indus.foundation.scope import Scope
@@ -252,7 +253,7 @@ class SuggestionStore:
     def _find(records: list[Suggestion], ref: str) -> Suggestion:
         text = ref.strip()
         pending = [r for r in records if r.status == "pending"]
-        if text.isdigit() and 1 <= int(text) <= len(pending) and len(text) < 4:
+        if is_digits(text, max_len=3) and 1 <= int(text) <= len(pending):
             return pending[int(text) - 1]
         for record in pending:
             if record.id == text.lower():

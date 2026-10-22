@@ -73,3 +73,48 @@ Compare checklist (filled after the rewrite; reopened skill reference 03 §2 and
 ## Status
 
 Done (2026-10-21). 12 files; 10 run green here (2 desktop files validated, not run).
+
+## Wave 46 (RM21): the nine desktop hooks, `OWED_HOOKS` emptied
+
+Read: no reference file and no Evidence (the hooks are ours; the step lists already name them).
+
+What changed: the nine `data-ui` hooks the two desktop flows press now sit on our own elements, and
+`OWED_HOOKS` is `{}`, so the scenario self-test treats any missing hook as an error again.
+
+- Onboarding (`apps/desktop/src/onboarding/Onboarding.tsx`): `onboarding-dialog` on the overlay
+  card (`role="dialog"`); `onboarding-custom-option` on the picker's custom-endpoint choice;
+  `onboarding-endpoint-url` on the base URL `<input>` (the flow `fill`s it, so the hook is on the
+  input itself) and `onboarding-test-continue` on the form's "Test and continue" submit (the same
+  form serves the local endpoint; only one shows at a time); `onboarding-model-select` on the model
+  `<input list>` (a free-text field with a datalist of the endpoint's models, not a `<select>`) and
+  `onboarding-start-chatting` on its "Start chatting" submit, the overlay's last button.
+- Transcript (`apps/desktop/src/chat/ToolRow.tsx`): `transcript-tool-row` on every tool row (the
+  row lives in `chat/`, not `chat/cards` as the old reason said). The chat-panes flow makes one
+  tool call, so the `wait_for` locator matches one element.
+- Panes (`apps/desktop/src/panes/PaneShell.tsx`): the layout toolbar gains a `PaneToggle` per
+  files and review pane, `pane-toggle-files` / `pane-toggle-review`. A toggle is pressed
+  (`aria-pressed`) when its pane is the front tab of a zone that is not minimised and the pane is
+  not hidden; a click on an unpressed toggle opens the pane (from the closed stack, or brings it to
+  the front, un-minimising its zone); a click on a pressed one closes it (the closed stack keeps its
+  place). Files and review no longer get an "Open …" button (the toggle covers it); other panes
+  keep theirs. Simple mode, where both are not allowed, shows no toggle.
+
+Why the toggles are literal components: the self-test (`hook_in_source`) looks for the static text
+`data-ui="<value>"` in a `.tsx` file, so a hook computed in a `.map` would not count. Each toggle
+use names its hook literally (`<PaneToggle … data-ui="pane-toggle-files" />`).
+
+Tests: `apps/desktop/src/onboarding/Onboarding.test.tsx` walks the custom-endpoint path by hooks
+alone (what the flow does); `chat/Transcript.test.tsx` counts the tool-row hooks;
+`panes/PaneShell.test.tsx` toggles both panes (front, swap, close, reopen; a minimised zone;
+Simple mode has none) and the close/reopen test now reopens Review through its toggle. Fail-first:
+with `OWED_HOOKS` empty and the sources at `main` (8a7735e), `scenarios.hook_problems` reports all
+nine hooks missing; on this tree it reports none, and `tests/unit/parity` passes.
+
+### Decisions for the lead
+- W46-d-1 (D-16.1000): the pane hooks are new toolbar toggles for files and review (not the zone tabs, whose
+  hook would be computed in a loop); pressing a showing pane's toggle closes it. Only these two
+  stateless panes get a toggle, so closing never loses state (preview and terminal keep Hide and
+  their "Open …" buttons).
+- W46-d-2 (D-16.1001): `docs/internals/parity-report-v1.md` still says "6 hooks owed" / "3 hooks owed" for the
+  two desktop flows; left as the v1 snapshot. Both flows stay `not run` for the other reason the
+  report gives (packaged app + CDP endpoint, owner lane).

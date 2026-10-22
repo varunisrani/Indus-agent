@@ -24,6 +24,8 @@ from typing import Any
 
 import httpx
 
+from indus.foundation.digits import is_digits
+
 __all__ = [
     "CDN_BASE",
     "CHANNEL_VERSION",
@@ -321,7 +323,7 @@ class ILinkClient:
                 await response.aread()
                 raise _http_error(response)
             declared = response.headers.get("Content-Length", "")
-            if declared.isdigit() and int(declared) > cap:
+            if is_digits(declared) and int(declared) > cap:
                 raise MediaTooLarge(int(declared), cap)
             seen = 0
             async for chunk in response.aiter_bytes():

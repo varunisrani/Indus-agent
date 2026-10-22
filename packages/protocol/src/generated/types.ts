@@ -1492,6 +1492,11 @@ export interface ProviderOption {
   authenticated: boolean;
   /** The provider of the current model. */
   current?: boolean;
+  /**
+   * Model ids the provider's endpoint lists (filled for the current custom or local endpoint;
+   * empty when it lists none or could not be asked: the picker then takes a typed id).
+   */
+  models?: string[];
 }
 
 /** A piece of the model's reasoning, shown apart from the reply. */

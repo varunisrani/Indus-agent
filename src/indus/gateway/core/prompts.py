@@ -39,6 +39,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import (
     ApprovalAction,
     ApprovalPrompt,
@@ -143,7 +144,7 @@ def parse_choice_reply(text: str, choices: Sequence[str], multi: bool) -> list[s
         return [by_text[stripped.lower()]]
     if multi:
         parts = [p for p in re.split(r"[,\s]+", stripped) if p]
-        if parts and all(p.rstrip(".)").isdigit() for p in parts):
+        if parts and all(is_digits(p.rstrip(".)")) for p in parts):
             numbers = [int(p.rstrip(".)")) for p in parts]
             if any(n < 1 or n > len(choices) for n in numbers):
                 return None
@@ -153,7 +154,7 @@ def parse_choice_reply(text: str, choices: Sequence[str], multi: bool) -> list[s
             return list(dict.fromkeys(by_text[p] for p in pieces))
         return [stripped]
     number = stripped.rstrip(".)")
-    if number.isdigit():
+    if is_digits(number):
         n = int(number)
         return [choices[n - 1]] if 1 <= n <= len(choices) else None
     return [stripped]

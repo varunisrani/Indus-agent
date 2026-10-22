@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 from indus.acp.backend import BackendError, MutationResult
 from indus.foundation.blocking import run_blocking
+from indus.foundation.digits import is_digits
 from indus.service.commands.registry import REGISTRY, CommandDef
 
 if TYPE_CHECKING:
@@ -261,7 +262,7 @@ async def _title(agent: AcpAgent, held: HeldSession, arg: str) -> Outcome:
 
 async def _undo(agent: AcpAgent, held: HeldSession, arg: str) -> Outcome:
     raw = arg or "1"
-    if not raw.isdigit() or int(raw) < 1:
+    if not is_digits(raw) or int(raw) < 1:
         return Outcome("Usage: /undo [N]  (how many of your messages to take back, default 1)")
     done = await _mutate(agent, held, "rewind", {"count": int(raw)})
     removed = int(done.data.get("removed") or 0)

@@ -51,6 +51,7 @@ import httpx
 
 from indus import __version__
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.foundation.redact import redact_text
 from indus.gateway.adapters._http import failure_from_exception, failure_from_status
 from indus.gateway.adapters.base import (
@@ -632,7 +633,7 @@ class DingTalkAdapter(Adapter):
             if body.status_code >= 400:
                 raise ConnectionError(f"the download failed (HTTP {body.status_code})")
             declared = body.headers.get("Content-Length", "")
-            if declared.isdigit() and int(declared) > cap:
+            if is_digits(declared) and int(declared) > cap:
                 raise ValueError(f"the file is too large ({declared} bytes, the cap is {cap})")
             seen = 0
             async for chunk in body.aiter_bytes():

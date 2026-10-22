@@ -24,7 +24,7 @@ against upstream over the network at integration (2026-10-21), "unverified" mean
 | Python (provisioned) | 3.14 (floor 3.13) | `scripts/install/pins.json` | matches `requires-python = ">=3.13,<3.15"` | P23-02, P23-05 |
 | curl exit codes for the mirror | 5, 6, 7, 18, 22, 28, 52, 55, 56 | `scripts/install/sh/20-runtime.sh` | curl's documented exit codes: proxy/host resolution, connect, partial file, HTTP error with `-f`, timeout, empty reply, send/receive failure | P23-05 |
 | git | any with `clone --filter=blob:none`, `merge-base --is-ancestor`, `stash push --include-untracked -m` | — | git 2.x documentation; tests run the machine's real git | P23-04 |
-| shellcheck | not pinned | — | not installed here: the fragments carry directives but are unchecked (follow-up: a CI step) | P23-03..05 |
+| shellcheck | 0.9.0 (GPL-3.0, CI tool only, never shipped) | `.github/workflows/ci.yml` job `shell` (`SHELLCHECK_VERSION`, runner `ubuntu-24.04`, from its signed apt archive) | W46 RS9: the job checks the built `scripts/install.sh` (every fragment and its directives) and `scripts/release/*.sh`, and fails when the installed version is not the pin. **Unverified**: not installed here and no network, so neither the version noble ships nor a clean run has been seen; the first CI run is the check | P23-03..05, W46 |
 
 ## PowerShell installer (I2: P23-06, P23-07)
 
@@ -85,3 +85,26 @@ is a follow-up once the lane has run. The older `ci.yml` jobs still use tag-pinn
 | SemVer | 2.0.0 precedence | `src/indus/foundation/versions.py` | canary `X.Y.Z-canary.<YYYYMMDDTHHMMSSZ>` orders below its own stable by construction |
 | GitHub REST (releases, assets, refs) | v3 (2022-11-28) | `scripts/release/github.py` | drafts, asset upload, release update; fakes in tests, never called from a test |
 | GHCR tagging | `docker buildx imagetools` | `scripts/release/publish.py` | aliases are new tags on an existing digest; nothing is rebuilt |
+
+## Wave 46 (builder g): a shellcheck CI job (release checklist RS9)
+
+Read: none from the reference (CI wiring only).
+
+- New job `shell` in `ci.yml` (and in the `gate` job's `needs`), on `ubuntu-24.04`: installs
+  shellcheck from the runner's apt archive (signed; no download to pin by digest), fails unless
+  `shellcheck --version` reports `SHELLCHECK_VERSION`, then runs `shellcheck scripts/install.sh`
+  plus every `scripts/release/*.sh` (`nullglob`: none on main today; wave 44 adds
+  `release_gates.sh`). `release.yml` is not touched.
+- Why the built installer and not each fragment: `install.sh` holds every fragment verbatim with its
+  `# shellcheck disable=…` directives (only the `shell=bash` directive is dropped, the shebang takes
+  its place); a fragment alone reads names another fragment sets (SC2154 / SC2034 noise).
+- Why apt and not a pinned release archive in `docker/pins.json` like hadolint: a new bundle needs
+  its SHA-256 from upstream, and this slice has no network; an empty digest fails
+  `docker/pins.py check --strict` in `docker.yml`.
+- Decision for the lead W46-g-2 (D-16.1012): shellcheck comes from the runner's signed apt archive with a
+  version assertion, not from a digest-pinned release archive. Moving it to a `docker/pins.json`
+  bundle (`pins.py refresh` over the network) is the follow-up if the lead wants one pin
+  mechanism for every CI tool.
+- Not run locally (no shellcheck here): the first CI run may report findings in `install.sh`; fix
+  them in the fragments and rebuild (`scripts/install/build.py`). Test of the job's shape:
+  `tooling/checks/tests/test_pins.py::test_ci_shellchecks_the_installer_and_release_scripts_at_a_pinned_version`.

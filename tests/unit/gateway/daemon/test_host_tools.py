@@ -9,10 +9,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+import pytest
+
 from indus.foundation.scope import Scope
 from indus.gateway.adapters.a2a.tools import TOOL_NAME as A2A_CALL
 from indus.gateway.daemon import process
 from indus.gateway.daemon.process import gateway_tool_registry
+from indus.gateway.http import API_SURFACE, WEBHOOK_SURFACE
 from indus.gateway.rooms.peers import LocalBotTransport
 from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
@@ -97,3 +100,26 @@ def test_a_session_chat_is_its_delivery_origin(scope: Scope) -> None:
         {"platform": "slack", "chat_id": "C1", "thread_id": None},
         None,
     ]
+
+
+def test_the_daemon_shapes_bot_chats_on_chat_and_api_services_only(
+    scope: Scope, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave 45 (D-16.980): the chat service (desktop Bots page, attached one-shots) and the API
+    server's service (a peer's ``/v1/bots/dm``) run the canonical chat as a bot turn; the webhook
+    surface keeps its read-only floor."""
+    seen: dict[str, bool] = {}
+
+    async def capture(daemon: Any, **values: Any) -> None:
+        seen[values["owner"]] = values.get("bot_chats", False)
+
+    monkeypatch.setattr(process, "_session_service", capture)
+    daemon = cast(Any, DaemonStub(scope))
+
+    async def main() -> None:
+        await process.build_service(daemon)
+        await process.build_surface_service(daemon, API_SURFACE)
+        await process.build_surface_service(daemon, WEBHOOK_SURFACE)
+
+    asyncio.run(main())
+    assert seen == {"gateway": True, "gateway-api_server": True, "gateway-webhook": False}

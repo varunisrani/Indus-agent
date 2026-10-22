@@ -42,7 +42,7 @@ import subprocess
 import tempfile
 import time
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Final, NoReturn, cast
@@ -76,6 +76,7 @@ from indus.providers.auth.store import AuthStore
 from indus.providers.profile import ProviderProfile
 from indus.providers.registry import Registry
 from indus.providers.route import is_placeholder
+from indus.safety.child_env import child_env
 from indus.service import prompt_size
 from indus.state import sessions as session_rows
 from indus.web.actions import ActionBusy, Actions, Say, actions_of
@@ -239,12 +240,23 @@ def install_info() -> tuple[str, Path]:
     return str(module.install_method()), Path(module.install_dir())
 
 
-def git_behind(folder: Path) -> int | None:
+def git_env(scope: Scope) -> dict[str, str]:
+    """The environment for the dashboard's git calls (SEC-8): the scope's child env.
+
+    ``child_env`` keeps what git needs to reach the remote (``PATH``, ``HOME`` for
+    ``~/.gitconfig`` and ``~/.ssh``, ``SSH_AUTH_SOCK``, the proxy variables, ``GIT_*``) and
+    drops provider keys and every ``INDUS_`` setting of the dashboard process.
+    """
+    return child_env(scope)
+
+
+def git_behind(folder: Path, *, env: Mapping[str, str]) -> int | None:
     """Commits the checkout at ``folder`` is behind its upstream (None when unknown)."""
     try:
         fetched = subprocess.run(  # noqa: S603 - fixed git argv
             ["git", "-C", str(folder), "fetch", "--quiet"],
             capture_output=True,
+            env=dict(env),
             timeout=GIT_TIMEOUT_S,
             check=False,
         )
@@ -253,6 +265,7 @@ def git_behind(folder: Path) -> int | None:
         counted = subprocess.run(  # noqa: S603 - fixed git argv
             ["git", "-C", str(folder), "rev-list", "--count", "HEAD..@{u}"],
             capture_output=True,
+            env=dict(env),
             text=True,
             timeout=GIT_TIMEOUT_S,
             check=False,
@@ -267,9 +280,12 @@ def git_behind(folder: Path) -> int | None:
         return None
 
 
-def _probe(request: Request) -> Callable[[Path], int | None]:
+def _probe(request: Request, scope: Scope) -> Callable[[Path], int | None]:
     found = _extra(request, "system.git_behind")
-    return cast(Callable[[Path], int | None], found) if callable(found) else git_behind
+    if callable(found):
+        return cast(Callable[[Path], int | None], found)
+    env = git_env(scope)
+    return lambda folder: git_behind(folder, env=env)
 
 
 def _install(request: Request) -> tuple[str, Path]:
@@ -312,7 +328,7 @@ def check_update(request: Request, scope: ReadScope, force: bool = False) -> dic
         behind = cached.get("behind")
         payload.update(behind=behind, checked_at=cached.get("checked_at"), cached=True)
     else:
-        behind = _probe(request)(folder)
+        behind = _probe(request, scope)(folder)
         payload.update(behind=behind, checked_at=now)
         with contextlib.suppress(OSError):
             cache.parent.mkdir(parents=True, exist_ok=True)
@@ -339,12 +355,15 @@ def apply_update(request: Request, scope: WriteScope) -> dict[str, Any]:
             hint=_UPDATE_HINTS.get(method, ""),
         )
 
+    env = git_env(scope)
+
     def job(say: Say) -> int:
         say(f"git pull --ff-only in {folder}")
         try:
             done = subprocess.run(  # noqa: S603 - fixed git argv
                 ["git", "-C", str(folder), "pull", "--ff-only"],
                 capture_output=True,
+                env=env,
                 text=True,
                 timeout=300,
                 check=False,

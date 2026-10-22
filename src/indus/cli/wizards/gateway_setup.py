@@ -17,7 +17,9 @@ platform the wizard:
   apply and why (its own authorizer: pair, ignore or decline);
 - offers a home channel, checked with the platform's target rule (P16-32);
 - runs a connection check: the adapter is built from the registry the way ``indus send`` builds it
-  (send-only), connected and closed. Telegram then prints the link that opens a chat with the bot.
+  (send-only), connected and closed. Telegram then prints the link that opens a chat with the bot;
+- once the platform is on, offers the jobs waiting for a chat platform as suggestions (wave 45,
+  ``service.integration_offers``; accepted with ``indus cron suggestions`` or ``/suggestions``).
 
 Without a terminal nothing is asked: the secret names and config keys to set are printed and the
 command exits 2 (R04.19). The CLI and the gateway are sibling layers (D-16.246), so the gateway's
@@ -970,6 +972,19 @@ def _configure(run: _Run, info: PlatformInfo) -> None:
     if steps.home:
         _home(run, info)
     _connection_check(run, info, store_values.values())
+    _suggest_jobs(run, info)
+
+
+def _suggest_jobs(run: _Run, info: PlatformInfo) -> None:
+    """A platform that is on now: the jobs waiting for a chat platform become suggestions
+    (``service.integration_offers``, wave 45); nothing is scheduled."""
+    if run.gateway.states(run.live_scope()).get(info.name) != "on":
+        return
+    from indus.service import integration_offers
+
+    added = integration_offers.connected(run.scope, "platform", info.name)
+    for line in integration_offers.notice_lines(added):
+        run.say(line)
 
 
 def _menu(run: _Run, platforms: Sequence[PlatformInfo]) -> None:

@@ -45,6 +45,7 @@ from typing import Any, ClassVar, Protocol
 from urllib.parse import urlparse
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import (
     REPLY_TO_KEY,
     Adapter,
@@ -680,7 +681,7 @@ class SimplexAdapter(Adapter):
         if not attachment.ref.startswith(FILE_REF):
             raise MediaRejected("it is not a SimpleX file")
         file_id = attachment.ref[len(FILE_REF) :]
-        if not file_id.isdigit():
+        if not is_digits(file_id):
             raise MediaRejected("it is not a SimpleX file")
         folder = self.options.files_folder
         if folder is None:
@@ -709,8 +710,8 @@ class SimplexAdapter(Adapter):
         text = chat_id.strip()
         if text.startswith(GROUP_PREFIX):
             group = text[len(GROUP_PREFIX) :]
-            return f"#{group}" if group.isdigit() else None
-        return f"@{text}" if text.isdigit() else None
+            return f"#{group}" if is_digits(group) else None
+        return f"@{text}" if is_digits(text) else None
 
     async def _compose(self, target: str, items: Sequence[Mapping[str, Any]]) -> SendResult:
         command = f"/_send {target} json {json.dumps(list(items), ensure_ascii=False)}"
@@ -755,7 +756,7 @@ class SimplexAdapter(Adapter):
             if index:
                 await self.slots.pace(chat_id)
             composed: dict[str, Any] = {"msgContent": {"type": "text", "text": chunk.text}}
-            if index == 0 and reply_to and reply_to.isdigit():
+            if index == 0 and reply_to and is_digits(reply_to):
                 composed["quotedItemId"] = int(reply_to)
             result = await self._compose(target, [composed])
             if not result.ok:
@@ -785,7 +786,7 @@ class SimplexAdapter(Adapter):
             content = {"type": "voice", "text": caption or "", "duration": 0}
         composed: dict[str, Any] = {"fileSource": {"filePath": full}, "msgContent": content}
         reply = meta.get(REPLY_TO_KEY)
-        if isinstance(reply, str) and reply.isdigit():
+        if is_digits(reply):
             composed["quotedItemId"] = int(reply)
         return await self._compose(target, [composed])
 

@@ -22,7 +22,9 @@ an argon2id hash), otherwise it refuses to bind and lists why each provider is o
 is no flag that skips the login (D-16.25).
 
 A missing SPA bundle in a source checkout with ``pnpm`` on PATH is built once before serving
-(``indus.web.spa.build_plan``). The dashboard attaches to the profile daemon in the background.
+(``indus.web.spa.build_plan``); without ``pnpm`` the command says how to get the release's prebuilt
+pages or build them (``web.bundle.missing_pages_hint``, F-3). The dashboard attaches to the profile
+daemon in the background.
 
 ``indus serve [--host] [--port 0]`` runs the headless backend (JSON and WebSocket only) and writes
 ``<home>/serve.json``; ``indus serve discover --json [-p NAME]`` and ``indus serve ensure --json``
@@ -213,7 +215,7 @@ def _maybe_build(launch: Launch) -> None:
     if plan is None:
         err(
             "The dashboard pages are not built; the API still works.",
-            f"Build them with: {spa.BUILD_COMMAND}",
+            bundle.missing_pages_hint(repo),
         )
         return
     click.echo("Building the dashboard pages (first launch)...")

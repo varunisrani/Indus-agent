@@ -10,7 +10,8 @@ the child then works in the parent's folder.
 
 ``open_worktree`` returns ``(ChildWorktree | None, note)``; ``scope_in_tree`` gives the child a
 scope whose ``terminal.cwd`` is the tree, so its terminal and file tools work there.
-``close_worktree`` applies P11's retention rule once the child has ended: a tree with commits or
+``close_worktree`` stops the process's language servers rooted in the tree (wave 45), then applies
+P11's retention rule once the child has ended: a tree with commits or
 changes is kept (and the reason given), a clean one is removed with its branch. The result names
 the tree either way.
 """
@@ -18,6 +19,7 @@ the tree either way.
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -131,10 +133,24 @@ async def open_worktree(
     )
 
 
+async def _release_language_servers(folder: str | Path) -> None:
+    """Stop this process's language servers rooted in ``folder`` (only when a host installed the
+    tier, so the LSP modules are never loaded for this)."""
+    if "indus.tools.lsp.diagnostics" not in sys.modules:
+        return
+    from indus.tools.lsp import diagnostics
+
+    stopped = await diagnostics.release_folder(str(folder))
+    if stopped:
+        log.info("stopped %d language server(s) of the worktree %s", stopped, folder)
+
+
 async def close_worktree(
     scope: Scope, tree: ChildWorktree, *, git: worktrees.Git | None = None
 ) -> Mapping[str, Any]:
-    """Keep the tree when it holds work, else remove it (P11 rule); returns its description."""
+    """Keep the tree when it holds work, else remove it (P11 rule); returns its description.
+    The child has ended: the process's language servers of the tree stop first (wave 45)."""
+    await _release_language_servers(tree.path)
 
     def run() -> Mapping[str, Any]:
         try:

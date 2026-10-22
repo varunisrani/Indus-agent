@@ -595,13 +595,55 @@ function RestoreRail(props: { ctx: ShellContext }) {
   );
 }
 
+/** Panes the toolbar flips with one button (W46): stateless, so closing one loses nothing. */
+const TOGGLED_PANES: ReadonlySet<PaneId> = new Set(["files", "review"]);
+
+/** Show a pane (open it, or bring it to the front of its zone) or, when it is showing, close it.
+ * `data-ui` is the button's test hook; each use names it literally so the parity scenarios'
+ * hook check finds it in the source. */
+function PaneToggle(props: {
+  ctx: ShellContext;
+  mode: InterfaceMode;
+  pane: PaneId;
+  "data-ui": string;
+}) {
+  const t = useT();
+  const { ctx, mode, pane } = props;
+  if (!ctx.registry.ids().includes(pane) || !paneAllowed(mode, pane)) return null;
+  const host = zones(ctx.layout.root).find((z) => z.tabs.includes(pane));
+  const showing =
+    host !== undefined && host.active === pane && !host.minimized && !isHidden(ctx.layout, pane);
+  const title = ctx.title(pane);
+  return (
+    <button
+      type="button"
+      className="pane-toggle"
+      aria-pressed={showing}
+      title={t(showing ? "panes.close" : "panes.open", { pane: title })}
+      data-ui={props["data-ui"]}
+      onClick={() => {
+        if (showing) ctx.store.close(pane);
+        else ctx.store.open(pane);
+      }}
+    >
+      {title}
+    </button>
+  );
+}
+
 function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: PresetId | null }) {
   const t = useT();
   const { ctx, mode } = props;
   const open = new Set(allPanes(ctx.layout.root));
   const closable = ctx.registry
     .ids()
-    .filter((pane) => pane !== CHAT_PANE && !open.has(pane) && paneAllowed(mode, pane));
+    .filter(
+      (pane) =>
+        pane !== CHAT_PANE &&
+        !TOGGLED_PANES.has(pane) &&
+        !open.has(pane) &&
+        paneAllowed(mode, pane),
+    );
   return (
     <div className="pane-toolbar">
       <label className="pane-toolbar-field">
@@ -623,6 +665,8 @@ function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: 
           ))}
         </select>
       </label>
+      <PaneToggle ctx={ctx} mode={mode} pane="files" data-ui="pane-toggle-files" />
+      <PaneToggle ctx={ctx} mode={mode} pane="review" data-ui="pane-toggle-review" />
       {closable.map((pane) => (
         <button
           key={pane}

@@ -27,7 +27,8 @@ export type CustomPage =
   | "workspace-desktop"
   | "profiles"
   | "plugins"
-  | "about";
+  | "about"
+  | "about-licences";
 
 export interface PageDef {
   readonly id: string;
@@ -249,7 +250,10 @@ export const VIEWS: readonly ViewDef[] = [
     id: "about",
     label: "settings.view.about",
     scoped: false,
-    pages: [{ id: "version", label: "settings.page.about.version", custom: "about" }],
+    pages: [
+      { id: "version", label: "settings.page.about.version", custom: "about" },
+      { id: "licences", label: "settings.page.about.licences", custom: "about-licences" },
+    ],
   },
 ];
 
@@ -484,6 +488,21 @@ export const MANIFEST: readonly ManifestRow[] = [
     page: "version",
     label: "settings.about.title",
     keywords: ["version", "update", "check", "release", "about"],
+  },
+  {
+    id: "licences",
+    view: "about",
+    page: "licences",
+    label: "settings.licences.title",
+    keywords: [
+      "licences",
+      "licenses",
+      "license",
+      "notices",
+      "open source",
+      "third party",
+      "credits",
+    ],
   },
   {
     id: "logs",

@@ -17,7 +17,9 @@ anywhere below the tree (ignored folders too, bounded walk), per-worktree refs. 
 
 ``prune(scope, repo, dry_run=)`` removes trees under ``.worktrees/`` older than
 ``worktrees.prune_after_hours`` (24) that have no blocker, and reports every other tree with its
-reason. ``<home>/worktrees.json`` records ``{path, repo, branch, base, session_id, created_at}``.
+reason. ``remove`` and ``prune`` take ``before_remove(path)``, told right before git removes a tree
+that passed the blocker check (wave 45: the CLI stops the tree's language servers in the daemon
+there). ``<home>/worktrees.json`` records ``{path, repo, branch, base, session_id, created_at}``.
 
 Every git call is bounded (10 s; ``worktree add`` 120 s) and non-interactive (prompts off, stdin
 closed); the environment comes from ``safety.child_env``.
@@ -33,7 +35,7 @@ import re
 import secrets
 import shutil
 import subprocess
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +50,7 @@ __all__ = [
     "GIT_TIMEOUT",
     "PROTECTED_BRANCHES",
     "REGISTRY_FILE",
+    "BeforeRemove",
     "Git",
     "PruneReport",
     "TreeStatus",
@@ -78,6 +81,9 @@ TREES_DIR = ".worktrees"
 BRANCH_PREFIX = "indus/"
 INCLUDE_FILE = ".worktreeinclude"
 MAX_SCAN_ENTRIES = 200_000
+
+type BeforeRemove = Callable[[str], object]
+"""Told the path of a tree about to be removed (the CLI stops its language servers, wave 45)."""
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _PER_WORKTREE_REFS = ("refs/worktree/", "refs/bisect/", "refs/rewritten/")
 # Dependency stores: never walked when looking for embedded repositories.
@@ -583,11 +589,27 @@ def statuses(scope: Scope, repo: str | Path, *, git: Git | None = None) -> list[
     return out
 
 
+def _announce(before_remove: BeforeRemove | None, folder: Path) -> None:
+    if before_remove is None:
+        return
+    try:
+        before_remove(str(folder))
+    except Exception:
+        log.warning("the before-remove step for %s failed; removing anyway", folder, exc_info=True)
+
+
 def remove(
-    scope: Scope, repo: str | Path, tree: str | Path, *, git: Git | None = None
+    scope: Scope,
+    repo: str | Path,
+    tree: str | Path,
+    *,
+    git: Git | None = None,
+    before_remove: BeforeRemove | None = None,
 ) -> str | None:
     """Remove a tree that loses nothing; returns the reason it was kept, or None when removed.
-    Its branch goes too unless protected."""
+    Its branch goes too unless protected. ``before_remove(path)`` runs once the tree passed the
+    blocker check, right before git removes it (its language servers stop there); a failure in
+    it is logged and the removal goes on."""
     runner = git if git is not None else git_for(scope)
     root = repo_root(runner, repo)
     if root is None:
@@ -596,6 +618,7 @@ def remove(
     blockers = removal_blockers(runner, folder)
     if blockers:
         return "; ".join(blockers)
+    _announce(before_remove, folder)
     try:
         branch = runner.out(["symbolic-ref", "--quiet", "--short", "HEAD"], folder)
         removed = runner.run(["worktree", "remove", "--force", str(folder)], root)
@@ -618,8 +641,10 @@ def prune(
     dry_run: bool = False,
     max_age_hours: float | None = None,
     git: Git | None = None,
+    before_remove: BeforeRemove | None = None,
 ) -> PruneReport:
-    """Remove old trees that lose nothing; report the rest (see the module notes)."""
+    """Remove old trees that lose nothing; report the rest (see the module notes).
+    ``before_remove`` runs for each tree about to be removed (``remove``)."""
     runner = git if git is not None else git_for(scope)
     limit = (
         float(_setting(scope, "worktrees.prune_after_hours", 24))
@@ -636,7 +661,7 @@ def prune(
         elif dry_run:
             removed.append(item.path)
         else:
-            reason = remove(scope, repo, item.path, git=runner)
+            reason = remove(scope, repo, item.path, git=runner, before_remove=before_remove)
             if reason is None:
                 removed.append(item.path)
             else:

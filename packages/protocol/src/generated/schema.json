@@ -2754,6 +2754,11 @@
           "description": "The provider of the current model.",
           "type": "boolean"
         },
+        "models": {
+          "description": "Model ids the provider's endpoint lists (filled for the current custom or local endpoint;\nempty when it lists none or could not be asked: the picker then takes a typed id).",
+          "items": {"type": "string"},
+          "type": "array"
+        },
         "name": {"description": "What people see.", "type": "string"},
         "slug": {"description": "The provider's name.", "type": "string"}
       },

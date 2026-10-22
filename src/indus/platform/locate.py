@@ -43,6 +43,23 @@ DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
 Connector = Callable[[str, int, float], bool]
 Runner = Callable[[Sequence[str], float], bool]
 
+# What a ``--version`` style probe may see of the process environment (SEC-8): enough to start a
+# program and pick its locale, never a key exported in the launching shell. This tier sits below
+# foundation, so there is no scope to build a child env from.
+PROBE_ENV_NAMES: tuple[str, ...] = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TMPDIR",
+    "SYSTEMROOT",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+)
+
 
 def _is_executable_file(path: Path) -> bool:
     try:
@@ -172,10 +189,17 @@ def _tcp_connect(host: str, port: int, deadline: float) -> bool:
         return False
 
 
+def probe_env(source: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment a probe runs with: only :data:`PROBE_ENV_NAMES` from ``source``."""
+    values = os.environ if source is None else source
+    return {name: values[name] for name in PROBE_ENV_NAMES if name in values}
+
+
 def _run_quietly(argv: Sequence[str], deadline: float) -> bool:
     try:
         done = subprocess.run(
             list(argv),
+            env=probe_env(),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

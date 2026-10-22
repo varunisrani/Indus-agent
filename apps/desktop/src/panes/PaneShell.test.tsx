@@ -108,9 +108,43 @@ describe("pane shell", () => {
     act(() => store.activate("review"));
     fireEvent.click(screen.getByRole("button", { name: "Close Review" }));
     expect(allPanes(store.layout().root)).not.toContain("review");
-    fireEvent.click(screen.getByRole("button", { name: "Open Review" }));
+    // files and review come back through their toolbar toggle, not an "Open" button
+    expect(screen.queryByRole("button", { name: "Open Review" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(allPanes(store.layout().root)).toContain("review");
     expect(screen.queryByRole("button", { name: "Close Chat" })).toBeNull();
+  });
+
+  it("the files and review toggles bring their pane to the front, and put it away (W46)", () => {
+    const { store } = setup();
+    const files = document.querySelector('[data-ui="pane-toggle-files"]') as HTMLElement;
+    const review = document.querySelector('[data-ui="pane-toggle-review"]') as HTMLElement;
+    expect(files.getAttribute("aria-pressed")).toBe("false"); // the preview is in front
+    fireEvent.click(files);
+    expect(zoneOf(store.layout().root, "files")?.active).toBe("files");
+    expect(screen.getByText("file tree")).toBeTruthy();
+    expect(files.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(review);
+    expect(screen.getByText("diffs")).toBeTruthy();
+    expect(review.getAttribute("aria-pressed")).toBe("true");
+    expect(files.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(review);
+    expect(allPanes(store.layout().root)).not.toContain("review");
+    expect(review.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(review);
+    expect(zoneOf(store.layout().root, "review")?.active).toBe("review");
+  });
+
+  it("a pane in a minimised zone toggles back to the front (W46)", () => {
+    const { store } = setup();
+    act(() => store.activate("files"));
+    const host = zoneOf(store.layout().root, "files")?.id ?? "";
+    act(() => store.setMinimized(host, true));
+    const files = document.querySelector('[data-ui="pane-toggle-files"]') as HTMLElement;
+    expect(files.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(files);
+    expect(zoneOf(store.layout().root, "files")?.minimized).toBe(false);
+    expect(files.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("a tab dragged onto another zone joins its tabs", () => {
@@ -142,6 +176,8 @@ describe("pane shell", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Simple" }));
     expect(screen.queryByRole("tab", { name: "Terminal" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open Terminal" })).toBeNull();
+    expect(document.querySelector('[data-ui="pane-toggle-files"]')).toBeNull();
+    expect(document.querySelector('[data-ui="pane-toggle-review"]')).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Advanced" }));
     expect(store.layout()).toBe(advanced);
   });

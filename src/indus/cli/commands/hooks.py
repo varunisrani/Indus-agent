@@ -42,6 +42,7 @@ DEFAULT_PAYLOADS: dict[str, dict[str, Any]] = {
         "args": {"command": "echo hello"},
         "result": "hello",
         "is_error": False,
+        "blocked": False,
         "duration_ms": 12,
     },
     "pre_llm_call": {

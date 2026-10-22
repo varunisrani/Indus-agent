@@ -249,6 +249,39 @@ def test_raising_post_tool_call_is_ignored(bus: HookBus) -> None:
     assert seen == ['probe:ran with {"q": 2}']
 
 
+@pytest.mark.parametrize("block", [True, False])
+def test_post_tool_call_sees_blocked_calls(bus: HookBus, block: bool) -> None:
+    """W46 RS19: an audit hook sees a call a ``pre_tool_call`` hook blocked, marked blocked."""
+    seen: list[dict[str, Any]] = []
+    if block:
+        bus.register("pre_tool_call", lambda **_: {"action": "block", "message": "audit says no"})
+
+    def audit(**payload: Any) -> None:
+        seen.append(payload)
+
+    bus.register("post_tool_call", audit, owner="audit")
+    ran: list[Mapping[str, Any]] = []
+    result = asyncio.run(
+        dispatch(
+            ToolCall("probe", {"q": 2}, "call_9"),
+            ToolContext(session_id="s1"),
+            registry=recording_registry(ran),
+            hooks=PluginToolHooks(bus),
+        )
+    )
+    assert len(seen) == 1
+    payload = seen[0]
+    assert payload["tool_name"] == "probe" and payload["args"] == {"q": 2}
+    assert payload["tool_call_id"] == "call_9" and payload["session_id"] == "s1"
+    assert payload["blocked"] is block
+    if block:
+        assert ran == [] and result.error_type == "blocked"
+        assert payload["is_error"] is True and payload["error_type"] == "blocked"
+        assert "audit says no" in payload["result"] and payload["duration_ms"] == 0
+    else:
+        assert ran == [{"q": 2}] and not result.is_error
+
+
 def test_hanging_observer_fails_open(bus: HookBus, fake_clock: FakeClock) -> None:
     release = threading.Event()
     bus.register("post_llm_call", lambda **_: release.wait(), owner="slow")

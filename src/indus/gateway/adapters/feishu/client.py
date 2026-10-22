@@ -29,6 +29,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 
 __all__ = [
     "AUTH_CODES",
@@ -215,7 +216,7 @@ class Endpoint:
         query = urlsplit(self.url).query
         for part in query.split("&"):
             name, _, value = part.partition("=")
-            if name == "service_id" and value.isdigit():
+            if name == "service_id" and is_digits(value):
                 return int(value)
         return 0
 
@@ -504,7 +505,7 @@ class FeishuClient:
                 await response.aread()
                 raise error_of(response)
             declared = response.headers.get("Content-Length", "")
-            if declared.isdigit() and int(declared) > cap:
+            if is_digits(declared) and int(declared) > cap:
                 raise MediaTooLarge(int(declared), cap)
             seen = 0
             async for chunk in response.aiter_bytes():

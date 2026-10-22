@@ -27,6 +27,7 @@ from pathlib import Path
 import httpx
 
 from indus.foundation.blocking import run_blocking
+from indus.foundation.digits import is_digits
 from indus.foundation.scope import Scope
 from indus.safety.path_guards import blocked_device, read_denial
 from indus.safety.safe_transport import ConnectBlocked, TransportFactory, safe_client
@@ -121,7 +122,7 @@ async def _download(
             if response.status_code >= 400:
                 raise SourceError(f"the server answered HTTP {response.status_code}")
             declared = response.headers.get("content-length", "")
-            if declared.isdigit() and int(declared) > max_bytes:
+            if is_digits(declared) and int(declared) > max_bytes:
                 raise SourceError(_too_big(max_bytes))
             async for chunk in response.aiter_bytes():
                 body.extend(chunk)

@@ -395,6 +395,7 @@ export function Onboarding(props: OnboardingProps) {
         ref={cardRef}
         tabIndex={-1}
         className="onboarding-card"
+        data-ui="onboarding-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
@@ -494,6 +495,7 @@ function Picker(props: {
             <button
               type="button"
               className="onboarding-option"
+              data-ui="onboarding-custom-option"
               onClick={() => props.onEndpoint("custom")}
             >
               <span className="onboarding-option-title">{t("onboarding.custom.option")}</span>
@@ -660,6 +662,7 @@ function EndpointForm(props: {
       <input
         id={urlId}
         className="settings-input"
+        data-ui="onboarding-endpoint-url"
         value={url}
         spellCheck={false}
         onChange={(event) => setUrl(event.currentTarget.value)}
@@ -681,7 +684,12 @@ function EndpointForm(props: {
         <button type="button" className="text-button" onClick={props.onBack}>
           {t("onboarding.back")}
         </button>
-        <button type="submit" className="button button-primary" disabled={!valid || props.busy}>
+        <button
+          type="submit"
+          className="button button-primary"
+          data-ui="onboarding-test-continue"
+          disabled={!valid || props.busy}
+        >
           {t("onboarding.endpoint.test")}
         </button>
       </div>
@@ -713,6 +721,7 @@ function ConfirmModel(props: {
       <input
         id={inputId}
         className="settings-input"
+        data-ui="onboarding-model-select"
         list={listId}
         value={model}
         spellCheck={false}
@@ -732,6 +741,7 @@ function ConfirmModel(props: {
         <button
           type="submit"
           className="button button-primary"
+          data-ui="onboarding-start-chatting"
           disabled={model.trim() === "" || props.busy}
         >
           {t("onboarding.model.save")}

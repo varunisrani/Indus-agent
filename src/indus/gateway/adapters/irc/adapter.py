@@ -37,6 +37,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Protocol
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import Adapter, AdapterConnectError, Capabilities, ChatInfo
 from indus.gateway.adapters.irc.protocol import (
     IrcLine,
@@ -177,7 +178,7 @@ def _failure_of(line: IrcLine) -> SendResult:
         if code == "INVALID_UTF8":
             return SendResult.failure(f"can't parse the message: {text}")
         if "RATE" in code or "THROTTL" in code or "FLOOD" in code:
-            waits = [p for p in line.params[2:-1] if p.isdigit()]
+            waits = [p for p in line.params[2:-1] if is_digits(p)]
             wait = float(waits[-1]) if waits else None
             return SendResult.failure(f"rate limited by the IRC server: {text}", retry_after=wait)
         if code.endswith("UNAVAILABLE"):

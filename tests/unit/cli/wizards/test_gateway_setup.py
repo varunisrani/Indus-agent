@@ -472,3 +472,28 @@ def test_the_suggested_home_can_be_declined(clean: Scope, world: World) -> None:
     run = setup(clean, world, "telegram", *script)
     assert run.code == 0, run.text
     assert "home_channel" not in platform_raw(clean, "telegram")
+
+
+def test_a_platform_left_on_suggests_the_waiting_jobs_once(clean: Scope, world: World) -> None:
+    """Wave 45 (D-16.981): the starter briefing waits for a chat platform; it is suggested, never
+    scheduled, and a second platform does not suggest it again."""
+    from indus.cron.suggestions import SuggestionStore
+
+    run = setup(clean, world, "telegram", *answers_for("telegram"))
+    assert run.code == 0
+    assert "Suggested job: Morning briefing" in run.text
+    pending = SuggestionStore(clean).pending()
+    assert [(s.dedup_key, s.source) for s in pending] == [
+        ("blueprint:morning-brief", "integration")
+    ]
+    again = setup(clean, world, "slack", *answers_for("slack"))
+    assert "Suggested job:" not in again.text
+    assert len(SuggestionStore(clean).pending()) == 1
+
+
+def test_a_platform_that_stays_off_suggests_nothing(clean: Scope, world: World) -> None:
+    from indus.cron.suggestions import store_path
+
+    run = setup(clean, world, "telegram", "")  # the token left empty: nothing saved
+    assert "Suggested job:" not in run.text
+    assert not store_path(clean).exists()

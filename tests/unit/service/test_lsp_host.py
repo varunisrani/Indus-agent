@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 
-from indus.foundation.scope import Scope
+from indus.foundation.scope import Scope, use_scope
 from indus.protocol.methods import SessionCreateParams
 from indus.service.lsp_host import LspUpkeep
 from indus.service.session_service import SessionService
@@ -35,6 +36,35 @@ def test_services_of_one_process_share_one_tier(scope: Scope) -> None:
         assert diagnostics.active() is checker
         await second.shutdown()
         assert diagnostics.active() is None and second.manager is None
+
+    asyncio.run(main())
+
+
+def test_each_profile_gets_its_own_tier(scope: Scope, tmp_path: Path) -> None:
+    """SEC-14: a second profile's services build their own tier (its scope, its settings) and
+    leave it without touching the first profile's; the edit's profile picks the checker."""
+    other_home = tmp_path / "profiles" / "other"
+    other_home.mkdir(parents=True)
+    other = replace(scope, home=other_home, profile_id="other", routed=True)
+
+    async def main() -> None:
+        mine, theirs = LspUpkeep(scope, settings=ON), LspUpkeep(other, settings=ON)
+        mine.start()
+        theirs.start()
+        assert mine.manager is not None and theirs.manager is not None
+        assert mine.manager is not theirs.manager and theirs.manager.scope is other
+        mine_checker = diagnostics.active(diagnostics.tier_key(scope))
+        theirs_checker = diagnostics.active(diagnostics.tier_key(other))
+        assert mine_checker is not None and mine_checker.manager is mine.manager
+        assert theirs_checker is not None and theirs_checker.manager is theirs.manager
+        assert diagnostics.active() is None  # two tiers and no profile bound: neither
+        with use_scope(other):
+            assert diagnostics.active() is theirs_checker
+        await theirs.shutdown()
+        assert diagnostics.active(diagnostics.tier_key(other)) is None
+        assert diagnostics.active() is mine_checker  # the one left
+        await mine.shutdown()
+        assert diagnostics.installed() == {}
 
     asyncio.run(main())
 

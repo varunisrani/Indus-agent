@@ -28,6 +28,7 @@ from typing import Any, cast
 from urllib.parse import quote, urlsplit
 
 from indus.foundation import yamlio
+from indus.foundation.digits import is_digits
 from indus.learning.skills.format import LAYOUT_DIRS, SKILL_FILE
 from indus.learning.skills.hub.lock import safe_rel_path, safe_skill_name
 from indus.learning.skills.hub.sources import (
@@ -237,7 +238,7 @@ class ClawHubSource:
                 if resp.status_code != 200:
                     return None
                 declared = resp.headers.get("content-length", "")
-                if declared.isdigit() and int(declared) > MAX_ZIP_BYTES:
+                if is_digits(declared) and int(declared) > MAX_ZIP_BYTES:
                     raise HubError(f"the ClawHub archive of {slug} is larger than 25 MiB")
                 async for chunk in resp.aiter_bytes():
                     data.extend(chunk)

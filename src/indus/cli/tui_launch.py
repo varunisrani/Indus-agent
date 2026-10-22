@@ -614,6 +614,7 @@ def _print_resume_hint(state: CliState, session_id: str | None) -> None:
 
 def _finish_worktree(state: CliState, info: Any, session_id: str | None) -> None:
     from indus.backends import worktrees
+    from indus.service.lsp_control import gateway_releaser
 
     if session_id is not None and _session_row(state, session_id) is not None:
         with contextlib.suppress(Exception):
@@ -621,7 +622,10 @@ def _finish_worktree(state: CliState, info: Any, session_id: str | None) -> None
         _err(f"Worktree kept for this session: {info.path}")
         return
     try:
-        kept = worktrees.remove(state.scope, info.repo, info.path)
+        # The session's language servers run in the profile's daemon when it attached there
+        # (wave 45): they stop before the tree goes.
+        releaser = gateway_releaser(state.scope.home)
+        kept = worktrees.remove(state.scope, info.repo, info.path, before_remove=releaser)
     except Exception as exc:
         kept = str(exc)
     if kept is None:

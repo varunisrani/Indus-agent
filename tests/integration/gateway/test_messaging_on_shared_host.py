@@ -13,7 +13,9 @@ model, one after another on the same profile home:
   again; queued input behind it makes the chat hear once that the conversation is paused; further
   messages are dropped; ``/reset`` starts a fresh conversation that answers;
 - a marker whose admission never started is not a lost turn: the input runs once after the restart;
-- a turn the host started on its own that stored its reply before dying: owed once, not paused.
+- a turn the host started on its own that stored its reply before dying: owed once, not paused;
+- a routeless session (TUI, desktop) whose lost turn saved its reply is settled quietly, never
+  shown as lost; one without that proof stays ``unknown`` (W46 RS6).
 """
 
 from __future__ import annotations
@@ -33,8 +35,10 @@ from indus.gateway.daemon.side_services import ControlPart
 from indus.service import gateway_control
 from indus.service.ws_auth import SUBPROTOCOL, TICKET_PROTOCOL_PREFIX, WS_INTERACTIVE
 from indus.state import gateway_routes as routes
+from indus.state import messages as transcript
 from indus.state import registry as store_registry
 from indus.state import runtime_ledger as ledger
+from indus.state import sessions as session_rows
 from indus.state.gateway_runtime import EXIT_OK
 from tests.fakes.model import FakeModelServer, text_turn
 from tests.fakes.platform.core import FakeChatPlatform
@@ -394,3 +398,64 @@ def test_a_background_task_runs_as_an_admission_in_its_own_session(tmp_path: Pat
         "side-"
     )
     assert (row.state, row.outcome) == ("terminal", "completed")
+
+
+def _lost_routeless_turn(scope: Scope, session_id: str, *, prompt_after: bool) -> None:
+    """A TUI session's turn left ``started`` by a dead owner after its reply was streamed and
+    saved, before its terminal write. ``prompt_after=False``: the prompt predates the admission
+    (an earlier turn's exchange), so the reply is no proof that this turn finished."""
+    with store_registry.shared(scope) as store:
+        assert session_rows.create(store, session_id, "tui")
+        epoch = ledger.begin_owner_epoch(store, "dead-owner").epoch
+        ledger.admit(
+            store,
+            epoch=epoch,
+            principal_id="tui:conn-1",
+            session_id=session_id,
+            request_id=f"{session_id}-turn",
+            payload={"text": "summarise the notes"},
+        )
+        assert ledger.claim_head(store, epoch=epoch, session_id=session_id).kind == "claimed"
+        transcript.append(store, session_id, {"role": "user", "content": "summarise the notes"})
+        transcript.append(store, session_id, {"role": "assistant", "content": "Here it is."})
+
+        def shift(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "UPDATE runtime_admissions SET created_at = created_at - 60 WHERE session_id = ?",
+                (session_id,),
+            )
+            if not prompt_after:
+                conn.execute(
+                    "UPDATE messages SET timestamp = timestamp - 120 "
+                    "WHERE session_id = ? AND role = 'user'",
+                    (session_id,),
+                )
+
+        store.write(shift)
+
+
+def test_a_routeless_lost_turn_whose_reply_was_saved_is_not_shown_as_lost(
+    tmp_path: Path,
+) -> None:
+    scope = daemon_scope(tmp_path)
+    fake = fake_platform()
+    _lost_routeless_turn(scope, "tui-saved", prompt_after=True)
+    _lost_routeless_turn(scope, "tui-unproven", prompt_after=False)
+    server = model_server()
+    daemon = daemon_for(scope, fake, server, tmp_path)
+
+    async def main() -> None:
+        flight = await fly(daemon)
+        report = daemon.boot.recovery
+        assert report is not None
+        assert report.saved_turns == ["tui-saved"] and report.paused == []
+        assert report.recovered_replies == []
+        assert await flight.stop() == EXIT_OK
+
+    asyncio.run(main())
+    states = {row.session_id: (row.state, row.outcome) for row in admissions(scope)}
+    assert states == {"tui-saved": ("terminal", "discarded"), "tui-unproven": ("unknown", None)}
+    with store_registry.shared(scope) as store:
+        kept = transcript.as_conversation(store, "tui-saved")
+    assert [m["content"] for m in kept] == ["summarise the notes", "Here it is."]  # no note added
+    assert server.requests == [] and fake.texts(ALLOWED) == []

@@ -1,131 +1,13 @@
 {
   "schema": 1,
   "note": "Written by `python -m tooling.checks.deps_audit --refresh` (OSV, pnpm audit). Do not edit by hand.",
-  "fetched_at": "2026-10-21T23:44:47Z",
+  "fetched_at": "2026-10-22T03:41:25Z",
   "locks": {
-    "uv.lock": "8bc7c79265f2d09be6c8b9aaec6d9d6e1b9e8c0cdb3ea1719405ee88f5212d20",
-    "pnpm-lock.yaml": "67428da84f07e31975cbf63c846f6a7dbb5d14a3197317fbe10042999746ccc1"
+    "uv.lock": "10157606d3ce98b7612fc00327386bdbc6ca478eef231972122fe9ce41702e80",
+    "pnpm-lock.yaml": "95771ec61560c590378facaab8473e6e8421cf17e67ad601b77ea9742ef9dcfb"
   },
   "packages": 877,
   "advisories": [
-    {
-      "id": "GHSA-2g87-pp6c-29x5",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "high",
-      "aliases": [],
-      "summary": "aiohttp: Multiple instances of excessive or unbounded memory/CPU use",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-494j-54xm-rwp3",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "low",
-      "aliases": [
-        "CVE-2026-111063"
-      ],
-      "summary": "AIOHTTP: Secure attribute not enforced for shared cookie",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-5wr8-gcqf-gqf3",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "high",
-      "aliases": [
-        "CVE-2026-111064"
-      ],
-      "summary": "aiohttp server lacks an initial request/header timeout",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-6cjc-53gc-5rqm",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-111065"
-      ],
-      "summary": "AIOHTTP: Connector pool exhaustion via Max-Age overflow",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-9xw5-w5jj-pvcg",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "high",
-      "aliases": [
-        "CVE-2026-111066"
-      ],
-      "summary": "AIOHTTP: File descriptor exhaustion in multipart requests",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-f9xw-jh8m-3mwq",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-111748"
-      ],
-      "summary": "AIOHTTP: Absolute-form request targets can spoof Request.scheme",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-gx76-c99x-2c96",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "low",
-      "aliases": [
-        "CVE-2026-111749"
-      ],
-      "summary": "AIOHTTP: Cookie from subdomain can remove Host-Only Scope from existing cookies",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-pqxq-w44r-73xw",
-      "ecosystem": "PyPI",
-      "package": "aiohttp",
-      "version": "3.14.3",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-111750"
-      ],
-      "summary": "AIOHTTP: Pure-Python parser request smuggling",
-      "fixed": [
-        "3.14.4"
-      ],
-      "origin": "osv"
-    },
     {
       "id": "GHSA-6q48-6c7w-9gw2",
       "ecosystem": "PyPI",
@@ -138,23 +20,6 @@
       "summary": "certifi bundles emSign root CAs with compromised intermediate CA keys",
       "fixed": [
         "2026.10.19"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-mrfv-m5wm-5w6w",
-      "ecosystem": "PyPI",
-      "package": "pynacl",
-      "version": "1.5.0",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2025-69277",
-        "PYSEC-2026-1448",
-        "PYSEC-2026-3002"
-      ],
-      "summary": "libsodium has Incomplete List of Disallowed Inputs",
-      "fixed": [
-        "1.6.2"
       ],
       "origin": "osv"
     },
@@ -261,117 +126,6 @@
       ],
       "summary": "sprintf-js vulnerable to denial of service through unbounded precision specifiers",
       "fixed": [],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-587h-7wmj-h5pm",
-      "ecosystem": "npm",
-      "package": "vite",
-      "version": "8.3.2",
-      "severity": "high",
-      "aliases": [
-        "CVE-2026-112942"
-      ],
-      "summary": "launch-editor: `fs.existsSync()` existence check can be bypassed on Windows",
-      "fixed": [
-        "8.3.3",
-        "8.2.4",
-        "8.1.6",
-        "7.3.7",
-        "6.4.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-698v-4r3x-3vcv",
-      "ecosystem": "npm",
-      "package": "vite",
-      "version": "8.3.2",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-112943"
-      ],
-      "summary": "launch-editor: escapeCmdArgs() omits % escaping on Windows",
-      "fixed": [
-        "8.3.3",
-        "8.2.4",
-        "8.1.6",
-        "7.3.7",
-        "6.4.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-9jrq-w75r-8gcw",
-      "ecosystem": "npm",
-      "package": "vite",
-      "version": "8.3.2",
-      "severity": "low",
-      "aliases": [
-        "CVE-2026-112945"
-      ],
-      "summary": "Vite: Cross origin script execution through Vite custom middleware",
-      "fixed": [
-        "8.3.3",
-        "8.2.4",
-        "8.1.6",
-        "7.3.7",
-        "6.4.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-r825-w8mm-5pxw",
-      "ecosystem": "npm",
-      "package": "vite",
-      "version": "8.3.2",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-112944"
-      ],
-      "summary": "launch-editor: Editor CLI flag misinterpretation causing arbitrary command execution for some editors",
-      "fixed": [
-        "8.3.3",
-        "8.2.4",
-        "8.1.6",
-        "7.3.7",
-        "6.4.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-rq7h-c2jc-7f22",
-      "ecosystem": "npm",
-      "package": "vite",
-      "version": "8.3.2",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-112946"
-      ],
-      "summary": "Vite: Files outside `server.fs.allow` could be served when project paths match system paths on non-Windows machine",
-      "fixed": [
-        "8.3.3",
-        "8.2.4",
-        "8.1.6",
-        "7.3.7",
-        "6.4.4"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-vfpm-58rq-9qcg",
-      "ecosystem": "npm",
-      "package": "vite",
-      "version": "8.3.2",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-112947"
-      ],
-      "summary": "Vite: First 4 bytes of files outside of `server.fs` setting is exposed by `?vite-wasm-instance`",
-      "fixed": [
-        "8.3.3",
-        "8.2.4"
-      ],
       "origin": "osv"
     }
   ]

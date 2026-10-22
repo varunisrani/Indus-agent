@@ -599,6 +599,9 @@ class ProviderOption(ProtocolModel):
     """Whether a key or sign-in is stored."""
     current: bool = False
     """The provider of the current model."""
+    models: list[str] = Field(default_factory=list)
+    """Model ids the provider's endpoint lists (filled for the current custom or local endpoint;
+    empty when it lists none or could not be asked: the picker then takes a typed id)."""
 
 
 class ModelOptionsParams(ProtocolModel):

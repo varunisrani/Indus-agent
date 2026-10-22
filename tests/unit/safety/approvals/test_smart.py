@@ -11,6 +11,7 @@ import pytest
 
 from indus.core.agent import Agent
 from indus.core.tool_round import handler_extras
+from indus.core.untrusted import Taint
 from indus.foundation.config import loader
 from indus.foundation.scope import Scope
 from indus.protocol.server_requests import ApprovalRequest
@@ -486,6 +487,7 @@ def test_tool_round_offers_the_judge(scope: Scope, fake_clock: FakeClock) -> Non
             broker = None
 
         runtime = agent.runtime
+        taint = Taint()  # the turn's laundering record (SEC-4, wave 46)
 
     agent.runtime.approval_judge = FakeAuxModel().judge()
     extras = handler_extras(_State())  # type: ignore[arg-type]

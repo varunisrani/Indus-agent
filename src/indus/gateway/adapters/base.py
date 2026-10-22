@@ -29,6 +29,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.foundation.redact import redact_text
 from indus.gateway.adapters._native import NativeStream
 from indus.gateway.core.events import Attachment, ChatType, InboundEvent
@@ -197,7 +198,7 @@ def clarify_callback(clarify_id: str, index: int) -> str:
 def parse_clarify_callback(data: str) -> tuple[str, int] | None:
     prefix, _, rest = data.partition(":")
     clarify_id, _, index = rest.partition(":")
-    if prefix != "clr" or not _CALLBACK_ID.match(clarify_id) or not index.isdigit():
+    if prefix != "clr" or not _CALLBACK_ID.match(clarify_id) or not is_digits(index):
         return None
     return clarify_id, int(index)
 

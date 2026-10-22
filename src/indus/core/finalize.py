@@ -219,6 +219,7 @@ async def finalize_turn(state: TurnState) -> TurnResult:
         guardrail=state.guard.halt,
         intervened=control.intervened,
         cleanup_errors=tuple(state.cleanup_errors),
+        read_untrusted=state.taint.read,
     )
 
 

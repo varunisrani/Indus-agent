@@ -106,3 +106,24 @@ Decisions for the lead (wiring): `continuation_rows` makes both rows scaffold fo
 durable (the interim answer was durable, so dropping the scaffold nudge at the end left two
 assistant rows in a row in the store); subagents get the standard gates too (no `pre_verify`); the
 review fork builds its runtime itself and has none.
+
+## Wave 45 (S45 — SEC-14, D-16.970)
+
+Status: done (2026-10-22). Read: no reference file (a fix of our own wiring; nothing to compare).
+
+One language-server tier per served profile instead of one per process. `service.lsp_host` keeps
+`_TIERS` keyed by the profile's home (`diagnostics.tier_key(scope)`); the first `LspUpkeep` of a
+profile builds that profile's `LspManager` from its own scope (child env, so its passthrough values
+and `INDUS_HOME`) and its own `lsp` settings, later upkeeps of the same profile join it, the last
+one out stops it. `tools.lsp.diagnostics` installs checkers per key (`install_active(checker,
+key=…)`; without a key the old process-wide behaviour, used by tests and single-scope code) and
+`active()` picks the checker of the edit's profile: the key `LspToolHooks.before` binds from the
+call's `ToolContext.scope` (`bind_tier`), else the scope the code runs under
+(`foundation.scope.scope_or_none`), else the process-wide checker or the only one installed. A
+bound profile without a tier gets none (never another profile's). `standard_gates(scope)` asks the
+scope's own tier; `LspToolHooks.transform` takes notes from the call scope's tier; `indus lsp
+status` shows the scope's tier.
+
+Tests: `tests/security/test_trust_boundaries.py::test_lsp_each_served_profile_gets_its_own_tier`
+(fails on the old tier: profile B's server started with the launch profile's `INDUS_HOME`),
+`tests/unit/service/test_lsp_host.py::test_each_profile_gets_its_own_tier`.

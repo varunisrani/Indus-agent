@@ -154,3 +154,7 @@ final edit instead of the first send once the runner streams replies; a live lan
 
 Integration (2026-10-20): the `discord-voice` extra was re-locked online (PyNaCl 1.5.0, davey 0.1.6,
 MIT by its wheel's classifier); D-16.560, D-16.561.
+
+Wave 46 (RM8, 2026-10-22): PyNaCl 1.5.0 → 1.6.2 through `[tool.uv] override-dependencies` (discord.py
+2.7.1 still caps its `voice` extra at `<1.6`; 1.5.0 carries GHSA-mrfv-m5wm-5w6w). discord.py's
+`has_nacl` and the adapter tests pass against 1.6.2; details in `docs/notes/P25/deps-audit.md`.

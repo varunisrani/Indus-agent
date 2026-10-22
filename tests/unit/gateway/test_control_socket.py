@@ -5,10 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 import socket
 import stat
-import tempfile
 import threading
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
@@ -18,16 +16,14 @@ import pytest
 
 from indus.gateway.control_socket import ControlServer, ControlSocketError, supervisor_kind
 from indus.service import gateway_control as wire
+from tests.short_paths import short_dir
 
 
 @pytest.fixture
 def short_home() -> Iterator[Path]:
     """A home whose socket path fits (pytest's tmp paths can be too long for sun_path)."""
-    home = Path(tempfile.mkdtemp(prefix="igw-", dir="/tmp"))
-    try:
+    with short_dir("igw-") as home:
         yield home
-    finally:
-        shutil.rmtree(home, ignore_errors=True)
 
 
 def run[T](coro: Awaitable[T]) -> T:

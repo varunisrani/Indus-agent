@@ -23,7 +23,11 @@ mode only), ``__INDUS_BASE_PATH__``, ``__INDUS_AUTH_REQUIRED__``,
 ``__INDUS_INITIAL_PROFILE__`` and
 ``__INDUS_DASHBOARD_PROFILE__``. Values are JSON with ``<``, ``>``,
 ``&`` and the two JavaScript line separators escaped, so no value can close the script. The active
-theme's first-paint CSS goes in just before it.
+theme's first-paint CSS goes in just before it. The index's ``Content-Security-Policy`` allows
+scripts from this origin and that one script by its SHA-256 (``index_csp``, SEC-18), computed per
+answer since the globals differ; no other inline script runs. The bootstrap stays inline on
+purpose: a separate script URL carrying the loopback session token could be included by any page
+with ``<script src>`` and read back.
 
 Framing: every answer from the bundle (index and files) carries ``FRAME_GUARD`` — no page may frame
 the dashboard (its loopback index holds the session token, so a framing site could otherwise drive
@@ -37,6 +41,8 @@ with the Node heap capped at half the cgroup memory limit (at most 4 GiB, at lea
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import os
@@ -62,9 +68,11 @@ __all__ = [
     "NO_STORE",
     "BuildPlan",
     "SpaBundle",
+    "bootstrap_body",
     "bootstrap_script",
     "build_plan",
     "default_bundle_dir",
+    "index_csp",
     "mount_spa",
     "run_build",
     "theme_css",
@@ -134,8 +142,8 @@ def _js(value: object) -> str:
     return text
 
 
-def bootstrap_script(state: DashboardState, prefix: str) -> str:
-    """The inline script with the runtime globals (see the module notes)."""
+def bootstrap_body(state: DashboardState, prefix: str) -> str:
+    """The bootstrap script's text: the runtime globals (see the module notes)."""
     lines: list[str] = []
     if not state.gated:
         lines.append(f"window.__INDUS_SESSION_TOKEN__={_js(state.auth.token.value)};")
@@ -149,7 +157,22 @@ def bootstrap_script(state: DashboardState, prefix: str) -> str:
             f"window.__INDUS_DASHBOARD_PROFILE__={_js(state.profile_name)};",
         ]
     )
-    return "<script>" + "".join(lines) + "</script>"
+    return "".join(lines)
+
+
+def bootstrap_script(state: DashboardState, prefix: str) -> str:
+    """The inline ``<script>`` element (its hash is in the index's CSP, ``index_csp``)."""
+    return "<script>" + bootstrap_body(state, prefix) + "</script>"
+
+
+def index_csp(script_body: str) -> str:
+    """The index answer's policy: no framing, and scripts only from this origin plus the one
+    bootstrap script, by its SHA-256 (SEC-18); no plugins, no foreign ``<base>``."""
+    digest = base64.b64encode(hashlib.sha256(script_body.encode("utf-8")).digest()).decode()
+    return (
+        f"{FRAME_GUARD['content-security-policy']}; script-src 'self' 'sha256-{digest}'; "
+        "object-src 'none'; base-uri 'self'"
+    )
 
 
 def theme_css(theme: str) -> str:
@@ -197,9 +220,11 @@ def _index(state: DashboardState, bundle: SpaBundle, request: Request) -> Respon
         return _not_built("index.html")
     prefix = request_prefix(request.scope)
     text = rewrite_index_html(text, prefix)
-    head = theme_css(state.theme) + bootstrap_script(state, prefix)
+    body = bootstrap_body(state, prefix)
+    head = theme_css(state.theme) + "<script>" + body + "</script>"
     text = text.replace("</head>", head + "</head>", 1) if "</head>" in text else head + text
-    return HTMLResponse(text, headers={"cache-control": NO_STORE, **FRAME_GUARD})
+    headers = {"cache-control": NO_STORE, **FRAME_GUARD, "content-security-policy": index_csp(body)}
+    return HTMLResponse(text, headers=headers)
 
 
 def mount_spa(app: FastAPI, state: DashboardState) -> None:

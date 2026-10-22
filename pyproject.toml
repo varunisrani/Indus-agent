@@ -66,7 +66,7 @@ discord = ["discord.py==2.7.1"]
 discord-voice = ["discord.py[voice]==2.7.1"]
 # Slack Socket Mode adapter (P15-35; MIT, MIT, Apache-2.0 AND MIT). Bolt's async app and Socket Mode
 # handler import aiohttp, which slack-sdk lists only as an optional extra. Imported lazily only.
-slack = ["slack-bolt==1.30.0", "slack-sdk==3.44.1", "aiohttp==3.14.3"]
+slack = ["slack-bolt==1.30.0", "slack-sdk==3.44.1", "aiohttp==3.14.4"]
 # Event socket of the Mattermost adapter (P16-08; MIT, needs wsproto MIT; both already locked through
 # the daytona extra). REST and Matrix (P16-06) use httpx only. Imported lazily by the adapter.
 mattermost = ["httpx-ws==0.9.0"]
@@ -137,7 +137,7 @@ acp = ["agent-client-protocol==0.12.1"]
 # libraries) stay opt-in. Kept equal to the union of its member extras by
 # tests/unit/packaging/test_metadata.py.
 messaging = [
-    "aiohttp==3.14.3",
+    "aiohttp==3.14.4",
     "coincurve==21.0.0",
     "cryptography==50.0.2",
     "discord.py==2.7.1",
@@ -149,7 +149,7 @@ messaging = [
 # pins guard accepts only exact pins, so the union is written out; the same test keeps it equal.
 all = [
     "agent-client-protocol==0.12.1",
-    "aiohttp==3.14.3",
+    "aiohttp==3.14.4",
     "coincurve==21.0.0",
     "cryptography==50.0.2",
     "ddgs==9.16.0",
@@ -211,7 +211,12 @@ artifacts = ["src/indus/web/static/", "src/indus/_tui_dist/"]
 [tool.uv]
 # 14-day age window (D-16.52): nothing uploaded after this instant is locked. Checked against
 # tooling/checks/pins_meta.json lock_date by the pins guard; bump both together.
-exclude-newer = "2026-10-04T00:00:00Z"
+exclude-newer = "2026-10-08T00:00:00Z"
+# W46 (RM8): discord.py 2.7.1, the newest release, still caps its `voice` extra at PyNaCl <1.6; 1.5.0
+# carries GHSA-mrfv-m5wm-5w6w, fixed in 1.6.2 (Apache-2.0, uploaded 2026-01-01). The override lifts
+# the cap to that one exact release; the discord voice tests run against it. Drop it once discord.py
+# allows 1.6.
+override-dependencies = ["pynacl==1.6.2"]
 
 [tool.ruff]
 line-length = 100

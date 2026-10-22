@@ -96,13 +96,19 @@ def standard_gates(
     *,
     host_for: HostFor,
     pre_verify: PreVerifyHook | None = None,
-    checker: Callable[[], EditDiagnostics | None] = diagnostics.active,
+    checker: Callable[[], EditDiagnostics | None] | None = None,
 ) -> StopGates:
-    """The LSP gate, verify-on-stop and (with a hook) the ``pre_verify`` gate, in that order."""
+    """The LSP gate, verify-on-stop and (with a hook) the ``pre_verify`` gate, in that order.
+    The LSP gate asks the checker of ``scope``'s own tier (SEC-14) unless ``checker`` is given."""
+    key = diagnostics.tier_key(scope)
+
+    def own_tier() -> EditDiagnostics | None:
+        return diagnostics.active(key)
+
     timeout = _setting(scope, "verify.phase_timeout")
     gates = StopGates(
         [
-            LspStopGate(checker),
+            LspStopGate(checker or own_tier),
             VerifyOnStopGate(
                 host_for,
                 enabled=lambda: _setting(scope, "verify.on_stop") is True,

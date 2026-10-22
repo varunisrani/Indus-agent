@@ -45,6 +45,7 @@ import httpx
 
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters._http import (
     BadPayload,
     CallbackListener,
@@ -506,7 +507,7 @@ class WhatsAppCloudAdapter(Adapter):
             chat_name=name,
             user_id=sender,
             user_name=name,
-            user_id_alt=f"+{sender}" if sender.isdigit() else None,
+            user_id_alt=f"+{sender}" if is_digits(sender) else None,
         )
         reply_to = str(context.get("id") or "").strip() or None
         quoted_from = _digits(context.get("from"))

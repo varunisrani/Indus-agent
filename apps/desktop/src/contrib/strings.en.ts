@@ -1,4 +1,5 @@
-// English strings of the desktop plugin inventory (P24-32 wiring): Settings › Advanced › Plugins.
+// English strings of the desktop plugin inventory (P24-32 wiring): Settings › Advanced › Plugins,
+// and of the shell's other contribution consumers (command palette, title bar).
 // Spread into `src/i18n/en.ts`.
 
 export const PLUGIN_STRINGS = {
@@ -19,4 +20,11 @@ export const PLUGIN_STRINGS = {
   "plugins.enable": "Use {name}",
   "plugins.on": "On",
   "plugins.reason": "Why: {reason}",
+  "plugins.pane": "Plugins",
+  "palette.label": "Commands",
+  "palette.search": "Type a command",
+  "palette.empty": "No command matches.",
+  "palette.close": "Close the command list",
+  "palette.goTo": "Go to {page}",
+  "titleBar.label": "Plugin items",
 } as const;

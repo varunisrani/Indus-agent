@@ -94,3 +94,30 @@ and `checksums.json`, xvfb): see LEAD-NOTES "P25 wave 43 landing notes (integrat
 `auth-gates.spec.ts` ran in the web lane with `CI=true`. The observations above are finding SEC-18
 of the threat model (open, small follow-ups); the framing fix is SEC-16 / D-16.906, the suites
 D-16.907.
+
+## Wave 45 (S45 — SEC-18, D-16.972 – D-16.975)
+
+Status: done (2026-10-22): the four observations above are fixed. Read: no reference file.
+
+- `IpcRegistry.seal()`: a sync channel left without a handler now runs the sender check before
+  answering `not-available` (as invoke channels already did). Test: `audit.test.ts` "channels left
+  to seal() refuse every foreign frame too (SEC-18)" (fails on the old registry, 9 cases).
+- Gated CSRF without `Origin` (`web.auth.gate.same_site_request`): an unsafe method needs a
+  same-origin `Origin`; without one, a same-origin `Referer`; with neither it is refused 403
+  `forbidden_origin`. The one non-browser credential gated mode documents and takes is the
+  service bearer on its opted-in routes (`INDUS_DASHBOARD_DRAIN_SECRET`, `auth.service_bearer`),
+  decided by `BearerSeam` before this check, so it is unaffected; the session token is refused in
+  gated mode anyway. The dashboard test client now sends the page's `Origin` like a browser
+  (`build(browser=False)` sends none).
+- Cookies (`web.auth.cookies.read`): over https only `__Host-` (first) and `__Secure-` (proxy
+  prefix) names are read, never the plain name; over http every variant as before.
+- SPA script CSP (`web.spa.index_csp`): the index answer carries `frame-ancestors 'none';
+  script-src 'self' 'sha256-<bootstrap>'; object-src 'none'; base-uri 'self'`, the hash computed
+  per answer over the exact bootstrap text (its globals differ by prefix and mode). The bootstrap
+  stays inline on purpose: an external script URL holding the loopback session token could be
+  pulled in by any page's `<script src>` and read.
+
+Tests: `tests/security/test_trust_boundaries.py::test_web_gated_unsafe_request_needs_its_own_origin_or_referer`,
+`::test_web_https_session_cookie_only_under_its_prefixed_name`,
+`::test_web_dashboard_scripts_only_from_its_origin_and_the_hashed_bootstrap` (each fails on the old
+code), `tests/unit/web/auth/test_cookies.py`, `tests/unit/web/test_spa.py`.

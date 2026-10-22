@@ -86,6 +86,7 @@ JOB_LANES: dict[str, frozenset[str]] = {
     "desktop-win": frozenset({"desktop-win"}),
     "desktop-linux": frozenset({"desktop-linux"}),
     "upgrade": frozenset({"upgrade"}),
+    "web-pages": frozenset(),
     "upload": frozenset(),
 }
 """``release.yml`` job → the lanes that must all be on for it to run (none: it always runs)."""

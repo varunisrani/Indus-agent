@@ -199,3 +199,27 @@ there / a compressed-away session), in the discard's transaction. Wired: `recove
 discard (`MessagingHost.discard`): that transcript already ends with the stored final. The WS
 endpoint is reached end to end by the CLI, a second client and the TS client in
 `tests/integration/cli/test_attach_daemon.py`.
+
+## Wave 46 (RS6: a lost turn whose reply was saved)
+
+Read: none from the reference (follow-up from LEAD-NOTES "P23 wave 36", landing on P20).
+
+- Cause: boot recovery settled an `unknown` admission whose stored final was there only for
+  sessions with a chat route (`_pause_unknown` skipped routeless sessions). A TUI/desktop/CLI
+  session whose daemon died after the reply was streamed and saved, before the admission's
+  terminal write, therefore stayed `unknown` and its surfaces showed "a turn was lost" + Discard.
+- Now a routeless session's unknown admission is discarded at boot (no note appended, nothing
+  sent; `RecoveryReport.saved_turns`) when `_turn_saved` proves the reply was this turn's: an
+  active user message written at or after the admission, and the transcript ends with a final
+  assistant reply written after it. A reply of an earlier turn (the prompt predates the admission,
+  e.g. a queued input that was claimed and died before its prompt was written) is no proof: the row
+  stays `unknown` for the person to discard. Chat-routed sessions keep the existing rule.
+- Test: `tests/integration/gateway/test_messaging_on_shared_host.py::
+  test_a_routeless_lost_turn_whose_reply_was_saved_is_not_shown_as_lost` (saved → discarded,
+  transcript unchanged, no model call, nothing sent; unproven → still `unknown`). Fail-first on
+  main: the saved row stays `unknown` (and the report has no `saved_turns`).
+
+### Decisions for the lead
+- W46-f-2 (D-16.1009): proof is timestamps (`created_at` vs message timestamps, the same clock), as the
+  existing routed rule uses. The admission's claim time is overwritten by the epoch flip, so the
+  admission time is the bound. A per-turn id on stored messages would be exact (follow-up).

@@ -217,7 +217,9 @@ def test_manual_approval_denied_spawns_nothing(tmp_path: Path) -> None:
     registry, seen = fake_tools(tmp_path)
     broker = FakeBroker(_clock(), default=Reply(choice="deny", reason="not now"))
     marker = tmp_path / "ran.txt"
-    code = f"open({str(marker)!r}, 'w').write('ran')\n"
+    # The long path sits on a line of its own: the approval text may wrap or shorten a long line
+    # (any base temp folder), so the check reads the short line that does the work (W46 RS11).
+    code = f"target = {str(marker)!r}\nopen(target, 'w').write('ran')\n"
     result = run(
         call(
             ExecuteCodeTool(),
@@ -234,7 +236,8 @@ def test_manual_approval_denied_spawns_nothing(tmp_path: Path) -> None:
     assert not marker.exists() and staged(tmp_path) == [] and seen == []
     (request,) = broker.requests
     assert request.kind == "approval"
-    assert "INDUS_SCRIPT" in request.command and str(marker) in request.command
+    assert "INDUS_SCRIPT" in request.command
+    assert "\nopen(target, 'w').write('ran')\n" in request.command
     assert [c.value for c in request.choices] == ["once", "session", "deny"]
 
 

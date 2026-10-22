@@ -21,6 +21,7 @@ from indus.foundation.secrets import open_secret_store
 from tests import platform_marks, self_chat_guard
 from tests.fakes.clock import FakeClock
 from tests.fakes.model import Script, load_script
+from tests.short_paths import short_dir
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -80,6 +81,13 @@ def scope(isolated_home: Path, fake_clock: FakeClock) -> Scope:
     env = EnvView.from_process().with_overlay({"INDUS_HOME": str(home)})
     scope = make_scope(home, env=env, clock=fake_clock)
     return scope.with_secrets(open_secret_store(home, scope.profile_id, mode="file"))
+
+
+@pytest.fixture
+def short_tmp() -> Iterator[Path]:
+    """A private folder with a short path, for Unix sockets (``tests.short_paths``)."""
+    with short_dir() as path:
+        yield path
 
 
 @pytest.fixture
@@ -185,5 +193,5 @@ def no_language_servers(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     monkeypatch.setattr(lsp_host, "settings_for", lambda _scope: LspSettings(enabled=False))
     yield
-    lsp_host._TIER.clear()  # pyright: ignore[reportPrivateUsage]
+    lsp_host._TIERS.clear()  # pyright: ignore[reportPrivateUsage]
     diagnostics.install_active(None)

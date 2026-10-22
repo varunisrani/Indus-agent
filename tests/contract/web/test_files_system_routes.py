@@ -22,6 +22,7 @@ from indus.web.auth.basic import hash_password
 from indus.web.auth.download_ticket import DOWNLOAD_TICKET_TTL_S, DownloadTickets
 from indus.web.routes import files, system
 from tests.contract.web.rest_app import (
+    BASE_URL,
     RestApp,
     build_rest_app,
     pause,
@@ -291,6 +292,7 @@ def test_gated_mode_wants_the_cookie_and_the_ticket(scope: Scope, tree: Path) ->
     built = build_rest_app(env_scope, options=AppOptions(host="0.0.0.0", config=config))
     try:
         browser = built.anonymous()
+        browser.headers["origin"] = BASE_URL  # a browser names its page (gated CSRF, SEC-18)
         login = {"username": "admin", "password": "correct horse"}
         assert browser.post("/auth/password-login", json=login).status_code == 200
         minted = browser.post("/api/files/download-ticket", json={"path": "docs/a.txt"})

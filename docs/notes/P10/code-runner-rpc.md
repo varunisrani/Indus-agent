@@ -117,3 +117,24 @@ tests `tests/unit/tools/builtin/code/{_rig,conftest,test_rpc,test_runner}.py`. S
 `code_execution` and `test_schema`, `tests/unit/cli/setup/test_wizard.py` (the core bundle answer now
 includes `code_execution`), tool-array goldens regenerated once for the new toolset (`execute_code`
 joins the cli, cron, api_server and acp arrays; prompt text unchanged).
+
+## Wave 46 (builder g): tests that survive a long base temp (release checklist RS11)
+
+Read: none from the reference (test hygiene only).
+
+- `tests/short_paths.py`: `short_dir(prefix)` makes a fresh owner-only folder directly under `/tmp`
+  (system temp folder where there is no `/tmp`) and removes it afterwards; `tests/conftest.py`
+  exposes it as the `short_tmp` fixture. Socket tests use it instead of `tmp_path`:
+  `test_rpc.py::test_long_socket_path_moves_to_a_short_private_dir` (the product's short dir now
+  lands in `short_tmp`, which stays short under any `--basetemp`),
+  `test_watchdogs.py::test_sd_notify_datagrams`, and the two `short_home` fixtures in
+  `test_control_socket.py` / `test_attach_verbs.py` (same behaviour, one helper).
+- `test_runner.py::test_manual_approval_denied_spawns_nothing` asserted the full marker path in the
+  approval text; the approval display wraps and shortens a long line, so a long base temp failed
+  it. The script now names the path on a line of its own and the test checks the short line that
+  writes the file.
+- Checked: those five files under `--basetemp` of 140 bytes: 122 passed, 1 skipped (both named
+  tests failed before). A full-suite sweep for other socket tests under a long base temp was not
+  run (time box); `tests/contract/mcp_serve` and `tests/integration/gateway` sockets live in the
+  profile home, whose long-path pointer file the product already handles (ran green above for
+  `test_daemon_start.py` and `test_gateway_e2e.py`).

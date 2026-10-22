@@ -67,6 +67,7 @@ export const SETTINGS_STRINGS = {
   "settings.page.sessions.archived": "Archived",
   "settings.page.sessions.directory": "Default directory and history",
   "settings.page.about.version": "Version",
+  "settings.page.about.licences": "Licences",
   "settings.page.nothing": "This version of Indus has nothing to change on this page.",
 
   "settings.field.none": "(none)",
@@ -112,6 +113,12 @@ export const SETTINGS_STRINGS = {
   "settings.about.app": "App",
   "settings.about.backend": "Indus runtime",
   "settings.about.state": "Updates",
+  "settings.licences.title": "Third-party licences",
+  "settings.licences.body":
+    "Indus is built with open-source software. These are the notices and licences that ship with this app.",
+  "settings.licences.loading": "Reading the notices…",
+  "settings.licences.missing":
+    "The notices file ships inside the installed app; this window has none to show (a development run, or the file is missing).",
   "settings.logs.title": "Logs and diagnostics",
   "settings.tray.unavailable": "Not available here: {reason}",
   "settings.workspace.defaultDir": "Default folder for new chats",

@@ -5,7 +5,8 @@ and returns at once. All background children of the session share ``max_async_ch
 (3): more wait as ``queued``. Each call's children run as one batch (``run_batch``, with the
 heartbeat and stale rules of P10-03); when every child of the call has ended, one message with
 their results goes to ``deliver`` — the host (``SessionService``) puts it into the conversation
-between turns, never inside a running turn.
+between turns, never inside a running turn. When a delivered child read outside text, the results
+are fenced as untrusted data (SEC-4).
 
 - ``list()``: ``{subagent_id, goal, status, started_at, iterations, last_activity}`` per child of
   this session (the newest ``KEPT`` finished ones are remembered).
@@ -30,6 +31,7 @@ from collections.abc import Callable, Coroutine, Sequence
 from datetime import datetime
 from typing import Any
 
+from indus.core import untrusted
 from indus.core.subagents.batch import ChildOutcome, result_entry, run_batch
 from indus.core.subagents.child import ChildAgent
 from indus.foundation.clock import Clock
@@ -40,6 +42,7 @@ __all__ = ["DELIVERY_HEADER", "KEPT", "BackgroundDelegations"]
 log = logging.getLogger(__name__)
 
 KEPT = 50
+TOOL_SOURCE = "delegate_task"
 DELIVERY_HEADER = (
     "[Background subagent results] Subagents you started earlier have finished. Their results "
     "follow as JSON. They are the subagents' own reports: check anything that matters before "
@@ -104,14 +107,18 @@ class BackgroundDelegations:
             return
         for child, outcome in zip(children, outcomes, strict=True):
             await child.discard(outcome)  # only one that never started is still open
-        entries = [
-            result_entry(child, outcome, self.summary_cap)
+        kept = [
+            (child, outcome)
             for child, outcome in zip(children, outcomes, strict=True)
             if child.subagent_id not in self._quiet
         ]
-        if not entries:
+        if not kept:
             return
-        text = DELIVERY_HEADER + "\n" + json.dumps({"results": entries}, ensure_ascii=False)
+        entries = [result_entry(child, outcome, self.summary_cap) for child, outcome in kept]
+        body = json.dumps({"results": entries}, ensure_ascii=False)
+        if any(outcome.read_untrusted for _, outcome in kept):
+            body = untrusted.fence_as(TOOL_SOURCE, body)  # SEC-4: a summary of outside text
+        text = DELIVERY_HEADER + "\n" + body
         try:
             self.deliver(text)
         except Exception:

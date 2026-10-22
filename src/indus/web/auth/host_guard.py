@@ -30,6 +30,8 @@ from urllib.parse import urlsplit
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from indus.foundation.digits import is_digits
+
 __all__ = [
     "ALL_INTERFACES",
     "LOOPBACK_HOSTS",
@@ -66,7 +68,7 @@ def host_of_authority(value: object) -> str:
     if text.count(":") > 1:
         return ""
     host, colon, port = text.partition(":")
-    if colon and not (port.isdigit() and 0 < len(port) <= 5):
+    if colon and not is_digits(port, max_len=5):
         return ""
     return host.lower() if host else ""
 

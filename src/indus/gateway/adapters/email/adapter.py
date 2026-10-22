@@ -49,6 +49,7 @@ from urllib.parse import quote, unquote
 
 from indus.foundation.blocking import BlockingPool, run_blocking
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import (
     REPLY_TO_KEY,
     Adapter,
@@ -668,7 +669,7 @@ class EmailAdapter(Adapter):
     def _trim_seen(self) -> None:
         if len(self._seen) <= SEEN_MAX:
             return
-        ordered = sorted(self._seen, key=lambda u: int(u) if u.isdigit() else -1)
+        ordered = sorted(self._seen, key=lambda u: int(u) if is_digits(u) else -1)
         self._seen = set(ordered[-(SEEN_MAX // 2) :])
 
     def _mailbox_key(self) -> tuple[str, str]:

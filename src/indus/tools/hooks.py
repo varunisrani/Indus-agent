@@ -1,7 +1,8 @@
 """The ``ToolHooks`` seam around every dispatched call.
 
-Three points: ``before`` may block a call or replace its arguments, ``after`` observes the result,
-``transform`` may replace it. The default ``NO_HOOKS`` does nothing.
+Three points: ``before`` may block a call or replace its arguments, ``after`` observes the result
+(a blocked call's too, with error type ``blocked``), ``transform`` may replace it. The default
+``NO_HOOKS`` does nothing.
 
 Failure policy:
 - the empty seam (``hooks.empty`` true) is fail-open: if even the no-op raises, the tool still runs;
@@ -24,6 +25,10 @@ from typing import Any, Protocol
 from indus.tools.calls import ToolCall, ToolContext, ToolResult
 
 log = logging.getLogger(__name__)
+
+# The error type of a call that ``before`` refused. ``dispatch`` still hands that call to ``after``
+# (zero duration) so observers see it, and never to ``transform``.
+BLOCKED = "blocked"
 
 
 @dataclass(frozen=True)

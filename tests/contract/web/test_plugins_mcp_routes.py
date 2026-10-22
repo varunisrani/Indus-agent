@@ -247,6 +247,26 @@ def test_mcp_add_list_toggle_delete(rest: RestApp, scope: Scope) -> None:
     assert rest.client.delete("/api/mcp/servers/fake").status_code == 404
 
 
+def test_mcp_add_suggests_the_jobs_waiting_for_the_server(rest: RestApp, scope: Scope) -> None:
+    """Wave 45 (D-16.981): a skill blueprint waiting for this server becomes a suggestion."""
+    from indus.cron.suggestions import SuggestionStore
+
+    folder = scope.home / "skills" / "watch"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: watch\ndescription: d\n"
+        'blueprint: {key: files, title: Watch files, schedule: "every 240m", '
+        'prompt: "Check the files.", integrations: ["mcp:fake"], slots: []}\n'
+        "---\n\n# watch\n",
+        encoding="utf-8",
+    )
+    assert _add_fake(rest, name="other").status_code == 201
+    assert SuggestionStore(scope).pending() == []
+    assert _add_fake(rest).status_code == 201
+    pending = SuggestionStore(scope).pending()
+    assert [(s.dedup_key, s.source) for s in pending] == [("blueprint:watch:files", "integration")]
+
+
 def test_mcp_add_refuses_bad_shapes_and_literal_secrets(rest: RestApp) -> None:
     secret = "kv-" + "Zq7r" * 8
     both = {"name": "x", "command": "a", "url": REMOTE}

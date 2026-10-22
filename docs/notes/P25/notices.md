@@ -82,3 +82,56 @@ Compare checklist (filled after the rewrite; reopened the reference `LICENSE`):
 ## Status
 
 Done (2026-10-21). See the final report.
+
+## Wave 46 (F-2): the desktop licences screen
+
+Read: no reference file and no Evidence (our own screen over our own notices file).
+
+What it does: Settings → About gains a second page, **Licences** (`view=about&page=licences`, also
+a search hit for "licences", "licenses", "notices", "open source", "third party"), which shows the
+`THIRD_PARTY_NOTICES.md` the packager already puts beside the app (`electron-builder.config.cjs`
+`extraResources`, P25-17) as plain text in a scrolling, keyboard-reachable block.
+
+- Main: `electron/diagnostics.ts` `readNotices(resourcesPath)` reads
+  `<resourcesPath>/THIRD_PARTY_NOTICES.md` (null when not packaged, missing, not a regular file or
+  over 4 MiB; the real file is about 140 KB), answered on the new invoke channel
+  `indus:about:notices` (group `about`, method `notices`, owner `W46`; request `{}`, response
+  `{ text: string | null }`). It goes through the registry like every handler (`check:ipc`), and
+  `src/global.d.ts` is regenerated (`pnpm gen:bridge-types`).
+- Renderer: `src/settings/LicencesPage.tsx` (custom page `about-licences`), the `about` bridge
+  group on `SettingsBridge`. The text is rendered as a React text child inside `<pre>`, never as
+  HTML or Markdown, so nothing in the file can inject markup. A development run (no
+  `resourcesPath`) or an older main without the channel shows a one-line reason instead.
+
+Tests: `electron/diagnostics.test.ts` (reader: null in dev, missing, oversized, a directory; the
+handler answers null unpackaged; the builder config ships the file under the name main reads);
+`src/settings/SettingsOverlay.test.tsx` (the About nav reaches the page and shows the text with
+markup kept as text; no bridge / null text explains why; search "licenses" lands on the row).
+
+### Decisions for the lead
+- W46-d-3 (D-16.1002): the notices are read by main and sent over IPC, not fetched by the renderer from a
+  file URL (the renderer has no file access). The channel lives with diagnostics, which already
+  holds `resourcesPath`, so `main.ts` is unchanged.
+- W46-d-4 (D-16.1003): plain text, not rendered Markdown: the file is long and generated; plain text is safe
+  without a sanitiser and still readable. Rendering it with headings is a later polish.
+
+## Wave 46 (builder g): refresh writes Biome's layout (release checklist RS7)
+
+Read: none from the reference (our own generator; Biome's JSON layout checked against the
+repository's pinned Biome binary).
+
+- Gap: `refresh` wrote `notices_data.json` with `json.dumps(indent=2)`, one array element per line;
+  Biome folds an array onto one line when it fits, so the lint gate failed after every refresh.
+- Now: `dump_json` writes the layout Biome keeps: every non-empty object one key per line (Biome
+  keeps an object expanded when its first key starts a new line), `{}` / `[]` inline, an array of
+  scalars or arrays on one line when that line, its trailing comma counted, fits `lineWidth` 100
+  (`biome.json`), else one element per line, each element judged again at its own indent. Width is
+  counted in code points (Biome counts display width, so East Asian wide characters would differ;
+  none occur in licence data).
+- Checked: 160 generated cases around the width boundary (nested rows, empty containers, objects
+  inside arrays, non-ASCII) came out byte-identical to `biome format`; the committed file
+  round-trips unchanged.
+- Tests: `tests/unit/release/test_notices.py::test_dump_json_*` (three; all failed on the old
+  `dump_json`).
+- Note: `scripts/release/*` is the wave-44 integrator's area; this slice changes only `dump_json` in
+  `notices.py` (wave 44's patch does not touch that file).

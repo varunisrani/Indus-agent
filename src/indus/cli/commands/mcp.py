@@ -6,7 +6,8 @@
 - ``add NAME --command CMD [--arg A ...] [--env K=V ...] | --url URL [--header K=V ...]``
   (``--preset NAME`` fills command or url): validated, probed (connect, list tools) unless
   ``--no-probe``; a failed probe saves the server disabled after a confirmation (without a
-  terminal: saved disabled, with a note);
+  terminal: saved disabled, with a note); a saved server offers the jobs waiting for it as
+  suggestions (wave 45, ``service.integration_offers``), never scheduling one;
 - ``test NAME``: connect once, list tools; exit 0 connected, 1 failed or unknown server; an
   HTTP failure shows the status, URL and the start of the body;
 - ``remove NAME``: drops the entry and its stored OAuth sign-in;
@@ -456,6 +457,11 @@ def add_command(
     if server.auth == "oauth":
         click.echo(f"Sign in with `indus mcp login {name}` before using it.")
     click.echo("Open sessions pick it up after /reload-mcp.")
+    # Jobs that were waiting for this server are suggested, never scheduled (wave 45).
+    from indus.service import integration_offers
+
+    for line in integration_offers.notice_lines(integration_offers.connected(scope, "mcp", name)):
+        click.echo(line)
 
 
 @mcp_group.command("test")

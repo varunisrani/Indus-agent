@@ -119,3 +119,70 @@ Compare checklist (filled after the rewrite; reopened `web/vite.config.ts`,
 Done (2026-10-20). Shared edits as listed under Files.
 
 Integration (wave 32, P18c integrator, 2026-10-21): decisions numbered D-16.655; the real `indus dashboard` serving the checkout's `apps/web/dist` is exercised by every spec in `apps/web/e2e`.
+
+## Wave 46 (builder k, 2026-10-22): F-3 prebuilt pages for a script install
+
+Read: no reference file (F-3 is our own release gap, rehearsal log §5; the reference builds on first
+launch, which needs Node and pnpm). Files: `src/indus/web/bundle.py` (`fetch_release`,
+`origin_slug`, `missing_pages_hint`, `python -m indus.web.bundle fetch`), `src/indus/web/command.py`
+(`_maybe_build` message), `scripts/install/sh/20-runtime.sh` (`ins_web_pages`, rebuilt
+`scripts/install.sh`), tests `tests/unit/web/test_bundle_fetch.py`,
+`tests/integration/install/test_install_sh_runtime.py` (products cases).
+
+Where the pages are built: by the release workflow, once per release, from the tagged commit; the
+script install downloads them. The trust chain starts at what the checkout already holds: HEAD's
+newest release tag → its annotated record's `manifest_sha256` → the release's `manifest.json`
+(digest equal) → `indus-web-<version>.tar.gz` (digest from the manifest) → unpacked with tarfile's
+`data` filter → `publish` into `src/indus/web/static` (gitignored; `locate()` already falls back to
+it in a checkout when `apps/web/dist` is not built) with a `.indus-release` stamp. HTTPS only (a
+redirect away from HTTPS is refused), manifest capped at 1 MiB, archive at 64 MiB, 60 s per
+download. A tree already stamped with HEAD's release is not downloaded again. Exit 3 = HEAD is on
+no release (a `main` install builds its own pages); the installer then prints the pnpm command; any
+other failure is a warning, never a failed install (the API still works).
+
+Dashboard message without pages and without pnpm: "No prebuilt pages for this checkout, and pnpm
+is not on PATH. On a release, run `python -m indus.web.bundle fetch` ... otherwise install Node.js
+and pnpm and run `pnpm install && pnpm --filter @indus/web build` in <checkout>."
+
+What `.github/workflows/release.yml` must add (wave-44 integrator owns it; not edited here):
+1. in the job that fills the upload directory (before `publish.py upload`): `pnpm install
+   --frozen-lockfile`, `pnpm --filter @indus/web build`, then
+   `tar -C apps/web/dist -czf <upload-dir>/indus-web-${VERSION}.tar.gz .` (index.html at the
+   archive root; `${VERSION}` without the `v`). `publish.py upload` then lists it in
+   `manifest.json`, whose digest the release tag records: nothing else changes in publish.py;
+2. the artefact check (tooling `test_artifacts` / reference-host scan) should run on that dist as
+   it does for the CI one;
+3. the rehearsal: a script install of the rehearsal release on a machine without Node shows the
+   pages (`indus dashboard` serves `index.html`).
+
+Decisions for the lead:
+- W46-k-1 (D-16.1016): the pages are fetched by the Python side (`indus.web.bundle fetch`), not by curl in
+  install.sh, so the installer, a manual repair and a later `indus update` share one checked path.
+- W46-k-2 (D-16.1017): the archive is verified through the release tag's `manifest_sha256` (the same record
+  `publish.py` writes), not a checksum file downloaded beside it; a fork's origin slug is used for
+  the download host, the tag record still decides what is accepted.
+- W46-k-5 (D-16.1020): the fetch's two local git reads (tags, origin URL) run with an explicit minimal env
+  (`GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, `LC_ALL=C`; git found on PATH first), so the
+  installer-run module needs no scope and inherits nothing (security_static `inherit_env`).
+- W46-k-3 (D-16.1018): the fetched pages go into the runtime tree `src/indus/web/static`, not `apps/web/dist`,
+  so a developer build still wins and `indus update`'s pnpm rebuild never mistakes them for one.
+
+Follow-ups (not done, time box):
+- `indus update --finish` should refresh the fetched pages for the new release (today they stay
+  at the installed release until the installer is rerun or `python -m indus.web.bundle fetch` is
+  run; the stamp makes the refresh a no-op when nothing changed). The CLI may not import the web
+  layer (D-16.246): run it as `python -m indus.web.bundle fetch` from finish's bundles phase.
+- `install.ps1` has the same gap (Windows script install); mirror `ins_web_pages`.
+
+Integration (waves 45 + 46 integrator, 2026-10-22): the release side is a separate job,
+`web-pages`, not steps in `upload`: `upload` checks out the default branch and runs only the
+release scripts (pinned by `test_script_jobs_never_build_the_default_branch`; R10.24), so the
+pages are built from the admitted commit in their own job, which belongs to no lane (it always runs,
+like `upload`; `claims.JOB_LANES["web-pages"] = frozenset()`), packs
+`indus-web-${VERSION}.tar.gz` (`VERSION` = admit's `version`, no `v`), sweeps `apps/web/dist` and
+the tarball with `tooling.checks artifacts --require-ref`, and keeps the tarball as the `web-pages`
+workflow artefact; `upload` collects it beside the desktop artefacts and the installers, so
+`publish.py upload` lists it in `manifest.json`. The gate needs the job. Pinned by
+`tests/unit/ci/test_release_workflow.py::test_every_release_carries_the_dashboard_pages`; the
+rehearsal row is in `docs/internals/rehearsal-log.md` §4. Decision D-16.1022.
+- Optional: `locate()` could treat stamped pages of another release as stale.

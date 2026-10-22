@@ -10,7 +10,9 @@
 All are HttpOnly with ``Path`` = the proxy prefix (or ``/``), and ``Secure`` whenever the request
 arrived over HTTPS (``scope["scheme"]`` after trusted forwarding, ``auth.proxy``). Over HTTPS the
 name carries a cookie prefix: ``__Host-`` at the root path, ``__Secure-`` under a proxy prefix
-(``__Host-`` requires ``Path=/``). Readers try every variant; logout clears every variant.
+(``__Host-`` requires ``Path=/``). Over HTTPS readers take only the prefixed names, ``__Host-``
+first (SEC-18: a plain-named cookie there may have been planted over plain HTTP or by a sibling
+host); over HTTP they try every variant, most strict first. Logout clears every variant.
 
 The PKCE payload is base64url(JSON) without padding, which needs no cookie quoting.
 """
@@ -61,6 +63,7 @@ PKCE_MAX_AGE: Final = 10 * 60
 SSO_ATTEMPT_MAX_AGE: Final = 60
 MIN_AT_MAX_AGE: Final = 60
 _VARIANTS: Final = ("__Host-", "__Secure-", "")
+_HTTPS_VARIANTS: Final = ("__Host-", "__Secure-")
 _B64URL: Final = re.compile(r"^[A-Za-z0-9_-]{1,8192}$")
 
 type SameSite = Literal["lax", "strict", "none"]
@@ -179,8 +182,9 @@ def clear_sso_attempt(response: Response, *, prefix: str) -> None:
 
 
 def read(connection: HTTPConnection, bare: str) -> str | None:
-    """The first non-empty value among the name variants, most strict first."""
-    for variant in _VARIANTS:
+    """The first non-empty value among the name variants, most strict first; over HTTPS the
+    unprefixed name is never read (module notes)."""
+    for variant in _HTTPS_VARIANTS if is_https(connection) else _VARIANTS:
         value = connection.cookies.get(f"{variant}{bare}")
         if value:
             return value

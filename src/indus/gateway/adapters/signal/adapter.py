@@ -42,6 +42,7 @@ from urllib.parse import quote, unquote, urlparse
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import (
     REPLY_TO_KEY,
     Adapter,
@@ -815,7 +816,7 @@ class SignalAdapter(Adapter):
         response = await client.post(self._url("/api/v1/rpc"), json=payload, timeout=timeout)
         if response.status_code == 429:
             raw = response.headers.get("retry-after", "")
-            wait = float(raw) if raw.replace(".", "", 1).isdigit() else DEFAULT_REFILL
+            wait = float(raw) if is_digits(raw.replace(".", "", 1)) else DEFAULT_REFILL
             raise SignalRpcError("rate limit: HTTP 429", rate_limited=True, retry_after=wait)
         if response.status_code >= 500:
             raise SignalRpcError(
@@ -903,7 +904,7 @@ class SignalAdapter(Adapter):
         return str(stamp)
 
     def _quote(self, reply_to: str | None) -> dict[str, Any]:
-        if not reply_to or not reply_to.isdigit():
+        if not reply_to or not is_digits(reply_to):
             return {}
         if reply_to in self._sent:
             return {"quoteTimestamp": int(reply_to), "quoteAuthor": self.account}

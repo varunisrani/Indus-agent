@@ -42,6 +42,7 @@ import httpx
 
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters._http import (
     CallbackListener,
     CallbackRequest,
@@ -871,7 +872,7 @@ class FeishuAdapter(Adapter):
             metadata["mentioned"] = True
         when = None
         created = str(message.get("create_time") or "")
-        if created.isdigit():
+        if is_digits(created):
             when = datetime.fromtimestamp(int(created) / 1000, UTC)
         user_name = await self._user_name(open_id) if not is_bot else None
         chat_name = await self._chat_name(chat_id) if chat_type != "dm" else user_name

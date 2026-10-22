@@ -16,7 +16,9 @@ last-added first):
    header on every ``/api`` path outside the shared public list (``auth.public_paths``), the
    ticket routes (``TICKET_PATHS``) handed to their own ticket check; gated: a verified session
    cookie (renewed through the provider's refresh token when it expired), the session token
-   refused even when presented, and an unsafe-method ``Origin`` that is not ours refused (403);
+   refused even when presented, and an unsafe method refused (403) unless its ``Origin`` is ours
+   — or, with no ``Origin``, its ``Referer`` is; with neither it is refused (SEC-18:
+   ``same_site_request``; service-bearer routes are decided earlier, by ``BearerSeam``);
 4. ``PluginRouteGate`` — dashboard plugin API routes (``/api/ext/<name>/…``) only after auth, so
    an unauthenticated caller gets 401 and never a 404 that names installed plugins;
 5. ``HostGuard`` (``auth.host_guard``) — DNS rebinding;
@@ -42,6 +44,7 @@ from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from indus.foundation.digits import is_digits
 from indus.web.auth import cookies
 from indus.web.auth.audit import AuditEvent, AuditLog
 from indus.web.auth.host_guard import LOOPBACK_HOSTS, HostRules, host_of_authority, scope_headers
@@ -79,6 +82,7 @@ __all__ = [
     "refusal",
     "request_prefix",
     "safe_next",
+    "same_site_request",
     "describe_mode",
     "session_of",
 ]
@@ -129,6 +133,19 @@ def same_origin(origin: str, host_header: str, rules: HostRules) -> bool:
     if host_of_authority(netloc) in rules.public_hosts:
         return True
     return bool(host_header) and netloc == host_header.strip().lower()
+
+
+def same_site_request(headers: Mapping[str, str], rules: HostRules) -> bool:
+    """The gated CSRF rule for an unsafe method (SEC-18): its ``Origin`` passes ``same_origin``;
+    without one, its ``Referer`` does; with neither it is refused. The only non-browser
+    credential gated mode takes, a service bearer on its opted-in routes (``auth.service_bearer``),
+    is decided before this check and never reaches it."""
+    host = headers.get("host", "")
+    origin = headers.get("origin")
+    if origin is not None:
+        return same_origin(origin, host, rules)
+    referer = headers.get("referer")
+    return bool(referer) and same_origin(referer or "", host, rules)
 
 
 def refusal(registry: ProviderRegistry) -> list[str]:
@@ -302,12 +319,7 @@ class LoginGate:
                 send,
             )
             return
-        origin = headers.get("origin")
-        if (
-            scope.get("method", "GET") in _UNSAFE
-            and origin is not None
-            and not same_origin(origin, headers.get("host", ""), self.ctx.rules)
-        ):
+        if scope.get("method", "GET") in _UNSAFE and not same_site_request(headers, self.ctx.rules):
             await _send_response(
                 JSONResponse(
                     {"error": "forbidden_origin", "detail": "Cross-site request refused."},
@@ -501,7 +513,7 @@ class AuthBodyLimit:
             {"error": "too_large", "detail": "The request body is too large."}, status_code=413
         )
         length = scope_headers(scope).get("content-length", "")
-        if length.isdigit() and int(length) > self.limit:
+        if is_digits(length) and int(length) > self.limit:
             await too_large(scope, receive, send)
             return
         seen = 0

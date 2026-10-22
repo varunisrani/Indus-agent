@@ -37,6 +37,7 @@ from typing import Any
 from starlette.requests import Request
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 
 __all__ = [
     "BIND_ATTEMPTS",
@@ -191,7 +192,7 @@ class BodyTooLarge(Exception):
 async def read_body(request: Request, limit: int) -> bytes:
     """The request body, refused with ``BodyTooLarge`` once more than ``limit`` bytes arrive."""
     declared = request.headers.get("content-length")
-    if declared is not None and declared.strip().isdigit() and int(declared) > limit:
+    if declared is not None and is_digits(declared.strip()) and int(declared) > limit:
         raise BodyTooLarge(limit)
     chunks: list[bytes] = []
     size = 0
@@ -362,7 +363,7 @@ class LengthGate:
             declared = _header(scope, b"content-length")
             if declared is not None:
                 text = declared.strip()
-                if not text.isdigit():
+                if not is_digits(text):
                     await send_json(send, 400, self.body(-1))
                     return
                 if int(text) > self.limit:

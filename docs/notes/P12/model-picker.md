@@ -74,3 +74,29 @@ Compare checklist (filled after the rewrite; reopened `modelPicker.tsx`):
 ## Status
 
 Done (2026-10-19). Bridge follow-ups listed above.
+
+## Wave 46 (RS4: a custom endpoint's models in the picker)
+
+Read: none from the reference (a product observation from the P25 parity pass,
+`docs/notes/P25/parity-compare.md`); our own `providers/model_list.py`, `cli/model_picker.py`.
+
+- Cause: the TUI's `rowOf` already read an optional `models` list on each provider row, but
+  `ProviderOption` had no such field and `model.options` never filled one, so every provider
+  showed "this provider lists no models".
+- `ProviderOption.models: list[str]` (default empty; TS regenerated, optional). `model.options`
+  fills it for the **current** provider only, and only when its profile is a custom or local
+  endpoint (`profile.is_custom`, listing supported): the session's own route and HTTP client when a
+  session is named, else the resolved route with a short-lived client. The list comes from
+  `model_list.list_models` with the profile scope, so it shares setup's per-base-URL cache
+  (`<home>/cache/model_lists.json`, `model_catalog.ttl_minutes`); any failure leaves the list empty
+  and the picker keeps its "type a model id" row. `rowOf` reads the typed field.
+- Tests: `tests/unit/tui_bridge/test_model_options_listing.py` (six listed ids reach the custom
+  row, one GET; a 503 leaves it empty; a vendor provider is never asked). Fail-first: on main the
+  rows have no `models` field. Vitest pickers suite unchanged and green.
+
+### Decisions for the lead
+- W46-f-1 (D-16.1008): only the current custom/local provider is listed live. Listing every local server
+  (Ollama, LM Studio) or vendor catalogue on each `/model` would cost up to the 10 s list timeout
+  per unreachable server; vendors keep the typed id (setup's curated aliases are not sent yet).
+  Follow-up if wanted: send `profile.model_aliases` for vendor rows, and list a non-current
+  custom provider once it is picked (needs a per-provider `model.options` call).

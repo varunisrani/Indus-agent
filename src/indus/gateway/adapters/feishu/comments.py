@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
+from indus.foundation.digits import is_digits
 from indus.gateway.core.events import InboundEvent, Source
 from indus.gateway.core.send import SendResult
 from indus.gateway.outbound.chunker import split_message
@@ -100,7 +101,7 @@ def parse_notice(event: Mapping[str, Any]) -> CommentNotice | None:
     receiver = _object(meta.get("to_user_id"))
     when = None
     raw_time = event.get("timestamp") or meta.get("timestamp")
-    if isinstance(raw_time, str) and raw_time.isdigit():
+    if isinstance(raw_time, str) and is_digits(raw_time):
         raw_time = int(raw_time)
     if isinstance(raw_time, int) and raw_time > 0:
         seconds = raw_time / 1000 if raw_time > 10**11 else raw_time

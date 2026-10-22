@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Final, cast
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import parse_digits
 from indus.foundation.scope import Scope
 from indus.gateway.adapters._http import (
     CallbackListener,
@@ -439,7 +440,7 @@ class A2AAdapter(Adapter):
     def _list(self, peer: str, params: Mapping[str, Any]) -> dict[str, Any]:
         size, token = params.get("pageSize"), params.get("pageToken")
         context, state = params.get("contextId"), params.get("status")
-        offset = int(token) if isinstance(token, str) and token.isdigit() else 0
+        offset = parse_digits(token) or 0
         page, following, total = self.tasks.list(
             peer,
             context_id=context if isinstance(context, str) else "",

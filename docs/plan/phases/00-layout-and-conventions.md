@@ -326,11 +326,11 @@ Versions below were checked on 2026-10-18 against the 14-day rule (released on o
 | discord.py | 2.7.1 | 2026-03-03 | MIT | extra `discord` | P15-34 |
 | audioop-lts | 0.2.2 | 2025-08-05 | PSF-2.0 | extra `discord` (via discord.py, Python 3.13+) | P15-34 |
 | discord.py[voice] | 2.7.1 | 2026-03-03 | MIT | extra `discord-voice` (discord.py's own voice extra on the `discord` pin) | P16-35 |
-| PyNaCl | 1.5.0 | 2022-01-07 | Apache-2.0 (bundles libsodium, ISC) | extra `discord-voice` (via discord.py[voice], `<1.6`) | P16-35 |
+| PyNaCl | 1.6.2 | 2026-01-01 | Apache-2.0 (bundles libsodium, ISC) | extra `discord-voice` (via discord.py[voice], whose `<1.6` cap is lifted by `[tool.uv] override-dependencies`, W46 RM8) | P16-35 |
 | davey | 0.1.6 | 2026-06-22 | MIT (wheel metadata classifier) | extra `discord-voice` (via discord.py[voice], `>=0.1.0`; prebuilt wheels for CPython 3.13 / 3.14) | P16-35 |
 | slack-bolt | 1.30.0 | 2026-07-15 | MIT | extra `slack` | P15-35 |
 | slack-sdk | 3.44.1 | 2026-09-03 | MIT | extra `slack` | P15-35 |
-| aiohttp | 3.14.3 | (already locked via modal / daytona) | Apache-2.0 AND MIT | extra `slack` (named: Bolt's async app and Socket Mode handler) | P15-35 |
+| aiohttp | 3.14.4 | 2026-10-05 (W46 RM8 re-lock) | Apache-2.0 AND MIT | extra `slack` (named: Bolt's async app and Socket Mode handler) | P15-35 |
 | httpx-ws | 0.9.0 | (already locked via daytona) | MIT | extras `mattermost`, `dingtalk`, `wecom`, `qqbot`, `feishu`, `simplex`, `buzz` and `yuanbao` (the event sockets, the Feishu / Lark long connection with no lark-oapi, the SimpleX daemon socket, the Nostr relay socket and the Yuanbao bot socket; brings wsproto 1.3.2, MIT, also already locked) | P16-08, P16-14, P16-16, P16-17, P16-20, P16-21, P16-28, P16-29 |
 | coincurve | 21.0.0 | 2025-03-08 | MIT OR Apache-2.0 (wheels bundle libsecp256k1, MIT, and cffi's `_cffi_backend`, MIT; licence read from the installed dist-info) | extra `buzz` (BIP-340 Schnorr signing and verification of Nostr events; no runtime dependencies; imported lazily) | P16-29 |
 | cryptography | 50.0.2 | (already locked via keyring → SecretStorage on Linux; uploaded 2026-09-30) | Apache-2.0 OR BSD-3-Clause | extras `wecom` (AES-256-CBC for the WeCom callback crypto and media), `google-chat` (RS256 for Google Chat) and `weixin` (AES-128-ECB for iLink media, the vendor's scheme); also base-installed through mcp → pyjwt[crypto], which the Teams bot-token check (P16-11) relies on; imported lazily | P16-11, P16-13, P16-18, P16-19 |

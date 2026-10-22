@@ -19,11 +19,17 @@ schedule is checked with the schedule grammar and must recur.
 
 Blueprints come from the starter catalogue below (ours) and from skills: ``SKILL.md`` frontmatter
 under ``<home>/skills/`` may carry ``metadata.indus.blueprints`` (a list) or ``blueprint`` (one
-mapping) with ``key``, ``title``, ``description``, ``schedule``, ``prompt``, ``slots`` and an
-optional ``deliver``; its key is shown as ``<skill>:<key>``. A skill blueprint that does not load
-(a placeholder other than the four, a placeholder with no slot to fill it, a bad slot) is skipped
-with a warning and never offered. The cron package sits beside the skills package (layer rule),
-so the frontmatter is read here directly.
+mapping) with ``key``, ``title``, ``description``, ``schedule``, ``prompt``, ``slots`` and the
+optional ``deliver`` and ``integrations``; its key is shown as ``<skill>:<key>``. A skill
+blueprint that does not load (a placeholder other than the four, a placeholder with no slot to
+fill it, a bad slot) is skipped with a warning and never offered. The cron package sits beside
+the skills package (layer rule), so the frontmatter is read here directly.
+
+``integrations`` names what a blueprint is waiting for (wave 45): when an integration is connected
+(``service.integration_offers``), each blueprint whose list holds the integration's kind
+(``platform``: any messaging platform; ``mcp``: any MCP server), its bare name (``telegram``,
+``github``) or ``kind:name`` is offered as a suggested job, when it fills from its defaults. Names
+are short lowercase words (``_INTEGRATION``); the starter morning briefing waits for ``platform``.
 
 One blueprint renders three ways: ``form`` (fields for the dashboard and desktop), ``cron_line``
 (a ``/cron add`` line pre-filled from the defaults or given values) and ``seed`` (a prompt that
@@ -107,6 +113,8 @@ _TIME = re.compile(r"^(\d{1,2}):(\d{2})$")
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _KEY = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _SLOT_NAME = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+_INTEGRATION = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,63})?$")
+MAX_INTEGRATIONS = 16
 TEXT_MAX = 200
 INTERVAL_MIN = 5
 INTERVAL_MAX = 7 * 24 * 60
@@ -231,6 +239,7 @@ class Blueprint:
     slots: tuple[Slot, ...] = ()
     deliver: str = targets.ORIGIN
     skill: str | None = None
+    integrations: tuple[str, ...] = ()
 
     @property
     def source(self) -> Literal["catalogue", "skill"]:
@@ -271,6 +280,15 @@ def _validate(bp: Blueprint) -> Blueprint:
     problem = _deliver_problem(bp.deliver)
     if problem:
         raise BlueprintError(f"blueprint {bp.key!r}: {problem}")
+    if len(bp.integrations) > MAX_INTEGRATIONS:
+        raise BlueprintError(
+            f"blueprint {bp.key!r} names more than {MAX_INTEGRATIONS} integrations"
+        )
+    for name in bp.integrations:
+        if not _INTEGRATION.match(name):
+            raise BlueprintError(
+                f"blueprint {bp.key!r}: integration {name!r} is not a short lowercase name"
+            )
     return bp
 
 
@@ -464,6 +482,7 @@ CATALOGUE: tuple[Blueprint, ...] = (
                 default="the day's calendar, open reminders and the weather",
             ),
         ),
+        integrations=("platform",),
     ),
     Blueprint(
         key="weekly-review",
@@ -555,6 +574,9 @@ def blueprint_from_mapping(raw: Mapping[str, Any], *, skill: str | None = None) 
     slots_raw: object = raw.get("slots") or []
     if not isinstance(slots_raw, list):
         raise BlueprintError(f"blueprint {key}: slots must be a list")
+    wanted: object = raw.get("integrations") or []
+    if not isinstance(wanted, list):
+        raise BlueprintError(f"blueprint {key}: integrations must be a list")
     slots: list[Slot] = []
     for item in cast(list[object], slots_raw):
         if not isinstance(item, Mapping):
@@ -569,6 +591,9 @@ def blueprint_from_mapping(raw: Mapping[str, Any], *, skill: str | None = None) 
         slots=tuple(slots),
         deliver=str(raw.get("deliver") or targets.ORIGIN).strip(),
         skill=skill,
+        integrations=tuple(
+            dict.fromkeys(str(name).strip().lower() for name in cast(list[object], wanted))
+        ),
     )
     return _validate(bp)
 

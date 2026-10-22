@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi import FastAPI
@@ -77,6 +78,7 @@ def build(scope: Scope, bundle_dir: Path) -> Iterator[Builder]:
         base_url: str | None = None,
         peer: str = "127.0.0.1",
         bundle: Path | None = None,
+        browser: bool = True,
         **options: Any,
     ) -> Built:
         used = scope.with_env(scope.env.with_overlay(dict(env or {})))
@@ -93,11 +95,16 @@ def build(scope: Scope, bundle_dir: Path) -> Iterator[Builder]:
         )
         shown = host if host not in ("0.0.0.0", "::") else "127.0.0.1"
         shown = f"[{shown}]" if ":" in shown else shown
+        url = base_url or f"http://{shown}:{port}"
+        parts = urlsplit(url)
+        # Like a browser, every request names the page's own origin (the gated CSRF rule refuses
+        # an unsafe request with no Origin and no Referer, SEC-18); ``browser=False`` sends none.
         client = TestClient(
             app,
-            base_url=base_url or f"http://{shown}:{port}",
+            base_url=url,
             client=(peer, 50000),
             follow_redirects=False,
+            headers={"origin": f"{parts.scheme}://{parts.netloc}"} if browser else None,
         )
         clients.append(client)
         return Built(app, client, app.state.indus)

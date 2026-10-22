@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters._http import SeenIds, failure_from_exception, failure_from_status
 from indus.gateway.adapters.base import (
     REPLY_TO_KEY,
@@ -195,7 +196,7 @@ def _timestamp(value: object) -> datetime | None:
             return datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:
             pass
-        value = int(text) if text.isdigit() else None
+        value = int(text) if is_digits(text) else None
     if isinstance(value, int | float) and not isinstance(value, bool):
         seconds = value / 1000 if value > 10**11 else value
         return datetime.fromtimestamp(seconds, UTC)

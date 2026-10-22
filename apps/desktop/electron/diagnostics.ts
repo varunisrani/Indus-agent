@@ -186,6 +186,25 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
   return text;
 }
 
+/** The third-party notices file the packager puts beside the archive (W46, F-2). */
+export const NOTICES_FILE = "THIRD_PARTY_NOTICES.md";
+/** The notices are about 150 KB; anything far past that is not our file. */
+export const NOTICES_MAX_BYTES = 4 * 1024 * 1024;
+
+/** The packaged notices text, or null (a development run, a missing, oversized or unreadable
+ * file). The renderer shows it as plain text. */
+export function readNotices(resourcesPath: string | null): string | null {
+  if (resourcesPath === null) return null;
+  try {
+    const file = path.join(resourcesPath, NOTICES_FILE);
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size > NOTICES_MAX_BYTES) return null;
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 /** The build stamp beside the packaged archive, or null. */
 export function readBuildStamp(resourcesPath: string | null): unknown {
   if (resourcesPath === null) return null;
@@ -224,7 +243,7 @@ export interface DiagnosticsHandle {
   menuItems: MenuItem[];
 }
 
-/** Register the logs, clipboard and diagnostics channels (P20-39). */
+/** Register the logs, clipboard and diagnostics channels (P20-39) and the notices (W46, F-2). */
 export function installDiagnostics(context: MainContext, deps: DiagnosticsDeps): DiagnosticsHandle {
   const { registry, log } = context;
   const now = deps.now ?? (() => new Date());
@@ -285,6 +304,7 @@ export function installDiagnostics(context: MainContext, deps: DiagnosticsDeps):
     rendererErrors.record(senderId, report);
   });
   registry.handle("indus:diagnostics:copy", () => copyDiagnostics());
+  registry.handle("indus:about:notices", () => ({ text: readNotices(deps.resourcesPath) }));
   registry.handle("indus:clipboard:read-text", async () => ({
     text: await deps.clipboard.readText(),
   }));

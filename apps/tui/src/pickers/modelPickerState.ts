@@ -121,9 +121,10 @@ export function initialPicker(allowGlobal = false): PickerState {
 }
 
 export function rowOf(option: ProviderOption, currentProvider = ""): ProviderRow {
-  const extra = option as ProviderOption & { models?: unknown };
-  const models = Array.isArray(extra.models)
-    ? extra.models.filter((m): m is string => typeof m === "string" && m !== "")
+  // `models` is filled for the current custom or local endpoint (what its `/models` lists).
+  const listed: unknown = option.models;
+  const models = Array.isArray(listed)
+    ? listed.filter((m): m is string => typeof m === "string" && m !== "")
     : [];
   return {
     slug: option.slug,

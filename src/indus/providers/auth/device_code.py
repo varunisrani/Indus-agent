@@ -36,6 +36,7 @@ from typing import Any, cast
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.foundation.errors import AuthError
 from indus.providers.profile import USER_AGENT
 from indus.providers.retry import parse_retry_after
@@ -238,7 +239,7 @@ def _positive_int(value: object, default: int) -> int:
         return default
     if isinstance(value, int | float) and value > 0:
         return int(value)
-    if isinstance(value, str) and value.strip().isdigit() and int(value) > 0:
+    if isinstance(value, str) and is_digits(value.strip()) and int(value) > 0:
         return int(value)
     return default
 

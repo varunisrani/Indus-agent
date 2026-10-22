@@ -122,3 +122,29 @@ Compare checklist (filled after the rewrite; reopened `hermes_cli/plugins_dispat
 
 Done (2026-10-19). Shared: `src/indus/tools/hooks.py`, `src/indus/foundation/blocking.py`,
 `tests/unit/foundation/test_blocking.py`, `tests/integration/core/test_d04_1_criteria.py`.
+
+## Wave 46 (builder g): `post_tool_call` for blocked calls (release checklist RS19)
+
+Read: none from the reference (a follow-up on our own seam; no reference file reopened).
+
+- Gap: `dispatch` returned at once when `before` blocked a call, so `after` (the bus's
+  `post_tool_call`) never saw it and audit plugins missed every refused call.
+- Now: a blocked call goes to `after` with the block result (error type `blocked`, the new shared
+  constant `tools.hooks.BLOCKED`) and zero duration; it never goes to `transform` (a block text is
+  not rewritten). `PluginToolHooks.after` adds `blocked` (bool) to the `post_tool_call` payload, so
+  the same keyword is `False` for calls that ran; shell hooks get it under `extra`.
+  `indus hooks test` sample payload carries `blocked: false`. An `after` that raises on a blocked
+  call is logged and the block stands.
+- Wrapping seams (`ChildHooks`, `LspToolHooks`, the review fork's `WhitelistHooks`) pass `after` through, so they
+  see blocked calls too; none acts on them. The gateway hook bridge's `tool_done` now also emits
+  `agent:step` for a blocked call (decision W46-g-1).
+- Tests: `tests/unit/tools/test_dispatch.py::test_blocked_call_still_reaches_after_but_not_transform`,
+  `::test_blocked_call_survives_a_raising_after`,
+  `tests/unit/plugins/test_hooks.py::test_post_tool_call_sees_blocked_calls` (both failed before).
+
+Decisions for the lead (wave 46):
+- W46-g-1 (D-16.1011): the gateway hook bridge (`gateway/hooks.py` `tool_done`) is left as is, so a blocked
+  call now also emits `agent:step` (a step the agent took, refused). Skipping blocked calls there is
+  a one-line `if blocked: return` if the lead prefers steps to mean "a tool ran".
+- W46-g-3 (D-16.1013): a blocked call skips `transform_tool_result` (the block text is the refusal the model
+  must see; a transform could launder it into a success).

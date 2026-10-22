@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final, cast
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import parse_digits
 from indus.foundation.fsio import atomic_write_json
 from indus.gateway.adapters._http import (
     BadPayload,
@@ -510,7 +511,8 @@ class RaftAdapter(Adapter):
         if not self._authorized(request):
             return Reply.json({"ok": False, "error": "unauthorized"}, 401)
         raw = request.query_params().get("max", "")
-        limit = int(raw) if raw.isdigit() else DRAIN_DEFAULT
+        limit = parse_digits(raw)
+        limit = DRAIN_DEFAULT if limit is None else limit
         return Reply.json(self.activity.drain(min(limit, QUEUE_CAP)))
 
     def report_activity(self, event: Mapping[str, Any]) -> bool:

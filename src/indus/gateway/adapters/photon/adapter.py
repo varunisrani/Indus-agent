@@ -47,6 +47,7 @@ from urllib.parse import quote, unquote, urlparse
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters._http import SeenIds, failure_from_exception, failure_from_status
 from indus.gateway.adapters._identity import mask_numbers
 from indus.gateway.adapters.base import (
@@ -163,7 +164,7 @@ def _port(value: object) -> int | None:
     text = (
         str(value).strip() if isinstance(value, int | str) and not isinstance(value, bool) else ""
     )
-    return int(text) if text.isdigit() else None
+    return int(text) if is_digits(text) else None
 
 
 @dataclass(frozen=True)

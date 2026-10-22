@@ -54,6 +54,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters._identity import expand_nostr_allowlist, hex_to_npub, nostr_pubkey
 from indus.gateway.adapters.base import (
     Adapter,
@@ -967,7 +968,7 @@ class BuzzAdapter(Adapter):
                 fields.get("x", "").lower(),
                 fields.get("m", ""),
             )
-            size = int(fields["size"]) if fields.get("size", "").isdigit() else 0
+            size = int(fields["size"]) if is_digits(fields.get("size", "")) else 0
             if not url or not _HEX64.fullmatch(digest) or not 0 < size <= MAX_ATTACHMENT_BYTES:
                 continue
             if total + size > MAX_ATTACHMENT_BYTES:
@@ -1008,7 +1009,7 @@ class BuzzAdapter(Adapter):
             raise MediaRejected("it is not a Buzz attachment")
         digest, _, rest = attachment.ref[len(MEDIA_REF) :].partition(":")
         size_text, _, url = rest.partition(":")
-        if not _HEX64.fullmatch(digest) or not size_text.isdigit():
+        if not _HEX64.fullmatch(digest) or not is_digits(size_text):
             raise MediaRejected("it is not a Buzz attachment")
         size = int(size_text)
         parts = urlsplit(url)

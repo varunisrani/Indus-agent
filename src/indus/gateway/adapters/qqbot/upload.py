@@ -29,6 +29,7 @@ from typing import Any, cast
 
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.qqbot.client import QQApiError
 
 __all__ = [
@@ -102,7 +103,7 @@ def _int(value: object, default: int = 0) -> int:
         return default
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().isdigit():
+    if isinstance(value, str) and is_digits(value.strip()):
         return int(value)
     return default
 

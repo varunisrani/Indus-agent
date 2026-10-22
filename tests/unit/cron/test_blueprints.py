@@ -180,6 +180,29 @@ def test_bad_templates_refused() -> None:
         bps.fill(make("in 2h"))
 
 
+def test_integrations_are_short_lowercase_names() -> None:
+    """Wave 45 (D-16.981): what a blueprint waits for; checked like every other field."""
+
+    def make(integrations: object) -> bps.Blueprint:
+        raw = {"key": "k", "title": "T", "prompt": "p", "schedule": "every 60m"}
+        return bps.blueprint_from_mapping({**raw, "integrations": integrations})
+
+    assert make([" GitHub", "mcp:github", "github", "platform"]).integrations == (
+        "github",
+        "mcp:github",
+        "platform",
+    )
+    assert make(None).integrations == ()
+    with pytest.raises(bps.BlueprintError, match="must be a list"):
+        make("github")
+    with pytest.raises(bps.BlueprintError, match="short lowercase"):
+        make(["git hub"])
+    with pytest.raises(bps.BlueprintError, match="short lowercase"):
+        make(["mcp:"])
+    with pytest.raises(bps.BlueprintError, match="more than"):
+        make([f"n{i}" for i in range(bps.MAX_INTEGRATIONS + 1)])
+
+
 # -- skill blueprints ---------------------------------------------------------------------------
 
 

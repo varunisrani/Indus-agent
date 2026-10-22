@@ -42,6 +42,7 @@ from typing import Any, Final, Protocol, cast
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.http.serving import is_loopback
 
 __all__ = [
@@ -173,7 +174,7 @@ def _number(value: object) -> int | None:
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+    if isinstance(value, str) and is_digits(value.strip(), signed=True):
         return int(value.strip())
     return None
 
@@ -383,7 +384,7 @@ class YuanbaoApi:
             if response.status_code >= 400:
                 raise ApiError(response.status_code, None, "the media download was refused")
             declared = response.headers.get("Content-Length", "")
-            if declared.isdigit() and int(declared) > cap:
+            if is_digits(declared) and int(declared) > cap:
                 raise MediaTooLarge(int(declared), cap)
             seen = 0
             async for chunk in response.aiter_bytes():

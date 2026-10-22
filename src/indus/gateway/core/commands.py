@@ -46,6 +46,7 @@ from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
 from indus.foundation.config import loader as config_loader
 from indus.foundation.config import writer as config_writer
+from indus.foundation.digits import is_digits
 from indus.foundation.scope import Scope
 from indus.gateway.core.events import InboundEvent, Source
 from indus.gateway.core.slash_access import SlashPolicy, policy_for, scope_of, tier_label
@@ -922,7 +923,7 @@ async def _do_undo(ctx: CommandContext, count: int) -> str:
 
 async def _undo(ctx: CommandContext) -> Reply:
     raw = ctx.args.strip() or "1"
-    if not raw.isdigit() or int(raw) < 1:
+    if not is_digits(raw) or int(raw) < 1:
         return "Usage: /undo [N]  (how many of your messages to take back, default 1)"
     count = int(raw)
     if ctx.pipeline.settings().destructive_confirm:

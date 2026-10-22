@@ -4,6 +4,7 @@ export const THEME_STRINGS = {
   "appearance.preset": "Colours",
   "appearance.preset.builtIn": "Indus (built in)",
   "appearance.preset.user": "{name} (yours)",
+  "appearance.preset.contributed": "{name} (plugin)",
   "appearance.accent": "Accent hue",
   "appearance.accent.reset": "Use the theme's accent",
   "appearance.profile": "For this profile only",

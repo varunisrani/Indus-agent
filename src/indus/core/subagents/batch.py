@@ -78,6 +78,8 @@ class ChildOutcome:
     worktree: Mapping[str, Any] | None = None
     iterations: int = 0
     extra: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    # The child's turns saw outside text: its summary reaches the parent fenced (SEC-4).
+    read_untrusted: bool = False
 
 
 class ChildRun(Protocol):

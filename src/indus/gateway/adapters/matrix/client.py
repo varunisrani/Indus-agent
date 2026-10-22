@@ -22,6 +22,8 @@ from urllib.parse import quote
 
 import httpx
 
+from indus.foundation.digits import is_digits
+
 __all__ = [
     "AUTH_ERRCODES",
     "DEFAULT_TIMEOUT_S",
@@ -383,7 +385,7 @@ class MatrixClient:
                         continue
                     raise error
                 declared = response.headers.get("Content-Length", "")
-                if declared.isdigit() and int(declared) > cap:
+                if is_digits(declared) and int(declared) > cap:
                     raise MediaTooLarge(int(declared), cap)
                 seen = 0
                 async for chunk in response.aiter_bytes():

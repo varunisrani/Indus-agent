@@ -41,7 +41,7 @@ from indus.foundation.scope import Scope
 from indus.plugins.settings import bounded_seconds, plugins_setting
 from indus.safety.approvals.tool_gate import approve_tool_call
 from indus.tools.calls import ToolCall, ToolContext, ToolResult
-from indus.tools.hooks import BeforeVerdict
+from indus.tools.hooks import BLOCKED, BeforeVerdict
 
 __all__ = [
     "BOUNDED",
@@ -743,6 +743,7 @@ class PluginToolHooks:
             is_error=result.is_error,
             status="error" if result.is_error else "ok",
             error_type=result.error_type or "",
+            blocked=result.error_type == BLOCKED,
             duration_ms=int(duration_s * 1000),
             **self._ids(call, ctx),
         )

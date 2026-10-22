@@ -825,6 +825,11 @@ export interface IndusDesktopLogs {
   rendererError(payload: { message: string; stack?: string; source?: string }): void;
 }
 
+export interface IndusDesktopAbout {
+  /** `indus:about:notices` (W46) */
+  notices(payload?: Record<string, never>): Promise<{ text: string | null }>;
+}
+
 export interface IndusDesktopDiagnostics {
   /** `indus:diagnostics:copy` (P20-39) */
   copy(payload?: Record<string, never>): Promise<{ copied: boolean; bytes: number }>;
@@ -972,6 +977,7 @@ export interface IndusDesktopBridge {
   readonly notifications: IndusDesktopNotifications;
   readonly deepLinks: IndusDesktopDeepLinks;
   readonly logs: IndusDesktopLogs;
+  readonly about: IndusDesktopAbout;
   readonly diagnostics: IndusDesktopDiagnostics;
   readonly clipboard: IndusDesktopClipboard;
   readonly find: IndusDesktopFind;

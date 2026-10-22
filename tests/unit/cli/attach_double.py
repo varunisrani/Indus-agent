@@ -104,6 +104,8 @@ class StubRemote:
     calls: list[tuple[str, Any]] = field(default_factory=lambda: [])
     listeners: dict[str, list[Callable[[Any], None]]] = field(default_factory=lambda: {})
     askers: dict[str, list[Callable[[Any], None]]] = field(default_factory=lambda: {})
+    answers: list[Any] = field(default_factory=lambda: [])
+    answered: threading.Event = field(default_factory=threading.Event)
     closed: bool = False
     released: threading.Event = field(default_factory=threading.Event)
     generation: int = 0
@@ -183,6 +185,8 @@ class StubRemote:
         self, session_id: str, request_id: str, answer: Any
     ) -> ServerRequestAnswerResult:
         self.calls.append(("answer", request_id))
+        self.answers.append(answer)
+        self.answered.set()
         return ServerRequestAnswerResult(accepted=True)
 
     def subscribe(self, session_id: str, listener: Callable[[Any], None]) -> Callable[[], None]:

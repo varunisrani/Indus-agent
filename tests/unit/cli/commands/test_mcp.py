@@ -89,6 +89,32 @@ def test_add_probes_then_saves_keeping_comments(scope: Scope) -> None:
     assert entry["command"] == sys.executable and entry["args"][-2:] == ["--name", "files"]
 
 
+def test_a_saved_server_suggests_the_jobs_waiting_for_it(scope: Scope) -> None:
+    """Wave 45 (D-16.981): a skill blueprint waiting for this server becomes a suggestion; a
+    server saved turned off (failed probe) suggests nothing."""
+    from indus.cron.suggestions import SuggestionStore
+
+    folder = scope.home / "skills" / "web-watch"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: web-watch\ndescription: d\n"
+        'blueprint: {key: pages, title: Watch the docs, schedule: "every 240m", '
+        'prompt: "Check the docs pages.", integrations: [files, broken], slots: []}\n'
+        "---\n\n# web-watch\n",
+        encoding="utf-8",
+    )
+    failed = run(scope, "mcp", "add", "broken", "--command", "/no/such/server-binary")
+    assert failed.code == 1 and "Suggested job:" not in failed.out
+    assert SuggestionStore(scope).pending() == []
+    result = add_fake(scope)
+    assert result.code == 0, result.err
+    assert "Suggested job: Watch the docs" in result.out
+    pending = SuggestionStore(scope).pending()
+    assert [(s.dedup_key, s.source) for s in pending] == [
+        ("blueprint:web-watch:pages", "integration")
+    ]
+
+
 def test_add_refuses_a_secret_in_a_header(scope: Scope) -> None:
     token = forge_token()
     result = run(

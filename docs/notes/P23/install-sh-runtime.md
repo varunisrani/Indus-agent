@@ -95,3 +95,14 @@ artefact manifest).
 ## Integration (wave 36)
 
 Settings key reconciled with P23-17 (D-16.748): the config stage always writes `updates.installs.<id16>.extras` = the list it synced (`indus update` re-syncs exactly that), and the complete stage writes `.channel` for an explicit `--channel`; the `.skip` key is gone — a later install leaves out the browser group when the saved extras lack it. Downloads use `--proto '=https' --proto-redir '=https'`.
+
+## Wave 46 (builder k, 2026-10-22): F-3 pages and F-4 version in the products/complete stages
+
+Read: no reference file. Products: `ins_web_pages` keeps a developer's `apps/web/dist`, else runs
+`<venv>/bin/python -m indus.web.bundle fetch --repo <checkout> --target
+<checkout>/src/indus/web/static` (details, trust chain and what release.yml must add:
+`docs/notes/P18/build-serve.md`, Wave 46); exit 3 (not on a release) prints the pnpm command, any
+other failure is a warning; the stage never fails on the pages. Complete: the marker gains
+`version` (HEAD's newest release tag without the `v`, `""` off a release), which `indus --version`
+reads (`docs/notes/P06/entry-startup.md`, Wave 46). Tests: products cases (exit 0 / 3 / 1, a dev
+build kept) and the marker key set; the full ladder asserts `version == "0.2.0"`.

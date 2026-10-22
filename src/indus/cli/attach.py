@@ -22,7 +22,11 @@ Attach mode rules:
   query that ends up queued behind one, exits **3** and nothing is resent. A transport lost while
   our own turn ran is "outcome unknown": never resubmitted (exit 1 for ``chat -q``, 2 for ``-z``).
   Ctrl-C interrupts the turn by its generation and waits up to ``SETTLE_S`` (10 s) for it to
-  settle, then exits 130.
+  settle, then exits 130. A finite ``chat -q`` (``--oneshot``, ``-Q`` or no terminal) answers an
+  approval request the way ``--local`` decides one in a one-shot run: refused, with the same
+  reason, unless ``approvals.single_query_mode`` is ``approve`` (then approved once); the turn goes
+  on and ends normally (W46 F-5). Any other question (clarify, sudo, a secret) still detaches
+  with exit 3 and the resume hint.
 - **Interactive**: the classic REPL and its one renderer (``repl.app.run_repl``) over
   ``AttachedHost``. Slash subset: ``/help``, ``/quit`` (``/exit``, ``/detach``), ``/stop``,
   ``/discard <admission_id>`` (resolves a lost turn; its generation is sent and checked). Every
@@ -67,6 +71,7 @@ from indus.protocol.methods import (
     SessionSteerResult,
     SubmitStatus,
 )
+from indus.protocol.server_requests import ApprovalRequest
 
 if TYPE_CHECKING:
     from indus.cli.oneshot import RunOutcome
@@ -77,6 +82,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "BLOCKED_EXIT",
+    "ONE_SHOT_DENY",
     "REFUSED_FLAGS",
     "SETTLE_S",
     "AttachBackend",
@@ -86,6 +92,7 @@ __all__ = [
     "attached_commands",
     "backend_factory",
     "failure_reason",
+    "one_shot_answer",
     "refused_flags",
     "run_attached_chat",
     "run_attached_oneshot",
@@ -667,8 +674,69 @@ class _Finite:
     failure: str | None = None
 
 
+ONE_SHOT_DENY: Final = (
+    "BLOCKED: a one-shot run has nobody present to approve it. Nothing ran. Find another way "
+    "that avoids this command; to allow such commands here the user sets "
+    "approvals.single_query_mode: approve."
+)
+"""The reason a finite attached ``chat -q`` gives the model with its refusal (as ``--local``)."""
+
+
+def one_shot_answer(scope: Scope) -> AnswerModel:
+    """How a finite ``chat -q`` answers an approval nobody can see: ``--local``'s single-query
+    rule (``approvals.single_query_mode``, deny unless set to approve)."""
+    from indus.foundation.config import loader
+    from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice
+    from indus.safety.approvals.decision import setting
+
+    read = scope if scope.config is not None else scope.with_config(loader.load(scope))
+    if str(setting(read, "approvals.single_query_mode")).strip().lower() == "approve":
+        return ApprovalAnswer(choice=ApprovalChoice.ONCE)
+    return ApprovalAnswer(choice=ApprovalChoice.DENY, reason=ONE_SHOT_DENY)
+
+
+def _answer_unseen(
+    host: AttachedHost, sid: str, requests: queue.SimpleQueue[Any], approve: AnswerModel | None
+) -> bool:
+    """Answer the approvals waiting in ``requests`` with ``approve``; False when one of them is
+    a question this run cannot answer (or no rule was given)."""
+    while True:
+        try:
+            request = requests.get_nowait()
+        except queue.Empty:
+            return True
+        if approve is None or not isinstance(request, ApprovalRequest):
+            return False
+        host.answer_server_request(sid, request.request_id, approve)
+
+
+def _wait_answering(
+    host: AttachedHost,
+    sid: str,
+    waiting: concurrent.futures.Future[Any],
+    asked: threading.Event,
+    requests: queue.SimpleQueue[Any],
+    approve: AnswerModel | None,
+) -> Any:
+    """The turn's result, answering approvals by ``approve`` meanwhile; ``_NeedsInput`` when a
+    request comes that this run cannot answer."""
+    while True:
+        try:
+            return _result(waiting, None, asked)
+        except _NeedsInput:
+            asked.clear()  # before draining: a request offered meanwhile sets it again
+            if not _answer_unseen(host, sid, requests, approve):
+                raise
+
+
 def _run_finite(
-    host: AttachedHost, plan: _Plan, text: str, *, source: str, unattended: bool
+    host: AttachedHost,
+    plan: _Plan,
+    text: str,
+    *,
+    source: str,
+    unattended: bool,
+    approve: AnswerModel | None = None,
 ) -> _Finite:
     from indus.cli.oneshot import RunOutcome
 
@@ -680,7 +748,13 @@ def _run_finite(
         run.blocked = True
         return run
     asked = threading.Event()
-    host.invoke("on_request", sid, lambda _request: asked.set())
+    requests: queue.SimpleQueue[Any] = queue.SimpleQueue()
+
+    def offered(request: Any) -> None:
+        requests.put(request)
+        asked.set()
+
+    host.invoke("on_request", sid, offered)
     try:
         ticket = host.invoke("submit", sid, text, unattended=unattended)
     except Exception as exc:
@@ -693,7 +767,7 @@ def _run_finite(
     outcome.started = True
     waiting = host.future("wait", sid, ticket.turn_id)
     try:
-        result = _result(waiting, None, asked)
+        result = _wait_answering(host, sid, waiting, asked, requests, approve)
     except _NeedsInput:
         waiting.cancel()
         run.needs_input = True
@@ -740,6 +814,7 @@ def _finite_session(
     unattended: bool,
     prefix: str,
     err: Callable[[str], None],
+    approve: AnswerModel | None = None,
 ) -> _Finite | int:
     backend = backend_factory()
     try:
@@ -748,7 +823,7 @@ def _finite_session(
     except AttachUnavailable as exc:
         return _unreachable(prefix, exc, err)
     try:
-        return _run_finite(host, plan, text, source=source, unattended=unattended)
+        return _run_finite(host, plan, text, source=source, unattended=unattended, approve=approve)
     except ProtocolError as exc:
         err(f"{prefix}: {exc.message}")
         return 1
@@ -837,7 +912,14 @@ def _finite_chat(
 
     del quiet  # nothing but the reply and the session line is printed either way
     run = _finite_session(
-        state, plan, query, source=source, unattended=False, prefix="indus chat", err=err
+        state,
+        plan,
+        query,
+        source=source,
+        unattended=False,
+        prefix="indus chat",
+        err=err,
+        approve=one_shot_answer(state.scope),
     )
     if isinstance(run, int):
         return run

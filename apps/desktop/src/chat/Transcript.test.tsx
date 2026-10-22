@@ -188,6 +188,8 @@ describe("Transcript", () => {
       row.getAttribute("data-state"),
     );
     expect(rows).toEqual(["neutral", "failed"]);
+    // the parity flow waits on this hook (W46, RM21): one per tool row
+    expect(view.container.querySelectorAll('[data-ui="transcript-tool-row"]').length).toBe(2);
     fireEvent.click(screen.getAllByRole("button", { name: /Ran/ })[0] as HTMLElement);
     expect(screen.getByText("exit code 1")).toBeTruthy();
   });

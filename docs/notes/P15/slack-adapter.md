@@ -105,9 +105,10 @@ Tests we will write:
   `first`) goes to the channel, not the thread. Fix in the core: for Slack, use
   `prospective_thread_id` as the outbound thread when there is no real one (not done here: it would
   change Discord's meaning of the field).
-- **Dependencies:** extra `slack = ["slack-bolt==1.30.0", "slack-sdk==3.44.1", "aiohttp==3.14.3"]`
+- **Dependencies:** extra `slack = ["slack-bolt==1.30.0", "slack-sdk==3.44.1", "aiohttp==3.14.4"]`
   (aiohttp is what Bolt's async app and Socket Mode handler import; it is an optional extra of
-  slack-sdk, so it must be named). Not locked here (lead re-locks).
+  slack-sdk, so it must be named). Not locked here (lead re-locks). Wave 46 (RM8) moved the pin
+  from 3.14.3 to 3.14.4 (advisory fixes, SEC2-3).
 - **Typing meta:** `outbound.ports.typing` calls `typing_start(chat_id)` with no metadata; Slack's
   status needs the thread, so the runner should pass `{"thread_id": source.thread_id or
   source.prospective_thread_id}` when it starts feeding `TypingLoop`.

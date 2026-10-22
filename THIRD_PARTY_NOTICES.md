@@ -124,7 +124,7 @@ Components are grouped by licence (SPDX expression). Each licence's full text fo
 
 | Component | Version | Kind | Used by | Note |
 |---|---|---|---|---|
-| pynacl | 1.5.0 | Python | extra discord-voice | the wheels bundle libsodium (ISC) |
+| pynacl | 1.6.2 | Python | extra discord-voice | the wheels bundle libsodium (ISC) |
 
 ### Apache-2.0 AND LGPL-2.1-or-later
 
@@ -136,7 +136,7 @@ Components are grouped by licence (SPDX expression). Each licence's full text fo
 
 | Component | Version | Kind | Used by | Note |
 |---|---|---|---|---|
-| aiohttp | 3.14.3 | Python | extra all, extra daytona, extra discord, extra discord-voice, extra matrix-e2ee, extra messaging, extra modal, extra research, extra slack |  |
+| aiohttp | 3.14.4 | Python | extra all, extra daytona, extra discord, extra discord-voice, extra matrix-e2ee, extra messaging, extra modal, extra research, extra slack |  |
 | sherpa-onnx-core | 1.13.8 | Python | extra wake-sherpa | the wheels bundle the ONNX Runtime shared library under MIT |
 
 ### Apache-2.0 AND Zlib AND BSL-1.0

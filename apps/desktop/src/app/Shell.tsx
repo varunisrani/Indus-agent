@@ -16,6 +16,12 @@ import {
 } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { draftOf, FRESH, setDraft, windowDrafts } from "../chat/composer/goneSession.ts";
+import {
+  CommandPalette,
+  ContributedTitleBar,
+  type PaletteEntry,
+  useContributedKeybinds,
+} from "../contrib/areas.tsx";
 import { ContributedNav } from "../contrib/shell.tsx";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
@@ -412,6 +418,19 @@ export function Shell(props: {
     }
   };
   const showSlots = usePaneShortcuts(platform, { onAction });
+  // the registry's keybinds (P24-32); a key the app uses is never given to a plugin
+  useContributedKeybinds(platform);
+  const paletteEntries = useMemo<PaletteEntry[]>(
+    () => [
+      { id: "app.new-chat", title: t("nav.newChat"), run: () => navigate(NEW_CHAT_PATH) },
+      ...PAGES.filter((page) => !isContributedPage(page)).map((page) => ({
+        id: `app.page.${page}`,
+        title: t("palette.goTo", { page: t(PAGE_TEXT[page].title) }),
+        run: () => navigate(pagePath(page)),
+      })),
+    ],
+    [t, navigate],
+  );
 
   const selectProfile = (next: string) => {
     if (switcher === null) return;
@@ -476,6 +495,11 @@ export function Shell(props: {
           </div>
         ))}
       {connection !== null && <ConnectionWarning connection={connection} />}
+      {/* the registry's title bar items and palette commands (P24-32) */}
+      {!secondary && (
+        <ContributedTitleBar platform={platform} bandHeight={launchFacts().titleBarHeight} />
+      )}
+      <CommandPalette builtIn={paletteEntries} />
     </div>
   );
 }

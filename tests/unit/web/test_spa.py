@@ -126,7 +126,11 @@ def test_no_bundle_answer_may_be_framed(build: Builder) -> None:
         response = built.client.get(path)
         assert response.status_code == 200, path
         assert response.headers["x-frame-options"] == "DENY", path
-        assert response.headers["content-security-policy"] == "frame-ancestors 'none'", path
+        csp = response.headers["content-security-policy"]
+        if path in ("/", "/sessions", "/index.html"):  # SEC-18: the index adds its script policy
+            assert csp.startswith("frame-ancestors 'none'; script-src 'self' 'sha256-"), path
+        else:
+            assert csp == "frame-ancestors 'none'", path
         assert response.headers["x-content-type-options"] == "nosniff", path
     css = built.client.get("/assets/index-abc123.css", headers={"X-Forwarded-Prefix": "/x"})
     assert css.headers["x-frame-options"] == "DENY"

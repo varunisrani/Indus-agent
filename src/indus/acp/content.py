@@ -38,6 +38,7 @@ from urllib.parse import unquote, urlparse
 
 from indus.acp import paths
 from indus.foundation.blocking import run_blocking
+from indus.foundation.digits import is_digits
 from indus.foundation.home import secure_dir
 from indus.foundation.scope import Scope
 
@@ -240,7 +241,7 @@ async def _default_fetch(scope: Scope, url: str) -> bytes:
     ):
         response.raise_for_status()
         declared = response.headers.get("content-length")
-        if declared and declared.isdigit() and int(declared) > MAX_BYTES:
+        if declared and is_digits(declared) and int(declared) > MAX_BYTES:
             raise _Refused(f"it is {int(declared):,} bytes, over the {MAX_BYTES:,} byte limit")
         body = bytearray()
         async for chunk in response.aiter_bytes():

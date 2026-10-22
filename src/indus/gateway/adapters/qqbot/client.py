@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 
 __all__ = [
     "API_BASE",
@@ -134,7 +135,7 @@ def _int(value: object) -> int | None:
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+    if isinstance(value, str) and is_digits(value.strip(), signed=True):
         return int(value.strip())
     return None
 
@@ -338,7 +339,7 @@ class QQClient:
                 await response.aread()
                 raise _error_of(response)
             declared = response.headers.get("Content-Length", "")
-            if declared.isdigit() and int(declared) > cap:
+            if is_digits(declared) and int(declared) > cap:
                 raise MediaTooLarge(int(declared), cap)
             seen = 0
             async for chunk in response.aiter_bytes():

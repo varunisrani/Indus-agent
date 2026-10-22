@@ -13,7 +13,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, Protocol, cast, runtime_checkable
 
 from indus.foundation.scope import Scope
 
@@ -24,6 +24,17 @@ ERROR_CUT_MARKER = " [error text cut]"
 ENVELOPE_KEYS = frozenset({"multimodal", "content", "text_summary"})
 
 _EMPTY: Mapping[str, Any] = MappingProxyType({})
+
+
+@runtime_checkable
+class TaintSink(Protocol):
+    """The turn's laundering record as a tool sees it (``core.untrusted.Taint``, SEC-4): a tool
+    whose result passes outside text on under its own name marks its call id, and the tool round
+    fences that result."""
+
+    def untrusted(self, tool_name: str) -> bool: ...
+
+    def mark(self, call_id: str | None) -> None: ...
 
 
 @dataclass(frozen=True)

@@ -45,6 +45,10 @@ Generations are counted per attached session, in process, until P17's turn lease
 A ``maintenance`` timer (P09-18, ``service.maintenance``), when given, starts with the first
 attached session and stops at ``aclose``; its chores run off the event loop.
 
+Canonical bot chats (P24-07, wave 45, ``service.bot_turns``): ``bot_chats``, when given, adjusts a
+session's options and selection when it is attached, before the MCP step: the profile's bot chat
+runs on the ``bots`` platform with the profile's ``bots`` selection; other sessions pass unchanged.
+
 ``execute_code`` kernels (P10-10/11, ``service.code_host``): ``close`` disposes the closed
 session's kernels (its current id and every id it continued from). ``kernels``, when given, is
 the host's share: its idle reaper starts with the first attached session and ``aclose`` shuts both
@@ -287,6 +291,7 @@ class SessionService:
         broker_factory: BrokerFactory | None = None,
         turn_door: TurnDoor | None = None,
         lsp: LspUpkeep | None = None,
+        bot_chats: AgentShaper | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
@@ -318,6 +323,7 @@ class SessionService:
         self.broker_factory = broker_factory
         self.turn_door = turn_door
         self.agent_shaper: AgentShaper | None = None
+        self.bot_chats = bot_chats
         self.replay_epoch = new_replay_epoch()
         """The in-process replay epoch (``events_since``); the daemon's event log has its own."""
 
@@ -583,6 +589,9 @@ class SessionService:
         try:
             sink = EventSink(session_id)
             broker = self._new_broker(session_id, sink)
+            if self.bot_chats is not None:
+                # Before the MCP step, so a bot chat's selection gets the MCP toolsets too.
+                options, selection = await self.bot_chats(session_id, options, selection)
             if self.mcp is not None:
                 await self.mcp.start()
                 selection = self.mcp.selection(selection)

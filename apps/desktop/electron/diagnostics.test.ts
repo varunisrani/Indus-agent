@@ -8,9 +8,12 @@ import {
   DIAGNOSTICS_MAX_BYTES,
   type DiagnosticsInput,
   installDiagnostics,
+  NOTICES_FILE,
+  NOTICES_MAX_BYTES,
   RENDERER_ERRORS_PER_MINUTE,
   RendererErrors,
   readBuildStamp,
+  readNotices,
 } from "./diagnostics.ts";
 import { DesktopLog, type LogFs } from "./log.ts";
 
@@ -141,6 +144,28 @@ describe("diagnostics bundle", () => {
     );
     expect(readBuildStamp(dir)).toEqual({ version: "1.0.0" });
   });
+
+  it("reads the packaged notices for the licences screen; null in a dev run or when unfit (W46)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-notices-read-"));
+    dirs.push(dir);
+    expect(readNotices(null)).toBeNull();
+    expect(readNotices(dir)).toBeNull(); // not packaged beside the app
+    fs.writeFileSync(path.join(dir, NOTICES_FILE), "# Third-party notices\n\nsome-lib MIT\n");
+    expect(readNotices(dir)).toBe("# Third-party notices\n\nsome-lib MIT\n");
+    fs.writeFileSync(path.join(dir, NOTICES_FILE), "x".repeat(NOTICES_MAX_BYTES + 1));
+    expect(readNotices(dir)).toBeNull(); // far past the real file's size: not ours
+    fs.rmSync(path.join(dir, NOTICES_FILE));
+    fs.mkdirSync(path.join(dir, NOTICES_FILE));
+    expect(readNotices(dir)).toBeNull(); // a directory, not a file
+  });
+
+  it("the packager config ships the notices file under the name main reads", () => {
+    const config = fs.readFileSync(
+      new URL("../electron-builder.config.cjs", import.meta.url),
+      "utf8",
+    );
+    expect(config).toContain(`to: "${NOTICES_FILE}"`);
+  });
 });
 
 describe("renderer errors", () => {
@@ -244,6 +269,13 @@ describe("installDiagnostics", () => {
     );
     expect(text).toContain("ERROR desktop:     at App (app.js:1)");
     expect(text).not.toContain(SECRETS.openai);
+  });
+
+  it("about.notices answers null when the app is not packaged", async () => {
+    const { handlers } = harness();
+    expect(await handlers.get("indus:about:notices")?.({}, { senderId: 1 })).toEqual({
+      text: null,
+    });
   });
 
   it("logs.recent returns the kept lines; logs.reveal shows the log file", async () => {

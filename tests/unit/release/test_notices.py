@@ -352,3 +352,49 @@ def test_docker_image_and_desktop_package_embed_the_same_file() -> None:
     assert '{ from: "../../THIRD_PARTY_NOTICES.md", to: "THIRD_PARTY_NOTICES.md" }' in builder
     ignore = (notices.ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
     assert "THIRD_PARTY_NOTICES.md" not in ignore and "*.md" not in ignore
+
+
+# -- W46 RS7: refresh writes the layout Biome keeps ----------------------------------------------
+
+
+def test_dump_json_keeps_the_committed_data_file_byte_for_byte() -> None:
+    """The committed file passes Biome; a refresh that changes no row must not reformat it."""
+    text = notices.DATA_FILE.read_text(encoding="utf-8")
+    assert notices.dump_json(json.loads(text)) == text
+
+
+def test_dump_json_arrays_fold_to_the_line_width_counting_the_comma() -> None:
+    # ``  "k": `` is 7 columns; ["a…", "b"] adds 9 around the first string, the comma 1 more.
+    fits = 100 - 7 - 9 - 1
+    data = {"k": ["a" * fits, "b"], "z": []}
+    assert notices.dump_json(data) == '{\n  "k": ["' + "a" * fits + '", "b"],\n  "z": []\n}\n'
+    over = {"k": ["a" * (fits + 1), "b"], "z": []}
+    assert notices.dump_json(over) == (
+        '{\n  "k": [\n    "' + "a" * (fits + 1) + '",\n    "b"\n  ],\n  "z": []\n}\n'
+    )
+    last = {"k": ["a" * (fits + 1), "b"]}  # no comma after the last key: the same text fits
+    assert notices.dump_json(last) == '{\n  "k": ["' + "a" * (fits + 1) + '", "b"]\n}\n'
+
+
+def test_dump_json_objects_always_break_and_rows_fold_one_by_one() -> None:
+    data = {"t": {"rows": [["pkg", "1.0", "MIT"], ["x" * 95, "2.0"]], "o": [{"a": 1}], "e": {}}}
+    assert notices.dump_json(data) == (
+        "{\n"
+        '  "t": {\n'
+        '    "rows": [\n'
+        '      ["pkg", "1.0", "MIT"],\n'
+        "      [\n"
+        '        "' + "x" * 95 + '",\n'
+        '        "2.0"\n'
+        "      ]\n"
+        "    ],\n"
+        '    "o": [\n'
+        "      {\n"
+        '        "a": 1\n'
+        "      }\n"
+        "    ],\n"
+        '    "e": {}\n'
+        "  }\n"
+        "}\n"
+    )
+    assert json.loads(notices.dump_json(data)) == data

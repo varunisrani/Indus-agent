@@ -1287,14 +1287,19 @@ def _empty_section() -> Any:
 
 
 async def build_service(daemon: GatewayDaemon) -> SessionService:
-    """The profile's session service for chat turns (lean host wiring, like the TUI bridge)."""
-    return await _session_service(daemon, platform="gateway", owner="gateway", chat=True)
+    """The profile's session service for chat turns (lean host wiring, like the TUI bridge).
+    Its canonical bot chat runs as a bot turn (``service.bot_turns``, wave 45)."""
+    return await _session_service(
+        daemon, platform="gateway", owner="gateway", chat=True, bot_chats=True
+    )
 
 
 async def build_surface_service(daemon: GatewayDaemon, spec: SurfaceSpec) -> SessionService:
     """The session service of one HTTP surface (P15-30..32): the spec's toolsets, platform and
     answerable request kinds; MCP servers for the API server only, never plugins (one plugin host
-    per profile, the chat service's); an ``untrusted`` surface (webhooks) gets neither."""
+    per profile, the chat service's); an ``untrusted`` surface (webhooks) gets neither. The API
+    server's service runs the canonical bot chat as a bot turn (a peer's ``/v1/bots/dm``, wave 45);
+    an untrusted surface keeps its floor."""
     return await _session_service(
         daemon,
         platform=spec.platform,
@@ -1303,6 +1308,7 @@ async def build_surface_service(daemon: GatewayDaemon, spec: SurfaceSpec) -> Ses
         toolsets=list(spec.toolsets),
         answerable=spec.answerable_kinds,
         mcp=not spec.untrusted,
+        bot_chats=not spec.untrusted,
     )
 
 
@@ -1366,6 +1372,7 @@ async def _session_service(
     toolsets: list[str] | None = None,
     answerable: tuple[str, ...] = (),
     mcp: bool = True,
+    bot_chats: bool = False,
 ) -> SessionService:
     from dataclasses import replace
 
@@ -1375,6 +1382,7 @@ async def _session_service(
     from indus.providers.auxiliary import AuxClient
     from indus.providers.route import resolve
     from indus.service import terminal_host
+    from indus.service.bot_turns import BotChats
     from indus.service.code_host import KernelUpkeep
     from indus.service.lsp_host import LspUpkeep
     from indus.service.mcp_host import McpUpkeep
@@ -1436,6 +1444,7 @@ async def _session_service(
         mcp=McpUpkeep(scope, tools, aux=aux, watch=False) if mcp else None,
         plugins=PluginUpkeep(scope, tools, surface="gateway", interactive=False) if chat else None,
         lsp=LspUpkeep(scope),
+        bot_chats=BotChats(scope, handle).shape if bot_chats else None,
     )
 
 

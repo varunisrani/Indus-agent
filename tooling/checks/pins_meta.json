@@ -1,4 +1,4 @@
 {
-  "lock_date": "2026-10-18",
+  "lock_date": "2026-10-22",
   "note": "The day uv.lock was last cut. [tool.uv] exclude-newer in pyproject.toml must be at least 14 days before it; the lead bumps both together when relocking. On pull requests this file is read from the base branch."
 }

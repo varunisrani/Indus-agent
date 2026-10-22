@@ -356,6 +356,18 @@ def test_ci_gate_fails_on_anything_but_success(results: list[str], code: int):
     assert out.returncode == code, out.stdout + out.stderr
 
 
+def test_ci_shellchecks_the_installer_and_release_scripts_at_a_pinned_version():
+    """W46 RS9: the built installer and the release shell scripts go through shellcheck, at a
+    pinned version on a pinned runner image."""
+    shell = "\n".join(ci_jobs(CI.read_text(encoding="utf-8"))["shell"])
+    assert "runs-on: ubuntu-24.04" in shell
+    pin = re.search(r'SHELLCHECK_VERSION: "(\d+\.\d+\.\d+)"', shell)
+    assert pin is not None
+    assert '[ "$found" != "$SHELLCHECK_VERSION" ]' in shell
+    assert 'shellcheck scripts/install.sh "${release[@]}"' in shell
+    assert "release=(scripts/release/*.sh)" in shell
+
+
 def test_ci_ts_job_steps_in_order():
     ts = "\n".join(ci_jobs(CI.read_text(encoding="utf-8"))["ts"])
     steps = [

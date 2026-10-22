@@ -33,6 +33,7 @@ from typing import Any, Protocol, runtime_checkable
 import httpx
 
 from indus.foundation.blocking import run_blocking
+from indus.foundation.digits import is_digits
 from indus.foundation.fsio import atomic_write_bytes
 from indus.foundation.scope import Scope
 from indus.tools.builtin.media import audio
@@ -177,7 +178,7 @@ def clamp_speed(value: object, provider_range: tuple[float, float]) -> float:
 
 async def _capped_body(response: httpx.Response, label: str) -> bytes:
     declared = response.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+    if is_digits(declared) and int(declared) > MAX_BODY_BYTES:
         raise ProviderFailed(f"{label} sent more than {MAX_BODY_BYTES // (1024 * 1024)} MB")
     body = bytearray()
     async for chunk in response.aiter_bytes():

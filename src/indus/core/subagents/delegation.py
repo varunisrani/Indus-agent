@@ -16,6 +16,11 @@ inline table. A call is normalised (P10-01), then:
   the parent turn's liveness.
 
 The agent's close stops every child it still has (session end).
+
+Fence laundering (SEC-4): when a child's turns saw outside text (an untrusted tool, or a tainted
+result such as an ``execute_code`` run that read a page), the call is marked in the turn's
+``Taint`` and the tool round fences the returned summaries; background deliveries are fenced by
+``BackgroundDelegations``.
 """
 
 from __future__ import annotations
@@ -184,11 +189,15 @@ class Delegation:
         if request.action == "stop":
             if self._background is None:
                 return ToolResult.error(NO_BACKGROUND, error_type="not_found")
-            return _control_result(await self._background.stop(request.subagent_id))
-        return await self._spawn(request, state, limits)
+            stopped = await self._background.stop(request.subagent_id)
+            child = self._background.children.get(request.subagent_id)
+            if child is not None and child.read_untrusted:
+                state.taint.mark(call.call_id)  # SEC-4: its partial summary read outside text
+            return _control_result(stopped)
+        return await self._spawn(request, state, limits, call.call_id)
 
     async def _spawn(
-        self, request: DelegateRequest, state: TurnState, limits: DelegationLimits
+        self, request: DelegateRequest, state: TurnState, limits: DelegationLimits, call_id: str
     ) -> ToolResult:
         if self.depth >= limits.max_depth:
             return ToolResult.error(
@@ -247,6 +256,8 @@ class Delegation:
             result_entry(child, outcome, limits.summary_max_chars)
             for child, outcome in zip(children, outcomes, strict=True)
         ]
+        if any(outcome.read_untrusted for outcome in outcomes):
+            state.taint.mark(call_id)  # SEC-4: a child summarised outside text
         return _json({"results": results})
 
     async def _build(

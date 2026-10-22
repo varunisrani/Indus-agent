@@ -36,7 +36,12 @@ is settled the same way per chat route of its session: a final the lost turn sto
 (through ``crash_reply_sink``, which skips it when the delivery ledger shows it went out) and the
 admission is discarded; otherwise the routes are paused. ``blocked`` is the admission service's
 notice that queued input waits behind an unknown turn (handed on only after this recovery ran):
-the route is paused and the chat told once. ``resolve_unknown`` also discards the session's
+the route is paused and the chat told once. An unknown admission of a session with no chat route
+(a TUI, desktop, CLI or web session) whose own reply was saved before the process died (the
+transcript holds the turn's user message and then ends with a final assistant reply, both written
+after the admission) is settled the same way: discarded with nothing sent, so no surface shows "a
+turn was lost" with Discard for a reply it can read (W46 RS6). Without that proof it stays
+``unknown`` for the person to discard. ``resolve_unknown`` also discards the session's
 unknown admission and closes the lost turn in its transcript with a short assistant note
 (``admissions.close_lost_turn``, in the discard's transaction), so a later resume does not
 start from a dangling question.
@@ -109,6 +114,8 @@ type CrashReplySink = Callable[[RouteEntry, Source, str], Awaitable[None]]
 @dataclass
 class RecoveryReport:
     recovered_replies: list[str] = field(default_factory=list[str])
+    saved_turns: list[str] = field(default_factory=list[str])
+    """Sessions without a chat route whose lost turn had saved its reply (discarded quietly)."""
     paused: list[str] = field(default_factory=list[str])
     cleared: list[str] = field(default_factory=list[str])
     """Markers whose admission never started or settled (not crash-left turns)."""
@@ -188,6 +195,21 @@ def _final_after(store: StoreHandle, session_id: str, started: float) -> str | N
         return None
     text = messages.decode_content(content)
     return text.strip() if isinstance(text, str) and text.strip() else None
+
+
+def _turn_saved(store: StoreHandle, session_id: str, admitted: float) -> bool:
+    """Whether the turn admitted at ``admitted`` stored its own reply: a user message written at
+    or after ``admitted``, then (as the last message) a final assistant reply. A reply of an
+    earlier turn, or a turn that died before its prompt was written, is no proof."""
+    if _final_after(store, session_id, admitted) is None:
+        return False
+    with store.read() as conn:
+        found = conn.execute(
+            "SELECT 1 FROM messages WHERE session_id = ? AND active = 1 AND role = 'user' "
+            "AND timestamp >= ? LIMIT 1",
+            (session_id, admitted),
+        ).fetchone()
+    return found is not None
 
 
 class BootRecovery:
@@ -307,7 +329,11 @@ class BootRecovery:
             return
         store = self.daemon.store
         for row in rows:
-            entries = [e for e in await self._routes_of(row.session_id) if not _paused(e)]
+            routed = await self._routes_of(row.session_id)
+            if not routed:
+                await self._settle_saved(row, report)
+                continue
+            entries = [e for e in routed if not _paused(e)]
             if not entries:
                 continue
             try:
@@ -349,6 +375,22 @@ class BootRecovery:
                     "/reset",
                     entry.session_key,
                 )
+
+    async def _settle_saved(self, row: AdmissionRow, report: RecoveryReport) -> None:
+        """A routeless session's lost turn whose reply was saved is not lost: discard it (the
+        transcript already ends with that reply, so nothing is appended or sent)."""
+        shared = self.shared
+        if shared is None:
+            return
+        try:
+            saved = await run_blocking(
+                _turn_saved, self.daemon.store, row.session_id, row.created_at, label="transcript"
+            )
+        except Exception:
+            log.warning("could not read the transcript of %s", row.session_id, exc_info=True)
+            return
+        if saved and await shared.discard(row):
+            report.saved_turns.append(row.session_id)
 
     async def _routes_of(self, session_id: str) -> list[RouteEntry]:
         try:

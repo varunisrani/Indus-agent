@@ -24,6 +24,7 @@ from indus.cli.args import ChatArgs, CliState, GlobalArgs, HostOverrides
 from indus.cli.session_select import LaunchPolicy
 from indus.foundation.scope import Scope
 from indus.protocol.events import ExitReason, MessageDelta, TurnDone
+from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice, ApprovalRequest
 from indus.state import registry
 from tests.fakes.agent import any_window
 from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn
@@ -353,6 +354,15 @@ def test_a_turn_that_does_not_settle_detaches(
     assert "Detached" in ran.err and "goes on in the daemon" in ran.err
 
 
+def _approval(session_id: str, request_id: str = "req-1") -> ApprovalRequest:
+    return ApprovalRequest(
+        request_id=request_id,
+        session_id=session_id,
+        command="rm -rf build",
+        description="recursive delete",
+    )
+
+
 def test_a_question_nobody_can_answer_detaches_a_finite_run_with_exit_3(
     scope: Scope, backend: StubBackend
 ) -> None:
@@ -362,7 +372,7 @@ def test_a_question_nobody_can_answer_detaches_a_finite_run_with_exit_3(
     async def asks(session_id: str, _turn: str) -> Any:
         import asyncio
 
-        remote.ask(session_id, {"kind": "approval"})
+        remote.ask(session_id, {"kind": "clarify"})
         await asyncio.to_thread(done.wait, 10.0)
 
     remote.wait_with = asks
@@ -373,6 +383,47 @@ def test_a_question_nobody_can_answer_detaches_a_finite_run_with_exit_3(
     assert ran.code == 3
     assert "waiting for an answer" in ran.err and "indus -r s-new-1" in ran.err
     assert calls(remote, "interrupt") == []  # detached without cancelling
+
+
+def _answered_run(scope: Scope, backend: StubBackend) -> Any:
+    remote = backend.remote
+
+    async def asks(session_id: str, turn_id: str) -> Any:
+        import asyncio
+
+        remote.ask(session_id, _approval(session_id))
+        assert await asyncio.to_thread(remote.answered.wait, 10.0)
+        return turn_result(session_id, turn_id, "I left the build folder alone.")
+
+    remote.wait_with = asks
+    return invoke(scope, "chat", "-q", "clean up")
+
+
+def test_an_approval_in_a_finite_chat_is_refused_as_local_does(
+    scope: Scope, backend: StubBackend
+) -> None:
+    """W46 F-5: with no terminal, attached ``chat -q`` refuses a risky command the way
+    ``--local`` does (``approvals.single_query_mode: deny``) and the turn ends normally."""
+    ran = _answered_run(scope, backend)
+    assert ran.code == 0, ran.err
+    assert "I left the build folder alone." in ran.out
+    (answer,) = backend.remote.answers
+    assert isinstance(answer, ApprovalAnswer)
+    assert answer.choice == ApprovalChoice.DENY and answer.reason == attach.ONE_SHOT_DENY
+    assert "approvals.single_query_mode" in attach.ONE_SHOT_DENY
+    assert "waiting for an answer" not in ran.err
+
+
+def test_single_query_mode_approve_approves_once_as_local_does(
+    scope: Scope, backend: StubBackend
+) -> None:
+    (scope.home / "config.yaml").write_text(
+        "approvals:\n  single_query_mode: approve\n", encoding="utf-8"
+    )
+    ran = _answered_run(scope, backend)
+    assert ran.code == 0, ran.err
+    (answer,) = backend.remote.answers
+    assert isinstance(answer, ApprovalAnswer) and answer.choice == ApprovalChoice.ONCE
 
 
 def test_an_interrupt_without_a_reply_says_it_was_not_run_again(

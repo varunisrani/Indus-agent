@@ -72,16 +72,26 @@ nav:
       - Desktop app: user-guide/desktop.md
       - Web dashboard: user-guide/dashboard.md
       - Docker: user-guide/docker.md
+      - Themes: user-guide/themes.md
+      - Pets: user-guide/pets.md
       - Models and keys: user-guide/models.md
       - Profiles: user-guide/profiles.md
       - Sessions: user-guide/sessions.md
       - Tools and backends: user-guide/tools-and-backends.md
+      - Language servers: user-guide/lsp.md
+      - Checking a project: user-guide/verify.md
+      - Helper programs: user-guide/helper-programs.md
+      - Egress proxy: user-guide/egress.md
       - Approvals and security: user-guide/security.md
+      - Saved logins (vault): user-guide/vault.md
       - Memory and skills: user-guide/memory-and-skills.md
       - Plugins and MCP: user-guide/plugins-and-mcp.md
       - Serving MCP: mcp-serve.md
       - Editors (ACP): acp.md
       - Scheduled jobs: user-guide/cron.md
+      - Task board: user-guide/board.md
+      - Bots and peers: user-guide/bots-and-peers.md
+      - Group rooms: user-guide/rooms.md
       - Research tooling: user-guide/research.md
       - Evals: research/evals.md
   - Messaging:
@@ -110,6 +120,7 @@ nav:
       - SimpleX Chat: messaging/simplex.md
       - Buzz: messaging/buzz.md
       - Raft: messaging/raft.md
+      - Relay: messaging/relay.md
       - API server and webhooks: messaging/api-and-webhooks.md
   - Reference:
       - Command line: reference/cli.md

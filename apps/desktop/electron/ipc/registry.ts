@@ -185,8 +185,12 @@ export class IpcRegistry {
         });
       } else if (def.kind === "sync") {
         this.names.add(def.name);
+        // The sender check first here too (SEC-18): a foreign frame learns nothing, not even
+        // which channels this build leaves unwired.
         this.options.ipc.on(def.name, (event) => {
-          event.returnValue = errorEnvelope("not-available", `${def.name} is not available`);
+          event.returnValue =
+            this.refuse(def.name, event) ??
+            errorEnvelope("not-available", `${def.name} is not available`);
         });
       }
     }

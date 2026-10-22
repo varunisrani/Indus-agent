@@ -96,7 +96,8 @@ Allow-listed (D-ids for the lead; details in the YAML):
 - `cli.z.approvals/outcome` (D-16.490): attached `-z` sends no `unattended`, so a dangerous command
   makes the finite run detach with exit 3 instead of being approved for the run.
 - `cli.q.denies/outcome` (D-16.487): a finite attached `chat -q` that meets a question detaches with
-  exit 3 instead of denying it.
+  exit 3 instead of denying it. Removed at the waves 45 + 46 integration (D-16.1025): wave 46's F-5
+  fix (D-16.1010) makes the attached client deny like the in-process host, so the entry was stale.
 - `bridge.lost_mid_turn/lost turn finished` (D-16.10): closing an attached client only detaches; the
   daemon finishes the turn.
 - `bridge.event_shape/session events` (D-?): no `session.info` after create/resume, no

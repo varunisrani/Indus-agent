@@ -390,6 +390,25 @@ def test_before_hook_can_block(reg: ToolRegistry) -> None:
     assert ran == []
 
 
+def test_blocked_call_still_reaches_after_but_not_transform(reg: ToolRegistry) -> None:
+    """W46 RS19: an observer sees the blocked call (with its block text); transform never
+    rewrites a block."""
+    hooks = Recorder(block="not allowed here")
+    hooks.replacement = ToolResult.ok("rewritten")
+    reg.register("e", "demo", schema(), returns("ran"))
+    result = run(reg, "e", {"q": 1}, hooks=hooks)
+    assert result.error_type == "blocked" and body(result)["error"] == "not allowed here"
+    assert hooks.events[0] == "before:{'q': 1}"
+    assert len(hooks.events) == 2 and hooks.events[1].startswith("after:")
+    assert "not allowed here" in hooks.events[1]
+
+
+def test_blocked_call_survives_a_raising_after(reg: ToolRegistry) -> None:
+    hooks = Recorder(block="no", raise_in="after")
+    reg.register("e", "demo", schema(), returns("ran"))
+    assert run(reg, "e", hooks=hooks).error_type == "blocked"
+
+
 def test_non_empty_before_that_raises_blocks(reg: ToolRegistry) -> None:
     hooks = Recorder(raise_in="before")
     reg.register("e", "demo", schema(), returns("ran"))

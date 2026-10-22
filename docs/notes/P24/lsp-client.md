@@ -121,3 +121,43 @@ servers get the child environment of the profile that started the tier (provider
 server either way, R02.22); `LspUpkeep.release(folder)` exists but no worktree-removal path calls it
 yet (follow-up with P11's worktree remove); `indus lsp restart` against a running daemon is still a
 follow-up.
+
+## Wave 45 (P45 — D-16.982, D-16.983): release before a worktree is removed; `indus lsp restart` reaches the daemon
+
+Status: done (2026-10-22, wave 45 builder P45). Read: no reference file. S45 makes the tier per
+profile in the same wave; this slice adds only entry points (`lsp_host.restart_servers(scope)` /
+`release_servers(scope, folder)`, both looking the tier up through one `_manager_for(scope)`, and
+`tools.lsp.diagnostics.release_folder`) and calls them, so the per-profile change stays in one
+place.
+
+What it does (own words):
+- **Release.** A language server rooted in a worktree must stop before the tree is removed (it
+  holds files open there and would only be reaped later, once its folder is gone). Three removal
+  paths: (1) a subagent's worktree (`core.subagents.worktree.close_worktree`) is removed in the
+  process that ran the child, so the process's tier releases the folder first
+  (`tools.lsp.diagnostics.release_folder`, a no-op when no tier is installed); (2) the TUI launcher
+  removing an `indus -w` tree and (3) `indus worktree prune` run in the CLI process, while the
+  session's servers live in the profile's daemon (sessions attach to it by default): before each
+  tree is removed the CLI asks the daemon with the owner-only control verb `lsp-release
+  {folder}` (absolute path; the daemon's `lsp_host.release_servers`). `backends.worktrees.remove/prune`
+  take a `before_remove(path)` callback run only for a tree that is really about to go (after the
+  blocker check), so a kept tree keeps its servers. No daemon, no socket: nothing to release.
+- **Restart.** `indus lsp restart` asks the running daemon first (owner-only control verb
+  `lsp-restart`: `lsp_host.restart_servers`, every server stopped and failures forgotten, the next edit
+  starts them again) and prints how many stopped there; with no daemon answering it keeps the old
+  behaviour (this process's tier, normally none). The plan names no protocol method for it, so none
+  was added (the control socket is the CLI's door to its daemon, like `stop` and `maintenance-run`).
+
+Edge cases: a daemon without LSP enabled answers `{stopped: 0, running: false}`; a relative or
+over-long `folder` is refused (`bad_params`); a daemon that does not know the verb (older) answers
+`unknown_verb` and the CLI falls back; a release that fails is logged and never blocks the removal.
+
+Tests: `tests/unit/service/test_lsp_control.py` (verbs known and owner-only, params, the tier
+reached, a real control-socket round trip from the CLI side, the fallbacks, `restart_lines`),
+`tests/unit/tools/lsp/test_release_folder.py`,
+`tests/unit/backends/test_worktrees.py::test_before_remove_is_told_only_for_trees_that_go`,
+`tests/unit/core/subagents/test_worktree.py::test_closing_a_child_tree_stops_its_language_servers_first`.
+
+Not done here (recorded): the classic CLI's own in-process tier is not asked before `/worktree
+prune` (its slash handler is synchronous; a server whose folder is gone is reaped by
+`reap_idle`).

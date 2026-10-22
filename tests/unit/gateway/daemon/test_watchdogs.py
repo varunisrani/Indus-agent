@@ -144,8 +144,8 @@ def test_restart_loop_guard_keeps_fifty_and_fails_open(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Unix sockets")
-def test_sd_notify_datagrams(tmp_path: Path) -> None:
-    address = str(tmp_path / "notify.sock")
+def test_sd_notify_datagrams(short_tmp: Path) -> None:
+    address = str(short_tmp / "notify.sock")
     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as server:
         server.bind(address)
         server.settimeout(5)
@@ -153,7 +153,7 @@ def test_sd_notify_datagrams(tmp_path: Path) -> None:
         assert notify("STATUS=hello", env)
         assert server.recv(256) == b"STATUS=hello"
         assert not notify("READY=1", {})
-        assert not notify("READY=1", {"NOTIFY_SOCKET": str(tmp_path / "nobody.sock")})
+        assert not notify("READY=1", {"NOTIFY_SOCKET": str(short_tmp / "nobody.sock")})
 
         async def main() -> None:
             clock = FakeClock(START)

@@ -13,7 +13,9 @@ key (a client key, or a dotted ``display.*`` / ``tui.*`` path).
   a turn runs waits for the turn to end (``deferred``); a model listed in ``tui.confirm_models``
   needs ``confirm: true`` (``CONFIRM_REQUIRED``).
 
-``model.options`` lists the bundled providers with whether a key is stored; ``model.save_key`` /
+``model.options`` lists the bundled providers with whether a key is stored, and for the current
+provider when it is a custom or local endpoint the model ids its ``/models`` lists (cached per base
+URL like setup's list; a failure leaves the list empty); ``model.save_key`` /
 ``model.disconnect`` write or remove a provider's key in the profile's secret store (the value is
 never logged). ``reload.mcp`` reloads the profile's MCP servers through ``indus.mcp.reload.reload``
 (P13-08: the request is the confirmation; the running sessions keep their tool arrays until their
@@ -27,6 +29,7 @@ import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
+import httpx
 from pydantic import JsonValue
 
 from indus.foundation.blocking import run_blocking
@@ -54,8 +57,9 @@ from indus.protocol.bridge import (
 from indus.protocol.errors import CONFIRM_REQUIRED, INVALID_PARAMS, PROVIDER_UNAVAILABLE
 from indus.protocol.methods import PROTOCOL_VERSION, ProtocolError
 from indus.providers import bundled
+from indus.providers.model_list import list_models
 from indus.providers.profile import ProviderProfile
-from indus.providers.route import resolve
+from indus.providers.route import RuntimeRoute, resolve
 from indus.providers.types import normalize_effort
 from indus.service.session_service import SessionService
 from indus.tui_bridge.bridge import TOOL_MODES, SessionView, ToolMode
@@ -358,12 +362,38 @@ def _profile(slug: str) -> ProviderProfile:
     return found
 
 
+def _lists_live(route: RuntimeRoute | None) -> bool:
+    """A custom or local endpoint's own list is the only one the picker can offer (RS4)."""
+    if route is None:
+        return False
+    profile = route.profile or bundled.by_name().get(route.provider.strip().lower())
+    return profile is not None and profile.is_custom and profile.supports_model_listing
+
+
+async def _listed_ids(
+    bridge: Bridge, route: RuntimeRoute, client: httpx.AsyncClient | None
+) -> list[str]:
+    try:
+        if client is not None:
+            found = await list_models(route, client=client, scope=bridge.scope)
+        else:
+            async with httpx.AsyncClient() as own:
+                found = await list_models(route, client=own, scope=bridge.scope)
+    except Exception:
+        log.debug("could not list the models of %s", route.provider, exc_info=True)
+        return []
+    return list(dict.fromkeys(m.id for m in found if m.id))
+
+
 async def model_options(bridge: Bridge, params: ModelOptionsParams) -> ModelOptionsResult:
     provider, model = "", ""
+    route: RuntimeRoute | None = None
+    client: httpx.AsyncClient | None = None
     if params.session_id is not None:
         service = await bridge.service()
         state = service.agent(params.session_id).binding.state
         provider, model = state.provider, state.model
+        route, client = getattr(state, "route", None), getattr(state, "client", None)
     else:
         try:
             route = resolve(bridge.scope)
@@ -371,6 +401,12 @@ async def model_options(bridge: Bridge, params: ModelOptionsParams) -> ModelOpti
         except Exception:
             log.debug("no route resolves for this profile", exc_info=True)
     options = [_option(bridge, p, provider) for p in bundled.PROFILES if not p.hidden]
+    if route is not None and _lists_live(route):
+        listed = await _listed_ids(bridge, route, client)
+        options = [
+            o.model_copy(update={"models": listed}) if o.slug == route.provider else o
+            for o in options
+        ]
     return ModelOptionsResult(provider=provider, model=model, providers=options)
 
 

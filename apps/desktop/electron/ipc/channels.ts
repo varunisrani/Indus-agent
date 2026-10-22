@@ -568,6 +568,9 @@ export const CHANNELS = [
     owner: "P20-39",
   },
 
+  // about: the packaged third-party notices for the licences screen (W46, F-2)
+  { name: "indus:about:notices", kind: "invoke", group: "about", method: "notices", owner: "W46" },
+
   // diagnostics, clipboard, find in page
   {
     name: "indus:diagnostics:copy",

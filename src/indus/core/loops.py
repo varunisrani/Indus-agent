@@ -34,6 +34,7 @@ from typing import Any, Final, Literal, cast
 from indus.core.goals import CommandReply, GoalJudge, parse_verdict
 from indus.core.session_scheduler import DueEntry, MetaStore, SessionHost, TurnEnd
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.protocol.events import LoopUpdate, Notice, NoticeLevel
 
 __all__ = [
@@ -124,7 +125,7 @@ def parse_loop_args(text: str, *, floor_s: int = DEFAULT_MIN_INTERVAL_S) -> Loop
     found = _TIMES.search(rest)
     if found:
         raw = found.group(1)
-        if not raw.isdigit() or int(raw) < 1:
+        if not is_digits(raw) or int(raw) < 1:
             return f"--times needs a whole number above 0, not {raw!r}"
         times = int(raw)
         rest = (rest[: found.start()] + rest[found.end() :]).strip()

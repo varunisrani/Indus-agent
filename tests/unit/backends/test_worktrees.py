@@ -192,3 +192,32 @@ def test_divergence_note(scope: Scope, repo: Path, git: Git) -> None:
     assert worktrees.divergence_note(scope, repo, [str(repo / "app.py")]) is None
     worktrees.bind_session(scope, str(tree), "s9")
     assert worktrees.load_registry(scope)[0]["session_id"] == "s9"
+
+
+def test_before_remove_is_told_only_for_trees_that_go(
+    scope: Scope, repo: Path, git: Git, fake_clock: FakeClock
+) -> None:
+    """Wave 45 (D-16.982): the CLI stops a tree's language servers there, so it must hear about
+    exactly the trees git removes, while they still exist; a failing step never keeps a tree."""
+    clean = Path(worktrees.create(scope, repo, "clean", git=git).path)
+    dirty = Path(worktrees.create(scope, repo, "dirty", git=git).path)
+    write(dirty, "app.py", "edited\n")
+    fake_clock.advance(25 * HOUR)
+    told: list[tuple[str, bool]] = []
+
+    def note(path: str) -> None:
+        told.append((path, Path(path).exists()))
+
+    worktrees.prune(scope, repo, dry_run=True, git=git, before_remove=note)
+    assert told == []
+    done = worktrees.prune(scope, repo, git=git, before_remove=note)
+    assert done.removed == (str(clean),) and told == [(str(clean), True)]
+    assert worktrees.remove(scope, repo, dirty, git=git, before_remove=note) is not None
+    assert len(told) == 1  # a kept tree keeps its servers
+
+    def broken(path: str) -> None:
+        raise OSError("no daemon")
+
+    other = Path(worktrees.create(scope, repo, "other", git=git).path)
+    assert worktrees.remove(scope, repo, other, git=git, before_remove=broken) is None
+    assert not other.exists()

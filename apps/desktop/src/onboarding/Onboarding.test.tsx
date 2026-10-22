@@ -281,6 +281,42 @@ describe("onboarding overlay", () => {
     });
   });
 
+  it("the parity flow's data-ui hooks walk the custom endpoint path (W46, RM21)", async () => {
+    const hook = (name: string) => document.querySelector(`[data-ui="${name}"]`) as HTMLElement;
+    const api = fakeRest();
+    api.route("GET", "/api/model/options", OPTIONS(false));
+    api.route("POST", "/api/model/test-endpoint", {
+      ok: true,
+      status: 200,
+      models: ["parity-model"],
+      message: "1 model",
+    });
+    api.route("POST", "/api/model/set", { ok: true });
+    render(<Onboarding ready api={api} saveKey={null} />);
+    await settle();
+    expect(hook("onboarding-dialog").getAttribute("role")).toBe("dialog");
+    await act(async () => {
+      fireEvent.click(hook("onboarding-custom-option"));
+    });
+    const url = hook("onboarding-endpoint-url") as HTMLInputElement;
+    expect(url.tagName).toBe("INPUT");
+    fireEvent.change(url, { target: { value: "http://127.0.0.1:24001/v1" } });
+    await act(async () => {
+      fireEvent.click(hook("onboarding-test-continue"));
+    });
+    await settle();
+    expect((hook("onboarding-model-select") as HTMLInputElement).value).toBe("parity-model");
+    await act(async () => {
+      fireEvent.click(hook("onboarding-start-chatting"));
+    });
+    await settle();
+    expect(api.calls.find((c) => c.path === "/api/model/set")?.body).toMatchObject({
+      provider: "custom",
+      model: "parity-model",
+      base_url: "http://127.0.0.1:24001/v1",
+    });
+  });
+
   it("recognises provider and auth failures only", () => {
     expect(
       isProviderFailure({

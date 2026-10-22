@@ -217,9 +217,11 @@ def test_loopback_tcp_transport(tmp_path: Path) -> None:
 
 
 def test_long_socket_path_moves_to_a_short_private_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, short_tmp: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # the short dir stays in this test
+    # The product's short dir goes under this test's own short folder (not ``tmp_path``, which a
+    # long ``--basetemp`` makes too long for any socket: W46 RS11).
+    monkeypatch.setattr(tempfile, "tempdir", str(short_tmp))
     deep = tmp_path / ("d" * 60) / ("e" * 60)
     deep.mkdir(parents=True)
     server = SocketRpcServer(deep)

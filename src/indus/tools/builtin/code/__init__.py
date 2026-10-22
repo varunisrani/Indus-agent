@@ -13,8 +13,17 @@ run it:
   script).
 
 Then ``runner.finish_result`` writes the JSON result. Context keywords beyond the usual ones:
-``tool_registry``, ``tool_hooks`` and ``enabled_tools`` (offered by the turn loop) and
-``code_kernel_owner`` (set for delegated children, P10-06).
+``tool_registry``, ``tool_hooks`` and ``enabled_tools`` (offered by the turn loop),
+``code_kernel_owner`` (set for delegated children, P10-06) and ``taint`` (the turn's
+``TaintSink``).
+
+Fence laundering (SEC-4, wave 46): a script that called a tool whose output is outside text
+(``TaintSink.untrusted``: web, browser, MCP, …) still gets that tool's plain JSON answer, but the
+run is marked tainted (``TaintSink.mark(tool_call_id)``) and the tool round fences what the run
+returns to the model. A session kernel keeps its variables between calls, so its taint is sticky:
+once a kernel owner's run read outside text, every later run for that owner is marked too, until
+``reset`` starts a fresh kernel. What a script writes to a file and a later ``read_file`` shows is
+not tracked (recorded as a residual in the threat model).
 """
 
 from __future__ import annotations
@@ -41,7 +50,7 @@ from indus.tools.builtin.code.settings import (
     CodeSettings,
     Mode,
 )
-from indus.tools.calls import ToolCall, ToolContext
+from indus.tools.calls import TaintSink, ToolCall, ToolContext
 from indus.tools.dispatch import dispatch
 from indus.tools.hooks import NO_HOOKS, ToolHooks
 from indus.tools.registry import ToolRegistry, ToolTraits
@@ -75,6 +84,7 @@ class ExecuteCodeTool:
         self._fallback_registry: ToolRegistry | None = None
         self._lock = threading.Lock()
         self._call_ids = itertools.count(1)
+        self._tainted_owners: set[str] = set()  # kernel owners whose kernel read outside text
 
     # -- pieces ---------------------------------------------------------------------------------
 
@@ -98,8 +108,16 @@ class ExecuteCodeTool:
         present = set(registry.names(scope))
         return schema.allowed_for(n for n in names if n in present)
 
-    def invoker(self, registry: ToolRegistry, hooks: ToolHooks, ctx: ToolContext) -> ToolInvoker:
+    def invoker(
+        self,
+        registry: ToolRegistry,
+        hooks: ToolHooks,
+        ctx: ToolContext,
+        read: _OutsideText | None = None,
+    ) -> ToolInvoker:
         async def invoke(name: str, args: dict[str, Any]) -> str:
+            if read is not None:
+                read.saw(name)
             call = ToolCall(name, args, f"code_{next(self._call_ids)}")
             result = await dispatch(call, ctx, registry=registry, hooks=hooks)
             return result.text
@@ -125,6 +143,8 @@ class ExecuteCodeTool:
         tool_hooks: object | None = None,
         enabled_tools: object | None = None,
         code_kernel_owner: str | None = None,
+        tool_call_id: str | None = None,
+        taint: object | None = None,
     ) -> str:
         if "code" not in args and "command" in args:
             return _error(MISROUTED_COMMAND)
@@ -187,48 +207,62 @@ class ExecuteCodeTool:
         ctx = ToolContext(
             scope=scope, task_id=task_id, session_id=session_id, turn_id=turn_id, extras=extras
         )
+        owner = code_kernel_owner or session_id or task_id or "default"
+        sink = taint if isinstance(taint, TaintSink) else None
+        read = _OutsideText(sink) if sink is not None else None
+        if read is not None and settings.kernel != "off":
+            with self._lock:
+                if reset:
+                    self._tainted_owners.discard(owner)
+                read.tainted = owner in self._tainted_owners
         pipeline = RpcPipeline(
             token="",  # set by the path that owns the transport
             allowed=frozenset(tools),
             max_calls=settings.max_tool_calls,
-            invoke=self.invoker(registry, hooks, ctx),
+            invoke=self.invoker(registry, hooks, ctx, read),
             clock=clock,
         )
-        owner = code_kernel_owner or session_id or task_id or "default"
         try:
-            if env.flags.host_local:
-                outcome = await self._local(
-                    code,
-                    scope,
-                    session_id,
-                    env.cwd,
-                    tools,
-                    settings,
-                    pipeline,
-                    clock,
-                    cancel,
-                    reset,
-                    owner,
-                )
-            else:
-                outcome = await remote.run_remote(
-                    remote.RemoteJob(
-                        code=code,
-                        scope=scope,
-                        env=env,
-                        env_key=str(env_key),
-                        owner=owner,
-                        mode=settings.mode,
-                        tools=tools,
-                        settings=settings,
-                        reset=reset,
-                        pipeline=pipeline,
-                        clock=clock,
-                        cancel=cancel,
+            try:
+                if env.flags.host_local:
+                    outcome = await self._local(
+                        code,
+                        scope,
+                        session_id,
+                        env.cwd,
+                        tools,
+                        settings,
+                        pipeline,
+                        clock,
+                        cancel,
+                        reset,
+                        owner,
                     )
-                )
-        except remote.RemoteSetupError as exc:
-            return _error(str(exc), calls=pipeline.calls_made)
+                else:
+                    outcome = await remote.run_remote(
+                        remote.RemoteJob(
+                            code=code,
+                            scope=scope,
+                            env=env,
+                            env_key=str(env_key),
+                            owner=owner,
+                            mode=settings.mode,
+                            tools=tools,
+                            settings=settings,
+                            reset=reset,
+                            pipeline=pipeline,
+                            clock=clock,
+                            cancel=cancel,
+                        )
+                    )
+            except remote.RemoteSetupError as exc:
+                return _error(str(exc), calls=pipeline.calls_made)
+        finally:
+            if read is not None and read.tainted:
+                read.mark(tool_call_id)
+                if settings.kernel != "off":
+                    with self._lock:
+                        self._tainted_owners.add(owner)
         result = runner.finish_result(outcome, scope, tools)
         if verdict.note:
             return _with_note(result, verdict.note)
@@ -310,6 +344,21 @@ class ExecuteCodeTool:
             rewrite=_rewrite,
             traits=ToolTraits(mutating=True),
         )
+
+
+class _OutsideText:
+    """Whether one run called a tool whose output is outside text (see the module notes)."""
+
+    def __init__(self, sink: TaintSink) -> None:
+        self.sink = sink
+        self.tainted = False
+
+    def saw(self, tool_name: str) -> None:
+        if not self.tainted and self.sink.untrusted(tool_name):
+            self.tainted = True
+
+    def mark(self, call_id: str | None) -> None:
+        self.sink.mark(call_id)
 
 
 def _with_note(result: str, note: str) -> str:

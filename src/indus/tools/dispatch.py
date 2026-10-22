@@ -4,7 +4,8 @@ Steps: refuse names the agent loop runs itself (the inline table) → look the t
 ``Unknown tool: <name>``) → repair argument types (``coerce``) → the ``before`` hook → run the
 handler with only the context keywords its signature declares (R02.28): async handlers are
 awaited, sync handlers run on the shared ``tools`` pool (D-04.1) with the entry's deadline →
-check the result contract → ``after`` and ``transform`` hooks.
+check the result contract → ``after`` and ``transform`` hooks. A call ``before`` blocks still
+goes to ``after`` (zero duration, error type ``blocked``), never to ``transform``.
 
 Nothing a handler does escapes as an exception: a raise becomes
 ``Tool failed: <Type>: <message>`` with chat framing removed and the text bounded; a result that is
@@ -32,7 +33,14 @@ from indus.tools.calls import (
     is_envelope,
 )
 from indus.tools.coerce import coerce_args
-from indus.tools.hooks import NO_HOOKS, ToolHooks, run_after, run_before, run_transform
+from indus.tools.hooks import (
+    BLOCKED,
+    NO_HOOKS,
+    ToolHooks,
+    run_after,
+    run_before,
+    run_transform,
+)
 from indus.tools.registry import ToolEntry, ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -188,7 +196,10 @@ async def dispatch(
     prepared = ToolCall(call.name, args, call.call_id)
     verdict = await run_before(hooks, prepared, ctx)
     if verdict.block is not None:
-        return ToolResult.error(verdict.block, error_type="blocked")
+        # Observers (audit plugins) still see the refused call; ``transform`` never rewrites it.
+        blocked = ToolResult.error(verdict.block, error_type=BLOCKED)
+        await run_after(hooks, prepared, ctx, blocked, 0.0)
+        return blocked
     if verdict.args is not None:
         args = dict(verdict.args)
         prepared = ToolCall(call.name, args, call.call_id)

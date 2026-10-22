@@ -354,16 +354,33 @@ ins_wire_path() {
     esac
 }
 
+# A checkout serves its own built pages (apps/web/dist) when a developer built them; otherwise a
+# release install gets the pages that release was built with: `python -m indus.web.bundle fetch`
+# checks them against the manifest digest the release tag records and publishes them into
+# src/indus/web/static (F-3). Never fatal: without pages the dashboard's API still works.
+ins_web_pages() {
+    local rc=0
+    if [ -f "$IN_DIR/apps/web/dist/index.html" ]; then
+        ins_log "the dashboard pages are built in this checkout (apps/web/dist)"
+        return 0
+    fi
+    ins_run --may-fail "Fetching the dashboard pages" \
+        "$(ins_venv_bin python)" -m indus.web.bundle fetch --repo "$IN_DIR" \
+        --target "$IN_DIR/src/indus/web/static" || rc=$?
+    case "$rc" in
+        0) ins_log "the dashboard pages of this release are in place" ;;
+        3) ins_info "This checkout is not on a release, so it has no prebuilt dashboard pages; build them with: pnpm install && pnpm --filter @indus/web build" ;;
+        *) ins_warn "the dashboard pages could not be fetched$(ins_cause); 'indus dashboard' serves only its API until they are (rerun the installer, or build them with pnpm --filter @indus/web build)" ;;
+    esac
+    return 0
+}
+
 ins_stage_products() {
     local program
     program="$(ins_venv_bin indus)"
     [ -x "$program" ] || ins_fail "$program is missing; run the dependencies stage first" deps_missing
     ins_publish_launcher "$program"
-    # A source checkout serves its own built pages (apps/web/dist, apps/tui/dist); building them
-    # from a release payload waits for the release artefact manifest.
-    if [ ! -f "$IN_DIR/apps/web/dist/index.html" ]; then
-        ins_log "the dashboard pages are not built in this checkout; 'indus dashboard' will say so"
-    fi
+    ins_web_pages
     if [ "$IN_DESKTOP" = true ]; then
         ins_warn "install.sh does not build the desktop app; download it from the release page (it uses this runtime)"
     fi
@@ -407,7 +424,7 @@ ins_stage_gateway() {
 # -- complete -------------------------------------------------------------------------------------
 
 ins_stage_complete() {
-    local commit url saved="" channel marker tmp
+    local commit url saved="" channel marker tmp version
     commit="$(git -C "$IN_DIR" rev-parse HEAD 2>/dev/null)" ||
         ins_fail "$IN_DIR is not a checkout; run the repository stage first" other
     url="$(git -C "$IN_DIR" config --get remote.origin.url 2>/dev/null)" || url=""
@@ -415,9 +432,13 @@ ins_stage_complete() {
     channel="$(ins_effective_channel "$url" "$saved")"
     marker="$IN_DIR/.indus-bootstrap.json"
     tmp="$marker.$$.tmp"
-    printf '{"schema":1,"commit":%s,"branch":%s,"channel":%s,"completed_at":"%s"}\n' \
+    # The release HEAD is on (newest when several), for `indus --version` (F-4); "" on main.
+    version="$(git -C "$IN_DIR" tag --points-at HEAD --list 'v*' 2>/dev/null | ins_newest_tag canary)"
+    version="${version#v}"
+    printf '{"schema":1,"commit":%s,"branch":%s,"channel":%s,"version":%s,"completed_at":"%s"}\n' \
         "$(ins_json_string "$commit")" "$(ins_json_string "$IN_BRANCH")" \
-        "$(ins_json_string "$channel")" "$(ins_now)" >"$tmp" && mv -f "$tmp" "$marker" ||
+        "$(ins_json_string "$channel")" "$(ins_json_string "$version")" "$(ins_now)" >"$tmp" &&
+        mv -f "$tmp" "$marker" ||
         { rm -f "$tmp"; ins_fail "cannot write $marker" filesystem_error; }
     if [ -n "$IN_CHANNEL" ]; then
         ins_set_install_setting channel "$IN_CHANNEL" ||

@@ -49,7 +49,7 @@ export function ToolRow(props: { part: ToolPart }) {
   const images = open ? toolImages(part.result) : [];
   const shown = all || result.length <= OUTPUT_PREVIEW ? result : result.slice(0, OUTPUT_PREVIEW);
   return (
-    <div className="tool-row" data-state={part.state}>
+    <div className="tool-row" data-ui="transcript-tool-row" data-state={part.state}>
       <button
         type="button"
         className="tool-summary"

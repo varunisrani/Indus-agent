@@ -3,6 +3,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type {
+  IndusDesktopAbout,
   IndusDesktopAmbient,
   IndusDesktopConnection,
   IndusDesktopFs,
@@ -32,6 +33,8 @@ export interface SettingsBridge {
   readonly fs?: IndusDesktopFs;
   /** About → Uninstall (P24-34). */
   readonly uninstall?: IndusDesktopUninstall;
+  /** About → Licences: the packaged third-party notices (W46, F-2). */
+  readonly about?: IndusDesktopAbout;
 }
 
 /** `model.save_key` over the daemon (keys go to the profile's secret store, never the renderer). */

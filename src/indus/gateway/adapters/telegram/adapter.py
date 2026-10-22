@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
+from indus.foundation.digits import is_digits
 from indus.gateway.adapters.base import (
     REPLY_TO_KEY,
     Adapter,
@@ -216,14 +217,14 @@ class TelegramOptions:
 
 def _message_id(value: object) -> int | None:
     text = str(value).strip() if value is not None else ""
-    return int(text) if text.isdigit() else None
+    return int(text) if is_digits(text) else None
 
 
 def _send_thread(meta: Mapping[str, Any]) -> int | None:
     """A forum topic to send into; the General topic (1) is addressed by omitting it."""
     raw = meta.get("thread_id")
     text = str(raw).strip() if raw is not None else ""
-    if not text.isdigit() or text == GENERAL_TOPIC:
+    if not is_digits(text) or text == GENERAL_TOPIC:
         return None
     return int(text)
 
@@ -232,7 +233,7 @@ def _typing_thread(meta: Mapping[str, Any]) -> int | None:
     """Unlike a send, a chat action needs thread 1 to show in a forum's General topic."""
     raw = meta.get("thread_id")
     text = str(raw).strip() if raw is not None else ""
-    return int(text) if text.isdigit() else None
+    return int(text) if is_digits(text) else None
 
 
 def _caption(text: str | None) -> str | None:
@@ -433,7 +434,7 @@ class TelegramAdapter(Adapter):
         if len(self._forum_menus) >= FORUM_MENU_MAX:
             self._forum_menus.clear()
         self._forum_menus.add(chat_id)
-        target = int(chat_id) if chat_id.lstrip("-").isdigit() else chat_id
+        target = int(chat_id) if is_digits(chat_id, signed=True) else chat_id
         task = asyncio.ensure_future(
             self._set_menu(menu_commands(), {"type": "chat", "chat_id": target})
         )
@@ -765,7 +766,7 @@ class TelegramAdapter(Adapter):
             or self.drafts_off
             or self.send_only
             or not self.connected
-            or not str(chat_id).isdigit()  # private chats have positive ids
+            or not is_digits(str(chat_id))  # private chats have positive ids
         ):
             return None
         thread = _send_thread(meta or {})

@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 
+from indus.foundation.digits import is_digits
 from indus.foundation.errors import ProviderHTTPError, ProviderStreamError
 from indus.providers.sse import SSEEvent, SSEItem
 from indus.providers.transports import (
@@ -123,7 +124,7 @@ def _finish(raw: object) -> FinishReason:
 def _status_from(value: object) -> int | None:
     if isinstance(value, int) and 100 <= value <= 599:
         return value
-    if isinstance(value, str) and value.isdigit() and 100 <= int(value) <= 599:
+    if is_digits(value) and 100 <= int(value) <= 599:
         return int(value)
     return None
 

@@ -338,17 +338,7 @@ APP_SOURCES: dict[str, tuple[str, ...]] = {
 # Hooks the scenarios need that the product does not carry yet, each with its reason. The scenario
 # self-test fails when one of these appears in the source (drop it here then) and when a locator
 # uses a hook that neither exists nor is listed.
-OWED_HOOKS: dict[str, str] = {
-    "onboarding-dialog": "desktop onboarding overlay (apps/desktop/src/onboarding/Onboarding.tsx)",
-    "onboarding-custom-option": "the custom-endpoint choice of the onboarding overlay",
-    "onboarding-endpoint-url": "the base URL field of the onboarding overlay",
-    "onboarding-test-continue": "the 'test and continue' button of the onboarding overlay",
-    "onboarding-model-select": "the model choice of the onboarding overlay",
-    "onboarding-start-chatting": "the last button of the onboarding overlay",
-    "transcript-tool-row": "a tool row in the desktop transcript (apps/desktop/src/chat/cards)",
-    "pane-toggle-files": "the button that opens the files pane (apps/desktop/src/panes)",
-    "pane-toggle-review": "the button that opens the review pane (apps/desktop/src/panes)",
-}
+OWED_HOOKS: dict[str, str] = {}  # W46 (RM21): the nine desktop hooks landed; none owed now
 
 
 def hook_in_source(hook: Hook, roots: Sequence[Path]) -> bool:

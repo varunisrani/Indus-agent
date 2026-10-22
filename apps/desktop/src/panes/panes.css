@@ -32,6 +32,21 @@
   border-radius: var(--indus-radius-sm);
 }
 
+.pane-toggle {
+  font: inherit;
+  padding: 0 var(--indus-space-2);
+  border: 1px solid var(--indus-color-border);
+  border-radius: var(--indus-radius-sm);
+  background: var(--indus-color-bg);
+  color: var(--indus-color-fg-muted);
+  cursor: pointer;
+}
+
+.pane-toggle[aria-pressed="true"] {
+  background: var(--indus-color-bg-raised);
+  color: var(--indus-color-fg);
+}
+
 .pane-toolbar .segmented {
   margin-left: auto;
 }

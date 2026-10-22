@@ -121,8 +121,21 @@ function fromColours(user: StoredUserTheme): SemanticTheme {
   ) as SemanticTheme;
 }
 
+/**
+ * A theme the contribution registry offers (`theme` area, P24-32): a bundled or plugin theme with
+ * both sides resolved. Held in memory only; a choice of it is stored as `contrib:<id>` and paints
+ * the built-in look while its plugin is not loaded.
+ */
+export interface ContributedTheme {
+  readonly id: string;
+  readonly label: string;
+  readonly light: SemanticTheme;
+  readonly dark: SemanticTheme;
+}
+
 export class AppearanceStore {
   private value: Appearance;
+  private offered: readonly ContributedTheme[] = [];
   private readonly listeners = new Set<() => void>();
   private readonly storage: Storage | null;
 
@@ -151,6 +164,16 @@ export class AppearanceStore {
       this.listeners.delete(listener);
     };
   };
+
+  /** The registry's themes, as last mirrored. */
+  contributed = (): readonly ContributedTheme[] => this.offered;
+
+  /** Replace the registry's themes (nothing is stored; a fresh value re-renders the readers). */
+  setContributed(list: readonly ContributedTheme[]): void {
+    this.offered = list;
+    this.value = { ...this.value };
+    for (const listener of [...this.listeners]) listener();
+  }
 
   private set(next: Appearance): void {
     this.value = next;
@@ -200,6 +223,10 @@ export class AppearanceStore {
     const choice =
       (profile !== null ? this.value.profiles[profile]?.theme : undefined) ?? this.value.theme;
     if (choice === null) return null;
+    if (choice.startsWith("contrib:")) {
+      const offered = this.offered.find((c) => c.id === choice.slice(8));
+      return offered === undefined ? null : offered[mode];
+    }
     if (choice.startsWith("user:")) {
       const user = this.value.userThemes.find((u) => u.id === choice.slice(5));
       return user === undefined ? null : fromColours(user);

@@ -23,6 +23,8 @@ from urllib.parse import quote
 
 import httpx
 
+from indus.foundation.digits import is_digits
+
 __all__ = [
     "DEFAULT_TIMEOUT_S",
     "ROUTES",
@@ -311,7 +313,7 @@ class MattermostClient:
                 await response.aread()
                 raise error_of(response)
             declared = response.headers.get("Content-Length", "")
-            if declared.isdigit() and int(declared) > cap:
+            if is_digits(declared) and int(declared) > cap:
                 raise MediaTooLarge(int(declared), cap)
             seen = 0
             async for chunk in response.aiter_bytes():

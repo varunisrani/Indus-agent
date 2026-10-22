@@ -30,6 +30,7 @@ from typing import Any, Final, cast
 import httpx
 
 from indus.foundation.blocking import run_blocking
+from indus.foundation.digits import is_digits
 
 __all__ = [
     "API_ROOT",
@@ -516,7 +517,7 @@ def _markup(markup: InlineKeyboardMarkup | None) -> dict[str, Any] | None:
 
 def _chat(chat_id: int | str) -> int | str:
     text = str(chat_id).strip()
-    return int(text) if text.lstrip("-").isdigit() else text
+    return int(text) if is_digits(text, signed=True) else text
 
 
 def _read_upload(path: Path) -> bytes:

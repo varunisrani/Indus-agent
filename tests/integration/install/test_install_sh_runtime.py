@@ -392,6 +392,53 @@ def test_launcher_for_a_custom_home_and_a_foreign_launcher(box: Sandbox) -> None
     assert launcher.read_text() == "#!/bin/sh\necho someone else's\n"
 
 
+def _fake_python(box: Sandbox, exit_code: int) -> None:
+    python = _checkout(box) / ".venv" / "bin" / "python"
+    python.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$*" >>"$INDUS_FAKE_TOOLS_STATE/python-calls"\n'
+        f"echo 'Could not fetch the dashboard pages: a reason' >&2\nexit {exit_code}\n"
+    )
+    python.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "said"),
+    [
+        (0, ""),
+        (3, "not on a release, so it has no prebuilt dashboard pages"),
+        (1, "the dashboard pages could not be fetched: Could not fetch the dashboard pages"),
+    ],
+)
+def test_products_fetch_the_release_pages_and_never_fail_on_them(
+    box: Sandbox, exit_code: int, said: str
+) -> None:
+    """F-3: the release's prebuilt pages go into the runtime tree; a failure is only a warning."""
+    _fake_venv(box)
+    _fake_python(box, exit_code)
+    checkout = box.indus_home / "indus-agent"
+    code, _, out = _stage(box, "products")
+    assert code == 0, out
+    (call,) = (box.state / "python-calls").read_text().splitlines()
+    assert call == (
+        f"-m indus.web.bundle fetch --repo {checkout} --target {checkout}/src/indus/web/static"
+    )
+    if said:
+        assert said in out
+    else:
+        assert "dashboard pages" not in out
+
+
+def test_products_keep_a_developer_build_of_the_pages(box: Sandbox) -> None:
+    _fake_venv(box)
+    _fake_python(box, 1)
+    dist = box.indus_home / "indus-agent" / "apps" / "web" / "dist"
+    dist.mkdir(parents=True)
+    (dist / "index.html").write_text("<html/>")
+    code, _, out = _stage(box, "products")
+    assert code == 0, out
+    assert not (box.state / "python-calls").exists()
+
+
 def test_products_need_the_environment(box: Sandbox) -> None:
     code, frame, _ = _stage(box, "products")
     assert code == 1 and "run the dependencies stage first" in str(frame["reason"])
@@ -427,7 +474,7 @@ def test_complete_writes_the_marker_and_saves_an_explicit_channel(box: Sandbox) 
     code, _, out = _stage(box, "complete", "--channel", "main")
     assert code == 0, out
     marker = json.loads((checkout / ".indus-bootstrap.json").read_text())
-    assert set(marker) == {"schema", "commit", "branch", "channel", "completed_at"}
+    assert set(marker) == {"schema", "commit", "branch", "channel", "version", "completed_at"}
     assert marker["schema"] == 1 and marker["branch"] == "main" and marker["channel"] == "main"
     assert marker["commit"] == box.git("rev-parse", "HEAD", cwd=checkout)
     assert re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", marker["completed_at"])
@@ -463,6 +510,7 @@ def test_a_full_non_interactive_install_ends_with_a_working_command(box: Sandbox
     assert box.git("rev-parse", "HEAD", cwd=checkout) == _tag_commit(box, bare, "v0.2.0")
     marker = json.loads((checkout / ".indus-bootstrap.json").read_text())
     assert marker["channel"] == "stable" and marker["schema"] == 1
+    assert marker["version"] == "0.2.0"  # what `indus --version` reads for this commit (F-4)
     (receipt,) = [
         json.loads(p.read_text())
         for p in (box.indus_home / "logs" / "install_receipts").glob("*.json")

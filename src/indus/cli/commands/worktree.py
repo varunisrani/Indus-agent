@@ -3,7 +3,8 @@
 Both work on the repository holding the current folder (the session's folder for the slash
 command): ``list`` (also bare) shows each tree under ``.worktrees/`` with its branch, age and what
 would keep it; ``new [NAME]`` makes one (``backends.worktrees.create``) and prints where it is;
-``prune [--dry-run]`` removes old trees that lose nothing and lists the rest with reasons. A
+``prune [--dry-run]`` removes old trees that lose nothing and lists the rest with reasons (the
+profile's gateway daemon first stops its language servers of each tree removed, wave 45). A
 worktree is never removed when its session ends; ``indus -w`` (``chat``) starts a session in a new
 one. Outside a git repository every action says so and exits 1.
 """
@@ -71,8 +72,12 @@ def new_lines(scope: Scope, folder: str | Path, name: str | None) -> Lines:
 
 
 def prune_lines(scope: Scope, folder: str | Path, *, dry_run: bool) -> Lines:
+    from indus.service.lsp_control import gateway_releaser
+
     try:
-        report = worktrees.prune(_scoped(scope), folder, dry_run=dry_run)
+        report = worktrees.prune(
+            _scoped(scope), folder, dry_run=dry_run, before_remove=gateway_releaser(scope.home)
+        )
     except worktrees.WorktreeError:
         return 1, [_NOT_A_REPO]
     verb = "Would remove" if dry_run else "Removed"

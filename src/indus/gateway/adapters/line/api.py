@@ -19,6 +19,8 @@ from typing import Any, Final
 
 import httpx
 
+from indus.foundation.digits import is_digits
+
 __all__ = [
     "API_BASE",
     "DATA_BASE",
@@ -157,7 +159,7 @@ class LineApi:
                 await response.aread()
                 raise LineError(response.status_code, response.text, response.headers)
             declared = response.headers.get("content-length", "")
-            if declared.isdigit() and int(declared) > max_bytes:
+            if is_digits(declared) and int(declared) > max_bytes:
                 raise LineError(413, "the content is too large to download", {})
             seen = 0
             async for chunk in response.aiter_bytes():

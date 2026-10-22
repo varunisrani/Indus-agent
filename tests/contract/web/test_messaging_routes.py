@@ -451,3 +451,22 @@ def test_drain_accepts_the_service_bearer(scope: Scope) -> None:
     finally:
         fake.remove()
         rest.close()
+
+
+def test_turning_a_platform_on_suggests_the_waiting_jobs(rest: RestApp, scope: Scope) -> None:
+    """Wave 45 (D-16.981): ``enabled: true`` offers the starter briefing as a suggestion (never a
+    job); the answer is unchanged, and an update that does not turn it on offers nothing."""
+    from indus.cron.suggestions import SuggestionStore, store_path
+
+    quiet = rest.client.put(
+        "/api/messaging/platforms/telegram", params=WRITE, json={"env": {TOKEN_NAME: _token()}}
+    )
+    assert quiet.status_code == 200 and not store_path(scope).exists()
+    answer = rest.client.put(
+        "/api/messaging/platforms/telegram", params=WRITE, json={"enabled": True}
+    )
+    assert answer.json() == {"ok": True, "platform": "telegram", "restart_needed": True}
+    pending = SuggestionStore(scope).pending()
+    assert [(s.dedup_key, s.source) for s in pending] == [
+        ("blueprint:morning-brief", "integration")
+    ]

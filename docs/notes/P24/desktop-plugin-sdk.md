@@ -170,3 +170,55 @@ Still follow-ups: consumers of `title-bar`, `palette-command`, `keybind`, `theme
 `transcript-directive`; plugin sockets (`/api/ext/<id>/` ticketed route).
 
 Status (wave 42): routes, sidebar nav, panes, plugin settings pages and the inventory page wired.
+
+## Wave 46 (RS16, builder e)
+
+Read: none (wiring of our own modules; no reference file opened, no Evidence).
+
+Done: the shell reads four more areas, in `src/contrib/areas.tsx` (consumers) mounted from
+`src/app/Shell.tsx` and `src/main.tsx`:
+- `title-bar`: `ContributedTitleBar`, a strip in the window band at the top right (left of the
+  Windows/Linux window controls, at the right edge on macOS), each item in its own error boundary.
+  Nothing is drawn while the area is empty, so the window is unchanged until something
+  contributes. Not drawn in a popped-out (secondary) window.
+- `palette-command`: `CommandPalette`, Ctrl/⌘+Shift+P. The shell passes built-in entries (new chat,
+  "Go to <page>" for each built-in page), then every `palette-command` (`title`, optional `hint`).
+  Words of the query must all occur in title or hint; arrows move, Enter runs, Escape or a click
+  outside closes and gives focus back.
+- `keybind`: `useContributedKeybinds` runs a keybind whose `keys` (Electron accelerator spelling,
+  `Mod` = Ctrl or ⌘) matches the keydown. `keybindFor` never hands a plugin a key the app uses: a
+  pane shortcut (`actionForKey`), a rebindable action's default (`KEY_ACTIONS`) or the palette's
+  own key — such a keybind is ignored. First in area order wins between plugins.
+- `theme`: `mirrorThemeContributions` keeps `AppearanceStore.contributed()` in step with the area;
+  Settings › Appearance lists each as "<label> (plugin)", stored as `contrib:<id>`. `tokens` is one
+  colour set for both sides or `{light, dark}`; every semantic name must be `#rrggbb` (checked by
+  `@indus/ui`'s `userTheme`), so a plugin can never put CSS text into the painted `<style>`. A theme
+  that fails the check is left out with a warning. While its plugin is off, the stored choice
+  paints the built-in look and comes back when the plugin does.
+- Plugins inventory as a pane: a bundled `pane` contribution `app.plugins` ("Plugins") renders the
+  same `PluginsPage` as Settings › Advanced › Plugins, so it is in the layout's Open list.
+`run` of a command or keybind is called in a try/catch (async rejections caught too): a failure
+only warns.
+
+Test: `src/contrib/areas.test.tsx` (title bar empty/ordered/throwing item; keybind matching on
+both platforms, reserved keys refused, a throwing run only warns, unloaded plugin's key inert;
+palette open/filter/run/close; themes offered, CSS text refused, withdrawn with the plugin).
+
+Decisions for the lead (W46-e):
+- W46-e-1 (D-16.1004): the renderer has no title band element (the window is frameless with the overlay, the
+  shell grid starts at the top), so title bar items are a fixed strip in the band, offset 144 px
+  from the right off macOS (the overlay controls). A real band row in the shell grid is a layout
+  change left for a parity pass.
+- W46-e-2 (D-16.1005): there was no command palette in the desktop; this one is new, minimal (built-in page
+  jumps + contributions) on Ctrl/⌘+Shift+P. A fuller palette (sessions, settings, actions) is a
+  follow-up.
+- W46-e-3 (D-16.1006): keybinds lose every collision with the app (defaults, not the person's overrides — the
+  overrides live in main's preferences and are not read here; a plugin key the person rebound an
+  action onto may still fire both: follow-up).
+- W46-e-4 (D-16.1007): theme tokens are `#rrggbb` only (no OKLCH or alpha) — the same rule as hand-made user
+  themes, and what keeps CSS injection out.
+
+Still follow-ups: `composer-extension`, `session-row-decoration`, `model-menu-decoration`,
+`appearance-setting`, `transcript-directive` consumers; plugin sockets.
+
+Status (wave 46): title bar, palette commands, keybinds, themes and the inventory pane wired.
