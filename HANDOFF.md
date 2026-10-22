@@ -76,6 +76,9 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
+Wave 48 IN FLIGHT (12:35 UTC; owner: "make the small things done"): 6 builders in scratchpad wt-w48{a..f}, brief
+`.agents/wip/w48/brief.md` — room views on groups.watch + approval card; TUI default-mode reads; desktop polish; PTY env +
+Windows bits; one-shot startup speed; katex/sprintf-js advisories + JS gate on in-line node_modules.
 Turn: AGENT_1 ACTIVE (window resets 12:00 UTC). Main `83104de` = wave 47 landed on top of waves 45+46 (`44c9a4f`)
 (LEAD-NOTES "Wave 47 landing notes (integrator)"). All 648 planned tasks except P23-15/16 (owner signing) and P24-21/22
 (post-1.0) are built; release checklist: 27 done, must 21 / should 14 open — almost all owner decisions or owner runs.
