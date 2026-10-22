@@ -19,3 +19,12 @@
   security + docs 2173. Not seen in a real Electron window (jsdom only).
 - W48-a-1, W48-a-2 (TUI/web room views would be NEW surfaces; web needs groups.* on the dashboard socket — owner/lead
   decides if owed for 1.0). RS3 can move to Done for the desktop.
+
+## w48e.patch: one-shot startup cuts (partial: budget still missed on this loaded box)
+- 8 files, +235/-9. protocol/base.py ProtocolModel defer_build=True (wire models build on first use, ~390→260 ms import);
+  core/subagents/output_schema.py lazy jsonschema (~50 ms); foundation/secrets.py start_backend_discovery() overlapping
+  keyring backend discovery with CLI imports (cli/entry.py), W48-e-3: discovery also runs for secret_store: file profiles.
+- Before/after (same box, alternating, 9 samples, load 7.5–8.7): wall to first byte 2532 → 2281 ms; perf test median 1917 ms
+  vs 1500 ms budget (budget unchanged). Fail-first: 5 new tests. pytest 3238 + 68 + 54; codegen --check unchanged.
+- Follow-ups (largest first): pricing YAML ~56 ms (JSON twin), use_attribute_docstrings ~100 ms, httpx._main ~80 ms
+  (third party), lazy cli.runtime imports (docker, browser, code kernel, cron.models, content_scan), measure on a quiet runner.
