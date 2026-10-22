@@ -28,3 +28,5 @@
   vs 1500 ms budget (budget unchanged). Fail-first: 5 new tests. pytest 3238 + 68 + 54; codegen --check unchanged.
 - Follow-ups (largest first): pricing YAML ~56 ms (JSON twin), use_attribute_docstrings ~100 ms, httpx._main ~80 ms
   (third party), lazy cli.runtime imports (docker, browser, code kernel, cron.models, content_scan), measure on a quiet runner.
+- NOTE: builder [g] continues [e] in scratchpad wt-w48g on a LOCAL base 34c34d1 (= 1b6e711 + w48e.patch); its patch is
+  relative to that base, so apply w48e.patch THEN w48g.patch.
