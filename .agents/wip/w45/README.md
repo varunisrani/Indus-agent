@@ -14,3 +14,18 @@
 - MERGE NOTE: P45 also edits service/lsp_host.py and cli/commands/lsp.py (restart); `_active_manager` now takes a scope.
 - RULE BREACH: an unintended pnpm auto-install (via `pnpm exec` on hard-linked node_modules) downloaded packages through the
   proxy into $S; caches deleted, lockfile unchanged.
+
+## w45-p45.patch: P24 partial items (done): message_agent in bot chat, integration offers, LSP release + restart
+- 37 files, +1399/-41. New service/bot_turns.py (bot chat runs on platform `bots`, gets platform_toolsets.bots or indus-bots;
+  daemon chat + API server only), service/integration_offers.py (blueprints `integrations` field; call sites: mcp add,
+  POST /api/mcp/servers, gateway setup, PUT messaging platform enabled), service/lsp_control.py (owner-only control verbs
+  lsp-restart, lsp-release), lsp_host restart_servers/release_servers via `_manager_for(scope)`, worktrees before_remove.
+- Checks: ruff, pyright, lint-imports, security_static, codegen --check, gen_reference fresh (cli.md regenerated),
+  tooling.checks ok; pytest 9443 passed / 65 skipped (contract, security, golden, unit service/gateway/cron/cli/backends/
+  subagents/lsp/web/state). Integration: 2 failures under load (test_room_two_members passes on rerun;
+  test_boot_recovery crash-left-turn failed twice under load, passed 3/3 and 10/10×4 alone) — integrator must confirm on a
+  quiet box.
+- D-16.980..983 (984–989 unused); B-DAEMON-1 threat-model row lists the new verbs.
+- MERGE with S45: point `_manager_for` at S45's per-profile tier (`_TIERS` keyed by profile home); release_folder must
+  release in every tier. Update D-16.878 (message_agent + suggestion offers done). w46h docs need the bots/lsp paragraphs.
+- Open: classic CLI in-process release on /worktree prune; message_agent in one-shot turns with no daemon.
