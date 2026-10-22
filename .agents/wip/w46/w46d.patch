@@ -1,0 +1,820 @@
+diff --git a/apps/desktop/electron/diagnostics.test.ts b/apps/desktop/electron/diagnostics.test.ts
+index 0beb4cf..a7e76cb 100644
+--- a/apps/desktop/electron/diagnostics.test.ts
++++ b/apps/desktop/electron/diagnostics.test.ts
+@@ -8,9 +8,12 @@ import {
+   DIAGNOSTICS_MAX_BYTES,
+   type DiagnosticsInput,
+   installDiagnostics,
++  NOTICES_FILE,
++  NOTICES_MAX_BYTES,
+   RENDERER_ERRORS_PER_MINUTE,
+   RendererErrors,
+   readBuildStamp,
++  readNotices,
+ } from "./diagnostics.ts";
+ import { DesktopLog, type LogFs } from "./log.ts";
+ 
+@@ -141,6 +144,28 @@ describe("diagnostics bundle", () => {
+     );
+     expect(readBuildStamp(dir)).toEqual({ version: "1.0.0" });
+   });
++
++  it("reads the packaged notices for the licences screen; null in a dev run or when unfit (W46)", () => {
++    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-notices-read-"));
++    dirs.push(dir);
++    expect(readNotices(null)).toBeNull();
++    expect(readNotices(dir)).toBeNull(); // not packaged beside the app
++    fs.writeFileSync(path.join(dir, NOTICES_FILE), "# Third-party notices\n\nsome-lib MIT\n");
++    expect(readNotices(dir)).toBe("# Third-party notices\n\nsome-lib MIT\n");
++    fs.writeFileSync(path.join(dir, NOTICES_FILE), "x".repeat(NOTICES_MAX_BYTES + 1));
++    expect(readNotices(dir)).toBeNull(); // far past the real file's size: not ours
++    fs.rmSync(path.join(dir, NOTICES_FILE));
++    fs.mkdirSync(path.join(dir, NOTICES_FILE));
++    expect(readNotices(dir)).toBeNull(); // a directory, not a file
++  });
++
++  it("the packager config ships the notices file under the name main reads", () => {
++    const config = fs.readFileSync(
++      new URL("../electron-builder.config.cjs", import.meta.url),
++      "utf8",
++    );
++    expect(config).toContain(`to: "${NOTICES_FILE}"`);
++  });
+ });
+ 
+ describe("renderer errors", () => {
+@@ -246,6 +271,13 @@ describe("installDiagnostics", () => {
+     expect(text).not.toContain(SECRETS.openai);
+   });
+ 
++  it("about.notices answers null when the app is not packaged", async () => {
++    const { handlers } = harness();
++    expect(await handlers.get("indus:about:notices")?.({}, { senderId: 1 })).toEqual({
++      text: null,
++    });
++  });
++
+   it("logs.recent returns the kept lines; logs.reveal shows the log file", async () => {
+     const { log, handlers, revealed } = harness();
+     for (let i = 0; i < 5; i += 1) log.write(`line ${i}`);
+diff --git a/apps/desktop/electron/diagnostics.ts b/apps/desktop/electron/diagnostics.ts
+index 40c4c74..6a09380 100644
+--- a/apps/desktop/electron/diagnostics.ts
++++ b/apps/desktop/electron/diagnostics.ts
+@@ -186,6 +186,25 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
+   return text;
+ }
+ 
++/** The third-party notices file the packager puts beside the archive (W46, F-2). */
++export const NOTICES_FILE = "THIRD_PARTY_NOTICES.md";
++/** The notices are about 150 KB; anything far past that is not our file. */
++export const NOTICES_MAX_BYTES = 4 * 1024 * 1024;
++
++/** The packaged notices text, or null (a development run, a missing, oversized or unreadable
++ * file). The renderer shows it as plain text. */
++export function readNotices(resourcesPath: string | null): string | null {
++  if (resourcesPath === null) return null;
++  try {
++    const file = path.join(resourcesPath, NOTICES_FILE);
++    const stat = fs.statSync(file);
++    if (!stat.isFile() || stat.size > NOTICES_MAX_BYTES) return null;
++    return fs.readFileSync(file, "utf8");
++  } catch {
++    return null;
++  }
++}
++
+ /** The build stamp beside the packaged archive, or null. */
+ export function readBuildStamp(resourcesPath: string | null): unknown {
+   if (resourcesPath === null) return null;
+@@ -224,7 +243,7 @@ export interface DiagnosticsHandle {
+   menuItems: MenuItem[];
+ }
+ 
+-/** Register the logs, clipboard and diagnostics channels (P20-39). */
++/** Register the logs, clipboard and diagnostics channels (P20-39) and the notices (W46, F-2). */
+ export function installDiagnostics(context: MainContext, deps: DiagnosticsDeps): DiagnosticsHandle {
+   const { registry, log } = context;
+   const now = deps.now ?? (() => new Date());
+@@ -285,6 +304,7 @@ export function installDiagnostics(context: MainContext, deps: DiagnosticsDeps):
+     rendererErrors.record(senderId, report);
+   });
+   registry.handle("indus:diagnostics:copy", () => copyDiagnostics());
++  registry.handle("indus:about:notices", () => ({ text: readNotices(deps.resourcesPath) }));
+   registry.handle("indus:clipboard:read-text", async () => ({
+     text: await deps.clipboard.readText(),
+   }));
+diff --git a/apps/desktop/electron/ipc/channels.ts b/apps/desktop/electron/ipc/channels.ts
+index d44a137..b02b398 100644
+--- a/apps/desktop/electron/ipc/channels.ts
++++ b/apps/desktop/electron/ipc/channels.ts
+@@ -568,6 +568,9 @@ export const CHANNELS = [
+     owner: "P20-39",
+   },
+ 
++  // about: the packaged third-party notices for the licences screen (W46, F-2)
++  { name: "indus:about:notices", kind: "invoke", group: "about", method: "notices", owner: "W46" },
++
+   // diagnostics, clipboard, find in page
+   {
+     name: "indus:diagnostics:copy",
+diff --git a/apps/desktop/electron/ipc/schemas.ts b/apps/desktop/electron/ipc/schemas.ts
+index e79cd7b..4a7ab50 100644
+--- a/apps/desktop/electron/ipc/schemas.ts
++++ b/apps/desktop/electron/ipc/schemas.ts
+@@ -971,6 +971,12 @@ export const SCHEMAS = {
+     }),
+   },
+ 
++  "indus:about:notices": {
++    request: none,
++    // null when the file is not beside the app (a development run) or cannot be read
++    response: z.object({ text: z.string().nullable() }),
++  },
++
+   "indus:diagnostics:copy": {
+     request: none,
+     response: z.object({ copied: z.boolean(), bytes: z.number().int().min(0) }),
+diff --git a/apps/desktop/src/chat/ToolRow.tsx b/apps/desktop/src/chat/ToolRow.tsx
+index 39f1559..d206d44 100644
+--- a/apps/desktop/src/chat/ToolRow.tsx
++++ b/apps/desktop/src/chat/ToolRow.tsx
+@@ -49,7 +49,7 @@ export function ToolRow(props: { part: ToolPart }) {
+   const images = open ? toolImages(part.result) : [];
+   const shown = all || result.length <= OUTPUT_PREVIEW ? result : result.slice(0, OUTPUT_PREVIEW);
+   return (
+-    <div className="tool-row" data-state={part.state}>
++    <div className="tool-row" data-ui="transcript-tool-row" data-state={part.state}>
+       <button
+         type="button"
+         className="tool-summary"
+diff --git a/apps/desktop/src/chat/Transcript.test.tsx b/apps/desktop/src/chat/Transcript.test.tsx
+index 9f32ab7..f58de18 100644
+--- a/apps/desktop/src/chat/Transcript.test.tsx
++++ b/apps/desktop/src/chat/Transcript.test.tsx
+@@ -188,6 +188,8 @@ describe("Transcript", () => {
+       row.getAttribute("data-state"),
+     );
+     expect(rows).toEqual(["neutral", "failed"]);
++    // the parity flow waits on this hook (W46, RM21): one per tool row
++    expect(view.container.querySelectorAll('[data-ui="transcript-tool-row"]').length).toBe(2);
+     fireEvent.click(screen.getAllByRole("button", { name: /Ran/ })[0] as HTMLElement);
+     expect(screen.getByText("exit code 1")).toBeTruthy();
+   });
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index 368bf51..20c03ad 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -825,6 +825,11 @@ export interface IndusDesktopLogs {
+   rendererError(payload: { message: string; stack?: string; source?: string }): void;
+ }
+ 
++export interface IndusDesktopAbout {
++  /** `indus:about:notices` (W46) */
++  notices(payload?: Record<string, never>): Promise<{ text: string | null }>;
++}
++
+ export interface IndusDesktopDiagnostics {
+   /** `indus:diagnostics:copy` (P20-39) */
+   copy(payload?: Record<string, never>): Promise<{ copied: boolean; bytes: number }>;
+@@ -972,6 +977,7 @@ export interface IndusDesktopBridge {
+   readonly notifications: IndusDesktopNotifications;
+   readonly deepLinks: IndusDesktopDeepLinks;
+   readonly logs: IndusDesktopLogs;
++  readonly about: IndusDesktopAbout;
+   readonly diagnostics: IndusDesktopDiagnostics;
+   readonly clipboard: IndusDesktopClipboard;
+   readonly find: IndusDesktopFind;
+diff --git a/apps/desktop/src/onboarding/Onboarding.test.tsx b/apps/desktop/src/onboarding/Onboarding.test.tsx
+index 4f625ce..3533c3c 100644
+--- a/apps/desktop/src/onboarding/Onboarding.test.tsx
++++ b/apps/desktop/src/onboarding/Onboarding.test.tsx
+@@ -281,6 +281,42 @@ describe("onboarding overlay", () => {
+     });
+   });
+ 
++  it("the parity flow's data-ui hooks walk the custom endpoint path (W46, RM21)", async () => {
++    const hook = (name: string) => document.querySelector(`[data-ui="${name}"]`) as HTMLElement;
++    const api = fakeRest();
++    api.route("GET", "/api/model/options", OPTIONS(false));
++    api.route("POST", "/api/model/test-endpoint", {
++      ok: true,
++      status: 200,
++      models: ["parity-model"],
++      message: "1 model",
++    });
++    api.route("POST", "/api/model/set", { ok: true });
++    render(<Onboarding ready api={api} saveKey={null} />);
++    await settle();
++    expect(hook("onboarding-dialog").getAttribute("role")).toBe("dialog");
++    await act(async () => {
++      fireEvent.click(hook("onboarding-custom-option"));
++    });
++    const url = hook("onboarding-endpoint-url") as HTMLInputElement;
++    expect(url.tagName).toBe("INPUT");
++    fireEvent.change(url, { target: { value: "http://127.0.0.1:24001/v1" } });
++    await act(async () => {
++      fireEvent.click(hook("onboarding-test-continue"));
++    });
++    await settle();
++    expect((hook("onboarding-model-select") as HTMLInputElement).value).toBe("parity-model");
++    await act(async () => {
++      fireEvent.click(hook("onboarding-start-chatting"));
++    });
++    await settle();
++    expect(api.calls.find((c) => c.path === "/api/model/set")?.body).toMatchObject({
++      provider: "custom",
++      model: "parity-model",
++      base_url: "http://127.0.0.1:24001/v1",
++    });
++  });
++
+   it("recognises provider and auth failures only", () => {
+     expect(
+       isProviderFailure({
+diff --git a/apps/desktop/src/onboarding/Onboarding.tsx b/apps/desktop/src/onboarding/Onboarding.tsx
+index 7b856bb..65d1367 100644
+--- a/apps/desktop/src/onboarding/Onboarding.tsx
++++ b/apps/desktop/src/onboarding/Onboarding.tsx
+@@ -395,6 +395,7 @@ export function Onboarding(props: OnboardingProps) {
+         ref={cardRef}
+         tabIndex={-1}
+         className="onboarding-card"
++        data-ui="onboarding-dialog"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="onboarding-title"
+@@ -494,6 +495,7 @@ function Picker(props: {
+             <button
+               type="button"
+               className="onboarding-option"
++              data-ui="onboarding-custom-option"
+               onClick={() => props.onEndpoint("custom")}
+             >
+               <span className="onboarding-option-title">{t("onboarding.custom.option")}</span>
+@@ -660,6 +662,7 @@ function EndpointForm(props: {
+       <input
+         id={urlId}
+         className="settings-input"
++        data-ui="onboarding-endpoint-url"
+         value={url}
+         spellCheck={false}
+         onChange={(event) => setUrl(event.currentTarget.value)}
+@@ -681,7 +684,12 @@ function EndpointForm(props: {
+         <button type="button" className="text-button" onClick={props.onBack}>
+           {t("onboarding.back")}
+         </button>
+-        <button type="submit" className="button button-primary" disabled={!valid || props.busy}>
++        <button
++          type="submit"
++          className="button button-primary"
++          data-ui="onboarding-test-continue"
++          disabled={!valid || props.busy}
++        >
+           {t("onboarding.endpoint.test")}
+         </button>
+       </div>
+@@ -713,6 +721,7 @@ function ConfirmModel(props: {
+       <input
+         id={inputId}
+         className="settings-input"
++        data-ui="onboarding-model-select"
+         list={listId}
+         value={model}
+         spellCheck={false}
+@@ -732,6 +741,7 @@ function ConfirmModel(props: {
+         <button
+           type="submit"
+           className="button button-primary"
++          data-ui="onboarding-start-chatting"
+           disabled={model.trim() === "" || props.busy}
+         >
+           {t("onboarding.model.save")}
+diff --git a/apps/desktop/src/panes/PaneShell.test.tsx b/apps/desktop/src/panes/PaneShell.test.tsx
+index bc35d56..04a5139 100644
+--- a/apps/desktop/src/panes/PaneShell.test.tsx
++++ b/apps/desktop/src/panes/PaneShell.test.tsx
+@@ -108,11 +108,45 @@ describe("pane shell", () => {
+     act(() => store.activate("review"));
+     fireEvent.click(screen.getByRole("button", { name: "Close Review" }));
+     expect(allPanes(store.layout().root)).not.toContain("review");
+-    fireEvent.click(screen.getByRole("button", { name: "Open Review" }));
++    // files and review come back through their toolbar toggle, not an "Open" button
++    expect(screen.queryByRole("button", { name: "Open Review" })).toBeNull();
++    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+     expect(allPanes(store.layout().root)).toContain("review");
+     expect(screen.queryByRole("button", { name: "Close Chat" })).toBeNull();
+   });
+ 
++  it("the files and review toggles bring their pane to the front, and put it away (W46)", () => {
++    const { store } = setup();
++    const files = document.querySelector('[data-ui="pane-toggle-files"]') as HTMLElement;
++    const review = document.querySelector('[data-ui="pane-toggle-review"]') as HTMLElement;
++    expect(files.getAttribute("aria-pressed")).toBe("false"); // the preview is in front
++    fireEvent.click(files);
++    expect(zoneOf(store.layout().root, "files")?.active).toBe("files");
++    expect(screen.getByText("file tree")).toBeTruthy();
++    expect(files.getAttribute("aria-pressed")).toBe("true");
++    fireEvent.click(review);
++    expect(screen.getByText("diffs")).toBeTruthy();
++    expect(review.getAttribute("aria-pressed")).toBe("true");
++    expect(files.getAttribute("aria-pressed")).toBe("false");
++    fireEvent.click(review);
++    expect(allPanes(store.layout().root)).not.toContain("review");
++    expect(review.getAttribute("aria-pressed")).toBe("false");
++    fireEvent.click(review);
++    expect(zoneOf(store.layout().root, "review")?.active).toBe("review");
++  });
++
++  it("a pane in a minimised zone toggles back to the front (W46)", () => {
++    const { store } = setup();
++    act(() => store.activate("files"));
++    const host = zoneOf(store.layout().root, "files")?.id ?? "";
++    act(() => store.setMinimized(host, true));
++    const files = document.querySelector('[data-ui="pane-toggle-files"]') as HTMLElement;
++    expect(files.getAttribute("aria-pressed")).toBe("false");
++    fireEvent.click(files);
++    expect(zoneOf(store.layout().root, "files")?.minimized).toBe(false);
++    expect(files.getAttribute("aria-pressed")).toBe("true");
++  });
++
+   it("a tab dragged onto another zone joins its tabs", () => {
+     const { store } = setup();
+     const chatZone = document.querySelector(
+@@ -142,6 +176,8 @@ describe("pane shell", () => {
+     fireEvent.click(screen.getByRole("radio", { name: "Simple" }));
+     expect(screen.queryByRole("tab", { name: "Terminal" })).toBeNull();
+     expect(screen.queryByRole("button", { name: "Open Terminal" })).toBeNull();
++    expect(document.querySelector('[data-ui="pane-toggle-files"]')).toBeNull();
++    expect(document.querySelector('[data-ui="pane-toggle-review"]')).toBeNull();
+     fireEvent.click(screen.getByRole("radio", { name: "Advanced" }));
+     expect(store.layout()).toBe(advanced);
+   });
+diff --git a/apps/desktop/src/panes/PaneShell.tsx b/apps/desktop/src/panes/PaneShell.tsx
+index 2a9be2a..656bd34 100644
+--- a/apps/desktop/src/panes/PaneShell.tsx
++++ b/apps/desktop/src/panes/PaneShell.tsx
+@@ -595,13 +595,55 @@ function RestoreRail(props: { ctx: ShellContext }) {
+   );
+ }
+ 
++/** Panes the toolbar flips with one button (W46): stateless, so closing one loses nothing. */
++const TOGGLED_PANES: ReadonlySet<PaneId> = new Set(["files", "review"]);
++
++/** Show a pane (open it, or bring it to the front of its zone) or, when it is showing, close it.
++ * `data-ui` is the button's test hook; each use names it literally so the parity scenarios'
++ * hook check finds it in the source. */
++function PaneToggle(props: {
++  ctx: ShellContext;
++  mode: InterfaceMode;
++  pane: PaneId;
++  "data-ui": string;
++}) {
++  const t = useT();
++  const { ctx, mode, pane } = props;
++  if (!ctx.registry.ids().includes(pane) || !paneAllowed(mode, pane)) return null;
++  const host = zones(ctx.layout.root).find((z) => z.tabs.includes(pane));
++  const showing =
++    host !== undefined && host.active === pane && !host.minimized && !isHidden(ctx.layout, pane);
++  const title = ctx.title(pane);
++  return (
++    <button
++      type="button"
++      className="pane-toggle"
++      aria-pressed={showing}
++      title={t(showing ? "panes.close" : "panes.open", { pane: title })}
++      data-ui={props["data-ui"]}
++      onClick={() => {
++        if (showing) ctx.store.close(pane);
++        else ctx.store.open(pane);
++      }}
++    >
++      {title}
++    </button>
++  );
++}
++
+ function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: PresetId | null }) {
+   const t = useT();
+   const { ctx, mode } = props;
+   const open = new Set(allPanes(ctx.layout.root));
+   const closable = ctx.registry
+     .ids()
+-    .filter((pane) => pane !== CHAT_PANE && !open.has(pane) && paneAllowed(mode, pane));
++    .filter(
++      (pane) =>
++        pane !== CHAT_PANE &&
++        !TOGGLED_PANES.has(pane) &&
++        !open.has(pane) &&
++        paneAllowed(mode, pane),
++    );
+   return (
+     <div className="pane-toolbar">
+       <label className="pane-toolbar-field">
+@@ -623,6 +665,8 @@ function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset:
+           ))}
+         </select>
+       </label>
++      <PaneToggle ctx={ctx} mode={mode} pane="files" data-ui="pane-toggle-files" />
++      <PaneToggle ctx={ctx} mode={mode} pane="review" data-ui="pane-toggle-review" />
+       {closable.map((pane) => (
+         <button
+           key={pane}
+diff --git a/apps/desktop/src/panes/panes.css b/apps/desktop/src/panes/panes.css
+index 89b0003..9a23564 100644
+--- a/apps/desktop/src/panes/panes.css
++++ b/apps/desktop/src/panes/panes.css
+@@ -32,6 +32,21 @@
+   border-radius: var(--indus-radius-sm);
+ }
+ 
++.pane-toggle {
++  font: inherit;
++  padding: 0 var(--indus-space-2);
++  border: 1px solid var(--indus-color-border);
++  border-radius: var(--indus-radius-sm);
++  background: var(--indus-color-bg);
++  color: var(--indus-color-fg-muted);
++  cursor: pointer;
++}
++
++.pane-toggle[aria-pressed="true"] {
++  background: var(--indus-color-bg-raised);
++  color: var(--indus-color-fg);
++}
++
+ .pane-toolbar .segmented {
+   margin-left: auto;
+ }
+diff --git a/apps/desktop/src/settings/LicencesPage.tsx b/apps/desktop/src/settings/LicencesPage.tsx
+new file mode 100644
+index 0000000..e7517bb
+--- /dev/null
++++ b/apps/desktop/src/settings/LicencesPage.tsx
+@@ -0,0 +1,57 @@
++// Settings → About → Licences (W46, F-2): the third-party notices the packager puts beside the app
++// (`THIRD_PARTY_NOTICES.md`, the same file the repository and the Docker image carry). Main reads
++// the file (`about.notices`); the page shows it as plain text, never as HTML.
++
++import { useEffect, useState } from "react";
++import { useT } from "../i18n/index.tsx";
++import { attempt, useSettings } from "./context.tsx";
++import { Row } from "./customPages.tsx";
++
++type Notices = { readonly state: "loading" } | { readonly state: "done"; text: string | null };
++
++export function LicencesPage() {
++  const t = useT();
++  const { bridge } = useSettings();
++  const source = bridge?.about;
++  const [notices, setNotices] = useState<Notices>({ state: "loading" });
++  useEffect(() => {
++    let live = true;
++    setNotices({ state: "loading" });
++    void attempt(source ? () => source.notices() : null).then((answer) => {
++      if (!live) return;
++      const text = answer.ok && answer.value.text !== "" ? answer.value.text : null;
++      setNotices({ state: "done", text });
++    });
++    return () => {
++      live = false;
++    };
++  }, [source]);
++  return (
++    <div className="settings-rows">
++      <Row
++        row="licences"
++        label={t("settings.licences.title")}
++        description={t("settings.licences.body")}
++      >
++        {notices.state === "loading" ? (
++          <p className="settings-row-note" role="status">
++            {t("settings.licences.loading")}
++          </p>
++        ) : notices.text === null ? (
++          <p className="settings-row-note" role="status">
++            {t("settings.licences.missing")}
++          </p>
++        ) : (
++          <pre
++            className="settings-notices"
++            data-ui="settings-licences-text"
++            // biome-ignore lint/a11y/noNoninteractiveTabindex: a long scrolling region keyboard users must reach
++            tabIndex={0}
++          >
++            {notices.text}
++          </pre>
++        )}
++      </Row>
++    </div>
++  );
++}
+diff --git a/apps/desktop/src/settings/SettingsOverlay.test.tsx b/apps/desktop/src/settings/SettingsOverlay.test.tsx
+index 044b24c..cbcd448 100644
+--- a/apps/desktop/src/settings/SettingsOverlay.test.tsx
++++ b/apps/desktop/src/settings/SettingsOverlay.test.tsx
+@@ -271,4 +271,47 @@ describe("settings overlay", () => {
+     await settle();
+     expect(screen.getByText("Not available in this build yet.")).toBeTruthy();
+   });
++
++  it("About → Licences shows the packaged notices as plain text (W46, F-2)", async () => {
++    const text = "# Third-party notices\n\n<b>some-lib</b> MIT License\n";
++    const bridge: SettingsBridge = { about: { notices: async () => ({ text }) } };
++    render(<Harness initial="view=about" api={backend(["default"])} bridge={bridge} />);
++    await settle();
++    await act(async () => {
++      fireEvent.click(screen.getByRole("button", { name: "Licences" }));
++    });
++    await settle();
++    expect(screen.getByTestId("query").textContent).toBe("view=about&page=licences");
++    const block = document.querySelector('[data-ui="settings-licences-text"]') as HTMLElement;
++    expect(block.textContent).toBe(text);
++    expect(block.querySelector("b")).toBeNull(); // never parsed as markup
++  });
++
++  it("Licences without a notices file (a dev run or an old main) says why (W46, F-2)", async () => {
++    render(<Harness initial="view=about&page=licences" api={backend(["default"])} bridge={null} />);
++    await settle();
++    expect(screen.getByText(/The notices file ships inside the installed app/)).toBeTruthy();
++    const empty: SettingsBridge = { about: { notices: async () => ({ text: null }) } };
++    render(
++      <Harness initial="view=about&page=licences" api={backend(["default"])} bridge={empty} />,
++    );
++    await settle();
++    expect(screen.getAllByText(/The notices file ships inside the installed app/)).toHaveLength(2);
++  });
++
++  it('search "licenses" finds the licences page', async () => {
++    render(<Harness initial="" api={backend(["default"])} bridge={null} />);
++    await settle();
++    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
++      target: { value: "licenses" },
++    });
++    const hit = screen
++      .getAllByRole("button")
++      .find((b) => b.textContent?.includes("Third-party licences"));
++    await act(async () => {
++      fireEvent.click(hit as HTMLElement);
++    });
++    await settle();
++    expect(screen.getByTestId("query").textContent).toBe("view=about&page=licences&row=licences");
++  });
+ });
+diff --git a/apps/desktop/src/settings/context.tsx b/apps/desktop/src/settings/context.tsx
+index 1b07efd..b5c3302 100644
+--- a/apps/desktop/src/settings/context.tsx
++++ b/apps/desktop/src/settings/context.tsx
+@@ -3,6 +3,7 @@
+ 
+ import { createContext, useCallback, useContext, useEffect, useState } from "react";
+ import type {
++  IndusDesktopAbout,
+   IndusDesktopAmbient,
+   IndusDesktopConnection,
+   IndusDesktopFs,
+@@ -32,6 +33,8 @@ export interface SettingsBridge {
+   readonly fs?: IndusDesktopFs;
+   /** About → Uninstall (P24-34). */
+   readonly uninstall?: IndusDesktopUninstall;
++  /** About → Licences: the packaged third-party notices (W46, F-2). */
++  readonly about?: IndusDesktopAbout;
+ }
+ 
+ /** `model.save_key` over the daemon (keys go to the profile's secret store, never the renderer). */
+diff --git a/apps/desktop/src/settings/customPages.tsx b/apps/desktop/src/settings/customPages.tsx
+index fbb49c7..ba58525 100644
+--- a/apps/desktop/src/settings/customPages.tsx
++++ b/apps/desktop/src/settings/customPages.tsx
+@@ -40,6 +40,7 @@ import {
+   KEY_ACTIONS,
+   normalizeAccelerator,
+ } from "./keybindings.ts";
++import { LicencesPage } from "./LicencesPage.tsx";
+ import type { CustomPage } from "./pages.ts";
+ import { patchFor, rest, valueAt } from "./settingsApi.ts";
+ import { UninstallSection } from "./UninstallSection.tsx";
+@@ -1564,6 +1565,7 @@ const PAGES: Readonly<Record<CustomPage, () => ReactNode>> = {
+   profiles: () => <ProfilesPage />,
+   plugins: () => <PluginsPage />, // P24-32: the desktop plugin inventory
+   about: () => <AboutPage />,
++  "about-licences": () => <LicencesPage />, // W46 (F-2)
+ };
+ 
+ export function CustomSettingsPage(props: { page: CustomPage }) {
+diff --git a/apps/desktop/src/settings/pages.ts b/apps/desktop/src/settings/pages.ts
+index f58fe8d..63a763c 100644
+--- a/apps/desktop/src/settings/pages.ts
++++ b/apps/desktop/src/settings/pages.ts
+@@ -27,7 +27,8 @@ export type CustomPage =
+   | "workspace-desktop"
+   | "profiles"
+   | "plugins"
+-  | "about";
++  | "about"
++  | "about-licences";
+ 
+ export interface PageDef {
+   readonly id: string;
+@@ -249,7 +250,10 @@ export const VIEWS: readonly ViewDef[] = [
+     id: "about",
+     label: "settings.view.about",
+     scoped: false,
+-    pages: [{ id: "version", label: "settings.page.about.version", custom: "about" }],
++    pages: [
++      { id: "version", label: "settings.page.about.version", custom: "about" },
++      { id: "licences", label: "settings.page.about.licences", custom: "about-licences" },
++    ],
+   },
+ ];
+ 
+@@ -485,6 +489,21 @@ export const MANIFEST: readonly ManifestRow[] = [
+     label: "settings.about.title",
+     keywords: ["version", "update", "check", "release", "about"],
+   },
++  {
++    id: "licences",
++    view: "about",
++    page: "licences",
++    label: "settings.licences.title",
++    keywords: [
++      "licences",
++      "licenses",
++      "license",
++      "notices",
++      "open source",
++      "third party",
++      "credits",
++    ],
++  },
+   {
+     id: "logs",
+     view: "about",
+diff --git a/apps/desktop/src/settings/settings.css b/apps/desktop/src/settings/settings.css
+index d18a5aa..406c53b 100644
+--- a/apps/desktop/src/settings/settings.css
++++ b/apps/desktop/src/settings/settings.css
+@@ -294,3 +294,21 @@
+ .settings-segment {
+   padding: var(--indus-space-1) var(--indus-space-2);
+ }
++
++/* About → Licences (W46, F-2): the packaged notices as plain text in a scrolling block. */
++.settings-notices {
++  box-sizing: border-box;
++  width: 100%;
++  max-height: 60vh;
++  margin: 0;
++  padding: var(--indus-space-2);
++  overflow: auto;
++  white-space: pre-wrap;
++  overflow-wrap: anywhere;
++  font-family: var(--indus-font-mono);
++  font-size: 11px;
++  color: var(--indus-color-fg);
++  background: var(--indus-color-bg);
++  border: 1px solid var(--indus-color-border);
++  border-radius: var(--indus-radius-sm);
++}
+diff --git a/apps/desktop/src/settings/strings.en.ts b/apps/desktop/src/settings/strings.en.ts
+index 690a9ce..26c5f21 100644
+--- a/apps/desktop/src/settings/strings.en.ts
++++ b/apps/desktop/src/settings/strings.en.ts
+@@ -67,6 +67,7 @@ export const SETTINGS_STRINGS = {
+   "settings.page.sessions.archived": "Archived",
+   "settings.page.sessions.directory": "Default directory and history",
+   "settings.page.about.version": "Version",
++  "settings.page.about.licences": "Licences",
+   "settings.page.nothing": "This version of Indus has nothing to change on this page.",
+ 
+   "settings.field.none": "(none)",
+@@ -112,6 +113,12 @@ export const SETTINGS_STRINGS = {
+   "settings.about.app": "App",
+   "settings.about.backend": "Indus runtime",
+   "settings.about.state": "Updates",
++  "settings.licences.title": "Third-party licences",
++  "settings.licences.body":
++    "Indus is built with open-source software. These are the notices and licences that ship with this app.",
++  "settings.licences.loading": "Reading the notices…",
++  "settings.licences.missing":
++    "The notices file ships inside the installed app; this window has none to show (a development run, or the file is missing).",
+   "settings.logs.title": "Logs and diagnostics",
+   "settings.tray.unavailable": "Not available here: {reason}",
+   "settings.workspace.defaultDir": "Default folder for new chats",
+diff --git a/docs/notes/P25/notices.md b/docs/notes/P25/notices.md
+index 9203bf9..1b00133 100644
+--- a/docs/notes/P25/notices.md
++++ b/docs/notes/P25/notices.md
+@@ -82,3 +82,35 @@ Compare checklist (filled after the rewrite; reopened the reference `LICENSE`):
+ ## Status
+ 
+ Done (2026-10-21). See the final report.
++
++## Wave 46 (F-2): the desktop licences screen
++
++Read: no reference file and no Evidence (our own screen over our own notices file).
++
++What it does: Settings → About gains a second page, **Licences** (`view=about&page=licences`, also
++a search hit for "licences", "licenses", "notices", "open source", "third party"), which shows the
++`THIRD_PARTY_NOTICES.md` the packager already puts beside the app (`electron-builder.config.cjs`
++`extraResources`, P25-17) as plain text in a scrolling, keyboard-reachable block.
++
++- Main: `electron/diagnostics.ts` `readNotices(resourcesPath)` reads
++  `<resourcesPath>/THIRD_PARTY_NOTICES.md` (null when not packaged, missing, not a regular file or
++  over 4 MiB; the real file is about 140 KB), answered on the new invoke channel
++  `indus:about:notices` (group `about`, method `notices`, owner `W46`; request `{}`, response
++  `{ text: string | null }`). It goes through the registry like every handler (`check:ipc`), and
++  `src/global.d.ts` is regenerated (`pnpm gen:bridge-types`).
++- Renderer: `src/settings/LicencesPage.tsx` (custom page `about-licences`), the `about` bridge
++  group on `SettingsBridge`. The text is rendered as a React text child inside `<pre>`, never as
++  HTML or Markdown, so nothing in the file can inject markup. A development run (no
++  `resourcesPath`) or an older main without the channel shows a one-line reason instead.
++
++Tests: `electron/diagnostics.test.ts` (reader: null in dev, missing, oversized, a directory; the
++handler answers null unpackaged; the builder config ships the file under the name main reads);
++`src/settings/SettingsOverlay.test.tsx` (the About nav reaches the page and shows the text with
++markup kept as text; no bridge / null text explains why; search "licenses" lands on the row).
++
++### Decisions for the lead
++- W46-d-3: the notices are read by main and sent over IPC, not fetched by the renderer from a
++  file URL (the renderer has no file access). The channel lives with diagnostics, which already
++  holds `resourcesPath`, so `main.ts` is unchanged.
++- W46-d-4: plain text, not rendered Markdown: the file is long and generated; plain text is safe
++  without a sanitiser and still readable. Rendering it with headings is a later polish.
+diff --git a/docs/notes/P25/parity-scenarios.md b/docs/notes/P25/parity-scenarios.md
+index ba17a22..bf14869 100644
+--- a/docs/notes/P25/parity-scenarios.md
++++ b/docs/notes/P25/parity-scenarios.md
+@@ -73,3 +73,48 @@ Compare checklist (filled after the rewrite; reopened skill reference 03 §2 and
+ ## Status
+ 
+ Done (2026-10-21). 12 files; 10 run green here (2 desktop files validated, not run).
++
++## Wave 46 (RM21): the nine desktop hooks, `OWED_HOOKS` emptied
++
++Read: no reference file and no Evidence (the hooks are ours; the step lists already name them).
++
++What changed: the nine `data-ui` hooks the two desktop flows press now sit on our own elements, and
++`OWED_HOOKS` is `{}`, so the scenario self-test treats any missing hook as an error again.
++
++- Onboarding (`apps/desktop/src/onboarding/Onboarding.tsx`): `onboarding-dialog` on the overlay
++  card (`role="dialog"`); `onboarding-custom-option` on the picker's custom-endpoint choice;
++  `onboarding-endpoint-url` on the base URL `<input>` (the flow `fill`s it, so the hook is on the
++  input itself) and `onboarding-test-continue` on the form's "Test and continue" submit (the same
++  form serves the local endpoint; only one shows at a time); `onboarding-model-select` on the model
++  `<input list>` (a free-text field with a datalist of the endpoint's models, not a `<select>`) and
++  `onboarding-start-chatting` on its "Start chatting" submit, the overlay's last button.
++- Transcript (`apps/desktop/src/chat/ToolRow.tsx`): `transcript-tool-row` on every tool row (the
++  row lives in `chat/`, not `chat/cards` as the old reason said). The chat-panes flow makes one
++  tool call, so the `wait_for` locator matches one element.
++- Panes (`apps/desktop/src/panes/PaneShell.tsx`): the layout toolbar gains a `PaneToggle` per
++  files and review pane, `pane-toggle-files` / `pane-toggle-review`. A toggle is pressed
++  (`aria-pressed`) when its pane is the front tab of a zone that is not minimised and the pane is
++  not hidden; a click on an unpressed toggle opens the pane (from the closed stack, or brings it to
++  the front, un-minimising its zone); a click on a pressed one closes it (the closed stack keeps its
++  place). Files and review no longer get an "Open …" button (the toggle covers it); other panes
++  keep theirs. Simple mode, where both are not allowed, shows no toggle.
++
++Why the toggles are literal components: the self-test (`hook_in_source`) looks for the static text
++`data-ui="<value>"` in a `.tsx` file, so a hook computed in a `.map` would not count. Each toggle
++use names its hook literally (`<PaneToggle … data-ui="pane-toggle-files" />`).
++
++Tests: `apps/desktop/src/onboarding/Onboarding.test.tsx` walks the custom-endpoint path by hooks
++alone (what the flow does); `chat/Transcript.test.tsx` counts the tool-row hooks;
++`panes/PaneShell.test.tsx` toggles both panes (front, swap, close, reopen; a minimised zone;
++Simple mode has none) and the close/reopen test now reopens Review through its toggle. Fail-first:
++with `OWED_HOOKS` empty and the sources at `main` (8a7735e), `scenarios.hook_problems` reports all
++nine hooks missing; on this tree it reports none, and `tests/unit/parity` passes.
++
++### Decisions for the lead
++- W46-d-1: the pane hooks are new toolbar toggles for files and review (not the zone tabs, whose
++  hook would be computed in a loop); pressing a showing pane's toggle closes it. Only these two
++  stateless panes get a toggle, so closing never loses state (preview and terminal keep Hide and
++  their "Open …" buttons).
++- W46-d-2: `docs/internals/parity-report-v1.md` still says "6 hooks owed" / "3 hooks owed" for the
++  two desktop flows; left as the v1 snapshot. Both flows stay `not run` for the other reason the
++  report gives (packaged app + CDP endpoint, owner lane).
+diff --git a/scripts/parity/scenarios.py b/scripts/parity/scenarios.py
+index 9b0eb1f..af71677 100644
+--- a/scripts/parity/scenarios.py
++++ b/scripts/parity/scenarios.py
+@@ -338,17 +338,7 @@ APP_SOURCES: dict[str, tuple[str, ...]] = {
+ # Hooks the scenarios need that the product does not carry yet, each with its reason. The scenario
+ # self-test fails when one of these appears in the source (drop it here then) and when a locator
+ # uses a hook that neither exists nor is listed.
+-OWED_HOOKS: dict[str, str] = {
+-    "onboarding-dialog": "desktop onboarding overlay (apps/desktop/src/onboarding/Onboarding.tsx)",
+-    "onboarding-custom-option": "the custom-endpoint choice of the onboarding overlay",
+-    "onboarding-endpoint-url": "the base URL field of the onboarding overlay",
+-    "onboarding-test-continue": "the 'test and continue' button of the onboarding overlay",
+-    "onboarding-model-select": "the model choice of the onboarding overlay",
+-    "onboarding-start-chatting": "the last button of the onboarding overlay",
+-    "transcript-tool-row": "a tool row in the desktop transcript (apps/desktop/src/chat/cards)",
+-    "pane-toggle-files": "the button that opens the files pane (apps/desktop/src/panes)",
+-    "pane-toggle-review": "the button that opens the review pane (apps/desktop/src/panes)",
+-}
++OWED_HOOKS: dict[str, str] = {}  # W46 (RM21): the nine desktop hooks landed; none owed now
+ 
+ 
+ def hook_in_source(hook: Hook, roots: Sequence[Path]) -> bool:

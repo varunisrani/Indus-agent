@@ -18,3 +18,14 @@
   ok; security_static ok; ruff clean.
 - W46-h-1: once P45 lands, bots-and-peers.md (message_agent in bot chat) and lsp.md (`indus lsp restart` vs a running daemon)
   each need a paragraph — the w45+w46 integrator adds them. W46-h-2: no runnable doc examples (need daemon/network).
+
+## w46d.patch: RM21 nine desktop data-ui hooks (OWED_HOOKS emptied) + F-2 desktop licences screen (done)
+- 22 files, +444/-18. Hooks on Onboarding (dialog + 5 steps), chat/ToolRow.tsx, new files/review PaneToggle in
+  panes/PaneShell.tsx; scripts/parity/scenarios.py OWED_HOOKS = {}. Licences: IPC `indus:about:notices` (channels.ts,
+  schemas.ts, handler in electron/diagnostics.ts reads <resources>/THIRD_PARTY_NOTICES.md, ≤4 MiB, null in dev),
+  global.d.ts regenerated, settings/LicencesPage.tsx at Settings → About → Licences (plain text <pre>).
+- Checks: biome lint/fmt, desktop typecheck, check:ipc, ruff, pyright, lint-imports, security_static, tooling.checks ok;
+  vitest 204 passed; pytest parity/contract/security 2063 passed, 1 load-flake (test_runner dry run; passes alone).
+- W46-d-1..4. MERGE NOTE: [e] also edits apps/desktop (Shell.tsx, main.tsx; d edits PaneShell.tsx, customPages.tsx,
+  channels.ts/schemas.ts) — expect nearby-line conflicts only.
+- Slip: one `npx vitest` may have made an npm version check over the network.
