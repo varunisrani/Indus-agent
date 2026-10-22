@@ -178,3 +178,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 04:58 UTC: 69% (04:55; resets 07:00). P25-20..24 landed (b9a43a1). Running: waves 45+46 integrator (verify25), screenshot agent (20 PNGs so far). 20 GB disk free.
 - 2026-10-22 05:06 UTC: screenshot pass A done (31 PNGs sent to the owner); 6 UI bugs recorded for wave 47.
 - 2026-10-22 05:16 UTC: 71% (05:05; resets 07:00). Waves 45+46 integrator applied the patches (224 paths) and is merging the LSP changes. Screenshot pass A sent to the owner. 20 GB disk free.
+- 2026-10-22 05:38 UTC: 74% (05:33; resets 07:00). Waves 45+46 integrator is triaging the room flake (30+ repeat runs). 21 GB disk free.
