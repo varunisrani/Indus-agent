@@ -1,0 +1,837 @@
+diff --git a/apps/desktop/src/chat/busyActions.test.ts b/apps/desktop/src/chat/busyActions.test.ts
+index a7c9e02..1339304 100644
+--- a/apps/desktop/src/chat/busyActions.test.ts
++++ b/apps/desktop/src/chat/busyActions.test.ts
+@@ -359,3 +359,104 @@ describe("busy actions", () => {
+     expect(journal.log.at(-1)).toBe("retire req-1 rejected");
+   });
+ });
++
++// W47-a: the daemon's turn ids (`turn.started` / `turn.done`) are not the admission ids the submit
++// answer and `admission.state` carry; the two arrive in either order.
++describe("busy state ends with the turn, whatever order the answers arrive in", () => {
++  /** The daemon starts the turn under its own id while the submit is still answering. */
++  function racing(events: ReadonlyArray<Record<string, unknown>>) {
++    const { daemon, actions } = setup();
++    daemon.handlers.set("prompt.submit", () => {
++      for (const event of events) daemon.emit(event);
++      return { turn_id: "adm-1", generation: 7, status: "streaming" };
++    });
++    return { daemon, actions };
++  }
++
++  it("turn.done ends it when the submit answer came after turn.started", async () => {
++    const { daemon, actions } = racing([
++      { type: "turn.started", turn_id: "turn-a", generation: 7 },
++    ]);
++    expect(await actions.send("hi")).toBe("started");
++    expect(actions.snapshot().running).toBe(true);
++    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
++    expect(actions.snapshot()).toMatchObject({ running: false, generation: null });
++  });
++
++  it("a submit answer that arrives after the turn ended does not bring Stop back", async () => {
++    const { actions } = racing([
++      { type: "turn.started", turn_id: "turn-a", generation: 7 },
++      { type: "turn.done", turn_id: "turn-a", reason: "completed" },
++    ]);
++    expect(await actions.send("hi")).toBe("started");
++    expect(actions.snapshot().running).toBe(false);
++    // the optimistic row still binds to the turn the transcript knows
++    expect(actions.snapshot().turnId).toBe("turn-a");
++  });
++
++  it("admission started after turn.started keeps the turn's own id", () => {
++    const { daemon, actions } = setup();
++    daemon.emit({ type: "turn.started", turn_id: "turn-a", generation: 7 });
++    daemon.emit({
++      type: "admission.state",
++      admission_id: "adm-1",
++      state: "started",
++      generation: 7,
++    });
++    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
++    expect(actions.snapshot().running).toBe(false);
++  });
++
++  it("admission started after turn.done changes nothing", () => {
++    const { daemon, actions } = setup();
++    daemon.emit({ type: "turn.started", turn_id: "turn-a", generation: 7 });
++    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
++    daemon.emit({
++      type: "admission.state",
++      admission_id: "adm-1",
++      state: "started",
++      generation: 7,
++    });
++    expect(actions.snapshot().running).toBe(false);
++  });
++
++  it("turn.done of an unseen turn ends a turn known only by its admission", async () => {
++    const { daemon, actions } = setup();
++    expect(await actions.send("hi")).toBe("started");
++    daemon.emit({ type: "turn.done", turn_id: "turn-z", reason: "completed" });
++    expect(actions.snapshot().running).toBe(false);
++  });
++
++  it("an earlier turn's end does not stop the next turn", () => {
++    const { daemon, actions } = setup();
++    daemon.emit({ type: "turn.started", turn_id: "turn-a", generation: 7 });
++    daemon.emit({ type: "turn.started", turn_id: "turn-b", generation: 8 });
++    daemon.emit({ type: "turn.done", turn_id: "turn-a", reason: "completed" });
++    expect(actions.snapshot()).toMatchObject({ running: true, turnId: "turn-b", generation: 8 });
++  });
++
++  it("the shared actions hear the session's events with no composer mounted", async () => {
++    const listeners = new Set<(event: SessionEvent) => void>();
++    const connection = {
++      onSessionEvent(sessionId: string, listener: (event: SessionEvent) => void) {
++        expect(sessionId).toBe(SID);
++        listeners.add(listener);
++        return () => listeners.delete(listener);
++      },
++    };
++    const { daemon, actions } = setup();
++    daemon.actions = null; // nothing feeds it but the connection
++    const shared = sharedActions(connection, SID, () => actions);
++    expect(await shared.send("from the fresh draft")).toBe("started");
++    for (const event of [
++      { type: "turn.started", turn_id: "turn-a", generation: 7 },
++      { type: "turn.done", turn_id: "turn-a", reason: "completed" },
++    ]) {
++      for (const listener of listeners) listener({ session_id: SID, ...event } as SessionEvent);
++    }
++    expect(shared.snapshot().running).toBe(false);
++    // asking again does not subscribe twice
++    sharedActions(connection, SID, () => actions);
++    expect(listeners.size).toBe(1);
++  });
++});
+diff --git a/apps/desktop/src/chat/busyActions.ts b/apps/desktop/src/chat/busyActions.ts
+index 4902696..f76bc55 100644
+--- a/apps/desktop/src/chat/busyActions.ts
++++ b/apps/desktop/src/chat/busyActions.ts
+@@ -12,9 +12,16 @@
+ // Every input goes through the prepared-submission journal (P20-20): prepare → submit with the
+ // journal's request id → retire with the receipt. An uncertain answer keeps the entry; the person
+ // retries (same request id: the daemon runs it at most once) or dismisses it.
++//
++// Turn identity (W47-a): the submit answer and `admission.state` name an input by its admission id,
++// `turn.started` / `turn.done` by the daemon's own turn id; only the generation is common to both,
++// and the answer can arrive before `turn.started` or after `turn.done`. Busy state is therefore
++// kept by generation: a turn whose end was seen never shows Stop again, and `turn.done` ends the
++// busy state unless a later turn has started since.
+ 
+ import type { MethodName, MethodTypes, PromptSubmitResult } from "@indus/protocol";
+ import {
++  type ChatConnection,
+   REQUEST_TIMEOUTS,
+   type RequestOptions,
+   type SessionEvent,
+@@ -64,6 +71,8 @@ export interface UncertainSubmission {
+ 
+ export interface BusySnapshot {
+   readonly running: boolean;
++  /** The running (or just ended) turn: its own id once `turn.started` named it, else the
++   * admission id from the submit answer. */
+   readonly turnId: string | null;
+   readonly generation: number | null;
+   readonly queue: readonly QueueEntry[];
+@@ -145,6 +154,10 @@ export class ChatActions {
+   private readonly sending = new Set<string>();
+   private readonly settled = new Set<string>();
+   private pendingSubmit: Promise<unknown> | null = null;
++  /** The daemon's turn ids seen in `turn.started` → their generation (the latest few). */
++  private readonly turns = new Map<string, number>();
++  /** The newest generation whose end this window saw (-1: none). */
++  private ended = -1;
+   private state: BusySnapshot = {
+     running: false,
+     turnId: null,
+@@ -193,15 +206,17 @@ export class ChatActions {
+     if (event.session_id !== this.sessionId) return;
+     switch (event.type) {
+       case "turn.started":
++        this.remember(event.turn_id, event.generation);
++        // a renumbered ledger (a new daemon) starts below what ended before
++        if (event.generation <= this.ended) this.ended = event.generation - 1;
+         this.set({ running: true, turnId: event.turn_id, generation: event.generation });
+         return;
+       case "turn.done":
+-        if (this.state.turnId === null || this.state.turnId === event.turn_id) {
+-          this.set({ running: false, turnId: null, generation: null });
+-        }
++        this.onTurnDone(event.turn_id);
+         return;
+       case "session.info":
+         if (event.running === false && this.state.running) {
++          this.markEnded(this.state.generation);
+           this.set({ running: false, turnId: null, generation: null });
+         }
+         return;
+@@ -213,6 +228,53 @@ export class ChatActions {
+     }
+   }
+ 
++  private remember(turnId: string, generation: number): void {
++    this.turns.delete(turnId);
++    this.turns.set(turnId, generation);
++    while (this.turns.size > 16) {
++      const [oldest] = this.turns.keys();
++      if (oldest === undefined) break;
++      this.turns.delete(oldest);
++    }
++  }
++
++  private markEnded(generation: number | null): void {
++    if (generation !== null && generation > this.ended) this.ended = generation;
++  }
++
++  /** The daemon's id of the turn running `generation`, when `turn.started` named it. */
++  private turnOf(generation: number): string | null {
++    let found: string | null = null;
++    for (const [turnId, own] of this.turns) if (own === generation) found = turnId;
++    return found;
++  }
++
++  private onTurnDone(turnId: string): void {
++    const { running, generation, turnId: current } = this.state;
++    const own = this.turns.get(turnId) ?? (current === turnId ? generation : null);
++    this.markEnded(own);
++    if (!running) return;
++    // One turn runs at a time: only a later turn that already started keeps the busy state.
++    const later =
++      current !== turnId &&
++      current !== null &&
++      this.turns.has(current) &&
++      (own === null || (generation !== null && generation > own));
++    if (later) return;
++    this.markEnded(generation);
++    this.set({ running: false, turnId: null, generation: null });
++  }
++
++  /** A turn is claimed for `generation` (submit answer or `admission.state` started). */
++  private claimed(admissionId: string, generation: number | null): Partial<BusySnapshot> {
++    const turnId = generation === null ? null : this.turnOf(generation);
++    if (generation !== null && generation <= this.ended) {
++      // its end already arrived: nothing runs (the turn id still binds the optimistic row)
++      return { running: false, turnId: turnId ?? admissionId, generation: null };
++    }
++    return { running: true, turnId: turnId ?? admissionId, generation };
++  }
++
+   private onAdmission(
+     admissionId: string,
+     state: string,
+@@ -239,12 +301,12 @@ export class ChatActions {
+       return;
+     }
+     // started or terminal: it left the queue
+-    const patch: { -readonly [K in keyof BusySnapshot]?: BusySnapshot[K] } = { queue: others };
+-    if (state === "terminal" && this.state.lost?.admissionId === admissionId) patch.lost = null;
+-    if (state === "started" && typeof generation === "number") {
+-      patch.running = true;
+-      patch.generation = generation;
+-      patch.turnId = admissionId;
++    let patch: Partial<BusySnapshot> = { queue: others };
++    if (state === "terminal" && this.state.lost?.admissionId === admissionId) {
++      patch = { ...patch, lost: null };
++    }
++    if (state === "started" && typeof generation === "number" && generation > this.ended) {
++      patch = { ...patch, ...this.claimed(admissionId, generation) };
+     }
+     this.set(patch);
+   }
+@@ -351,11 +413,9 @@ export class ChatActions {
+       return "queued";
+     }
+     if (result.status === "steered" || result.status === "redirected") return "steered";
+-    this.set({
+-      running: true,
+-      turnId: result.turn_id,
+-      generation: typeof result.generation === "number" ? result.generation : this.state.generation,
+-    });
++    const generation =
++      typeof result.generation === "number" ? result.generation : this.state.generation;
++    this.set(this.claimed(result.turn_id, generation));
+     return "started";
+   }
+ 
+@@ -604,8 +664,16 @@ export function sharedActions(
+   }
+   let actions = bySession.get(sessionId);
+   if (actions === undefined) {
+-    actions = make();
+-    bySession.set(sessionId, actions);
++    const made = make();
++    actions = made;
++    bySession.set(sessionId, made);
++    // W47-a: it hears the session's events for as long as it lives, not only while a composer
++    // shows the session (a fresh draft's first send, quick entry and Retry run with none mounted,
++    // and a turn that ends meanwhile would otherwise keep Stop/Steer up).
++    const source = connection as Partial<Pick<ChatConnection, "onSessionEvent">>;
++    if (typeof source.onSessionEvent === "function") {
++      source.onSessionEvent.call(connection, sessionId, (event) => made.handleEvent(event));
++    }
+   }
+   return actions;
+ }
+diff --git a/apps/desktop/src/chat/composer/Composer.tsx b/apps/desktop/src/chat/composer/Composer.tsx
+index 5adf740..f018cd3 100644
+--- a/apps/desktop/src/chat/composer/Composer.tsx
++++ b/apps/desktop/src/chat/composer/Composer.tsx
+@@ -165,12 +165,15 @@ function useSessionActions(
+         }),
+     );
+   }, [props.actions, connection, sessionId, journal, inflight]);
++  const given = props.actions !== undefined;
+   useEffect(() => {
+     if (made === null || connection === null) return;
+-    const stop = connection.onSessionEvent(made.sessionId, (event) => made.handleEvent(event));
+     void made.recoverPrepared();
+-    return stop;
+-  }, [made, connection]);
++    // Shared actions hear their session's events for their whole life (`sharedActions`); only
++    // actions handed in from outside are fed while this composer shows them.
++    if (!given) return;
++    return connection.onSessionEvent(made.sessionId, (event) => made.handleEvent(event));
++  }, [made, connection, given]);
+   return made;
+ }
+ 
+diff --git a/apps/desktop/src/chat/messageStream.test.ts b/apps/desktop/src/chat/messageStream.test.ts
+index 25669f7..03a23fb 100644
+--- a/apps/desktop/src/chat/messageStream.test.ts
++++ b/apps/desktop/src/chat/messageStream.test.ts
+@@ -388,6 +388,44 @@ describe("tool rows", () => {
+     expect(toolOutcome(false, "exit code 2")).toBe("failed");
+   });
+ 
++  it("rows rebuilt from history carry the live rows' summary and arguments (W47-a)", () => {
++    const sid = "s-tools";
++    let live = emptyTranscript(sid);
++    for (const event of [
++      { type: "turn.started", turn_id: "t1", generation: 1 },
++      {
++        type: "tool.started",
++        turn_id: "t1",
++        call_id: "c1",
++        name: "terminal",
++        arguments: { command: "ls -la" },
++      },
++      { type: "tool.completed", turn_id: "t1", call_id: "c1", name: "terminal", ok: true },
++      { type: "turn.done", turn_id: "t1", reason: "completed" },
++    ]) {
++      live = applyEvent(live, { session_id: sid, ...event } as ClientEvent);
++    }
++    const rows: HistoryMessage[] = [
++      { role: "user", text: "list it", row_id: 1 },
++      { role: "tool", text: "a b", name: "terminal", arguments: { command: "ls -la" }, row_id: 2 },
++      { role: "tool", text: "x", name: "read_file", row_id: 3 },
++    ];
++    const reloaded = applyHistory(emptyTranscript(sid), rows, 1);
++    const tools = (t: SessionTranscript) =>
++      t.items.flatMap((item) =>
++        item.kind === "assistant" ? item.parts.filter((part) => part.type === "tool") : [],
++      );
++    const [before] = tools(live);
++    const [after, bare] = tools(reloaded);
++    expect(after?.args).toEqual(before?.args);
++    expect(toolSummary(after?.name ?? "", after?.args ?? null)).toEqual({
++      verb: "run",
++      target: "ls -la",
++    });
++    // a row stored without arguments still shows, with no Arguments section
++    expect(bare?.args).toBeNull();
++  });
++
+   it("finds images in a result", () => {
+     expect(toolImages("see indus-media://shot/1.png and data:image/png;base64,AAAA")).toEqual([
+       "indus-media://shot/1.png",
+diff --git a/apps/desktop/src/chat/messageStream.ts b/apps/desktop/src/chat/messageStream.ts
+index 82deccd..cce1e61 100644
+--- a/apps/desktop/src/chat/messageStream.ts
++++ b/apps/desktop/src/chat/messageStream.ts
+@@ -521,8 +521,12 @@ export function historyItems(rows: readonly HistoryMessage[]): TranscriptItem[]
+     if (row.role === "assistant") {
+       if (row.text !== "") parts.push({ type: "text", text: row.text });
+     } else {
++      // The stored call's arguments (W47-a): the same summary and Arguments as the live row.
++      const args =
++        row.arguments === undefined || row.arguments === null ? null : rec(row.arguments);
+       parts.push({
+         ...newTool(`row:${row.row_id ?? index}`, row.name ?? "tool"),
++        args,
+         state: /^(error|failed)\b/i.test(row.text.trim()) ? "failed" : "ok",
+         result: row.text,
+       });
+diff --git a/apps/desktop/src/chat/restHistory.test.ts b/apps/desktop/src/chat/restHistory.test.ts
+index 85272e6..ab44162 100644
+--- a/apps/desktop/src/chat/restHistory.test.ts
++++ b/apps/desktop/src/chat/restHistory.test.ts
+@@ -20,11 +20,37 @@ describe("REST history", () => {
+   it("shows user, assistant and tool rows; drops system and tool-call-only rows; names tools", () => {
+     expect(displayRows(ROWS)).toEqual([
+       { role: "user", text: "Please write the notes", row_id: 2 },
+-      { role: "tool", text: "wrote 1 file", name: "write_file", row_id: 4 },
++      { role: "tool", text: "wrote 1 file", name: "write_file", arguments: {}, row_id: 4 },
+       { role: "assistant", text: "Done.", row_id: 5 },
+     ]);
+   });
+ 
++  it("gives tool rows their call's arguments, as the live rows have them (W47-a)", () => {
++    const rows = [
++      {
++        id: 1,
++        role: "assistant",
++        content: "",
++        tool_calls: [
++          { id: "c1", name: "read_file", arguments: '{"path": "notes.md"}' },
++          { id: "c2", function: { name: "terminal", arguments: '{"command": "ls"}' } },
++          { id: "c3", name: "odd", arguments: "not json" },
++          { id: "c4", name: "list", arguments: "[1, 2]" },
++        ],
++      },
++      { id: 2, role: "tool", content: "text", tool_call_id: "c1" },
++      { id: 3, role: "tool", content: "ran", tool_call_id: "c2" },
++      { id: 4, role: "tool", content: "?", tool_call_id: "c3" },
++      { id: 5, role: "tool", content: "?", tool_call_id: "c4" },
++    ];
++    expect(displayRows(rows)).toEqual([
++      { role: "tool", text: "text", name: "read_file", arguments: { path: "notes.md" }, row_id: 2 },
++      { role: "tool", text: "ran", name: "terminal", arguments: { command: "ls" }, row_id: 3 },
++      { role: "tool", text: "?", name: "odd", row_id: 4 },
++      { role: "tool", text: "?", name: "list", row_id: 5 },
++    ]);
++  });
++
+   it("asks the session's messages route for the profile; not-found means the route is missing", async () => {
+     const seen: IndusApiRequest[] = [];
+     const load = restHistory(async (request) => {
+diff --git a/apps/desktop/src/chat/restHistory.ts b/apps/desktop/src/chat/restHistory.ts
+index d215e70..6c60fb1 100644
+--- a/apps/desktop/src/chat/restHistory.ts
++++ b/apps/desktop/src/chat/restHistory.ts
+@@ -3,8 +3,9 @@
+ // events; stored rows are read through `indus serve`, P17 / P18-11), so the desktop reads
+ // `GET /api/sessions/{id}/messages` through main's REST proxy and flattens the rows the way the
+ // daemon's display projection does: user, assistant and tool rows only, an assistant row that is
+-// only tool calls dropped, tool rows named by their call. A backend without the route (the fake
+-// test daemon) answers not-found, and the caller falls back to `session.history`.
++// only tool calls dropped, tool rows named by their call and carrying its arguments (the route
++// masks them; W47-a). A backend without the route (the fake test daemon) answers not-found, and
++// the caller falls back to `session.history`.
+ 
+ import type { HistoryMessage } from "@indus/protocol";
+ import type { IndusApiRequest, IndusApiResult } from "../global.d.ts";
+@@ -25,9 +26,27 @@ interface StoredRow {
+ 
+ const SHOWN = new Set(["user", "assistant", "tool"]);
+ 
++type Arguments = NonNullable<HistoryMessage["arguments"]>;
++
++/** A call's arguments as an object (the route sends JSON text); null when they are not one. */
++function parseArguments(raw: unknown): Arguments | null {
++  let value = raw;
++  if (typeof raw === "string") {
++    try {
++      value = raw.trim() === "" ? {} : JSON.parse(raw);
++    } catch {
++      return null;
++    }
++  }
++  return typeof value === "object" && value !== null && !Array.isArray(value)
++    ? (value as Arguments)
++    : null;
++}
++
+ /** Stored rows (oldest first) → what the transcript shows. */
+ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
+   const names = new Map<string, string>();
++  const calls = new Map<string, unknown>();
+   const out: HistoryMessage[] = [];
+   for (const row of rows) {
+     const role = typeof row.role === "string" ? row.role : "";
+@@ -39,6 +58,7 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
+         const name = typeof call?.name === "string" ? call.name : fn?.name;
+         if (typeof call?.id === "string" && typeof name === "string" && name !== "")
+           names.set(call.id, name);
++        if (typeof call?.id === "string") calls.set(call.id, call.arguments ?? fn?.arguments);
+       }
+     }
+     const text = typeof row.content === "string" ? row.content : "";
+@@ -49,7 +69,14 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
+         (typeof row.tool_name === "string" && row.tool_name !== "" ? row.tool_name : null) ??
+         names.get(callId) ??
+         "tool";
+-      out.push({ role: "tool", text, name, row_id: rowId });
++      const args = parseArguments(calls.get(callId));
++      out.push({
++        role: "tool",
++        text,
++        name,
++        ...(args === null ? {} : { arguments: args }),
++        row_id: rowId,
++      });
+       continue;
+     }
+     if (text.trim() === "") continue; // an assistant row with only tool calls
+diff --git a/docs/internals/threat-model.md b/docs/internals/threat-model.md
+index 14de715..6d85087 100644
+--- a/docs/internals/threat-model.md
++++ b/docs/internals/threat-model.md
+@@ -64,7 +64,7 @@ shapes this review found out of `src/` and `scripts/` (row B-STATIC-1).
+ | B-ENV-1 | A-KEYS → child processes | every child env from `indus.safety.child_env` (blocked provider names, every `INDUS_`, passthrough only by name) | `tests/unit/safety/test_child_env.py`, `tests/security/test_trust_boundaries.py::test_env_child_never_gets_provider_keys_or_indus_settings` | held |
+ | B-ENV-2 | process environment reads | only the allow-listed bootstrap modules read `os.environ` | `tooling/checks/tests/test_no_raw_environ.py`, `tests/unit/gateway/multiplex/test_no_env_reads.py` | held |
+ | B-ENV-3 | spawn sites | a spawn must pass `env=` (static rule `inherit_env`; three reviewed files, three call sites: the user's editor for `config edit` and `memory edit`, the macOS `ps` probe of the test-isolation guard). The dashboard's git update and check get the scope's child env; doctor's `--version` probes get the child env and `locate.probe` only `PROBE_ENV_NAMES` (wave 46) | `tooling/checks/tests/test_security_static.py`, `tests/security/test_outside_numbers.py::test_sec8_dashboard_git_calls_get_a_child_env`, `tests/security/test_outside_numbers.py::test_sec8_doctor_version_probe_gets_a_child_env`, `tests/security/test_outside_numbers.py::test_sec8_locate_probe_passes_only_the_probe_names` | fixed SEC-8 (the editor keeps the person's env: residual for the owner, D-16.998) |
+-| B-REDACT-1 | A-KEYS → tool output, logs, surfaces | `redact_output` masks credential shapes and the scope's own secret values; tool arguments masked for display | `tests/unit/safety/test_redaction.py`, `tests/unit/foundation/test_redact.py`, `tests/security/test_trust_boundaries.py::test_redact_tool_output_masks_credentials_and_scope_secrets` | held |
++| B-REDACT-1 | A-KEYS → tool output, logs, surfaces | `redact_output` masks credential shapes and the scope's own secret values; tool arguments masked for display | `tests/unit/safety/test_redaction.py`, `tests/unit/foundation/test_redact.py`, `tests/security/test_trust_boundaries.py::test_redact_tool_output_masks_credentials_and_scope_secrets`, `tests/contract/tui_bridge/test_methods_session.py::test_display_projection_gives_tool_rows_their_arguments` and `tests/contract/web/test_sessions_routes.py::test_tool_call_arguments_are_masked_for_display` (stored arguments shown after a reload, W47-a) | held |
+ | B-INJECT-1 | T-INJECT → the model through tool results | outside text fenced as data (web, browser, MCP, Feishu, Yuanbao, `a2a_call`, `message_agent`, `drive_preview`); fence words inside are defused; a result that passes outside text on under a trusted name is tainted and fenced too (an `execute_code` run that called an untrusted tool over its RPC, sticky for a session kernel until reset; a `delegate_task` summary from a child whose turns saw outside text, background deliveries included) | `tests/unit/core/test_tool_round.py`, `tests/security/test_trust_boundaries.py::test_inject_outside_text_reaches_the_model_fenced`, `tests/security/test_trust_boundaries.py::test_inject_bot_and_preview_answers_reach_the_model_fenced`, `tests/security/test_trust_boundaries.py::test_inject_own_tools_are_not_fenced`, `tests/security/test_trust_boundaries.py::test_inject_a_script_that_read_outside_text_is_tainted`, `tests/security/test_trust_boundaries.py::test_inject_a_subagent_summary_of_outside_text_is_fenced` | fixed SEC-3, SEC-4, SEC-5, SEC-12 |
+ | B-INJECT-2 | T-INJECT → instructions: project context files, persona, memory, skills, cron prompts | `threat_scan` (context / strict sets, invisible characters) before use | `tests/unit/safety/test_threat_scan.py` | held |
+ | B-INJECT-3 | T-STRANGER → a turn through a webhook | prompt framed as untrusted; the session's tools must be within `WEBHOOK_FLOOR`; unattended | `tests/contract/gateway/test_webhook.py` | held |
+diff --git a/docs/notes/P20/busy-actions.md b/docs/notes/P20/busy-actions.md
+index bc6718c..85b1afc 100644
+--- a/docs/notes/P20/busy-actions.md
++++ b/docs/notes/P20/busy-actions.md
+@@ -84,3 +84,43 @@ Integration (wave-34 merge, D-16.682): `sharedActions(connection, sessionId, mak
+ session and the transcript's Retry use it); `recoverPrepared()` skips inputs this object is sending or
+ has settled — the wired run showed the first message of a new chat as "Not confirmed" while it ran
+ (test `busyActions.test.ts::listing the journal mid-submit never offers the input being sent`).
++
++## Wave 47 (builder a, 2026-10-22): Stop/Steer stuck after a turn ended
++
++Status: done (fail-first tests below fail on the snapshot base and pass with the fix).
++
++Read: no reference file and no Evidence (a bug in our own busy state, found while capturing
++screenshots: the composer kept Stop/Steer for minutes after the model went idle; a window reload
++cleared it).
++
++Cause, two parts:
++- **Two ids for one turn.** The submit answer and `admission.state` name an input by its admission
++  id; `turn.started` / `turn.done` carry the daemon's own turn id (`agent.start_turn` mints it). The
++  busy state stored whichever came last as `turnId` and `turn.done` ended the busy state only when its
++  id matched. When `turn.started` arrived before the submit answer (or before `admission.state
++  started`), `turnId` became the admission id and `turn.done` was ignored; when the answer arrived
++  after `turn.done`, it switched the busy state back on. Only a later `session.info { running:
++  false }` (a reattach, i.e. a reload) cleared it. The old tests hid this by using the admission id
++  as the turn id in `turn.started`.
++- **Nobody listening.** `sharedActions` objects were fed events only while a composer showing their
++  session was mounted. The fresh draft's first send, quick entry and Retry use them with no such
++  composer, so a turn that ended before the session's composer mounted left Stop up.
++
++Fix (`src/chat/busyActions.ts`): busy state is kept by generation, the one number both ids share. The
++object remembers the daemon's turn ids seen in `turn.started` with their generation (the latest 16)
++and the newest generation whose end it saw. `turn.done` ends the busy state unless a later turn that
++already started is running; a submit answer or `admission.state started` for a generation that
++already ended never shows Stop again (its `turnId` is still the turn's own id when known, so the
++optimistic row binds to the turn the transcript holds). `sharedActions` subscribes the object to its
++session's events for its whole life; the composer subscribes only actions handed in from outside.
++
++Tests: `src/chat/busyActions.test.ts` "busy state ends with the turn, whatever order the answers
++arrive in" (answer after `turn.started`; answer after `turn.done`; admission started after
++`turn.started` and after `turn.done`; `turn.done` of an unseen turn; an earlier turn's end does not
++stop the next; shared actions hear events with no composer mounted).
++
++### Decisions for the lead
++- W47-a-1: busy state follows the generation, not the turn id; the admission id is kept only as a
++  fallback `turnId` until `turn.started` names the turn. No protocol change.
++- W47-a-2: `sharedActions` holds one permanent session-event listener per (connection, session);
++  the per-composer subscription remains only for actions passed in as a prop (tests, embeds).
+diff --git a/docs/notes/P20/transcript.md b/docs/notes/P20/transcript.md
+index ec1015c..ab42bcc 100644
+--- a/docs/notes/P20/transcript.md
++++ b/docs/notes/P20/transcript.md
+@@ -161,3 +161,38 @@ shared oracle `apps/desktop/testing/oracle.ts` for P20-40. Slots for slice C: `C
+ `Transcript` `footer`/`onFailureAction` (ChatView supplies defaults: reconnect, open logs, settings, new chat).
+ 
+ Integration (wave 35, P20-40 findings): stored history is read over REST (`GET /api/sessions/{id}/messages` through main's proxy, `src/chat/restHistory.ts`) because the daemon's WebSocket does not serve `session.history` (D-16.718); a session opened before the connection is ready loads when it becomes ready; `applyHistory` no longer keeps a finished live reply the snapshot already holds when its user row was bound to another turn id (D-16.719, `messageStream.test.ts::a finished reply whose user row is bound elsewhere is not shown twice by the snapshot`).
++
++## Wave 47 (builder a, 2026-10-22): tool rows rebuilt from history keep summary and Arguments
++
++Status: done (fail-first tests below fail on the snapshot base and pass with the fix).
++
++Read: no reference file and no Evidence (our own display projection).
++
++Bug: after a window reload the transcript is rebuilt from stored rows, and tool rows lost their
++verb target (path / command) and the expanded row's Arguments: `HistoryMessage` carried only the
++tool's name and output, and both the desktop's REST flattening (`restHistory.ts`) and the daemon's
++`display_messages` dropped the call's arguments.
++
++Fix:
++- Protocol: `HistoryMessage.arguments` (optional object, tool rows only), codegen regenerated
++  (`packages/protocol/src/generated/`).
++- `indus.tui_bridge.methods_session.display_messages` gives each tool row its call's arguments,
++  parsed (stored as JSON text or an object; anything that is not an object is left out) and masked
++  with `redact_arguments`, as `tool.started` masks them (B-REDACT-1).
++- `GET /api/sessions/{id}/messages` (`web/routes/sessions_store.py`) masks each call's `arguments`
++  the same way before sending them (JSON text kept; text that does not parse is masked whole).
++- Desktop: `restHistory.displayRows` attaches the parsed arguments of the row's call;
++  `messageStream.historyItems` puts them on the rebuilt `ToolPart`, so `toolSummary` and `ToolRow`
++  show what the live row showed.
++
++Tests: `tests/contract/tui_bridge/test_methods_session.py::test_display_projection_gives_tool_rows_their_arguments`,
++`tests/contract/web/test_sessions_routes.py::test_tool_call_arguments_are_masked_for_display`,
++`src/chat/restHistory.test.ts` "gives tool rows their call's arguments…",
++`src/chat/messageStream.test.ts` "rows rebuilt from history carry the live rows' summary and arguments".
++
++### Decisions for the lead
++- W47-a-3: arguments travel on `HistoryMessage` (an additive protocol field) rather than being
++  re-derived by each surface; empty arguments (`"{}"`) come through as `{}` (the row then shows no
++  Arguments section, as live).
++- W47-a-4: the REST messages route now masks tool-call arguments for every client (the web SPA
++  included); before, it sent them as stored.
+diff --git a/packages/protocol/src/generated/schema.json b/packages/protocol/src/generated/schema.json
+index 9576c1e..4d5fa99 100644
+--- a/packages/protocol/src/generated/schema.json
++++ b/packages/protocol/src/generated/schema.json
+@@ -1550,6 +1550,14 @@
+       "additionalProperties": false,
+       "description": "One stored row, flattened for display.",
+       "properties": {
++        "arguments": {
++          "anyOf": [
++            {"additionalProperties": {"$ref": "#/$defs/JsonValue"}, "type": "object"},
++            {"type": "null"}
++          ],
++          "default": null,
++          "description": "For tool rows: the call's parsed arguments, masked as ``tool.started`` masks them (absent\nwhen the stored call has none that parse to an object)."
++        },
+         "name": {
+           "anyOf": [{"type": "string"}, {"type": "null"}],
+           "default": null,
+diff --git a/packages/protocol/src/generated/types.ts b/packages/protocol/src/generated/types.ts
+index 81706b4..51da7f8 100644
+--- a/packages/protocol/src/generated/types.ts
++++ b/packages/protocol/src/generated/types.ts
+@@ -829,6 +829,11 @@ export interface HistoryMessage {
+   text: string;
+   /** For tool rows: the tool's name. */
+   name?: string | null;
++  /**
++   * For tool rows: the call's parsed arguments, masked as `tool.started` masks them (absent
++   * when the stored call has none that parse to an object).
++   */
++  arguments?: { [key: string]: JsonValue } | null;
+   /** The stored row's id (undo and branch points). */
+   row_id?: number | null;
+ }
+diff --git a/src/indus/protocol/bridge.py b/src/indus/protocol/bridge.py
+index e401919..9ae5c1f 100644
+--- a/src/indus/protocol/bridge.py
++++ b/src/indus/protocol/bridge.py
+@@ -76,6 +76,9 @@ class HistoryMessage(ProtocolModel):
+     """The text; image parts show as ``[image]``."""
+     name: str | None = None
+     """For tool rows: the tool's name."""
++    arguments: dict[str, JsonValue] | None = None
++    """For tool rows: the call's parsed arguments, masked as ``tool.started`` masks them (absent
++    when the stored call has none that parse to an object)."""
+     row_id: int | None = None
+     """The stored row's id (undo and branch points)."""
+ 
+diff --git a/src/indus/tui_bridge/methods_session.py b/src/indus/tui_bridge/methods_session.py
+index 570ecaf..b712159 100644
+--- a/src/indus/tui_bridge/methods_session.py
++++ b/src/indus/tui_bridge/methods_session.py
+@@ -13,6 +13,7 @@ A title set before the session has a stored row is kept and written after its fi
+ 
+ from __future__ import annotations
+ 
++import json
+ import logging
+ from collections.abc import Iterable
+ from typing import TYPE_CHECKING, Any, cast
+@@ -57,6 +58,7 @@ from indus.protocol.methods import (
+     SessionResumeParams,
+     SessionResumeResult,
+ )
++from indus.safety.redaction import redact_arguments
+ from indus.service.session_service import SessionService, usage_numbers
+ from indus.state import listing, rewind, titles
+ from indus.state.registry import StoreHandle
+@@ -102,9 +104,26 @@ def flatten_content(content: object) -> str:
+     return str(content)
+ 
+ 
++def _call_arguments(raw: object) -> dict[str, Any] | None:
++    """A stored call's arguments as an object (stored as JSON text or already parsed), masked
++    for display the way ``tool.started`` masks them; None when they are not an object."""
++    value: object = raw
++    if isinstance(raw, str):
++        try:
++            value = json.loads(raw) if raw.strip() else {}
++        except ValueError:
++            return None
++    if not isinstance(value, dict):
++        return None
++    return redact_arguments(cast(dict[str, Any], value))
++
++
+ def display_messages(rows: Iterable[TranscriptRow]) -> list[HistoryMessage]:
+-    """The rows a person sees, in order (system, scaffold and hidden rows dropped)."""
++    """The rows a person sees, in order (system, scaffold and hidden rows dropped). A tool row
++    carries its call's arguments, so a transcript rebuilt from history shows the same summary and
++    Arguments as the live rows did (W47-a)."""
+     names: dict[str, str] = {}
++    arguments: dict[str, object] = {}
+     out: list[HistoryMessage] = []
+     for row in rows:
+         role = _SHOWN.get(row.role)
+@@ -113,14 +132,22 @@ def display_messages(rows: Iterable[TranscriptRow]) -> list[HistoryMessage]:
+         for call in row.tool_calls or ():
+             function = call.get("function")
+             if isinstance(function, dict) and call.get("id"):
+-                names[str(call["id"])] = str(cast(dict[str, Any], function).get("name", ""))
++                spec = cast(dict[str, Any], function)
++                names[str(call["id"])] = str(spec.get("name", ""))
++                arguments[str(call["id"])] = spec.get("arguments")
+         text = flatten_content(row.content)
+         name = None
++        args = None
+         if role is HistoryRole.TOOL:
+-            name = row.name or names.get(row.tool_call_id or "") or "tool"
++            call_id = row.tool_call_id or ""
++            name = row.name or names.get(call_id) or "tool"
++            if call_id in arguments:
++                args = _call_arguments(arguments[call_id])
+         elif not text.strip():
+             continue  # an assistant row with only tool calls
+-        out.append(HistoryMessage(role=role, text=text, name=name, row_id=row.row_id))
++        out.append(
++            HistoryMessage(role=role, text=text, name=name, arguments=args, row_id=row.row_id)
++        )
+     return out
+ 
+ 
+diff --git a/src/indus/web/routes/sessions_store.py b/src/indus/web/routes/sessions_store.py
+index 3ce1f12..b24efb6 100644
+--- a/src/indus/web/routes/sessions_store.py
++++ b/src/indus/web/routes/sessions_store.py
+@@ -27,6 +27,7 @@ from fastapi import HTTPException
+ 
+ from indus.foundation.errors import IndusError, StoreUnavailable
+ from indus.foundation.scope import Scope
++from indus.safety.redaction import redact_arguments, redact_output
+ from indus.state import browse, deletion, listing, messages, runtime_ledger
+ from indus.state.errors import Bucket, classify
+ from indus.state.registry import StoreHandle
+@@ -325,12 +326,29 @@ def _calls(raw: object) -> list[dict[str, str]]:
+         fn_map = cast(dict[str, Any], fn) if isinstance(fn, dict) else {}
+         name = fn_map.get("name", call.get("name", ""))
+         args: object = fn_map.get("arguments", call.get("arguments", ""))
+-        if not isinstance(args, str):
+-            args = json.dumps(args, ensure_ascii=False, default=str)
+-        out.append({"id": str(call.get("id") or ""), "name": str(name or ""), "arguments": args})
++        out.append(
++            {"id": str(call.get("id") or ""), "name": str(name or ""), "arguments": _shown(args)}
++        )
+     return out
+ 
+ 
++def _shown(args: object) -> str:
++    """A stored call's arguments as display JSON text, masked as ``tool.started`` masks them
++    (the desktop rebuilds its tool rows from these after a reload, W47-a)."""
++    parsed: object = args
++    if isinstance(args, str):
++        try:
++            parsed = json.loads(args)
++        except ValueError:
++            return redact_output(args)
++    if isinstance(parsed, dict):
++        parsed = redact_arguments(cast(dict[str, Any], parsed))
++        return json.dumps(parsed, ensure_ascii=False, default=str)
++    if isinstance(args, str):
++        return redact_output(args)
++    return redact_output(json.dumps(parsed, ensure_ascii=False, default=str))
++
++
+ def message_json(row: Mapping[str, Any]) -> dict[str, Any]:
+     """One stored message as the SPA's ``SessionMessage``."""
+     out: dict[str, Any] = {
+diff --git a/tests/contract/tui_bridge/test_methods_session.py b/tests/contract/tui_bridge/test_methods_session.py
+index 6f007ef..b5629ea 100644
+--- a/tests/contract/tui_bridge/test_methods_session.py
++++ b/tests/contract/tui_bridge/test_methods_session.py
+@@ -126,6 +126,37 @@ def test_display_projection_drops_scaffold_and_names_tools() -> None:
+     assert flatten_content([{"type": "input_image"}, "x"]) == "[image]\nx"
+ 
+ 
++def test_display_projection_gives_tool_rows_their_arguments() -> None:
++    """W47-a: a transcript rebuilt from history shows the same summary and Arguments as live
++    rows, masked as ``tool.started`` masks them."""
++    secret = "sk-" + "live" + "A" * 30
++    command = f"curl -H 'Authorization: Bearer {secret}' https://example.invalid"
++    rows = [
++        TranscriptRow(
++            role="assistant",
++            content=None,
++            tool_calls=[
++                {"id": "c1", "function": {"name": "read_file", "arguments": '{"path": "a.py"}'}},
++                {"id": "c2", "function": {"name": "terminal", "arguments": {"command": command}}},
++                {"id": "c3", "function": {"name": "odd", "arguments": "not json"}},
++            ],
++        ),
++        TranscriptRow(role="tool", content="data", tool_call_id="c1"),
++        TranscriptRow(role="tool", content="ran", tool_call_id="c2"),
++        TranscriptRow(role="tool", content="?", tool_call_id="c3"),
++        TranscriptRow(role="tool", content="orphan", tool_call_id="c9", name="x"),
++        TranscriptRow(role="assistant", content="done"),
++    ]
++    shown = display_messages(rows)
++    assert shown[0].arguments == {"path": "a.py"}
++    ran = shown[1].arguments
++    assert ran is not None and secret not in str(ran)
++    assert str(ran["command"]).startswith("curl ")
++    assert shown[2].arguments is None and shown[3].arguments is None
++    assert shown[4].arguments is None  # only tool rows carry them
++    assert "arguments" not in shown[4].model_dump(exclude_none=True)
++
++
+ def test_list_and_most_recent_hide_machine_sessions(
+     scope: Scope, fake_clock: FakeClock, tmp_path: Path
+ ) -> None:
+diff --git a/tests/contract/web/test_sessions_routes.py b/tests/contract/web/test_sessions_routes.py
+index f681081..d947c97 100644
+--- a/tests/contract/web/test_sessions_routes.py
++++ b/tests/contract/web/test_sessions_routes.py
+@@ -2,6 +2,7 @@
+ 
+ from __future__ import annotations
+ 
++import json
+ import sqlite3
+ from collections.abc import Iterator, Mapping
+ from pathlib import Path
+@@ -245,6 +246,32 @@ def test_a_compressed_conversation_reads_as_one(
+     assert [m["content"] for m in page["messages"]] == ["first half", "second half"]
+ 
+ 
++def test_tool_call_arguments_are_masked_for_display(
++    rest: RestApp, store: DashboardStore, scope: Scope
++) -> None:
++    """W47-a: the desktop rebuilds tool rows (summary and Arguments) from this route after a
++    reload; the arguments are masked as the live ``tool.started`` masks them."""
++    secret = "sk-" + "live" + "B" * 30
++    calls = [
++        {
++            "id": "c1",
++            "type": "function",
++            "function": {"name": "terminal", "arguments": f'{{"command": "echo {secret}"}}'},
++        },
++        {"id": "c2", "type": "function", "function": {"name": "odd", "arguments": f"x {secret}"}},
++    ]
++    with registry.open_unshared(scope) as handle:
++        sessions.create(handle, "s-tools", "cli", started_at=store.now - 300)
++        messages.append(
++            handle, "s-tools", {"role": "assistant", "content": "", "tool_calls": calls}
++        )
++    page = rest.client.get("/api/sessions/s-tools/messages").json()
++    shown = page["messages"][0]["tool_calls"]
++    assert [call["name"] for call in shown] == ["terminal", "odd"]
++    assert all(secret not in call["arguments"] for call in shown)
++    assert json.loads(shown[0]["arguments"])["command"].startswith("echo ")
++
++
+ def test_reads_never_write_the_store(rest: RestApp, store: DashboardStore) -> None:
+     before = _signature(store.path)
+     sid = store.by_source["cli"]

@@ -17,3 +17,13 @@
 - Fail-first: 6 finish, 4 locate, 2 ps1 parity. pytest update/version/entry + integration/install 220, unit/web 388,
   security 89, contract 1893. ruff/pyright/lint-imports/security_static/tooling.checks ok.
 - W47-f-1..3. Follow-up: pwsh tests + a real Windows source install (rehearsal row).
+
+## w47a.patch: desktop composer stuck on Stop/Steer; tool rows lose detail after reload (done)
+- 17 files, +492/-31. busyActions.ts follows the generation (turn ids seen in turn.started; newest ended generation);
+  sharedActions subscribes for its lifetime (fixes composer-less sends). Protocol: optional HistoryMessage.arguments
+  (codegen regenerated); tui_bridge display_messages and REST /api/sessions/{id}/messages mask tool-call arguments
+  (redact_arguments; W47-a-4: REST now masks for every client); desktop restHistory + messageStream rebuild rows with args.
+- Fail-first: 6 busyActions, messageStream, restHistory, 2 pytest. pytest 826 + 1525 + security 89; tsc/biome ok; desktop
+  vitest 659 passed + 1 load timeout (Transcript 2,000-message window; passes alone).
+- W47-a-1..4. MERGE NOTE: w47g also changes packages/protocol/src/generated/* (regenerate with codegen after applying both).
+  Follow-up: localEcho binds the optimistic row to the admission id (pre-existing).
