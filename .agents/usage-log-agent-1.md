@@ -155,3 +155,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 00:13 UTC: 85% (resets 02:00). SEC1 finished and parked (236d9ad); its worktree was removed. Wave-42 integrator still running (verify22). No new agents. 21 GB disk free.
 - 2026-10-22 00:26 UTC: 86% (resets 02:00). Wave-42 integrator: full pytest green (18055 passed, 130 skipped); remaining gate steps still running. 21 GB disk free.
 - 2026-10-22 00:39 UTC: 88% (resets 02:00). Wave-42 integrator: pytest and vitest green; now running Electron E2E (then web Playwright). 21 GB disk free.
+- 2026-10-22 00:51 UTC: 88% (last reading 00:39; resets 02:00). Wave-42 integrator is on its last lane, web Playwright, debugging the PTY route. 22 GB disk free.
