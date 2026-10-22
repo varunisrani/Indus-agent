@@ -171,3 +171,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 03:52 UTC: 47% (03:49 reading; ~1.2%/min; resets 07:00). 16 GB disk free, load 23. No reports yet.
 - 2026-10-22 04:03 UTC: 53% (04:00 reading; ~0.6%/min; resets 07:00). w46e parked. 11 agents running; 16 GB disk free.
 - 2026-10-22 04:14 UTC: 61% (resets 07:00). Parked: w46e, w46h, w46d, w45 S45, w45 P45. Running: w44 integrator, w46 a b c f g k. 17 GB disk free.
+- 2026-10-22 04:22 UTC: 64% (04:19). All wave-45/46 builders parked. w44 integrator at 88% of full pytest. Screenshot agent started.
