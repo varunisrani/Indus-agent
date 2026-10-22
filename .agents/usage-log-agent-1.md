@@ -160,3 +160,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 01:09 UTC: 90%. Landed P24 wiring wave 42 (226a5ae). Handed the turn to Agent 2 (PAUSED) per the guard; nothing running.
 - 2026-10-22 02:07 UTC: 0% (window reset; next reset 07:00). Turn was still AGENT_2 PAUSED; Agent 1 took it back.
 - 2026-10-22 02:15 UTC: started 4 agents (w43 integrator, R1, R2, R3).
+- 2026-10-22 02:25 UTC: 11% (resets 07:00; about 0.65%/min with 4 agents). w43 integrator, R1, R2 and R3 running. 22 GB disk free.
