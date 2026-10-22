@@ -13,17 +13,16 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 `apps/`; the plan in `docs/plan/`; the guards in `tooling/checks/`.
 
 ## Last stop
-- By: **Agent 2** | At: 2026-10-21 17:25 UTC | Branch: `main` (pushed to origin)
-- Why now: Agent 2 at 90% of its window (resets 17:30 UTC) — the hand-back guard. Nothing is running. The P24 integration
-  is parked mid-gate in `.agents/wip/w40/` (see NEXT STEP 1).
-- Last fully verified code commit: `fd44e16` (P23: pytest "not perf" 16321 passed / 0 failed; perf 11/1; vitest 2455;
-  Electron lane 35; pyright 0; lint-imports kept; tooling.checks ok).
-- Agent 2's landings this turn (since 12:32): P23 (`fd44e16`), test_tui_publish race fix (`19ced11`); built and parked: P24
-  UI wave (w39 U1 U2 U3) + B4 (P24-45..47); integrated all of P24 (w40, unverified Python gate).
+- By: **Agent 1** | At: 2026-10-22 01:09 UTC | Branch: `main` (pushed to origin)
+- Why now: Agent 1 at 90% of its window (resets 02:00 UTC), the usage guard. Nothing is running; no worktrees in flight.
+- Last fully verified code commit: `226a5ae` (P24 wiring wave 42: pytest "not perf" 18055 passed / 0 failed; perf 18/1;
+  vitest 2789; Electron E2E 36/1; web Playwright 9; pyright 0; lint-imports kept; tooling.checks ok).
+- Agent 1's landings this turn (since 21:05): P24 (`5c0cff8`), P25-05..19 (`08bcf51`), P24 wiring (`226a5ae`); built and
+  parked: w43 SEC1 (P25-01/02) and SEC2 (P25-03/04) in `.agents/wip/w43/`.
 
 ## Usage at last stop
-📊 Agent 2 usage: 3% used, 97% left (reading 20:54 UTC) — resets 01:50 UTC — ACTIVE (took the turn back 20:56 UTC)
-📊 Agent 1 usage: last recorded 2026-10-21 10:17 (91%, reset 13:10) — expected fresh — READY
+📊 Agent 1 usage: 90% used, 10% left (reading 01:02 UTC) — resets 02:00 UTC — PAUSED
+📊 Agent 2 usage: last recorded 2026-10-21 20:54 (3%, reset 01:50) — expected fresh — READY
 
 ## Handoff history
 | # | From → To | Time (UTC) | Steps done | Reason |
@@ -35,6 +34,7 @@ copying (`docs/plan/01-clean-room-protocol.md`). Code lives in `src/indus/` (Pyt
 | 5 | Agent 2 → Agent 1 | 2026-10-21 03:45 | P16 (36/36), P18 (30/30, M6 web demo), P19 (18/18, attached ACP on a real daemon), P20-01..07; load-failure root causes; P20-08..24 integrated but unverified (wip patch) | Owner asked to hand over; Agent 2 at 83% |
 | 6 | Agent 1 → Agent 2 | 2026-10-21 10:20 | P20-08..40 landed (P20 complete); P23 integrated (green, needs rebase onto P20); P24-01..18, 23, 24, 38..44 built + parked; 45 partial | Agent 1 at 91%; nothing in flight |
 | 7 | Agent 2 → Agent 1 | 2026-10-21 17:25 | P23 landed (21/23); P24 all 47 built except 21/22 (post-1.0) and integrated into one patch (w40, Python full gate unfinished) | Agent 2 at 90% (guard) |
+| 8 | Agent 1 → Agent 2 | 2026-10-22 01:09 | P24 landed (`5c0cff8`) and wired (wave 42 `226a5ae`, full gate green); P25-05..19 landed; P25-01..04 built and parked (w43) | Agent 1 at 90% (guard); nothing in flight |
 
 ## Progress
 - [x] Stage 0 — intake decisions (`docs/plan/README.md`) — by Agent 1
@@ -76,21 +76,21 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Turn: AGENT_1 ACTIVE. Main `08bcf51` (P24 `5c0cff8`, P25-05..19 `08bcf51`) + status commits. In flight (23:35 UTC): wave-42 wiring integrator in scratchpad verify22 (brief `.agents/wip/w42/integrator-brief.md`; WA + WB +
-WC; D-16.542 served-profile attach; DeliveryRouter self-chat leak; demos; D-16.860..889); security builders SEC1 (P25-01/02) +
-SEC2 (P25-03/04) in wt-w43* (brief `.agents/wip/w43/brief-security.md`). Next: P25-20..24 release work.
-Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built (`5c0cff8`; wiring owed); P25 15/24 built and parked
-(`.agents/wip/w41/`: d1 docs + notices, g1 gates + perf, q1 parity — README lists the post-landing steps).
-1. **P25 wave-41 integrator**: land w41-d1, w41-g1, w41-q1 on main (now with P24): regenerate notices (`uv sync --all-extras`,
-   notices.py refresh/write) and reference pages after P24; wire the CI steps G1 lists; full gate with a SHORT pytest basetemp
-   (long paths break AF_UNIX tests).
-2. **D-16.799 wiring builders** (P24 features built but not called): multiplex in `gateway run`; room loop + idle-exit count;
-   relay front in the daemon; LSP manager + LspToolHooks + StopGates in core/loop.py; message_agent + a2a_call + browser_vault /
-   browser_exec registration; suggestion offers; preview automation server requests; desktop contribution-registry consumers +
-   plugins page; TUI wake → voice; `indus dashboard --console`; profile_rows in profiles.list. Then the P24 demos (two profiles,
-   room, LSP stop gate).
-3. **P25 remaining**: 01–04 security (threat model + guards, Python + desktop/web regression suites, dependency audit), 20–24
-   release (checklist, fresh-clone gates, canary rehearsal, post-release smoke, Windows terminal best effort). P23-15/16 signing.
+Turn: see `.agents/turn.json`. At 01:15 UTC Agent 1 stopped at 90% (resets 02:00 UTC); nothing is running. Main `226a5ae` = P24
+wiring wave 42 landed (full gate green: pytest 18055/0, perf 18, vitest 2789, Electron E2E 36, web Playwright 9; D-16.860..879;
+LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)").
+Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 15/24 landed (05–19).
+1. **w43 security integrator**: apply `.agents/wip/w43/w43-sec1.patch` (P25-01 threat model + `security_static` guard, P25-02
+   `tests/security/`, fixes SEC-1/2/3/11) and `w43-sec2.patch` (P25-03 desktop/web security tests, P25-04 deps audit + workflow,
+   SPA framing headers) on main with `git apply --3way`. Re-check the threat-model rows that cite w42 surfaces (B-LSP-1, preview
+   automation, served-profile attach); run `python -m tooling.checks security_static` against the w42 code and allow-list or fix
+   new hits (dated reasons); full gate (short pytest basetemp). README in `.agents/wip/w43/` has the details and open items
+   (SEC-4 execute_code/delegate_task fence needs a design call; SEC-5 message_agent fence).
+2. **P25-20..24 release**: checklist, fresh-clone gates, canary rehearsal, post-release smoke, Windows terminal best effort.
+3. Follow-ups from wave 42: bot-chat turns offering message_agent; suggestion offers on integration connect; the remaining
+   desktop contribution areas; RFC 8252 broker; approvals in room turns + room event push; LspUpkeep.release before worktree
+   removal and `indus lsp restart`; `oneshot_first_token` perf budget has only ~30 ms headroom (1471 ms vs 1500).
+   Older: re-locks (certifi, aiohttp, vite, pynacl), perf baseline on CI, 9 desktop data-ui hooks, TUI model picker bug.
 Owner items: see the list below (release base D-16.690, signing secrets, licence rulings incl. D1's dated exceptions and the
 Git for Windows source offer, D-16.800–802, similarity verdicts (20 regions), 58 ACC Review rows, parity reference captures,
 stray paths at / and /root, /tmp/pytest-of-root).
@@ -99,7 +99,7 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree AND its $S dir; one
 integrator per group runs the full gate (pytest --basetemp short); the lead commits, rebases, fast-forwards, pushes, updates the
 phase table and this file.
-- Last landings: P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+- Last landings: P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
   P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),

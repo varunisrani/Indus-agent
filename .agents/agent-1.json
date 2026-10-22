@@ -1,12 +1,12 @@
 {
   "agent": "AGENT_1",
   "account": "Account 1",
-  "state": "ACTIVE",
-  "usage_pct": 83,
-  "remaining_pct": 17,
+  "state": "PAUSED",
+  "usage_pct": 90,
+  "remaining_pct": 10,
   "resets_at": "2026-10-22T02:00:00+00:00",
-  "last_check": "2026-10-22T00:01:00+00:00",
-  "current_step": "Wiring integrator (verify22); SEC1 SEC2 security builders",
-  "last_commit": "08bcf51",
-  "updated_at": "2026-10-21T21:06:00Z"
+  "last_check": "2026-10-22T01:02:00+00:00",
+  "current_step": "Stopped at the guard; nothing running. Next: w43 security integrator",
+  "last_commit": "226a5ae",
+  "updated_at": "2026-10-22T01:09:00+00:00"
 }
