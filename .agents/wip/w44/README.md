@@ -13,3 +13,17 @@
   (needs Docker, Nix, a display, INDUS_REF, PARITY_REF); log it in HANDOFF.
 - RM1 = land w43. Owner must rows: RM2–6 security decisions (SEC-4..10), RM7/8 re-locks, RM9–13 one-time decisions,
   RM14 signing, RM15/16 licences, RM17–20 people-strict lanes, RM26 contributor map.
+
+## w44-r3.patch: P25-24 native Windows terminal backend, best effort (built; Windows-only tests not yet run)
+- 10 files, +2140/-3. Builder checks: ruff, format, pyright 0 (linux + windows platform), lint-imports; pytest 2565 passed /
+  55 skipped / 7 deselected (the 7 `platforms("windows")` tests start real Git Bash). Ran against the main checkout's .venv,
+  which lacks mkdocs/acp/wsproto: test_docs_build, contract/acp, contract/web not collected and `licenses` reported SETUP
+  here — the integrator's full gate covers these. mkdocs not run (nav unchanged).
+- New: src/indus/backends/local_windows.py (`local` on win32: Git Bash lookup, MSYS path conversion both ways, scripts as
+  files, job-object kill, UTF-8 console), tests/unit/backends/test_local_windows.py (63 run on Linux), note
+  docs/notes/P25/windows-local.md (D-16.950..958 written out; copy into 16-what-we-change.md; 959 unused).
+- Changed: backends/registry.py, platform/known_dirs.py, gen_reference.py (+ regenerated environment-variables.md for
+  INDUS_GIT_BASH), acceptance-map ACC-Q6-3, getting-started/windows.md, .github/workflows/ci.yml new `windows-local` job
+  (continue-on-error: true until first green — owner/lead removes it after).
+- Follow-ups: background processes, `indus verify` host, cron scripts and code-execution launcher still POSIX-only on native
+  Windows (each needs a Windows branch or a "use WSL2" refusal).
