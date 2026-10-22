@@ -166,3 +166,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 03:14 UTC: landed P25-01..04 security (4945b48).
 - 2026-10-22 03:15 UTC: started w44 integrator, S45 and P45 (3 agents).
 - 2026-10-22 03:19 UTC: 24% (resets 07:00). w44 integrator, S45 and P45 running. 21 GB disk free.
+- 2026-10-22 03:38 UTC: owner asked for 12+ agents. Started 9 wave-46 builders; 12 agents running.
