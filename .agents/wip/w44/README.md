@@ -27,3 +27,19 @@
   (continue-on-error: true until first green — owner/lead removes it after).
 - Follow-ups: background processes, `indus verify` host, cron scripts and code-execution launcher still POSIX-only on native
   Windows (each needs a Windows branch or a "use WSL2" refusal).
+
+## w44-r2.patch: P25-22 canary rehearsal automation, P25-23 smoke + rollback kit (agent part done; real runs are the owner's)
+- 16 files, +3286. Builder checks: ruff, format, pyright 0, lint-imports; `INDUS_RELEASE_LANE=1 pytest tests/e2e/upgrade
+  tests/unit/release tests/unit/ci tests/unit/packaging tests/integration/update` 323 passed / 5 skipped; tests/contract +
+  tooling/checks/tests 2197 passed / 55 skipped; tooling.checks ok. shellcheck / pwsh / PSScriptAnalyzer not available.
+- New: tests/e2e/upgrade/ (world.py builds two local releases offline; test_canary_to_stable.py; test_smoke_steps.py),
+  tests/unit/release/test_smoke_scripts.py, scripts/release/smoke/{linux.sh,macos.sh,windows.ps1}, docs/internals/
+  rehearsal-log.md (owner template, F-1..F-5), docs/internals/rollback.md, notes rehearsal.md, smoke-rollback.md.
+- Changed: pyproject.toml (`release` marker), release.yml (ci Tests step sets INDUS_RELEASE_LANE=1), 16-what-we-change.md
+  D-16.935..942 (943–949 unused). §3.1 range row for wave 44 is the integrator's.
+- FINDING F-1 (must-fix): release.yml uploads only desktop-* artefacts; install.sh / install.ps1 / install.cmd are never
+  attached, but the install guide downloads them from releases/latest/download → 404. Fix at the w44 integration.
+- F-2 no desktop licences screen (notices file ships); F-3 script install has no built dashboard pages without pnpm/Node;
+  F-4 source install `--version` prints 0.0.0; F-5 approval with no terminal: --local refuses, attached leaves it waiting.
+- Slip: an exploratory `indus dashboard` started a first-launch pnpm build (node_modules in the worktree, a store under $S;
+  may have fetched packages through the proxy). The builder stopped it by pid and removed them. Nothing under ~ or /root.
