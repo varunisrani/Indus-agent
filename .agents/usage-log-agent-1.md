@@ -184,3 +184,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 07:10 UTC: window reset (1%; next reset 12:00). Waves 45+46 integrator fixing 7 pytest failures. Started 8 wave-47 builders on a local snapshot of that integration.
 - 2026-10-22 07:24 UTC: 15% (07:22; ~0.75%/min with 9 agents; resets 12:00). 18 GB disk free, load 27.
 - 2026-10-22 07:45 UTC: 23% (07:43; resets 12:00). Container restarted ~07:40 again; all worktrees survived; partial diffs saved to scratchpad/partials; resumed the w45+46 integrator and 7 wave-47 builders. 17 GB disk free.
+- 2026-10-22 08:01 UTC: 30% (resets 12:00). Parked w47c, w47f. Running: w45+46 integrator, w47 a b d e g h. 17 GB disk free.
