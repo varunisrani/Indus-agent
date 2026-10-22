@@ -28,7 +28,10 @@ owner, P10-06) and ``aux`` (``SessionRuntime.aux``, the bound auxiliary client),
 only when the turn has one; always ``tool_registry``, ``tool_hooks`` and ``enabled_tools`` (the
 session's registry, hooks and tool names, for ``execute_code``), ``native_vision`` (the current
 route shows the main model images a tool returns, ``providers.route.sees_tool_images``) and
-``subagent`` (``SessionRuntime.subagent``: the session is a delegated child).
+``subagent`` (``SessionRuntime.subagent``: the session is a delegated child). ``delivery_origin``
+(``{platform, chat_id, thread_id}`` of the chat a gateway session answers in, asked of
+``SessionRuntime.delivery_origin`` once per round) is offered when the host knows one: the cron
+and board tools subscribe that chat.
 """
 
 from __future__ import annotations
@@ -389,12 +392,16 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
     limits = options.exec_limits
     segments = plan_segments(plan, cwd=cwd, batch_deadline_s=limits.batch_deadline_s)
     budget = options.budget()
+    extras = handler_extras(state)
+    origin = await _delivery_origin(state)
+    if origin is not None:
+        extras["delivery_origin"] = origin
     ctx = ToolContext(
         scope=runtime.scope,
         task_id=state.session_id,
         session_id=state.session_id,
         turn_id=state.turn_id,
-        extras=handler_extras(state),
+        extras=extras,
     )
 
     async def run_one(index: int) -> ToolResult:
@@ -463,6 +470,25 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
                     return
     finally:
         state.control.phase = "model"
+
+
+_ORIGIN_KEYS = ("platform", "chat_id", "thread_id")
+
+
+async def _delivery_origin(state: TurnState) -> dict[str, str] | None:
+    """The session's chat as ``{platform, chat_id, thread_id?}``, or None (see the notes)."""
+    lookup = state.runtime.delivery_origin
+    if lookup is None:
+        return None
+    try:
+        found = await lookup(state.session_id)
+    except Exception:
+        log.debug("the delivery origin of %s is unknown", state.session_id, exc_info=True)
+        return None
+    if not found:
+        return None
+    origin = {k: str(found[k]) for k in _ORIGIN_KEYS if found.get(k) not in (None, "")}
+    return origin if origin.get("platform") and origin.get("chat_id") else None
 
 
 def handler_extras(state: TurnState) -> dict[str, Any]:

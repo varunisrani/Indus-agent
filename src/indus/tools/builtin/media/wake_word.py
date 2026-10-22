@@ -3,9 +3,11 @@
 Pieces, smallest first:
 
 - ``WakeEngine``: scores one audio frame (16 kHz mono int16 little-endian, ``frame_length``
-  samples) from 0 to 1. ``OpenWakeWordEngine`` (the default) and ``SherpaKeywordEngine`` are thin
-  adapters over optional packages, imported only when built; no wake model ships with Indus — the
-  person trains one with the engine's own tools or supplies one (``wake_word.model``).
+  samples) from 0 to 1. ``SherpaKeywordEngine`` (the default: the ``wake-sherpa`` extra, D-16.800)
+  and ``OpenWakeWordEngine`` (chosen with ``wake_word.engine: openwakeword`` where that package
+  installs) are thin adapters over optional packages, imported only when built; no wake model
+  ships with Indus — the person trains one with the engine's own tools or supplies one
+  (``wake_word.model``).
 - ``WakeDetector``: turns scores into detections, one per utterance: ``confirm_frames`` frames in
   a row at or over the threshold fire once; it then stays quiet until ``REARM_FRAMES`` frames fall
   below the threshold again, and never fires twice within ``cooldown_s``.
@@ -36,6 +38,7 @@ from indus.protocol.wake import MAX_FEED_BYTES, SAMPLE_RATE
 __all__ = [
     "CONFIRM_FRAMES",
     "COOLDOWN_S",
+    "DEFAULT_ENGINE",
     "DEFAULT_PHRASE",
     "FRAME_LENGTH",
     "MAX_FEED_BYTES",
@@ -69,6 +72,9 @@ COOLDOWN_S = 2.0
 
 type EngineName = Literal["openwakeword", "sherpa"]
 ENGINES: tuple[EngineName, ...] = ("openwakeword", "sherpa")
+DEFAULT_ENGINE: EngineName = "sherpa"
+"""sherpa-onnx ships as the ``wake-sherpa`` extra; openWakeWord cannot be locked on Python 3.13
+(D-16.800), so it is the one a person opts into."""
 
 _PACKAGES: Mapping[str, tuple[str, str]] = {
     "openwakeword": ("openwakeword", "pip install openwakeword (or uv add openwakeword)"),
@@ -101,7 +107,7 @@ def _clamp(value: object, lo: float, hi: float, fallback: float) -> float:
 class WakeSettings:
     enabled: bool = False
     consent: bool = False
-    engine: EngineName = "openwakeword"
+    engine: EngineName = DEFAULT_ENGINE
     phrase: str = DEFAULT_PHRASE
     model: str = ""
     threshold: float = 0.5
@@ -111,11 +117,11 @@ class WakeSettings:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> WakeSettings:
         """The ``wake_word`` section, with out-of-range numbers clamped."""
-        engine = str(raw.get("engine") or "openwakeword").strip().lower()
+        engine = str(raw.get("engine") or DEFAULT_ENGINE).strip().lower()
         return cls(
             enabled=raw.get("enabled") is True,
             consent=raw.get("consent") is True,
-            engine=cast(EngineName, engine if engine in ENGINES else "openwakeword"),
+            engine=cast(EngineName, engine if engine in ENGINES else DEFAULT_ENGINE),
             phrase=" ".join(str(raw.get("phrase") or DEFAULT_PHRASE).split()) or DEFAULT_PHRASE,
             model=str(raw.get("model") or "").strip(),
             threshold=_clamp(raw.get("threshold"), 0.05, 0.99, 0.5),

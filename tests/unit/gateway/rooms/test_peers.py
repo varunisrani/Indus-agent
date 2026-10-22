@@ -45,6 +45,7 @@ from indus.service.peers import (
 from indus.state import messages, registry
 from indus.state.bot_chat import CANONICAL_TITLE, find_canonical
 from indus.tools.builtin.message_agent import BotDelivery, BotTarget
+from tests import self_chat_guard
 from tests.contract.gateway._http_kit import build_api, within
 from tests.fakes.clock import FakeClock
 from tests.fakes.model import text_turn
@@ -510,3 +511,41 @@ def test_two_routers_share_the_self_chat_deliverer(scope: Scope) -> None:
     assert _holders() == before + 1
     second.close()
     assert _holders() == before
+
+
+def test_a_router_left_open_is_found_and_released(scope: Scope) -> None:
+    """Wave 42: a router never closed kept ``self-chat`` registered for the rest of the run, so
+    ``test_a_cli_pass_can_deliver_to_the_own_bot_chat`` failed after the gateway tests. The root
+    conftest finds such a leak after each test and gives the holds back."""
+    before = self_chat_guard.holders()
+    DeliveryRouter(scope, homes=lambda _p: None)  # never closed
+    assert self_chat_guard.holders() == before + 1
+    assert cron_delivery.deliverer_for(SELF_CHAT) is not None
+    assert self_chat_guard.release_leaked(before) == 1
+    assert self_chat_guard.holders() == before
+    assert (cron_delivery.deliverer_for(SELF_CHAT) is None) == (before == 0)
+    assert self_chat_guard.release_leaked(before) == 0
+
+
+def test_the_api_server_itself_serves_the_bot_routes(
+    scope: Scope, fake_clock: FakeClock, tmp_path: Path
+) -> None:
+    """Wave 42: ``build_api_app`` (the daemon's API server) mounts ``bots_router`` behind its own
+    bearer gate, so a peer reaches ``/v1/bots/*`` on a real gateway."""
+
+    async def main() -> None:
+        kit = await build_api(scope, fake_clock, tmp_path, text_turn("pong"))
+        try:
+            async with kit.client(key=None) as plain:
+                assert (await plain.post(CHAT_PATH, json={})).status_code == 401
+            async with kit.client() as client:
+                chat = await within(client.post(CHAT_PATH, json={}))
+                assert chat.status_code == 200
+                session = chat.json()["session_id"]
+                dm = await within(client.post(DM_PATH, json={"message": "ping", "author": "w"}))
+                assert dm.status_code == 200
+                assert (dm.json()["session_id"], dm.json()["reply"]) == (session, "pong")
+        finally:
+            await kit.close()
+
+    asyncio.run(main())

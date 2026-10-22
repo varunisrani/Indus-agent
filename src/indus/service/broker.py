@@ -62,6 +62,8 @@ from indus.protocol.server_requests import (
     ApprovalRequest,
     ClarifyAnswer,
     ClarifyRequest,
+    PreviewActRequest,
+    PreviewReadRequest,
     SecretRequest,
     ServerRequestAnswer,
     SudoRequest,
@@ -80,7 +82,14 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-type RequestModel = ApprovalRequest | ClarifyRequest | SudoRequest | SecretRequest
+type RequestModel = (
+    ApprovalRequest
+    | ClarifyRequest
+    | SudoRequest
+    | SecretRequest
+    | PreviewActRequest
+    | PreviewReadRequest
+)
 """Any concrete server request."""
 
 _RESERVED_KEYS = frozenset({"kind", "request_id", "session_id", "turn_id", "deadline_s"})

@@ -307,6 +307,8 @@ class DaemonBridge:
             **MaintenanceVerb(self.daemon.scope).handlers(),
             # P19-16/17: `indus mcp serve` sends and answers approvals through the daemon.
             **BridgeVerbs(self.daemon).handlers(),
+            # P24-01: the multiplex host's serve-profile / unserve-profile / rescan-profiles.
+            **getattr(self.daemon, "control_verbs", {}),
         }
 
     # -- verbs (async: they run on the daemon's loop) -------------------------------------------

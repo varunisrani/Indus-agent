@@ -34,6 +34,8 @@ from indus.protocol.server_requests import (
     ClarifyAnswer,
     ClarifyQuestion,
     ClarifyRequest,
+    PreviewActAnswer,
+    PreviewReadAnswer,
     SecretAnswer,
     SecretRequest,
     ServerRequestBase,
@@ -365,3 +367,5 @@ def describe_answer(answer: AnswerModel) -> str:
             return "password sent" if password else "no password given"
         case SecretAnswer(value=value):
             return "value saved" if value else "skipped"
+        case PreviewActAnswer(ok=ok) | PreviewReadAnswer(ok=ok):  # a desktop window's, never here
+            return "preview answered" if ok else "preview refused"

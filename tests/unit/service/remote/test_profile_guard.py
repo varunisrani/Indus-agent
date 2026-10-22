@@ -248,6 +248,25 @@ def test_bind_daemon_scope_keeps_one_profile_together(scope: Scope, tmp_path: Pa
     assert bind_daemon_scope(scope.with_secrets(None), mine).secrets is None
 
 
+def test_a_served_profiles_own_routed_scope_may_serve_its_daemon(
+    scope: Scope, tmp_path: Path
+) -> None:  # D-16.542 as amended in wave 42: attach for multiplexed (served) profiles
+    from dataclasses import replace
+
+    mine = expected_profile_id(scope.home)
+    routed = replace(scope, routed=True)
+    assert bind_daemon_scope(routed, mine, served=True) is routed
+    with pytest.raises(ScopeNotBound, match="routed"):
+        bind_daemon_scope(routed, mine)  # not a served profile's daemon
+    with pytest.raises(ProfileMismatch):  # still exactly the ticket book's profile
+        bind_daemon_scope(routed, expected_profile_id(tmp_path), served=True)
+    other_home = tmp_path / "other"
+    other_home.mkdir()
+    foreign = routed.with_secrets(open_secret_store(other_home, "other", mode="file"))
+    with pytest.raises(ScopeNotBound, match="secret store"):  # and with its own secrets
+        bind_daemon_scope(foreign, mine, served=True)
+
+
 @aio
 async def test_ws_endpoint_refuses_a_scope_of_another_profile(
     scope: Scope, store: StoreHandle, tmp_path: Path

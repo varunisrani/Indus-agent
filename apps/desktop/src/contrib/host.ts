@@ -95,6 +95,20 @@ async function agentPluginEnabled(bridge: IndusDesktopBridge, name: string): Pro
 }
 
 let running: PluginLoader | null = null;
+const startListeners = new Set<() => void>();
+
+/** The window's plugin loader once plugins started (Settings › Advanced › Plugins reads it). */
+export function runningPluginLoader(): PluginLoader | null {
+  return running;
+}
+
+/** Called when the window's loader starts (the inventory page may open first). */
+export function onPluginLoaderStarted(listener: () => void): () => void {
+  startListeners.add(listener);
+  return () => {
+    startListeners.delete(listener);
+  };
+}
 
 /** The Capabilities page's rows for the loader's inventory: a plugin is on when it loaded. */
 export function pluginRows(records: readonly PluginRecord[]): DesktopPluginRow[] {
@@ -128,6 +142,7 @@ export async function startDesktopPlugins(deps: HostDeps): Promise<PluginLoader>
     log: (text) => deps.bridge.logs.rendererError({ message: text, source: "renderer:plugins" }),
   });
   running = loader;
+  for (const listener of [...startListeners]) listener();
   deps.bridge.plugins.onChanged(({ files }) => void loader.sync(files));
   try {
     const { files } = await deps.bridge.plugins.list();

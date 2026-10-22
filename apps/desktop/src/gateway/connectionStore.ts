@@ -30,6 +30,7 @@ import {
 import type { EventTypes, MethodName, MethodTypes } from "@indus/protocol";
 import { desktopBridge } from "../app/bridge.ts";
 import type { IndusConnectionDescriptor, IndusDesktopConnection } from "../global.d.ts";
+import { windowPreviewAutomation } from "../panes/preview/automation.ts";
 import { replayWatchedSessions } from "./replay.ts";
 import { ServerRequestStore } from "./serverRequests.ts";
 import {
@@ -105,8 +106,16 @@ export interface ConnectionStoreOptions {
 type EventListener = (event: ClientEvent) => void;
 type SessionListener = (event: SessionEvent) => void;
 
-/** What this viewer renders (every server-request kind) and accepts (declines). */
-export const CLIENT_FEATURES: readonly string[] = ["server_requests", "request.decline"];
+/**
+ * What this viewer renders (every kind a person answers, plus the preview kinds its preview pane
+ * answers, P24-25) and accepts (declines).
+ */
+export const CLIENT_FEATURES: readonly string[] = [
+  "server_requests",
+  "server_requests.preview.act",
+  "server_requests.preview.read",
+  "request.decline",
+];
 
 const READY = "gateway.ready";
 const TURN_STARTED = "turn.started";
@@ -253,6 +262,7 @@ export class GatewayConnection implements ChatConnection {
     this.serverRequests = new ServerRequestStore({
       now: () => this.clock.now(),
       channel: () => this.client.channel,
+      preview: windowPreviewAutomation,
     });
     this.client.handle({ serverRequests: this.serverRequests.handlers() });
     this.client.subscribe((event) => this.onClientEvent(event));

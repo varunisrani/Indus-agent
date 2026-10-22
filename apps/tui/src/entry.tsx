@@ -220,6 +220,9 @@ const app = ink.render(tree, {
   stdout: output.stream,
   stdin: input.stream as unknown as NodeJS.ReadStream,
   alternateScreen: true,
+  // Always interactive: the entry refused to start without a terminal above, and Ink would
+  // otherwise draw nothing until exit whenever `CI` is set (a dashboard on a CI runner).
+  interactive: true,
   exitOnCtrlC: false,
   maxFps: 60,
   patchConsole: false,

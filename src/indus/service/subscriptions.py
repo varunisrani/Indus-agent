@@ -43,7 +43,11 @@ from typing import Any, Final
 
 from indus.protocol.errors import INVALID_PARAMS, SESSION_NOT_FOUND
 from indus.protocol.methods import SERVER_REQUESTS_FEATURE, ProtocolError
-from indus.protocol.server_requests import SERVER_REQUEST_KINDS, SERVER_REQUEST_METHOD
+from indus.protocol.server_requests import (
+    PERSON_REQUEST_KINDS,
+    SERVER_REQUEST_KINDS,
+    SERVER_REQUEST_METHOD,
+)
 from indus.service.daemon_host import DaemonSessionHost
 from indus.service.event_log import LoggedEvent, Replay, ReplayGap
 from indus.service.request_redelivery import Offer
@@ -100,11 +104,12 @@ def serialize(frame: Mapping[str, Any]) -> str:
 
 def capabilities_from(features: Iterable[str]) -> frozenset[str]:
     """Viewer capabilities from a client's ``client.capabilities`` features: ``server_requests``
-    renders every kind, ``server_requests.<kind>`` one kind, ``request.decline`` allows 4404."""
+    renders every kind a person answers, ``server_requests.<kind>`` one kind (the preview kinds
+    only this way: a desktop window names them), ``request.decline`` allows 4404."""
     found: set[str] = set()
     for name in features:
         if name == SERVER_REQUESTS_FEATURE:
-            found.update(SERVER_REQUEST_KINDS)
+            found.update(PERSON_REQUEST_KINDS)
         elif name.startswith(SERVER_REQUESTS_FEATURE + "."):
             kind = name[len(SERVER_REQUESTS_FEATURE) + 1 :]
             if kind in SERVER_REQUEST_KINDS:

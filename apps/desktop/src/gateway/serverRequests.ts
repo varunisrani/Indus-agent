@@ -2,6 +2,10 @@
 // shows. The channel hands each request to a handler that waits for the person; this store keeps
 // those waits by id. First answer wins (R08.19): a second answer, a double click or a card the
 // daemon re-offered after a reconnect never produces a second frame on the wire.
+//
+// The preview kinds (`preview.act` / `preview.read`, P24-25) are no cards: with a `preview`
+// handler (the window's preview automation) they go straight to it; the window that shows the
+// session's preview answers, any other one declines "not shown here" through the channel.
 
 import {
   declineAnswer,
@@ -9,7 +13,13 @@ import {
   type RpcChannel,
   type ServerRequestHandlers,
 } from "@indus/client";
-import type { ServerRequest, ServerRequestAnswer, ServerRequestKind } from "@indus/protocol";
+import type {
+  PreviewActRequest,
+  PreviewReadRequest,
+  ServerRequest,
+  ServerRequestAnswer,
+  ServerRequestKind,
+} from "@indus/protocol";
 
 export interface PendingServerRequest {
   /** The request's `request_id`. */
@@ -33,10 +43,36 @@ const SETTLED_MEMORY = 512;
 
 const KINDS: readonly ServerRequestKind[] = ["approval", "clarify", "sudo", "secret"];
 
+/** The preview request kinds a window answers for the session preview it shows. */
+export const PREVIEW_KINDS = ["preview.act", "preview.read"] as const;
+
+type PreviewServerRequest = PreviewActRequest | PreviewReadRequest;
+
+/** What the window's preview automation answers: the page's result, or "not shown here". */
+export type PreviewHandlerAnswer =
+  | { readonly declined: "not_shown" }
+  | ({ readonly ok: boolean } & Readonly<Record<string, unknown>>);
+
+export interface PreviewHandler {
+  handle(request: PreviewServerRequest): Promise<PreviewHandlerAnswer>;
+}
+
 export interface ServerRequestStoreOptions {
   now?: () => number;
   /** The channel whose `decline` sends the "not shown here" refusal. */
   channel?: () => Pick<RpcChannel, "decline"> | null;
+  /** Answers the preview kinds (absent: they are refused like any kind nothing here handles). */
+  preview?: PreviewHandler;
+}
+
+/** The protocol answer for what the page reported (`ok`, `error`, the rest as `result`). */
+export function previewAnswer(
+  kind: PreviewServerRequest["kind"],
+  reported: { readonly ok: boolean } & Readonly<Record<string, unknown>>,
+): ServerRequestAnswer {
+  const { ok, error, ...rest } = reported;
+  const result = JSON.parse(JSON.stringify(rest)) as Record<string, never>;
+  return { kind, ok, error: typeof error === "string" ? error : null, result };
 }
 
 export class ServerRequestStore {
@@ -109,6 +145,12 @@ export class ServerRequestStore {
     for (const kind of KINDS) {
       table[kind] = (request, meta) => this.accept(request, meta);
     }
+    const preview = this.options.preview;
+    if (preview !== undefined) {
+      for (const kind of PREVIEW_KINDS) {
+        table[kind] = (request) => this.drive(preview, request as PreviewServerRequest);
+      }
+    }
     return table as ServerRequestHandlers;
   }
 
@@ -116,6 +158,24 @@ export class ServerRequestStore {
   clear(): void {
     if (this.waiting.size === 0) return;
     for (const id of [...this.waiting.keys()]) this.close(id);
+  }
+
+  private async drive(
+    preview: PreviewHandler,
+    request: PreviewServerRequest,
+  ): Promise<ServerRequestAnswer> {
+    let reported: PreviewHandlerAnswer;
+    try {
+      reported = await preview.handle(request);
+    } catch (error) {
+      reported = { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    if ("declined" in reported) {
+      // The channel sends the decline (or the plain refusal); this answer is then dropped.
+      this.options.channel?.()?.decline(request.request_id);
+      return declineAnswer(request);
+    }
+    return previewAnswer(request.kind, reported);
   }
 
   private accept(request: ServerRequest, meta: IncomingRequest): Promise<ServerRequestAnswer> {

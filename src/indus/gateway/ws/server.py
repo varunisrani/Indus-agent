@@ -449,12 +449,14 @@ class WsEndpoint:
         limits: WsLimits | None = None,
         theme: str = "auto",
         strict: bool | None = None,
+        served: bool = False,
     ) -> None:
         self.host = host
         self.book = book
         # Every RPC runs under this one scope (the dispatcher's ``use_scope``): it must be the
-        # profile the ticket book serves, with that profile's secrets (P17-24, R05.14).
-        self.scope = bind_daemon_scope(scope, book.profile_id)
+        # profile the ticket book serves, with that profile's secrets (P17-24, R05.14). A served
+        # profile's daemon in a multiplex host passes ``served`` (its own routed scope, D-16.542).
+        self.scope = bind_daemon_scope(scope, book.profile_id, served=served)
         self.limits = limits or WsLimits()
         self.theme = theme
         self.strict = strict_from(scope) if strict is None else strict

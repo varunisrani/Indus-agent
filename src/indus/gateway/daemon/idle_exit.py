@@ -11,10 +11,13 @@ client's ``ensure`` starts a new daemon without a word.
 Busy means any of (``DaemonProbe``; every probe fails closed: an error counts as busy):
 
 - ``quick`` (loop-only facts, synchronous): the daemon stopping; a messaging platform enabled or
-  connected; an HTTP surface part; an outstanding attach ticket; a WebSocket connection; a viewer
-  that is not the messaging intake's; a running generation on the host; a chat-service session busy
-  or with input waiting; an intake chat claim; a running background process of the terminal tool
-  in a held session;
+  connected natively (a platform served only through a relay connector does not count: the
+  connector buffers its events while the gateway is gone, P24-08); an HTTP surface part; a part's
+  own ``busy_reason`` (a group-room turn queued or running, P24-06); a served profile that is
+  busy (a multiplexing host, P24-01); an outstanding attach ticket; a WebSocket connection; a
+  viewer that is not the messaging intake's; a running generation on the host; a chat-service
+  session busy or with input waiting; an intake chat claim; a running background process of the
+  terminal tool in a held session;
 - ``slow`` (store and file reads, off the loop): an admission queued in the runtime ledger (not one
   stuck behind an unknown turn); a cron run in flight or a cron job due within the next tick
   (``CRON_HORIZON_S``) unless cron is paused globally; a loop or heartbeat due within the next tick
@@ -251,11 +254,22 @@ class DaemonProbe:
         daemon = self.daemon
         if daemon.lifecycle.stopping:
             return "already stopping"
-        platforms = sorted(set(daemon.settings.enabled()) | set(daemon.adapters))
+        relayed = set(getattr(daemon, "relayed", ()))
+        platforms = sorted(set(daemon.settings.enabled()) | (set(daemon.adapters) - relayed))
         if platforms:
             return "messaging platform enabled: " + ", ".join(platforms)
         if any(part.name == "http" for part in daemon.parts):
             return "HTTP surfaces enabled"
+        for part in daemon.parts:
+            reason = getattr(part, "busy_reason", None)
+            why = reason() if callable(reason) else None
+            if why is not None:
+                return str(why)
+        mux = getattr(daemon, "mux", None)
+        if mux is not None and getattr(daemon, "parent", None) is None:
+            why = mux.busy_reason()
+            if why is not None:
+                return why
         if daemon.tickets.outstanding():
             return "a client is attaching"
         ws = daemon.ws

@@ -28,7 +28,14 @@ export function slashSetup(options: { catalog?: CatalogEntry[]; timeoutMs?: numb
   const out: Recorded = { lines: [], pages: [], submits: [], prefills: [], exits: [], timers: [] };
   const confirm = vi.fn(async () => true);
   const ctx: SlashContext = {
-    rpc: { call: (method, params) => channel.call(method, params as object) },
+    rpc: {
+      call: (method, params, options) =>
+        channel.call(
+          method,
+          params as object,
+          options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+        ),
+    },
     ui: uiStore,
     overlay: overlayStore,
     systemLine: (text) => out.lines.push(text),

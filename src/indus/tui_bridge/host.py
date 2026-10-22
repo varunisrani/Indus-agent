@@ -26,6 +26,7 @@ from indus.providers.auxiliary import AuxClient
 from indus.providers.route import resolve
 from indus.service import terminal_host
 from indus.service.code_host import KernelUpkeep
+from indus.service.lsp_host import LspUpkeep
 from indus.service.mcp_host import McpUpkeep
 from indus.service.plugin_host import PluginUpkeep
 from indus.service.session_service import SessionService
@@ -105,6 +106,7 @@ def make_service(bridge: Bridge) -> SessionService:
         kernels=KernelUpkeep(scope, reaper=True),
         mcp=McpUpkeep(scope, tool_registry, aux=aux, watch=True),
         plugins=PluginUpkeep(scope, tool_registry, surface="tui", cwd=str(cwd)),
+        lsp=LspUpkeep(scope),
     )
 
     async def shut_terminal() -> None:

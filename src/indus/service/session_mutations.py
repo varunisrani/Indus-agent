@@ -37,7 +37,11 @@ an ACP session the editor toolset when the client chose none (``editor_mcp.acp_s
 the umbrella ``mcp`` toolset), leaves the profile's configured MCP servers out when
 ``platform_toolsets.acp`` says ``no_mcp`` (the service runs its MCP step before the shaper), its
 stored folder and stored model (bound before its first turn), and — when it has editor servers —
-their registry and toolsets.
+their registry and toolsets. A session a desktop window created (source ``gui``, from the call or
+its stored row) gets its own registry over the shared one with the preview tools
+(``tools.builtin.preview``, P24-25: ``drive_preview`` / ``annotate_preview``, answered by the window
+showing its preview) and the ``desktop-preview`` toolset in an explicit selection; no other
+session sees them.
 """
 
 from __future__ import annotations
@@ -69,13 +73,23 @@ from indus.service.session_service import SessionService, usage_numbers
 from indus.state import rewind, sessions, titles
 from indus.state import usage as usage_rows
 from indus.state.registry import StoreHandle
+from indus.tools.builtin import preview
 from indus.tools.session_registry import SessionRegistry
 
-__all__ = ["ACP_SOURCE", "COMMANDS", "SessionMutations", "stored_pick", "window_guard"]
+__all__ = [
+    "ACP_SOURCE",
+    "COMMANDS",
+    "GUI_SOURCE",
+    "SessionMutations",
+    "stored_pick",
+    "window_guard",
+    "with_preview",
+]
 
 log = logging.getLogger(__name__)
 
 ACP_SOURCE: Final = "acp"
+GUI_SOURCE: Final = preview.DESKTOP_SURFACE
 COMMANDS: Final = ("tools", "status", "usage", "version")
 """The information commands ``command`` answers."""
 _KEPT: Final = 512
@@ -169,7 +183,7 @@ class SessionMutations:
         self._states: dict[str, _State] = {}
         self._gates: dict[str, asyncio.Lock] = {}
         self._kept: OrderedDict[str, _Kept] = OrderedDict()
-        self._sources: dict[str, bool] = {}
+        self._sources: dict[str, str] = {}
         self._closed = False
 
     # -- views ------------------------------------------------------------------------------------
@@ -328,6 +342,19 @@ class SessionMutations:
         self, session_id: str, options: AgentOptions, selection: Sequence[str] | None
     ) -> tuple[AgentOptions, list[str] | None]:
         """The service's ``agent_shaper`` (see the module notes)."""
+        window = options.source == GUI_SOURCE
+        if window:  # created by a window now; its row may not be written yet
+            if len(self._sources) >= _KEPT_SOURCES:
+                self._sources.clear()
+            self._sources[session_id] = GUI_SOURCE
+        options, chosen = await self._shape(session_id, options, selection)
+        if window or self._sources.get(session_id) == GUI_SOURCE:
+            options, chosen = with_preview(options, chosen)
+        return options, chosen
+
+    async def _shape(
+        self, session_id: str, options: AgentOptions, selection: Sequence[str] | None
+    ) -> tuple[AgentOptions, list[str] | None]:
         chosen = list(selection) if selection is not None else None
         key = self._key_of(session_id)
         state = self._states.get(key)
@@ -337,11 +364,12 @@ class SessionMutations:
             known = self._sources.get(session_id)
             if known is None:
                 row = await self._row(session_id)
-                known = row is not None and row.get("source") == ACP_SOURCE
+                found = row.get("source") if row is not None else None
+                known = found if isinstance(found, str) else ""
                 if len(self._sources) >= _KEPT_SOURCES:
                     self._sources.clear()
                 self._sources[session_id] = known
-            acp = known
+            acp = known == ACP_SOURCE
         if not acp and state is None:
             return options, chosen
         state = self._state(key)
@@ -732,3 +760,18 @@ class SessionMutations:
         for key in list(self._states):
             await self.forget(key)
         self._kept.clear()
+
+
+def with_preview(
+    options: AgentOptions, selection: list[str] | None
+) -> tuple[AgentOptions, list[str] | None]:
+    """A desktop window's session: the preview tools in its own registry (see the module notes)."""
+    registry = options.registry
+    if registry is None:
+        return options, selection
+    own = registry if isinstance(registry, SessionRegistry) else SessionRegistry(registry)
+    if own.get("drive_preview") is None:
+        preview.register_tools(own, surface=GUI_SOURCE)
+    if selection is not None and preview.PREVIEW_TOOLSET not in selection:
+        selection = [*selection, preview.PREVIEW_TOOLSET]
+    return replace(options, registry=own), selection

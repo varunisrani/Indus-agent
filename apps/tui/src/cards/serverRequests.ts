@@ -26,7 +26,10 @@ import type {
 } from "./payloads.ts";
 import { errorText, type RpcLike } from "./rpcLike.ts";
 
-export const STATUS_TEXT: Readonly<Record<ServerRequest["kind"], string>> = {
+/** The kinds a person answers here (the preview kinds are a desktop window's, never a card). */
+export type CardRequestKind = Exclude<ServerRequest["kind"], "preview.act" | "preview.read">;
+
+export const STATUS_TEXT: Readonly<Record<CardRequestKind, string>> = {
   approval: "approval needed",
   clarify: "the agent has a question",
   sudo: "password needed",
@@ -110,7 +113,7 @@ export function createServerRequestCards(deps: ServerRequestDeps): ServerRequest
 
   function ask<A>(
     meta: IncomingRequest,
-    kind: ServerRequest["kind"],
+    kind: CardRequestKind,
     cardKind: CardKind,
     refusal: () => A,
     build: (finish: (answer: A) => void) => unknown,

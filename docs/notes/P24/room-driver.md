@@ -122,15 +122,41 @@ transition, the not-admitted requeue, prune) and the test names of
   work-record capture, replicas (`groups.replicate`, `groups.replica_state`), approvals inside
   rooms (`groups.approve`), schema migrations of older drafts.
 
-## Status
-
-Done (2026-10-21). Driver, stop-directive parser and the `groups.*` handler table finished;
-declaring `groups.*` in the protocol and mounting the driver loop in the daemon are wiring for the
-lead.
-
 ## Integration (P24 integrator, 2026-10-21)
 
 Wired: `groups.*` declared in `indus.protocol.groups` and served by the daemon's WebSocket over
 `<root>/rooms.db` and its driver (opened on the first call). The room loop (lease → recover → start
 → member turn → settle) is not built: rooms take messages and stops, members do not answer yet
 (D-16.799).
+
+## Wiring (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file (wiring; the turn policy below is our own). `gateway/rooms/loop.py`:
+`RoomPart` (BACKGROUND, a root-level part: a multiplexing host runs it once) runs `RoomLoop` over
+`<root>/rooms.db` every second: lease (renewed each pass, under the daemon start's instance id —
+the same process generation `groups.*` uses) → `recover` on a new or reclaimed lease →
+`expire_turns` → whose turn it is (`RoomPlanner`, replayed from the log) → `admit` → `start` the
+head → the member's turn (`daemon_runner`: a fresh session in the member profile's own session
+service when this process serves it; heartbeats every 30 s) → the reply as `message.member` →
+`settle` (or `complete_stop` / `settle_stopping`) → `turn.*` events; `prune_terminal` hourly. Idle
+exit counts a queued or running room turn as busy (`DaemonPart.busy_reason`). Demo:
+`tests/integration/gateway/multiplex/test_room_two_members.py::test_a_room_with_two_members_taking_turns`;
+policy and fences: `tests/unit/gateway/rooms/test_loop.py`. Helper added: `mentioned_members`.
+
+Decisions for the lead:
+- Turn policy: a person's message gives the @mentioned members a turn (`@all` everyone), else the
+  first member; when every awaited turn answered, the member after the last speaker (room order,
+  skipping held members) goes next; at most `MEMBER_TURNS_PER_MESSAGE` (8) member turns per
+  person message; silence, a failed turn, a stop request or a newer person message ends a chain;
+  a held member stays held until a later person message @mentions it again.
+- The first pass over a room after a start admits nothing older than its newest task, `turn.*`
+  event or person message (no replay of old chains; an owed turn of the newest chain is admitted).
+- A member whose profile this process does not serve fails its turn with `member.unavailable`
+  (serve every member from one gateway: `gateway.multiplex_profiles`). Running turns are failed as
+  `gateway_stopping` at shutdown (never left indeterminate by a clean stop).
+- Follow-ups: room turns have nobody to answer an approval (they wait until stopped or the 3 h
+  limit); clients are not notified of new room events (they read `groups.log`).
+
+## Status
+
+Done (2026-10-21); the room loop is wired in wave 42 (members answer in rooms).

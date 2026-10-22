@@ -5,6 +5,11 @@ request models below; the client answers with the ``server_request.answer`` meth
 answers share a ``kind`` so a mismatched answer is refused. A withdrawn request is announced with
 a ``server_request.cancelled`` event. Secret values (passwords, keys) travel as plain strings so
 the models round-trip; transports and logs must never print them.
+
+Two kinds are asked of a window rather than a person (P24-25): ``preview.act`` and
+``preview.read`` drive the page in a session's desktop preview pane. Only the window that shows
+that session's preview answers them; any other window declines (``4404`` not shown). They are
+listed in ``PREVIEW_REQUEST_KINDS``; ``PERSON_REQUEST_KINDS`` are the ones a person answers.
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import Field, PositiveFloat, model_validator
+from pydantic import Field, JsonValue, PositiveFloat, model_validator
 
 from indus.protocol.base import ProtocolModel
 
@@ -152,14 +157,91 @@ class SecretAnswer(ProtocolModel):
     """The value; absent or empty when skipped."""
 
 
+class PreviewPin(ProtocolModel):
+    """One note to put on a page element."""
+
+    selector: str = Field(min_length=1, max_length=500)
+    """A CSS selector on the page."""
+    note: str = Field(min_length=1, max_length=500)
+    """What the note says."""
+
+
+class PreviewActRequest(ServerRequestBase):
+    """Act on the page in the session's desktop preview pane (asked of the window showing it)."""
+
+    kind: Literal["preview.act"] = "preview.act"
+    """Request kind."""
+    action: Literal["navigate", "click", "type", "scroll", "annotate"]
+    """What to do."""
+    url: str | None = None
+    """For navigate: an http(s) or ``file:///`` address."""
+    selector: str | None = Field(default=None, max_length=500)
+    """For click, type and scroll: a CSS selector on the page."""
+    text: str | None = Field(default=None, max_length=4_000)
+    """For type: the text to enter."""
+    submit: bool | None = None
+    """For type: press Enter after the text."""
+    dx: int | None = None
+    """For scroll without a selector: pixels to the right."""
+    dy: int | None = None
+    """For scroll without a selector: pixels down."""
+    pins: list[PreviewPin] | None = Field(default=None, max_length=20)
+    """For annotate: the notes, in order."""
+
+
+class PreviewReadRequest(ServerRequestBase):
+    """Read the page in the session's desktop preview pane (asked of the window showing it)."""
+
+    kind: Literal["preview.read"] = "preview.read"
+    """Request kind."""
+    what: Literal["snapshot"] = "snapshot"
+    """What to read: the title, address, visible text and interactive elements."""
+
+
+class PreviewActAnswer(ProtocolModel):
+    """What the page did."""
+
+    kind: Literal["preview.act"] = "preview.act"
+    """Answer kind."""
+    ok: bool
+    """Whether the action ran."""
+    error: str | None = None
+    """Why it did not, in a few words."""
+    result: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
+    """What the page reported (for navigate the address); secret values are never included."""
+
+
+class PreviewReadAnswer(ProtocolModel):
+    """What the page shows."""
+
+    kind: Literal["preview.read"] = "preview.read"
+    """Answer kind."""
+    ok: bool
+    """Whether the page could be read."""
+    error: str | None = None
+    """Why it could not, in a few words."""
+    result: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
+    """The snapshot: title, address, visible text, interactive elements (secrets redacted)."""
+
+
 type ServerRequest = Annotated[
-    ApprovalRequest | ClarifyRequest | SudoRequest | SecretRequest,
+    ApprovalRequest
+    | ClarifyRequest
+    | SudoRequest
+    | SecretRequest
+    | PreviewActRequest
+    | PreviewReadRequest,
     Field(discriminator="kind"),
 ]
 """Any server request, told apart by ``kind``."""
 
 type ServerRequestAnswer = Annotated[
-    ApprovalAnswer | ClarifyAnswer | SudoAnswer | SecretAnswer,
+    ApprovalAnswer
+    | ClarifyAnswer
+    | SudoAnswer
+    | SecretAnswer
+    | PreviewActAnswer
+    | PreviewReadAnswer,
     Field(discriminator="kind"),
 ]
 """Any answer, told apart by ``kind``."""
@@ -169,5 +251,15 @@ SERVER_REQUEST_KINDS: dict[str, tuple[type[ServerRequestBase], type[ProtocolMode
     "clarify": (ClarifyRequest, ClarifyAnswer),
     "sudo": (SudoRequest, SudoAnswer),
     "secret": (SecretRequest, SecretAnswer),
+    "preview.act": (PreviewActRequest, PreviewActAnswer),
+    "preview.read": (PreviewReadRequest, PreviewReadAnswer),
 }
 """Kind → (request model, answer model)."""
+
+PREVIEW_REQUEST_KINDS: frozenset[str] = frozenset({"preview.act", "preview.read"})
+"""Kinds a desktop window answers for the session preview it shows (never a person)."""
+
+PERSON_REQUEST_KINDS: tuple[str, ...] = tuple(
+    kind for kind in SERVER_REQUEST_KINDS if kind not in PREVIEW_REQUEST_KINDS
+)
+"""Kinds a person answers (cards, prompts): what a terminal or editor surface can render."""

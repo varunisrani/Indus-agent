@@ -291,14 +291,17 @@ def test_matrix_alias_resolves_through_the_directory(installed: None, scope: Sco
         [{"id": "!abc123:example.org", "name": "#ops:example.org", "type": "group"}],
     )
     router = DeliveryRouter(scope, homes=lambda _p: None, directory=directory)
-    (target,) = cron_targets.parse_targets("matrix:#ops:example.org").targets
-    assert router.resolve(target) == Resolved("matrix", "!abc123:example.org", None)
-    (threaded,) = cron_targets.parse_targets("matrix:#ops:example.org:$root").targets
-    assert router.resolve(threaded) == Resolved("matrix", "!abc123:example.org", "$root")
-    # an alias the directory does not know is a real Matrix id: sent as written (the adapter
-    # resolves it with the homeserver)
-    (unknown,) = cron_targets.parse_targets("matrix:#other:example.org").targets
-    assert router.resolve(unknown) == Resolved("matrix", "#other:example.org", None)
+    try:
+        (target,) = cron_targets.parse_targets("matrix:#ops:example.org").targets
+        assert router.resolve(target) == Resolved("matrix", "!abc123:example.org", None)
+        (threaded,) = cron_targets.parse_targets("matrix:#ops:example.org:$root").targets
+        assert router.resolve(threaded) == Resolved("matrix", "!abc123:example.org", "$root")
+        # an alias the directory does not know is a real Matrix id: sent as written (the adapter
+        # resolves it with the homeserver)
+        (unknown,) = cron_targets.parse_targets("matrix:#other:example.org").targets
+        assert router.resolve(unknown) == Resolved("matrix", "#other:example.org", None)
+    finally:
+        router.close()  # a router holds the self-chat deliverer until closed
 
 
 def test_without_the_rule_the_alias_is_cut_wrongly(scope: Scope) -> None:
@@ -317,10 +320,13 @@ def test_hash_names_stay_directory_names(installed: None, scope: Scope) -> None:
     )
     homes = {"mattermost": HomeChannel("mattermost", "h" * 26)}
     router = DeliveryRouter(scope, homes=homes.get, directory=directory)
-    (named,) = cron_targets.parse_targets("mattermost:town-square").targets
-    assert router.resolve(named) == Resolved("mattermost", MM_ID, None)
-    # ambiguous: "town" is a prefix of two names, so nothing is picked
-    (vague,) = cron_targets.parse_targets("mattermost:town").targets
-    assert str(router.resolve(vague)).startswith("unknown_channel")
-    (home,) = cron_targets.parse_targets("mattermost").targets
-    assert router.resolve(home) == Resolved("mattermost", "h" * 26, None)
+    try:
+        (named,) = cron_targets.parse_targets("mattermost:town-square").targets
+        assert router.resolve(named) == Resolved("mattermost", MM_ID, None)
+        # ambiguous: "town" is a prefix of two names, so nothing is picked
+        (vague,) = cron_targets.parse_targets("mattermost:town").targets
+        assert str(router.resolve(vague)).startswith("unknown_channel")
+        (home,) = cron_targets.parse_targets("mattermost").targets
+        assert router.resolve(home) == Resolved("mattermost", "h" * 26, None)
+    finally:
+        router.close()

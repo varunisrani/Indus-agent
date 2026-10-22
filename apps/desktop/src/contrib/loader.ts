@@ -84,6 +84,7 @@ export class PluginLoader {
   private readonly listeners = new Set<Listener>();
   private readonly registry: ContributionRegistry;
   private queue: Promise<void> = Promise.resolve();
+  private lastFiles: readonly IndusPluginFile[] = [];
   private readonly options: LoaderOptions;
 
   constructor(options: LoaderOptions) {
@@ -104,12 +105,22 @@ export class PluginLoader {
 
   /** Make the loaded set match `files` (calls are queued, never interleaved). */
   sync(files: readonly IndusPluginFile[]): Promise<void> {
+    this.lastFiles = files;
     this.queue = this.queue.then(() => this.runSync(files)).catch(() => undefined);
     return this.queue;
   }
 
-  /** The person's on/off choice; applied at once. */
-  setEnabled(id: string, enabled: boolean, files: readonly IndusPluginFile[]): Promise<void> {
+  /** The person's on/off choice for a plugin (stored, else its default). */
+  choiceOf(id: string): boolean | undefined {
+    return this.decisions()[id];
+  }
+
+  /** The person's on/off choice; applied at once (against the files main listed last). */
+  setEnabled(
+    id: string,
+    enabled: boolean,
+    files: readonly IndusPluginFile[] = this.lastFiles,
+  ): Promise<void> {
     const decisions = this.decisions();
     decisions[id] = enabled;
     try {

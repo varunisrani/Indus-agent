@@ -73,6 +73,27 @@ def test_list_names_every_live_profile(rest: RestApp) -> None:
     assert got["active"] == "default"
 
 
+def test_the_list_carries_each_bot_s_forever_chat(rest: RestApp, scope: Scope) -> None:
+    """P24-31 wiring (D-16.799): ``profile_rows`` on the real list — the row names the same chat
+    ``bots.open`` opens, a profile without one says null, and listing creates no store."""
+    from indus.foundation.profiles import profile_home
+    from indus.service import bots_rpc
+    from indus.state.connection import DB_NAME
+
+    before = rest.client.get("/api/profiles").json()["profiles"]
+    assert [p["canonical_session"] for p in before] == [None, None]
+    spare = rest.client.post("/api/profiles", json={"name": "spare"})
+    assert spare.status_code == 201, spare.text
+    opened = bots_rpc.for_root(scope).call("bots.open", {"profile": "work"})
+    assert opened["created"] is True
+    rows = {p["name"]: p for p in rest.client.get("/api/profiles").json()["profiles"]}
+    assert rows["work"]["canonical_session"] == {"session_id": opened["session_id"]}
+    assert rows["spare"]["canonical_session"] is None
+    assert not (profile_home(scope.root, "spare") / DB_NAME).exists()
+    again = bots_rpc.for_root(scope).call("bots.open", {"profile": "work"})
+    assert again == {"session_id": opened["session_id"], "created": False}
+
+
 def test_a_description_that_looks_like_a_flag_stays_text(rest: RestApp) -> None:
     created = rest.client.post("/api/profiles", json={"name": "odd", "description": "--clone-all"})
     assert created.status_code == 201, created.text

@@ -103,3 +103,21 @@ per agent host process, wrapped in `EditDiagnostics` and installed with
 `tools.lsp.diagnostics.install_active`; call `manager.trust(<session work tree>)` per session and
 `manager.release(path)` before a worktree is removed; `await manager.close()` at host exit.
 Follow-ups: `lsp.exclude_roots`; a daemon verb for `indus lsp restart` against a running daemon.
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: `service.lsp_host.LspUpkeep` — one language-server tier per process (`LspManager(scope=…)`
+in `EditDiagnostics`, `install_active`), joined by every session service of the process (CLI
+runtime, TUI bridge, ACP local host, gateway daemon chat and surface services:
+`SessionService(lsp=…)`); built when the first session is attached (nothing spawns until an edited
+file needs a server), each attached session's folder trusted by its git work tree
+(`manager.trust`), the last service out closes the manager and uninstalls the checker. Tests:
+`tests/unit/service/test_lsp_host.py`. The root `tests/conftest.py` turns hosts' own LSP settings
+off (`no_language_servers`; the venv carries `pyright-langserver`) — a test wanting the tier passes
+`LspUpkeep(scope, settings=…)`.
+
+Decisions for the lead (wiring): the tier is per process, not per profile: a multiplexed gateway's
+servers get the child environment of the profile that started the tier (provider keys never reach a
+server either way, R02.22); `LspUpkeep.release(folder)` exists but no worktree-removal path calls it
+yet (follow-up with P11's worktree remove); `indus lsp restart` against a running daemon is still a
+follow-up.

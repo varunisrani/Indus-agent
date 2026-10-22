@@ -113,9 +113,27 @@ Compare checklist (filled after the rewrite; reopened `gateway/relay/ws_transpor
 - Deliberate differences: the reference signs an expiring upgrade token (5 min TTL) and so needs a "first 4401 after success is provisional" re-dial; we sign a fresh timestamp + nonce per dial, so an auth refusal is always final. The reference's dormant mode keeps re-dialling on a slow cadence (a suspended machine wakes with a frozen loop); we wait for `wake()` or the next start (Indus has no machine suspend; idle exit ends the process). One hello per connection instead of one per fronted identity: the connector answers with every platform it fronts for us.
 - Not taken: passthrough-plane forwards (Discord interactions, Twilio), channel `context` rendering, Slack `/parent` command rewrite, Discord command manifest on hello, relevance-policy POST, wake-URL registration, brokered-suspend redial holds, keepalive tuning (httpx-ws defaults) — they serve the reference's hosted connector; recorded "later".
 
+## Wiring (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file (wiring). `gateway/relay/part.py` (`RelayPart`, BACKGROUND, only with
+`gateway.relay.url`): `build_front` → the part holds the transport (`acquire`; a retryable first
+failure is dialled again with the transport's backoff, a configuration problem is reported once;
+status row `relay`) → one `create_relay_adapter` per descriptor, connected through
+`GatewayDaemon.attach_relayed` (intake, sender, status, listeners like a native adapter; the
+delivery router attaches it `via_relay` and reads `native_state` from the daemon) → a platform
+whose native adapter is enabled is left to it. `RelayFront.on_interrupt` stops the running turn of
+that session key (or every running turn of that platform and chat, in any served profile). At an
+idle exit the part asks the connector to go dormant before the adapters disconnect; relayed
+platforms do not keep an auto-started daemon up. Events the connector replays right after the
+handshake wait for their adapters (`RelayFront.hold` / `release`: an event handed over is
+acknowledged and would never be replayed again). Tests: `tests/integration/gateway/test_relay_part.py`.
+
+Decisions for the lead: a relayed platform needs its registry entry (its access policy; an
+unknown platform is denied even though relay events are `auth_upstream`); `relay_settings` loads
+the profile config when the scope carries none.
+
 ## Status
 
 Done (2026-10-21). Transport, descriptor and contract document written and tested
-(`tests/unit/gateway/relay/test_transport.py`, 49 tests). Shared files changed:
-`src/indus/foundation/config/schema.py` (`gateway.relay.*`) and its test. Daemon wiring (start the
-front, idle → `go_dormant`) is the lead's at integration.
+(`tests/unit/gateway/relay/test_transport.py`, 49 tests); shared: `foundation/config/schema.py`
+(`gateway.relay.*`) and its test. Daemon wiring done in wave 42 (above).

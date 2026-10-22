@@ -6,6 +6,7 @@ import { CAPABILITY_STRINGS } from "../app/capabilities/strings.en.ts";
 import { MANAGE_STRINGS } from "../app/manage/strings.en.ts";
 import { CHAT_STRINGS } from "../chat/strings.en.ts";
 import { VOICE_STRINGS } from "../chat/voice/strings.en.ts";
+import { PLUGIN_STRINGS } from "../contrib/strings.en.ts";
 import { DEEP_LINK_STRINGS } from "../deepLinks/strings.en.ts";
 import { ONBOARDING_STRINGS } from "../onboarding/strings.en.ts";
 import { ANNOTATE_STRINGS } from "../panes/preview/annotateStrings.en.ts";
@@ -214,4 +215,7 @@ export const en = {
 
   // composer voice: dictation, read-aloud, spoken conversation (P24-35)
   ...VOICE_STRINGS,
+
+  // desktop plugin inventory (P24-32 wiring)
+  ...PLUGIN_STRINGS,
 } as const satisfies Record<string, string>;

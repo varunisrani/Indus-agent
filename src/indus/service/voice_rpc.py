@@ -6,6 +6,13 @@ file; ``voice.speak`` runs the text-to-speech provider (``tts.SpeechTool``), rea
 and removes the file. A provider that is missing, not set up or failing is ``PROVIDER_UNAVAILABLE``
 with the provider's own reason (never a key); a clip that is not base64 is ``INVALID_PARAMS``.
 Neither the clip nor the text is logged.
+
+``voice.listen`` (the wake word's hand-off for the terminal UI, P24-20) records one take on this
+process's microphone — the one the wake word listened on, which a detection already released —
+with the REPL voice mode's rules (``tools.builtin.media.voice_take``: ``voice.silence_seconds``
+after speech ends it, ``voice.wait_seconds`` without speech gives up, ``voice.max_seconds`` caps
+it), then transcribes it as ``voice.transcribe`` does. A take without speech is never sent to the
+provider. ``MICROPHONE`` and ``CLOCK`` are the seams tests replace.
 """
 
 from __future__ import annotations
@@ -14,6 +21,7 @@ import base64
 import binascii
 import contextlib
 import secrets
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
@@ -28,13 +36,24 @@ from indus.protocol.methods import ProtocolError
 from indus.protocol.voice import (
     MAX_CLIP_BYTES,
     VOICE_METHODS,
+    VoiceListenParams,
+    VoiceListenResult,
     VoiceSpeakParams,
     VoiceSpeakResult,
     VoiceTranscribeParams,
     VoiceTranscribeResult,
 )
 
-__all__ = ["VOICE_HANDLERS", "VOICE_METHODS", "register", "voice_speak", "voice_transcribe"]
+__all__ = [
+    "CLOCK",
+    "MICROPHONE",
+    "VOICE_HANDLERS",
+    "VOICE_METHODS",
+    "register",
+    "voice_listen",
+    "voice_speak",
+    "voice_transcribe",
+]
 
 _SUFFIXES: Mapping[str, str] = {
     "audio/webm": ".webm",
@@ -117,9 +136,68 @@ async def voice_speak(ctx: VoiceContext, params: VoiceSpeakParams) -> VoiceSpeak
     return VoiceSpeakResult(audio_b64=base64.b64encode(audio).decode("ascii"), mime=mime)
 
 
+def _default_microphone() -> Any:
+    from indus.tools.builtin.media.wake_word import SoundDeviceMicrophone
+
+    return SoundDeviceMicrophone()
+
+
+MICROPHONE: Callable[[], Any] = _default_microphone
+"""The audio input ``voice.listen`` opens (a ``wake_word.Microphone``)."""
+CLOCK: Callable[[], float] = time.monotonic
+"""The clock a take's silence and limits are measured on."""
+
+
+async def voice_listen(ctx: VoiceContext, params: VoiceListenParams) -> VoiceListenResult:
+    from indus.foundation import config
+    from indus.tools.builtin.media import stt
+    from indus.tools.builtin.media.voice_take import VoiceSettings, record_take
+    from indus.tools.builtin.media.wake_word import WakeUnavailable
+
+    scope = ctx.scope
+    if scope.config is None:
+        scope = scope.with_config(await run_blocking(config.load, scope, label="voice settings"))
+    settings = VoiceSettings.from_scope(scope)
+
+    def record() -> tuple[Any, str]:
+        return record_take(MICROPHONE(), settings, CLOCK)
+
+    try:
+        take, ended = await run_blocking(record, label="voice take")
+    except WakeUnavailable as exc:
+        raise ProtocolError(PROVIDER_UNAVAILABLE, str(exc)) from None
+    except Exception as exc:  # the audio library's own errors (no device, device busy)
+        raise ProtocolError(
+            PROVIDER_UNAVAILABLE, f"the microphone could not record: {exc}"
+        ) from None
+    if not take.usable:
+        return VoiceListenResult(text="", reason="cancel" if ended == "cancel" else "no_speech")
+    wav = take.wav()
+
+    def save() -> Path:
+        path = _clip_dir(scope) / f"take-{secrets.token_hex(8)}.wav"
+        atomic_write_bytes(path, wav, mode=0o600)
+        return path
+
+    path = await run_blocking(save, label="voice take")
+    try:
+        heard = await stt.transcribe(path, scope=scope)
+    except stt.SttError as exc:
+        raise ProtocolError(PROVIDER_UNAVAILABLE, str(exc)) from None
+    finally:
+        with contextlib.suppress(OSError):
+            path.unlink()
+    if heard.inaudible or not heard.text.strip():
+        return VoiceListenResult(text="", reason="inaudible")
+    return VoiceListenResult(
+        text=heard.text.strip(), reason="limit" if ended == "limit" else "spoke"
+    )
+
+
 VOICE_HANDLERS: Mapping[str, Callable[[Any, Any], Awaitable[ProtocolModel]]] = {
     "voice.transcribe": voice_transcribe,
     "voice.speak": voice_speak,
+    "voice.listen": voice_listen,
 }
 
 

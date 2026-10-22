@@ -116,13 +116,16 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/core/test_stop_gates_lsp.py::test_lsp_gate_fires_at_most_three_times_a_turn`
   - `tests/unit/core/test_stop_gates_lsp.py::test_continuation_rows_keep_roles_alternating`
   - `tests/unit/tools/lsp/test_diagnostics.py::test_settle_waits_at_most_five_seconds`
-  - Review: the loop calls `StopGates.run` before accepting a text answer (lead wiring, P24-16)
+  - `tests/integration/core/test_lsp_stop_gate.py::test_lsp_stop_gate_catches_a_type_error_and_the_turn_goes_on_to_a_fix`
+  - `tests/unit/core/test_stop_gate_wiring.py::test_the_gated_answer_stands_when_the_budget_runs_out`
+  - `tests/unit/service/test_lsp_host.py::test_the_service_joins_the_tier_trusts_the_folder_and_leaves_at_close`
 - **ACC-A28-2** Verify-on-stop (opt-in) and the `pre_verify` plugin hook after code edits may send the agent back, each capped per turn
   - `tests/unit/core/test_stop_gates_lsp.py::test_verify_on_stop_is_off_by_default`
   - `tests/unit/core/test_stop_gates_lsp.py::test_verify_on_stop_sends_the_failure_back`
   - `tests/unit/core/test_stop_gates_lsp.py::test_verify_on_stop_passes_skips_prose_and_is_capped`
   - `tests/unit/core/test_stop_gates_lsp.py::test_pre_verify_hook_after_code_edits_only_and_capped`
   - `tests/unit/core/test_stop_gates_lsp.py::test_gate_order_lsp_then_verify_then_hook`
+  - `tests/unit/core/test_stop_gate_wiring.py::test_pre_verify_sees_the_turn_edits_without_a_language_server`
 - **ACC-A29-1** Tool round: unknown tool names auto-repaired or answered with valid names, duplicate calls dropped …
   - `tests/unit/core/test_tool_round.py::test_name_repair_table`
   - `tests/unit/core/test_tool_round.py::test_misspelled_name_is_repaired_and_run`
@@ -1239,6 +1242,8 @@ Checked by `python -m tooling.checks acceptance`.
 - **ACC-J22-1** TUI wake word: `/wake on` sends consent from the explicit command, `off` persists, `status` shows the owner
   - `apps/tui/src/commands/wake.test.ts::on sends consent from the explicit command and says what happened`
   - `apps/tui/src/commands/wake.test.ts::off stops and persists; status shows the state`
+  - `apps/tui/src/commands/wakeHandOff.test.ts::a detection records one take, sends it as the user's prompt and listens again`
+  - `tests/unit/service/test_voice_rpc.py::test_wake_detection_hands_the_microphone_to_one_take_then_listens_again`
 - **ACC-J23-1** TUI `/pet` shows the pet's card in a pane; use / off / list call the pet methods
   - `apps/tui/src/commands/pet.test.ts::shows the pet's card in a pane`
   - `apps/tui/src/commands/pet.test.ts::use, off and list call the pet methods`
@@ -1529,6 +1534,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/adapters/a2a/test_adapter.py::test_streaming_answers_server_sent_events_in_order`
   - `tests/unit/gateway/adapters/a2a/test_adapter.py::test_outbound_to_a_private_address_is_refused_unless_trusted`
   - `tests/unit/gateway/adapters/a2a/test_adapter.py::test_outbound_carries_the_privacy_note_masks_secrets_and_conforms`
+  - `tests/unit/gateway/daemon/test_host_tools.py::test_the_daemon_registers_message_agent_and_a2a_call`
   - Review: requests checked against our subset schema until the vendor A2A v1.0 schema is pinned; live lane against a real A2A peer (owner) (P24-10)
 - **ACC-K13-1** Inbound normalisation: command detection, burst text batching, per-platform dedupe, reply context …
   - `tests/unit/gateway/core/test_events.py::test_commands_are_detected`
@@ -1665,7 +1671,13 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/rooms/test_driver.py::test_a_task_whose_lease_generation_changed_settles_indeterminate`
   - `tests/unit/gateway/rooms/test_driver.py::test_stop_directives`
   - `tests/unit/gateway/rooms/test_rpc.py::test_promote_needs_confirm_and_demote_needs_a_newer_lineage`
-  - Review: daemon mounting of the driver and `groups.*` (lead wiring, P24-06); desktop room views (P24-31)
+  - `tests/unit/gateway/rooms/test_loop.py::test_two_members_take_turns_after_a_person_speaks`
+  - `tests/unit/gateway/rooms/test_loop.py::test_a_member_held_by_a_stop_directive_takes_no_turn`
+  - `tests/unit/gateway/rooms/test_loop.py::test_groups_stop_stops_the_running_turn`
+  - `tests/unit/gateway/rooms/test_loop.py::test_a_turn_running_under_a_dead_process_is_not_run_again`
+  - `tests/unit/gateway/rooms/test_loop.py::test_a_new_process_finishes_the_owed_chain_and_never_replays_old_ones`
+  - `tests/integration/gateway/multiplex/test_room_two_members.py::test_a_room_with_two_members_taking_turns`
+  - Review: desktop room views (P24-31)
 - **ACC-K38-2** Bot-to-bot messaging and peer gateways (`message_agent`, canonical chats, `indus peer`)
   - `tests/unit/tools/builtin/test_message_agent.py::test_retry_happens_at_most_once`
   - `tests/unit/tools/builtin/test_message_agent.py::test_non_retryable_failure_is_not_retried`
@@ -1675,6 +1687,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/rooms/test_peers.py::test_a_private_address_needs_the_lan_flag`
   - `tests/unit/cli/commands/test_peer.py::test_add_with_a_key_from_stdin`
   - `tests/unit/state/test_bot_chat.py::test_canonical_chat_survives_compression`
+  - `tests/unit/gateway/rooms/test_peers.py::test_the_api_server_itself_serves_the_bot_routes`
+  - `tests/unit/gateway/daemon/test_host_tools.py::test_the_daemon_registers_message_agent_and_a2a_call`
+  - `tests/unit/gateway/daemon/test_host_tools.py::test_the_bot_transport_is_installed_for_the_profile_and_removed_at_stop`
 - **ACC-K37-1** Relay connector: signed dial-out WebSocket, capability descriptors, reconnect backoff, dormant buffering, one adapter per fronted platform with op gating and the router rule
   - `tests/unit/gateway/relay/test_transport.py::test_a_fake_connector_with_max_len_zero_gives_4096`
   - `tests/unit/gateway/relay/test_transport.py::test_bad_hmac_is_rejected_by_the_fake_and_start_is_not_retryable`
@@ -1683,7 +1698,11 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/relay/test_adapter.py::test_relay_adapter_passes_the_contract_suite`
   - `tests/unit/gateway/relay/test_adapter.py::test_ops_not_advertised_are_capability_refusals_and_never_reach_the_wire`
   - `tests/unit/gateway/relay/test_adapter.py::test_router_resolution_table`
-  - Review: daemon wiring (front start, one adapter per descriptor, router attach) lands at integration; live lane against a real connector (owner) (P24-08, P24-09)
+  - `tests/integration/gateway/test_relay_part.py::test_a_relayed_platform_chats_and_delivers_through_the_connector`
+  - `tests/integration/gateway/test_relay_part.py::test_the_connectors_interrupt_stops_the_running_turn`
+  - `tests/integration/gateway/test_relay_part.py::test_an_idle_daemon_leaves_the_connector_dormant_and_the_next_start_replays`
+  - `tests/integration/gateway/test_relay_part.py::test_an_enabled_native_adapter_keeps_its_platform`
+  - Review: live lane against a real connector (owner) (P24-08, P24-09)
 - **ACC-K45-1** Discord voice channels: `/voice join|leave|status`, per-speaker utterances become turns keyed on the voice channel, replies spoken through a mixer, idle leave, clear answers when voice cannot work
   - `tests/unit/gateway/adapters/discord/test_voice.py::test_two_speakers_become_two_turns_keyed_on_the_voice_channel`
   - `tests/unit/gateway/adapters/discord/test_voice.py::test_the_bot_leaves_after_300_seconds_without_speech`
@@ -1706,6 +1725,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_supervised_daemon_never_idles_out`
   - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_due_cron_job_keeps_the_daemon`
   - `tests/unit/gateway/daemon/test_idle_exit.py::test_ensure_waits_out_an_idle_exiting_daemon`
+  - `tests/unit/gateway/daemon/test_idle_exit.py::test_a_relayed_platform_does_not_keep_the_daemon_but_a_room_turn_does`
   - `tests/e2e/service/test_shared_backend.py::test_an_auto_started_daemon_idles_out_and_the_next_chat_restarts_it_silently`
 - **ACC-K50-1** Multiplexed profiles fail closed: a served secondary profile reads credentials and allowlists only from its own scope (never the launch process env); one host gateway per user serves every profile and a second run attaches
   - `tests/unit/gateway/multiplex/test_scope.py::test_a_secondary_without_its_own_allowlist_denies`
@@ -1713,16 +1733,20 @@ Checked by `python -m tooling.checks acceptance`.
   - `tests/unit/gateway/multiplex/test_no_env_reads.py::test_the_gateway_never_reads_the_process_env`
   - `tests/integration/gateway/multiplex/test_attach_second_run.py::test_a_second_run_for_a_served_profile_attaches_after_identify`
   - `tests/unit/gateway/multiplex/test_host.py::test_tickets_are_minted_for_served_profiles_only`
-  - Review: daemon wiring of the host, scopes and binder into `gateway run` (P24 lead wiring)
+  - `tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_two_profiles_served_by_one_gateway_with_isolated_secrets`
+  - `tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_a_served_profile_is_attached_over_its_own_websocket`
+  - `tests/unit/service/remote/test_profile_guard.py::test_a_served_profiles_own_routed_scope_may_serve_its_daemon`
 - **ACC-K50-2** Profile routes: conjunctive match, most specific wins (user 16, thread 8, chat 4, guild 2), only for the receiving bot; the receiving bot answers, never another by guess
   - `tests/unit/gateway/multiplex/test_routes.py::test_specificity_table`
   - `tests/unit/gateway/multiplex/test_routes.py::test_a_route_for_bot_a_is_ignored_for_bot_b`
   - `tests/unit/gateway/multiplex/test_routes.py::test_a_restored_source_with_two_possible_owners_delivers_nowhere`
   - `tests/unit/gateway/multiplex/test_routes.py::test_the_receiving_bot_survives_a_restart`
+  - `tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_a_routed_message_runs_in_its_profile_and_is_answered_by_the_bot_that_received_it`
 - **ACC-K50-3** Shared ingress: secondary profiles' HTTP apps under `/p/<profile>/` on the default listener, checked with their own secrets and keys; anything unmounted is 404, never the default's handler
   - `tests/contract/gateway/multiplex/test_shared_ingress.py::test_b_secret_is_accepted_under_its_prefix_and_refused_unprefixed`
   - `tests/contract/gateway/multiplex/test_shared_ingress.py::test_a_profile_without_that_app_gets_404_not_the_default`
   - `tests/contract/gateway/multiplex/test_shared_ingress.py::test_api_keys_are_per_profile_under_the_prefix`
+  - `tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_a_served_profile_http_is_reached_under_its_prefix_with_its_own_keys`
 - **ACC-K51-1** CLI attach: `indus`, `chat`, `-q` and `-z` ensure the daemon and run their turns there by default; leaving only detaches
   - `tests/unit/cli/test_attach.py::test_chat_q_attaches_by_default`
   - `tests/unit/cli/test_attach.py::test_z_attaches_by_default_and_prints_only_the_reply`
@@ -1966,6 +1990,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `apps/desktop/src/app/artifacts/ArtifactsPage.test.tsx::a remote artifact download carries the originating profile`
   - `tests/unit/cli/importers/test_sessions.py::test_preview_lists_mapped_messages_for_claude_code`
   - `tests/unit/cli/importers/test_sessions.py::test_an_unknown_format_is_refused`
+  - `tests/contract/web/test_learning_routes.py::test_the_graph_has_the_journey_nodes_in_the_map_shape`
 - **ACC-N17-1** Connections registry and remote auth: one local entry, quarantine, dedupe, access-proxy header drop list, native sign-in state check, both legs tested, one server ticket per WebSocket dial
   - `apps/desktop/electron/connections/registry.test.ts::a malformed entry survives a save verbatim`
   - `apps/desktop/electron/connections/registry.test.ts::removing the primary retargets the local entry`
@@ -1989,6 +2014,7 @@ Checked by `python -m tooling.checks acceptance`.
   - `apps/desktop/src/bots/canonicalChat.test.ts::two concurrent clicks create one chat`
   - `apps/desktop/src/bots/canonicalChat.test.ts::the canonical chat is absent from the sessions list; side-chats stay`
   - `apps/desktop/src/bots/GroupRoom.test.tsx::group discard needs confirmation`
+  - `tests/contract/web/test_profiles_models_routes.py::test_the_list_carries_each_bot_s_forever_chat`
 - **ACC-N24-1** Tray with a StatusNotifier host hides on close and comes back when the host leaves; without a host it is refused
   - `apps/desktop/e2e/core/surfaces.electron.test.ts::tray with a host: closing hides to the tray; the host going away brings windows back`
   - `apps/desktop/e2e/core/surfaces.electron.test.ts::tray without a StatusNotifier host: switched on, it stays unavailable and Settings says why`
@@ -2011,6 +2037,9 @@ Checked by `python -m tooling.checks acceptance`.
   - `apps/desktop/src/panes/preview/annotate.test.ts::leaving the mode, waiting or removing pins sends nothing`
   - `apps/desktop/src/panes/preview/automation.test.ts::a request for a session this window does not show is declined not_shown`
   - `tests/unit/tools/builtin/test_preview.py::test_tools_absent_outside_desktop_sessions`
+  - `tests/unit/service/test_preview_requests.py::test_every_window_declining_is_not_shown_and_no_window_is_undelivered`
+  - `tests/unit/service/test_preview_requests.py::test_the_daemon_gives_only_window_sessions_the_preview_tools`
+  - `apps/desktop/src/gateway/previewRequests.test.ts::another session's request is declined not shown, never answered`
 - **ACC-N15-1** Capabilities page: a scope switch reloads only the profile-scoped tabs; an install deep link confirms first; plugin badges
   - `apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx::a scope switch reloads the profile-scoped tabs only`
   - `apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx::an install deep link shows the confirmation before any call`

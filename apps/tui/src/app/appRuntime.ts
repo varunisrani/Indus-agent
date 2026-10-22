@@ -16,6 +16,7 @@ import {
 import type { CatalogEntry, CommandsCatalogResult, SessionRow } from "@indus/protocol";
 import { askConfirm, openPager } from "../cards/openCards.ts";
 import { createServerRequestCards, type ServerRequestCards } from "../cards/serverRequests.ts";
+import { WAKE_DETECTED, WakeHandOff } from "../commands/wakeHandOff.ts";
 import { detailsStore, readOverrides } from "../components/details.ts";
 import { readStatusFields } from "../components/statusSegments.ts";
 import { scrollBy, scrollToBottom } from "../components/virtualRows.ts";
@@ -36,7 +37,7 @@ import type { SlashContext } from "../slash/types.ts";
 import { captureDestination, isCurrent } from "../state/destination.ts";
 import { type Card, overlayStore } from "../state/overlayStore.ts";
 import { transcriptStore } from "../state/transcriptStore.ts";
-import { STATUS_READY, uiStore } from "../state/uiStore.ts";
+import { STATUS_READY, STATUS_WORKING, uiStore } from "../state/uiStore.ts";
 import { PromptQueue } from "../submit/queue.ts";
 import { Submitter } from "../submit/submission.ts";
 import type { ExitReason } from "../terminal/lifecycle.ts";
@@ -125,6 +126,8 @@ export class AppRuntime {
   readonly recovery: Recovery;
   readonly keyActions: KeyActions;
   readonly switcherOps: SwitcherOps;
+  /** The wake word's hand-off: `wake.detected` → one voice take → a prompt (P24-20). */
+  readonly wake: WakeHandOff;
   readonly history: { entries(): readonly string[]; push(text: string): unknown };
   private readonly options: RuntimeOptions;
   private readonly clock: Clock;
@@ -232,6 +235,18 @@ export class AppRuntime {
       ...(options.attached === true ? { restartLine: ATTACH_RESTART_LINE } : {}),
     });
 
+    this.wake = new WakeHandOff({
+      rpc: this.rpc,
+      system,
+      send: (text) => void this.submitter.dispatch(text),
+      status: (text) =>
+        this.controller.setStatus(
+          text ?? (uiStore.getState().busy ? STATUS_WORKING : STATUS_READY),
+        ),
+      questionOpen: () => overlayStore.getState().blocked(),
+      sessionId: () => uiStore.getState().sid,
+    });
+
     this.handle = createEventHandler({
       controller: this.controller,
       sys: system,
@@ -290,6 +305,8 @@ export class AppRuntime {
     } else if (event.type === "transport.exit") {
       this.lastExit = { code: event.code, signal: event.signal, stderrLast: event.stderr_last };
       if (!this.disposed) this.park();
+    } else if ((event as { type: string }).type === WAKE_DETECTED) {
+      void this.wake.detected(event as { phrase?: unknown });
     } else if (event.type === "tool.completed" && event.name === "clarify") {
       this.cards.flushOpenClarify();
     } else if (event.type === "transport.attach_failed") {

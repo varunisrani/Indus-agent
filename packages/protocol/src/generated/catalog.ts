@@ -1080,6 +1080,19 @@ export const METHODS = deepFreeze({
     "params": "SlashExecParams",
     "result": "SlashExecResult"
   },
+  "voice.listen": {
+    "errors": [
+      "PARSE_ERROR",
+      "INVALID_REQUEST",
+      "METHOD_NOT_FOUND",
+      "INVALID_PARAMS",
+      "INTERNAL_ERROR",
+      "UNKNOWN_PARAM_KEY",
+      "PROVIDER_UNAVAILABLE"
+    ],
+    "params": "VoiceListenParams",
+    "result": "VoiceListenResult"
+  },
   "voice.speak": {
     "errors": [
       "PARSE_ERROR",
@@ -1264,6 +1277,7 @@ export interface MethodTypes {
   "sessions.watch": { params: T.SessionsWatchParams; result: T.SessionsWatchResult };
   "shell.exec": { params: T.ShellExecParams; result: T.ShellExecResult };
   "slash.exec": { params: T.SlashExecParams; result: T.SlashExecResult };
+  "voice.listen": { params: T.VoiceListenParams; result: T.VoiceListenResult };
   "voice.speak": { params: T.VoiceSpeakParams; result: T.VoiceSpeakResult };
   "voice.transcribe": { params: T.VoiceTranscribeParams; result: T.VoiceTranscribeResult };
   "wake.feed": { params: T.WakeFeedParams; result: T.WakeFeedResult };
@@ -1359,6 +1373,14 @@ export const SERVER_REQUEST_KINDS = deepFreeze({
     "answer": "ClarifyAnswer",
     "request": "ClarifyRequest"
   },
+  "preview.act": {
+    "answer": "PreviewActAnswer",
+    "request": "PreviewActRequest"
+  },
+  "preview.read": {
+    "answer": "PreviewReadAnswer",
+    "request": "PreviewReadRequest"
+  },
   "secret": {
     "answer": "SecretAnswer",
     "request": "SecretRequest"
@@ -1374,6 +1396,8 @@ export type ServerRequestKind = keyof typeof SERVER_REQUEST_KINDS;
 export interface ServerRequestTypes {
   "approval": { answer: T.ApprovalAnswer; request: T.ApprovalRequest };
   "clarify": { answer: T.ClarifyAnswer; request: T.ClarifyRequest };
+  "preview.act": { answer: T.PreviewActAnswer; request: T.PreviewActRequest };
+  "preview.read": { answer: T.PreviewReadAnswer; request: T.PreviewReadRequest };
   "secret": { answer: T.SecretAnswer; request: T.SecretRequest };
   "sudo": { answer: T.SudoAnswer; request: T.SudoRequest };
 }

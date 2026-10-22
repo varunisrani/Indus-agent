@@ -37,7 +37,9 @@ __all__ = [
     "FINISH_REASON",
     "MAX_HOOK_NUDGES",
     "MAX_VERIFY_NUDGES",
+    "HostFor",
     "PreVerifyGate",
+    "PreVerifyHook",
     "StopContext",
     "StopDecision",
     "StopGate",
@@ -167,12 +169,14 @@ class StopGates:
 def continuation_rows(
     decision: StopDecision, answer: str, *, reasoning: str | None = None
 ) -> tuple[TranscriptRow, TranscriptRow]:
-    """The interim answer row and the gate's message row, in that order."""
+    """The interim answer row and the gate's message row, in that order. Both are scaffold for
+    a gate that is not durable, so dropping them at the end of the turn keeps roles alternating."""
     interim = TranscriptRow(
         role="assistant",
         content=answer,
         reasoning=reasoning,
         finish_reason=FINISH_REASON,
+        scaffold=not decision.durable,
         extra={"stop_gate": decision.gate},
     )
     nudge = TranscriptRow(

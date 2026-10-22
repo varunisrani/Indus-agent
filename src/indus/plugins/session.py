@@ -9,7 +9,9 @@ calls ``plugin_options`` once per session to get ``AgentOptions`` with:
 - ``llm_context``: the prologue's per-turn source, the bus's ``pre_llm_call`` (P13-17), whose text
   rides the user message, never the system prompt;
 - ``builder``: wrapped so the plugin prompt sections are rendered once and frozen (P13-18). The
-  unwrapped builder stays the one subagents start from.
+  unwrapped builder stays the one subagents start from;
+- ``pre_verify``: the bus's ``pre_verify`` hook for the agent's stop gates (P24-17; asked only after
+  code edits, and only while a plugin registered that hook).
 """
 
 from __future__ import annotations
@@ -20,12 +22,13 @@ from typing import Any
 
 from indus.core.agent import AgentOptions
 from indus.core.prompt.builder import PromptBuilder
+from indus.core.stop_gates import PreVerifyHook
 from indus.core.turn_state import LlmContextSource
 from indus.plugins.context import PluginHost
 from indus.plugins.hooks import AskApproval, HookBus, PluginToolHooks
 from indus.plugins.prompt_sections import FrozenSections, PluginSectionsBuilder
 
-__all__ = ["llm_context_source", "plugin_options"]
+__all__ = ["llm_context_source", "plugin_options", "pre_verify_source"]
 
 
 def llm_context_source(bus: HookBus) -> LlmContextSource:
@@ -37,6 +40,17 @@ def llm_context_source(bus: HookBus) -> LlmContextSource:
         return await bus.pre_llm_call(**dict(payload))
 
     return source
+
+
+def pre_verify_source(bus: HookBus) -> PreVerifyHook:
+    """The stop gates' ``pre_verify`` over ``bus``: the first ``continue`` message, or None."""
+
+    async def hook(**payload: Any) -> str | None:
+        if not bus.has("pre_verify"):
+            return None
+        return await bus.pre_verify(**payload)
+
+    return hook
 
 
 def plugin_options(
@@ -65,6 +79,7 @@ def plugin_options(
         options,
         hooks=PluginToolHooks(bus, ask_approval=ask_approval),
         llm_context=llm_context_source(bus),
+        pre_verify=pre_verify_source(bus),
         builder=builder,
         subagent_builder=options.subagent_builder or base,
     )

@@ -8,6 +8,10 @@ counters and every surface that could not start (``problems``) are rows of the r
 (``surfaces``); a surface that cannot start never stops the daemon (the platforms and cron keep
 running). At shutdown the surfaces close first (their running turns and API-started cron runs are
 cancelled and awaited), then their session services.
+
+Under multiplexing (P24-04) the host daemon's listeners serve a ``SharedIngress`` around their own
+app, and a served secondary binds nothing: its surfaces are mounted at ``/p/<profile>/`` on the
+host's listeners (status row ``{"mounted": "/p/<profile>/"}``) and unmounted when it stops.
 """
 
 from __future__ import annotations
@@ -55,15 +59,27 @@ class HttpPart(DaemonPart):
             on_status=status,
             tickets=daemon.tickets,
         )
+        mux = daemon.mux
+        if mux is not None and daemon.parent is None:
+            host.front = mux.ingress_front
+        elif mux is not None:
+            host.mount = lambda name, app, paths: mux.mount(daemon, name, app, paths)
         self.surfaces = await start_http_surfaces(host)
         for problem in self.surfaces.problems:
             name, _, why = problem.partition(": ")
             key = "api_server" if name == "API server" else "webhook"
             daemon.status.set_surface(key, {"problem": why or problem})
-        if self.surfaces.webhook is not None:
+            if mux is not None and daemon.parent is None:
+                mux.ingress.pop(key, None)  # nothing listens there: nothing can be shared
+        for key, prefix in self.surfaces.mounted.items():
+            daemon.status.set_surface(key, {"mounted": prefix})
+        if self.surfaces.webhook is not None and "webhook" not in self.surfaces.mounted:
             daemon.status.set_surface("webhook", {"listening": True})
 
     async def stop(self, daemon: GatewayDaemon) -> None:
+        mux = daemon.mux
+        if mux is not None and daemon.parent is not None:
+            mux.unmount(daemon)
         surfaces, self.surfaces = self.surfaces, None
         if surfaces is not None:
             try:

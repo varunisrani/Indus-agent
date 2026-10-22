@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 if TYPE_CHECKING:
     from indus.gateway.daemon.process import GatewayDaemon
 
-__all__ = ["PART_FACTORIES", "DaemonPart", "Stage", "load_parts"]
+__all__ = ["PART_FACTORIES", "ROOT_PART_FACTORIES", "DaemonPart", "Stage", "load_parts"]
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +58,11 @@ class DaemonPart:
     async def stop(self, daemon: GatewayDaemon) -> None:
         """Stop (reverse order). Must not raise; bounded by the shutdown watchdog."""
 
+    def busy_reason(self) -> str | None:
+        """Why this part keeps an auto-started daemon from idling out (P17-23), or None. Loop-only
+        facts: it must not block or await."""
+        return None
+
     def __repr__(self) -> str:
         return f"<{type(self).__name__} {self.name} {self.stage.name.lower()}>"
 
@@ -69,13 +74,23 @@ PART_FACTORIES: tuple[str, ...] = (
     "indus.gateway.extras:create",
     "indus.gateway.http.part:create",
     "indus.gateway.board_part:create",
+    "indus.gateway.relay.part:create",
+    "indus.gateway.rooms.loop:create",
 )
 """``"module:attr"`` factories of the parts every gateway runs (each feature adds its line):
 the control socket with the reconnect watcher and gateway hooks (P15-27, P15-29; CONTROL), the
 delivery-ledger sweep (P15-19; RECOVERY), the platform deliverers and channel directory (P15-20;
 BACKGROUND), cron, chat prompts and media intake (P15-21..23; BACKGROUND), the API server and
 the webhook receiver (P15-30..32; BACKGROUND, only when enabled), the task-board watchers and
-dispatcher (P24-12; BACKGROUND, boards that exist, ``kanban.dispatch_in_gateway``)."""
+dispatcher (P24-12; BACKGROUND, boards that exist, ``kanban.dispatch_in_gateway``), the relay
+connector's front (P24-08/09; BACKGROUND, only with ``gateway.relay.url``), the group-room loop
+(P24-06; BACKGROUND)."""
+
+ROOT_PART_FACTORIES: frozenset[str] = frozenset(
+    {"indus.gateway.board_part:create", "indus.gateway.rooms.loop:create"}
+)
+"""Parts over the install root's shared state (task boards, group rooms): a multiplexing host runs
+them once, never again in each served profile (P24-01..04)."""
 
 
 def load_parts(

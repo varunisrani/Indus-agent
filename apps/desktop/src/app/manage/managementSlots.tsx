@@ -1,8 +1,8 @@
-// The management pages and overlays a profile workspace mounts (P24-27, P24-28, P24-31): main.tsx
-// spreads these into the workspace's slots next to the chat and settings slots.
+// The management pages and overlays a profile workspace mounts (P24-27, P24-28): main.tsx spreads
+// these into the workspace's slots next to the chat and settings slots. The Bots page (P24-31) is
+// not a slot: it is a bundled contribution's route (main.tsx, `contrib/shell.tsx`).
 
 import { useLocation } from "react-router";
-import { BotsPage } from "../../bots/BotsPage.tsx";
 import type { RpcLike } from "../../bots/canonicalChat.ts";
 import { desktopPluginSource } from "../../contrib/host.ts";
 import type { GatewayConnection } from "../../gateway/connectionStore.ts";
@@ -74,7 +74,6 @@ export function managementSlots(deps: { connection: GatewayConnection; profile: 
       artifacts: () => <ArtifactsPage profile={profile} />,
       "command-center": () => <CommandCenter profile={profile} />,
       "learning-map": () => <LearningMap profile={profile} />,
-      bots: () => <BotsPage rpc={rpcOf(connection)} />,
       // P24-26: the counts from the daemon and the Desktop column from the plugin loader (P24-32)
       capabilities: () => (
         <CapabilitiesRoute

@@ -236,6 +236,7 @@ def test_per_method_deadlines(scope: Scope) -> None:
         "wake.start": 180.0,  # P24-20: a first start may load a model
         "voice.transcribe": 300.0,  # P24-35
         "voice.speak": 300.0,
+        "voice.listen": 3900.0,  # P24-20 wiring: the longest take, then the transcription
     }
 
 

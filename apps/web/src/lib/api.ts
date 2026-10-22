@@ -91,6 +91,7 @@ export const PROFILE_SCOPED_FAMILIES = [
   "/api/cron",
   "/api/daemon",
   "/api/env",
+  "/api/learning",
   "/api/logs",
   "/api/mcp",
   "/api/memory",

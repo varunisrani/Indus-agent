@@ -35,6 +35,7 @@ disabled never hides an enabled relay.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import mimetypes
 import secrets
@@ -261,6 +262,7 @@ class RelayFront:
         self.media = media
         self.on_interrupt = on_interrupt
         self._adapters: dict[str, RelayAdapter] = {}
+        self._gate: asyncio.Event | None = None
         transport.set_event_handler(self._event)
         transport.set_interrupt_handler(self._interrupt)
         transport.set_fatal_handler(self._fatal)
@@ -278,7 +280,21 @@ class RelayFront:
     def fronts(self, platform: str) -> bool:
         return self.transport.fronts(platform)
 
+    def hold(self) -> None:
+        """Keep events of platforms without an adapter yet until ``release`` (the daemon's
+        start: the connector replays what it buffered right after the handshake, before the
+        adapters are attached; an event handed over is acknowledged and never replayed again)."""
+        self._gate = asyncio.Event()
+
+    def release(self) -> None:
+        gate, self._gate = self._gate, None
+        if gate is not None:
+            gate.set()
+
     async def _event(self, platform: str, event: Mapping[str, Any]) -> None:
+        gate = self._gate
+        if gate is not None and platform not in self._adapters:
+            await gate.wait()
         adapter = self._adapters.get(platform)
         if adapter is None:
             log.warning("relay: dropped an event for %s: no adapter is connected for it", platform)

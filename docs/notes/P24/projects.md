@@ -74,3 +74,11 @@ Done (2026-10-21).
 Wired: `PROJECT_METHODS` are in the method catalogue (codegen) and served by the daemon's WebSocket
 and the TUI bridge; a session created over the WebSocket with a folder inside a project joins it
 (`projects_rpc.join_session`; profiles without `projects.db` are left alone).
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: `SessionService.create` joins the project owning the create `cwd` (`projects_rpc.join_session`),
+so every surface (CLI, TUI, ACP, the daemon's WebSocket) does it; the WebSocket method's own call was
+removed (it went through the same service). Profiles without `projects.db` are untouched. Tests:
+`tests/unit/service/test_lsp_host.py::test_a_session_created_in_a_project_folder_joins_it`,
+`::test_a_profile_without_projects_gets_no_projects_file`.

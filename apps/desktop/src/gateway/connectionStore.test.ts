@@ -260,7 +260,12 @@ describe("GatewayConnection", () => {
     await settle();
     const [announce] = h.server.calls("client.capabilities");
     expect(announce?.params).toEqual({ features: [...CLIENT_FEATURES], surface: "gui" });
-    expect(CLIENT_FEATURES).toEqual(["server_requests", "request.decline"]);
+    expect(CLIENT_FEATURES).toEqual([
+      "server_requests",
+      "server_requests.preview.act",
+      "server_requests.preview.read",
+      "request.decline",
+    ]);
     const [resubscribe] = h.server.calls("session.subscribe");
     expect(Number(resubscribe?.id)).toBeGreaterThan(Number(announce?.id));
   });

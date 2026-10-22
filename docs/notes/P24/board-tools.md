@@ -79,3 +79,13 @@ Compare checklist (reopened the files above):
 ## Status
 
 Done (2026-10-21).
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: the tool round offers `delivery_origin` (`{platform, chat_id, thread_id}`) when the session's
+runtime has an origin lookup (`SessionRuntime.delivery_origin`, `AgentOptions.delivery_origin`); the
+gateway daemon's chat sessions look it up in the admission pipeline (`origin_source`, the chat of
+the session's last admitted message), so `kanban_create` subscribes that chat — and cron's
+`cronjob_manage` gets the same origin (its gap closed too). Tests:
+`tests/unit/core/test_stop_gate_wiring.py::test_a_gateway_chat_reaches_tools_as_delivery_origin`,
+`tests/unit/gateway/daemon/test_host_tools.py::test_a_session_chat_is_its_delivery_origin`.

@@ -83,3 +83,26 @@ unchanged). The loop and dispatcher wiring is for the lead:
    budget-exhaustion fallback, and return (the loop iterates again);
 3. register `LspStopGate()` first, then `VerifyOnStopGate(host_for, enabled=lambda: verify.on_stop)`,
    then `PreVerifyGate(plugin_hooks.pre_verify, limit=verify.max_hook_nudges)`.
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: every agent's tool seam is `LspToolHooks(<host seam>)` (`core.agent._edit_seam`, all hosts and
+subagents, once — a seam already wrapped is kept), so the turn's edited files are recorded with LSP
+off too; `core.loop._handle_answer` asks `SessionRuntime.stop_gates` after the intent-ack check and
+before the repetition check (`_sent_back`): a decision adds `continuation_rows`, flushes, keeps the
+answer as `TurnState.gated_answer` (the turn's answer if the budget runs out: `_no_grace` and an
+empty grace summary use it) and the loop goes on; the gates' counts and the turn's edit list are
+dropped at turn end (`_forget_gates`). Gates: `core.stop_gates_lsp.standard_gates` — `LspStopGate`,
+`VerifyOnStopGate` (session terminal environment via `runtime.environments`, `verify.on_stop` read at
+each answer, `verify.max_stop_attempts`, `verify.phase_timeout`), `PreVerifyGate` when the host gives
+`AgentOptions.pre_verify` (plugins: `plugins.session.pre_verify_source`). Hosts may pass
+`AgentOptions.stop_gates`. DEMO (Done-when item): `tests/integration/core/test_lsp_stop_gate.py`
+— a real `SessionService` with `LspUpkeep`, the real `write_file`, a language server over stdio:
+the edit's error arrives after the tool result, the LSP gate sends the agent back with it (durable
+row after the interim answer) and the turn ends on the fix. Also `tests/unit/core/test_stop_gate_wiring.py`.
+ACC-A28-1 / ACC-A28-2 rows updated.
+
+Decisions for the lead (wiring): `continuation_rows` makes both rows scaffold for a gate that is not
+durable (the interim answer was durable, so dropping the scaffold nudge at the end left two
+assistant rows in a row in the store); subagents get the standard gates too (no `pre_verify`); the
+review fork builds its runtime itself and has none.

@@ -7,8 +7,17 @@ describe("/wake", () => {
   it("on sends consent from the explicit command and says what happened", async () => {
     const { server, ctx, out } = slashSetup();
     server.handle("wake.start", () => ({ started: true, phrase: "hey indus" }));
+    const deadlines: unknown[] = [];
+    const inner = ctx.rpc;
+    ctx.rpc = {
+      call: (method, params, options) => {
+        deadlines.push(options?.timeoutMs);
+        return inner.call(method, params, options);
+      },
+    };
     await createDispatcher(ctx).run("/wake on");
     expect(server.calls("wake.start")[0]?.params).toEqual({ surface: "tui", consent: true });
+    expect(deadlines).toEqual([190_000]); // a first start may load a model (server: 180 s)
     expect(out.lines.at(-1)).toContain("Listening for “hey indus”");
   });
 

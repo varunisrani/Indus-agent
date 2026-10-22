@@ -61,6 +61,12 @@ plugins' toolsets to each selection, gives each top-level agent the hooks-bus se
 plugin prompt sections, runs ``on_session_start`` after a session is attached and
 ``on_session_end`` before it is closed, and takes every registration back at ``aclose``.
 
+Language servers (P24-15/16, ``service.lsp_host``): ``lsp``, when given, joins the process's
+language-server tier before the first agent is built, trusts each attached session's folder for
+servers that run project code, and leaves the tier at ``aclose`` (the last service out stops the
+servers). Projects (P24-14): a session created with a ``cwd`` inside a project's folder joins that
+project (``projects_rpc.join_session``; profiles without projects are left alone).
+
 Daemon seams (P17-08, ``service.daemon_host``): ``broker_factory`` builds each session's broker
 (the daemon hands it the session's ``RequestBook``); with a ``turn_door`` every turn the service
 would start on its own — host injections, background-subagent results, undelivered steer text —
@@ -125,11 +131,12 @@ from indus.protocol.requests_port import AnswerModel
 from indus.providers.auxiliary import AuxClient, auto_title, generate_title
 from indus.providers.route import RuntimeRoute
 from indus.providers.types import Usage
-from indus.service import code_host
+from indus.service import code_host, projects_rpc
 from indus.service.admissions import Receipt
 from indus.service.broker import ServerRequestBroker
 from indus.service.code_host import KernelUpkeep
 from indus.service.event_log import Replay, ReplayGap, new_replay_epoch
+from indus.service.lsp_host import LspUpkeep
 from indus.service.maintenance import MaintenanceTimer
 from indus.service.mcp_host import McpUpkeep
 from indus.service.plugin_host import PluginUpkeep
@@ -279,6 +286,7 @@ class SessionService:
         plugins: PluginUpkeep | None = None,
         broker_factory: BrokerFactory | None = None,
         turn_door: TurnDoor | None = None,
+        lsp: LspUpkeep | None = None,
     ) -> None:
         self.scope = scope
         self.route = route
@@ -303,6 +311,7 @@ class SessionService:
         self.kernels = kernels
         self.mcp = mcp
         self.plugins = plugins
+        self.lsp = lsp
         self._input_probe: Callable[[str], bool] | None = None
         self._turn_end: list[TurnEndListener] = []
         self._moved: list[Callable[[str, str], object]] = []
@@ -466,6 +475,10 @@ class SessionService:
             session_id = new_session_id(self.scope.clock)
             options, selection = self._options_for(params, source)
             await self._attach(session_id, options=options, selection=selection)
+            if params.cwd:
+                await run_blocking(
+                    projects_rpc.join_session, self.scope, session_id, params.cwd, label="project"
+                )
             self._start_maintenance()
             if params.title:
                 try:
@@ -580,6 +593,9 @@ class SessionService:
                 await self.plugins.start()
                 selection = self.plugins.selection(selection)
                 options = self.plugins.options(options, session_id)
+            if self.lsp is not None:
+                self.lsp.start()
+                self.lsp.trust(options.cwd or options.session_fields.get("cwd"))
             agent = await self._factory(session_id, sink, broker, options, selection)
             if self.mcp is not None:
                 self.mcp.attach(agent)
@@ -1071,6 +1087,8 @@ class SessionService:
             await self.mcp.shutdown()
         if self.kernels is not None:
             await self.kernels.shutdown()
+        if self.lsp is not None:
+            await self.lsp.shutdown()
 
     def _ids_leading_to(self, session_id: str) -> list[str]:
         """The older ids that continue (after compression) as ``session_id``."""

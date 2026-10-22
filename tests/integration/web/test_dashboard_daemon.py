@@ -13,7 +13,8 @@ attached to the same session.
   answered there and the CLI's card closes;
 - the store holds one user row per prompt, all in the one session;
 - the dashboard's token (handed over in ``INDUS_DASHBOARD_SESSION_TOKEN``, the desktop shell's
-  way) reaches neither the PTY child's environment nor any URL.
+  way) reaches neither the PTY child's environment nor any URL;
+- the dashboard runs with ``CI=true`` (as on a CI runner) and the TUI in its PTY still draws.
 """
 
 from __future__ import annotations
@@ -107,7 +108,12 @@ def stack(tmp_path: Path, renderer: Path, token: str) -> Iterator[WebStack]:
             APPROVAL_TURN,
             [{"text": ["Cleaned ", "up."]}],
         ],
-        "dashboard": {"host": "127.0.0.1", "env": {"INDUS_DASHBOARD_SESSION_TOKEN": token}},
+        # CI=true as on a CI runner: the PTY child inherits it, and the TUI must still draw
+        # (Ink turns non-interactive under CI unless told otherwise; wave 42 integration).
+        "dashboard": {
+            "host": "127.0.0.1",
+            "env": {"INDUS_DASHBOARD_SESSION_TOKEN": token, "CI": "true"},
+        },
     }
     web = WebStack(spec)
     try:

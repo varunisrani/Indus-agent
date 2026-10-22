@@ -18,6 +18,7 @@ import { settingsSlots } from "./app/settingsSlots.tsx";
 import { applyStoredTheme } from "./app/theme.tsx";
 import { BotsPage, BotsSurface, botsContribution, registryHost } from "./bots/BotsPage.tsx";
 import { startDesktopPlugins } from "./contrib/host.ts";
+import { mirrorPaneContributions } from "./contrib/shell.tsx";
 import { ConnectionStore } from "./gateway/connectionStore.ts";
 import { translate } from "./i18n/index.tsx";
 import { registerWorkingPanes } from "./panes/d2Panes.tsx";
@@ -70,7 +71,7 @@ async function start(): Promise<void> {
             profile: workspace.profile,
           }),
           ...settings,
-          pages: manage.pages, // P24-27, P24-28, P24-31
+          pages: manage.pages, // P24-27, P24-28 (Bots, P24-31, is a contributed route)
           overlays: { ...manage.overlays, ...settings.overlays },
         };
       }),
@@ -82,8 +83,22 @@ async function start(): Promise<void> {
   connections.setPrimary(initial);
   bridge?.connection.onChanged((descriptor) => switcher.noteDescriptor(descriptor));
 
-  // the working panes (P20-28..31) join the pane registry before the layout reads it
+  // the working panes (P20-28..31) join the pane registry before the layout reads it; contributed
+  // panes (P24-32) follow the registry's `pane` area from then on
   registerWorkingPanes();
+  if (hasShell(query.kind)) mirrorPaneContributions();
+  // The Bots surface (P24-31) is a bundled contribution in the app's registry (P24-32): its route
+  // and its sidebar entry, both read by the shell. Registered before the first render so a link
+  // to /bots opens it.
+  if (hasShell(query.kind)) {
+    new BotsSurface(
+      registryHost(),
+      botsContribution(
+        () => <BotsPage rpc={rpcOf(switcher.foreground().connection)} />,
+        translate("nav.bots"),
+      ),
+    ).setEnabled(true);
+  }
   const sidebar = new SidebarModel();
   switcher.registerWipe((profile) => sidebar.wipe(profile));
   // only the main window keeps its arrangement: a popped-out or peer window must not overwrite it
@@ -114,17 +129,6 @@ async function start(): Promise<void> {
       />
     </StrictMode>,
   );
-  // The Bots surface (P24-31) is a bundled contribution in the app's registry (P24-32): its route
-  // and nav entry; the page itself is the workspace's `bots` page slot.
-  if (hasShell(query.kind)) {
-    new BotsSurface(
-      registryHost(),
-      botsContribution(
-        () => <BotsPage rpc={rpcOf(switcher.foreground().connection)} />,
-        translate("nav.bots"),
-      ),
-    ).setEnabled(true);
-  }
   // The wake word (P24-20) over the foreground connection; a detection dictates into the
   // composer (P24-35). Armed at launch only when it was turned on (consent stays with the switch).
   if (bridge !== null && query.kind === "main") {

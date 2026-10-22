@@ -429,6 +429,9 @@ describe("RpcChannel server requests (our server_request wire)", () => {
       kind: "secret",
       value: null,
     });
+    expect(
+      declineAnswer({ kind: "preview.read", request_id: "p", session_id: "s", what: "snapshot" }),
+    ).toEqual({ kind: "preview.read", ok: false, error: "not shown here", result: {} });
   });
 
   it("first answer wins when a handler resolves after the request was already answered", async () => {

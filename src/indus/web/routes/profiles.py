@@ -5,8 +5,10 @@ name is checked against the live profiles under the backend's root first, so a d
 (tombstoned) or unknown profile is 404 for reads and writes alike, and no route ever creates the
 folder of a profile that does not exist.
 
-- ``GET /api/profiles``: each live profile with its model, description, whether it has a persona,
-  plus the sticky profile (``active``) and the one this backend serves (``current``).
+- ``GET /api/profiles``: each live profile with its model, description, whether it has a persona
+  and its bot's forever-chat (``canonical_session: {session_id} | null``, P24-31: the same lookup
+  as ``bots.open``, read only), plus the sticky profile (``active``) and the one this backend
+  serves (``current``).
 - ``POST /api/profiles {name, clone_from?, clone_all?, description?, no_skills?, alias?}``,
   ``PATCH /api/profiles/{name} {new_name}`` and ``DELETE /api/profiles/{name}`` run the real
   ``indus profile create|rename|delete`` in a child process (``web`` may not import ``cli``; the
@@ -57,6 +59,7 @@ from indus.foundation.profiles import (
 )
 from indus.foundation.redact import redact_text
 from indus.foundation.scope import Scope
+from indus.service import bots_rpc
 from indus.web.actions import ActionBusy, Say, actions_of, child_env
 from indus.web.scope import ProfileScopes, ProfileUnknown, scopes_of
 from indus.web.state import dashboard_state
@@ -238,6 +241,7 @@ def list_all(scopes: Scopes) -> dict[str, Any]:
     root = scopes.base.root
     sticky = read_active(root)
     rows = [_row(scopes, pid, sticky) for pid in list_profiles(root)]
+    rows = bots_rpc.for_root(scopes.base).profile_rows(rows)  # P24-31 canonical_session
     return {"profiles": rows, "active": sticky, "current": scopes.base.profile_id}
 
 

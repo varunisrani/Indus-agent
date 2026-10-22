@@ -2977,7 +2977,7 @@ indus gateway [OPTIONS] COMMAND [ARGS]...
 
 | Command | What it does |
 |---|---|
-| [`indus gateway run`](#indus-gateway-run) | Run the messaging gateway in the foreground (one per profile). |
+| [`indus gateway run`](#indus-gateway-run) | Run the messaging gateway in the foreground (one per profile, or one serving every profile with gateway.multiplex_profiles). |
 | [`indus gateway ensure`](#indus-gateway-ensure) | Make sure the gateway runs (start it if needed) and print where clients attach. |
 | [`indus gateway api-key`](#indus-gateway-api-key) | Make, list and revoke the keys clients use with the gateway's HTTP API. |
 | [`indus gateway setup`](#indus-gateway-setup) | Set up a messaging platform step by step: credentials, who may talk to the bot, a connection check. |
@@ -2991,7 +2991,7 @@ indus gateway [OPTIONS] COMMAND [ARGS]...
 
 ### indus gateway run
 
-Run the messaging gateway in the foreground (one per profile).
+Run the messaging gateway in the foreground (one per profile, or one serving every profile with gateway.multiplex_profiles).
 
 ```text
 indus gateway run [OPTIONS]
@@ -3642,6 +3642,7 @@ indus dashboard [OPTIONS]
 | `--port` | INTEGER RANGE | `9119` | Port to bind (0 = any free one). |
 | `--no-open` | flag |  | Do not open a browser. |
 | `--isolated` | flag |  | Run a separate backend for this profile only. |
+| `--console` | flag |  | Turn on the admin console (a curated command set, not a shell). |
 
 ## indus serve
 

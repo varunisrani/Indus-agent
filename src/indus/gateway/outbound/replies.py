@@ -64,6 +64,11 @@ class PlatformReplies:
     def sender_for(self, platform: str) -> OutboundSender | None:
         return self._senders.get(platform.lower())
 
+    def sender_for_reply(self, source: Source, session_key: str | None) -> OutboundSender | None:
+        """The sender that answers ``source`` (by platform here; a multiplexing daemon picks the
+        bot that received the chat, P24-03)."""
+        return self.sender_for(str(source.platform))
+
     def add(self, platform: str, sender: OutboundSender) -> None:
         """Use ``sender`` for ``platform`` (an adapter connected or reconnected)."""
         self._senders[platform.lower()] = sender
@@ -81,7 +86,7 @@ class PlatformReplies:
         session_key: str | None = None,
         message_ref: str | None = None,
     ) -> DeliveryReport | None:
-        sender = self.sender_for(str(source.platform))
+        sender = self.sender_for_reply(source, session_key)
         if sender is None:
             log.warning("no outbound sender for %s; a %s reply was dropped", source.platform, kind)
             return None

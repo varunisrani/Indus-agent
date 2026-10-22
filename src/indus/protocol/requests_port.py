@@ -16,9 +16,17 @@ from typing import Any, Protocol
 
 from indus.protocol.envelope import ErrorObject
 from indus.protocol.events import CancelReason
-from indus.protocol.server_requests import ApprovalAnswer, ClarifyAnswer, SecretAnswer, SudoAnswer
+from indus.protocol.server_requests import (
+    ApprovalAnswer,
+    ClarifyAnswer,
+    PreviewActAnswer,
+    PreviewReadAnswer,
+    SecretAnswer,
+    SudoAnswer,
+)
 
 __all__ = [
+    "NOT_SHOWN_INDUS_CODE",
     "AnswerModel",
     "RequestNotAnswered",
     "RequestUnsupported",
@@ -26,7 +34,18 @@ __all__ = [
     "ServerRequestPort",
 ]
 
-type AnswerModel = ApprovalAnswer | ClarifyAnswer | SudoAnswer | SecretAnswer
+NOT_SHOWN_INDUS_CODE = "server_request.not_shown"
+"""``error.data.indus_code`` of a ``RequestUnsupported`` whose request every attached viewer
+declined as not shown there (a desktop window that does not show the session's preview, P24-25)."""
+
+type AnswerModel = (
+    ApprovalAnswer
+    | ClarifyAnswer
+    | SudoAnswer
+    | SecretAnswer
+    | PreviewActAnswer
+    | PreviewReadAnswer
+)
 """What a successful ask returns: the answer model of the asked kind."""
 
 

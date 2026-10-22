@@ -110,3 +110,33 @@ the end of that dictation resumes listening; with no composer on screen it liste
 Settings › Chat › Voice holds `WakeToggle`. Client deadline 190 s for `wake.start`
 (`gateway/timing.ts`). Owed: TUI `wake.detected` → voice mode and its 180 s deadline; the engine
 default (owner, D-16.800).
+
+## Wiring (wave 42, WC, D-16.799)
+
+Read: none (wiring).
+
+- TUI `wake.detected` → voice: `apps/tui/src/commands/wakeHandOff.ts`, wired in `AppRuntime`. On a
+  detection it says so, shows "listening…", asks for one take with `voice.listen` (new, below),
+  sends the transcript as the user's prompt (the submitter's normal path: echoed, queued while a
+  reply runs) or says why nothing was sent, and always calls `wake.resume`. Nothing is recorded
+  while a question card is open; a second detection during a take is ignored.
+- `voice.listen` (declared in `indus.protocol.voice`, codegen regenerated; handler
+  `service.voice_rpc.voice_listen`, served by the bridge and the daemon): one take on the
+  answering process's microphone — the one the wake word used and a detection released — with the
+  REPL voice mode's rules, then the profile's speech-to-text. The take rules moved, unchanged, from
+  `cli/voice.py` to `tools/builtin/media/voice_take.py` (`VoiceSettings`, `Capture`, `level`, new
+  `record_take`) so the service layer can use them; `cli.voice` re-exports them. Deadline 3,900 s
+  (the longest `voice.max_seconds` plus the transcription).
+- `/wake on` now waits 190 s (`Rpc.call(..., {timeoutMs})`, new optional third argument).
+- Engine default per the D-16.800 recommendation: `wake_word.engine` defaults to `sherpa`
+  (`DEFAULT_ENGINE`); `openwakeword` stays selectable where it installs.
+Tests: `tests/unit/service/test_voice_rpc.py::test_wake_detection_hands_the_microphone_to_one_take_then_listens_again`
+(real `WakeRpc`/`WakeService` + `voice_listen` on one scripted device: wake stream, take stream,
+wake stream again, never two open), `::test_listen_*`; `apps/tui/src/commands/wakeHandOff.test.ts`
+(the runtime over the fake bridge: detection → `voice.listen` → `prompt.submit` → `wake.resume`).
+
+Decisions for the lead (wiring): `voice.listen` is a new declared method (the terminal has no
+microphone of its own; the reference's TUI records in its bridge too); D-16.800's recommendation
+applied (default engine sherpa-onnx) — the owner row can be closed or reversed with one line.
+
+Status (wave 42): TUI hand-off and its deadline wired; engine default set.

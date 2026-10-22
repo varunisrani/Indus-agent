@@ -34,7 +34,8 @@ here (P05 wave 2 notes):
 - subagents (P10-02): ``AgentOptions.subagent_builder`` is the builder under the learning
   wrappers, so a child's prompt has no frozen memory, skills index or preloads; children never
   get a background review (``attach_review`` forces ``no_review`` for them) and never reach the
-  curator, which only this host's start and maintenance timer run;
+  curator, which only this host's start and maintenance timer run; a skill a review writes that
+  declares a blueprint is offered as a suggested job (``service.review_offers``, P24-46);
 - MCP servers (P13-05..12, ``service.mcp_host``): one tool registry per run (built-in and
   learning tools, plus the MCP tools of the profile's overlay) is shared by every agent of the
   service; ``McpUpkeep`` starts the profile's servers before the first agent (discovery once),
@@ -48,7 +49,11 @@ here (P05 wave 2 notes):
   finite run skips unconsented hooks with a warning); each top-level agent gets the bus seams
   (tool guards, ``pre_llm_call`` context on the user message) and the frozen plugin prompt
   sections, subagents neither; the interactive run's maintenance timer checks for plugin updates
-  (``plugins.auto_update_check_hours``), never at start.
+  (``plugins.auto_update_check_hours``), never at start;
+- language servers (P24-15/16, ``service.lsp_host``): ``LspUpkeep`` joins the process's
+  language-server tier (a server starts only when an edited file needs it) and stops the servers
+  at exit; every agent's stop gates (the LSP gate, verify-on-stop, the ``pre_verify`` hook) may
+  send it back to work before an answer is final.
 """
 
 from __future__ import annotations
@@ -75,10 +80,11 @@ from indus.learning.review.counters import NO_REVIEW_CONTEXTS
 from indus.providers.auxiliary import AuxClient
 from indus.providers.profile import REASONING_LEVELS
 from indus.providers.route import RuntimeRoute, resolve
-from indus.service import terminal_host
+from indus.service import review_offers, terminal_host
 from indus.service.broker import ServerRequestBroker
 from indus.service.code_host import KernelUpkeep
 from indus.service.host_inprocess import InProcessHost
+from indus.service.lsp_host import LspUpkeep
 from indus.service.maintenance import MaintenanceTimer, learning_timer, profile_idle_s
 from indus.service.mcp_host import McpUpkeep
 from indus.service.plugin_host import PluginUpkeep, update_check
@@ -281,7 +287,8 @@ def agent_factory(
         agent.runtime.environments = terminal.runtime().environments
         agent.runtime.run_context = run_context
         learning.bind_aux(agent.aux)
-        learning.attach_review(agent, no_review=run_context in NO_REVIEW_CONTEXTS)
+        runner = learning.attach_review(agent, no_review=run_context in NO_REVIEW_CONTEXTS)
+        review_offers.listen(runner, scope)  # skills it writes may suggest jobs (P24-46)
         return agent
 
     return build
@@ -367,6 +374,8 @@ def build_service(spec: ServiceSpec) -> SessionService:
         kernels=KernelUpkeep(spec.scope, reaper=spec.run_context == "interactive"),
         mcp=McpUpkeep(spec.scope, registry, aux=aux, watch=spec.run_context == "interactive"),
         plugins=_plugins(spec, registry, cwd),
+        # Language servers check the run's edits (P24-15/16); none start unless a file is edited.
+        lsp=LspUpkeep(spec.scope),
     )
     _trajectory_saver(spec, service, cwd)
     return service

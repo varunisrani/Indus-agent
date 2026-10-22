@@ -2167,6 +2167,185 @@
       "required": ["slug", "name", "shown"],
       "type": "object"
     },
+    "PreviewActAnswer": {
+      "additionalProperties": false,
+      "description": "What the page did.",
+      "properties": {
+        "error": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Why it did not, in a few words."
+        },
+        "kind": {
+          "const": "preview.act",
+          "default": "preview.act",
+          "description": "Answer kind.",
+          "type": "string"
+        },
+        "ok": {"description": "Whether the action ran.", "type": "boolean"},
+        "result": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "What the page reported (for navigate the address); secret values are never included.",
+          "type": "object"
+        }
+      },
+      "required": ["ok"],
+      "type": "object"
+    },
+    "PreviewActRequest": {
+      "additionalProperties": false,
+      "description": "Act on the page in the session's desktop preview pane (asked of the window showing it).",
+      "properties": {
+        "action": {
+          "description": "What to do.",
+          "enum": ["navigate", "click", "type", "scroll", "annotate"],
+          "type": "string"
+        },
+        "deadline_s": {
+          "anyOf": [{"exclusiveMinimum": 0, "type": "number"}, {"type": "null"}],
+          "default": null,
+          "description": "Seconds the agent waits before withdrawing the request; absent means no deadline."
+        },
+        "dx": {
+          "anyOf": [{"type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "For scroll without a selector: pixels to the right."
+        },
+        "dy": {
+          "anyOf": [{"type": "integer"}, {"type": "null"}],
+          "default": null,
+          "description": "For scroll without a selector: pixels down."
+        },
+        "kind": {
+          "const": "preview.act",
+          "default": "preview.act",
+          "description": "Request kind.",
+          "type": "string"
+        },
+        "pins": {
+          "anyOf": [
+            {"items": {"$ref": "#/$defs/PreviewPin"}, "maxItems": 20, "type": "array"},
+            {"type": "null"}
+          ],
+          "default": null,
+          "description": "For annotate: the notes, in order."
+        },
+        "request_id": {
+          "description": "Unique id; the answer and any cancellation name it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "selector": {
+          "anyOf": [{"maxLength": 500, "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For click, type and scroll: a CSS selector on the page."
+        },
+        "session_id": {"description": "The session asking.", "minLength": 1, "type": "string"},
+        "submit": {
+          "anyOf": [{"type": "boolean"}, {"type": "null"}],
+          "default": null,
+          "description": "For type: press Enter after the text."
+        },
+        "text": {
+          "anyOf": [{"maxLength": 4000, "type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For type: the text to enter."
+        },
+        "turn_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The turn waiting on the answer, if any."
+        },
+        "url": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "For navigate: an http(s) or ``file:///`` address."
+        }
+      },
+      "required": ["request_id", "session_id", "action"],
+      "type": "object"
+    },
+    "PreviewPin": {
+      "additionalProperties": false,
+      "description": "One note to put on a page element.",
+      "properties": {
+        "note": {
+          "description": "What the note says.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "selector": {
+          "description": "A CSS selector on the page.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["selector", "note"],
+      "type": "object"
+    },
+    "PreviewReadAnswer": {
+      "additionalProperties": false,
+      "description": "What the page shows.",
+      "properties": {
+        "error": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "Why it could not, in a few words."
+        },
+        "kind": {
+          "const": "preview.read",
+          "default": "preview.read",
+          "description": "Answer kind.",
+          "type": "string"
+        },
+        "ok": {"description": "Whether the page could be read.", "type": "boolean"},
+        "result": {
+          "additionalProperties": {"$ref": "#/$defs/JsonValue"},
+          "description": "The snapshot: title, address, visible text, interactive elements (secrets redacted).",
+          "type": "object"
+        }
+      },
+      "required": ["ok"],
+      "type": "object"
+    },
+    "PreviewReadRequest": {
+      "additionalProperties": false,
+      "description": "Read the page in the session's desktop preview pane (asked of the window showing it).",
+      "properties": {
+        "deadline_s": {
+          "anyOf": [{"exclusiveMinimum": 0, "type": "number"}, {"type": "null"}],
+          "default": null,
+          "description": "Seconds the agent waits before withdrawing the request; absent means no deadline."
+        },
+        "kind": {
+          "const": "preview.read",
+          "default": "preview.read",
+          "description": "Request kind.",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Unique id; the answer and any cancellation name it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {"description": "The session asking.", "minLength": 1, "type": "string"},
+        "turn_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The turn waiting on the answer, if any."
+        },
+        "what": {
+          "const": "snapshot",
+          "default": "snapshot",
+          "description": "What to read: the title, address, visible text and interactive elements.",
+          "type": "string"
+        }
+      },
+      "required": ["request_id", "session_id"],
+      "type": "object"
+    },
     "ProjectFolderInfo": {
       "additionalProperties": false,
       "description": "One folder a project owns.",
@@ -2831,6 +3010,8 @@
         "mapping": {
           "approval": "#/$defs/ApprovalRequest",
           "clarify": "#/$defs/ClarifyRequest",
+          "preview.act": "#/$defs/PreviewActRequest",
+          "preview.read": "#/$defs/PreviewReadRequest",
           "secret": "#/$defs/SecretRequest",
           "sudo": "#/$defs/SudoRequest"
         },
@@ -2840,7 +3021,9 @@
         {"$ref": "#/$defs/ApprovalRequest"},
         {"$ref": "#/$defs/ClarifyRequest"},
         {"$ref": "#/$defs/SudoRequest"},
-        {"$ref": "#/$defs/SecretRequest"}
+        {"$ref": "#/$defs/SecretRequest"},
+        {"$ref": "#/$defs/PreviewActRequest"},
+        {"$ref": "#/$defs/PreviewReadRequest"}
       ]
     },
     "ServerRequestAnswer": {
@@ -2848,6 +3031,8 @@
         "mapping": {
           "approval": "#/$defs/ApprovalAnswer",
           "clarify": "#/$defs/ClarifyAnswer",
+          "preview.act": "#/$defs/PreviewActAnswer",
+          "preview.read": "#/$defs/PreviewReadAnswer",
           "secret": "#/$defs/SecretAnswer",
           "sudo": "#/$defs/SudoAnswer"
         },
@@ -2857,7 +3042,9 @@
         {"$ref": "#/$defs/ApprovalAnswer"},
         {"$ref": "#/$defs/ClarifyAnswer"},
         {"$ref": "#/$defs/SudoAnswer"},
-        {"$ref": "#/$defs/SecretAnswer"}
+        {"$ref": "#/$defs/SecretAnswer"},
+        {"$ref": "#/$defs/PreviewActAnswer"},
+        {"$ref": "#/$defs/PreviewReadAnswer"}
       ]
     },
     "ServerRequestAnswerParams": {
@@ -4315,6 +4502,35 @@
         }
       },
       "required": ["surface", "count"],
+      "type": "object"
+    },
+    "VoiceListenParams": {
+      "additionalProperties": false,
+      "description": "Record one take on this process's microphone and return its text.",
+      "properties": {
+        "session_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The chat the take is for (null: a new chat)."
+        }
+      },
+      "type": "object"
+    },
+    "VoiceListenResult": {
+      "additionalProperties": false,
+      "description": "What was said in the take.",
+      "properties": {
+        "reason": {
+          "description": "How the take ended: ``spoke`` (a pause after speech), ``no_speech`` (nobody spoke in\n``voice.wait_seconds``), ``inaudible`` (no words made out), ``limit`` (``voice.max_seconds``)\nor ``cancel`` (the microphone stream ended).",
+          "enum": ["spoke", "no_speech", "inaudible", "limit", "cancel"],
+          "type": "string"
+        },
+        "text": {
+          "description": "The transcript (\"\" when nothing was said or nothing could be made out).",
+          "type": "string"
+        }
+      },
+      "required": ["text", "reason"],
       "type": "object"
     },
     "VoiceSpeakParams": {
@@ -5825,6 +6041,19 @@
         "params": "SlashExecParams",
         "result": "SlashExecResult"
       },
+      "voice.listen": {
+        "errors": [
+          "PARSE_ERROR",
+          "INVALID_REQUEST",
+          "METHOD_NOT_FOUND",
+          "INVALID_PARAMS",
+          "INTERNAL_ERROR",
+          "UNKNOWN_PARAM_KEY",
+          "PROVIDER_UNAVAILABLE"
+        ],
+        "params": "VoiceListenParams",
+        "result": "VoiceListenResult"
+      },
       "voice.speak": {
         "errors": [
           "PARSE_ERROR",
@@ -5935,6 +6164,8 @@
     "server_requests": {
       "approval": {"answer": "ApprovalAnswer", "request": "ApprovalRequest"},
       "clarify": {"answer": "ClarifyAnswer", "request": "ClarifyRequest"},
+      "preview.act": {"answer": "PreviewActAnswer", "request": "PreviewActRequest"},
+      "preview.read": {"answer": "PreviewReadAnswer", "request": "PreviewReadRequest"},
       "secret": {"answer": "SecretAnswer", "request": "SecretRequest"},
       "sudo": {"answer": "SudoAnswer", "request": "SudoRequest"}
     },

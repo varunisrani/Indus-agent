@@ -8,6 +8,7 @@ import { BootOverlay, type BootOverlayProps } from "../boot/BootOverlay.tsx";
 import { ChatView } from "../chat/ChatView.tsx";
 import type { ErrorItem } from "../chat/messageStream.ts";
 import { TranscriptStoreProvider } from "../chat/transcriptReact.tsx";
+import { ContributedRoute, useContributedPaths } from "../contrib/shell.tsx";
 import type { ConnectionStore } from "../gateway/connectionStore.ts";
 import {
   ConnectionStoreProvider,
@@ -31,7 +32,14 @@ import { hasShell, type WindowQuery } from "./bridge.ts";
 import { CapabilitiesRoute } from "./capabilities/CapabilitiesPage.tsx";
 import { RootErrorBoundary } from "./ErrorBoundary.tsx";
 import { ComingLaterPage, LaterWindow, OverlayCard } from "./pages.tsx";
-import { backgroundOf, classifyPath, closeTarget, type OverlayId, type PageId } from "./routes.ts";
+import {
+  backgroundOf,
+  classifyPath,
+  closeTarget,
+  isContributedPage,
+  type OverlayId,
+  type PageId,
+} from "./routes.ts";
 import { Shell, type ShellChrome, ShellChromeProvider } from "./Shell.tsx";
 import { ThemeProvider } from "./theme.tsx";
 
@@ -54,14 +62,22 @@ export function AppRoutes(props: { slots?: AppSlots }) {
   const location = useLocation();
   const navigate = useNavigate();
   const foreground = useSwitcherState(useSwitcher())?.foreground;
-  const view = classifyPath(location.pathname);
+  // the registry's route paths (P24-32): a plugin's or a bundled surface's page
+  const contributed = useContributedPaths();
+  const view = classifyPath(location.pathname, contributed);
   if (view.kind === "unknown") return <Navigate to="/" replace />;
+  if (view.kind === "page" && isContributedPage(view.page)) return <Navigate to="/" replace />;
   const background =
-    view.kind === "overlay" ? classifyPath(backgroundOf(location.state) ?? "/") : view;
+    view.kind === "overlay"
+      ? classifyPath(backgroundOf(location.state, contributed) ?? "/", contributed)
+      : view;
   const slots = props.slots ?? {};
+  const close = () => navigate(closeTarget(location.state, contributed), { replace: true });
   let main: ReactNode;
   const page = background.kind === "page" ? slots.pages?.[background.page] : undefined;
-  if (page !== undefined) {
+  if (background.kind === "contributed") {
+    main = <ContributedRoute path={background.path} />;
+  } else if (page !== undefined) {
     main = page(); // a workspace's page (P24-26..31), e.g. Capabilities with its counts
   } else if (background.kind === "page" && background.page === "capabilities") {
     // P24-26 without a workspace slot: the page over REST only (no counts, no desktop plugins)
@@ -88,13 +104,8 @@ export function AppRoutes(props: { slots?: AppSlots }) {
     >
       {main}
       {view.kind === "overlay" &&
-        (slots.overlays?.[view.overlay]?.(() =>
-          navigate(closeTarget(location.state), { replace: true }),
-        ) ?? (
-          <OverlayCard
-            overlay={view.overlay}
-            onClose={() => navigate(closeTarget(location.state), { replace: true })}
-          />
+        (slots.overlays?.[view.overlay]?.(close) ?? (
+          <OverlayCard overlay={view.overlay} onClose={close} />
         ))}
       {slots.layers}
     </Shell>

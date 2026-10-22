@@ -1,11 +1,13 @@
 // `/wake on|off|status` (P24-20, J22): the terminal side of the wake word. `on` is an explicit
 // gesture, so it sends `consent: true` (the daemon stores the person's agreement and turns the
 // feature on before it opens the microphone); `off` stops listening and turns it off; `status`
-// says what the listener is doing. A detection arrives as `wake.detected` and hands off to voice
-// mode (P10). `wake.*` are not in the generated catalogue yet, hence the plain `rpc.call`.
+// says what the listener is doing. A detection arrives as `wake.detected` and hands off to one
+// voice take (`wakeHandOff.ts`, wired in the app runtime). `on` waits up to 190 s: a first start
+// may load a model (the server allows 180 s).
 
 import { errorText } from "../cards/rpcLike.ts";
 import type { LocalCommand, RunContext } from "../slash/types.ts";
+import { WAKE_START_TIMEOUT_MS } from "./wakeHandOff.ts";
 
 const REASONS: Record<string, string> = {
   disabled: "the wake word is off; /wake on turns it on",
@@ -32,9 +34,16 @@ interface StatusAnswer {
   hint?: string | null;
 }
 
-async function call<T>(ctx: RunContext, method: string, params: object): Promise<T | null> {
+async function call<T>(
+  ctx: RunContext,
+  method: string,
+  params: object,
+  timeoutMs?: number,
+): Promise<T | null> {
   try {
-    const result = (await ctx.rpc.call(method, params)) as T;
+    const result = (await (timeoutMs === undefined
+      ? ctx.rpc.call(method, params)
+      : ctx.rpc.call(method, params, { timeoutMs }))) as T;
     return ctx.stale() ? null : result;
   } catch (error) {
     if (!ctx.stale()) ctx.systemLine(`/wake failed: ${errorText(error)}`);
@@ -68,7 +77,12 @@ export const WAKE_COMMAND: LocalCommand = {
     const word = arg.trim().toLowerCase() || "status";
     if (word === "on") {
       ctx.systemLine("Starting the listener (the first start can take a few minutes)…");
-      const answer = await call<StartAnswer>(ctx, "wake.start", { surface: "tui", consent: true });
+      const answer = await call<StartAnswer>(
+        ctx,
+        "wake.start",
+        { surface: "tui", consent: true },
+        WAKE_START_TIMEOUT_MS,
+      );
       if (answer !== null) ctx.systemLine(startLine(answer));
       return;
     }

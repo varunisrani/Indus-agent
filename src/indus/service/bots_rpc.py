@@ -8,8 +8,10 @@ Every profile is a bot. ``BotsRpc(profiles, chats, routines)`` answers, with pla
   exists;
 - ``bots.update {profile, avatar?, hidden?, sections?}`` → the bot.
 
-``profile_rows(rows)`` adds the same ``canonical_session`` to each ``profiles.list`` row, so the
-row's preview and a click open one chat.
+``profile_rows(rows)`` adds the same ``canonical_session`` to each ``profiles.list`` row (the
+dashboard's ``GET /api/profiles``, ``indus.web.routes.profiles``), so the row's preview and a click
+open one chat. A profile whose lookup fails (a broken or locked store) gets ``null`` there: the
+profile list never fails for one bot.
 
 The forever-chat's identity is only (profile, canonical title) — the ``CanonicalChats`` port. Its
 real implementation is the state layer's canonical-chat lookup (P24-07: hidden rows included,
@@ -46,6 +48,7 @@ from indus.foundation.fsio import atomic_write_json
 from indus.foundation.profiles import list_profiles, profile_home
 from indus.foundation.scope import Scope, make_scope
 from indus.state import bot_chat, registry
+from indus.state.connection import default_store_path
 from indus.state.registry import StoreHandle
 
 __all__ = [
@@ -266,9 +269,13 @@ class BotsRpc:
     def profile_rows(self, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         """``profiles.list`` rows with each bot's ``canonical_session`` (or null) added."""
         out: list[dict[str, Any]] = []
+        names = set(self.profiles.names())
         for row in rows:
             name = str(row.get("name", ""))
-            found = self.chats.find(name) if name in self.profiles.names() else None
+            try:
+                found = self.chats.find(name) if name in names else None
+            except Exception:  # one bad store shows no chat, never a failed list
+                found = None
             out.append(
                 {**row, "canonical_session": None if found is None else {"session_id": found}}
             )
@@ -319,6 +326,9 @@ class StoreCanonicalChats:
             store.close()
 
     def find(self, profile: str) -> str | None:
+        # a profile without a store has no chat; a lookup must not create the store
+        if not default_store_path(_quiet_scope(self.profiles, profile, self.scope)).exists():
+            return None
         return self._with(profile, bot_chat.find_canonical)
 
     def ensure(self, profile: str) -> tuple[str, bool]:

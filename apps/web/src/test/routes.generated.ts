@@ -51,6 +51,8 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
   { method: "POST", path: "/api/files/mkdir", scoped: false },
   { method: "GET", path: "/api/files/read", scoped: false },
   { method: "POST", path: "/api/files/upload", scoped: false },
+  { method: "GET", path: "/api/learning/graph", scoped: true },
+  { method: "DELETE", path: "/api/learning/nodes/{node_id}", scoped: true },
   { method: "GET", path: "/api/logs", scoped: true },
   { method: "GET", path: "/api/mcp/oauth/callback", scoped: false },
   { method: "DELETE", path: "/api/mcp/oauth/flows/{flow_id}", scoped: true },

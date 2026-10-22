@@ -25,7 +25,10 @@ def main(scope: Scope, *, replace: bool = False) -> int:
 
     daemon = GatewayDaemon(scope, options=DaemonOptions(replace=replace))
     code = asyncio.run(daemon.run())
-    if daemon.holder is not None and code in (0, 75):
+    verdict = daemon.attach_verdict
+    if verdict is not None:  # a multiplexing host gateway serves (or refused) this profile
+        print(f"indus gateway: {verdict.message}", file=sys.stderr)
+    elif daemon.holder is not None and code in (0, 75):
         print(
             f"indus gateway: already running for this profile (pid {daemon.holder.pid})",
             file=sys.stderr,
@@ -35,7 +38,8 @@ def main(scope: Scope, *, replace: bool = False) -> int:
 
 @click.command(
     "run",
-    help="Run the messaging gateway in the foreground (one per profile).",
+    help="Run the messaging gateway in the foreground (one per profile, or one serving every "
+    "profile with gateway.multiplex_profiles).",
 )
 @click.option(
     "--replace",

@@ -1299,7 +1299,7 @@ class WakeWordSection(_Section):
         description="the person agreed to microphone listening (set only by an explicit on)",
     )
     engine: Literal["openwakeword", "sherpa"] = Field(
-        default="openwakeword", description="keyword engine: openwakeword or sherpa"
+        default="sherpa", description="keyword engine: sherpa (default) or openwakeword"
     )
     phrase: str = Field(default="hey indus", description="the phrase to listen for")
     model: str = Field(

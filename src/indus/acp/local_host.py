@@ -870,6 +870,7 @@ def build_service(scope: Scope, factory: AgentFactory) -> SessionService:
     from indus.service import terminal_host
     from indus.service.code_host import KernelUpkeep
     from indus.service.host_inprocess import ALL_KINDS
+    from indus.service.lsp_host import LspUpkeep
     from indus.service.mcp_host import McpUpkeep
     from indus.service.plugin_host import PluginUpkeep
     from indus.state import registry
@@ -906,6 +907,7 @@ def build_service(scope: Scope, factory: AgentFactory) -> SessionService:
         kernels=KernelUpkeep(scope, reaper=True),
         mcp=McpUpkeep(scope, tool_registry, aux=aux, watch=True),
         plugins=PluginUpkeep(scope, tool_registry, surface="acp", cwd=str(cwd)),
+        lsp=LspUpkeep(scope),
     )
 
 

@@ -75,6 +75,7 @@ __all__ = [
     "TaskAttempt",
     "TaskConflict",
     "TaskKey",
+    "mentioned_members",
     "stop_directives",
 ]
 
@@ -1198,6 +1199,22 @@ def _adjacent_stop(tokens: list[str], start: int, step: int) -> bool:
             continue
         return False
     return False
+
+
+def mentioned_members(text: str, handles: Iterable[str]) -> list[str]:
+    """The member handles ``text`` @mentions in prose, in order of first mention (``@all`` /
+    ``@everyone`` name every member); code, quotes and blockquotes never count."""
+    order = list(handles)
+    known = {h.lower().lstrip("@"): h for h in order}
+    found: list[str] = []
+    for line in _prose_lines(text or ""):
+        for token in _TOKEN.findall(line):
+            if not token.startswith("@"):
+                continue
+            name = token[1:].lower()
+            picked = order if name in BROADCAST else [known[name]] if name in known else []
+            found.extend(h for h in picked if h not in found)
+    return found
 
 
 def stop_directives(text: str, handles: Iterable[str], *, enabled: bool = True) -> frozenset[str]:

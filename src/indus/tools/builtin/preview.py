@@ -8,12 +8,15 @@ that shows this session's preview. A window that does not show it declines with 
 every action runs inside the page's own sandbox there, never in the app.
 
 The tools exist only in sessions a desktop window created: ``register_tools(registry,
-surface=...)`` registers them for the ``gui`` surface and does nothing otherwise. The handler gets
-the session's preview channel as the ``preview`` keyword (``PreviewPort``); without one it says so.
+surface=...)`` registers them for the ``gui`` surface and does nothing otherwise (the daemon does
+it in that session's own registry, ``service.session_mutations``). The handler gets the session's
+preview channel as the ``preview`` keyword (``PreviewPort``), else builds ``BrokerPreview`` over the
+session's server-request broker (the ``broker`` keyword); without either it says so.
 
-Interface (until the protocol knows the two request kinds): ``PreviewPort.request(kind, payload,
-timeout)`` returns the window's answer as a mapping, or raises ``PreviewDeclined`` (no window shows
-the preview) or ``PreviewUndelivered`` (no desktop window is attached any more).
+``PreviewPort.request(kind, payload, timeout)`` returns the window's answer as a mapping (``ok``,
+``error`` and what the page reported), or raises ``PreviewDeclined`` (every attached window
+declined: none shows the preview), ``PreviewUndelivered`` (no desktop window is attached, or the
+request was withdrawn) or ``TimeoutError``.
 """
 
 from __future__ import annotations
@@ -23,12 +26,20 @@ import re
 from collections.abc import Mapping
 from typing import Any, Literal, Protocol, cast
 
+from indus.protocol.events import CancelReason
+from indus.protocol.requests_port import (
+    NOT_SHOWN_INDUS_CODE,
+    RequestUnsupported,
+    RequestWithdrawn,
+    ServerRequestPort,
+)
 from indus.tools.calls import ToolResult
 from indus.tools.registry import ToolRegistry, ToolTraits
 
 __all__ = [
     "ACTIONS",
     "ANNOTATE_SCHEMA",
+    "BrokerPreview",
     "DESKTOP_SURFACE",
     "DRIVE_SCHEMA",
     "MAX_PINS",
@@ -72,6 +83,48 @@ class PreviewPort(Protocol):
     async def request(
         self, kind: Kind, payload: Mapping[str, Any], *, timeout: float
     ) -> Mapping[str, Any]: ...
+
+
+class BrokerPreview:
+    """``PreviewPort`` over the session's server-request broker (the daemon offers the request to
+    the attached desktop windows; the one showing the preview answers)."""
+
+    def __init__(self, broker: ServerRequestPort, *, turn_id: str | None = None) -> None:
+        self.broker = broker
+        self.turn_id = turn_id
+
+    async def request(
+        self, kind: Kind, payload: Mapping[str, Any], *, timeout: float
+    ) -> Mapping[str, Any]:
+        try:
+            answer = await self.broker.ask(kind, payload, timeout=timeout, turn_id=self.turn_id)
+        except RequestUnsupported as exc:
+            data = exc.error.data
+            code = data.get("indus_code") if isinstance(data, Mapping) else None
+            if code == NOT_SHOWN_INDUS_CODE:
+                raise PreviewDeclined() from exc
+            raise PreviewUndelivered(str(exc)) from exc
+        except RequestWithdrawn as exc:
+            if exc.reason is CancelReason.TIMED_OUT:
+                raise TimeoutError(str(exc)) from exc
+            raise PreviewUndelivered(str(exc)) from exc
+        body = answer.model_dump(mode="json")
+        result = body.get("result")
+        found: dict[str, Any] = (
+            dict(cast(Mapping[str, Any], result)) if isinstance(result, Mapping) else {}
+        )
+        found["ok"] = body.get("ok") is True
+        if body.get("error"):
+            found["error"] = body["error"]
+        return found
+
+
+def _port(
+    preview: PreviewPort | None, broker: ServerRequestPort | None, turn_id: str | None
+) -> PreviewPort | None:
+    if preview is not None:
+        return preview
+    return BrokerPreview(broker, turn_id=turn_id) if broker is not None else None
 
 
 def _text(args: Mapping[str, Any], key: str, limit: int) -> str | None:
@@ -147,17 +200,30 @@ async def _ask(preview: PreviewPort | None, kind: Kind, payload: dict[str, Any])
     return json.dumps(dict(answer), ensure_ascii=False)
 
 
-async def drive_preview(args: Mapping[str, Any], *, preview: PreviewPort | None = None) -> str:
+async def drive_preview(
+    args: Mapping[str, Any],
+    *,
+    preview: PreviewPort | None = None,
+    broker: ServerRequestPort | None = None,
+    turn_id: str | None = None,
+) -> str:
     """The ``drive_preview`` handler (see the module notes)."""
     try:
         kind, payload = _drive_payload(args)
     except ValueError as exc:
         return ToolResult.error(str(exc)).text
-    return await _ask(preview, kind, payload)
+    return await _ask(_port(preview, broker, turn_id), kind, payload)
 
 
-async def annotate_preview(args: Mapping[str, Any], *, preview: PreviewPort | None = None) -> str:
+async def annotate_preview(
+    args: Mapping[str, Any],
+    *,
+    preview: PreviewPort | None = None,
+    broker: ServerRequestPort | None = None,
+    turn_id: str | None = None,
+) -> str:
     """The ``annotate_preview`` handler: numbered notes on page elements, shown to the person."""
+    preview = _port(preview, broker, turn_id)
     raw: object = args.get("pins")
     if not isinstance(raw, list) or not raw:
         return ToolResult.error("pins must be a non-empty list of {selector, note}.").text

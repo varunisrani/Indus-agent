@@ -131,3 +131,10 @@ Wired: `A2A_ENTRY` is a built-in platform (non-chat row in the adapter matrix, s
 target rule: nothing can be pushed to a peer). `a2a_call` is not a built-in tool module: built-in
 modules may not import the gateway (R02.26, `test_router.py::test_no_model_tool_wraps_the_router`),
 so its registration from the gateway host is owed (D-16.791).
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: `a2a_call` is registered by the daemon (`gateway_tool_registry`; built-in modules may not import
+the gateway, R02.26), offered while `a2a.peers` is configured (its probe). Registry entry, adapter
+matrix row, wizard text and "not a target" were done at P24 integration and are unchanged.
+Test: `tests/unit/gateway/daemon/test_host_tools.py::test_the_daemon_registers_message_agent_and_a2a_call`.

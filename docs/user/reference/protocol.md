@@ -99,6 +99,7 @@ The JSON-RPC protocol between the agent host and its surfaces (TUI, desktop, das
 | [`groups.demote`](#groupsdemote) | Adopt a strictly newer authority lineage seen elsewhere. |
 | [`voice.transcribe`](#voicetranscribe) | The text of one recorded clip. |
 | [`voice.speak`](#voicespeak) | Read a text aloud. |
+| [`voice.listen`](#voicelisten) | Record one take on this process's microphone and return its text. |
 
 ### session.create
 
@@ -1909,6 +1910,25 @@ Result:
 
 Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`, `PROVIDER_UNAVAILABLE`.
 
+### voice.listen
+
+Record one take on this process's microphone and return its text.
+
+Parameters:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `session_id` | str or null | no | The chat the take is for (null: a new chat). |
+
+Result:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `text` | str | yes | The transcript ("" when nothing was said or nothing could be made out). |
+| `reason` | 'spoke' \| 'no_speech' \| 'inaudible' \| 'limit' \| 'cancel' | yes | How the take ended: ``spoke`` (a pause after speech), ``no_speech`` (nobody spoke in ``voice.wait_seconds``), ``inaudible`` (no words made out), ``limit`` (``voice.max_seconds``) or ``cancel`` (the microphone stream ended). |
+
+Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`, `PROVIDER_UNAVAILABLE`.
+
 ## Notifications
 
 | Method | What it carries |
@@ -2377,6 +2397,61 @@ Answer:
 |---|---|---|---|
 | `kind` | 'secret' | no | Answer kind. |
 | `value` | str or null | no | The value; absent or empty when skipped. |
+
+### preview.act
+
+Act on the page in the session's desktop preview pane (asked of the window showing it).
+
+Request:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `request_id` | str | yes | Unique id; the answer and any cancellation name it. |
+| `session_id` | str | yes | The session asking. |
+| `turn_id` | str or null | no | The turn waiting on the answer, if any. |
+| `deadline_s` | float or null | no | Seconds the agent waits before withdrawing the request; absent means no deadline. |
+| `kind` | 'preview.act' | no | Request kind. |
+| `action` | 'navigate' \| 'click' \| 'type' \| 'scroll' \| 'annotate' | yes | What to do. |
+| `url` | str or null | no | For navigate: an http(s) or ``file:///`` address. |
+| `selector` | str or null | no | For click, type and scroll: a CSS selector on the page. |
+| `text` | str or null | no | For type: the text to enter. |
+| `submit` | bool or null | no | For type: press Enter after the text. |
+| `dx` | int or null | no | For scroll without a selector: pixels to the right. |
+| `dy` | int or null | no | For scroll without a selector: pixels down. |
+| `pins` | list[PreviewPin] or null | no | For annotate: the notes, in order. |
+
+Answer:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | 'preview.act' | no | Answer kind. |
+| `ok` | bool | yes | Whether the action ran. |
+| `error` | str or null | no | Why it did not, in a few words. |
+| `result` | dict[str, JsonValue] | no | What the page reported (for navigate the address); secret values are never included. |
+
+### preview.read
+
+Read the page in the session's desktop preview pane (asked of the window showing it).
+
+Request:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `request_id` | str | yes | Unique id; the answer and any cancellation name it. |
+| `session_id` | str | yes | The session asking. |
+| `turn_id` | str or null | no | The turn waiting on the answer, if any. |
+| `deadline_s` | float or null | no | Seconds the agent waits before withdrawing the request; absent means no deadline. |
+| `kind` | 'preview.read' | no | Request kind. |
+| `what` | 'snapshot' | no | What to read: the title, address, visible text and interactive elements. |
+
+Answer:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | 'preview.read' | no | Answer kind. |
+| `ok` | bool | yes | Whether the page could be read. |
+| `error` | str or null | no | Why it could not, in a few words. |
+| `result` | dict[str, JsonValue] | no | The snapshot: title, address, visible text, interactive elements (secrets redacted). |
 
 ## Error codes
 

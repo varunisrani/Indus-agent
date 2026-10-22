@@ -7,7 +7,12 @@ import { createContext, createElement, type ReactNode, useContext } from "react"
 import { uiStore } from "../state/uiStore.ts";
 
 export interface Rpc {
-  call<M extends string>(method: M, params: unknown): Promise<unknown>;
+  /** `options.timeoutMs` replaces the channel's default deadline for this call. */
+  call<M extends string>(
+    method: M,
+    params: unknown,
+    options?: { timeoutMs?: number },
+  ): Promise<unknown>;
   /** Answer an open server request (a card's result). */
   answer(requestId: string, answer: unknown): Promise<void>;
   /**
@@ -26,7 +31,12 @@ interface Waiter {
 export function rpcFromClient(client: IndusClient): Rpc {
   const waiters = new Map<string, Waiter>();
   return {
-    call: (method, params) => client.channel.call(method, params as object),
+    call: (method, params, options) =>
+      client.channel.call(
+        method,
+        params as object,
+        options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+      ),
     answer: async (requestId, answer) => {
       const waiter = waiters.get(requestId);
       if (waiter !== undefined) {

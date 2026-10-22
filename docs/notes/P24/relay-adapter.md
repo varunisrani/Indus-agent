@@ -92,9 +92,28 @@ Compare checklist (filled after the rewrite; reopened `gateway/relay/adapter.py`
 - Deliberate differences: one adapter per fronted platform (the reference: one adapter presenting as "relay" and routing per chat); inbound replay dedupe by buffer id in the transport rather than by (platform, chat, message id) in the adapter (live events are never replayed in our contract); prompt presses come back as our ordinary button callback data instead of a separate `prompt_response` field with a per-process nonce.
 - Not taken: draft streams and native task cards, Slack status-text / thread-anchor knobs (`reply_in_thread`), auto-thread rename lane, the 👀→✅ processing reactions (the `react` op exists; hooking it to turn start/end is daemon wiring), egress-target attestation for the `send_message` tool, per-chat descriptor lookup for chats of several platforms on one adapter (not needed: one adapter per platform) — recorded "later".
 
+## Wiring (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file (wiring). `gateway/relay/part.py` (`RelayPart`, BACKGROUND, only with
+`gateway.relay.url`): `build_front` → the part holds the transport (`acquire`; a retryable first
+failure is dialled again with the transport's backoff, a configuration problem is reported once;
+status row `relay`) → one `create_relay_adapter` per descriptor, connected through
+`GatewayDaemon.attach_relayed` (intake, sender, status, listeners like a native adapter; the
+delivery router attaches it `via_relay` and reads `native_state` from the daemon) → a platform
+whose native adapter is enabled is left to it. `RelayFront.on_interrupt` stops the running turn of
+that session key (or every running turn of that platform and chat, in any served profile). At an
+idle exit the part asks the connector to go dormant before the adapters disconnect; relayed
+platforms do not keep an auto-started daemon up. Events the connector replays right after the
+handshake wait for their adapters (`RelayFront.hold` / `release`: an event handed over is
+acknowledged and would never be replayed again). Tests: `tests/integration/gateway/test_relay_part.py`.
+
+Decisions for the lead: a relayed platform needs its registry entry (its access policy; an
+unknown platform is denied even though relay events are `auth_upstream`); `relay_settings` loads
+the profile config when the scope carries none.
+
 ## Status
 
 Done (2026-10-21). Adapter, fake connector and router rule written and tested
-(`tests/unit/gateway/relay/test_adapter.py`, 50 tests incl. the 10 shared contract checks). Shared
-file changed: `src/indus/gateway/delivery/router.py` (relay senders, `native_state`, the rule); R1
-also edits this file for the `self-chat` target. Daemon wiring is the lead's.
+(`tests/unit/gateway/relay/test_adapter.py`, 50 tests incl. the 10 shared contract checks); shared:
+`gateway/delivery/router.py`. Daemon wiring done in wave 42 (above; `RelayFront.hold` / `release`
+added).

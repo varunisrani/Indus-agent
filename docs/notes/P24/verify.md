@@ -79,3 +79,11 @@ Compare checklist (filled after the rewrite; reopened the files above):
 
 Done (2026-10-21). Shared: config `verify` section (+ test), `cli/app.py` row, the CLI golden
 order and non-TTY rows. Follow-up: a saved recipe file (`.indus/verify.json`, `--save`).
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: `VerifyOnStopGate` is in every agent's standard gates (`core.stop_gates_lsp.standard_gates`),
+running in the session's terminal environment (`EnvironmentRegistry.acquire` for the session) when
+`verify.on_stop` is true; `PreVerifyGate` gets the plugin bus's `pre_verify` (`AgentOptions.pre_verify`,
+set by `plugins.session.plugin_options`). The turn's edited files come from `LspToolHooks` even with
+LSP off (`tests/unit/core/test_stop_gate_wiring.py::test_pre_verify_sees_the_turn_edits_without_a_language_server`).

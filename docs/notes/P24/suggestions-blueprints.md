@@ -100,3 +100,16 @@ to that chat, `/blueprint <name>` sends the blueprint's questions as the next tu
 desktop slash catalogue and the ACP golden frames were regenerated for the two new commands. Owed:
 `cron.suggestions.offer` from the review fork and integrations; dashboard / desktop forms over
 `blueprints.form`.
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired (review half): a finished background review that created or changed a skill offers that
+skill's blueprints that fill from their defaults as `usage` suggestions (`service.review_offers`,
+hung on each runner by the CLI runtime; `ReviewRunner.listeners`; `learning.review.summary.written_skills`
+counts only applied writes). The dedup key is the refresh's (`blueprint:<key>`), so a dismissed one
+never returns. Tests: `tests/unit/service/test_review_offers.py`.
+
+Decisions for the lead (wiring): the review never invents jobs itself (no new review tool): it offers
+what the skills it wrote declare. Not wired: `integration` offers — no product event says an
+integration was connected yet (follow-up with the connections work); the gateway host attaches no
+background review, so only CLI-hosted sessions offer.

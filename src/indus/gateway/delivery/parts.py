@@ -12,7 +12,10 @@ Two daemon parts (``PART_FACTORIES`` names ``ledger_part`` and ``router_part``):
   disconnect gets its reconnect-only rows sent again; ``stop`` cancels the retry timer.
 - ``RouterPart`` (``Stage.BACKGROUND``): the delivery router registers a P14 deliverer for each
   platform that connects (and ``all`` while any is attached) and removes it when the platform goes
-  down; the channel directory is rebuilt at start and every 5 minutes; mirror notes reach the
+  down; a platform the daemon serves through a relay connector is attached as relayed and the
+  router reads each platform's native state from the daemon (P24-09: an enabled native adapter
+  wins, an explicitly disabled one never hides the relay); the channel directory is rebuilt at
+  start and every 5 minutes; mirror notes reach the
   conversations that live in a chat something was delivered to. A Microsoft Graph receiver
   (P16-12) that comes up gets a forward (``graph_forward``): its replies go to
   ``platforms.msgraph.deliver_to`` through this router, never back to Graph.
@@ -168,8 +171,10 @@ class RouterPart(DaemonPart):
             homes=home,
             directory=self.directory,
             mirror=Mirror(daemon.store, daemon.service),
+            native_state=getattr(daemon, "native_state", None),
         )
         router = self.router
+        relayed: set[str] = set()
 
         def up(name: str, adapter: Adapter) -> None:
             from indus.gateway.adapters.msgraph.adapter import GraphReceiver
@@ -179,11 +184,21 @@ class RouterPart(DaemonPart):
                 adapter.set_forward(graph_forward(router))
                 return
             sender = daemon.senders.get(name)
-            if sender is not None:
+            if sender is None:
+                return
+            if name in getattr(daemon, "relayed", ()):
+                relayed.add(name)
+                router.attach(name, sender, via_relay=True)
+            else:
                 router.attach(name, sender)
 
         def down(name: str, _fatal: bool, _reason: str) -> None:
-            router.detach(name)  # its sender is gone with the adapter; up attaches it again
+            # its sender is gone with the adapter; up attaches it again
+            if name in relayed:
+                relayed.discard(name)
+                router.detach(name, via_relay=True)
+            else:
+                router.detach(name)
 
         self._undo += [daemon.on_platform_up(up), daemon.on_platform_down(down)]
 

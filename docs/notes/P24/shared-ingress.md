@@ -69,6 +69,21 @@ Compare checklist (filled after the rewrite; reopened `gateway/platforms/shared_
   `profile_url`).
 - Not taken: wildcard-host URL helper beyond `profile_url`.
 
+## Wiring (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file (wiring). The host's HTTP part passes `HttpHost.front` (the API server
+through `ApiServer(front=)`, the webhook receiver by `receiver.app = front("webhook", app)` before
+it starts); a served secondary's HTTP part passes `HttpHost.mount` instead: nothing binds, its API
+app (`API_PATHS`: `/health`, `/v1/`, `/api/`) and webhook receiver (`WEBHOOK_PATHS`:
+`/webhooks/`) are mounted at `/p/<profile>/` under its scope, status row `{"mounted": "/p/<p>/"}`,
+unmounted when it stops. Test:
+`tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_a_served_profile_http_is_reached_under_its_prefix_with_its_own_keys`.
+
+Decisions for the lead: a secondary's surface needs the launch profile to enable that listener;
+otherwise it is reported as a problem ("no … listener to share") and not served (no listener of
+its own under multiplexing). The callback-kit adapters' shared-listener mode is not wired (none of
+the multiplex demos needs it; follow-up).
+
 ## Status
 
-Done (2026-10-21). Daemon wiring listed above is owed by the lead.
+Done (2026-10-21), wired in wave 42 (API server and webhook receiver).

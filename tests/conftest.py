@@ -18,7 +18,7 @@ import pytest
 
 from indus.foundation.scope import EnvView, Scope, make_scope
 from indus.foundation.secrets import open_secret_store
-from tests import platform_marks
+from tests import platform_marks, self_chat_guard
 from tests.fakes.clock import FakeClock
 from tests.fakes.model import Script, load_script
 
@@ -156,3 +156,34 @@ def drop_platform_target_rules() -> Iterator[None]:
     platform_targets = sys.modules.get("indus.gateway.adapters.targets")
     if platform_targets is not None:
         platform_targets.uninstall()
+
+
+@pytest.fixture(autouse=True)
+def no_self_chat_holder_left() -> Iterator[None]:
+    """A test may not leave a ``DeliveryRouter`` open: its hold on the process-wide ``self-chat``
+    deliverer would outlive the test and break later ones that expect none (``self_chat_guard``).
+    The leaking test fails at teardown; its holds are released first."""
+    before = self_chat_guard.holders()
+    yield
+    leaked = self_chat_guard.release_leaked(before)
+    if leaked:
+        pytest.fail(
+            f"{leaked} DeliveryRouter(s) left open: close() each router the test builds",
+            pytrace=False,
+        )
+
+
+@pytest.fixture(autouse=True)
+def no_language_servers(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Hosts built in a test join no language-server tier (P24-15/16 wiring): the venv carries
+    ``pyright-langserver``, and a test that edits a file inside a git work tree must not start it.
+    A test that wants the tier passes ``LspUpkeep(scope, settings=...)``. Whatever tier a test left
+    installed is dropped afterwards."""
+    from indus.service import lsp_host
+    from indus.tools.lsp import diagnostics
+    from indus.tools.lsp.manager import LspSettings
+
+    monkeypatch.setattr(lsp_host, "settings_for", lambda _scope: LspSettings(enabled=False))
+    yield
+    lsp_host._TIER.clear()  # pyright: ignore[reportPrivateUsage]
+    diagnostics.install_active(None)

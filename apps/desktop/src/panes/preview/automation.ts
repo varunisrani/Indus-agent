@@ -9,8 +9,10 @@
 // (`loadURL` on the webview) and accepts http(s) and `file:///` only; nothing here opens the OS
 // browser (D-16.20: the guest preload hands off trusted clicks only, and these clicks are not).
 //
-// Interface until the protocol carries the two kinds: `handle(request)` takes the server
-// request's fields and resolves to the answer object, or to `{ declined: "not_shown" }`.
+// `handle(request)` takes the server request (`PreviewActRequest` / `PreviewReadRequest` of
+// `@indus/protocol`; absent fields may come as null) and resolves to what the page reported, or to
+// `{ declined: "not_shown" }`; the window's server-request store turns that into the protocol
+// answer or the channel's decline (`gateway/serverRequests.ts`).
 
 import { guestCall, guestInstallScript } from "./annotate.ts";
 import { isWebUrl } from "./target.ts";
@@ -23,15 +25,15 @@ export interface PreviewRequest {
   readonly kind: PreviewRequestKind;
   readonly request_id: string;
   readonly session_id: string;
-  readonly action?: string;
-  readonly what?: string;
-  readonly url?: string;
-  readonly selector?: string;
-  readonly text?: string;
-  readonly submit?: boolean;
-  readonly dx?: number;
-  readonly dy?: number;
-  readonly pins?: readonly { selector: string; note: string }[];
+  readonly action?: string | null;
+  readonly what?: string | null;
+  readonly url?: string | null;
+  readonly selector?: string | null;
+  readonly text?: string | null;
+  readonly submit?: boolean | null;
+  readonly dx?: number | null;
+  readonly dy?: number | null;
+  readonly pins?: readonly { selector: string; note: string }[] | null;
 }
 
 export type PreviewAnswer =
@@ -120,7 +122,8 @@ export class PreviewAutomation {
       if (!ACTIONS.has(action)) return { ok: false, error: `unknown action ${action}` };
       const payload: Record<string, unknown> = { action };
       for (const key of ["selector", "text", "submit", "dx", "dy", "pins"] as const) {
-        if (request[key] !== undefined) payload[key] = request[key];
+        const value = request[key];
+        if (value !== undefined && value !== null) payload[key] = value;
       }
       return await this.call(guest, guestCall("act", payload));
     } catch (error) {

@@ -13,7 +13,7 @@ imported only when the production opener dials.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from indus.gateway.relay.descriptor import Descriptor, DescriptorError
 from indus.gateway.relay.transport import (
@@ -49,11 +49,15 @@ def _number(value: object, default: float) -> float:
 
 def relay_settings(scope: Scope) -> RelaySettings | None:
     """``gateway.relay`` for ``scope``, or None when no relay URL is configured."""
+    from indus.foundation.config import loader as config_loader
     from indus.gateway.config import read_secret
 
-    config = scope.config
+    config: Any = scope.config
     if config is None:
-        return None
+        try:
+            config = config_loader.load(scope)
+        except Exception:
+            return None
     url = config.get("gateway.relay.url")
     if not isinstance(url, str) or not url.strip():
         return None

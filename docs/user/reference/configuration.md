@@ -704,7 +704,7 @@ Wake phrase that starts voice mode.
 |---|---|---|---|
 | `wake_word.enabled` | bool | `false` | listen for the wake phrase |
 | `wake_word.consent` | bool | `false` | the person agreed to microphone listening (set only by an explicit on) |
-| `wake_word.engine` | 'openwakeword' \| 'sherpa' | `openwakeword` | keyword engine: openwakeword or sherpa |
+| `wake_word.engine` | 'openwakeword' \| 'sherpa' | `sherpa` | keyword engine: sherpa (default) or openwakeword |
 | `wake_word.phrase` | str | `hey indus` | the phrase to listen for |
 | `wake_word.model` | str | `""` | path to the wake model (none ships: train or supply one) |
 | `wake_word.threshold` | float | `0.5` | score a frame needs to count, 0-1 |

@@ -27,6 +27,14 @@ A rotating compaction (``compression.in_place: false``) continues the conversati
 session: the agent's sink, ledger and engine move to the child id and ``on_session_moved``
 listeners (the host) are told ``(old id, new id)``.
 
+Edits and stop gates (P24-16/17): the tool hook seam is always wrapped in
+``tools.lsp.diagnostics.LspToolHooks`` (it binds who is editing for each call, so the turn's
+edited files are known even with no language server, and hands late LSP notes to the next tool
+result), and the runtime asks ``AgentOptions.stop_gates`` — by default
+``core.stop_gates_lsp.standard_gates``: the LSP gate, verify-on-stop in the session's terminal
+environment, and ``AgentOptions.pre_verify`` (the plugin hook) when the host gave one — before a
+text answer is final.
+
 ``run_turn`` runs one turn and returns its ``TurnResult``; ``chat`` returns just the final text.
 ``start_turn`` first awaits the runtime's ``before_turn`` hooks (P09-15: a live turn cancels the
 session's background review); a failing hook is logged and the turn goes ahead. While a turn
@@ -79,6 +87,8 @@ from indus.core.persist import MemoryStore, StateStore, TranscriptStore
 from indus.core.prompt.builder import BuildContext, PromptBuilder
 from indus.core.prompt.lifecycle import Builder, PromptLifecycle, PromptStore, SessionPrompts
 from indus.core.route import ClientFactory, RouteBinding, RouteState, pooled_client, prompt_identity
+from indus.core.stop_gates import PreVerifyHook, StopContext, StopGates
+from indus.core.stop_gates_lsp import standard_gates
 from indus.core.transcript import TranscriptRow
 from indus.core.turn_state import (
     Hydrator,
@@ -86,6 +96,7 @@ from indus.core.turn_state import (
     LlmContextSource,
     LoopOptions,
     NoteSource,
+    OriginLookup,
     SessionRuntime,
     TurnResult,
     TurnState,
@@ -114,10 +125,12 @@ from indus.state.usage import UsageDelta
 from indus.tools import toolsets
 from indus.tools.builtin import load_builtins
 from indus.tools.builtin.delegate import TOOL_NAME as DELEGATE_TOOL
+from indus.tools.builtin.exec_host import ExecHost
 from indus.tools.builtin.todo import TOOL_NAME as TODO_TOOL
 from indus.tools.builtin.todo import TodoWiring, todo_wiring
 from indus.tools.definitions import definitions
 from indus.tools.hooks import NO_HOOKS, ToolHooks
+from indus.tools.lsp.diagnostics import LspToolHooks
 from indus.tools.registry import ToolRegistry
 
 __all__ = [
@@ -197,6 +210,12 @@ class AgentOptions:
     # wraps ``builder`` with session-level blocks (P09: frozen memory, skills index, preloads)
     # passes the unwrapped one here, so children never carry them.
     subagent_builder: Builder | None = None
+    # Stop gates (A28): None builds the standard ones (``core.stop_gates_lsp.standard_gates``).
+    stop_gates: StopGates | None = None
+    # The ``pre_verify`` plugin hook for the standard gates (P24-17); None: no such gate.
+    pre_verify: PreVerifyHook | None = None
+    # The chat a gateway session answers in, offered to tools as ``delivery_origin`` (P24-13).
+    delivery_origin: OriginLookup | None = None
 
 
 @dataclass
@@ -346,6 +365,11 @@ def _stable_tier(lifecycle: PromptLifecycle) -> str | None:
         return None
     stable = parts.stable.strip()
     return stable if stable and lifecycle.prompt.startswith(stable) else None
+
+
+def _edit_seam(hooks: ToolHooks) -> ToolHooks:
+    """The session's tool hook seam inside ``LspToolHooks`` (once; see the module notes)."""
+    return hooks if isinstance(hooks, LspToolHooks) else LspToolHooks(hooks)
 
 
 # -- the agent ------------------------------------------------------------------------------------
@@ -639,7 +663,7 @@ class Agent:
             tools=tools,
             scope=self.scope,
             route=state.route,
-            hooks=options.hooks,
+            hooks=_edit_seam(options.hooks),
             inline=inline,
             hydrators=hydrators,
             source=options.source or options.platform,
@@ -651,7 +675,14 @@ class Agent:
             llm_context=options.llm_context,
             aux=self.aux,
             subagent=options.delegation_depth > 0,
+            delivery_origin=options.delivery_origin,
         )
+        gates = options.stop_gates
+        if gates is None:
+            gates = standard_gates(
+                self.scope, host_for=self._verify_host, pre_verify=options.pre_verify
+            )
+        self._runtime.stop_gates = gates
         caller = self.caller
         self.fallback = FallbackChain(
             self.scope,
@@ -665,6 +696,17 @@ class Agent:
         caller.eager = self.fallback.wants_eager
         self.binding.add_dependent(prompt_identity(lifecycle))
         self.binding.add_dependent(self._follow_route)
+
+    async def _verify_host(self, ctx: StopContext) -> ExecHost | None:
+        """Where verify-on-stop runs: the session's terminal environment (None: none here)."""
+        runtime = self._runtime
+        environments = runtime.environments if runtime is not None else None
+        if environments is None:
+            return None
+        _key, env = await environments.acquire(
+            self.scope, task_id=ctx.owner, session_id=ctx.session_id
+        )
+        return env
 
     def _usage_sink(self, store: TranscriptStore) -> Any:
         """Where the usage ledger writes (P08-08): the session's store rows, when there is one."""

@@ -78,13 +78,19 @@ Compare checklist (reopened the files above):
   of a worker an earlier pass started, so such a worker that dies with the task still running is
   booked as a crash (follow-up: have the worker write its exit code next to its log).
 
-## Status
-
-Done (2026-10-21). Daemon wiring handed to the lead (above).
-
 ## Integration (P24 integrator, 2026-10-21)
 
 Wired: `gateway/board_part.py` (`BoardPart`, BACKGROUND) runs one `BoardWatchers` loop per existing
 board when `kanban.dispatch_in_gateway` is on, at `kanban.dispatch_interval_seconds`, with notices
 through the daemon's delivery router (D-16.789). `kanban_create`'s `delivery_origin` is still not
 handed in by the loop (the cron tool has the same gap).
+
+## Wiring check (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file. The integrator's `BoardPart` is in `PART_FACTORIES` and now in
+`ROOT_PART_FACTORIES` (a multiplexing host runs it once, never in each served profile). End to end
+through a real daemon: `tests/integration/gateway/test_board_in_daemon.py::test_a_task_outcome_reaches_its_subscribed_chat_through_the_daemon`.
+
+## Status
+
+Done (2026-10-21), wired.

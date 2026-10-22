@@ -258,7 +258,7 @@ def test_catalogue_names() -> None:
             for row in group
         ),
     ]
-    assert len(METHODS) == 89
+    assert len(METHODS) == 90  # + voice.listen (P24-20 wiring)
     for spec in METHODS.values():
         assert spec.summary
 
@@ -364,7 +364,14 @@ def test_event_seq_is_never_negative() -> None:
 
 def test_server_request_union_and_kind_table() -> None:
     adapter: TypeAdapter[ServerRequest] = TypeAdapter(ServerRequest)
-    assert set(SERVER_REQUEST_KINDS) == {"approval", "clarify", "sudo", "secret"}
+    assert set(SERVER_REQUEST_KINDS) == {
+        "approval",
+        "clarify",
+        "sudo",
+        "secret",
+        "preview.act",
+        "preview.read",
+    }
     for kind, (request, answer) in SERVER_REQUEST_KINDS.items():
         sample = next(s for s in SAMPLES if type(s) is request)
         assert type(adapter.validate_python(sample.to_wire())) is request

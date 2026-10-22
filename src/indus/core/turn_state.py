@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from indus.core.notes import NoteChannel
     from indus.core.prompt.builder import BuildContext
     from indus.core.prompt.lifecycle import PromptLifecycle
+    from indus.core.stop_gates import StopGates
     from indus.foundation.clock import Clock
     from indus.foundation.scope import Scope
 
@@ -66,6 +67,7 @@ __all__ = [
     "InlineExecutor",
     "LlmContextSource",
     "LoopOptions",
+    "OriginLookup",
     "PersistFailed",
     "SessionRuntime",
     "TurnResult",
@@ -87,6 +89,9 @@ The payload names are listed in ``prologue.llm_context_payload``."""
 type AfterTurn = Callable[["TurnState"], Awaitable[None] | None]
 type BeforeTurn = Callable[[], Awaitable[object] | object]
 type OnCompaction = Callable[[], object]
+type OriginLookup = Callable[[str], Awaitable[Mapping[str, Any] | None]]
+"""The chat a session answers in, ``{platform, chat_id, thread_id}`` or None (a gateway session's
+origin, P24-13): the tool round offers it to handlers as ``delivery_origin``."""
 
 
 class PersistFailed(Exception):
@@ -198,6 +203,12 @@ class SessionRuntime:
     on_compaction: list[OnCompaction] = field(default_factory=list[OnCompaction])
     # Extra context for this turn's user message (P13-17 ``pre_llm_call``); None: no hook.
     llm_context: LlmContextSource | None = None
+    # Checks asked before a text answer is final (A28, ``core.stop_gates``: the LSP gate, verify-on-
+    # stop, the ``pre_verify`` plugin hook); None: an answer is final at once.
+    stop_gates: StopGates | None = None
+    # Where the session's chat is (gateway sessions), offered to tools as ``delivery_origin`` (the
+    # cron and board tools subscribe that chat); None: no chat to deliver to.
+    delivery_origin: OriginLookup | None = None
 
     def tool_names(self) -> frozenset[str]:
         names: set[str] = set(self.inline)
@@ -278,6 +289,8 @@ class TurnState:
     system_prompt: str = ""
     # The mixture-of-agents plan of this turn (P10-21, ``core.moa.MoaTurn``); None: a plain turn.
     moa: Any = None
+    # The last answer a stop gate sent back (A28): the turn's answer if the budget runs out first.
+    gated_answer: str | None = None
 
     # -- views -----------------------------------------------------------------------------------
 

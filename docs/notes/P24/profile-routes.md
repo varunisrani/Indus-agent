@@ -102,6 +102,21 @@ Compare checklist (filled after the rewrite; reopened `gateway/profile_routing.p
 - Not taken: "transport inferred" identities for hand-built sources (we always resolve through
   the table or fail closed).
 
+## Wiring (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file (wiring). Every adapter of every served profile is registered in the
+host's `AdapterTable` (platform up / down); its sink is `MultiplexServing.intake`:
+`ProfileRouter.identify` first (unresolved → `drop_unresolved`, one "please resend" notice through
+the receiving bot), then the routed profile's admission pipeline (session key in its namespace),
+with `ReceivingBots.remember` for the key. Replies of every served profile pick their sender with
+`PlatformReplies.sender_for_reply` → `delivery_adapter` (the receiving bot, live or restored from
+the sidecar; never another bot by guess). Test:
+`tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_a_routed_message_runs_in_its_profile_and_is_answered_by_the_bot_that_received_it`.
+
+Decisions for the lead: routes come from the launch profile's `gateway.profile_routes` only (one
+route table per host); cron and `indus send` deliveries keep their per-profile delivery router
+(they name a platform, not a received chat).
+
 ## Status
 
-Done (2026-10-21). Intake/pipeline wiring listed above is owed by the lead.
+Done (2026-10-21), wired in wave 42.

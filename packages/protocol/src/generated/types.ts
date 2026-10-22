@@ -1170,6 +1170,84 @@ export interface PetSlugResult {
   shown: boolean;
 }
 
+/** What the page did. */
+export interface PreviewActAnswer {
+  /** Answer kind. */
+  kind: "preview.act";
+  /** Whether the action ran. */
+  ok: boolean;
+  /** Why it did not, in a few words. */
+  error?: string | null;
+  /** What the page reported (for navigate the address); secret values are never included. */
+  result?: { [key: string]: JsonValue };
+}
+
+/** Act on the page in the session's desktop preview pane (asked of the window showing it). */
+export interface PreviewActRequest {
+  /** Unique id; the answer and any cancellation name it. */
+  request_id: string;
+  /** The session asking. */
+  session_id: string;
+  /** The turn waiting on the answer, if any. */
+  turn_id?: string | null;
+  /** Seconds the agent waits before withdrawing the request; absent means no deadline. */
+  deadline_s?: number | null;
+  /** Request kind. */
+  kind: "preview.act";
+  /** What to do. */
+  action: "navigate" | "click" | "type" | "scroll" | "annotate";
+  /** For navigate: an http(s) or `file:///` address. */
+  url?: string | null;
+  /** For click, type and scroll: a CSS selector on the page. */
+  selector?: string | null;
+  /** For type: the text to enter. */
+  text?: string | null;
+  /** For type: press Enter after the text. */
+  submit?: boolean | null;
+  /** For scroll without a selector: pixels to the right. */
+  dx?: number | null;
+  /** For scroll without a selector: pixels down. */
+  dy?: number | null;
+  /** For annotate: the notes, in order. */
+  pins?: PreviewPin[] | null;
+}
+
+/** One note to put on a page element. */
+export interface PreviewPin {
+  /** A CSS selector on the page. */
+  selector: string;
+  /** What the note says. */
+  note: string;
+}
+
+/** What the page shows. */
+export interface PreviewReadAnswer {
+  /** Answer kind. */
+  kind: "preview.read";
+  /** Whether the page could be read. */
+  ok: boolean;
+  /** Why it could not, in a few words. */
+  error?: string | null;
+  /** The snapshot: title, address, visible text, interactive elements (secrets redacted). */
+  result?: { [key: string]: JsonValue };
+}
+
+/** Read the page in the session's desktop preview pane (asked of the window showing it). */
+export interface PreviewReadRequest {
+  /** Unique id; the answer and any cancellation name it. */
+  request_id: string;
+  /** The session asking. */
+  session_id: string;
+  /** The turn waiting on the answer, if any. */
+  turn_id?: string | null;
+  /** Seconds the agent waits before withdrawing the request; absent means no deadline. */
+  deadline_s?: number | null;
+  /** Request kind. */
+  kind: "preview.read";
+  /** What to read: the title, address, visible text and interactive elements. */
+  what: "snapshot";
+}
+
 /** One folder a project owns. */
 export interface ProjectFolderInfo {
   /** Absolute folder path. */
@@ -1545,9 +1623,9 @@ export interface SecretRequest {
   prompt: string;
 }
 
-export type ServerRequest = ApprovalRequest | ClarifyRequest | SudoRequest | SecretRequest;
+export type ServerRequest = ApprovalRequest | ClarifyRequest | SudoRequest | SecretRequest | PreviewActRequest | PreviewReadRequest;
 
-export type ServerRequestAnswer = ApprovalAnswer | ClarifyAnswer | SudoAnswer | SecretAnswer;
+export type ServerRequestAnswer = ApprovalAnswer | ClarifyAnswer | SudoAnswer | SecretAnswer | PreviewActAnswer | PreviewReadAnswer;
 
 /** Answer an open server request. */
 export interface ServerRequestAnswerParams {
@@ -2303,6 +2381,24 @@ export interface ViewerCount {
   surface: "cli" | "tui" | "gui" | "acp" | "web" | "messaging";
   /** How many of them are attached. */
   count: number;
+}
+
+/** Record one take on this process's microphone and return its text. */
+export interface VoiceListenParams {
+  /** The chat the take is for (null: a new chat). */
+  session_id?: string | null;
+}
+
+/** What was said in the take. */
+export interface VoiceListenResult {
+  /** The transcript ("" when nothing was said or nothing could be made out). */
+  text: string;
+  /**
+   * How the take ended: `spoke` (a pause after speech), `no_speech` (nobody spoke in
+   * `voice.wait_seconds`), `inaudible` (no words made out), `limit` (`voice.max_seconds`)
+   * or `cancel` (the microphone stream ended).
+   */
+  reason: "spoke" | "no_speech" | "inaudible" | "limit" | "cancel";
 }
 
 /** Read a text aloud. */

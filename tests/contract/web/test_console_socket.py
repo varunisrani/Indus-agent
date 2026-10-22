@@ -10,6 +10,8 @@ import threading
 from collections.abc import AsyncIterator
 from typing import Any
 
+import pytest
+
 from indus.foundation.clock import SystemClock
 from indus.foundation.scope import Scope
 from indus.gateway.http.serving import HttpServer, bind_listener
@@ -300,3 +302,80 @@ async def test_unknown_profile_closes_4400(scope: Scope) -> None:
         offer = dashboard_offer("token", rig.state.auth.token.value)
         client = await WireClient.connect(f"{rig.base}{CONSOLE_PATH}?profile=nope", offer)
         assert (await client.closed_with()).code == 4400
+
+
+# -- `indus dashboard --console` (P24-36 wiring, D-16.799) ----------------------------------------
+
+
+def _dashboard_through_the_cli(
+    scope: Scope, monkeypatch: pytest.MonkeyPatch, *flags: str
+) -> dict[str, Any]:
+    """Run the real ``indus dashboard`` command; its server is ours (same app, same socket), and
+    while it serves, one client opens ``/api/console`` and runs ``version``."""
+    from click.testing import CliRunner
+
+    from indus.cli import app as app_mod
+    from indus.cli.args import CliState
+    from indus.web import command
+    from indus.web.app import DaemonLink
+
+    seen: dict[str, Any] = {}
+
+    async def drive(app: Any, sock: Any) -> None:
+        state: DashboardState = app.state.indus
+        seen["enabled"] = state.console_enabled
+        port = int(sock.getsockname()[1])
+        http = HttpServer(app, sock, name="console-cli-test", ws={"ws": "wsproto"})
+        async with app.router.lifespan_context(app):
+            await http.start()
+            try:
+                client = await WireClient.connect(
+                    f"ws://127.0.0.1:{port}{CONSOLE_PATH}",
+                    dashboard_offer("token", state.auth.token.value),
+                )
+                first = await client.recv() if state.console_enabled else None
+                if first is None:
+                    seen["closed"] = (await client.closed_with()).code
+                    return
+                seen["ready"] = json.loads(first)
+                await send(client, type="input", line="version")
+                seen["output"] = await until_type(client, "output")
+                seen["complete"] = await until_type(client, "complete")
+                await client.close()
+            finally:
+                await http.stop()
+
+    def serve(app: Any, sock: Any) -> None:
+        asyncio.run(drive(app, sock))
+
+    monkeypatch.setattr(command, "run_server", serve)
+    monkeypatch.setattr(command, "_maybe_build", lambda launch: None)  # no SPA build here
+    monkeypatch.setattr(DaemonLink, "start", lambda self: None)  # no daemon spawn here
+    state = CliState(scope=scope, stdin_isatty=lambda: False, stdout_isatty=lambda: False)
+    result = CliRunner().invoke(
+        app_mod.cli,
+        ["dashboard", "--isolated", "--port", "0", "--no-open", *flags],
+        obj=state,
+        standalone_mode=False,
+    )
+    assert result.exception is None, result.output
+    assert result.return_value == 0
+    return seen
+
+
+def test_dashboard_console_flag_serves_the_console(
+    scope: Scope, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _dashboard_through_the_cli(scope, monkeypatch, "--console")
+    assert seen["enabled"] is True
+    assert seen["ready"]["type"] == "ready" and seen["ready"]["profile"] == "work"
+    assert seen["output"]["data"].startswith("Indus Agent")
+    assert seen["complete"]["status"] == "ok" and seen["complete"]["command"] == "version"
+
+
+def test_dashboard_without_the_flag_keeps_the_console_off(
+    scope: Scope, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _dashboard_through_the_cli(scope, monkeypatch)
+    assert seen["enabled"] is False
+    assert seen["closed"] == 4404

@@ -149,18 +149,29 @@ sections):
   cross-gateway room grants (RoomLink), the `ui_meta` install marker (our gate is the `bots`
   platform of the canonical chat's turns).
 
-## Status
-
-Done (2026-10-21). Canonical chat, peers, tool, CLI and the `self-chat` target finished; mounting
-`bots_router` in the API server, registering `message_agent` with `install_transport` in the
-daemon and running canonical chat turns with `indus-bots` / platform `bots` are wiring for the
-lead. Shared files changed: `tools/toolsets.py`, `cli/app.py`, `cron/targets.py`,
-`gateway/delivery/router.py`, `foundation/errors.py`, `tests/contract/cli/test_help_catalogue.py`,
-`tests/contract/cli/non_tty_table.yaml`.
-
 ## Integration (P24 integrator, 2026-10-21)
 
 Wired: the API app includes `bots_router(ctx)`; the `self-chat` deliverer moved to
 `indus.service.self_chat` (re-exported here) so `indus cron tick` / `cron daemon` hold it during
 their passes (the CLI may not import the gateway). Owed: `message_agent` registration with the bot
 transport, the room loop, idle exit counting live room tasks (D-16.799).
+
+## Wiring check (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file. `bots_router(ctx)` is served by the daemon's own API app
+(`build_api_app`, behind its bearer gate): `tests/unit/gateway/rooms/test_peers.py::test_the_api_server_itself_serves_the_bot_routes`.
+The room loop and idle exit counting room tasks are wired (room-driver note). `message_agent`
+registration with the bot transport is slice WB's.
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: `message_agent` is registered in the daemon's tool registry (`gateway_tool_registry`, with the
+Feishu / Yuanbao / `a2a_call` tools) and the chat service installs `LocalBotTransport` for the profile
+(`_install_bot_transport`, undone at daemon stop). Tests: `tests/unit/gateway/daemon/test_host_tools.py`.
+Still owed (follow-up, not WB's list): canonical-chat turns run with `indus-bots` / platform `bots`
+(the API server's `/v1/bots/dm` desk and the desktop Bots page still open them with their own
+platform, so `message_agent` is reachable only once that selection is made). The room loop is wired by WA (above).
+
+## Status
+
+Done (2026-10-21); daemon side wired in wave 42.

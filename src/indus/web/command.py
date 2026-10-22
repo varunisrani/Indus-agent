@@ -4,15 +4,17 @@ The commands live with the web package and the CLI loads them by name (``cli.app
 CLI and the web surface are sibling layers and may not import each other (D-16.246); the process
 state comes in as ``ctx.obj``.
 
-``indus dashboard [--host 127.0.0.1] [--port 9119] [--no-open] [--isolated]`` serves the web
-dashboard. One backend serves the whole machine root (every profile under it):
+``indus dashboard [--host 127.0.0.1] [--port 9119] [--no-open] [--isolated] [--console]`` serves the
+web dashboard. One backend serves the whole machine root (every profile under it):
 
 - a live machine backend (``<root>/dashboard.json`` + its health answer) that serves the asked
   address is reused: the browser opens on it (``?profile=<name>`` for a named profile) and the
   command ends (exit 0); one that cannot serve the asked host/port ends the command with exit 78,
   naming its pid and address;
 - a port another program holds ends it with exit 75 before anything starts;
-- ``--isolated`` runs a backend for this profile alone, beside any machine backend.
+- ``--isolated`` runs a backend for this profile alone, beside any machine backend;
+- ``--console`` turns on the admin console (``/api/console``, P24-36) of the backend this command
+  starts; a reused machine backend keeps the setting it was started with (a line says so).
 
 Gated mode (a bind beyond loopback, or a public URL) needs a login provider. Without one: on a
 terminal the command offers to set a username and password (written through the config writer as
@@ -76,6 +78,7 @@ class Launch:
     port_given: bool = True
     open_browser: bool = True
     isolated: bool = False
+    console: bool = False
     interactive: bool = False
     bind: Callable[[str, int], socket.socket] | None = None
     owner: Callable[[Path], Any] | None = None
@@ -244,6 +247,8 @@ def run_launch(launch: Launch) -> int:
                 return EX_CONFIG
             target = _profile_url(owner.url, profile)
             click.echo(f"The dashboard is already running: {target}")
+            if launch.console:
+                err("--console applies to a backend this command starts; that one keeps its own.")
             if launch.open_browser:
                 launch.opener(target)
             return 0
@@ -270,6 +275,7 @@ def run_launch(launch: Launch) -> int:
             host=launch.host,
             port=port,
             initial_profile=profile if machine and profile != DEFAULT_PROFILE else "",
+            console_enabled=launch.console,
             daemon=DaemonLink(scope.home, scope.env) if launch.mode == "dashboard" else None,
         )
         while True:
@@ -347,9 +353,15 @@ def _port_given(ctx: click.Context) -> bool:
 )
 @click.option("--no-open", is_flag=True, help="Do not open a browser.")
 @click.option("--isolated", is_flag=True, help="Run a separate backend for this profile only.")
+@click.option(
+    "--console",
+    "console",
+    is_flag=True,
+    help="Turn on the admin console (a curated command set, not a shell).",
+)
 @click.pass_context
 def dashboard_command(
-    ctx: click.Context, host: str, port: int, no_open: bool, isolated: bool
+    ctx: click.Context, host: str, port: int, no_open: bool, isolated: bool, console: bool
 ) -> int:
     return run_launch(
         Launch(
@@ -360,6 +372,7 @@ def dashboard_command(
             port_given=_port_given(ctx),
             open_browser=not no_open,
             isolated=isolated,
+            console=console,
             interactive=_interactive(ctx),
         )
     )

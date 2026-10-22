@@ -154,3 +154,10 @@ channels), `src/settings/{pages.ts,customPages.tsx}` (Gateways › Connections),
 remote is now the registry's primary entry (`adoptRemote` / `forgetPrimaryRemote`). Integration: the boot
 orchestrator reads the registry primary through `RemoteStore.saved()`; P20-40 should add a remote
 E2E spec now that the dial no longer needs the header rewrite.
+
+## Wiring (wave 42, WC, D-16.799)
+
+Not done, recorded: the server-side RFC 8252 broker (`/auth/native/{authorize,token,refresh}`,
+`auth_flows: ["native_pkce"]` in `/api/status`) is not small — it brokers the upstream OIDC
+provider (state, PKCE verifier and code exchange, rotating refresh tokens, revocation) and is a
+security surface of its own. The desktop keeps falling back to token mode (D-16.589 stands).

@@ -23,6 +23,15 @@
    for a daemon ``ensure`` started (and no supervisor), the idle-exit watch (P17-23,
    ``idle_exit``: stop reason ``idle_exit`` after ``gateway.idle_exit_seconds`` with nothing to do).
 
+With ``gateway.multiplex_profiles: true`` (P24-01..04, ``gateway.multiplex.serving``) step 1 is
+preceded by the host check: a live host gateway of this user either already serves the profile
+(exit 0 at a shell, 75 supervised), will serve it on request (same), or refuses (75 transient, 78
+/ 1 permanent); otherwise this daemon claims the host lock and publishes the record. Once
+running it serves every live profile of the root, each in an embedded ``GatewayDaemon``
+(``parent`` set), routes inbound messages through the profile router, answers through the bot
+that received the chat, and shares its HTTP listeners at ``/p/<profile>/``. The served secondaries
+stop first at shutdown; the record and the host lock go last.
+
 Then it waits for a stop or restart (``lifecycle``) and shuts down in reverse: the WebSocket
 endpoint first (clients detached), the parts and platforms, the intake, then the host (running
 turns interrupted and settled, sessions and the service closed), the control socket (the ticket
@@ -64,7 +73,13 @@ from indus.gateway.daemon import idle_exit, liveness
 from indus.gateway.daemon.command import run_command  # the CLI's "module:attr" target
 from indus.gateway.daemon.drain import drain_verdict, machine_epoch
 from indus.gateway.daemon.lifecycle import Lifecycle, drain_turns, wait_for_turns
-from indus.gateway.daemon.parts import DaemonPart, Stage, load_parts
+from indus.gateway.daemon.parts import (
+    PART_FACTORIES,
+    ROOT_PART_FACTORIES,
+    DaemonPart,
+    Stage,
+    load_parts,
+)
 from indus.gateway.daemon.recovery import BootRecovery, RecoveryReport
 from indus.gateway.daemon.status import StatusWriter, append_exit_line, previous_death
 from indus.gateway.daemon.watchdogs import (
@@ -105,8 +120,11 @@ from indus.state.registry import StoreHandle
 
 if TYPE_CHECKING:
     from indus.backends.processes import ProcessRegistry
+    from indus.gateway.core.events import Source
     from indus.gateway.core.shared_host import MessagingHost
     from indus.gateway.http import SurfaceSpec
+    from indus.gateway.multiplex.host import RunVerdict
+    from indus.gateway.multiplex.serving import MultiplexServing
     from indus.gateway.ws.server import WsEndpoint
     from indus.plugins.hooks import HookBus
     from indus.service.automation import SessionAutomation
@@ -121,8 +139,11 @@ __all__ = [
     "BootInfo",
     "DaemonOptions",
     "GatewayDaemon",
+    "PartsFactory",
     "PlatformRuntime",
+    "ServiceFactory",
     "StartupFailed",
+    "SurfaceFactory",
     "build_service",
     "build_surface_service",
     "gateway_tool_registry",
@@ -137,6 +158,8 @@ type SurfaceFactory = Callable[[GatewayDaemon, SurfaceSpec], Awaitable[SessionSe
 type UpListener = Callable[[str, Adapter], object]
 type DownListener = Callable[[str, bool, str], object]
 type ReadyListener = Callable[[], object]
+type PartsFactory = Callable[[GatewayDaemon], Sequence[DaemonPart]]
+type ReplyRoute = Callable[[Source, str | None], OutboundSender | None]
 
 
 _NOT_CONFLICTS = frozenset({"missing_dependency", "adapter_build_failed", "unknown_platform"})
@@ -227,14 +250,21 @@ class StartupFailed(Exception):
 
 
 class _DaemonReplies(PlatformReplies):
-    """The reply port over the daemon's live sender table (platforms come and go)."""
+    """The reply port over the daemon's live sender table (platforms come and go). Under
+    multiplexing ``route`` picks the sender per chat (the bot that received it, P24-03)."""
 
-    def __init__(self, senders: dict[str, OutboundSender]) -> None:
+    def __init__(self, senders: dict[str, OutboundSender], route: ReplyRoute | None = None) -> None:
         super().__init__({})
         self._live = senders
+        self._route = route
 
     def sender_for(self, platform: str) -> OutboundSender | None:
         return self._live.get(platform.lower())
+
+    def sender_for_reply(self, source: Source, session_key: str | None) -> OutboundSender | None:
+        if self._route is None:
+            return super().sender_for_reply(source, session_key)
+        return self._route(source, session_key)
 
     async def aclose(self) -> None:
         for sender in list(self._live.values()):
@@ -274,14 +304,28 @@ class GatewayDaemon:
         service_factory: ServiceFactory | None = None,
         parts: Sequence[DaemonPart] | None = None,
         surface_factory: SurfaceFactory | None = None,
+        parent: GatewayDaemon | None = None,
+        secondary_parts: PartsFactory | None = None,
     ) -> None:
         self.scope = scope
         self.clock: Clock = scope.clock
         self.options = options or DaemonOptions()
         self.registry = registry if registry is not None else PlatformRegistry()
-        self._service_factory: ServiceFactory = service_factory or build_service
-        self._surface_factory: SurfaceFactory = surface_factory or build_surface_service
+        self.registry_given = registry is not None
+        self.service_factory: ServiceFactory = service_factory or build_service
+        self.surface_factory: SurfaceFactory = surface_factory or build_surface_service
         self._explicit_parts = list(parts) if parts is not None else None
+        self.parent = parent
+        """The host daemon when this one serves a secondary profile in it (P24-01..04)."""
+        self.mux: MultiplexServing | None = parent.mux if parent is not None else None
+        """The multiplex host state, shared by the host daemon and its served profiles."""
+        self._secondary_parts = secondary_parts
+        self.attach_verdict: RunVerdict | None = None
+        """Set when a live host gateway already serves (or refused) this profile."""
+        self.control_verbs: dict[str, tuple[Any, float]] = {}
+        """Extra control-socket verbs (the multiplex host's ``serve-profile`` and friends)."""
+        self.relayed: set[str] = set()
+        """Platforms served through a relay connector (P24-09), not by their native adapter."""
         self.parts: list[DaemonPart] = []
         self.lifecycle = Lifecycle()
         self.process = ProcessIdentity.current()
@@ -323,8 +367,10 @@ class GatewayDaemon:
             epoch=self.boot.epoch,
         )
         self.systemd = SystemdNotifier(scope.env, clock=self.clock)
+        # One credential-lock directory per OS user: a served profile uses the host's.
+        lock_env = parent.scope.env if parent is not None else scope.env
         self.token_locks = TokenLocks(
-            default_lock_dir(scope.env), profile=scope.profile_id, home=str(scope.home)
+            default_lock_dir(lock_env), profile=scope.profile_id, home=str(scope.home)
         )
         # Platform → the key its token lock was taken on, so the release uses the same key even
         # when the secret store changed in between.
@@ -352,7 +398,7 @@ class GatewayDaemon:
 
     async def surface_service(self, spec: SurfaceSpec) -> SessionService:
         """A session service for one HTTP surface (P15-30..32; the HTTP part closes it)."""
-        return await self._surface_factory(self, spec)
+        return await self.surface_factory(self, spec)
 
     def spawn(self, coro: Coroutine[Any, Any, Any], *, name: str) -> asyncio.Task[Any]:
         """A tracked background task (cancelled at shutdown; a failure is logged)."""
@@ -392,8 +438,8 @@ class GatewayDaemon:
                 log.exception("a platform listener failed")
 
     def identity(self) -> dict[str, Any]:
-        """What the control socket's ``identify`` answers."""
-        return {
+        """What the control socket's ``identify`` answers (plus the served set on a host)."""
+        found: dict[str, Any] = {
             "pid": self.process.pid,
             "start_time": self.process.start_time,
             "pidns": self.process.pidns,
@@ -403,6 +449,22 @@ class GatewayDaemon:
             "code_version": __version__,
             "epoch": self.boot.epoch,
         }
+        mux = self.mux
+        if mux is not None and self.parent is None:
+            found.update(mux.host.identify_fields())
+        elif mux is not None and self.parent is not None:
+            found.update({"multiplex": True, "served_by": str(self.parent.scope.home)})
+        return found
+
+    def native_state(self, platform: str) -> bool | None:
+        """The platform's native adapter: True enabled, False explicitly disabled, None not
+        configured (the delivery router's rule for relayed platforms, P24-09)."""
+        found = self.settings.get(platform)
+        if found is None:
+            return None
+        if found.enabled:
+            return True
+        return False if found.explicit is False else None
 
     def status_snapshot(self) -> dict[str, Any]:
         return self.status.snapshot().to_json()
@@ -494,6 +556,40 @@ class GatewayDaemon:
 
     async def run(self) -> int:
         """The whole life of the daemon; returns the exit code."""
+        if self.parent is None:
+            from indus.gateway.multiplex.serving import multiplex_enabled
+
+            if await run_blocking(multiplex_enabled, self.scope, label="gateway config"):
+                return await self._run_multiplexed()
+        return await self._run_claimed()
+
+    async def _run_multiplexed(self) -> int:
+        """The host check before the instance lock (P24-01); then the normal run as the host."""
+        from indus.gateway.multiplex.serving import MultiplexServing, open_host
+
+        try:
+            opened = await open_host(self)
+        except Exception as exc:  # the host state dir or its lock could not be used
+            log.error("the host gateway lock could not be taken: %s", exc)
+            return EXIT_RESTART
+        if not isinstance(opened, MultiplexServing):
+            self.attach_verdict = opened
+            log.warning("%s", opened.message)
+            code = opened.exit_code
+            return EXIT_RESTART if code is None else code
+        mux = opened
+        mux.secondary_parts = self._secondary_parts
+        self.mux = mux
+        self.tickets = TicketBook.for_home(
+            self.scope.home, instance_id=self.instance_id, served=mux.host.served_ticket_ids
+        )
+        self.control_verbs.update(mux.host.control_verbs())
+        try:
+            return await self._run_claimed()
+        finally:
+            await mux.aclose()
+
+    async def _run_claimed(self) -> int:
         home = self.scope.home
         home.mkdir(parents=True, exist_ok=True)
         record = PidRecord(
@@ -609,6 +705,8 @@ class GatewayDaemon:
         self.systemd.ready("running")
         chosen = self.options.idle_exit_seconds
         self.idle_watch = idle_exit.arm(self, window=None if chosen is None else lambda: chosen)
+        if self.mux is not None and self.parent is None:
+            self.spawn(self.mux.serve_all(), name="serve the root's profiles")
         log.info(
             "gateway running: %s",
             ", ".join(sorted(self.adapters)) or "no messaging platform connected",
@@ -618,9 +716,14 @@ class GatewayDaemon:
 
     async def _start(self) -> None:
         await self._assemble()
-        self.parts = (
-            list(self._explicit_parts) if self._explicit_parts is not None else load_parts(self)
-        )
+        if self._explicit_parts is not None:
+            self.parts = list(self._explicit_parts)
+        elif self.parent is not None:
+            # A served profile runs its own parts; the root-level ones run once, in the host.
+            own = tuple(f for f in PART_FACTORIES if f not in ROOT_PART_FACTORIES)
+            self.parts = load_parts(self, own)
+        else:
+            self.parts = load_parts(self)
         for part in self.parts:
             try:
                 await part.prepare(self)
@@ -686,7 +789,10 @@ class GatewayDaemon:
         from indus.gateway.ws.server import WsEndpoint
 
         try:
-            endpoint = WsEndpoint(host, self.tickets, scope=self.scope)
+            # A served profile's daemon binds its own (routed) scope (D-16.542, wave 42).
+            endpoint = WsEndpoint(
+                host, self.tickets, scope=self.scope, served=self.parent is not None
+            )
             await endpoint.start()
         except Exception as exc:
             log.warning("the attach WebSocket is not available: %s", exc)
@@ -735,7 +841,7 @@ class GatewayDaemon:
             watchdog = _config_value(scope, "gateway.systemd_watchdog_seconds", 0.0)
         self.systemd = SystemdNotifier(scope.env, clock=self.clock, watchdog_seconds=watchdog)
         self.store = await run_blocking(store_registry.acquire, scope, label="session store")
-        service = await self._service_factory(self)
+        service = await self.service_factory(self)
         self.service = service
         self.plugins = service.plugins
         self.mcp = service.mcp
@@ -767,7 +873,9 @@ class GatewayDaemon:
         )
         self.dead_targets = DeadTargets.for_scope(scope)
         self.media = MediaPolicy.for_scope(scope, section)
-        self.replies = _DaemonReplies(self.senders)
+        self.replies = _DaemonReplies(
+            self.senders, self.mux.reply_sender(self) if self.mux is not None else None
+        )
         self.pipeline = AdmissionPipeline(
             scope=scope,
             service=service,
@@ -918,9 +1026,14 @@ class GatewayDaemon:
         except Exception as exc:
             await self._failed(name, "retrying", "connect_failed", adapter.scrub(str(exc)))
             return
+        await self._adopt(name, adapter)
+
+    async def _adopt(self, name: str, adapter: Adapter) -> None:
+        """A connected adapter serves ``name`` from now on (intake, sender, status, listeners)."""
         self.adapters[name] = adapter
         self.pipeline.adapters[name] = adapter
-        adapter.set_sink(self.pipeline.accept)
+        mux = self.mux
+        adapter.set_sink(self.pipeline.accept if mux is None else mux.intake(self, adapter))
         adapter.set_fatal_listener(
             lambda code, message: self._lost_for_good(name, adapter, code, message)
         )
@@ -931,6 +1044,30 @@ class GatewayDaemon:
         self.set_platform_state(name, "connected")
         log.info("platform %s connected", name)
         await self._tell(self._up, name, adapter)
+
+    async def attach_relayed(self, name: str, adapter: Adapter, *, timeout: float) -> bool:
+        """Connect a relay connector's adapter for ``name`` and serve the platform through it
+        (P24-09). False (status row set) when it does not connect."""
+        if name in self.adapters:
+            log.info("platform %s already has an adapter; the relay does not take it", name)
+            return False
+        self.set_platform_state(name, "retrying", error_code="starting")
+        try:
+            await asyncio.wait_for(adapter.connect(is_reconnect=False), timeout)
+        except TimeoutError:
+            with contextlib.suppress(Exception):
+                await adapter.disconnect()
+            await self._failed(name, "retrying", "connect_timeout", "the relay did not answer")
+            return False
+        except AdapterConnectError as exc:
+            await self._failed(name, "retrying" if exc.retryable else "fatal", exc.code, str(exc))
+            return False
+        except Exception as exc:
+            await self._failed(name, "retrying", "connect_failed", adapter.scrub(str(exc)))
+            return False
+        self.relayed.add(name)
+        await self._adopt(name, adapter)
+        return True
 
     async def _failed(self, name: str, state: PlatformState, code: str, message: str) -> None:
         log.warning("platform %s %s: %s", name, state, message)
@@ -1094,6 +1231,8 @@ class GatewayDaemon:
         self._started.clear()
         for part in reversed([p for p in started if p.stage is Stage.BACKGROUND]):
             await self._stop_part(part)
+        if self.mux is not None and self.parent is None:
+            await self.mux.stop_served()  # served profiles drain and stop before the host
         for name in list(self.adapters):
             await self.disconnect_platform(name, fatal=False, reason="stopping")
         for part in reversed([p for p in started if p.stage is Stage.RECOVERY]):
@@ -1171,17 +1310,51 @@ def gateway_tool_registry(scope: Scope) -> ToolRegistry:
     """The tool registry of the daemon's sessions: the built-in tools plus the gateway-only ones,
     today the Feishu document and comment tools (P16-15) and the Yuanbao group, DM and sticker
     tools (P16-22), which their toolsets gate to their own platform's sessions and their probes to
-    profiles with that platform's credentials."""
+    profiles with that platform's credentials; ``message_agent`` (P24-07, the ``bots`` toolset of
+    canonical bot chats; it delivers through the transport ``_session_service`` installs) and
+    ``a2a_call`` (P24-10, the ``a2a`` toolset, offered while peers are configured). Built-in tool
+    modules may not import the gateway (R02.26), so these are registered here."""
+    from indus.gateway.adapters.a2a import tools as a2a_tools
     from indus.gateway.adapters.feishu import tools as feishu_tools
     from indus.gateway.adapters.yuanbao import tools as yuanbao_tools
-    from indus.tools.builtin import load_builtins
+    from indus.tools.builtin import load_builtins, message_agent
     from indus.tools.registry import ToolRegistry
 
     tools = ToolRegistry(clock=scope.clock)
     load_builtins(tools)
     feishu_tools.register_tools(tools)
     yuanbao_tools.register_tools(tools)
+    message_agent.register_tools(tools)
+    a2a_tools.register_tools(tools)
     return tools
+
+
+async def _chat_origin(daemon: GatewayDaemon, session_id: str) -> dict[str, Any] | None:
+    """The chat a daemon session answers in (``delivery_origin`` for the cron and board tools)."""
+    pipeline: AdmissionPipeline | None = getattr(daemon, "pipeline", None)
+    if pipeline is None:
+        return None
+    source = await pipeline.origin_source(session_id)
+    if source is None:
+        return None
+    return {
+        "platform": str(source.platform),
+        "chat_id": str(source.chat_id),
+        "thread_id": str(source.thread_id) if source.thread_id else None,
+    }
+
+
+def _install_bot_transport(daemon: GatewayDaemon) -> None:
+    """``message_agent`` of this profile delivers through ``LocalBotTransport`` (P24-07)."""
+    from indus.gateway.rooms.peers import LocalBotTransport
+    from indus.tools.builtin.message_agent import install_transport
+
+    undo = install_transport(daemon.scope, LocalBotTransport(daemon.scope))
+
+    async def uninstall() -> None:
+        undo()
+
+    daemon.closers.append(uninstall)
 
 
 async def _session_service(
@@ -1203,6 +1376,7 @@ async def _session_service(
     from indus.providers.route import resolve
     from indus.service import terminal_host
     from indus.service.code_host import KernelUpkeep
+    from indus.service.lsp_host import LspUpkeep
     from indus.service.mcp_host import McpUpkeep
     from indus.service.plugin_host import PluginUpkeep
     from indus.service.session_service import SessionService
@@ -1223,6 +1397,7 @@ async def _session_service(
         session_fields={"cwd": str(cwd), "model": route.model},
         store=store,
         registry=tools,
+        delivery_origin=(lambda session_id: _chat_origin(daemon, session_id)) if chat else None,
     )
 
     async def factory(
@@ -1241,6 +1416,7 @@ async def _session_service(
     if chat:
         terminal_host.install(handle, terminal.runtime().processes)
         daemon.terminal_processes = terminal.runtime().processes
+        _install_bot_transport(daemon)
 
         async def shut_terminal() -> None:
             await terminal.runtime().shutdown()
@@ -1259,6 +1435,7 @@ async def _session_service(
         kernels=KernelUpkeep(scope, reaper=chat),
         mcp=McpUpkeep(scope, tools, aux=aux, watch=False) if mcp else None,
         plugins=PluginUpkeep(scope, tools, surface="gateway", interactive=False) if chat else None,
+        lsp=LspUpkeep(scope),
     )
 
 
@@ -1269,6 +1446,7 @@ async def run_daemon(
     registry: PlatformRegistry | None = None,
     service_factory: ServiceFactory | None = None,
     parts: Sequence[DaemonPart] | None = None,
+    secondary_parts: PartsFactory | None = None,
 ) -> int:
     """Run one gateway for ``scope`` until it stops; the exit code."""
     daemon = GatewayDaemon(
@@ -1277,5 +1455,6 @@ async def run_daemon(
         registry=registry,
         service_factory=service_factory,
         parts=parts,
+        secondary_parts=secondary_parts,
     )
     return await daemon.run()

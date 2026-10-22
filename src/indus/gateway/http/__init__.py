@@ -20,6 +20,12 @@ build:
 
 A surface that cannot start (no API key, a refused webhook route, the port taken after the bind
 retries) is reported in ``HttpSurfaces.problems`` and left off; the other one still starts.
+
+Under multiplexing (P24-04) the launch profile's host passes ``front``: each listener serves
+``front(name, app)`` (a ``SharedIngress`` around the profile's own app). A served secondary's host
+passes ``mount`` instead: nothing binds a port; each surface's app is mounted on the launch
+listener of the same name at ``/p/<profile>/`` for the paths it serves (``API_PATHS``,
+``WEBHOOK_PATHS``), and ``HttpSurfaces.mounted`` names the prefix.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 from indus.foundation.scope import Scope
 from indus.foundation.secrets import SecretStore, open_secret_store
@@ -38,7 +44,9 @@ from indus.state.api_keys import ApiKeyRing, KeyStore
 from indus.state.registry import StoreHandle
 
 __all__ = [
+    "API_PATHS",
     "API_SURFACE",
+    "WEBHOOK_PATHS",
     "WEBHOOK_SURFACE",
     "HttpHost",
     "HttpSurfaces",
@@ -66,6 +74,11 @@ API_SURFACE = SurfaceSpec(
 )
 WEBHOOK_SURFACE = SurfaceSpec("webhook", ("indus-webhook",), (), "webhook", untrusted=True)
 
+API_PATHS: Final = ("/health", "/v1/", "/api/")
+"""What the API app serves (claimed by its mount on a shared listener)."""
+WEBHOOK_PATHS: Final = ("/webhooks/",)
+"""What the webhook receiver serves (claimed by its mount on a shared listener)."""
+
 type ServiceFactory = Callable[[SurfaceSpec], SessionService | Awaitable[SessionService]]
 
 
@@ -80,6 +93,11 @@ class HttpHost:
     deliver: Any = None  # webhook.DirectDeliver; default: P14's deliverer registry
     on_status: Callable[[str, dict[str, Any]], object] | None = None
     tickets: Any = None  # service.ws_auth.TicketBook: the browser-control broker's (P24-47)
+    front: Callable[[str, Any], Any] | None = None
+    """Multiplex host: ``front(surface, app)`` is what that listener serves (P24-04)."""
+    mount: Callable[[str, Any, tuple[str, ...]], str] | None = None
+    """Served secondary: mount ``app`` for ``paths`` on the host's listener; the URL prefix.
+    Raises ``LookupError`` when the host has no such listener."""
 
 
 @dataclass
@@ -87,6 +105,8 @@ class HttpSurfaces:
     api: Any = None  # api_server.ApiServer
     webhook: Any = None  # webhook.WebhookReceiver
     problems: list[str] = field(default_factory=list[str])
+    mounted: dict[str, str] = field(default_factory=dict[str, str])
+    """Surface → its prefix on the host's shared listener (a served secondary)."""
 
     async def aclose(self) -> None:
         if self.api is not None:
@@ -172,13 +192,25 @@ async def start_http_surfaces(host: HttpHost) -> HttpSurfaces:
         ctx.cron = default_cron(ctx)
         ctx.browser_broker = _browser_broker(host)
         status = host.on_status
+        front = host.front
         server = ApiServer(
-            ctx, on_status=(lambda data: status("api_server", data)) if status else None
+            ctx,
+            on_status=(lambda data: status("api_server", data)) if status else None,
+            front=(lambda app: front("api_server", app)) if front is not None else None,
         )
         try:
-            await server.start()
+            if host.mount is not None:
+                if not ctx.keys.has_keys():
+                    raise NoApiKey(
+                        "the API server needs an API key: run `indus gateway api-key create` first"
+                    )
+                surfaces.mounted["api_server"] = host.mount(
+                    "api_server", server.profile_app, API_PATHS
+                )
+            else:
+                await server.start()
             surfaces.api = server
-        except (NoApiKey, OSError) as exc:
+        except (NoApiKey, OSError, LookupError) as exc:
             surfaces.problems.append(f"API server: {exc}")
             log.error("the API server did not start: %s", exc)
             await server.aclose()
@@ -193,10 +225,16 @@ async def start_http_surfaces(host: HttpHost) -> HttpSurfaces:
             desk=desk,
             deliver=host.deliver,
         )
+        if host.front is not None:
+            receiver.app = host.front("webhook", receiver.app)
         try:
-            await receiver.start()
+            if host.mount is not None:
+                receiver.load()
+                surfaces.mounted["webhook"] = host.mount("webhook", receiver.app, WEBHOOK_PATHS)
+            else:
+                await receiver.start()
             surfaces.webhook = receiver
-        except (RouteError, OSError) as exc:
+        except (RouteError, OSError, LookupError) as exc:
             surfaces.problems.append(f"webhook receiver: {exc}")
             log.error("the webhook receiver did not start: %s", exc)
             await receiver.aclose()

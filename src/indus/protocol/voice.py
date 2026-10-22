@@ -1,14 +1,17 @@
 """``voice.*``: speech to text and text to speech for the desktop composer (P24-35).
 
 The desktop records a clip and asks ``voice.transcribe`` for its text (dictation, spoken
-conversation); ``voice.speak`` reads a reply aloud. Both run the profile's configured providers
-(P10: ``stt.*``, ``tts.*``) inside the daemon, so provider keys never reach the renderer. The
-handlers are in ``indus.service.voice_rpc``.
+conversation); ``voice.speak`` reads a reply aloud. ``voice.listen`` records one take on the
+answering process's own microphone and returns its text: the terminal UI's hand-off after the wake
+word (P24-20), whose process (the bridge or the daemon) owns the microphone the wake word used.
+All run the profile's configured providers (P10: ``stt.*``, ``tts.*``) inside that process, so
+provider keys never reach a renderer. The handlers are in ``indus.service.voice_rpc``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Literal
 
 from pydantic import Field
 
@@ -21,6 +24,8 @@ MAX_SPEAK_CHARS = 20_000
 """Longest text ``voice.speak`` reads."""
 VOICE_TIMEOUT_S = 300.0
 """A long clip or text may take a provider a while."""
+LISTEN_TIMEOUT_S = 3_600.0 + VOICE_TIMEOUT_S
+"""``voice.listen``: the longest take ``voice.max_seconds`` allows, then the transcription."""
 
 
 class VoiceTranscribeParams(ProtocolModel):
@@ -57,16 +62,36 @@ class VoiceSpeakResult(ProtocolModel):
     """Its type."""
 
 
+class VoiceListenParams(ProtocolModel):
+    """Record one take on this process's microphone and return its text."""
+
+    session_id: str | None = None
+    """The chat the take is for (null: a new chat)."""
+
+
+class VoiceListenResult(ProtocolModel):
+    """What was said in the take."""
+
+    text: str
+    """The transcript ("" when nothing was said or nothing could be made out)."""
+    reason: Literal["spoke", "no_speech", "inaudible", "limit", "cancel"]
+    """How the take ended: ``spoke`` (a pause after speech), ``no_speech`` (nobody spoke in
+    ``voice.wait_seconds``), ``inaudible`` (no words made out), ``limit`` (``voice.max_seconds``)
+    or ``cancel`` (the microphone stream ended)."""
+
+
 type _Row = tuple[str, type[ProtocolModel], type[ProtocolModel], tuple[ErrorCode, ...]]
 
 VOICE_METHODS: tuple[_Row, ...] = (
     ("voice.transcribe", VoiceTranscribeParams, VoiceTranscribeResult, (PROVIDER_UNAVAILABLE,)),
     ("voice.speak", VoiceSpeakParams, VoiceSpeakResult, (PROVIDER_UNAVAILABLE,)),
+    ("voice.listen", VoiceListenParams, VoiceListenResult, (PROVIDER_UNAVAILABLE,)),
 )
 """``(name, params, result, extra errors)`` for the voice methods, in declaration order."""
 
 VOICE_DEADLINES: Mapping[str, float] = {
     "voice.transcribe": VOICE_TIMEOUT_S,
     "voice.speak": VOICE_TIMEOUT_S,
+    "voice.listen": LISTEN_TIMEOUT_S,
 }
 """Dispatcher deadlines (in ``rpc.dispatch.DEADLINES``)."""

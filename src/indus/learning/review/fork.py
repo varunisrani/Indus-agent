@@ -34,6 +34,9 @@ Dispatch whitelist (advertised is not permitted): ``skill_manage``, ``skill_view
 calls go through ``WhitelistHooks``. Writes run with the origin ``background_review``
 (``learning.pending.bind_origin``), attended only for ``/refine``.
 
+Every finished review is handed to the runner's ``listeners`` (``ReviewOutcome``; a listener may
+be async, a failing one is logged): the host offers suggested jobs from it (P24-46).
+
 A live turn calls ``cancel_for_live_turn()``: the fork is interrupted and given 2.0 s (on the
 injected clock) to finish; past that the live turn goes ahead anyway. With ``learning.review.defer:
 auto`` an automatic review bound for a local server waits in the ``IdleQueue`` instead.
@@ -43,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import logging
 import secrets
 from collections.abc import Callable, Collection, Coroutine, Iterable, Mapping, Sequence
@@ -93,6 +97,7 @@ __all__ = [
     "USER_CLIP",
     "AuxCaller",
     "GuardedCaller",
+    "ReviewListener",
     "ReviewOutcome",
     "ReviewParent",
     "ReviewRunner",
@@ -443,6 +448,9 @@ class ReviewOutcome:
     reason: str = ""
 
 
+type ReviewListener = Callable[[ReviewOutcome], object]
+
+
 @dataclass(frozen=True)
 class _Route:
     routed: bool
@@ -493,6 +501,8 @@ class ReviewRunner:
         self._closed = False
         self._warned: set[str] = set()
         self.last: ReviewOutcome | None = None
+        self.listeners: list[ReviewListener] = []
+        """Told every finished review (see the module notes)."""
         self.trigger: ReviewTrigger | None = None
         """The session's counters and trigger once ``install_review`` made them."""
 
@@ -703,7 +713,17 @@ class ReviewRunner:
             if owned:
                 self._task = None
         self.last = outcome
+        await self._tell(outcome)
         return outcome
+
+    async def _tell(self, outcome: ReviewOutcome) -> None:
+        for listener in list(self.listeners):
+            try:
+                answer = listener(outcome)
+                if inspect.isawaitable(answer):
+                    await answer
+            except Exception:
+                log.warning("a review listener failed", exc_info=True)
 
     async def _run(self, request: ReviewRequest) -> ReviewOutcome:
         parent = self.parent.runtime

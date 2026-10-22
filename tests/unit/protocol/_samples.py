@@ -60,6 +60,11 @@ from indus.protocol.server_requests import (
     ClarifyAnswer,
     ClarifyQuestion,
     ClarifyRequest,
+    PreviewActAnswer,
+    PreviewActRequest,
+    PreviewPin,
+    PreviewReadAnswer,
+    PreviewReadRequest,
     SecretAnswer,
     SecretRequest,
     SudoAnswer,
@@ -195,6 +200,17 @@ SAMPLES: list[ProtocolModel] = [
     SecretAnswer(value="v-" + "example"),
     SecretAnswer(),
     ClarifyQuestion(id="q", text="?", choices=["a", "b"], multi_select=True),
+    PreviewActRequest(
+        request_id="r",
+        session_id="s",
+        action="annotate",
+        pins=[PreviewPin(selector="#a", note="n")],
+    ),
+    PreviewActRequest(request_id="r", session_id="s", action="scroll", dx=0, dy=300),
+    PreviewReadRequest(request_id="r", session_id="s"),
+    PreviewActAnswer(ok=True, result={"url": "http://localhost:5173/"}),
+    PreviewReadAnswer(ok=False, error="no page loaded"),
+    PreviewPin(selector="button#go", note="click here"),
 ]
 
 SAMPLES += BRIDGE_SAMPLES

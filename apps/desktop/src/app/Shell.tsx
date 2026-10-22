@@ -16,6 +16,7 @@ import {
 } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { draftOf, FRESH, setDraft, windowDrafts } from "../chat/composer/goneSession.ts";
+import { ContributedNav } from "../contrib/shell.tsx";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
 import { type MessageKey, useT } from "../i18n/index.tsx";
@@ -33,6 +34,7 @@ import { beginNewChat, Sidebar, SidebarModel } from "../sidebar/Sidebar.tsx";
 import { desktopBridge, launchFacts } from "./bridge.ts";
 import { OVERLAY_ICONS, OVERLAY_TEXT, PAGE_ICONS, PAGE_TEXT } from "./pages.tsx";
 import {
+  isContributedPage,
   NEW_CHAT_PATH,
   OVERLAYS,
   overlayPath,
@@ -143,7 +145,7 @@ function LeftSidebar(props: {
           <span>{t("nav.newChat")}</span>
         </button>
         <ul className="nav-list">
-          {PAGES.map((page) => (
+          {PAGES.filter((page) => !isContributedPage(page)).map((page) => (
             <li key={page}>
               <NavLink to={pagePath(page)} className="nav-item">
                 {PAGE_ICONS[page]}
@@ -151,6 +153,8 @@ function LeftSidebar(props: {
               </NavLink>
             </li>
           ))}
+          {/* the registry's sidebar entries (P24-32): bundled surfaces and plugins */}
+          <ContributedNav />
         </ul>
       </nav>
       {props.switchError !== null && (

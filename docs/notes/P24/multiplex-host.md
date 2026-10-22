@@ -134,6 +134,48 @@ Compare checklist (filled after the rewrite; reopened the four files):
   record cleanup (the daemon's stop path calls `MultiplexHost.aclose`; a crash leaves a record the
   free lock already marks stale).
 
+## Wiring (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file (wiring of our own modules; the behaviour is this note's). Wired in
+`gateway run` through the daemon (`gateway/daemon/process.py`, new `gateway/multiplex/serving.py`):
+
+- **before the instance lock** (`GatewayDaemon.run` → `_run_multiplexed` → `serving.open_host`):
+  with `gateway.multiplex_profiles: true`, `decide_second_run` (attach 0 / 75 supervised;
+  transient 75; permanent 78 / 1); `start` → `MultiplexHost.claim` (lock + record), a lost race is
+  a transient 75; the record and the lock go at exit (`MultiplexServing.aclose`). `gateway run`
+  prints the verdict (`command.py`).
+- **the host daemon**: `identity()` carries `identify_fields()`; the control socket registers
+  `control_verbs()` (`GatewayDaemon.control_verbs`, merged by `DaemonBridge.control_handlers`);
+  the ticket book is `TicketBook.for_home(..., served=host.served_ticket_ids)`; once running it
+  serves every live profile of the root (`rescan`).
+- **serve / unserve hooks**: each served secondary runs as an embedded `GatewayDaemon` (`parent`
+  set) under its own `ProfileScopeCache` scope, bound with `ScopeBinder.run_turn` (its whole task
+  tree carries the profile's scope); it takes that profile's instance lock and runs its own store,
+  service, authorizer, adapters and control socket; the root-level parts (task boards, group
+  rooms: `ROOT_PART_FACTORIES`) run only in the host. A secondary that ends on its own is
+  unserved; the host stops every secondary (drain, stop) before its own adapters at shutdown.
+- **demo**: `tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_two_profiles_served_by_one_gateway_with_isolated_secrets`
+  (bot A's token and allowlist only in the launch env, bot B's only in B's secret store; a sender
+  allowed only by B is refused by A and answered by B; each chat in its own store; a second
+  `gateway run` for `b` attaches; a restart keeps each chat with its own bot).
+
+Decisions for the lead:
+- Served profiles run as embedded per-profile daemons (one store, service, control socket and
+  instance lock each) rather than one daemon with per-profile tables; the host serves every live
+  profile of the root at start (including `default` when launched from a named profile).
+- D-16.542 refuses a routed scope at the attach WebSocket (`profile_guard.bind_daemon_scope`), so
+  a served secondary runs without an attach endpoint (`attach_ws=False`): `describe` on its control
+  socket answers a null `ws_url`. Amend D-16.542 to accept a served profile's own routed scope, or
+  attach through the host (follow-up). **Resolved at integration (wave 42, D-16.542 amended,
+  D-16.877):** `bind_daemon_scope(..., served=True)` accepts the routed scope of the daemon that
+  serves exactly that profile (home = its ticket book's profile, secret store inside that home);
+  `WsEndpoint(served=...)` passes it, the served daemon sets it (`parent` set) and the secondary
+  options no longer force `attach_ws=False`. `indus` / the TUI attach to a served profile through
+  its own control socket and endpoint:
+  `tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_a_served_profile_is_attached_over_its_own_websocket`,
+  `tests/unit/service/remote/test_profile_guard.py::test_a_served_profiles_own_routed_scope_may_serve_its_daemon`.
+- D-16.17 flipped to "multiplex available, off by default" in `16-what-we-change.md`.
+
 ## Status
 
-Done (2026-10-21). Daemon wiring listed above is owed by the lead.
+Done (2026-10-21), wired in wave 42 (above).

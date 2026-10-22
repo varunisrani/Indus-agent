@@ -96,3 +96,20 @@ Compare checklist (filled after the rewrite; reopened the files in `Read:`):
 ## Status
 
 Done (2026-10-21). Wiring owed: `preview.act` / `preview.read` kinds in `indus.protocol.server_requests` + `@indus/client` (decline answer `not_shown`), the desktop request store routing them to `windowPreviewAutomation.handle`, a `PreviewPort` over the session broker offered to tool handlers as `preview`, and `preview.register_tools(registry, surface=…)` called for sessions a `gui` viewer created. Shared: `PreviewPane.tsx` (annotate toolbar, pin panel, automation attach), `d2Panes.tsx` (session id + add-to-chat), `en.ts`.
+
+## Wiring (wave 42, WB — D-16.799)
+
+Wired: protocol kinds `preview.act` / `preview.read` (`PreviewActRequest`, `PreviewReadRequest`;
+answers `{ok, error, result}`), `PREVIEW_REQUEST_KINDS` / `PERSON_REQUEST_KINDS`; codegen rerun.
+The generic `server_requests` feature now means the kinds a person answers (TUI, CLI, ACP never get
+preview requests); the desktop window advertises `server_requests.preview.act|read`
+(`CLIENT_FEATURES`) and its `ServerRequestStore` routes them to `windowPreviewAutomation` (never a
+card): the window showing the session's preview answers, others decline through the channel (4404);
+`declineAnswer` covers the new kinds. Every window declining settles the request undeliverable with
+`error.data.indus_code = server_request.not_shown` → `PreviewDeclined`; no capable window →
+`PreviewUndelivered`; a timeout → `TimeoutError`. The tools build `BrokerPreview` over the session's
+broker (no new handler extra) and exist only in daemon sessions a desktop window created
+(`SessionMutations.shape` → `with_preview`: a `SessionRegistry` with the tools, `desktop-preview` in an
+explicit selection; the stored row's source keeps it after a reload or restart). Tests:
+`tests/unit/service/test_preview_requests.py`, `apps/desktop/src/gateway/previewRequests.test.ts`,
+`packages/client/src/channel.test.ts` (decline answer). ACC-N12-2 updated.

@@ -120,3 +120,16 @@ Compare checklist (filled after the rewrite; reopened `hermes_cli/console_engine
 ## Status
 
 Done (2026-10-21). Shared files listed under Files.
+
+## Wiring (wave 42, WC, D-16.799)
+
+Read: none (wiring).
+
+`indus dashboard --console` (`web/command.py`): the flag sets `AppOptions.console_enabled` of the
+backend the command starts (machine or `--isolated`); when a running machine backend is reused it
+keeps its own setting and the command says so on stderr. Tests drive the real command (click) with
+its server swapped for an in-test one on the same socket:
+`tests/contract/web/test_console_socket.py::test_dashboard_console_flag_serves_the_console`
+(`ready`, `version` runs) and `::test_dashboard_without_the_flag_keeps_the_console_off` (4404).
+
+Status (wave 42): wired.

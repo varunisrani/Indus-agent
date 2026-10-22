@@ -140,7 +140,8 @@ def test_split_frames_pads_the_last() -> None:
 
 def test_settings_clamp_and_defaults() -> None:
     s = WakeSettings.from_mapping({"threshold": 7, "confirm_frames": 0, "engine": "porcupine"})
-    assert s.threshold == 0.99 and s.confirm_frames == 1 and s.engine == "openwakeword"
+    assert s.threshold == 0.99 and s.confirm_frames == 1 and s.engine == "sherpa"  # D-16.800
+    assert WakeSettings.from_mapping({"engine": "openwakeword"}).engine == "openwakeword"
     assert s.phrase == "hey indus" and not s.enabled and not s.consent
 
 

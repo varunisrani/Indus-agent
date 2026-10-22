@@ -42,16 +42,20 @@ from indus.protocol.errors import (
     SERVER_REQUEST_UNSUPPORTED,
     make_error,
 )
+from indus.protocol.requests_port import NOT_SHOWN_INDUS_CODE
 from indus.protocol.server_requests import (
     SERVER_REQUEST_KINDS,
     ApprovalRequest,
     ClarifyRequest,
+    PreviewActRequest,
+    PreviewReadRequest,
     SecretRequest,
     SudoRequest,
 )
 
 __all__ = [
     "NOT_SHOWN_CODE",
+    "NOT_SHOWN_INDUS_CODE",
     "REQUEST_ID_PREFIX",
     "SETTLED_EVENT",
     "UNRENDERABLE_CODE",
@@ -72,7 +76,14 @@ UNRENDERABLE_CODE = METHOD_NOT_FOUND.code
 """A viewer's "I cannot render this kind" answer (JSON-RPC method not found, -32601)."""
 SETTLED_EVENT = "request.settled"
 
-type OfferedRequest = ApprovalRequest | ClarifyRequest | SudoRequest | SecretRequest
+type OfferedRequest = (
+    ApprovalRequest
+    | ClarifyRequest
+    | SudoRequest
+    | SecretRequest
+    | PreviewActRequest
+    | PreviewReadRequest
+)
 type SettledEmitter = Callable[[Mapping[str, Any]], object]
 type UndeliverableHook = Callable[[str, ErrorObject], object]
 
@@ -309,6 +320,7 @@ class RequestBook:
             error = make_error(
                 SERVER_REQUEST_UNSUPPORTED,
                 f"the {entry.kind} request could not be delivered: {why}",
+                indus_code=NOT_SHOWN_INDUS_CODE if reason == "not_shown" else None,
                 retryable=False,
             )
             self._undeliverable(request_id, error)

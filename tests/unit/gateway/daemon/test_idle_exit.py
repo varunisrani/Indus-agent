@@ -315,6 +315,9 @@ class StandIn:
         self.pipeline = SimpleNamespace(claims=[])
         self.terminal_processes: Any = None
         self.automation: Any = None
+        self.relayed: set[str] = set()
+        self.mux: Any = None
+        self.parent: Any = None
         if store is not None:
             self.store = store
 
@@ -386,6 +389,25 @@ def test_every_quick_reason(scope: Scope) -> None:
         undo()
         if reason != "already stopping":
             assert probe.quick() is None, reason
+
+
+def test_a_relayed_platform_does_not_keep_the_daemon_but_a_room_turn_does(scope: Scope) -> None:
+    """Wave 42: a platform served only through the relay connector does not count (the
+    connector buffers while the gateway is gone, P24-08); a part's own busy reason does (a
+    group-room turn queued or running, P24-06); so does a busy served profile of a host."""
+    daemon = StandIn(scope)
+    daemon.adapters["telegram"] = object()
+    daemon.relayed = {"telegram"}
+    assert daemon.probe().quick() is None
+    daemon.adapters["slack"] = object()
+    assert daemon.probe().quick() == "messaging platform enabled: slack"
+    daemon.adapters.pop("slack")
+    room = SimpleNamespace(name="rooms", busy_reason=lambda: "a member's turn runs in group room r")
+    daemon.parts.append(room)
+    assert daemon.probe().quick() == "a member's turn runs in group room r"
+    daemon.parts.clear()
+    daemon.mux = SimpleNamespace(busy_reason=lambda: "profile b: a chat turn runs")
+    assert daemon.probe().quick() == "profile b: a chat turn runs"
 
 
 def test_the_messaging_intake_is_not_a_client(scope: Scope) -> None:

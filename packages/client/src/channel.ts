@@ -155,6 +155,10 @@ export function declineAnswer(request: ServerRequest): ServerRequestAnswer {
       return { kind: "sudo", password: null };
     case "secret":
       return { kind: "secret", value: null };
+    case "preview.act":
+    case "preview.read":
+      // A desktop window's preview requests (P24-25): nothing here shows that preview.
+      return { kind: request.kind, ok: false, error: "not shown here", result: {} };
   }
 }
 

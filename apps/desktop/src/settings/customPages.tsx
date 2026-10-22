@@ -15,6 +15,7 @@ import {
 import { LogsViewer } from "../app/LogsViewer.tsx";
 import { useProvidedShellChrome } from "../app/Shell.tsx";
 import { type ThemeMode, useTheme } from "../app/theme.tsx";
+import { PluginsPage } from "../contrib/PluginsPage.tsx";
 import type {
   IndusAmbientState,
   IndusFsLimits,
@@ -1561,6 +1562,7 @@ const PAGES: Readonly<Record<CustomPage, () => ReactNode>> = {
   "sessions-archived": () => <ArchivedPage />,
   "workspace-desktop": () => <WorkspaceDesktopPage />,
   profiles: () => <ProfilesPage />,
+  plugins: () => <PluginsPage />, // P24-32: the desktop plugin inventory
   about: () => <AboutPage />,
 };
 

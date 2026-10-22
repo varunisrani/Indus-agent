@@ -45,6 +45,7 @@ from indus.protocol.methods import (
 )
 from indus.protocol.requests_port import AnswerModel, RequestWithdrawn
 from indus.protocol.server_requests import (
+    PERSON_REQUEST_KINDS,
     SERVER_REQUEST_KINDS,
     ApprovalAnswer,
     ApprovalChoice,
@@ -84,7 +85,7 @@ _FIXED = {"sudo": SUDO_DEADLINE_S, "secret": SECRET_DEADLINE_S}
 def kinds_for(features: Sequence[str]) -> list[str]:
     """The request kinds a client's accepted features cover."""
     if SERVER_REQUESTS_FEATURE in features:
-        return list(SERVER_REQUEST_KINDS)
+        return list(PERSON_REQUEST_KINDS)  # the preview kinds are a desktop window's
     prefix = SERVER_REQUESTS_FEATURE + "."
     return [kind for kind in SERVER_REQUEST_KINDS if prefix + kind in features]
 

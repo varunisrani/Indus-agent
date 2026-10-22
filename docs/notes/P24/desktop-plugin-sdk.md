@@ -138,3 +138,35 @@ Compare checklist (filled after the rewrite; reopened the files in `Read:`):
 
 Partly done (2026-10-21): SDK, registry, disk plugins (check, serve, hot reload), loader, host,
 status-bar area. Remaining shell areas and the inventory page are follow-ups (above).
+
+## Wiring (wave 42, WC, D-16.799)
+
+Read: none (wiring of our own modules; no reference file opened).
+
+Done: the shell now reads four more areas. `src/contrib/shell.tsx`: `route` (the route view renders
+the contribution matching the path, `classifyPath(path, contributedPaths)` → `contributed`; a
+route never shadows a built-in page or overlay; overlays opened over a contributed route return to
+it), `sidebar-nav` (`ContributedNav` under the built-in pages), `pane` (`mirrorPaneContributions`
+keeps `paneRegistry` in step, so a plugin pane is in the layout toolbar's Open list and leaves with
+its plugin). Settings › Advanced › Plugins (`src/contrib/PluginsPage.tsx`): the inventory over
+`PluginLoader.inventory()` with status, reason, an on/off switch (`setEnabled`, kept across
+starts), "Check the folder again" (`plugins.rescan` → `sync`) and each loaded plugin's
+`plugin-settings-page` contributions. `react.tsx` gained `ContributionRegistryProvider` (tests,
+previews) and exports `ContributionBoundary`; `loader.ts` remembers the last file list.
+Test: `src/contrib/shell.test.tsx::a disk plugin's page, sidebar entry, pane and settings show, and
+leave live when turned off` (a real `PluginLoader`, the real `AppRoutes`/`Shell`), plus shadowing,
+overlay return and a throwing page; `src/contrib/PluginsPage.test.tsx`.
+
+Decisions for the lead (wiring):
+- A plugin pane's `render` gets `{sessionId, profile, active, hidden}` only — not the working
+  panes' `connection` (that object reaches every gateway method, past `PLUGIN_RPC_METHODS`).
+- A contributed route is matched exactly (no parameters); a deep link to a plugin route opened
+  before the plugin loaded falls back like any unknown path (nested → new chat).
+- `CONTRIBUTED_PAGES` (`routes.ts`): reserved names served by a bundled contribution — `bots`. While
+  that contribution is off, `/bots` is no page (back to a new chat) and has no sidebar entry.
+
+Still follow-ups: consumers of `title-bar`, `palette-command`, `keybind`, `theme`,
+`composer-extension`, `session-row-decoration`, `model-menu-decoration`, `appearance-setting`,
+`transcript-directive`; plugin sockets (`/api/ext/<id>/` ticketed route).
+
+Status (wave 42): routes, sidebar nav, panes, plugin settings pages and the inventory page wired.

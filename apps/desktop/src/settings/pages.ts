@@ -26,6 +26,7 @@ export type CustomPage =
   | "sessions-archived"
   | "workspace-desktop"
   | "profiles"
+  | "plugins"
   | "about";
 
 export interface PageDef {
@@ -183,6 +184,7 @@ export const VIEWS: readonly ViewDef[] = [
       },
       { id: "terminal", label: "settings.page.advanced.terminal", prefixes: ["terminal."] },
       { id: "profiles", label: "settings.page.advanced.profiles", custom: "profiles" },
+      { id: "plugins", label: "settings.page.advanced.plugins", custom: "plugins" }, // P24-32
     ],
   },
   {
@@ -520,6 +522,14 @@ export const MANIFEST: readonly ManifestRow[] = [
     label: "settings.workspace.dataUrl",
     description: "settings.workspace.dataUrlBody",
     keywords: ["file size", "limit", "image", "attachment", "read"],
+  },
+  {
+    id: "desktop-plugins",
+    view: "advanced",
+    page: "plugins",
+    label: "plugins.title",
+    description: "plugins.body",
+    keywords: ["plugins", "extensions", "add-ons", "desktop plugins", "sidebar", "panes"],
   },
   {
     id: "profiles",

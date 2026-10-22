@@ -115,6 +115,21 @@ Compare checklist (filled after the rewrite; reopened the two files):
 - Not taken: per-adapter YAML `extra` precedence (`extra_or_secret`) stays in each adapter; the
   reader only covers env/secret names.
 
+## Wiring (wave 42, builder WA, 2026-10-21)
+
+Read: no reference file (wiring). The host builds each served profile's scope with
+`ProfileScopeCache` (`gateway/multiplex/serving.py`) and runs that profile's whole daemon under
+it (`ScopeBinder.run_turn`): its turns, evictions, finalisation, cron, deferred callbacks and child
+processes run inside a task tree that carries the profile's scope; its authorizer reads policy
+through `read_secret(scope, …)`, i.e. its own secret store and its own overlay only (R06.26 fails
+closed). A message a route hands to another profile is accepted under that profile's scope
+(`use_scope`) after `adopt_inbound_media` moved its files. Demo:
+`tests/integration/gateway/multiplex/test_two_profiles_one_gateway.py::test_two_profiles_served_by_one_gateway_with_isolated_secrets`
+(B's scope has neither the launch env's token nor its allowlist; A refuses B's sender).
+
+Decisions for the lead: a served profile uses the host's credential-lock directory (one per OS
+user), not one derived from its own env view.
+
 ## Status
 
-Done (2026-10-21). Daemon wiring listed above is owed by the lead.
+Done (2026-10-21), wired in wave 42.

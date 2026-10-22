@@ -15,7 +15,9 @@ summary never claims a change that is not on disk.
   of a patch, a file path and the start of its content).
 
 ``emit_done`` sends ``learning.review.done {kinds, summary_lines}`` on the session's event stream;
-``log_completion`` writes the one log line every review ends with.
+``log_completion`` writes the one log line every review ends with. ``written_skills`` names the
+skills the review really created or changed (same rules), for the host's suggestion offers (P24-46:
+a skill the review wrote that declares a blueprint is offered as a ``usage`` suggestion).
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ __all__ = [
     "log_completion",
     "mode_from",
     "summary_lines",
+    "written_skills",
 ]
 
 log = logging.getLogger(__name__)
@@ -213,6 +216,48 @@ def _skill_lines(call: _Call, body: Mapping[str, Any], verbose: bool) -> list[st
 
 
 # -- the summary ----------------------------------------------------------------------------------
+
+
+_WRITES = frozenset({"create", "patch", "edit", "write_file", "remove_file"})
+
+
+def _applied(call: _Call, body: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """``(action, skill)`` for every applied operation of one successful ``skill_manage`` call."""
+    results = body.get("results")
+    if not isinstance(results, list):
+        item = {**call.args, **body}
+        return [(_text(item.get("action")), _text(item.get("name")))]
+    if body.get("operations_applied") is False:
+        return []
+    ops = call.args.get("operations")
+    op_list = cast(list[object], ops) if isinstance(ops, list) else [call.args]
+    found: list[tuple[str, str]] = []
+    for position, raw in enumerate(cast(list[object], results)):
+        result = _object(raw)
+        if result is None or result.get("success") is False or result.get("staged"):
+            continue
+        op = _object(op_list[position]) if position < len(op_list) else None
+        item = {**(op or {}), **result}
+        name = _text(item.get("name")) or _text(call.args.get("name"))
+        found.append((_text(item.get("action")), name))
+    return found
+
+
+def written_skills(rows: Sequence[TranscriptRow]) -> list[str]:
+    """The skills the review's own ``rows`` created or changed (not archived), in order."""
+    calls = _calls(rows)
+    names: list[str] = []
+    for row in rows:
+        call = calls.get(row.tool_call_id or "") if row.role == "tool" else None
+        if call is None or call.name != "skill_manage":
+            continue
+        body = _object(row.content)
+        if body is None or body.get("success") is not True or body.get("staged"):
+            continue
+        for action, name in _applied(call, body):
+            if action in _WRITES and name and name not in names:
+                names.append(name)
+    return names
 
 
 def summary_lines(rows: Sequence[TranscriptRow], mode: Mode = "on") -> list[str]:

@@ -1,8 +1,9 @@
 // The shell's side of the contribution registry (P24-32): read an area and render it, each
 // contribution inside its own error boundary, so a plugin that throws while rendering removes
-// itself from the screen and nothing else.
+// itself from the screen and nothing else. The registry the shell reads is the app's, unless a
+// `ContributionRegistryProvider` above says otherwise (tests, previews).
 
-import { Component, type ReactNode, useSyncExternalStore } from "react";
+import { Component, createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
 import {
   type Area,
   type Contribution,
@@ -10,16 +11,32 @@ import {
   contributions,
 } from "./registry.ts";
 
-/** The live list of `area` (re-renders on every registry change). */
-export function useContributions(
-  area: Area,
-  registry: ContributionRegistry = contributions,
-): Contribution[] {
-  useSyncExternalStore(registry.subscribe, registry.snapshot, registry.snapshot);
-  return registry.list(area);
+const RegistryContext = createContext<ContributionRegistry>(contributions);
+
+export function ContributionRegistryProvider(props: {
+  registry: ContributionRegistry;
+  children: ReactNode;
+}) {
+  return (
+    <RegistryContext.Provider value={props.registry}>{props.children}</RegistryContext.Provider>
+  );
 }
 
-class ContributionBoundary extends Component<
+/** The registry the shell reads (the app's unless a provider says otherwise). */
+export function useContributionRegistry(): ContributionRegistry {
+  return useContext(RegistryContext);
+}
+
+/** The live list of `area` (re-renders on every registry change). */
+export function useContributions(area: Area, registry?: ContributionRegistry): Contribution[] {
+  const provided = useContext(RegistryContext);
+  const source = registry ?? provided;
+  useSyncExternalStore(source.subscribe, source.snapshot, source.snapshot);
+  return source.list(area);
+}
+
+/** One contribution's error boundary: a render failure hides that contribution only. */
+export class ContributionBoundary extends Component<
   { id: string; children: ReactNode },
   { failed: boolean }
 > {

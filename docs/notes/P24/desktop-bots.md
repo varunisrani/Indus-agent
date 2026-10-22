@@ -109,3 +109,20 @@ declared results, `canonical: null` kept on the wire). The test drives the real 
 P24-32's registry (one `route` + one `sidebar-nav` entry, source `app`) and `main.tsx` registers the
 Bots surface there; the page itself is still the workspace's `bots` slot until the shell reads those
 areas (D-16.794). Still owed: `profile_rows` into `profiles.list`, the room loop (D-16.799).
+
+## Wiring (wave 42, WC, D-16.799)
+
+Read: none (wiring).
+
+- `profile_rows` is on the profile list: `GET /api/profiles` (the dashboard's and the desktop's
+  `profiles.list`) runs `bots_rpc.for_root(scopes.base).profile_rows(rows)`, so each row carries
+  `canonical_session: {session_id} | null` — the same title-only lookup `bots.open` uses. The lookup
+  never creates a store (a profile without `state.db` is null without opening it) and one broken
+  store gives null for that row, never a failed list. Test:
+  `tests/contract/web/test_profiles_models_routes.py::test_the_list_carries_each_bot_s_forever_chat`.
+- The shell reads the `route` and `sidebar-nav` areas now (P24-32 wiring): `/bots` is served by the
+  Bots contribution (registered in `main.tsx` before the first render), no longer by a workspace
+  page slot; switching the surface off removes the page and its sidebar entry at once
+  (`src/contrib/shell.test.tsx::the Bots page is served only while its contribution is on`).
+
+Status (wave 42): `profile_rows` wired. Still owed elsewhere: the room loop (WA).

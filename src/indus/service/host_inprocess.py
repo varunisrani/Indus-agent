@@ -41,7 +41,7 @@ from indus.protocol.methods import (
     SessionSteerResult,
 )
 from indus.protocol.requests_port import AnswerModel
-from indus.protocol.server_requests import SERVER_REQUEST_KINDS
+from indus.protocol.server_requests import PERSON_REQUEST_KINDS
 from indus.service.cron_refs import register_cron_references
 from indus.service.session_service import SessionService
 
@@ -49,7 +49,8 @@ __all__ = ["ALL_KINDS", "DEFAULT_CALL_TIMEOUT", "Feed", "InProcessHost"]
 
 log = logging.getLogger(__name__)
 
-ALL_KINDS: tuple[str, ...] = tuple(SERVER_REQUEST_KINDS)
+ALL_KINDS: tuple[str, ...] = PERSON_REQUEST_KINDS
+"""Every kind a person answers (the preview kinds are a desktop window's, P24-25)."""
 """Every server-request kind; the in-process host can answer all of them."""
 
 DEFAULT_CALL_TIMEOUT = 60.0

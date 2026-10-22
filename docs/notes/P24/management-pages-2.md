@@ -136,3 +136,22 @@ agents, command-center, starmap share-code/constants, artifacts, session-import)
 and the 30-session index match; our share code drops labels by design; no gaps fixed beyond the
 notes above. Shared files touched: `src/app/{routes,pages,App}.tsx|ts`, `src/main.tsx`,
 `src/i18n/en.ts`, IPC table (`indus:artifacts:download`), `electron/main.ts` (install step).
+
+## Wiring (wave 42, WC, D-16.799)
+
+Read: none (wiring).
+
+The learning-graph read exists: `src/indus/web/routes/learning.py` — `GET /api/learning/graph`
+(the `indus journey` nodes in the map's shape: skill ids `skill:<name>`, memory ids the journey's
+`memory:<store>:<n>:<sha8>`, `createdBy` agent/user/null, `enabled` from `skills.disabled`) and
+`DELETE /api/learning/nodes/{id}` (journey delete: a memory entry removed, a skill archived; stale
+or unknown 404, pinned 409). Router registered, route list regenerated
+(`apps/web/src/test/routes.generated.ts`), `/api/learning` added to the SPA's profile-scoped
+families. The desktop map now gets `full: true` from the server.
+Tests: `tests/contract/web/test_learning_routes.py`.
+
+Decision for the lead: the learning layer records no "learned with" link, so the edges are skills
+of one category and entries of one memory store (a star per group); a real link is a learning
+backend follow-up.
+
+Status (wave 42): the learning-graph read is done.

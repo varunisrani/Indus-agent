@@ -23,6 +23,13 @@ to the next fallback route (``core.fallback``) and the request is rebuilt for it
 Mixture of agents (P10-21): a turn the host armed (``core.moa``) asks the preset's reference
 models before each request and the advice rides on the request's last user message.
 
+Stop gates (A28, P24-16/17): before a text answer is final the loop asks
+``SessionRuntime.stop_gates`` with the files this turn edited (``diagnostics.turn_edits``).
+A gate that sends the agent back adds the candidate answer as an interim assistant row and its
+message as a user row (``continuation_rows``; durable for the LSP gate) and the turn goes on; the
+candidate stays the turn's answer if the budget runs out before a better one (``gated_answer``).
+The gates' per-turn counts and the turn's edit list are dropped when the turn ends.
+
 Restarts that produced no answer (a redirect, a route change, a fallback, an overflow recovery)
 give the iteration back and bump ``restart_count``; more than ``max_restarts`` end the turn. When
 the budget runs out, one toolless grace request asks for a summary (retried once when empty, think
@@ -61,6 +68,7 @@ from indus.core.response_checks import (
     is_repetition_dominated,
     scrubber_for,
 )
+from indus.core.stop_gates import StopContext, continuation_rows
 from indus.core.tool_round import run_tool_round
 from indus.core.transcript import TranscriptRow
 from indus.core.turn_state import PersistFailed, TurnResult, TurnState
@@ -79,6 +87,7 @@ from indus.providers.retry import RetryFailed, RetryWait
 from indus.providers.streaming import CallResult, RouteChanged
 from indus.providers.types import ChatRequest, NormalizedResponse, TextDelta
 from indus.providers.types import ReasoningDelta as ReasoningEvent
+from indus.tools.lsp.diagnostics import forget_turn, turn_edits
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +125,10 @@ async def run_turn(state: TurnState) -> TurnResult:
             final_text=texts.LOOP_ERROR_REPLY.format(detail=_short(exc)),
             failure=Failure("loop_error", False, detail=_short(exc)),
         )
-    return await finalize_turn(state)
+    try:
+        return await finalize_turn(state)
+    finally:
+        _forget_gates(state)
 
 
 # -- the loop ------------------------------------------------------------------------------------
@@ -163,7 +175,7 @@ def _no_grace(state: TurnState) -> None:
         ExitReason.MAX_ITERATIONS if cap and state.api_calls >= cap else ExitReason.BUDGET_EXHAUSTED
     )
     limit = str(cap) if cap else texts.LIMIT_UNLIMITED
-    state.end(reason, final_text=texts.LIMIT_REPLY.format(limit=limit))
+    state.end(reason, final_text=state.gated_answer or texts.LIMIT_REPLY.format(limit=limit))
 
 
 async def _iteration(state: TurnState) -> None:
@@ -440,6 +452,8 @@ async def _handle_answer(state: TurnState, raw: CallResult) -> None:
         return
     final = finish_continuation(state.checks, visible) if state.checks.fragments else visible
     final = final.strip()
+    if not is_repetition_dominated(final) and await _sent_back(state, final, response):
+        return
     state.drop_scaffold()
     if is_repetition_dominated(final):
         state.end(
@@ -459,6 +473,50 @@ async def _handle_answer(state: TurnState, raw: CallResult) -> None:
     )
     await state.flush()
     state.end(ExitReason.COMPLETED, final_text=final)
+
+
+def _stop_context(state: TurnState, answer: str = "") -> StopContext:
+    runtime = state.runtime
+    owner = state.session_id
+    return StopContext(
+        session_id=owner,
+        turn_id=state.turn_id,
+        answer=answer,
+        edited=tuple(turn_edits(owner, state.turn_id)),
+        task_id=owner,
+        platform=runtime.prompt_context.platform or runtime.options.platform,
+        model=str(getattr(runtime.caller, "model", "") or ""),
+    )
+
+
+async def _sent_back(state: TurnState, final: str, response: NormalizedResponse) -> bool:
+    """Ask the stop gates about ``final``; True when one sent the agent back to work (A28)."""
+    gates = state.runtime.stop_gates
+    if gates is None or state.control.interrupted:
+        return False
+    decision = await gates.run(_stop_context(state, final))
+    if decision is None or state.control.interrupted:
+        return False
+    log.info(
+        "turn %s: stop gate %s sends the agent back (attempt %d)",
+        state.turn_id,
+        decision.gate,
+        decision.attempt,
+    )
+    state.add(*continuation_rows(decision, final, reasoning=response.reasoning))
+    await state.flush()
+    state.gated_answer = final
+    return True
+
+
+def _forget_gates(state: TurnState) -> None:
+    """The turn is over: its gate counts and edit list go (the next turn starts fresh)."""
+    try:
+        if state.runtime.stop_gates is not None:
+            state.runtime.stop_gates.end_turn(_stop_context(state))
+        forget_turn(state.session_id, state.turn_id)
+    except Exception:
+        log.debug("forgetting the stop gates of turn %s failed", state.turn_id, exc_info=True)
 
 
 async def _apply(state: TurnState, verdict: Verdict, response: NormalizedResponse) -> None:
@@ -559,7 +617,7 @@ async def _grace(state: TurnState) -> None:
         state.end(reason, final_text=summary)
         return
     limit = str(cap) if cap else texts.LIMIT_UNLIMITED
-    state.end(reason, final_text=texts.LIMIT_REPLY.format(limit=limit))
+    state.end(reason, final_text=state.gated_answer or texts.LIMIT_REPLY.format(limit=limit))
 
 
 # -- failures --------------------------------------------------------------------------------------

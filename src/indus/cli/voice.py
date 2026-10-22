@@ -34,7 +34,6 @@ from __future__ import annotations
 import array
 import contextlib
 import importlib
-import io
 import logging
 import math
 import re
@@ -59,7 +58,18 @@ from indus.protocol.events import (
     TurnDone,
     TurnStarted,
 )
-from indus.tools.builtin.media.common import AUDIO_DIR, folder, setting, unique_name
+from indus.tools.builtin.media.common import AUDIO_DIR, folder, unique_name
+from indus.tools.builtin.media.voice_take import (
+    BLOCK_SECONDS,
+    CHANNELS,
+    DEFAULT_KEY,
+    SAMPLE_BYTES,
+    SAMPLE_RATE,
+    Capture,
+    StopReason,
+    VoiceSettings,
+    level,
+)
 
 if TYPE_CHECKING:
     from indus.cli.repl.app import Repl
@@ -93,20 +103,10 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-SAMPLE_RATE = 16_000
-CHANNELS = 1
-SAMPLE_BYTES = 2
-BLOCK_SECONDS = 0.1
-MIN_TAKE_SECONDS = 0.3
-CONFIRM_SECONDS = 0.3
-"""Loud audio needed before a take counts as speech (a click or a knock does not)."""
-DIP_SECONDS = 0.3
-"""Before speech is confirmed, a pause this long starts the count again."""
 REPEAT_GAP = 0.6
 """A press this soon after the previous one is the key being held (auto-repeat)."""
 RELEASE_GAP = 0.35
 """Once held, no repeat for this long means the key was let go."""
-DEFAULT_KEY = "ctrl+space"
 STT_TIMEOUT_S = 600.0
 TTS_TIMEOUT_S = 300.0
 EXTRA_HINT = "pip install 'indus-agent[voice]'"
@@ -152,49 +152,6 @@ MESSAGES: dict[str, str] = {
 def message(name: str, /, **values: object) -> str:
     """The status string ``name`` with its placeholders filled."""
     return MESSAGES[name].format(**values)
-
-
-# -- settings ------------------------------------------------------------------------------------
-
-
-def _number(value: object, fallback: float, *, low: float, high: float) -> float:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return fallback
-    number = float(value)
-    if not math.isfinite(number) or number < low or number > high:
-        return fallback
-    return number
-
-
-@dataclass(frozen=True)
-class VoiceSettings:
-    """``voice.*`` from the profile's config; odd values fall back to the defaults."""
-
-    record_key: str = DEFAULT_KEY
-    silence_threshold: float = 300.0
-    silence_seconds: float = 2.0
-    wait_seconds: float = 10.0
-    max_seconds: float = 120.0
-    read_aloud: bool = False
-
-    @classmethod
-    def from_scope(cls, scope: Scope | None) -> VoiceSettings:
-        base = cls()
-
-        def get(name: str) -> object:
-            return setting(scope, f"voice.{name}")
-
-        key = get("record_key")
-        return cls(
-            record_key=key.strip() if isinstance(key, str) and key.strip() else base.record_key,
-            silence_threshold=_number(
-                get("silence_threshold"), base.silence_threshold, low=1, high=32767
-            ),
-            silence_seconds=_number(get("silence_seconds"), base.silence_seconds, low=0.2, high=60),
-            wait_seconds=_number(get("wait_seconds"), base.wait_seconds, low=1, high=600),
-            max_seconds=_number(get("max_seconds"), base.max_seconds, low=1, high=3600),
-            read_aloud=get("read_aloud") is True,
-        )
 
 
 # -- the record key ------------------------------------------------------------------------------
@@ -289,84 +246,6 @@ class KeyGesture:
 
 
 # -- audio ---------------------------------------------------------------------------------------
-
-
-def level(block: bytes) -> float:
-    """Root mean square of a block of signed 16-bit little-endian samples."""
-    usable = len(block) - len(block) % SAMPLE_BYTES
-    if usable <= 0:
-        return 0.0
-    samples = array.array("h")
-    samples.frombytes(block[:usable])
-    if sys.byteorder == "big":
-        samples.byteswap()
-    return math.sqrt(sum(s * s for s in samples) / len(samples))
-
-
-type StopReason = Literal["released", "silence", "no_speech", "limit", "card", "cancel"]
-
-
-class Capture:
-    """One take: the blocks so far and what the levels say about them."""
-
-    def __init__(self, settings: VoiceSettings, started: float) -> None:
-        self.settings = settings
-        self.started = started
-        self.blocks: list[bytes] = []
-        self.frames = 0
-        self.peak = 0.0
-        self.heard = False
-        self._loud = 0.0
-        self._dip = 0.0
-        self._quiet_since: float | None = None
-
-    @property
-    def seconds(self) -> float:
-        return self.frames / SAMPLE_RATE
-
-    @property
-    def usable(self) -> bool:
-        return self.heard and self.seconds >= MIN_TAKE_SECONDS
-
-    def add(self, block: bytes, now: float) -> StopReason | None:
-        """Keep ``block`` (arrived at ``now``); a reason when the take should end here."""
-        self.blocks.append(block)
-        frames = len(block) // (SAMPLE_BYTES * CHANNELS)
-        self.frames += frames
-        span = frames / SAMPLE_RATE
-        loudness = level(block)
-        self.peak = max(self.peak, loudness)
-        rules = self.settings
-        if loudness >= rules.silence_threshold:
-            self._dip = 0.0
-            self._quiet_since = None
-            if not self.heard:
-                self._loud += span
-                self.heard = self._loud >= CONFIRM_SECONDS - 1e-6
-        elif self.heard:
-            if self._quiet_since is None:
-                self._quiet_since = now - span
-            if now - self._quiet_since >= rules.silence_seconds - 1e-6:
-                return "silence"
-        else:
-            if self._loud:
-                self._dip += span
-                if self._dip >= DIP_SECONDS - 1e-6:
-                    self._loud = self._dip = 0.0
-            if now - self.started >= rules.wait_seconds - 1e-6:
-                return "no_speech"
-        if now - self.started >= rules.max_seconds - 1e-6:
-            return "limit"
-        return None
-
-    def wav(self) -> bytes:
-        out = io.BytesIO()
-        with wave.open(out, "wb") as writer:
-            writer.setnchannels(CHANNELS)
-            writer.setsampwidth(SAMPLE_BYTES)
-            writer.setframerate(SAMPLE_RATE)
-            writer.writeframes(b"".join(self.blocks))
-        return out.getvalue()
 
 
 class Resampler:

@@ -21,7 +21,10 @@ On the daemon side every RPC runs under the daemon's one ``Scope`` — home, env
 terminal policy travel together in it (R05.14, R03.23). ``bind_daemon_scope`` is the check an
 endpoint makes before it serves anyone: the scope's home must be the profile its ticket book
 serves, its secret store (when it says where it lives) must belong to that home, and a routed
-(multiplexed) scope is refused — one daemon serves one profile until P24.
+(multiplexed) scope is refused unless the endpoint belongs to the daemon that serves exactly that
+profile inside a multiplex host (``served=True``, D-16.542 as amended in wave 42): that daemon's
+scope is routed only because the process was launched for another profile, while its home,
+secret store and env overlay are the served profile's own. One endpoint still serves one profile.
 
 Launch options of one run (``INDUS_YOLO_MODE``, ``INDUS_MODEL``, every ``INDUS_TUI_*`` …) belong
 to a session, not to the daemon: ``launch_free_env`` is the one scrub the grant helper and
@@ -153,11 +156,13 @@ def _inside(path: Path, home: Path) -> bool:
     return True
 
 
-def bind_daemon_scope(scope: Scope, profile_id: str) -> Scope:
+def bind_daemon_scope(scope: Scope, profile_id: str, *, served: bool = False) -> Scope:
     """``scope`` when it can serve the daemon of ``profile_id`` (see the module notes); raises
-    ``ProfileMismatch`` for another home and ``ScopeNotBound`` for parts of another profile."""
+    ``ProfileMismatch`` for another home and ``ScopeNotBound`` for parts of another profile.
+    ``served``: the daemon serves this one profile inside a multiplex host, so its routed scope
+    is that profile's own (still bound to the home and the secret store checked here)."""
     check_profile(expected_profile_id(scope.home), profile_id, where="ticket book")
-    if scope.routed:
+    if scope.routed and not served:
         raise ScopeNotBound("a routed scope cannot serve a daemon (one profile per daemon)")
     where = getattr(scope.secrets, "index_path", None)
     if isinstance(where, Path) and not _inside(where, scope.home):
