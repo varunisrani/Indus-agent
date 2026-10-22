@@ -39,7 +39,9 @@ async def test_slash_completion_over_the_socket_matches_local(
     scope: Scope, store: StoreHandle, fake_clock: FakeClock, tmp_path: Path
 ) -> None:
     (scope.home / "config.yaml").write_text(
-        "quick_commands:\n  gs:\n    type: exec\n    command: git status\n", encoding="utf-8"
+        "quick_commands:\n  gs:\n    type: exec\n    command: git status\n"
+        "  gl:\n    type: alias\n    target: /goal\n",
+        encoding="utf-8",
     )
     r = await rig(scope, store, tmp_path)
     tui = await r.attached("tui")
@@ -57,11 +59,16 @@ async def test_slash_completion_over_the_socket_matches_local(
     await r.close()
 
     assert "/help" in texts(attached["/he"])
-    assert {"/gs", "/goal"} <= set(texts(attached["/g"]))
+    # Quick exec commands are not offered where they do not run (the daemon, W48-h).
+    assert {"/gl", "/goal"} <= set(texts(attached["/g"])) and "/gs" not in texts(attached["/g"])
     assert texts(attached["/reasoning hig"]) == ["high"]
     async with open_rig(scope, fake_clock, tmp_path) as local:
         for text in SLASH_TEXTS:
-            assert await local.ok("complete.slash", text=text) == attached[text], text
+            here = await local.ok("complete.slash", text=text)
+            kept = [item for item in here["items"] if item["text"] != "/gs"]
+            assert {**here, "items": kept} == attached[text], text
+            if text == "/g":
+                assert "/gs" in texts(here)
 
 
 @aio

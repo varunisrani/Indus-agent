@@ -84,3 +84,29 @@ Done (2026-10-21).
 
 Integration (wave-34 merge, D-16.679): the cards run on slice R's `ServerRequestStore`;
 `OpenServerRequest.answer` is bound to `store.answer(id, …)` (first answer wins in the store).
+
+## Wave 48 (W48-c): a new card is scrolled into view
+
+Status: done (2026-10-22, wave-48 builder c).
+
+Read: none (a UI follow-up seen in the wave-47 screenshot pass; no reference file or Evidence).
+
+Bug: the card stack sits after the transcript's rows, inside the scroll area. The transcript
+follows the stream only when it re-renders itself; a card that opens re-renders only the stack,
+and a tool row expanded above it had already pushed the end out of sight. The card could open
+below the visible area with nothing pointing at it.
+
+Fix: `useRevealOnOpen` (`src/chat/cards/ApprovalCard.tsx`) scrolls the card's own section into
+view once, when it mounts (`scrollIntoView({ block: "nearest" })`: only as far as needed, nothing
+when it is already visible). The approval card and the clarify card use it; the sudo and secret
+dialogs are modal and need nothing. Cards are keyed by request id, so a re-render around a card
+(a tool row appearing later) never scrolls again.
+
+Tests: `src/chat/cards/CardStack.test.tsx` "scrolls a newly opened card into view once (W48-c)"
+(failed on base `1b6e711`: no scroll; passes with the fix: once for r1, not on re-render, once for
+a second card r2).
+
+### Decisions for the lead
+- **W48-c-2 (D-16.1077):** a card that opens is brought into view even when the reader had scrolled up: an
+  open approval or question blocks the turn, so it wins over the reading position (minimal
+  scroll, once per card).

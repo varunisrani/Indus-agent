@@ -85,6 +85,9 @@ GUARD_STUB = (
     "[Same output as the earlier {tool} call{ref} this turn, byte for byte; read that result. "
     "Arguments: {args}]"
 )
+WORKDIR_GONE_NOTICE = (
+    "This chat's folder no longer exists: {folder}. Its tools run in the default folder instead."
+)
 GUARD_HALT_REPLY = (
     "I stopped because {tool} kept failing or repeating ({count} times) without getting "
     "anywhere. The last result above shows where it got stuck. Tell me how to go on, or say "

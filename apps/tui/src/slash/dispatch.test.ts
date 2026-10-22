@@ -33,6 +33,12 @@ describe("catalogue matching", () => {
     expect(matchCatalog("deploys", catalog)).toEqual({ type: "none" });
   });
 
+  it("entries the server marks unavailable never match (W48-h)", () => {
+    const listed = [entry("gs", { runs: "unavailable" }), entry("git-log")];
+    expect(matchCatalog("g", listed)).toEqual({ type: "match", canonical: "git-log" });
+    expect(matchCatalog("gs", listed)).toEqual({ type: "none" });
+  });
+
   it("a prefix match beats substring matches", () => {
     expect(matchCatalog("ze", [entry("zeta"), entry("amaze")])).toEqual({
       type: "match",

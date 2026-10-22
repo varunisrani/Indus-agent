@@ -300,6 +300,8 @@ class TurnState:
     gated_answer: str | None = None
     # Results that carry outside text under a trusted tool's name (SEC-4, ``core.untrusted``).
     taint: Taint = field(default_factory=Taint)
+    # The "chat folder is gone" notice was sent this turn (W48-c, ``core.tool_round``).
+    workdir_noticed: bool = False
 
     # -- views -----------------------------------------------------------------------------------
 

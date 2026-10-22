@@ -19,6 +19,7 @@ from indus.learning.skills.resolver import (
     clear_scan_cache,
     load_catalog,
 )
+from indus.safety import content_scan
 from tests.unit.learning.skills.helpers import make_skill, with_skills_config
 
 FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "repos" / "project_skills"
@@ -168,7 +169,8 @@ def test_scan_failure_quarantines(
     def broken(*_a: Any, **_k: Any) -> Any:
         raise RuntimeError("scanner down")
 
-    monkeypatch.setattr(pt, "scan_tree", broken)
+    # project_trust imports the scanner when it first scans (W48-g-3).
+    monkeypatch.setattr(content_scan, "scan_tree", broken)
     names = project_names(trusting(scope, repo), repo)
     assert set(names.values()) == {"quarantined"}
 

@@ -2,7 +2,7 @@
 import { type OutboundFrame, RpcChannel, type Transport } from "@indus/client";
 import type { ApprovalRequest, ServerRequestAnswer } from "@indus/protocol";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServerRequestStoreProvider } from "../../gateway/react.tsx";
 import { type OpenServerRequest, ServerRequestStore } from "../../gateway/serverRequests.ts";
 import { FakeConnection } from "../testFakes.ts";
@@ -74,6 +74,29 @@ describe("card stack", () => {
     expect((screen.getByLabelText("Reason for denying (optional)") as HTMLInputElement).value).toBe(
       "half typed",
     );
+  });
+
+  it("scrolls a newly opened card into view once (W48-c)", () => {
+    // The card can open below an expanded tool row, out of sight: it is brought into view when it
+    // appears, and not again when the transcript re-renders around it.
+    const seen: string[] = [];
+    const spy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function record(
+      this: Element,
+    ) {
+      seen.push(this.getAttribute("data-request-id") ?? this.tagName);
+    });
+    try {
+      const first = [approval([])];
+      const view = render(<Transcript tools={["terminal"]} requests={first} />);
+      expect(seen).toEqual(["r1"]);
+      view.rerender(<Transcript tools={["terminal", "read_file"]} requests={first} />);
+      expect(seen).toEqual(["r1"]);
+      const second = [...first, open("approval", { request_id: "r2", command: "ls" }, [])];
+      view.rerender(<Transcript tools={["terminal", "read_file"]} requests={second} />);
+      expect(seen).toEqual(["r1", "r2"]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("shows exactly the backend's choices, deny always among them", () => {

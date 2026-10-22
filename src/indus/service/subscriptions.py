@@ -23,6 +23,8 @@ holds what the transport needs for that, on top of the ``DaemonSessionHost`` (P1
   the host's event log, plus ``report`` for changes that do not travel as events.
 - Presence: ``announce_viewers`` puts a ``session.viewers`` event (surface kinds and counts) into
   the session's log whenever a subscription changes its viewers.
+- Header: every attach also asks the host for a ``session.info`` (``announce_info``), so a
+  client that attached a session learns its model, folder and title (W48-h, D-16.550).
 
 Every method runs on the daemon's event loop. Event frames are checked against their declared
 models (``check_event``); in strict mode a mismatch is kept in ``violations``.
@@ -659,6 +661,7 @@ class Subscriptions:
         reoffered = self._counts.offers - before
         self._state.attached.add(key)
         announce_viewers(self.host, key)
+        self.host.announce_info(key)  # the status bar's header (W48-h)
         return Subscribed(
             session_id=attachment.session_id,
             key=key,

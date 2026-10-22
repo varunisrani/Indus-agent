@@ -242,6 +242,11 @@ export class ChatActions {
     if (generation !== null && generation > this.ended) this.ended = generation;
   }
 
+  /** The daemon's own id of the turn that runs `generation`, once `turn.started` named it. */
+  namedTurn(generation: number): string | null {
+    return this.turnOf(generation);
+  }
+
   /** The daemon's id of the turn running `generation`, when `turn.started` named it. */
   private turnOf(generation: number): string | null {
     let found: string | null = null;

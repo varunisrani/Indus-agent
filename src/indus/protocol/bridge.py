@@ -94,6 +94,8 @@ class SessionRow(ProtocolModel):
     """The start of its first user message."""
     source: str = ""
     """Where it was started (``cli``, ``tui``, a platform name)."""
+    model: str | None = None
+    """The model it last ran on, when one is stored."""
     started_at: float
     """Start time, epoch seconds."""
     last_active: float | None = None
@@ -398,6 +400,9 @@ class CommandRunner(StrEnum):
     SERVER = "server"
     CLIENT = "client"
     LATER = "later"
+    UNAVAILABLE = "unavailable"
+    """The server knows it but does not run it for this connection (a daemon refuses commands
+    that change one viewer's own state or that only ``--local`` runs; W48-h)."""
 
 
 class CatalogEntry(ProtocolModel):
@@ -416,7 +421,8 @@ class CatalogEntry(ProtocolModel):
     kind: CommandKind
     """Where it comes from."""
     runs: CommandRunner
-    """Who runs it: the server (``slash.exec``), the client, or nobody yet."""
+    """Who runs it: the server (``slash.exec``), the client, nobody yet, or nobody on this
+    connection (``unavailable``: do not offer it)."""
 
 
 class CommandsCatalogParams(ProtocolModel):

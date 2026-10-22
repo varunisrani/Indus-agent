@@ -41,7 +41,7 @@ SOFTWARE.
 
 ## What Indus Agent ships
 
-Every component below is redistributed by at least one way of installing Indus Agent (installers, Docker image, desktop app, `uv sync` with extras): 167 Python packages, 262 npm packages bundled into the dashboard, terminal UI and desktop app, 5 pinned binaries and 1 base image. "Used by" says which part brings each one in: `base` is the core install, `extra <name>` an optional extra, `apps/<name>` a JavaScript app.
+Every component below is redistributed by at least one way of installing Indus Agent (installers, Docker image, desktop app, `uv sync` with extras): 167 Python packages, 260 npm packages bundled into the dashboard, terminal UI and desktop app, 5 pinned binaries and 1 base image. "Used by" says which part brings each one in: `base` is the core install, `extra <name>` an optional extra, `apps/<name>` a JavaScript app.
 
 Components are grouped by licence (SPDX expression). Each licence's full text follows once at the end; every package's own copyright notice stays in its distribution.
 
@@ -449,7 +449,6 @@ Components are grouped by licence (SPDX expression). Each licence's full text fo
 | comma-separated-tokens | 2.0.3 | npm | apps/desktop |  |
 | commander | 15.0.0 | npm | apps/desktop |  |
 | commander | 7.2.0 | npm | apps/desktop |  |
-| commander | 8.3.0 | npm | apps/desktop |  |
 | convert-to-spaces | 2.0.1 | npm | apps/tui |  |
 | cookie-es | 3.1.1 | npm | apps/desktop, apps/web |  |
 | cose-base | 1.0.3 | npm | apps/desktop |  |
@@ -485,7 +484,6 @@ Components are grouped by licence (SPDX expression). Each licence's full text fo
 | is-in-ci | 2.0.0 | npm | apps/tui |  |
 | js-yaml | 4.3.2 | npm | apps/desktop |  |
 | jsonfile | 6.2.1 | npm | apps/desktop |  |
-| katex | 0.16.47 | npm | apps/desktop |  |
 | katex | 0.19.0 | npm | apps/desktop |  |
 | khroma | 2.1.0 | npm | apps/desktop | optional dependency not installed on Linux; licence from its published package.json |
 | layout-base | 1.0.2 | npm | apps/desktop |  |

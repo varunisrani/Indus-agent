@@ -5,14 +5,22 @@ The slash menu (``complete.slash``), the model picker (``model.options``) and th
 WebSocket (an attached TUI, the default). Both call these functions, so an attached TUI sees what
 ``--local`` shows for the same profile:
 
-- ``slash_completions(scope, text, surface=, session_id=)``: the shared registry's names for the
-  surface, plus the profile's quick commands and the runnable skills and bundles;
+- ``slash_completions(scope, text, surface=, session_id=, quick_exec=)``: the shared registry's
+  names for the surface, plus the profile's quick commands (``exec`` ones only where they run) and
+  the runnable skills and bundles;
 - ``provider_options(scope, provider=, model=, route=, client=)``: the bundled providers with
   whether a key is stored (the secret store or the environment), and for a custom or local
   endpoint the model ids its ``/models`` lists (a failure leaves the list empty);
   ``session_choice(service, session_id)`` is a session's current provider, model, route and client;
   ``profile_choice(scope)`` the profile's resolved route (empty when none resolves);
-- ``stored_sessions(handle, params)``: the store's picker listing (blocking; run it off the loop).
+- ``stored_sessions(handle, params)``: the store's picker listing (blocking; run it off the loop);
+  each row carries the title, source and the model the session last ran on (W48-b);
+- ``command_catalog(scope, surface=, skills=, refused=, quick_exec=)``: ``commands.catalog``, the
+  surface's built-in commands (who runs each: ``SERVER_COMMANDS`` / ``CLIENT_COMMANDS``), then the
+  quick commands and the runnable skills and bundles (blocking; W48-b). A host that does not run
+  some of them names them: ``refused`` built-ins and, with ``quick_exec=False``, quick ``exec``
+  commands are listed ``unavailable`` (the daemon: ``DAEMON_REFUSED``, ``DAEMON_QUICK_EXEC``;
+  W48-h).
 
 Who may name which session is the transport's rule, not this module's: the daemon checks that the
 connection attached it before it calls in here.
@@ -21,14 +29,18 @@ connection attached it before it calls in here.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Collection, Mapping
+from typing import TYPE_CHECKING, Any, Final, cast
 
 import httpx
 
 from indus.foundation.config import loader, schema
 from indus.foundation.scope import Scope
 from indus.protocol.bridge import (
+    CatalogEntry,
+    CommandKind,
+    CommandRunner,
+    CommandsCatalogResult,
     CompleteResult,
     CompletionItem,
     ModelOptionsResult,
@@ -41,7 +53,7 @@ from indus.providers import bundled
 from indus.providers.model_list import list_models
 from indus.providers.profile import ProviderProfile
 from indus.providers.route import RuntimeRoute, resolve
-from indus.service.commands.registry import REGISTRY, Surface
+from indus.service.commands.registry import REGISTRY, CommandDef, Surface
 from indus.state import listing
 from indus.state.registry import StoreHandle
 
@@ -50,9 +62,14 @@ if TYPE_CHECKING:
     from indus.service.session_service import SessionService
 
 __all__ = [
+    "CLIENT_COMMANDS",
+    "DAEMON_QUICK_EXEC",
+    "DAEMON_REFUSED",
     "MAX_SLASH_ITEMS",
     "QUICK_KEY",
+    "SERVER_COMMANDS",
     "SKILL_PLATFORM",
+    "command_catalog",
     "profile_choice",
     "provider_option",
     "provider_options",
@@ -70,6 +87,47 @@ QUICK_KEY = "quick_commands"
 SKILL_PLATFORM = "tui"
 """The platform skills are listed for (the terminal UI's catalogue)."""
 MAX_SLASH_ITEMS = 200
+SERVER_COMMANDS = frozenset(
+    {
+        "title",
+        "undo",
+        "retry",
+        "branch",
+        "compress",
+        "stop",
+        "steer",
+        "queue",
+        "status",
+        "usage",
+        "history",
+        "help",
+        "version",
+        "yolo",
+        "reasoning",
+        "fast",
+        "tools",
+    }
+)
+"""Built-in commands the agent side runs (``slash.exec``; the bridge's ``HANDLERS``)."""
+CLIENT_COMMANDS = frozenset(
+    {"new", "clear", "resume", "sessions", "model", "config", "quit", "save"}
+)
+"""Built-in commands the terminal UI runs itself."""
+DAEMON_REFUSED: Final[Mapping[str, str]] = {
+    "queue": (
+        "not run by the daemon: it keeps no queue per viewer (a message sent while a reply runs "
+        "waits in the session's own queue)"
+    ),
+    "yolo": "not run by the daemon: session switches change only in --local (D-16.549)",
+    "reasoning": "not run by the daemon: session switches change only in --local (D-16.549)",
+    "fast": "not run by the daemon: session switches change only in --local (D-16.549)",
+}
+"""Server commands a shared daemon does not run, with the reason it answers (W48-h)."""
+DAEMON_QUICK_EXEC = (
+    "not run by the daemon: quick exec commands run only in --local (the daemon runs no shell "
+    "commands for a client)"
+)
+"""Why the daemon does not run quick ``exec`` commands (W48-h)."""
 
 type Choice = tuple[str, str, RuntimeRoute | None, httpx.AsyncClient | None]
 """``(provider, model, route, client)``: what the picker marks current and may list live."""
@@ -113,11 +171,19 @@ def skill_table(scope: Scope, session_id: str | None) -> CommandTable | None:
 
 
 def slash_completions(
-    scope: Scope, text: str, *, surface: Surface, session_id: str | None = None
+    scope: Scope,
+    text: str,
+    *,
+    surface: Surface,
+    session_id: str | None = None,
+    quick_exec: bool = True,
 ) -> CompleteResult:
-    """``complete.slash``: the candidates for the slash text typed so far."""
+    """``complete.slash``: the candidates for the slash text typed so far (quick ``exec``
+    commands only when ``quick_exec``: the daemon does not run them, W48-h)."""
     extra: dict[str, str] = {}
     for name, spec in quick_command_table(scope).items():
+        if not quick_exec and str(spec.get("type", "exec")).lower() == "exec":
+            continue
         extra[name] = str(spec.get("description") or "quick command")
     table = skill_table(scope, session_id)
     if table is not None:
@@ -223,6 +289,7 @@ def session_row(summary: listing.SessionSummary) -> SessionRow:
         title=summary.title,
         preview=summary.preview,
         source=summary.source,
+        model=summary.model or None,
         started_at=summary.started_at,
         last_active=summary.last_active,
         message_count=max(0, summary.message_count),
@@ -234,3 +301,73 @@ def stored_sessions(handle: StoreHandle, params: SessionListParams) -> SessionLi
     filters = listing.ListFilters(include_subagents=params.include_subagents, query=params.query)
     found = listing.list_sessions(handle, filters, params.limit)
     return SessionListResult(sessions=[session_row(s) for s in found])
+
+
+# -- the command catalogue -------------------------------------------------------------------------
+
+
+def _runner(cmd: CommandDef, refused: Collection[str]) -> CommandRunner:
+    if cmd.name in refused:
+        return CommandRunner.UNAVAILABLE
+    if cmd.name in SERVER_COMMANDS:
+        return CommandRunner.SERVER
+    if cmd.name in CLIENT_COMMANDS:
+        return CommandRunner.CLIENT
+    return CommandRunner.LATER
+
+
+def command_catalog(
+    scope: Scope,
+    *,
+    surface: Surface,
+    skills: CommandTable | None,
+    refused: Collection[str] = (),
+    quick_exec: bool = True,
+) -> CommandsCatalogResult:
+    """``commands.catalog``: built-ins, then quick commands, then the skills and bundles of
+    ``skills`` (``skill_table``; None when they cannot be listed). ``refused`` built-ins and (when
+    ``quick_exec`` is False) quick ``exec`` commands are ``unavailable`` here. Blocking."""
+    entries = [
+        CatalogEntry(
+            name=cmd.name,
+            aliases=list(cmd.aliases),
+            description=cmd.description,
+            category=cmd.category,
+            args_hint=cmd.args_hint,
+            kind=CommandKind.BUILTIN,
+            runs=_runner(cmd, refused),
+        )
+        for cmd in REGISTRY.commands(surface)
+    ]
+    taken = {key for cmd in REGISTRY for key in cmd.keys}
+    for name, spec in sorted(quick_command_table(scope).items()):
+        if name in taken:
+            continue
+        kind = str(spec.get("type", "exec"))
+        runs = CommandRunner.SERVER
+        if not quick_exec and kind.lower() == "exec":
+            runs = CommandRunner.UNAVAILABLE
+        entries.append(
+            CatalogEntry(
+                name=name,
+                description=str(spec.get("description") or f"quick command ({kind})"),
+                category="custom",
+                kind=CommandKind.QUICK,
+                runs=runs,
+            )
+        )
+        taken.add(name)
+    if skills is not None:
+        for name, note in sorted(skills.names().items()):
+            if name in taken:
+                continue
+            entries.append(
+                CatalogEntry(
+                    name=name,
+                    description=note,
+                    category="custom",
+                    kind=CommandKind.SKILL,
+                    runs=CommandRunner.SERVER,
+                )
+            )
+    return CommandsCatalogResult(commands=entries)

@@ -14,13 +14,14 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Protocol, cast
 
 from indus.core.persist import StateStore
 from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope
 from indus.protocol.errors import INTERNAL_ERROR, PROVIDER_UNAVAILABLE
 from indus.protocol.methods import ProtocolError
+from indus.service.client_settings import TOOL_MODES, ToolMode, default_tool_mode
 from indus.service.rpc.dispatch import ContractViolation
 from indus.service.session_service import SessionService, protocol_error_for
 from indus.state.registry import StoreHandle
@@ -36,9 +37,6 @@ __all__ = [
 ]
 
 log = logging.getLogger(__name__)
-
-type ToolMode = Literal["off", "new", "all", "verbose"]
-TOOL_MODES: tuple[ToolMode, ...] = ("off", "new", "all", "verbose")
 
 
 class Emitter(Protocol):
@@ -170,10 +168,7 @@ class Bridge:
     # -- sessions ---------------------------------------------------------------------------------
 
     def default_tool_mode(self) -> ToolMode:
-        from indus.tui_bridge.methods_config import tui_setting
-
-        value = str(tui_setting(self.scope, "tool_progress") or "all").strip().lower()
-        return cast(ToolMode, value) if value in TOOL_MODES else "all"
+        return default_tool_mode(self.scope)
 
     def view(self, session_id: str) -> SessionView | None:
         service = self._service

@@ -30,6 +30,7 @@ from indus.web.pty.resize import TermSize, resize_frame
 from indus.web.ws.chat_gate import PURPOSE_PTY, purpose_of
 from indus.web.ws.chat_routes import ChatSeams
 from indus.web.ws.pty_route import (
+    HOST_TERMINAL_NAMES,
     NODE_MISSING,
     PTY_HOST_ENV,
     SESSION_FILE_ENV,
@@ -353,6 +354,40 @@ def test_child_env_comes_from_the_builder(scope: Scope, tmp_path: Path) -> None:
     assert fresh.argv == ("/py", "-m", "indus", "--tui")
     assert fresh.cwd == tmp_path
     assert SIDECAR_URL_ENV not in fresh.env and SESSION_FILE_ENV not in fresh.env
+
+
+def test_the_child_env_drops_the_host_terminal_s_theme_pins(scope: Scope, tmp_path: Path) -> None:
+    # Wave 48: the dashboard started from a light Apple Terminal (or a kitty inside tmux) must not
+    # pin the embedded TUI's light/dark or describe a terminal it is not running in; the
+    # colour-scheme reports from the page's xterm decide (W47-d-1).
+    host = {
+        "COLORFGBG": "0;15",
+        "TERM_PROGRAM": "Apple_Terminal",
+        "TERM_PROGRAM_VERSION": "455",
+        "TERM": "xterm-kitty",
+        "COLORTERM": "24bit",
+        "KITTY_WINDOW_ID": "3",
+        "WT_SESSION": "w1",
+        "ZED_TERM": "true",
+        "TMUX": "/tmp/tmux-0/default,1,0",
+        "TMUX_PANE": "%1",
+        "ZELLIJ": "0",
+        "STY": "1.pts-0",
+        "ITERM_SESSION_ID": "w0t0p0",
+        "VTE_VERSION": "7600",
+        "Colorfgbg": "15;0",  # names compare without case (a Windows env)
+        "LANG": "C.UTF-8",
+        "HOME": str(tmp_path),
+    }
+    request = ChildRequest(scope.with_env(scope.env.with_overlay(host)), None, tmp_path, None, None)
+    env = dict(TuiChild(python="/py", which=lambda _name, _path: "/n")(request).env)
+    kept = {k.upper() for k in env}
+    for name in host:
+        if name not in ("TERM", "COLORTERM", "LANG", "HOME"):
+            assert name.upper() not in kept, name
+    assert {"COLORFGBG", "TERM_PROGRAM", "KITTY_WINDOW_ID", "TMUX"} <= HOST_TERMINAL_NAMES
+    assert env["TERM"] == "xterm-256color" and env["COLORTERM"] == "truecolor"  # the page's xterm
+    assert env["LANG"] == "C.UTF-8" and env["HOME"] == str(tmp_path)  # the rest is kept
 
 
 def test_lease_holder_reads_browse_only(scope: Scope) -> None:

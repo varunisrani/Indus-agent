@@ -217,6 +217,7 @@ export function BotsPage(props: {
           </div>
           {room !== null && (
             <GroupRoom
+              key={room}
               rpc={rpc}
               roomId={room}
               onDisbanded={() => {

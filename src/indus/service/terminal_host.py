@@ -20,13 +20,15 @@ The lost-job hook of Docker recovery needs no store; ``TerminalRuntime`` registe
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from indus.backends.docker import reaper
-from indus.backends.docker.environment import label_value
+from indus.backends.docker import liveness
 from indus.backends.process_receipts import set_lineage_resolver
-from indus.backends.processes import ProcessRegistry
 from indus.state import compression, sessions
 from indus.state.registry import StoreHandle
+
+if TYPE_CHECKING:
+    from indus.backends.processes import ProcessRegistry
 
 __all__ = ["install", "is_continuation", "jobs_alive", "session_alive"]
 
@@ -59,6 +61,9 @@ def session_alive(store: StoreHandle, task: str) -> bool:
 
 def jobs_alive(processes: ProcessRegistry, task: str) -> bool:
     """Does a background job of this process still run for the container task id ``task``?"""
+    # Imported here: only the Docker sweep asks, and a run without Docker never loads it (W48-g-3).
+    from indus.backends.docker.environment import label_value
+
     for record in processes.running():
         if record.session_id and label_value(record.session_id) == task:
             return True
@@ -70,7 +75,7 @@ def jobs_alive(processes: ProcessRegistry, task: str) -> bool:
 def install(store: StoreHandle, processes: ProcessRegistry) -> None:
     """Wire the receipts lineage check and the orphan sweep's liveness to this host."""
     set_lineage_resolver(lambda owner, caller: is_continuation(store, owner, caller))
-    reaper.set_liveness(
+    liveness.set_liveness(
         session_alive=lambda task: session_alive(store, task),
         jobs_alive=lambda task: jobs_alive(processes, task),
     )

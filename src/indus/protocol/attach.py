@@ -290,7 +290,8 @@ class SessionMutateParams(ProtocolModel):
     payload: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
     """The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``;
     ``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``;
-    ``branch``: ``mcp_servers``; ``compress``: ``focus``; ``command``: ``name``, ``arg``)."""
+    ``branch``: ``mcp_servers``, ``title``; ``compress``: ``focus``; ``command``: ``name``,
+    ``arg``)."""
     request_id: str = Field(min_length=1, max_length=200)
     """The client's id for this change: the same id again answers the first result."""
     generation: NonNegativeInt | None = None

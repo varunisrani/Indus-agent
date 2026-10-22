@@ -56,6 +56,18 @@ export function useArmed(armMs: number): boolean {
   return armed;
 }
 
+/**
+ * Bring a card into view once, when it opens (W48-c). It is rendered after the transcript's rows
+ * and can open below an expanded tool row, out of sight; "nearest" scrolls only as far as needed.
+ */
+export function useRevealOnOpen<T extends HTMLElement>() {
+  const host = useRef<T>(null);
+  useEffect(() => {
+    host.current?.scrollIntoView?.({ block: "nearest" });
+  }, []);
+  return host;
+}
+
 /** Button props that fire `onActivate` only for an explicit click or keyboard activation. */
 export function useExplicitPress(onActivate: () => void, armed: boolean) {
   const pressedHere = useRef(false);
@@ -105,6 +117,7 @@ export function ApprovalCard(props: { open: OpenServerRequest; armMs?: number })
   const choices = allowedChoices(request);
   const armed = useArmed(props.armMs ?? ARM_DELAY_MS);
   const [reason, setReason] = useState("");
+  const host = useRevealOnOpen<HTMLElement>();
 
   const choose = (choice: ApprovalChoice) => {
     const trimmed = reason.trim();
@@ -126,6 +139,7 @@ export function ApprovalCard(props: { open: OpenServerRequest; armMs?: number })
 
   return (
     <section
+      ref={host}
       aria-label={t("approval.title")}
       data-card="approval"
       data-request-id={props.open.id}

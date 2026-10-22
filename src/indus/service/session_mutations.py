@@ -9,8 +9,9 @@ connection attached, an operation, its payload, the client's ``request_id`` and,
 - ``editor_mcp`` — the editor's own MCP servers for this session (``service.editor_mcp``): checked
   against the session's record (a changed spec is refused, nothing changes), connected, and the
   agent rebuilt with them; while a turn runs the change waits for the turn's end (``deferred``).
-- ``branch`` — a stored copy of the session; the child gets the named servers or a copy of the
-  parent's, recorded at once, connected when the child is attached. Idle only.
+- ``branch`` — a stored copy of the session (``title`` names it); the child gets the named
+  servers or a copy of the parent's, recorded at once, connected when the child is attached. Idle
+  only.
 - ``workspace`` — the session's folder (row and agent). Idle only.
 - ``model`` — the session's route, also written to its row (``model``, billing provider and base
   URL) so a resume runs it; ``confirm`` when the target window cannot hold the context in use
@@ -180,6 +181,9 @@ class SessionMutations:
         self.resolve_route: Callable[[str, str | None], RuntimeRoute] = self._resolve
         """``(model, provider) -> route`` for a model change (blocking)."""
         self.model_guard: Callable[[int, int], str | None] = window_guard
+        self.on_change: Callable[[str], object] | None = None
+        """Told the session's key after a model or folder change applied (the host sends the
+        session's viewers a fresh ``session.info``, W48-h)."""
         self._states: dict[str, _State] = {}
         self._gates: dict[str, asyncio.Lock] = {}
         self._kept: OrderedDict[str, _Kept] = OrderedDict()
@@ -187,6 +191,14 @@ class SessionMutations:
         self._closed = False
 
     # -- views ------------------------------------------------------------------------------------
+
+    def _changed(self, key: str) -> None:
+        if self.on_change is None:
+            return
+        try:
+            self.on_change(key)
+        except Exception:
+            log.warning("the change of %s could not be announced", key, exc_info=True)
 
     def servers(self, key: str) -> list[dict[str, Any]]:
         """The editor specs held for a session (memory only; tests and diagnostics)."""
@@ -561,8 +573,14 @@ class SessionMutations:
         state = self._states.get(key)
         held = state.servers.spec_list() if state is not None and state.servers else []
         specs = named or held
+        raw = payload.get("title")
+        title = (raw.strip() or None) if isinstance(raw, str) else None
         try:
-            child = await run_blocking(lambda: rewind.branch(self.store, sid), label="branch")
+            child = await run_blocking(
+                lambda: rewind.branch(self.store, sid, title=title), label="branch"
+            )
+        except titles.TitleTaken as exc:
+            raise ProtocolError(INVALID_PARAMS, str(exc), path="title") from None
         except rewind.BranchRefused as exc:
             raise ProtocolError(SESSION_NOT_FOUND, str(exc), path="session_id") from None
         if specs or (state is not None and state.acp):
@@ -587,6 +605,7 @@ class SessionMutations:
         await run_blocking(lambda: sessions.set_cwd(self.store, sid, folder), label="workspace")
         self._state(key).cwd = folder
         await self._reload(key, sid)
+        self._changed(key)
         return SessionMutateResult(status="applied", cwd=folder)
 
     async def _rewind(self, key: str, sid: str, payload: Mapping[str, Any]) -> Result:
@@ -697,6 +716,7 @@ class SessionMutations:
         fields = {**agent.options.session_fields, "model": after.model}
         agent.options = replace(agent.options, session_fields=fields)
         await self._record_route(sid, after.route)
+        self._changed(key)
         return SessionMutateResult(status="applied", model=after.model, provider=after.provider)
 
     async def _record_route(self, sid: str, route: RuntimeRoute) -> None:

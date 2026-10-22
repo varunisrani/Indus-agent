@@ -45,7 +45,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
-from indus.backends.task_overrides import with_workdir
+from indus.backends.task_overrides import with_workdir, workdir_gone
 from indus.core import loop_texts as texts
 from indus.core import untrusted
 from indus.core.exit_reasons import ExitReason, Failure
@@ -56,7 +56,7 @@ from indus.core.tool_exec import Executor, SlotOutcome
 from indus.core.tool_plan import PlanCall, plan_segments, traits_for
 from indus.core.transcript import TranscriptRow
 from indus.core.turn_state import PersistFailed, TurnState
-from indus.protocol.events import ToolCompleted, ToolStarted
+from indus.protocol.events import Notice, NoticeLevel, ToolCompleted, ToolStarted
 from indus.providers.route import sees_tool_images
 from indus.providers.types import NormalizedResponse
 from indus.safety.redaction import redact_arguments
@@ -70,6 +70,9 @@ log = logging.getLogger(__name__)
 __all__ = ["RoundAction", "handler_extras", "repair_name", "run_tool_round", "unique_ids"]
 
 type RoundAction = Literal["continue", "retry", "end"]
+
+# The notice's key: a client shows one such notice and replaces it when it comes again.
+WORKDIR_NOTICE_KEY = "workdir_missing"
 
 _NAME_CUT = re.compile(r"[\"'<>]")
 _CAMEL = re.compile(r"(?<!^)(?=[A-Z])")
@@ -401,6 +404,15 @@ async def _execute(state: TurnState, calls: list[_Call], valid: frozenset[str]) 
         extras["delivery_origin"] = origin
     scope = runtime.scope
     if scope is not None and runtime.workdir is not None:
+        if not state.workdir_noticed and workdir_gone(scope, runtime.workdir):
+            # W48-c: the tools fall back to the profile's folder; say so once per turn.
+            state.workdir_noticed = True
+            state.emit(
+                Notice,
+                level=NoticeLevel.WARNING,
+                text=texts.WORKDIR_GONE_NOTICE.format(folder=runtime.workdir),
+                key=WORKDIR_NOTICE_KEY,
+            )
         scope = with_workdir(scope, runtime.workdir)  # the session's own folder (W47-b)
     ctx = ToolContext(
         scope=scope,

@@ -43,11 +43,15 @@ export type CatalogMatch =
   | { type: "ambiguous"; names: string[] }
   | { type: "none" };
 
-/** Resolve a typed word against the catalogue's names and aliases (descriptions never count). */
+/**
+ * Resolve a typed word against the catalogue's names and aliases (descriptions never count).
+ * Entries the server marks `unavailable` (it does not run them here, W48-h) never match.
+ */
 export function matchCatalog(name: string, catalog: readonly CatalogEntry[]): CatalogMatch {
   const wanted = name.toLowerCase();
   const keys: { key: string; canonical: string }[] = [];
   for (const entry of catalog) {
+    if (entry.runs === "unavailable") continue;
     for (const key of [entry.name, ...(entry.aliases ?? [])]) {
       keys.push({ key: key.toLowerCase().replace(/^\//, ""), canonical: entry.name });
     }

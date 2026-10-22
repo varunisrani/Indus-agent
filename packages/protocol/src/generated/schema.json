@@ -517,7 +517,7 @@
         "name": {"description": "Canonical name, without the slash.", "type": "string"},
         "runs": {
           "$ref": "#/$defs/CommandRunner",
-          "description": "Who runs it: the server (``slash.exec``), the client, or nobody yet."
+          "description": "Who runs it: the server (``slash.exec``), the client, nobody yet, or nobody on this\nconnection (``unavailable``: do not offer it)."
         }
       },
       "required": ["name", "description", "category", "kind", "runs"],
@@ -714,7 +714,7 @@
     },
     "CommandRunner": {
       "description": "Who runs a slash command.",
-      "enum": ["server", "client", "later"],
+      "enum": ["server", "client", "later", "unavailable"],
       "type": "string"
     },
     "CommandsCatalogParams": {
@@ -3550,7 +3550,7 @@
         "operation": {"$ref": "#/$defs/SessionMutationName", "description": "What to change."},
         "payload": {
           "additionalProperties": {"$ref": "#/$defs/JsonValue"},
-          "description": "The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``;\n``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``;\n``branch``: ``mcp_servers``; ``compress``: ``focus``; ``command``: ``name``, ``arg``).",
+          "description": "The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``;\n``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``;\n``branch``: ``mcp_servers``, ``title``; ``compress``: ``focus``; ``command``: ``name``,\n``arg``).",
           "type": "object"
         },
         "request_id": {
@@ -3770,6 +3770,11 @@
           "description": "Stored messages.",
           "minimum": 0,
           "type": "integer"
+        },
+        "model": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "description": "The model it last ran on, when one is stored."
         },
         "preview": {
           "default": "",

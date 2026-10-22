@@ -126,3 +126,55 @@ Read: none (wiring).
   (`src/contrib/shell.test.tsx::the Bots page is served only while its contribution is on`).
 
 Status (wave 42): `profile_rows` wired. Still owed elsewhere: the room loop (WA).
+
+## Wave 48 (builder a — RS3 room views on groups.watch, approval card)
+
+Status: done for the desktop `GroupRoom.tsx` (2026-10-22). The TUI and the web dashboard have no
+room view to switch (searched `apps/tui/src`, `apps/web/src`, `packages/*/src`: no `groups.*`
+caller, no room page); building those views is a follow-up (W48-a-2). Read: no reference file (our
+own design over wave 47's daemon side, `docs/notes/P24/room-driver.md` "Wave 47").
+
+What changed (own words):
+- The room reads `groups.log` once, then calls `groups.watch {room_id, since_seq: <last seen>}` and
+  merges each `groups.event` notification for its room (deduplicated by `seq`, other rooms ignored);
+  every pushed event asks `groups.status` again (calls made while one is in flight collapse into one
+  more). A `gateway.ready` (a reconnect: the daemon's watch ended with the old socket) watches again
+  from the last seen `seq`. Closing the room removes the listener and sends `groups.unwatch` (also
+  when the watch answer arrives after the close). Polling `groups.log` every `ROOM_POLL_MS` happens
+  only when the watch is refused (an older daemon, the stdio bridge) or the connection offers no
+  notifications.
+- `RpcLike` gained an optional `onEvent`; `rpcOf(connection)` forwards `GatewayConnection.onEvent`
+  and is now one object per connection (a `WeakMap`), so a re-render of the Bots page no longer
+  restarts the room's effects (it would unwatch and watch again on every render).
+- Switching rooms no longer carries the last room over: the Bots page keys `GroupRoom` by room id,
+  and `GroupRoom` itself starts from `seq` 0 with an empty log when its `roomId` changes (before,
+  the next room was read from the last room's `seq`, so its earlier events were skipped).
+- `approval.requested` without a later `approval.answered` / `approval.settled` for its
+  `request_id` is a card (`bots/RoomApprovalCard.tsx`, a `fieldset` named "<member> asks for
+  approval"): the room's name, the member's command verbatim in a `pre` and its description in a
+  `blockquote` under "What <member> wants to run, in its own words:" (SEC-15: the member's text is
+  data, shown as quoted text and never as markup or as the person's words), the reason field for a
+  deny, and exactly the request's choices (no `deny` or `once` added: the daemon refuses a choice
+  the request did not offer). A choice needs an explicit press after the chat card's arming delay
+  (`useArmed` / `useExplicitPress` reused). It sends `groups.approve {room_id, request_id, choice,
+  reason?}`; the answer's `approval.answered` event is merged at once, so the card closes; a refusal
+  (`rooms.event_conflict`, a request no longer open) stays on the card as "Not accepted: …".
+
+Tests (fail-first: the four live-room cases failed on the base — no `groups.watch` call, no card —
+and the `rpcOf` case failed on the base with a new object per call):
+`apps/desktop/src/bots/GroupRoom.test.tsx` "GroupRoom live (groups.watch)" (follows by
+`groups.event` after one log read, re-watches on `gateway.ready`, unwatches on close; falls back to
+polling only when the watch is refused; the card offers only the request's choices and closes on the
+answer; a refused answer stays on the card; a settled request drops the card),
+"GroupRoom switching rooms" (failed on the base: the second room's log was read from `seq` 2),
+`apps/desktop/src/app/manage/managementSlots.test.ts`.
+
+## Decisions for the lead (wave 48, a)
+- W48-a-1 (D-16.1070): the room view follows `groups.watch` and polls only when the watch call fails; a
+  `gateway.ready` re-watches from the last seen `seq` (the daemon drops a closed connection's
+  watches). The approval card offers only the request's own choices (unlike the chat card, which
+  always adds `deny`), since `groups.approve` refuses any other.
+- W48-a-2 (D-16.1071, owner; follow-up): there is no TUI or web room view; D-16.1056's "(and the TUI / web room
+  views)" has nothing to switch. If they are wanted, they are new surfaces (the web dashboard would
+  also need `groups.*` and `groups.event` on its socket). Release-checklist RS3 can move to Done for
+  the desktop; the lead decides whether TUI / web room views are owed for 1.0.

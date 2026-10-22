@@ -15,6 +15,7 @@ import pytest
 
 from indus.core.persist import MemoryStore
 from indus.foundation.scope import Scope
+from indus.protocol.events import EventBase, Notice, NoticeLevel
 from indus.protocol.methods import SessionCreateParams
 from indus.service.session_service import SessionService
 from indus.tools.builtin import write_file
@@ -140,6 +141,55 @@ def test_a_session_without_a_folder_keeps_the_profile_terminal_cwd(
     assert (configured / "plain.txt").read_text(encoding="utf-8") == "configured"
     assert not (daemon / "plain.txt").exists()
     assert not (chat / "plain.txt").exists()
+
+
+def _folder_notices(events: list[EventBase]) -> list[Notice]:
+    return [e for e in events if isinstance(e, Notice) and e.key == "workdir_missing"]
+
+
+def test_a_chat_whose_folder_is_gone_says_so_once_per_turn(
+    scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """W48-c: the tools fall back to the profile's folder (W47-b-3), and the chat now says so."""
+    daemon, chat = _folders(tmp_path, monkeypatch)
+    kept = tmp_path / "kept-folder"
+    kept.mkdir()
+    model = FakeModelServer(
+        script_of(
+            tool_batch(("write_file", {"path": "one.txt", "content": "1"})),
+            tool_batch(("write_file", {"path": "two.txt", "content": "2"})),
+            text_turn("Written."),
+            tool_batch(("write_file", {"path": "three.txt", "content": "3"})),
+            text_turn("Written."),
+        )
+    )
+    seen: dict[str, list[Notice]] = {}
+
+    async def scenario() -> None:
+        svc = _service(scope, model, MemoryStore(), tmp_path / "locks")
+        try:
+            gone = await svc.create(SessionCreateParams(cwd=str(chat)))
+            chat.rmdir()  # the folder was deleted after the chat was made
+            ticket = await svc.submit(gone.session_id, "Write two files.")
+            await asyncio.wait_for(svc.wait(gone.session_id, ticket.turn_id), 30)
+            seen["gone"] = _folder_notices(svc.events(gone.session_id))
+            present = await svc.create(SessionCreateParams(cwd=str(kept)))
+            ticket = await svc.submit(present.session_id, "Write a file.")
+            await asyncio.wait_for(svc.wait(present.session_id, ticket.turn_id), 30)
+            seen["present"] = _folder_notices(svc.events(present.session_id))
+        finally:
+            await svc.aclose()
+
+    asyncio.run(scenario())
+
+    # two tool rounds, one notice: a warning that names the missing folder
+    assert len(seen["gone"]) == 1
+    notice = seen["gone"][0]
+    assert notice.level is NoticeLevel.WARNING
+    assert str(chat) in notice.text
+    assert (daemon / "one.txt").exists() and (daemon / "two.txt").exists()
+    assert seen["present"] == []
+    assert (kept / "three.txt").exists()
 
 
 class _Config:

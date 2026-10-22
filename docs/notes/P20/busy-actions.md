@@ -124,3 +124,31 @@ stop the next; shared actions hear events with no composer mounted).
   fallback `turnId` until `turn.started` names the turn. No protocol change.
 - W47-a-2 (D-16.1031): `sharedActions` holds one permanent session-event listener per (connection, session);
   the per-composer subscription remains only for actions passed in as a prop (tests, embeds).
+
+## Wave 48 (W48-c): the optimistic row binds to the turn's own id
+
+Status: done (2026-10-22, wave-48 builder c).
+
+Read: none (the W47-a follow-up in our own code; no reference file or Evidence).
+
+Bug: `sendShown` (`src/chat/localEcho.ts`) binds the person's optimistic row to the snapshot's
+`turnId` when the submit answers. When the answer comes before `turn.started`, that is the
+admission id; the transcript holds the reply under the daemon's own turn id, so the row and the
+reply were two groups. A history reload mid-turn then flushed the stored part of the reply under
+the row and added the live reply again below (the reply's first part shown twice); later reloads
+could not match the reply to its prompt by turn id.
+
+Fix: `ChatActions.namedTurn(generation)` exposes the daemon's id for a generation once
+`turn.started` named it. After binding, `sendShown` keeps listening to the actions while that id
+is unknown and binds the row again when it arrives; it stops when the turn ends unnamed or a later
+generation runs. When `turn.started` came first the row is bound once, to the turn's id, as before.
+
+Tests (fail-first on base `1b6e711`): `src/chat/localEcho.test.ts` "the optimistic row follows the
+turn's own id": answer then `turn.started` binds again (failed on base); `turn.started` first binds
+once; the turn ending unnamed stops waiting; and, through the real reducer, "a history reload
+mid-turn keeps the row and the reply in one group" (failed on base: the stored partial reply and
+the live one were both shown).
+
+### Decisions for the lead
+- **W48-c-5 (D-16.1080):** the row's binding follows the generation (W47-a-1) on the client; no protocol
+  change (the submit answer keeps naming the admission id).

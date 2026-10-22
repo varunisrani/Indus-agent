@@ -1,8 +1,11 @@
 """What a model call cost, and how sure we are about it (P08-08).
 
 The prices live in ``pricing_table.yaml`` next to this module: our own table, one block per vendor
-with the vendor's price page and the day it was read. ``estimate_cost`` turns one call's token
-buckets into a ``CostResult`` whose ``status`` never pretends:
+with the vendor's price page and the day it was read. ``pricing_table.json`` is its generated twin
+(``python -m indus.providers.pricing_twin``), read instead of parsing YAML on every start while
+it names the YAML's sha256; a stale twin is ignored and the YAML is parsed (W48-g-1).
+``estimate_cost`` turns one call's token buckets into a ``CostResult`` whose ``status`` never
+pretends:
 
 - ``actual``: the provider itself reported what it billed (a numeric ``cost`` in the raw usage,
   as aggregators with usage accounting do);
@@ -19,6 +22,8 @@ below a cent never reads as ``$0.00``.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from collections.abc import Mapping
@@ -27,7 +32,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from functools import cache
 from importlib import resources
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from indus.foundation import yamlio
 from indus.providers.hosts import is_loopback, try_parse
@@ -51,6 +56,7 @@ __all__ = [
 type CostStatus = Literal["actual", "estimated", "included", "unknown"]
 
 TABLE_FILE = "pricing_table.yaml"
+TWIN_FILE = "pricing_table.json"
 MILLION = Decimal(1_000_000)
 CENT = Decimal("0.01")
 _STANDARD_TIERS = frozenset({"", "default", "standard", "auto"})
@@ -215,7 +221,31 @@ def _model(raw: Mapping[str, Any], where: str) -> ModelPrice:
 
 def load_table(text: str) -> PriceTable:
     """Parse price table YAML (see the file's header for the shape)."""
-    data = _mapping(yamlio.load_safe(text), "table")
+    return table_from_data(yamlio.load_safe(text))
+
+
+def source_digest(text: str) -> str:
+    """The sha256 of the YAML source text that a JSON twin names."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def table_from_twin(yaml_text: str, twin_text: str) -> PriceTable | None:
+    """The table from a JSON twin of ``yaml_text``; ``None`` when the twin is not for that text."""
+    try:
+        twin = json.loads(twin_text)
+    except ValueError:
+        return None
+    if not isinstance(twin, dict):
+        return None
+    twin_map = cast(dict[str, Any], twin)
+    if twin_map.get("source_sha256") != source_digest(yaml_text):
+        return None
+    return table_from_data(twin_map.get("table"))
+
+
+def table_from_data(raw: object) -> PriceTable:
+    """Build the table from parsed data (the YAML document or the twin's ``table``)."""
+    data = _mapping(raw, "table")
     vendors: list[VendorPrices] = []
     for name, raw_vendor in _mapping(data.get("vendors") or {}, "vendors").items():
         vendor = _mapping(raw_vendor, f"vendors.{name}")
@@ -241,8 +271,17 @@ def load_table(text: str) -> PriceTable:
 @cache
 def default_table() -> PriceTable:
     """The table shipped with the package (read once)."""
-    text = resources.files("indus.providers").joinpath(TABLE_FILE).read_text(encoding="utf-8")
-    return load_table(text)
+    package = resources.files("indus.providers")
+    text = package.joinpath(TABLE_FILE).read_text(encoding="utf-8")
+    try:
+        twin = package.joinpath(TWIN_FILE).read_text(encoding="utf-8")
+    except OSError:
+        twin = ""
+    table = table_from_twin(text, twin) if twin else None
+    if table is None:
+        log.debug("%s is missing or stale; parsing %s", TWIN_FILE, TABLE_FILE)
+        table = load_table(text)
+    return table
 
 
 # -- costing -----------------------------------------------------------------------------------

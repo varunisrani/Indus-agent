@@ -988,7 +988,7 @@ Parameters:
 |---|---|---|---|
 | `session_id` | SessionId | yes | A session this connection watches. |
 | `operation` | SessionMutationName | yes | What to change. |
-| `payload` | dict[str, JsonValue] | no | The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``; ``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``; ``branch``: ``mcp_servers``; ``compress``: ``focus``; ``command``: ``name``, ``arg``). |
+| `payload` | dict[str, JsonValue] | no | The operation's arguments (``editor_mcp``: ``mcp_servers``; ``workspace``: ``cwd``; ``model``: ``model``, ``provider``, ``confirm``; ``rewind``: ``count``; ``rename``: ``title``; ``branch``: ``mcp_servers``, ``title``; ``compress``: ``focus``; ``command``: ``name``, ``arg``). |
 | `request_id` | str | yes | The client's id for this change: the same id again answers the first result. |
 | `generation` | int or null | no | The turn the client believes runs; another running turn makes the change ``refused`` (``stale_generation``). |
 

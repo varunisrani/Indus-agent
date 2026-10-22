@@ -1676,10 +1676,6 @@
         "7.2.0": {
           "licence": "MIT",
           "source": "metadata"
-        },
-        "8.3.0": {
-          "licence": "MIT",
-          "source": "metadata"
         }
       },
       "convert-to-spaces": {
@@ -2123,10 +2119,6 @@
         }
       },
       "katex": {
-        "0.16.47": {
-          "licence": "MIT",
-          "source": "metadata"
-        },
         "0.19.0": {
           "licence": "MIT",
           "source": "metadata"

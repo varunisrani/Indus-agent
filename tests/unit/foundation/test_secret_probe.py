@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import stat
+import sys
 import threading
+import types
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +31,8 @@ from tests.contract.foundation.test_secret_store_contract import (
 from tests.fakes.clock import FakeClock
 
 LOGGER = "indus.foundation.secrets"
+# The real lookup, kept before the autouse fixture in tests/conftest.py swaps it for "fail".
+REAL_SYSTEM_KEYRING = secrets_mod._system_keyring  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.fixture(autouse=True)
@@ -175,3 +179,64 @@ def test_unknown_mode_refused(home: Path) -> None:
 
     with pytest.raises(SecretStoreError):
         open_secret_store(home, "default", mode="vault")
+
+
+def _fake_keyring_module(gate: threading.Event, calls: list[str]) -> types.ModuleType:
+    module = types.ModuleType("keyring")
+    backend = MemoryKeyring()
+
+    def get_keyring() -> object:
+        calls.append(threading.current_thread().name)
+        if threading.current_thread().name == "indus-keyring-discovery":
+            assert gate.wait(10), "the test never opened the gate"
+        return backend
+
+    module.get_keyring = get_keyring  # type: ignore[attr-defined]
+    return module
+
+
+def test_backend_discovery_starts_once_and_the_probe_waits_for_it(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """W48-e-3: the CLI starts discovery at process start; the probe joins it, then asks."""
+    gate = threading.Event()
+    calls: list[str] = []
+    monkeypatch.setitem(sys.modules, "keyring", _fake_keyring_module(gate, calls))
+    monkeypatch.setattr(secrets_mod, "_system_keyring", REAL_SYSTEM_KEYRING)
+    secrets_mod.start_backend_discovery()
+    secrets_mod.start_backend_discovery()  # a second start is a no-op
+    found: dict[str, object] = {}
+    opener = threading.Thread(
+        target=lambda: found.update(store=open_secret_store(home, "default")), daemon=True
+    )
+    opener.start()
+    probing = threading.Event()
+    for _ in range(1000):
+        if any(t.name == "indus-keychain-probe" for t in threading.enumerate()):
+            probing.set()
+            break
+        threading.Event().wait(0.01)
+    assert probing.is_set()
+    assert calls == ["indus-keyring-discovery"]  # the probe is waiting on discovery
+    gate.set()
+    opener.join(10)
+    assert calls == ["indus-keyring-discovery", "indus-keychain-probe"]
+    store = found["store"]
+    assert isinstance(store, SecretStore)
+    assert store.backend_name == "keychain"
+
+
+def test_a_failed_discovery_leaves_the_answer_to_the_probe(
+    home: Path, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = types.ModuleType("keyring")
+
+    def get_keyring() -> object:
+        raise RuntimeError("no backend module")
+
+    module.get_keyring = get_keyring  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "keyring", module)
+    monkeypatch.setattr(secrets_mod, "_system_keyring", REAL_SYSTEM_KEYRING)
+    secrets_mod.start_backend_discovery()
+    store = open_secret_store(home, "default", clock=clock)
+    assert store.backend_name == "file"

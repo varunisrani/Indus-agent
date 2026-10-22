@@ -225,3 +225,24 @@
   color: var(--color-muted);
   font-size: 0.8rem;
 }
+
+.room-approval {
+  border-color: var(--color-warn);
+  margin: 0;
+  min-width: 0;
+}
+
+.room-approval > legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.room-approval-command,
+.room-approval-description {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--color-line);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

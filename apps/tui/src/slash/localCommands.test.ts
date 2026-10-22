@@ -306,6 +306,15 @@ describe("help and missing hooks", () => {
     expect(out.pages[0]?.text).toContain("/deploy — ship it");
   });
 
+  it("/help leaves out what the server marks unavailable here (W48-h)", async () => {
+    const { ctx, out } = slashSetup({
+      catalog: [entry("deploy"), entry("gs", { runs: "unavailable", description: "git status" })],
+    });
+    await createDispatcher(ctx).run("/help");
+    expect(out.pages[0]?.text).toContain("/deploy");
+    expect(out.pages[0]?.text).not.toContain("/gs");
+  });
+
   it("a command whose hook is missing says it is not available yet", async () => {
     const { ctx, out } = slashSetup();
     await createDispatcher(ctx).run("/copy");

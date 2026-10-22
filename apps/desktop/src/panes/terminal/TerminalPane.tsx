@@ -160,7 +160,12 @@ function TerminalSlot(props: {
   useEffect(() => {
     const element = host.current;
     if (element === null || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
+    // W48-c: refit on the next frame, once per frame. Fitting inside the callback resizes the
+    // terminal's own elements while size changes are still being delivered, and the browser then
+    // reports "ResizeObserver loop completed with undelivered notifications".
+    let frame: number | null = null;
+    const refit = () => {
+      frame = null;
       const view = viewRef.current;
       const id = idRef.current;
       if (view === null || id === null || !props.active || !props.visible) return;
@@ -170,9 +175,15 @@ function TerminalSlot(props: {
         cols: Math.max(2, size.cols),
         rows: Math.max(2, size.rows),
       });
+    };
+    const observer = new ResizeObserver(() => {
+      if (frame === null) frame = requestAnimationFrame(refit);
     });
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
   }, [bridge, props.active, props.visible]);
 
   return (

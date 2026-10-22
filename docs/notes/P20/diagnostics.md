@@ -111,3 +111,40 @@ Compare checklist (filled after the rewrite; reopened the files in `Read:`):
 
 Done (2026-10-21). Shared files changed: `electron/ipc/channels.ts`, `electron/ipc/schemas.ts`,
 `src/global.d.ts`, `electron/appMenu.ts`, `src/i18n/en.ts`, `src/styles.css`, `src/main.tsx`.
+
+## Wave 48 (W48-c): the ResizeObserver line and run folders in the desktop log
+
+Status: done (2026-10-22, wave-48 builder c).
+
+Read: none (seen in About › Version during the wave-47 screenshot pass; no reference file or
+Evidence).
+
+What was logged: `ERROR desktop: [renderer] renderer:main (window 1): error: ResizeObserver loop
+completed with undelivered notifications.` plus a location line `at file:///tmp/<run folder>/app/
+dist/index.html:0:0`. Chromium raises that message as a window `error` event with no error object
+and no position when size changes are left over to the next frame; nothing failed.
+
+Cause and fix, three parts:
+- **The loop.** The terminal pane's `ResizeObserver` called `view.fit()` inside its callback; the
+  fit resizes xterm's elements (and the WebGL addon's own observed canvas) while the browser is
+  still delivering size changes. `TerminalPane.tsx` now refits on the next animation frame, at most
+  once per frame, and cancels a pending frame when the pane goes away.
+- **The classification.** `src/app/errorForwarding.ts` no longer forwards that notice
+  ("ResizeObserver loop completed with undelivered notifications" / "… limit exceeded") when the
+  event carries no error object; a real `Error` whose message says the same still goes out.
+- **Run folders.** An event without a position (line 0) gets no location line; `file:` URLs in the
+  location and the stack are cut to their file name (`index-Ab12.js:120:33`). The folders are where
+  this copy of the app runs (a temp folder in E2E, the install folder otherwise) and say nothing
+  about the error; the asset's hashed name still identifies the build. `http(s):` URLs (the dev
+  server) are kept.
+
+Tests (fail-first on base `1b6e711`): `src/app/errorForwarding.test.tsx` "the browser's
+ResizeObserver loop notice is not an error (W48-c)" and "no run folder in the log: …";
+`src/panes/terminal/TerminalPane.test.tsx` "a resize refits on the next frame, not inside the
+observer callback (W48-c)". All three failed on base and pass with the fix.
+
+### Decisions for the lead
+- **W48-c-3 (D-16.1078):** the ResizeObserver loop notice is dropped in the renderer (not forwarded at a lower
+  level): the `logs.rendererError` channel has no level, and the notice is not actionable.
+- **W48-c-4 (D-16.1079):** renderer error locations keep only the file name of `file:` URLs; the main side's
+  redaction is unchanged.

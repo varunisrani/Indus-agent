@@ -22,6 +22,7 @@ export type SwitcherRow =
       readonly id: string;
       readonly title: string;
       readonly model: string;
+      readonly source: string;
       readonly status: LiveStatus;
       readonly current: boolean;
     }
@@ -32,6 +33,7 @@ export type SwitcherRow =
       readonly preview: string;
       /** Epoch seconds of the newest activity. */
       readonly when: number;
+      readonly model: string;
       readonly source: string;
     };
 
@@ -96,21 +98,28 @@ export function relativeAge(when: number, nowMs: number): string {
   return `${Math.floor(days / 7)}w`;
 }
 
-/** Rows in display order; a stored row that is also live is shown once, as live. */
+/**
+ * Rows in display order; a stored row that is also live is shown once, as live. A live row
+ * takes what `session.info` said, else its stored row's title, model and source: attached to the
+ * daemon no `session.info` arrives, so the listing is what names it (W48-b).
+ */
 export function buildRows(
   live: readonly LiveInput[],
   stored: readonly SessionRow[],
   currentId: string | null,
 ): SwitcherRow[] {
   const rows: SwitcherRow[] = [{ kind: "new", id: NEW_ROW_ID }];
+  const listed = new Map(stored.map((row) => [row.session_id, row]));
   const liveIds = new Set<string>();
   for (const session of live) {
     liveIds.add(session.id);
+    const row = listed.get(session.id);
     rows.push({
       kind: "live",
       id: session.id,
-      title: clip(session.title || session.id, TITLE_MAX),
-      model: shortModel(session.model),
+      title: clip(session.title || row?.title || row?.preview || session.id, TITLE_MAX),
+      model: shortModel(session.model || row?.model || null),
+      source: row?.source ?? "",
       status: session.status,
       current: session.id === currentId,
     });
@@ -123,6 +132,7 @@ export function buildRows(
       title: clip(row.title || row.preview || row.session_id, TITLE_MAX),
       preview: row.title ? clip(row.preview ?? "", TITLE_MAX) : "",
       when: row.last_active ?? row.started_at,
+      model: shortModel(row.model ?? null),
       source: row.source ?? "",
     });
   }

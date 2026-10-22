@@ -8,7 +8,7 @@ from collections.abc import Iterator
 import pytest
 
 from indus.backends import process_receipts
-from indus.backends.docker import reaper
+from indus.backends.docker import liveness, reaper
 from indus.backends.processes import ProcessRegistry, SpawnRequest
 from indus.backends.wait import FOREGROUND
 from indus.foundation.scope import Scope
@@ -87,9 +87,9 @@ def test_install_points_receipts_and_sweep_at_the_store(store: StoreHandle) -> N
     assert process_receipts._owns("s1", "s2")  # pyright: ignore[reportPrivateUsage]
     assert not process_receipts._owns("s1", "zz")  # pyright: ignore[reportPrivateUsage]
     sessions.end(store, "s2", "user_exit")
-    report = reaper._liveness  # pyright: ignore[reportPrivateUsage]
-    assert report["session"]("s1") is False and report["session"]("nobody") is True
-    assert report["jobs"]("s1") is False
+    session_alive, jobs_alive = liveness.current()
+    assert session_alive("s1") is False and session_alive("nobody") is True
+    assert jobs_alive("s1") is False
 
 
 def test_runtime_registers_and_drops_the_lost_handler() -> None:

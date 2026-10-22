@@ -189,6 +189,10 @@ def main(
     if _fast_version(args):
         return 0
     target: MutableMapping[str, str] = os.environ if env is None else env
+    if process:
+        from indus.foundation.secrets import start_backend_discovery
+
+        start_backend_discovery()  # overlaps the imports below (W48-e-3)
 
     from indus.cli.app import rewrite_session_flags
 

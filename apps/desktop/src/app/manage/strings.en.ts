@@ -206,6 +206,11 @@ export const MANAGE_STRINGS = {
   "manage.room.disband": "Disband",
   "manage.room.disbandConfirm": "Disband this room for every member? Its history stays readable.",
   "manage.room.disbandYes": "Disband",
+  "manage.room.approval.title": "{member} asks for approval",
+  "manage.room.approval.room": "In the room {room}",
+  "manage.room.approval.quoted": "What {member} wants to run, in its own words:",
+  "manage.room.approval.noChoices": "This request offers no choice this app knows.",
+  "manage.room.approval.refused": "Not accepted: {reason}",
 
   "manage.conn.body":
     "The Indus servers this app knows. The primary opens in new windows; credentials stay in the system keychain.",

@@ -19,12 +19,15 @@ because the two may not import each other.
   ``execute`` is called again with ``confirmed=True`` for the same line;
 - a command runs as its own process, ``python -m indus <words>``, for the console's profile (the
   env from ``safety.child_env`` with ``INDUS_HOME`` pinned to the profile; never this process's
-  env), stdin closed (no prompt can wait), in a new process group;
+  env), stdin closed (no prompt can wait), in a new process group — on native Windows in its own
+  job object instead (``local_windows.start_windows_process``; a start the job calls refuse is a
+  "could not start" answer);
 - output beyond ``output_limit`` characters (50,000) is cut with a marker that says how many were
   left out; credential shapes are masked.
 
 Cancellation: each run carries a ``CancelToken``; cancel (or the caller's timeout) kills the
-command's process group and every descendant — an agent run the command started included.
+command's process group and every descendant — an agent run the command started included (on
+Windows: the job is terminated).
 """
 
 from __future__ import annotations
@@ -39,9 +42,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Final, Literal, Protocol
 
+from indus.backends.contract import BackendError
 from indus.backends.local import LocalProcess, force_kill_tree
+from indus.backends.local_windows import start_windows_process
 from indus.foundation.redact import redact_text
 from indus.foundation.scope import Scope
+from indus.platform.facts import os_family
 from indus.safety.child_env import child_env
 
 __all__ = [
@@ -238,22 +244,40 @@ class SubprocessRunner:
     def __call__(self, scope: Scope, words: Sequence[str], token: CancelToken) -> RunOutput:
         env = child_env(scope)
         env["NO_COLOR"] = "1"
-        popen = subprocess.Popen(
-            [self.python, "-m", "indus", *words],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(scope.home),
-            env=env,
-            start_new_session=True,
-            close_fds=True,
-        )
-        proc = LocalProcess(popen)
-        remove = token.on_cancel(lambda: force_kill_tree(proc))
+        argv = [self.python, "-m", "indus", *words]
+        if os_family() == "win32":  # no process groups to signal: a job object holds the tree
+            try:
+                job = start_windows_process(
+                    argv, cwd=str(scope.home), env=env, stdin=None, separate_stderr=True
+                )
+            except BackendError as exc:
+                raise OSError(str(exc)) from exc
+            popen, stop, release = job.popen, job.terminate_tree, job.release
+        else:
+            popen = subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(scope.home),
+                env=env,
+                start_new_session=True,
+                close_fds=True,
+            )
+            proc = LocalProcess(popen)
+
+            def stop() -> None:
+                force_kill_tree(proc)
+
+            def release() -> None:
+                return None
+
+        remove = token.on_cancel(stop)
         try:
             out, err = popen.communicate()
         finally:
             remove()
+            release()
         return RunOutput(
             code=popen.returncode,
             stdout=out[:_MAX_CAPTURE].decode("utf-8", "replace"),

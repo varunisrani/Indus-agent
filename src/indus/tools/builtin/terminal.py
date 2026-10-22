@@ -27,17 +27,22 @@ One call goes through these steps, each of which can end it with a result from
 
 Configuration is read from the call's ``Scope`` on every call (D-16.75). Work without a profile
 scope is refused before anything is touched (R02.8).
+
+On native Windows a host-local backend cannot run background jobs (they fail to start with the
+WSL2 refusal, W47-e-1), so there the offered schema (``schema_overrides``) drops ``background``
+and the background-only arguments and says so in its description; sandbox backends keep them.
 """
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import re
 import weakref
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, Final, Literal, cast
 
 from indus.backends.contract import (
     BackendFlags,
@@ -55,6 +60,7 @@ from indus.foundation.blocking import run_blocking
 from indus.foundation.clock import Clock
 from indus.foundation.config.schema import default_for
 from indus.foundation.scope import Scope, scope_or_none
+from indus.platform.facts import os_family
 from indus.protocol.requests_port import ServerRequestPort
 from indus.safety import approvals
 from indus.safety.approvals.decision import ApprovalDecision, InterruptFlag, RunContext
@@ -667,6 +673,16 @@ class TerminalTool:
     def session_cwd(self, scope: Scope, session_id: str | None) -> str | None:
         return self._cwds.get((str(scope.home), session_id or "default"))
 
+    def schema_overrides(self, scope: Scope | None) -> Mapping[str, Any] | None:
+        """The schema without background jobs on native Windows with a host-local backend."""
+        if os_family() != "win32":
+            return None
+        name = EnvironmentRegistry.backend_name(scope) if scope is not None else "local"
+        entry = self.shared.environments.entry(name)
+        if entry is None or not entry.flags.host_local:
+            return None
+        return copy.deepcopy(WINDOWS_HOST_SCHEMA)
+
     def probe(self, scope: Scope) -> bool:
         """Tool availability: the configured backend exists and can run here."""
         environments = self.shared.environments
@@ -977,6 +993,7 @@ class TerminalTool:
             probe=self.probe,
             is_async=True,
             max_result_chars=MAX_RESULT_CHARS,
+            schema_overrides=self.schema_overrides,
             cross_refs=CROSS_REFS,
             traits=ToolTraits(mutating=True),
         )
@@ -1055,6 +1072,41 @@ TERMINAL_SCHEMA: dict[str, Any] = {
         },
     },
 }
+
+BACKGROUND_ONLY_ARGS: tuple[str, ...] = (
+    "background",
+    "pty",
+    "notify",
+    "heartbeat",
+    "persist_on_release",
+)
+
+
+def _windows_host_schema() -> dict[str, Any]:
+    params = cast(dict[str, Any], TERMINAL_SCHEMA["parameters"])
+    props = cast(dict[str, Any], params["properties"])
+    kept = {k: v for k, v in props.items() if k not in BACKGROUND_ONLY_ARGS}
+    kept["timeout"] = {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Seconds before the command is stopped (default 180, maximum 600). A "
+        "command that finishes early returns at once, so be generous.",
+    }
+    return {
+        "description": (
+            "Run a shell command (bash) on the user's machine. The working directory and "
+            "exported variables carry over between calls. Output is cut to its beginning and end "
+            "when it is long (the full text is saved to a file named in the result) and secrets "
+            "are masked. Commands run in the foreground only: background processes are not "
+            "available on native Windows, so a server or watcher needs WSL2 or a Docker or SSH "
+            "terminal backend. Risky commands may need the user's approval first."
+        ),
+        "parameters": {**params, "properties": kept},
+    }
+
+
+WINDOWS_HOST_SCHEMA: Final[Mapping[str, Any]] = _windows_host_schema()
+"""What a native-Windows host backend offers (see the module notes)."""
 
 
 DEFAULT_TOOL = TerminalTool()

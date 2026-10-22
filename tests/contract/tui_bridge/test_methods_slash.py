@@ -207,3 +207,11 @@ def test_handlers_never_import_the_cli() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, check=True, timeout=60
     )
     assert out.stdout.strip() == "[]"
+
+
+def test_the_shared_catalogue_names_what_the_bridge_runs() -> None:
+    """W48-b: the catalogue (also served by the daemon) says ``server`` for exactly HANDLERS."""
+    from indus.service import picker_reads
+
+    assert set(methods_slash.HANDLERS) == picker_reads.SERVER_COMMANDS
+    assert methods_slash.CLIENT == picker_reads.CLIENT_COMMANDS

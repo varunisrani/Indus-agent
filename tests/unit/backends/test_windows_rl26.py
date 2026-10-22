@@ -17,6 +17,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ import pytest
 
 from indus.backends import local_windows as lw
 from indus.backends import processes
-from indus.backends.contract import BackendUnavailable, ExecResult
+from indus.backends.contract import BackendError, BackendUnavailable, ExecResult
 from indus.backends.local_windows import GitBash, WindowsProcess
 from indus.backends.processes import ProcessRegistry, SpawnRequest
 from indus.cli.commands import verify as verify_cli
@@ -34,6 +35,7 @@ from indus.cron.ports import JobSpec
 from indus.foundation.clock import SystemClock
 from indus.foundation.scope import Scope
 from indus.safety.child_env import child_env
+from indus.service import console
 from indus.tools.builtin.code import launch
 from indus.tools.builtin.code.output import ByteCapture
 from indus.tools.verify import runner as verify_runner
@@ -366,3 +368,78 @@ def test_windows_starter_boots_and_stops_the_tree(monkeypatch: pytest.MonkeyPatc
     assert stand_in.calls[0]["argv"][1:] == ["-c", "echo $$; sleep 30 & wait"]
     assert stand_in.calls[0]["env"]["MSYS_NO_PATHCONV"] == "1"
     assert stand_in.jobs.terminated == 1 and _gone(int(output.split()[0]))
+
+
+# -- the admin console's command runner (wave 48) --------------------------------------------------
+
+
+def _fake_python(tmp_path: Path) -> str:
+    """Stands in for ``python``: drops ``-m indus`` and acts on the console words."""
+    path = tmp_path / "fake-python"
+    path.write_text(
+        "#!/bin/sh\n"
+        "shift 2\n"
+        'case "$1" in\n'
+        '  status) printf "out:%s" "$NO_COLOR"; printf oops >&2 ;;\n'
+        '  slow) sleep 30 & echo $! > "$2"; wait ;;\n'
+        "esac\n"
+    )
+    path.chmod(0o755)
+    return str(path)
+
+
+def test_console_runs_its_command_in_a_job_on_windows(
+    scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stand_in = StandIn()
+    monkeypatch.setattr(console, "os_family", lambda: "win32", raising=False)
+    monkeypatch.setattr(console, "start_windows_process", stand_in, raising=False)
+    runner = console.SubprocessRunner(python=_fake_python(tmp_path))
+
+    run = runner(scope, ["status"], console.CancelToken())
+
+    assert (run.code, run.stdout, run.stderr, run.cancelled) == (0, "out:1", "oops", False)
+    (call,) = stand_in.calls
+    assert call["argv"][1:] == ["-m", "indus", "status"] and call["separate"] is True
+    assert call["env"]["INDUS_HOME"] == str(scope.home)
+    assert stand_in.jobs.closed >= 1  # the job handle is released
+
+
+def test_console_cancel_terminates_the_job_on_windows(
+    scope: Scope, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stand_in = StandIn()
+    monkeypatch.setattr(console, "os_family", lambda: "win32", raising=False)
+    monkeypatch.setattr(console, "start_windows_process", stand_in, raising=False)
+    runner = console.SubprocessRunner(python=_fake_python(tmp_path))
+    token, pid_file = console.CancelToken(), tmp_path / "child.pid"
+    done: list[console.RunOutput] = []
+    worker = threading.Thread(
+        target=lambda: done.append(runner(scope, ["slow", str(pid_file)], token))
+    )
+    worker.start()
+    clock = SystemClock()
+    deadline = clock.monotonic() + 10
+    while not (pid_file.exists() and pid_file.read_text().strip()) and clock.monotonic() < deadline:
+        clock.sleep_sync(0.05)
+    token.cancel()
+    worker.join(10)
+
+    assert done and done[0].cancelled
+    assert stand_in.jobs.terminated >= 1 and stand_in.jobs.closed >= 1
+    assert _gone(int(pid_file.read_text().strip()))  # the grandchild went with the job
+
+
+def test_console_start_failure_on_windows_is_reported(
+    scope: Scope, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(argv: list[str], **kwargs: Any) -> WindowsProcess:
+        raise BackendError("the new process could not be opened")
+
+    monkeypatch.setattr(console, "os_family", lambda: "win32", raising=False)
+    monkeypatch.setattr(console, "start_windows_process", refuse, raising=False)
+
+    result = console.ConsoleEngine(scope).execute("status")
+
+    assert result.status == "error" and "could not start" in result.message
+    assert "could not be opened" in result.message

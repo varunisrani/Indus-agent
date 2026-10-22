@@ -205,4 +205,59 @@ describe("TerminalPane", () => {
     view.unmount();
     expect(terminal.dispose).toHaveBeenCalledWith({ terminalId: "t1" });
   });
+
+  it("a resize refits on the next frame, not inside the observer callback (W48-c)", async () => {
+    // Fitting inside the ResizeObserver callback resizes the terminal's own elements while the
+    // browser is still delivering size changes, which logs "ResizeObserver loop completed with
+    // undelivered notifications". The refit waits for the next animation frame, once per frame.
+    const observers: Array<() => void> = [];
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observers.push(callback);
+        }
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      },
+    );
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      nextFrame += 1;
+      frames.set(nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    try {
+      const { terminal, bridge } = fakeTerminal();
+      const { createView } = fakeViews();
+      const view = render(
+        <TerminalPane cwd={null} mode="local" bridge={bridge} createView={createView} />,
+      );
+      await screen.findByRole("tab", { name: "bash" });
+      await waitFor(() => expect(observers.length).toBeGreaterThan(0));
+      const observed = observers.at(-1) as () => void;
+      terminal.resize.mockClear();
+      frames.clear();
+      observed();
+      observed();
+      expect(terminal.resize).not.toHaveBeenCalled();
+      expect(frames.size).toBe(1);
+      for (const [id, run] of [...frames]) {
+        frames.delete(id);
+        run(0);
+      }
+      expect(terminal.resize).toHaveBeenCalledTimes(1);
+      expect(terminal.resize).toHaveBeenCalledWith({ terminalId: "t1", cols: 90, rows: 30 });
+      // a frame still pending when the pane goes away is cancelled
+      observed();
+      expect(frames.size).toBe(1);
+      view.unmount();
+      expect(frames.size).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

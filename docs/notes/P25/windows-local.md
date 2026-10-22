@@ -206,3 +206,42 @@ boots and stops the tree.
 - A native port of background processes (W47-e-1) if Windows demand appears; the `terminal`
   tool could then stop offering `background=true` on Windows instead of failing the start.
 - `service/console.py` also builds a `LocalProcess` (not in RL26's list); check it on Windows.
+
+## Wave 48 (builder d): `terminal` stops offering background jobs on Windows; the console's runner
+
+Status: done, not yet run on Windows (fail-first: the two schema tests in
+`tests/unit/tools/builtin/test_terminal_plan.py` and the three console tests in
+`tests/unit/backends/test_windows_rl26.py` failed on the base; all pass now, OS family patched to
+`win32`, Win32 job calls replaced by the `GroupJobs` stand-in).
+Read: none (our own RL26 code and this note's wave 47 follow-ups).
+
+- **`terminal` schema** (`tools/builtin/terminal.py`): `TerminalTool.schema_overrides` (registered
+  as the entry's `schema_overrides`) answers, on native Windows with a host-local backend
+  (`local`, which opens the Git Bash host there), `WINDOWS_HOST_SCHEMA`: only `command`,
+  `timeout`, `workdir`; the timeout text no longer promises promotion to a background process; the
+  description says commands run in the foreground only and points servers/watchers to WSL2 or a
+  Docker/SSH backend. Sandbox backends on Windows and every other OS keep the full schema. A
+  `background=true` call that still arrives keeps W47-e-1's `failed_start` refusal.
+- **Admin console** (`service/console.py`, `SubprocessRunner`): on Windows `LocalProcess` failed
+  after the child had started (`os.getpgid` does not exist there), so the console could not run any
+  command. The runner now starts `python -m indus <words>` through `start_windows_process` (its own
+  job object, no console window, stdin closed, stderr apart); cancel/timeout terminate the job
+  (the whole tree) and the job handle is released after `communicate`. A start the job calls
+  refuse (`BackendError`) becomes the console's "`<cmd>` could not start: …" answer. Python is run
+  directly, so no Git Bash is needed.
+
+Decisions for the lead:
+- W48-d-2 (D-16.1082): on native Windows with a host-local terminal backend the `terminal` tool offers no
+  `background` / `pty` / `notify` / `heartbeat` / `persist_on_release` (schema override); sandbox
+  backends keep them; a call that still asks keeps the W47-e-1 refusal.
+- W48-d-3 (D-16.1083): the admin console's runner on Windows uses a job object (`start_windows_process`,
+  stderr apart), cancel = terminate the job; no refusal needed.
+
+Follow-ups:
+- On a Windows host, a trailing `&` and a timeout above 600 s are still turned into background
+  jobs by `plan()` and end in the W47-e-1 refusal; the foreground guidance texts still name
+  `background=true`. Make `plan()` aware of the backend (cap the timeout, refuse `&` with a
+  foreground hint) if this shows up in practice.
+- `test_windows_starter_boots_and_stops_the_tree` (wave 47) failed once in 4 local runs
+  (`output.split()[0]` on empty output: the 0.5 s sleep raced the first `echo`); not touched here.
+- Run the console and `terminal` cases on the `windows-local` lane.

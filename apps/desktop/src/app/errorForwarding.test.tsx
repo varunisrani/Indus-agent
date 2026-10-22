@@ -57,6 +57,69 @@ describe("renderer error forwarding", () => {
     expect(send).toHaveBeenCalledTimes(REPORTS_PER_MINUTE + 1);
   });
 
+  it("the browser's ResizeObserver loop notice is not an error (W48-c)", () => {
+    // Chromium reports it as an error event with no error object and no position; it says size
+    // changes were delivered in the next frame, nothing failed.
+    const target = new EventTarget();
+    const send = vi.fn();
+    installErrorForwarding(target, send, { source: "renderer:main", now: () => 0 });
+    for (const message of [
+      "ResizeObserver loop completed with undelivered notifications.",
+      "ResizeObserver loop limit exceeded",
+    ]) {
+      target.dispatchEvent(
+        new ErrorEvent("error", {
+          message,
+          filename: "file:///tmp/indus-e2e-app-0cLphi/app/dist/index.html",
+          lineno: 0,
+          colno: 0,
+        }),
+      );
+    }
+    expect(send).not.toHaveBeenCalled();
+    // a real error that mentions it still goes out
+    target.dispatchEvent(new ErrorEvent("error", { error: new Error("ResizeObserver loop") }));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("no run folder in the log: no position, no location line; file URLs keep their file name", () => {
+    const target = new EventTarget();
+    const send = vi.fn();
+    installErrorForwarding(target, send, { source: "renderer:main", now: () => 0 });
+    target.dispatchEvent(
+      new ErrorEvent("error", {
+        message: "Script error.",
+        filename: "file:///tmp/indus-e2e-app-0cLphi/app/dist/index.html",
+        lineno: 0,
+        colno: 0,
+      }),
+    );
+    expect(send.mock.calls[0]?.[0]).toEqual({
+      message: "error: Script error.",
+      source: "renderer:main",
+    });
+    const error = new TypeError("boom");
+    error.stack = [
+      "TypeError: boom",
+      "    at render (file:///home/me/.cache/run-7/app/dist/assets/index-Ab12.js:120:33)",
+      "    at http://localhost:5173/src/main.tsx:4:1",
+    ].join("\n");
+    target.dispatchEvent(
+      new ErrorEvent("error", {
+        error,
+        message: error.message,
+        filename: "file:///home/me/.cache/run-7/app/dist/assets/index-Ab12.js",
+        lineno: 120,
+        colno: 33,
+      }),
+    );
+    const stack = String(send.mock.calls[1]?.[0].stack);
+    expect(stack).not.toContain("/home/me/.cache/run-7");
+    expect(stack).toContain("at render (index-Ab12.js:120:33)");
+    expect(stack).toContain("http://localhost:5173/src/main.tsx:4:1");
+    expect(stack.split("\n").at(-1)).toBe("at index-Ab12.js:120:33");
+  });
+
   it("a throwing bridge never breaks the page", () => {
     const target = new EventTarget();
     installErrorForwarding(

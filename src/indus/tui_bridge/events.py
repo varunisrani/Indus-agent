@@ -50,6 +50,7 @@ from indus.protocol.events import (
 )
 from indus.protocol.server_requests import SERVER_REQUEST_KINDS, SERVER_REQUEST_METHOD
 from indus.safety.redaction import redact_output
+from indus.service import session_header
 from indus.service.session_service import SessionService, usage_numbers
 from indus.tui_bridge.bridge import ContractViolation, SessionView
 
@@ -126,32 +127,10 @@ def _cap(value: Any, limit: int) -> Any:
 
 
 def session_info(service: SessionService, view: SessionView) -> dict[str, Any]:
-    """``SessionInfo`` fields for an attached session."""
-    agent = service.agent(view.session_id)
-    fields: dict[str, Any] = {
-        "title": view.title,
-        "model": service.route.model,
-        "provider": service.route.provider,
-        "cwd": str(agent.options.cwd) if agent.options.cwd is not None else None,
-        "tools": [],
-        "running": agent.current is not None,
-        "tool_progress": view.tool_mode,
-    }
-    try:
-        state = agent.binding.state
-        fields["model"] = state.model
-        fields["provider"] = state.provider
-        fields["reasoning_effort"] = state.reasoning_effort
-    except Exception:
-        log.debug("route state not ready", exc_info=True)
-    try:
-        fields["tools"] = list(agent.tool_names)
-    except Exception:
-        log.debug("tool names not ready", exc_info=True)
-    if fields["cwd"] is None:
-        cwd = agent.options.session_fields.get("cwd")
-        fields["cwd"] = str(cwd) if cwd else None
-    return fields
+    """``SessionInfo`` fields for an attached session (``service.session_header``)."""
+    return session_header.session_info(
+        service, view.session_id, title=view.title, tool_progress=view.tool_mode
+    )
 
 
 def failed_result(result: str) -> bool:

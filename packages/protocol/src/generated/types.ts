@@ -282,7 +282,10 @@ export interface CatalogEntry {
   args_hint?: string;
   /** Where it comes from. */
   kind: CommandKind;
-  /** Who runs it: the server (`slash.exec`), the client, or nobody yet. */
+  /**
+   * Who runs it: the server (`slash.exec`), the client, nobody yet, or nobody on this
+   * connection (`unavailable`: do not offer it).
+   */
   runs: CommandRunner;
 }
 
@@ -380,7 +383,7 @@ export interface CommandDispatchResult {
 export type CommandKind = "builtin" | "quick" | "skill";
 
 /** Who runs a slash command. */
-export type CommandRunner = "server" | "client" | "later";
+export type CommandRunner = "server" | "client" | "later" | "unavailable";
 
 /** List every slash command the client can offer. */
 export interface CommandsCatalogParams {
@@ -1906,7 +1909,8 @@ export interface SessionMutateParams {
   /**
    * The operation's arguments (`editor_mcp`: `mcp_servers`; `workspace`: `cwd`;
    * `model`: `model`, `provider`, `confirm`; `rewind`: `count`; `rename`: `title`;
-   * `branch`: `mcp_servers`; `compress`: `focus`; `command`: `name`, `arg`).
+   * `branch`: `mcp_servers`, `title`; `compress`: `focus`; `command`: `name`,
+   * `arg`).
    */
   payload?: { [key: string]: JsonValue };
   /** The client's id for this change: the same id again answers the first result. */
@@ -2017,6 +2021,8 @@ export interface SessionRow {
   preview?: string;
   /** Where it was started (`cli`, `tui`, a platform name). */
   source?: string;
+  /** The model it last ran on, when one is stored. */
+  model?: string | null;
   /** Start time, epoch seconds. */
   started_at: number;
   /** Newest activity, epoch seconds. */

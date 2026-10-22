@@ -8,7 +8,7 @@ import { useState } from "react";
 import type { OpenServerRequest } from "../../gateway/serverRequests.ts";
 import { useT } from "../../i18n/index.tsx";
 import { errorMessage } from "../rpcErrors.ts";
-import { useArmed, useExplicitPress } from "./ApprovalCard.tsx";
+import { useArmed, useExplicitPress, useRevealOnOpen } from "./ApprovalCard.tsx";
 
 /** Lock one answer; resolves with the question ids still open. */
 export type ClarifyLock = (questionId: string, answer: string[]) => Promise<string[]>;
@@ -109,6 +109,7 @@ export function ClarifyCard(props: {
   const [locked, setLocked] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  const host = useRevealOnOpen<HTMLElement>();
 
   const lockOne = async (questionId: string, answer: string[]) => {
     if (busy.has(questionId)) return;
@@ -138,6 +139,7 @@ export function ClarifyCard(props: {
 
   return (
     <section
+      ref={host}
       aria-label={t("clarify.title")}
       data-card="clarify"
       data-request-id={props.open.id}

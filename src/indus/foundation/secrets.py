@@ -7,7 +7,8 @@
   fail/null backend, an exception or the deadline marks the keychain unusable for the rest of the
   process run (the answer is cached, never retried) and the file backend is used, with one warning.
 - ``keychain`` raises ``SecretStoreUnavailable`` when that check fails.
-- ``file`` never touches the keychain.
+- ``file`` never touches the keychain (a CLI process may already have started the library's
+  backend discovery, ``start_backend_discovery``, which reads and writes no entry).
 
 Keychains cannot list their entries, so the names (never values) live in
 ``<home>/secrets.index.json`` for every backend.
@@ -331,17 +332,51 @@ _probe_lock = threading.Lock()
 # id(backend or None) -> (backend kept alive, usable backend or None)
 _probe_cache: dict[int, tuple[object, KeyringLike | None]] = {}
 _fallback_warned = False
+_discovery: threading.Thread | None = None
 
 
 def reset_probe_cache() -> None:
-    """Forget probe results and the fallback warning (tests only)."""
-    global _fallback_warned
+    """Forget probe results, the fallback warning and a started discovery (tests only)."""
+    global _fallback_warned, _discovery
     with _probe_lock:
         _probe_cache.clear()
         _fallback_warned = False
+        _discovery = None
+
+
+def _discover_backend() -> None:
+    try:
+        import keyring
+
+        keyring.get_keyring()
+    except Exception:  # the probe asks again and reports what went wrong
+        log.debug("keyring backend discovery failed", exc_info=True)
+
+
+def start_backend_discovery() -> None:
+    """Start the ``keyring`` library finding its backend, in a daemon thread (process start only).
+
+    Finding the backend imports every installed backend module and scans package metadata; on
+    Linux the macOS module even runs the C toolchain to look for its frameworks. That costs about
+    250 ms here, much of it waiting on child processes, so the CLI starts it before its own
+    imports and the probe later waits for it (W48-e-3). Discovery reads and writes no entry; the
+    probe's own lookup still happens only when ``open_secret_store`` asks for the keychain.
+    """
+    global _discovery
+    with _probe_lock:
+        if _discovery is not None:
+            return
+        _discovery = threading.Thread(
+            target=_discover_backend, name="indus-keyring-discovery", daemon=True
+        )
+        thread = _discovery
+    thread.start()
 
 
 def _system_keyring() -> KeyringLike:
+    discovery = _discovery
+    if discovery is not None:
+        discovery.join()  # runs on the probe's worker thread, which the caller bounds by deadline
     import keyring
 
     return keyring.get_keyring()

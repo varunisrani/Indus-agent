@@ -11,6 +11,8 @@ export const BOTS_SOURCE = "bots";
 /** The daemon methods the Bots surface calls (`bots.*`, `groups.*`). */
 export interface RpcLike {
   request(method: string, params: Record<string, unknown>): Promise<unknown>;
+  /** The connection's notifications (`groups.event`, `gateway.ready`, ...); absent: none. */
+  onEvent?(listener: (event: { type: string } & Record<string, unknown>) => void): () => void;
 }
 
 export interface CanonicalRow {

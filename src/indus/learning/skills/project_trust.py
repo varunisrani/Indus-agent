@@ -42,7 +42,6 @@ from indus.foundation.scope import Scope
 from indus.learning.skills.format import SKILL_FILE
 from indus.learning.skills.hub.lock import tree_hash
 from indus.learning.skills.resolver import SKIP_DIRS, skills_setting
-from indus.safety.content_scan import SCANNER_ID, render_report, scan_tree
 from indus.tools.builtin.paths import base_dir
 
 __all__ = [
@@ -207,6 +206,10 @@ def _cache_path(scope: Scope, digest: str) -> Path:
 def scan_project_skill(scope: Scope, skill_dir: Path) -> dict[str, Any]:
     """``{scanner, verdict, summary, report}`` for ``skill_dir``, from the cache when the folder's
     content hash and the scanner id match, else scanned now and cached."""
+    # Imported here: the scanner's patterns cost ~25 ms to compile and a run whose project has no
+    # trusted skills never scans (W48-g-3).
+    from indus.safety.content_scan import SCANNER_ID, render_report, scan_tree
+
     digest = tree_hash(skill_dir)
     path = _cache_path(scope, digest)
     try:

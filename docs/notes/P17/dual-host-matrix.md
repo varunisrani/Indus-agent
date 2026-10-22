@@ -103,11 +103,15 @@ Allow-listed (D-ids for the lead; details in the YAML):
   answer is gone and no `cli.q` entry is needed.
 - `bridge.lost_mid_turn/lost turn finished` (D-16.10): closing an attached client only detaches; the
   daemon finishes the turn.
-- `bridge.event_shape/session events` (D-?): no `session.info` after create/resume, no
-  `session.title` when the title lands.
-- `bridge.settings/settings` (D-16.549): `config.get`, `config.set` are not served by the
-  daemon (-32601). `model.options`, `complete.slash` and `session.list` are served since wave 47
-  (D-16.1038, D-16.1039).
+- `bridge.event_shape/session events` (D-16.550): no `session.info` after create/resume, no
+  `session.title` when the title lands. Removed in wave 48 (W48-h): the daemon host sends both to
+  the session's viewers (`DaemonSessionHost.announce_info`, the turn-end title check), so the
+  entry was stale.
+- `bridge.settings/settings` (D-16.549): `config.set` is not served by the daemon (-32601).
+  `model.options`, `complete.slash` and `session.list` are served since wave 47
+  (D-16.1038, D-16.1039); `config.get`, `complete.path` and `commands.catalog` since wave 48
+  (W48-b), so only the write differs. `slash.exec` / `command.dispatch` are served since wave 48
+  too (W48-h; the matrix has no slash case).
 
 ## Decisions for the lead
 - D-? (proposed): the daemon serves the session methods only; the TUI's settings/picker methods

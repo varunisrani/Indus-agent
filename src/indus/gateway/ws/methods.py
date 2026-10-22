@@ -42,7 +42,24 @@ the client's ``request_id``.
 The TUI's pickers (W47-c): ``complete.slash``, ``model.options`` and ``session.list`` answer what
 the in-process bridge answers for the profile (``service.picker_reads``). A named ``session_id``
 must be one this connection attached (another's reads as unknown); ``session.list`` lists the
-profile's stored conversations, as ``--local`` does (every attached client is the owner).
+profile's stored conversations, as ``--local`` does (every attached client is the owner); its rows
+carry the title, the source and the model the session last ran on.
+
+The TUI's other reads (W48-b): ``complete.path`` (``service.path_completion``: the client's folder,
+else the attached session's, listed through the profile's terminal backend), ``commands.catalog``
+(``picker_reads.command_catalog`` for the connection's surface) and ``config.get``
+(``service.client_settings``; the session keys read the attached session's live switches, and
+``verbose`` is the profile's tool-progress mode: the daemon keeps none per viewer) answer what the
+bridge answers. ``config.set`` is not served (D-16.549).
+
+Server-run slash commands (W48-h): ``slash.exec`` and ``command.dispatch`` for a session this
+connection attached run ``service.slash_commands`` with the daemon as host
+(``service.daemon_slash``), so they answer what the bridge answers; what a shared daemon does not
+run (``picker_reads.DAEMON_REFUSED``, quick ``exec`` commands) is refused with its reason
+(``SLASH_NOT_OWNED`` from ``slash.exec``, ``UNSUPPORTED_COMMAND`` from ``command.dispatch``) and
+``commands.catalog`` lists it ``unavailable``. The header a status bar shows (``session.info``,
+``session.title``) reaches the session's viewers from the host
+(``DaemonSessionHost.announce_info``).
 
 ``runtime.describe`` answers what the control socket's ``describe`` does, plus the replay epoch.
 ``maintenance.run`` runs one bulk store operation on the daemon's own store handle
@@ -53,7 +70,7 @@ from __future__ import annotations
 
 import contextlib
 import secrets
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from indus.foundation.blocking import run_blocking
 from indus.gateway.control_socket import code_version
@@ -81,8 +98,15 @@ from indus.protocol.attach import (
     SessionUnsubscribeResult,
 )
 from indus.protocol.bridge import (
+    CommandDispatchParams,
+    CommandDispatchResult,
+    CommandsCatalogParams,
+    CommandsCatalogResult,
+    CompletePathParams,
     CompleteResult,
     CompleteSlashParams,
+    ConfigGetParams,
+    ConfigGetResult,
     GatewayPingParams,
     GatewayPingResult,
     ModelOptionsParams,
@@ -95,6 +119,8 @@ from indus.protocol.bridge import (
     SessionListResult,
     SessionUsageParams,
     SessionUsageResult,
+    SlashExecParams,
+    SlashExecResult,
     UsageNumbers,
 )
 from indus.protocol.errors import (
@@ -127,9 +153,10 @@ from indus.protocol.methods import (
     SubmitStatus,
     negotiate_features,
 )
-from indus.service import picker_reads
+from indus.service import client_settings, path_completion, picker_reads, slash_commands
 from indus.service.admissions import Receipt, close_lost_turn
 from indus.service.commands.registry import Surface
+from indus.service.daemon_slash import DaemonSlashHost
 from indus.service.event_log import ReplayGap
 from indus.service.fences import ControlApplied, ControlStatus, Responded, StaleGeneration
 from indus.service.maintenance_gate import MaintenanceVerb
@@ -497,7 +524,11 @@ async def complete_slash(conn: WsConnection, params: CompleteSlashParams) -> Com
     surface = _COMMAND_SURFACE.get(conn.subs.surface, "tui")
     return await run_blocking(
         lambda: picker_reads.slash_completions(
-            conn.scope, params.text, surface=surface, session_id=params.session_id
+            conn.scope,
+            params.text,
+            surface=surface,
+            session_id=params.session_id,
+            quick_exec=False,  # the daemon does not run them (W48-h)
         ),
         label="slash completion",
     )
@@ -518,6 +549,83 @@ async def model_options(conn: WsConnection, params: ModelOptionsParams) -> Model
 async def list_sessions(conn: WsConnection, params: SessionListParams) -> SessionListResult:
     return await run_blocking(
         picker_reads.stored_sessions, conn.host.store, params, label="session list"
+    )
+
+
+# -- the TUI's other reads (W48-b) ----------------------------------------------------------------
+
+
+def _attached_id(conn: WsConnection, session_id: str | None) -> str | None:
+    """The live id of a session this connection attached (None when none is named)."""
+    if session_id is None:
+        return None
+    return conn.host.service.current_id(conn.subs.require(session_id))
+
+
+@methods.method("complete.path")
+async def complete_path(conn: WsConnection, params: CompletePathParams) -> CompleteResult:
+    sid = _attached_id(conn, params.session_id)
+    folder = path_completion.session_folder(conn.host.service, sid)
+    named = params if sid is None else params.model_copy(update={"session_id": sid})
+    return await path_completion.complete_path(conn.scope, named, folder=folder)
+
+
+@methods.method("commands.catalog")
+async def commands_catalog(
+    conn: WsConnection, params: CommandsCatalogParams
+) -> CommandsCatalogResult:
+    sid = _attached_id(conn, params.session_id)
+    surface = _COMMAND_SURFACE.get(conn.subs.surface, "tui")
+    return await run_blocking(
+        lambda: picker_reads.command_catalog(
+            conn.scope,
+            surface=surface,
+            skills=picker_reads.skill_table(conn.scope, sid),
+            refused=picker_reads.DAEMON_REFUSED,
+            quick_exec=False,
+        ),
+        label="command catalogue",
+    )
+
+
+# -- server-run slash commands (W48-h) ------------------------------------------------------------
+
+
+def _slash_host(conn: WsConnection, session_id: str) -> DaemonSlashHost:
+    key = conn.subs.require(session_id)
+    surface = _COMMAND_SURFACE.get(conn.subs.surface, "tui")
+    return DaemonSlashHost(conn.host, key, scope=conn.scope, surface=surface)
+
+
+@methods.method("slash.exec")
+async def slash_exec(conn: WsConnection, params: SlashExecParams) -> SlashExecResult:
+    host = _slash_host(conn, params.session_id)
+    named = params.model_copy(update={"session_id": host.service.current_id(host.key)})
+    return await slash_commands.slash_exec(host, slash_commands.HANDLERS, named)
+
+
+@methods.method("command.dispatch")
+async def command_dispatch(
+    conn: WsConnection, params: CommandDispatchParams
+) -> CommandDispatchResult:
+    host = _slash_host(conn, params.session_id)
+    named = params.model_copy(update={"session_id": host.service.current_id(host.key)})
+    return await slash_commands.dispatch(host, slash_commands.HANDLERS, named)
+
+
+@methods.method("config.get")
+async def config_get(conn: WsConnection, params: ConfigGetParams) -> ConfigGetResult:
+    """Read-only: ``config.set`` stays with the in-process bridge (D-16.549)."""
+    sid = _attached_id(conn, params.session_id)
+    live: dict[str, Any] | None = None
+    if sid is not None and client_settings.needs_session(params):
+        # The daemon keeps no per-viewer tool-progress mode: the profile's applies.
+        verbose = await run_blocking(
+            client_settings.default_tool_mode, conn.scope, label="settings read"
+        )
+        live = client_settings.session_switches(conn.scope, conn.host.service, sid, verbose)
+    return await run_blocking(
+        client_settings.read_config, conn.scope, params, live, label="settings read"
     )
 
 

@@ -60,12 +60,12 @@ function rowText(row: SwitcherRow, draft: string, now: number): { main: string; 
     case "live":
       return {
         main: `${STATUS_MARK[row.status]} ${row.title}${row.current ? " (open)" : ""}`,
-        side: row.model,
+        side: [row.model, row.source].filter(Boolean).join(" · "),
       };
     case "stored":
       return {
         main: row.preview ? `${row.title} — ${row.preview}` : row.title,
-        side: [relativeAge(row.when, now), row.source].filter(Boolean).join(" · "),
+        side: [relativeAge(row.when, now), row.model, row.source].filter(Boolean).join(" · "),
       };
   }
 }

@@ -160,3 +160,41 @@ Tests (fail-first on base `9a155bbb9a`):
 - A notice when a chat's folder no longer exists (today it silently uses the fallback).
 - Session rows written before this fix: a desktop chat started without a folder stored
   the daemon's folder as its `cwd`; those chats stay there (the folder equals the host's own).
+
+## Wave 48 (W48-c): a notice when a chat's folder is gone
+
+Status: done (2026-10-22, wave-48 builder c; uncommitted, for the lead's `git apply --3way`).
+
+Read: none (a follow-up of W47-b-3 in our own code; no reference file or Evidence opened).
+
+What changes: W47-b-3 left the tools of a chat whose folder was deleted falling back to
+`terminal.cwd` (else the process folder) without a word. Now the tool round says so: when the
+session has its own folder, the local backend would use it, and it is not an existing directory,
+the turn emits one `notice` event (level `warning`, key `workdir_missing`) naming the folder:
+"This chat's folder no longer exists: <folder>. Its tools run in the default folder instead." The
+fallback itself is unchanged.
+
+- `backends/task_overrides.py`: `workdir_gone(scope, folder)`, the same conditions as
+  `with_workdir` turned around (absolute, local backend, not a directory). A relative or empty
+  folder is not "gone" (it was never used); a sandbox backend never uses the host folder.
+- `core/tool_round.py`: before `with_workdir`, at most once per turn (`TurnState.workdir_noticed`).
+  The notice comes only when tools run, i.e. when the fallback is actually used; a turn without
+  tool calls says nothing. The text is `loop_texts.WORKDIR_GONE_NOTICE`.
+- Every surface already shows `notice` events: the desktop transcript keeps one row per key
+  (`messageStream.ts` upserts by key) and the TUI shows its notice line (the web chat runs the
+  TUI). No protocol change.
+
+Tests (fail-first on base `1b6e711`):
+`tests/unit/service/test_session_workdir.py::test_a_chat_whose_folder_is_gone_says_so_once_per_turn`
+(failed on base: no notice; with the fix: two tool rounds, one warning naming the folder, the
+files land in the fallback folder; a chat whose folder exists gets none).
+
+### Decisions for the lead
+- **W48-c-1 (D-16.1076):** the "folder gone" notice is a turn event (`notice`, `warning`, key `workdir_missing`),
+  sent once per turn and only when a tool round runs, not a refusal: the person keeps working in
+  the default folder and sees why relative paths land there. Desktop rows upsert by key, so a
+  long chat shows the notice once (where it first appeared) until the window reloads.
+
+### Follow-ups
+- Moving a chat to another folder from the notice (a "Choose folder" action) needs a desktop
+  control over the workspace-move mutation; not built here.

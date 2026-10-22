@@ -21,7 +21,8 @@ default sandbox, and its factory is handed the override through ``plan``:
 A session started in a folder of its own (a desktop chat's project folder or default directory,
 W47-b) uses the same kind of overlay: ``with_workdir`` answers ``terminal.cwd`` with that folder on
 the scope its tool calls get, so relative paths and new shells start there rather than in the
-folder the serving process happens to run in.
+folder the serving process happens to run in. When that folder has been deleted since,
+``workdir_gone`` says so: the tools fall back to ``terminal.cwd`` and the turn shows a notice.
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ __all__ = [
     "register_row",
     "reset_warnings",
     "with_workdir",
+    "workdir_gone",
 ]
 
 log = logging.getLogger(__name__)
@@ -264,6 +266,15 @@ def with_workdir(scope: Scope, folder: str | None) -> Scope:
     if backend_for(scope, TaskOverride()) != "local":
         return scope
     return scope.with_config(LayeredConfig(scope.config, {"terminal.cwd": folder}))
+
+
+def workdir_gone(scope: Scope, folder: str | None) -> bool:
+    """True when ``with_workdir`` would use ``folder`` (an absolute folder on the local backend)
+    but it no longer exists, so the tools fall back to ``terminal.cwd`` (W48-c: a notice says
+    so)."""
+    if not folder or not os.path.isabs(folder) or os.path.isdir(folder):
+        return False
+    return backend_for(scope, TaskOverride()) == "local"
 
 
 def register_row(scope: Scope, task_id: str, image: str | None, cwd: str | None) -> str | None:

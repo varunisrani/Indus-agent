@@ -140,3 +140,29 @@ Integration (P18 integrator, 2026-10-20):
 Done (2026-10-20). Shared: `src/indus/cli/tui_launch.py` (`INDUS_TUI_DASHBOARD_SESSION_FILE`,
 ~20 lines) and two tests in `tests/unit/cli/test_tui_launch.py`. W1's gate and app factory are
 stood in by `tests/contract/web/_stubs_w2.py`.
+
+## Wave 48 (builder d): the PTY child drops the host terminal's theme pins
+
+Status: done (fail-first: `tests/contract/web/test_pty_route.py::test_the_child_env_drops_the_host_terminal_s_theme_pins`
+failed on the base with `COLORFGBG` still in the child's env; passes now).
+Read: none (follow-up from the wave 47 landing notes; our own `apps/tui/src/theme/detect.ts` and
+`terminal/capabilities.ts` for which names the TUI reads).
+
+- Cause: `TuiChild` passed on the env of the process that started the dashboard. Started from a
+  light Apple Terminal (or with `COLORFGBG` set), the embedded TUI took that as an environment pin
+  and ignored the colour-scheme reports of the page's xterm (P12/themes.md, Wave 47), so it could
+  paint for the wrong background.
+- Now `TuiChild` drops `HOST_TERMINAL_NAMES` (names compared without case, for a Windows env):
+  the theme pins `COLORFGBG`, `TERM_PROGRAM` (+ `TERM_PROGRAM_VERSION`) and the names that say
+  which terminal or multiplexer this is (`KITTY_WINDOW_ID`, `WT_SESSION`, `ZED_TERM`,
+  `ITERM_SESSION_ID`, `VTE_VERSION`, `TMUX`, `TMUX_PANE`, `ZELLIJ`, `STY`) — the child runs in the
+  page's xterm, not in that terminal, so sync output and key protocols must not follow them
+  either. `TERM` is now always `xterm-256color` and `COLORTERM` always `truecolor` (the bridge
+  only backfilled a missing `TERM`; a host `xterm-kitty` or `screen-256color` leaked through).
+- `INDUS_TUI_LIGHT` / `INDUS_TUI_THEME` / `INDUS_TUI_BACKGROUND` needed nothing: `child_env`
+  already drops every `INDUS_` name (`KEPT_PRODUCT_NAMES` is empty).
+
+Decisions for the lead:
+- W48-d-1 (D-16.1081): the dashboard PTY child never inherits the host terminal's identity (theme pins plus
+  terminal/multiplexer names, `HOST_TERMINAL_NAMES`) and always gets `TERM=xterm-256color`,
+  `COLORTERM=truecolor`; light/dark comes from the page's colour-scheme reports only.

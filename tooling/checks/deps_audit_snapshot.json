@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "note": "Written by `python -m tooling.checks.deps_audit --refresh` (OSV, pnpm audit). Do not edit by hand.",
-  "fetched_at": "2026-10-22T03:41:25Z",
+  "fetched_at": "2026-10-22T12:39:18Z",
   "locks": {
     "uv.lock": "10157606d3ce98b7612fc00327386bdbc6ca478eef231972122fe9ce41702e80",
-    "pnpm-lock.yaml": "95771ec61560c590378facaab8473e6e8421cf17e67ad601b77ea9742ef9dcfb"
+    "pnpm-lock.yaml": "b61a71e5ca4d9e96d2656d2902620c4c0feb98f6b2740e9d40e910f21ab15c71"
   },
-  "packages": 877,
+  "packages": 868,
   "advisories": [
     {
       "id": "GHSA-6q48-6c7w-9gw2",
@@ -96,36 +96,6 @@
       "fixed": [
         "6.20.1"
       ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-238p-pmpm-9mq7",
-      "ecosystem": "npm",
-      "package": "katex",
-      "version": "0.16.47",
-      "severity": "low",
-      "aliases": [
-        "CVE-2026-103923",
-        "NPM-1241206"
-      ],
-      "summary": "KaTeX: Existing prototype pollution can bypass trust restrictions",
-      "fixed": [
-        "0.18.2",
-        ">=0.18.2"
-      ],
-      "origin": "osv"
-    },
-    {
-      "id": "GHSA-hp3w-g68c-fv3c",
-      "ecosystem": "npm",
-      "package": "sprintf-js",
-      "version": "1.1.3",
-      "severity": "moderate",
-      "aliases": [
-        "CVE-2026-97058"
-      ],
-      "summary": "sprintf-js vulnerable to denial of service through unbounded precision specifiers",
-      "fixed": [],
       "origin": "osv"
     }
   ]

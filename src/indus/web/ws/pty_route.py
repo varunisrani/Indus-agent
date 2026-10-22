@@ -16,7 +16,11 @@ gate's business). In order:
    with the env from the single child-env builder (R02.22) plus the publish URL and the internal
    credential (separate variables, the URL carries no credential), the channel file for the
    renderer's live session id, ``COLORTERM=truecolor``, mouse reporting off (the browser's wheel
-   scrolls the terminal) and ``INDUS_PTY_HOST=dashboard``; no Node
+   scrolls the terminal) and ``INDUS_PTY_HOST=dashboard``; the variables that describe the
+   terminal the dashboard itself was started from (``HOST_TERMINAL_NAMES``: ``COLORFGBG`` and
+   ``TERM_PROGRAM``, which pin the TUI's light/dark, and the multiplexer / terminal identity
+   names) are dropped and ``TERM`` is ``xterm-256color``, so the page's xterm and its colour-scheme
+   reports decide (wave 48; the ``INDUS_TUI_*`` theme names never pass ``child_env``); no Node
    on the PATH → red text + 1011;
 7. without ``attach``: one PTY for this socket only, ended when the socket goes, the channel file
    this socket made dropped in a ``finally`` a cancelled handler still runs. With ``attach``: the
@@ -64,6 +68,7 @@ from indus.web.ws.chat_gate import PURPOSE_PTY, SidecarLink, scope_of
 
 __all__ = [
     "CLOSE_START_FAILED",
+    "HOST_TERMINAL_NAMES",
     "NODE_MISSING",
     "PTY_HOST_ENV",
     "SESSION_FILE_ENV",
@@ -88,6 +93,27 @@ launcher then keeps) instead of a temp file of its own."""
 PTY_HOST_ENV: Final = "INDUS_PTY_HOST"
 MOUSE_ENV: Final = "INDUS_TUI_MOUSE"
 PTY_HOST: Final = "dashboard"
+PAGE_TERM: Final = "xterm-256color"
+HOST_TERMINAL_NAMES: Final = frozenset(
+    {
+        # pin the TUI's light/dark ahead of the colour-scheme reports (apps/tui theme/detect.ts)
+        "COLORFGBG",
+        "TERM_PROGRAM",
+        "TERM_PROGRAM_VERSION",
+        # name a terminal or multiplexer the page's xterm is not (sync output, key protocols)
+        "ITERM_SESSION_ID",
+        "KITTY_WINDOW_ID",
+        "STY",
+        "TMUX",
+        "TMUX_PANE",
+        "VTE_VERSION",
+        "WT_SESSION",
+        "ZED_TERM",
+        "ZELLIJ",
+    }
+)
+"""Variables of the terminal the dashboard was started from; the PTY child never inherits them."""
+_REPLACED: Final = HOST_TERMINAL_NAMES | {"TERM", "COLORTERM"}
 _TRUE: Final = frozenset({"1", "true", "yes", "on"})
 
 NODE_MISSING: Final = (
@@ -144,13 +170,17 @@ class TuiChild:
     which: Callable[[str, str | None], str | None] = locate.which
 
     def __call__(self, request: ChildRequest) -> ChildSpec:
-        env = child_env(request.scope)
+        env = {
+            name: value
+            for name, value in child_env(request.scope).items()
+            if name.upper() not in _REPLACED  # Windows env names ignore case
+        }
         if self.which("node", env.get("PATH")) is None:
             raise ChatStartError(NODE_MISSING)
         argv = [self.python, "-m", "indus", "--tui"]
         if request.resume:
             argv += ["-r", request.resume]
-        env.setdefault("COLORTERM", "truecolor")
+        env.update(TERM=PAGE_TERM, COLORTERM="truecolor")  # the page's xterm, not the host's
         env[MOUSE_ENV] = "off"  # the browser's wheel scrolls xterm; no mouse reports
         env[PTY_HOST_ENV] = PTY_HOST
         if request.session_file is not None:

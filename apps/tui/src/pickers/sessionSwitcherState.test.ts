@@ -65,6 +65,30 @@ describe("rows", () => {
     expect(rows[1]).toMatchObject({ current: true, model: "m-1" });
   });
 
+  it("a live row without session.info takes title, model and source from its stored row", () => {
+    // Attached to the daemon (the default) no session.info arrives: the listing fills the row.
+    const bare = { id: "a", title: null, model: null, status: "idle" as const };
+    const rows = buildRows([bare], [stored("a", { model: "vendor/m-2", source: "cli" })], "a");
+    expect(rows[1]).toMatchObject({
+      kind: "live",
+      title: "title a",
+      model: "m-2",
+      source: "cli",
+      current: true,
+    });
+    // What session.info says wins over the listing.
+    const told = buildRows([live("a")], [stored("a", { model: "vendor/m-2" })], "a");
+    expect(told[1]).toMatchObject({ title: "live a", model: "m-1", source: "tui" });
+    // No stored row yet (a brand-new session): the id stands in for the title.
+    expect(buildRows([bare], [], "a")[1]).toMatchObject({ title: "a", model: "", source: "" });
+  });
+
+  it("stored rows carry their model and source", () => {
+    const rows = buildRows([], [stored("b", { model: "vendor/m-3" }), stored("c")], null);
+    expect(rows[1]).toMatchObject({ kind: "stored", model: "m-3", source: "tui" });
+    expect(rows[2]).toMatchObject({ kind: "stored", model: "" });
+  });
+
   it("clips titles to 64 characters and starts on the open session", () => {
     const rows = buildRows([], [stored("x", { title: "t".repeat(100) })], null);
     expect((rows[1] as { title: string }).title).toHaveLength(64);

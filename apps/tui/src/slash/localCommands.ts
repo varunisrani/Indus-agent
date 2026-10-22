@@ -124,7 +124,10 @@ function helpText(ctx: RunContext): string {
     lines.push(`  ${names}${command.args ? ` ${command.args}` : ""} — ${command.summary}`);
   }
   const local = new Set(LOCAL_COMMANDS.flatMap((c) => [c.name, ...(c.aliases ?? [])]));
-  const remote = (ctx.catalog() ?? []).filter((entry) => !local.has(entry.name));
+  // `unavailable`: the server does not run it on this connection (W48-h), so it is not offered.
+  const remote = (ctx.catalog() ?? []).filter(
+    (entry) => !local.has(entry.name) && entry.runs !== "unavailable",
+  );
   if (remote.length > 0) {
     lines.push("", "Commands the agent runs:");
     for (const entry of remote) {

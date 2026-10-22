@@ -2,7 +2,8 @@
 
 ``config.get`` reads ``full`` (every setting the client shows, plus the session's live switches
 when a session is named), ``mtime`` (the settings file's change stamp, for cheap polling) or one
-key (a client key, or a dotted ``display.*`` / ``tui.*`` path).
+key (a client key, or a dotted ``display.*`` / ``tui.*`` path); the reading is
+``indus.service.client_settings``, which the daemon's WebSocket answers with too (W48-b).
 
 ``config.set`` changes one client key:
 
@@ -32,7 +33,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import JsonValue
 
 from indus.foundation.blocking import run_blocking
-from indus.foundation.config import loader, schema, writer
+from indus.foundation.config import writer
 from indus.foundation.scope import Scope
 from indus.protocol.bridge import (
     ConfigApplied,
@@ -58,9 +59,16 @@ from indus.providers import bundled
 from indus.providers.profile import ProviderProfile
 from indus.providers.route import resolve
 from indus.providers.types import normalize_effort
-from indus.service import picker_reads
+from indus.service import client_settings, picker_reads
+from indus.service.client_settings import (
+    SESSION_KEYS,
+    TOOL_MODES,
+    ToolMode,
+    read_setting,
+    tui_setting,
+)
 from indus.service.session_service import SessionService
-from indus.tui_bridge.bridge import TOOL_MODES, SessionView, ToolMode
+from indus.tui_bridge.bridge import SessionView
 
 if TYPE_CHECKING:
     from indus.tui_bridge.bridge import Bridge
@@ -80,95 +88,23 @@ _SAVED: dict[ConfigKey, str] = {
     ConfigKey.STATUSBAR: "tui.statusbar",
     ConfigKey.MOUSE: "tui.mouse",
 }
-_SESSION_KEYS = frozenset({ConfigKey.YOLO, ConfigKey.REASONING, ConfigKey.FAST, ConfigKey.MODEL})
-_READABLE_PREFIXES = ("display.", "tui.")
 
 
 # -- reading ---------------------------------------------------------------------------------------
 
 
-def read_setting(scope: Scope, key: str) -> Any:
-    """``key`` from the profile's settings file, read fresh, else the built-in default."""
-    value: Any = None
-    try:
-        value = loader.load(scope).get(key)
-    except Exception:
-        log.debug("settings unreadable", exc_info=True)
-    return schema.default_for(key) if value is None else value
-
-
-def tui_setting(scope: Scope, name: str) -> Any:
-    """One ``tui.*`` setting."""
-    return read_setting(scope, f"tui.{name}")
-
-
-def _mtime(scope: Scope) -> float | None:
-    try:
-        return loader.config_path(scope).stat().st_mtime
-    except OSError:
-        return None
-
-
-def _stored_setting(scope: Scope, key: str) -> Any:
-    """``key`` only when the settings file sets it (``None`` otherwise, no built-in default)."""
-    try:
-        view = loader.load(scope)
-        return view.get(key) if view.is_set(key) else None
-    except Exception:
-        log.debug("settings unreadable", exc_info=True)
-        return None
-
-
-def _client_settings(scope: Scope) -> dict[str, Any]:
-    return {
-        # Unset stays null: the TUI's own default (queue) differs from the classic one (R05.18).
-        "busy": _stored_setting(scope, "display.busy_input_mode"),
-        "show_reasoning": read_setting(scope, "display.show_reasoning"),
-        "theme": tui_setting(scope, "theme"),
-        "indicator": tui_setting(scope, "indicator"),
-        "details": tui_setting(scope, "details"),
-        "statusbar": tui_setting(scope, "statusbar"),
-        "mouse": tui_setting(scope, "mouse"),
-        "verbose": tui_setting(scope, "tool_progress"),
-    }
-
-
 def session_settings(bridge: Bridge, service: SessionService, session_id: str) -> dict[str, Any]:
-    from indus.core import fast_mode
-    from indus.safety.approvals.decision import APPROVALS, session_key
-
-    agent = service.agent(session_id)
-    state = agent.binding.state
+    """The session's live switches, with the tool-progress mode of this bridge's view of it."""
     view = bridge.view(session_id)
-    return {
-        "model": state.model,
-        "provider": state.provider,
-        "reasoning": state.reasoning_effort,
-        "fast": fast_mode.FAST_MODES.get(fast_mode.session_key(bridge.scope, agent.session_id)),
-        "yolo": APPROVALS.auto_approve(session_key(bridge.scope, agent.session_id)),
-        "verbose": view.tool_mode if view is not None else bridge.default_tool_mode(),
-    }
+    verbose = view.tool_mode if view is not None else bridge.default_tool_mode()
+    return client_settings.session_switches(bridge.scope, service, session_id, verbose)
 
 
 async def get(bridge: Bridge, params: ConfigGetParams) -> ConfigGetResult:
-    scope = bridge.scope
-    key = params.key
-    if key == "mtime":
-        return ConfigGetResult(key=key, value=_mtime(scope))
-    if key == "full":
-        values = _client_settings(scope)
-        if params.session_id is not None:
-            values.update(session_settings(bridge, await bridge.service(), params.session_id))
-        return ConfigGetResult(key=key, value=cast(JsonValue, values))
-    if key in {k.value for k in ConfigKey}:
-        live_key = ConfigKey(key) in _SESSION_KEYS or key == ConfigKey.VERBOSE.value
-        if live_key and params.session_id is not None:
-            live = session_settings(bridge, await bridge.service(), params.session_id)
-            return ConfigGetResult(key=key, value=cast(JsonValue, live.get(key)))
-        return ConfigGetResult(key=key, value=cast(JsonValue, _client_settings(scope).get(key)))
-    if key.startswith(_READABLE_PREFIXES):
-        return ConfigGetResult(key=key, value=cast(JsonValue, read_setting(scope, key)))
-    raise ProtocolError(INVALID_PARAMS, f"{key} is not a setting the client can read", path="key")
+    live: dict[str, Any] | None = None
+    if params.session_id is not None and client_settings.needs_session(params):
+        live = session_settings(bridge, await bridge.service(), params.session_id)
+    return client_settings.read_config(bridge.scope, params, live)
 
 
 # -- writing ---------------------------------------------------------------------------------------
@@ -294,7 +230,7 @@ async def _set_session(
 
 async def set_value(bridge: Bridge, params: ConfigSetParams) -> ConfigSetResult:
     key, value = params.key, params.value
-    if key in _SESSION_KEYS:
+    if key in SESSION_KEYS:
         if params.session_id is None:
             raise ProtocolError(INVALID_PARAMS, f"{key.value} needs a session", path="session_id")
         service = await bridge.service()

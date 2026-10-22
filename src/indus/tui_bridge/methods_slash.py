@@ -1,40 +1,35 @@
 """Slash commands on the bridge (P12-31): ``commands.catalog``, ``slash.exec`` and
 ``command.dispatch``.
 
-Commands are looked up in the shared registry (``indus.service.commands``) and run **in process**
-by the handlers in ``HANDLERS`` below; the bridge never imports ``indus.cli``. Who runs what:
+Commands are looked up in the shared registry (``indus.service.commands``) and run **in process**;
+the bridge never imports ``indus.cli``. The commands themselves, the busy and timeout rules and the
+dispatch order are ``indus.service.slash_commands`` (shared with the daemon's WebSocket, W48-h);
+this module is the bridge's ``SlashHost`` (``BridgeSlashHost``) and the handlers only an
+in-process host has: ``queue`` (this viewer's own prompt queue) and the session switches ``yolo``,
+``reasoning``, ``fast`` (through ``config.set``). Who runs what:
 
-- ``HANDLERS`` — this module (session, control and information commands);
+- ``HANDLERS`` — the shared handlers plus the bridge's own (session, control and information);
 - ``CLIENT`` — the terminal UI itself (screen, pickers, leaving, files on the client's side);
 - everything else is answered ``SLASH_NOT_OWNED`` ("not mine"), so a client can tell "run it
   yourself or later" from a handler that failed (``SLASH_WORKER_FAILED``, also used when a handler
   passes its reply timeout: ``Bridge.slash_timeout``, at least ``MIN_TIMEOUT_S``) (R05.12).
-
-A registry entry whose busy policy is ``reject`` is refused with ``SESSION_BUSY`` while a turn
-runs. ``command.dispatch`` resolves, in order, a quick command (``exec`` runs through
-``shell.exec``'s checks; ``alias`` names another command), a skill or skill bundle (its expansion
-is the prompt to send), then a built-in (``exec`` with ``slash.exec``'s output).
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping
-from importlib import metadata
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from indus.foundation.blocking import run_blocking
+from indus.foundation.scope import Scope
 from indus.protocol.bridge import (
-    CatalogEntry,
     CommandDispatchParams,
     CommandDispatchResult,
-    CommandKind,
-    CommandRunner,
     CommandsCatalogParams,
     CommandsCatalogResult,
     ConfigKey,
     ConfigSetParams,
-    DispatchKind,
     SessionBranchParams,
     SessionCompressParams,
     SessionTitleParams,
@@ -42,16 +37,10 @@ from indus.protocol.bridge import (
     SlashExecParams,
     SlashExecResult,
 )
-from indus.protocol.errors import (
-    SESSION_BUSY,
-    SLASH_NOT_OWNED,
-    SLASH_WORKER_FAILED,
-    UNSUPPORTED_COMMAND,
-)
-from indus.protocol.methods import ProtocolError
-from indus.service import picker_reads
-from indus.service.commands.registry import REGISTRY, CommandDef, command_word
-from indus.service.session_service import SessionService, usage_numbers
+from indus.service import picker_reads, slash_commands
+from indus.service.commands.registry import Surface
+from indus.service.session_service import SessionService
+from indus.service.slash_commands import SlashHandler, out, running
 from indus.tui_bridge import methods_config, methods_session
 
 if TYPE_CHECKING:
@@ -64,6 +53,7 @@ __all__ = [
     "HANDLERS",
     "MIN_TIMEOUT_S",
     "SURFACE",
+    "BridgeSlashHost",
     "quick_commands",
     "register",
     "skill_table",
@@ -71,26 +61,93 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-SURFACE = "tui"
-MIN_TIMEOUT_S = 5.0
-MAX_ALIAS_HOPS = 5
-CLIENT = frozenset({"new", "clear", "resume", "sessions", "model", "config", "quit", "save"})
-
-type SlashHandler = Callable[[Bridge, SessionService, str, str], Awaitable[SlashExecResult]]
+SURFACE: Surface = "tui"
+MIN_TIMEOUT_S = slash_commands.MIN_TIMEOUT_S
+CLIENT = picker_reads.CLIENT_COMMANDS
+_NOTHING: Mapping[str, str] = {}
 
 
-# -- helpers ---------------------------------------------------------------------------------------
+class BridgeSlashHost:
+    """The in-process bridge as the shared commands' host."""
+
+    def __init__(self, bridge: Bridge, service: SessionService) -> None:
+        self.bridge = bridge
+        self._service = service
+
+    @property
+    def scope(self) -> Scope:
+        return self.bridge.scope
+
+    @property
+    def service(self) -> SessionService:
+        return self._service
+
+    @property
+    def surface(self) -> Surface:
+        return SURFACE
+
+    @property
+    def timeout(self) -> float:
+        return max(MIN_TIMEOUT_S, self.bridge.slash_timeout)
+
+    @property
+    def refused(self) -> Mapping[str, str]:
+        return _NOTHING
+
+    @property
+    def quick_exec_refusal(self) -> str | None:
+        return None
+
+    def skills(self, session_id: str | None) -> CommandTable | None:
+        return skill_table(self.bridge, session_id)
+
+    def queued(self, session_id: str) -> int:
+        view = self.bridge.view(session_id)
+        return len(view.queue) if view is not None else 0
+
+    async def title(self, session_id: str, title: str | None) -> tuple[str | None, bool]:
+        result = await methods_session.title(
+            self.bridge, SessionTitleParams(session_id=session_id, title=title)
+        )
+        return result.title, bool(result.pending)
+
+    async def undo(self, session_id: str, count: int) -> tuple[int, str]:
+        result = await methods_session.undo(
+            self.bridge, SessionUndoParams(session_id=session_id, count=count)
+        )
+        return result.removed, result.prefill or ""
+
+    async def branch(self, session_id: str, title: str | None) -> tuple[str, str | None]:
+        child = await methods_session.branch(
+            self.bridge, SessionBranchParams(session_id=session_id, title=title)
+        )
+        return child.session_id, child.title
+
+    async def compress(self, session_id: str, focus: str | None) -> str:
+        done = await methods_session.compress(
+            self.bridge, SessionCompressParams(session_id=session_id, focus=focus)
+        )
+        return done.message or f"Compression: {done.status}."
+
+    def stop(self, session_id: str) -> bool:
+        stopped = self._service.interrupt(session_id, hard=True).interrupted
+        view = self.bridge.view(session_id)
+        if view is not None:
+            view.queue.clear()
+        return stopped
+
+    def steer(self, session_id: str, text: str) -> bool:
+        return self._service.steer(session_id, text).queued
+
+    async def run_quick(self, session_id: str, command: str) -> tuple[str, str, int]:
+        from indus.tui_bridge.methods_shell import run_host_command
+
+        ran = await run_host_command(self.bridge, command, session_id=session_id)
+        return ran.stdout, ran.stderr, ran.code
 
 
-def _running(service: SessionService, session_id: str) -> bool:
-    try:
-        return service.agent(session_id).current is not None
-    except ProtocolError:
-        return False
-
-
-def _out(*lines: str, **extra: Any) -> SlashExecResult:
-    return SlashExecResult(output="\n".join(lines), **extra)
+def _bridge(host: BridgeSlashHost) -> Bridge:
+    return host.bridge
 
 
 async def _switch(bridge: Bridge, session_id: str, key: ConfigKey, value: Any) -> Any:
@@ -98,202 +155,71 @@ async def _switch(bridge: Bridge, session_id: str, key: ConfigKey, value: Any) -
     return (await methods_config.set_value(bridge, params)).value
 
 
-# -- the bridge's own handlers ---------------------------------------------------------------------
+# -- the bridge's own handlers (an in-process host only) -------------------------------------------
 
 
-async def _title(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    result = await methods_session.title(
-        bridge, SessionTitleParams(session_id=sid, title=arg.strip() or None)
-    )
-    if not arg.strip():
-        return _out(f"Title: {result.title}" if result.title else "This session has no title yet.")
-    note = " (saved after the first reply)" if result.pending else ""
-    return _out(f"Title set: {result.title}{note}")
-
-
-async def _undo(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    raw = arg.strip() or "1"
-    if not raw.isdigit() or int(raw) < 1:
-        return _out("Usage: /undo [N]  (how many of your messages to take back, default 1)")
-    result = await methods_session.undo(bridge, SessionUndoParams(session_id=sid, count=int(raw)))
-    if not result.removed:
-        return _out("There is nothing to undo yet.")
-    return _out(f"Took back {result.removed} stored messages.", prefill=result.prefill or None)
-
-
-async def _retry(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    result = await methods_session.undo(bridge, SessionUndoParams(session_id=sid, count=1))
-    if not result.removed or not result.prefill.strip():
-        return _out("There is no message to send again yet.")
-    return _out("Sending your last message again.", submit=result.prefill)
-
-
-async def _branch(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    child = await methods_session.branch(
-        bridge, SessionBranchParams(session_id=sid, title=arg.strip() or None)
-    )
-    shown = child.title or child.session_id
-    return _out(
-        f"Branched into '{shown}'. The original stays as it was.", switch_to=child.session_id
-    )
-
-
-async def _compress(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    done = await methods_session.compress(
-        bridge, SessionCompressParams(session_id=sid, focus=arg.strip() or None)
-    )
-    return _out(done.message or f"Compression: {done.status}.")
-
-
-async def _stop(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    stopped = service.interrupt(sid, hard=True).interrupted
-    view = bridge.view(sid)
-    if view is not None:
-        view.queue.clear()
-    return _out("Stopped the running reply." if stopped else "Nothing was running.")
-
-
-async def _steer(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    if not arg.strip():
-        return _out("Usage: /steer <text>")
-    if service.steer(sid, arg).queued:
-        return _out("The running reply will pick this up after its current step.")
-    return _out("Nothing is running; sending it as a message.", submit=arg.strip())
-
-
-async def _queue(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    view = bridge.watch(sid)
+async def _queue(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
+    view = _bridge(host).watch(sid)
     word, _, rest = arg.strip().partition(" ")
     word = word.lower()
     if word == "list" or not arg.strip():
         if not view.queue:
-            return _out("Nothing is queued.")
-        return _out(*(f"{n}. {text}" for n, text in enumerate(view.queue, 1)))
+            return out("Nothing is queued.")
+        return out(*(f"{n}. {text}" for n, text in enumerate(view.queue, 1)))
     if word == "clear":
         count = len(view.queue)
         view.queue.clear()
-        return _out(f"Cleared {count} queued message(s).")
+        return out(f"Cleared {count} queued message(s).")
     if word == "rm":
         if not rest.strip().isdigit() or not 1 <= int(rest) <= len(view.queue):
-            return _out("Usage: /queue rm N  (N from /queue list)")
+            return out("Usage: /queue rm N  (N from /queue list)")
         removed = view.queue[int(rest) - 1]
         del view.queue[int(rest) - 1]
-        return _out(f"Removed: {removed}")
+        return out(f"Removed: {removed}")
     text = rest.strip() if word == "add" else arg.strip()
-    if not _running(service, sid):
-        return _out("Nothing is running; sending it now.", submit=text)
+    if not running(host.service, sid):
+        return out("Nothing is running; sending it now.", submit=text)
     view.queue.append(text)
-    return _out(f"Queued ({len(view.queue)} waiting).")
+    return out(f"Queued ({len(view.queue)} waiting).")
 
 
-async def _status(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    agent = service.agent(sid)
-    state = agent.binding.state
-    lines = [
-        f"Session: {agent.session_id}",
-        f"Model: {state.model} ({state.provider})",
-        f"Reasoning: {state.reasoning_effort or 'off'}",
-        f"Folder: {agent.options.cwd or agent.options.session_fields.get('cwd') or '-'}",
-        "A reply is running." if agent.current is not None else "Idle.",
-    ]
-    view = bridge.view(sid)
-    if view is not None and view.queue:
-        lines.append(f"Queued messages: {len(view.queue)}")
-    return _out(*lines)
-
-
-async def _usage(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    n = usage_numbers(service, sid)
-    return _out(
-        f"Model calls: {n['api_calls']}",
-        f"Tokens: {n['input_tokens']} in, {n['output_tokens']} out, "
-        f"{n['cache_read_tokens']} from cache",
-        f"Cost: {n['cost_label'] or 'unknown'}",
-    )
-
-
-async def _history(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    rows = methods_session.display_messages(await service.store.load(service.current_id(sid)))
-    if not rows:
-        return _out("No messages yet.")
-    lines = [
-        f"{row.role.value}: {row.text.splitlines()[0][:120] if row.text else ''}" for row in rows
-    ]
-    return _out(*lines[-40:])
-
-
-async def _help(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    wanted = arg.strip().lstrip("/").lower()
-    lines: list[str] = []
-    for cmd in REGISTRY.commands(SURFACE):
-        if wanted and wanted not in cmd.name:
-            continue
-        lines.append(f"{cmd.usage():<28} {cmd.description}")
-    return _out(*(lines or [f"No command matches '{wanted}'."]))
-
-
-async def _version(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    try:
-        number = metadata.version("indus")
-    except metadata.PackageNotFoundError:
-        number = "unknown"
-    return _out(f"Indus Agent {number}")
-
-
-async def _yolo(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
+async def _yolo(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
     from indus.safety.approvals.decision import APPROVALS, session_key
 
-    enabled = not APPROVALS.auto_approve(session_key(bridge.scope, service.agent(sid).session_id))
+    bridge = _bridge(host)
+    agent_id = host.service.agent(sid).session_id
+    enabled = not APPROVALS.auto_approve(session_key(bridge.scope, agent_id))
     await _switch(bridge, sid, ConfigKey.YOLO, enabled)
     if enabled:
-        return _out("Auto-approve is ON for this session; never-allowed commands stay blocked.")
-    return _out("Auto-approve is off: risky commands ask first again.")
+        return out("Auto-approve is ON for this session; never-allowed commands stay blocked.")
+    return out("Auto-approve is off: risky commands ask first again.")
 
 
-async def _reasoning(
-    bridge: Bridge, service: SessionService, sid: str, arg: str
-) -> SlashExecResult:
+async def _reasoning(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
     if not arg.strip():
-        level = service.agent(sid).binding.state.reasoning_effort or "off"
-        return _out(f"Reasoning effort: {level}.")
-    value = await _switch(bridge, sid, ConfigKey.REASONING, arg.strip().split()[0])
-    return _out(f"Reasoning effort: {value}.")
+        level = host.service.agent(sid).binding.state.reasoning_effort or "off"
+        return out(f"Reasoning effort: {level}.")
+    value = await _switch(_bridge(host), sid, ConfigKey.REASONING, arg.strip().split()[0])
+    return out(f"Reasoning effort: {value}.")
 
 
-async def _fast(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
+async def _fast(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
     word = arg.strip().split()[0] if arg.strip() else "status"
     if word == "status":
-        live = methods_config.session_settings(bridge, service, sid)
-        return _out(f"Fast mode: {live.get('fast') or 'normal'}.")
-    value = await _switch(bridge, sid, ConfigKey.FAST, word)
-    return _out(f"Fast mode {value} for this session.")
-
-
-async def _tools(bridge: Bridge, service: SessionService, sid: str, arg: str) -> SlashExecResult:
-    names = sorted(service.agent(sid).tool_names)
-    return _out(f"{len(names)} tools: " + ", ".join(names) if names else "No tools are enabled.")
+        live = methods_config.session_settings(_bridge(host), host.service, sid)
+        return out(f"Fast mode: {live.get('fast') or 'normal'}.")
+    value = await _switch(_bridge(host), sid, ConfigKey.FAST, word)
+    return out(f"Fast mode {value} for this session.")
 
 
 HANDLERS: dict[str, SlashHandler] = {
-    "title": _title,
-    "undo": _undo,
-    "retry": _retry,
-    "branch": _branch,
-    "compress": _compress,
-    "stop": _stop,
-    "steer": _steer,
+    **slash_commands.HANDLERS,
     "queue": _queue,
-    "status": _status,
-    "usage": _usage,
-    "history": _history,
-    "help": _help,
-    "version": _version,
     "yolo": _yolo,
     "reasoning": _reasoning,
     "fast": _fast,
-    "tools": _tools,
 }
-"""Canonical command name → the bridge's handler."""
+"""Canonical command name → the bridge's handler (the shared ones and the bridge's own)."""
 
 
 # -- quick commands and skills ---------------------------------------------------------------------
@@ -309,162 +235,26 @@ def skill_table(bridge: Bridge, session_id: str | None) -> CommandTable | None:
     return picker_reads.skill_table(bridge.scope, session_id)
 
 
-def _runner(cmd: CommandDef) -> CommandRunner:
-    if cmd.name in HANDLERS:
-        return CommandRunner.SERVER
-    if cmd.name in CLIENT:
-        return CommandRunner.CLIENT
-    return CommandRunner.LATER
-
-
 # -- handlers --------------------------------------------------------------------------------------
 
 
 async def catalog(bridge: Bridge, params: CommandsCatalogParams) -> CommandsCatalogResult:
-    entries = [
-        CatalogEntry(
-            name=cmd.name,
-            aliases=list(cmd.aliases),
-            description=cmd.description,
-            category=cmd.category,
-            args_hint=cmd.args_hint,
-            kind=CommandKind.BUILTIN,
-            runs=_runner(cmd),
-        )
-        for cmd in REGISTRY.commands(SURFACE)
-    ]
-    taken = {key for cmd in REGISTRY for key in cmd.keys}
-    for name, spec in sorted(quick_commands(bridge).items()):
-        if name in taken:
-            continue
-        kind = str(spec.get("type", "exec"))
-        entries.append(
-            CatalogEntry(
-                name=name,
-                description=str(spec.get("description") or f"quick command ({kind})"),
-                category="custom",
-                kind=CommandKind.QUICK,
-                runs=CommandRunner.SERVER,
-            )
-        )
-        taken.add(name)
-    table = skill_table(bridge, params.session_id)
-    if table is not None:
-        for name, note in sorted(table.names().items()):
-            if name in taken:
-                continue
-            entries.append(
-                CatalogEntry(
-                    name=name,
-                    description=note,
-                    category="custom",
-                    kind=CommandKind.SKILL,
-                    runs=CommandRunner.SERVER,
-                )
-            )
-    return CommandsCatalogResult(commands=entries)
-
-
-async def _run(
-    bridge: Bridge, service: SessionService, cmd: CommandDef, session_id: str, arg: str
-) -> SlashExecResult:
-    handler = HANDLERS.get(cmd.name)
-    if handler is None:
-        where = (
-            "the terminal UI runs it itself"
-            if cmd.name in CLIENT
-            else (f"not available in the terminal UI yet (arrives with {cmd.owner})")
-        )
-        raise ProtocolError(SLASH_NOT_OWNED, f"/{cmd.name}: {where}", path="command")
-    if cmd.busy_policy == "reject" and _running(service, session_id):
-        raise ProtocolError(SESSION_BUSY, f"/{cmd.name} waits until the reply finishes")
-    limit = max(MIN_TIMEOUT_S, bridge.slash_timeout)
-    try:
-        return await asyncio.wait_for(handler(bridge, service, session_id, arg), timeout=limit)
-    except ProtocolError:
-        raise
-    except TimeoutError as exc:
-        raise ProtocolError(
-            SLASH_WORKER_FAILED, f"/{cmd.name} did not answer within {limit:g} s"
-        ) from exc
-    except Exception as exc:
-        log.error("/%s failed", cmd.name, exc_info=exc)
-        raise ProtocolError(
-            SLASH_WORKER_FAILED, f"/{cmd.name} failed: {type(exc).__name__}: {exc}"
-        ) from exc
+    return await run_blocking(
+        lambda: picker_reads.command_catalog(
+            bridge.scope, surface=SURFACE, skills=skill_table(bridge, params.session_id)
+        ),
+        label="command catalogue",
+    )
 
 
 async def slash_exec(bridge: Bridge, params: SlashExecParams) -> SlashExecResult:
-    service = await bridge.service()
-    word, arg = command_word(params.command)
-    cmd = REGISTRY.resolve(word)
-    if cmd is None or not cmd.offered_on(SURFACE):
-        if word in quick_commands(bridge) or _is_skill(bridge, params.session_id, word):
-            raise ProtocolError(
-                SLASH_NOT_OWNED, f"/{word}: resolve it with command.dispatch", path="command"
-            )
-        raise ProtocolError(UNSUPPORTED_COMMAND, f"/{word} is not a command", path="command")
-    return await _run(bridge, service, cmd, params.session_id, arg)
-
-
-def _is_skill(bridge: Bridge, session_id: str | None, word: str) -> bool:
-    table = skill_table(bridge, session_id)
-    return table is not None and word in table.names()
+    host = BridgeSlashHost(bridge, await bridge.service())
+    return await slash_commands.slash_exec(host, HANDLERS, params)
 
 
 async def dispatch(bridge: Bridge, params: CommandDispatchParams) -> CommandDispatchResult:
-    from indus.tui_bridge.methods_shell import run_host_command
-
-    service = await bridge.service()
-    name = params.name.strip().lstrip("/").lower()
-    arg = params.arg
-    for _hop in range(MAX_ALIAS_HOPS):
-        quick = quick_commands(bridge).get(name)
-        if quick is None or REGISTRY.resolve(name) is not None:
-            break
-        kind = str(quick.get("type", "")).lower()
-        if kind == "exec":
-            command = str(quick.get("command") or "")
-            ran = await run_host_command(bridge, command, session_id=params.session_id)
-            output = "\n".join(part for part in (ran.stdout, ran.stderr) if part)
-            if ran.code:
-                output = f"{output}\n(exit {ran.code})".strip()
-            return CommandDispatchResult(kind=DispatchKind.EXEC, output=output or "(no output)")
-        if kind == "alias":
-            target = str(quick.get("target") or "").strip().lstrip("/")
-            if not target:
-                break
-            word, _, rest = target.partition(" ")
-            if REGISTRY.resolve(word) is not None:
-                joined = " ".join(part for part in (rest, arg) if part)
-                return CommandDispatchResult(
-                    kind=DispatchKind.ALIAS, target=f"/{word} {joined}".strip()
-                )
-            name, arg = word.lower(), " ".join(part for part in (rest, arg) if part)
-            continue
-        break
-    table = skill_table(bridge, params.session_id)
-    if table is not None and name in table.names():
-        line = f"/{name} {arg}".strip()
-        expansion = table.run(line, scope=bridge.scope, session_id=params.session_id)
-        if expansion is None or not expansion.loaded:
-            raise ProtocolError(SLASH_WORKER_FAILED, f"/{name} could not be loaded")
-        return CommandDispatchResult(kind=DispatchKind.SKILL, message=expansion.text)
-    cmd = REGISTRY.resolve(name)
-    if cmd is not None and cmd.offered_on(SURFACE):
-        ran = await _run(bridge, service, cmd, params.session_id, arg)
-        if ran.submit is not None:
-            return CommandDispatchResult(
-                kind=DispatchKind.SEND, message=ran.submit, output=ran.output
-            )
-        if ran.prefill is not None:
-            return CommandDispatchResult(
-                kind=DispatchKind.PREFILL, message=ran.prefill, output=ran.output
-            )
-        return CommandDispatchResult(kind=DispatchKind.EXEC, output=ran.output)
-    raise ProtocolError(
-        UNSUPPORTED_COMMAND, f"/{name} is not a quick, skill or built-in command", path="name"
-    )
+    host = BridgeSlashHost(bridge, await bridge.service())
+    return await slash_commands.dispatch(host, HANDLERS, params)
 
 
 def register(table: MethodTable) -> None:

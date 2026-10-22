@@ -19,7 +19,9 @@ from indus.safety.approvals.decision import (
     ApprovalDecision,
     StaleInterruptReset,
 )
+from indus.tools.builtin import terminal as terminal_module
 from indus.tools.builtin.terminal import (
+    TERMINAL_SCHEMA,
     Call,
     GateRequest,
     GateVerdict,
@@ -32,6 +34,7 @@ from indus.tools.builtin.terminal import (
     trailing_amp_command,
     workdir_guard,
 )
+from indus.tools.definitions import definitions
 from indus.tools.registry import ToolRegistry
 from tests.fakes.terminal import ScriptedEnv, terminal_scope
 from tests.unit.tools.builtin._terminal_rig import Rig
@@ -580,3 +583,44 @@ def test_stale_interrupt_cleared_once_before_retries(
     assert reset.used and not stop.is_set()  # cleared once, before the retried run
     assert not decision.clear_stale_interrupt(stop)  # a second call does nothing
     assert len(env.calls) == 2
+
+
+# -- native Windows: no background offer on a host backend (wave 48) ----------------------------
+
+BACKGROUND_ONLY = {"background", "pty", "notify", "heartbeat", "persist_on_release"}
+
+
+def _offered(rig: Rig) -> dict[str, Any]:
+    registry = ToolRegistry()
+    rig.tool.register(registry)
+    (tool,) = definitions(registry, ["terminal"], scope=rig.scope)
+    return tool["function"]
+
+
+def test_native_windows_host_backend_is_not_offered_background(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Host jobs refuse on native Windows (W47-e-1), so the schema stops offering them there.
+    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
+    fn = _offered(Rig(tmp_path))  # the scripted backend is host-local, like `local`
+    props = fn["parameters"]["properties"]
+    assert not BACKGROUND_ONLY & set(props), sorted(BACKGROUND_ONLY & set(props))
+    assert set(props) == {"command", "timeout", "workdir"}
+    assert fn["parameters"]["required"] == ["command"]
+    assert "background=true" not in fn["description"] and "WSL2" in fn["description"]
+    assert "background" not in props["timeout"]["description"]
+    assert "maximum 600" in props["timeout"]["description"]
+    # the static schema itself is untouched
+    assert "background" in TERMINAL_SCHEMA["parameters"]["properties"]
+
+
+def test_windows_sandbox_backends_and_other_hosts_keep_background(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
+    sandbox = Rig(tmp_path / "a", env=ScriptedEnv(flags=BackendFlags(isolated=True)))
+    assert set(_offered(sandbox)["parameters"]["properties"]) >= BACKGROUND_ONLY
+    monkeypatch.setattr(terminal_module, "os_family", lambda: "linux", raising=False)
+    fn = _offered(Rig(tmp_path / "b"))
+    assert set(fn["parameters"]["properties"]) >= BACKGROUND_ONLY
+    assert "background=true" in fn["description"]

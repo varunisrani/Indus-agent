@@ -237,3 +237,143 @@ Decisions for the lead:
 - W47-c-3 (D-16.1040): next candidates for the daemon table, same pattern: `complete.path` (needs the
   session's backend and cwd), `commands.catalog`, `config.get` (read-only; then `bridge.settings`
   narrows to `config.set`).
+
+## Wave 48 (builder b, 2026-10-22): the TUI's other reads, and named session rows
+
+Status: done. An attached TUI (the default) got `-32601` for `complete.path`, `commands.catalog` and
+`config.get`, and its sessions picker showed the open session as a bare id with no model (the
+daemon sends no `session.info`, D-16.550, and `session.list` rows had no model). Now the daemon
+serves the three reads with the bridge's answers, `session.list` rows carry the model, and the
+picker fills a live row from its stored row.
+
+Read: no reference file (our own attach path; the bridge handlers are the spec). Our
+`tui_bridge/methods_complete.py`, `methods_config.py`, `methods_slash.py`, `service/picker_reads.py`,
+`apps/tui/src/pickers/sessionSwitcherState.ts`, `SessionSwitcher.tsx`, the screenshot
+`tui-08-sessions.png`, threat model B-DAEMON-5.
+
+What changed (own words):
+- One definition per read, under `indus.service` (the gateway may not import `tui_bridge`):
+  `service/path_completion.py` (moved from the bridge: reference hints, fuzzy `@word`, folder
+  listings through a non-local backend; `session_folder(service, id)` is the session's folder),
+  `service/client_settings.py` (`read_config`, `needs_session`, `session_switches`, the settings
+  helpers and `ToolMode` / `TOOL_MODES`, re-exported by the bridge modules for their callers) and
+  `picker_reads.command_catalog` with `SERVER_COMMANDS` / `CLIENT_COMMANDS` (the bridge's
+  `HANDLERS` / `CLIENT`; a test keeps them equal). The bridge's handlers now call these.
+- Daemon (`gateway/ws/methods.py`): a named `session_id` must be attached by this connection
+  (`Subscriptions.require`, then `service.current_id`). `complete.path` uses the client's `cwd`,
+  else the attached session's folder, through the process's terminal registry (the one the
+  daemon's agents use). `commands.catalog` follows the connection's surface like `complete.slash`.
+  `config.get` reads the live switches on the loop and the settings file off it; `verbose` for a
+  session is the profile's `tui.tool_progress` (the daemon keeps no per-viewer mode).
+  `config.set` stays unserved.
+- Protocol: `SessionRow.model` (optional; regenerated `packages/protocol`); `picker_reads.session_row`
+  fills it from the listing.
+- TUI: `buildRows` gives a live row `session.info`'s title and model, else its stored row's title
+  (or preview), model and source; stored rows carry model too. The switcher shows
+  `model · source` beside live rows and `age · model · source` beside stored rows.
+
+Tests (fail-first; on the base the three methods answered `-32601`, `served()` lacked them and
+rows had no `model`): `tests/contract/gateway/test_ws_tui_reads.py` (each read over the socket
+equals the in-process bridge's for the same profile: path words incl. `@`, fuzzy and hidden, the
+session's folder; catalogue with a quick command; `config.get` for `full`, client keys, dotted
+keys, `mtime`, a session's `full` and `model`; a foreign session → `SESSION_NOT_FOUND`;
+`config.set` → `-32601`; session rows carry title, model, source),
+`tests/contract/tui_bridge/test_methods_slash.py::test_the_shared_catalogue_names_what_the_bridge_runs`,
+vitest `sessionSwitcherState.test.ts` (two new cases failed on the base). Dual-host matrix
+`bridge.settings` still differs (only `config.set` now); its allow-list text updated.
+
+Not done here: `slash.exec` / `command.dispatch` are still not served, so a catalogue entry
+marked `runs: server` cannot be run by an attached TUI (it answers `-32601`, as before);
+`session.info` / `session.title` from the daemon (D-16.550) would also give the status bar the
+model and folder.
+
+Decisions for the lead:
+- W48-b-1 (D-16.1072): `config.get` and `commands.catalog` over the daemon answer exactly what `--local`
+  answers, including `runs: server` for the bridge's handlers although the daemon does not serve
+  `slash.exec` yet (the TUI reads only names, aliases and descriptions from the catalogue).
+  Proposed: keep; serve `slash.exec` next or mark those entries `later` when attached.
+- W48-b-2 (D-16.1073): an attached session's `verbose` in `config.get` is the profile's tool-progress mode.
+- W48-b-3 (D-16.1074): D-16.549 / D-16.1040 text: `config.get`, `complete.path`, `commands.catalog` served
+  since wave 48; `bridge.settings` narrows to `config.set` (allow-list YAML and
+  `dual-host-matrix.md` already say so).
+- W48-b-4 (D-16.1075): `SessionRow.model` (optional field, protocol addition; generated files regenerated).
+
+## Wave 48 (builder h, 2026-10-22): the attached status bar's header, and server-run slash commands
+
+Status: done. An attached TUI (the default) got no `session.info` / `session.title` from the
+daemon (D-16.550), so its status bar had no model or folder and the composer's `sessionCwd` fell
+back to the launch folder; and `slash.exec` / `command.dispatch` answered `-32601` although
+`commands.catalog` marks server commands `runs: server`. Now the daemon sends the header to the
+session's viewers and runs the bridge's server commands with the bridge's answers.
+
+Read: no reference file (our own attach path; the bridge is the spec). Our
+`tui_bridge/events.py` (`session_info`, `settle_title`), `methods_slash.py`, `methods_session.py`,
+`service/daemon_host.py`, `subscriptions.py`, `session_mutations.py`, `apps/tui/src/slash/*`,
+the dual-host matrix and its allow-list, threat model B-DAEMON-5 / B-MUX-3.
+
+What changed (own words):
+- One definition per piece, under `indus.service` (the gateway may not import `tui_bridge`):
+  `service/session_header.py` (`session_info`: the `SessionInfo` fields; the bridge's
+  `events.session_info` delegates), `service/transcript_view.py` (the display projection moved
+  from `methods_session`, re-exported there), `service/slash_commands.py` (the commands written
+  once against a `SlashHost`; the run rules — refusals, busy policy, timeout, error mapping — and
+  `command.dispatch`'s order: quick, skill, built-in). `tui_bridge/methods_slash.py` is now the
+  bridge's host (`BridgeSlashHost`) plus the handlers only an in-process host has (`queue`,
+  `yolo`, `reasoning`, `fast`); `service/daemon_slash.py` is the daemon's host.
+- Header: `DaemonSessionHost.announce_info(key)` puts a `session.info` (stored title, the profile's
+  tool-progress mode, `None` fields left out like the bridge's) into the session's event log, so
+  only that session's viewers get it. `Subscriptions._attach` calls it on every create, resume
+  and subscribe; `SessionMutations.on_change` calls it after a model or folder change applies
+  (also a deferred model switch). After each turn the host compares the stored title with the
+  one its viewers were sent and sends `session.title` when it changed (the automatic title), as
+  the bridge's `settle_title` does; a rename already travels as `session.title` (the host keeps
+  the sent title from it).
+- Commands on the daemon: `slash.exec` / `command.dispatch` require a session this connection
+  attached (`Subscriptions.require`); `/title`, `/undo`, `/retry`, `/branch` go through
+  `session.mutate` (`rename`, `rewind`, `branch`, which now takes a `title`), `/compress` runs
+  under the session's mutation gate (idle only), `/stop` and `/steer` through the fences with the
+  running turn's generation (`DaemonSessionHost.running_generation`); `/status`, `/usage`,
+  `/history`, `/help`, `/version`, `/tools` are the shared text. Refused with a reason
+  (`picker_reads.DAEMON_REFUSED`, `DAEMON_QUICK_EXEC`): `/queue` (the bridge's per-viewer queue),
+  `/yolo`, `/reasoning`, `/fast` (session switches stay with `config.set`, D-16.549) and quick
+  `exec` commands (the daemon runs no shell command for a client). `slash.exec` answers
+  `SLASH_NOT_OWNED` and `command.dispatch` `UNSUPPORTED_COMMAND` with the same text, so the TUI
+  shows `/name: <reason>`. Quick `alias` commands and skills dispatch as in `--local`.
+- Catalogue: `CommandRunner.UNAVAILABLE` (`"unavailable"`, protocol addition, regenerated); the
+  daemon's `commands.catalog` marks the refused built-ins and quick `exec` commands with it, and
+  its `complete.slash` leaves quick `exec` commands out. The TUI's `/help` and catalogue matching
+  skip `unavailable` entries (the refused built-ins are the TUI's own local commands anyway).
+
+Tests (fail-first; on the base: the header wait timed out, `slash.exec` / `command.dispatch`
+answered `-32601`): `tests/contract/gateway/test_ws_tui_session.py` (the header reaches the
+creating connection and a later subscriber, never a bystander, and changes with rename and
+folder; its fields equal the bridge's; server commands over the socket equal `--local`'s for the
+same steps; a foreign session → `SESSION_NOT_FOUND`; refused commands and quick `exec` answer the
+reason and are `unavailable` in the catalogue and absent from completion; `/stop` / `/steer`
+idle). Dual-host matrix: `bridge.event_shape/session events` now agrees on both hosts and failed
+as stale, so its D-16.550 allow-list entry is removed. Vitest `localCommands.test.ts`,
+`dispatch.test.ts` (2 new cases failed on the base). Updated: `test_ws_tui_reads.py` (the daemon
+catalogue equals `--local`'s apart from `unavailable`), `test_ws_endpoint.py` (resume cursor:
+presence then the header), `test_ws_pickers.py` (the daemon's completion leaves quick `exec`
+commands out).
+
+Decisions for the lead:
+- W48-h-1 (D-16.1093): the header travels as numbered events in the session's log (replayed, every viewer
+  gets one when any viewer attaches, like `session.viewers`), not as unnumbered frames to one
+  connection (events need a `seq`; the client's cursor would drop a reused one).
+- W48-h-2 (D-16.1094): what the daemon refuses: `/queue`, `/yolo`, `/reasoning`, `/fast`, quick `exec`
+  commands (catalogue `unavailable`). Proposed follow-up: serve the session switches when
+  `config.set`'s session keys come to the daemon (one policy for both paths); quick `exec` only
+  with a daemon-side `shell.exec` and its checks.
+- W48-h-3 (D-16.1095): `CommandRunner.UNAVAILABLE` (protocol addition); clients do not offer such entries.
+- W48-h-4 (D-16.1096): `/title` on a session with no reply yet answers "Title set: X" on the daemon (the
+  rename writes the row at once) where the bridge says "(saved after the first reply)".
+- W48-h-5 (D-16.1097): `/stop` on the daemon stops the running turn only; inputs other viewers queued stay
+  queued (the bridge clears its own viewer queue).
+- W48-h-6 (D-16.1098): `session.info.tool_progress` on the daemon is the profile's mode (as W48-b-2).
+- Integrator: D-16.550 can be closed; D-16.549's text keeps only `config.set`.
+
+Follow-ups: `/status` on the daemon does not count the session's queued inputs; the attached TUI's
+local `/yolo`, `/reasoning`, `/fast`, `/verbose`, `/busy` still call `config.set` (-32601 when
+attached); `running` in `session.info` is only refreshed on attach and changes (turn events carry
+it otherwise).

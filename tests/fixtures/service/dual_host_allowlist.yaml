@@ -16,19 +16,12 @@ differences:
     why: >-
       Closing (or losing) an attached client only detaches it: the daemon finishes the running
       turn and stores it. In process the turn dies with the child. Never resent on either host.
-  - case: bridge.event_shape
-    facet: session events
-    host: attached
-    d_id: D-16.550
-    why: >-
-      The daemon sends no `session.info` after `session.create`/`resume` and no `session.title`
-      when the automatic title lands (it is stored, and list watchers get `session.updated`), so
-      an attached TUI shows no model, folder or title for the session.
   - case: bridge.settings
     facet: settings
     host: attached
     d_id: D-16.549
     why: >-
-      The daemon does not serve `config.get` and `config.set` (what the TUI reads at start and
-      changes from its settings): they answer -32601 over the attach socket. `model.options`,
-      `complete.slash` and `session.list` are served since wave 47 (W47-c, D-16.1039).
+      The daemon does not serve `config.set` (what the TUI changes from its settings): it answers
+      -32601 over the attach socket, so the saved value stays as it was. `model.options`,
+      `complete.slash` and `session.list` are served since wave 47 (W47-c, D-16.1039);
+      `config.get`, `complete.path` and `commands.catalog` since wave 48 (W48-b).

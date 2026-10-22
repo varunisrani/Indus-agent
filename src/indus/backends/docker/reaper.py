@@ -27,17 +27,19 @@ import asyncio
 import logging
 import re
 import threading
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from indus.backends.docker import liveness
 from indus.backends.docker.environment import (
     LABEL_AGENT,
     LABEL_PROFILE,
     LABEL_TASK,
     SHARED_TASK,
 )
+from indus.backends.docker.liveness import Alive, set_liveness
 from indus.backends.docker.probe import DockerCli
 from indus.foundation.clock import Clock
 from indus.foundation.scope import Scope
@@ -63,37 +65,15 @@ RM_TIMEOUT_S = 30.0
 STOPPED_STATES = frozenset({"exited", "created", "dead"})
 _FRACTION = re.compile(r"(\.\d{6})\d+")
 
-type Alive = Callable[[str], bool]
-
-
-def _always(_: str) -> bool:
-    return True
-
-
-def _never(_: str) -> bool:
-    return False
-
-
 _lock = threading.Lock()
 _started: set[tuple[str, str]] = set()
 _tasks: set[asyncio.Future[Any]] = set()
-_liveness: dict[str, Alive] = {"session": _always, "jobs": _never}
-
-
-def set_liveness(*, session_alive: Alive | None = None, jobs_alive: Alive | None = None) -> None:
-    """The host's answers: is the session with this id still open, does this task id have a
-    running background job."""
-    with _lock:
-        if session_alive is not None:
-            _liveness["session"] = session_alive
-        if jobs_alive is not None:
-            _liveness["jobs"] = jobs_alive
 
 
 def reset_for_tests() -> None:
     with _lock:
         _started.clear()
-        _liveness.update(session=_always, jobs=_never)
+    liveness.reset()
 
 
 @dataclass
@@ -132,9 +112,9 @@ async def reap_orphans(
     stopped_after_s: float = STOPPED_AFTER_S,
 ) -> ReapReport:
     """One sweep (see the module notes). Never raises for a docker failure."""
-    with _lock:
-        session_ok = session_alive or _liveness["session"]
-        jobs_ok = jobs_alive or _liveness["jobs"]
+    installed_session, installed_jobs = liveness.current()
+    session_ok = session_alive or installed_session
+    jobs_ok = jobs_alive or installed_jobs
     report = ReapReport()
     began = clock.monotonic()
     listing = await cli.call(

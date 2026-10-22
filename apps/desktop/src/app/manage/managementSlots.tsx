@@ -19,15 +19,27 @@ import { ProfilesOverlay } from "../profiles/ProfilesOverlay.tsx";
 import { backgroundOf, classifyPath } from "../routes.ts";
 import { WebhooksPage } from "../webhooks/WebhooksPage.tsx";
 
-/** The daemon's `bots.*` / `groups.*` methods through the window's connection. Those names are
- * not in the generated protocol types yet (wiring for the integrator), hence the widening. */
+const RPC_OF = new WeakMap<GatewayConnection, RpcLike>();
+
+/** The daemon's `bots.*` / `groups.*` methods and the connection's notifications (a room's
+ * `groups.event`) through the window's connection. One object per connection, so a page's
+ * effects keyed on it (a room's watch) do not restart on every render. The method names are
+ * widened to plain strings here. */
 export function rpcOf(connection: GatewayConnection): RpcLike {
-  return {
+  const known = RPC_OF.get(connection);
+  if (known !== undefined) return known;
+  const rpc: RpcLike = {
     request: (method, params) =>
       (
         connection.request as unknown as (m: string, p: Record<string, unknown>) => Promise<unknown>
       )(method, params),
+    onEvent: (listener) =>
+      connection.onEvent((event) =>
+        listener(event as unknown as { type: string } & Record<string, unknown>),
+      ),
   };
+  RPC_OF.set(connection, rpc);
+  return rpc;
 }
 
 function MessagingRoute(props: { connection: GatewayConnection; profile: string | null }) {

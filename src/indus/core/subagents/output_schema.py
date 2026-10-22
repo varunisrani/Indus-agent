@@ -19,12 +19,6 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError
-from jsonschema.validators import (
-    validator_for,  # pyright: ignore[reportUnknownVariableType]
-)
-
 __all__ = [
     "MAX_ERRORS",
     "MAX_ERROR_CHARS",
@@ -62,11 +56,19 @@ class SchemaCheck:
 
 
 def _validator_class(schema: Mapping[str, Any]) -> Any:
+    # jsonschema is imported on first use: it costs ~50 ms and most runs never delegate (W48-e-2).
+    from jsonschema import Draft202012Validator
+    from jsonschema.validators import (
+        validator_for,  # pyright: ignore[reportUnknownVariableType]
+    )
+
     return validator_for(schema, default=Draft202012Validator)  # pyright: ignore[reportUnknownVariableType]
 
 
 def check_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
     """``schema`` as a plain dict when it is a valid JSON Schema; ``OutputSchemaInvalid`` if not."""
+    from jsonschema.exceptions import SchemaError
+
     plain = dict(schema)
     try:
         _validator_class(plain).check_schema(plain)

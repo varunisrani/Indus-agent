@@ -650,7 +650,10 @@ async def test_resume_answers_the_daemon_cursor(
     await first.until(done(sid))
     second = await r.attached("tui")
     resumed = await second.request("session.resume", {"session_id": sid})
-    assert resumed["result"]["last_seq"] == r.host.event_log.last_seq(sid) - 1  # then presence
+    while not any(n.get("method") == "session.info" for n in second.notes):
+        await second.until(lambda f: f.get("method") == "session.info")
+    # Then presence and the header (W48-h).
+    assert resumed["result"]["last_seq"] == r.host.event_log.last_seq(sid) - 2
     closed = await second.request("session.close", {"session_id": sid})
     assert closed["result"]["closed"] is True
     assert sid in r.host.hosted()  # closing from a client only detaches

@@ -143,3 +143,43 @@ the re-lock. D-16.908.
   1.6.
 - W46-b-3 (D-16.996): the notices rows are the release area's file; the builder left the patch for the
   integrator rather than editing `scripts/release/` in parallel with waves 44/45.
+
+## Wave 48 (npm advisories katex / sprintf-js, 2026-10-22, builder f)
+
+Status: done for katex and sprintf-js (both advisories left the snapshot); pypdf not bumped (fixes too new,
+dates below). Read: none (dependency maintenance; no reference file).
+
+- Fail first: `python -m tooling.checks.deps_audit --refresh --pnpm-audit --no-write` on main's lock
+  (network, agent proxy): 877 packages, warnings GHSA-238p-pmpm-9mq7 katex@0.16.47 (low; `pnpm audit
+  --prod`'s only row) and GHSA-hp3w-g68c-fv3c sprintf-js@1.1.3 (moderate).
+- katex: only mermaid 11.17.2 brought 0.16.47 (`katex: ^0.16.47`); the fix is 0.18.2+. No mermaid 11.x
+  allows 0.18 (mermaid 12 asks `^0.18.0`, a major bump of the diagram renderer). Override
+  `mermaid>katex: 0.19.0`, the version `apps/desktop` already depends on (MIT, 2026-10-01). Mermaid uses
+  only `(await import("katex")).default.renderToString(tex, {throwOnError, displayMode, output})`; checked
+  against 0.19.0 from mermaid's own directory: it resolves 0.19.0, `output: "mathml"` renders, a parse
+  error still throws `ParseError`. A desktop renderer `vite build` (to the scratchpad, deleted) has one
+  katex chunk and no 0.16.47.
+- sprintf-js: no fixed release exists (advisory range "through 1.1.3"). Its only path is
+  app-builder-lib 26.17.0 → `@electron/get` 3.1.0 → optional `global-agent` 3.0.0 → `roarr` 2.15.4 →
+  sprintf-js. No app-builder-lib release moves off `@electron/get ^3.0.0`. Override
+  `@electron/get>global-agent: 4.1.3` (BSD-3-Clause, 2026-03-11): same CommonJS `bootstrap()` that
+  `@electron/get`'s `initializeProxy()` calls (checked from `@electron/get`'s directory), no roarr.
+- `pnpm install` (agent proxy; "Lockfile passes supply-chain policies", `minimumReleaseAge` 20160) then
+  `pnpm install --frozen-lockfile` ok. node_modules now match the lock (vite 8.3.3, the wave-46 gap closed).
+  877 → 868 locked packages.
+- `--refresh --pnpm-audit` after: 0 failing, `pnpm audit --prod` 0 rows; katex and sprintf-js left the
+  snapshot. Remaining warnings: pypdf ×5.
+- `THIRD_PARTY_NOTICES.md` regenerated (katex 0.16.47 and commander 8.3.0 no longer shipped: 262 → 260
+  npm packages) and `notices.py refresh` dropped those two rows from `notices_data.json`.
+- pypdf 6.19.0 (5 advisories): fixes 6.20.0 (uploaded 2026-10-09T10:49Z), 6.20.1 (2026-10-12T16:14Z),
+  6.21.1 (2026-10-17) are all after `exclude-newer` 2026-10-08, so `uv.lock` is unchanged. The pins
+  guard allows exclude-newer up to lock_date − 14 days: 6.20.0 becomes lockable with lock_date
+  2026-10-24, 6.20.1 (all four moderates) with lock_date 2026-10-27, 6.21.1 (the low one) 2026-11-01.
+
+### Decisions for the lead
+
+- W48-f-1 (D-16.1087): `mermaid>katex: 0.19.0` (outside mermaid's declared `^0.16.47`) rather than mermaid 12; drop
+  it when mermaid moves to a release that allows katex >= 0.18.2.
+- W48-f-2 (D-16.1088): `@electron/get>global-agent: 4.1.3` over app-builder-lib's `@electron/get` 3 (sprintf-js has
+  no fixed release); only used when electron-builder downloads Electron with `ELECTRON_GET_USE_PROXY`.
+- W48-f-3 (D-16.1089): pypdf stays at 6.19.0 until the lock date allows 6.20.1 (2026-10-27).

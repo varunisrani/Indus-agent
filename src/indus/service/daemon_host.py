@@ -16,7 +16,12 @@ the same call shapes with the daemon's rules:
   server requests to the asking viewer. After a turn's ``turn.done`` the host adds what the TUI's
   own bridge sends at a turn's end: ``message.complete`` (the final reply and why the turn ended;
   a client settles its streamed text on it) and ``session.usage`` (the session's counters), so an
-  attached client sees the same turn end as an in-process one (P17-26).
+  attached client sees the same turn end as an in-process one (P17-26). The status bar's header
+  travels the same way (W48-h, D-16.550): ``announce_info`` puts a ``session.info``
+  (``service.session_header``, the stored title, the profile's tool-progress mode: the daemon keeps
+  none per viewer) into the session's events when a viewer attaches and when a model or folder
+  change applies; after a turn a stored title that changed (the automatic title) is sent as
+  ``session.title``, as the bridge does. Only the session's viewers receive them.
 - **Input.** ``submit`` admits the text into the session's durable FIFO (``AdmissionService``) and
   returns its receipt; every move of an input after that (queued, claimed, settled, lost) is
   appended to the session's events as ``admission.state``. An input submitted ``unattended`` (a
@@ -83,6 +88,7 @@ from indus.protocol.methods import (
 from indus.protocol.requests_port import AnswerModel
 from indus.protocol.server_requests import SERVER_REQUEST_KINDS
 from indus.safety.approvals.decision import APPROVALS, session_key
+from indus.service import client_settings, session_header
 from indus.service.admissions import (
     CANCELLED,
     INTERRUPTED,
@@ -125,7 +131,7 @@ from indus.service.viewers import (
     busy_default,
 )
 from indus.state import runtime_ledger as ledger
-from indus.state import sessions
+from indus.state import sessions, titles
 from indus.state.registry import StoreHandle
 from indus.state.runtime_ledger import AdmissionRow, LedgerRefusal
 
@@ -266,9 +272,12 @@ class DaemonSessionHost:
         self._one_shot: dict[str, str | None] = {}
         """Keys whose running turn is one-shot, with the run context to put back after it."""
         self._closed = False
+        self._titles: dict[str, str | None] = {}
+        """The title the session's viewers were last sent, by key."""
         self.mutations = SessionMutations(
             service, store, running=self._running_generation, key_of=self._any_key
         )
+        self.mutations.on_change = self.announce_info
         service.broker_factory = self._make_broker
         service.turn_door = self._door
         service.agent_shaper = self.mutations.shape
@@ -356,6 +365,10 @@ class DaemonSessionHost:
         except ProtocolError:
             return None
         return ticket.generation if agent.current is not None else None
+
+    def running_generation(self, key: str) -> int | None:
+        """The generation of the turn the session's agent runs now, or None."""
+        return self._running_generation(key)
 
     def _any_key(self, session_id: str) -> str:
         """The host key of ``session_id``, also while it is being attached (else the id)."""
@@ -655,6 +668,8 @@ class DaemonSessionHost:
             ticket.touch(kind)
         if kind == "turn.done":
             self._done[key] = (_field(event, "turn_id"), _field(event, "reason"))
+        elif kind == "session.title":
+            self._titles[key] = _field(event, "title") or None
         self.event_log.append(key, event)
 
     def _admission_moved(self, key: str, receipt: Receipt) -> None:
@@ -699,12 +714,54 @@ class DaemonSessionHost:
                 "reason": reason,
             },
         )
+        self._spawn(self._settle_title(key))
         try:
             usage = usage_numbers(self.service, current)
         except Exception:
             log.debug("no usage for %s", current, exc_info=True)
             return
         self._on_event(key, {"type": "session.usage", "session_id": current, "usage": usage})
+
+    # -- the session header (W48-h) ----------------------------------------------------------------
+
+    def announce_info(self, key: str) -> None:
+        """Put a ``session.info`` for the hosted session ``key`` into its events (soon: the title
+        and the settings are read off the loop)."""
+        if key in self._live and not self._closed:
+            self._spawn(self._send_info(key))
+
+    async def _stored_title(self, session_id: str) -> str | None:
+        try:
+            return await self._off(lambda: titles.get_title(self.store, session_id))
+        except Exception:
+            log.debug("title of %s unreadable", session_id, exc_info=True)
+            return None
+
+    async def _send_info(self, key: str) -> None:
+        if key not in self._live:
+            return
+        sid = self.service.current_id(key)
+        title = await self._stored_title(sid)
+        mode = await self._off(lambda: client_settings.default_tool_mode(self.store.scope))
+        if key not in self._live:
+            return
+        try:
+            fields = session_header.session_info(self.service, sid, title=title, tool_progress=mode)
+        except Exception:
+            log.debug("no session info for %s", key, exc_info=True)
+            return
+        self._titles[key] = title
+        shown = {name: value for name, value in fields.items() if value is not None}
+        self._on_event(key, {"type": "session.info", "session_id": sid, **shown})
+
+    async def _settle_title(self, key: str) -> None:
+        """After a turn: a stored title that changed (the automatic title) as ``session.title``."""
+        if key not in self._live:
+            return
+        sid = self.service.current_id(key)
+        stored = await self._stored_title(sid)
+        if key in self._live and stored is not None and stored != self._titles.get(key):
+            self._on_event(key, {"type": "session.title", "session_id": sid, "title": stored})
 
     def _fan_out(self, entry: LoggedEvent) -> None:
         if self.viewers.count(entry.session_id):
@@ -729,6 +786,7 @@ class DaemonSessionHost:
                     undo()
             self.fences.forget(key)
             self._done.pop(key, None)
+            self._titles.pop(key, None)
             self.event_log.forget(key)
             self.viewers.forget(key)
             for name in [n for n, k in self._keys.items() if k == key]:

@@ -11,6 +11,7 @@ NAMES = (
     "pins",
     "locales",
     "protocol_stale",
+    "generated_twins",
     "no_raw_environ",
     "artifacts",
     "security_static",

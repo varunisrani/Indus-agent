@@ -20,5 +20,16 @@ allowBuilds:
 
 # electron-updater (P20-37) reaches sax through builder-util-runtime; sax moved to BlueOak-1.0.0
 # (not on licenses_allow.json) after 1.4.1, the last ISC release, which still satisfies `^1.2.4`.
+#
+# Advisory overrides (wave 48, both releases older than the 14-day rule):
+# - mermaid 11.17.2 asks for katex ^0.16.47; every 0.16.x is hit by GHSA-238p-pmpm-9mq7 (fixed in
+#   0.18.2). Mermaid calls only `renderToString(tex, {throwOnError, displayMode, output})`, which 0.19.0
+#   keeps, so its katex is the 0.19.0 the desktop app already depends on (one katex in the lock).
+#   Drop this when a mermaid release that allows katex >= 0.18.2 is adopted (mermaid 12 asks ^0.18.0).
+# - sprintf-js has no fixed release (GHSA-hp3w-g68c-fv3c, through 1.1.3); it arrives only through
+#   global-agent 3 (roarr), the optional proxy helper of @electron/get 3 under electron-builder.
+#   global-agent 4.1.3 keeps the same CJS `bootstrap()` that @electron/get calls and drops roarr.
 overrides:
   builder-util-runtime>sax: 1.4.1
+  mermaid>katex: 0.19.0
+  "@electron/get>global-agent": 4.1.3
