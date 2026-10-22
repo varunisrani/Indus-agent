@@ -188,3 +188,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 08:14 UTC: all 8 wave-47 patches parked; only the waves 45+46 integrator is running.
 - 2026-10-22 08:18 UTC: 36% (08:16; resets 12:00). Only the waves 45+46 integrator runs (full suite run 3 after the restart). 20 GB disk free.
 - 2026-10-22 08:40 UTC: 37% (08:31; resets 12:00). Waves 45+46 integrator full run 3 at 87%. 19 GB disk free.
+- 2026-10-22 08:57 UTC: 38% (08:46; resets 12:00). Waves 45+46 full run 3: 18452 passed, 2 failed (tests/e2e/test_demo1.py kill-after-approval and ctrl-c seal); integrator investigating. 20 GB disk free.
