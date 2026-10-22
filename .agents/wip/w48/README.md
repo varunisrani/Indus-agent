@@ -75,3 +75,15 @@
 - Fail-first: pricing twin 4, field docs 3, one-shot import guard. pytest 3627 + 2378 + 3924 + 236; all guards ok.
 - Follow-ups: config defaults twin (~100 ms), shipped-skills front-matter twin (~25–50 ms), httpx._main (third party).
 - NOTE: two new generated twins need their --check wired into tooling.checks or CI (integrator: add to the gate).
+
+## w48h.patch: daemon session.info/session.title to attached clients; slash.exec / command.dispatch served (done; relative to LOCAL base 0992fb4 — apply w48b first)
+- 29 files, +1389/-443. service/session_header.py (shared info fields; bridge uses it), header as numbered session events on
+  attach + model/folder change, session.title after a turn if the stored title changed; service/slash_commands.py shared
+  handlers + rules, service/daemon_slash.py daemon side (title/undo/retry/branch via session.mutate, /compress under the
+  session lock when idle, /stop and /steer by generation), refusals: /queue, /yolo, /reasoning, /fast, quick exec (protocol
+  CommandRunner.UNAVAILABLE; TUI skips unavailable entries); service/transcript_view.py (display_messages moved).
+- Fail-first: tests/contract/gateway/test_ws_tui_session.py (2/4 failed on base), matrix stale entry removed (bridge.event_shape
+  session events), 2 vitest. pytest 5818 (+1 fixed, rerun 8); TUI vitest 792; protocol 9; guards ok. Full suite NOT rerun
+  after the last test fix — integrator's gate covers it.
+- W48-h-1..6. D-16.550 can close; D-16.549 now only config.set. Follow-ups: attached /yolo /reasoning /fast /verbose /busy
+  still call config.set (-32601); /status queued count; running refresh.
