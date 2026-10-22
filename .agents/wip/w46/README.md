@@ -87,3 +87,14 @@
   `pnpm --filter @indus/web build`, `tar -C apps/web/dist -czf <upload-dir>/indus-web-${VERSION}.tar.gz .` (VERSION without
   v); scan that dist with the artefact/reference-host scan; rehearsal row "script install without Node serves the pages".
 - W46-k-1..5. Follow-ups: `indus update --finish` refresh of fetched pages; install.ps1 parity; stale-stamp handling.
+
+## w46c.patch: RM4 — SEC-6 strict digit parsing, SEC-8 explicit spawn envs (done; editor residual needs owner acceptance)
+- 55 files, +464/-83. New foundation/digits.py (is_digits / parse_digits, ASCII only, default cap 20, hard cap 4000); 62
+  spots in 45 files (gateway, every adapter's ids/timestamps/sizes, web body gate + Host port, ACP, providers, media, hub,
+  cron picks, /goal /loop). SEC-8: web/routes/system.py git_env(scope); cli/doctor/checks.py probes with child_env;
+  platform/locate.py probe_env(); 3 inherit_env allow entries removed (editor + macOS ps stay allow-listed).
+- Tests: tests/unit/foundation/test_digits.py, tests/security/test_outside_numbers.py (separate file from w46a's). pytest
+  9108 passed (1 doc-test failure fixed after; security + digits 107 passed). ruff/pyright/lint-imports/tooling.checks ok.
+- W46-c-1 (Content-Length over the cap = not a number; streaming cap still applies), W46-c-2 OWNER: accept the editor
+  residual in writing, W46-c-3 OWNER: GH_TOKEN/GITHUB_TOKEN no longer reach the dashboard's git update.
+- MERGE NOTE: threat-model.md edited by S45, w46a, w46b, w46c (different rows).
