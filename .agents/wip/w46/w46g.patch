@@ -1,0 +1,687 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 92d9d2c..e7b47ed 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -444,6 +444,36 @@ jobs:
+       - name: Run the default package
+         run: nix run .#default -- --version
+ 
++  # W46 RS9: shellcheck over the POSIX installer and the release shell scripts. The installer is
++  # checked as built: scripts/install.sh carries every fragment of scripts/install/sh/ verbatim,
++  # their shellcheck directives included, and checking a fragment alone would flag names another
++  # fragment defines. The version is pinned: the job fails when the runner's (signed) apt archive
++  # hands over another one, so move the pin and the runner image together.
++  shell:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    env:
++      SHELLCHECK_VERSION: "0.9.0"
++    steps:
++      - name: Check out
++        uses: actions/checkout@v4
++
++      - name: Install the pinned shellcheck
++        run: |
++          sudo apt-get update -qq
++          sudo apt-get install -y -qq --no-install-recommends shellcheck
++          found="$(shellcheck --version | sed -n 's/^version: //p')"
++          if [ "$found" != "$SHELLCHECK_VERSION" ]; then
++            echo "::error::shellcheck $found installed, $SHELLCHECK_VERSION pinned"
++            exit 1
++          fi
++
++      - name: shellcheck the installer and the release scripts
++        run: |
++          shopt -s nullglob
++          release=(scripts/release/*.sh)
++          shellcheck scripts/install.sh "${release[@]}"
++
+   # P25-19: the clean-room guards over BUILT outputs, not only sources: the web dist (from
+   # web-e2e), the unpacked Linux desktop build with its ASAR (from desktop-package), the docs site
+   # and the three installers. Reference names, vendor hosts, reference media and the build
+@@ -514,6 +544,7 @@ jobs:
+       - desktop-package
+       - desktop-e2e
+       - nix
++      - shell
+       - artefacts
+     if: always()
+     runs-on: ubuntu-latest
+diff --git a/docs/notes/P10/code-runner-rpc.md b/docs/notes/P10/code-runner-rpc.md
+index 28aa322..ae7a0d1 100644
+--- a/docs/notes/P10/code-runner-rpc.md
++++ b/docs/notes/P10/code-runner-rpc.md
+@@ -117,3 +117,24 @@ tests `tests/unit/tools/builtin/code/{_rig,conftest,test_rpc,test_runner}.py`. S
+ `code_execution` and `test_schema`, `tests/unit/cli/setup/test_wizard.py` (the core bundle answer now
+ includes `code_execution`), tool-array goldens regenerated once for the new toolset (`execute_code`
+ joins the cli, cron, api_server and acp arrays; prompt text unchanged).
++
++## Wave 46 (builder g): tests that survive a long base temp (release checklist RS11)
++
++Read: none from the reference (test hygiene only).
++
++- `tests/short_paths.py`: `short_dir(prefix)` makes a fresh owner-only folder directly under `/tmp`
++  (system temp folder where there is no `/tmp`) and removes it afterwards; `tests/conftest.py`
++  exposes it as the `short_tmp` fixture. Socket tests use it instead of `tmp_path`:
++  `test_rpc.py::test_long_socket_path_moves_to_a_short_private_dir` (the product's short dir now
++  lands in `short_tmp`, which stays short under any `--basetemp`),
++  `test_watchdogs.py::test_sd_notify_datagrams`, and the two `short_home` fixtures in
++  `test_control_socket.py` / `test_attach_verbs.py` (same behaviour, one helper).
++- `test_runner.py::test_manual_approval_denied_spawns_nothing` asserted the full marker path in the
++  approval text; the approval display wraps and shortens a long line, so a long base temp failed
++  it. The script now names the path on a line of its own and the test checks the short line that
++  writes the file.
++- Checked: those five files under `--basetemp` of 140 bytes: 122 passed, 1 skipped (both named
++  tests failed before). A full-suite sweep for other socket tests under a long base temp was not
++  run (time box); `tests/contract/mcp_serve` and `tests/integration/gateway` sockets live in the
++  profile home, whose long-path pointer file the product already handles (ran green above for
++  `test_daemon_start.py` and `test_gateway_e2e.py`).
+diff --git a/docs/notes/P13/hooks-bus.md b/docs/notes/P13/hooks-bus.md
+index 5e3ace4..100842d 100644
+--- a/docs/notes/P13/hooks-bus.md
++++ b/docs/notes/P13/hooks-bus.md
+@@ -122,3 +122,29 @@ Compare checklist (filled after the rewrite; reopened `hermes_cli/plugins_dispat
+ 
+ Done (2026-10-19). Shared: `src/indus/tools/hooks.py`, `src/indus/foundation/blocking.py`,
+ `tests/unit/foundation/test_blocking.py`, `tests/integration/core/test_d04_1_criteria.py`.
++
++## Wave 46 (builder g): `post_tool_call` for blocked calls (release checklist RS19)
++
++Read: none from the reference (a follow-up on our own seam; no reference file reopened).
++
++- Gap: `dispatch` returned at once when `before` blocked a call, so `after` (the bus's
++  `post_tool_call`) never saw it and audit plugins missed every refused call.
++- Now: a blocked call goes to `after` with the block result (error type `blocked`, the new shared
++  constant `tools.hooks.BLOCKED`) and zero duration; it never goes to `transform` (a block text is
++  not rewritten). `PluginToolHooks.after` adds `blocked` (bool) to the `post_tool_call` payload, so
++  the same keyword is `False` for calls that ran; shell hooks get it under `extra`.
++  `indus hooks test` sample payload carries `blocked: false`. An `after` that raises on a blocked
++  call is logged and the block stands.
++- Wrapping seams (`ChildHooks`, `LspToolHooks`, the review fork's `WhitelistHooks`) pass `after` through, so they
++  see blocked calls too; none acts on them. The gateway hook bridge's `tool_done` now also emits
++  `agent:step` for a blocked call (decision W46-g-1).
++- Tests: `tests/unit/tools/test_dispatch.py::test_blocked_call_still_reaches_after_but_not_transform`,
++  `::test_blocked_call_survives_a_raising_after`,
++  `tests/unit/plugins/test_hooks.py::test_post_tool_call_sees_blocked_calls` (both failed before).
++
++Decisions for the lead (wave 46):
++- W46-g-1: the gateway hook bridge (`gateway/hooks.py` `tool_done`) is left as is, so a blocked
++  call now also emits `agent:step` (a step the agent took, refused). Skipping blocked calls there is
++  a one-line `if blocked: return` if the lead prefers steps to mean "a tool ran".
++- W46-g-3: a blocked call skips `transform_tool_result` (the block text is the refusal the model
++  must see; a transform could launder it into a success).
+diff --git a/docs/notes/P23/tool-versions.md b/docs/notes/P23/tool-versions.md
+index fd3c29f..9fe7a9b 100644
+--- a/docs/notes/P23/tool-versions.md
++++ b/docs/notes/P23/tool-versions.md
+@@ -24,7 +24,7 @@ against upstream over the network at integration (2026-10-21), "unverified" mean
+ | Python (provisioned) | 3.14 (floor 3.13) | `scripts/install/pins.json` | matches `requires-python = ">=3.13,<3.15"` | P23-02, P23-05 |
+ | curl exit codes for the mirror | 5, 6, 7, 18, 22, 28, 52, 55, 56 | `scripts/install/sh/20-runtime.sh` | curl's documented exit codes: proxy/host resolution, connect, partial file, HTTP error with `-f`, timeout, empty reply, send/receive failure | P23-05 |
+ | git | any with `clone --filter=blob:none`, `merge-base --is-ancestor`, `stash push --include-untracked -m` | — | git 2.x documentation; tests run the machine's real git | P23-04 |
+-| shellcheck | not pinned | — | not installed here: the fragments carry directives but are unchecked (follow-up: a CI step) | P23-03..05 |
++| shellcheck | 0.9.0 (GPL-3.0, CI tool only, never shipped) | `.github/workflows/ci.yml` job `shell` (`SHELLCHECK_VERSION`, runner `ubuntu-24.04`, from its signed apt archive) | W46 RS9: the job checks the built `scripts/install.sh` (every fragment and its directives) and `scripts/release/*.sh`, and fails when the installed version is not the pin. **Unverified**: not installed here and no network, so neither the version noble ships nor a clean run has been seen; the first CI run is the check | P23-03..05, W46 |
+ 
+ ## PowerShell installer (I2: P23-06, P23-07)
+ 
+@@ -85,3 +85,26 @@ is a follow-up once the lane has run. The older `ci.yml` jobs still use tag-pinn
+ | SemVer | 2.0.0 precedence | `src/indus/foundation/versions.py` | canary `X.Y.Z-canary.<YYYYMMDDTHHMMSSZ>` orders below its own stable by construction |
+ | GitHub REST (releases, assets, refs) | v3 (2022-11-28) | `scripts/release/github.py` | drafts, asset upload, release update; fakes in tests, never called from a test |
+ | GHCR tagging | `docker buildx imagetools` | `scripts/release/publish.py` | aliases are new tags on an existing digest; nothing is rebuilt |
++
++## Wave 46 (builder g): a shellcheck CI job (release checklist RS9)
++
++Read: none from the reference (CI wiring only).
++
++- New job `shell` in `ci.yml` (and in the `gate` job's `needs`), on `ubuntu-24.04`: installs
++  shellcheck from the runner's apt archive (signed; no download to pin by digest), fails unless
++  `shellcheck --version` reports `SHELLCHECK_VERSION`, then runs `shellcheck scripts/install.sh`
++  plus every `scripts/release/*.sh` (`nullglob`: none on main today; wave 44 adds
++  `release_gates.sh`). `release.yml` is not touched.
++- Why the built installer and not each fragment: `install.sh` holds every fragment verbatim with its
++  `# shellcheck disable=…` directives (only the `shell=bash` directive is dropped, the shebang takes
++  its place); a fragment alone reads names another fragment sets (SC2154 / SC2034 noise).
++- Why apt and not a pinned release archive in `docker/pins.json` like hadolint: a new bundle needs
++  its SHA-256 from upstream, and this slice has no network; an empty digest fails
++  `docker/pins.py check --strict` in `docker.yml`.
++- Decision for the lead W46-g-2: shellcheck comes from the runner's signed apt archive with a
++  version assertion, not from a digest-pinned release archive. Moving it to a `docker/pins.json`
++  bundle (`pins.py refresh` over the network) is the follow-up if the lead wants one pin
++  mechanism for every CI tool.
++- Not run locally (no shellcheck here): the first CI run may report findings in `install.sh`; fix
++  them in the fragments and rebuild (`scripts/install/build.py`). Test of the job's shape:
++  `tooling/checks/tests/test_pins.py::test_ci_shellchecks_the_installer_and_release_scripts_at_a_pinned_version`.
+diff --git a/docs/notes/P25/notices.md b/docs/notes/P25/notices.md
+index 9203bf9..84babde 100644
+--- a/docs/notes/P25/notices.md
++++ b/docs/notes/P25/notices.md
+@@ -82,3 +82,24 @@ Compare checklist (filled after the rewrite; reopened the reference `LICENSE`):
+ ## Status
+ 
+ Done (2026-10-21). See the final report.
++
++## Wave 46 (builder g): refresh writes Biome's layout (release checklist RS7)
++
++Read: none from the reference (our own generator; Biome's JSON layout checked against the
++repository's pinned Biome binary).
++
++- Gap: `refresh` wrote `notices_data.json` with `json.dumps(indent=2)`, one array element per line;
++  Biome folds an array onto one line when it fits, so the lint gate failed after every refresh.
++- Now: `dump_json` writes the layout Biome keeps: every non-empty object one key per line (Biome
++  keeps an object expanded when its first key starts a new line), `{}` / `[]` inline, an array of
++  scalars or arrays on one line when that line, its trailing comma counted, fits `lineWidth` 100
++  (`biome.json`), else one element per line, each element judged again at its own indent. Width is
++  counted in code points (Biome counts display width, so East Asian wide characters would differ;
++  none occur in licence data).
++- Checked: 160 generated cases around the width boundary (nested rows, empty containers, objects
++  inside arrays, non-ASCII) came out byte-identical to `biome format`; the committed file
++  round-trips unchanged.
++- Tests: `tests/unit/release/test_notices.py::test_dump_json_*` (three; all failed on the old
++  `dump_json`).
++- Note: `scripts/release/*` is the wave-44 integrator's area; this slice changes only `dump_json` in
++  `notices.py` (wave 44's patch does not touch that file).
+diff --git a/scripts/release/notices.py b/scripts/release/notices.py
+index f17019e..e7cb3ce 100644
+--- a/scripts/release/notices.py
++++ b/scripts/release/notices.py
+@@ -588,8 +588,53 @@ def refresh(inputs: Inputs) -> tuple[dict[str, Any], list[str]]:
+     return data, still_unknown
+ 
+ 
++JSON_INDENT = 2
++JSON_LINE_WIDTH = 100  # the repository's Biome ``lineWidth`` (biome.json)
++
++
++def _flat_json(value: Any) -> str | None:
++    """``value`` on one line as Biome writes it, or None when it holds a non-empty object."""
++    if isinstance(value, Mapping):
++        return "{}" if not value else None
++    if isinstance(value, list | tuple):
++        parts = [_flat_json(item) for item in cast(Sequence[Any], value)]
++        if any(part is None for part in parts):
++            return None
++        return "[" + ", ".join(cast(list[str], parts)) + "]"
++    return json.dumps(value, ensure_ascii=False)
++
++
++def _layout_json(value: Any, depth: int, used: int, tail: int) -> str:
++    """``value`` starting ``used`` columns into its line with ``tail`` characters after it."""
++    pad = " " * (JSON_INDENT * (depth + 1))
++    if isinstance(value, Mapping):
++        items = list(cast(Mapping[str, Any], value).items())
++        if not items:
++            return "{}"
++        lines: list[str] = []
++        for index, (key, item) in enumerate(items):
++            comma = 1 if index < len(items) - 1 else 0
++            head = f"{pad}{json.dumps(key, ensure_ascii=False)}: "
++            lines.append(head + _layout_json(item, depth + 1, len(head), comma) + "," * comma)
++        return "{\n" + "\n".join(lines) + "\n" + pad[JSON_INDENT:] + "}"
++    if isinstance(value, list | tuple):
++        flat = _flat_json(value)
++        if flat is not None and used + len(flat) + tail <= JSON_LINE_WIDTH:
++            return flat
++        elements = list(cast(Sequence[Any], value))
++        rows = [
++            pad + _layout_json(item, depth + 1, len(pad), 1 if i < len(elements) - 1 else 0)
++            for i, item in enumerate(elements)
++        ]
++        return "[\n" + ",\n".join(rows) + "\n" + pad[JSON_INDENT:] + "]"
++    return json.dumps(value, ensure_ascii=False)
++
++
+ def dump_json(data: Mapping[str, Any]) -> str:
+-    return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
++    """``data`` in the layout Biome's formatter keeps (W46 RS7), so a refresh passes the lint gate
++    as written: objects one key per line, an array on one line when it fits the line width (its
++    trailing comma counted), else one element per line."""
++    return _layout_json(data, 0, 0, 0) + "\n"
+ 
+ 
+ # -- entry --------------------------------------------------------------------------------------
+diff --git a/src/indus/cli/commands/hooks.py b/src/indus/cli/commands/hooks.py
+index 6fd36d2..9b2d534 100644
+--- a/src/indus/cli/commands/hooks.py
++++ b/src/indus/cli/commands/hooks.py
+@@ -42,6 +42,7 @@ DEFAULT_PAYLOADS: dict[str, dict[str, Any]] = {
+         "args": {"command": "echo hello"},
+         "result": "hello",
+         "is_error": False,
++        "blocked": False,
+         "duration_ms": 12,
+     },
+     "pre_llm_call": {
+diff --git a/src/indus/plugins/hooks.py b/src/indus/plugins/hooks.py
+index 517ef05..d85dbe9 100644
+--- a/src/indus/plugins/hooks.py
++++ b/src/indus/plugins/hooks.py
+@@ -41,7 +41,7 @@ from indus.foundation.scope import Scope
+ from indus.plugins.settings import bounded_seconds, plugins_setting
+ from indus.safety.approvals.tool_gate import approve_tool_call
+ from indus.tools.calls import ToolCall, ToolContext, ToolResult
+-from indus.tools.hooks import BeforeVerdict
++from indus.tools.hooks import BLOCKED, BeforeVerdict
+ 
+ __all__ = [
+     "BOUNDED",
+@@ -743,6 +743,7 @@ class PluginToolHooks:
+             is_error=result.is_error,
+             status="error" if result.is_error else "ok",
+             error_type=result.error_type or "",
++            blocked=result.error_type == BLOCKED,
+             duration_ms=int(duration_s * 1000),
+             **self._ids(call, ctx),
+         )
+diff --git a/src/indus/tools/dispatch.py b/src/indus/tools/dispatch.py
+index fb566db..7d43d2f 100644
+--- a/src/indus/tools/dispatch.py
++++ b/src/indus/tools/dispatch.py
+@@ -4,7 +4,8 @@ Steps: refuse names the agent loop runs itself (the inline table) → look the t
+ ``Unknown tool: <name>``) → repair argument types (``coerce``) → the ``before`` hook → run the
+ handler with only the context keywords its signature declares (R02.28): async handlers are
+ awaited, sync handlers run on the shared ``tools`` pool (D-04.1) with the entry's deadline →
+-check the result contract → ``after`` and ``transform`` hooks.
++check the result contract → ``after`` and ``transform`` hooks. A call ``before`` blocks still
++goes to ``after`` (zero duration, error type ``blocked``), never to ``transform``.
+ 
+ Nothing a handler does escapes as an exception: a raise becomes
+ ``Tool failed: <Type>: <message>`` with chat framing removed and the text bounded; a result that is
+@@ -32,7 +33,14 @@ from indus.tools.calls import (
+     is_envelope,
+ )
+ from indus.tools.coerce import coerce_args
+-from indus.tools.hooks import NO_HOOKS, ToolHooks, run_after, run_before, run_transform
++from indus.tools.hooks import (
++    BLOCKED,
++    NO_HOOKS,
++    ToolHooks,
++    run_after,
++    run_before,
++    run_transform,
++)
+ from indus.tools.registry import ToolEntry, ToolRegistry
+ 
+ log = logging.getLogger(__name__)
+@@ -188,7 +196,10 @@ async def dispatch(
+     prepared = ToolCall(call.name, args, call.call_id)
+     verdict = await run_before(hooks, prepared, ctx)
+     if verdict.block is not None:
+-        return ToolResult.error(verdict.block, error_type="blocked")
++        # Observers (audit plugins) still see the refused call; ``transform`` never rewrites it.
++        blocked = ToolResult.error(verdict.block, error_type=BLOCKED)
++        await run_after(hooks, prepared, ctx, blocked, 0.0)
++        return blocked
+     if verdict.args is not None:
+         args = dict(verdict.args)
+         prepared = ToolCall(call.name, args, call.call_id)
+diff --git a/src/indus/tools/hooks.py b/src/indus/tools/hooks.py
+index 479c4eb..63236dd 100644
+--- a/src/indus/tools/hooks.py
++++ b/src/indus/tools/hooks.py
+@@ -1,7 +1,8 @@
+ """The ``ToolHooks`` seam around every dispatched call.
+ 
+-Three points: ``before`` may block a call or replace its arguments, ``after`` observes the result,
+-``transform`` may replace it. The default ``NO_HOOKS`` does nothing.
++Three points: ``before`` may block a call or replace its arguments, ``after`` observes the result
++(a blocked call's too, with error type ``blocked``), ``transform`` may replace it. The default
++``NO_HOOKS`` does nothing.
+ 
+ Failure policy:
+ - the empty seam (``hooks.empty`` true) is fail-open: if even the no-op raises, the tool still runs;
+@@ -25,6 +26,10 @@ from indus.tools.calls import ToolCall, ToolContext, ToolResult
+ 
+ log = logging.getLogger(__name__)
+ 
++# The error type of a call that ``before`` refused. ``dispatch`` still hands that call to ``after``
++# (zero duration) so observers see it, and never to ``transform``.
++BLOCKED = "blocked"
++
+ 
+ @dataclass(frozen=True)
+ class BeforeVerdict:
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 7f7dc3e..848b996 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -21,6 +21,7 @@ from indus.foundation.secrets import open_secret_store
+ from tests import platform_marks, self_chat_guard
+ from tests.fakes.clock import FakeClock
+ from tests.fakes.model import Script, load_script
++from tests.short_paths import short_dir
+ 
+ 
+ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+@@ -82,6 +83,13 @@ def scope(isolated_home: Path, fake_clock: FakeClock) -> Scope:
+     return scope.with_secrets(open_secret_store(home, scope.profile_id, mode="file"))
+ 
+ 
++@pytest.fixture
++def short_tmp() -> Iterator[Path]:
++    """A private folder with a short path, for Unix sockets (``tests.short_paths``)."""
++    with short_dir() as path:
++        yield path
++
++
+ @pytest.fixture
+ def fake_model_script() -> Callable[[str], Script]:
+     """Load a script from ``tests/fixtures/model_scripts/`` by name (``"hello"``) or path."""
+diff --git a/tests/short_paths.py b/tests/short_paths.py
+new file mode 100644
+index 0000000..482aa58
+--- /dev/null
++++ b/tests/short_paths.py
+@@ -0,0 +1,28 @@
++"""Short private folders for Unix sockets in tests (W46, release checklist RS11).
++
++A Unix socket path must fit ``sun_path`` (108 bytes on Linux, 104 on macOS). ``tmp_path`` under a
++long ``--basetemp`` (or a long ``TMPDIR``) does not, so a test that binds a socket asks for
++``short_dir()`` (or the ``short_tmp`` fixture) instead: a fresh owner-only folder directly under
++``/tmp``, removed afterwards. Hosts without ``/tmp`` fall back to the system temp folder.
++"""
++
++from __future__ import annotations
++
++import contextlib
++import os
++import shutil
++import tempfile
++from collections.abc import Iterator
++from pathlib import Path
++
++SHORT_ROOT = "/tmp"  # noqa: S108 - deliberately short; the folder itself is private (mkdtemp)
++
++
++@contextlib.contextmanager
++def short_dir(prefix: str = "it-") -> Iterator[Path]:
++    root = SHORT_ROOT if os.path.isdir(SHORT_ROOT) else None
++    path = Path(tempfile.mkdtemp(prefix=prefix, dir=root))
++    try:
++        yield path
++    finally:
++        shutil.rmtree(path, ignore_errors=True)
+diff --git a/tests/unit/gateway/daemon/test_attach_verbs.py b/tests/unit/gateway/daemon/test_attach_verbs.py
+index 84f801a..9ab6f75 100644
+--- a/tests/unit/gateway/daemon/test_attach_verbs.py
++++ b/tests/unit/gateway/daemon/test_attach_verbs.py
+@@ -6,8 +6,6 @@ import asyncio
+ import json
+ import logging
+ import os
+-import shutil
+-import tempfile
+ import time
+ from collections.abc import Awaitable, Callable, Iterator
+ from pathlib import Path
+@@ -35,6 +33,7 @@ from indus.state import registry
+ from indus.state.registry import StoreHandle
+ from tests.fakes.agent import eventually
+ from tests.fakes.model import text_turn, tool_batch
++from tests.short_paths import short_dir
+ from tests.unit.service.test_daemon_host import Holder, open_host
+ 
+ WS_URL = "ws://127.0.0.1:47011/ws"
+@@ -49,11 +48,8 @@ def store(scope: Scope) -> Iterator[StoreHandle]:
+ 
+ @pytest.fixture
+ def short_home() -> Iterator[Path]:
+-    home = Path(tempfile.mkdtemp(prefix="igw-", dir="/tmp"))
+-    try:
++    with short_dir("igw-") as home:
+         yield home
+-    finally:
+-        shutil.rmtree(home, ignore_errors=True)
+ 
+ 
+ def verbs_for(home: Path, *, url: str | None = WS_URL, **kw: Any) -> AttachVerbs:
+diff --git a/tests/unit/gateway/daemon/test_watchdogs.py b/tests/unit/gateway/daemon/test_watchdogs.py
+index ab750e7..5ca7bd5 100644
+--- a/tests/unit/gateway/daemon/test_watchdogs.py
++++ b/tests/unit/gateway/daemon/test_watchdogs.py
+@@ -144,8 +144,8 @@ def test_restart_loop_guard_keeps_fifty_and_fails_open(tmp_path: Path) -> None:
+ 
+ 
+ @pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Unix sockets")
+-def test_sd_notify_datagrams(tmp_path: Path) -> None:
+-    address = str(tmp_path / "notify.sock")
++def test_sd_notify_datagrams(short_tmp: Path) -> None:
++    address = str(short_tmp / "notify.sock")
+     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as server:
+         server.bind(address)
+         server.settimeout(5)
+@@ -153,7 +153,7 @@ def test_sd_notify_datagrams(tmp_path: Path) -> None:
+         assert notify("STATUS=hello", env)
+         assert server.recv(256) == b"STATUS=hello"
+         assert not notify("READY=1", {})
+-        assert not notify("READY=1", {"NOTIFY_SOCKET": str(tmp_path / "nobody.sock")})
++        assert not notify("READY=1", {"NOTIFY_SOCKET": str(short_tmp / "nobody.sock")})
+ 
+         async def main() -> None:
+             clock = FakeClock(START)
+diff --git a/tests/unit/gateway/test_control_socket.py b/tests/unit/gateway/test_control_socket.py
+index 13fe42f..9d4e613 100644
+--- a/tests/unit/gateway/test_control_socket.py
++++ b/tests/unit/gateway/test_control_socket.py
+@@ -5,10 +5,8 @@ from __future__ import annotations
+ import asyncio
+ import json
+ import os
+-import shutil
+ import socket
+ import stat
+-import tempfile
+ import threading
+ from collections.abc import Awaitable, Callable, Iterator
+ from pathlib import Path
+@@ -18,16 +16,14 @@ import pytest
+ 
+ from indus.gateway.control_socket import ControlServer, ControlSocketError, supervisor_kind
+ from indus.service import gateway_control as wire
++from tests.short_paths import short_dir
+ 
+ 
+ @pytest.fixture
+ def short_home() -> Iterator[Path]:
+     """A home whose socket path fits (pytest's tmp paths can be too long for sun_path)."""
+-    home = Path(tempfile.mkdtemp(prefix="igw-", dir="/tmp"))
+-    try:
++    with short_dir("igw-") as home:
+         yield home
+-    finally:
+-        shutil.rmtree(home, ignore_errors=True)
+ 
+ 
+ def run[T](coro: Awaitable[T]) -> T:
+diff --git a/tests/unit/plugins/test_hooks.py b/tests/unit/plugins/test_hooks.py
+index 160302b..58c042c 100644
+--- a/tests/unit/plugins/test_hooks.py
++++ b/tests/unit/plugins/test_hooks.py
+@@ -249,6 +249,39 @@ def test_raising_post_tool_call_is_ignored(bus: HookBus) -> None:
+     assert seen == ['probe:ran with {"q": 2}']
+ 
+ 
++@pytest.mark.parametrize("block", [True, False])
++def test_post_tool_call_sees_blocked_calls(bus: HookBus, block: bool) -> None:
++    """W46 RS19: an audit hook sees a call a ``pre_tool_call`` hook blocked, marked blocked."""
++    seen: list[dict[str, Any]] = []
++    if block:
++        bus.register("pre_tool_call", lambda **_: {"action": "block", "message": "audit says no"})
++
++    def audit(**payload: Any) -> None:
++        seen.append(payload)
++
++    bus.register("post_tool_call", audit, owner="audit")
++    ran: list[Mapping[str, Any]] = []
++    result = asyncio.run(
++        dispatch(
++            ToolCall("probe", {"q": 2}, "call_9"),
++            ToolContext(session_id="s1"),
++            registry=recording_registry(ran),
++            hooks=PluginToolHooks(bus),
++        )
++    )
++    assert len(seen) == 1
++    payload = seen[0]
++    assert payload["tool_name"] == "probe" and payload["args"] == {"q": 2}
++    assert payload["tool_call_id"] == "call_9" and payload["session_id"] == "s1"
++    assert payload["blocked"] is block
++    if block:
++        assert ran == [] and result.error_type == "blocked"
++        assert payload["is_error"] is True and payload["error_type"] == "blocked"
++        assert "audit says no" in payload["result"] and payload["duration_ms"] == 0
++    else:
++        assert ran == [{"q": 2}] and not result.is_error
++
++
+ def test_hanging_observer_fails_open(bus: HookBus, fake_clock: FakeClock) -> None:
+     release = threading.Event()
+     bus.register("post_llm_call", lambda **_: release.wait(), owner="slow")
+diff --git a/tests/unit/release/test_notices.py b/tests/unit/release/test_notices.py
+index 45a5660..b3c69bc 100644
+--- a/tests/unit/release/test_notices.py
++++ b/tests/unit/release/test_notices.py
+@@ -352,3 +352,49 @@ def test_docker_image_and_desktop_package_embed_the_same_file() -> None:
+     assert '{ from: "../../THIRD_PARTY_NOTICES.md", to: "THIRD_PARTY_NOTICES.md" }' in builder
+     ignore = (notices.ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+     assert "THIRD_PARTY_NOTICES.md" not in ignore and "*.md" not in ignore
++
++
++# -- W46 RS7: refresh writes the layout Biome keeps ----------------------------------------------
++
++
++def test_dump_json_keeps_the_committed_data_file_byte_for_byte() -> None:
++    """The committed file passes Biome; a refresh that changes no row must not reformat it."""
++    text = notices.DATA_FILE.read_text(encoding="utf-8")
++    assert notices.dump_json(json.loads(text)) == text
++
++
++def test_dump_json_arrays_fold_to_the_line_width_counting_the_comma() -> None:
++    # ``  "k": `` is 7 columns; ["a…", "b"] adds 9 around the first string, the comma 1 more.
++    fits = 100 - 7 - 9 - 1
++    data = {"k": ["a" * fits, "b"], "z": []}
++    assert notices.dump_json(data) == '{\n  "k": ["' + "a" * fits + '", "b"],\n  "z": []\n}\n'
++    over = {"k": ["a" * (fits + 1), "b"], "z": []}
++    assert notices.dump_json(over) == (
++        '{\n  "k": [\n    "' + "a" * (fits + 1) + '",\n    "b"\n  ],\n  "z": []\n}\n'
++    )
++    last = {"k": ["a" * (fits + 1), "b"]}  # no comma after the last key: the same text fits
++    assert notices.dump_json(last) == '{\n  "k": ["' + "a" * (fits + 1) + '", "b"]\n}\n'
++
++
++def test_dump_json_objects_always_break_and_rows_fold_one_by_one() -> None:
++    data = {"t": {"rows": [["pkg", "1.0", "MIT"], ["x" * 95, "2.0"]], "o": [{"a": 1}], "e": {}}}
++    assert notices.dump_json(data) == (
++        "{\n"
++        '  "t": {\n'
++        '    "rows": [\n'
++        '      ["pkg", "1.0", "MIT"],\n'
++        "      [\n"
++        '        "' + "x" * 95 + '",\n'
++        '        "2.0"\n'
++        "      ]\n"
++        "    ],\n"
++        '    "o": [\n'
++        "      {\n"
++        '        "a": 1\n'
++        "      }\n"
++        "    ],\n"
++        '    "e": {}\n'
++        "  }\n"
++        "}\n"
++    )
++    assert json.loads(notices.dump_json(data)) == data
+diff --git a/tests/unit/tools/builtin/code/test_rpc.py b/tests/unit/tools/builtin/code/test_rpc.py
+index 115342a..bddd5e6 100644
+--- a/tests/unit/tools/builtin/code/test_rpc.py
++++ b/tests/unit/tools/builtin/code/test_rpc.py
+@@ -217,9 +217,11 @@ def test_loopback_tcp_transport(tmp_path: Path) -> None:
+ 
+ 
+ def test_long_socket_path_moves_to_a_short_private_dir(
+-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++    tmp_path: Path, short_tmp: Path, monkeypatch: pytest.MonkeyPatch
+ ) -> None:
+-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # the short dir stays in this test
++    # The product's short dir goes under this test's own short folder (not ``tmp_path``, which a
++    # long ``--basetemp`` makes too long for any socket: W46 RS11).
++    monkeypatch.setattr(tempfile, "tempdir", str(short_tmp))
+     deep = tmp_path / ("d" * 60) / ("e" * 60)
+     deep.mkdir(parents=True)
+     server = SocketRpcServer(deep)
+diff --git a/tests/unit/tools/builtin/code/test_runner.py b/tests/unit/tools/builtin/code/test_runner.py
+index 5c6695e..6f360dd 100644
+--- a/tests/unit/tools/builtin/code/test_runner.py
++++ b/tests/unit/tools/builtin/code/test_runner.py
+@@ -217,7 +217,9 @@ def test_manual_approval_denied_spawns_nothing(tmp_path: Path) -> None:
+     registry, seen = fake_tools(tmp_path)
+     broker = FakeBroker(_clock(), default=Reply(choice="deny", reason="not now"))
+     marker = tmp_path / "ran.txt"
+-    code = f"open({str(marker)!r}, 'w').write('ran')\n"
++    # The long path sits on a line of its own: the approval text may wrap or shorten a long line
++    # (any base temp folder), so the check reads the short line that does the work (W46 RS11).
++    code = f"target = {str(marker)!r}\nopen(target, 'w').write('ran')\n"
+     result = run(
+         call(
+             ExecuteCodeTool(),
+@@ -234,7 +236,8 @@ def test_manual_approval_denied_spawns_nothing(tmp_path: Path) -> None:
+     assert not marker.exists() and staged(tmp_path) == [] and seen == []
+     (request,) = broker.requests
+     assert request.kind == "approval"
+-    assert "INDUS_SCRIPT" in request.command and str(marker) in request.command
++    assert "INDUS_SCRIPT" in request.command
++    assert "\nopen(target, 'w').write('ran')\n" in request.command
+     assert [c.value for c in request.choices] == ["once", "session", "deny"]
+ 
+ 
+diff --git a/tests/unit/tools/test_dispatch.py b/tests/unit/tools/test_dispatch.py
+index 082e96b..1eace8b 100644
+--- a/tests/unit/tools/test_dispatch.py
++++ b/tests/unit/tools/test_dispatch.py
+@@ -390,6 +390,25 @@ def test_before_hook_can_block(reg: ToolRegistry) -> None:
+     assert ran == []
+ 
+ 
++def test_blocked_call_still_reaches_after_but_not_transform(reg: ToolRegistry) -> None:
++    """W46 RS19: an observer sees the blocked call (with its block text); transform never
++    rewrites a block."""
++    hooks = Recorder(block="not allowed here")
++    hooks.replacement = ToolResult.ok("rewritten")
++    reg.register("e", "demo", schema(), returns("ran"))
++    result = run(reg, "e", {"q": 1}, hooks=hooks)
++    assert result.error_type == "blocked" and body(result)["error"] == "not allowed here"
++    assert hooks.events[0] == "before:{'q': 1}"
++    assert len(hooks.events) == 2 and hooks.events[1].startswith("after:")
++    assert "not allowed here" in hooks.events[1]
++
++
++def test_blocked_call_survives_a_raising_after(reg: ToolRegistry) -> None:
++    hooks = Recorder(block="no", raise_in="after")
++    reg.register("e", "demo", schema(), returns("ran"))
++    assert run(reg, "e", hooks=hooks).error_type == "blocked"
++
++
+ def test_non_empty_before_that_raises_blocks(reg: ToolRegistry) -> None:
+     hooks = Recorder(raise_in="before")
+     reg.register("e", "demo", schema(), returns("ran"))
+diff --git a/tooling/checks/tests/test_pins.py b/tooling/checks/tests/test_pins.py
+index e442fa7..fc7232c 100644
+--- a/tooling/checks/tests/test_pins.py
++++ b/tooling/checks/tests/test_pins.py
+@@ -356,6 +356,18 @@ def test_ci_gate_fails_on_anything_but_success(results: list[str], code: int):
+     assert out.returncode == code, out.stdout + out.stderr
+ 
+ 
++def test_ci_shellchecks_the_installer_and_release_scripts_at_a_pinned_version():
++    """W46 RS9: the built installer and the release shell scripts go through shellcheck, at a
++    pinned version on a pinned runner image."""
++    shell = "\n".join(ci_jobs(CI.read_text(encoding="utf-8"))["shell"])
++    assert "runs-on: ubuntu-24.04" in shell
++    pin = re.search(r'SHELLCHECK_VERSION: "(\d+\.\d+\.\d+)"', shell)
++    assert pin is not None
++    assert '[ "$found" != "$SHELLCHECK_VERSION" ]' in shell
++    assert 'shellcheck scripts/install.sh "${release[@]}"' in shell
++    assert "release=(scripts/release/*.sh)" in shell
++
++
+ def test_ci_ts_job_steps_in_order():
+     ts = "\n".join(ci_jobs(CI.read_text(encoding="utf-8"))["ts"])
+     steps = [

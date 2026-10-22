@@ -54,3 +54,23 @@
 - W46-a-1..4 (whole result fenced; sticky per owner; short/error untrusted runs count; lead files still say SEC-4 open —
   integrator updates HANDOFF/LEAD-NOTES/phase table). Residuals: file write then read_file; model-copied text.
 - MERGE NOTE: S45 also edits core/untrusted.py (adds wrap(); _fence_text calls it) and threat-model.md (other rows).
+
+## w46f.patch: RS4 TUI model picker, RS6 lost turn with saved reply, F-5 chat -q approvals (done)
+- 15 files, +473/-16. RS4: protocol ProviderOption.models (codegen regenerated: packages/protocol types.ts + schema.json),
+  tui_bridge/methods_config.py lists the current custom/local provider via model_list.list_models; TUI rowOf reads it.
+  RS6: gateway/daemon/recovery.py discards a routeless lost turn quietly when the transcript proves the reply is saved
+  (RecoveryReport.saved_turns). F-5: cli/attach.py `one_shot_answer` — attached finite `chat -q` denies approvals with the
+  --local wording (approve once under approvals.single_query_mode: approve); clarify/sudo/secret still exit 3.
+- Fail-first tests (tui_bridge listing, integration shared-host routeless lost turn, cli attach). pytest 4018 passed, 1
+  flake: test_room_two_members (flakes on main too: 2/4 with main's files) — integrator triages. TUI vitest 42, tsc ok.
+- W46-f-1..3; follow-up D-16.487 daemon-side single-query flag. Move F-5 row in rehearsal-log to Done at integration.
+
+## w46g.patch: RS19 post_tool_call for blocked calls, RS7 notices JSON layout, RS9 shellcheck job, RS11 short socket dirs (done)
+- 21 files, +355/-27. RS19: tools/dispatch.py run_after on block (no transform), BLOCKED in tools/hooks.py, plugin payload
+  `blocked`. RS7: scripts/release/notices.py dump_json matches Biome (160 width cases byte-identical; committed file
+  unchanged). RS9: ci.yml new `shell` job (apt shellcheck, version must equal 0.9.0; built install.sh + scripts/release/*.sh)
+  and `gate` needs it — first CI run unverified. RS11: tests/short_paths.py + `short_tmp` fixture; watchdogs, rpc, control
+  socket, attach verbs, runner line-wrap test fixed.
+- Fail-first tests; pytest 7813 passed, 1 load flake (ssh deadline contract; passes alone). gen_reference/notices fresh.
+- W46-g-1..3. MERGE NOTE: ci.yml also edited by w44 (windows-local job); the committed notices_data.json layout is
+  unchanged by RS7, so w46b-notices.patch should still apply.
