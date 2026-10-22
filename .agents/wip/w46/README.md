@@ -29,3 +29,16 @@
 - W46-d-1..4. MERGE NOTE: [e] also edits apps/desktop (Shell.tsx, main.tsx; d edits PaneShell.tsx, customPages.tsx,
   channels.ts/schemas.ts) — expect nearby-line conflicts only.
 - Slip: one `npx vitest` may have made an npm version check over the network.
+
+## w46b.patch (+ w46b-notices.patch): RM8 re-lock (done) — LOCKFILES INCLUDED (uv.lock, pnpm-lock.yaml)
+- aiohttp 3.14.3 → 3.14.4 (exclude-newer moved to 2026-10-08 = lock date 2026-10-22 minus 14 days; pins_meta.json
+  lock_date 2026-10-22); pynacl 1.5.0 → 1.6.2 via `[tool.uv] override-dependencies` (discord.py 2.7.1 caps <1.6; W46-b-2);
+  vite 8.3.2 → 8.3.3 (root package.json + pnpm-lock). No other package moved. Licences Apache-2.0/MIT/ISC (allowed).
+- deps_audit snapshot refreshed through the proxy: 877 packages, 0 failing; 15 advisories gone; 4 aiohttp/vite allow entries
+  removed. certifi untouched (owner, RM7).
+- APPLY w46b-notices.patch TOO (scripts/release/notices_data.json + THIRD_PARTY_NOTICES.md version keys), or notices --check
+  and 4 test_notices tests fail. If [g]'s RS7 changes the notices_data.json layout, re-key aiohttp/pynacl by hand.
+- W46-b-1: the policy check on a PR reads pins_meta.json from the base branch — we land on main directly, fine.
+- Checks: ruff, lint-imports, tooling.checks ok (deps_audit warn: pypdf, katex, sprintf-js); uv lock --check, pnpm
+  --frozen-lockfile ok; slack/discord adapter tests 215 passed; nacl AEAD round trip; apps/web vite build + vitest 281;
+  tooling/checks + packaging 562; contract + security 1964.
