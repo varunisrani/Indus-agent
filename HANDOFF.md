@@ -80,6 +80,9 @@ Turn: AGENT_1 ACTIVE (window resets 07:00 UTC). Main `4945b48` = P25-01..04 secu
 18198/0, perf 18, vitest 2883, Electron E2E 41, web Playwright 14; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes
 (integrator)"). In flight: wave-44 integrator in scratchpad verify24 (brief `.agents/wip/w44/integrator-brief.md`; R1 P25-20/21,
 R2 P25-22/23, R3 P25-24 patches + README in `.agents/wip/w44/`; fixes F-1 installer scripts not attached to releases).
+Also in flight: wave-45 builders S45 (SEC-14/15/18, wt-w45s, D-16.970..979) and P45 (P24 partial items: message_agent in
+bot-chat, suggestion offers on connect, LspUpkeep.release + `indus lsp restart`, wt-w45p, D-16.980..989); brief
+`.agents/wip/w45/brief.md`.
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 19/24 landed (01–19).
 1. **Land wave 44** when its integrator is green (P25-20..24). If it stopped mid-way, its staged diff is the work: save it.
 2. **Open security findings** (docs/internals/threat-model.md): SEC-4 needs the owner's design call (fencing what
