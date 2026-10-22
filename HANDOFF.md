@@ -83,7 +83,11 @@ Agent-doable follow-ups left: RS3 room views (desktop GroupRoom.tsx, TUI, web) o
 serves complete.path / commands.catalog / config.get; notice when a chat's folder is gone; dashboard PTY child drops
 COLORFGBG/TERM_PROGRAM; desktop localEcho admission-id binding; Windows real runs (RL26, install.ps1); JS gate rerun on
 re-locked node_modules (needs pnpm registry metadata); oneshot_first_token budget on slow boxes; katex / sprintf-js advisories.
-UI screenshots: scratchpad/shots (pass A sent 05:05); pass B on the final tree in progress.
+UI screenshots: final set (34 PNGs, main daea8cf) sent to the owner 11:10 UTC; every wave-47 UI fix confirmed working.
+Minor UI follow-ups seen in that pass: TUI sessions picker rows show only the id in default mode (--local showed title,
+model, source); desktop About › Version log shows a ResizeObserver loop ERROR line and long run paths; the desktop
+transcript does not scroll an approval card into view when it opens below an expanded tool row; sidebar/web rail titles
+are width-clipped (expected). The Licences page is empty outside a packaged app (expected).
 Done: P00–P22 complete; P23 21/23 (15/16 signing open); P24 45/47 built and wired (21/22 post-1.0); P25 19/24 landed (01–19).
 1. **Land wave 44** when its integrator is green (P25-20..24). If it stopped mid-way, its staged diff is the work: save it.
 2. **Open security findings** (docs/internals/threat-model.md): SEC-4 needs the owner's design call (fencing what
