@@ -45,7 +45,7 @@ acceptance, done when. Paths and conventions come from
 | P22 | [P22-research-tooling.md](P22-research-tooling.md) | 1 | 15 | 36 | 6 | 4 | 15 | — | done (`6f04798`) |
 | P23 | [P23-packaging-release.md](P23-packaging-release.md) | 2 | 23 | 78 | 8 | 4 | 24 | — | in progress (21/23 in this commit; P23-15/16 desktop signing open; Docker / Nix / installer-E2E lanes not yet run in CI) |
 | P24 | [P24-multiplex-extras.md](P24-multiplex-extras.md) | 3.5 | 47 | 218 | 27 | 11 | 47 | M8 | in progress (45/47 built `5c0cff8`, wired in wave 42 `226a5ae`; Done-when holds except desktop SSH to a second gateway (unit tests only) and the partial items in D-16.878; 21/22 post-1.0) |
-| P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | built (24/24: 01–04 `4945b48`, 05–19 `08bcf51`, 20–24 `b9a43a1`); waves 45+46 `44c9a4f` and 47 `83104de` closed every agent-doable must/should row found so far (27 done); release blocked on owner decisions (§0, certifi RM7, signing RM14, licences, D-16.998/999 acceptances, people-strict lanes) and owner runs (real gates, canary, 3-OS smoke) |
+| P25 | [P25-hardening-parity-release.md](P25-hardening-parity-release.md) | 2 | 24 | 73 | 11 | 4 | 24 | M9 / **v1.0** | built (24/24: 01–04 `4945b48`, 05–19 `08bcf51`, 20–24 `b9a43a1`); follow-up waves 45–48 (`44c9a4f`, `83104de`, `bd1eaf9`) closed every agent-doable must/should row found so far (32 done); release blocked on owner decisions (§0, certifi RM7, signing RM14, licences, D-16.998/999, room views D-16.1071, people-strict lanes) and owner runs (real gates, canary, 3-OS smoke) |
 
 ## How a phase runs
 

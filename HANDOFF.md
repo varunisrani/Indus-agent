@@ -76,9 +76,14 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Wave 48 IN FLIGHT (12:35 UTC; owner: "make the small things done"): 6 builders in scratchpad wt-w48{a..f}, brief
-`.agents/wip/w48/brief.md` — room views on groups.watch + approval card; TUI default-mode reads; desktop polish; PTY env +
-Windows bits; one-shot startup speed; katex/sprintf-js advisories + JS gate on in-line node_modules.
+Turn: AGENT_1 ACTIVE (window resets 17:30 UTC). Main `bd1eaf9` = wave 48 landed (LEAD-NOTES "Wave 48 landing notes
+(integrator)"): desktop room view on groups.watch + approval card, attached TUI reads/slash/header events, desktop polish,
+PTY env, Windows terminal schema + console, katex/sprintf-js cleared, startup ~400 ms faster. Release checklist: 32 done.
+Left for agents (small): attached config.set (needed by /yolo /reasoning /fast /verbose /busy), daemon shell.exec for quick
+exec, /status queued count; Windows plan() background mapping, starter-test race, real windows-local run; config-defaults
+and skills front-matter twins (RM25, judge on a quiet runner); pypdf re-lock on/after 2026-10-27 (RS37); certifi by 2026-11-09
+(RM7, owner). Owner: TUI/web room views (D-16.1071) and the list below. /tmp leftovers from gates (upd-*, scoped_dir*,
+pytest-of-root) need the owner's OK to delete.
 Turn: AGENT_1 ACTIVE (window resets 12:00 UTC). Main `83104de` = wave 47 landed on top of waves 45+46 (`44c9a4f`)
 (LEAD-NOTES "Wave 47 landing notes (integrator)"). All 648 planned tasks except P23-15/16 (owner signing) and P24-21/22
 (post-1.0) are built; release checklist: 27 done, must 21 / should 14 open — almost all owner decisions or owner runs.
@@ -108,7 +113,7 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree AND its $S dir; one
 integrator per group runs the full gate (pytest --basetemp short); the lead commits, rebases, fast-forwards, pushes, updates the
 phase table and this file.
-- Last landings: wave 47 (`83104de`; D-16.1030..1059; LEAD-NOTES "Wave 47 landing notes (integrator)"), waves 45+46 (`44c9a4f`; D-16.970..1025; LEAD-NOTES "Waves 45 + 46 landing notes (integrator)"), P25-20..24 release prep wave 44 (`b9a43a1`; D-16.920..964; LEAD-NOTES "P25 wave 44 landing notes (integrator)"), P25-01..04 security wave 43 (`4945b48`; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes (integrator)"), P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+- Last landings: wave 48 (`bd1eaf9`; D-16.1070..1102; LEAD-NOTES "Wave 48 landing notes (integrator)"), wave 47 (`83104de`; D-16.1030..1059; LEAD-NOTES "Wave 47 landing notes (integrator)"), waves 45+46 (`44c9a4f`; D-16.970..1025; LEAD-NOTES "Waves 45 + 46 landing notes (integrator)"), P25-20..24 release prep wave 44 (`b9a43a1`; D-16.920..964; LEAD-NOTES "P25 wave 44 landing notes (integrator)"), P25-01..04 security wave 43 (`4945b48`; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes (integrator)"), P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
   P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
