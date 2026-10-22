@@ -1,0 +1,954 @@
+diff --git a/docs/internals/threat-model.md b/docs/internals/threat-model.md
+index 14de715..b644c4d 100644
+--- a/docs/internals/threat-model.md
++++ b/docs/internals/threat-model.md
+@@ -56,7 +56,7 @@ shapes this review found out of `src/` and `scripts/` (row B-STATIC-1).
+ |---|---|---|---|---|
+ | B-APPROVE-1 | T-MODEL → A-EXEC: a command the model writes | floors before every bypass: hardline set (incl. unparsable commands), runtime-delete, agent `sudo -S`, `approvals.deny` globs; yolo, `mode: off`, allowlists and prepared decisions come after (R02.4) | `tests/unit/safety/approvals/test_policy.py`, `tests/unit/safety/approvals/test_floors.py`, `tests/security/test_trust_boundaries.py::test_approve_floor_beats_every_bypass` | held |
+ | B-APPROVE-2 | a person's silence | a timeout blocks with outcome `timeout`, never counted as a denial (R02.5) | `tests/unit/safety/approvals/test_human.py`, `tests/security/test_trust_boundaries.py::test_approve_timeout_is_not_a_denial` | held |
+-| B-APPROVE-3 | unattended runs (cron, single query, webhook, unattended tickets) | nobody can answer → the context's policy, `deny` by default, without asking (R02.27) | `tests/unit/safety/approvals/test_policy.py`, `tests/security/test_trust_boundaries.py::test_approve_unattended_denies_at_once` | held |
++| B-APPROVE-3 | unattended runs (cron, single query, webhook, unattended tickets) | nobody can answer → the context's policy, `deny` by default, without asking (R02.27) | `tests/unit/safety/approvals/test_policy.py`, `tests/security/test_trust_boundaries.py::test_approve_unattended_denies_at_once`, `tests/unit/cli/test_attach_remote.py::test_an_attached_chat_q_decides_approvals_as_local_does` (a daemon turn sent `single_query`, D-16.487) | held |
+ | B-APPROVE-4 | T-MODEL → non-shell tools with side effects (untrusted MCP write tools, plugin `approve`, computer use, code execution) | one tool gate, same order as commands, fails closed | `tests/unit/safety/approvals/test_tool_gate.py`, `tests/unit/mcp/test_trust.py` | held |
+ | B-FILES-1 | T-MODEL → A-KEYS through file reads | Indus secret stores, control files and secret env files refused on the path as written and the resolved path; `..` and symlinks resolved first | `tests/unit/safety/test_path_guards.py`, `tests/unit/tools/builtin/test_read_file.py`, `tests/security/test_trust_boundaries.py::test_files_secret_stores_unreadable_even_through_a_link` | held |
+ | B-FILES-2 | T-MODEL → A-HOST through file writes | system paths, credential folders in every reachable home, Indus control files refused; `~/.ssh/config` needs approval | `tests/unit/tools/builtin/test_write_file.py`, `tests/security/test_trust_boundaries.py::test_files_credential_folders_unwritable_even_through_a_link` | held |
+diff --git a/docs/notes/P17/cli-attach.md b/docs/notes/P17/cli-attach.md
+index a1ddab8..8bae0c9 100644
+--- a/docs/notes/P17/cli-attach.md
++++ b/docs/notes/P17/cli-attach.md
+@@ -189,3 +189,55 @@ Read: none from the reference (rehearsal finding F-5, `.agents/wip/w44/w44-r2.pa
+   answer is safe meanwhile (it only ever denies, or approves when the person configured approve).
+ - F-5 row in the rehearsal log can move to Done with this (the smoke accepted either outcome; the
+   integrator owns `rehearsal-log.md`).
++
++## Wave 47 (D-16.487: the daemon runs a finite attached turn `single_query`)
++
++Status: done (builder g, 2026-10-22). Supersedes wave 46's client-side answer (D-16.1010).
++
++Read: none from the reference (follow-up named by W46-f-3; our own `--local` route,
++`cli/oneshot.py`, `cli/chat.py`, `safety/approvals/policy.py`).
++
++- Before: the daemon ran every turn with the run context `interactive`, so an attached finite
++  `chat -q` saw an approval request and answered it itself (`one_shot_answer`, W46 F-5): only
++  approvals followed `--local`; clarify, sudo and secrets were still offered to the viewers and
++  detached the run with exit 3, and the allowlist/smart steps ran as for a person.
++- Now: `prompt.submit` carries `single_query` (protocol, codegen and the reference page
++  regenerated). `chat -q` and `-z` send it (the client journal keeps it with the entry, so a retry
++  is exact). The daemon keeps it in the input's ledger payload; when the worker starts that turn it
++  sets the session agent's run context to `single_query` and its broker's `asks_nobody` (no kind
++  answerable, `RequestUnsupported` at once), both put back when the turn ends, and re-applied to
++  the child id if a compaction moves the session mid-turn. So the approval pipeline itself takes the
++  `--local` route (floors, prepared decisions, auto-approve, allowlist, then
++  `approvals.single_query_mode`, deny by default with the same wording), sudo runs headless and
++  clarify answers "undelivered", exactly as an in-process one-shot run with no answerable kinds.
++  `-z` also sends `unattended`, so its auto-approve still decides approvals (step 4 comes before
++  the one-shot step).
++- The client never answers a server request now: `one_shot_answer`, `ONE_SHOT_DENY` and the
++  approval-answering wait are gone. A request that still reaches a finite run (a daemon that offers
++  one anyway) detaches with exit 3 and the resume hint, as before W46.
++- Tests (fail-first: each fails on the base snapshot `9a155bb`):
++  `tests/unit/cli/test_attach_remote.py::test_an_attached_chat_q_decides_approvals_as_local_does`
++  (`deny` / `approve`: the real CLI against the daemon's real WebSocket, a tool that asks the real
++  approval pipeline; on the base the decision came from step `human` — the client's answer — and
++  now from step `unattended` with `--local`'s wording; this keeps the intent of W46's two tests),
++  `tests/unit/service/test_daemon_host.py::test_a_single_query_input_runs_its_turn_as_single_query_and_asks_nobody`,
++  `tests/contract/gateway/test_ws_endpoint.py::test_submit_carries_single_query_into_the_admission`,
++  `tests/unit/service/remote/test_host.py::test_the_journal_is_private_and_retires_entries`
++  (the flag is kept), `tests/unit/cli/test_attach.py::test_a_finite_chat_runs_its_turn_single_query_in_the_daemon`,
++  `::test_an_approval_offered_to_a_finite_chat_is_not_answered_here`.
++
++### Decisions for the lead
++- W47-g-1: `-z` sends `single_query` as well as `unattended`: its `--local` run is `single_query`
++  with auto-approve, so attached it now also asks nobody (a clarify answers "undelivered" instead
++  of detaching with exit 3). D-16.554's "any other question still detaches a finite attached run"
++  then holds only for a daemon that still offers one.
++- W47-g-2: "asks nobody" is the whole broker for that turn (`asks_nobody`), not a filter on the
++  viewers: other surfaces watching the session (TUI, desktop) are not asked either while the
++  one-shot turn runs, as `--local` passes no answerable kinds. Their next turn is asked as usual.
++- W47-g-3: D-16.1010 is superseded (the client-side answer is removed). The new key is refused by
++  an older daemon (`ProtocolModel` refuses unknown keys): a version-skewed daemon fails the submit
++  rather than silently running the turn interactive (fail closed).
++- Doc rows the integrator owns that still describe the W46 answer: D-16.1010 / D-16.1025 and
++  D-16.554's wording (`docs/plan/16-what-we-change.md`), RS26 in
++  `docs/internals/release-checklist.md`, the `cli.q.denies` line in
++  `docs/notes/P17/dual-host-matrix.md`, LEAD-NOTES' "attached `-q` deny (D-16.487)" follow-up.
+diff --git a/docs/user/reference/protocol.md b/docs/user/reference/protocol.md
+index 1d84422..2192e57 100644
+--- a/docs/user/reference/protocol.md
++++ b/docs/user/reference/protocol.md
+@@ -160,6 +160,7 @@ Parameters:
+ | `when_busy` | BusyAction | no | While a turn runs: refuse (``SESSION_BUSY``), queue it, steer or redirect the turn. |
+ | `request_id` | str or null | no | The client's id for this input (daemon): sending it again returns the first admission instead of running the text twice. |
+ | `unattended` | bool | no | A finite run nobody watches (``indus -z``; daemon): this input's turn auto-approves risky commands as the in-process run does (the hard floors still refuse). In-process hosts take the run's approval policy from its launch and ignore it. |
++| `single_query` | bool | no | A finite run (an attached ``indus chat -q`` or ``indus -z``; daemon): this input's turn runs one-shot, as ``--local`` runs it: approvals follow ``approvals.single_query_mode`` (or ``unattended``'s auto-approve) and no question is asked of anyone. In-process hosts take the run context from the run's launch and ignore it. |
+ 
+ Result:
+ 
+diff --git a/packages/protocol/src/generated/schema.json b/packages/protocol/src/generated/schema.json
+index 9576c1e..c869986 100644
+--- a/packages/protocol/src/generated/schema.json
++++ b/packages/protocol/src/generated/schema.json
+@@ -2703,6 +2703,11 @@
+           "$ref": "#/$defs/SessionId",
+           "description": "The session to run the turn in."
+         },
++        "single_query": {
++          "default": false,
++          "description": "A finite run (an attached ``indus chat -q`` or ``indus -z``; daemon): this input's turn\nruns one-shot, as ``--local`` runs it: approvals follow ``approvals.single_query_mode`` (or\n``unattended``'s auto-approve) and no question is asked of anyone. In-process hosts take the\nrun context from the run's launch and ignore it.",
++          "type": "boolean"
++        },
+         "text": {"$ref": "#/$defs/MessageText", "description": "The user's message."},
+         "unattended": {
+           "default": false,
+diff --git a/packages/protocol/src/generated/types.ts b/packages/protocol/src/generated/types.ts
+index 81706b4..0cf30d0 100644
+--- a/packages/protocol/src/generated/types.ts
++++ b/packages/protocol/src/generated/types.ts
+@@ -1461,6 +1461,13 @@ export interface PromptSubmitParams {
+    * run's approval policy from its launch and ignore it.
+    */
+   unattended?: boolean;
++  /**
++   * A finite run (an attached `indus chat -q` or `indus -z`; daemon): this input's turn
++   * runs one-shot, as `--local` runs it: approvals follow `approvals.single_query_mode` (or
++   * `unattended`'s auto-approve) and no question is asked of anyone. In-process hosts take the
++   * run context from the run's launch and ignore it.
++   */
++  single_query?: boolean;
+ }
+ 
+ /** The ticket for the started turn. */
+diff --git a/src/indus/cli/attach.py b/src/indus/cli/attach.py
+index 1cae986..2db3694 100644
+--- a/src/indus/cli/attach.py
++++ b/src/indus/cli/attach.py
+@@ -22,11 +22,11 @@ Attach mode rules:
+   query that ends up queued behind one, exits **3** and nothing is resent. A transport lost while
+   our own turn ran is "outcome unknown": never resubmitted (exit 1 for ``chat -q``, 2 for ``-z``).
+   Ctrl-C interrupts the turn by its generation and waits up to ``SETTLE_S`` (10 s) for it to
+-  settle, then exits 130. A finite ``chat -q`` (``--oneshot``, ``-Q`` or no terminal) answers an
+-  approval request the way ``--local`` decides one in a one-shot run: refused, with the same
+-  reason, unless ``approvals.single_query_mode`` is ``approve`` (then approved once); the turn goes
+-  on and ends normally (W46 F-5). Any other question (clarify, sudo, a secret) still detaches
+-  with exit 3 and the resume hint.
++  settle, then exits 130. A finite run's input is sent ``single_query`` (D-16.487): the daemon
++  runs that turn as ``--local`` runs a one-shot (approvals follow ``approvals.single_query_mode``,
++  refused with the same reason unless it is ``approve``; clarify, sudo and secrets are asked of
++  nobody), so the turn goes on and ends normally. This process never answers a request itself: one
++  that still reaches it (a daemon that ignores the flag) detaches with exit 3 and the resume hint.
+ - **Interactive**: the classic REPL and its one renderer (``repl.app.run_repl``) over
+   ``AttachedHost``. Slash subset: ``/help``, ``/quit`` (``/exit``, ``/detach``), ``/stop``,
+   ``/discard <admission_id>`` (resolves a lost turn; its generation is sent and checked). Every
+@@ -71,7 +71,6 @@ from indus.protocol.methods import (
+     SessionSteerResult,
+     SubmitStatus,
+ )
+-from indus.protocol.server_requests import ApprovalRequest
+ 
+ if TYPE_CHECKING:
+     from indus.cli.oneshot import RunOutcome
+@@ -82,7 +81,6 @@ if TYPE_CHECKING:
+ 
+ __all__ = [
+     "BLOCKED_EXIT",
+-    "ONE_SHOT_DENY",
+     "REFUSED_FLAGS",
+     "SETTLE_S",
+     "AttachBackend",
+@@ -92,7 +90,6 @@ __all__ = [
+     "attached_commands",
+     "backend_factory",
+     "failure_reason",
+-    "one_shot_answer",
+     "refused_flags",
+     "run_attached_chat",
+     "run_attached_oneshot",
+@@ -149,7 +146,9 @@ class AttachedService(Protocol):
+         self, params: SessionCreateParams, *, source: str, policy: Mapping[str, Any]
+     ) -> Any: ...
+     def resume(self, session_id: str, *, policy: Mapping[str, Any] | None) -> Any: ...
+-    def submit(self, session_id: str, text: str, *, unattended: bool = False) -> Any: ...
++    def submit(
++        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
++    ) -> Any: ...
+     def wait(self, session_id: str, turn_id: str) -> Any: ...
+     def interrupt(self, session_id: str, generation: int | None, *, hard: bool = False) -> Any: ...
+     def steer(self, session_id: str, text: str) -> Any: ...
+@@ -674,61 +673,6 @@ class _Finite:
+     failure: str | None = None
+ 
+ 
+-ONE_SHOT_DENY: Final = (
+-    "BLOCKED: a one-shot run has nobody present to approve it. Nothing ran. Find another way "
+-    "that avoids this command; to allow such commands here the user sets "
+-    "approvals.single_query_mode: approve."
+-)
+-"""The reason a finite attached ``chat -q`` gives the model with its refusal (as ``--local``)."""
+-
+-
+-def one_shot_answer(scope: Scope) -> AnswerModel:
+-    """How a finite ``chat -q`` answers an approval nobody can see: ``--local``'s single-query
+-    rule (``approvals.single_query_mode``, deny unless set to approve)."""
+-    from indus.foundation.config import loader
+-    from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice
+-    from indus.safety.approvals.decision import setting
+-
+-    read = scope if scope.config is not None else scope.with_config(loader.load(scope))
+-    if str(setting(read, "approvals.single_query_mode")).strip().lower() == "approve":
+-        return ApprovalAnswer(choice=ApprovalChoice.ONCE)
+-    return ApprovalAnswer(choice=ApprovalChoice.DENY, reason=ONE_SHOT_DENY)
+-
+-
+-def _answer_unseen(
+-    host: AttachedHost, sid: str, requests: queue.SimpleQueue[Any], approve: AnswerModel | None
+-) -> bool:
+-    """Answer the approvals waiting in ``requests`` with ``approve``; False when one of them is
+-    a question this run cannot answer (or no rule was given)."""
+-    while True:
+-        try:
+-            request = requests.get_nowait()
+-        except queue.Empty:
+-            return True
+-        if approve is None or not isinstance(request, ApprovalRequest):
+-            return False
+-        host.answer_server_request(sid, request.request_id, approve)
+-
+-
+-def _wait_answering(
+-    host: AttachedHost,
+-    sid: str,
+-    waiting: concurrent.futures.Future[Any],
+-    asked: threading.Event,
+-    requests: queue.SimpleQueue[Any],
+-    approve: AnswerModel | None,
+-) -> Any:
+-    """The turn's result, answering approvals by ``approve`` meanwhile; ``_NeedsInput`` when a
+-    request comes that this run cannot answer."""
+-    while True:
+-        try:
+-            return _result(waiting, None, asked)
+-        except _NeedsInput:
+-            asked.clear()  # before draining: a request offered meanwhile sets it again
+-            if not _answer_unseen(host, sid, requests, approve):
+-                raise
+-
+-
+ def _run_finite(
+     host: AttachedHost,
+     plan: _Plan,
+@@ -736,7 +680,6 @@ def _run_finite(
+     *,
+     source: str,
+     unattended: bool,
+-    approve: AnswerModel | None = None,
+ ) -> _Finite:
+     from indus.cli.oneshot import RunOutcome
+ 
+@@ -748,15 +691,10 @@ def _run_finite(
+         run.blocked = True
+         return run
+     asked = threading.Event()
+-    requests: queue.SimpleQueue[Any] = queue.SimpleQueue()
+-
+-    def offered(request: Any) -> None:
+-        requests.put(request)
+-        asked.set()
+-
+-    host.invoke("on_request", sid, offered)
++    host.invoke("on_request", sid, lambda _request: asked.set())
+     try:
+-        ticket = host.invoke("submit", sid, text, unattended=unattended)
++        # A finite run's turn runs one-shot in the daemon (D-16.487), as ``--local`` runs it.
++        ticket = host.invoke("submit", sid, text, unattended=unattended, single_query=True)
+     except Exception as exc:
+         if failure_reason(exc) != "outcome_unknown":
+             raise
+@@ -767,7 +705,7 @@ def _run_finite(
+     outcome.started = True
+     waiting = host.future("wait", sid, ticket.turn_id)
+     try:
+-        result = _wait_answering(host, sid, waiting, asked, requests, approve)
++        result = _result(waiting, None, asked)
+     except _NeedsInput:
+         waiting.cancel()
+         run.needs_input = True
+@@ -814,7 +752,6 @@ def _finite_session(
+     unattended: bool,
+     prefix: str,
+     err: Callable[[str], None],
+-    approve: AnswerModel | None = None,
+ ) -> _Finite | int:
+     backend = backend_factory()
+     try:
+@@ -823,7 +760,7 @@ def _finite_session(
+     except AttachUnavailable as exc:
+         return _unreachable(prefix, exc, err)
+     try:
+-        return _run_finite(host, plan, text, source=source, unattended=unattended, approve=approve)
++        return _run_finite(host, plan, text, source=source, unattended=unattended)
+     except ProtocolError as exc:
+         err(f"{prefix}: {exc.message}")
+         return 1
+@@ -919,7 +856,6 @@ def _finite_chat(
+         unattended=False,
+         prefix="indus chat",
+         err=err,
+-        approve=one_shot_answer(state.scope),
+     )
+     if isinstance(run, int):
+         return run
+diff --git a/src/indus/cli/attach_remote.py b/src/indus/cli/attach_remote.py
+index 1720da9..281f5f7 100644
+--- a/src/indus/cli/attach_remote.py
++++ b/src/indus/cli/attach_remote.py
+@@ -203,14 +203,17 @@ class RemoteAttached:
+         return result
+ 
+     async def submit(
+-        self, session_id: str, text: str, *, unattended: bool = False
++        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
+     ) -> PromptSubmitResult:
+         from indus.service.remote.host import OutcomeUnknown
+ 
+         # ``unattended`` (``-z``): the daemon auto-approves this input's turn, as the in-process
+-        # run does; any other question still detaches the finite run (exit 3).
++        # run does. ``single_query`` (``chat -q``, ``-z``): the daemon runs the turn one-shot, so
++        # approvals follow ``approvals.single_query_mode`` and nobody is asked (D-16.487).
+         try:
+-            return await self.service.submit(session_id, text, unattended=unattended)
++            return await self.service.submit(
++                session_id, text, unattended=unattended, single_query=single_query
++            )
+         except OutcomeUnknown as lost:
+             raise RemoteRefusal("outcome_unknown", lost.args[0] if lost.args else "") from None
+ 
+diff --git a/src/indus/gateway/ws/methods.py b/src/indus/gateway/ws/methods.py
+index bd70acb..f73fafe 100644
+--- a/src/indus/gateway/ws/methods.py
++++ b/src/indus/gateway/ws/methods.py
+@@ -11,7 +11,8 @@ the submitting surface decides what happens while a turn runs (TUI queues, other
+ are refused — a steer names its generation through ``session.steer``. ``turn_id`` is the
+ admission id. A ``request_id`` from the client is the admission request id (under one principal
+ per surface), so sending the same input again returns its first admission. ``unattended`` (a
+-finite ``-z`` run) makes the input's turn auto-approve (``DaemonSessionHost``). An input that
++finite ``-z`` run) makes the input's turn auto-approve and ``single_query`` (a finite ``chat -q`` or
++``-z``) runs it one-shot (``DaemonSessionHost``). An input that
+ would start at once (idle session, nothing queued) is answered once the worker has claimed it
+ (at most ``CLAIM_WAIT_S``), so ``generation`` names its turn; an input still unclaimed after that
+ is answered ``queued`` with the running turn's generation, or none when no turn runs.
+@@ -300,6 +301,7 @@ async def submit(conn: WsConnection, params: PromptSubmitParams) -> PromptSubmit
+             surface=conn.subs.surface,
+             busy=busy,
+             unattended=params.unattended,
++            single_query=params.single_query,
+         )
+     except LedgerRefusal as refusal:
+         raise ProtocolError(
+diff --git a/src/indus/protocol/methods.py b/src/indus/protocol/methods.py
+index 4d4457d..755466e 100644
+--- a/src/indus/protocol/methods.py
++++ b/src/indus/protocol/methods.py
+@@ -139,6 +139,11 @@ class PromptSubmitParams(ProtocolModel):
+     """A finite run nobody watches (``indus -z``; daemon): this input's turn auto-approves risky
+     commands as the in-process run does (the hard floors still refuse). In-process hosts take the
+     run's approval policy from its launch and ignore it."""
++    single_query: bool = False
++    """A finite run (an attached ``indus chat -q`` or ``indus -z``; daemon): this input's turn
++    runs one-shot, as ``--local`` runs it: approvals follow ``approvals.single_query_mode`` (or
++    ``unattended``'s auto-approve) and no question is asked of anyone. In-process hosts take the
++    run context from the run's launch and ignore it."""
+ 
+ 
+ class PromptSubmitResult(ProtocolModel):
+diff --git a/src/indus/service/broker.py b/src/indus/service/broker.py
+index 18aa93b..aa4ac54 100644
+--- a/src/indus/service/broker.py
++++ b/src/indus/service/broker.py
+@@ -125,6 +125,9 @@ class ServerRequestBroker:
+         self._new_id = new_id
+         self._answerable: frozenset[str] = frozenset()
+         self.set_answerable_kinds(answerable_kinds)
++        self.asks_nobody = False
++        """While true no kind is answerable (``RequestUnsupported`` at once): a one-shot turn of
++        the daemon, which asks nobody as the in-process one-shot run does."""
+         self._open: dict[str, _Open] = {}
+         self._closed = False
+         self._wait_total = 0.0
+@@ -137,7 +140,10 @@ class ServerRequestBroker:
+ 
+     @property
+     def answerable_kinds(self) -> frozenset[str]:
+-        """Kinds that may be asked now: the attached viewers' kinds when a book is used."""
++        """Kinds that may be asked now: the attached viewers' kinds when a book is used, none
++        while ``asks_nobody`` is set."""
++        if self.asks_nobody:
++            return frozenset()
+         if self._book is not None:
+             return self._book.answerable_kinds()
+         return self._answerable
+diff --git a/src/indus/service/daemon_host.py b/src/indus/service/daemon_host.py
+index 3f4b8fd..f1b3be7 100644
+--- a/src/indus/service/daemon_host.py
++++ b/src/indus/service/daemon_host.py
+@@ -21,7 +21,10 @@ the same call shapes with the daemon's rules:
+   returns its receipt; every move of an input after that (queued, claimed, settled, lost) is
+   appended to the session's events as ``admission.state``. An input submitted ``unattended`` (a
+   finite ``-z`` run) runs its turn with the session's auto-approve switched on for that turn only
+-  (the hard floors still refuse), as the in-process ``-z`` run approves for its run. When a turn
++  (the hard floors still refuse), as the in-process ``-z`` run approves for its run. An input
++  submitted ``single_query`` (a finite ``chat -q`` or ``-z``) runs its turn with the run context
++  ``single_query`` and asks nobody (the session's broker answers no kind), for that turn only, as
++  the in-process one-shot run does (D-16.487). When a turn
+   runs and the caller names no busy mode, the submitting surface decides (R05.18): the TUI
+   queues, every other surface interrupts the running turn — after the new input is admitted, so
+   it is never lost. Turns the service would start on its own (host
+@@ -168,6 +171,8 @@ _PERSON_STOPS: Final = frozenset({CANCELLED, INTERRUPTED})
+ ADMISSION_EVENT: Final = "admission.state"
+ UNATTENDED: Final = "unattended"
+ """Payload flag of an input from a finite unattended run (``-z``): auto-approve for its turn."""
++SINGLE_QUERY: Final = "single_query"
++"""Payload flag of an input from a finite run (``chat -q``, ``-z``): its turn runs one-shot."""
+ 
+ 
+ async def _io_pool[T](fn: Callable[[], T]) -> T:
+@@ -258,6 +263,8 @@ class DaemonSessionHost:
+         self._done: dict[str, tuple[str, str]] = {}
+         self._auto: dict[str, set[str]] = {}
+         """Session ids whose auto-approve this host switched on for an unattended turn, by key."""
++        self._one_shot: dict[str, str | None] = {}
++        """Keys whose running turn is one-shot, with the run context to put back after it."""
+         self._closed = False
+         self.mutations = SessionMutations(
+             service, store, running=self._running_generation, key_of=self._any_key
+@@ -511,10 +518,12 @@ class DaemonSessionHost:
+         surface: str | None = None,
+         busy: BusyMode | None = None,
+         unattended: bool = False,
++        single_query: bool = False,
+     ) -> Receipt:
+         """Admit ``text`` into the session's queue; the receipt says where it stands. Refusals
+         leave as ``LedgerRefusal``. ``unattended``: the input's turn auto-approves (floors still
+-        apply), for that turn only."""
++        apply), for that turn only. ``single_query``: the input's turn runs one-shot (run context
++        ``single_query``, nobody asked), for that turn only."""
+         self._check_open()
+         if not text or not text.strip():
+             raise ProtocolError(TEXT_EMPTY, path="text")
+@@ -530,6 +539,8 @@ class DaemonSessionHost:
+         payload: dict[str, Any] = {"text": text}
+         if unattended:
+             payload[UNATTENDED] = True
++        if single_query:
++            payload[SINGLE_QUERY] = True
+         receipt = await self.admissions.admit(principal, key, request_id, payload)
+         if mode == "interrupt" and running is not None and receipt.state == "queued":
+             applied = self.fences.interrupt(key, running.generation)
+@@ -777,6 +788,8 @@ class DaemonSessionHost:
+                     return _not_started(ticket)
+                 if ticket.admission.payload.get(UNATTENDED) is True:
+                     self._auto_approve(key, self.service.current_id(key))
++                if ticket.admission.payload.get(SINGLE_QUERY) is True:
++                    self._begin_one_shot(key)
+                 running = await self.service.start_admitted(
+                     key, ticket.text, generation=ticket.generation
+                 )
+@@ -797,6 +810,7 @@ class DaemonSessionHost:
+             return _outcome(ticket, result)
+         finally:
+             self._end_auto_approve(key)
++            self._end_one_shot(key)
+             if self._tickets.get(key) is ticket:
+                 del self._tickets[key]
+             self._spawn(self._after_turn(key, ticket.admission.admission_id))
+@@ -814,6 +828,27 @@ class DaemonSessionHost:
+         for session_id in self._auto.pop(key, set()):
+             APPROVALS.set_auto_approve(session_key(self.store.scope, session_id), False)
+ 
++    def _begin_one_shot(self, key: str) -> None:
++        """Run this turn as the in-process one-shot run does: the run context ``single_query``
++        (approvals follow ``approvals.single_query_mode``, sudo stays headless) and a broker that
++        asks nobody (clarify, secrets and the rest are unsupported)."""
++        runtime = self.service.agent(self.service.current_id(key)).runtime
++        self._one_shot.setdefault(key, runtime.run_context)
++        runtime.run_context = "single_query"
++        live = self._live.get(key)
++        if live is not None:
++            live.broker.asks_nobody = True
++
++    def _end_one_shot(self, key: str) -> None:
++        if key not in self._one_shot:
++            return
++        before = self._one_shot.pop(key)
++        live = self._live.get(key)
++        if live is not None:
++            live.broker.asks_nobody = False
++        with contextlib.suppress(Exception):  # the session may be gone with its turn
++            self.service.agent(self.service.current_id(key)).runtime.run_context = before
++
+     def _stop_turn(self, key: str, generation: int, reason: str) -> None:
+         """The ticket's interrupt hook: soft for a person's interrupt, hard (subagents too) for a
+         cancel or stop, by the system for the watchdog, a lost lease or shutdown."""
+@@ -894,6 +929,9 @@ class DaemonSessionHost:
+         self._keys[new] = key
+         if key in self._auto:  # the unattended turn goes on under the child id
+             self._auto_approve(key, new)
++        if key in self._one_shot:  # so does a one-shot turn
++            with contextlib.suppress(Exception):
++                self.service.agent(new).runtime.run_context = "single_query"
+         live = self._live.get(key)
+         book = live.book if live is not None else None
+         if book is None and key in self._fresh:
+diff --git a/src/indus/service/remote/host.py b/src/indus/service/remote/host.py
+index 4182b21..5c02a04 100644
+--- a/src/indus/service/remote/host.py
++++ b/src/indus/service/remote/host.py
+@@ -325,13 +325,16 @@ class RemoteSessionService:
+     # -- turns ------------------------------------------------------------------------------------
+ 
+     async def submit(
+-        self, session_id: str, text: str, *, unattended: bool = False
++        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
+     ) -> PromptSubmitResult:
+         """Admit ``text`` (see the module notes for the journal and ``OutcomeUnknown``).
+-        ``unattended``: a finite run nobody watches (``-z``); the daemon auto-approves its turn."""
++        ``unattended``: a finite run nobody watches (``-z``); the daemon auto-approves its turn.
++        ``single_query``: a finite run (``chat -q``, ``-z``); the daemon runs its turn one-shot."""
+         found = self._session(session_id)
+         entry = await run_blocking(
+-            lambda: self.journal.prepare(found.current, text, unattended=unattended),
++            lambda: self.journal.prepare(
++                found.current, text, unattended=unattended, single_query=single_query
++            ),
+             label="journal",
+         )
+         return await self._send(found, entry)
+@@ -358,6 +361,8 @@ class RemoteSessionService:
+         }
+         if entry.unattended:  # kept with the entry, so an explicit retry is an exact retry
+             params["unattended"] = True
++        if entry.single_query:
++            params["single_query"] = True
+         floor = max(found.by_generation, default=0)
+         try:
+             answer = await self.channel.request("prompt.submit", params)
+@@ -805,8 +810,13 @@ class RemoteHost:
+     def resume(self, session_id: str) -> SessionResumeResult:
+         return self.call(self.service.resume(session_id))
+ 
+-    def submit(self, session_id: str, text: str, *, unattended: bool = False) -> PromptSubmitResult:
+-        return self.call(self.service.submit(session_id, text, unattended=unattended), timeout=None)
++    def submit(
++        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
++    ) -> PromptSubmitResult:
++        return self.call(
++            self.service.submit(session_id, text, unattended=unattended, single_query=single_query),
++            timeout=None,
++        )
+ 
+     def wait(
+         self, session_id: str, turn_id: str | None = None, *, timeout: float | None = -1.0
+diff --git a/src/indus/service/remote/journal.py b/src/indus/service/remote/journal.py
+index a975ad6..8503b95 100644
+--- a/src/indus/service/remote/journal.py
++++ b/src/indus/service/remote/journal.py
+@@ -67,6 +67,8 @@ class Prepared:
+     created_at: float = 0.0
+     unattended: bool = False
+     """Sent as a finite unattended run's input (``-z``); a retry sends it the same way."""
++    single_query: bool = False
++    """Sent as a finite run's input (``chat -q``, ``-z``: its turn runs one-shot); kept likewise."""
+ 
+     def to_json(self) -> dict[str, Any]:
+         out: dict[str, Any] = {
+@@ -78,6 +80,8 @@ class Prepared:
+         }
+         if self.unattended:
+             out["unattended"] = True
++        if self.single_query:
++            out["single_query"] = True
+         return out
+ 
+     @classmethod
+@@ -102,7 +106,15 @@ class Prepared:
+             if isinstance(created, int | float) and not isinstance(created, bool)
+             else 0.0
+         )
+-        return cls(request_id, session_id, text, state, when, body.get("unattended") is True)
++        return cls(
++            request_id,
++            session_id,
++            text,
++            state,
++            when,
++            body.get("unattended") is True,
++            body.get("single_query") is True,
++        )
+ 
+ 
+ class Journal:
+@@ -134,6 +146,7 @@ class Journal:
+         *,
+         request_id: str | None = None,
+         unattended: bool = False,
++        single_query: bool = False,
+     ) -> Prepared:
+         """Write a new entry before the submit is sent."""
+         entry = Prepared(
+@@ -143,6 +156,7 @@ class Journal:
+             "prepared",
+             self._wall(),
+             unattended,
++            single_query,
+         )
+         self._write(entry)
+         return entry
+diff --git a/tests/contract/gateway/test_ws_endpoint.py b/tests/contract/gateway/test_ws_endpoint.py
+index 089e66b..e9e4cb0 100644
+--- a/tests/contract/gateway/test_ws_endpoint.py
++++ b/tests/contract/gateway/test_ws_endpoint.py
+@@ -386,6 +386,28 @@ async def test_submit_answers_real_generations_and_carries_unattended(
+     await r.close()
+ 
+ 
++@aio
++async def test_submit_carries_single_query_into_the_admission(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    """W47 g (D-16.487): ``single_query`` (an attached finite ``chat -q``) is kept with the
++    input, so the daemon's turn runs ``single_query``; a later plain input does not carry it."""
++    r = await rig(scope, store, tmp_path, text_turn("done"), text_turn("next"))
++    client = await r.attached()
++    sid = (await client.request("session.create", {}))["result"]["session_id"]
++    first = await client.request(
++        "prompt.submit", {"session_id": sid, "text": "work", "single_query": True}
++    )
++    row = ledger.get(store, first["result"]["turn_id"])
++    assert row is not None and row.payload.get("single_query") is True
++    await client.until(done(sid))
++    later = await client.request("prompt.submit", {"session_id": sid, "text": "more"})
++    plain = ledger.get(store, later["result"]["turn_id"])
++    assert plain is not None and "single_query" not in plain.payload
++    await client.close()
++    await r.close()
++
++
+ @aio
+ async def test_a_queued_input_is_cancelled_by_admission_and_a_started_one_is_not(
+     scope: Scope, store: StoreHandle, tmp_path: Path
+diff --git a/tests/unit/cli/attach_double.py b/tests/unit/cli/attach_double.py
+index ed98f69..a1ba181 100644
+--- a/tests/unit/cli/attach_double.py
++++ b/tests/unit/cli/attach_double.py
+@@ -9,7 +9,8 @@ It answers like ``RemoteAttached``:
+ 
+ - ``create(params, *, source, policy)`` / ``resume(session_id, *, policy)``; a changed frozen value
+   raises an error whose ``reason`` is ``policy_conflict`` and whose ``fields`` lists the fields;
+-- ``submit(session_id, text, *, unattended=False)`` (``turn_id`` = the admission id);
++- ``submit(session_id, text, *, unattended=False, single_query=False)`` (``turn_id`` = the
++  admission id);
+ - ``wait(session_id, turn_id)``; raises with ``reason`` ``outcome_unknown`` /
+   ``blocked_by_unknown``;
+ - ``pending(session_id)`` rows (``admission_id``, ``state``, ``generation``, ``text``);
+@@ -135,11 +136,21 @@ class StubRemote:
+         return SessionResumeResult(session_id=session_id, message_count=0, last_seq=0)
+ 
+     async def submit(
+-        self, session_id: str, text: str, *, unattended: bool = False
++        self, session_id: str, text: str, *, unattended: bool = False, single_query: bool = False
+     ) -> PromptSubmitResult:
+         self.generation += 1
+         turn = f"adm-{self.generation}"
+-        self.calls.append(("submit", {"text": text, "unattended": unattended, "turn": turn}))
++        self.calls.append(
++            (
++                "submit",
++                {
++                    "text": text,
++                    "unattended": unattended,
++                    "single_query": single_query,
++                    "turn": turn,
++                },
++            )
++        )
+         for listener in self.listeners.get(session_id, []):
+             listener(
+                 TurnStarted(
+diff --git a/tests/unit/cli/test_attach.py b/tests/unit/cli/test_attach.py
+index 1a9c5ab..1fd471c 100644
+--- a/tests/unit/cli/test_attach.py
++++ b/tests/unit/cli/test_attach.py
+@@ -24,7 +24,7 @@ from indus.cli.args import ChatArgs, CliState, GlobalArgs, HostOverrides
+ from indus.cli.session_select import LaunchPolicy
+ from indus.foundation.scope import Scope
+ from indus.protocol.events import ExitReason, MessageDelta, TurnDone
+-from indus.protocol.server_requests import ApprovalAnswer, ApprovalChoice, ApprovalRequest
++from indus.protocol.server_requests import ApprovalRequest
+ from indus.state import registry
+ from tests.fakes.agent import any_window
+ from tests.fakes.model import FakeModelServer, fake_route, script_of, text_turn
+@@ -162,6 +162,7 @@ def test_chat_q_attaches_by_default(scope: Scope, backend: StubBackend, tmp_path
+     assert created["source"] == "cli"
+     assert created["policy"]["cwd"] == str(Path.cwd())
+     assert calls(backend.remote, "submit")[0]["unattended"] is False
++    assert calls(backend.remote, "submit")[0]["single_query"] is True
+     assert backend.remote.closed
+ 
+ 
+@@ -174,7 +175,12 @@ def test_z_attaches_by_default_and_prints_only_the_reply(
+     assert ran.out == "hello from the daemon\n"
+     assert ran.err == ""
+     (submitted,) = calls(backend.remote, "submit")
+-    assert submitted == {"text": "say hello", "unattended": True, "turn": "adm-1"}
++    assert submitted == {
++        "text": "say hello",
++        "unattended": True,
++        "single_query": True,
++        "turn": "adm-1",
++    }
+     policy = calls(backend.remote, "create")[0]["policy"]
+     assert policy["model"] == "m1" and policy["toolsets"] == ["web"]
+     import json
+@@ -385,45 +391,41 @@ def test_a_question_nobody_can_answer_detaches_a_finite_run_with_exit_3(
+     assert calls(remote, "interrupt") == []  # detached without cancelling
+ 
+ 
+-def _answered_run(scope: Scope, backend: StubBackend) -> Any:
+-    remote = backend.remote
+-
+-    async def asks(session_id: str, turn_id: str) -> Any:
+-        import asyncio
+-
+-        remote.ask(session_id, _approval(session_id))
+-        assert await asyncio.to_thread(remote.answered.wait, 10.0)
+-        return turn_result(session_id, turn_id, "I left the build folder alone.")
+-
+-    remote.wait_with = asks
+-    return invoke(scope, "chat", "-q", "clean up")
+-
+-
+-def test_an_approval_in_a_finite_chat_is_refused_as_local_does(
++def test_a_finite_chat_runs_its_turn_single_query_in_the_daemon(
+     scope: Scope, backend: StubBackend
+ ) -> None:
+-    """W46 F-5: with no terminal, attached ``chat -q`` refuses a risky command the way
+-    ``--local`` does (``approvals.single_query_mode: deny``) and the turn ends normally."""
+-    ran = _answered_run(scope, backend)
++    """W47 g (D-16.487): attached ``chat -q`` asks the daemon to run its turn ``single_query``
++    (approvals then follow ``approvals.single_query_mode`` there, as ``--local``); the client no
++    longer answers approvals itself (W46's ``one_shot_answer`` is retired)."""
++    ran = invoke(scope, "chat", "-q", "clean up")
+     assert ran.code == 0, ran.err
+-    assert "I left the build folder alone." in ran.out
+-    (answer,) = backend.remote.answers
+-    assert isinstance(answer, ApprovalAnswer)
+-    assert answer.choice == ApprovalChoice.DENY and answer.reason == attach.ONE_SHOT_DENY
+-    assert "approvals.single_query_mode" in attach.ONE_SHOT_DENY
+-    assert "waiting for an answer" not in ran.err
++    (submitted,) = calls(backend.remote, "submit")
++    assert submitted["single_query"] is True and submitted["unattended"] is False
++    assert not hasattr(attach, "one_shot_answer")
+ 
+ 
+-def test_single_query_mode_approve_approves_once_as_local_does(
++def test_an_approval_offered_to_a_finite_chat_is_not_answered_here(
+     scope: Scope, backend: StubBackend
+ ) -> None:
+-    (scope.home / "config.yaml").write_text(
+-        "approvals:\n  single_query_mode: approve\n", encoding="utf-8"
+-    )
+-    ran = _answered_run(scope, backend)
+-    assert ran.code == 0, ran.err
+-    (answer,) = backend.remote.answers
+-    assert isinstance(answer, ApprovalAnswer) and answer.choice == ApprovalChoice.ONCE
++    """A daemon that still offers an approval (one that ignores the flag) gets no answer from
++    the client: the run detaches with exit 3 and the resume hint, never approving by itself."""
++    remote = backend.remote
++    done = threading.Event()
++
++    async def asks(session_id: str, _turn: str) -> Any:
++        import asyncio
++
++        remote.ask(session_id, _approval(session_id))
++        await asyncio.to_thread(done.wait, 10.0)
++
++    remote.wait_with = asks
++    try:
++        ran = invoke(scope, "chat", "-q", "clean up")
++    finally:
++        done.set()
++    assert ran.code == 3
++    assert "waiting for an answer" in ran.err
++    assert remote.answers == []
+ 
+ 
+ def test_an_interrupt_without_a_reply_says_it_was_not_run_again(
+diff --git a/tests/unit/cli/test_attach_remote.py b/tests/unit/cli/test_attach_remote.py
+index fafb3aa..aff0263 100644
+--- a/tests/unit/cli/test_attach_remote.py
++++ b/tests/unit/cli/test_attach_remote.py
+@@ -133,6 +133,77 @@ async def test_chat_q_runs_its_turn_in_the_daemon_and_prints_the_reply(
+     assert rows(store) == [("attach:cli", "terminal", "completed")] * 2
+ 
+ 
++def _risky_tool(scope: Scope, decisions: list[Any]) -> Callable[..., Any]:
++    """An inline tool that asks the real approval pipeline about a risky command, the way the
++    terminal tool does (the turn's run context and broker), and records the decision."""
++    from indus.core.turn_state import TurnState
++    from indus.foundation.config import loader
++    from indus.safety.approvals.decision import ApprovalContext
++    from indus.safety.approvals.policy import decide
++    from indus.tools.calls import ToolCall, ToolResult
++
++    async def risky(call: ToolCall, state: TurnState) -> ToolResult:
++        read = scope.with_config(loader.load(scope))
++        ctx = ApprovalContext(
++            scope=read,
++            session_id="s-risky",
++            turn_id=state.turn_id,
++            run_context=cast(Any, state.runtime.run_context or "interactive"),
++            broker=state.control.broker,
++        )
++        decision = await decide("git reset --hard", ctx)
++        decisions.append(decision)
++        return ToolResult(decision.message or "ran")
++
++    return risky
++
++
++@aio
++@pytest.mark.parametrize("mode", ["deny", "approve"])
++async def test_an_attached_chat_q_decides_approvals_as_local_does(
++    scope: Scope,
++    store: StoreHandle,
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++    mode: str,
++) -> None:
++    """W47 g (D-16.487; was W46 F-5's client-side answer): an attached finite ``chat -q`` runs its
++    turn ``single_query`` in the daemon, so a risky command is refused with ``--local``'s wording
++    (``approvals.single_query_mode: deny``, the default) or allowed when set to approve; nothing
++    waits for an answer, the turn ends normally and nobody is asked."""
++    from tests.fakes.model import tool_batch
++
++    if mode == "approve":
++        (scope.home / "config.yaml").write_text(
++            "approvals:\n  single_query_mode: approve\n", encoding="utf-8"
++        )
++    decisions: list[Any] = []
++    r = await rig(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("risky", {})),
++        text_turn("I left the build folder alone."),
++        tools={"risky": _risky_tool(scope, decisions)},
++    )
++    await listening(r, monkeypatch)
++    try:
++        ran = await asyncio.to_thread(invoke, scope, "chat", "-q", "clean up")
++    finally:
++        await r.close()
++    assert ran.code == 0, ran.err
++    assert "I left the build folder alone." in ran.out
++    assert "waiting for an answer" not in ran.err
++    (decision,) = decisions
++    if mode == "deny":
++        assert not decision.approved and decision.step == "unattended"
++        assert "a one-shot run has nobody present to approve it" in (decision.message or "")
++        assert "approvals.single_query_mode: approve" in (decision.message or "")
++    else:
++        assert decision.approved and decision.step == "unattended"
++    assert rows(store) == [("attach:cli", "terminal", "completed")]
++
++
+ @aio
+ async def test_a_session_behind_a_lost_turn_exits_3_and_discard_lets_it_go_on(
+     scope: Scope, store: StoreHandle, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+diff --git a/tests/unit/service/remote/test_host.py b/tests/unit/service/remote/test_host.py
+index b06a4e9..29b317b 100644
+--- a/tests/unit/service/remote/test_host.py
++++ b/tests/unit/service/remote/test_host.py
+@@ -137,6 +137,7 @@ async def test_an_accepted_submit_retires_its_entry(
+     assert first.generation == 1  # the claimed turn's, never a 0 placeholder
+     sent = [f for t in r.transports for f in t.sent if f.get("method") == "prompt.submit"]
+     assert sent[-1]["params"]["unattended"] is True  # -z: the daemon auto-approves the turn
++    assert "single_query" not in sent[-1]["params"]
+     await eventually(lambda: holder.entered)
+     holder.gate.set()
+     turn = await svc.wait(sid, first.turn_id)
+@@ -323,7 +324,7 @@ async def test_controls_name_the_running_generation(
+ 
+ 
+ def test_the_journal_is_private_and_retires_entries(scope: Scope) -> None:
+-    journal = Journal(scope.home, wall=iter([1.0, 2.0, 3.0, 4.0]).__next__)
++    journal = Journal(scope.home, wall=iter([1.0, 2.0, 3.0, 4.0, 5.0]).__next__)
+     first = journal.prepare("s1", "one")
+     second = journal.prepare("s2", "two")
+     folder = journal_dir(scope.home)
+@@ -348,6 +349,11 @@ def test_the_journal_is_private_and_retires_entries(scope: Scope) -> None:
+     kept = journal.mark_unknown(lone.request_id)
+     assert kept is not None and kept.unattended and journal.get(lone.request_id) == kept
+     assert not second.unattended and "unattended" not in second.to_json()
++    # So does a finite chat -q input's single-query flag (W47 g, D-16.487).
++    once = journal.prepare("s5", "five", single_query=True)
++    held = journal.mark_unknown(once.request_id)
++    assert held is not None and held.single_query and journal.get(once.request_id) == held
++    assert not second.single_query and "single_query" not in second.to_json()
+ 
+ 
+ # -- the blocking facade --------------------------------------------------------------------------
+diff --git a/tests/unit/service/test_daemon_host.py b/tests/unit/service/test_daemon_host.py
+index b2d570a..d67a537 100644
+--- a/tests/unit/service/test_daemon_host.py
++++ b/tests/unit/service/test_daemon_host.py
+@@ -744,3 +744,51 @@ async def test_an_unattended_input_auto_approves_only_its_own_turn(
+     finally:
+         APPROVALS.set_auto_approve(key, False)
+         await host.aclose()
++
++
++@aio
++async def test_a_single_query_input_runs_its_turn_as_single_query_and_asks_nobody(
++    scope: Scope, store: StoreHandle, tmp_path: Path
++) -> None:
++    """W47 g (D-16.487): an input submitted ``single_query`` (an attached finite ``chat -q``)
++    runs its turn with the run context ``--local`` gives it and no answerable kind (clarify,
++    sudo and the rest are unsupported, as ``--local`` passes none), for that turn only."""
++    from indus.protocol.requests_port import RequestUnsupported
++    from indus.service.broker import ServerRequestBroker
++
++    seen: list[tuple[str | None, bool]] = []
++
++    async def probe(call: ToolCall, state: TurnState) -> ToolResult:
++        broker = state.control.broker
++        assert isinstance(broker, ServerRequestBroker)
++        can_ask = "clarify" in broker.answerable_kinds
++        seen.append((state.runtime.run_context, can_ask))
++        if not can_ask:
++            with pytest.raises(RequestUnsupported):
++                await broker.ask("clarify", {"questions": [{"id": "q", "text": "which?"}]})
++        return ToolResult("looked")
++
++    host = await open_host(
++        scope,
++        store,
++        tmp_path,
++        tool_batch(("probe", {})),
++        text_turn("ran once"),
++        tool_batch(("probe", {})),
++        text_turn("ran attended"),
++        tools={"probe": probe},
++    )
++    tui = Watcher("t1", "tui", kinds=("approval", "clarify"))
++    sid = (await host.create(viewer=tui.viewer)).session_id
++    try:
++        lone = await host.submit(sid, "q run", principal="p", request_id="r1", single_query=True)
++        assert (await host.wait(lone.admission_id)).outcome == "completed"
++        assert seen == [("single_query", False)]
++        row = ledger.get(store, lone.admission_id)
++        assert row is not None and row.payload == {"text": "q run", "single_query": True}
++        assert host.service.agent(sid).runtime.run_context is None  # put back after the turn
++        plain = await host.submit(sid, "chat", principal="p", request_id="r2")
++        assert (await host.wait(plain.admission_id)).outcome == "completed"
++        assert seen[1] == (None, True)  # the next input runs as the session always does
++    finally:
++        await host.aclose()

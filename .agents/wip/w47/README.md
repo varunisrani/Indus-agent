@@ -27,3 +27,29 @@
   vitest 659 passed + 1 load timeout (Transcript 2,000-message window; passes alone).
 - W47-a-1..4. MERGE NOTE: w47g also changes packages/protocol/src/generated/* (regenerate with codegen after applying both).
   Follow-up: localEcho binds the optimistic row to the admission id (pre-existing).
+
+## w47h.patch: RS3 room approvals answered by the person; room events pushed (daemon side done; UI views not yet)
+- 18 files, +1264/-31. gateway/rooms/loop.py TurnRequests + messaging viewer; room events approval.requested / .answered /
+  .settled (only a person may write .answered; never in member prompts — SEC-15 kept); rpc.py groups.approve (open request,
+  offered choice, first answer wins); new gateway/rooms/watch.py groups.watch/unwatch → groups.event notifications (WS only);
+  protocol + codegen + protocol.md regenerated (method count 90 → 93; w47g also touches protocol — regenerate after both).
+- Fail-first: 3 loop tests, watch import; security pin test. pytest 647 targeted + contract/security 1983;
+  test_room_two_members 5/5. TS not checked (generated only).
+- W47-h-1..3. Follow-up W47-h-3: desktop GroupRoom.tsx and TUI/web room views → groups.watch + approval card (then RS3 Done).
+
+## w47d.patch: dashboard light-theme Chat tab, TUI slash-menu redraw, desktop slash contrast, session titles (done)
+- 21 files, +531/-24. TUI follows terminal colour-scheme reports (CSI ? 996 n / 997 / mode 2031) and late OSC 11 answers
+  (inputFilter onScheme, theme.followTerminalScheme); web xterm SchemeReporter answers them from data-theme; CompletionList
+  count line takes a row + truncate; desktop highlighted description text-accent-fg; providers/auxiliary clean_title keeps
+  the first line up to 60 chars with "…"; fake model titles use the full first line.
+- Fail-first: CompletionList, Composer, keys onScheme, theme, clean_title. pytest 2930; tsc tui/web/desktop; vitest 210
+  (+3 load timeouts in untouched files). Not yet seen in a real browser — the screenshot pass B checks it.
+- W47-d-1..2. Follow-up: drop COLORFGBG / TERM_PROGRAM from the dashboard PTY child's env.
+
+## w47g.patch: D-16.487 single_query flag on prompt.submit; client-side one_shot_answer retired (done)
+- 19 files, +368/-129. PromptSubmitParams.single_query; daemon_host runs the turn with run_context single_query and the broker
+  asks nobody (restored after); remote journal/host keep the flag; cli/attach.py sends it for chat -q and -z.
+- Fail-first: end-to-end attach test (step 'human' → 'unattended'), daemon_host test, ws contract. pytest cli+protocol
+  1967, service 584, contract+security 1983, attach integration 2, dual-host matrix 4. codegen/gen_reference fresh.
+- W47-g-1..3 (older daemons refuse the new key: fails closed). Integrator updates D-16.554/1010/1025 text, RS26 and the
+  dual-host-matrix note; closes LEAD-NOTES' "attached -q deny" follow-up.
