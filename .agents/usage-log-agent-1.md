@@ -174,3 +174,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-22 04:22 UTC: 64% (04:19). All wave-45/46 builders parked. w44 integrator at 88% of full pytest. Screenshot agent started.
 - 2026-10-22 04:25 UTC: 65% (resets 07:00). w44 integrator full pytest: 18317 passed, 2 failed (it is fixing). Screenshot agent running. 20 GB disk free.
 - 2026-10-22 04:42 UTC: 67% (04:39; resets 07:00). After the 04:28 container restart both agents were resumed: w44 integrator fixing 2 failures; screenshot agent has web 11 + TUI 8, redoing desktop. 20 GB disk free.
+- 2026-10-22 04:55 UTC: landed P25-20..24 (b9a43a1); P25 24/24 built.

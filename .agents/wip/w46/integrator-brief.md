@@ -22,7 +22,7 @@ the wave-46 range. Read .agents/wip/w45/README.md and .agents/wip/w46/README.md 
    restart` reaching the daemon). Threat model: SEC-4/14/15/18 fixed — make the header line and the finding table agree; the
    doc test must pass. D-16.878: message_agent and suggestion offers done. Release checklist (landed with w44): move the
    rows these waves closed (RM2, RM4, RM8, RM21; RS4, RS6, RS7, RS9 (CI step added, first run pending), RS10, RS11, RS16,
-   RS19; F-2..F-5) to "Done in this wave" with "this integration"; the `checklist` guard must pass.
+   RS19; F-2..F-5 = RS23..RS26; RM28 SEC-14 and RM29 SEC-15 closed by S45) to "Done in this wave" with "this integration"; the `checklist` guard must pass.
 4. Triage `tests/integration/gateway/multiplex/test_room_two_members.py` (flaky on main per w46f: 2 of 4 runs fail) and
    `test_boot_recovery::test_a_crash_left_turn_pauses_the_conversation_until_reset` (failed under load for P45): find the
    root cause on a quiet run and fix it (never skip or loosen a test); if you cannot, record exactly what you saw.
