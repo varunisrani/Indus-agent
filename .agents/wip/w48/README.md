@@ -61,3 +61,5 @@
 - W48-b-1..4. Integrator updates D-16.549 / D-16.1040 text (W48-b-3). MERGE NOTE: w48b and the wave-47 picker_reads are in
   main already; packages/protocol/src/generated changes — regenerate with codegen after applying.
 - Follow-ups: serve slash.exec / command.dispatch; daemon session.info / session.title (D-16.550) for the attached status bar.
+- NOTE: builder [h] continues [b] in scratchpad wt-w48h on a LOCAL base 0992fb4 (= 1b6e711 + w48b.patch): daemon
+  session.info/session.title events and slash.exec/command.dispatch over the socket. Apply w48b.patch THEN w48h.patch.
