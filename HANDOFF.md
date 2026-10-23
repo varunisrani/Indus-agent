@@ -76,6 +76,9 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
+Wave 49 IN FLIGHT (2026-10-23 05:45 UTC; owner: "complete the remaining 4 tasks"): builders in scratchpad wt-w49{a..d}
+for P23-15 (macOS signing), P23-16 (Windows/Linux artefacts), P24-21 (Termux APT), P24-22 (MSIX); brief
+`.agents/wip/w49/brief.md`. Signing runs need the owner's secrets; the code paths skip cleanly without them.
 Turn: AGENT_1 ACTIVE (window resets 17:30 UTC). Main `bd1eaf9` = wave 48 landed (LEAD-NOTES "Wave 48 landing notes
 (integrator)"): desktop room view on groups.watch + approval card, attached TUI reads/slash/header events, desktop polish,
 PTY env, Windows terminal schema + console, katex/sprintf-js cleared, startup ~400 ms faster. Release checklist: 32 done.
