@@ -89,7 +89,7 @@ Left for agents (small): attached config.set (needed by /yolo /reasoning /fast /
 exec, /status queued count; Windows plan() background mapping, starter-test race, real windows-local run; config-defaults
 and skills front-matter twins (RM25, judge on a quiet runner); pypdf re-lock on/after 2026-10-27 (RS37); certifi by 2026-11-09
 (RM7, owner). Owner: TUI/web room views (D-16.1071) and the list below. /tmp leftovers from gates (upd-*, scoped_dir*,
-pytest-of-root) need the owner's OK to delete.
+pytest-of-root): owner said do NOT delete them (2026-10-23); leave them.
 Turn: AGENT_1 ACTIVE (window resets 12:00 UTC). Main `83104de` = wave 47 landed on top of waves 45+46 (`44c9a4f`)
 (LEAD-NOTES "Wave 47 landing notes (integrator)"). All 648 planned tasks except P23-15/16 (owner signing) and P24-21/22
 (post-1.0) are built; release checklist: 27 done, must 21 / should 14 open — almost all owner decisions or owner runs.
@@ -152,8 +152,7 @@ regex (CNRI-Python), pyarrow bundled zlib/Boost, coincurve (MIT OR Apache-2.0); 
 side-channel advisories) behind our Engine interface in an optional Linux-only extra — ship it until vodozemac? (5) stray
 /root/indus-backup-2026-01-01-090000.zip, log lines a builder appended under /root/.indus, one pnpm cache line in
 /root/.cache/pnpm/lockfile-verified.jsonl, npm debug logs /root/.npm/_logs/2026-10-20T14_05_* (deletion needs the owner's OK).
-(6) The owner also asked (2026-10-20) to update two Hindi videos (remove captions; on-screen English → Devanagari Hindi,
-same font/colour/position) — waiting for the files.
+(6) Hindi videos request (2026-10-20): DROPPED by the owner on 2026-10-23 ("no need to do this for now").
 Owner items: licences (Pillow MIT-CMU; voice extra av/numpy; Piper/eSpeak NG; new P21 vendor-extra
 transitives), real-key P09 demo, manual run of a paused cron job (runs without resuming — confirm); webhook `auth: auto` accepts an
 untimestamped generic signature (replay after the 1 h delivery-id window) — decide whether to require the
