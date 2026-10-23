@@ -36,3 +36,14 @@
   REGENERATE codegen + field_docs + gen_reference after both are applied (never hand-merge generated files).
 - Builder gate: ruff, pyright 0, lint-imports, codegen/twins --check, tooling.checks ok, tsc/biome/vitest protocol+tui
   801 passed; pytest 6339 passed then the 2 pinned tests updated (affected set 85 passed).
+## w50f (start-up twins, RM25) — 13 files, base 7eee12d, clean scan
+- Config: `defaults.json` twin (keyed by sha256 of schema.py + versions.py), models `defer_build`, `validate()` checks only
+  changed top-level settings (warnings identical to the whole-model check on 25 inputs). Generator
+  `foundation/config/defaults_twin.py --check`.
+- Skills: `shipped_frontmatter.json` twin keyed by the front-matter block's own sha256 (edited/user skills always parse).
+  Generator `learning/skills/frontmatter_twin.py --check`. Both in the `generated_twins` guard; biome skips both JSONs.
+- Measured: schema import 199 → 131 ms; shipped-skill parse 20 → 1 ms; one-shot first byte within box noise (RM25: judge on
+  a quiet runner). Perf budgets unchanged.
+- Decisions W50-f-1..3. Note: any edit to schema.py (even comments)/versions.py/shipped SKILL.md needs a twin regen.
+  REPL pump test (`test_keys.py::test_feed_items_reach_the_screen_through_the_pump`) flaked once under load ~13.
+- Builder gate: ruff, pyright 0, lint-imports, all --check 0, biome, tooling.checks ok; pytest 15326 passed, 1 load flake.
