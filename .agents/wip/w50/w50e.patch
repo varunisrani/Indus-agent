@@ -1,0 +1,816 @@
+diff --git a/apps/desktop/electron-builder.config.cjs b/apps/desktop/electron-builder.config.cjs
+index 00f514a..f8c67e0 100644
+--- a/apps/desktop/electron-builder.config.cjs
++++ b/apps/desktop/electron-builder.config.cjs
+@@ -22,9 +22,15 @@
+ const path = require("node:path");
+ const { pathToFileURL } = require("node:url");
+ 
+-const { channelIdentity, releaseRepository } = require("./scripts/channel-identity.cjs");
++const {
++  channelIdentity,
++  releaseRepository,
++  windowsPublisher,
++} = require("./scripts/channel-identity.cjs");
+ 
+ const IDENTITY = channelIdentity(process.env.INDUS_DESKTOP_CHANNEL ?? "");
++/** The certificate subject a Windows update must be signed by (W50-e-2; owner placeholder until filled). */
++const WINDOWS_PUBLISHER = windowsPublisher(IDENTITY.channel).publisher;
+ const APP_ID = IDENTITY.appId;
+ const PRODUCT = IDENTITY.productName;
+ const DEEP_LINK_SCHEME = "indus";
+@@ -198,10 +204,15 @@ const config = {
+     signtoolOptions: {
+       sign: signWindowsFile,
+       signingHashAlgorithms: ["sha256"],
++      // Written into app-update.yml; electron-updater refuses an NSIS update whose Authenticode
++      // signer's subject differs. Without a name the check would be skipped, so one is always set:
++      // the channel's configured subject (a placeholder matches no real certificate, and
++      // dist-win.mjs refuses to sign while it is one).
++      publisherName: [WINDOWS_PUBLISHER],
+     },
+-    // The Windows build is updated by hand (the stamp's update owner) until a signed build's
+-    // publisher name is known; then this check turns on with electron-updater (P23-16 follow-up).
+-    verifyUpdateCodeSignature: false,
++    // The update signature check stays on (W50-e). The stamp's update owner on Windows is still
++    // `manual` until the first signed run; the feed is ready for electron-updater when it flips.
++    verifyUpdateCodeSignature: true,
+   },
+   nsis: {
+     oneClick: true,
+diff --git a/apps/desktop/electron/identity.test.ts b/apps/desktop/electron/identity.test.ts
+new file mode 100644
+index 0000000..a1e38ce
+--- /dev/null
++++ b/apps/desktop/electron/identity.test.ts
+@@ -0,0 +1,47 @@
++import { createRequire } from "node:module";
++import { describe, expect, it } from "vitest";
++import { identityForChannel, runtimeIdentity } from "./identity.ts";
++import type { BuildStamp } from "./updates/skew.ts";
++
++const packaging = createRequire(import.meta.url)("../scripts/channel-identity.cjs") as {
++  CHANNELS: readonly string[];
++  channelIdentity: (channel: string) => { appId: string; productName: string };
++};
++
++function stamp(channel: "stable" | "canary"): BuildStamp {
++  return { version: "0.9.0", commit: null, channel, updateOwner: "electron-updater" };
++}
++
++describe("runtime identity (W50-e)", () => {
++  it("names each channel exactly as packaging does (channel-identity.cjs)", () => {
++    expect(packaging.CHANNELS).toEqual(["stable", "canary"]);
++    for (const channel of packaging.CHANNELS) {
++      const built = packaging.channelIdentity(channel);
++      const running = identityForChannel(channel as "stable" | "canary");
++      expect(running.appName).toBe(built.productName);
++      expect(running.launcherId).toBe(built.appId);
++    }
++  });
++
++  it("a packaged canary is Indus Canary with its own launcher id; stable keeps Indus", () => {
++    expect(runtimeIdentity(stamp("canary"), true)).toEqual({
++      channel: "canary",
++      appName: "Indus Canary",
++      launcherId: "ai.indus.desktop.canary",
++    });
++    expect(runtimeIdentity(stamp("stable"), true)).toEqual({
++      channel: "stable",
++      appName: "Indus",
++      launcherId: "ai.indus.desktop",
++    });
++  });
++
++  it("a packaged app without a readable stamp never takes the stable identity", () => {
++    expect(runtimeIdentity(null, true).launcherId).toBe("ai.indus.desktop.canary");
++  });
++
++  it("an unpackaged (development) run keeps the stable names", () => {
++    expect(runtimeIdentity(null, false).appName).toBe("Indus");
++    expect(runtimeIdentity(stamp("canary"), false).appName).toBe("Indus");
++  });
++});
+diff --git a/apps/desktop/electron/identity.ts b/apps/desktop/electron/identity.ts
+new file mode 100644
+index 0000000..a68a02d
+--- /dev/null
++++ b/apps/desktop/electron/identity.ts
+@@ -0,0 +1,38 @@
++// The running app's own name and Linux launcher id, per release channel (W50-e).
++//
++// Packaging gives a canary its own app id and product name (scripts/channel-identity.cjs, P23-16);
++// the app must call itself the same at run time, or a canary would write its launcher entry over
++// the stable one and group its windows under the stable app. The channel comes from the build
++// stamp, the one record of what a build is (P20-37). A packaged app whose stamp cannot be read is
++// treated as canary, the same rule packaging follows: an unlabelled build never takes the stable
++// identity. An unpackaged (development) run keeps the stable names.
++//
++// The two base names repeat channel-identity.cjs's; identity.test.ts holds them equal.
++
++import type { BuildStamp } from "./updates/skew.ts";
++
++export type DesktopChannel = "stable" | "canary";
++
++const BASE_APP_ID = "ai.indus.desktop";
++const BASE_PRODUCT = "Indus";
++
++export interface DesktopIdentity {
++  channel: DesktopChannel;
++  /** `app.setName`, window titles, the app menu, the launcher entry's Name and StartupWMClass. */
++  appName: string;
++  /** The launcher entry's file name and icon name on Linux (the build's app id). */
++  launcherId: string;
++}
++
++export function identityForChannel(channel: DesktopChannel): DesktopIdentity {
++  if (channel === "canary") {
++    return { channel, appName: `${BASE_PRODUCT} Canary`, launcherId: `${BASE_APP_ID}.canary` };
++  }
++  return { channel, appName: BASE_PRODUCT, launcherId: BASE_APP_ID };
++}
++
++/** The identity of this run: the stamp's channel when packaged, else stable for development. */
++export function runtimeIdentity(stamp: BuildStamp | null, packaged: boolean): DesktopIdentity {
++  if (!packaged) return identityForChannel("stable");
++  return identityForChannel(stamp?.channel ?? "canary");
++}
+diff --git a/apps/desktop/electron/linuxLauncher.test.ts b/apps/desktop/electron/linuxLauncher.test.ts
+index 65480ed..f3847f1 100644
+--- a/apps/desktop/electron/linuxLauncher.test.ts
++++ b/apps/desktop/electron/linuxLauncher.test.ts
+@@ -29,16 +29,16 @@ function setup(overrides: Partial<LauncherDeps> = {}) {
+     homeDir: path.join(root, "home"),
+     resourcesPath: resources,
+     scheme: "indus",
++    identity: { launcherId: "ai.indus.desktop", appName: "Indus" },
+     log: (line) => lines.push(line),
+     ...overrides,
+   };
+   const entry = path.join(
+-    root,
+-    "home",
++    deps.homeDir,
+     ".local",
+     "share",
+     "applications",
+-    "ai.indus.desktop.desktop",
++    `${deps.identity.launcherId}.desktop`,
+   );
+   return { root, deps, lines, entry };
+ }
+@@ -51,7 +51,12 @@ describe("Linux launcher entry", () => {
+   });
+ 
+   it("registers the deep-link scheme and passes links with %U", () => {
+-    const text = desktopEntry({ execPath: "/opt/Indus.AppImage", scheme: "indus" });
++    const text = desktopEntry({
++      execPath: "/opt/Indus.AppImage",
++      scheme: "indus",
++      id: "ai.indus.desktop",
++      name: "Indus",
++    });
+     expect(text).toContain("Exec=/opt/Indus.AppImage %U\n");
+     expect(text).toContain("MimeType=x-scheme-handler/indus;\n");
+     expect(text).toContain("Icon=ai.indus.desktop\n");
+@@ -70,6 +75,28 @@ describe("Linux launcher entry", () => {
+     expect(writeLinuxLauncher(deps)).toEqual({ written: false, reason: "unchanged" });
+   });
+ 
++  it("a canary writes its own entry and icon, named Indus Canary, beside stable's (W50-e)", () => {
++    const stable = setup();
++    const canary = setup({
++      homeDir: stable.deps.homeDir,
++      identity: { launcherId: "ai.indus.desktop.canary", appName: "Indus Canary" },
++    });
++    expect(writeLinuxLauncher(stable.deps).written).toBe(true);
++    expect(writeLinuxLauncher(canary.deps)).toEqual({ written: true, file: canary.entry });
++    expect(canary.entry).toMatch(/applications\/ai\.indus\.desktop\.canary\.desktop$/);
++    const text = fs.readFileSync(canary.entry, "utf8");
++    expect(text).toContain("Name=Indus Canary\n");
++    expect(text).toContain("StartupWMClass=Indus Canary\n");
++    expect(text).toContain("Icon=ai.indus.desktop.canary\n");
++    const icons = path.join(stable.deps.homeDir, ".local/share/icons/hicolor/256x256/apps");
++    expect(fs.existsSync(path.join(icons, "ai.indus.desktop.canary.png"))).toBe(true);
++    // stable's entry is untouched
++    const stableText = fs.readFileSync(stable.entry, "utf8");
++    expect(stableText).toContain("Name=Indus\n");
++    expect(stableText).toContain("StartupWMClass=Indus\n");
++    expect(stableText).toContain("Icon=ai.indus.desktop\n");
++  });
++
+   it("honours XDG_DATA_HOME", () => {
+     const { deps, root } = setup();
+     const data = path.join(root, "data");
+diff --git a/apps/desktop/electron/linuxLauncher.ts b/apps/desktop/electron/linuxLauncher.ts
+index 6f37496..c238889 100644
+--- a/apps/desktop/electron/linuxLauncher.ts
++++ b/apps/desktop/electron/linuxLauncher.ts
+@@ -1,13 +1,14 @@
+ // Linux launcher entry for the AppImage build (P20-38). An AppImage installs nothing, so the app
+ // adds itself to the desktop's application menu: once the main window is first visible it writes
+-// `<data home>/applications/ai.indus.desktop.desktop` (Exec = the AppImage file, with `%U` so
++// `<data home>/applications/<launcher id>.desktop` (Exec = the AppImage file, with `%U` so
+ // `indus://` links reach it) and copies its icon into the hicolor theme. Only for a packaged
+-// AppImage, only when the content changed, never fatal.
++// AppImage, only when the content changed, never fatal. The launcher id and the name are the
++// build's channel identity (electron/identity.ts): `ai.indus.desktop` / `Indus` for stable,
++// `ai.indus.desktop.canary` / `Indus Canary` for a canary, so the two never share an entry.
+ 
+ import fs from "node:fs";
+ import path from "node:path";
+ 
+-export const LAUNCHER_ID = "ai.indus.desktop";
+ export const LAUNCHER_ICON_SIZE = 256;
+ 
+ export interface LauncherInput {
+@@ -15,7 +16,10 @@ export interface LauncherInput {
+   execPath: string;
+   /** The deep-link scheme the app registered (`indus`, or `indus-dev` in dev). */
+   scheme: string;
+-  name?: string;
++  /** The launcher id: the entry's file name and its icon name. */
++  id: string;
++  /** Name shown in the menu; also StartupWMClass, which must equal `app.setName`'s value. */
++  name: string;
+ }
+ 
+ /** Quote one argument for a desktop entry Exec line (spec: double quotes, escape `"`, `` ` ``, `$`, `\`). */
+@@ -26,14 +30,14 @@ export function quoteExecArg(arg: string): string {
+ 
+ /** The desktop entry text. */
+ export function desktopEntry(input: LauncherInput): string {
+-  const name = input.name ?? "Indus";
++  const name = input.name;
+   return [
+     "[Desktop Entry]",
+     "Type=Application",
+     `Name=${name}`,
+     "Comment=Desktop app for Indus Agent",
+     `Exec=${quoteExecArg(input.execPath)} %U`,
+-    `Icon=${LAUNCHER_ID}`,
++    `Icon=${input.id}`,
+     "Terminal=false",
+     "Categories=Development;",
+     `MimeType=x-scheme-handler/${input.scheme};`,
+@@ -79,6 +83,8 @@ export interface LauncherDeps {
+   /** `process.resourcesPath` (the icon ships as `icons/indus.png` beside the archive). */
+   resourcesPath: string;
+   scheme: string;
++  /** This build's channel identity (`launcherId`, `appName`). */
++  identity: { launcherId: string; appName: string };
+   log: (line: string) => void;
+   fs?: LauncherFs;
+ }
+@@ -102,16 +108,22 @@ export function writeLinuxLauncher(deps: LauncherDeps): LauncherOutcome {
+     deps.env.XDG_DATA_HOME !== undefined && path.isAbsolute(deps.env.XDG_DATA_HOME)
+       ? deps.env.XDG_DATA_HOME
+       : path.join(deps.homeDir, ".local", "share");
+-  const file = path.join(dataHome, "applications", `${LAUNCHER_ID}.desktop`);
++  const id = deps.identity.launcherId;
++  const file = path.join(dataHome, "applications", `${id}.desktop`);
+   const icon = path.join(
+     dataHome,
+     "icons",
+     "hicolor",
+     `${LAUNCHER_ICON_SIZE}x${LAUNCHER_ICON_SIZE}`,
+     "apps",
+-    `${LAUNCHER_ID}.png`,
++    `${id}.png`,
+   );
+-  const text = desktopEntry({ execPath: appImage, scheme: deps.scheme });
++  const text = desktopEntry({
++    execPath: appImage,
++    scheme: deps.scheme,
++    id,
++    name: deps.identity.appName,
++  });
+   try {
+     if (!files.exists(icon))
+       files.copyFile(path.join(deps.resourcesPath, "icons", "indus.png"), icon);
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 2761501..e1bb0ab 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -54,6 +54,7 @@ import { installContextMenus, type MenuContentsLike } from "./contextMenu.ts";
+ import { DeepLinkRouter, installDeepLinks } from "./deepLinks.ts";
+ import { installDiagnostics } from "./diagnostics.ts";
+ import { applyEnvDefaults, parseBakedEnvDefaults } from "./envDefaults.ts";
++import { runtimeIdentity } from "./identity.ts";
+ import { type IpcMainLike, IpcRegistry } from "./ipc/registry.ts";
+ import { installJournalIpc, PreparedSubmissions } from "./journal/preparedSubmissions.ts";
+ import { chooseOzonePlatform, planSwitches, readLaunchConfig } from "./launchConfig.ts";
+@@ -104,6 +105,7 @@ import {
+ import { type Fetcher, installThemeMarketplace } from "./theme/marketplace.ts";
+ import { installUninstall } from "./uninstall.ts";
+ import { createUpdateGate, gateHooks, installUpdates } from "./updates/install.ts";
++import { readStamp, stampLocations } from "./updates/skew.ts";
+ import { installWindowIpc } from "./windows/ipc.ts";
+ import { type BrowserWindowLike, WindowManager } from "./windows/manager.ts";
+ import { installPetWindow } from "./windows/petWindow.ts";
+@@ -112,8 +114,14 @@ import { installWakeIndicator } from "./windows/wakeIndicator.ts";
+ /** Replaced at build time by scripts/build-electron.mjs with the validated defaults JSON. */
+ declare const __INDUS_ENV_DEFAULTS__: string | undefined;
+ 
+-const APP_NAME = "Indus";
+ const HERE = import.meta.dirname;
++// Name and Linux launcher id follow the build stamp's channel, like the packaged app id and product
++// name do (W50-e): a canary is "Indus Canary" with launcher id ai.indus.desktop.canary.
++const IDENTITY = runtimeIdentity(
++  app.isPackaged ? readStamp(stampLocations(app.getAppPath()).inside) : null,
++  app.isPackaged,
++);
++const APP_NAME = IDENTITY.appName;
+ 
+ // -- pre-ready ------------------------------------------------------------------------------------
+ 
+@@ -623,6 +631,7 @@ async function boot(): Promise<void> {
+     homeDir: os.homedir(),
+     resourcesPath: process.resourcesPath,
+     scheme: instance.scheme,
++    identity: IDENTITY,
+     log: logLine,
+   }); // P20-38
+   startDeepLinks();
+diff --git a/apps/desktop/scripts/channel-identity.cjs b/apps/desktop/scripts/channel-identity.cjs
+index 8a4538a..e356526 100644
+--- a/apps/desktop/scripts/channel-identity.cjs
++++ b/apps/desktop/scripts/channel-identity.cjs
+@@ -1,7 +1,9 @@
+ // Who a desktop build is, per release channel (P23-16). A canary must install and run beside the
+ // stable app: its own app id (bundle id, Windows install GUID), product name (install folder and
+ // Electron's userData folder, which Electron derives from the packaged productName), Linux
+-// executable and .deb package, and its own update feed channel on GitHub Releases.
++// executable and .deb package, and its own update feed channel on GitHub Releases. The running app
++// takes the same names from its build stamp's channel (electron/identity.ts, held equal by a test),
++// and the Windows update check its publisher from packaging/msix/identity.json (windowsPublisher).
+ //
+ // The channel comes from INDUS_DESKTOP_CHANNEL (the release lanes pass admit's `kind`;
+ // dist-unsigned.mjs passes the build stamp's channel). Without it a build is canary, the same
+@@ -57,11 +59,49 @@ function releaseRepository(file = path.join(__dirname, "..", "electron", "releas
+   return { owner: String(match[1]), repo: String(match[2]) };
+ }
+ 
++/** The mark an owner placeholder carries in packaging/msix/identity.json (msix.mjs reads the same). */
++const OWNER_PLACEHOLDER = "OWNER-TO-FILL";
++const PUBLISHER_FILE = path.join(__dirname, "..", "packaging", "msix", "identity.json");
++
++/**
++ * The Windows code-signing publisher of `channel`: the certificate subject recorded once, for the
++ * MSIX lane and the NSIS update check alike, in packaging/msix/identity.json. `placeholder` is
++ * true while the owner has not filled it in yet.
++ * @param {string} channel
++ * @param {string} [file]
++ * @returns {{ publisher: string, placeholder: boolean, file: string }}
++ */
++function windowsPublisher(channel, file = PUBLISHER_FILE) {
++  const resolved = resolveChannel(channel);
++  /** @type {unknown} */
++  let table;
++  try {
++    table = JSON.parse(fs.readFileSync(file, "utf8"));
++  } catch (error) {
++    const why = error instanceof Error ? error.message : String(error);
++    throw new Error(`cannot read the Windows publisher from ${file}: ${why}`);
++  }
++  const entry =
++    table !== null && typeof table === "object"
++      ? /** @type {Record<string, unknown>} */ (table)[resolved]
++      : undefined;
++  const publisher =
++    entry !== null && typeof entry === "object"
++      ? /** @type {Record<string, unknown>} */ (entry).publisher
++      : undefined;
++  if (typeof publisher !== "string" || publisher.trim() === "") {
++    throw new Error(`${file} has no ${resolved}.publisher (the signing certificate's subject)`);
++  }
++  return { publisher, placeholder: publisher.includes(OWNER_PLACEHOLDER), file };
++}
++
+ module.exports = {
+   BASE_APP_ID,
+   CHANNELS,
+   DEFAULT_CHANNEL,
++  OWNER_PLACEHOLDER,
+   channelIdentity,
+   releaseRepository,
+   resolveChannel,
++  windowsPublisher,
+ };
+diff --git a/apps/desktop/scripts/dist-win.mjs b/apps/desktop/scripts/dist-win.mjs
+index 751bf2d..3513d5d 100644
+--- a/apps/desktop/scripts/dist-win.mjs
++++ b/apps/desktop/scripts/dist-win.mjs
+@@ -6,16 +6,38 @@
+ // Azure Trusted Signing group, else a PFX), removes them from the environment, then makes the build
+ // of dist-unsigned.mjs: one NSIS installer + ZIP per arch, the identity stamped before ASAR
+ // integrity and every PE signed once by the hooks. With no secrets the signer prints one line and
+-// the build is unsigned; a partial group fails before anything is built. Output: build/release/.
++// the build is unsigned; a partial group fails before anything is built. A signed build also needs
++// the channel's publisher (the certificate subject the update check compares, W50-e): while
++// packaging/msix/identity.json still holds the owner placeholder, it is refused before building.
++// Output: build/release/.
+ 
+ import path from "node:path";
+ import { fileURLToPath } from "node:url";
++import identity from "./channel-identity.cjs";
+ import { distUnsigned, parseFlags } from "./dist-unsigned.mjs";
+ import { armWindowsSigning } from "./sign-win.mjs";
+ 
++/**
++ * Refuse a signed build whose update feed would name a placeholder publisher: every later update
++ * would fail electron-updater's signer check. Unsigned builds pass (the placeholder fails closed).
++ */
++export function checkSignedPublisher(kind, channel, lookup = identity.windowsPublisher) {
++  if (kind === "none") return null;
++  const resolved = identity.resolveChannel(channel);
++  const { publisher, placeholder, file } = lookup(resolved);
++  if (placeholder) {
++    throw new Error(
++      `a signed Windows build needs the certificate subject as ${resolved}.publisher in ${file} ` +
++        "(still the owner placeholder)",
++    );
++  }
++  return publisher;
++}
++
+ export async function distWin(flags, env = process.env) {
+   if (process.platform !== "win32") throw new Error("the Windows build runs on Windows only");
+   const kind = armWindowsSigning(env);
++  checkSignedPublisher(kind, flags.channel ?? env.INDUS_DESKTOP_CHANNEL ?? "");
+   if (kind !== "none") process.stdout.write(`[sign-win] signed build (${kind})\n`);
+   return distUnsigned(flags);
+ }
+diff --git a/apps/desktop/scripts/stage-app.mjs b/apps/desktop/scripts/stage-app.mjs
+index 569b4cc..e7052f2 100644
+--- a/apps/desktop/scripts/stage-app.mjs
++++ b/apps/desktop/scripts/stage-app.mjs
+@@ -22,6 +22,7 @@ import fs from "node:fs";
+ import { createRequire } from "node:module";
+ import path from "node:path";
+ import { fileURLToPath } from "node:url";
++import identity from "./channel-identity.cjs";
+ 
+ export const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ /** Packages with a compiled binding the main process loads at run time. */
+@@ -37,8 +38,13 @@ const REPO_ALLOW_FILE = path.resolve(
+   "checks",
+   "licenses_allow.json",
+ );
+-/** The Linux/Windows app id; also the desktop entry's file name on Linux. */
+-export const APP_ID = "ai.indus.desktop";
++/**
++ * `desktopName` for a build on `channel`: its app id (channel-identity.cjs) + `.desktop`. Electron
++ * hands it to the Linux desktop as the app's desktop-file id, so a canary must not take stable's.
++ */
++export function desktopNameFor(channel) {
++  return `${identity.channelIdentity(channel ?? "").appId}.desktop`;
++}
+ export const PACKAGE_NAME = "indus-desktop";
+ 
+ /** Parts of a native module's folder that never ship (sources, build scripts, typings). */
+@@ -279,7 +285,7 @@ export function stageApp({
+     license: "MIT",
+     type: "module",
+     main: "dist-electron/main.js",
+-    desktopName: `${APP_ID}.desktop`,
++    desktopName: desktopNameFor(stamp.channel),
+     dependencies,
+   };
+   fs.writeFileSync(
+diff --git a/apps/desktop/scripts/stage-app.test.ts b/apps/desktop/scripts/stage-app.test.ts
+index f20da5b..762ae04 100644
+--- a/apps/desktop/scripts/stage-app.test.ts
++++ b/apps/desktop/scripts/stage-app.test.ts
+@@ -13,7 +13,7 @@ interface Staged {
+ const stage = stageApp as (options: {
+   appDir: string;
+   outDir: string;
+-  stamp?: { version: string; updateOwner?: string };
++  stamp?: { version: string; updateOwner?: string; channel?: string };
+   platform?: string;
+   allowFile?: string;
+ }) => Staged;
+@@ -102,7 +102,11 @@ describe("stage the packaged app", () => {
+   it("holds only the bundles and a generated package.json without dependencies", () => {
+     const root = app();
+     const out = path.join(root, "build", "app");
+-    const staged = stage({ appDir: root, outDir: out, stamp: { version: "0.4.2" } });
++    const staged = stage({
++      appDir: root,
++      outDir: out,
++      stamp: { version: "0.4.2", channel: "stable" },
++    });
+     expect(files(out)).toEqual([
+       "desktop-build-stamp.json",
+       "dist-electron/main.js",
+@@ -125,6 +129,19 @@ describe("stage the packaged app", () => {
+     );
+   });
+ 
++  it("names the desktop-file id after the stamp's channel; an unlabelled stamp is canary (W50-e)", () => {
++    const desktopName = (stamp: { version: string; channel?: string }) => {
++      const root = app();
++      return stage({ appDir: root, outDir: path.join(root, "build", "app"), stamp }).packageJson
++        .desktopName;
++    };
++    expect(desktopName({ version: "0.4.2", channel: "stable" })).toBe("ai.indus.desktop.desktop");
++    expect(desktopName({ version: "0.4.2", channel: "canary" })).toBe(
++      "ai.indus.desktop.canary.desktop",
++    );
++    expect(desktopName({ version: "0.4.2" })).toBe("ai.indus.desktop.canary.desktop");
++  });
++
+   it("copies a declared node-pty with its binding, platform prebuilds and runtime deps only", () => {
+     const root = app(PTY_FILES, { "node-pty": "1.1.0" });
+     const out = path.join(root, "build", "app");
+diff --git a/apps/desktop/scripts/windowsUpdates.test.ts b/apps/desktop/scripts/windowsUpdates.test.ts
+new file mode 100644
+index 0000000..eef6ea2
+--- /dev/null
++++ b/apps/desktop/scripts/windowsUpdates.test.ts
+@@ -0,0 +1,158 @@
++// Windows update signature check (W50-e): the NSIS feed carries the channel's configured
++// publisher, verification stays on, and a signed build is refused while the publisher is the
++// owner placeholder.
++import fs from "node:fs";
++import { createRequire } from "node:module";
++import os from "node:os";
++import path from "node:path";
++import { afterAll, describe, expect, it } from "vitest";
++// @ts-expect-error -- plain JS module without types
++import { IDENTITY_FILE, isPlaceholder, PLACEHOLDER } from "../../../scripts/release/msix.mjs";
++// @ts-expect-error -- plain JS module without types
++import { checkSignedPublisher } from "./dist-win.mjs";
++
++const require = createRequire(import.meta.url);
++type Publisher = { publisher: string; placeholder: boolean; file: string };
++const identity = require("./channel-identity.cjs") as {
++  OWNER_PLACEHOLDER: string;
++  windowsPublisher: (channel: string, file?: string) => Publisher;
++};
++const CONFIG_PATH = require.resolve("../electron-builder.config.cjs");
++const check = checkSignedPublisher as (
++  kind: string,
++  channel: string,
++  lookup?: (channel: string) => Publisher,
++) => string | null;
++
++type WinConfig = {
++  win: { verifyUpdateCodeSignature?: boolean; signtoolOptions: { publisherName?: unknown } };
++};
++
++function loadConfig(channel: string): WinConfig {
++  const saved = process.env.INDUS_DESKTOP_CHANNEL;
++  process.env.INDUS_DESKTOP_CHANNEL = channel;
++  try {
++    delete require.cache[CONFIG_PATH];
++    return require(CONFIG_PATH) as WinConfig;
++  } finally {
++    if (saved === undefined) delete process.env.INDUS_DESKTOP_CHANNEL;
++    else process.env.INDUS_DESKTOP_CHANNEL = saved;
++    delete require.cache[CONFIG_PATH];
++  }
++}
++
++const dirs: string[] = [];
++afterAll(() => {
++  for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
++});
++
++function identityFile(content: string): string {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-publisher-"));
++  dirs.push(dir);
++  const file = path.join(dir, "identity.json");
++  fs.writeFileSync(file, content);
++  return file;
++}
++
++/** A distinguished name built at run time (never a literal subject in the repository). */
++const subject = (cn: string) => [`CN=${cn}`, "O=Example Org", "C=ZZ"].join(", ");
++
++describe("Windows update publisher (W50-e)", () => {
++  it("reads the same file and placeholder mark as the MSIX lane", () => {
++    expect(identity.OWNER_PLACEHOLDER).toBe(PLACEHOLDER);
++    expect(identity.windowsPublisher("stable").file).toBe(IDENTITY_FILE);
++  });
++
++  it("puts each channel's configured publisher into the feed and keeps verification on", () => {
++    const table = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8")) as Record<
++      string,
++      { publisher: string }
++    >;
++    for (const channel of ["stable", "canary"]) {
++      const config = loadConfig(channel);
++      expect(config.win.verifyUpdateCodeSignature).toBe(true);
++      expect(config.win.signtoolOptions.publisherName).toEqual([table[channel]?.publisher]);
++    }
++  });
++
++  it("electron-builder takes that publisher for app-update.yml (never a silent skip)", async () => {
++    // app-update.yml gets `publisherName` only when the signing manager computes one; with none,
++    // electron-updater would skip the check. Ours never falls back to certificate discovery.
++    const builderDir = path.dirname(require.resolve("electron-builder/package.json"));
++    const fromBuilder = createRequire(path.join(builderDir, "package.json"));
++    const { WindowsSignToolManager } = fromBuilder(
++      "app-builder-lib/out/codeSign/windowsSignToolManager.js",
++    ) as {
++      WindowsSignToolManager: new (
++        packager: unknown,
++      ) => {
++        computedPublisherName: { value: Promise<string[] | null> };
++      };
++    };
++    for (const channel of ["stable", "canary"]) {
++      const config = loadConfig(channel);
++      const manager = new WindowsSignToolManager({ platformSpecificBuildOptions: config.win });
++      await expect(manager.computedPublisherName.value).resolves.toEqual([
++        identity.windowsPublisher(channel).publisher,
++      ]);
++    }
++  });
++
++  it("flags the committed publisher exactly as the MSIX lane does", () => {
++    for (const channel of ["stable", "canary"]) {
++      const found = identity.windowsPublisher(channel);
++      expect(found.placeholder).toBe(isPlaceholder(found.publisher));
++    }
++  });
++
++  it("reads a filled-in subject and flags a placeholder", () => {
++    const filled = subject("Indus Test Signer");
++    const file = identityFile(
++      JSON.stringify({
++        stable: { publisher: filled },
++        canary: { publisher: `CN=${PLACEHOLDER} subject` },
++      }),
++    );
++    expect(identity.windowsPublisher("stable", file)).toEqual({
++      publisher: filled,
++      placeholder: false,
++      file,
++    });
++    expect(identity.windowsPublisher("canary", file).placeholder).toBe(true);
++  });
++
++  it("fails without a publisher for the channel, or on an unreadable file, naming the file", () => {
++    const empty = identityFile(JSON.stringify({ stable: { publisher: "  " } }));
++    expect(() => identity.windowsPublisher("stable", empty)).toThrow(/stable\.publisher/);
++    expect(() => identity.windowsPublisher("canary", empty)).toThrow(/canary\.publisher/);
++    const broken = identityFile("{ not json");
++    expect(() => identity.windowsPublisher("stable", broken)).toThrow(broken);
++    expect(() => identity.windowsPublisher("nightly", empty)).toThrow(/stable, canary/);
++  });
++
++  it("refuses a signed build while the channel's publisher is a placeholder", () => {
++    const placeholder = (channel: string) => ({
++      publisher: `CN=${PLACEHOLDER}`,
++      placeholder: true,
++      file: `/x/identity.json#${channel}`,
++    });
++    for (const kind of ["pfx", "azure"]) {
++      expect(() => check(kind, "stable", placeholder)).toThrow(
++        /signed Windows build needs the certificate subject as stable\.publisher/,
++      );
++    }
++    // an unlabelled build is canary, as everywhere else
++    expect(() => check("pfx", "", placeholder)).toThrow(/canary\.publisher/);
++    // the committed file: refused exactly while it holds the placeholder
++    if (identity.windowsPublisher("stable").placeholder) {
++      expect(() => check("pfx", "stable")).toThrow(/owner placeholder/);
++    }
++  });
++
++  it("lets a signed build with a filled-in publisher and every unsigned build go on", () => {
++    const filled = subject("Indus Test Signer");
++    const lookup = () => ({ publisher: filled, placeholder: false, file: "/x/identity.json" });
++    expect(check("pfx", "canary", lookup)).toBe(filled);
++    expect(check("none", "stable")).toBeNull();
++  });
++});
+diff --git a/docs/notes/followups/w50-e.md b/docs/notes/followups/w50-e.md
+new file mode 100644
+index 0000000..a4a3946
+--- /dev/null
++++ b/docs/notes/followups/w50-e.md
+@@ -0,0 +1,120 @@
++# Task: desktop identity follow-ups from wave 49 (w50 slice e) Phase: follow-ups Owner: wave-50 builder e
++
++## Status
++
++Done (2026-10-23), with the Windows update owner left `manual` (W50-e-4). Built and tested on Linux:
++the running app's name and Linux launcher id follow the build stamp's channel (canary: `Indus Canary`,
++`ai.indus.desktop.canary`), the staged `desktopName` follows it too, and the Windows config keeps
++`verifyUpdateCodeSignature` on with `signtoolOptions.publisherName` read from
++`packaging/msix/identity.json`; `dist-win.mjs` refuses a signed build while that publisher is the
++owner placeholder. Not run: a packaged canary AppImage on a real desktop, a real NSIS update on
++Windows (needs the owner's certificate subject and the first signed run). Changed outside the
++slice's own files: `apps/desktop/scripts/stage-app.mjs` (`APP_ID` export replaced by
++`desktopNameFor`), `apps/desktop/electron/main.ts` (identity line and launcher deps).
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `apps/desktop/electron/product-identity.ts`
++(how a non-stable build pins its name before the first userData read), `apps/desktop/electron/main.ts`
++(where the app name is chosen and set, the Windows app user model id), `apps/desktop/electron-builder.config.cjs`
++(`extraMetadata.desktopName`, the Windows signing block with the publisher name).
++Evidence: none.
++Vendor code read for behaviour (not the reference): electron-builder 26.17.0 `app-builder-lib`
++(`codeSign/windowsSignToolManager.js` publisher name, `publish/PublishManager.js` app-update.yml,
++`targets/LinuxTargetHelper.js` desktop entry), electron-updater 6.8.9 (`NsisUpdater.js`,
++`windowsExecutableCodeSignatureVerifier.js`).
++
++What it does (own words): wave 49 gave a canary build its own app id, product name, Linux
++executable and feed at packaging time (`scripts/channel-identity.cjs`), but the running app still
++called itself `Indus` and wrote its Linux launcher entry as `ai.indus.desktop.desktop` with icon
++`ai.indus.desktop` — so a canary AppImage overwrote the stable app's menu entry, and its windows
++were grouped under the stable launcher. Now the running app takes its identity from the build
++stamp's channel through the same derivation: a canary is named `Indus Canary` (window title, app
++menu, `app.setName`, the launcher entry's Name and StartupWMClass) and its launcher entry and icon
++are `ai.indus.desktop.canary`. The staged `package.json`'s `desktopName` (which Electron hands to
++the desktop as the app's desktop-file id) follows the stamp's channel too.
++
++Windows: electron-updater checks an NSIS update's Authenticode signer against `publisherName` in
++`app-update.yml`, and electron-builder only writes that key when it knows a publisher. Without it,
++the check is silently skipped. The config now keeps `verifyUpdateCodeSignature` on and gives
++electron-builder the channel's configured publisher (the certificate subject recorded in
++`packaging/msix/identity.json`, the same value the MSIX lane signs with). While that value is the
++owner placeholder, a signed Windows build is refused before anything is built (a feed that names a
++placeholder publisher would refuse every later update); an unsigned build keeps the placeholder,
++which can never match a real certificate (fails closed).
++
++Inputs → outputs: build stamp `channel` (packaged) → runtime name and launcher id;
++`INDUS_DESKTOP_CHANNEL` / `--channel` → config `win.signtoolOptions.publisherName`,
++`win.verifyUpdateCodeSignature: true`, staged `desktopName`; `dist-win.mjs` with an armed signer
++and a placeholder publisher → error naming the file and key.
++
++Files: `apps/desktop/scripts/channel-identity.cjs` (publisher lookup), `apps/desktop/electron-builder.config.cjs`,
++`apps/desktop/scripts/dist-win.mjs`, `apps/desktop/scripts/stage-app.mjs`, new `apps/desktop/electron/identity.ts`,
++`apps/desktop/electron/linuxLauncher.ts`, `apps/desktop/electron/main.ts`; tests beside each.
++
++Edge cases / failure modes:
++- Unpackaged (dev) run: no stamp → the stable names (`Indus`), as before; the launcher is never
++  written outside a packaged AppImage anyway.
++- Packaged with an unreadable stamp → canary names (the rule of `channel-identity.cjs`: an
++  unlabelled build never takes the stable identity), so it can never overwrite the stable entry.
++- userData is unaffected: Electron derives it from the packaged productName before main runs.
++- Unknown channel in the config env → the existing `resolveChannel` error.
++- identity.json missing, unparsable, or without a publisher for the channel → the config fails
++  naming the file (a build must not ship a feed without a publisher).
++- Placeholder publisher + no signer → build goes on (unsigned, manual update owner).
++- Placeholder publisher + armed signer → refused before the build, message names file and key only.
++
++Our design differences / decisions:
++- W50-e-1: the runtime derives its identity from the build stamp's channel (the one declaration of
++  what a build is, P20-37), not a value baked into the main bundle: `--skip-build` can reuse a
++  bundle built for another channel, the stamp is always written per build. `electron/identity.ts`
++  repeats the two base names and a test holds it equal to `channel-identity.cjs` for every channel.
++- W50-e-2: the Windows publisher is read from `packaging/msix/identity.json` (`stable` / `canary`
++  `publisher`), the one place the certificate subject is configured; no new owner value.
++- W50-e-3: a signed Windows build with a placeholder publisher is refused (as `msix.mjs` refuses to
++  sign with one); unsigned builds keep the placeholder, which fails closed.
++- W50-e-4: the stamp's update owner on Windows stays `manual`; flipping it to electron-updater waits
++  for the first signed run (owner item). Only the config half (publisher + verification on) lands.
++- Left out: the notification centre's literal app name (`ambient/install.ts`), the Windows
++  AppUserModelID, the `.deb` entry's StartupWMClass (electron-builder takes it from desktopName).
++
++Tests we will write:
++- identity: stable/canary/dev/no-stamp names; equal to `channel-identity.cjs` for every channel.
++- launcher: canary file name, icon name, Name and StartupWMClass; stable unchanged.
++- stage-app: desktopName follows the stamp's channel.
++- config: `verifyUpdateCodeSignature` true and `publisherName` = identity.json's publisher per
++  channel; a missing publisher throws; schema still valid.
++- dist-win: armed signer + placeholder → refused; complete publisher or no signer → goes on.
++
++## Decisions for the lead
++- W50-e-1 … W50-e-4 above.
++- Owner: the certificate subject in `apps/desktop/packaging/msix/identity.json` (stable and canary
++  `publisher`) is now also the Windows update publisher; filling it is required before the first
++  signed Windows run.
++
++Compare checklist (filled after the rewrite; reopened `electron/product-identity.ts`,
++`electron/main.ts` (app name, app user model id), `electron-builder.config.cjs` (`extraMetadata`,
++Windows signing block)):
++- [x] A non-stable build takes its own display name at start-up, before windows exist; stable keeps
++  the historic name. Same here, from the stamp's channel. (test: `electron/identity.test.ts` ›
++  "a packaged canary is Indus Canary …")
++- [x] The packaged package.json's `desktopName` follows the build's app id. Same, from the stamp
++  the staged app ships. (test: `scripts/stage-app.test.ts` › "names the desktop-file id after the
++  stamp's channel …")
++- [x] One derivation for every name a channel owns. The running app's copy is held equal to
++  `channel-identity.cjs` by a test instead of importing it (W50-e-1). (test: `identity.test.ts` ›
++  "names each channel exactly as packaging does")
++- [x] The Windows signing block carries a publisher name for the update check. Ours is always set,
++  from the configured certificate subject, not from an environment variable that may be missing
++  (an absent name makes electron-updater skip the check). (tests: `scripts/windowsUpdates.test.ts`
++  › "puts each channel's configured publisher …", "electron-builder takes that publisher …")
++- [x] Gap found: nothing stopped a signed build from shipping a placeholder publisher — fixed by
++  `checkSignedPublisher` in `dist-win.mjs`, pinned by `windowsUpdates.test.ts` › "refuses a signed
++  build while the channel's publisher is a placeholder".
++- [x] Linux launcher entry (our own P20-38 feature; the reference writes none at run time): file,
++  icon, Name and StartupWMClass follow the identity. (test: `electron/linuxLauncher.test.ts` › "a
++  canary writes its own entry and icon …")
++- Deliberate differences: the reference pins userData by hand for non-stable builds; Electron
++  already derives ours from the packaged productName (wave 49 `extraMetadata`), so main does not
++  move it. The reference reads the publisher from an environment variable on the Azure route only;
++  ours reads the one configured subject on every route.
++- Not taken: the Windows app user model id (we set none today; follow-up), a test-only environment
++  override of the app name, the notification centre's app name (`ambient/install.ts`, follow-up).
