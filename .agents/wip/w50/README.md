@@ -16,3 +16,12 @@
   DAEMON_QUICK_EXEC) — keep both sides. Ledger: close D-16.549; D-16.1094 text; RS30/RS33 and P17/ws-endpoint.md wording.
 - Builder gate: ruff, pyright 0, lint-imports, codegen/twins --check, tooling.checks ok; pytest contract/service/
   tui_bridge/gateway/integration 5315 passed, 0 failed.
+## w50d (Termux follow-ups) — 9 files, base 7eee12d, clean scan
+- `indus update`: new `apt` install kind from the `.install_method` stamp (wins over `.git`); refusal message
+  `pkg upgrade indus-agent` (package name is indus-agent, W50-d-1); exit 1 like other managed kinds.
+- `scripts/termux/repo.py`: `validate` (Release/index/pool/stanza/payload checks, collected) and `sign` commands, exit 4 on
+  an invalid tree; `build.sh` stages now `... pack repo validate sign` (11).
+- Decisions W50-d-1..5. Follow-ups: `indus uninstall` apt kind; dashboard `_UPDATE_HINTS` apt entry; termux.yml exit-4
+  annotation.
+- Builder gate: ruff, pyright 0, lint-imports, twins --check, tooling.checks ok; pytest release/cli/ci/contract/install
+  4252 passed, 0 failed.
