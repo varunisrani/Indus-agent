@@ -44,3 +44,22 @@
   key fingerprint; image Python must be 3.14.
 - Integrator: off-by-default `termux` lane in release.yml + claims.LANES calling termux.yml; acceptance Known gaps S5 and
   checklist RL8 → partial; `apt` install kind for `indus update` (follow-up).
+
+## w49b.patch: P23-16 Windows + Linux desktop artefacts (built; first real Windows run owed)
+- 14 files, +1695/-54. New apps/desktop/scripts/{sign-win.mjs (signer selection: Azure group > PFX, partial refused; ledger
+  signs each .exe/.dll/.node once after the stamp; PE certificate-table check; installer/uninstaller via the same signer),
+  sign-win.test.ts (20), dist-win.mjs (arms the signer, strips secrets from env before electron-builder), checksums.mjs +
+  test (SHA256SUMS-linux.txt, sha256sum -c format), channel-identity.cjs (canary app id ai.indus.desktop.canary, product
+  "Indus Canary", indus-desktop-canary; feeds per channel from releaseBase.ts)}; electron-builder.config.cjs top-level
+  identity/publish/hooks + win/nsis per-arch + linux AppImage+deb; dist-unsigned.mjs targets; release.yml desktop-win
+  (environment: release, secrets only in the build step) + desktop-linux (no secrets, checks sums) + shared comment;
+  test_release_workflow.py; checklist §0 Windows secret names; tool-versions note.
+- Secret names = the shared set (WIN_CERTIFICATE(+_PASSWORD) or AZURE_TRUSTED_SIGNING_{ENDPOINT,ACCOUNT,PROFILE} +
+  INDUS_AZURE_SIGNING_DLIB (+ AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET); INDUS_SIGNTOOL).
+- Checks: biome, tsc, desktop vitest 1642; ruff/pyright; pytest 2637; tooling.checks ok.
+- W49-b-1..9. MERGE with w49a: use a's afterExtract and add `win32` to STAMPERS (stampWindowsExecutable from sign-win.mjs);
+  keep both sides of builderConfig.test.ts "never signs/publishes"; drop a's `_build_step` (b's build_step covers dist-*);
+  reword the release.yml desktop comment once; the top-level canary identity also applies to mac ("Indus Canary.app").
+- Follow-ups: real Windows signing run (Trusted Signing client 1.0.53 + dlib path unverified offline), arm64 pty.node
+  smoke, Windows updates via electron-updater with publisherName, deb update owner manual, linux launcher id / APP_NAME
+  follow canary identity. Owner: Windows secrets, publisher name, maintainer address (RM12), app ids (RM10).
