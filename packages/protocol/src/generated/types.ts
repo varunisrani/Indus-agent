@@ -2212,7 +2212,7 @@ export interface SessionsWatchResult {
 export interface ShellExecParams {
   /** The command line. */
   command: string;
-  /** The session whose folder it runs in. */
+  /** The session whose folder it runs in (on the daemon: one this connection attached). */
   session_id?: string | null;
 }
 

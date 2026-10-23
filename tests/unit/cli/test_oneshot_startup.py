@@ -57,3 +57,20 @@ def test_the_one_shot_imports_leave_docker_cron_and_the_content_scanner_unloaded
         [sys.executable, "-c", _LAZY], capture_output=True, text=True, timeout=120, check=True
     )
     assert json.loads(done.stdout.strip().splitlines()[-1]) == []
+
+
+_CONFIG = (
+    "import json\n"
+    "import indus.cli.oneshot, indus.cli.runtime, indus.core.agent\n"
+    "from indus.foundation.config import schema\n"
+    "models = [schema.ConfigModel, *schema._Section.__subclasses__()]\n"
+    "print(json.dumps(sorted(m.__name__ for m in models if m.__pydantic_complete__)))\n"
+)
+
+
+def test_the_one_shot_imports_build_no_config_section_validator() -> None:
+    # W50-f-1: DEFAULTS come from the generated twin, so no config model is built at import.
+    done = subprocess.run(
+        [sys.executable, "-c", _CONFIG], capture_output=True, text=True, timeout=120, check=True
+    )
+    assert json.loads(done.stdout.strip().splitlines()[-1]) == []

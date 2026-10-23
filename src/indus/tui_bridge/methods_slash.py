@@ -4,9 +4,9 @@
 Commands are looked up in the shared registry (``indus.service.commands``) and run **in process**;
 the bridge never imports ``indus.cli``. The commands themselves, the busy and timeout rules and the
 dispatch order are ``indus.service.slash_commands`` (shared with the daemon's WebSocket, W48-h);
-this module is the bridge's ``SlashHost`` (``BridgeSlashHost``) and the handlers only an
-in-process host has: ``queue`` (this viewer's own prompt queue) and the session switches ``yolo``,
-``reasoning``, ``fast`` (through ``config.set``). Who runs what:
+this module is the bridge's ``SlashHost`` (``BridgeSlashHost``; the session switches ``yolo``,
+``reasoning``, ``fast`` go through its ``config.set``) and the handler only an in-process host
+has: ``queue`` (this viewer's own prompt queue). Who runs what:
 
 - ``HANDLERS`` — the shared handlers plus the bridge's own (session, control and information);
 - ``CLIENT`` — the terminal UI itself (screen, pickers, leaving, files on the client's side);
@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
+
+from pydantic import JsonValue
 
 from indus.foundation.blocking import run_blocking
 from indus.foundation.scope import Scope
@@ -101,9 +103,13 @@ class BridgeSlashHost:
     def skills(self, session_id: str | None) -> CommandTable | None:
         return skill_table(self.bridge, session_id)
 
-    def queued(self, session_id: str) -> int:
+    async def queued(self, session_id: str) -> int:
         view = self.bridge.view(session_id)
         return len(view.queue) if view is not None else 0
+
+    async def set_switch(self, session_id: str, key: ConfigKey, value: JsonValue) -> JsonValue:
+        params = ConfigSetParams(key=key, value=value, session_id=session_id)
+        return (await methods_config.set_value(self.bridge, params)).value
 
     async def title(self, session_id: str, title: str | None) -> tuple[str | None, bool]:
         result = await methods_session.title(
@@ -150,11 +156,6 @@ def _bridge(host: BridgeSlashHost) -> Bridge:
     return host.bridge
 
 
-async def _switch(bridge: Bridge, session_id: str, key: ConfigKey, value: Any) -> Any:
-    params = ConfigSetParams(key=key, value=value, session_id=session_id)
-    return (await methods_config.set_value(bridge, params)).value
-
-
 # -- the bridge's own handlers (an in-process host only) -------------------------------------------
 
 
@@ -183,41 +184,9 @@ async def _queue(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
     return out(f"Queued ({len(view.queue)} waiting).")
 
 
-async def _yolo(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
-    from indus.safety.approvals.decision import APPROVALS, session_key
-
-    bridge = _bridge(host)
-    agent_id = host.service.agent(sid).session_id
-    enabled = not APPROVALS.auto_approve(session_key(bridge.scope, agent_id))
-    await _switch(bridge, sid, ConfigKey.YOLO, enabled)
-    if enabled:
-        return out("Auto-approve is ON for this session; never-allowed commands stay blocked.")
-    return out("Auto-approve is off: risky commands ask first again.")
-
-
-async def _reasoning(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
-    if not arg.strip():
-        level = host.service.agent(sid).binding.state.reasoning_effort or "off"
-        return out(f"Reasoning effort: {level}.")
-    value = await _switch(_bridge(host), sid, ConfigKey.REASONING, arg.strip().split()[0])
-    return out(f"Reasoning effort: {value}.")
-
-
-async def _fast(host: BridgeSlashHost, sid: str, arg: str) -> SlashExecResult:
-    word = arg.strip().split()[0] if arg.strip() else "status"
-    if word == "status":
-        live = methods_config.session_settings(_bridge(host), host.service, sid)
-        return out(f"Fast mode: {live.get('fast') or 'normal'}.")
-    value = await _switch(_bridge(host), sid, ConfigKey.FAST, word)
-    return out(f"Fast mode {value} for this session.")
-
-
 HANDLERS: dict[str, SlashHandler] = {
     **slash_commands.HANDLERS,
     "queue": _queue,
-    "yolo": _yolo,
-    "reasoning": _reasoning,
-    "fast": _fast,
 }
 """Canonical command name → the bridge's handler (the shared ones and the bridge's own)."""
 

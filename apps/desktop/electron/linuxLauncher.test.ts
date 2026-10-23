@@ -29,16 +29,16 @@ function setup(overrides: Partial<LauncherDeps> = {}) {
     homeDir: path.join(root, "home"),
     resourcesPath: resources,
     scheme: "indus",
+    identity: { launcherId: "ai.indus.desktop", appName: "Indus" },
     log: (line) => lines.push(line),
     ...overrides,
   };
   const entry = path.join(
-    root,
-    "home",
+    deps.homeDir,
     ".local",
     "share",
     "applications",
-    "ai.indus.desktop.desktop",
+    `${deps.identity.launcherId}.desktop`,
   );
   return { root, deps, lines, entry };
 }
@@ -51,7 +51,12 @@ describe("Linux launcher entry", () => {
   });
 
   it("registers the deep-link scheme and passes links with %U", () => {
-    const text = desktopEntry({ execPath: "/opt/Indus.AppImage", scheme: "indus" });
+    const text = desktopEntry({
+      execPath: "/opt/Indus.AppImage",
+      scheme: "indus",
+      id: "ai.indus.desktop",
+      name: "Indus",
+    });
     expect(text).toContain("Exec=/opt/Indus.AppImage %U\n");
     expect(text).toContain("MimeType=x-scheme-handler/indus;\n");
     expect(text).toContain("Icon=ai.indus.desktop\n");
@@ -68,6 +73,28 @@ describe("Linux launcher entry", () => {
     );
     expect(fs.readFileSync(icon, "utf8")).toBe("png");
     expect(writeLinuxLauncher(deps)).toEqual({ written: false, reason: "unchanged" });
+  });
+
+  it("a canary writes its own entry and icon, named Indus Canary, beside stable's (W50-e)", () => {
+    const stable = setup();
+    const canary = setup({
+      homeDir: stable.deps.homeDir,
+      identity: { launcherId: "ai.indus.desktop.canary", appName: "Indus Canary" },
+    });
+    expect(writeLinuxLauncher(stable.deps).written).toBe(true);
+    expect(writeLinuxLauncher(canary.deps)).toEqual({ written: true, file: canary.entry });
+    expect(canary.entry).toMatch(/applications\/ai\.indus\.desktop\.canary\.desktop$/);
+    const text = fs.readFileSync(canary.entry, "utf8");
+    expect(text).toContain("Name=Indus Canary\n");
+    expect(text).toContain("StartupWMClass=Indus Canary\n");
+    expect(text).toContain("Icon=ai.indus.desktop.canary\n");
+    const icons = path.join(stable.deps.homeDir, ".local/share/icons/hicolor/256x256/apps");
+    expect(fs.existsSync(path.join(icons, "ai.indus.desktop.canary.png"))).toBe(true);
+    // stable's entry is untouched
+    const stableText = fs.readFileSync(stable.entry, "utf8");
+    expect(stableText).toContain("Name=Indus\n");
+    expect(stableText).toContain("StartupWMClass=Indus\n");
+    expect(stableText).toContain("Icon=ai.indus.desktop\n");
   });
 
   it("honours XDG_DATA_HOME", () => {

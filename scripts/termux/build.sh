@@ -13,7 +13,11 @@
 #                android_24_arm64_v8a (ABI cp314)
 #   7 venv       an offline install (--network none, --no-index) at the on-device path
 #   8 pack       DEBIAN/control and the payload under the Termux prefix, dpkg-deb with xz
-#   9 repo       repo.py build: pool, Packages, Release and, with a key, InRelease + Release.gpg
+#   9 repo       repo.py build without a key: pool, Packages and an unsigned Release
+#  10 validate   repo.py validate: the Release, the indexes and the pool agree, the tag's version
+#                is listed, and its package is laid out for Termux (prefix, launcher, venv, app,
+#                the `apt` install stamp `indus update` reads); a failure stops before signing
+#  11 sign       repo.py sign: InRelease + Release.gpg (verified) and key.asc, only after validate
 #
 # Usage: build.sh --tag <tag> --out <dir> [--source <checkout>] [--key-file <file>] [--dry-run]
 #   --source    git checkout holding the tag (default: this repository)
@@ -22,7 +26,8 @@
 #   --dry-run   print the identity and the stage plan, run nothing
 #
 # Exit codes: 0 built and signed; 2 refused (usage, tag, host, tools, placeholder digest);
-# 3 Release unsigned (CI treats 3 as failure); anything else: the named stage failed.
+# 3 Release unsigned (CI treats 3 as failure); 4 the assembled repository failed validation
+# (nothing signed); anything else: the named stage failed.
 
 set -Eeuo pipefail
 
@@ -36,7 +41,7 @@ TERMUX_PREFIX="/data/data/com.termux/files/usr"
 INSTALL_ROOT="$TERMUX_PREFIX/lib/$PACKAGE"
 RUNTIME_PACKAGES=(python nodejs-lts uv)
 PLACEHOLDER_DIGEST="sha256:0000000000000000000000000000000000000000000000000000000000000000"
-STAGES=(identity preflight source image runtimes wheels venv pack repo)
+STAGES=(identity preflight source image runtimes wheels venv pack repo validate sign)
 
 say() { printf 'termux build: %s\n' "$*" >&2; }
 refuse() { say "refused: $*"; exit 2; }
@@ -231,11 +236,25 @@ Description: Indus Agent for Termux
 EOF
 dpkg-deb --build -Zxz --root-owner-group "$TREE" "$OUT/debs/${PACKAGE}_${DEB_VERSION}_aarch64.deb"
 
-stage 9 "assemble the $SUITE repository"
-repo_args=(build --debs "$OUT/debs" --out "$OUT/repo" --tag "$TAG")
-[ -z "$KEY_FILE" ] || repo_args+=(--key-file "$KEY_FILE")
+stage 9 "assemble the $SUITE repository (unsigned)"
 set +e
-"$PY" "$HERE/repo.py" "${repo_args[@]}"
+"$PY" "$HERE/repo.py" build --debs "$OUT/debs" --out "$OUT/repo" --tag "$TAG"
+code=$?
+set -e
+# Without a key repo.py ends with 3 (Release unsigned): that is this stage's success.
+if [ "$code" -ne 3 ]; then
+    say "stage repo ended with exit $code, expected 3 (assembled, unsigned)"
+    exit $((code == 0 ? 1 : code))
+fi
+
+stage 10 "validate the $SUITE repository before signing"
+"$PY" "$HERE/repo.py" validate --out "$OUT/repo" --tag "$TAG"
+
+stage 11 "sign the $SUITE Release"
+sign_args=(sign --out "$OUT/repo" --tag "$TAG")
+[ -z "$KEY_FILE" ] || sign_args+=(--key-file "$KEY_FILE")
+set +e
+"$PY" "$HERE/repo.py" "${sign_args[@]}"
 code=$?
 set -e
 rm -rf "$WORK"

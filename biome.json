@@ -11,6 +11,8 @@
       "!**/dist",
       "!**/node_modules",
       "!packages/protocol/src/generated",
+      "!src/indus/foundation/config/defaults.json",
+      "!src/indus/learning/skills/shipped_frontmatter.json",
       "!src/indus/protocol/field_docs.json",
       "!src/indus/providers/pricing_table.json",
       "!tests/fixtures",

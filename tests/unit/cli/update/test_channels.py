@@ -82,6 +82,20 @@ def test_managed_installs_are_refused(tmp_path: Path) -> None:
     assert "pull" in REFUSALS["docker"].lower() and "nix" in REFUSALS["nix"].lower()
 
 
+def test_the_termux_stamp_is_its_own_kind(tmp_path: Path) -> None:
+    """W50-d-2: the `.deb` from the Termux APT channel stamps `apt`; the package manager owns that
+    tree even when a `.git` sits in it, and the refusal names the command that works there."""
+    never = lambda _p: False  # noqa: E731
+    pkg = _tree(tmp_path / "termux")
+    for text in ("apt\n", "\ufeffAPT\r\n"):
+        (tmp_path / "termux" / ".install_method").write_text(text, encoding="utf-8")
+        assert detect_kind(pkg, exists=never) == "apt"
+    (tmp_path / "termux" / ".git").mkdir()
+    assert detect_kind(pkg, exists=lambda p: p == "/.dockerenv") == "apt"
+    assert "`pkg upgrade indus-agent`" in REFUSALS["apt"]
+    assert "Termux" in REFUSALS["apt"] and "install.sh" not in REFUSALS["apt"]
+
+
 def test_install_id_is_the_real_path_hash(tmp_path: Path) -> None:
     real = tmp_path / "real"
     real.mkdir()

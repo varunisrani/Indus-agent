@@ -8,10 +8,14 @@ session's gate, so never under a starting turn), ``/compress`` under the same ga
 ``/steer`` through the generation fences naming the turn that runs. A title change reaches every
 viewer of the session as ``session.title``.
 
-What a shared daemon does not run is refused with its reason (``picker_reads.DAEMON_REFUSED``:
-``/queue`` is one viewer's own queue in the bridge, the session switches stay with ``config.set``
-in ``--local``; quick ``exec`` commands, ``DAEMON_QUICK_EXEC``), and the daemon's catalogue lists
-them ``unavailable``.
+The session switches ``/yolo``, ``/reasoning``, ``/fast`` go through the daemon's ``config.set``
+(``service.daemon_config``, W50-a), and ``/status`` counts the inputs waiting in the session's
+durable queue. What a shared daemon does not run is refused with its reason
+(``picker_reads.DAEMON_REFUSED``: ``/queue`` is one viewer's own queue in the bridge), and the
+daemon's catalogue lists it ``unavailable``. Quick ``exec`` commands run here (W50-b) through
+``service.host_shell`` with the checks ``--local`` applies (dangerous-command refusal, the built
+child environment, the limit on the scope's clock, redaction before the cut), in the session's
+folder.
 """
 
 from __future__ import annotations
@@ -20,12 +24,15 @@ import secrets
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
+from pydantic import JsonValue
+
 from indus.foundation.blocking import run_blocking
 from indus.foundation.scope import Scope
 from indus.protocol.attach import SessionMutateParams, SessionMutateResult
+from indus.protocol.bridge import ConfigKey, ConfigSetParams
 from indus.protocol.errors import INVALID_PARAMS, SESSION_BUSY, ErrorCode
 from indus.protocol.methods import ProtocolError
-from indus.service import picker_reads, slash_commands
+from indus.service import daemon_config, host_shell, picker_reads, slash_commands
 from indus.service.commands.registry import Surface
 from indus.service.daemon_host import DaemonSessionHost
 from indus.service.fences import ControlApplied, ControlStatus, StaleGeneration
@@ -85,13 +92,21 @@ class DaemonSlashHost:
 
     @property
     def quick_exec_refusal(self) -> str | None:
-        return picker_reads.DAEMON_QUICK_EXEC
+        return None  # they run here (W50-b)
 
     def skills(self, session_id: str | None) -> CommandTable | None:
         return picker_reads.skill_table(self.scope, session_id)
 
-    def queued(self, session_id: str) -> int:
-        return 0  # the daemon keeps no queue per viewer
+    async def queued(self, session_id: str) -> int:
+        """The inputs waiting in the session's durable queue (W50-a; every viewer's)."""
+        return await self.host.queued_inputs(self.key)
+
+    async def set_switch(self, session_id: str, key: ConfigKey, value: JsonValue) -> JsonValue:
+        """The daemon's ``config.set`` of a session switch (``service.daemon_config``, W50-a)."""
+        sid = self.service.current_id(self.key)
+        params = ConfigSetParams(key=key, value=value, session_id=sid)
+        done = await daemon_config.set_switch(self.host, self.key, params, scope=self.scope)
+        return done.value
 
     async def _mutate(self, operation: str, **payload: object) -> SessionMutateResult:
         params = SessionMutateParams.model_validate(
@@ -154,4 +169,12 @@ class DaemonSlashHost:
         return _took(self.host.steer(self.key, generation, text))
 
     async def run_quick(self, session_id: str, command: str) -> tuple[str, str, int]:
-        raise ProtocolError(INVALID_PARAMS, picker_reads.DAEMON_QUICK_EXEC)  # never offered
+        ran = await host_shell.run_host_command(
+            self.scope,
+            command,
+            session_id=self.service.current_id(self.key),
+            service=self.service,
+            timeout=host_shell.TIMEOUT_S,
+            clock=self.scope.clock,
+        )
+        return ran.stdout, ran.stderr, ran.code

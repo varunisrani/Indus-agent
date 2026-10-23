@@ -25,6 +25,8 @@ holds what the transport needs for that, on top of the ``DaemonSessionHost`` (P1
   the session's log whenever a subscription changes its viewers.
 - Header: every attach also asks the host for a ``session.info`` (``announce_info``), so a
   client that attached a session learns its model, folder and title (W48-h, D-16.550).
+- A viewer's own tool-progress mode per attached session (``set_tool_mode``, from
+  ``config.set verbose`` with a session, W50-a), dropped when the session is let go.
 
 Every method runs on the daemon's event loop. Event frames are checked against their declared
 models (``check_event``); in strict mode a mismatch is kept in ``violations``.
@@ -50,6 +52,7 @@ from indus.protocol.server_requests import (
     SERVER_REQUEST_KINDS,
     SERVER_REQUEST_METHOD,
 )
+from indus.service.client_settings import ToolMode
 from indus.service.daemon_host import DaemonSessionHost
 from indus.service.event_log import LoggedEvent, Replay, ReplayGap
 from indus.service.request_redelivery import Offer
@@ -485,6 +488,7 @@ class _Counts:
 @dataclass(slots=True)
 class _State:
     attached: set[str] = field(default_factory=set[str])
+    tool_modes: dict[str, ToolMode] = field(default_factory=dict[str, ToolMode])
 
 
 class Subscriptions:
@@ -544,6 +548,16 @@ class Subscriptions:
 
     def is_viewer(self, key: str) -> bool:
         return self.host.viewers.find(key, self.connection_id) is not None
+
+    def tool_mode(self, key: str) -> ToolMode | None:
+        """This connection's own tool-progress mode for the attached session ``key`` (None: the
+        profile's applies)."""
+        return self._state.tool_modes.get(key)
+
+    def set_tool_mode(self, key: str, mode: ToolMode) -> None:
+        """``config.set verbose`` with a session (W50-a): this viewer's mode, kept while the
+        session stays attached here (not saved; the daemon still sends every tool event)."""
+        self._state.tool_modes[key] = mode
 
     # -- configuration --------------------------------------------------------------------------
 
@@ -678,6 +692,7 @@ class Subscriptions:
         if key is None or key not in self._state.attached:
             return False
         self._state.attached.discard(key)
+        self._state.tool_modes.pop(key, None)
         self.outbox.close_lane(key)
         removed = await self.host.detach(key, self.connection_id)
         if removed:
@@ -714,6 +729,7 @@ class Subscriptions:
     def forget(self, key: str) -> None:
         """The host closed the session (``session.close``): drop it here too."""
         self._state.attached.discard(key)
+        self._state.tool_modes.pop(key, None)
         self.outbox.close_lane(key)
 
     # -- refusals -------------------------------------------------------------------------------

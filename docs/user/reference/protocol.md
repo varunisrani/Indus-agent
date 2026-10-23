@@ -630,7 +630,7 @@ Parameters:
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `command` | str | yes | The command line. |
-| `session_id` | str or null | no | The session whose folder it runs in. |
+| `session_id` | str or null | no | The session whose folder it runs in (on the daemon: one this connection attached). |
 
 Result:
 
@@ -640,7 +640,7 @@ Result:
 | `stderr` | str | yes | The redacted tail of its error output. |
 | `code` | int | yes | Exit status. |
 
-Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`, `TEXT_EMPTY`, `SHELL_REFUSED`, `SHELL_TIMEOUT`.
+Errors: `PARSE_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_FOUND`, `INVALID_PARAMS`, `INTERNAL_ERROR`, `UNKNOWN_PARAM_KEY`, `TEXT_EMPTY`, `SHELL_REFUSED`, `SHELL_TIMEOUT`, `SESSION_NOT_FOUND`.
 
 ### config.get
 

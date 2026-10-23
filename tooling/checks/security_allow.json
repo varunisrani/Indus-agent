@@ -4,8 +4,8 @@
     "src/indus/cli/bang.py": {
       "shell": "2026-10-21: the classic CLI's !command runs the text the person typed at their own prompt through their shell (never model output); env comes from indus.safety.child_env"
     },
-    "src/indus/tui_bridge/methods_shell.py": {
-      "shell": "2026-10-21: the TUI's !command, the same as cli/bang.py: text typed by the owner of the bridge connection, env from the caller (child_env)"
+    "src/indus/service/host_shell.py": {
+      "shell": "2026-10-23: the TUI's !command and quick exec commands (moved from tui_bridge/methods_shell.py, W50-b), for the bridge and for a client attached to the owner's daemon: text typed by the owner or from the profile's own config.yaml, dangerous-command refusal first, env from child_env, output redacted, time-limited"
     },
     "src/indus/gateway/core/commands.py": {
       "shell": "2026-10-21: quick commands of type exec run the command string from the profile's own config.yaml; the chat message's arguments are never appended; env from child_env, output redacted, time-limited"

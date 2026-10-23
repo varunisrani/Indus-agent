@@ -22,6 +22,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import identity from "./channel-identity.cjs";
 
 export const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** Packages with a compiled binding the main process loads at run time. */
@@ -37,8 +38,13 @@ const REPO_ALLOW_FILE = path.resolve(
   "checks",
   "licenses_allow.json",
 );
-/** The Linux/Windows app id; also the desktop entry's file name on Linux. */
-export const APP_ID = "ai.indus.desktop";
+/**
+ * `desktopName` for a build on `channel`: its app id (channel-identity.cjs) + `.desktop`. Electron
+ * hands it to the Linux desktop as the app's desktop-file id, so a canary must not take stable's.
+ */
+export function desktopNameFor(channel) {
+  return `${identity.channelIdentity(channel ?? "").appId}.desktop`;
+}
 export const PACKAGE_NAME = "indus-desktop";
 
 /** Parts of a native module's folder that never ship (sources, build scripts, typings). */
@@ -279,7 +285,7 @@ export function stageApp({
     license: "MIT",
     type: "module",
     main: "dist-electron/main.js",
-    desktopName: `${APP_ID}.desktop`,
+    desktopName: desktopNameFor(stamp.channel),
     dependencies,
   };
   fs.writeFileSync(

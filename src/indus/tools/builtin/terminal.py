@@ -31,6 +31,10 @@ scope is refused before anything is touched (R02.8).
 On native Windows a host-local backend cannot run background jobs (they fail to start with the
 WSL2 refusal, W47-e-1), so there the offered schema (``schema_overrides``) drops ``background``
 and the background-only arguments and says so in its description; sandbox backends keep them.
+On that host ``plan`` runs with ``foreground_only`` (W50-c): a trailing ``&`` is refused with a
+foreground hint instead of becoming a job, a timeout above the cap is cut to the cap (the result
+says so in ``timeout_capped``) instead of being promoted, and the guidance refusals point to WSL2
+or a Docker or SSH backend rather than ``background=true``.
 """
 
 from __future__ import annotations
@@ -321,31 +325,76 @@ def _asks_help_or_version(command: str) -> bool:
     )
 
 
-def foreground_guidance(command: str) -> str | None:
-    """Why this foreground command should be a background job instead, or None."""
+GUIDANCE = {
+    "wrapper": (
+        "This foreground command detaches itself (nohup/disown/setsid), so its output and "
+        'exit would be lost. Send it without the wrapper as terminal(command="...", '
+        "background=true, notify=true) so it is tracked; check readiness and run tests in "
+        "separate calls."
+    ),
+    "amp": (
+        "This foreground command puts work in the background with '&'. Send it without the "
+        "'&' as terminal(command=\"...\", background=true) (add notify=true for a job that "
+        "ends), then check on it in follow-up calls."
+    ),
+    "long_lived": (
+        "This looks like a server or watcher that keeps running. Start it with "
+        "background=true, wait until it is ready (a health URL or a log line), then run "
+        "tests in a separate call."
+    ),
+}
+"""The planning refusals where background jobs can run."""
+
+WINDOWS_ELSEWHERE = (
+    "Background processes are not available on native Windows with the local terminal backend; "
+    "a server, watcher or long job needs WSL2 or a Docker or SSH terminal backend."
+)
+WINDOWS_GUIDANCE = {
+    "wrapper": (
+        "This command detaches itself (nohup/disown/setsid), so its output and exit would be "
+        "lost. If it finishes on its own, send it without the wrapper; it then runs in the "
+        "foreground. " + WINDOWS_ELSEWHERE
+    ),
+    "amp": (
+        "This command puts work in the background with '&'. If every part finishes on its own, "
+        "send it without the '&' (or with '&&'); it then runs in the foreground. "
+        + WINDOWS_ELSEWHERE
+    ),
+    "trailing_amp": (
+        "The trailing '&' would start a background process. If the command finishes on its own, "
+        "send it without the '&'; it then runs in the foreground (up to the timeout). "
+        + WINDOWS_ELSEWHERE
+    ),
+    "long_lived": (
+        "This looks like a server or watcher that keeps running, so it would hold this call "
+        "until its timeout and then be stopped. " + WINDOWS_ELSEWHERE
+    ),
+}
+"""The planning refusals on a host that runs foreground commands only (W50-c-1, W50-c-3)."""
+
+TIMEOUT_CAPPED_NOTE = (
+    "The requested timeout ({requested}s) is above the {cap}s foreground limit, so the command "
+    "ran with a {cap}s timeout. Background processes are not available on native Windows with "
+    "the local terminal backend; a longer job needs WSL2 or a Docker or SSH terminal backend."
+)
+
+
+def foreground_guidance(command: str, *, foreground_only: bool = False) -> str | None:
+    """Why this foreground command should be a background job instead, or None. With
+    ``foreground_only`` (a host without background jobs) the texts name where such work can run
+    instead of ``background=true``."""
     if _asks_help_or_version(command):
         return None
     plain = _mask_quotes(command)
     if _WRAPPERS.search(plain):
-        return (
-            "This foreground command detaches itself (nohup/disown/setsid), so its output and "
-            'exit would be lost. Send it without the wrapper as terminal(command="...", '
-            "background=true, notify=true) so it is tracked; check readiness and run tests in "
-            "separate calls."
-        )
-    if "&" in _NOT_BACKGROUND.sub("", plain):
-        return (
-            "This foreground command puts work in the background with '&'. Send it without the "
-            "'&' as terminal(command=\"...\", background=true) (add notify=true for a job that "
-            "ends), then check on it in follow-up calls."
-        )
-    if any(p.search(plain) for p in _LONG_LIVED):
-        return (
-            "This looks like a server or watcher that keeps running. Start it with "
-            "background=true, wait until it is ready (a health URL or a log line), then run "
-            "tests in a separate call."
-        )
-    return None
+        kind = "wrapper"
+    elif "&" in _NOT_BACKGROUND.sub("", plain):
+        kind = "amp"
+    elif any(p.search(plain) for p in _LONG_LIVED):
+        kind = "long_lived"
+    else:
+        return None
+    return (WINDOWS_GUIDANCE if foreground_only else GUIDANCE)[kind]
 
 
 def _strip_trailing_amp(command: str) -> str:
@@ -385,6 +434,7 @@ class Plan:
     workdir: str | None
     auto_background: bool = False
     promoted_from: int | None = None
+    capped_from: int | None = None  # foreground-only host: the timeout asked for, above the cap
 
 
 def _config(scope: Scope, key: str, fallback: Any = None) -> Any:
@@ -394,8 +444,10 @@ def _config(scope: Scope, key: str, fallback: Any = None) -> Any:
     return value
 
 
-def plan(call: Call, scope: Scope) -> Plan:
-    """Decide how the call runs; raises ``Refusal``."""
+def plan(call: Call, scope: Scope, *, foreground_only: bool = False) -> Plan:
+    """Decide how the call runs; raises ``Refusal``. ``foreground_only``: the backend cannot
+    run background jobs here (native Windows, host-local), so nothing is turned into one; an
+    explicit ``background=true`` is still planned and meets the backend's own refusal."""
     command = call.command
     if not isinstance(command, str):
         raise Refusal(results.rejected(f"command must be text, got {type(command).__name__}."))
@@ -418,12 +470,16 @@ def plan(call: Call, scope: Scope) -> Plan:
         return Plan(command, True, timeout, call.workdir)
     converted = trailing_amp_command(command)
     if converted is not None:
+        if foreground_only:
+            raise Refusal(results.rejected(WINDOWS_GUIDANCE["trailing_amp"]))
         return Plan(converted, True, timeout, call.workdir, auto_background=True)
-    guidance = foreground_guidance(command)
+    guidance = foreground_guidance(command, foreground_only=foreground_only)
     if guidance:
         raise Refusal(results.rejected(guidance))
     cap = int(_config(scope, "terminal.max_foreground_timeout", DEFAULT_FOREGROUND_CAP))
     if timeout > cap:
+        if foreground_only:
+            return Plan(command, False, float(cap), call.workdir, capped_from=int(timeout))
         return Plan(command, True, timeout, call.workdir, promoted_from=int(timeout))
     return Plan(command, False, timeout, call.workdir)
 
@@ -673,13 +729,20 @@ class TerminalTool:
     def session_cwd(self, scope: Scope, session_id: str | None) -> str | None:
         return self._cwds.get((str(scope.home), session_id or "default"))
 
+    def foreground_only(
+        self, scope: Scope | None, environments: EnvironmentRegistry | None = None
+    ) -> bool:
+        """True on native Windows when the scope's backend is host-local (``local`` opens the Git
+        Bash host there): background jobs cannot start, so none is offered or planned."""
+        if os_family() != "win32":
+            return False
+        name = EnvironmentRegistry.backend_name(scope) if scope is not None else "local"
+        entry = (environments or self.shared.environments).entry(name)
+        return entry is not None and entry.flags.host_local
+
     def schema_overrides(self, scope: Scope | None) -> Mapping[str, Any] | None:
         """The schema without background jobs on native Windows with a host-local backend."""
-        if os_family() != "win32":
-            return None
-        name = EnvironmentRegistry.backend_name(scope) if scope is not None else "local"
-        entry = self.shared.environments.entry(name)
-        if entry is None or not entry.flags.host_local:
+        if not self.foreground_only(scope):
             return None
         return copy.deepcopy(WINDOWS_HOST_SCHEMA)
 
@@ -732,7 +795,7 @@ class TerminalTool:
                     "the command was not run."
                 )
             )
-        steps = plan(call, scope)
+        steps = plan(call, scope, foreground_only=self.foreground_only(scope, ctx.environments))
         try:
             key, env = await ctx.environments.acquire(scope, session_id=session_id)
         except BackendUnavailable as exc:
@@ -875,7 +938,7 @@ class TerminalTool:
         if isinstance(outcome, BackendStatus):
             return results.backend_status(outcome)
         self._record_cwd(scope, session_id, steps.workdir, outcome)
-        return results.finish(
+        finished = results.finish(
             steps.command,
             outcome,
             scope=scope,
@@ -884,6 +947,10 @@ class TerminalTool:
             approval_note=verdict.note,
             max_chars=int(_config(scope, "tool_output.max_chars", 50_000)),
         )
+        if steps.capped_from is None:
+            return finished
+        capped = TIMEOUT_CAPPED_NOTE.format(requested=steps.capped_from, cap=int(steps.timeout))
+        return mutation_hooks.with_notes(finished, {"timeout_capped": capped})
 
     def _record_cwd(
         self, scope: Scope, session_id: str | None, workdir: str | None, result: ExecResult

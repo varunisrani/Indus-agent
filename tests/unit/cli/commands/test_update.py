@@ -79,6 +79,30 @@ def test_managed_install_refused_with_its_instruction(
     assert ran.code == 1 and "Nix owns updates: run `nix flake update` and rebuild." in ran.err
 
 
+def test_termux_install_is_sent_to_pkg(
+    user_scope: Scope,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W50-d-2: the Termux `.deb`'s `apt` stamp → refused with the `pkg upgrade` line; nothing is
+    run, whichever way the command is asked."""
+    tree = tmp_path / "termux" / "app"
+    (tree / "src" / "indus").mkdir(parents=True)
+    (tree / "pyproject.toml").write_text("", encoding="utf-8")
+    (tree / ".install_method").write_text("apt\n", encoding="utf-8")
+    world = World(tree)
+    for argv in (["-y"], ["--check"], ["--channel", "canary", "-y"]):
+        ran = cli(capsys, monkeypatch, user_scope, world, *argv)
+        assert ran.code == 1 and REFUSALS["apt"] in ran.err, argv
+        assert "pkg upgrade indus-agent" in ran.err
+    planned = cli(capsys, monkeypatch, user_scope, world, "--plan")
+    plan = json.loads(planned.out)
+    assert planned.code == 1 and plan["install_kind"] == "apt" and plan["action"] == "refused"
+    assert plan["reason"] == REFUSALS["apt"]
+    assert world.runs == []
+
+
 def test_no_terminal_needs_yes_and_touches_nothing(
     upstream: Upstream,
     user_scope: Scope,

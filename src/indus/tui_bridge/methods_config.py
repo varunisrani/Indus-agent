@@ -28,13 +28,9 @@ from __future__ import annotations
 import importlib
 import logging
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, cast
-
-from pydantic import JsonValue
+from typing import TYPE_CHECKING, Any
 
 from indus.foundation.blocking import run_blocking
-from indus.foundation.config import writer
-from indus.foundation.scope import Scope
 from indus.protocol.bridge import (
     ConfigApplied,
     ConfigGetParams,
@@ -53,20 +49,13 @@ from indus.protocol.bridge import (
     ReloadMcpParams,
     ReloadMcpResult,
 )
-from indus.protocol.errors import CONFIRM_REQUIRED, INVALID_PARAMS, PROVIDER_UNAVAILABLE
+from indus.protocol.errors import INVALID_PARAMS, PROVIDER_UNAVAILABLE
 from indus.protocol.methods import PROTOCOL_VERSION, ProtocolError
 from indus.providers import bundled
 from indus.providers.profile import ProviderProfile
 from indus.providers.route import resolve
-from indus.providers.types import normalize_effort
-from indus.service import client_settings, picker_reads
-from indus.service.client_settings import (
-    SESSION_KEYS,
-    TOOL_MODES,
-    ToolMode,
-    read_setting,
-    tui_setting,
-)
+from indus.service import client_settings, config_writes, picker_reads
+from indus.service.client_settings import SESSION_KEYS, read_setting, tui_setting
 from indus.service.session_service import SessionService
 from indus.tui_bridge.bridge import SessionView
 
@@ -78,16 +67,7 @@ __all__ = ["apply_deferred", "read_setting", "register", "session_settings", "tu
 
 log = logging.getLogger(__name__)
 
-BUSY_MODES = ("interrupt", "queue", "steer")
 MCP_RELOAD = "indus.mcp.reload:reload"
-_SAVED: dict[ConfigKey, str] = {
-    ConfigKey.BUSY: "display.busy_input_mode",
-    ConfigKey.THEME: "tui.theme",
-    ConfigKey.INDICATOR: "tui.indicator",
-    ConfigKey.DETAILS: "tui.details",
-    ConfigKey.STATUSBAR: "tui.statusbar",
-    ConfigKey.MOUSE: "tui.mouse",
-}
 
 
 # -- reading ---------------------------------------------------------------------------------------
@@ -108,37 +88,8 @@ async def get(bridge: Bridge, params: ConfigGetParams) -> ConfigGetResult:
 
 
 # -- writing ---------------------------------------------------------------------------------------
-
-
-def _nested(dotted: str, value: Any) -> dict[str, Any]:
-    head, _, rest = dotted.partition(".")
-    return {head: _nested(rest, value) if rest else value}
-
-
-async def _save(scope: Scope, dotted: str, value: Any) -> None:
-    await run_blocking(writer.save, scope, _nested(dotted, value), label="settings write")
-
-
-def _bad(message: str) -> ProtocolError:
-    return ProtocolError(INVALID_PARAMS, message, path="value")
-
-
-def _choice(value: JsonValue, allowed: tuple[str, ...]) -> str:
-    if not isinstance(value, str) or value.strip().lower() not in allowed:
-        raise _bad(f"value must be one of {', '.join(allowed)}")
-    return value.strip().lower()
-
-
-def _flag(value: JsonValue) -> bool:
-    if not isinstance(value, bool):
-        raise _bad("value must be true or false")
-    return value
-
-
-def _tool_mode(value: JsonValue) -> ToolMode:
-    if isinstance(value, bool):
-        return "verbose" if value else "all"
-    return cast(ToolMode, _choice(value, TOOL_MODES))
+# The checks and the profile writes are ``indus.service.config_writes`` (shared with the daemon's
+# WebSocket, W50-a); this bridge keeps how a session's model is bound and its viewer's mode.
 
 
 async def _set_model(bridge: Bridge, service: SessionService, session_id: str, wanted: str) -> None:
@@ -170,8 +121,6 @@ async def apply_deferred(bridge: Bridge, service: SessionService, view: SessionV
 async def _set_session(
     bridge: Bridge, params: ConfigSetParams, service: SessionService, session_id: str
 ) -> ConfigSetResult:
-    from indus.core import fast_mode
-    from indus.safety.approvals.decision import APPROVALS, session_key
     from indus.state import sessions
 
     key, value = params.key, params.value
@@ -180,42 +129,29 @@ async def _set_session(
     view = bridge.view(sid)
     applied = ConfigApplied.NOW
     if key is ConfigKey.YOLO:
-        enabled = _flag(value)
+        enabled = config_writes.yolo_value(value)
         handle = bridge.store_handle()
 
         def persist(on: bool) -> object:
             if handle is None:
                 return False
-            return sessions.patch_model_config(handle, sid, {sessions.YOLO_KEY: bool(on)})
+            return sessions.set_yolo(handle, sid, on)
 
-        APPROVALS.set_auto_approve(session_key(bridge.scope, sid), enabled, persist=persist)
+        config_writes.switch_auto_approve(bridge.scope, sid, enabled, persist)
     elif key is ConfigKey.FAST:
-        mode = fast_mode.parse_mode(value)
-        if mode is None:
-            raise _bad(f"value must be one of {', '.join(fast_mode.MODES)}")
-        fast_mode.FAST_MODES.set(fast_mode.session_key(bridge.scope, sid), mode)
-        value = mode
+        value = config_writes.fast_value(value)
+        config_writes.switch_fast(bridge.scope, sid, value)
     elif key is ConfigKey.REASONING:
-        if not isinstance(value, str) or not value.strip():
-            raise _bad("value must be a reasoning level")
-        effort = normalize_effort(value.strip().lower())
+        effort = config_writes.reasoning_value(value)
         binding = agent.binding
         try:
             await binding.apply(binding.state.route, requested_effort=effort)
         except Exception as exc:
-            raise _bad(f"reasoning not changed: {exc}") from exc
+            raise config_writes.bad_value(f"reasoning not changed: {exc}") from exc
         value = binding.state.reasoning_effort or "none"
     else:  # model
-        if not isinstance(value, str) or not value.strip():
-            raise _bad("value must be a model name")
-        wanted = value.strip()
-        confirm = {str(m).strip() for m in tui_setting(bridge.scope, "confirm_models") or []}
-        if (wanted in confirm or wanted.partition(":")[2] in confirm) and not params.confirm:
-            raise ProtocolError(
-                CONFIRM_REQUIRED,
-                f"{wanted} is marked as expensive; confirm the switch",
-                path="confirm",
-            )
+        wanted = config_writes.model_value(value)
+        config_writes.check_confirm(bridge.scope, wanted, params.confirm)
         if agent.current is not None:
             if view is not None:
                 view.pending_model = wanted
@@ -232,34 +168,19 @@ async def set_value(bridge: Bridge, params: ConfigSetParams) -> ConfigSetResult:
     key, value = params.key, params.value
     if key in SESSION_KEYS:
         if params.session_id is None:
-            raise ProtocolError(INVALID_PARAMS, f"{key.value} needs a session", path="session_id")
+            raise config_writes.needs_session(key)
         service = await bridge.service()
         return await _set_session(bridge, params, service, params.session_id)
     if key is ConfigKey.VERBOSE:
-        mode = _tool_mode(value)
         if params.session_id is not None:
+            mode = config_writes.tool_mode(value)
             await bridge.service()
             view = bridge.watch(params.session_id)
             view.tool_mode = mode
             bridge.projector.info(view)
             return ConfigSetResult(key=key, value=mode, applied=ConfigApplied.NOW, saved=False)
-        await _save(bridge.scope, "tui.tool_progress", mode)
-        return ConfigSetResult(key=key, value=mode, applied=ConfigApplied.NOW, saved=True)
-    dotted = _SAVED[key]
-    if key is ConfigKey.BUSY:
-        clean: Any = _choice(value, BUSY_MODES)
-    elif key is ConfigKey.INDICATOR:
-        clean = _choice(value, ("spinner", "dots", "none"))
-    elif key is ConfigKey.DETAILS:
-        clean = _choice(value, ("collapsed", "expanded"))
-    elif key in (ConfigKey.STATUSBAR, ConfigKey.MOUSE):
-        clean = _flag(value)
-    else:  # theme
-        if not isinstance(value, str) or not value.strip():
-            raise _bad("value must be a theme name")
-        clean = value.strip()
-    await _save(bridge.scope, dotted, clean)
-    return ConfigSetResult(key=key, value=clean, applied=ConfigApplied.NOW, saved=True)
+        return await config_writes.save_tool_mode(bridge.scope, value)
+    return await config_writes.save_setting(bridge.scope, key, value)
 
 
 # -- models ----------------------------------------------------------------------------------------

@@ -377,3 +377,20 @@ Follow-ups: `/status` on the daemon does not count the session's queued inputs; 
 local `/yolo`, `/reasoning`, `/fast`, `/verbose`, `/busy` still call `config.set` (-32601 when
 attached); `running` in `session.info` is only refreshed on attach and changes (turn events carry
 it otherwise).
+
+## Wave 50 (a, b): `config.set` and `shell.exec` served attached (integration note)
+
+Both follow-ups above are closed. The daemon serves `config.set` (wave 50 a, D-16.1150 –
+D-16.1156; task note `docs/notes/followups/w50-a.md`): the bridge's keys, checks, messages and
+scope from `service/config_writes.py`, the session switches through `service/daemon_config.py`
+(a model switch is `session.mutate`'s, `deferred` while a turn runs), `verbose` with a session is
+this connection's own mode. So the attached TUI's `/yolo`, `/reasoning`, `/fast`, `/verbose`,
+`/busy`, Shift+Tab and model picker work, `/yolo`, `/reasoning`, `/fast` run on the daemon as
+server commands, and the daemon's `/status` shows `Queued messages: N`; D-16.549 is closed and
+the allow-list's `bridge.settings` entry is gone. The daemon also serves `shell.exec` and runs
+quick `exec` commands (wave 50 b, D-16.1157 – D-16.1160; `docs/notes/followups/w50-b.md`) through
+`service/host_shell.py`, the one definition `--local` uses (`DAEMON_QUICK_EXEC` removed). Since
+then `picker_reads.DAEMON_REFUSED` holds `/queue` only, the one command the daemon still refuses
+and lists `unavailable`. Open: whether an attached `!command` should go through the sandbox
+backend (owner question D-16.1158); the daemon does not yet trim tool events by a connection's
+own `verbose` mode (D-16.1151).

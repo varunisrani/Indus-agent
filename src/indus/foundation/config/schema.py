@@ -3,27 +3,41 @@
 `DEFAULTS` is generated from the models, so every default lives in exactly one place (D-16.32).
 Sections without a model yet are kept as raw mappings; unknown keys inside a modelled section are
 kept and reported, never dropped.
+
+Start-up (W50-f-1): the models build their validators on first use (``defer_build``), and
+``defaults.json`` is the generated twin of ``DEFAULTS`` (``python -m
+indus.foundation.config.defaults_twin``), read instead of building every model at import while it
+names the sha256 of this file and ``versions.py``; a missing or stale twin means the defaults are
+built from the models as before. ``validate`` checks only the settings that differ from the
+defaults, which are valid by construction.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
+import logging
 import types
 import typing
 from collections.abc import Mapping
-from typing import Any, Literal, Union, cast
+from pathlib import Path
+from typing import Annotated, Any, Literal, Union, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
-from indus.foundation import yamlio
+from indus.foundation import versions, yamlio
 from indus.foundation.versions import SANDBOX_IMAGE
+
+log = logging.getLogger(__name__)
 
 CURRENT_VERSION = 1
 VERSION_KEY = "_config_version"
+DEFAULTS_TWIN = Path(__file__).with_name("defaults.json")
 
 
 class _Section(BaseModel):
-    model_config = ConfigDict(extra="allow", validate_default=True)
+    model_config = ConfigDict(extra="allow", validate_default=True, defer_build=True)
 
 
 class ModelSection(_Section):
@@ -1839,7 +1853,9 @@ class PmSection(_Section):
 class ConfigModel(BaseModel):
     """The whole file. Unknown top-level sections are kept as they are."""
 
-    model_config = ConfigDict(extra="allow", validate_default=True, populate_by_name=True)
+    model_config = ConfigDict(
+        extra="allow", validate_default=True, populate_by_name=True, defer_build=True
+    )
 
     model: str | ModelSection = Field(
         default_factory=ModelSection, description="the chat model and its endpoint"
@@ -2042,11 +2058,51 @@ class ConfigModel(BaseModel):
     config_version: int = Field(default=CURRENT_VERSION, alias=VERSION_KEY)
 
 
-def _build_defaults() -> dict[str, Any]:
+def build_defaults() -> dict[str, Any]:
     return ConfigModel().model_dump(by_alias=True, mode="python")
 
 
-_DEFAULTS: dict[str, Any] = _build_defaults()
+def defaults_sources() -> tuple[Path, ...]:
+    """The files whose text decides ``DEFAULTS``: this module and the pinned versions it reads."""
+    return (Path(__file__), Path(versions.__file__))
+
+
+def source_digest() -> str:
+    """The sha256 the defaults twin names (each source's file name and text, newlines as read)."""
+    digest = hashlib.sha256()
+    for source in defaults_sources():
+        digest.update(source.name.encode("utf-8") + b"\0")
+        digest.update(source.read_text(encoding="utf-8").encode("utf-8") + b"\0")
+    return digest.hexdigest()
+
+
+def defaults_from_twin(twin_text: str, digest: str) -> dict[str, Any] | None:
+    """The defaults a twin carries; ``None`` when it is not JSON, not a twin, or for other text."""
+    try:
+        twin = json.loads(twin_text)
+    except ValueError:
+        return None
+    if not isinstance(twin, dict):
+        return None
+    twin_map = cast(dict[str, Any], twin)
+    defaults = twin_map.get("defaults")
+    if twin_map.get("source_sha256") != digest or not isinstance(defaults, dict):
+        return None
+    return cast(dict[str, Any], defaults)
+
+
+def _load_defaults() -> dict[str, Any]:
+    try:
+        found = defaults_from_twin(DEFAULTS_TWIN.read_text(encoding="utf-8"), source_digest())
+    except (OSError, UnicodeDecodeError):
+        found = None
+    if found is None:
+        log.debug("%s is missing or stale; building the defaults from the models", DEFAULTS_TWIN)
+        return build_defaults()
+    return found
+
+
+_DEFAULTS: dict[str, Any] = _load_defaults()
 DEFAULTS: Mapping[str, Any] = types.MappingProxyType(_DEFAULTS)
 
 
@@ -2124,22 +2180,90 @@ def schema_for(key: str) -> type | None:
     return _type_of(annotation)
 
 
-def validate(data: Mapping[str, Any]) -> list[str]:
-    """Check ``data`` against the models; return warnings (never raises, never drops keys)."""
+def same_value(left: object, right: object) -> bool:
+    """Equal with equal types all the way down (``1``, ``1.0`` and ``True`` are three values)."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        left_map = cast(dict[Any, Any], left)
+        right_map = cast(dict[Any, Any], right)
+        return list(left_map) == list(right_map) and all(
+            same_value(value, right_map[key]) for key, value in left_map.items()
+        )
+    if isinstance(left, list | tuple):
+        left_seq = cast(list[Any] | tuple[Any, ...], left)
+        right_seq = cast(list[Any] | tuple[Any, ...], right)
+        return len(left_seq) == len(right_seq) and all(
+            same_value(a, b) for a, b in zip(left_seq, right_seq, strict=True)
+        )
+    return left == right
+
+
+_ADAPTERS: dict[str, TypeAdapter[Any]] = {}
+
+
+def _adapter(name: str) -> TypeAdapter[Any]:
+    """A validator for one top-level setting alone (built on first use, then kept)."""
+    adapter = _ADAPTERS.get(name)
+    if adapter is None:
+        info = ConfigModel.model_fields[name]
+        annotation: Any = info.annotation
+        if info.metadata:
+            annotation = Annotated[annotation, *info.metadata]
+        adapter = _ADAPTERS[name] = TypeAdapter(annotation)
+    return adapter
+
+
+def _warnings(
+    errors: list[tuple[str, ValidationError]], parsed: list[tuple[str, Any]]
+) -> list[str]:
+    if errors:
+        return [
+            ".".join(str(p) for p in (*((key,) if key else ()), *err["loc"])) + f": {err['msg']}"
+            for key, exc in errors
+            for err in exc.errors()
+        ]
     warnings: list[str] = []
-    try:
-        parsed = ConfigModel.model_validate(dict(data))
-    except ValidationError as exc:
-        for err in exc.errors():
-            where = ".".join(str(p) for p in err["loc"])
-            warnings.append(f"{where}: {err['msg']}")
-        return warnings
-    for name in ConfigModel.model_fields:
-        section = getattr(parsed, name)
+    for name, section in parsed:
         if isinstance(section, _Section) and section.model_extra:
             for extra in section.model_extra:
                 warnings.append(f"{name}.{extra}: unknown setting (kept)")
     return warnings
+
+
+def _validate_whole(data: Mapping[str, Any]) -> list[str]:
+    """The whole-model check: every setting through ``ConfigModel`` (builds every section)."""
+    try:
+        parsed = ConfigModel.model_validate(dict(data))
+    except ValidationError as exc:
+        return _warnings([("", exc)], [])
+    return _warnings([], [(name, getattr(parsed, name)) for name in ConfigModel.model_fields])
+
+
+def validate(data: Mapping[str, Any]) -> list[str]:
+    """Check ``data`` against the models; return warnings (never raises, never drops keys).
+
+    Only the settings whose value differs from the default are validated, each with its own
+    field's validator, in the model's field order; the warnings are those of the whole-model check
+    (``_validate_whole``), which a key spelled by field name instead of its alias still takes.
+    """
+    fields = ConfigModel.model_fields
+    if any(info.alias and info.alias != name and name in data for name, info in fields.items()):
+        return _validate_whole(data)
+    errors: list[tuple[str, ValidationError]] = []
+    parsed: list[tuple[str, Any]] = []
+    for name, info in fields.items():
+        key = info.alias or name
+        if key not in data:
+            continue  # absent: the model would use the default, which is valid
+        value = data[key]
+        if key in _DEFAULTS and same_value(value, _DEFAULTS[key]):
+            continue
+        try:
+            parsed.append((name, _adapter(name).validate_python(value)))
+        except ValidationError as exc:
+            errors.append((key, exc))
+    return _warnings(errors, parsed)
 
 
 _EXAMPLE_HEADER = """\

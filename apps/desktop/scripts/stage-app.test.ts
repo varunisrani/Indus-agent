@@ -13,7 +13,7 @@ interface Staged {
 const stage = stageApp as (options: {
   appDir: string;
   outDir: string;
-  stamp?: { version: string; updateOwner?: string };
+  stamp?: { version: string; updateOwner?: string; channel?: string };
   platform?: string;
   allowFile?: string;
 }) => Staged;
@@ -102,7 +102,11 @@ describe("stage the packaged app", () => {
   it("holds only the bundles and a generated package.json without dependencies", () => {
     const root = app();
     const out = path.join(root, "build", "app");
-    const staged = stage({ appDir: root, outDir: out, stamp: { version: "0.4.2" } });
+    const staged = stage({
+      appDir: root,
+      outDir: out,
+      stamp: { version: "0.4.2", channel: "stable" },
+    });
     expect(files(out)).toEqual([
       "desktop-build-stamp.json",
       "dist-electron/main.js",
@@ -123,6 +127,19 @@ describe("stage the packaged app", () => {
     expect(JSON.parse(fs.readFileSync(path.join(out, "package.json"), "utf8"))).toEqual(
       staged.packageJson,
     );
+  });
+
+  it("names the desktop-file id after the stamp's channel; an unlabelled stamp is canary (W50-e)", () => {
+    const desktopName = (stamp: { version: string; channel?: string }) => {
+      const root = app();
+      return stage({ appDir: root, outDir: path.join(root, "build", "app"), stamp }).packageJson
+        .desktopName;
+    };
+    expect(desktopName({ version: "0.4.2", channel: "stable" })).toBe("ai.indus.desktop.desktop");
+    expect(desktopName({ version: "0.4.2", channel: "canary" })).toBe(
+      "ai.indus.desktop.canary.desktop",
+    );
+    expect(desktopName({ version: "0.4.2" })).toBe("ai.indus.desktop.canary.desktop");
   });
 
   it("copies a declared node-pty with its binding, platform prebuilds and runtime deps only", () => {

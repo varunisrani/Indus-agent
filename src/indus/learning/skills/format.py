@@ -22,10 +22,14 @@ path. Each condition is independent and all must pass:
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import re
 import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
@@ -51,11 +55,13 @@ __all__ = [
     "SkillFrontmatter",
     "SkillMetadata",
     "VisibilityContext",
+    "block_digest",
     "check_category",
     "check_name",
     "check_skill_text",
     "check_support_path",
     "check_support_size",
+    "frontmatter_block",
     "hidden_reason",
     "parse_skill",
     "split_frontmatter",
@@ -76,6 +82,8 @@ LAYOUT_DIRS: tuple[str, ...] = ("references", "templates", "scripts", "examples"
 
 _OS_PREFIX = {"macos": "darwin", "darwin": "darwin", "linux": "linux", "windows": "win32"}
 _FENCE_END = re.compile(r"^---[ \t]*$", re.MULTILINE)
+# The shipped skills' parsed front matter, keyed by block digest (W50-f-2; `frontmatter_twin`).
+SHIPPED_TWIN = Path(__file__).with_name("shipped_frontmatter.json")
 
 
 class SkillFormatError(ValueError):
@@ -221,20 +229,66 @@ class ParsedSkill:
 # -- parsing ------------------------------------------------------------------------------------
 
 
-def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
-    """``(frontmatter mapping, body)``. Raises ``SkillFormatError`` when the fences or the YAML
-    are broken; text without a leading fence gives ``({}, text)``."""
+def frontmatter_block(text: str) -> tuple[str | None, str]:
+    """``(the YAML text between the fences, body)``; ``(None, text)`` without a leading fence.
+
+    Raises ``SkillFormatError`` when the closing fence is missing.
+    """
     content = text.removeprefix("﻿")
     first, _, rest = content.partition("\n")
     if first.rstrip() != "---":
-        return {}, content
+        return None, content
     end = _FENCE_END.search(rest)
     if end is None:
         raise SkillFormatError(["frontmatter has no closing '---' line"])
-    block = rest[: end.start()]
-    body = rest[end.end() :].removeprefix("\n")
+    return rest[: end.start()], rest[end.end() :].removeprefix("\n")
+
+
+def block_digest(block: str) -> str:
+    """The sha256 of a front-matter block, the key of the shipped-skills twin."""
+    return hashlib.sha256(block.encode("utf-8")).hexdigest()
+
+
+@cache
+def _shipped_blocks() -> Mapping[str, dict[str, Any]]:
+    """Digest -> parsed front matter of each shipped skill, from the twin (empty when unusable)."""
     try:
-        loaded = yamlio.load_safe(block) if block.strip() else {}
+        twin = json.loads(SHIPPED_TWIN.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    skills = cast(dict[str, Any], twin).get("skills") if isinstance(twin, dict) else None
+    if not isinstance(skills, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for entry in cast(dict[str, Any], skills).values():
+        if not isinstance(entry, dict):
+            continue
+        digest = cast(dict[str, Any], entry).get("sha256")
+        frontmatter = cast(dict[str, Any], entry).get("frontmatter")
+        if isinstance(digest, str) and isinstance(frontmatter, dict):
+            out[digest] = cast(dict[str, Any], frontmatter)
+    return out
+
+
+def _load_block(block: str) -> object:
+    known = _shipped_blocks().get(block_digest(block))
+    if known is not None:
+        return copy.deepcopy(known)
+    return yamlio.load_safe(block)
+
+
+def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """``(frontmatter mapping, body)``. Raises ``SkillFormatError`` when the fences or the YAML
+    are broken; text without a leading fence gives ``({}, text)``.
+
+    A block that is the front matter of a shipped skill is read from the generated twin instead of
+    parsed (W50-f-2); any other block is parsed.
+    """
+    block, body = frontmatter_block(text)
+    if block is None:
+        return {}, body
+    try:
+        loaded = _load_block(block) if block.strip() else {}
     except yamlio.YamlError as exc:
         raise SkillFormatError([f"frontmatter is not valid YAML: {exc}"]) from exc
     if not isinstance(loaded, dict):

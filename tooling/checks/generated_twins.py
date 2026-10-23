@@ -1,11 +1,14 @@
-"""Generated twins check: the JSON twins the startup path reads match their sources (W48-g).
+"""Generated twins check: the JSON twins the startup path reads match their sources (W48-g, W50-f).
 
-Two files ship as generated twins so the one-shot path skips slow parsing at import:
-``src/indus/providers/pricing_table.json`` (from ``pricing_table.yaml``) and
-``src/indus/protocol/field_docs.json`` (the field docstrings of the wire models). Each generator
-has a ``--check`` mode; this guard runs both in a child process against the checked root
-(``PYTHONPATH=<root>/src``), so the tree under ``--root`` is judged, not an installed copy. A root
-without a generator (the guards' own fixture trees) skips that twin with a note.
+Four files ship as generated twins so the one-shot path skips slow parsing or model building:
+``src/indus/providers/pricing_table.json`` (from ``pricing_table.yaml``),
+``src/indus/protocol/field_docs.json`` (the field docstrings of the wire models),
+``src/indus/foundation/config/defaults.json`` (the config defaults built from the models) and
+``src/indus/learning/skills/shipped_frontmatter.json`` (the shipped skills' parsed front matter,
+read from ``skills/``). Each generator has a ``--check`` mode; this guard runs each in a child
+process against the checked root (``PYTHONPATH=<root>/src``), so the tree under ``--root`` is
+judged, not an installed copy. A root without a generator (the guards' own fixture trees) skips
+that twin with a note.
 """
 
 from __future__ import annotations
@@ -38,6 +41,16 @@ TWINS = (
         "indus.protocol.field_docs",
         "src/indus/protocol/field_docs.py",
         "src/indus/protocol/field_docs.json",
+    ),
+    Twin(
+        "indus.foundation.config.defaults_twin",
+        "src/indus/foundation/config/defaults_twin.py",
+        "src/indus/foundation/config/defaults.json",
+    ),
+    Twin(
+        "indus.learning.skills.frontmatter_twin",
+        "src/indus/learning/skills/frontmatter_twin.py",
+        "src/indus/learning/skills/shipped_frontmatter.json",
     ),
 )
 

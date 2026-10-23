@@ -44,6 +44,9 @@ the same call shapes with the daemon's rules:
   (P17-05) and return their result values (``StaleGeneration`` for a control aimed at another
   turn). Server requests live in one ``RequestBook`` per session (P17-07), handed to the session's
   broker; ``refuse`` records a viewer's error answer.
+- **Switches.** ``set_auto_approve`` is a person's ``/yolo`` over ``config.set`` (W50-a): stored
+  on the session row, then switched, and an unattended turn that switched it on leaves it as the
+  person set it. ``queued_inputs`` counts the inputs waiting in a session's queue (``/status``).
 - **Policy.** ``create`` freezes the launch policy (P17-09) into the session row; ``resume`` with a
   policy that changes a frozen value is refused (``PolicyConflict``).
 - **Changes.** ``mutations`` (``service.session_mutations``) serves ``session.mutate``: an editor's
@@ -639,6 +642,12 @@ class DaemonSessionHost:
         """A viewer answered a server request with an error (``-32601``, ``4404`` …)."""
         return self._require(session_id).book.refuse(connection_id, request_id, code)
 
+    async def queued_inputs(self, session_id: str) -> int:
+        """How many inputs wait in the session's queue (not the running one; read off the loop)."""
+        key = self._require(session_id).key
+        rows = await self._off(lambda: ledger.pending(self.store, key))
+        return sum(1 for row in rows if row.state == "queued")
+
     async def stop(self, session_id: str, admission_id: str) -> StopResult:
         """Cancel a queued admission or stop exactly its running turn."""
         return await self.fences.stop(self._require(session_id).key, admission_id)
@@ -885,6 +894,22 @@ class DaemonSessionHost:
     def _end_auto_approve(self, key: str) -> None:
         for session_id in self._auto.pop(key, set()):
             APPROVALS.set_auto_approve(session_key(self.store.scope, session_id), False)
+
+    async def set_auto_approve(self, key: str, enabled: bool) -> None:
+        """A person's ``/yolo`` (``config.set``, W50-a) for the hosted session ``key``: written to
+        its row first (a resume keeps it), then switched. An unattended turn that switched it on
+        no longer switches it off at its end: the person's choice stays."""
+        sid = self.service.current_id(key)
+        self._auto.get(key, set()).discard(sid)
+
+        def remember() -> bool:
+            return sessions.set_yolo(self.store, sid, enabled)
+
+        try:
+            await self._off(remember)
+        except Exception:
+            log.warning("could not store the auto-approve switch of %s", sid, exc_info=True)
+        APPROVALS.set_auto_approve(session_key(self.store.scope, sid), enabled)
 
     def _begin_one_shot(self, key: str) -> None:
         """Run this turn as the in-process one-shot run does: the run context ``single_query``

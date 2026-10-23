@@ -5,6 +5,7 @@ Every other kind is refused with the one instruction that works for it (I21):
 
 - ``docker``: pull a new image and recreate the container (the image never updates itself);
 - ``nix``: Nix owns updates (``nix flake update``, then rebuild; P23-13);
+- ``apt``: the Termux APT channel's package (P24-21); Termux's ``pkg`` upgrades it;
 - ``desktop``: the desktop app updates its bundled runtime itself (Settings → About);
 - ``package``: an installed package has no updater (we publish no wheels, D-16.14);
 - ``dev``: a source tree without git history has nothing to move with.
@@ -50,7 +51,7 @@ __all__ = [
     "stamp_of",
 ]
 
-type InstallKind = Literal["source", "docker", "nix", "desktop", "package", "dev"]
+type InstallKind = Literal["source", "docker", "nix", "apt", "desktop", "package", "dev"]
 type Outcome = Literal["ok", "failed", "skipped", "owed", "deferred", "interrupted"]
 
 EXIT_AVAILABLE = 10
@@ -67,6 +68,12 @@ REFUSALS: dict[str, str] = {
         "your data volume is kept."
     ),
     "nix": "Nix owns updates: run `nix flake update` and rebuild.",
+    "apt": (
+        "This copy came from the Termux APT channel, so Termux's package manager updates it: "
+        "run `pkg upgrade indus-agent`. The suite named in "
+        "$PREFIX/etc/apt/sources.list.d/indus-agent.list (indus-stable or indus-canary) "
+        "decides the channel."
+    ),
     "desktop": (
         "This runtime belongs to the desktop app, which updates it itself: "
         "use Settings → About → Update in the app."
@@ -82,6 +89,9 @@ REFUSALS: dict[str, str] = {
 }
 
 _SOURCE_STAMPS = frozenset({"git", "source", "installer", "sh", "ps1"})
+_MANAGED_STAMPS = frozenset({"docker", "nix", "apt", "desktop", "package", "dev"})
+"""Stamps that name their kind as is. ``apt`` is written only by the Termux build
+(``scripts/termux/build.sh``), so it always means the Termux channel."""
 
 
 def detect_kind(
@@ -102,7 +112,7 @@ def detect_kind(
         return "source"
     if method in _SOURCE_STAMPS:
         return "source" if (root / ".git").exists() else "dev"
-    if method in {"docker", "nix", "desktop", "package", "dev"}:
+    if method in _MANAGED_STAMPS:
         return method  # type: ignore[return-value]
     return "package"
 

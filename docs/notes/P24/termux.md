@@ -175,3 +175,12 @@ Compare checklist (filled after the rewrite; reopened `scripts/termux/deb_versio
   `tests/unit/ci/test_termux_workflow.py::test_release_lane_names_the_admitted_commit_with_the_tag`
   and `tests/unit/ci/test_release_workflow.py::test_termux_lane_calls_its_workflow_on_the_admitted_commit`.
   The lane has never run.
+
+## Follow-up (wave 50, slice d)
+
+- W49-c-8's message is built: `indus update` knows the `apt` stamp as its own install kind and
+  refuses with `pkg upgrade indus-agent` (`docs/notes/followups/w50-d.md`, W50-d-1, W50-d-2).
+- `build.sh` gained the `validate` stage between assembling and signing (stages `repo`, `validate`,
+  `sign`; `repo.py validate` / `repo.py sign`, exit 4 for an invalid tree; W50-d-3, W50-d-4). It
+  checks the built repository and the package layout on the host; the install / upgrade proof in a
+  fresh Termux container (`check_apt.sh`'s role) is still owed to the first lane run.

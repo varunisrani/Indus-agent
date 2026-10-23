@@ -54,6 +54,7 @@ import { installContextMenus, type MenuContentsLike } from "./contextMenu.ts";
 import { DeepLinkRouter, installDeepLinks } from "./deepLinks.ts";
 import { installDiagnostics } from "./diagnostics.ts";
 import { applyEnvDefaults, parseBakedEnvDefaults } from "./envDefaults.ts";
+import { runtimeIdentity } from "./identity.ts";
 import { type IpcMainLike, IpcRegistry } from "./ipc/registry.ts";
 import { installJournalIpc, PreparedSubmissions } from "./journal/preparedSubmissions.ts";
 import { chooseOzonePlatform, planSwitches, readLaunchConfig } from "./launchConfig.ts";
@@ -104,6 +105,7 @@ import {
 import { type Fetcher, installThemeMarketplace } from "./theme/marketplace.ts";
 import { installUninstall } from "./uninstall.ts";
 import { createUpdateGate, gateHooks, installUpdates } from "./updates/install.ts";
+import { readStamp, stampLocations } from "./updates/skew.ts";
 import { installWindowIpc } from "./windows/ipc.ts";
 import { type BrowserWindowLike, WindowManager } from "./windows/manager.ts";
 import { installPetWindow } from "./windows/petWindow.ts";
@@ -112,8 +114,14 @@ import { installWakeIndicator } from "./windows/wakeIndicator.ts";
 /** Replaced at build time by scripts/build-electron.mjs with the validated defaults JSON. */
 declare const __INDUS_ENV_DEFAULTS__: string | undefined;
 
-const APP_NAME = "Indus";
 const HERE = import.meta.dirname;
+// Name and Linux launcher id follow the build stamp's channel, like the packaged app id and product
+// name do (W50-e): a canary is "Indus Canary" with launcher id ai.indus.desktop.canary.
+const IDENTITY = runtimeIdentity(
+  app.isPackaged ? readStamp(stampLocations(app.getAppPath()).inside) : null,
+  app.isPackaged,
+);
+const APP_NAME = IDENTITY.appName;
 
 // -- pre-ready ------------------------------------------------------------------------------------
 
@@ -623,6 +631,7 @@ async function boot(): Promise<void> {
     homeDir: os.homedir(),
     resourcesPath: process.resourcesPath,
     scheme: instance.scheme,
+    identity: IDENTITY,
     log: logLine,
   }); // P20-38
   startDeepLinks();

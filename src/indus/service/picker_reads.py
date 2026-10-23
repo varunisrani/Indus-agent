@@ -19,8 +19,8 @@ WebSocket (an attached TUI, the default). Both call these functions, so an attac
   surface's built-in commands (who runs each: ``SERVER_COMMANDS`` / ``CLIENT_COMMANDS``), then the
   quick commands and the runnable skills and bundles (blocking; W48-b). A host that does not run
   some of them names them: ``refused`` built-ins and, with ``quick_exec=False``, quick ``exec``
-  commands are listed ``unavailable`` (the daemon: ``DAEMON_REFUSED``, ``DAEMON_QUICK_EXEC``;
-  W48-h).
+  commands are listed ``unavailable`` (the daemon: ``DAEMON_REFUSED``, W48-h; it runs quick
+  ``exec`` commands since W50-b).
 
 Who may name which session is the transport's rule, not this module's: the daemon checks that the
 connection attached it before it calls in here.
@@ -63,7 +63,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CLIENT_COMMANDS",
-    "DAEMON_QUICK_EXEC",
     "DAEMON_REFUSED",
     "MAX_SLASH_ITEMS",
     "QUICK_KEY",
@@ -118,16 +117,10 @@ DAEMON_REFUSED: Final[Mapping[str, str]] = {
         "not run by the daemon: it keeps no queue per viewer (a message sent while a reply runs "
         "waits in the session's own queue)"
     ),
-    "yolo": "not run by the daemon: session switches change only in --local (D-16.549)",
-    "reasoning": "not run by the daemon: session switches change only in --local (D-16.549)",
-    "fast": "not run by the daemon: session switches change only in --local (D-16.549)",
 }
-"""Server commands a shared daemon does not run, with the reason it answers (W48-h)."""
-DAEMON_QUICK_EXEC = (
-    "not run by the daemon: quick exec commands run only in --local (the daemon runs no shell "
-    "commands for a client)"
-)
-"""Why the daemon does not run quick ``exec`` commands (W48-h)."""
+"""Server commands a shared daemon does not run, with the reason it answers (W48-h; the session
+switches ``yolo``, ``reasoning``, ``fast`` run there since W50-a, quick ``exec`` commands since
+W50-b)."""
 
 type Choice = tuple[str, str, RuntimeRoute | None, httpx.AsyncClient | None]
 """``(provider, model, route, client)``: what the picker marks current and may list live."""
@@ -179,7 +172,7 @@ def slash_completions(
     quick_exec: bool = True,
 ) -> CompleteResult:
     """``complete.slash``: the candidates for the slash text typed so far (quick ``exec``
-    commands only when ``quick_exec``: the daemon does not run them, W48-h)."""
+    commands only when ``quick_exec``: a host that does not run them leaves them out)."""
     extra: dict[str, str] = {}
     for name, spec in quick_command_table(scope).items():
         if not quick_exec and str(spec.get("type", "exec")).lower() == "exec":

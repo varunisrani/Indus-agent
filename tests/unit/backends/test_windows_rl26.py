@@ -101,7 +101,12 @@ class GroupJobs:
 
             readable, _, _ = select.select([fd], [], [], 0)
             if readable:
-                return None  # readable with nothing waiting: every writer closed it
+                # Readable: either bytes arrived after the count above (wave 50: that window
+                # ended the reader early, with nothing read) or every writer closed it. Count
+                # again; still nothing waiting means end of file.
+                fcntl.ioctl(fd, termios.FIONREAD, waiting)
+                count = int.from_bytes(waiting, sys.byteorder)
+                return count or None
         return count
 
 
@@ -359,15 +364,37 @@ def test_windows_starter_boots_and_stops_the_tree(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(verify_runner, "start_windows_process", stand_in)
     starter = verify_runner.WindowsStarter(dict(os.environ), _bash(), clock=SystemClock())
 
-    async def go() -> str:
-        handle = await starter.start("echo $$; sleep 30 & wait", os.getcwd())
-        await SystemClock().sleep(0.5)
-        return await starter.stop(handle)
+    command = "echo $$; sleep 30 & echo $!; wait"
 
-    output = asyncio.run(go())
-    assert stand_in.calls[0]["argv"][1:] == ["-c", "echo $$; sleep 30 & wait"]
+    async def go() -> tuple[list[str], str]:
+        handle = await starter.start(command, os.getcwd())
+        assert isinstance(handle, verify_runner._WindowsService)
+        # Wait for the reader thread to deliver both pids (a real signal, not a fixed sleep).
+        pids = await _complete_lines(handle.chunks, 2, deadline_s=15.0)
+        return pids, await starter.stop(handle)
+
+    pids, output = asyncio.run(go())
+    assert stand_in.calls[0]["argv"][1:] == ["-c", command]
     assert stand_in.calls[0]["env"]["MSYS_NO_PATHCONV"] == "1"
-    assert stand_in.jobs.terminated == 1 and _gone(int(output.split()[0]))
+    assert output.split()[:2] == pids
+    shell, grandchild = (int(pid) for pid in pids)
+    assert stand_in.jobs.terminated == 1
+    assert _gone(shell) and _gone(grandchild)  # the whole tree, not only the shell
+
+
+async def _complete_lines(chunks: list[str], count: int, *, deadline_s: float) -> list[str]:
+    """The first ``count`` complete lines the reader thread has appended to ``chunks``, polled
+    until they are there; fails at the deadline with what had arrived."""
+    clock = SystemClock()
+    end = clock.monotonic() + deadline_s
+    while True:
+        text = "".join(list(chunks))
+        lines = text.split("\n")[:-1]  # the last piece is an unfinished line
+        if len(lines) >= count:
+            return [line.strip() for line in lines[:count]]
+        if clock.monotonic() >= end:
+            raise AssertionError(f"only {text!r} arrived within {deadline_s:g}s")
+        await clock.sleep(0.01)
 
 
 # -- the admin console's command runner (wave 48) --------------------------------------------------

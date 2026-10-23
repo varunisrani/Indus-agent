@@ -1,4 +1,5 @@
-"""P24-21: the static APT repository for the Termux channel (layout, signing seam, exit 3)."""
+"""P24-21: the static APT repository for the Termux channel (layout, signing seam, exit 3), and
+the validation that runs before anything is signed (W50-d-3, exit 4)."""
 
 from __future__ import annotations
 
@@ -9,7 +10,8 @@ import lzma
 import shutil
 import subprocess
 import tarfile
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -35,14 +37,31 @@ CONTROL = (
 # -- building test packages ------------------------------------------------------------------------
 
 
-def _tar(files: Mapping[str, bytes]) -> bytes:
+def _tar(files: Mapping[str, bytes], *, executable: frozenset[str] = frozenset()) -> bytes:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.GNU_FORMAT) as archive:
         for name, body in files.items():
             info = tarfile.TarInfo(name)
-            info.size, info.mtime, info.mode = len(body), 0, 0o644
+            info.size, info.mtime = len(body), 0
+            info.mode = 0o755 if name in executable else 0o644
             archive.addfile(info, io.BytesIO(body))
     return buffer.getvalue()
+
+
+PREFIX = "./data/data/com.termux/files/usr"
+LAUNCHER = f"{PREFIX}/bin/indus"
+HOME_DIR = f"{PREFIX}/lib/indus-agent"
+STAMP_FILE = f"{HOME_DIR}/app/.install_method"
+
+
+def termux_layout(launcher: bytes = b"#!/bin/sh\n") -> dict[str, bytes]:
+    """The entries `check_payload` looks for, as `build.sh` lays them out."""
+    return {
+        LAUNCHER: launcher,
+        f"{HOME_DIR}/venv/bin/python": b"\x7fELF",
+        f"{HOME_DIR}/app/src/indus/__init__.py": b'__version__ = "1.2.3"\n',
+        STAMP_FILE: b"apt\n",
+    }
 
 
 def _ar(members: list[tuple[str, bytes]]) -> bytes:
@@ -61,6 +80,8 @@ def make_deb(
     member: str = "control.tar.xz",
     payload: bytes = b"#!/bin/sh\n",
     extra: Mapping[str, bytes] | None = None,
+    layout: Mapping[str, bytes] | None = None,
+    executable: frozenset[str] = frozenset({LAUNCHER}),
 ) -> bytes:
     text = control if control is not None else CONTROL.format(version=version, arch=arch)
     inner = _tar({"./control": text.encode(), **(extra or {})})
@@ -69,7 +90,8 @@ def make_deb(
         "control.tar.gz": lambda b: gzip.compress(b, mtime=0),
         "control.tar": lambda b: b,
     }.get(member, lambda b: b)(inner)
-    data = lzma.compress(_tar({"./data/data/com.termux/files/usr/bin/indus": payload}))
+    files = termux_layout(payload) if layout is None else layout
+    data = lzma.compress(_tar(files, executable=executable))
     return _ar([("debian-binary", b"2.0\n"), (member, packed), ("data.tar.xz", data)])
 
 
@@ -335,8 +357,10 @@ def test_gpg_signer_refuses_several_keys_and_bad_signatures(tmp_path: Path) -> N
 
 
 @pytest.mark.skipif(shutil.which("gpg") is None, reason="gpg is not installed")
-def test_real_gpg_signs_and_verifies(tmp_path: Path) -> None:
-    """End to end with a throwaway key made here (no key material is stored in the repo)."""
+@pytest.mark.parametrize("route", ["one-call", "build-validate-sign"])
+def test_real_gpg_signs_and_verifies(tmp_path: Path, route: str) -> None:
+    """End to end with a throwaway key made here (no key material is stored in the repo), both as
+    one `build --key-file` call and as the three steps `build.sh` runs (W50-d-3)."""
     home = tmp_path / "keyring"
     home.mkdir(mode=0o700)
     env = {"GNUPGHOME": str(home), "HOME": str(home), "PATH": "/usr/bin:/bin", "LC_ALL": "C"}
@@ -356,8 +380,14 @@ def test_real_gpg_signs_and_verifies(tmp_path: Path) -> None:
         write_debs(tmp_path / "in", make_deb())
         out = tmp_path / "repo"
         args = ["build", "--debs", str(tmp_path / "in"), "--out", str(out), "--tag", "v1.2.3"]
-        code = repo.main([*args, "--key-file", str(tmp_path / "secret.asc"), "--date", EPOCH])
-        assert code == repo.EXIT_OK
+        key = ["--key-file", str(tmp_path / "secret.asc")]
+        if route == "one-call":
+            assert repo.main([*args, *key, "--date", EPOCH]) == repo.EXIT_OK
+        else:
+            assert repo.main([*args, "--date", EPOCH]) == repo.EXIT_UNSIGNED
+            suite = ["--out", str(out), "--tag", "v1.2.3"]
+            assert repo.main(["validate", *suite]) == repo.EXIT_OK
+            assert repo.main(["sign", *suite, *key]) == repo.EXIT_OK
         dists = out / "dists/indus-stable"
         gpg("--verify", str(dists / "InRelease"))
         gpg("--verify", str(dists / "Release.gpg"), str(dists / "Release"))
@@ -451,3 +481,244 @@ def test_a_dpkg_deb_package_is_read(tmp_path: Path) -> None:
     )
     control = read_control(deb.read_bytes())
     assert control.get("Architecture") == "aarch64"
+
+
+# -- validation before signing (W50-d-3, W50-d-4) ------------------------------------------------
+
+POOL_FILE = "pool/main/i/indus-agent/indus-agent_1.2.3-1_aarch64.deb"
+SUITE_DIR = "dists/indus-stable"
+INDEX = f"{SUITE_DIR}/main/binary-aarch64/Packages"
+
+
+def assembled(tmp_path: Path, *debs: bytes, tag: str = "v1.2.3") -> Path:
+    """An unsigned tree, as `build.sh`'s repo stage leaves it."""
+    out = tmp_path / "repo"
+    paths = write_debs(tmp_path / f"in-{tag}", *(debs or (make_deb(),)))
+    build_repository(paths, out, tag, signer=None, when=WHEN)
+    return out
+
+
+def _edit(path: Path, old: str, new: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    assert old in text
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+
+def test_an_assembled_tree_validates(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out = assembled(tmp_path)
+    canary = "v1.2.4-canary.20261021T064100Z"
+    assembled(tmp_path, make_deb(version="1.2.4~canary.20261021T064100Z-1"), tag=canary)
+    assert repo.validate_repository(out, "v1.2.3") == []
+    assert repo.validate_repository(out, canary) == []
+    assert repo.main(["validate", "--out", str(out), "--tag", "v1.2.3"]) == repo.EXIT_OK
+    assert "indus-stable: valid; indus-agent 1.2.3-1 is laid out for Termux" in (
+        capsys.readouterr().err
+    )
+    assert repo.main(["validate", "--out", str(out), "--tag", "v1.2.3+canary.x"]) == 2
+
+
+def _drop_release(out: Path) -> None:
+    (out / SUITE_DIR / "Release").unlink()
+
+
+def _grow_index(out: Path) -> None:
+    with (out / INDEX).open("a", encoding="utf-8") as index:
+        index.write("\n")
+
+
+def _third_index(out: Path) -> None:
+    with (out / SUITE_DIR / "Release").open("a", encoding="utf-8") as release:
+        release.write(f" {'0' * 64}                1 main/binary-aarch64/Extra\n")
+
+
+def _climbing_name(out: Path) -> None:
+    _edit(out / SUITE_DIR / "Release", " main/binary-aarch64/Packages.gz", " ../Packages.gz")
+
+
+def _wrong_suite(out: Path) -> None:
+    _edit(out / SUITE_DIR / "Release", "Suite: indus-stable", "Suite: indus-canary")
+
+
+def _garbage_gz(out: Path) -> None:
+    (out / f"{INDEX}.gz").write_bytes(b"not gzip at all")
+
+
+def _drop_pool_file(out: Path) -> None:
+    (out / POOL_FILE).unlink()
+
+
+def _swap_pool_file(out: Path) -> None:
+    (out / POOL_FILE).write_bytes(make_deb(payload=b"#!/bin/sh\necho other\n"))
+
+
+def _other_control(out: Path) -> None:
+    (out / POOL_FILE).write_bytes(make_deb(version="1.2.5-1"))
+
+
+def _escaping_filename(out: Path) -> None:
+    _edit(out / INDEX, f"Filename: {POOL_FILE}", "Filename: ../../evil.deb")
+
+
+def _no_digest(out: Path) -> None:
+    text = (out / INDEX).read_text(encoding="utf-8")
+    kept = [line for line in text.splitlines(keepends=True) if not line.startswith("SHA256:")]
+    (out / INDEX).write_text("".join(kept), encoding="utf-8")
+
+
+def _listed_twice(out: Path) -> None:
+    text = (out / INDEX).read_text(encoding="utf-8")
+    (out / INDEX).write_text(text + "\n" + text, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        (_drop_release, "Release is missing (was the repository assembled?)"),
+        (_grow_index, "main/binary-aarch64/Packages does not match its Release entry"),
+        (_grow_index, "Packages.gz does not hold the same bytes as Packages"),
+        (_third_index, "Release lists ["),
+        (_climbing_name, "malformed SHA256 line"),
+        (_wrong_suite, "Release Suite is 'indus-canary', not 'indus-stable'"),
+        (_garbage_gz, "Packages.gz is not gzip"),
+        (_drop_pool_file, f"indus-agent 1.2.3-1: {POOL_FILE} is missing from the pool"),
+        (_swap_pool_file, "does not match the stanza's SHA256"),
+        (_other_control, "has Version 1.2.5-1"),
+        (_escaping_filename, "Filename ../../evil.deb is not the pool path"),
+        (_no_digest, "the stanza has no SHA256"),
+        (_listed_twice, "indus-agent 1.2.3-1 is listed twice"),
+    ],
+)
+def test_a_damaged_tree_is_reported(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    damage: Callable[[Path], None],
+    message: str,
+) -> None:
+    out = assembled(tmp_path)
+    damage(out)
+    problems = repo.validate_repository(out, "v1.2.3")
+    assert [p for p in problems if message in p], problems
+    suite = ["--out", str(out), "--tag", "v1.2.3"]
+    assert repo.main(["validate", *suite]) == repo.EXIT_INVALID == 4
+    assert message in capsys.readouterr().err
+    assert repo.main(["sign", *suite]) == repo.EXIT_INVALID  # checked before the key is looked at
+    assert not (out / SUITE_DIR / "InRelease").exists() and not (out / "key.asc").exists()
+
+
+def test_the_tags_version_must_be_listed(tmp_path: Path) -> None:
+    out = assembled(tmp_path)
+    assert repo.validate_repository(out, "v1.2.4") == [
+        "indus-agent 1.2.4-1 (the version of v1.2.4) is not listed in indus-stable"
+    ]
+    assert repo.validate_repository(tmp_path / "nothing", "v1.2.3") == [
+        "dists/indus-stable/Release is missing (was the repository assembled?)"
+    ]
+
+
+def _without(name: str) -> dict[str, bytes]:
+    files = termux_layout()
+    del files[name]
+    return files
+
+
+@pytest.mark.parametrize(
+    ("deb", "message"),
+    [
+        (make_deb(layout=_without(STAMP_FILE)), "no install stamp /data/data/com.termux"),
+        (
+            make_deb(layout={**termux_layout(), STAMP_FILE: b"git\n"}),
+            "the install stamp says 'git', not 'apt'",
+        ),
+        (make_deb(executable=frozenset()), "/usr/bin/indus is not executable"),
+        (
+            make_deb(layout=_without(LAUNCHER)),
+            "no launcher /data/data/com.termux/files/usr/bin/indus",
+        ),
+        (make_deb(layout=_without(f"{HOME_DIR}/venv/bin/python")), "no environment python"),
+        (
+            make_deb(layout=_without(f"{HOME_DIR}/app/src/indus/__init__.py")),
+            "no application package",
+        ),
+        (
+            make_deb(layout={**termux_layout(), "./etc/profile": b"x", "./../up": b"y"}),
+            "2 payload entries outside /data/data/com.termux/files/usr: './etc/profile', './../up'",
+        ),
+        (
+            _ar([("debian-binary", b"2.0\n"), ("control.tar", _tar({"./control": b"x"}))]),
+            "no data member in the package",
+        ),
+        (
+            _ar([("debian-binary", b"2.0\n"), ("data.tar.zst", b"zstd")]),
+            "unsupported data member 'data.tar.zst'",
+        ),
+        (
+            _ar([("debian-binary", b"2.0\n"), ("data.tar.xz", b"not xz")]),
+            "unreadable data member",
+        ),
+    ],
+)
+def test_the_payload_layout_is_checked(deb: bytes, message: str) -> None:
+    problems = repo.check_payload(deb)
+    assert [p for p in problems if message in p], problems
+
+
+def test_a_good_payload_has_no_problems() -> None:
+    assert repo.check_payload(make_deb()) == []
+    stamp_with_bom = {**termux_layout(), STAMP_FILE: "\ufeffAPT\r\n".encode()}
+    assert repo.check_payload(make_deb(layout=stamp_with_bom)) == []
+    plain = _ar(
+        [
+            ("debian-binary", b"2.0\n"),
+            ("data.tar", _tar(termux_layout(), executable=frozenset({LAUNCHER}))),
+        ]
+    )
+    assert repo.check_payload(plain) == []
+
+
+def test_nothing_is_signed_when_the_package_is_not_laid_out_for_termux(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A package without its `apt` stamp would leave `indus update` unable to send the user to
+    `pkg`: the one-call build refuses to sign it, and so does `sign`."""
+    unstamped = make_deb(layout=_without(STAMP_FILE))
+    signer = FakeSigner()
+    debs = write_debs(tmp_path / "in", unstamped)
+    with pytest.raises(repo.InvalidRepository, match="no install stamp") as caught:
+        build_repository(debs, tmp_path / "repo", "v1.2.3", signer=signer, when=WHEN)
+    assert caught.value.suite == "indus-stable" and len(caught.value.problems) == 1
+    assert signer.signed == []
+    out = tmp_path / "repo"
+    assert (out / SUITE_DIR / "Release").is_file()  # written, but never signed
+    assert not (out / SUITE_DIR / "InRelease").exists() and not (out / "key.asc").exists()
+    with pytest.raises(repo.InvalidRepository):
+        repo.sign_repository(out, "v1.2.3", signer)
+    assert signer.signed == []
+    key = tmp_path / "key.asc"
+    key.write_text("not used\n")
+
+    @contextmanager
+    def fake_open(*_args: object, **_kwargs: object) -> Iterator[FakeSigner]:
+        yield signer
+
+    monkeypatch.setattr(repo.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(repo.GpgSigner, "open", fake_open)
+    args = ["build", "--debs", str(tmp_path / "in"), "--out", str(out), "--tag", "v1.2.3"]
+    assert repo.main([*args, "--key-file", str(key)]) == repo.EXIT_INVALID
+    assert signer.signed == []
+    err = capsys.readouterr().err
+    assert "indus-stable: indus-agent 1.2.3-1: no install stamp" in err
+    assert "1 problem(s); nothing was signed" in err
+
+
+def test_sign_validates_then_signs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out = assembled(tmp_path)
+    suite = ["--out", str(out), "--tag", "v1.2.3"]
+    assert repo.main(["sign", *suite]) == repo.EXIT_UNSIGNED
+    assert "valid but left UNSIGNED (no --key-file given)" in capsys.readouterr().err
+    assert repo.main(["sign", *suite, "--key-file", str(tmp_path / "missing.asc")]) == 2
+    signer = FakeSigner()
+    assert repo.sign_repository(out, "v1.2.3", signer) == "indus-stable"
+    release = (out / SUITE_DIR / "Release").read_bytes()
+    assert signer.signed == [release]
+    assert (out / SUITE_DIR / "InRelease").read_bytes() == b"CLEARSIGNED\n" + release
+    assert (out / "key.asc").read_bytes() == b"PUBLIC KEY STAND-IN\n"

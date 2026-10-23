@@ -1094,7 +1094,8 @@ export const METHODS = deepFreeze({
       "UNKNOWN_PARAM_KEY",
       "TEXT_EMPTY",
       "SHELL_REFUSED",
-      "SHELL_TIMEOUT"
+      "SHELL_TIMEOUT",
+      "SESSION_NOT_FOUND"
     ],
     "params": "ShellExecParams",
     "result": "ShellExecResult"

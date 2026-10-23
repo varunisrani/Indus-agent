@@ -455,7 +455,7 @@
     },
     "499": {
      "command": "The command line.",
-     "session_id": "The session whose folder it runs in."
+     "session_id": "The session whose folder it runs in (on the daemon: one this connection attached)."
     },
     "508": {
      "code": "Exit status.",
@@ -564,7 +564,7 @@
      "title": "Its title, when it has one."
     }
    },
-   "sha256": "f97c0fe22dacf4bb7af9bd6ad7df4a11b788c2a04aad11af1d49b97d4d14a19b"
+   "sha256": "43e5142b7ea2a730df108a71b6d08c02899067888237a8fb42174f9106469e16"
   },
   "indus.protocol.capabilities": {
    "classes": {

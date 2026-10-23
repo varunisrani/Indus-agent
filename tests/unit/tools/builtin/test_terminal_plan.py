@@ -624,3 +624,103 @@ def test_windows_sandbox_backends_and_other_hosts_keep_background(
     fn = _offered(Rig(tmp_path / "b"))
     assert set(fn["parameters"]["properties"]) >= BACKGROUND_ONLY
     assert "background=true" in fn["description"]
+
+
+# -- native Windows: plan() turns nothing into a background job (wave 50 c) -----------------------
+
+
+def _plan_fg_only(scope: Scope, **args: Any) -> Any:
+    return plan(normalize({"command": "true", **args}), scope, foreground_only=True)
+
+
+def _fg_only_refusal(scope: Scope, **args: Any) -> dict[str, Any]:
+    with pytest.raises(Refusal) as caught:
+        _plan_fg_only(scope, **args)
+    return json.loads(caught.value.result)
+
+
+@pytest.mark.parametrize(
+    "command", ["python -m http.server 8000 &", "make build && ./serve | tee log &", "srv 2>&1 &"]
+)
+def test_foreground_only_refuses_a_trailing_amp_with_a_foreground_hint(
+    scope: Scope, command: str
+) -> None:
+    assert trailing_amp_command(command) is not None  # POSIX would make it a job
+    body = _fg_only_refusal(scope, command=command)
+    assert body["status"] == "error"
+    assert "without the '&'" in body["error"] and "foreground" in body["error"]
+    assert "WSL2" in body["error"] and "background=true" not in body["error"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["srv & echo started", "nohup ./server", "setsid ./worker", "npm run dev", "uvicorn app:m"],
+)
+def test_foreground_only_guidance_names_no_background_option(scope: Scope, command: str) -> None:
+    body = _fg_only_refusal(scope, command=command)
+    assert "WSL2" in body["error"] and "background=true" not in body["error"]
+    assert foreground_guidance(command, foreground_only=True) == body["error"]
+    assert "background=true" in (foreground_guidance(command) or "")  # POSIX text unchanged
+
+
+def test_foreground_only_caps_an_overcap_timeout_in_the_foreground(tmp_path: Path) -> None:
+    scope = terminal_scope(tmp_path)
+    steps = _plan_fg_only(scope, command="pytest -x", timeout=900)
+    assert not steps.background and steps.promoted_from is None
+    assert steps.timeout == 600 and steps.capped_from == 900
+    at_cap = _plan_fg_only(scope, command="pytest -x", timeout=600)
+    assert (at_cap.background, at_cap.timeout, at_cap.capped_from) == (False, 600, None)
+    custom = terminal_scope(tmp_path, {"terminal": {"max_foreground_timeout": 120}}, name="c")
+    steps = _plan_fg_only(custom, command="pytest -x", timeout=300)
+    assert (steps.background, steps.timeout, steps.capped_from) == (False, 120, 300)
+
+
+def test_foreground_only_keeps_ordinary_and_explicit_background_plans(scope: Scope) -> None:
+    for command in ("ls && pwd", "cmd 2>&1 | tee out", "srv --help &", "uvicorn --version"):
+        steps = _plan_fg_only(scope, command=command)
+        assert not steps.background and steps.command == command
+    # an explicit background=true is planned as asked and meets the backend's refusal (W47-e-1)
+    assert _plan_fg_only(scope, command="srv", background=True).background
+
+
+def test_windows_host_backend_refuses_trailing_amp_before_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
+    rig = Rig(tmp_path)  # the scripted backend is host-local, like `local`
+    body = rig.run(rig.call(command="python3 -m http.server 8000 &"))
+    assert body["status"] == "error" and "without the '&'" in body["error"]
+    assert rig.specs == [] and rig.env.calls == [] and rig.created == []
+
+
+def test_windows_host_backend_runs_an_overcap_call_in_the_foreground_at_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
+    rig = Rig(tmp_path, env=ScriptedEnv([ExecResult("ok", 0)]))
+    rig.deliverable()
+    body = rig.run(rig.call(command="pytest -x", timeout=900))
+    assert body["output"] == "ok" and body["exit_code"] == 0
+    assert "900s" in body["timeout_capped"] and "600s" in body["timeout_capped"]
+    assert "promoted_from_foreground" not in body and rig.specs == []
+    assert [call.timeout for call in rig.env.calls] == [600]
+    # within the cap: no note
+    rig.env.answers.append(ExecResult("ok", 0))
+    assert "timeout_capped" not in rig.run(rig.call(command="pytest -x", timeout=60))
+
+
+def test_windows_sandbox_backend_and_posix_hosts_still_promote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
+    sandbox = Rig(tmp_path / "a", env=ScriptedEnv(flags=BackendFlags(isolated=True)))
+    assert not sandbox.tool.foreground_only(sandbox.scope)
+    body = sandbox.run(sandbox.call(command="pytest -x", timeout=900))
+    # promoted: started as a job inside the sandbox (the scripted one prints no process id)
+    assert "process id" in body["error"] and "timeout_capped" not in body
+    assert "nohup bash -lc" in sandbox.env.calls[0].command
+    monkeypatch.setattr(terminal_module, "os_family", lambda: "linux", raising=False)
+    host = Rig(tmp_path / "b")
+    assert not host.tool.foreground_only(host.scope)
+    body = host.run(host.call(command="python3 -m http.server 8000 &"))
+    assert "auto_backgrounded" in body

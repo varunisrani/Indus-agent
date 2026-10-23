@@ -58,8 +58,12 @@ What to expect:
   (`MSYS_NO_PATHCONV=1` and `MSYS2_ARG_CONV_EXCL=*`, unless you set them yourself), so options like
   `/F` reach programs such as `tasklist` unchanged. Give Windows programs Windows paths.
 - **Stopping.** A command that runs too long or that you interrupt is stopped together with every
-  program it started. Programs a command started in the background (`some-server &`) keep running
-  after that command ends normally.
+  program it started. Programs a command started in the background (a script that runs
+  `some-server &`, say) keep running after that command ends normally.
+- **Foreground only.** The agent runs commands in the foreground: a command that ends in `&` is
+  refused with a hint to send it without the `&`, and a timeout above the 600-second foreground
+  limit is cut to that limit (the result says so). Servers, watchers and longer jobs need WSL2 or a
+  Docker or SSH terminal backend.
 - **Text.** Commands get a UTF-8 console and `PYTHONUTF8=1`, so accented and non-Latin output comes
   through intact. Temporary files live under `<home>\cache\terminal`.
 - **Not available natively:** `sudo`, and the background-process, scheduled-job and code-execution

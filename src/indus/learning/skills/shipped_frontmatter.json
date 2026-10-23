@@ -1,0 +1,332 @@
+{
+ "note": "generated from the shipped skills by `python -m indus.learning.skills.frontmatter_twin`; do not edit",
+ "skills": {
+  "data/data-wrangling": {
+   "sha256": "171c60e07f0fc6a7cf7b1cd1be0b9b38a483009faadd99c39af17d7bc3c9fd01",
+   "frontmatter": {
+    "name": "data-wrangling",
+    "description": "Clean and reshape CSV, JSON and Excel data",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "data",
+      "tags": [
+       "csv",
+       "json",
+       "excel",
+       "pandas",
+       "cleaning"
+      ]
+     }
+    }
+   }
+  },
+  "data/pdf-and-documents": {
+   "sha256": "1d163434577876c91d3c63c29446ede40b19fed1e333d1f9a064a4158fad97b2",
+   "frontmatter": {
+    "name": "pdf-and-documents",
+    "description": "Extract from and assemble PDF and Office documents",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "data",
+      "tags": [
+       "pdf",
+       "docx",
+       "documents",
+       "extraction"
+      ]
+     }
+    }
+   }
+  },
+  "indus/indus-guide": {
+   "sha256": "4ea665ae975106c8d7e034b99e72f5cd77228612c8853920db12b11ddf28f3db",
+   "frontmatter": {
+    "name": "indus-guide",
+    "description": "Use, configure and extend Indus Agent itself",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "indus",
+      "tags": [
+       "indus",
+       "help",
+       "configuration",
+       "setup",
+       "profiles"
+      ]
+     }
+    }
+   }
+  },
+  "indus/skill-authoring": {
+   "sha256": "7adbf401035ad09adeabb6b0d57ddbea352df0ac4e8e8d56b67d935fdea23543",
+   "frontmatter": {
+    "name": "skill-authoring",
+    "description": "Write or improve a SKILL.md for Indus Agent",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "indus",
+      "tags": [
+       "skills",
+       "authoring",
+       "skill-md",
+       "learning"
+      ]
+     }
+    }
+   }
+  },
+  "productivity/meeting-notes-to-actions": {
+   "sha256": "9bb5e817198abb5e62e43e8f9b8ea9a6ba36e34cd0eb59a161b0486143fbf150",
+   "frontmatter": {
+    "name": "meeting-notes-to-actions",
+    "description": "Turn meeting notes into decisions and owned actions",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "productivity",
+      "tags": [
+       "meetings",
+       "notes",
+       "actions",
+       "decisions"
+      ]
+     }
+    }
+   }
+  },
+  "productivity/scheduling-jobs": {
+   "sha256": "fe189292e8240aad12b4ef92551eace4fe306e9e75a839a09059c442f92dc277",
+   "frontmatter": {
+    "name": "scheduling-jobs",
+    "description": "Turn a request into a safe scheduled job",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "productivity",
+      "tags": [
+       "cron",
+       "schedule",
+       "automation",
+       "reminders"
+      ]
+     }
+    }
+   }
+  },
+  "research/research-with-sources": {
+   "sha256": "66a0b60969aa61aff2d7cc76d91538286e5cef40f52083eac72d2dba370faf62",
+   "frontmatter": {
+    "name": "research-with-sources",
+    "description": "Search, read and cite sources for a question",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "research",
+      "tags": [
+       "research",
+       "web",
+       "citations",
+       "sources"
+      ]
+     }
+    }
+   }
+  },
+  "software-development/code-review": {
+   "sha256": "16a61f5dfcfb7ed104c479d09d36ff16b10feeb2bbeda1da775d149d0469d5c7",
+   "frontmatter": {
+    "name": "code-review",
+    "description": "Review a change for correctness, risk and clarity",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "software-development",
+      "tags": [
+       "review",
+       "diff",
+       "quality",
+       "risk"
+      ]
+     }
+    }
+   }
+  },
+  "software-development/git-workflow": {
+   "sha256": "84242a0388c9acff7bbffa0db93c7ecfde685660e7ffd50a6c30e583b77c6802",
+   "frontmatter": {
+    "name": "git-workflow",
+    "description": "Branch, commit, rebase and settle merge conflicts",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "software-development",
+      "tags": [
+       "git",
+       "version-control",
+       "branches",
+       "conflicts"
+      ],
+      "requires_toolsets": [
+       "terminal"
+      ]
+     }
+    }
+   }
+  },
+  "software-development/github-cli": {
+   "sha256": "3cf98371658943a2242450a7bd345a2ac362a6469b06cc500c8c3ed79d4a5e84",
+   "frontmatter": {
+    "name": "github-cli",
+    "description": "Work with GitHub issues and pull requests via gh",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "software-development",
+      "tags": [
+       "github",
+       "gh",
+       "issues",
+       "pull-requests",
+       "ci"
+      ],
+      "requires_toolsets": [
+       "terminal"
+      ]
+     }
+    }
+   }
+  },
+  "software-development/project-onboarding": {
+   "sha256": "c9817386bbccedc80b18740b8d6dd8bd195c5a97831b1aa5e7f3e9be3acf418c",
+   "frontmatter": {
+    "name": "project-onboarding",
+    "description": "Map an unfamiliar repository before changing it",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "software-development",
+      "tags": [
+       "codebase",
+       "architecture",
+       "onboarding",
+       "exploration"
+      ]
+     }
+    }
+   }
+  },
+  "software-development/shell-scripting": {
+   "sha256": "63398a14838769d81090cad45802211dfa43719538d25af4dc4227b399c40bbc",
+   "frontmatter": {
+    "name": "shell-scripting",
+    "description": "Write safe, repeatable shell scripts",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "software-development",
+      "tags": [
+       "bash",
+       "shell",
+       "scripts",
+       "automation"
+      ],
+      "requires_toolsets": [
+       "terminal"
+      ]
+     }
+    }
+   }
+  },
+  "software-development/systematic-debugging": {
+   "sha256": "7685175323defd72d0a5582b0c63085cd2a041aae64b874a76bdae33d6b9455a",
+   "frontmatter": {
+    "name": "systematic-debugging",
+    "description": "Reproduce, isolate, fix and verify a bug",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "software-development",
+      "tags": [
+       "debugging",
+       "bugs",
+       "root-cause",
+       "testing"
+      ]
+     }
+    }
+   }
+  },
+  "software-development/test-first": {
+   "sha256": "56de6e8a9b8ee2ca2c561d8300efe049bc5491d02bbf4eb5a1050a99f3906f08",
+   "frontmatter": {
+    "name": "test-first",
+    "description": "Write a failing test first, then make it pass",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "software-development",
+      "tags": [
+       "testing",
+       "tdd",
+       "red-green-refactor"
+      ]
+     }
+    }
+   }
+  },
+  "writing/writing-clearly": {
+   "sha256": "af7e4644c9117dac634d68eba67877f51adc900f428811c2a82f603ec5d53611",
+   "frontmatter": {
+    "name": "writing-clearly",
+    "description": "Edit prose for clarity, brevity and the right tone",
+    "version": "1.0.0",
+    "author": "Indus Agent",
+    "license": "MIT",
+    "metadata": {
+     "indus": {
+      "category": "writing",
+      "tags": [
+       "writing",
+       "editing",
+       "tone",
+       "clarity"
+      ]
+     }
+    }
+   }
+  }
+ },
+ "skipped": []
+}

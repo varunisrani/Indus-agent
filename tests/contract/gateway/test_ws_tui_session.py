@@ -4,9 +4,10 @@ The daemon sends ``session.info`` (model, provider, folder, tools, title) to the
 attached a session, when they attach and when the model, folder or title changes, and
 ``session.title`` when the title changes, with the shapes the in-process bridge sends (D-16.550).
 ``slash.exec`` / ``command.dispatch`` run the bridge's server commands with the bridge's answers;
-the commands a shared daemon does not run (a viewer's own queue, the session switches
-``config.set`` governs, quick ``exec`` commands) are refused with a reason, and the daemon's
-catalogue marks them ``unavailable``. A connection reaches only the sessions it attached.
+the commands a shared daemon does not run (a viewer's own queue) are refused with a reason, and
+the daemon's catalogue marks them ``unavailable`` (the session switches ``/yolo``, ``/reasoning``,
+``/fast`` run there since W50-a: ``test_ws_config_set.py``; quick ``exec`` commands since W50-b:
+``test_ws_shell.py``). A connection reaches only the sessions it attached.
 """
 
 from __future__ import annotations
@@ -25,8 +26,9 @@ from tests.unit.backends._aio import aio
 
 __all__ = ["store"]  # the fixture, imported for pytest
 
-DAEMON_REFUSED = ("queue", "yolo", "reasoning", "fast")
-"""Server commands a shared daemon does not run (``picker_reads.DAEMON_REFUSED``)."""
+DAEMON_REFUSED = ("queue",)
+"""Server commands a shared daemon does not run (``picker_reads.DAEMON_REFUSED``; the session
+switches run there since W50-a)."""
 SAME_TEXT = ("version", "help", "usage", "title", "title Alpine", "title", "undo", "history")
 """Commands whose output is the same text on both hosts (no session id in it)."""
 
@@ -166,7 +168,7 @@ async def test_commands_a_shared_daemon_does_not_run_are_refused_and_marked(
     sid = result_of(await tui.request("session.create", {}))["session_id"]
     catalog = result_of(await tui.request("commands.catalog", {"session_id": sid}))
     refused: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
-    for name in [*DAEMON_REFUSED, "gs"]:
+    for name in DAEMON_REFUSED:
         refused[name] = (
             await tui.request("slash.exec", {"session_id": sid, "command": name}),
             await tui.request("command.dispatch", {"session_id": sid, "name": name, "arg": ""}),
@@ -179,10 +181,10 @@ async def test_commands_a_shared_daemon_does_not_run_are_refused_and_marked(
     await r.close()
 
     runs = {entry["name"]: entry["runs"] for entry in catalog["commands"]}
-    assert {name: runs[name] for name in [*DAEMON_REFUSED, "gs"]} == dict.fromkeys(
-        [*DAEMON_REFUSED, "gs"], "unavailable"
+    assert {name: runs[name] for name in DAEMON_REFUSED} == dict.fromkeys(
+        DAEMON_REFUSED, "unavailable"
     )
-    assert runs["version"] == runs["status"] == runs["ver"] == "server"
+    assert runs["version"] == runs["status"] == runs["ver"] == runs["gs"] == "server"
     for name, (exec_frame, dispatch_frame) in refused.items():
         assert error_of(exec_frame) == SLASH_NOT_OWNED.code, name
         assert error_of(dispatch_frame) == UNSUPPORTED_COMMAND.code, name
@@ -190,7 +192,7 @@ async def test_commands_a_shared_daemon_does_not_run_are_refused_and_marked(
         assert "daemon" in reason and reason == dispatch_frame["error"]["message"], name
     assert alias == {"kind": "alias", "target": "/version"}
     names = {item["text"].lstrip("/") for item in offered["items"]}
-    assert "ver" in names and "gs" not in names  # never offered where it cannot run
+    assert {"ver", "gs"} <= names  # quick exec commands run on the daemon too (W50-b)
 
 
 @aio

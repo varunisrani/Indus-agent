@@ -3,7 +3,9 @@ once for the TUI's in-process bridge (P12-31) and the daemon's WebSocket (W48-h)
 
 A transport implements ``SlashHost`` (how it titles, takes back, branches, compresses, stops and
 steers a session) and hands ``run`` / ``slash_exec`` / ``dispatch`` its handler table: the shared
-``HANDLERS`` plus its own (the bridge adds ``queue``, ``yolo``, ``reasoning``, ``fast``). A name in
+``HANDLERS`` plus its own (the bridge adds ``queue``). The session switches ``yolo``, ``reasoning``
+and ``fast`` go through the host's ``set_switch`` (its ``config.set``, W50-a), and ``/status``
+counts the inputs waiting for the session (``queued``). A name in
 the host's ``refused`` table is answered with its reason, never run: ``SLASH_NOT_OWNED`` from
 ``slash.exec`` (so a client asks ``command.dispatch``) and ``UNSUPPORTED_COMMAND`` from
 ``command.dispatch`` (the client then shows the reason). The same holds for a quick ``exec``
@@ -26,11 +28,14 @@ from collections.abc import Awaitable, Callable, Mapping
 from importlib import metadata
 from typing import TYPE_CHECKING, Any, Protocol
 
+from pydantic import JsonValue
+
 from indus.foundation.blocking import run_blocking
 from indus.foundation.scope import Scope
 from indus.protocol.bridge import (
     CommandDispatchParams,
     CommandDispatchResult,
+    ConfigKey,
     DispatchKind,
     SlashExecParams,
     SlashExecResult,
@@ -43,7 +48,7 @@ from indus.protocol.errors import (
     ErrorCode,
 )
 from indus.protocol.methods import ProtocolError
-from indus.service import picker_reads
+from indus.service import client_settings, picker_reads
 from indus.service.commands.registry import REGISTRY, CommandDef, Surface, command_word
 from indus.service.session_service import SessionService, usage_numbers
 from indus.service.transcript_view import display_messages
@@ -98,8 +103,13 @@ class SlashHost(Protocol):
         """The skills and bundles a slash word can run (None when they cannot be listed)."""
         ...
 
-    def queued(self, session_id: str) -> int:
-        """Prompts this viewer queued for the session (0 when the host keeps none)."""
+    async def queued(self, session_id: str) -> int:
+        """Prompts waiting for the session: the bridge's viewer queue, the daemon's durable
+        queue (W50-a)."""
+        ...
+
+    async def set_switch(self, session_id: str, key: ConfigKey, value: JsonValue) -> JsonValue:
+        """``config.set`` of one session switch on this host; the value as applied (W50-a)."""
         ...
 
     async def title(self, session_id: str, title: str | None) -> tuple[str | None, bool]:
@@ -209,7 +219,7 @@ async def _status(host: SlashHost, sid: str, arg: str) -> SlashExecResult:
         f"Folder: {agent.options.cwd or agent.options.session_fields.get('cwd') or '-'}",
         "A reply is running." if agent.current is not None else "Idle.",
     ]
-    queued = host.queued(sid)
+    queued = await host.queued(sid)
     if queued:
         lines.append(f"Queued messages: {queued}")
     return out(*lines)
@@ -259,6 +269,32 @@ async def _tools(host: SlashHost, sid: str, arg: str) -> SlashExecResult:
     return out(f"{len(names)} tools: " + ", ".join(names) if names else "No tools are enabled.")
 
 
+async def _yolo(host: SlashHost, sid: str, arg: str) -> SlashExecResult:
+    live = client_settings.session_switches(host.scope, host.service, sid, "all")
+    enabled = live.get("yolo") is not True
+    await host.set_switch(sid, ConfigKey.YOLO, enabled)
+    if enabled:
+        return out("Auto-approve is ON for this session; never-allowed commands stay blocked.")
+    return out("Auto-approve is off: risky commands ask first again.")
+
+
+async def _reasoning(host: SlashHost, sid: str, arg: str) -> SlashExecResult:
+    if not arg.strip():
+        level = host.service.agent(sid).binding.state.reasoning_effort or "off"
+        return out(f"Reasoning effort: {level}.")
+    value = await host.set_switch(sid, ConfigKey.REASONING, arg.strip().split()[0])
+    return out(f"Reasoning effort: {value}.")
+
+
+async def _fast(host: SlashHost, sid: str, arg: str) -> SlashExecResult:
+    word = arg.strip().split()[0] if arg.strip() else "status"
+    if word == "status":
+        live = client_settings.session_switches(host.scope, host.service, sid, "all")
+        return out(f"Fast mode: {live.get('fast') or 'normal'}.")
+    value = await host.set_switch(sid, ConfigKey.FAST, word)
+    return out(f"Fast mode {value} for this session.")
+
+
 HANDLERS: dict[str, SlashHandler] = {
     "title": _title,
     "undo": _undo,
@@ -273,6 +309,9 @@ HANDLERS: dict[str, SlashHandler] = {
     "help": _help,
     "version": _version,
     "tools": _tools,
+    "yolo": _yolo,
+    "reasoning": _reasoning,
+    "fast": _fast,
 }
 """Canonical command name → the handler every host shares."""
 

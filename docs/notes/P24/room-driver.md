@@ -233,3 +233,14 @@ attribute 'requests'`; `test_watch.py` failed to import `GroupsWatchParams`):
   `groups.log`; switch them to `groups.watch` + `groups.event` and render `approval.requested`
   as a card answering with `groups.approve`. Release-checklist RS3 can move to Done once that
   lands (daemon side done here).
+
+## Wave 50 integration: a watcher added during a read (D-16.1179)
+
+The full gate caught `test_watchers_get_every_new_room_event_in_order_once` failing 1 in 20 when
+run alone: `groups.watch` from an earlier cursor, landing while a poll's read ran off the loop,
+took that page's newer events and its cursor jumped past the older ones it was never sent.
+`RoomWatch._poll_room` now hands a page read from `since` only to watchers whose cursor is at
+least `since`; a later watcher is served from its own cursor by the next poll (its watch nudged
+it). Pinned deterministically by
+`tests/unit/gateway/rooms/test_watch.py::test_a_watcher_added_while_a_read_runs_misses_no_event`
+(fails on the wave 47 code); the original test 50/50 after the fix.

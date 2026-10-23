@@ -1,13 +1,14 @@
 // Linux launcher entry for the AppImage build (P20-38). An AppImage installs nothing, so the app
 // adds itself to the desktop's application menu: once the main window is first visible it writes
-// `<data home>/applications/ai.indus.desktop.desktop` (Exec = the AppImage file, with `%U` so
+// `<data home>/applications/<launcher id>.desktop` (Exec = the AppImage file, with `%U` so
 // `indus://` links reach it) and copies its icon into the hicolor theme. Only for a packaged
-// AppImage, only when the content changed, never fatal.
+// AppImage, only when the content changed, never fatal. The launcher id and the name are the
+// build's channel identity (electron/identity.ts): `ai.indus.desktop` / `Indus` for stable,
+// `ai.indus.desktop.canary` / `Indus Canary` for a canary, so the two never share an entry.
 
 import fs from "node:fs";
 import path from "node:path";
 
-export const LAUNCHER_ID = "ai.indus.desktop";
 export const LAUNCHER_ICON_SIZE = 256;
 
 export interface LauncherInput {
@@ -15,7 +16,10 @@ export interface LauncherInput {
   execPath: string;
   /** The deep-link scheme the app registered (`indus`, or `indus-dev` in dev). */
   scheme: string;
-  name?: string;
+  /** The launcher id: the entry's file name and its icon name. */
+  id: string;
+  /** Name shown in the menu; also StartupWMClass, which must equal `app.setName`'s value. */
+  name: string;
 }
 
 /** Quote one argument for a desktop entry Exec line (spec: double quotes, escape `"`, `` ` ``, `$`, `\`). */
@@ -26,14 +30,14 @@ export function quoteExecArg(arg: string): string {
 
 /** The desktop entry text. */
 export function desktopEntry(input: LauncherInput): string {
-  const name = input.name ?? "Indus";
+  const name = input.name;
   return [
     "[Desktop Entry]",
     "Type=Application",
     `Name=${name}`,
     "Comment=Desktop app for Indus Agent",
     `Exec=${quoteExecArg(input.execPath)} %U`,
-    `Icon=${LAUNCHER_ID}`,
+    `Icon=${input.id}`,
     "Terminal=false",
     "Categories=Development;",
     `MimeType=x-scheme-handler/${input.scheme};`,
@@ -79,6 +83,8 @@ export interface LauncherDeps {
   /** `process.resourcesPath` (the icon ships as `icons/indus.png` beside the archive). */
   resourcesPath: string;
   scheme: string;
+  /** This build's channel identity (`launcherId`, `appName`). */
+  identity: { launcherId: string; appName: string };
   log: (line: string) => void;
   fs?: LauncherFs;
 }
@@ -102,16 +108,22 @@ export function writeLinuxLauncher(deps: LauncherDeps): LauncherOutcome {
     deps.env.XDG_DATA_HOME !== undefined && path.isAbsolute(deps.env.XDG_DATA_HOME)
       ? deps.env.XDG_DATA_HOME
       : path.join(deps.homeDir, ".local", "share");
-  const file = path.join(dataHome, "applications", `${LAUNCHER_ID}.desktop`);
+  const id = deps.identity.launcherId;
+  const file = path.join(dataHome, "applications", `${id}.desktop`);
   const icon = path.join(
     dataHome,
     "icons",
     "hicolor",
     `${LAUNCHER_ICON_SIZE}x${LAUNCHER_ICON_SIZE}`,
     "apps",
-    `${LAUNCHER_ID}.png`,
+    `${id}.png`,
   );
-  const text = desktopEntry({ execPath: appImage, scheme: deps.scheme });
+  const text = desktopEntry({
+    execPath: appImage,
+    scheme: deps.scheme,
+    id,
+    name: deps.identity.appName,
+  });
   try {
     if (!files.exists(icon))
       files.copyFile(path.join(deps.resourcesPath, "icons", "indus.png"), icon);

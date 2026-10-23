@@ -98,6 +98,10 @@ Our design differences / decisions:
   from `electron/releaseBase.ts` (the desktop's one copy), so no new copy of the owner value.
   Windows keeps `verifyUpdateCodeSignature: false` and the manual update owner (the stamp) until a
   signed build's publisher name is known; turning on the Windows updater is a follow-up.
+  Since wave 50 e (D-16.1171 – D-16.1173) Windows update signature verification is on
+  (`verifyUpdateCodeSignature: true`, `win.signtoolOptions.publisherName` read from
+  `packaging/msix/identity.json`; a signed build refuses the `OWNER-TO-FILL` publisher); the
+  update owner stays `manual` until the first signed run.
 - W49-b-7 (D-16.1123): the `.deb` needs a maintainer; we use the RM12 placeholder
   `Indus Agent maintainers <maintainers@indus.invalid>` until the owner picks an address.
 - W49-b-8 (D-16.1124): the Azure route uses signtool `/dlib` with the Trusted Signing client package (fetched

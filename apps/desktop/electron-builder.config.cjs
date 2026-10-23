@@ -22,9 +22,15 @@
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
-const { channelIdentity, releaseRepository } = require("./scripts/channel-identity.cjs");
+const {
+  channelIdentity,
+  releaseRepository,
+  windowsPublisher,
+} = require("./scripts/channel-identity.cjs");
 
 const IDENTITY = channelIdentity(process.env.INDUS_DESKTOP_CHANNEL ?? "");
+/** The certificate subject a Windows update must be signed by (W50-e-2; owner placeholder until filled). */
+const WINDOWS_PUBLISHER = windowsPublisher(IDENTITY.channel).publisher;
 const APP_ID = IDENTITY.appId;
 const PRODUCT = IDENTITY.productName;
 const DEEP_LINK_SCHEME = "indus";
@@ -198,10 +204,15 @@ const config = {
     signtoolOptions: {
       sign: signWindowsFile,
       signingHashAlgorithms: ["sha256"],
+      // Written into app-update.yml; electron-updater refuses an NSIS update whose Authenticode
+      // signer's subject differs. Without a name the check would be skipped, so one is always set:
+      // the channel's configured subject (a placeholder matches no real certificate, and
+      // dist-win.mjs refuses to sign while it is one).
+      publisherName: [WINDOWS_PUBLISHER],
     },
-    // The Windows build is updated by hand (the stamp's update owner) until a signed build's
-    // publisher name is known; then this check turns on with electron-updater (P23-16 follow-up).
-    verifyUpdateCodeSignature: false,
+    // The update signature check stays on (W50-e). The stamp's update owner on Windows is still
+    // `manual` until the first signed run; the feed is ready for electron-updater when it flips.
+    verifyUpdateCodeSignature: true,
   },
   nsis: {
     oneClick: true,

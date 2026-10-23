@@ -502,7 +502,7 @@ class ShellExecParams(ProtocolModel):
     command: str
     """The command line."""
     session_id: str | None = None
-    """The session whose folder it runs in."""
+    """The session whose folder it runs in (on the daemon: one this connection attached)."""
 
 
 class ShellExecResult(ProtocolModel):
@@ -786,7 +786,12 @@ BRIDGE_METHODS: tuple[MethodRow, ...] = (
         CommandDispatchResult,
         (SESSION_NOT_FOUND, UNSUPPORTED_COMMAND, SHELL_REFUSED, SHELL_TIMEOUT),
     ),
-    ("shell.exec", ShellExecParams, ShellExecResult, (TEXT_EMPTY, SHELL_REFUSED, SHELL_TIMEOUT)),
+    (
+        "shell.exec",
+        ShellExecParams,
+        ShellExecResult,
+        (TEXT_EMPTY, SHELL_REFUSED, SHELL_TIMEOUT, SESSION_NOT_FOUND),
+    ),
     ("config.get", ConfigGetParams, ConfigGetResult, (SESSION_NOT_FOUND,)),
     (
         "config.set",

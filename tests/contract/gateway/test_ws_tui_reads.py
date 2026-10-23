@@ -4,8 +4,9 @@ An attached TUI (the default) asks the daemon for ``complete.path`` (the compose
 completion), ``commands.catalog`` (the slash catalogue; what a shared daemon does not run is
 listed ``unavailable``, W48-h) and ``config.get`` (its settings at start
 and their polling). They answer what the in-process bridge (``--local``) answers for the same
-profile; a named session must be one this connection attached. ``config.set`` stays unserved
-(D-16.549). The sessions picker's rows carry the session's model as well as its title and source.
+profile; a named session must be one this connection attached (``config.set`` is served since
+W50-a: ``test_ws_config_set.py``). The sessions picker's rows carry the session's model as well as
+its title and source.
 """
 
 from __future__ import annotations
@@ -101,8 +102,9 @@ async def test_command_catalog_over_the_socket_matches_local(
     assert for_session == profile_wide
     async with open_rig(scope, fake_clock, tmp_path) as local:
         here = await local.ok("commands.catalog")
-    # The same catalogue, but what a shared daemon does not run is ``unavailable`` there (W48-h).
-    off = {*DAEMON_REFUSED, "gs"}
+    # The same catalogue, but what a shared daemon does not run is ``unavailable`` there (W48-h);
+    # quick exec commands run there since W50-b.
+    off = set(DAEMON_REFUSED)
     assert profile_wide["commands"] == [
         {**entry, "runs": "unavailable"} if entry["name"] in off else entry
         for entry in here["commands"]
@@ -125,7 +127,6 @@ async def test_config_get_over_the_socket_matches_local(
     live = result_of(await tui.request("config.get", {"key": "full", "session_id": sid}))
     model = result_of(await tui.request("config.get", {"key": "model", "session_id": sid}))
     unknown = await tui.request("config.get", {"key": "model.api_key"})
-    write = await tui.request("config.set", {"key": "busy", "value": "queue"})
     other = await r.attached("tui")
     foreign = await other.request("config.get", {"key": "full", "session_id": sid})
     assert error_of(foreign) == SESSION_NOT_FOUND.code
@@ -139,7 +140,6 @@ async def test_config_get_over_the_socket_matches_local(
     assert live["value"]["model"] and live["value"]["verbose"] == "new"
     assert model["value"] == live["value"]["model"]
     assert error_of(unknown) != METHOD_NOT_FOUND.code  # refused as a key, not as a method
-    assert error_of(write) == METHOD_NOT_FOUND.code  # config.set stays unserved (D-16.549)
     async with open_rig(scope, fake_clock, tmp_path) as local:
         for key in CONFIG_KEYS:
             assert await local.ok("config.get", key=key) == attached[key], key
@@ -169,9 +169,8 @@ async def test_session_rows_carry_title_model_and_source(
         assert await local.ok("session.list", limit=50) == listed
 
 
-def test_the_endpoint_serves_the_tui_reads_but_not_config_set() -> None:
+def test_the_endpoint_serves_the_tui_reads_and_config_set() -> None:
     from indus.gateway.ws.methods import served
 
     names = set(served())
-    assert {"complete.path", "commands.catalog", "config.get"} <= names
-    assert "config.set" not in names
+    assert {"complete.path", "commands.catalog", "config.get", "config.set"} <= names

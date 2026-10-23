@@ -59,16 +59,12 @@ async def test_slash_completion_over_the_socket_matches_local(
     await r.close()
 
     assert "/help" in texts(attached["/he"])
-    # Quick exec commands are not offered where they do not run (the daemon, W48-h).
-    assert {"/gl", "/goal"} <= set(texts(attached["/g"])) and "/gs" not in texts(attached["/g"])
+    # Quick exec commands are offered on the daemon too: it runs them (W50-b).
+    assert {"/gl", "/goal", "/gs"} <= set(texts(attached["/g"]))
     assert texts(attached["/reasoning hig"]) == ["high"]
     async with open_rig(scope, fake_clock, tmp_path) as local:
         for text in SLASH_TEXTS:
-            here = await local.ok("complete.slash", text=text)
-            kept = [item for item in here["items"] if item["text"] != "/gs"]
-            assert {**here, "items": kept} == attached[text], text
-            if text == "/g":
-                assert "/gs" in texts(here)
+            assert await local.ok("complete.slash", text=text) == attached[text], text
 
 
 @aio

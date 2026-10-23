@@ -49,17 +49,32 @@ The TUI's other reads (W48-b): ``complete.path`` (``service.path_completion``: t
 else the attached session's, listed through the profile's terminal backend), ``commands.catalog``
 (``picker_reads.command_catalog`` for the connection's surface) and ``config.get``
 (``service.client_settings``; the session keys read the attached session's live switches, and
-``verbose`` is the profile's tool-progress mode: the daemon keeps none per viewer) answer what the
-bridge answers. ``config.set`` is not served (D-16.549).
+``verbose`` is this connection's own tool-progress mode for the session, else the profile's) answer
+what the bridge answers.
+
+``config.set`` (W50-a, D-16.549) answers what the bridge answers (``service.config_writes``: the
+same keys, checks and messages): profile keys are saved to the profile; ``verbose`` with a session
+is this connection's own mode for it (not saved; the daemon still sends every tool event), without
+one it is saved; the session switches (``yolo``, ``fast``, ``reasoning``, ``model``) need a session
+this connection attached and change the shared session for every viewer
+(``service.daemon_config``; a model switch is ``session.mutate``'s, ``deferred`` while a turn runs).
 
 Server-run slash commands (W48-h): ``slash.exec`` and ``command.dispatch`` for a session this
 connection attached run ``service.slash_commands`` with the daemon as host
 (``service.daemon_slash``), so they answer what the bridge answers; what a shared daemon does not
-run (``picker_reads.DAEMON_REFUSED``, quick ``exec`` commands) is refused with its reason
-(``SLASH_NOT_OWNED`` from ``slash.exec``, ``UNSUPPORTED_COMMAND`` from ``command.dispatch``) and
-``commands.catalog`` lists it ``unavailable``. The header a status bar shows (``session.info``,
+run (``picker_reads.DAEMON_REFUSED``) is refused with its reason (``SLASH_NOT_OWNED`` from
+``slash.exec``, ``UNSUPPORTED_COMMAND`` from ``command.dispatch``) and ``commands.catalog`` lists
+it ``unavailable``. The header a status bar shows (``session.info``,
 ``session.title``) reaches the session's viewers from the host
 (``DaemonSessionHost.announce_info``).
+
+The owner's own shell command (W50-b): ``shell.exec`` (the composer's ``!command`` and
+``{!command}``) and quick ``exec`` commands (through ``command.dispatch``) run through
+``service.host_shell`` with the checks ``--local`` applies and nothing looser: a hardline or
+dangerous command is refused (``SHELL_REFUSED``), the child's environment comes from the builder
+for the connection's profile, the limit runs on the scope's clock (``SHELL_TIMEOUT``) and the output
+is redacted before its tail is cut. A named session must be one this connection attached; the
+command runs in its folder (else the profile's ``terminal.cwd``, else the daemon's folder).
 
 ``runtime.describe`` answers what the control socket's ``describe`` does, plus the replay epoch.
 ``maintenance.run`` runs one bulk store operation on the daemon's own store handle
@@ -105,8 +120,12 @@ from indus.protocol.bridge import (
     CompletePathParams,
     CompleteResult,
     CompleteSlashParams,
+    ConfigApplied,
     ConfigGetParams,
     ConfigGetResult,
+    ConfigKey,
+    ConfigSetParams,
+    ConfigSetResult,
     GatewayPingParams,
     GatewayPingResult,
     ModelOptionsParams,
@@ -119,6 +138,8 @@ from indus.protocol.bridge import (
     SessionListResult,
     SessionUsageParams,
     SessionUsageResult,
+    ShellExecParams,
+    ShellExecResult,
     SlashExecParams,
     SlashExecResult,
     UsageNumbers,
@@ -153,7 +174,15 @@ from indus.protocol.methods import (
     SubmitStatus,
     negotiate_features,
 )
-from indus.service import client_settings, path_completion, picker_reads, slash_commands
+from indus.service import (
+    client_settings,
+    config_writes,
+    daemon_config,
+    host_shell,
+    path_completion,
+    picker_reads,
+    slash_commands,
+)
 from indus.service.admissions import Receipt, close_lost_turn
 from indus.service.commands.registry import Surface
 from indus.service.daemon_slash import DaemonSlashHost
@@ -528,7 +557,6 @@ async def complete_slash(conn: WsConnection, params: CompleteSlashParams) -> Com
             params.text,
             surface=surface,
             session_id=params.session_id,
-            quick_exec=False,  # the daemon does not run them (W48-h)
         ),
         label="slash completion",
     )
@@ -582,7 +610,6 @@ async def commands_catalog(
             surface=surface,
             skills=picker_reads.skill_table(conn.scope, sid),
             refused=picker_reads.DAEMON_REFUSED,
-            quick_exec=False,
         ),
         label="command catalogue",
     )
@@ -615,17 +642,55 @@ async def command_dispatch(
 
 @methods.method("config.get")
 async def config_get(conn: WsConnection, params: ConfigGetParams) -> ConfigGetResult:
-    """Read-only: ``config.set`` stays with the in-process bridge (D-16.549)."""
     sid = _attached_id(conn, params.session_id)
     live: dict[str, Any] | None = None
     if sid is not None and client_settings.needs_session(params):
-        # The daemon keeps no per-viewer tool-progress mode: the profile's applies.
-        verbose = await run_blocking(
+        # ``verbose``: this connection's own mode for the session, else the profile's.
+        own = conn.subs.tool_mode(conn.subs.require(sid))
+        verbose = own or await run_blocking(
             client_settings.default_tool_mode, conn.scope, label="settings read"
         )
         live = client_settings.session_switches(conn.scope, conn.host.service, sid, verbose)
     return await run_blocking(
         client_settings.read_config, conn.scope, params, live, label="settings read"
+    )
+
+
+# -- config.set (W50-a) ---------------------------------------------------------------------------
+
+
+@methods.method("config.set")
+async def config_set(conn: WsConnection, params: ConfigSetParams) -> ConfigSetResult:
+    """The bridge's ``config.set`` (``service.config_writes``): profile keys saved, session
+    switches on a session this connection attached (``service.daemon_config``)."""
+    name = params.key
+    if name in client_settings.SESSION_KEYS:
+        if params.session_id is None:
+            raise config_writes.needs_session(name)
+        key = conn.subs.require(params.session_id)
+        return await daemon_config.set_switch(conn.host, key, params, scope=conn.scope)
+    if name is ConfigKey.VERBOSE:
+        if params.session_id is None:
+            return await config_writes.save_tool_mode(conn.scope, params.value)
+        mode = config_writes.tool_mode(params.value)
+        conn.subs.set_tool_mode(conn.subs.require(params.session_id), mode)
+        return ConfigSetResult(key=name, value=mode, applied=ConfigApplied.NOW, saved=False)
+    return await config_writes.save_setting(conn.scope, name, params.value)
+
+
+# -- the owner's own shell command (W50-b) ---------------------------------------------------------
+
+
+@methods.method("shell.exec")
+async def shell_exec(conn: WsConnection, params: ShellExecParams) -> ShellExecResult:
+    sid = _attached_id(conn, params.session_id)
+    return await host_shell.run_host_command(
+        conn.scope,
+        params.command,
+        session_id=sid,
+        service=conn.host.service,
+        timeout=host_shell.TIMEOUT_S,
+        clock=conn.scope.clock,
     )
 
 

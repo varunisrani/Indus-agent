@@ -4,10 +4,13 @@
 cursor (the last sequence number it was sent). ``poll`` reads every watched room's events after
 the lowest cursor (``read(room_id, since_seq)`` → a ``LogPage``, run off the loop) and sends each
 watcher the events past its own cursor as ``groups.event`` notifications (``owner.notify``), in
-order and once; one poll runs at a time. The log is read rather than hooked, so events written by
-any store of the install (the room loop's turns, replies and approvals; another endpoint's
-messages) reach every watcher. ``start`` runs ``poll`` every ``WATCH_POLL_S`` (sooner after
-``nudge``) while anyone watches; ``unwatch`` and ``drop`` (a closed connection) stop it.
+order and once; one poll runs at a time. A page read from ``since`` goes only to the watchers
+whose cursor is at least ``since``: one that started watching (or re-watched from an earlier
+cursor) while the read ran gets its events on the next poll, never a gap. The log is read
+rather than hooked, so events written by any store of the install (the room loop's turns,
+replies and approvals; another endpoint's messages) reach every watcher. ``start`` runs
+``poll`` every ``WATCH_POLL_S`` (sooner after ``nudge``) while anyone watches; ``unwatch`` and
+``drop`` (a closed connection) stop it.
 """
 
 from __future__ import annotations
@@ -107,7 +110,8 @@ class RoomWatch:
             for event in page.events:
                 frame = GroupsEvent(room_id=room_id, event=event.to_dict()).to_wire()
                 for watcher in list(self._rooms.get(room_id, {}).values()):
-                    if event.seq <= watcher.cursor:
+                    # A watcher added during the read may be behind the page: the next poll.
+                    if watcher.cursor < since or event.seq <= watcher.cursor:
                         continue
                     watcher.cursor = event.seq
                     try:
