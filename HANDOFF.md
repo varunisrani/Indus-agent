@@ -76,9 +76,12 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-Wave 49 IN FLIGHT (2026-10-23 05:45 UTC; owner: "complete the remaining 4 tasks"): builders in scratchpad wt-w49{a..d}
-for P23-15 (macOS signing), P23-16 (Windows/Linux artefacts), P24-21 (Termux APT), P24-22 (MSIX); brief
-`.agents/wip/w49/brief.md`. Signing runs need the owner's secrets; the code paths skip cleanly without them.
+ALL 648 PLANNED TASKS BUILT. Main `8a9f9f3` = wave 49 landed (2026-10-23 07:55 UTC; LEAD-NOTES "Wave 49 landing notes
+(integrator)"; D-16.1110..1147): P23-15 macOS sign+notarise, P23-16 Windows/Linux artefacts + canary identity, P24-21 Termux
+APT (optional lane), P24-22 MSIX (optional lane). Full gate green (pytest 18638/0 failed, perf 18/1, vitest 2978, Electron E2E
+43/2, web 14). Owed by the owner: signing secrets (checklist §0 "Signing secrets", RM14), first signed mac/Windows runs
+(ACC-S6-1/2), Termux base digest + repo host + key fingerprint, MSIX publisher/Partner Center identity, whether the
+`release` environment requires reviewers. Agent follow-ups: see the wave-49 LEAD-NOTES list.
 Turn: AGENT_1 ACTIVE (window resets 17:30 UTC). Main `bd1eaf9` = wave 48 landed (LEAD-NOTES "Wave 48 landing notes
 (integrator)"): desktop room view on groups.watch + approval card, attached TUI reads/slash/header events, desktop polish,
 PTY env, Windows terminal schema + console, katex/sprintf-js cleared, startup ~400 ms faster. Release checklist: 32 done.
@@ -116,7 +119,7 @@ Lead loop: builders in scratchpad worktrees never commit; extract with the clean
 patch is non-empty, scan, park in .agents/wip/<wave>/ with a README section, push, THEN remove the worktree AND its $S dir; one
 integrator per group runs the full gate (pytest --basetemp short); the lead commits, rebases, fast-forwards, pushes, updates the
 phase table and this file.
-- Last landings: wave 48 (`bd1eaf9`; D-16.1070..1102; LEAD-NOTES "Wave 48 landing notes (integrator)"), wave 47 (`83104de`; D-16.1030..1059; LEAD-NOTES "Wave 47 landing notes (integrator)"), waves 45+46 (`44c9a4f`; D-16.970..1025; LEAD-NOTES "Waves 45 + 46 landing notes (integrator)"), P25-20..24 release prep wave 44 (`b9a43a1`; D-16.920..964; LEAD-NOTES "P25 wave 44 landing notes (integrator)"), P25-01..04 security wave 43 (`4945b48`; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes (integrator)"), P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
+- Last landings: wave 49 (`8a9f9f3`; D-16.1110..1147; LEAD-NOTES "Wave 49 landing notes (integrator)"), wave 48 (`bd1eaf9`; D-16.1070..1102; LEAD-NOTES "Wave 48 landing notes (integrator)"), wave 47 (`83104de`; D-16.1030..1059; LEAD-NOTES "Wave 47 landing notes (integrator)"), waves 45+46 (`44c9a4f`; D-16.970..1025; LEAD-NOTES "Waves 45 + 46 landing notes (integrator)"), P25-20..24 release prep wave 44 (`b9a43a1`; D-16.920..964; LEAD-NOTES "P25 wave 44 landing notes (integrator)"), P25-01..04 security wave 43 (`4945b48`; D-16.900..912; LEAD-NOTES "P25 wave 43 landing notes (integrator)"), P24 wiring wave 42 (`226a5ae`; D-16.860..879; LEAD-NOTES "P24 wiring wave 42 landing notes (integrator)"), P25-05..19 (`08bcf51`; D-16.830..849; LEAD-NOTES "P25 wave 41 landing notes (integrator)"), P24 (`5c0cff8`; D-16.770..802; notes in LEAD-NOTES "P24 waves 37–39 landing notes (integrator + lead)"), P23 (`fd44e16`; D-16.740..769; Electron E2E harness fixes), test_tui_publish race fix (`19ced11`),
   P20 (Agent 1: `2a1991b`, `52deb8b`), P18-23..30 (`71389d4`; P18 COMPLETE; Playwright web-e2e lane not yet run in CI; D-16.650..658),
   P18/P19 follow-ups (prompt-size breakdown — P18-16 complete; ACP no_mcp + model row + reattach e2e; TUI →
   dashboard events; mcp-serve doc; backup download ticket; P04 persona-flag prompt fix), P20-01..07 desktop foundation (`86f44f7`; IPC/preload contract in docs/notes/P20/preload-bridge.md),
