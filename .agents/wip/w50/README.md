@@ -47,3 +47,11 @@
 - Decisions W50-f-1..3. Note: any edit to schema.py (even comments)/versions.py/shipped SKILL.md needs a twin regen.
   REPL pump test (`test_keys.py::test_feed_items_reach_the_screen_through_the_pump`) flaked once under load ~13.
 - Builder gate: ruff, pyright 0, lint-imports, all --check 0, biome, tooling.checks ok; pytest 15326 passed, 1 load flake.
+## w50c (Windows plan() foreground + starter race) — 5 files, base 7eee12d, clean scan
+- `terminal.py`: `plan(foreground_only=…)` true only on native Windows host-local backends: trailing `&` refused with a
+  foreground hint (WSL2 / Docker / SSH), over-limit timeout capped to `terminal.max_foreground_timeout` with
+  `timeout_capped`, guidance texts from `WINDOWS_GUIDANCE`; POSIX and Windows sandbox backends unchanged.
+- `test_windows_rl26.py`: starter test waits on the shell's and child's pid lines (no sleep); the `GroupJobs` stand-in
+  recounts the pipe before calling it closed (second race). 20x: 20/20, 220/220 under CPU load, plan tests 2000/2000.
+- docs/user/getting-started/windows.md "Foreground only". Decisions W50-c-1..4. Follow-up: windows-local real-child lane.
+- Builder gate: ruff, pyright 0, lint-imports, all --check, mkdocs --strict, tooling.checks ok; pytest 4965 passed, 0 failed.

@@ -1,0 +1,526 @@
+diff --git a/docs/notes/followups/w50-c.md b/docs/notes/followups/w50-c.md
+new file mode 100644
+index 0000000..fdeb824
+--- /dev/null
++++ b/docs/notes/followups/w50-c.md
+@@ -0,0 +1,123 @@
++# Task: Windows `plan()` stays in the foreground; the w47 starter-test race (wave 50 c) Phase: followups Owner: builder w50c
++
++## Status
++
++Done (2026-10-23), not run on Windows (the OS family is patched to `win32` in the tests, as in
++waves 47 and 48). `plan()` refuses a trailing `&` and caps an over-limit timeout on a native-Windows
++host-local backend; its guidance texts there name WSL2 / Docker / SSH, not `background=true`. The
++w47 starter test waits for its two pid lines instead of sleeping 0.5 s. Changed outside the
++task's code and tests: `docs/user/getting-started/windows.md` (a "Foreground only" bullet; the
++`some-server &` example now reads as a script's own background program). Fail-first: the 13 new
++plan / tool tests fail on the base `terminal.py` (12 on behaviour, the sandbox/POSIX guard on the
++new `foreground_only` method); the base starter test fails 3 of 3 with the `IndexError` from wave 48
++when Git Bash's start is slowed by 1 s (`BASH_ENV` pointing at a `sleep 1` file). A first 20x run
++of the new test with the slowed start failed once (the 15 s wait timed out with nothing read): a
++second race, in the test's `GroupJobs.pipe_available` stand-in, which read "readable with 0 bytes
++counted" as end of file when the first bytes landed between its `FIONREAD` count and its `select`;
++the reader then quit early with no output (the same empty output the wave 48 failure showed). The
++stand-in now counts again when the pipe is readable (shown with a scratch script that writes into
++the pipe inside that window: the base stand-in answers None, the fixed one 5). After both fixes,
++20x each: the starter test 20/20; the whole `test_windows_rl26.py` 220/220 (every case uses the
++stand-in); the starter test with the 1 s slowed start 20/20, also under 12 CPU burners on 4 cores
++(and 80/80 more without them); `test_terminal_plan.py` 2000/2000.
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `tools/terminal_tool.py` (the
++foreground cap and its promotion to a tracked background job only, found by search; it has no
++native-Windows branch for either). Our own: `docs/notes/P25/windows-local.md` (P25-24 and the
++wave 47 / 48 sections, whose follow-up names this task), `docs/plan/phases/P25-hardening-parity-release.md` (P25-24
++row), `docs/plan/16-what-we-change.md` D-16.55, D-16.1043, D-16.1082. Evidence: none.
++
++What it does (own words): on POSIX, `plan()` quietly turns two foreground shapes into tracked
++background jobs: a command whose only backgrounding is one trailing `&`, and a foreground timeout
++above `terminal.max_foreground_timeout` (600 s). On native Windows with a host-local backend
++(`local`, which runs Git Bash there) background jobs cannot start (D-16.1043: `failed_start` with
++the WSL2 text) and the schema no longer offers them (D-16.1082, whose timeout text already says
++"maximum 600"). So both conversions there end in a refusal after approval, and the refusal texts
++from the foreground guidance tell the model to use `background=true`, which that host does not
++offer. On such a host `plan()` now:
++
++- a trailing `&`: refused before anything runs, with a foreground hint (run it without the `&`;
++  a server or watcher needs WSL2 or a Docker or SSH terminal backend);
++- a timeout above the cap: runs in the foreground with the timeout capped at the cap, and the
++  result says so (`timeout_capped`): what was asked, what was used, and that a longer job needs
++  WSL2 or a sandbox backend;
++- the other backgrounding shapes (inline `&`, nohup/disown/setsid, dev servers and watchers) are
++  still refused, with texts that name no `background=true`;
++- an explicit `background=true` keeps D-16.1043's refusal (D-16.1082 says so);
++- sandbox backends on Windows and every other OS are unchanged.
++
++Inputs → outputs: a `terminal` call + the scope's backend + the OS family → a `Plan` (foreground,
++capped) or a `Refusal`; the foreground result gains `timeout_capped` when the cap applied.
++
++Second part: `test_windows_starter_boots_and_stops_the_tree` (wave 47) slept 0.5 s and then read
++the first word of the output as the shell's pid; on a busy box the first `echo` had not arrived
++(failed once in 4 runs in wave 48). The test now waits until the reader thread has delivered the
++lines it needs (the shell's pid and its background child's pid), with a generous deadline, and
++also checks that the grandchild is gone, which is what the test name promises. The test's job
++stand-in (`GroupJobs.pipe_available`) had its own window (bytes arriving between its byte count and
++its `select` read as end of file); it now counts again before calling the pipe closed.
++
++Files: `src/indus/tools/builtin/terminal.py`, `tests/unit/tools/builtin/test_terminal_plan.py`,
++`tests/unit/backends/test_windows_rl26.py`, `docs/user/getting-started/windows.md`, this note.
++
++Edge cases / failure modes:
++- Help / version calls with a trailing `&` (`srv --help &`) are not a trailing-`&` job on POSIX
++  either; they fall to the guidance check exactly as on POSIX.
++- A timeout equal to the cap is not capped (no note).
++- A configured cap (`terminal.max_foreground_timeout`) is used, not the literal 600.
++- The backend is the scope's configured one, looked up in the call's environment registry (the
++  same rule as the schema override), so a Windows host whose profile uses Docker keeps POSIX
++  behaviour.
++- Test race: the reader thread appends chunks while the test polls; a chunk may hold a partial
++  line, so the wait counts complete lines.
++
++Our design differences / decisions:
++- `plan(call, scope, *, foreground_only=False)`; `foreground_guidance(command, *,
++  foreground_only=False)`; `TerminalTool.foreground_only(scope, environments)` shared with
++  `schema_overrides`. Our names.
++- Capping instead of refusing a long timeout: the offered schema already says "maximum 600" on
++  that host, and a command that finishes early returns at once, so running it is the useful
++  answer; the note tells the model a longer job was cut off (rc 124 at the cap).
++
++Tests we will write:
++- Plan: trailing `&` refused with a foreground hint naming WSL2 and no `background=true`; the
++  other backgrounding shapes refused without `background=true`; an over-cap timeout planned in
++  the foreground at the cap (configured cap honoured); an explicit `background=true` still plans
++  background; `foreground_only=False` unchanged.
++- Tool: on a patched `win32` host-local rig, `cmd &` is refused and nothing runs; an over-cap
++  call runs in the foreground with the timeout at the cap and the `timeout_capped` note; a
++  sandbox backend on `win32` still promotes.
++- Race: the starter test waits for its two pid lines; run 20 times in a row, also with Git
++  Bash's start slowed (`BASH_ENV`) and under CPU load.
++
++## Decisions for the lead
++- W50-c-1: on native Windows with a host-local terminal backend, `plan()` refuses a trailing `&`
++  (foreground hint, WSL2 / Docker / SSH for servers) instead of turning it into a background job.
++- W50-c-2: there, a foreground timeout above `terminal.max_foreground_timeout` is capped at it and
++  the result carries `timeout_capped`, instead of a promotion to a background job.
++- W50-c-3: there, the foreground guidance refusals (inline `&`, nohup/disown/setsid, servers and
++  watchers) name WSL2 or a Docker / SSH backend instead of `background=true`.
++- W50-c-4 (tests only): the wave 47 starter test waits for its two pid lines (a real signal,
++  15 s deadline) and checks the grandchild too; the `GroupJobs` stand-in counts the pipe again
++  before calling it closed.
++
++Compare checklist (filled after the rewrite; reopened the planning branch of `tools/terminal_tool.py`):
++- [x] Order kept: explicit background, then the trailing-`&` conversion, then the guidance
++  refusal, then the over-cap check; a trailing-`&` call is never also "promoted" (test:
++  `test_terminal_plan.py::test_trailing_amp_becomes_background`, `::test_overcap_foreground_is_promoted`,
++  both unchanged and passing)
++- [x] Over-cap promotion and the trailing-`&` conversion kept on POSIX and on Windows sandbox
++  backends (test: `::test_windows_sandbox_backend_and_posix_hosts_still_promote`)
++- [x] Windows host: trailing `&` refused before the backend is even opened (test:
++  `::test_windows_host_backend_refuses_trailing_amp_before_running`)
++- [x] Windows host: over-cap runs in the foreground at the cap with `timeout_capped` (tests:
++  `::test_foreground_only_caps_an_overcap_timeout_in_the_foreground`,
++  `::test_windows_host_backend_runs_an_overcap_call_in_the_foreground_at_the_cap`)
++- [x] Guidance texts on that host name no `background=true` (test:
++  `::test_foreground_only_guidance_names_no_background_option`)
++- [x] Help / version and ordinary `&&`, `2>&1` commands unchanged (test:
++  `::test_foreground_only_keeps_ordinary_and_explicit_background_plans`)
++- Deliberate differences: the reference has no native-Windows branch for either conversion; ours
++  follows D-16.1043 / D-16.1082 (no background jobs on a Windows host backend).
++- Not taken: a native port of background jobs (D-16.1043 stays); a refusal for an over-cap
++  timeout (capping is more useful, W50-c-2).
+diff --git a/docs/user/getting-started/windows.md b/docs/user/getting-started/windows.md
+index bd728a3..12bfa83 100644
+--- a/docs/user/getting-started/windows.md
++++ b/docs/user/getting-started/windows.md
+@@ -58,8 +58,12 @@ What to expect:
+   (`MSYS_NO_PATHCONV=1` and `MSYS2_ARG_CONV_EXCL=*`, unless you set them yourself), so options like
+   `/F` reach programs such as `tasklist` unchanged. Give Windows programs Windows paths.
+ - **Stopping.** A command that runs too long or that you interrupt is stopped together with every
+-  program it started. Programs a command started in the background (`some-server &`) keep running
+-  after that command ends normally.
++  program it started. Programs a command started in the background (a script that runs
++  `some-server &`, say) keep running after that command ends normally.
++- **Foreground only.** The agent runs commands in the foreground: a command that ends in `&` is
++  refused with a hint to send it without the `&`, and a timeout above the 600-second foreground
++  limit is cut to that limit (the result says so). Servers, watchers and longer jobs need WSL2 or a
++  Docker or SSH terminal backend.
+ - **Text.** Commands get a UTF-8 console and `PYTHONUTF8=1`, so accented and non-Latin output comes
+   through intact. Temporary files live under `<home>\cache\terminal`.
+ - **Not available natively:** `sudo`, and the background-process, scheduled-job and code-execution
+diff --git a/src/indus/tools/builtin/terminal.py b/src/indus/tools/builtin/terminal.py
+index 9e026bf..27d3bc0 100644
+--- a/src/indus/tools/builtin/terminal.py
++++ b/src/indus/tools/builtin/terminal.py
+@@ -31,6 +31,10 @@ scope is refused before anything is touched (R02.8).
+ On native Windows a host-local backend cannot run background jobs (they fail to start with the
+ WSL2 refusal, W47-e-1), so there the offered schema (``schema_overrides``) drops ``background``
+ and the background-only arguments and says so in its description; sandbox backends keep them.
++On that host ``plan`` runs with ``foreground_only`` (W50-c): a trailing ``&`` is refused with a
++foreground hint instead of becoming a job, a timeout above the cap is cut to the cap (the result
++says so in ``timeout_capped``) instead of being promoted, and the guidance refusals point to WSL2
++or a Docker or SSH backend rather than ``background=true``.
+ """
+ 
+ from __future__ import annotations
+@@ -321,31 +325,76 @@ def _asks_help_or_version(command: str) -> bool:
+     )
+ 
+ 
+-def foreground_guidance(command: str) -> str | None:
+-    """Why this foreground command should be a background job instead, or None."""
++GUIDANCE = {
++    "wrapper": (
++        "This foreground command detaches itself (nohup/disown/setsid), so its output and "
++        'exit would be lost. Send it without the wrapper as terminal(command="...", '
++        "background=true, notify=true) so it is tracked; check readiness and run tests in "
++        "separate calls."
++    ),
++    "amp": (
++        "This foreground command puts work in the background with '&'. Send it without the "
++        "'&' as terminal(command=\"...\", background=true) (add notify=true for a job that "
++        "ends), then check on it in follow-up calls."
++    ),
++    "long_lived": (
++        "This looks like a server or watcher that keeps running. Start it with "
++        "background=true, wait until it is ready (a health URL or a log line), then run "
++        "tests in a separate call."
++    ),
++}
++"""The planning refusals where background jobs can run."""
++
++WINDOWS_ELSEWHERE = (
++    "Background processes are not available on native Windows with the local terminal backend; "
++    "a server, watcher or long job needs WSL2 or a Docker or SSH terminal backend."
++)
++WINDOWS_GUIDANCE = {
++    "wrapper": (
++        "This command detaches itself (nohup/disown/setsid), so its output and exit would be "
++        "lost. If it finishes on its own, send it without the wrapper; it then runs in the "
++        "foreground. " + WINDOWS_ELSEWHERE
++    ),
++    "amp": (
++        "This command puts work in the background with '&'. If every part finishes on its own, "
++        "send it without the '&' (or with '&&'); it then runs in the foreground. "
++        + WINDOWS_ELSEWHERE
++    ),
++    "trailing_amp": (
++        "The trailing '&' would start a background process. If the command finishes on its own, "
++        "send it without the '&'; it then runs in the foreground (up to the timeout). "
++        + WINDOWS_ELSEWHERE
++    ),
++    "long_lived": (
++        "This looks like a server or watcher that keeps running, so it would hold this call "
++        "until its timeout and then be stopped. " + WINDOWS_ELSEWHERE
++    ),
++}
++"""The planning refusals on a host that runs foreground commands only (W50-c-1, W50-c-3)."""
++
++TIMEOUT_CAPPED_NOTE = (
++    "The requested timeout ({requested}s) is above the {cap}s foreground limit, so the command "
++    "ran with a {cap}s timeout. Background processes are not available on native Windows with "
++    "the local terminal backend; a longer job needs WSL2 or a Docker or SSH terminal backend."
++)
++
++
++def foreground_guidance(command: str, *, foreground_only: bool = False) -> str | None:
++    """Why this foreground command should be a background job instead, or None. With
++    ``foreground_only`` (a host without background jobs) the texts name where such work can run
++    instead of ``background=true``."""
+     if _asks_help_or_version(command):
+         return None
+     plain = _mask_quotes(command)
+     if _WRAPPERS.search(plain):
+-        return (
+-            "This foreground command detaches itself (nohup/disown/setsid), so its output and "
+-            'exit would be lost. Send it without the wrapper as terminal(command="...", '
+-            "background=true, notify=true) so it is tracked; check readiness and run tests in "
+-            "separate calls."
+-        )
+-    if "&" in _NOT_BACKGROUND.sub("", plain):
+-        return (
+-            "This foreground command puts work in the background with '&'. Send it without the "
+-            "'&' as terminal(command=\"...\", background=true) (add notify=true for a job that "
+-            "ends), then check on it in follow-up calls."
+-        )
+-    if any(p.search(plain) for p in _LONG_LIVED):
+-        return (
+-            "This looks like a server or watcher that keeps running. Start it with "
+-            "background=true, wait until it is ready (a health URL or a log line), then run "
+-            "tests in a separate call."
+-        )
+-    return None
++        kind = "wrapper"
++    elif "&" in _NOT_BACKGROUND.sub("", plain):
++        kind = "amp"
++    elif any(p.search(plain) for p in _LONG_LIVED):
++        kind = "long_lived"
++    else:
++        return None
++    return (WINDOWS_GUIDANCE if foreground_only else GUIDANCE)[kind]
+ 
+ 
+ def _strip_trailing_amp(command: str) -> str:
+@@ -385,6 +434,7 @@ class Plan:
+     workdir: str | None
+     auto_background: bool = False
+     promoted_from: int | None = None
++    capped_from: int | None = None  # foreground-only host: the timeout asked for, above the cap
+ 
+ 
+ def _config(scope: Scope, key: str, fallback: Any = None) -> Any:
+@@ -394,8 +444,10 @@ def _config(scope: Scope, key: str, fallback: Any = None) -> Any:
+     return value
+ 
+ 
+-def plan(call: Call, scope: Scope) -> Plan:
+-    """Decide how the call runs; raises ``Refusal``."""
++def plan(call: Call, scope: Scope, *, foreground_only: bool = False) -> Plan:
++    """Decide how the call runs; raises ``Refusal``. ``foreground_only``: the backend cannot
++    run background jobs here (native Windows, host-local), so nothing is turned into one; an
++    explicit ``background=true`` is still planned and meets the backend's own refusal."""
+     command = call.command
+     if not isinstance(command, str):
+         raise Refusal(results.rejected(f"command must be text, got {type(command).__name__}."))
+@@ -418,12 +470,16 @@ def plan(call: Call, scope: Scope) -> Plan:
+         return Plan(command, True, timeout, call.workdir)
+     converted = trailing_amp_command(command)
+     if converted is not None:
++        if foreground_only:
++            raise Refusal(results.rejected(WINDOWS_GUIDANCE["trailing_amp"]))
+         return Plan(converted, True, timeout, call.workdir, auto_background=True)
+-    guidance = foreground_guidance(command)
++    guidance = foreground_guidance(command, foreground_only=foreground_only)
+     if guidance:
+         raise Refusal(results.rejected(guidance))
+     cap = int(_config(scope, "terminal.max_foreground_timeout", DEFAULT_FOREGROUND_CAP))
+     if timeout > cap:
++        if foreground_only:
++            return Plan(command, False, float(cap), call.workdir, capped_from=int(timeout))
+         return Plan(command, True, timeout, call.workdir, promoted_from=int(timeout))
+     return Plan(command, False, timeout, call.workdir)
+ 
+@@ -673,13 +729,20 @@ class TerminalTool:
+     def session_cwd(self, scope: Scope, session_id: str | None) -> str | None:
+         return self._cwds.get((str(scope.home), session_id or "default"))
+ 
+-    def schema_overrides(self, scope: Scope | None) -> Mapping[str, Any] | None:
+-        """The schema without background jobs on native Windows with a host-local backend."""
++    def foreground_only(
++        self, scope: Scope | None, environments: EnvironmentRegistry | None = None
++    ) -> bool:
++        """True on native Windows when the scope's backend is host-local (``local`` opens the Git
++        Bash host there): background jobs cannot start, so none is offered or planned."""
+         if os_family() != "win32":
+-            return None
++            return False
+         name = EnvironmentRegistry.backend_name(scope) if scope is not None else "local"
+-        entry = self.shared.environments.entry(name)
+-        if entry is None or not entry.flags.host_local:
++        entry = (environments or self.shared.environments).entry(name)
++        return entry is not None and entry.flags.host_local
++
++    def schema_overrides(self, scope: Scope | None) -> Mapping[str, Any] | None:
++        """The schema without background jobs on native Windows with a host-local backend."""
++        if not self.foreground_only(scope):
+             return None
+         return copy.deepcopy(WINDOWS_HOST_SCHEMA)
+ 
+@@ -732,7 +795,7 @@ class TerminalTool:
+                     "the command was not run."
+                 )
+             )
+-        steps = plan(call, scope)
++        steps = plan(call, scope, foreground_only=self.foreground_only(scope, ctx.environments))
+         try:
+             key, env = await ctx.environments.acquire(scope, session_id=session_id)
+         except BackendUnavailable as exc:
+@@ -875,7 +938,7 @@ class TerminalTool:
+         if isinstance(outcome, BackendStatus):
+             return results.backend_status(outcome)
+         self._record_cwd(scope, session_id, steps.workdir, outcome)
+-        return results.finish(
++        finished = results.finish(
+             steps.command,
+             outcome,
+             scope=scope,
+@@ -884,6 +947,10 @@ class TerminalTool:
+             approval_note=verdict.note,
+             max_chars=int(_config(scope, "tool_output.max_chars", 50_000)),
+         )
++        if steps.capped_from is None:
++            return finished
++        capped = TIMEOUT_CAPPED_NOTE.format(requested=steps.capped_from, cap=int(steps.timeout))
++        return mutation_hooks.with_notes(finished, {"timeout_capped": capped})
+ 
+     def _record_cwd(
+         self, scope: Scope, session_id: str | None, workdir: str | None, result: ExecResult
+diff --git a/tests/unit/backends/test_windows_rl26.py b/tests/unit/backends/test_windows_rl26.py
+index da8bcdb..0a05ace 100644
+--- a/tests/unit/backends/test_windows_rl26.py
++++ b/tests/unit/backends/test_windows_rl26.py
+@@ -101,7 +101,12 @@ class GroupJobs:
+ 
+             readable, _, _ = select.select([fd], [], [], 0)
+             if readable:
+-                return None  # readable with nothing waiting: every writer closed it
++                # Readable: either bytes arrived after the count above (wave 50: that window
++                # ended the reader early, with nothing read) or every writer closed it. Count
++                # again; still nothing waiting means end of file.
++                fcntl.ioctl(fd, termios.FIONREAD, waiting)
++                count = int.from_bytes(waiting, sys.byteorder)
++                return count or None
+         return count
+ 
+ 
+@@ -359,15 +364,37 @@ def test_windows_starter_boots_and_stops_the_tree(monkeypatch: pytest.MonkeyPatc
+     monkeypatch.setattr(verify_runner, "start_windows_process", stand_in)
+     starter = verify_runner.WindowsStarter(dict(os.environ), _bash(), clock=SystemClock())
+ 
+-    async def go() -> str:
+-        handle = await starter.start("echo $$; sleep 30 & wait", os.getcwd())
+-        await SystemClock().sleep(0.5)
+-        return await starter.stop(handle)
++    command = "echo $$; sleep 30 & echo $!; wait"
+ 
+-    output = asyncio.run(go())
+-    assert stand_in.calls[0]["argv"][1:] == ["-c", "echo $$; sleep 30 & wait"]
++    async def go() -> tuple[list[str], str]:
++        handle = await starter.start(command, os.getcwd())
++        assert isinstance(handle, verify_runner._WindowsService)
++        # Wait for the reader thread to deliver both pids (a real signal, not a fixed sleep).
++        pids = await _complete_lines(handle.chunks, 2, deadline_s=15.0)
++        return pids, await starter.stop(handle)
++
++    pids, output = asyncio.run(go())
++    assert stand_in.calls[0]["argv"][1:] == ["-c", command]
+     assert stand_in.calls[0]["env"]["MSYS_NO_PATHCONV"] == "1"
+-    assert stand_in.jobs.terminated == 1 and _gone(int(output.split()[0]))
++    assert output.split()[:2] == pids
++    shell, grandchild = (int(pid) for pid in pids)
++    assert stand_in.jobs.terminated == 1
++    assert _gone(shell) and _gone(grandchild)  # the whole tree, not only the shell
++
++
++async def _complete_lines(chunks: list[str], count: int, *, deadline_s: float) -> list[str]:
++    """The first ``count`` complete lines the reader thread has appended to ``chunks``, polled
++    until they are there; fails at the deadline with what had arrived."""
++    clock = SystemClock()
++    end = clock.monotonic() + deadline_s
++    while True:
++        text = "".join(list(chunks))
++        lines = text.split("\n")[:-1]  # the last piece is an unfinished line
++        if len(lines) >= count:
++            return [line.strip() for line in lines[:count]]
++        if clock.monotonic() >= end:
++            raise AssertionError(f"only {text!r} arrived within {deadline_s:g}s")
++        await clock.sleep(0.01)
+ 
+ 
+ # -- the admin console's command runner (wave 48) --------------------------------------------------
+diff --git a/tests/unit/tools/builtin/test_terminal_plan.py b/tests/unit/tools/builtin/test_terminal_plan.py
+index b4e943f..07e87ea 100644
+--- a/tests/unit/tools/builtin/test_terminal_plan.py
++++ b/tests/unit/tools/builtin/test_terminal_plan.py
+@@ -624,3 +624,103 @@ def test_windows_sandbox_backends_and_other_hosts_keep_background(
+     fn = _offered(Rig(tmp_path / "b"))
+     assert set(fn["parameters"]["properties"]) >= BACKGROUND_ONLY
+     assert "background=true" in fn["description"]
++
++
++# -- native Windows: plan() turns nothing into a background job (wave 50 c) -----------------------
++
++
++def _plan_fg_only(scope: Scope, **args: Any) -> Any:
++    return plan(normalize({"command": "true", **args}), scope, foreground_only=True)
++
++
++def _fg_only_refusal(scope: Scope, **args: Any) -> dict[str, Any]:
++    with pytest.raises(Refusal) as caught:
++        _plan_fg_only(scope, **args)
++    return json.loads(caught.value.result)
++
++
++@pytest.mark.parametrize(
++    "command", ["python -m http.server 8000 &", "make build && ./serve | tee log &", "srv 2>&1 &"]
++)
++def test_foreground_only_refuses_a_trailing_amp_with_a_foreground_hint(
++    scope: Scope, command: str
++) -> None:
++    assert trailing_amp_command(command) is not None  # POSIX would make it a job
++    body = _fg_only_refusal(scope, command=command)
++    assert body["status"] == "error"
++    assert "without the '&'" in body["error"] and "foreground" in body["error"]
++    assert "WSL2" in body["error"] and "background=true" not in body["error"]
++
++
++@pytest.mark.parametrize(
++    "command",
++    ["srv & echo started", "nohup ./server", "setsid ./worker", "npm run dev", "uvicorn app:m"],
++)
++def test_foreground_only_guidance_names_no_background_option(scope: Scope, command: str) -> None:
++    body = _fg_only_refusal(scope, command=command)
++    assert "WSL2" in body["error"] and "background=true" not in body["error"]
++    assert foreground_guidance(command, foreground_only=True) == body["error"]
++    assert "background=true" in (foreground_guidance(command) or "")  # POSIX text unchanged
++
++
++def test_foreground_only_caps_an_overcap_timeout_in_the_foreground(tmp_path: Path) -> None:
++    scope = terminal_scope(tmp_path)
++    steps = _plan_fg_only(scope, command="pytest -x", timeout=900)
++    assert not steps.background and steps.promoted_from is None
++    assert steps.timeout == 600 and steps.capped_from == 900
++    at_cap = _plan_fg_only(scope, command="pytest -x", timeout=600)
++    assert (at_cap.background, at_cap.timeout, at_cap.capped_from) == (False, 600, None)
++    custom = terminal_scope(tmp_path, {"terminal": {"max_foreground_timeout": 120}}, name="c")
++    steps = _plan_fg_only(custom, command="pytest -x", timeout=300)
++    assert (steps.background, steps.timeout, steps.capped_from) == (False, 120, 300)
++
++
++def test_foreground_only_keeps_ordinary_and_explicit_background_plans(scope: Scope) -> None:
++    for command in ("ls && pwd", "cmd 2>&1 | tee out", "srv --help &", "uvicorn --version"):
++        steps = _plan_fg_only(scope, command=command)
++        assert not steps.background and steps.command == command
++    # an explicit background=true is planned as asked and meets the backend's refusal (W47-e-1)
++    assert _plan_fg_only(scope, command="srv", background=True).background
++
++
++def test_windows_host_backend_refuses_trailing_amp_before_running(
++    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
++    rig = Rig(tmp_path)  # the scripted backend is host-local, like `local`
++    body = rig.run(rig.call(command="python3 -m http.server 8000 &"))
++    assert body["status"] == "error" and "without the '&'" in body["error"]
++    assert rig.specs == [] and rig.env.calls == [] and rig.created == []
++
++
++def test_windows_host_backend_runs_an_overcap_call_in_the_foreground_at_the_cap(
++    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
++    rig = Rig(tmp_path, env=ScriptedEnv([ExecResult("ok", 0)]))
++    rig.deliverable()
++    body = rig.run(rig.call(command="pytest -x", timeout=900))
++    assert body["output"] == "ok" and body["exit_code"] == 0
++    assert "900s" in body["timeout_capped"] and "600s" in body["timeout_capped"]
++    assert "promoted_from_foreground" not in body and rig.specs == []
++    assert [call.timeout for call in rig.env.calls] == [600]
++    # within the cap: no note
++    rig.env.answers.append(ExecResult("ok", 0))
++    assert "timeout_capped" not in rig.run(rig.call(command="pytest -x", timeout=60))
++
++
++def test_windows_sandbox_backend_and_posix_hosts_still_promote(
++    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    monkeypatch.setattr(terminal_module, "os_family", lambda: "win32", raising=False)
++    sandbox = Rig(tmp_path / "a", env=ScriptedEnv(flags=BackendFlags(isolated=True)))
++    assert not sandbox.tool.foreground_only(sandbox.scope)
++    body = sandbox.run(sandbox.call(command="pytest -x", timeout=900))
++    # promoted: started as a job inside the sandbox (the scripted one prints no process id)
++    assert "process id" in body["error"] and "timeout_capped" not in body
++    assert "nohup bash -lc" in sandbox.env.calls[0].command
++    monkeypatch.setattr(terminal_module, "os_family", lambda: "linux", raising=False)
++    host = Rig(tmp_path / "b")
++    assert not host.tool.foreground_only(host.scope)
++    body = host.run(host.call(command="python3 -m http.server 8000 &"))
++    assert "auto_backgrounded" in body
