@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Package manifest for the Indus desktop app as MSIX (P24-22). scripts/release/msix.mjs fills every
+  double-braced field (values are XML-escaped; an unfilled field fails the build) and checks the result
+  against the structure the MSIX schemas require before makeappx sees it. Identity values come from
+  identity.json beside this file: stable, canary and the Store identity are separate entries.
+  Minimum OS: Windows 11 22H2 (build 22621).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap rescap desktop6">
+
+  <Identity
+    Name="{{identityName}}"
+    Publisher="{{publisher}}"
+    Version="{{version}}"
+    ProcessorArchitecture="{{arch}}" />
+
+  <Properties>
+    <DisplayName>{{displayName}}</DisplayName>
+    <PublisherDisplayName>{{publisherDisplayName}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>{{description}}</Description>
+    <!-- The app, its daemon and the CLI share the user's real profile folders. -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="{{minVersion}}"
+      MaxVersionTested="{{maxVersionTested}}" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="{{applicationId}}" Executable="{{executable}}" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="{{displayName}}"
+        Description="{{description}}"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="{{protocol}}">
+            <uap:DisplayName>{{displayName}} link</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+    <DeviceCapability Name="microphone" />
+  </Capabilities>
+</Package>

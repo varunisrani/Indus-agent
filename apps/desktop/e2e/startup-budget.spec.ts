@@ -6,7 +6,6 @@
 // (`pnpm --filter @indus/desktop e2e`), one file at a time.
 
 import { spawn } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { readBudgets } from "../../../tooling/perf/read-budgets.mjs";
@@ -21,10 +20,11 @@ import {
   fakeBackend,
   freePort,
   HEALTHY,
+  packagedLinuxBinary,
   tempDir,
 } from "./fixtures.ts";
 
-const BINARY = path.join(APP_ROOT, "build", "release", "linux-unpacked", "indus-desktop");
+const BINARY = packagedLinuxBinary(path.join(APP_ROOT, "build", "release"));
 const LAUNCHES = 3;
 const budget = (readBudgets().desktop as unknown as { cold_start: { limit_ms: number } })
   .cold_start;
@@ -33,7 +33,7 @@ const skipReason =
     ? e2eSkip
     : process.platform !== "linux"
       ? "the budget is measured on the Linux package here (macOS/Windows: the release lane)"
-      : fs.existsSync(BINARY)
+      : BINARY !== null
         ? ""
         : "no packaged build (CI's desktop-package job makes build/release/linux-unpacked)";
 
@@ -47,7 +47,7 @@ async function coldStart(): Promise<number> {
   const display = displayWrapper();
   const [command, ...args] = [
     ...(display?.command ?? []),
-    BINARY,
+    BINARY as string,
     ...rootSandboxArgs(),
     "--disable-gpu",
     `--remote-debugging-port=${port}`,

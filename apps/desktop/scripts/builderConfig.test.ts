@@ -15,11 +15,28 @@ type Config = Record<string, unknown> & {
   win: Record<string, unknown>;
   nsis: Record<string, unknown>;
   linux: Record<string, unknown>;
+  deb: Record<string, unknown>;
   dmg: Record<string, unknown>;
   directories: Record<string, string>;
   extraResources: Array<{ from: string; to: string }>;
 };
-const config = require("../electron-builder.config.cjs") as Config;
+const CONFIG_PATH = require.resolve("../electron-builder.config.cjs");
+const config = require(CONFIG_PATH) as Config;
+
+/** A fresh copy of the config as a build on `channel` evaluates it (P23-16). */
+function loadConfig(channel: string | undefined): Config {
+  const saved = process.env.INDUS_DESKTOP_CHANNEL;
+  if (channel === undefined) delete process.env.INDUS_DESKTOP_CHANNEL;
+  else process.env.INDUS_DESKTOP_CHANNEL = channel;
+  try {
+    delete require.cache[CONFIG_PATH];
+    return require(CONFIG_PATH) as Config;
+  } finally {
+    if (saved === undefined) delete process.env.INDUS_DESKTOP_CHANNEL;
+    else process.env.INDUS_DESKTOP_CHANNEL = saved;
+    delete require.cache[CONFIG_PATH];
+  }
+}
 const size = pngSize as (bytes: Buffer) => { width: number; height: number } | null;
 
 describe("electron-builder config", () => {
@@ -34,33 +51,78 @@ describe("electron-builder config", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("names the app ai.indus.desktop / Indus and pins Electron exactly", () => {
+  it("names the stable app ai.indus.desktop / Indus and pins Electron exactly", () => {
     const desktop = require("../package.json") as { devDependencies: Record<string, string> };
-    expect(config.appId).toBe("ai.indus.desktop");
-    expect(config.productName).toBe("Indus");
-    expect(config.electronVersion).toBe(desktop.devDependencies.electron);
-    expect(config.protocols).toEqual([{ name: "Indus link", schemes: ["indus"] }]);
+    const stable = loadConfig("stable");
+    expect(stable.appId).toBe("ai.indus.desktop");
+    expect(stable.productName).toBe("Indus");
+    expect(stable.extraMetadata).toEqual({ productName: "Indus" });
+    expect(stable.electronVersion).toBe(desktop.devDependencies.electron);
+    expect(stable.protocols).toEqual([{ name: "Indus link", schemes: ["indus"] }]);
   });
 
-  it("builds DMG + ZIP on macOS, NSIS + ZIP on Windows, AppImage on Linux", () => {
-    expect(config.mac.target).toEqual(["dmg", "zip"]);
-    expect(config.win.target).toEqual(["nsis", "zip"]);
-    expect(config.linux.target).toEqual(["AppImage"]);
-    expect(config.nsis).toMatchObject({ oneClick: true, perMachine: false });
-    expect(config.linux.executableName).toBe("indus-desktop");
+  it("gives a canary its own app id, product name, data dir, Linux names and feed (P23-16)", () => {
+    const stable = loadConfig("stable");
+    const canary = loadConfig("canary");
+    expect(canary.appId).toBe("ai.indus.desktop.canary");
+    expect(canary.productName).toBe("Indus Canary");
+    // Electron names the userData folder after the packaged productName.
+    expect(canary.extraMetadata).toEqual({ productName: "Indus Canary" });
+    expect(canary.linux.executableName).toBe("indus-desktop-canary");
+    expect(canary.deb).toEqual({ packageName: "indus-desktop-canary" });
+    expect(stable.linux.executableName).toBe("indus-desktop");
+    expect(stable.deb).toEqual({ packageName: "indus-desktop" });
+    for (const key of ["appId", "productName"] as const) expect(canary[key]).not.toBe(stable[key]);
+    // An unlabelled build is canary, as the build stamp's default.
+    expect(loadConfig(undefined).appId).toBe("ai.indus.desktop.canary");
+    expect(() => loadConfig("nightly")).toThrow(/stable, canary/);
   });
 
-  it("never signs, notarises or publishes", () => {
-    expect(config.publish).toBeNull();
-    expect(config.forceCodeSigning).toBe(false);
-    expect(config.mac).toMatchObject({ identity: null, notarize: false, hardenedRuntime: true });
-    for (const hook of ["afterSign", "afterAllArtifactBuild", "artifactBuildCompleted"]) {
-      expect(config[hook]).toBeUndefined();
+  it("points each channel's update feed at GitHub Releases for RELEASE_REPOSITORY", () => {
+    const base = fs.readFileSync(path.join(APP_DIR, "electron/releaseBase.ts"), "utf8");
+    const [owner, repo] = (/RELEASE_REPOSITORY = "([^"]+)"/.exec(base)?.[1] ?? "").split("/");
+    for (const [channel, feed] of [
+      ["stable", "latest"],
+      ["canary", "canary"],
+    ] as const) {
+      expect(loadConfig(channel).publish).toEqual([
+        { provider: "github", owner, repo, channel: feed },
+      ]);
     }
-    expect(config.win.sign).toBeUndefined();
+  });
+
+  it("builds DMG + ZIP on macOS, per-arch NSIS + ZIP on Windows, AppImage + deb on Linux", () => {
+    expect(config.mac.target).toEqual(["dmg", "zip"]);
+    expect(config.win.target).toEqual([
+      { target: "nsis", arch: ["x64", "arm64"] },
+      { target: "zip", arch: ["x64", "arm64"] },
+    ]);
+    expect(config.nsis).toMatchObject({
+      oneClick: true,
+      perMachine: false,
+      buildUniversalInstaller: false,
+    });
+    expect(config.linux.target).toEqual(["AppImage", "deb"]);
+    expect(String(config.linux.maintainer)).toMatch(/@indus\.invalid>$/);
+  });
+
+  it("signs macOS only through dist-mac (P23-15), Windows only through our hooks (P23-16), and never publishes from the build", () => {
+    expect(config.forceCodeSigning).toBe(false);
+    // unsigned unless dist-mac.mjs armed the certificate; its hooks are covered by sign-mac.test.ts
+    expect(config.mac).toMatchObject({ identity: null, notarize: false, hardenedRuntime: true });
+    expect(config.artifactBuildCompleted).toBeUndefined();
+    for (const hook of ["afterExtract", "afterPack", "afterSign", "afterAllArtifactBuild"]) {
+      expect(typeof config[hook]).toBe("function");
+    }
+    // electron-builder neither edits nor signs the executable late; our signer gets the installers.
+    expect(config.win.signAndEditExecutable).toBe(false);
     expect(config.win.azureSignOptions).toBeUndefined();
-    expect(config.win.signtoolOptions).toBeUndefined();
-    expect(typeof config.afterPack).toBe("function");
+    const signtool = config.win.signtoolOptions as Record<string, unknown>;
+    expect(typeof signtool.sign).toBe("function");
+    expect(signtool.signingHashAlgorithms).toEqual(["sha256"]);
+    for (const key of ["certificateFile", "certificatePassword", "certificateSha1"]) {
+      expect(signtool[key]).toBeUndefined();
+    }
   });
 
   it("packs an asar from the staged app, unpacks native modules and ships the stamp", () => {
@@ -136,8 +198,9 @@ describe("dist-unsigned", () => {
   it("picks the host's targets and an unpacked-only mode", () => {
     const targets = targetsFor as (p: string, o?: { dir?: boolean }) => Record<string, string[]>;
     expect(targets("darwin")).toEqual({ mac: ["dmg", "zip"] });
-    expect(targets("win32")).toEqual({ win: ["nsis", "zip"] });
-    expect(targets("linux")).toEqual({ linux: ["AppImage"] });
+    expect(targets("win32")).toEqual({ win: ["nsis", "zip"], x64: true, arm64: true });
+    expect(targets("win32", { dir: true })).toEqual({ win: ["dir"] });
+    expect(targets("linux")).toEqual({ linux: ["AppImage", "deb"] });
     expect(targets("linux", { dir: true })).toEqual({ linux: ["dir"] });
     expect(() => targets("aix")).toThrow(/no desktop build/);
   });

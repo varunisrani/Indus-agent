@@ -174,19 +174,27 @@ jobs:
             -InstallDir "$env:RUNNER_TEMP\indus-agent" -IndusHome "$env:RUNNER_TEMP\indus-home" `
             -NonInteractive -SkipBrowser -SkipComputerUse
 
-  # Desktop lanes build with P20-38's packaging (`dist:unsigned`, output apps/desktop/build/release).
-  # Signing is P23-15 (macOS: APPLE_ID, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD,
-  # MAC_CERTIFICATE, MAC_CERTIFICATE_PASSWORD) and P23-16 (Windows: WIN_CERTIFICATE,
-  # WIN_CERTIFICATE_PASSWORD), added with their hooks in the protected `release` environment; until
-  # then these lanes publish unsigned builds and pass no secret to the build.
-# The build stamp records the admitted commit (INDUS_DESKTOP_COMMIT; it refuses a checkout of any
-# other commit), never github.sha.
+  # Desktop lanes package with P20-38's scripts into apps/desktop/build/release. Two of them sign,
+  # from the protected `release` environment, and the secrets reach only their build step, under
+  # their own names, through `env` (never the install step, never echoed; plain node runs it):
+  #   desktop-mac    P23-15, scripts/dist-mac.mjs: MAC_CERTIFICATE, MAC_CERTIFICATE_PASSWORD, and
+  #                  for notarisation APPLE_ID + APPLE_TEAM_ID + APPLE_APP_SPECIFIC_PASSWORD or
+  #                  APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER
+  #   desktop-win    P23-16, scripts/dist-win.mjs: a complete Azure Trusted Signing group
+  #                  (AZURE_TRUSTED_SIGNING_ENDPOINT, _ACCOUNT, _PROFILE with AZURE_TENANT_ID,
+  #                  AZURE_CLIENT_ID, AZURE_CLIENT_SECRET), else WIN_CERTIFICATE +
+  #                  WIN_CERTIFICATE_PASSWORD
+  #   desktop-linux  unsigned by design (`dist:unsigned`), SHA-256 sums beside it; no secret
+  # With none of a lane's secrets set the build is unsigned and says so in one line; a partial set
+  # stops it. The build stamp records the admitted commit (INDUS_DESKTOP_COMMIT; it refuses a
+  # checkout of any other commit), never github.sha.
   desktop-mac:
     name: Desktop (macOS)
     needs: admit
     if: fromJSON(needs.admit.outputs.jobs)['desktop-mac']
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
+    environment: release
     steps:
       - name: Check out the admitted commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -197,17 +205,28 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # 7.0.0
         with:
           node-version-file: .nvmrc
-      - name: Build
+      - name: Install (no secrets)
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Build, sign and notarise
         env:
           INDUS_RELEASE_VERSION: ${{ needs.admit.outputs.version }}
           INDUS_RELEASE_EPOCH: ${{ needs.admit.outputs.epoch }}
           INDUS_DESKTOP_VERSION: ${{ needs.admit.outputs.version }}
           INDUS_DESKTOP_CHANNEL: ${{ needs.admit.outputs.kind }}
           INDUS_DESKTOP_COMMIT: ${{ needs.admit.outputs.commit }}
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
-          pnpm --filter @indus/desktop run dist:unsigned
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        # Plain node, not pnpm: no package manager process runs with the secrets in its environment.
+        working-directory: apps/desktop
+        run: node scripts/dist-mac.mjs
       - name: Keep the artefacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -215,12 +234,18 @@ jobs:
           path: apps/desktop/build/release/*.*
           if-no-files-found: error
 
+  # P23-16: one NSIS installer + ZIP per arch (x64, arm64). scripts/dist-win.mjs arms the signer
+  # from the secrets and removes them from the environment; the hooks stamp the executable before
+  # ASAR integrity and sign every .exe/.dll/.node once after the fuses, then the uninstaller and
+  # installer. The secrets reach only the build step (never the install step, so no package script
+  # sees them), under the same names, run with plain node, and are never echoed.
   desktop-win:
     name: Desktop (Windows)
     needs: admit
     if: fromJSON(needs.admit.outputs.jobs)['desktop-win']
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
+    environment: release
     steps:
       - name: Check out the admitted commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -231,17 +256,50 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # 7.0.0
         with:
           node-version-file: .nvmrc
-      - name: Build
+      - name: Install (no secrets)
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      # The Azure route's signtool plug-in. Fetched on every run (no secret decides it); a failed
+      # fetch only matters to an Azure-signed build, which then stops on the missing dlib.
+      - name: Trusted Signing client
+        continue-on-error: true
+        run: >-
+          nuget install Microsoft.Trusted.Signing.Client -Version 1.0.53 -ExcludeVersion
+          -OutputDirectory "$env:RUNNER_TEMP\trusted-signing"
+      - name: Build and sign
         env:
           INDUS_RELEASE_VERSION: ${{ needs.admit.outputs.version }}
           INDUS_RELEASE_EPOCH: ${{ needs.admit.outputs.epoch }}
           INDUS_DESKTOP_VERSION: ${{ needs.admit.outputs.version }}
           INDUS_DESKTOP_CHANNEL: ${{ needs.admit.outputs.kind }}
           INDUS_DESKTOP_COMMIT: ${{ needs.admit.outputs.commit }}
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
-          pnpm --filter @indus/desktop run dist:unsigned
+          WIN_CERTIFICATE: ${{ secrets.WIN_CERTIFICATE }}
+          WIN_CERTIFICATE_PASSWORD: ${{ secrets.WIN_CERTIFICATE_PASSWORD }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # Part of the Azure group only when the Azure secrets exist (a path, not a secret).
+          INDUS_AZURE_SIGNING_DLIB: >-
+            ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && format('{0}\trusted-signing\Microsoft.Trusted.Signing.Client\bin\x64\Azure.CodeSigning.Dlib.dll', runner.temp) || '' }}
+        # Plain node, not pnpm: no package manager process runs with the secrets in its environment.
+        working-directory: apps/desktop
+        run: node scripts/dist-win.mjs
+      # The optional desktop-msix lane packs these very (signed) apps; kept only when it is on,
+      # under a name the upload's `desktop-*` pattern never collects.
+      - name: Keep the unpacked apps (desktop-msix lane)
+        if: fromJSON(needs.admit.outputs.jobs)['desktop-msix']
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-unpacked
+          path: |
+            apps/desktop/build/release/win-unpacked
+            apps/desktop/build/release/win-arm64-unpacked
+          if-no-files-found: error
+          retention-days: 3
       - name: Keep the artefacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -276,12 +334,91 @@ jobs:
           corepack enable
           pnpm install --frozen-lockfile
           pnpm --filter @indus/desktop run dist:unsigned
+      # P23-16: AppImage + .deb, unsigned; the build wrote SHA256SUMS-linux.txt beside them.
+      - name: Check the SHA-256 sums
+        run: node apps/desktop/scripts/checksums.mjs check apps/desktop/build/release/SHA256SUMS-linux.txt
       - name: Keep the artefacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-linux
           path: apps/desktop/build/release/*.*
           if-no-files-found: error
+
+  # Optional lanes (claims.OPTIONAL_LANES): off unless the claim names them (`release.py --lanes`).
+  #
+  # P24-22: MSIX packages per arch, one bundle and the App Installer feed, packed from the Windows
+  # lane's own unpacked apps (nothing rebuilt). Signed with the Windows lane's secrets when they are
+  # set (identity.json's publisher must then be the certificate subject); else unsigned with one
+  # line. The Store bundle (`--store`, stable 1.0.0 or later) stays a manual step.
+  desktop-msix:
+    name: Desktop MSIX (optional)
+    needs: [admit, desktop-win]
+    if: fromJSON(needs.admit.outputs.jobs)['desktop-msix']
+    runs-on: windows-latest
+    timeout-minutes: 60
+    environment: release
+    steps:
+      - name: Check out the admitted commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.admit.outputs.commit }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # 7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Collect the Windows lane's unpacked apps
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: win-unpacked
+          path: apps/desktop/build/release
+      - name: Windows SDK tools on PATH
+        shell: pwsh
+        run: |
+          $bin = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" |
+            Sort-Object Name -Descending | Select-Object -First 1
+          Add-Content -Path $env:GITHUB_PATH -Value $bin.FullName
+      - name: Trusted Signing client
+        continue-on-error: true
+        run: >-
+          nuget install Microsoft.Trusted.Signing.Client -Version 1.0.53 -ExcludeVersion
+          -OutputDirectory "$env:RUNNER_TEMP\trusted-signing"
+      - name: Pack, bundle and sign
+        env:
+          VERSION: ${{ needs.admit.outputs.version }}
+          WIN_CERTIFICATE: ${{ secrets.WIN_CERTIFICATE }}
+          WIN_CERTIFICATE_PASSWORD: ${{ secrets.WIN_CERTIFICATE_PASSWORD }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          INDUS_AZURE_SIGNING_DLIB: >-
+            ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && format('{0}\trusted-signing\Microsoft.Trusted.Signing.Client\bin\x64\Azure.CodeSigning.Dlib.dll', runner.temp) || '' }}
+        # Plain node, no package install: msix.mjs uses Node's own modules only.
+        run: node scripts/release/msix.mjs build --version "$env:VERSION" --out "$env:RUNNER_TEMP\msix"
+      - name: Keep the bundle and the feed
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-msix
+          path: |
+            ${{ runner.temp }}/msix/*.msixbundle
+            ${{ runner.temp }}/msix/*.appinstaller
+          if-no-files-found: error
+
+  # P24-21: the Termux APT channel (aarch64 .deb + signed static repository) through termux.yml on
+  # the admitted commit, named by the release tag; termux.yml reads TERMUX_APT_SIGNING_KEY and
+  # TERMUX_APT_SIGNING_PASSPHRASE from the `release` environment itself, fails on an unsigned
+  # Release (exit 3) and keeps the repository as an artifact for the owner's host.
+  termux:
+    name: Termux APT channel (optional)
+    needs: admit
+    if: fromJSON(needs.admit.outputs.jobs)['termux']
+    uses: ./.github/workflows/termux.yml
+    with:
+      tag: ${{ needs.admit.outputs.tag }}
+      commit: ${{ needs.admit.outputs.commit }}
 
   upgrade:
     name: Previous release → this commit
@@ -373,7 +510,7 @@ jobs:
 
   upload:
     name: Artefacts onto the draft (once)
-    needs: [admit, desktop-mac, desktop-win, desktop-linux, web-pages]
+    needs: [admit, desktop-mac, desktop-win, desktop-linux, desktop-msix, web-pages]
     if: ${{ !cancelled() && needs.admit.result == 'success' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -428,7 +565,9 @@ jobs:
   gate:
     name: Every selected job passed
     if: always()
-    needs: [admit, ci, docker, nix, install-e2e, desktop-mac, desktop-win, desktop-linux, upgrade, web-pages, upload]
+    needs:
+      [admit, ci, docker, nix, install-e2e, desktop-mac, desktop-win, desktop-linux, desktop-msix,
+       termux, upgrade, web-pages, upload]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

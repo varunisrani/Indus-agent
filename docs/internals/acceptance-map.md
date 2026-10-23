@@ -2194,6 +2194,6 @@ Parts of inventory rows that 1.0 ships without, each citing its row in §2.8 ("N
 - **I48** telemetry and install-receipt upload (D-16.49)
 - **N30** the light (remote-only) desktop variant (D-16.48) and MSIX/Store bundles (D-16.15)
 - **N33** a separate native setup installer app (D-16.47)
-- **S5** the Termux APT channel (D-16.15)
-- **S6** MSIX and Store bundles (D-16.15)
+- **S5** partial delivery: the Termux APT channel is built (P24-21, wave 49) as the optional `termux` release lane but has never run; the builder base digest, the signing key, the repository host and the first green run are the owner's, so 1.0 ships without the channel (D-16.15)
+- **S6** partial delivery: MSIX packages, bundle and App Installer feed are built (P24-22, wave 49) as the optional `desktop-msix` release lane but have never run on Windows; Store bundles are not submitted; ACC-S6-1 (a signed build passing the OS assessment) is owed to the first signed run (D-16.15)
 - **O9** the legacy single-query runner script (D-16.85)

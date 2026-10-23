@@ -14,6 +14,7 @@
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import readline from "node:readline";
@@ -33,6 +34,25 @@ export const REPO = path.resolve(APP_ROOT, "..", "..");
 export const PYTHON = path.join(REPO, ".venv", "bin", "python");
 export const REAL_INDUS = path.join(REPO, ".venv", "bin", "indus");
 export const GUEST_PAGES = path.join(APP_ROOT, "testing", "guestPages");
+const { CHANNELS, channelIdentity } = createRequire(import.meta.url)(
+  "../scripts/channel-identity.cjs",
+) as {
+  CHANNELS: readonly string[];
+  channelIdentity: (channel: string) => { executableName: string };
+};
+
+/**
+ * The packaged Linux executable under an electron-builder output folder, whichever channel built
+ * it (P23-16: a canary is `indus-desktop-canary`), or null when there is none.
+ */
+export function packagedLinuxBinary(release: string): string | null {
+  for (const channel of CHANNELS) {
+    const file = path.join(release, "linux-unpacked", channelIdentity(channel).executableName);
+    if (fs.existsSync(file)) return file;
+  }
+  return null;
+}
+
 /** How long a fresh DevTools session must stay open before `attach` hands it out. */
 const SESSION_SETTLE_MS = 250;
 

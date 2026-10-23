@@ -108,3 +108,14 @@ Read: none from the reference (CI wiring only).
 - Not run locally (no shellcheck here): the first CI run may report findings in `install.sh`; fix
   them in the fragments and rebuild (`scripts/install/build.py`). Test of the job's shape:
   `tooling/checks/tests/test_pins.py::test_ci_shellchecks_the_installer_and_release_scripts_at_a_pinned_version`.
+
+## Wave 49 (builder b): Windows and Linux desktop artefacts (P23-16)
+
+| Tool / format | Version | Where | Notes |
+|---|---|---|---|
+| electron-builder / app-builder-lib | 26.17.0 | `apps/desktop/electron-builder.config.cjs` | `afterExtract` runs before the rename and `addWinAsarIntegrity`; `signAndEditExecutable: false`; `win.signtoolOptions.sign` custom hook; `nsis.buildUniversalInstaller: false`; `deb.packageName`; `afterAllArtifactBuild`; update files `<channel>.yml` / `<channel>-linux.yml` from the `github` publish provider (checked in `out/` of the pinned package) |
+| resedit (via app-builder-lib `out/util/resEdit.js`) | as pinned by app-builder-lib 26.17.0 | `apps/desktop/scripts/sign-win.mjs` | the identity stamp reuses electron-builder's own editor, loaded from its package |
+| signtool (Windows SDK) | newest `10.0.*` on the runner, or `INDUS_SIGNTOOL` | `sign-win.mjs` | `sign /fd SHA256 /tr <url> /td SHA256` + `/f /p` (PFX) or `/dlib /dmdf` (Azure); no shell |
+| Microsoft.Trusted.Signing.Client (NuGet) | 1.0.53 | `release.yml` desktop-win | fetched on every Windows release run (`continue-on-error`; only an Azure-signed build needs it, and it stops on a missing dlib); **to verify** against Microsoft's docs on the first signed run (version and `bin/x64/Azure.CodeSigning.Dlib.dll` layout; not checked here, no network) |
+| PE/COFF Authenticode certificate table | data directory 4 (file offset, size), 8-byte aligned, at the end of the image | `sign-win.mjs` `peCertificateTable` | checked after every signature |
+| `sha256sum` text format | GNU coreutils (`<hex>  <name>`) | `apps/desktop/scripts/checksums.mjs` | `sha256sum -c SHA256SUMS-linux.txt` accepts it |

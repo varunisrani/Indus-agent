@@ -53,11 +53,16 @@ export function unsignedEnv(env) {
   return out;
 }
 
-/** electron-builder targets for the host platform (`--dir` → unpacked only). */
+/**
+ * electron-builder targets for the host platform (`--dir` → unpacked only, host arch). Windows
+ * builds x64 and arm64 in one run, one NSIS installer each (`nsis.buildUniversalInstaller: false`).
+ */
 export function targetsFor(platform, { dir = false } = {}) {
   if (platform === "darwin") return { mac: dir ? ["dir"] : ["dmg", "zip"] };
-  if (platform === "win32") return { win: dir ? ["dir"] : ["nsis", "zip"] };
-  if (platform === "linux") return { linux: dir ? ["dir"] : ["AppImage"] };
+  if (platform === "win32") {
+    return dir ? { win: ["dir"] } : { win: ["nsis", "zip"], x64: true, arm64: true };
+  }
+  if (platform === "linux") return { linux: dir ? ["dir"] : ["AppImage", "deb"] };
   throw new Error(`no desktop build for platform ${platform}`);
 }
 
@@ -76,7 +81,8 @@ export function parseFlags(argv) {
   return flags;
 }
 
-async function buildBundles() {
+/** Renderer (Vite → dist/) and main + preload (dist-electron/) bundles. */
+export async function buildBundles() {
   const { build } = await import("vite");
   await build({
     root: APP_DIR,
@@ -102,6 +108,8 @@ export async function distUnsigned(flags) {
   const clean = unsignedEnv(process.env);
   for (const key of Object.keys(process.env)) if (!(key in clean)) delete process.env[key];
   process.env.CSC_IDENTITY_AUTO_DISCOVERY = "false";
+  // The config picks the app id, product name and update feed from the stamp's channel (P23-16).
+  process.env.INDUS_DESKTOP_CHANNEL = stamp.channel;
 
   const builder = require("electron-builder");
   const config = require(path.join(APP_DIR, "electron-builder.config.cjs"));

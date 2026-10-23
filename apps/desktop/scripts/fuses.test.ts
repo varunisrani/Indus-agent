@@ -76,6 +76,26 @@ describe("fuse table", () => {
     ]);
   });
 
+  it("finds a canary build's binaries under their own names (P23-16)", () => {
+    const dist = fs.mkdtempSync(path.join(os.tmpdir(), "indus-dist-"));
+    dirs.push(dist);
+    fs.mkdirSync(path.join(dist, "linux-unpacked"));
+    fs.writeFileSync(path.join(dist, "linux-unpacked", "indus-desktop-canary"), "", {
+      mode: 0o755,
+    });
+    fs.mkdirSync(path.join(dist, "win-unpacked"));
+    fs.writeFileSync(path.join(dist, "win-unpacked", "Indus Canary.exe"), "");
+    fs.mkdirSync(path.join(dist, "mac-arm64", "Indus Canary.app"), { recursive: true });
+    const found = (findPackagedBinaries as (d: string) => string[])(dist)
+      .map((f) => path.relative(dist, f))
+      .sort();
+    expect(found).toEqual([
+      path.join("linux-unpacked", "indus-desktop-canary"),
+      path.join("mac-arm64", "Indus Canary.app"),
+      path.join("win-unpacked", "Indus Canary.exe"),
+    ]);
+  });
+
   it("verify fails when nothing is found or the file has no fuse wire", async () => {
     expect((await verifyBinaries([])).ok).toBe(false);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-fuse-"));

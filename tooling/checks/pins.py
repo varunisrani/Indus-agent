@@ -10,6 +10,10 @@
    ``workspace:*`` only for ``@indus/*``.
 4. With any ``package.json`` present, ``pnpm-workspace.yaml`` sets ``minimumReleaseAge >= 20160``.
 5. Git sources name a full 40-hex commit.
+6. Every Dockerfile base outside ``tests/`` (``Dockerfile`` or ``*.Dockerfile``) is pinned by
+   ``@sha256:<64 hex>``, directly or through an ``ARG`` default; ``scratch`` and earlier stages
+   need nothing. An all-zero digest is an owner placeholder: with an ``owner-to-fill`` mark in
+   the file it is reported as a warning, without one it fails.
 """
 
 from __future__ import annotations
@@ -52,6 +56,14 @@ EXACT_NODE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)
 NODE_GIT = re.compile(r"^(?:git\+[^#]+|git://[^#]+|github:[^#]+|[\w.-]+/[\w.-]+)#(?P<rev>.*)$")
 RELEASE_AGE = re.compile(r"^minimumReleaseAge\s*:\s*(?P<value>[^#]*?)\s*(?:#.*)?$", re.MULTILINE)
 UPLOAD_TIME = re.compile(r'upload-time\s*=\s*"([^"]+)"')
+DOCKER_ARG = re.compile(r"^\s*ARG\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?:=(?P<value>\S*))?", re.I)
+DOCKER_FROM = re.compile(
+    r"^\s*FROM\s+(?:--platform=\S+\s+)?(?P<image>\S+)(?:\s+AS\s+(?P<stage>\S+))?", re.I
+)
+DOCKER_REF = re.compile(r"^\$\{?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\}?$")
+DIGEST_PIN = re.compile(r"@sha256:(?P<hex>[0-9a-f]{64})$")
+PLACEHOLDER_HEX = "0" * 64
+OWNER_MARK = "owner-to-fill"
 
 
 def norm(name: str) -> str:
@@ -329,6 +341,64 @@ def check_workspace(root: Path, result: Result) -> None:
         result.fail(f"pnpm-workspace.yaml: minimumReleaseAge {value!r} is below 14 days {fix}")
 
 
+# --------------------------------------------------------------------------- dockerfiles
+
+
+def is_dockerfile(path: Path, root: Path) -> bool:
+    if path.name != "Dockerfile" and not path.name.endswith(".Dockerfile"):
+        return False
+    return path.relative_to(root).parts[0] != "tests"
+
+
+def check_dockerfile(path: Path, root: Path, result: Result) -> int:
+    """Rule 6 for one Dockerfile; returns how many bases it checked."""
+    where = rel(path, root)
+    text = path.read_text(encoding="utf-8")
+    args: dict[str, str] = {}
+    stages: set[str] = set()
+    count = 0
+    for number, line in enumerate(text.splitlines(), start=1):
+        arg = DOCKER_ARG.match(line)
+        if arg:
+            args[arg.group("name")] = arg.group("value") or ""
+            continue
+        base = DOCKER_FROM.match(line)
+        if not base:
+            continue
+        image = base.group("image")
+        if base.group("stage"):
+            stages.add(base.group("stage").lower())
+        if image.lower() == "scratch" or image.lower() in stages:
+            continue
+        count += 1
+        ref = DOCKER_REF.match(image)
+        if ref:
+            image = args.get(ref.group("name"), "")
+        pin = DIGEST_PIN.search(image)
+        if pin is None:
+            result.fail(
+                f"{where}:{number}: base {image or base.group('image')!r} is not pinned"
+                " -> write <image>:<tag>@sha256:<digest>"
+            )
+        elif pin.group("hex") == PLACEHOLDER_HEX:
+            if OWNER_MARK in text:
+                result.warnings.append(
+                    f"{where}:{number}: base digest is the owner-to-fill placeholder"
+                    " -> resolve it with `docker buildx imagetools inspect` and fill it in"
+                )
+            else:
+                result.fail(f"{where}:{number}: all-zero base digest without an owner-to-fill mark")
+    return count
+
+
+def check_docker(root: Path, result: Result) -> int:
+    return sum(
+        check_dockerfile(path, root, result)
+        for path in walk_files(root)
+        if is_dockerfile(path, root)
+    )
+
+
 # --------------------------------------------------------------------------- entry
 
 
@@ -342,7 +412,10 @@ def run(
     today = today or datetime.now(UTC).date()
     py = check_python(ctx.root, allow_path, meta_path, result, today)
     node = check_node(ctx.root, result)
-    result.notes.append(f"checked {py} Python and {node} Node dependency entries")
+    bases = check_docker(ctx.root, result)
+    result.notes.append(
+        f"checked {py} Python and {node} Node dependency entries and {bases} Dockerfile bases"
+    )
     return result
 
 

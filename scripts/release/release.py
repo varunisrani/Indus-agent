@@ -358,7 +358,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--bump", choices=BUMPS, default="patch")
     parser.add_argument("--canary", action="store_true", help="a canary of the next patch")
     parser.add_argument("--autopublish", action="store_true", help="publish as soon as green")
-    parser.add_argument("--lanes", default=None, help="comma-separated lanes (default: all)")
+    parser.add_argument(
+        "--lanes",
+        default=None,
+        help="comma-separated lanes (default: all but the optional desktop-msix and termux)",
+    )
     parser.add_argument("--if-new", action="store_true", help="do nothing for a released commit")
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--repository", default=RELEASE_REPOSITORY)

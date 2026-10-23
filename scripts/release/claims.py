@@ -3,7 +3,9 @@
 A release is a set of *lanes*: each is a build or a suite in ``release.yml``. The claim — the
 JSON message of the annotated attempt ref ``rc.<N>-v<version>`` — records the set once, so a rerun
 can never change it, and the gate judges every job against it: a job whose lane is on must
-succeed; it may be skipped only when its lane is off (R10.18).
+succeed; it may be skipped only when its lane is off (R10.18). A lane marked ``optional`` is off
+unless someone names it (``release.py --lanes``): the Termux APT channel (P24-21) and the MSIX
+bundle (P24-22, which packs ``desktop-win``'s own unpacked apps, so it needs that lane on too).
 
 Claim (schema 1): ``kind`` (``stable`` / ``canary``), ``version``, ``attempt``, ``commit`` (40
 hex), ``autopublish``, ``lanes`` (sorted names), ``epoch`` (the attempt ref's tagger time, unix
@@ -41,6 +43,8 @@ __all__ = [
     "JOB_LANES",
     "LANES",
     "LANE_NAMES",
+    "LANE_REQUIRES",
+    "OPTIONAL_LANES",
     "WARNING_BEGIN",
     "WARNING_END",
     "Claim",
@@ -62,6 +66,8 @@ SHA_RE = re.compile(r"[0-9a-f]{40}")
 class Lane:
     name: str
     doc: str
+    optional: bool = False
+    """Off unless named: never part of the default set (W49 integration)."""
 
 
 LANES: tuple[Lane, ...] = (
@@ -73,9 +79,20 @@ LANES: tuple[Lane, ...] = (
     Lane("desktop-win", "the signed Windows desktop installer"),
     Lane("desktop-linux", "the Linux desktop AppImage and .deb"),
     Lane("upgrade", "the previous release updated to this commit with `indus update`"),
+    Lane(
+        "desktop-msix",
+        "MSIX packages, bundle and App Installer feed from the Windows lane's apps",
+        optional=True,
+    ),
+    Lane("termux", "the signed Termux APT repository (aarch64 .deb), termux.yml", optional=True),
 )
 LANE_NAMES: tuple[str, ...] = tuple(lane.name for lane in LANES)
-DEFAULT_LANES: frozenset[str] = frozenset(LANE_NAMES)
+OPTIONAL_LANES: frozenset[str] = frozenset(lane.name for lane in LANES if lane.optional)
+DEFAULT_LANES: frozenset[str] = frozenset(LANE_NAMES) - OPTIONAL_LANES
+"""What a claim selects when ``--lanes`` is not given: every lane but the optional ones."""
+
+LANE_REQUIRES: dict[str, frozenset[str]] = {"desktop-msix": frozenset({"desktop-win"})}
+"""Lanes that are meaningless alone: naming one without these is refused, never quietly skipped."""
 
 JOB_LANES: dict[str, frozenset[str]] = {
     "ci": frozenset({"ci"}),
@@ -86,6 +103,8 @@ JOB_LANES: dict[str, frozenset[str]] = {
     "desktop-win": frozenset({"desktop-win"}),
     "desktop-linux": frozenset({"desktop-linux"}),
     "upgrade": frozenset({"upgrade"}),
+    "desktop-msix": frozenset({"desktop-msix", "desktop-win"}),
+    "termux": frozenset({"termux"}),
     "web-pages": frozenset(),
     "upload": frozenset(),
 }
@@ -97,13 +116,18 @@ class ClaimError(ValueError):
 
 
 def parse_lanes(text: str | None) -> frozenset[str]:
-    """``"ci,docker"`` → the lane set; None/empty → the default set. Unknown names refuse."""
+    """``"ci,docker"`` → the lane set; None/empty → the default set (no optional lane). Unknown
+    names refuse, and so does a lane named without the lanes it needs (``LANE_REQUIRES``)."""
     if text is None or not text.strip():
         return DEFAULT_LANES
     names = {part.strip() for part in text.split(",") if part.strip()}
     unknown = sorted(names - set(LANE_NAMES))
     if unknown:
         raise ClaimError(f"unknown lane(s): {', '.join(unknown)} (lanes: {', '.join(LANE_NAMES)})")
+    for name in sorted(names):
+        missing = sorted(LANE_REQUIRES.get(name, frozenset()) - names)
+        if missing:
+            raise ClaimError(f"lane {name} needs {', '.join(missing)} too")
     return frozenset(names)
 
 

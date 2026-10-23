@@ -75,6 +75,26 @@ The desktop app ships installers for macOS (DMG), Windows (NSIS) and Linux (AppI
 start it looks for Indus Agent on your computer and, when there is none, offers to install it with
 the same steps as the install script, showing each one as it runs. See [Desktop app](../user-guide/desktop.md).
 
+## Termux (Android)
+
+`install.sh` does not run on Termux. Termux on an aarch64 phone or tablet installs Indus Agent from
+its own signed APT repository instead; the package brings its own Python, Node and uv, so it does
+not depend on the versions Termux ships. Suites: `indus-stable` and `indus-canary` (component
+`main`).
+
+```bash
+pkg install curl gnupg
+mkdir -p "$PREFIX/etc/apt/keyrings"
+curl -fsSL <repository>/key.asc -o "$PREFIX/etc/apt/keyrings/indus-agent.asc"
+gpg --show-keys "$PREFIX/etc/apt/keyrings/indus-agent.asc"   # compare the fingerprint
+echo "deb [signed-by=$PREFIX/etc/apt/keyrings/indus-agent.asc] <repository> indus-stable main" \
+  > "$PREFIX/etc/apt/sources.list.d/indus-agent.list"
+pkg update && pkg install indus-agent
+```
+
+The repository address and the key fingerprint are published with each release once the channel
+is live. Update with `pkg upgrade indus-agent`.
+
 ## What gets installed
 
 The standard install includes the extras most people need: web search, document reading,

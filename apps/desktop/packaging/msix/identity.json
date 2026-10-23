@@ -1,0 +1,29 @@
+{
+  "$comment": "MSIX package identities (P24-22). 'publisher' must equal the signing certificate's subject; 'store' comes from Partner Center. Values containing OWNER-TO-FILL are placeholders the owner replaces; scripts/release/msix.mjs refuses to sign with, or build a Store bundle from, a placeholder.",
+  "stable": {
+    "identityName": "IndusAgent.Desktop",
+    "displayName": "Indus",
+    "publisher": "CN=OWNER-TO-FILL signing certificate subject",
+    "publisherDisplayName": "Indus Agent contributors",
+    "protocol": "indus",
+    "filePrefix": "Indus",
+    "feedName": "Indus.appinstaller"
+  },
+  "canary": {
+    "identityName": "IndusAgent.Desktop.Canary",
+    "displayName": "Indus Canary",
+    "publisher": "CN=OWNER-TO-FILL signing certificate subject",
+    "publisherDisplayName": "Indus Agent contributors",
+    "protocol": "indus",
+    "filePrefix": "Indus-Canary",
+    "feedName": "Indus-Canary.appinstaller"
+  },
+  "store": {
+    "identityName": "OWNER-TO-FILL.PartnerCenterPackageName",
+    "displayName": "Indus",
+    "publisher": "CN=OWNER-TO-FILL-PARTNER-CENTER-PUBLISHER-ID",
+    "publisherDisplayName": "OWNER-TO-FILL Partner Center publisher display name",
+    "protocol": "indus",
+    "filePrefix": "Indus-Store"
+  }
+}

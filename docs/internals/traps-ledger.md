@@ -1226,7 +1226,18 @@ Checked by `python -m tooling.checks traps`.
   - `apps/desktop/electron/deepLinks.test.ts::delivery shows a tray-hidden window inactive and never focuses it (R08.21)`
   - `apps/desktop/src/deepLinks/DeepLinkHost.test.tsx::listens before it tells main it is ready`
 - **R08.22** Code signing order
-  - Review: signing order is verified on packaged builds in the release lane (P23-15)
+  - `apps/desktop/scripts/sign-mac.test.ts::the pinned electron-builder runs afterExtract before ASAR integrity and the Info.plist rewrite`
+  - `apps/desktop/scripts/sign-mac.test.ts::writes the stamp keys into the pristine Electron.app Info.plist`
+  - `apps/desktop/scripts/sign-mac.test.ts::signs every nested target before the app, deepest first, and seals refreshed digests`
+  - `apps/desktop/scripts/sign-mac.test.ts::notarises after the outer signature and staples the accepted app`
+  - `apps/desktop/scripts/sign-mac.test.ts::no secret set: unsigned, one line naming the secrets`
+  - `tests/unit/ci/test_release_workflow.py::test_mac_lane_signs_with_the_release_environment_secrets`
+  - `apps/desktop/scripts/sign-win.test.ts::stamps electron.exe before the rename and integrity, then signs each PE exactly once`
+  - `apps/desktop/scripts/sign-win.test.ts::refuses to sign a folder whose executable was not stamped first`
+  - `apps/desktop/scripts/sign-win.test.ts::stamps in afterExtract and signs in afterPack only after the fuses`
+  - `apps/desktop/scripts/sign-win.test.ts::installer and uninstaller go through the same signer; a rebuilt file is signed anew`
+  - `apps/desktop/scripts/sign-win.test.ts::fails when the image changed after signing (certificate table no longer at the end)`
+  - `tests/unit/ci/test_release_workflow.py::test_windows_lane_signs_with_the_release_environment_secrets`
 - **R08.23** Remote execution boundary
   - `apps/desktop/src/chat/composer/Composer.test.tsx::remote mode uploads bytes: no client path reaches the remote host`
   - `apps/desktop/electron/connections/ssh.test.ts::client-only files reach the remote as bytes, never as a client path (R08.23)`

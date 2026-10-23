@@ -6,8 +6,8 @@
 
 import fs from "node:fs";
 
-/** Parse the header JSON from the first bytes of an archive. */
-export function parseAsarHeader(buffer) {
+/** The header JSON text from the first bytes of an archive, exactly as stored. */
+export function asarHeaderText(buffer) {
   if (buffer.length < 16) throw new Error("asar: file too short");
   if (buffer.readUInt32LE(0) !== 4) throw new Error("asar: bad size pickle");
   const headerSize = buffer.readUInt32LE(4);
@@ -15,11 +15,19 @@ export function parseAsarHeader(buffer) {
   if (16 + jsonLength > 8 + headerSize || 16 + jsonLength > buffer.length) {
     throw new Error("asar: header length out of range");
   }
-  return JSON.parse(buffer.toString("utf8", 16, 16 + jsonLength));
+  return buffer.toString("utf8", 16, 16 + jsonLength);
 }
 
-/** Read the header of the archive at `file` (reads only the header bytes). */
-export function readAsarHeader(file) {
+/** Parse the header JSON from the first bytes of an archive. */
+export function parseAsarHeader(buffer) {
+  return JSON.parse(asarHeaderText(buffer));
+}
+
+/**
+ * The header JSON text of the archive at `file` (reads only the header bytes). Electron's ASAR
+ * integrity check hashes exactly this text (P23-15 refreshes the hash before the outer signature).
+ */
+export function readAsarHeaderText(file) {
   const fd = fs.openSync(file, "r");
   try {
     const head = Buffer.alloc(8);
@@ -28,10 +36,15 @@ export function readAsarHeader(file) {
     if (headerSize > 256 * 1024 * 1024) throw new Error("asar: header too large");
     const buffer = Buffer.alloc(8 + headerSize);
     fs.readSync(fd, buffer, 0, buffer.length, 0);
-    return parseAsarHeader(buffer);
+    return asarHeaderText(buffer);
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/** Read the header of the archive at `file` (reads only the header bytes). */
+export function readAsarHeader(file) {
+  return JSON.parse(readAsarHeaderText(file));
 }
 
 /** Flatten a header into `[{ path, kind: "file" | "link", unpacked }]` with `/` separators. */

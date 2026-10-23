@@ -1,10 +1,16 @@
 // electron-builder configuration for the desktop app (P20-38): unsigned builds on three OSes.
 //
-//   macOS    DMG (download) + ZIP (the update artefact); hardened runtime, entitlements and the
-//            Info.plist usage strings are ready for P23, but `identity: null` keeps it unsigned
-//   Windows  NSIS installer (per user) + portable ZIP, unsigned (D-16.84; Authenticode P23, D-16.70;
-//            MSIX deferred, D-16.15)
-//   Linux    AppImage
+//   macOS    DMG (download) + ZIP (the update artefact); unsigned unless scripts/dist-mac.mjs
+//            armed the release certificate (P23-15): then signed inside-out with the hardened
+//            runtime, notarised and stapled by the hooks below
+//   Windows  one NSIS installer (per user) + portable ZIP per arch (x64, arm64); Authenticode
+//            through scripts/sign-win.mjs when the named secrets are set, else unsigned with one
+//            line (P23-16, D-16.70; MSIX is P24-22, D-16.15)
+//   Linux    AppImage + .deb, unsigned, with SHA-256 sums beside them (scripts/checksums.mjs)
+//
+// Identity and update feed follow the channel (scripts/channel-identity.cjs, P23-16): a canary
+// gets its own app id, product name (install folder, userData, "Indus Canary.app"), Linux
+// executable and feed.
 //
 // The packed folder is `build/app`, staged by scripts/stage-app.mjs (bundles + native modules
 // only). After packing, the fuses are flipped (P20-04) and the archive is checked
@@ -16,9 +22,15 @@
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
-const APP_ID = "ai.indus.desktop";
-const PRODUCT = "Indus";
+const { channelIdentity, releaseRepository } = require("./scripts/channel-identity.cjs");
+
+const IDENTITY = channelIdentity(process.env.INDUS_DESKTOP_CHANNEL ?? "");
+const APP_ID = IDENTITY.appId;
+const PRODUCT = IDENTITY.productName;
 const DEEP_LINK_SCHEME = "indus";
+const RELEASES = releaseRepository();
+/** Windows installers: one per architecture, never a combined one (P23-16). */
+const WINDOWS_ARCHES = ["x64", "arm64"];
 
 const desktopPackage = require("./package.json");
 const electronVersion = desktopPackage.devDependencies.electron;
@@ -61,6 +73,32 @@ async function afterPack(context) {
     throw new Error(`packaged app check failed:\n  ${problems.join("\n  ")}`);
   }
   process.stdout.write(`[asar] ${summary}\n`);
+  // Windows: every PE signed once, after the fuses changed the binary (P23-16). No-op elsewhere.
+  await runHook("sign-win.mjs", "signPackedWindowsApp", context);
+}
+
+/**
+ * After extraction, before the rename and the ASAR integrity resource (P23-15 / P23-16): the build
+ * identity goes onto the pristine Electron binary through scripts/after-extract.mjs, whose STAMPERS
+ * hold one stamper per platform (darwin: Info.plist keys; win32: stampWindowsExecutable).
+ */
+async function afterExtract(context) {
+  await runHook("after-extract.mjs", "default", context);
+}
+
+/** Notarisation follows signing (P23-15); the hook returns at once off macOS. */
+async function afterSign(context) {
+  await runHook("notarize.mjs", "default", context);
+}
+
+/** electron-builder's hand-off of the NSIS uninstaller and installer to our signer. */
+async function signWindowsFile(configuration) {
+  await runHook("sign-win.mjs", "signWithIndus", configuration);
+}
+
+/** SHA-256 sums beside the Linux artefacts (returned so the build lists the file too). */
+async function afterAllArtifactBuild(buildResult) {
+  return runHook("checksums.mjs", "linuxChecksums", buildResult);
 }
 
 /** Usage strings for what the app can ask the OS for (voice, capture, local servers, automation). */
@@ -103,16 +141,37 @@ const config = {
   protocols: [{ name: `${PRODUCT} link`, schemes: [DEEP_LINK_SCHEME] }],
   // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder fills this macro
   artifactName: "Indus-${version}-${os}-${arch}.${ext}",
-  publish: null,
+  // Electron derives the userData folder from the packaged productName: a canary keeps its own.
+  extraMetadata: { productName: PRODUCT },
+  // The electron-updater feed per channel on GitHub Releases (latest*.yml / canary*.yml beside
+  // the artefacts, app-update.yml in the app). Nothing is published from here: dist-unsigned.mjs
+  // passes `--publish never`; the release workflow uploads the files.
+  publish: [
+    {
+      provider: "github",
+      owner: RELEASES.owner,
+      repo: RELEASES.repo,
+      channel: IDENTITY.feedChannel,
+    },
+  ],
   forceCodeSigning: false,
+  afterExtract,
   afterPack,
+  afterSign,
+  afterAllArtifactBuild,
 
   mac: {
     target: ["dmg", "zip"],
     category: "public.app-category.developer-tools",
     icon: "resources/icons/icon.png",
-    // Unsigned until P23: no identity, no notarisation, no Gatekeeper assessment.
-    identity: null,
+    // P23-15. `null` keeps a build unsigned; dist-mac.mjs sets INDUS_MAC_SIGNING=1 and the
+    // certificate as CSC_LINK only when the release secrets are complete (dist-unsigned.mjs strips
+    // CSC_LINK), and electron-builder then finds the Developer ID itself. Our signer replaces
+    // electron-builder's: nested code inside-out, ASAR integrity refreshed, the app last
+    // (scripts/sign-mac.mjs). Notarisation and the Gatekeeper assessment run in the afterSign
+    // hook, so both built-in switches stay off.
+    identity: process.env.INDUS_MAC_SIGNING === "1" && process.env.CSC_LINK ? undefined : null,
+    sign: (options) => runHook("sign-mac.mjs", "default", options),
     notarize: false,
     gatekeeperAssess: false,
     hardenedRuntime: true,
@@ -127,14 +186,27 @@ const config = {
   },
 
   win: {
-    target: ["nsis", "zip"],
+    target: [
+      { target: "nsis", arch: WINDOWS_ARCHES },
+      { target: "zip", arch: WINDOWS_ARCHES },
+    ],
     icon: "resources/icons/icon.png",
-    // No certificate is configured anywhere; dist-unsigned.mjs also strips signing variables.
+    // One signer (scripts/sign-win.mjs): the identity is stamped in afterExtract and every PE is
+    // signed in afterPack, so electron-builder's own late resource edit and signing stay off;
+    // it still hands the uninstaller and installer to signWindowsFile.
+    signAndEditExecutable: false,
+    signtoolOptions: {
+      sign: signWindowsFile,
+      signingHashAlgorithms: ["sha256"],
+    },
+    // The Windows build is updated by hand (the stamp's update owner) until a signed build's
+    // publisher name is known; then this check turns on with electron-updater (P23-16 follow-up).
     verifyUpdateCodeSignature: false,
   },
   nsis: {
     oneClick: true,
     perMachine: false,
+    buildUniversalInstaller: false,
     // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder fills this macro
     artifactName: "Indus-Setup-${version}-${arch}.${ext}",
     deleteAppDataOnUninstall: false,
@@ -142,13 +214,19 @@ const config = {
   },
 
   linux: {
-    target: ["AppImage"],
+    target: ["AppImage", "deb"],
     category: "Development",
     icon: "resources/icons/png",
-    // Never `indus`: the CLI of the same name lives on PATH.
-    executableName: "indus-desktop",
+    // Never `indus`: the CLI of the same name lives on PATH (`indus-desktop-canary` for canary).
+    executableName: IDENTITY.executableName,
+    // The release checklist's placeholder (RM12) until the owner names a monitored address.
+    maintainer: "Indus Agent maintainers <maintainers@indus.invalid>",
     synopsis: "Desktop app for Indus Agent",
     description: "Chat with Indus Agent, review its edits and run its tools from a desktop window.",
+  },
+  deb: {
+    // The canary installs beside the stable package.
+    packageName: IDENTITY.executableName,
   },
 };
 

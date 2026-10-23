@@ -10,6 +10,10 @@ import {
   flipFuses,
   getCurrentFuseWire,
 } from "@electron/fuses";
+import identity from "./channel-identity.cjs";
+
+/** Every channel's packaged names (P23-16: a canary has its own product and Linux executable). */
+const CHANNEL_NAMES = identity.CHANNELS.map((channel) => identity.channelIdentity(channel));
 
 /** Fuse name → wanted state (true = enabled). Exactly these six. */
 export const WANTED_FUSES = Object.freeze({
@@ -75,7 +79,10 @@ function isExecutableFile(file) {
  * The packaged Electron binaries under an electron-builder output folder: `*.app` bundles
  * (macOS), `win*-unpacked/<name>.exe` (Windows) and `linux*-unpacked/<executable>` (Linux).
  */
-export function findPackagedBinaries(distDir, { productName = "Indus" } = {}) {
+export function findPackagedBinaries(distDir, { productName = undefined } = {}) {
+  const products =
+    productName === undefined ? CHANNEL_NAMES.map((id) => id.productName) : [productName];
+  const executables = CHANNEL_NAMES.map((id) => id.executableName);
   const found = [];
   const walk = (dir, depth) => {
     let entries = [];
@@ -89,12 +96,11 @@ export function findPackagedBinaries(distDir, { productName = "Indus" } = {}) {
       if (entry.isDirectory() && entry.name.endsWith(".app")) {
         found.push(full);
       } else if (entry.isDirectory() && /^win.*-unpacked$/.test(entry.name)) {
-        const exe = path.join(full, `${productName}.exe`);
-        if (fs.existsSync(exe)) found.push(exe);
+        const exe = products.map((n) => path.join(full, `${n}.exe`)).find((f) => fs.existsSync(f));
+        if (exe !== undefined) found.push(exe);
       } else if (entry.isDirectory() && /^linux.*-unpacked$/.test(entry.name)) {
-        const candidates = [productName, productName.toLowerCase(), "indus-desktop"].map((n) =>
-          path.join(full, n),
-        );
+        const names = [...products, ...products.map((n) => n.toLowerCase()), ...executables];
+        const candidates = names.map((n) => path.join(full, n));
         const bin = candidates.find(isExecutableFile);
         if (bin !== undefined) found.push(bin);
       } else if (entry.isDirectory() && depth < 3) {

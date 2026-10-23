@@ -217,24 +217,205 @@ def test_docker_lane_tests_then_pushes_by_attempt_ref(jobs: dict[str, dict[str, 
         assert "latest" not in str(job) and "stable" not in str(job)
 
 
+def build_step(job: dict[str, Any]) -> dict[str, Any]:
+    """The step that runs the desktop packaging script (``dist:unsigned`` or ``dist-<os>.mjs``)."""
+    return next(
+        s
+        for s in job["steps"]
+        if "dist:unsigned" in str(s.get("run", "")) or "scripts/dist-" in str(s.get("run", ""))
+    )
+
+
 def test_desktop_lanes_use_the_packaging_scripts(jobs: dict[str, dict[str, Any]]) -> None:
-    """P20-38 packaging: ``dist:unsigned`` into ``apps/desktop/build/release``; no secret reaches an
-    unsigned build (signing arrives with P23-15/16)."""
+    """P20-38 packaging into ``apps/desktop/build/release``. Linux stays unsigned on
+    ``dist:unsigned`` and takes no secret (P23-16); the macOS (``dist-mac.mjs``, P23-15) and
+    Windows (``dist-win.mjs``, P23-16) signing lanes are checked on their own."""
     for name in ("desktop-mac", "desktop-win", "desktop-linux"):
-        job = jobs[name]
-        build = next(s for s in job["steps"] if "pnpm" in str(s.get("run", "")))
-        assert "pnpm --filter @indus/desktop run dist:unsigned" in build["run"]
-        assert "secrets." not in str(job)
-        keep = job["steps"][-1]
+        keep = jobs[name]["steps"][-1]
         assert keep["with"]["path"] == "apps/desktop/build/release/*.*"
+    linux = build_step(jobs["desktop-linux"])
+    assert "pnpm --filter @indus/desktop run dist:unsigned" in linux["run"]
+    assert "secrets." not in str(jobs["desktop-linux"])
+
+
+WIN_SECRETS = (
+    # the names apps/desktop/scripts/sign-win.mjs reads (and scripts/release/msix.mjs, P24-22)
+    "WIN_CERTIFICATE",
+    "WIN_CERTIFICATE_PASSWORD",
+    "AZURE_TRUSTED_SIGNING_ENDPOINT",
+    "AZURE_TRUSTED_SIGNING_ACCOUNT",
+    "AZURE_TRUSTED_SIGNING_PROFILE",
+    "AZURE_TENANT_ID",
+    "AZURE_CLIENT_ID",
+    "AZURE_CLIENT_SECRET",
+)
+
+
+def test_windows_lane_signs_with_the_release_environment_secrets(
+    jobs: dict[str, dict[str, Any]],
+) -> None:
+    """P23-16: the Windows lane runs in the protected ``release`` environment; each secret reaches
+    only the build step, under its own name, through ``env``; dependencies install earlier without
+    them; the build is ``dist-win.mjs`` with plain node (unsigned with one line when absent)."""
+    job = jobs["desktop-win"]
+    assert job["environment"] == "release"
+    build = build_step(job)
+    assert build["run"].strip() == "node scripts/dist-win.mjs"
+    assert build["working-directory"] == "apps/desktop"
+    env = build["env"]
+    for name in WIN_SECRETS:
+        assert env[name] == f"${{{{ secrets.{name} }}}}", name
+    dlib = " ".join(str(env["INDUS_AZURE_SIGNING_DLIB"]).split())
+    assert dlib.startswith("${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && format(")
+    assert "Azure.CodeSigning.Dlib.dll" in dlib and dlib.endswith("|| '' }}")
+    assert not [k for k in env if k.startswith(("CSC_", "WIN_CSC_"))]
+    steps = job["steps"]
+    install = next(s for s in steps if "pnpm install" in str(s.get("run", "")))
+    assert steps.index(install) < steps.index(build)
+    for step in steps:
+        run = str(step.get("run", ""))
+        assert "secrets." not in run
+        assert not re.search(r"\b(echo|printf)\b", run)
+        assert "set -x" not in run
+        if step is not build:
+            assert "secrets." not in str(step), step.get("name")
+    client = next(s for s in steps if "Trusted.Signing.Client" in str(s.get("run", "")))
+    assert steps.index(client) < steps.index(build)
+    signer = (ROOT / "apps/desktop/scripts/sign-win.mjs").read_text(encoding="utf-8")
+    for name in (*WIN_SECRETS, "INDUS_AZURE_SIGNING_DLIB"):
+        assert f'"{name}"' in signer, name
+
+
+def test_linux_lane_checks_its_sums(jobs: dict[str, dict[str, Any]]) -> None:
+    """P23-16: the Linux artefacts ship unsigned with SHA-256 sums, checked before they are kept."""
+    steps = jobs["desktop-linux"]["steps"]
+    check = next(s for s in steps if "checksums.mjs check" in str(s.get("run", "")))
+    assert "apps/desktop/build/release/SHA256SUMS-linux.txt" in check["run"]
+    assert steps.index(build_step(jobs["desktop-linux"])) < steps.index(check) < len(steps) - 1
+
+
+def test_optional_lanes_exist_but_never_run_by_default(jobs: dict[str, dict[str, Any]]) -> None:
+    """W49 integration: ``desktop-msix`` (P24-22) and ``termux`` (P24-21) are lanes like any other
+    (gated, judged against the claim) but optional, so a claim without them skips both."""
+    from scripts.release.claims import DEFAULT_LANES, OPTIONAL_LANES, jobs_to_run
+
+    assert {"desktop-msix", "termux"} == OPTIONAL_LANES
+    assert not OPTIONAL_LANES & DEFAULT_LANES
+    default = jobs_to_run(DEFAULT_LANES)
+    for name in OPTIONAL_LANES:
+        assert name in jobs and default[name] is False, name
+        assert name in jobs["gate"]["needs"], name
+    assert "desktop-msix" in jobs["upload"]["needs"]  # its bundle and feed go onto the draft
+
+
+def test_msix_lane_packs_the_windows_lanes_own_apps(jobs: dict[str, dict[str, Any]]) -> None:
+    """P24-22 wired in: the Windows lane keeps its unpacked apps only when ``desktop-msix`` is on,
+    under a name the upload never collects; the MSIX lane packs those (nothing rebuilt, no package
+    install), signs with the Windows secret names only in its build step, and keeps the bundle and
+    the App Installer feed as a ``desktop-*`` artefact."""
+    win = jobs["desktop-win"]["steps"]
+    kept = next(s for s in win if s.get("name") == "Keep the unpacked apps (desktop-msix lane)")
+    assert kept["if"] == "fromJSON(needs.admit.outputs.jobs)['desktop-msix']"
+    assert kept["with"]["name"] == "win-unpacked"  # not collected by the upload's `desktop-*`
+    assert win.index(kept) < len(win) - 1
+    job = jobs["desktop-msix"]
+    assert job["needs"] == ["admit", "desktop-win"]
+    assert job["environment"] == "release"
+    steps = job["steps"]
+    collect = next(s for s in steps if str(s.get("uses", "")).startswith("actions/download-"))
+    assert collect["with"] == {"name": "win-unpacked", "path": "apps/desktop/build/release"}
+    assert "pnpm" not in str(job) and "dist-win" not in str(job)
+    build = next(s for s in steps if "scripts/release/msix.mjs build" in str(s.get("run", "")))
+    assert "--store" not in build["run"]
+    env = build["env"]
+    assert env["VERSION"] == "${{ needs.admit.outputs.version }}"
+    for name in WIN_SECRETS:
+        assert env[name] == f"${{{{ secrets.{name} }}}}", name
+    assert (
+        env["INDUS_AZURE_SIGNING_DLIB"]
+        == jobs["desktop-win"]["steps"][[s.get("name") for s in win].index("Build and sign")][
+            "env"
+        ]["INDUS_AZURE_SIGNING_DLIB"]
+    )
+    for step in steps:
+        if step is not build:
+            assert "secrets." not in str(step), step.get("name")
+        assert not re.search(r"\b(echo|printf)\b", str(step.get("run", "")))
+    keep = steps[-1]
+    assert keep["with"]["name"] == "desktop-msix"
+    assert keep["with"]["path"].splitlines() == [
+        "${{ runner.temp }}/msix/*.msixbundle",
+        "${{ runner.temp }}/msix/*.appinstaller",
+    ]
+    msix = (ROOT / "scripts/release/msix.mjs").read_text(encoding="utf-8")
+    for name in ("WIN_CERTIFICATE", "WIN_CERTIFICATE_PASSWORD", "INDUS_AZURE_SIGNING_DLIB"):
+        assert f'"{name}"' in msix, name
+
+
+def test_termux_lane_calls_its_workflow_on_the_admitted_commit(
+    jobs: dict[str, dict[str, Any]],
+) -> None:
+    """P24-21 wired in: the optional ``termux`` lane calls ``termux.yml`` with the release tag and
+    the admitted commit (the tag is named locally there); its secrets stay in that workflow's
+    ``release`` environment, so none is passed from here."""
+    job = jobs["termux"]
+    assert job["uses"] == "./.github/workflows/termux.yml"
+    called = triggers(load(ROOT / ".github/workflows/termux.yml"))["workflow_call"]["inputs"]
+    assert set(job["with"]) == set(called)
+    assert job["with"] == {"tag": "${{ needs.admit.outputs.tag }}", "commit": ADMITTED}
+    assert "secrets" not in job
+
+
+MAC_SECRETS = (
+    "MAC_CERTIFICATE",
+    "MAC_CERTIFICATE_PASSWORD",
+    "APPLE_ID",
+    "APPLE_TEAM_ID",
+    "APPLE_APP_SPECIFIC_PASSWORD",
+    "APPLE_API_KEY",
+    "APPLE_API_KEY_ID",
+    "APPLE_API_ISSUER",
+)
+
+
+def test_mac_lane_signs_with_the_release_environment_secrets(
+    jobs: dict[str, dict[str, Any]],
+) -> None:
+    """P23-15: the mac lane runs in the protected ``release`` environment; each secret reaches only
+    the build step, under its own name, through ``env`` (never pasted into a script, never echoed);
+    dependencies install in an earlier step without them; the build is ``dist-mac.mjs`` with plain
+    node, which builds unsigned with one line when the secrets are absent."""
+    job = jobs["desktop-mac"]
+    assert job["environment"] == "release"
+    build = build_step(job)
+    assert build["run"].strip() == "node scripts/dist-mac.mjs"
+    assert build["working-directory"] == "apps/desktop"
+    passed = {k: v for k, v in build["env"].items() if "secrets." in str(v)}
+    assert passed == {name: f"${{{{ secrets.{name} }}}}" for name in MAC_SECRETS}
+    for step in job["steps"]:
+        if step is build:
+            continue
+        assert "secrets." not in str(step), step.get("name")
+        assert not any(name in str(step.get("env", {})) for name in MAC_SECRETS)
+    install = next(s for s in job["steps"] if "pnpm install" in str(s.get("run", "")))
+    assert job["steps"].index(install) < job["steps"].index(build)
+    for step in job["steps"]:
+        run = str(step.get("run", ""))
+        assert "secrets." not in run
+        assert not re.search(r"\b(echo|printf)\b", run)
+        assert "set -x" not in run
+    keep = job["steps"][-1]
+    assert keep["with"]["path"] == "apps/desktop/build/release/*.*"
+    script = (ROOT / "apps/desktop/scripts/sign-mac.mjs").read_text(encoding="utf-8")
+    for name in MAC_SECRETS:
+        assert f'"{name}"' in script, name
 
 
 def test_desktop_build_stamp_names_the_admitted_commit(jobs: dict[str, dict[str, Any]]) -> None:
     """The build stamp (write-build-stamp.mjs) reads INDUS_DESKTOP_COMMIT, never GITHUB_SHA, which
     in a release run is the default branch's tip (R10.24)."""
     for name in ("desktop-mac", "desktop-win", "desktop-linux"):
-        build = next(s for s in jobs[name]["steps"] if "pnpm" in str(s.get("run", "")))
-        env = build["env"]
+        env = build_step(jobs[name])["env"]
         assert env["INDUS_DESKTOP_COMMIT"] == ADMITTED
         assert env["INDUS_DESKTOP_VERSION"] == "${{ needs.admit.outputs.version }}"
         assert "GITHUB_SHA" not in env

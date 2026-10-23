@@ -29,7 +29,11 @@ RS27–RS32 and moved to Done; RS24 and RS26's follow-ups closed; RS3 and RL26 p
 the wave 48 integration (2026-10-22, D-16.1100): RS3 moved to Done (desktop room view; TUI / web
 room views are owner question D-16.1071); the screenshot pass's minor UI follow-ups recorded as
 RS33–RS35 and the katex / sprintf-js advisories as RS36, all moved to Done; the pypdf re-lock
-recorded as RS37; RS29, RS30, RL26 and RM25 updated. This file is checked by `python -m tooling.checks checklist` (ids, counts, Source and
+recorded as RS37; RS29, RS30, RL26 and RM25 updated. Updated at the wave 49 integration (2026-10-23,
+D-16.1146): P23-15/16 (desktop signing, Windows and Linux artefacts) and P24-21/22 (Termux APT,
+MSIX) built, so P23 is 23/23 and P24 47/47 built; RM14 is now code done with the owner's secrets
+and first signed runs owed; RL8 and RL9 are partial deliveries (optional release lanes, never run);
+§0 names every secret. This file is checked by `python -m tooling.checks checklist` (ids, counts, Source and
 Why, owner approvals, the After v1.0 list).
 
 ## 0. One-time decisions (owner)
@@ -56,7 +60,8 @@ it is chosen so that it cannot reach users by accident. Agents never fill these 
       reverse-domain id under a domain the project controls, decided before the first public
       canary.
 - [ ] **Windows installer format**: settled — a signed NSIS installer built by electron-builder
-      (Authenticode), MSIX/Store after 1.0 (D-16.70, D-16.15). Signing itself is RM14.
+      (Authenticode), per arch (x64, arm64); MSIX is built as the optional `desktop-msix` release
+      lane (P24-22, off by default) and the Store after 1.0 (D-16.70, D-16.15). Signing is RM14.
 - [ ] **Docs domain** (RM11). What hangs on it: `site_url` in `mkdocs.yml` (unset today, so the
       `llms.txt` links are site-relative), the Pages deployment of `.github/workflows/docs.yml`,
       and every link printed by the CLI or the apps that points at the docs. Placeholder: no
@@ -66,9 +71,27 @@ it is chosen so that it cannot reach users by accident. Agents never fill these 
       `Indus Agent maintainers <maintainers@indus.invalid>` (the `.invalid` domain can never
       deliver mail); no package carries an address today.
 - [ ] **Signing secrets** (RM14): created by the owner in the protected `release` environment,
-      by name only: `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
-      `MAC_CERTIFICATE`, `MAC_CERTIFICATE_PASSWORD`, `WIN_CERTIFICATE`,
-      `WIN_CERTIFICATE_PASSWORD`. The desktop lanes pass no secret until P23-15/16 land.
+      by name only (no value is ever written in the repository or a log):
+      - macOS (`desktop-mac`, P23-15): `MAC_CERTIFICATE` (base64 .p12),
+        `MAC_CERTIFICATE_PASSWORD`, and for notarisation either `APPLE_ID` + `APPLE_TEAM_ID` +
+        `APPLE_APP_SPECIFIC_PASSWORD` or the App Store Connect API key `APPLE_API_KEY` +
+        `APPLE_API_KEY_ID` + `APPLE_API_ISSUER`;
+      - Windows (`desktop-win` NSIS, P23-16, and the optional `desktop-msix`, P24-22, alike): Azure
+        Trusted Signing (`AZURE_TRUSTED_SIGNING_ENDPOINT`, `AZURE_TRUSTED_SIGNING_ACCOUNT`,
+        `AZURE_TRUSTED_SIGNING_PROFILE`, with `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`,
+        `AZURE_CLIENT_SECRET`; the lane sets `INDUS_AZURE_SIGNING_DLIB` itself; a complete group
+        wins) or a PFX (`WIN_CERTIFICATE` base64, `WIN_CERTIFICATE_PASSWORD`); MSIX also needs
+        `apps/desktop/packaging/msix/identity.json`'s `publisher` set to the certificate subject
+        (and the Partner Center identity for a Store bundle);
+      - Termux (the optional `termux` lane, P24-21): `TERMUX_APT_SIGNING_KEY` (armoured secret key)
+        and `TERMUX_APT_SIGNING_PASSPHRASE` (when the key has one), plus the real
+        `termux-docker:aarch64` base digest in `scripts/termux/builder.Dockerfile`, the repository
+        host and the key fingerprint for the install guide.
+      A partial group stops a build; none builds unsigned with one line (the Termux lane fails
+      instead: an unsigned channel is never kept). Each lane passes them to its build step only;
+      the Linux lane takes none (AppImage and `.deb` ship unsigned with SHA-256 sums). If the
+      `release` environment requires reviewers, every release and canary waits at the mac and
+      Windows lanes.
 - [ ] **Trademark search** for "Indus Agent" (RM13, D-16.40): the licence (MIT) is settled; the
       name search and counsel's review of the notices wording are open.
 - [x] **REA registration** (D-16.61): settled — owner approved 2026-10-18; rea-agents 6.7.0.
@@ -187,7 +210,7 @@ in the row with its date; an id that turns out to be a duplicate goes to Withdra
 | RM11 | Docs domain: `site_url` unset in `mkdocs.yml`, Pages target not chosen | P25-14 note `docs/notes/P25/docs-site.md`; `mkdocs.yml:11` | Without it the published docs have no canonical address and the `llms.txt` links stay relative (§0) |
 | RM12 | Maintainer contact: no monitored address chosen; placeholder `<maintainers@indus.invalid>` | P25-20 row; skill reference 08 §4 | Security reports and package metadata need a real, monitored address; the placeholder can never deliver (§0) |
 | RM13 | Trademark search and counsel's review of the name and the notices wording | D-16.40; `HANDOFF.md` current state | Shipping under a name that conflicts with a mark is costly to undo after launch |
-| RM14 | Desktop signing (P23-15/16) not built: macOS notarisation and Windows Authenticode lanes, the protected `release` environment and its secrets (by name in §0) | `docs/plan/phases/LEAD-NOTES.md` "P23 wave 36" (tasks, owner items); D-16.70 | Unsigned builds meet Gatekeeper refusals and SmartScreen warnings; the canary rehearsal (§2) needs signed builds |
+| RM14 | Desktop signing (P23-15/16): code done in wave 49 (macOS sign, notarise, staple; Windows Authenticode for every PE and the installers; D-16.1110 – D-16.1125); owed: the owner's secrets in the protected `release` environment — `MAC_CERTIFICATE`, `MAC_CERTIFICATE_PASSWORD`, `APPLE_ID` + `APPLE_TEAM_ID` + `APPLE_APP_SPECIFIC_PASSWORD` or `APPLE_API_KEY` + `APPLE_API_KEY_ID` + `APPLE_API_ISSUER`; `WIN_CERTIFICATE` + `WIN_CERTIFICATE_PASSWORD` or `AZURE_TRUSTED_SIGNING_ENDPOINT` + `AZURE_TRUSTED_SIGNING_ACCOUNT` + `AZURE_TRUSTED_SIGNING_PROFILE` with `AZURE_TENANT_ID` + `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET`; for the optional lanes `TERMUX_APT_SIGNING_KEY` (+ `TERMUX_APT_SIGNING_PASSPHRASE`) — and the first signed runs on macOS and Windows (ACC-S6-1 Gatekeeper assessment, ACC-S6-2 signer shown; the Trusted Signing client 1.0.53 path) | `docs/plan/phases/LEAD-NOTES.md` "Wave 49 landing notes (integrator)"; `docs/notes/P23/sign-mac.md`; `docs/notes/P23/sign-win-linux.md`; D-16.70 | Unsigned builds meet Gatekeeper refusals and SmartScreen warnings; the canary rehearsal (§2) needs signed builds, and no signing path has run against Apple or Microsoft yet |
 | RM15 | Licence rulings for components shipped under dated exceptions: regex (CNRI-Python), pyarrow's bundled Zlib / BSL-1.0, coincurve (MIT OR Apache-2.0), Pillow (MIT-CMU), the voice extra's av (LGPL FFmpeg) and numpy (Zlib parts), Piper / eSpeak NG, sherpa-onnx's bundled libasound (LGPL, D-16.849), Git for Windows (GPL-2.0, source offer), the P21 vendor-extra transitives | `HANDOFF.md` owner items and owner decisions (3); `docs/notes/P25/notices.md`; `tooling/checks/licenses_allow.json` | Redistribution under a licence the owner has not accepted is a legal risk; each exception is dated and must be ruled on (keep, drop the component, or replace it) |
 | RM16 | Notices for the shipped Docker images: the Debian package set is credited by one `LicenseRef-Debian-packages` row pointing at `/usr/share/doc`, Chromium in the browser variants is not listed; hadolint (GPL-3.0) is CI-only and never shipped | `docs/plan/phases/LEAD-NOTES.md` "P23 wave 36" owner items; `scripts/release/notices_data.json` (checked) | Images redistribute these binaries; the owner confirms that the in-image copyright files satisfy the obligations or asks for a generated list |
 | RM17 | Similarity report: the 20 closest regions have no verdict | `docs/internals/similarity-report.md`; `docs/notes/P25/similarity-closest.md` | The `similarity --closest 20 --report` gate fails until a person gives every region a verdict (`independent`, `protocol-mandated`, `convention`, `fix`); a `fix` verdict means a rewrite before the tag |
@@ -233,8 +256,8 @@ in the row with its date; an id that turns out to be a duplicate goes to Withdra
 | RL5 | Telemetry and install-receipt upload (inventory I48) | acceptance map Known gaps; D-16.49 | Privacy default: receipts stay local |
 | RL6 | The light, remote-only desktop variant (inventory N30) | acceptance map Known gaps; D-16.48, D-16.15 | Packaging matrix cost |
 | RL7 | A separate native setup installer app (inventory N33) | acceptance map Known gaps; D-16.47 | The desktop's in-app installer covers first run |
-| RL8 | The Termux APT channel (inventory S5; P24-21) | acceptance map Known gaps; D-16.15 | No capacity in P24; post-1.0 |
-| RL9 | MSIX and Store packages (inventory S6; P24-22) | acceptance map Known gaps; D-16.15, D-16.70 | Signed NSIS ships at 1.0 |
+| RL8 | The Termux APT channel (inventory S5; P24-21): partial delivery — built in wave 49 as the optional `termux` release lane (`termux.yml`, D-16.1126 – D-16.1133, D-16.1143), never run; owed: the builder base digest, `TERMUX_APT_SIGNING_KEY` (+ `_PASSPHRASE`), the repository host and key fingerprint, the first green lane run, a Termux message in `indus update` | acceptance map Known gaps; D-16.15; `docs/notes/P24/termux.md` | Off by default until it has run green; the channel is post-1.0 |
+| RL9 | MSIX and Store packages (inventory S6; P24-22): partial delivery — per-arch MSIX, bundle and App Installer feed built in wave 49 as the optional `desktop-msix` release lane (D-16.1134 – D-16.1142, D-16.1143), never run on Windows; owed: `identity.json` publisher and Partner Center identity, a real install and update on Windows 11 22H2 and 24H2, the canary feed on the `channels` release, the Store submission (1.0.0 or later) | acceptance map Known gaps; D-16.15, D-16.70; `docs/notes/P24/msix.md` | Signed NSIS ships at 1.0; MSIX stays opt-in until it has run |
 | RL10 | The legacy single-query runner script (inventory O9) | acceptance map Known gaps; D-16.85 | `indus -z` and `indus chat -q` cover one-shot runs |
 | RL11 | The native-app OAuth broker (RFC 8252, `/auth/native/*`) | D-16.875; LEAD-NOTES wave 42 follow-ups | A security surface of its own; the desktop keeps the token-mode fallback (D-16.589) |
 | RL12 | Make placeholder traps Review rows fail the everyday check, not only `--strict` | `docs/notes/P25/traps-complete.md`; LEAD-NOTES "P25 wave 41" follow-ups | A lead policy choice; `--strict` already gates the release |

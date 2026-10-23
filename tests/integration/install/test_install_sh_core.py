@@ -312,7 +312,8 @@ def test_termux_is_refused_with_a_pointer(box: Sandbox) -> None:
     assert result.returncode == 1
     frame = parse_stage_frame(result.stdout)
     assert frame is not None and frame["ok"] is False
-    assert "Termux" in str(frame["reason"]) and "later release" in str(frame["reason"])
+    reason = str(frame["reason"])
+    assert "Termux" in reason and "APT channel" in reason and "pkg install indus-agent" in reason
 
 
 def test_reason_strings_are_escaped(box: Sandbox) -> None:

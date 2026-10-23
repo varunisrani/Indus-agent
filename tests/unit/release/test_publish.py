@@ -11,7 +11,7 @@ import pytest
 
 from indus.cli.update.channels import Git
 from indus.foundation.versions import RELEASE_IMAGE
-from scripts.release import publish
+from scripts.release import claims, publish
 from scripts.release.claims import IMAGES, draft_body
 from scripts.release.publish import Controller, PublishError, admit, gate
 from scripts.release.versioning import read_channel_record
@@ -136,9 +136,11 @@ def test_admit_refuses_bad_claims(remote: Remote) -> None:
 
 
 def needs(**results: str) -> dict[str, dict[str, str]]:
+    """Every job green, the optional lanes' jobs (off by default) skipped."""
     base = {job: "success" for job in ("admit", "ci", "docker", "nix", "install-e2e",
             "desktop-mac", "desktop-win", "desktop-linux", "upgrade", "web-pages",
             "upload")}  # fmt: skip
+    base.update({job: "skipped" for job in ("desktop-msix", "termux")})
     base.update(results)
     return {job: {"result": result} for job, result in base.items()}
 
@@ -166,6 +168,35 @@ def test_gate_command_reads_needs_and_lanes(tmp_path: Path) -> None:
     env["LANES"] = json.dumps(["ci", "docker", "nix", "install-e2e", "desktop-mac",
                                "desktop-win", "desktop-linux"])  # fmt: skip
     assert publish.main(["gate"], root=tmp_path, env=env) == 0
+
+
+def test_optional_lanes_are_off_by_default_and_gated_when_named() -> None:
+    """W49 integration: ``desktop-msix`` (P24-22) and ``termux`` (P24-21) never run unless the
+    claim names them; named, their jobs must succeed like any other; ``desktop-msix`` alone (it
+    packs the Windows lane's apps) is refused instead of being skipped quietly."""
+    assert {"desktop-msix", "termux"} == claims.OPTIONAL_LANES
+    assert set(claims.LANE_NAMES) - claims.OPTIONAL_LANES == claims.DEFAULT_LANES
+    assert claims.parse_lanes(None) == claims.DEFAULT_LANES
+    assert claims.parse_lanes("") == claims.DEFAULT_LANES
+    default = claims.jobs_to_run(claims.DEFAULT_LANES)
+    assert default["desktop-msix"] is False and default["termux"] is False
+    assert all(run for job, run in default.items() if job not in claims.OPTIONAL_LANES)
+    assert gate(needs(), sorted(claims.DEFAULT_LANES)) == []
+    assert gate(needs(termux="success"), sorted(claims.DEFAULT_LANES)) == [
+        "termux=success (expected skipped)"
+    ]
+    every = sorted(claims.LANE_NAMES)
+    assert claims.parse_lanes(",".join(every)) == set(every)
+    assert gate(needs(), every) == [
+        "desktop-msix=skipped (expected success)",
+        "termux=skipped (expected success)",
+    ]
+    assert gate(needs(**{"desktop-msix": "success", "termux": "success"}), every) == []
+    assert claims.jobs_to_run({"termux"})["termux"] is True
+    assert claims.jobs_to_run({"desktop-msix"})["desktop-msix"] is False
+    with pytest.raises(claims.ClaimError, match="desktop-msix needs desktop-win"):
+        claims.parse_lanes("ci,desktop-msix")
+    assert claims.parse_lanes("desktop-win,desktop-msix") == {"desktop-win", "desktop-msix"}
 
 
 # -- upload ----------------------------------------------------------------------------------------

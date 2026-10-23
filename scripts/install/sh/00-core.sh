@@ -340,7 +340,7 @@ ins_new_run_id() {
 
 ins_check_platform() {
     if [ -n "${TERMUX_VERSION:-}" ] || case "${PREFIX:-}" in *com.termux*) true ;; *) false ;; esac; then
-        ins_fail "Termux is not supported by install.sh; a Termux package is planned for a later release" unsupported_platform
+        ins_fail "Termux is not supported by install.sh; use the Termux APT channel instead: add the indus-stable source, then pkg install indus-agent (install guide, Termux section)" unsupported_platform
     fi
     case "$(uname -s 2>/dev/null)" in
         Linux | Darwin) ;;

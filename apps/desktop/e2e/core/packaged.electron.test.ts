@@ -21,12 +21,13 @@ import {
   fakeBackend,
   freePort,
   HEALTHY,
+  packagedLinuxBinary,
   tempDir,
 } from "../fixtures.ts";
 
 const BUILD = path.join(APP_ROOT, "build");
 const RELEASE = path.join(BUILD, "release");
-const prebuilt = fs.existsSync(path.join(RELEASE, "linux-unpacked", "indus-desktop"));
+const prebuilt = packagedLinuxBinary(RELEASE) !== null;
 // the build writes the bundles into the checkout too (gitignored); leave none behind that it made
 const OUTPUTS = ["dist", "dist-electron"].map((name) => path.join(APP_ROOT, name));
 const preexisting = new Set(OUTPUTS.filter((dir) => fs.existsSync(dir)));
@@ -78,8 +79,9 @@ describe.skipIf(skipReason !== "")(
     }, 360_000);
 
     it("the packaged app is interactive within 60 s and its CSP refuses an inline script", async () => {
-      const binary = path.join(RELEASE, "linux-unpacked", "indus-desktop");
-      expect(fs.existsSync(binary)).toBe(true);
+      const binary = packagedLinuxBinary(RELEASE);
+      expect(binary).not.toBeNull();
+      if (binary === null) return;
       const work = tempDir("indus-e2e-pack-");
       const fake = fakeBackend(work, HEALTHY);
       const port = await freePort();

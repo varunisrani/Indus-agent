@@ -259,6 +259,54 @@ def test_node_git_sources(tmp_path: Path, spec: str, code: int):
     assert check(node_repo(tmp_path, {"r": spec})).code == code
 
 
+# --------------------------------------------------------------------------- rule 6: Dockerfiles
+
+DIGEST = "@sha256:" + "ab" * 32
+ZEROS = "@sha256:" + "0" * 64
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"FROM debian:trixie-slim{DIGEST}\n",
+        f"ARG BASE_IMAGE=debian:trixie-slim{DIGEST}\nFROM ${{BASE_IMAGE}} AS a\nFROM a AS b\n",
+        f"ARG BASE=x{DIGEST}\nFROM --platform=$BUILDPLATFORM $BASE\nFROM scratch\n",
+    ],
+)
+def test_dockerfile_bases_pinned_by_digest_pass(tmp_path: Path, text: str):
+    write(repo(tmp_path, []) / "docker" / "Dockerfile", text)
+    result = check(tmp_path)
+    assert result.code == 0 and result.warnings == [], result.violations
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "FROM debian:trixie-slim\n",
+        "ARG BASE_IMAGE=debian:latest\nFROM ${BASE_IMAGE}\n",
+        "ARG BASE_IMAGE\nFROM ${BASE_IMAGE}\n",
+        f"FROM debian{ZEROS}\n",  # a placeholder without the owner mark
+    ],
+)
+def test_unpinned_dockerfile_bases_fail(tmp_path: Path, text: str):
+    write(repo(tmp_path, []) / "scripts" / "x" / "builder.Dockerfile", text)
+    result = check(tmp_path)
+    assert result.code == 1 and "builder.Dockerfile:" in result.violations[0]
+
+
+def test_owner_placeholder_digest_warns(tmp_path: Path):
+    text = f"# owner-to-fill: resolve it\nARG BASE_IMAGE=img:tag{ZEROS}\nFROM ${{BASE_IMAGE}}\n"
+    write(repo(tmp_path, []) / "scripts" / "b.Dockerfile", text)
+    result = check(tmp_path)
+    assert result.code == 0
+    assert len(result.warnings) == 1 and "owner-to-fill placeholder" in result.warnings[0]
+
+
+def test_dockerfiles_under_tests_are_not_policed(tmp_path: Path):
+    write(repo(tmp_path, []) / "tests" / "fixtures" / "Dockerfile", "FROM debian:bookworm-slim\n")
+    assert check(tmp_path).code == 0
+
+
 # --------------------------------------------------------------------------- real repo
 
 

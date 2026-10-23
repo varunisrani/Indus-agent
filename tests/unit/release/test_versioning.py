@@ -247,6 +247,7 @@ _CALLERS = (
     "scripts/release/versioning.py",
     "scripts/release/release.py",
     "scripts/release/publish.py",
+    "scripts/termux/repo.py",
 )
 
 

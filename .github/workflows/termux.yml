@@ -1,0 +1,114 @@
+name: Termux APT channel
+run-name: Termux APT channel ${{ inputs.tag }}
+
+# P24-21. An optional lane: it runs only when someone dispatches it for a release tag, or when
+# release.yml's opt-in `termux` lane calls it with the admitted commit (the tag is named on that
+# commit locally, before the tag exists on the remote); never on push or pull request. It builds the aarch64 .deb in the
+# digest-pinned builder image (scripts/termux/build.sh) and assembles the signed static APT
+# repository (scripts/termux/repo.py), kept as an artifact for the owner's host. The signing key
+# comes from the protected `release` environment by name only: TERMUX_APT_SIGNING_KEY (armoured
+# secret key) and TERMUX_APT_SIGNING_PASSPHRASE (when the key has one). Without the key the
+# Release is unsigned, build.sh exits 3 and this lane fails: an unsigned channel is never kept.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to package (vX.Y.Z or vX.Y.Z-canary.<YYYYMMDDTHHMMSSZ>)
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to package
+        required: true
+        type: string
+      commit:
+        description: The admitted commit to package under that tag (release.yml)
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: termux-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Version mapping and repository tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit || format('refs/tags/{0}', inputs.tag) }}
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+      - name: Run the Termux tests
+        run: |
+          uv sync --locked
+          uv run pytest -q tests/unit/release/test_termux_versions.py \
+            tests/unit/release/test_termux_repo.py tests/unit/release/test_termux_build_script.py
+      - name: Plan the build
+        run: bash scripts/termux/build.sh --tag "$TAG" --out "$RUNNER_TEMP/termux-plan" --dry-run
+
+  build:
+    name: Build the .deb and the signed repository (aarch64)
+    needs: checks
+    runs-on: ubuntu-24.04-arm
+    environment: release
+    timeout-minutes: 120
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit || format('refs/tags/{0}', inputs.tag) }}
+          fetch-depth: 0
+          persist-credentials: false
+      # Called by release.yml the tag does not exist yet: name the checked-out commit with it here
+      # (never pushed). A tag that exists must already name this commit.
+      - name: Name the commit with the tag
+        if: inputs.commit != ''
+        run: |
+          if ! git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
+            git tag "$TAG" HEAD
+          fi
+          test "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+      - name: Build and sign
+        env:
+          TERMUX_APT_SIGNING_KEY: ${{ secrets.TERMUX_APT_SIGNING_KEY }}
+          TERMUX_APT_SIGNING_PASSPHRASE: ${{ secrets.TERMUX_APT_SIGNING_PASSPHRASE }}
+        run: |
+          args=(--tag "$TAG" --out "$RUNNER_TEMP/termux")
+          if [ -n "$TERMUX_APT_SIGNING_KEY" ]; then
+            umask 077
+            printf '%s\n' "$TERMUX_APT_SIGNING_KEY" > "$RUNNER_TEMP/apt-signing-key.asc"
+            args+=(--key-file "$RUNNER_TEMP/apt-signing-key.asc")
+          else
+            echo "::warning::TERMUX_APT_SIGNING_KEY is not set; the Release will be unsigned"
+          fi
+          code=0
+          bash scripts/termux/build.sh "${args[@]}" || code=$?
+          rm -f "$RUNNER_TEMP/apt-signing-key.asc"
+          if [ "$code" -eq 3 ]; then
+            echo "::error::the APT Release is unsigned (exit 3); the channel is not published"
+          fi
+          exit "$code"
+      - name: Keep the repository
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: termux-apt-${{ inputs.tag }}
+          path: ${{ runner.temp }}/termux/repo
+          if-no-files-found: error
+          retention-days: 30
