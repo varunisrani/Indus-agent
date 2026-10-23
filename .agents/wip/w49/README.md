@@ -28,3 +28,19 @@
   environment — if it requires reviewers, every canary waits at the mac lane. ACC-S6-1 needs the first signed run.
 - MERGE with w49b: top-level hook keys, after-extract STAMPERS (win32), builderConfig.test.ts, test_release_workflow.py
   loop, traps R08.22 row, release.yml shared desktop-lanes comment (reword once both land).
+
+## w49c.patch: P24-21 Termux APT channel (built and unit-tested; container stages and the lane never run)
+- 17 files, +2192/-4. New scripts/termux/{repo.py (version mapping + static APT repo builder, gpg signer; exit 0 signed /
+  2 refused / 3 unsigned), build.sh (9 stages, --dry-run, --in-container), builder.Dockerfile (base digest ARG = all-zero
+  placeholder, owner-to-fill), __init__.py}, .github/workflows/termux.yml (workflow_dispatch + workflow_call only, release
+  env, 2 secrets by name), docs/notes/P24/termux.md; install.sh still refuses Termux and points to the channel (fragment
+  00-core.sh + rebuilt install.sh); docs install.md Termux section (`<repository>` placeholder); tooling/checks/pins.py rule 6
+  (Dockerfile bases by digest; marked placeholder warns).
+- Tests: versions (table, 16 malformed, dpkg ordering incl. real dpkg), repo (golden listing, immutability, exit 3, gpg
+  signer incl. a real gpg run with a test-generated key, 11 refused packages), build script, workflow, pins rule 6.
+  pytest 690 + 2319; ruff/pyright/lint-imports; tooling.checks ok (pins warn on the placeholder).
+- W49-c-1 canary spelling ours (v1.2.4-canary.<ts> → 1.2.4~canary.<ts>-1; `+canary` refused); W49-c-2..8 in the note.
+- Owner: real base digest for termux-docker:aarch64; secrets TERMUX_APT_SIGNING_KEY (+ _PASSPHRASE); repo hosting URL +
+  key fingerprint; image Python must be 3.14.
+- Integrator: off-by-default `termux` lane in release.yml + claims.LANES calling termux.yml; acceptance Known gaps S5 and
+  checklist RL8 → partial; `apt` install kind for `indus update` (follow-up).
