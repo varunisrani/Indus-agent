@@ -25,3 +25,14 @@
   annotation.
 - Builder gate: ruff, pyright 0, lint-imports, twins --check, tooling.checks ok; pytest release/cli/ci/contract/install
   4252 passed, 0 failed.
+## w50b (daemon shell.exec + quick exec) — 19 files, base 7eee12d, clean scan
+- `service/host_shell.py`: shared shell checks/runner/output cleaning (bridge delegates, unchanged behaviour); daemon
+  serves `shell.exec` (named session must be attached by this connection, else SESSION_NOT_FOUND); quick `exec` commands
+  served on the daemon (`DAEMON_QUICK_EXEC` removed).
+- Protocol: `shell.exec` row gains SESSION_NOT_FOUND + session_id doc; generated TS/schema/field_docs/reference regenerated.
+  security_allow.json shell exception moved to host_shell.py (dated 2026-10-23). Threat model B-SHELL-1/B-DAEMON-5 proofs.
+- Decisions W50-b-1..4. Owner/lead question: should attached `!command` ever go through the sandbox backend (W50-b-2).
+- Merge with w50a: picker_reads.py, test_ws_tui_session.py, test_ws_tui_reads.py, methods.py docstring, B-DAEMON-5;
+  REGENERATE codegen + field_docs + gen_reference after both are applied (never hand-merge generated files).
+- Builder gate: ruff, pyright 0, lint-imports, codegen/twins --check, tooling.checks ok, tsc/biome/vitest protocol+tui
+  801 passed; pytest 6339 passed then the 2 pinned tests updated (affected set 85 passed).
