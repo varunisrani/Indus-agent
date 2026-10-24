@@ -11,3 +11,17 @@
   desktop vitest 174 files / 1730 passed; Electron E2E 43 passed / 2 skipped (packaged-build only); tooling.checks ok.
 - D-16.1210 – 1229 (§2.7). Landing notes: landing-w53-desk.md. Follow-ups listed there (g's leftovers, HUD approval,
   quick-entry target, BootOverlay toast, CSS order, re-capture g/h/m).
+
+## w53j.patch — builder j, desktop settings B (spec desktop-settings-b.md), base e402468 (main + w51b), 33 files
+- 29 of 33 reference slugs: Memory, Voice (own view), Advanced (7 pages), Notifications, Providers (accounts, keys,
+  endpoints, local models), Gateways, Keyboard, Tools & Keys › Keys, Sessions, Plugins, About (version, uninstall,
+  licences). Not built: Billing (lead decision), Screen capture + Tools & Keys › Settings (spec). New
+  settings/pagesB/*, fieldCopy.ts, stringsB.en.ts; shared edits in own blocks (pages.ts incl. `PageDef.after`, navMeta,
+  SettingsOverlay, context `go`, schemaPage field copy, search, keybindings, strings, i18n spread).
+- Field moves out of settings-a's pages (terminal.backend/timeout, tool_output.max_chars, chat/voice) — slice i makes
+  the same removals. Integrator: ONE label/order mechanism (j's fieldCopy.ts + curated order vs i's), customPages.tsx
+  conflicts (both slices cut pages out of it).
+- Gate (builder): biome 0 errors (1 existing warning); tsc clean; desktop vitest 172 files / 1712 passed; Electron E2E
+  chat 9 + surfaces 6 passed; tooling.checks ok. Decisions W52-j-1..9 in docs/notes/ui-parity/desktop-settings-b.md.
+- Still differs: Plugins keeps shared contrib markup; no endpoint delete (PUT /api/config is additive); no "Current"
+  pill; no gradient edge on provider cards. Compared against spec numbers (no reference screenshots in this container).
