@@ -53,3 +53,11 @@
   `what` + ErrorState restyle, ActionLog restyle, format.ts formatSize/formatDateTime.
 - Decisions W52-docs-1, lang-1, sys-1/2, files-1, login-1, f-1/2. Gate: tsc, biome, vitest 300/301 (App route-table
   timeout also on base), e2e 13/13, auth pytest 194, ruff, tooling.checks ok. Backend follow-ups F1 (host facts), F3 (docs).
+## w52h (desktop composer menus, palette, switcher, sidebar rows) — base 993f0e9, clean scan, 10/10 slugs
+- New chat/composer/{CompletionDrawer,ComposerHelp,AttachMenu}.tsx (+css/strings), app/SessionSwitcher.tsx (+test),
+  sidebar/SessionRowMenu.tsx. Bug fixes: `@` mention (client stripped the @ before complete.path; cwd now sent),
+  attach control wired (none before). Ctrl+K palette, Ctrl+Tab switcher, pane tabs Ctrl+PageUp/Down.
+- Foundation additions in ui/components.tsx + ui.css (MenuPanel, ContextMenuAt, MenuLabel, MenuSeparator, MenuRow,
+  FloatingHud, keyCaps, useHoverTip, SmallDialog; .desk-menu tightened). w52g also edits ui/components (MenuItem tone)
+  and Composer.tsx (NoticeStrip) and styles.css — merge both. Shared: i18n/en.ts, settings/keybindings.ts, strings.
+- Decisions W52-h-1..8. Electron e2e NOT run; late fixes not re-captured. Desktop vitest all groups pass.

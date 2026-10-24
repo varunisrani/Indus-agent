@@ -1,0 +1,4979 @@
+diff --git a/apps/desktop/src/app/SessionSwitcher.test.tsx b/apps/desktop/src/app/SessionSwitcher.test.tsx
+new file mode 100644
+index 0000000..cc559de
+--- /dev/null
++++ b/apps/desktop/src/app/SessionSwitcher.test.tsx
+@@ -0,0 +1,74 @@
++// @vitest-environment jsdom
++import { act, cleanup, render, screen } from "@testing-library/react";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { IDLE, REVEAL_MS, SessionSwitcher, stepSwitcher } from "./SessionSwitcher.tsx";
++
++afterEach(() => {
++  cleanup();
++  vi.useRealTimers();
++});
++
++const ROWS = [
++  { id: "a", title: "Alpha", state: "idle" as const },
++  { id: "b", title: "Beta", state: "unread" as const },
++  { id: "c", title: "Gamma", state: "running" as const },
++];
++
++const down = (init: KeyboardEventInit) =>
++  window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init }));
++const up = (init: KeyboardEventInit) =>
++  window.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, ...init }));
++
++describe("session switcher (W52-h-2)", () => {
++  it("steps from the open chat and wraps both ways", () => {
++    const first = stepSwitcher(IDLE, 1, 3, 2);
++    expect(first).toEqual({ cycling: true, shown: false, index: 0 });
++    expect(stepSwitcher(first, -1, 3, 2).index).toBe(2);
++    expect(stepSwitcher(IDLE, 1, 1, 0)).toBe(IDLE);
++  });
++
++  it("a quick tap opens the next chat without showing the card", () => {
++    const onOpen = vi.fn();
++    render(<SessionSwitcher rows={ROWS} activeId="a" onOpen={onOpen} />);
++    act(() => {
++      down({ key: "Tab", ctrlKey: true });
++      up({ key: "Control" });
++    });
++    expect(screen.queryByRole("dialog")).toBeNull();
++    expect(onOpen).toHaveBeenCalledWith("b");
++  });
++
++  it("held, the card shows the chats; letting go of Ctrl opens the pick", () => {
++    vi.useFakeTimers();
++    const onOpen = vi.fn();
++    render(<SessionSwitcher rows={ROWS} activeId="a" onOpen={onOpen} />);
++    act(() => {
++      down({ key: "Tab", ctrlKey: true });
++      down({ key: "Tab", ctrlKey: true });
++      vi.advanceTimersByTime(REVEAL_MS + 10);
++    });
++    const options = screen.getAllByRole("option");
++    expect(options.map((o) => o.textContent)).toEqual(["Alpha", "Beta", "Gamma"]);
++    expect(options[2]?.getAttribute("aria-selected")).toBe("true");
++    act(() => up({ key: "Control" }));
++    expect(onOpen).toHaveBeenCalledWith("c");
++    expect(screen.queryByRole("dialog")).toBeNull();
++  });
++
++  it("Escape cancels; fewer than two chats do nothing", () => {
++    const onOpen = vi.fn();
++    const view = render(<SessionSwitcher rows={ROWS} activeId="a" onOpen={onOpen} />);
++    act(() => {
++      down({ key: "Tab", ctrlKey: true });
++      down({ key: "Escape" });
++      up({ key: "Control" });
++    });
++    expect(onOpen).not.toHaveBeenCalled();
++    view.rerender(<SessionSwitcher rows={ROWS.slice(0, 1)} activeId="a" onOpen={onOpen} />);
++    act(() => {
++      down({ key: "Tab", ctrlKey: true });
++      up({ key: "Control" });
++    });
++    expect(onOpen).not.toHaveBeenCalled();
++  });
++});
+diff --git a/apps/desktop/src/app/SessionSwitcher.tsx b/apps/desktop/src/app/SessionSwitcher.tsx
+new file mode 100644
+index 0000000..ea39b64
+--- /dev/null
++++ b/apps/desktop/src/app/SessionSwitcher.tsx
+@@ -0,0 +1,149 @@
++// The session switcher (W52-h-2): Ctrl+Tab steps to the next chat (Ctrl+Shift+Tab the previous)
++// in the sidebar's order — pinned first, then by last activity. A quick tap switches at once; held
++// past `REVEAL_MS` a small card at the top of the window shows the chats with the pick marked, and
++// letting go of Ctrl opens it. While the card shows: Tab / ↓ next, Shift+Tab / ↑ previous, Enter
++// opens, Escape cancels, a click opens that row. Needs two chats or more.
++
++import { useCallback, useEffect, useRef, useState } from "react";
++import { useT } from "../i18n/index.tsx";
++import { switcherStep } from "../panes/shortcuts.ts";
++import { FloatingHud } from "../ui/components.tsx";
++
++export const REVEAL_MS = 220;
++
++export interface SwitcherRow {
++  readonly id: string;
++  readonly title: string;
++  readonly state: "running" | "unread" | "idle";
++}
++
++export interface SwitcherState {
++  /** A Ctrl+Tab cycle is in progress (Ctrl still held). */
++  readonly cycling: boolean;
++  /** The card is shown. */
++  readonly shown: boolean;
++  readonly index: number;
++}
++
++export const IDLE: SwitcherState = { cycling: false, shown: false, index: 0 };
++
++/** The state after one step (pure; `current` is the open chat's index or -1). */
++export function stepSwitcher(
++  state: SwitcherState,
++  step: 1 | -1,
++  count: number,
++  current: number,
++): SwitcherState {
++  if (count < 2) return state;
++  const from = state.cycling ? state.index : current;
++  const index = (((from + step) % count) + count) % count;
++  return { cycling: true, shown: state.shown, index };
++}
++
++export function SessionSwitcher(props: {
++  rows: readonly SwitcherRow[];
++  activeId: string | null;
++  onOpen: (id: string) => void;
++}) {
++  const t = useT();
++  const [state, setShown] = useState<SwitcherState>(IDLE);
++  // the latest state, readable at once by the next key event (before React renders)
++  const current = useRef<SwitcherState>(IDLE);
++  const setState = useCallback((next: (before: SwitcherState) => SwitcherState) => {
++    current.current = next(current.current);
++    setShown(current.current);
++  }, []);
++  const live = useRef({ rows: props.rows, activeId: props.activeId, onOpen: props.onOpen });
++  live.current = { rows: props.rows, activeId: props.activeId, onOpen: props.onOpen };
++  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
++
++  const reset = useCallback(() => {
++    if (timer.current !== null) clearTimeout(timer.current);
++    timer.current = null;
++    setState(() => IDLE);
++  }, [setState]);
++
++  const commit = useCallback(() => {
++    const { rows, activeId, onOpen } = live.current;
++    const row = rows[current.current.index];
++    reset();
++    if (row !== undefined && row.id !== activeId) onOpen(row.id);
++  }, [reset]);
++
++  useEffect(() => {
++    const onKeyDown = (event: KeyboardEvent) => {
++      const { rows, activeId } = live.current;
++      const now = current.current;
++      const step = switcherStep(event);
++      if (step !== null) {
++        // not stopped: the pane shortcuts see the key too (it ends their slot-number hint)
++        event.preventDefault();
++        if (rows.length < 2) return;
++        const at = rows.findIndex((row) => row.id === activeId);
++        setState((before) => stepSwitcher(before, step, rows.length, at));
++        if (!now.cycling && timer.current === null) {
++          timer.current = setTimeout(() => {
++            timer.current = null;
++            setState((before) => (before.cycling ? { ...before, shown: true } : before));
++          }, REVEAL_MS);
++        }
++        return;
++      }
++      if (!now.cycling) return;
++      if (event.key === "Escape") {
++        event.preventDefault();
++        reset();
++      } else if (event.key === "Enter") {
++        event.preventDefault();
++        commit();
++      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
++        event.preventDefault();
++        const delta = event.key === "ArrowDown" ? 1 : -1;
++        setState((before) => stepSwitcher(before, delta, rows.length, before.index));
++      }
++    };
++    const onKeyUp = (event: KeyboardEvent) => {
++      if (event.key === "Control" && current.current.cycling) commit();
++    };
++    const onBlur = () => reset();
++    window.addEventListener("keydown", onKeyDown, true);
++    window.addEventListener("keyup", onKeyUp, true);
++    window.addEventListener("blur", onBlur);
++    return () => {
++      window.removeEventListener("keydown", onKeyDown, true);
++      window.removeEventListener("keyup", onKeyUp, true);
++      window.removeEventListener("blur", onBlur);
++      if (timer.current !== null) clearTimeout(timer.current);
++    };
++  }, [commit, reset, setState]);
++
++  if (!state.shown) return null;
++  return (
++    <FloatingHud
++      label={t("switcher.label")}
++      width={304}
++      onClose={reset}
++      className="session-switcher"
++    >
++      <div role="listbox" aria-label={t("switcher.label")} className="session-switcher-list">
++        {props.rows.map((row, index) => (
++          <div
++            key={row.id}
++            role="option"
++            tabIndex={-1}
++            aria-selected={index === state.index}
++            className="desk-hud-row session-switcher-row"
++            onMouseDown={(event) => {
++              event.preventDefault();
++              reset();
++              if (row.id !== props.activeId) props.onOpen(row.id);
++            }}
++          >
++            <span className="session-switcher-dot" data-state={row.state} aria-hidden="true" />
++            <span className="session-switcher-title">{row.title}</span>
++          </div>
++        ))}
++      </div>
++    </FloatingHud>
++  );
++}
+diff --git a/apps/desktop/src/app/Shell.tsx b/apps/desktop/src/app/Shell.tsx
+index e0a0cd2..d00edad 100644
+--- a/apps/desktop/src/app/Shell.tsx
++++ b/apps/desktop/src/app/Shell.tsx
+@@ -4,11 +4,15 @@
+ // decides which surfaces show; the tab and window shortcuts are handled here.
+ 
+ import {
++  AppWindow,
+   Ellipsis,
++  Folder,
+   House,
++  MessageSquare,
+   Monitor,
+   Moon,
+   PanelLeft,
++  Plus,
+   Settings as SettingsIcon,
+   SquarePen,
+   Sun,
+@@ -60,6 +64,7 @@ import {
+   pagePath,
+   sessionPath,
+ } from "./routes.ts";
++import { SessionSwitcher, type SwitcherRow } from "./SessionSwitcher.tsx";
+ import { type ThemeMode, useTheme } from "./theme.tsx";
+ 
+ // -- chrome: the window's sidebar model and pane layout ------------------------------------------
+@@ -503,17 +508,106 @@ export function Shell(props: {
+   const showSlots = usePaneShortcuts(platform, { onAction });
+   // the registry's keybinds (P24-32); a key the app uses is never given to a plugin
+   useContributedKeybinds(platform);
+-  const paletteEntries = useMemo<PaletteEntry[]>(
+-    () => [
+-      { id: "app.new-chat", title: t("nav.newChat"), run: () => navigate(NEW_CHAT_PATH) },
+-      ...PAGES.filter((page) => !isContributedPage(page)).map((page) => ({
++  const listStore = chrome.sidebar.sessions(profile);
++  const listRows = useSyncExternalStore(
++    (listener) => listStore.subscribe(listener),
++    () => listStore.getState(),
++  );
++  const switcherRows = useMemo<SwitcherRow[]>(() => {
++    const rows = [
++      ...listRows.rows.filter((row) => row.pinned),
++      ...listRows.rows.filter((row) => !row.pinned),
++    ];
++    return rows.map((row) => ({
++      id: row.id,
++      title: rowTitle(t, row),
++      state:
++        row.active || row.ids.some((id) => listRows.running.has(id))
++          ? "running"
++          : listStore.unread.isUnread(row, sessionId)
++            ? "unread"
++            : "idle",
++    }));
++  }, [listRows, listStore, sessionId, t]);
++  const activeRowId =
++    sessionId === null
++      ? null
++      : (listRows.rows.find((row) => row.ids.includes(sessionId))?.id ?? sessionId);
++  const openOverlay = useCallback(
++    (overlay: OverlayId) =>
++      navigate(overlayPath(overlay), {
++        state: overlayStateFrom(location.pathname, location.state),
++      }),
++    [navigate, location.pathname, location.state],
++  );
++  const paletteEntries = useMemo<PaletteEntry[]>(() => {
++    const pages = PAGES.filter((page) => !isContributedPage(page));
++    const goto: PaletteEntry[] = [
++      {
++        id: "app.new-chat",
++        title: t("nav.newChat"),
++        icon: <Plus aria-hidden="true" />,
++        keys: "CommandOrControl+N",
++        run: () => {
++          beginNewChat(chrome.sidebar, profile, null);
++          navigate(NEW_CHAT_PATH);
++        },
++      },
++      {
++        id: "app.new-window",
++        title: t("palette.newWindow"),
++        icon: <AppWindow aria-hidden="true" />,
++        keys: "CommandOrControl+Shift+N",
++        run: () => void desktopBridge()?.windows.openInstance({ profile }),
++      },
++      {
++        id: "app.overlay.settings",
++        title: t(OVERLAY_TEXT.settings.title),
++        icon: OVERLAY_ICONS.settings,
++        keys: "CommandOrControl+,",
++        deeper: true,
++        run: () => openOverlay("settings"),
++      },
++      ...pages.map((page) => ({
+         id: `app.page.${page}`,
+-        title: t("palette.goTo", { page: t(PAGE_TEXT[page].title) }),
++        title: t(PAGE_TEXT[page].title),
++        keywords: t("palette.goTo", { page: t(PAGE_TEXT[page].title) }),
++        icon: PAGE_ICONS[page],
+         run: () => navigate(pagePath(page)),
+       })),
+-    ],
+-    [t, navigate],
+-  );
++      ...(["cron", "profiles", "agents"] as const).map((overlay) => ({
++        id: `app.overlay.${overlay}`,
++        title: t(OVERLAY_TEXT[overlay].title),
++        icon: OVERLAY_ICONS[overlay],
++        deeper: true,
++        run: () => openOverlay(overlay),
++      })),
++    ];
++    const projects: PaletteEntry[] = projectPrefs.projects.map((project) => ({
++      id: `app.project.${project.id}`,
++      title: project.name,
++      hint: t("palette.newChatIn", { name: project.name }),
++      group: "projects",
++      icon: <Folder aria-hidden="true" />,
++      run: () => {
++        beginNewChat(chrome.sidebar, profile, project);
++        navigate(NEW_CHAT_PATH);
++      },
++    }));
++    const chats: PaletteEntry[] = [
++      ...listRows.rows.filter((row) => row.pinned),
++      ...listRows.rows.filter((row) => !row.pinned),
++    ].map((row) => ({
++      id: `app.chat.${row.durableId}`,
++      title: rowTitle(t, row),
++      keywords: [row.cwd ?? "", row.preview ?? "", row.id].join(" "),
++      group: "chats",
++      searchOnly: true,
++      icon: <MessageSquare aria-hidden="true" />,
++      run: () => navigate(sessionPath(row.id)),
++    }));
++    return [...goto, ...projects, ...chats];
++  }, [t, navigate, chrome, profile, openOverlay, projectPrefs.projects, listRows.rows]);
+ 
+   const selectProfile = (next: string) => {
+     if (switcher === null) return;
+@@ -607,7 +701,14 @@ export function Shell(props: {
+       {!secondary && (
+         <ContributedTitleBar platform={platform} bandHeight={launchFacts().titleBarHeight} />
+       )}
+-      <CommandPalette builtIn={paletteEntries} />
++      <CommandPalette builtIn={paletteEntries} mac={platform === "mac" || platform === "darwin"} />
++      {!secondary && (
++        <SessionSwitcher
++          rows={switcherRows}
++          activeId={activeRowId}
++          onOpen={(id) => navigate(sessionPath(id))}
++        />
++      )}
+     </div>
+   );
+ }
+diff --git a/apps/desktop/src/app/chatSlots.tsx b/apps/desktop/src/app/chatSlots.tsx
+index fa31434..4d9974d 100644
+--- a/apps/desktop/src/app/chatSlots.tsx
++++ b/apps/desktop/src/app/chatSlots.tsx
+@@ -17,7 +17,14 @@ import type { ChatConnection } from "../gateway/connectionStore.ts";
+ import { browserStorage } from "../profiles/storageFamilies.ts";
+ import { freshDraftFolder, newChatTarget } from "../sidebar/projects.ts";
+ import type { AppSlots } from "./App.tsx";
+-import { backgroundOf, classifyPath, NEW_CHAT_PATH, sessionPath } from "./routes.ts";
++import {
++  backgroundOf,
++  classifyPath,
++  NEW_CHAT_PATH,
++  overlayPath,
++  overlayStateFrom,
++  sessionPath,
++} from "./routes.ts";
+ import { StatusBar } from "./StatusBar.tsx";
+ 
+ /** System lines (slash output) kept above the composer. */
+@@ -42,6 +49,7 @@ function ComposerSlot(props: {
+   voice: VoicePort;
+ }) {
+   const navigate = useNavigate();
++  const location = useLocation();
+   const transcripts = useTranscriptStore();
+   const [lines, setLines] = useState<readonly string[]>([]);
+   // biome-ignore lint/correctness/useExhaustiveDependencies: a new conversation starts clean
+@@ -73,6 +81,11 @@ function ComposerSlot(props: {
+         }}
+         onSessionGone={() => navigate(NEW_CHAT_PATH, { replace: true })}
+         onNewChat={() => navigate(NEW_CHAT_PATH)}
++        onEditModels={() =>
++          navigate(`${overlayPath("settings")}?view=model&page=main`, {
++            state: overlayStateFrom(location.pathname, location.state),
++          })
++        }
+         onReasoningDisplay={(show) => transcripts.setShowReasoning(show)}
+         onSystemLine={(line) => setLines((now) => [...now.slice(1 - SYSTEM_LINES), line])}
+       />
+diff --git a/apps/desktop/src/chat/EffortChip.tsx b/apps/desktop/src/chat/EffortChip.tsx
+index f133cf6..5b89d01 100644
+--- a/apps/desktop/src/chat/EffortChip.tsx
++++ b/apps/desktop/src/chat/EffortChip.tsx
+@@ -1,11 +1,12 @@
+-// The composer's reasoning-effort chip (W51-b-6): shows the current model's effort preset and
+-// sets it from a short menu. The caller applies the choice (preset store, `config.set reasoning`).
++// The composer's reasoning-effort chip (W51-b-6, menu W52-h): shows the current model's effort
++// preset and sets it from a small menu — a Thinking switch (off = `none`) and the effort levels.
++// The caller applies the choice (preset store, `config.set reasoning`). Picking a level closes the
++// menu; the switch keeps it open.
+ 
+-import { Check } from "lucide-react";
+-import { useEffect, useRef, useState } from "react";
++import { useCallback, useRef, useState } from "react";
+ import type { MessageKey } from "../i18n/index.tsx";
+ import { useT } from "../i18n/index.tsx";
+-import { Chip } from "../ui/components.tsx";
++import { Chip, MenuLabel, MenuPanel, MenuRow, MenuSeparator } from "../ui/components.tsx";
+ 
+ const LEVELS: ReadonlyArray<{ value: string | null; short: MessageKey; long: MessageKey }> = [
+   { value: null, short: "effort.auto", long: "effort.autoLong" },
+@@ -15,29 +16,67 @@ const LEVELS: ReadonlyArray<{ value: string | null; short: MessageKey; long: Mes
+   { value: "medium", short: "effort.medium", long: "effort.mediumLong" },
+   { value: "high", short: "effort.high", long: "effort.highLong" },
+   { value: "xhigh", short: "effort.xhigh", long: "effort.xhighLong" },
++  { value: "max", short: "effort.max", long: "effort.maxLong" },
++  { value: "ultra", short: "effort.ultra", long: "effort.ultraLong" },
+ ];
+ 
++/** The levels the menu lists under "Effort" (Off is the Thinking switch). */
++const LISTED = LEVELS.filter((level) => level.value !== "none");
++
++export const DEFAULT_THINKING_EFFORT = "medium";
++
+ export function effortShort(value: string | null): MessageKey {
+   return LEVELS.find((level) => level.value === value)?.short ?? "effort.auto";
+ }
+ 
++/** The menu body: Options (Thinking switch) and the Effort list. Shared with the model menu. */
++export function EffortOptions(props: {
++  effort: string | null;
++  onPick: (value: string | null) => void;
++  /** Called after a level is picked (the switch never closes). */
++  onPicked?: () => void;
++}) {
++  const t = useT();
++  const lastOn = useRef<string>(DEFAULT_THINKING_EFFORT);
++  if (props.effort !== null && props.effort !== "none") lastOn.current = props.effort;
++  const thinking = props.effort !== "none";
++  return (
++    <>
++      <MenuLabel>{t("effort.options")}</MenuLabel>
++      <MenuRow
++        kind="switch"
++        label={t("effort.thinking")}
++        checked={thinking}
++        onSelect={() => props.onPick(thinking ? "none" : lastOn.current)}
++      />
++      <MenuSeparator />
++      <MenuLabel>{t("effort.effort")}</MenuLabel>
++      {LISTED.map((level) => (
++        <MenuRow
++          key={level.value ?? "auto"}
++          kind="radio"
++          label={t(level.long)}
++          checked={level.value === props.effort}
++          onSelect={() => {
++            props.onPick(level.value);
++            props.onPicked?.();
++          }}
++        />
++      ))}
++    </>
++  );
++}
++
+ export function EffortChip(props: {
+   effort: string | null;
+   onPick: (value: string | null) => void;
+ }) {
+   const t = useT();
+   const [open, setOpen] = useState(false);
+-  const root = useRef<HTMLDivElement>(null);
+-  useEffect(() => {
+-    if (!open) return;
+-    const away = (event: PointerEvent) => {
+-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+-    };
+-    document.addEventListener("pointerdown", away);
+-    return () => document.removeEventListener("pointerdown", away);
+-  }, [open]);
++  const trigger = useRef<HTMLDivElement>(null);
++  const close = useCallback(() => setOpen(false), []);
+   return (
+-    <div className="desk-menu-root" ref={root}>
++    <div className="desk-menu-root" ref={trigger}>
+       <Chip
+         aria-haspopup="menu"
+         aria-expanded={open}
+@@ -47,32 +86,14 @@ export function EffortChip(props: {
+         {t(effortShort(props.effort))}
+       </Chip>
+       {open && (
+-        <div className="desk-menu" data-side="up" data-align="end">
+-          <div
+-            role="menu"
+-            aria-label={t("effort.title")}
+-            onKeyDown={(event) => {
+-              if (event.key === "Escape") setOpen(false);
+-            }}
+-          >
+-            {LEVELS.map((level) => (
+-              <button
+-                key={level.value ?? "auto"}
+-                type="button"
+-                role="menuitemradio"
+-                aria-checked={level.value === props.effort}
+-                className="desk-menu-item"
+-                onClick={() => {
+-                  setOpen(false);
+-                  props.onPick(level.value);
+-                }}
+-              >
+-                <span className="desk-menu-item-label">{t(level.long)}</span>
+-                {level.value === props.effort && <Check aria-hidden="true" />}
+-              </button>
+-            ))}
+-          </div>
+-        </div>
++        <MenuPanel
++          label={t("effort.title")}
++          onClose={close}
++          keepOpenFor={trigger}
++          className="effort-menu"
++        >
++          <EffortOptions effort={props.effort} onPick={props.onPick} onPicked={close} />
++        </MenuPanel>
+       )}
+     </div>
+   );
+diff --git a/apps/desktop/src/chat/ModelPicker.tsx b/apps/desktop/src/chat/ModelPicker.tsx
+index ad25095..12f3519 100644
+--- a/apps/desktop/src/chat/ModelPicker.tsx
++++ b/apps/desktop/src/chat/ModelPicker.tsx
+@@ -7,6 +7,16 @@
+ // provider in a session that already has messages, or the daemon's `CONFIRM_REQUIRED` — asks first.
+ 
+ import type { MethodName, MethodTypes, ModelOptionsResult } from "@indus/protocol";
++import {
++  ChevronLeft,
++  ChevronRight,
++  LoaderCircle,
++  Plus,
++  RefreshCw,
++  Search,
++  Settings2,
++  Star,
++} from "lucide-react";
+ import {
+   useCallback,
+   useEffect,
+@@ -19,8 +29,8 @@ import {
+ import type { ChatConnection, RequestOptions } from "../gateway/connectionStore.ts";
+ import { useGatewayConnection } from "../gateway/react.tsx";
+ import { useT } from "../i18n/index.tsx";
+-import { Chip } from "../ui/components.tsx";
+-import { EffortChip } from "./EffortChip.tsx";
++import { Button, Chip, MenuLabel, MenuRow, MenuSeparator } from "../ui/components.tsx";
++import { EffortChip, EffortOptions } from "./EffortChip.tsx";
+ import type { StorageLike } from "./inflightJournal.ts";
+ import { errorMessage, errorName } from "./rpcErrors.ts";
+ 
+@@ -41,7 +51,16 @@ export interface ModelPreset {
+   readonly fast?: boolean;
+ }
+ 
+-export const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "none"] as const;
++export const EFFORTS = [
++  "minimal",
++  "low",
++  "medium",
++  "high",
++  "xhigh",
++  "max",
++  "ultra",
++  "none",
++] as const;
+ 
+ export const STICKY_PREFIX = "indus.desktop.model.";
+ export const PRESETS_KEY = "indus.desktop.model-presets";
+@@ -323,10 +342,39 @@ export interface ModelPickerProps {
+   /** Opened from outside (the `/model` command). */
+   open?: boolean;
+   onOpenChange?: (open: boolean) => void;
++  /** "Edit models…": open the model settings (no row without it). */
++  onEditModels?: () => void;
+ }
+ 
+ type Confirming = { message: string; resolve: (ok: boolean) => void };
+ 
++interface Group {
++  readonly key: string;
++  readonly label: string;
++  readonly rows: readonly ModelEntry[];
++}
++
++/** Favourites first (when any), then one group per provider in catalogue order. */
++export function groupEntries(
++  entries: readonly ModelEntry[],
++  favourites: ReadonlySet<string>,
++  favouritesLabel: string,
++): Group[] {
++  const groups: Group[] = [];
++  const fav = entries.filter((entry) => favourites.has(modelKey(entry)));
++  if (fav.length > 0) groups.push({ key: "fav", label: favouritesLabel, rows: fav });
++  const byProvider = new Map<string, ModelEntry[]>();
++  for (const entry of entries) {
++    const list = byProvider.get(entry.provider) ?? [];
++    list.push(entry);
++    byProvider.set(entry.provider, list);
++  }
++  for (const [provider, rows] of byProvider) {
++    groups.push({ key: `p:${provider}`, label: rows[0]?.providerName ?? provider, rows });
++  }
++  return groups;
++}
++
+ export function ModelPicker(props: ModelPickerProps) {
+   const t = useT();
+   const active = useGatewayConnection();
+@@ -348,11 +396,13 @@ export function ModelPicker(props: ModelPickerProps) {
+   const [confirming, setConfirming] = useState<Confirming | null>(null);
+   const [note, setNote] = useState<string | null>(null);
+   const [chosen, setChosen] = useState<ModelChoice | null>(null);
+-  const [focusKey, setFocusKey] = useState<string | null>(null);
++  const [detail, setDetail] = useState<ModelEntry | null>(null);
++  const [custom, setCustom] = useState(false);
+   const [, setPresetVersion] = useState(0);
+   const bumpPresets = () => setPresetVersion((v) => v + 1);
+   const listId = useId();
+   const searchRef = useRef<HTMLInputElement>(null);
++  const root = useRef<HTMLDivElement>(null);
+ 
+   const load = useCallback(async () => {
+     if (connection === null) return;
+@@ -368,9 +418,22 @@ export function ModelPicker(props: ModelPickerProps) {
+     if (open) {
+       void load();
+       searchRef.current?.focus();
++    } else {
++      setDetail(null);
++      setCustom(false);
+     }
+   }, [open, load]);
+ 
++  // click-away closes (the trigger toggles itself)
++  useEffect(() => {
++    if (!open) return;
++    const away = (event: PointerEvent) => {
++      if (!root.current?.contains(event.target as Node)) setOpen(false);
++    };
++    document.addEventListener("pointerdown", away);
++    return () => document.removeEventListener("pointerdown", away);
++  }, [open, setOpen]);
++
+   // W51-b: ask once up front so the chip names the configured model before the picker is opened
+   // (it said "Choose a model" while the status bar already named one). Asked again when the
+   // backend becomes ready; a failure leaves the chip as it was and the picker asks on open.
+@@ -398,6 +461,10 @@ export function ModelPicker(props: ModelPickerProps) {
+     () => orderEntries(searchModels(options ? entriesFrom(options) : [], query), favourites),
+     [options, query, favourites],
+   );
++  const groups = useMemo(
++    () => groupEntries(entries, favourites, t("model.favourites")),
++    [entries, favourites, t],
++  );
+ 
+   const pick = async (entry: ModelEntry) => {
+     if (connection === null) return;
+@@ -431,24 +498,66 @@ export function ModelPicker(props: ModelPickerProps) {
+     setOpen(false);
+   };
+ 
++  const pickCustom = () => {
++    const id = query.trim();
++    if (id === "") return;
++    const provider = current?.provider ?? options?.provider ?? "";
++    const known = options?.providers.find((p) => p.slug === provider);
++    void pick({
++      provider,
++      providerName: known?.name ?? provider,
++      model: id,
++      authenticated: true,
++    });
++  };
++
+   const effort =
+     props.current?.effort ?? (current ? prefs.preset(modelKey(current)).effort : undefined);
+-  const focused = entries.find((entry) => modelKey(entry) === focusKey) ?? null;
+-  const focusedPreset = focused ? prefs.preset(modelKey(focused)) : {};
++  const setEffort = (key: string, value: string | null) => {
++    const { effort: _previous, ...rest } = prefs.preset(key);
++    prefs.setPreset(key, value === null ? rest : { ...rest, effort: value });
++    bumpPresets();
++  };
++
++  const onMenuKey = (event: React.KeyboardEvent) => {
++    if (event.key === "Escape") {
++      event.stopPropagation();
++      if (detail !== null) setDetail(null);
++      else setOpen(false);
++      return;
++    }
++    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
++    const rows = [
++      ...(root.current?.querySelectorAll<HTMLElement>(
++        ".model-menu .model-row-name, .model-menu [role^='menuitem']",
++      ) ?? []),
++    ];
++    if (rows.length === 0) return;
++    const at = rows.indexOf(document.activeElement as HTMLElement);
++    const step = event.key === "ArrowDown" ? 1 : -1;
++    rows[
++      at === -1 ? (step === 1 ? 0 : rows.length - 1) : (at + step + rows.length) % rows.length
++    ]?.focus();
++    event.preventDefault();
++  };
++
++  const detailPreset = detail ? prefs.preset(modelKey(detail)) : {};
+ 
+   return (
+-    <div className="model-picker" data-testid="model-picker">
+-      <Chip aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
+-        {current ? current.model : t("model.none")}
++    <div className="model-picker" data-testid="model-picker" ref={root}>
++      <Chip
++        aria-haspopup="dialog"
++        aria-expanded={open}
++        aria-label={current ? undefined : t("model.loading")}
++        onClick={() => setOpen(!open)}
++      >
++        {current ? current.model : <LoaderCircle aria-hidden="true" size={12} className="spin" />}
+       </Chip>
+       {current !== null && (
+         <EffortChip
+           effort={effort ?? null}
+           onPick={(value) => {
+-            const key = modelKey(current);
+-            const { effort: _previous, ...rest } = prefs.preset(key);
+-            prefs.setPreset(key, value === null ? rest : { ...rest, effort: value });
+-            bumpPresets();
++            setEffort(modelKey(current), value);
+             if (connection !== null && props.sessionId !== null && value !== null) {
+               void connection
+                 .request("config.set", {
+@@ -461,133 +570,183 @@ export function ModelPicker(props: ModelPickerProps) {
+           }}
+         />
+       )}
+-      {note !== null ? <span className="ml-2 text-xs text-muted">{note}</span> : null}
++      {note !== null ? <span className="model-picker-note">{note}</span> : null}
+       {open ? (
+         <div
+           role="dialog"
+           aria-label={t("model.title")}
+-          className="absolute bottom-full z-30 mb-1 w-80 rounded-lg border border-line bg-raised p-2 shadow-lg"
+-          onKeyDown={(event) => {
+-            if (event.key === "Escape") setOpen(false);
+-          }}
++          className="desk-menu model-menu"
++          onKeyDown={onMenuKey}
+         >
+-          <input
+-            ref={searchRef}
+-            type="search"
+-            aria-label={t("model.search")}
+-            aria-controls={listId}
+-            placeholder={t("model.search")}
+-            className="mb-2 w-full rounded border border-line bg-bg px-2 py-1 text-sm"
+-            value={query}
+-            onChange={(event) => setQuery(event.target.value)}
+-          />
+-          {loadError !== null ? (
+-            <p role="alert" className="text-xs text-danger">
+-              {t("model.loadFailed", { message: loadError })}{" "}
+-              <button type="button" className="underline" onClick={() => void load()}>
+-                {t("model.retry")}
+-              </button>
+-            </p>
+-          ) : null}
+-          <ul id={listId} aria-label={t("model.title")} className="max-h-64 overflow-auto">
+-            {entries.map((entry) => {
+-              const key = modelKey(entry);
+-              const selected = current !== null && modelKey(current) === key;
+-              return (
+-                <li
+-                  key={key}
+-                  data-model={key}
+-                  className="flex items-center gap-2 rounded px-1 text-sm hover:bg-bg"
+-                >
+-                  <button
+-                    type="button"
+-                    aria-label={t(favourites.has(key) ? "model.unfavourite" : "model.favourite", {
+-                      model: entry.model,
+-                    })}
+-                    aria-pressed={favourites.has(key)}
+-                    className="text-xs"
+-                    onClick={() => setFavourites(prefs.toggleFavourite(key))}
+-                  >
+-                    {favourites.has(key) ? "★" : "☆"}
+-                  </button>
++          {detail !== null ? (
++            <div role="menu" aria-label={t("model.optionsFor", { model: detail.model })}>
++              <MenuRow
++                icon={<ChevronLeft aria-hidden="true" />}
++                label={detail.model}
++                ariaLabel={t("model.back")}
++                onSelect={() => setDetail(null)}
++              />
++              <MenuSeparator />
++              <EffortOptions
++                effort={detailPreset.effort ?? null}
++                onPick={(value) => setEffort(modelKey(detail), value)}
++              />
++              <MenuSeparator />
++              <MenuRow
++                kind="switch"
++                label={t("model.fast")}
++                ariaLabel={t("model.fastFor", { model: detail.model })}
++                checked={detailPreset.fast === true}
++                onSelect={() => {
++                  prefs.setPreset(modelKey(detail), {
++                    ...detailPreset,
++                    fast: detailPreset.fast !== true,
++                  });
++                  bumpPresets();
++                }}
++              />
++            </div>
++          ) : (
++            <>
++              <div className="model-menu-search">
++                {custom ? (
++                  <Plus aria-hidden="true" size={13} />
++                ) : (
++                  <Search aria-hidden="true" size={13} />
++                )}
++                <input
++                  ref={searchRef}
++                  type="search"
++                  aria-label={t(custom ? "model.custom" : "model.search")}
++                  aria-controls={listId}
++                  placeholder={t(custom ? "model.customPlaceholder" : "model.search")}
++                  value={query}
++                  onChange={(event) => setQuery(event.target.value)}
++                  onKeyDown={(event) => {
++                    if (event.key === "Enter" && custom) {
++                      event.preventDefault();
++                      pickCustom();
++                    }
++                  }}
++                />
++              </div>
++              {loadError !== null ? (
++                <p role="alert" className="model-menu-note">
++                  {t("model.loadFailed", { message: loadError })}{" "}
+                   <button
+                     type="button"
+-                    className="flex-1 truncate text-left py-1"
+-                    aria-current={selected ? "true" : undefined}
+-                    onFocus={() => setFocusKey(key)}
+-                    onMouseEnter={() => setFocusKey(key)}
+-                    onClick={() => void pick(entry)}
++                    className="desk-btn"
++                    data-variant="text"
++                    onClick={() => void load()}
+                   >
+-                    {entry.model}
+-                    <span className="ml-2 text-xs text-muted">{entry.providerName}</span>
++                    {t("model.retry")}
+                   </button>
+-                </li>
+-              );
+-            })}
+-            {options !== null && entries.length === 0 ? (
+-              <li className="px-1 py-1 text-xs text-muted">{t("model.noMatch")}</li>
+-            ) : null}
+-          </ul>
+-          {focused !== null ? (
+-            <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-xs">
+-              <label className="flex items-center gap-1">
+-                {t("model.effort")}
+-                <select
+-                  aria-label={t("model.effortFor", { model: focused.model })}
+-                  value={focusedPreset.effort ?? ""}
+-                  onChange={(event) => {
+-                    const { effort: _previous, ...rest } = focusedPreset;
+-                    const value = event.target.value;
+-                    prefs.setPreset(
+-                      modelKey(focused),
+-                      value === "" ? rest : { ...rest, effort: value },
+-                    );
+-                    bumpPresets();
+-                  }}
+-                >
+-                  <option value="">{t("model.effortKeep")}</option>
+-                  {EFFORTS.map((level) => (
+-                    <option key={level} value={level}>
+-                      {level}
+-                    </option>
+-                  ))}
+-                </select>
+-              </label>
+-              <label className="flex items-center gap-1">
+-                <input
+-                  type="checkbox"
+-                  aria-label={t("model.fastFor", { model: focused.model })}
+-                  checked={focusedPreset.fast === true}
+-                  onChange={(event) => {
+-                    prefs.setPreset(modelKey(focused), {
+-                      ...focusedPreset,
+-                      fast: event.target.checked,
+-                    });
+-                    bumpPresets();
++                </p>
++              ) : null}
++              <div id={listId}>
++                {groups.map((group) => (
++                  <div key={group.key} className="model-group">
++                    <MenuLabel>{group.label}</MenuLabel>
++                    <ul aria-label={group.label} className="model-menu-list">
++                      {group.rows.map((entry) => {
++                        const key = modelKey(entry);
++                        const selected = current !== null && modelKey(current) === key;
++                        const starred = favourites.has(key);
++                        return (
++                          <li
++                            key={key}
++                            data-model={key}
++                            className="model-row"
++                            data-dim={entry.authenticated ? undefined : "true"}
++                          >
++                            <button
++                              type="button"
++                              className="model-star"
++                              aria-label={t(starred ? "model.unfavourite" : "model.favourite", {
++                                model: entry.model,
++                              })}
++                              aria-pressed={starred}
++                              onClick={() => setFavourites(prefs.toggleFavourite(key))}
++                            >
++                              <Star aria-hidden="true" />
++                            </button>
++                            <button
++                              type="button"
++                              className="model-row-name"
++                              aria-current={selected ? "true" : undefined}
++                              onClick={() => void pick(entry)}
++                              onKeyDown={(event) => {
++                                if (event.key === "ArrowRight") {
++                                  event.preventDefault();
++                                  setDetail(entry);
++                                } else if (event.key === "Enter" && event.shiftKey) {
++                                  event.preventDefault();
++                                  setFavourites(prefs.toggleFavourite(key));
++                                }
++                              }}
++                            >
++                              {entry.model}
++                            </button>
++                            {!entry.authenticated && (
++                              <span className="model-row-note">{t("model.signIn")}</span>
++                            )}
++                            <button
++                              type="button"
++                              className="model-row-more"
++                              aria-label={t("model.optionsFor", { model: entry.model })}
++                              onClick={() => setDetail(entry)}
++                            >
++                              <ChevronRight aria-hidden="true" />
++                            </button>
++                          </li>
++                        );
++                      })}
++                    </ul>
++                  </div>
++                ))}
++                {options !== null && entries.length === 0 && !custom ? (
++                  <p className="model-menu-note">{t("model.noMatch")}</p>
++                ) : null}
++              </div>
++              <MenuSeparator />
++              <div role="menu" aria-label={t("model.title")}>
++                <MenuRow
++                  icon={<RefreshCw aria-hidden="true" />}
++                  label={t("model.refresh")}
++                  onSelect={() => void load()}
++                />
++                <MenuRow
++                  icon={<Plus aria-hidden="true" />}
++                  label={t("model.addCustom")}
++                  onSelect={() => {
++                    setCustom(true);
++                    setQuery("");
++                    searchRef.current?.focus();
+                   }}
+                 />
+-                {t("model.fast")}
+-              </label>
+-            </div>
+-          ) : null}
++                {props.onEditModels !== undefined && (
++                  <MenuRow
++                    icon={<Settings2 aria-hidden="true" />}
++                    label={t("model.edit")}
++                    onSelect={() => {
++                      setOpen(false);
++                      props.onEditModels?.();
++                    }}
++                  />
++                )}
++              </div>
++            </>
++          )}
+           {confirming !== null ? (
+-            <div
+-              role="alertdialog"
+-              aria-label={t("model.confirmTitle")}
+-              className="mt-2 rounded border border-warn p-2 text-xs"
+-            >
++            <div role="alertdialog" aria-label={t("model.confirmTitle")} className="model-confirm">
+               <p>{confirming.message}</p>
+-              <div className="mt-1 flex justify-end gap-2">
+-                <button type="button" onClick={() => confirming.resolve(false)}>
++              <div className="model-confirm-actions">
++                <Button variant="ghost" size="sm" onClick={() => confirming.resolve(false)}>
+                   {t("model.keep")}
+-                </button>
+-                <button
+-                  type="button"
+-                  className="rounded bg-accent px-2 text-accent-fg"
+-                  onClick={() => confirming.resolve(true)}
+-                >
++                </Button>
++                <Button variant="primary" size="sm" onClick={() => confirming.resolve(true)}>
+                   {t("model.switch")}
+-                </button>
++                </Button>
+               </div>
+             </div>
+           ) : null}
+diff --git a/apps/desktop/src/chat/composer/AttachMenu.tsx b/apps/desktop/src/chat/composer/AttachMenu.tsx
+new file mode 100644
+index 0000000..c5c9ea4
+--- /dev/null
++++ b/apps/desktop/src/chat/composer/AttachMenu.tsx
+@@ -0,0 +1,250 @@
++// The composer's `+` menu (W52-h): files, a folder reference, images, a URL reference and prompt
++// snippets. Files and images become attachments (the existing local / remote path rules apply);
++// a folder or URL is inserted as an `@folder:` / `@url:` reference the backend expands. Paste
++// image is shown disabled: the renderer cannot read clipboard images through our bridge (Ctrl+V
++// in the editor still attaches them).
++
++import {
++  ClipboardPaste,
++  File,
++  FolderOpen,
++  Image,
++  Link,
++  MessageSquareText,
++  Plus,
++  ScanSearch,
++  Wand,
++} from "lucide-react";
++import { type FormEvent, useCallback, useRef, useState } from "react";
++import { type MessageKey, useT } from "../../i18n/index.tsx";
++import {
++  Button,
++  MenuLabel,
++  MenuPanel,
++  MenuRow,
++  MenuSeparator,
++  SmallDialog,
++} from "../../ui/components.tsx";
++
++export type PickMode = "files" | "folder" | "images";
++
++/** The `@folder:` reference for a picked folder: relative to the chat's folder when inside it. */
++export function folderReference(path: string, cwd: string | null): string {
++  let shown = path;
++  if (cwd !== null && cwd !== "") {
++    const base = cwd.endsWith("/") ? cwd : `${cwd}/`;
++    if (path === cwd) shown = ".";
++    else if (path.startsWith(base)) shown = path.slice(base.length);
++  }
++  return `@folder:${shown.includes(" ") ? `"${shown}"` : shown}`;
++}
++
++/** A URL a reference may carry (http or https only), or null. */
++export function cleanUrl(text: string): string | null {
++  try {
++    const url = new URL(text.trim());
++    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
++  } catch {
++    return null;
++  }
++}
++
++export const SNIPPETS: ReadonlyArray<{
++  id: string;
++  icon: typeof File;
++  label: MessageKey;
++  hint: MessageKey;
++  text: MessageKey;
++}> = [
++  {
++    id: "review",
++    icon: ScanSearch,
++    label: "attach.snippet.review",
++    hint: "attach.snippet.reviewHint",
++    text: "attach.snippet.reviewText",
++  },
++  {
++    id: "plan",
++    icon: Wand,
++    label: "attach.snippet.plan",
++    hint: "attach.snippet.planHint",
++    text: "attach.snippet.planText",
++  },
++  {
++    id: "explain",
++    icon: MessageSquareText,
++    label: "attach.snippet.explain",
++    hint: "attach.snippet.explainHint",
++    text: "attach.snippet.explainText",
++  },
++];
++
++export function AttachMenu(props: {
++  /** Ask main for paths; resolves with the chosen ones (empty when cancelled). */
++  pick: ((mode: PickMode) => Promise<string[]>) | null;
++  /** Picked files / images become attachments. */
++  onFiles: (paths: string[]) => void;
++  /** Text inserted at the caret (references, snippets). */
++  onInsert: (text: string) => void;
++  cwd: string | null;
++}) {
++  const t = useT();
++  const [open, setOpen] = useState(false);
++  const [dialog, setDialog] = useState<"url" | "snippets" | null>(null);
++  const [url, setUrl] = useState("");
++  const [urlError, setUrlError] = useState(false);
++  const trigger = useRef<HTMLButtonElement>(null);
++  const close = useCallback(() => setOpen(false), []);
++  const choose = (run: () => void) => {
++    setOpen(false);
++    run();
++  };
++  const pickInto = async (mode: PickMode) => {
++    if (props.pick === null) return;
++    const paths = await props.pick(mode);
++    if (paths.length === 0) return;
++    if (mode === "folder") {
++      props.onInsert(paths.map((path) => folderReference(path, props.cwd)).join(" "));
++    } else props.onFiles(paths);
++  };
++  const submitUrl = (event: FormEvent) => {
++    event.preventDefault();
++    const clean = cleanUrl(url);
++    if (clean === null) {
++      setUrlError(true);
++      return;
++    }
++    props.onInsert(`@url:${clean}`);
++    setDialog(null);
++    setUrl("");
++    setUrlError(false);
++  };
++  const noPicker = props.pick === null;
++  return (
++    <div className="desk-menu-root composer-attach-root">
++      <button
++        ref={trigger}
++        type="button"
++        className="desk-icon-btn composer-attach"
++        aria-label={t("composer.attach")}
++        aria-haspopup="menu"
++        aria-expanded={open}
++        onClick={() => setOpen(!open)}
++      >
++        <Plus aria-hidden="true" />
++      </button>
++      {open && (
++        <MenuPanel
++          label={t("attach.menu")}
++          onClose={close}
++          keepOpenFor={trigger}
++          className="composer-attach-menu"
++        >
++          <MenuLabel>{t("attach.menu")}</MenuLabel>
++          <MenuRow
++            icon={<File aria-hidden="true" />}
++            label={t("attach.files")}
++            disabled={noPicker}
++            onSelect={() => choose(() => void pickInto("files"))}
++          />
++          <MenuRow
++            icon={<FolderOpen aria-hidden="true" />}
++            label={t("attach.folder")}
++            disabled={noPicker}
++            onSelect={() => choose(() => void pickInto("folder"))}
++          />
++          <MenuRow
++            icon={<Image aria-hidden="true" />}
++            label={t("attach.images")}
++            disabled={noPicker}
++            onSelect={() => choose(() => void pickInto("images"))}
++          />
++          <MenuRow
++            icon={<ClipboardPaste aria-hidden="true" />}
++            label={t("attach.paste")}
++            disabled
++            onSelect={() => undefined}
++          />
++          <MenuRow
++            icon={<Link aria-hidden="true" />}
++            label={t("attach.url")}
++            onSelect={() => choose(() => setDialog("url"))}
++          />
++          <MenuSeparator />
++          <MenuRow
++            icon={<MessageSquareText aria-hidden="true" />}
++            label={t("attach.snippets")}
++            onSelect={() => choose(() => setDialog("snippets"))}
++          />
++          <MenuSeparator />
++          <p className="composer-attach-tip">
++            {t("attach.tipBefore")} <kbd className="desk-kbd">@</kbd> {t("attach.tipAfter")}
++          </p>
++        </MenuPanel>
++      )}
++      {dialog === "url" && (
++        <SmallDialog
++          title={t("attach.urlTitle")}
++          description={t("attach.urlHint")}
++          onClose={() => setDialog(null)}
++        >
++          <form className="composer-url-form" onSubmit={submitUrl}>
++            <input
++              className="desk-input"
++              type="url"
++              aria-label={t("attach.urlField")}
++              placeholder="https://"
++              value={url}
++              aria-invalid={urlError}
++              onChange={(event) => {
++                setUrl(event.target.value);
++                setUrlError(false);
++              }}
++            />
++            {urlError && (
++              <p role="alert" className="composer-url-error">
++                {t("attach.urlInvalid")}
++              </p>
++            )}
++            <div className="desk-dialog-actions">
++              <Button variant="ghost" onClick={() => setDialog(null)}>
++                {t("attach.cancel")}
++              </Button>
++              <Button variant="primary" type="submit">
++                {t("attach.urlAdd")}
++              </Button>
++            </div>
++          </form>
++        </SmallDialog>
++      )}
++      {dialog === "snippets" && (
++        <SmallDialog
++          title={t("attach.snippetsTitle")}
++          description={t("attach.snippetsHint")}
++          onClose={() => setDialog(null)}
++        >
++          <ul className="composer-snippets">
++            {SNIPPETS.map((snippet) => (
++              <li key={snippet.id}>
++                <button
++                  type="button"
++                  className="composer-snippet"
++                  onClick={() => {
++                    props.onInsert(t(snippet.text));
++                    setDialog(null);
++                  }}
++                >
++                  <snippet.icon aria-hidden="true" size={16} />
++                  <span>
++                    <strong>{t(snippet.label)}</strong>
++                    <small>{t(snippet.hint)}</small>
++                  </span>
++                </button>
++              </li>
++            ))}
++          </ul>
++        </SmallDialog>
++      )}
++    </div>
++  );
++}
+diff --git a/apps/desktop/src/chat/composer/CompletionDrawer.tsx b/apps/desktop/src/chat/composer/CompletionDrawer.tsx
+new file mode 100644
+index 0000000..6d383df
+--- /dev/null
++++ b/apps/desktop/src/chat/composer/CompletionDrawer.tsx
+@@ -0,0 +1,198 @@
++// The composer's completion drawer (W52-h): slash commands grouped by catalogue category, `@`
++// references with a glyph per kind, an empty and a "looking" state. Keys stay in the composer
++// (the textarea keeps focus; a mouse-down here never blurs it).
++
++import type { CompletionItem } from "@indus/protocol";
++import {
++  Columns2,
++  File,
++  Folder,
++  GitBranch,
++  Globe,
++  LoaderCircle,
++  Puzzle,
++  SquareTerminal,
++} from "lucide-react";
++import { Fragment, type ReactNode, useEffect, useRef } from "react";
++import { type MessageKey, useT } from "../../i18n/index.tsx";
++import { useHoverTip } from "../../ui/components.tsx";
++import { CATEGORY_ORDER, categoryOf } from "../slash.ts";
++import type { CompletionState } from "./completion.ts";
++
++export interface DrawerGroup {
++  /** Catalogue category, "other", a mention scope, or null for an unlabelled list. */
++  readonly key: string | null;
++  readonly items: ReadonlyArray<{ item: CompletionItem; index: number }>;
++}
++
++/**
++ * The rows in display groups. Slash items group by category in catalogue order (unknown names —
++ * plugins, skills — last as "other"). The source already sorted the flat list the same way
++ * (`orderByCategory`), so the arrow keys walk the rows in the order they are shown.
++ */
++export function groupItems(state: CompletionState): DrawerGroup[] {
++  const trigger = state.trigger;
++  if (trigger === null) return [];
++  const indexed = state.items.map((item, index) => ({ item, index }));
++  if (trigger.kind === "mention") {
++    const word = trigger.word.toLowerCase();
++    const scope = word.startsWith("@file:")
++      ? "file"
++      : word.startsWith("@folder:")
++        ? "folder"
++        : null;
++    return [{ key: scope, items: indexed }];
++  }
++  const groups = new Map<string, Array<{ item: CompletionItem; index: number }>>();
++  for (const entry of indexed) {
++    const key = categoryOf(entry.item.text) ?? "other";
++    const list = groups.get(key) ?? [];
++    list.push(entry);
++    groups.set(key, list);
++  }
++  const rank = (key: string) => {
++    const at = CATEGORY_ORDER.indexOf(key);
++    return at === -1 ? CATEGORY_ORDER.length : at;
++  };
++  return [...groups.entries()]
++    .sort((a, b) => rank(a[0]) - rank(b[0]))
++    .map(([key, items]) => ({ key, items }));
++}
++
++const GROUP_KEYS: Readonly<Record<string, MessageKey>> = {
++  session: "drawer.group.session",
++  config: "drawer.group.config",
++  tools: "drawer.group.tools",
++  info: "drawer.group.info",
++  exit: "drawer.group.exit",
++  other: "drawer.group.other",
++  file: "drawer.scope.file",
++  folder: "drawer.scope.folder",
++};
++
++/** The glyph and its tone for one row. */
++export function iconFor(
++  kind: "slash" | "mention",
++  item: CompletionItem,
++): {
++  icon: ReactNode;
++  tone: "accent" | "muted";
++} {
++  const size = { "aria-hidden": true as const };
++  if (kind === "slash") {
++    return categoryOf(item.text) === null
++      ? { icon: <Puzzle {...size} />, tone: "muted" }
++      : { icon: <SquareTerminal {...size} />, tone: "accent" };
++  }
++  const text = item.text.replace(/^@/, "").toLowerCase();
++  if (text.startsWith("diff")) return { icon: <Columns2 {...size} />, tone: "accent" };
++  if (text.startsWith("git:")) return { icon: <GitBranch {...size} />, tone: "accent" };
++  if (text.startsWith("url:")) return { icon: <Globe {...size} />, tone: "accent" };
++  if (text.startsWith("folder:") || text.endsWith("/"))
++    return { icon: <Folder {...size} />, tone: "muted" };
++  return { icon: <File {...size} />, tone: "muted" };
++}
++
++function Row(props: {
++  item: CompletionItem;
++  index: number;
++  kind: "slash" | "mention";
++  listId: string;
++  selected: boolean;
++  onPick: (item: CompletionItem) => void;
++}) {
++  const { icon, tone } = iconFor(props.kind, props.item);
++  const ref = useRef<HTMLDivElement>(null);
++  const hover = useHoverTip(props.item.meta ? props.item.meta : null);
++  useEffect(() => {
++    // keep the highlighted row in view inside the drawer only (never scroll the transcript)
++    const row = ref.current;
++    const box = row?.parentElement?.closest(".desk-popover");
++    if (!props.selected || row === null || !(box instanceof HTMLElement)) return;
++    const top = row.offsetTop;
++    if (top < box.scrollTop) box.scrollTop = top - 4;
++    else if (top + row.offsetHeight > box.scrollTop + box.clientHeight)
++      box.scrollTop = top + row.offsetHeight - box.clientHeight + 4;
++  }, [props.selected]);
++  return (
++    <div
++      ref={ref}
++      id={`${props.listId}-${props.index}`}
++      role="option"
++      tabIndex={-1}
++      aria-selected={props.selected}
++      className="desk-popover-row"
++      onMouseDown={(event) => {
++        event.preventDefault();
++        props.onPick(props.item);
++      }}
++      {...hover.bind}
++    >
++      <span className="desk-popover-icon" data-tone={tone}>
++        {icon}
++      </span>
++      <span className="desk-popover-name">{props.item.display}</span>
++      {props.item.meta ? <span className="desk-popover-meta">{props.item.meta}</span> : null}
++      {hover.tip}
++    </div>
++  );
++}
++
++export function CompletionDrawer(props: {
++  state: CompletionState;
++  listId: string;
++  onPick: (item: CompletionItem) => void;
++}) {
++  const t = useT();
++  const { state } = props;
++  const trigger = state.trigger;
++  if (trigger === null) return null;
++  const groups = groupItems(state);
++  const empty = state.items.length === 0;
++  return (
++    // biome-ignore lint/a11y/noStaticElementInteractions: keeps the editor's focus on a click
++    <div
++      className="desk-popover"
++      data-kind={trigger.kind}
++      onMouseDown={(event) => event.preventDefault()}
++    >
++      {empty ? (
++        state.loading ? (
++          <p className="desk-popover-empty" role="status">
++            <LoaderCircle aria-hidden="true" size={12} className="spin" /> {t("drawer.loading")}
++          </p>
++        ) : (
++          <p className="desk-popover-empty" role="status">
++            {t("drawer.empty")}
++            <span>
++              {t(trigger.kind === "mention" ? "drawer.emptyMention" : "drawer.emptySlash")}
++            </span>
++          </p>
++        )
++      ) : (
++        <div role="listbox" id={props.listId} aria-label={t("composer.completions")}>
++          {groups.map((group) => (
++            <Fragment key={group.key ?? "all"}>
++              {group.key !== null && GROUP_KEYS[group.key] !== undefined ? (
++                <div className="desk-popover-head" role="presentation">
++                  {t(GROUP_KEYS[group.key] as MessageKey)}
++                </div>
++              ) : null}
++              {group.items.map(({ item, index }) => (
++                <Row
++                  key={`${item.text}\u0000${item.display}`}
++                  item={item}
++                  index={index}
++                  kind={trigger.kind}
++                  listId={props.listId}
++                  selected={index === state.selected}
++                  onPick={props.onPick}
++                />
++              ))}
++            </Fragment>
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/apps/desktop/src/chat/composer/Composer.test.tsx b/apps/desktop/src/chat/composer/Composer.test.tsx
+index 265db84..534101e 100644
+--- a/apps/desktop/src/chat/composer/Composer.test.tsx
++++ b/apps/desktop/src/chat/composer/Composer.test.tsx
+@@ -40,6 +40,14 @@ function mount(connection: FakeConnection, extra: Partial<ComposerProps> = {}) {
+   return { view, box, drafts, props };
+ }
+ 
++/** The + menu's "Files…" row (W52-h: the attach button opens a menu). */
++async function openFiles() {
++  fireEvent.click(screen.getByRole("button", { name: "Attach" }));
++  await act(async () => {
++    fireEvent.click(screen.getByRole("menuitem", { name: "Files…" }));
++  });
++}
++
+ function type(box: HTMLTextAreaElement, value: string) {
+   fireEvent.change(box, { target: { value } });
+ }
+@@ -124,11 +132,12 @@ describe("composer", () => {
+     expect(box.value).toBe("/usage ");
+   });
+ 
+-  it("the highlighted row's note uses the accent's ink, not the muted grey (W47 d)", async () => {
++  it("slash rows are grouped by catalogue category, plugin commands last (W52-h)", async () => {
+     const connection = chatDaemon().on("complete.slash", () => ({
+       items: [
+         { text: "/agents", display: "/agents", meta: "background tasks" },
+-        { text: "/usage", display: "/usage", meta: "token use" },
++        { text: "/deploy", display: "/deploy", meta: "a plugin command" },
++        { text: "/new", display: "/new", meta: "fresh session" },
+       ],
+     }));
+     const { box } = mount(connection);
+@@ -136,12 +145,56 @@ describe("composer", () => {
+       type(box, "/");
+     });
+     const options = await screen.findAllByRole("option");
+-    const note = (option: HTMLElement | undefined) =>
+-      option?.querySelector("span:last-child")?.className.split(/\s+/) ?? [];
++    expect(options.map((o) => o.querySelector(".desk-popover-name")?.textContent)).toEqual([
++      "/new",
++      "/agents",
++      "/deploy",
++    ]);
+     expect(options[0]?.getAttribute("aria-selected")).toBe("true");
+-    expect(note(options[0])).toContain("text-accent-fg");
+-    expect(note(options[0])).not.toContain("text-muted");
+-    expect(note(options[1])).toContain("text-muted");
++    const heads = [...document.querySelectorAll(".desk-popover-head")].map((h) => h.textContent);
++    expect(heads[0]).toBe("Session");
++    expect(heads.at(-1)).toBe("Other");
++  });
++
++  it("@ in a fresh draft searches the draft's folder and shows an empty state (W52-h)", async () => {
++    const connection = chatDaemon().on("complete.path", () => ({ items: [] }));
++    const { box } = mount(connection, { sessionId: null, newSessionCwd: "/work/repo" });
++    await act(async () => {
++      type(box, "look at @src");
++    });
++    expect(connection.called("complete.path")[0]?.params).toMatchObject({
++      word: "@src",
++      cwd: "/work/repo",
++    });
++    expect(screen.getByRole("status").textContent).toContain("No matches");
++    fireEvent.keyDown(box, { key: "Escape" });
++    expect(screen.queryByText("No matches")).toBeNull();
++  });
++
++  it("a lone ? shows the help card; deleting it closes the card (W52-h)", () => {
++    const { box } = mount(chatDaemon());
++    type(box, "?");
++    const help = screen.getByRole("region", { name: "Composer help" });
++    expect(help.textContent).toContain("/resume");
++    expect(help.textContent).toContain("Hotkeys");
++    type(box, "");
++    expect(screen.queryByRole("region", { name: "Composer help" })).toBeNull();
++  });
++
++  it("the + menu inserts a URL reference and lists Paste image disabled (W52-h)", async () => {
++    const { box } = mount(chatDaemon(), { pickFiles: async () => [] });
++    fireEvent.click(screen.getByRole("button", { name: "Attach" }));
++    expect(
++      screen.getByRole("menuitem", { name: "Paste image" }).getAttribute("aria-disabled"),
++    ).toBe("true");
++    fireEvent.click(screen.getByRole("menuitem", { name: "URL…" }));
++    fireEvent.change(screen.getByLabelText("Address"), {
++      target: { value: "https://example.com/a" },
++    });
++    await act(async () => {
++      fireEvent.click(screen.getByRole("button", { name: "Add" }));
++    });
++    expect(box.value).toBe("@url:https://example.com/a ");
+   });
+ 
+   it("a slow answer for an older word never replaces the newer list", async () => {
+@@ -151,7 +204,14 @@ describe("composer", () => {
+       (params) =>
+         new Promise((resolve) => {
+           releases.push(() =>
+-            resolve({ items: [{ text: `${params.word}-match`, display: `${params.word}-match` }] }),
++            resolve({
++              items: [
++                {
++                  text: `${String(params.word).slice(1)}-match`,
++                  display: `${String(params.word).slice(1)}-match`,
++                },
++              ],
++            }),
+           );
+         }),
+     );
+@@ -198,9 +258,7 @@ describe("composer", () => {
+       pickFiles: async () => ["/Users/me/Desktop/shot.png"],
+       attachmentDeps: { uploadBytes, readLocalBytes, guardLocalPath },
+     });
+-    await act(async () => {
+-      fireEvent.click(screen.getByRole("button", { name: "Attach" }));
+-    });
++    await openFiles();
+     // and one pasted file (never has a path)
+     const pasted = new File([new Uint8Array([9, 9])], "notes.txt", { type: "text/plain" });
+     fireEvent.paste(box, { clipboardData: { files: [pasted] } });
+@@ -229,9 +287,7 @@ describe("composer", () => {
+       pickFiles: async () => ["/home/me/shot.png"],
+       attachmentDeps: { uploadBytes, guardLocalPath, readLocalBytes: async () => new Uint8Array() },
+     });
+-    await act(async () => {
+-      fireEvent.click(screen.getByRole("button", { name: "Attach" }));
+-    });
++    await openFiles();
+     type(box, "this one");
+     await act(async () => {
+       fireEvent.keyDown(box, { key: "Enter" });
+@@ -251,9 +307,7 @@ describe("composer", () => {
+         },
+       },
+     });
+-    await act(async () => {
+-      fireEvent.click(screen.getByRole("button", { name: "Attach" }));
+-    });
++    await openFiles();
+     type(box, "secret stuff");
+     await act(async () => {
+       fireEvent.keyDown(box, { key: "Enter" });
+diff --git a/apps/desktop/src/chat/composer/Composer.tsx b/apps/desktop/src/chat/composer/Composer.tsx
+index b5a56cd..f11af34 100644
+--- a/apps/desktop/src/chat/composer/Composer.tsx
++++ b/apps/desktop/src/chat/composer/Composer.tsx
+@@ -10,7 +10,7 @@
+ // - a vanished session hands its unsent text to the fresh draft once, with an undoable strip.
+ 
+ import type { TodoItem } from "@indus/protocol";
+-import { ArrowUp, Plus, Square } from "lucide-react";
++import { ArrowUp, Square } from "lucide-react";
+ import {
+   type ChangeEvent,
+   type ClipboardEvent,
+@@ -24,6 +24,8 @@ import {
+   useState,
+   useSyncExternalStore,
+ } from "react";
++import { desktopBridge, launchFacts } from "../../app/bridge.ts";
++import { useSessionFacts } from "../../app/StatusBar.tsx";
+ import type { ChatConnection } from "../../gateway/connectionStore.ts";
+ import { useGatewayConnection } from "../../gateway/react.tsx";
+ import { useT } from "../../i18n/index.tsx";
+@@ -41,6 +43,7 @@ import { errorMessage, isUncertain } from "../rpcErrors.ts";
+ import { helpLines, isSlashLine, type LocalCommandName, runSlash } from "../slash.ts";
+ import type { VoicePort } from "../voice/dictation.ts";
+ import { VoiceButtons } from "../voice/VoiceButtons.tsx";
++import { AttachMenu, type PickMode } from "./AttachMenu.tsx";
+ import {
+   type Attachment,
+   AttachmentError,
+@@ -55,6 +58,8 @@ import {
+   stageAttachment,
+   withFileReferences,
+ } from "./attachments.ts";
++import { CompletionDrawer } from "./CompletionDrawer.tsx";
++import { ComposerHelp } from "./ComposerHelp.tsx";
+ import {
+   applyCompletion,
+   CompletionSource,
+@@ -62,6 +67,7 @@ import {
+   EMPTY_COMPLETION,
+   PromptHistory,
+ } from "./completion.ts";
++import "./composerMenus.css";
+ import {
+   adoptGoneDraft,
+   type DraftStore,
+@@ -102,10 +108,12 @@ export interface ComposerProps {
+   onReasoningDisplay?(show: boolean): void;
+   /** A system line in the conversation (slash output, notices). */
+   onSystemLine?(text: string): void;
+-  /** The native file picker; resolves with chosen paths. */
+-  pickFiles?(): Promise<string[]>;
++  /** The native picker (files, a folder or images); resolves with chosen paths. */
++  pickFiles?(mode?: PickMode): Promise<string[]>;
+   attachmentDeps?: Partial<Pick<StageDeps, "guardLocalPath" | "readLocalBytes" | "uploadBytes">>;
+   completionDebounceMs?: number;
++  /** "Edit models…" in the model menu: open the model settings. */
++  onEditModels?(): void;
+   /** The daemon's voice methods (P24-35); the mic and talk buttons show only with one. */
+   voice?: VoicePort | null;
+ }
+@@ -219,12 +227,13 @@ export function Composer(props: ComposerProps) {
+       new CompletionSource({
+         request,
+         sessionId: props.sessionId,
++        cwd: props.cwd ?? props.newSessionCwd ?? null,
+         onChange: setCompletion,
+         ...(props.completionDebounceMs === undefined
+           ? {}
+           : { debounceMs: props.completionDebounceMs }),
+       }),
+-    [request, props.sessionId, props.completionDebounceMs],
++    [request, props.sessionId, props.cwd, props.newSessionCwd, props.completionDebounceMs],
+   );
+   useEffect(() => () => source.dispose(), [source]);
+ 
+@@ -303,10 +312,20 @@ export function Composer(props: ComposerProps) {
+     addFiles(event.clipboardData.files);
+   };
+ 
+-  const pick = async () => {
+-    if (props.pickFiles === undefined) return;
+-    const paths = await props.pickFiles();
++  const picker = props.pickFiles ?? bridgePicker();
++  const attachPaths = (paths: string[]) =>
+     setAttachments((now) => [...now, ...paths.map((path) => attachmentFromPath(path))]);
++  /** Insert `text` at the caret as its own word. */
++  const insertAtCaret = (insert: string) => {
++    const box = textarea.current;
++    const at = box?.selectionStart ?? text.length;
++    const before = text.slice(0, at);
++    const after = text.slice(at);
++    const lead = before === "" || /\s$/.test(before) ? "" : " ";
++    const tail = after.startsWith(" ") ? "" : " ";
++    const next = `${before}${lead}${insert}${tail}${after}`;
++    write(next, before.length + lead.length + insert.length + tail.length);
++    box?.focus();
+   };
+ 
+   // -- sending ------------------------------------------------------------------------------------
+@@ -453,6 +472,16 @@ export function Composer(props: ComposerProps) {
+ 
+   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+     if (event.nativeEvent.isComposing || composing.current) return;
++    if (completion.trigger !== null && completion.items.length === 0 && event.key === "Escape") {
++      event.preventDefault();
++      source.close();
++      return;
++    }
++    if (showHelp && event.key === "Escape") {
++      event.preventDefault();
++      write("");
++      return;
++    }
+     if (completion.trigger !== null && completion.items.length > 0) {
+       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+         event.preventDefault();
+@@ -505,6 +534,17 @@ export function Composer(props: ComposerProps) {
+   };
+ 
+   const restored = drafts.restored;
++  const showHelp = text === "?" && attachments.length === 0 && completion.trigger === null;
++  const facts = useSessionFacts(connection, props.sessionId);
++  const info = facts.info;
++  const current =
++    info !== null && typeof info.model === "string" && info.model !== ""
++      ? {
++          provider: typeof info.provider === "string" ? info.provider : "",
++          model: info.model,
++          effort: typeof info.reasoning_effort === "string" ? info.reasoning_effort : null,
++        }
++      : null;
+   const hasStack =
+     todos.length > 0 ||
+     busy.queue.length + busy.held.length > 0 ||
+@@ -615,58 +655,26 @@ export function Composer(props: ComposerProps) {
+       ) : null}
+ 
+       <div className="composer-main">
+-        {completion.trigger !== null && completion.items.length > 0 ? (
+-          <div
+-            role="listbox"
+-            id={listId}
+-            aria-label={t("composer.completions")}
+-            className="absolute bottom-full left-3 z-20 mb-1 max-h-60 w-96 overflow-auto rounded border border-line bg-raised shadow p-1"
+-          >
+-            {completion.items.map((item, index) => (
+-              <div
+-                key={`${item.text}\u0000${item.display}`}
+-                id={`${listId}-${index}`}
+-                role="option"
+-                tabIndex={-1}
+-                aria-selected={index === completion.selected}
+-                className={`flex gap-2 rounded px-2 py-0.5 text-sm ${
+-                  index === completion.selected ? "bg-accent text-accent-fg" : ""
+-                }`}
+-                onMouseDown={(event) => {
+-                  event.preventDefault();
+-                  if (completion.trigger === null) return;
+-                  const applied = applyCompletion(text, completion.trigger, item);
+-                  source.close();
+-                  write(applied.text, applied.caret);
+-                }}
+-              >
+-                <span className="font-mono">{item.display}</span>
+-                {item.meta ? (
+-                  // the highlighted row sits on the accent fill: its note takes the accent's ink
+-                  // (muted grey on the accent is unreadable)
+-                  <span
+-                    className={`truncate ${
+-                      index === completion.selected ? "text-accent-fg" : "text-muted"
+-                    }`}
+-                  >
+-                    {item.meta}
+-                  </span>
+-                ) : null}
+-              </div>
+-            ))}
+-          </div>
++        {completion.trigger !== null ? (
++          <CompletionDrawer
++            state={completion}
++            listId={listId}
++            onPick={(item) => {
++              if (completion.trigger === null) return;
++              const applied = applyCompletion(text, completion.trigger, item);
++              source.close();
++              write(applied.text, applied.caret);
++            }}
++          />
+         ) : null}
++        {showHelp ? <ComposerHelp mac={isMacPlatform()} /> : null}
+         <div className="composer-box">
+-          {props.pickFiles !== undefined ? (
+-            <button
+-              type="button"
+-              className="desk-icon-btn composer-attach"
+-              aria-label={t("composer.attach")}
+-              onClick={() => void pick()}
+-            >
+-              <Plus aria-hidden="true" />
+-            </button>
+-          ) : null}
++          <AttachMenu
++            pick={picker}
++            onFiles={attachPaths}
++            onInsert={insertAtCaret}
++            cwd={props.cwd ?? props.newSessionCwd ?? null}
++          />
+           <textarea
+             ref={textarea}
+             aria-label={t("composer.label")}
+@@ -695,6 +703,9 @@ export function Composer(props: ComposerProps) {
+               profile={props.profile ?? null}
+               connection={connection}
+               prefs={prefs}
++              current={current}
++              hasHistory={props.sessionId !== null}
++              {...(props.onEditModels === undefined ? {} : { onEditModels: props.onEditModels })}
+               open={pickerOpen}
+               onOpenChange={setPickerOpen}
+             />
+@@ -762,6 +773,23 @@ export function Composer(props: ComposerProps) {
+   );
+ }
+ 
++/** The native picker through main's bridge, or null in a plain browser preview. */
++function bridgePicker(): ((mode?: PickMode) => Promise<string[]>) | null {
++  const fs = desktopBridge()?.fs;
++  if (fs === undefined) return null;
++  return async (mode = "files") => {
++    const answer = await fs.selectPaths(
++      mode === "folder" ? { mode: "open-dir" } : { mode: "open-file", multiple: true },
++    );
++    return answer.canceled ? [] : answer.paths;
++  };
++}
++
++function isMacPlatform(): boolean {
++  const platform = launchFacts().platform;
++  return platform === "mac" || platform === "darwin";
++}
++
+ function isGoneName(name: string | null): boolean {
+   return name === "SESSION_NOT_FOUND" || name === "SESSION_REFUSED";
+ }
+diff --git a/apps/desktop/src/chat/composer/ComposerHelp.tsx b/apps/desktop/src/chat/composer/ComposerHelp.tsx
+new file mode 100644
+index 0000000..7f939a7
+--- /dev/null
++++ b/apps/desktop/src/chat/composer/ComposerHelp.tsx
+@@ -0,0 +1,64 @@
++// The `?` help card (W52-h): shown while the composer holds exactly `?`. Common commands from the
++// catalogue and the keys the composer really has (rebindable ones read from the key bindings).
++
++import { type MessageKey, useT } from "../../i18n/index.tsx";
++import { effectiveBindings } from "../../settings/keybindings.ts";
++import { keyCaps } from "../../ui/components.tsx";
++import { shortDescription } from "../slash.ts";
++
++export const HELP_COMMANDS = ["help", "new", "resume", "model", "reasoning", "stop"] as const;
++
++function Caps(props: { keys: readonly string[] }) {
++  return (
++    <span className="composer-help-keys">
++      {props.keys.map((key, index) => (
++        // biome-ignore lint/suspicious/noArrayIndexKey: caps can repeat (↑ ↓ are distinct anyway)
++        <kbd key={`${key}-${index}`} className="desk-kbd">
++          {key}
++        </kbd>
++      ))}
++    </span>
++  );
++}
++
++export function ComposerHelp(props: {
++  mac: boolean;
++  overrides?: Readonly<Record<string, string>>;
++}) {
++  const t = useT();
++  const focus = effectiveBindings(props.overrides ?? {})["composer.focus"] ?? "";
++  const hotkeys: ReadonlyArray<{ keys: string[]; label: MessageKey }> = [
++    { keys: ["@"], label: "help.mention" },
++    { keys: ["/"], label: "help.slash" },
++    { keys: ["?"], label: "help.self" },
++    { keys: ["Enter", props.mac ? "⇧" : "Shift", "Enter"], label: "help.send" },
++    { keys: ["↑", "↓"], label: "help.history" },
++    { keys: ["Esc"], label: "help.escape" },
++    ...(focus === "" ? [] : [{ keys: keyCaps(focus, props.mac), label: "help.focus" as const }]),
++  ];
++  return (
++    <section className="desk-popover composer-help" aria-label={t("help.label")}>
++      <div className="desk-popover-head composer-help-head">{t("help.commands")}</div>
++      <ul className="composer-help-list">
++        {HELP_COMMANDS.map((name) => (
++          <li key={name} className="composer-help-row">
++            <code className="composer-help-cmd">/{name}</code>
++            <span className="composer-help-text">{shortDescription(name)}</span>
++          </li>
++        ))}
++      </ul>
++      <div className="desk-popover-head composer-help-head">{t("help.hotkeys")}</div>
++      <ul className="composer-help-list">
++        {hotkeys.map((row) => (
++          <li key={row.label} className="composer-help-row">
++            <Caps keys={row.keys} />
++            <span className="composer-help-text">{t(row.label)}</span>
++          </li>
++        ))}
++      </ul>
++      <p className="composer-help-foot">
++        <code className="composer-help-cmd">/help</code> {t("help.footer")}
++      </p>
++    </section>
++  );
++}
+diff --git a/apps/desktop/src/chat/composer/completion.ts b/apps/desktop/src/chat/composer/completion.ts
+index 0e0993f..9edc1a8 100644
+--- a/apps/desktop/src/chat/composer/completion.ts
++++ b/apps/desktop/src/chat/composer/completion.ts
+@@ -6,7 +6,7 @@
+ 
+ import type { CompletionItem, MethodName, MethodTypes } from "@indus/protocol";
+ import type { RequestOptions } from "../../gateway/connectionStore.ts";
+-import { completeSlash } from "../slash.ts";
++import { completeSlash, dropListedAliases, orderByCategory } from "../slash.ts";
+ 
+ export type TriggerKind = "slash" | "mention";
+ 
+@@ -59,16 +59,23 @@ export interface CompletionState {
+   readonly trigger: Trigger | null;
+   readonly items: readonly CompletionItem[];
+   readonly selected: number;
++  /** An answer for the current trigger is still on its way. */
++  readonly loading?: boolean;
+ }
+ 
+ export const EMPTY_COMPLETION: CompletionState = { trigger: null, items: [], selected: 0 };
+ 
++/** How long a question may run before the drawer says it is looking. */
++export const LOADING_DELAY_MS = 150;
++
+ /** Debounce for asking the daemon while the person types. */
+ export const COMPLETION_DEBOUNCE_MS = 60;
+ 
+ export interface CompletionSourceOptions {
+   request: Request | null;
+   sessionId: string | null;
++  /** The folder paths are completed in (the draft's folder before its session exists). */
++  cwd?: string | null;
+   onChange: (state: CompletionState) => void;
+   debounceMs?: number;
+ }
+@@ -122,11 +129,16 @@ export class CompletionSource {
+   private async ask(trigger: Trigger, mine: number): Promise<void> {
+     const controller = new AbortController();
+     this.controller = controller;
++    const slow = setTimeout(() => {
++      if (mine === this.generation) this.publish({ ...this.state, trigger, loading: true });
++    }, LOADING_DELAY_MS);
+     let items: CompletionItem[];
+     try {
+       items = await this.fetch(trigger, controller.signal);
+     } catch {
+       items = [];
++    } finally {
++      clearTimeout(slow);
+     }
+     if (mine !== this.generation) return;
+     this.publish({ trigger, items, selected: 0 });
+@@ -134,11 +146,20 @@ export class CompletionSource {
+ 
+   private async fetch(trigger: Trigger, signal: AbortSignal): Promise<CompletionItem[]> {
+     const { request, sessionId } = this.options;
+-    if (trigger.kind === "slash") return completeSlash(trigger.word, request, sessionId, signal);
++    if (trigger.kind === "slash") {
++      return orderByCategory(
++        dropListedAliases(await completeSlash(trigger.word, request, sessionId, signal)),
++      );
++    }
+     if (request === null) return [];
++    // W52-h: a fresh draft has no session yet; its folder decides where paths are found (the
++    // daemon otherwise searched its own folder and `@src` found nothing).
++    const cwd = this.options.cwd ?? null;
+     const answer = await request(
+       "complete.path",
+-      { word: trigger.word.slice(1), session_id: sessionId },
++      // the whole word, `@` included: the daemon answers a bare `@` with the reference forms and
++      // treats `@src` as a reference (without the `@` it listed a plain path and found nothing)
++      { word: trigger.word, session_id: sessionId, ...(cwd === null ? {} : { cwd }) },
+       { timeoutMs: 10_000, signal },
+     );
+     return answer.items;
+diff --git a/apps/desktop/src/chat/composer/composerMenus.css b/apps/desktop/src/chat/composer/composerMenus.css
+new file mode 100644
+index 0000000..d65cc08
+--- /dev/null
++++ b/apps/desktop/src/chat/composer/composerMenus.css
+@@ -0,0 +1,332 @@
++/* The composer's floating surfaces (W52-h): help card, attach menu and dialogs, model and effort
++   menus. The drawer, menu and dialog skins come from ui/ui.css; this file only places them. */
++
++.composer-help {
++  max-height: min(420px, calc(100vh - 128px));
++  overflow: auto;
++}
++
++.composer-help-head {
++  color: var(--desk-fg-4);
++  font-weight: 500;
++}
++
++.composer-help-list {
++  margin: 0;
++  padding: 0 0 4px;
++  list-style: none;
++}
++
++.composer-help-row {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  min-height: 26px;
++  padding: 0 10px;
++  font-size: var(--desk-text-small);
++}
++
++.composer-help-cmd {
++  color: var(--desk-fg-2);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: var(--desk-text-small);
++  font-weight: 500;
++}
++
++.composer-help-text {
++  overflow: hidden;
++  color: var(--desk-fg-3);
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.composer-help-keys {
++  display: inline-flex;
++  gap: 4px;
++}
++
++.composer-help-keys .desk-kbd {
++  height: 17px;
++  min-width: 16px;
++  border-color: var(--desk-stroke-3);
++  color: var(--desk-fg-2);
++}
++
++.composer-help-foot {
++  margin: 0;
++  padding: 6px 10px 4px;
++  border-top: 1px solid var(--desk-stroke-1);
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++}
++
++/* -- attach -------------------------------------------------------------------------------- */
++
++.composer-attach-root {
++  align-self: center;
++}
++
++.composer-attach-menu {
++  bottom: calc(100% + 10px);
++  left: -6px;
++  width: 240px;
++}
++
++.composer-attach-tip {
++  margin: 0;
++  padding: 4px 10px 2px;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++}
++
++.composer-attach-tip .desk-kbd {
++  height: 15px;
++  min-width: 14px;
++  color: var(--desk-fg-2);
++}
++
++.composer-url-form {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++}
++
++.composer-url-error {
++  margin: 0;
++  color: var(--desk-danger);
++  font-size: var(--desk-text-small);
++}
++
++.composer-snippets {
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.composer-snippet {
++  display: flex;
++  align-items: flex-start;
++  gap: 10px;
++  width: 100%;
++  padding: 8px 10px;
++  border: 1px solid var(--desk-stroke-1);
++  border-radius: var(--desk-radius-card);
++  background: transparent;
++  color: var(--desk-fg-1);
++  font: inherit;
++  text-align: left;
++  cursor: pointer;
++}
++
++.composer-snippet:hover,
++.composer-snippet:focus-visible {
++  outline: none;
++  background: var(--desk-row-hover);
++}
++
++.composer-snippet > svg {
++  margin-top: 2px;
++  color: var(--desk-fg-3);
++}
++
++.composer-snippet strong {
++  display: block;
++  font-size: 14px;
++  font-weight: 600;
++}
++
++.composer-snippet small {
++  display: block;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-small);
++}
++
++/* -- model and effort menus --------------------------------------------------------------- */
++
++.model-menu,
++.effort-menu {
++  bottom: calc(100% + 9px);
++  right: 0;
++}
++
++.model-menu {
++  width: 288px;
++  max-height: min(420px, calc(100vh - 160px));
++  overflow: auto;
++}
++
++.effort-menu {
++  width: 208px;
++}
++
++.model-menu-search {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  height: 37px;
++  margin: -4px -4px 0;
++  padding: 0 10px;
++  border-bottom: 1px solid var(--desk-stroke-2);
++}
++
++.model-menu-search input {
++  flex: 1;
++  min-width: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-1);
++  font: inherit;
++  font-size: var(--desk-text-small);
++}
++
++.model-menu-search input::placeholder {
++  color: var(--desk-fg-3);
++}
++
++.model-menu-search input:focus-visible {
++  outline: none;
++}
++
++.model-menu-list {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.model-row {
++  display: flex;
++  align-items: center;
++  border-radius: 2px;
++}
++
++.model-row:hover,
++.model-row:focus-within {
++  background: var(--desk-row-hover);
++}
++
++.model-star {
++  display: inline-grid;
++  place-items: center;
++  width: 26px;
++  height: 24px;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-4);
++  cursor: pointer;
++}
++
++.model-star[aria-pressed="true"] {
++  color: var(--desk-accent);
++}
++
++.model-star > svg {
++  width: 13px;
++  height: 13px;
++}
++
++.model-row-name {
++  flex: 1;
++  min-width: 0;
++  overflow: hidden;
++  padding: 4px 4px 4px 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-1);
++  font: inherit;
++  font-size: var(--desk-text-small);
++  line-height: 16px;
++  text-align: left;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++  cursor: pointer;
++}
++
++.model-row-name[aria-current="true"] {
++  font-weight: 600;
++}
++
++.model-row-name:focus-visible {
++  outline: none;
++}
++
++.model-row-note {
++  padding-right: 4px;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++}
++
++.model-row-more {
++  display: inline-grid;
++  place-items: center;
++  width: 24px;
++  height: 24px;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++}
++
++.model-row-more > svg {
++  width: 14px;
++  height: 14px;
++}
++
++.model-row[data-dim="true"] .model-row-name {
++  color: var(--desk-fg-3);
++}
++
++.model-star[aria-pressed="true"] > svg {
++  fill: currentColor;
++}
++
++.model-menu-note {
++  margin: 0;
++  padding: 4px 10px;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-small);
++}
++
++.model-menu .desk-menu-item {
++  color: var(--desk-fg-2);
++}
++
++.model-confirm {
++  margin: 4px 0 0;
++  padding: 8px 10px;
++  border-top: 1px solid var(--desk-stroke-2);
++  font-size: var(--desk-text-small);
++}
++
++.model-confirm p {
++  margin: 0 0 6px;
++}
++
++.model-confirm-actions {
++  display: flex;
++  justify-content: flex-end;
++  gap: 6px;
++}
++
++.model-picker-note {
++  position: absolute;
++  top: calc(100% + 6px);
++  right: 0;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++  white-space: nowrap;
++}
++
++.spin {
++  animation: desk-spin 900ms linear infinite;
++}
++
++@keyframes desk-spin {
++  to {
++    transform: rotate(360deg);
++  }
++}
+diff --git a/apps/desktop/src/chat/composer/strings.en.ts b/apps/desktop/src/chat/composer/strings.en.ts
+new file mode 100644
+index 0000000..5fabe9f
+--- /dev/null
++++ b/apps/desktop/src/chat/composer/strings.en.ts
+@@ -0,0 +1,82 @@
++// English strings of the composer's menus (W52-h): the completion drawer, the `?` help card, the
++// attach menu and its dialogs, the model and effort menus. Spread into `src/i18n/en.ts`.
++
++export const COMPOSER_MENU_STRINGS = {
++  // completion drawer
++  "drawer.group.session": "Session",
++  "drawer.group.config": "Config",
++  "drawer.group.tools": "Tools",
++  "drawer.group.info": "Info",
++  "drawer.group.exit": "Exit",
++  "drawer.group.other": "Other",
++  "drawer.scope.file": "File",
++  "drawer.scope.folder": "Folder",
++  "drawer.empty": "No matches",
++  "drawer.emptyMention": "Try @file: or @folder:",
++  "drawer.emptySlash": "Try /help",
++  "drawer.loading": "Looking…",
++
++  // `?` help card
++  "help.label": "Composer help",
++  "help.commands": "Common commands",
++  "help.hotkeys": "Hotkeys",
++  "help.mention": "files, folders, urls, git",
++  "help.slash": "commands",
++  "help.self": "this help",
++  "help.send": "send · new line",
++  "help.history": "earlier prompts",
++  "help.escape": "close menus",
++  "help.focus": "focus the composer",
++  "help.footer": "shows every command",
++
++  // attach menu
++  "attach.menu": "Attach",
++  "attach.files": "Files…",
++  "attach.folder": "Folder…",
++  "attach.images": "Images…",
++  "attach.paste": "Paste image",
++  "attach.url": "URL…",
++  "attach.snippets": "Prompt snippets…",
++  "attach.tipBefore": "Tip: type",
++  "attach.tipAfter": "to point at files inline.",
++  "attach.urlTitle": "Add a web page",
++  "attach.urlField": "Address",
++  "attach.urlHint": "The page is fetched and read with your message.",
++  "attach.urlInvalid": "Use an http or https address.",
++  "attach.urlAdd": "Add",
++  "attach.cancel": "Cancel",
++  "attach.snippetsTitle": "Prompt snippets",
++  "attach.snippetsHint": "Start from a ready prompt; edit it before sending.",
++  "attach.snippet.review": "Review this change",
++  "attach.snippet.reviewHint": "Look for bugs and risky edits in the working tree",
++  "attach.snippet.reviewText":
++    "Review the uncommitted changes in @diff. List real bugs first, then risky spots, then small cleanups.",
++  "attach.snippet.plan": "Plan the work",
++  "attach.snippet.planHint": "Break a task into steps before touching code",
++  "attach.snippet.planText":
++    "Before changing anything, write a short step-by-step plan for this task and wait for my go: ",
++  "attach.snippet.explain": "Explain this code",
++  "attach.snippet.explainHint": "Walk through a file or folder in plain words",
++  "attach.snippet.explainText": "Explain how this works, in plain words, file by file: @folder:",
++
++  // model menu
++  "model.loading": "Model not known yet",
++  "model.favourites": "Favorites",
++  "model.optionsFor": "Options for {model}",
++  "model.refresh": "Refresh models",
++  "model.addCustom": "Add custom model…",
++  "model.customPlaceholder": "Type a model id",
++  "model.custom": "Custom model id",
++  "model.edit": "Edit models…",
++  "model.signIn": "Sign in",
++  "model.back": "Back to models",
++
++  // effort menu
++  "effort.options": "Options",
++  "effort.thinking": "Thinking",
++  "effort.effort": "Effort",
++  "effort.max": "Max",
++  "effort.maxLong": "Max",
++  "effort.ultra": "Ultra",
++  "effort.ultraLong": "Ultra",
++} as const;
+diff --git a/apps/desktop/src/chat/slash.ts b/apps/desktop/src/chat/slash.ts
+index 213ea15..533e046 100644
+--- a/apps/desktop/src/chat/slash.ts
++++ b/apps/desktop/src/chat/slash.ts
+@@ -125,6 +125,49 @@ export function offlineCompletions(text: string): CompletionItem[] {
+   return items.sort((a, b) => a.text.localeCompare(b.text));
+ }
+ 
++/** Catalogue categories in their first-appearance order (the drawer's group order). */
++export const CATEGORY_ORDER: readonly string[] = [
++  ...new Set(OFFLINE_CATALOG.map((command) => command.category)),
++];
++
++/** The catalogue category of a command name or alias (`/reset` → `session`), or null. */
++export function categoryOf(word: string): string | null {
++  const name = normalizeName(word.split(/\s+/)[0] ?? "");
++  return BY_KEY.get(name)?.category ?? (LOCAL.has(name) ? "session" : null);
++}
++
++const CATALOG_INDEX = new Map(OFFLINE_CATALOG.map((command, index) => [command.name, index]));
++
++/** Aliases whose command is listed too (`/reset` beside `/new`) leave the list: one row each. */
++export function dropListedAliases(items: readonly CompletionItem[]): CompletionItem[] {
++  const names = new Set(items.map((item) => normalizeName(item.text.split(/\s+/)[0] ?? "")));
++  return items.filter((item) => {
++    const name = normalizeName(item.text.split(/\s+/)[0] ?? "");
++    const canonical = canonicalName(name);
++    return canonical === name || !names.has(canonical);
++  });
++}
++
++/** Slash candidates grouped by category (catalogue order), then in catalogue order; unknown last. */
++export function orderByCategory(items: readonly CompletionItem[]): CompletionItem[] {
++  const rank = (item: CompletionItem): [number, number] => {
++    const category = categoryOf(item.text);
++    const group = category === null ? -1 : CATEGORY_ORDER.indexOf(category);
++    const name = canonicalName(item.text.split(/\s+/)[0] ?? "");
++    return [group === -1 ? CATEGORY_ORDER.length : group, CATALOG_INDEX.get(name) ?? 1e6];
++  };
++  return items
++    .map((item, index) => ({ item, index, rank: rank(item) }))
++    .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.index - b.index)
++    .map((entry) => entry.item);
++}
++
++/** The catalogue's description of a command, cut at its first clause (for short lists). */
++export function shortDescription(name: string): string {
++  const text = BY_KEY.get(normalizeName(name))?.description ?? "";
++  return text.split(/[;—]/)[0]?.trim() ?? "";
++}
++
+ /** A command line, not a path such as `/usr/bin/env` and not a lone `/`. */
+ export function isSlashLine(text: string): boolean {
+   const trimmed = text.trim();
+diff --git a/apps/desktop/src/chat/strings.en.ts b/apps/desktop/src/chat/strings.en.ts
+index 0419bab..a80fd58 100644
+--- a/apps/desktop/src/chat/strings.en.ts
++++ b/apps/desktop/src/chat/strings.en.ts
+@@ -92,7 +92,7 @@ export const CHAT_STRINGS = {
+   "effort.mediumLong": "Medium",
+   "effort.high": "High",
+   "effort.highLong": "High",
+-  "effort.xhigh": "Max",
++  "effort.xhigh": "X-High",
+   "effort.xhighLong": "Extra high",
+   "model.search": "Search models",
+   "model.noMatch": "No model matches.",
+diff --git a/apps/desktop/src/contrib/areas.test.tsx b/apps/desktop/src/contrib/areas.test.tsx
+index 67afffb..c47fbda 100644
+--- a/apps/desktop/src/contrib/areas.test.tsx
++++ b/apps/desktop/src/contrib/areas.test.tsx
+@@ -164,6 +164,34 @@ describe("palette-command area", () => {
+     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+     expect(screen.queryByRole("dialog")).toBeNull();
+   });
++
++  it("opens on Ctrl+K with grouped rows, key caps and search-only chats (W52-h)", () => {
++    render(
++      createElement(CommandPalette, {
++        builtIn: [
++          { id: "app.new", title: "New session", keys: "CommandOrControl+N", run: () => {} },
++          { id: "app.proj", title: "Indus", group: "projects", run: () => {} },
++          { id: "app.chat", title: "Lunch", group: "chats", searchOnly: true, run: () => {} },
++        ],
++        registry: new ContributionRegistry(),
++      }),
++    );
++    act(() => {
++      window.dispatchEvent(key({ key: "k", ctrlKey: true }));
++    });
++    const dialog = screen.getByRole("dialog", { name: "Commands" });
++    expect([...dialog.querySelectorAll(".desk-hud-heading")].map((h) => h.textContent)).toEqual([
++      "Go to",
++      "Projects",
++    ]);
++    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
++      "New session",
++      "Indus",
++    ]);
++    expect(dialog.querySelectorAll('.desk-kbd[data-key="Ctrl"]').length).toBe(1);
++    fireEvent.change(screen.getByRole("combobox"), { target: { value: "lun" } });
++    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Lunch"]);
++  });
+ });
+ 
+ describe("theme area", () => {
+diff --git a/apps/desktop/src/contrib/areas.tsx b/apps/desktop/src/contrib/areas.tsx
+index 3cd9880..18e0620 100644
+--- a/apps/desktop/src/contrib/areas.tsx
++++ b/apps/desktop/src/contrib/areas.tsx
+@@ -4,8 +4,9 @@
+ // - Title bar: the area's items in a strip at the top right of the window band (left of the
+ //   window controls; on macOS at the right edge), each inside its own error boundary. Nothing is
+ //   drawn while the area is empty, so the window looks as before until something contributes.
+-// - Palette: Ctrl/⌘+Shift+P opens a command list — the built-in "go to" entries the shell passes
+-//   plus every `palette-command` — filtered as you type; Enter runs the selected one.
++// - Palette: Ctrl/⌘+K (or Ctrl/⌘+Shift+P) opens a command card at the top of the window — the
++//   shell's grouped entries (pages, projects, chats) plus every `palette-command` — filtered as
++//   you type; Enter runs the selected one (W52-h look: groups, icons, key caps).
+ // - Keybinds: a `keybind` runs when its accelerator is pressed. A plugin never takes a key the app
+ //   already uses (the pane shortcuts, the rebindable actions' defaults, the palette's own key);
+ //   such a keybind is ignored. `Mod` means Ctrl, or ⌘ on macOS.
+@@ -17,14 +18,17 @@
+ // else happens.
+ 
+ import { type SemanticName, type SemanticTheme, semanticNames, userTheme } from "@indus/ui";
++import { ChevronRight, Search } from "lucide-react";
+ import {
++  Fragment,
+   type KeyboardEvent as ReactKeyboardEvent,
++  type ReactNode,
+   useEffect,
+   useMemo,
+   useRef,
+   useState,
+ } from "react";
+-import { useT } from "../i18n/index.tsx";
++import { type MessageKey, useT } from "../i18n/index.tsx";
+ import { actionForKey, isMac, type KeyLike } from "../panes/shortcuts.ts";
+ import {
+   acceleratorFromEvent,
+@@ -32,6 +36,7 @@ import {
+   normalizeAccelerator,
+ } from "../settings/keybindings.ts";
+ import { type AppearanceStore, appearance, type ContributedTheme } from "../theme/themeStore.ts";
++import { FloatingHud, KeyHint, keyCaps } from "../ui/components.tsx";
+ import { ContributionArea, useContributionRegistry, useContributions } from "./react.tsx";
+ import { type Contribution, type ContributionRegistry, contributions } from "./registry.ts";
+ 
+@@ -80,8 +85,10 @@ export function ContributedTitleBar(props: {
+ 
+ // -- keybinds ------------------------------------------------------------------------------------
+ 
+-/** The palette's own accelerator. */
+-export const PALETTE_KEYS = "CommandOrControl+Shift+P";
++/** The palette's own accelerator (W52-h: Ctrl/⌘+K, as in the reference). */
++export const PALETTE_KEYS = "CommandOrControl+K";
++/** The older accelerator, kept as an alias. */
++export const PALETTE_ALIAS_KEYS = "CommandOrControl+Shift+P";
+ 
+ const fold = (accelerator: string) =>
+   accelerator.replace(/\b(Command|Control)\b/g, "CommandOrControl");
+@@ -95,7 +102,7 @@ export function keysOf(c: Contribution): string | null {
+ 
+ /** The accelerators the app keeps for itself (the rebindable actions' defaults, the palette). */
+ function reservedKeys(): ReadonlySet<string> {
+-  const out = new Set<string>([PALETTE_KEYS]);
++  const out = new Set<string>([PALETTE_KEYS, PALETTE_ALIAS_KEYS]);
+   for (const value of Object.values(effectiveBindings({}))) {
+     const normal = normalizeAccelerator(value);
+     if (normal !== null) out.add(fold(normal));
+@@ -139,20 +146,50 @@ export function useContributedKeybinds(platform: string, registry?: Contribution
+ 
+ // -- palette -------------------------------------------------------------------------------------
+ 
++export type PaletteGroup = "goto" | "projects" | "chats" | "commands";
++
+ /** One row of the palette: a built-in entry from the shell, or a `palette-command`. */
+ export interface PaletteEntry {
+   readonly id: string;
+   readonly title: string;
+   readonly hint?: string;
++  /** Searched too, never shown. */
++  readonly keywords?: string;
++  readonly icon?: ReactNode;
++  /** Defaults: built-in entries "goto", contributed commands "commands". */
++  readonly group?: PaletteGroup;
++  /** An accelerator (`CommandOrControl+Shift+N`) shown as key caps. */
++  readonly keys?: string;
++  /** The row leads somewhere deeper (a chevron). */
++  readonly deeper?: boolean;
++  /** Listed only while the person is searching (chats). */
++  readonly searchOnly?: boolean;
+   run(): void;
+ }
+ 
++const GROUP_ORDER: readonly PaletteGroup[] = ["goto", "projects", "chats", "commands"];
++const GROUP_TEXT: Readonly<Record<PaletteGroup, MessageKey>> = {
++  goto: "palette.group.goto",
++  projects: "palette.group.projects",
++  chats: "palette.group.chats",
++  commands: "palette.group.commands",
++};
++
++/** Entries in display order: grouped, groups in a fixed order, entries in their given order. */
++export function groupPalette(entries: readonly PaletteEntry[]): PaletteEntry[] {
++  const rank = (entry: PaletteEntry) => GROUP_ORDER.indexOf(entry.group ?? "commands");
++  return entries
++    .map((entry, index) => ({ entry, index }))
++    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
++    .map((item) => item.entry);
++}
++
+ /** The entries whose title (or hint) holds every word of `query`, in the given order. */
+ export function filterPalette(entries: readonly PaletteEntry[], query: string): PaletteEntry[] {
+   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+   if (words.length === 0) return [...entries];
+   return entries.filter((entry) => {
+-    const text = `${entry.title} ${entry.hint ?? ""}`.toLowerCase();
++    const text = `${entry.title} ${entry.hint ?? ""} ${entry.keywords ?? ""}`.toLowerCase();
+     return words.every((word) => text.includes(word));
+   });
+ }
+@@ -162,14 +199,17 @@ function entryOf(c: Contribution): PaletteEntry {
+     id: c.id,
+     title: String(c.title),
+     ...(typeof c.hint === "string" && c.hint.length <= 128 ? { hint: c.hint } : {}),
++    group: "commands",
+     run: () => runContribution(c),
+   };
+ }
+ 
+-/** Ctrl/⌘+Shift+P: the built-in entries, then the registry's commands. */
++/** Ctrl/⌘+K (alias Ctrl/⌘+Shift+P): the built-in entries, then the registry's commands. */
+ export function CommandPalette(props: {
+   builtIn: readonly PaletteEntry[];
+   registry?: ContributionRegistry;
++  /** Key caps in macOS symbols. */
++  mac?: boolean;
+ }) {
+   const t = useT();
+   const commands = useContributions("palette-command", props.registry);
+@@ -181,7 +221,8 @@ export function CommandPalette(props: {
+ 
+   useEffect(() => {
+     const onKeyDown = (event: KeyboardEvent) => {
+-      if (fold(acceleratorFromEvent(event)) !== PALETTE_KEYS) return;
++      const pressed = fold(acceleratorFromEvent(event));
++      if (pressed !== PALETTE_KEYS && pressed !== PALETTE_ALIAS_KEYS) return;
+       event.preventDefault();
+       setOpen((was) => {
+         if (!was) back.current = document.activeElement;
+@@ -198,10 +239,13 @@ export function CommandPalette(props: {
+     if (open) input.current?.focus();
+   }, [open]);
+ 
+-  const entries = useMemo(
+-    () => filterPalette([...props.builtIn, ...commands.map(entryOf)], query),
+-    [props.builtIn, commands, query],
+-  );
++  const entries = useMemo(() => {
++    const all = [...props.builtIn, ...commands.map(entryOf)].map((entry) =>
++      entry.group === undefined ? { ...entry, group: "goto" as const } : entry,
++    );
++    const shown = query.trim() === "" ? all.filter((entry) => !entry.searchOnly) : all;
++    return groupPalette(filterPalette(shown, query));
++  }, [props.builtIn, commands, query]);
+   if (!open) return null;
+ 
+   const close = () => {
+@@ -232,21 +276,9 @@ export function CommandPalette(props: {
+   };
+ 
+   return (
+-    <div className="command-palette-layer">
+-      <button
+-        type="button"
+-        className="command-palette-backdrop"
+-        tabIndex={-1}
+-        aria-label={t("palette.close")}
+-        onClick={close}
+-      />
+-      <div
+-        className="command-palette"
+-        role="dialog"
+-        aria-modal="true"
+-        aria-label={t("palette.label")}
+-        onKeyDown={onKey}
+-      >
++    <FloatingHud label={t("palette.label")} width={544} onClose={close} className="command-palette">
++      <div className="command-palette-search">
++        <Search aria-hidden="true" size={16} />
+         <input
+           ref={input}
+           role="combobox"
+@@ -255,39 +287,64 @@ export function CommandPalette(props: {
+           aria-label={t("palette.search")}
+           placeholder={t("palette.search")}
+           value={query}
++          onKeyDown={onKey}
+           onChange={(event) => {
+             setQuery(event.target.value);
+             setSelected(0);
+           }}
+         />
+-        {entries.length === 0 ? (
+-          <p className="command-palette-empty">{t("palette.empty")}</p>
+-        ) : (
+-          <div id="command-palette-list" role="listbox" aria-label={t("palette.label")}>
+-            {entries.map((entry, index) => (
+-              <div
+-                key={entry.id}
+-                role="option"
+-                tabIndex={-1}
+-                aria-selected={index === current}
+-                className="command-palette-option"
+-                data-contribution={entry.id}
+-                onMouseEnter={() => setSelected(index)}
+-                onMouseDown={(event) => {
+-                  event.preventDefault();
+-                  choose(entry);
+-                }}
+-              >
+-                <span>{entry.title}</span>
+-                {entry.hint === undefined ? null : (
+-                  <span className="command-palette-hint">{entry.hint}</span>
+-                )}
+-              </div>
+-            ))}
+-          </div>
+-        )}
+       </div>
+-    </div>
++      {entries.length === 0 ? (
++        <p className="command-palette-empty">{t("palette.empty")}</p>
++      ) : (
++        <div
++          id="command-palette-list"
++          role="listbox"
++          aria-label={t("palette.label")}
++          className="command-palette-list"
++        >
++          {entries.map((entry, index) => {
++            const group = entry.group ?? "commands";
++            const heading = index === 0 || (entries[index - 1]?.group ?? "commands") !== group;
++            return (
++              <Fragment key={entry.id}>
++                {heading && (
++                  <div className="desk-hud-heading" role="presentation">
++                    {t(GROUP_TEXT[group])}
++                  </div>
++                )}
++                <div
++                  role="option"
++                  tabIndex={-1}
++                  aria-selected={index === current}
++                  className="desk-hud-row command-palette-option"
++                  data-contribution={entry.id}
++                  ref={(node) => {
++                    if (node !== null && index === current)
++                      node.scrollIntoView?.({ block: "nearest" });
++                  }}
++                  onMouseEnter={() => setSelected(index)}
++                  onMouseDown={(event) => {
++                    event.preventDefault();
++                    choose(entry);
++                  }}
++                >
++                  {entry.icon ?? null}
++                  <span className="command-palette-title">{entry.title}</span>
++                  {entry.hint === undefined ? null : (
++                    <span className="command-palette-hint">{entry.hint}</span>
++                  )}
++                  {entry.keys !== undefined && (
++                    <KeyHint keys={keyCaps(entry.keys, props.mac === true)} />
++                  )}
++                  {entry.deeper && <ChevronRight aria-hidden="true" />}
++                </div>
++              </Fragment>
++            );
++          })}
++        </div>
++      )}
++    </FloatingHud>
+   );
+ }
+ 
+diff --git a/apps/desktop/src/contrib/strings.en.ts b/apps/desktop/src/contrib/strings.en.ts
+index 1db0cd8..146cda2 100644
+--- a/apps/desktop/src/contrib/strings.en.ts
++++ b/apps/desktop/src/contrib/strings.en.ts
+@@ -22,8 +22,15 @@ export const PLUGIN_STRINGS = {
+   "plugins.reason": "Why: {reason}",
+   "plugins.pane": "Plugins",
+   "palette.label": "Commands",
+-  "palette.search": "Type a command",
+-  "palette.empty": "No command matches.",
++  "palette.search": "Search chats, pages and commands",
++  "palette.empty": "No results",
++  "palette.group.goto": "Go to",
++  "palette.group.projects": "Projects",
++  "palette.group.chats": "Chats",
++  "palette.group.commands": "Commands",
++  "palette.newWindow": "New window",
++  "palette.newChatIn": "New chat in {name}",
++  "switcher.label": "Switch chat",
+   "palette.close": "Close the command list",
+   "palette.goTo": "Go to {page}",
+   "titleBar.label": "Plugin items",
+diff --git a/apps/desktop/src/i18n/en.ts b/apps/desktop/src/i18n/en.ts
+index 18170ca..4da9071 100644
+--- a/apps/desktop/src/i18n/en.ts
++++ b/apps/desktop/src/i18n/en.ts
+@@ -4,6 +4,7 @@
+ import { AMBIENT_STRINGS } from "../ambient/strings.en.ts";
+ import { CAPABILITY_STRINGS } from "../app/capabilities/strings.en.ts";
+ import { MANAGE_STRINGS } from "../app/manage/strings.en.ts";
++import { COMPOSER_MENU_STRINGS } from "../chat/composer/strings.en.ts";
+ import { CHAT_STRINGS } from "../chat/strings.en.ts";
+ import { VOICE_STRINGS } from "../chat/voice/strings.en.ts";
+ import { PLUGIN_STRINGS } from "../contrib/strings.en.ts";
+@@ -182,6 +183,8 @@ export const en = {
+ 
+   // chat surfaces (P20-19..24: composer, queue, cards, model picker, status bar, slash)
+   ...CHAT_STRINGS,
++  // composer menus, model and effort menus (W52-h)
++  ...COMPOSER_MENU_STRINGS,
+ 
+   // sessions sidebar (P20-25), profile rail and switching (P20-26)
+   ...SIDEBAR_STRINGS,
+diff --git a/apps/desktop/src/panes/shortcuts.test.ts b/apps/desktop/src/panes/shortcuts.test.ts
+index 0d2d1ab..805683b 100644
+--- a/apps/desktop/src/panes/shortcuts.test.ts
++++ b/apps/desktop/src/panes/shortcuts.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from "vitest";
+-import { actionForKey, isModifierKey, type KeyLike } from "./shortcuts.ts";
++import { actionForKey, isModifierKey, type KeyLike, switcherStep } from "./shortcuts.ts";
+ 
+ function key(partial: Partial<KeyLike> & { key: string }): KeyLike {
+   return { metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...partial };
+@@ -20,12 +20,20 @@ describe("tab shortcuts", () => {
+     ],
+     ["linux", key({ key: "3", code: "Digit3", ctrlKey: true }), { kind: "jump", slot: 3 }],
+     ["darwin", key({ key: "9", metaKey: true }), { kind: "jump", slot: 9 }],
+-    ["darwin", key({ key: "Tab", ctrlKey: true }), { kind: "cycle", step: 1 }],
+-    ["linux", key({ key: "Tab", ctrlKey: true, shiftKey: true }), { kind: "cycle", step: -1 }],
++    ["darwin", key({ key: "PageDown", ctrlKey: true }), { kind: "cycle", step: 1 }],
++    ["linux", key({ key: "PageUp", ctrlKey: true }), { kind: "cycle", step: -1 }],
+   ])("%s %j", (platform, event, action) => {
+     expect(actionForKey(event, platform)).toEqual(action);
+   });
+ 
++  it("Ctrl+Tab is the session switcher's step, not a pane action (W52-h-2)", () => {
++    expect(actionForKey(key({ key: "Tab", ctrlKey: true }), "linux")).toBeNull();
++    expect(switcherStep(key({ key: "Tab", ctrlKey: true }))).toBe(1);
++    expect(switcherStep(key({ key: "Tab", ctrlKey: true, shiftKey: true }))).toBe(-1);
++    expect(switcherStep(key({ key: "Tab", metaKey: true }))).toBeNull();
++    expect(switcherStep(key({ key: "Tab" }))).toBeNull();
++  });
++
+   it("the other platform's modifier does nothing", () => {
+     expect(actionForKey(key({ key: "t", ctrlKey: true }), "darwin")).toBeNull();
+     expect(actionForKey(key({ key: "t", metaKey: true }), "linux")).toBeNull();
+diff --git a/apps/desktop/src/panes/shortcuts.ts b/apps/desktop/src/panes/shortcuts.ts
+index 49e296d..715d353 100644
+--- a/apps/desktop/src/panes/shortcuts.ts
++++ b/apps/desktop/src/panes/shortcuts.ts
+@@ -1,4 +1,4 @@
+-// Tab and window shortcuts of the pane shell (P20-27). The platform modifier is ⌘ on macOS and
++// Tab and window shortcuts of the pane shell (P20-27; tab cycling on Ctrl+PageDown since W52-h). The platform modifier is ⌘ on macOS and
+ // Ctrl elsewhere. Holding it alone for 400 ms shows slot numbers on the tabs; any other key or
+ // letting go hides them. The mapping is pure (`actionForKey`) so it is tested without a DOM.
+ 
+@@ -39,10 +39,22 @@ export function isModifierKey(event: KeyLike, platform: string): boolean {
+   return event.key === (isMac(platform) ? "Meta" : "Control");
+ }
+ 
++/** Ctrl+Tab / Ctrl+Shift+Tab on every platform: the session switcher's step (W52-h-2). */
++export function switcherStep(event: KeyLike): 1 | -1 | null {
++  if (event.key !== "Tab" || !event.ctrlKey || event.metaKey || event.altKey) return null;
++  return event.shiftKey ? -1 : 1;
++}
++
+ export function actionForKey(event: KeyLike, platform: string): PaneAction | null {
+-  // Ctrl+Tab cycles on every platform (as browsers do).
+-  if (event.key === "Tab" && event.ctrlKey && !event.metaKey && !event.altKey) {
+-    return { kind: "cycle", step: event.shiftKey ? -1 : 1 };
++  // Ctrl+PageDown / Ctrl+PageUp cycle the tabs on every platform (Ctrl+Tab is the switcher's).
++  if (
++    (event.key === "PageDown" || event.key === "PageUp") &&
++    event.ctrlKey &&
++    !event.metaKey &&
++    !event.altKey &&
++    !event.shiftKey
++  ) {
++    return { kind: "cycle", step: event.key === "PageDown" ? 1 : -1 };
+   }
+   if (!modifierDown(event, platform)) return null;
+   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+diff --git a/apps/desktop/src/settings/keybindings.ts b/apps/desktop/src/settings/keybindings.ts
+index e021aca..c663528 100644
+--- a/apps/desktop/src/settings/keybindings.ts
++++ b/apps/desktop/src/settings/keybindings.ts
+@@ -20,7 +20,10 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
+   { id: "composer.focus", label: "settings.key.focusComposer", defaultKey: "CommandOrControl+L" },
+   { id: "tab.close", label: "settings.key.closeTab", defaultKey: "CommandOrControl+W" },
+   { id: "tab.reopen", label: "settings.key.reopenTab", defaultKey: "CommandOrControl+Shift+T" },
+-  { id: "tab.next", label: "settings.key.nextTab", defaultKey: "Control+Tab" },
++  // W52-h-2: Ctrl+Tab steps through chats (the session switcher); tabs cycle on Ctrl+PageDown.
++  { id: "tab.next", label: "settings.key.nextChat", defaultKey: "Control+Tab" },
++  { id: "tab.cycle", label: "settings.key.nextTab", defaultKey: "Control+PageDown" },
++  { id: "palette.open", label: "settings.key.palette", defaultKey: "CommandOrControl+K" },
+   { id: "find", label: "settings.key.find", defaultKey: "CommandOrControl+F" },
+ ];
+ 
+diff --git a/apps/desktop/src/settings/strings.en.ts b/apps/desktop/src/settings/strings.en.ts
+index 982fdb2..9e372a3 100644
+--- a/apps/desktop/src/settings/strings.en.ts
++++ b/apps/desktop/src/settings/strings.en.ts
+@@ -208,6 +208,8 @@ export const SETTINGS_STRINGS = {
+   "settings.key.closeTab": "Close tab",
+   "settings.key.reopenTab": "Reopen the last closed tab",
+   "settings.key.nextTab": "Next tab",
++  "settings.key.nextChat": "Next chat (hold to choose)",
++  "settings.key.palette": "Command palette",
+   "settings.key.find": "Find in the conversation",
+   "settings.key.quickEntry": "Quick entry (global)",
+   "settings.key.hudSnap": "Bring the HUD to the pointer (global)",
+diff --git a/apps/desktop/src/sidebar/SessionRowMenu.tsx b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+new file mode 100644
+index 0000000..bd181f7
+--- /dev/null
++++ b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+@@ -0,0 +1,99 @@
++// The sidebar row's menu (W52-h): right-click a session row, or Shift+F10 / the context-menu key on
++// a focused one. Only actions Indus really has: open in a floating window, rename, pin, unread,
++// copy the id, archive, delete (W52-h-4 lists what the reference has that we leave out).
++
++import {
++  Archive,
++  ArchiveRestore,
++  Copy,
++  ExternalLink,
++  Mail,
++  MailOpen,
++  Pencil,
++  Pin,
++  PinOff,
++  Trash2,
++} from "lucide-react";
++import { useT } from "../i18n/index.tsx";
++import { ContextMenuAt, MenuRow, MenuSeparator } from "../ui/components.tsx";
++
++export interface RowMenuActions {
++  popOut?: (() => void) | undefined;
++  rename: () => void;
++  togglePin: () => void;
++  toggleUnread: () => void;
++  copyId: () => void;
++  toggleArchive: () => void;
++  remove: () => void;
++}
++
++export function SessionRowMenu(props: {
++  x: number;
++  y: number;
++  title: string;
++  pinned: boolean;
++  unread: boolean;
++  archived: boolean;
++  actions: RowMenuActions;
++  onClose: () => void;
++}) {
++  const t = useT();
++  const run = (action: () => void) => () => {
++    props.onClose();
++    action();
++  };
++  const a = props.actions;
++  return (
++    <ContextMenuAt
++      label={t("sidebar.menu.label", { title: props.title })}
++      x={props.x}
++      y={props.y}
++      onClose={props.onClose}
++    >
++      {a.popOut !== undefined && (
++        <>
++          <MenuRow
++            icon={<ExternalLink aria-hidden="true" />}
++            label={t("sidebar.menu.popOut")}
++            onSelect={run(a.popOut)}
++          />
++          <MenuSeparator />
++        </>
++      )}
++      <MenuRow
++        icon={<Pencil aria-hidden="true" />}
++        label={t("sidebar.menu.rename")}
++        onSelect={run(a.rename)}
++      />
++      <MenuRow
++        icon={props.pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
++        label={t(props.pinned ? "sidebar.menu.unpin" : "sidebar.menu.pin")}
++        onSelect={run(a.togglePin)}
++      />
++      <MenuRow
++        icon={props.unread ? <MailOpen aria-hidden="true" /> : <Mail aria-hidden="true" />}
++        label={t(props.unread ? "sidebar.menu.read" : "sidebar.menu.unread")}
++        onSelect={run(a.toggleUnread)}
++      />
++      <MenuRow
++        icon={<Copy aria-hidden="true" />}
++        label={t("sidebar.menu.copyId")}
++        onSelect={run(a.copyId)}
++      />
++      <MenuSeparator />
++      <MenuRow
++        icon={
++          props.archived ? <ArchiveRestore aria-hidden="true" /> : <Archive aria-hidden="true" />
++        }
++        label={t(props.archived ? "sidebar.menu.unarchive" : "sidebar.menu.archive")}
++        onSelect={run(a.toggleArchive)}
++      />
++      <MenuRow
++        icon={<Trash2 aria-hidden="true" />}
++        label={t("sidebar.menu.delete")}
++        tone="danger"
++        onSelect={run(a.remove)}
++      />
++    </ContextMenuAt>
++  );
++}
+diff --git a/apps/desktop/src/sidebar/Sidebar.test.tsx b/apps/desktop/src/sidebar/Sidebar.test.tsx
+index db37e87..41fa4c8 100644
+--- a/apps/desktop/src/sidebar/Sidebar.test.tsx
++++ b/apps/desktop/src/sidebar/Sidebar.test.tsx
+@@ -110,9 +110,10 @@ describe("sessions sidebar", () => {
+     expect(onOpenSession).toHaveBeenCalledWith("s-tip");
+   });
+ 
+-  it("pins on the durable id", async () => {
++  it("pins on the durable id (row menu)", async () => {
+     const { api } = mount();
+-    fireEvent.click(await screen.findByRole("button", { name: "Pin Parser work" }));
++    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Parser work/ }));
++    fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
+     await waitFor(() =>
+       expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
+         method: "PATCH",
+@@ -124,6 +125,48 @@ describe("sessions sidebar", () => {
+     expect(within(pinned).getByText("Parser work")).toBeTruthy();
+   });
+ 
++  it("shift-click pins without opening the chat (W52-h)", async () => {
++    const { api, onOpenSession } = mount();
++    fireEvent.click(await screen.findByRole("button", { name: /^Lunch/ }), { shiftKey: true });
++    expect(onOpenSession).not.toHaveBeenCalled();
++    await waitFor(() =>
++      expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
++        method: "PATCH",
++        path: "/api/sessions/s-plain",
++        body: { pinned: true },
++      }),
++    );
++  });
++
++  it("the row menu renames inline and deletes after a confirmation (W52-h)", async () => {
++    const { api } = mount();
++    const row = await screen.findByRole("button", { name: /^Lunch/ });
++    fireEvent.keyDown(row, { key: "F10", shiftKey: true });
++    fireEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
++    const field = screen.getByRole("textbox", { name: "Session title" });
++    fireEvent.change(field, { target: { value: "Lunch plans" } });
++    fireEvent.keyDown(field, { key: "Enter" });
++    await waitFor(() =>
++      expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
++        method: "PATCH",
++        path: "/api/sessions/s-plain",
++        body: { title: "Lunch plans" },
++      }),
++    );
++    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Lunch plans/ }));
++    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
++    const dialog = screen.getByRole("dialog", { name: "Delete this session?" });
++    await act(async () => {
++      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
++    });
++    await waitFor(() => {
++      const call = api.mock.calls.at(-1)?.[0];
++      expect(call?.method).toBe("DELETE");
++      expect(call?.path.startsWith("/api/sessions/s-plain?")).toBe(true);
++    });
++    expect(screen.queryByRole("button", { name: /^Lunch plans/ })).toBeNull();
++  });
++
+   it("search finds a pasted id at once and adds the server's hits", async () => {
+     mount();
+     await screen.findByRole("button", { name: /^Lunch/ });
+@@ -253,8 +296,10 @@ describe("sessions sidebar", () => {
+       };
+     });
+     mount({ api });
+-    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+-    fireEvent.click(await screen.findByRole("button", { name: "Restore Old one" }));
++    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
++    fireEvent.click(screen.getByRole("menuitemradio", { name: "Archived" }));
++    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Old one/ }));
++    fireEvent.click(screen.getByRole("menuitem", { name: "Unarchive" }));
+     await waitFor(() =>
+       expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
+         path: "/api/sessions/old",
+@@ -289,9 +334,9 @@ describe("sessions sidebar", () => {
+   it("relative times", () => {
+     const now = 1_000_000_000_000;
+     expect(relativeTime(translate, now - 10_000, now)).toBe("now");
+-    expect(relativeTime(translate, now - 5 * 60_000, now)).toBe("5 min");
+-    expect(relativeTime(translate, now - 3 * 3_600_000, now)).toBe("3 h");
+-    expect(relativeTime(translate, now - 50 * 3_600_000, now)).toBe("2 d");
++    expect(relativeTime(translate, now - 5 * 60_000, now)).toBe("5m");
++    expect(relativeTime(translate, now - 3 * 3_600_000, now)).toBe("3h");
++    expect(relativeTime(translate, now - 50 * 3_600_000, now)).toBe("2d");
+     expect(relativeTime(translate, 0, now)).toBe("");
+   });
+ });
+diff --git a/apps/desktop/src/sidebar/Sidebar.tsx b/apps/desktop/src/sidebar/Sidebar.tsx
+index f551f1c..e9572f0 100644
+--- a/apps/desktop/src/sidebar/Sidebar.tsx
++++ b/apps/desktop/src/sidebar/Sidebar.tsx
+@@ -5,14 +5,11 @@
+ // shows the other profile's list at once and keeps this one.
+ 
+ import {
+-  Archive,
+-  ArchiveRestore,
+   FolderPlus,
+   GitBranch,
++  ListFilter,
+   MessageSquareDashed,
+-  PictureInPicture2,
+   Pin,
+-  PinOff,
+   Plus,
+   Search,
+   SearchX,
+@@ -21,6 +18,7 @@ import {
+ import {
+   type FormEvent,
+   type ReactNode,
++  useCallback,
+   useEffect,
+   useMemo,
+   useRef,
+@@ -28,10 +26,21 @@ import {
+   useSyncExternalStore,
+ } from "react";
+ import { desktopBridge } from "../app/bridge.ts";
++import { copyText } from "../app/clipboard.ts";
+ import { Loader } from "../app/Loader.tsx";
+ import { type MessageKey, type Translate, useT } from "../i18n/index.tsx";
+ import { browserStorage, type StorageLike } from "../profiles/storageFamilies.ts";
+-import { EmptyState, GroupGlyph } from "../ui/components.tsx";
++import {
++  Button,
++  EmptyState,
++  GroupGlyph,
++  MenuLabel,
++  MenuPanel,
++  MenuRow,
++  MenuSeparator,
++  SmallDialog,
++  useHoverTip,
++} from "../ui/components.tsx";
+ import {
+   groupByProject,
+   type ListDir,
+@@ -41,6 +50,7 @@ import {
+   ProjectStore,
+   scanRepos,
+ } from "./projects.ts";
++import { SessionRowMenu } from "./SessionRowMenu.tsx";
+ import {
+   type ApiRequest,
+   type ListView,
+@@ -165,110 +175,150 @@ function useStore<S>(store: { subscribe(listener: () => void): () => void; getSt
+   );
+ }
+ 
+-function SessionItem(props: {
+-  row: SessionRow;
++/** What a row asks the sidebar to do (the delete confirmation lives at the sidebar level). */
++interface RowHost {
+   list: SessionListStore;
++  running: ReadonlySet<string>;
+   activeSessionId: string | null;
+-  running: boolean;
+   now: number;
+   onOpen(id: string): void;
+   onPopOut?: ((id: string) => void) | undefined;
+-}) {
++  onDelete(row: SessionRow): void;
++}
++
++function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; running: boolean }) {
+   const t = useT();
+   const { row, list } = props;
+   const title = rowTitle(t, row);
+   const current = props.activeSessionId !== null && row.ids.includes(props.activeSessionId);
+   const unread = list.unread.isUnread(row, props.activeSessionId);
+   const running = props.running || row.active;
++  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
++  const [renaming, setRenaming] = useState(false);
++  const button = useRef<HTMLButtonElement>(null);
++  const titleRef = useRef<HTMLSpanElement>(null);
++  const [truncated, setTruncated] = useState(false);
++  const tip = useHoverTip(truncated ? title : null);
++  const closeMenu = useCallback(() => setMenu(null), []);
++  const openMenuAtRow = () => {
++    const rect = button.current?.getBoundingClientRect();
++    setMenu({ x: (rect?.left ?? 0) + 24, y: rect?.bottom ?? 0 });
++  };
++  if (renaming) {
++    return (
++      <li className="session-row" data-current={current ? "true" : undefined}>
++        <input
++          className="session-rename"
++          aria-label={t("sidebar.renameField")}
++          defaultValue={row.title ?? title}
++          // biome-ignore lint/a11y/noAutofocus: the person just asked to rename this row
++          autoFocus
++          onFocus={(event) => event.currentTarget.select()}
++          onKeyDown={(event) => {
++            if (event.key === "Enter") {
++              event.preventDefault();
++              void list.setTitle(row, event.currentTarget.value);
++              setRenaming(false);
++            } else if (event.key === "Escape") {
++              event.preventDefault();
++              setRenaming(false);
++            }
++          }}
++          onBlur={() => setRenaming(false)}
++        />
++      </li>
++    );
++  }
+   return (
+     <li className="session-row" data-current={current ? "true" : undefined}>
+       <button
++        ref={button}
+         type="button"
+         className="session-open"
+         aria-current={current ? "page" : undefined}
+-        onClick={() => props.onOpen(row.id)}
+-        title={row.cwd ?? undefined}
++        aria-haspopup="menu"
++        onClick={(event) => {
++          // Shift-click pins (or unpins) without opening the chat
++          if (event.shiftKey) {
++            void list.setPinned(row, !row.pinned);
++            return;
++          }
++          props.onOpen(row.id);
++        }}
++        onContextMenu={(event) => {
++          // ours instead of Electron's native menu (a prevented event never reaches main)
++          event.preventDefault();
++          setMenu({ x: event.clientX, y: event.clientY });
++        }}
++        onKeyDown={(event) => {
++          if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
++            event.preventDefault();
++            openMenuAtRow();
++          }
++        }}
++        onMouseEnter={(event) => {
++          const node = titleRef.current;
++          setTruncated(node !== null && node.scrollWidth > node.clientWidth);
++          tip.bind.onMouseEnter(event);
++        }}
++        onMouseLeave={tip.bind.onMouseLeave}
+       >
+         <span className="session-dots" aria-hidden="true">
+-          {running ? (
+-            <span className="session-dot" data-kind="running" />
+-          ) : unread ? (
+-            <span className="session-dot" data-kind="unread" />
+-          ) : null}
++          <span
++            className="session-dot"
++            data-kind={running ? "running" : unread ? "unread" : "idle"}
++          />
+         </span>
+         {row.branch && <GitBranch aria-hidden="true" size={12} className="session-branch" />}
+-        <span className="session-title">{title}</span>
++        <span ref={titleRef} className="session-title">
++          {title}
++        </span>
+         {unread && <span className="sr-only">{t("sidebar.unread")}</span>}
+         {running && <span className="sr-only">{t("sidebar.running")}</span>}
+         {row.branch && <span className="sr-only">{t("sidebar.branch")}</span>}
+         <span className="session-time">{relativeTime(t, row.lastActive, props.now)}</span>
+       </button>
+-      <span className="session-actions">
+-        {props.onPopOut !== undefined && (
+-          <button
+-            type="button"
+-            className="icon-button"
+-            aria-label={t("sidebar.popOut", { title })}
+-            title={t("sidebar.popOut", { title })}
+-            onClick={() => props.onPopOut?.(row.id)}
+-          >
+-            <PictureInPicture2 aria-hidden="true" size={14} />
+-          </button>
+-        )}
+-        <button
+-          type="button"
+-          className="icon-button"
+-          aria-label={t(row.pinned ? "sidebar.unpin" : "sidebar.pin", { title })}
+-          title={t(row.pinned ? "sidebar.unpin" : "sidebar.pin", { title })}
+-          aria-pressed={row.pinned}
+-          onClick={() => void list.setPinned(row, !row.pinned)}
+-        >
+-          {row.pinned ? (
+-            <PinOff aria-hidden="true" size={14} />
+-          ) : (
+-            <Pin aria-hidden="true" size={14} />
+-          )}
+-        </button>
+-        <button
+-          type="button"
+-          className="icon-button"
+-          aria-label={t(row.archived ? "sidebar.unarchive" : "sidebar.archive", { title })}
+-          title={t(row.archived ? "sidebar.unarchive" : "sidebar.archive", { title })}
+-          onClick={() => void list.setArchived(row, !row.archived)}
+-        >
+-          {row.archived ? (
+-            <ArchiveRestore aria-hidden="true" size={14} />
+-          ) : (
+-            <Archive aria-hidden="true" size={14} />
+-          )}
+-        </button>
+-      </span>
++      {truncated ? tip.tip : null}
++      {menu !== null && (
++        <SessionRowMenu
++          x={menu.x}
++          y={menu.y}
++          title={title}
++          pinned={row.pinned}
++          unread={unread}
++          archived={row.archived}
++          onClose={closeMenu}
++          actions={{
++            popOut: props.onPopOut === undefined ? undefined : () => props.onPopOut?.(row.id),
++            rename: () => setRenaming(true),
++            togglePin: () => void list.setPinned(row, !row.pinned),
++            toggleUnread: () => (unread ? list.markSeen(row) : list.markUnread(row)),
++            copyId: () => void copyText(row.durableId),
++            toggleArchive: () => void list.setArchived(row, !row.archived),
++            remove: () => props.onDelete(row),
++          }}
++        />
++      )}
+     </li>
+   );
+ }
+ 
+-function RowList(props: {
+-  rows: readonly SessionRow[];
+-  list: SessionListStore;
+-  running: ReadonlySet<string>;
+-  activeSessionId: string | null;
+-  now: number;
+-  onOpen(id: string): void;
+-  onPopOut?: ((id: string) => void) | undefined;
+-  label: string;
+-}) {
++function RowList(
++  props: Omit<RowHost, "running"> & {
++    rows: readonly SessionRow[];
++    running: ReadonlySet<string>;
++    label: string;
++  },
++) {
++  const { rows, label, running, ...host } = props;
+   return (
+-    <ul className="session-list" aria-label={props.label}>
+-      {props.rows.map((row) => (
++    <ul className="session-list" aria-label={label}>
++      {rows.map((row) => (
+         <SessionItem
+           key={row.durableId}
++          {...host}
+           row={row}
+-          list={props.list}
+-          running={row.ids.some((id) => props.running.has(id))}
+-          activeSessionId={props.activeSessionId}
+-          now={props.now}
+-          onOpen={props.onOpen}
+-          onPopOut={props.onPopOut}
++          running={row.ids.some((id) => running.has(id))}
+         />
+       ))}
+     </ul>
+@@ -414,6 +464,10 @@ export function Sidebar(props: SidebarProps) {
+   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+   const [creating, setCreating] = useState(false);
+   const [now, setNow] = useState(() => Date.now());
++  const [deleting, setDeleting] = useState<SessionRow | null>(null);
++  const [filterOpen, setFilterOpen] = useState(false);
++  const filterButton = useRef<HTMLButtonElement>(null);
++  const closeFilter = useCallback(() => setFilterOpen(false), []);
+ 
+   // load the profile's list; refresh after turns end
+   useEffect(() => {
+@@ -485,6 +539,14 @@ export function Sidebar(props: SidebarProps) {
+     now,
+     onOpen: openSession,
+     onPopOut: props.onPopOut,
++    onDelete: (row: SessionRow) => setDeleting(row),
++  };
++  const confirmDelete = async () => {
++    const row = deleting;
++    setDeleting(null);
++    if (row === null) return;
++    const open = props.activeSessionId !== null && row.ids.includes(props.activeSessionId);
++    if ((await list.remove(row)) && open) props.onNewChat();
+   };
+ 
+   return (
+@@ -633,25 +695,50 @@ export function Sidebar(props: SidebarProps) {
+                       <FolderPlus aria-hidden="true" />
+                     </button>
+                   )}
+-                  <div
+-                    className="sidebar-views"
+-                    role="radiogroup"
+-                    aria-label={t("sidebar.view.label")}
+-                  >
+-                    {(["live", "archived"] as const).map((view) => (
+-                      // biome-ignore lint/a11y/useSemanticElements: a segmented control, not a native radio
+-                      <button
+-                        key={view}
+-                        type="button"
+-                        role="radio"
+-                        aria-checked={state.view === view}
+-                        className="sidebar-view-option"
+-                        onClick={() => list.setView(view)}
++                  <span className="desk-menu-root">
++                    <button
++                      ref={filterButton}
++                      type="button"
++                      className="desk-icon-btn"
++                      data-size="sm"
++                      aria-label={t("sidebar.filter")}
++                      aria-haspopup="menu"
++                      aria-expanded={filterOpen}
++                      onClick={() => setFilterOpen(!filterOpen)}
++                    >
++                      <ListFilter aria-hidden="true" />
++                    </button>
++                    {filterOpen && (
++                      <MenuPanel
++                        label={t("sidebar.filter")}
++                        onClose={closeFilter}
++                        keepOpenFor={filterButton}
++                        className="sidebar-filter-menu"
+                       >
+-                        {t(VIEW_KEYS[view])}
+-                      </button>
+-                    ))}
+-                  </div>
++                        <MenuLabel>{t("sidebar.view.label")}</MenuLabel>
++                        {(["live", "archived"] as const).map((view) => (
++                          <MenuRow
++                            key={view}
++                            kind="radio"
++                            label={t(VIEW_KEYS[view])}
++                            checked={state.view === view}
++                            onSelect={() => {
++                              setFilterOpen(false);
++                              list.setView(view);
++                            }}
++                          />
++                        ))}
++                        <MenuSeparator />
++                        <MenuLabel>{t("sidebar.sort.label")}</MenuLabel>
++                        <MenuRow
++                          kind="radio"
++                          label={t("sidebar.sort.recent")}
++                          checked
++                          onSelect={() => setFilterOpen(false)}
++                        />
++                      </MenuPanel>
++                    )}
++                  </span>
+                 </>
+               }
+             >
+@@ -694,6 +781,23 @@ export function Sidebar(props: SidebarProps) {
+           </>
+         )}
+       </div>
++      {deleting !== null && (
++        <SmallDialog
++          title={t("sidebar.delete.title")}
++          description={t("sidebar.delete.body", { title: rowTitle(t, deleting) })}
++          onClose={() => setDeleting(null)}
++          actions={
++            <>
++              <Button variant="ghost" onClick={() => setDeleting(null)}>
++                {t("sidebar.cancel")}
++              </Button>
++              <Button variant="danger" onClick={() => void confirmDelete()}>
++                {t("sidebar.delete.confirm")}
++              </Button>
++            </>
++          }
++        />
++      )}
+     </div>
+   );
+ }
+diff --git a/apps/desktop/src/sidebar/sessionList.ts b/apps/desktop/src/sidebar/sessionList.ts
+index 9182023..d7f7258 100644
+--- a/apps/desktop/src/sidebar/sessionList.ts
++++ b/apps/desktop/src/sidebar/sessionList.ts
+@@ -497,6 +497,52 @@ export class SessionListStore {
+     return this.patchRow(row, { pinned }, { ...row, pinned });
+   }
+ 
++  /** Rename (W52-h): PATCH `{title}`; an empty title is ignored. */
++  setTitle(row: SessionRow, title: string): Promise<boolean> {
++    const clean = title.trim().slice(0, 200);
++    if (clean === "" || clean === row.title) return Promise.resolve(false);
++    return this.patchRow(row, { title: clean }, { ...row, title: clean });
++  }
++
++  /** Mark the row unread again (the person asked for it). */
++  markUnread(row: SessionRow): void {
++    this.unread.markUnread(row);
++    this.patch({});
++  }
++
++  /**
++   * Delete the conversation (W52-h): a fenced DELETE of the durable id. The row leaves the list
++   * at once and comes back if the backend refuses (a busy session is a 409).
++   */
++  async remove(row: SessionRow): Promise<boolean> {
++    if (this.api === null) return false;
++    const before = this.state.rows;
++    this.patch({ rows: before.filter((r) => r.durableId !== row.durableId), error: null });
++    try {
++      const answer = await this.fenced(row.durableId, async (fence) =>
++        (this.api as ApiRequest)({
++          method: "DELETE",
++          path: `/api/sessions/${encodeURIComponent(row.durableId)}?${new URLSearchParams(
++            Object.entries(fence).map(([key, value]) => [key, String(value)]),
++          ).toString()}`,
++          profile: this.profile,
++        }),
++      );
++      if (answer.status >= 200 && answer.status < 400) {
++        this.unread.forget(row.durableId);
++        return true;
++      }
++      this.patch({ rows: upsertRow(this.state.rows, row), error: `status ${answer.status}` });
++      return false;
++    } catch (error) {
++      this.patch({
++        rows: upsertRow(this.state.rows, row),
++        error: error instanceof Error ? error.message : String(error),
++      });
++      return false;
++    }
++  }
++
+   setArchived(row: SessionRow, archived: boolean): Promise<boolean> {
+     const result = this.patchRow(row, { archived }, { ...row, archived });
+     // an archived row leaves the live view (and a restored one the archived view)
+@@ -537,12 +583,12 @@ export class SessionListStore {
+   }
+ 
+   /**
+-   * One fenced write: the backend refuses a PATCH without the session's mutation identity, so
++   * One fenced write: the backend refuses a write without the session's mutation identity, so
+    * read the snapshot (revision, generation) first; a stale revision is read again once.
+    */
+-  private async fencedPatch(
++  private async fenced(
+     durableId: string,
+-    body: { pinned?: boolean; archived?: boolean },
++    send: (fence: Record<string, string | number>) => ReturnType<ApiRequest>,
+   ): Promise<{ status: number }> {
+     const api = this.api as ApiRequest;
+     const path = `/api/sessions/${encodeURIComponent(durableId)}`;
+@@ -556,18 +602,10 @@ export class SessionListStore {
+       if (snap.kind !== "response" || snap.status >= 400) return { status: snap.status };
+       const fence = snap.body as { revision?: unknown; generation?: unknown } | null;
+       this.writes += 1;
+-      answer = await api({
+-        method: "PATCH",
+-        path,
+-        body: {
+-          ...body,
+-          request_id: `sidebar-${Date.now().toString(36)}-${this.writes}`,
+-          expected_revision: typeof fence?.revision === "number" ? fence.revision : 0,
+-          ...(typeof fence?.generation === "number"
+-            ? { expected_generation: fence.generation }
+-            : {}),
+-        },
+-        profile: this.profile,
++      answer = await send({
++        request_id: `sidebar-${Date.now().toString(36)}-${this.writes}`,
++        expected_revision: typeof fence?.revision === "number" ? fence.revision : 0,
++        ...(typeof fence?.generation === "number" ? { expected_generation: fence.generation } : {}),
+       });
+       const code = (answer.body as { detail?: { code?: unknown } } | null)?.detail?.code;
+       if (answer.status !== 409 || code !== "stale_revision") break;
+@@ -575,9 +613,23 @@ export class SessionListStore {
+     return { status: answer.kind === "not-found" ? 404 : answer.status };
+   }
+ 
++  private fencedPatch(
++    durableId: string,
++    body: { pinned?: boolean; archived?: boolean; title?: string },
++  ): Promise<{ status: number }> {
++    return this.fenced(durableId, (fence) =>
++      (this.api as ApiRequest)({
++        method: "PATCH",
++        path: `/api/sessions/${encodeURIComponent(durableId)}`,
++        body: { ...body, ...fence },
++        profile: this.profile,
++      }),
++    );
++  }
++
+   private async patchRow(
+     row: SessionRow,
+-    body: { pinned?: boolean; archived?: boolean },
++    body: { pinned?: boolean; archived?: boolean; title?: string },
+     optimistic: SessionRow,
+   ): Promise<boolean> {
+     const before = this.state.rows;
+diff --git a/apps/desktop/src/sidebar/sidebar.css b/apps/desktop/src/sidebar/sidebar.css
+index d7c9c53..2fb2d20 100644
+--- a/apps/desktop/src/sidebar/sidebar.css
++++ b/apps/desktop/src/sidebar/sidebar.css
+@@ -13,30 +13,13 @@
+   margin: 0 8px 4px;
+ }
+ 
+-.sidebar-views {
+-  display: inline-flex;
+-  gap: 2px;
+-}
+-
+-.sidebar-view-option {
+-  padding: 0 4px;
+-  border: 0;
+-  border-radius: 3px;
+-  background: transparent;
+-  color: var(--desk-fg-4);
+-  font: inherit;
+-  font-size: 10px;
+-  letter-spacing: 0.02em;
+-  cursor: pointer;
+-}
+-
+-.sidebar-view-option:hover {
+-  color: var(--desk-fg-1);
+-}
+-
+-.sidebar-view-option[aria-checked="true"] {
+-  color: var(--desk-fg-2);
+-  background: var(--desk-row-hover);
++.sidebar-filter-menu {
++  top: calc(100% + 4px);
++  right: 0;
++  width: 180px;
++  text-transform: none;
++  letter-spacing: 0;
++  font-weight: 400;
+ }
+ 
+ .sidebar-scroll {
+@@ -131,11 +114,34 @@
+   background: transparent;
+   color: var(--desk-fg-2);
+   font: inherit;
+-  font-size: var(--desk-text-ui);
++  font-size: var(--desk-text-nav);
+   text-align: left;
+   cursor: pointer;
+ }
+ 
++.session-open:focus-visible {
++  outline: 1px solid var(--desk-accent);
++  outline-offset: -1px;
++}
++
++.session-rename {
++  flex: 1;
++  min-width: 0;
++  height: 25px;
++  margin: 1px 4px;
++  padding: 0 6px;
++  border: 1px solid var(--desk-accent);
++  border-radius: var(--desk-radius-control);
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  font: inherit;
++  font-size: var(--desk-text-nav);
++}
++
++.session-rename:focus-visible {
++  outline: none;
++}
++
+ .session-row[data-current="true"] .session-open,
+ .session-row:hover .session-open {
+   color: var(--desk-fg-1);
+@@ -163,21 +169,17 @@
+   flex: none;
+ }
+ 
+-.session-dots:empty::before {
+-  content: "";
+-  width: 3px;
+-  height: 3px;
+-  border-radius: 50%;
+-  background: var(--desk-fg-4);
+-}
+-
+ .session-dot {
+-  width: 6px;
+-  height: 6px;
++  width: 5px;
++  height: 5px;
+   border-radius: 50%;
+   background: var(--desk-accent);
+ }
+ 
++.session-dot[data-kind="idle"] {
++  background: var(--desk-fg-4);
++}
++
+ .session-dot[data-kind="running"] {
+   background: var(--desk-success);
+   animation: session-pulse 1.2s ease-in-out infinite;
+@@ -188,27 +190,6 @@
+   color: var(--desk-fg-3);
+ }
+ 
+-.session-actions {
+-  position: absolute;
+-  right: 4px;
+-  display: none;
+-  gap: 1px;
+-  padding-left: 6px;
+-  background: inherit;
+-  border-radius: var(--desk-radius-control);
+-}
+-
+-.session-row:hover .session-actions,
+-.session-row:focus-within .session-actions {
+-  display: inline-flex;
+-}
+-
+-.session-actions .icon-button {
+-  width: 20px;
+-  height: 20px;
+-  padding: 0;
+-}
+-
+ .project-group {
+   margin-top: 4px;
+ }
+diff --git a/apps/desktop/src/sidebar/strings.en.ts b/apps/desktop/src/sidebar/strings.en.ts
+index ce2ba83..1b9e26f 100644
+--- a/apps/desktop/src/sidebar/strings.en.ts
++++ b/apps/desktop/src/sidebar/strings.en.ts
+@@ -16,7 +16,7 @@ export const SIDEBAR_STRINGS = {
+   "sidebar.emptyArchived": "Nothing archived",
+   "sidebar.allInProjects": "Every session sits in a project above.",
+   "sidebar.noMatch": "No sessions match \u201c{query}\u201d",
+-  "sidebar.pinnedHint": "Pin a session to keep it here",
++  "sidebar.pinnedHint": "Shift-click a chat to pin",
+   "sidebar.untitled": "Untitled conversation",
+   "sidebar.unread": "(new activity)",
+   "sidebar.running": "(working)",
+@@ -32,9 +32,9 @@ export const SIDEBAR_STRINGS = {
+   "sidebar.showAll": "Show all ({n})",
+   "sidebar.showLess": "Show less",
+   "sidebar.time.now": "now",
+-  "sidebar.time.minutes": "{n} min",
+-  "sidebar.time.hours": "{n} h",
+-  "sidebar.time.days": "{n} d",
++  "sidebar.time.minutes": "{n}m",
++  "sidebar.time.hours": "{n}h",
++  "sidebar.time.days": "{n}d",
+   "sidebar.project.new": "New project",
+   "sidebar.project.name": "Name",
+   "sidebar.project.folders": "Folders",
+@@ -46,4 +46,23 @@ export const SIDEBAR_STRINGS = {
+   "sidebar.project.newChat": "New chat in {name}",
+   "sidebar.project.remove": "Remove project {name}",
+   "sidebar.project.empty": "No conversations in this project yet.",
++  // filter and row menus (W52-h)
++  "sidebar.filter": "Filter sessions",
++  "sidebar.sort.label": "Sort",
++  "sidebar.sort.recent": "Last activity",
++  "sidebar.menu.label": "Actions for {title}",
++  "sidebar.menu.popOut": "Open in window",
++  "sidebar.menu.rename": "Rename…",
++  "sidebar.menu.pin": "Pin",
++  "sidebar.menu.unpin": "Unpin",
++  "sidebar.menu.unread": "Mark as unread",
++  "sidebar.menu.read": "Mark as read",
++  "sidebar.menu.copyId": "Copy ID",
++  "sidebar.menu.archive": "Archive",
++  "sidebar.menu.unarchive": "Unarchive",
++  "sidebar.menu.delete": "Delete",
++  "sidebar.renameField": "Session title",
++  "sidebar.delete.title": "Delete this session?",
++  "sidebar.delete.body": "\u201c{title}\u201d and its messages are removed for good.",
++  "sidebar.delete.confirm": "Delete",
+ } as const;
+diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
+index 0fe06f6..535eb98 100644
+--- a/apps/desktop/src/styles.css
++++ b/apps/desktop/src/styles.css
+@@ -241,74 +241,101 @@ body {
+   right: 8px;
+ }
+ 
+-/* the command palette (P24-32): Ctrl/Cmd+Shift+P */
+-.command-palette-layer {
+-  position: fixed;
+-  inset: 0;
+-  z-index: 60;
+-  display: flex;
+-  justify-content: center;
+-  align-items: flex-start;
+-  padding-top: 12vh;
+-}
+-
+-.command-palette-backdrop {
+-  position: absolute;
+-  inset: 0;
+-  border: 0;
+-  background: var(--desk-backdrop);
+-}
+-
++/* the command palette (P24-32; W52-h: a floating card at the top, Ctrl/Cmd+K) */
+ .command-palette {
+-  position: relative;
+-  width: min(600px, 90vw);
+-  max-height: 60vh;
+   display: flex;
+   flex-direction: column;
+-  border: 1px solid var(--desk-stroke-1);
+-  border-radius: var(--desk-radius-card);
+-  background: var(--desk-bg-raised);
+-  color: var(--desk-fg-1);
+-  box-shadow: var(--desk-shadow-card);
++  max-height: min(380px, 70vh);
+   overflow: hidden;
+ }
+ 
+-.command-palette input {
+-  padding: 12px 14px;
++.command-palette-search {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  height: 44px;
++  flex: none;
++  padding: 0 12px;
++  border-bottom: 1px solid var(--desk-stroke-strong);
++  color: var(--desk-fg-3);
++}
++
++.command-palette-search input {
++  flex: 1;
++  min-width: 0;
+   border: 0;
+-  border-bottom: 1px solid var(--desk-stroke-1);
+   background: transparent;
+-  color: inherit;
++  color: var(--desk-fg-1);
+   font: inherit;
+-  font-size: var(--desk-text-chat);
++  font-size: var(--desk-text-ui);
+ }
+ 
+-.command-palette input:focus-visible {
++.command-palette-search input::placeholder {
++  color: var(--desk-fg-3);
++}
++
++.command-palette-search input:focus-visible {
+   outline: none;
+ }
+ 
+-.command-palette [role="listbox"] {
+-  padding: 4px;
++.command-palette-list {
++  padding: 0 4px 4px;
+   overflow-y: auto;
+ }
+ 
+-.command-palette-option {
+-  display: flex;
+-  justify-content: space-between;
+-  gap: 8px;
+-  padding: 6px 10px;
+-  border-radius: var(--desk-radius-control);
+-  font-size: var(--desk-text-ui);
+-  cursor: pointer;
++.command-palette-title {
++  flex: 1;
++  min-width: 0;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
+ }
+ 
+-.command-palette-option[aria-selected="true"] {
+-  background: var(--desk-row-active);
++.command-palette-hint {
++  overflow: hidden;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++  text-overflow: ellipsis;
++  white-space: nowrap;
+ }
+ 
+ .command-palette-empty {
+-  padding: 12px 14px;
++  margin: 0;
++  padding: 24px 12px;
+   color: var(--desk-fg-3);
++  font-size: 14px;
++  text-align: center;
++}
++
++/* the session switcher (W52-h-2): Ctrl+Tab held */
++.session-switcher {
++  max-height: min(352px, 70vh);
++  overflow-y: auto;
++  padding: 4px;
++}
++
++.session-switcher-title {
++  flex: 1;
++  min-width: 0;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.session-switcher-dot {
++  flex: none;
++  width: 6px;
++  height: 6px;
++  border-radius: 50%;
++  background: var(--desk-fg-4);
++}
++
++.session-switcher-dot[data-state="running"] {
++  background: var(--desk-success);
++}
++
++.session-switcher-dot[data-state="unread"] {
++  background: var(--desk-accent);
+ }
+ 
+ .status-bar {
+@@ -935,17 +962,7 @@ body {
+   font-size: var(--desk-text-small);
+ }
+ 
+-/* the completion list and the model dialog float above the bar */
+-.composer [role="listbox"],
+-.model-picker > [role="dialog"] {
+-  border-color: var(--desk-stroke-1);
+-  background: var(--desk-bg-raised);
+-  box-shadow: var(--desk-shadow-menu);
+-}
+-
+-.model-picker > [role="dialog"] {
+-  right: 0;
+-}
++/* the composer's drawer and menus: chat/composer/composerMenus.css (W52-h) */
+ 
+ /* -- markdown ----------------------------------------------------------------------------- */
+ 
+diff --git a/apps/desktop/src/ui/components.tsx b/apps/desktop/src/ui/components.tsx
+index fb78df9..481c844 100644
+--- a/apps/desktop/src/ui/components.tsx
++++ b/apps/desktop/src/ui/components.tsx
+@@ -2,7 +2,8 @@
+ // a component and a variant instead of restyling at the call site. See
+ // docs/notes/ui-parity/desktop-foundation.md for the catalogue.
+ 
+-import { ChevronDown } from "lucide-react";
++import * as Dialog from "@radix-ui/react-dialog";
++import { Check, ChevronDown, ChevronRight } from "lucide-react";
+ import {
+   type ButtonHTMLAttributes,
+   type ReactNode,
+@@ -246,3 +247,319 @@ export function Menu(props: {
+     </div>
+   );
+ }
++
++// -- menu surface parts (W52-h-1) -----------------------------------------------------------------
++// One family for every dropdown and context menu: a panel that owns arrow keys, Home/End, Escape
++// and click-away, plus its row kinds. `MenuPanel` is positioned by the caller (`className` /
++// `style`); `ContextMenuAt` places one at the pointer and keeps it inside the window.
++
++const ROW_SELECTOR = '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
++
++function rowsIn(root: HTMLElement | null): HTMLElement[] {
++  if (root === null) return [];
++  return [...root.querySelectorAll<HTMLElement>(ROW_SELECTOR)].filter(
++    (row) => row.getAttribute("aria-disabled") !== "true",
++  );
++}
++
++export function MenuPanel(props: {
++  label: string;
++  onClose: () => void;
++  children: ReactNode;
++  className?: string;
++  style?: React.CSSProperties;
++  /** Focus the first row on open (off when a search field takes focus). */
++  autoFocus?: boolean;
++  /** Elements whose clicks do not count as "away" (the trigger). */
++  keepOpenFor?: React.RefObject<HTMLElement | null>;
++  id?: string;
++}) {
++  const root = useRef<HTMLDivElement>(null);
++  const { onClose, keepOpenFor } = props;
++  useEffect(() => {
++    const onDown = (event: PointerEvent) => {
++      const target = event.target as Node;
++      if (root.current?.contains(target)) return;
++      if (keepOpenFor?.current?.contains(target)) return;
++      onClose();
++    };
++    document.addEventListener("pointerdown", onDown);
++    return () => document.removeEventListener("pointerdown", onDown);
++  }, [onClose, keepOpenFor]);
++  useEffect(() => {
++    if (props.autoFocus !== false) rowsIn(root.current)[0]?.focus();
++  }, [props.autoFocus]);
++  const onKeyDown = (event: React.KeyboardEvent) => {
++    if (event.key === "Escape") {
++      event.stopPropagation();
++      event.preventDefault();
++      onClose();
++      return;
++    }
++    const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
++    if (!keys.includes(event.key)) return;
++    const rows = rowsIn(root.current);
++    if (rows.length === 0) return;
++    const at = rows.indexOf(document.activeElement as HTMLElement);
++    const next =
++      event.key === "Home"
++        ? 0
++        : event.key === "End"
++          ? rows.length - 1
++          : (at + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
++    rows[next]?.focus();
++    event.preventDefault();
++  };
++  return (
++    <div
++      ref={root}
++      id={props.id}
++      role="menu"
++      tabIndex={-1}
++      aria-label={props.label}
++      className={props.className === undefined ? "desk-menu" : `desk-menu ${props.className}`}
++      style={props.style}
++      onKeyDown={onKeyDown}
++    >
++      {props.children}
++    </div>
++  );
++}
++
++/** A menu at the pointer (right-click), kept inside the window. */
++export function ContextMenuAt(props: {
++  label: string;
++  x: number;
++  y: number;
++  onClose: () => void;
++  children: ReactNode;
++}) {
++  const [place, setPlace] = useState({ left: props.x, top: props.y });
++  const probe = useRef<HTMLDivElement>(null);
++  useEffect(() => {
++    const panel = probe.current?.firstElementChild as HTMLElement | null;
++    if (panel === null || panel === undefined) return;
++    const rect = panel.getBoundingClientRect();
++    const left = Math.max(4, Math.min(props.x, window.innerWidth - rect.width - 4));
++    const top = Math.max(4, Math.min(props.y, window.innerHeight - rect.height - 4));
++    setPlace({ left, top });
++  }, [props.x, props.y]);
++  return (
++    <div ref={probe} className="desk-context-layer">
++      <MenuPanel
++        label={props.label}
++        onClose={props.onClose}
++        className="desk-menu-at"
++        style={{ left: place.left, top: place.top }}
++      >
++        {props.children}
++      </MenuPanel>
++    </div>
++  );
++}
++
++/** The small uppercase label over a group of menu rows. */
++export function MenuLabel(props: { children: ReactNode }) {
++  return (
++    <div className="desk-menu-label" role="presentation">
++      {props.children}
++    </div>
++  );
++}
++
++export function MenuSeparator() {
++  // biome-ignore lint/a11y/useSemanticElements: a menu separator inside an ARIA menu
++  return <div className="desk-menu-sep" role="separator" />;
++}
++
++/**
++ * One menu row: icon, label, optional key hint / check / switch / chevron. `kind` picks the role
++ * (`radio` and `check` carry `aria-checked`); `tone="danger"` paints it red.
++ */
++export function MenuRow(props: {
++  label: ReactNode;
++  icon?: ReactNode;
++  hint?: ReactNode;
++  kind?: "item" | "radio" | "check" | "switch";
++  checked?: boolean;
++  tone?: "danger";
++  disabled?: boolean;
++  chevron?: boolean;
++  ariaLabel?: string;
++  onSelect: () => void;
++  onMouseEnter?: () => void;
++}) {
++  const kind = props.kind ?? "item";
++  const role =
++    kind === "radio" ? "menuitemradio" : kind === "item" ? "menuitem" : "menuitemcheckbox";
++  return (
++    <button
++      type="button"
++      role={role}
++      tabIndex={-1}
++      aria-label={props.ariaLabel}
++      {...(kind === "item" ? {} : { "aria-checked": props.checked === true })}
++      aria-disabled={props.disabled ? "true" : undefined}
++      className="desk-menu-item"
++      data-tone={props.tone}
++      onMouseEnter={props.onMouseEnter}
++      onClick={() => {
++        if (!props.disabled) props.onSelect();
++      }}
++    >
++      {props.icon ?? null}
++      <span className="desk-menu-item-label">{props.label}</span>
++      {props.hint !== undefined && <span className="desk-menu-hint">{props.hint}</span>}
++      {kind === "switch" && (
++        <span className="desk-menu-switch" data-on={props.checked ? "true" : "false"} />
++      )}
++      {kind === "radio" && props.checked && (
++        <Check aria-hidden="true" className="desk-menu-check" />
++      )}
++      {kind === "check" && props.checked && (
++        <Check aria-hidden="true" className="desk-menu-check" />
++      )}
++      {props.chevron && <ChevronRight aria-hidden="true" className="desk-menu-chevron" />}
++    </button>
++  );
++}
++
++// -- floating HUD (palette, session switcher) ------------------------------------------------------
++
++/**
++ * A card centred at the top of the window, over a transparent click-catcher (no dimming). It is
++ * outside the title band's drag region so clicks reach it.
++ */
++export function FloatingHud(props: {
++  label: string;
++  width: number;
++  onClose: () => void;
++  children: ReactNode;
++  className?: string;
++  onKeyDown?: (event: React.KeyboardEvent) => void;
++}) {
++  return (
++    <div className="desk-hud-layer">
++      <button
++        type="button"
++        className="desk-hud-catcher"
++        tabIndex={-1}
++        aria-label={props.label}
++        onClick={props.onClose}
++      />
++      <div
++        className={props.className === undefined ? "desk-hud" : `desk-hud ${props.className}`}
++        role="dialog"
++        aria-modal="true"
++        aria-label={props.label}
++        style={{ width: props.width }}
++        onKeyDown={props.onKeyDown}
++      >
++        {props.children}
++      </div>
++    </div>
++  );
++}
++
++/** A shortcut accelerator (`CommandOrControl+Shift+N`) as key cap labels for this platform. */
++export function keyCaps(accelerator: string, mac: boolean): string[] {
++  const names: Record<string, string> = mac
++    ? { CommandOrControl: "⌘", Command: "⌘", Control: "⌃", Shift: "⇧", Alt: "⌥" }
++    : { CommandOrControl: "Ctrl", Command: "Ctrl", Control: "Ctrl", Shift: "Shift", Alt: "Alt" };
++  return accelerator
++    .split("+")
++    .filter((part) => part !== "")
++    .map((part) => names[part] ?? part);
++}
++
++// -- tooltip -------------------------------------------------------------------------------------
++
++/**
++ * Hover tip (inverted chip) shown after a short delay beside its anchor, in a fixed layer so a
++ * scrolling list never clips it. Spread `bind` on the anchor and render `tip` anywhere.
++ */
++export function useHoverTip(
++  text: string | null,
++  side: "right" | "top" = "right",
++): {
++  bind: { onMouseEnter: (e: React.MouseEvent) => void; onMouseLeave: () => void };
++  tip: ReactNode;
++} {
++  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
++  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
++  useEffect(
++    () => () => {
++      if (timer.current !== null) clearTimeout(timer.current);
++    },
++    [],
++  );
++  const bind = {
++    onMouseEnter: (event: React.MouseEvent) => {
++      if (text === null) return;
++      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
++      if (timer.current !== null) clearTimeout(timer.current);
++      timer.current = setTimeout(() => {
++        setAt(
++          side === "right"
++            ? { x: rect.right + 8, y: rect.top + rect.height / 2 }
++            : { x: rect.left + rect.width / 2, y: rect.top - 8 },
++        );
++      }, TIP_DELAY_MS);
++    },
++    onMouseLeave: () => {
++      if (timer.current !== null) clearTimeout(timer.current);
++      timer.current = null;
++      setAt(null);
++    },
++  };
++  const tip =
++    at === null || text === null ? null : (
++      <span className="desk-tip" data-side={side} role="tooltip" style={{ left: at.x, top: at.y }}>
++        {text}
++      </span>
++    );
++  return { bind, tip };
++}
++
++export const TIP_DELAY_MS = 400;
++
++// -- small dialog --------------------------------------------------------------------------------
++
++/**
++ * A compact modal (≈448px) for one question or one short form: title, an optional line under it,
++ * the body, and a right-aligned action row. Escape and the backdrop close it.
++ */
++export function SmallDialog(props: {
++  title: string;
++  description?: string;
++  onClose: () => void;
++  children?: ReactNode;
++  actions?: ReactNode;
++}) {
++  return (
++    <Dialog.Root
++      open
++      onOpenChange={(open) => {
++        if (!open) props.onClose();
++      }}
++    >
++      <Dialog.Portal>
++        <Dialog.Overlay className="desk-dialog-backdrop" />
++        <Dialog.Content
++          className="desk-dialog"
++          aria-describedby={undefined}
++          onMouseDown={(event) => event.stopPropagation()}
++        >
++          <Dialog.Title className="desk-dialog-title">{props.title}</Dialog.Title>
++          {props.description !== undefined && (
++            <p className="desk-dialog-text">{props.description}</p>
++          )}
++          {props.children}
++          {props.actions !== undefined && (
++            <div className="desk-dialog-actions">{props.actions}</div>
++          )}
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>
++  );
++}
+diff --git a/apps/desktop/src/ui/ui.css b/apps/desktop/src/ui/ui.css
+index 6416904..28ba980 100644
+--- a/apps/desktop/src/ui/ui.css
++++ b/apps/desktop/src/ui/ui.css
+@@ -278,14 +278,29 @@
+ .desk-menu {
+   position: absolute;
+   z-index: var(--z-overlay);
+-  min-width: 200px;
++  min-width: 160px;
+   max-width: 320px;
+   padding: 4px;
+-  border: 1px solid var(--desk-stroke-1);
+-  border-radius: var(--desk-radius-card);
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: 3px;
+   background: var(--desk-bg-raised);
+   box-shadow: var(--desk-shadow-menu);
+   color: var(--desk-fg-1);
++  font-size: var(--desk-text-small);
++  animation: desk-menu-in 130ms var(--indus-easing-standard);
++}
++
++@keyframes desk-menu-in {
++  from {
++    opacity: 0;
++    transform: scale(0.95);
++  }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  .desk-menu {
++    animation: none;
++  }
+ }
+ 
+ .desk-menu[data-side="down"] {
+@@ -309,13 +324,15 @@
+   align-items: center;
+   gap: 8px;
+   width: 100%;
+-  padding: 5px 8px;
++  min-height: 24px;
++  padding: 4px 10px;
+   border: 0;
+-  border-radius: var(--desk-radius-control);
++  border-radius: 2px;
+   background: transparent;
+   color: var(--desk-fg-1);
+   font: inherit;
+-  font-size: var(--desk-text-ui);
++  font-size: var(--desk-text-small);
++  line-height: 16px;
+   text-align: left;
+   cursor: pointer;
+ }
+@@ -323,23 +340,111 @@
+ .desk-menu-item > svg {
+   width: 14px;
+   height: 14px;
+-  color: var(--desk-fg-3);
++  color: var(--desk-fg-2);
+   flex: none;
+ }
+ 
+ .desk-menu-item:hover,
+-.desk-menu-item:focus-visible {
++.desk-menu-item:focus-visible,
++.desk-menu-item:focus {
+   outline: none;
+   background: var(--desk-row-hover);
+ }
+ 
++.desk-menu-item[aria-disabled="true"] {
++  opacity: 0.5;
++  cursor: default;
++}
++
++.desk-menu-item[aria-disabled="true"]:hover {
++  background: transparent;
++}
++
++.desk-menu-item[data-tone="danger"],
++.desk-menu-item[data-tone="danger"] > svg {
++  color: var(--desk-danger);
++}
++
+ .desk-menu-item-label {
+   flex: 1;
++  min-width: 0;
++  overflow: hidden;
++  text-overflow: ellipsis;
+ }
+ 
+ .desk-menu-hint {
+-  color: var(--desk-fg-4);
+-  font-size: var(--desk-text-small);
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++}
++
++.desk-menu-item > .desk-menu-check {
++  width: 12px;
++  height: 12px;
++  color: var(--desk-fg-2);
++}
++
++.desk-menu-item > .desk-menu-chevron {
++  width: 14px;
++  height: 14px;
++  color: var(--desk-fg-3);
++}
++
++.desk-menu-switch {
++  position: relative;
++  flex: none;
++  width: 26px;
++  height: 14px;
++  border-radius: 999px;
++  background: var(--desk-stroke-strong);
++  transition: background-color var(--indus-duration-quick) var(--indus-easing-standard);
++}
++
++.desk-menu-switch::after {
++  content: "";
++  position: absolute;
++  top: 2px;
++  left: 2px;
++  width: 10px;
++  height: 10px;
++  border-radius: 50%;
++  background: var(--desk-bg-canvas);
++  transition: transform var(--indus-duration-quick) var(--indus-easing-standard);
++}
++
++.desk-menu-switch[data-on="true"] {
++  background: var(--desk-accent);
++}
++
++.desk-menu-switch[data-on="true"]::after {
++  transform: translateX(12px);
++}
++
++.desk-menu-label {
++  padding: 4px 10px 2px;
++  color: var(--desk-fg-3);
++  font-size: 10px;
++  font-weight: 600;
++  letter-spacing: 0.08em;
++  text-transform: uppercase;
++}
++
++.desk-menu-sep {
++  height: 1px;
++  margin: 4px -4px;
++  background: var(--desk-stroke-2);
++}
++
++.desk-context-layer {
++  position: fixed;
++  inset: 0;
++  z-index: var(--z-overlay);
++  pointer-events: none;
++}
++
++.desk-menu.desk-menu-at {
++  position: fixed;
++  pointer-events: auto;
++  width: 176px;
+ }
+ 
+ .desk-menu-footer {
+@@ -479,3 +584,245 @@ input[type="search"]::-webkit-search-cancel-button {
+   height: 12px;
+   color: var(--desk-fg-4);
+ }
++
++/* -- composer drawer (slash, mention, help) ------------------------------------------------- */
++
++.desk-popover {
++  position: absolute;
++  bottom: calc(100% + 4px);
++  left: 3px;
++  z-index: 20;
++  width: min(320px, calc(100% - 16px));
++  max-height: min(352px, calc(100vh - 128px));
++  overflow: auto;
++  padding: 4px;
++  border: 1px solid var(--desk-stroke-1);
++  border-radius: 3px;
++  background: var(--desk-bg-input);
++  box-shadow: var(--desk-shadow-menu);
++  scrollbar-width: thin;
++}
++
++.desk-popover-head {
++  padding: 8px 8px 2px;
++  color: var(--desk-fg-3);
++  font-size: 10px;
++  font-weight: 600;
++  letter-spacing: 0.05em;
++  text-transform: uppercase;
++}
++
++.desk-popover-head:first-child {
++  padding-top: 2px;
++}
++
++.desk-popover-row {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  height: 28px;
++  padding: 4px 8px;
++  border-radius: 6px;
++  color: var(--desk-fg-1);
++  font-size: var(--desk-text-small);
++  line-height: 20px;
++  cursor: pointer;
++}
++
++.desk-popover-row[aria-selected="true"] {
++  background: color-mix(in srgb, var(--desk-accent) 12%, var(--desk-bg-input));
++}
++
++.desk-popover-icon {
++  display: inline-grid;
++  place-items: center;
++  flex: none;
++  width: 16px;
++  height: 16px;
++  color: var(--desk-fg-3);
++}
++
++.desk-popover-icon > svg {
++  width: 14px;
++  height: 14px;
++}
++
++.desk-popover-icon[data-tone="accent"] {
++  color: var(--desk-accent);
++}
++
++.desk-popover-name {
++  flex: none;
++  max-width: 60%;
++  overflow: hidden;
++  font-weight: 500;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.desk-popover-meta {
++  flex: 1;
++  min-width: 0;
++  overflow: hidden;
++  color: var(--desk-fg-3);
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.desk-popover-empty {
++  margin: 0;
++  padding: 12px;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-small);
++}
++
++.desk-popover-empty span {
++  display: block;
++  color: var(--desk-fg-4);
++}
++
++/* -- floating HUD (palette, switcher) ------------------------------------------------------- */
++
++.desk-hud-layer {
++  position: fixed;
++  inset: 0;
++  z-index: var(--z-overlay);
++  -webkit-app-region: no-drag;
++}
++
++.desk-hud-catcher {
++  position: absolute;
++  inset: 0;
++  border: 0;
++  background: transparent;
++  cursor: default;
++}
++
++.desk-hud {
++  position: absolute;
++  top: 12px;
++  left: 50%;
++  max-width: calc(100vw - 24px);
++  transform: translateX(-50%);
++  border: 1px solid var(--desk-stroke-1);
++  border-radius: 4px;
++  background: var(--desk-bg-raised);
++  box-shadow:
++    0 8px 24px rgb(0 0 0 / 0.12),
++    0 1px 3px rgb(0 0 0 / 0.08);
++  color: var(--desk-fg-1);
++  font-size: var(--desk-text-small);
++  -webkit-app-region: no-drag;
++}
++
++@media (max-width: 704px) {
++  .desk-hud {
++    top: calc(var(--desk-band-height) + 8px);
++  }
++}
++
++.desk-hud-heading {
++  padding: 10px 10px 4px;
++  color: var(--desk-accent);
++  font-size: 10px;
++  font-weight: 600;
++  letter-spacing: 0.16em;
++  text-transform: uppercase;
++}
++
++.desk-hud-row {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  min-height: 24px;
++  padding: 4px 8px;
++  border-radius: 4px;
++  color: var(--desk-fg-2);
++  cursor: pointer;
++}
++
++.desk-hud-row > svg {
++  flex: none;
++  width: 14px;
++  height: 14px;
++  color: var(--desk-fg-3);
++}
++
++.desk-hud-row[aria-selected="true"] {
++  background: var(--desk-accent-soft);
++  color: var(--desk-fg-1);
++}
++
++.desk-hud-row .desk-key-hint {
++  opacity: 0.55;
++}
++
++/* -- tooltip -------------------------------------------------------------------------------- */
++
++.desk-tip {
++  position: fixed;
++  z-index: calc(var(--z-overlay) + 1);
++  max-width: 360px;
++  padding: 4px 8px;
++  border-radius: 3px;
++  background: var(--desk-fg-1);
++  color: var(--desk-bg-canvas);
++  font-size: var(--desk-text-small);
++  line-height: 16px;
++  white-space: nowrap;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  pointer-events: none;
++  transform: translateY(-50%);
++}
++
++.desk-tip[data-side="top"] {
++  transform: translate(-50%, -100%);
++}
++
++/* -- small dialog --------------------------------------------------------------------------- */
++
++.desk-dialog-backdrop {
++  position: fixed;
++  inset: 0;
++  z-index: var(--z-overlay);
++  background: var(--desk-backdrop);
++}
++
++.desk-dialog {
++  position: fixed;
++  top: 50%;
++  left: 50%;
++  z-index: calc(var(--z-overlay) + 1);
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++  width: min(448px, calc(100vw - 32px));
++  padding: 20px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: var(--desk-radius-card);
++  background: var(--desk-bg-canvas);
++  box-shadow: var(--desk-shadow-card);
++  color: var(--desk-fg-1);
++  transform: translate(-50%, -50%);
++  -webkit-app-region: no-drag;
++}
++
++.desk-dialog-title {
++  margin: 0;
++  font-size: 15px;
++  font-weight: 600;
++}
++
++.desk-dialog-text {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-ui);
++}
++
++.desk-dialog-actions {
++  display: flex;
++  justify-content: flex-end;
++  gap: 8px;
++  margin-top: 4px;
++}
+diff --git a/docs/notes/ui-parity/desktop-composer-menus.md b/docs/notes/ui-parity/desktop-composer-menus.md
+new file mode 100644
+index 0000000..f6b01cf
+--- /dev/null
++++ b/docs/notes/ui-parity/desktop-composer-menus.md
+@@ -0,0 +1,110 @@
++# Task: Desktop composer menus, palette, switcher, sidebar rows (W52-h) Phase: ui-parity Owner: builder w52h
++
++Status: Done for all ten slugs (2026-10-24, wrapped up early on the lead's usage call). All ten
++captured once in both themes (compare PDF `$SP/w52h/compare.pdf`); the last fixes (alias rows
++dropped from the slash drawer, `@` sent with its trigger so a bare `@` lists the reference forms,
++help card height, switcher slot hint) landed after that capture and were not re-captured.
++Remaining / follow-ups: row tooltips only on truncated titles (no cwd line); row dots use the
++existing "active" flag, so open-but-idle chats show the working dot where the reference is grey;
++"Chat: " title prefix (foundation follow-up); Open in terminal, Appearance, Branch, Export, Move
++to project, `@staged`, `@profile`, queue-send key and paste-image omitted (W52-h-4/7).
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): none directly by this builder; the
++wave-52 spec `desktop-composer-menus.md` (lead's Read + Note of the reference desktop app: composer
++completion drawer, trigger popover, help hint, attach menu, model and reasoning pills and menus,
++floating HUD constants, command palette, session switcher and its store, shared menu tokens,
++sidebar session-actions and filter menus — behaviour only) is this note's starting point.
++Evidence: reference screenshots (compare set, never in the repo), desktop slugs `slash-menu`,
++`mention-menu`, `model-picker`, `effort-picker`, `composer-help`, `composer-attach-menu`,
++`command-palette`, `session-switcher`, `session-sidebar`, `context-menu`, each `--light` / `--dark`.
++
++What it does (own words): the composer's floating surfaces get the reference's quiet look. Typing
++`/` opens a narrow drawer above the composer with commands grouped by category, each with a small
++terminal glyph; `@` opens the same drawer with reference kinds (diff, file, folder, git, url) and
++paths; a lone `?` shows a help card with common commands and the keys we really have. The `+`
++button opens an attach menu (files, folder, images, URL, prompt snippets). The model chip opens a
++menu with a quiet search, models grouped by provider with a star, and refresh / custom / edit rows;
++the effort chip opens a menu with a Thinking switch and the effort list (Max and Ultra included).
++Ctrl+K opens a command palette as a floating card at the top of the window with grouped, iconed
++rows and key caps. Ctrl+Tab steps through recent chats with a small switcher card (shown when held).
++Sidebar rows show a dot, the title and a short time; Shift-click pins; right-click (or Shift+F10)
++opens an in-window menu with the real row actions, including rename and delete.
++
++Inputs → outputs: composer text and caret → `complete.slash` / `complete.path` (with the draft's
++`cwd`) → drawer rows; picks → existing `config.set` calls and per-model presets; palette entries
++from pages, overlays, projects, sessions and plugin commands; row menu → REST PATCH (title,
++pinned, archived), DELETE, unread tracker, clipboard, pop-out.
++
++Files: `apps/desktop/src/ui/components.tsx` + `ui/ui.css` (foundation: menu parts, popover, HUD,
++tooltip — added in the foundation's own files), `chat/composer/{Composer.tsx,completion.ts,
++ComposerHelp.tsx,AttachMenu.tsx,attachments.ts}`, `chat/{ModelPicker.tsx,EffortChip.tsx,slash.ts,
++strings.en.ts}`, `contrib/{areas.tsx,strings.en.ts}`, `app/{Shell.tsx,SessionSwitcher.tsx,
++chatSlots.tsx}`, `panes/shortcuts.ts`, `settings/{keybindings.ts,strings.en.ts}`,
++`sidebar/{Sidebar.tsx,SessionRowMenu.tsx,sessionList.ts,sidebar.css,strings.en.ts}`, `styles.css`
++(palette rules), tests beside them.
++
++Edge cases / failure modes:
++- `@` in a fresh draft must search the draft's folder (it searched the daemon's folder and showed
++  nothing); an empty answer shows "No matches", not a hidden drawer.
++- A slash command not in the catalogue (plugin / skill) goes in a last "Other" group.
++- Rename with an empty title is ignored; a refused PATCH / DELETE rolls the row back and shows the
++  sidebar's error line. Deleting the open chat navigates to the fresh draft.
++- Ctrl+Tab with fewer than two chats does nothing; a quick tap switches without showing the card.
++- Prevented `contextmenu` keeps Electron's native menu from opening on top of ours.
++
++Our design differences / decisions:
++- W52-h-1: no new Radix packages; the foundation's `Menu` gains the menu-surface parts (section
++  label, separator, check, switch row, destructive row, submenu panel, positioned-at-pointer
++  variant) so every menu in the app shares one family.
++- W52-h-2: Ctrl+Tab is "next chat" through the switcher (lead decision); pane-tab cycling moves to
++  Ctrl+PageDown / Ctrl+PageUp. The `tab.next` keybinding label becomes "Next chat".
++- W52-h-3: the switcher shows no `⌃N` slot labels (our Ctrl+digit keeps jumping pane slots).
++- W52-h-4: row menu omits Open in terminal, Appearance, Move to project, Branch and Export (no
++  backend / IPC for them; export would need a save-file write IPC) — listed as gaps.
++- W52-h-8: `complete.path` gets the whole `@word` (the daemon decides reference vs path by the
++  `@`; the client stripped it, which is why `@` in a fresh draft found nothing).
++- W52-h-5: hover action buttons (pop-out / pin / archive) leave the row; the same actions live in
++  the row menu (the reference shows none on hover).
++- W52-h-6: per-model reasoning capability is unknown to us, so the effort chip always shows.
++- W52-h-7: `@staged`, `@profile` mentions, paste-image from the menu and a queue-send key do not
++  exist in Indus; the menu shows Paste image disabled, the others are omitted.
++
++Tests we will write:
++- completion: `cwd` sent for a fresh draft; empty answer keeps the drawer with "No matches";
++  slash rows grouped by catalogue category.
++- composer: `?` opens help, deleting it closes; `+` menu lists the attach items, URL inserts
++  `@url:`; effort menu lists Max/Ultra and the Thinking switch.
++- palette: Ctrl+K opens (Ctrl+Shift+P still does), groups and key caps render.
++- shortcuts: Ctrl+Tab → switcher step, Ctrl+PageDown → pane cycle.
++- sidebar: filter menu switches to Archived; Shift-click pins; row menu rename (PATCH title) and
++  delete (DELETE) with a fake API.
++
++Compare checklist (tick in the side-by-side PDF, light AND dark):
++- [x] slash-menu: drawer 320 px wide, anchored 3 px inside composer left, ends 5 px above composer;
++      group header "SESSION" etc.; terminal glyph in accent; sans `/name` + grey truncated
++      description; 28 px rows; highlight tint; tooltip on hover.
++- [x] mention-menu: opens on bare `@` in a fresh draft; kind icons coloured; file/folder scope
++      header; empty state.
++- [x] model-picker: ghost pill with chevron (no border, no "Choose a model" after a chat); 288 px
++      menu sitting on the composer; borderless search; provider label; star + name + chevron rows;
++      refresh/add/edit footer rows.
++- [x] effort-picker: separate "Med"-style pill; 208 px menu; OPTIONS/Thinking switch; EFFORT list
++      with check; Max/Ultra present.
++- [x] composer-help: `?` opens it; mono commands; key caps; deleting `?` closes.
++- [x] composer-attach-menu: `+` at composer left; 240 px menu; ATTACH label; 5 items + snippets +
++      tip; Paste image disabled; URL and snippets dialogs work.
++- [x] command-palette: Ctrl+K; 544 px HUD at top 12 px, no dim; search row with icon + divider;
++      accent uppercase group headings; icons; key caps; selection tint.
++- [x] session-switcher: hold Ctrl+Tab shows 304 px HUD with dots/titles; release opens; quick tap
++      switches.
++- [x] session-sidebar: quiet search with one clear button; PINNED/SESSIONS accent headers; filter
++      menu replaces the segmented control; 27 px rows with dot/title/time; selected tint; tooltip
++      for long titles.
++- [x] context-menu: in-renderer menu on right-click/Shift+F10; grouped items with separators;
++      Delete in red; rename inline works; native menu does not double-open.
++- [x] No reference product text; no copied long sentences; tokens from the foundation, no stray
++      hex in components.
++- [x] biome, tsc, vitest (desktop, all 172 files; Electron e2e not run — lead stop), (desktop), Electron e2e touched specs, `python -m tooling.checks
++      --require-ref` green (ok, exit 0).
++- Intended differences: "Auto" stays first in the effort list (no stored preset); switcher has no
++  `⌃N` labels (W52-h-3); slash rows also carry our catalogue text; palette lists our pages/overlays.
