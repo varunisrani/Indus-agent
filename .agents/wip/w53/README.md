@@ -51,3 +51,16 @@
   boot + surfaces 10 passed; tooling.checks ok. Decisions W52-k-1..7 in docs/notes/ui-parity/desktop-capabilities.md.
 - Follow-ups: setEnabled + Bots row in desktopPluginSource; toolset write route; readiness probe; skill catalog /
   SKILL.md routes; plugin uninstall + catalog; bot presence + create-room RPC; messaging docs_url; "1 tools" plural.
+
+## w53l.patch — builder l, desktop command center (spec desktop-command-center.md), base f3f7772 (LOCAL = e402468 + w53-desk), 45 files
+- Apply AFTER w51b + w53-desk. Command center (sessions, system, usage, maintenance), session import (new overlay),
+  cron + new-job dialog, profiles, agents, artifacts, webhooks, learning map (starmap), sidebar no-match line: done.
+  Layout editor partial (no per-zone grip chips; band preset select kept for tests/e2e).
+- New app/overlay/kit.tsx (+css) panel controls; routes.ts moves webhooks / command-center / learning-map to overlays
+  (paths unchanged); Shell.tsx footer More menu + palette; ManageOverlay removed (unused); foundation additions:
+  EmptyState description/look, SmallDialog size wide/closeLabel, OverlayCard titlebarActions/surface/id + focus,
+  ListDetail reshaped.
+- Integrator: k's app/masterDetail.tsx has TextTabs too — keep ONE TextTabs / search control (dedupe with
+  overlay/kit.tsx QuietSearch); both edit Shell.tsx LeftSidebar/footer.
+- Gate (builder): desktop vitest 176 files / 1745 passed; Electron E2E surfaces + boot 10/10; tsc clean; biome 0 errors;
+  tooling.checks ok. Decisions W52-l-1..11 in docs/notes/ui-parity/desktop-command-center.md.
