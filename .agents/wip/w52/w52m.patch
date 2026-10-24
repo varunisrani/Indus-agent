@@ -1,0 +1,5546 @@
+diff --git a/apps/desktop/e2e/core/chat.electron.test.ts b/apps/desktop/e2e/core/chat.electron.test.ts
+index a0b0f9e..88912c0 100644
+--- a/apps/desktop/e2e/core/chat.electron.test.ts
++++ b/apps/desktop/e2e/core/chat.electron.test.ts
+@@ -166,6 +166,8 @@ describe.skipIf(realSkip !== "")(
+       const current = stack as Stack;
+       await running.secondLaunch(`${DEV_SCHEME}://open/settings?view=providers&page=accounts`);
+       await clickButton(running.cdp, "Set up a provider", 30_000);
++      // W52-m: the custom endpoint row sits behind the "Other providers" disclosure
++      await clickButtonStarting(running.cdp, "Other providers", 30_000);
+       await clickButtonStarting(running.cdp, "Use a custom OpenAI-compatible endpoint", 30_000);
+       await fillField(
+         running.cdp,
+diff --git a/apps/desktop/e2e/core/surfaces.electron.test.ts b/apps/desktop/e2e/core/surfaces.electron.test.ts
+index 46e9777..2f8e35f 100644
+--- a/apps/desktop/e2e/core/surfaces.electron.test.ts
++++ b/apps/desktop/e2e/core/surfaces.electron.test.ts
+@@ -14,6 +14,7 @@ import { cleanupFakes } from "../../testing/fakeIndus.ts";
+ import {
+   APP_ROOT,
+   bridge,
++  clickAt,
+   clickButton,
+   clickButtonStarting,
+   fakeBackend,
+@@ -288,11 +289,8 @@ describe.skipIf(skipReason !== "")(
+         `!!document.querySelector('.onboarding-form input[type="password"]')`,
+         "the key form",
+       );
+-      await app.cdp.eval(`(() => {
+-      const select = document.querySelector('.onboarding-form select');
+-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, "openrouter");
+-      select.dispatchEvent(new Event("change", { bubbles: true }));
+-    })()`);
++      // W52-m: the provider is a tile of the key screen (the native select is gone)
++      await clickAt(app.cdp, '.onboarding-form [data-provider="openrouter"]');
+       await fillField(app.cdp, '.onboarding-form input[type="password"]', key);
+       await app.cdp.eval(`document.querySelector('.onboarding-form').requestSubmit()`);
+       await app.cdp.waitFor(hasButton("Start chatting"), "the model step", 20_000);
+diff --git a/apps/desktop/electron/ambient/hud.test.ts b/apps/desktop/electron/ambient/hud.test.ts
+index db75800..df00419 100644
+--- a/apps/desktop/electron/ambient/hud.test.ts
++++ b/apps/desktop/electron/ambient/hud.test.ts
+@@ -21,7 +21,7 @@ const AREA = { x: 0, y: 0, width: 1920, height: 1080 };
+ 
+ describe("HUD geometry", () => {
+   it("default bounds: centred near the bottom, never above the area", () => {
+-    expect(defaultHudBounds(AREA)).toEqual({ x: 680, y: 768, width: 560, height: 240 });
++    expect(defaultHudBounds(AREA)).toEqual({ x: 650, y: 688, width: 620, height: 320 });
+     expect(defaultHudBounds({ x: 0, y: 0, width: 300, height: 200 })).toEqual({
+       x: 0,
+       y: 0,
+@@ -243,6 +243,6 @@ describe("HUD controller", () => {
+     screen.cursor = { x: 960, y: 540 };
+     hud.snapToPointer();
+     const win = created[0] as FakeWindow;
+-    expect(win.getBounds()).toMatchObject({ x: 680, y: 500 });
++    expect(win.getBounds()).toMatchObject({ x: 650, y: 500 });
+   });
+ });
+diff --git a/apps/desktop/electron/ambient/hud.ts b/apps/desktop/electron/ambient/hud.ts
+index d2089db..2b6f033 100644
+--- a/apps/desktop/electron/ambient/hud.ts
++++ b/apps/desktop/electron/ambient/hud.ts
+@@ -13,7 +13,7 @@ import { readJsonFile, writeFileAtomic } from "../fsSecure.ts";
+ import type { BrowserWindowLike } from "../windows/manager.ts";
+ import { type DisplayLike, displayShowing, type Rect } from "../windows/windowState.ts";
+ 
+-export const HUD_DEFAULT_SIZE = { width: 560, height: 240 } as const;
++export const HUD_DEFAULT_SIZE = { width: 620, height: 320 } as const;
+ export const HUD_MIN_SIZE = { width: 360, height: 160 } as const;
+ /** Gap between the default HUD and the bottom of the work area. */
+ export const HUD_BOTTOM_MARGIN = 72;
+diff --git a/apps/desktop/electron/ambient/quickEntry.test.ts b/apps/desktop/electron/ambient/quickEntry.test.ts
+index 31739b6..8935532 100644
+--- a/apps/desktop/electron/ambient/quickEntry.test.ts
++++ b/apps/desktop/electron/ambient/quickEntry.test.ts
+@@ -12,10 +12,10 @@ import {
+ describe("quick entry bounds", () => {
+   it("centred a quarter down the pointer's display, inside it", () => {
+     expect(quickBounds({ x: 0, y: 0, width: 1920, height: 1080 })).toEqual({
+-      x: 650,
++      x: 640,
+       y: 270,
+-      width: 620,
+-      height: 150,
++      width: 640,
++      height: 168,
+     });
+     expect(quickBounds({ x: 1920, y: 0, width: 500, height: 100 })).toEqual({
+       x: 1920,
+diff --git a/apps/desktop/electron/ambient/quickEntry.ts b/apps/desktop/electron/ambient/quickEntry.ts
+index 80d288b..666e658 100644
+--- a/apps/desktop/electron/ambient/quickEntry.ts
++++ b/apps/desktop/electron/ambient/quickEntry.ts
+@@ -9,7 +9,7 @@ import type { BrowserWindowLike } from "../windows/manager.ts";
+ import type { Rect } from "../windows/windowState.ts";
+ import { type FloatingWindow, floatAbove, type ScreenLike, type Timers } from "./hud.ts";
+ 
+-export const QUICK_SIZE = { width: 620, height: 150 } as const;
++export const QUICK_SIZE = { width: 640, height: 168 } as const;
+ /** How far down the display the composer sits (fraction of the work area's height). */
+ export const QUICK_TOP_FRACTION = 0.25;
+ export const QUICK_RELAY_TIMEOUT_MS = 15_000;
+diff --git a/apps/desktop/src/ambient/ambient.css b/apps/desktop/src/ambient/ambient.css
+index 938129e..2ed5eea 100644
+--- a/apps/desktop/src/ambient/ambient.css
++++ b/apps/desktop/src/ambient/ambient.css
+@@ -41,62 +41,175 @@ html[data-window="quick"] body {
+   overflow: hidden;
+ }
+ 
+-.hud,
+-.quick {
++/* HUD (W52-m): the composer bar on top, the transcript on a dark translucent sheet below it. */
++.hud {
+   position: fixed;
+   inset: 0;
+   display: flex;
+   flex-direction: column;
+-  border: 1px solid var(--indus-color-border);
+-  border-radius: var(--indus-radius-lg, 12px);
+-  background: var(--indus-color-bg-raised);
+-  box-shadow: var(--indus-shadow-mid);
+   overflow: hidden;
++  color: var(--desk-fg-1);
+ }
+ 
+-.hud-bar {
++.hud-body {
++  position: relative;
+   display: flex;
++  flex-direction: column;
++  flex: 1;
++  min-height: 0;
++}
++
++.hud .chat {
++  background: transparent;
++}
++
++/* the composer bar first, full width */
++.hud .chat-composer {
++  order: -1;
++  flex: none;
++  padding: 0;
++  cursor: grab;
++}
++
++.hud[data-dragging="true"] .chat-composer {
++  cursor: grabbing;
++}
++
++.hud .composer-box {
++  min-height: 41px;
+   align-items: center;
+-  gap: var(--indus-space-1);
+-  padding: var(--indus-space-1) var(--indus-space-2);
+-  border-bottom: 1px solid var(--indus-color-border);
+-  color: var(--indus-color-fg-muted);
+-  font-size: 12px;
+-  user-select: none;
++  padding: 6px 64px 6px 12px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: 12px;
++  background: var(--desk-bg-input);
+ }
+ 
+-.hud-grip {
+-  flex: 1;
++.hud .composer-box:focus-within {
++  border-color: var(--desk-accent);
++}
++
++.hud .composer-box textarea {
++  font-size: 15px;
++}
++
++.hud-placeholder-bar {
+   display: flex;
+   align-items: center;
+-  gap: var(--indus-space-1);
+-  cursor: grab;
+-  min-height: 24px;
++  height: 41px;
++  padding: 0 64px 0 16px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: 12px;
++  background: var(--desk-bg-input);
++  color: var(--desk-fg-3);
++  font-size: 15px;
+ }
+ 
+-.hud-grip[data-dragging="true"] {
+-  cursor: grabbing;
++.hud-tools {
++  position: absolute;
++  top: 0;
++  right: 8px;
++  z-index: 2;
++  display: flex;
++  align-items: center;
++  gap: 2px;
++  height: 41px;
+ }
+ 
+-.hud-body {
+-  flex: 1;
+-  min-height: 0;
+-  overflow: auto;
+-  padding: var(--indus-space-2) var(--indus-space-3);
++.hud-tool {
++  display: inline-grid;
++  place-items: center;
++  width: 24px;
++  height: 24px;
++  padding: 0;
++  border: 0;
++  border-radius: var(--desk-radius-control);
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++}
++
++.hud-tool:hover {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-1);
+ }
+ 
+ .hud-row {
+-  margin: 0 0 var(--indus-space-2);
+-  white-space: pre-wrap;
++  padding: 16px 24px;
++  color: #a4a4a6;
++  font-size: 13px;
+ }
+ 
+-.hud-row[data-role="user"] {
+-  color: var(--indus-color-fg-muted);
++/* the sheet: inset 8px, near-black at ~82% in both themes, rounded bottom corners */
++.hud .transcript,
++.hud-row {
++  margin: 0 8px;
++  border-radius: 0 0 12px 12px;
++  background: rgb(12 13 18 / 0.82);
++  color: #ffffff;
++  transition: opacity 180ms var(--indus-easing-standard);
+ }
+ 
+-.hud-composer {
+-  border-top: 1px solid var(--indus-color-border);
+-  padding: var(--indus-space-2);
++.hud[data-sheet="shown"] .transcript,
++.hud[data-sheet="shown"] .hud-row {
++  opacity: 1;
++  transition-duration: 110ms;
++}
++
++.hud[data-sheet="hidden"] .transcript,
++.hud[data-sheet="hidden"] .hud-row {
++  opacity: 0;
++  pointer-events: none;
++}
++
++.hud .transcript .msg,
++.hud .transcript .msg-assistant {
++  color: #ffffff;
++  font-size: 15px;
++}
++
++/* a user turn: gold text, no bubble, not sticky */
++.hud .transcript .msg-user {
++  position: static;
++  background: transparent;
++}
++
++.hud .transcript .msg-user .msg-bubble {
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: #ffcf6b;
++  box-shadow: none;
++}
++
++.hud .transcript table,
++.hud .transcript th,
++.hud .transcript td {
++  border-color: rgb(255 255 255 / 0.1);
++  background: transparent;
++  color: #a4a4a6;
++}
++
++.hud .transcript pre,
++.hud .transcript code {
++  background: rgb(255 255 255 / 0.05);
++  color: #e6e6e6;
++}
++
++.hud .tool-row,
++.hud .inline-diff,
++.hud .msg-notice,
++.hud .msg-note,
++.hud .timeline,
++.hud .transcript-bottom,
++.hud .chat-stalled {
++  display: none;
++}
++
++@media (prefers-reduced-motion: reduce) {
++  .hud .transcript,
++  .hud-row {
++    transition: none;
++  }
+ }
+ 
+ .hud-edge {
+@@ -162,36 +275,93 @@ html[data-window="quick"] body {
+   cursor: nwse-resize;
+ }
+ 
++/* Quick entry (W52-m): one card centred in a transparent window. */
+ .quick {
+-  padding: var(--indus-space-3);
+-  gap: var(--indus-space-2);
++  position: fixed;
++  inset: 0;
++  display: flex;
++  flex-direction: column;
++  justify-content: center;
++  padding: 12px;
++  color: var(--desk-fg-1);
++  font-family: var(--desk-font-ui);
++}
++
++.quick-card {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++  padding: 10px 14px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: 12px;
++  background: color-mix(in srgb, var(--desk-bg-raised) 96%, var(--desk-fg-1));
++  box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
++}
++
++:root[data-theme="indus-light"] .quick-card {
++  background: #fdfdfd;
++}
++
++.quick-row {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++}
++
++.quick-prompt {
++  flex: none;
++  color: var(--desk-fg-3);
++  font-size: 15px;
+ }
+ 
+-.quick textarea {
++.quick-input {
+   flex: 1;
+-  resize: none;
++  min-width: 0;
++  padding: 0;
+   border: 0;
+   outline: none;
+   background: transparent;
+-  color: var(--indus-color-fg);
++  color: var(--desk-fg-1);
+   font: inherit;
+   font-size: 15px;
+ }
+ 
+-.quick-footer {
++.quick-input::placeholder {
++  color: var(--desk-fg-4);
++}
++
++.quick[data-sending="true"] .quick-input {
++  opacity: 0.55;
++}
++
++.quick-target {
+   display: flex;
+   align-items: center;
+-  gap: var(--indus-space-2);
+-  color: var(--indus-color-fg-muted);
+-  font-size: 12px;
++  gap: 8px;
+ }
+ 
+-.quick-footer .quick-hint {
+-  flex: 1;
++.quick-target-label {
++  color: var(--desk-fg-3);
++  font-size: 11px;
++}
++
++.quick-select {
++  padding: 2px 6px;
++  border: 1px solid var(--desk-stroke-strong);
++  border-radius: 6px;
++  background: transparent;
++  color: var(--desk-fg-1);
++  font: inherit;
++  font-size: 11px;
++}
++
++.quick-select option {
++  background: var(--desk-bg-raised);
++  color: var(--desk-fg-1);
+ }
+ 
+ .quick-error {
+   margin: 0;
+-  color: var(--indus-color-danger);
+-  font-size: 12px;
++  color: var(--desk-danger);
++  font-size: 11px;
+ }
+diff --git a/apps/desktop/src/ambient/strings.en.ts b/apps/desktop/src/ambient/strings.en.ts
+index 4194ebb..7d6a36b 100644
+--- a/apps/desktop/src/ambient/strings.en.ts
++++ b/apps/desktop/src/ambient/strings.en.ts
+@@ -10,7 +10,11 @@ export const AMBIENT_STRINGS = {
+   "hud.resize": "Drag to resize",
+ 
+   "quick.label": "Quick message",
+-  "quick.placeholder": "Ask Indus",
++  "quick.placeholder": "Ask Indus…",
++  "quick.sendTo": "Send to",
++  "quick.target.current": "Current chat",
++  "hud.placeholder": "What's on your mind?",
++  "hud.leave": "Leave floating chat",
+   "quick.send": "Send",
+   "quick.hint": "Enter to send, Esc to close",
+   "quick.sending": "Sending",
+diff --git a/apps/desktop/src/app/Shell.tsx b/apps/desktop/src/app/Shell.tsx
+index e0a0cd2..4368224 100644
+--- a/apps/desktop/src/app/Shell.tsx
++++ b/apps/desktop/src/app/Shell.tsx
+@@ -488,6 +488,11 @@ export function Shell(props: {
+       case "toggle-right": {
+         const snapshot = panes.layout();
+         const tools = zones(snapshot.root).filter((z) => !z.tabs.includes(CHAT_PANE));
++        if (tools.length === 0) {
++          // W52-m: an empty right side opens the right group (Files on top, Terminal below)
++          const opened = [panes.open("files"), panes.open("terminal")];
++          return opened.some(Boolean);
++        }
+         const showing = tools.some(
+           (z) => !z.minimized && z.tabs.some((pane) => !isHidden(snapshot, pane)),
+         );
+diff --git a/apps/desktop/src/hud/Hud.tsx b/apps/desktop/src/hud/Hud.tsx
+index 9cb6769..0734073 100644
+--- a/apps/desktop/src/hud/Hud.tsx
++++ b/apps/desktop/src/hud/Hud.tsx
+@@ -1,10 +1,13 @@
+-// The HUD window (P20-35): one conversation in a small floating card — a grip bar (press and hold
+-// to move), the transcript and the composer of the chat slots, and edge handles to resize. Moving
+-// and resizing are main's job: this window only says "held" and "let go" (`hud.drag`). When main
+-// points the HUD at another session (`hud.onChanged`) the route follows.
++// The HUD window (P20-35; W52-m look): one conversation as a Spotlight-style bar — the chat slots'
++// composer on top, with reset / leave buttons at its right end — and the transcript on a dark
++// translucent sheet hanging under it. The sheet shows while the composer has focus and for a
++// moment after the transcript changes (a turn streaming), then fades. Press and hold on the bar's
++// empty space to move the window; the invisible edges resize it. Moving and resizing are main's
++// job: this window only says "held" and "let go" (`hud.drag`). When main points the HUD at another
++// session (`hud.onChanged`) the route follows.
+ 
+ import "../ambient/ambient.css";
+-import { GripHorizontal, LayoutGrid, X } from "lucide-react";
++import { Minimize2, Undo2 } from "lucide-react";
+ import { type PointerEvent, useEffect, useRef, useState } from "react";
+ import { useLocation, useNavigate } from "react-router";
+ import type { AppSlots } from "../app/App.tsx";
+@@ -15,6 +18,12 @@ import { useT } from "../i18n/index.tsx";
+ 
+ /** A press on the grip turns into a move after this long (a click stays a click). */
+ export const HUD_HOLD_MS = 150;
++/** The sheet stays this long after the transcript last changed. */
++export const HUD_LINGER_MS = 1100;
++
++/** Pointer presses on these start their own action, never a move. */
++const INTERACTIVE =
++  "button, a, input, textarea, select, [contenteditable], [role='menu'], [role='dialog']";
+ 
+ type Edge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+ const EDGES: readonly Edge[] = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+@@ -26,6 +35,9 @@ export function Hud(props: { slots?: AppSlots }) {
+   const navigate = useNavigate();
+   const [dragging, setDragging] = useState(false);
+   const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const [focused, setFocused] = useState(false);
++  const [recent, setRecent] = useState(false);
++  const body = useRef<HTMLDivElement>(null);
+   const view = classifyPath(location.pathname);
+   const sessionId = view.kind === "chat" ? view.sessionId : null;
+ 
+@@ -51,8 +63,34 @@ export function Hud(props: { slots?: AppSlots }) {
+     }
+   };
+ 
++  // activity on the transcript keeps the sheet up for a moment
++  useEffect(() => {
++    const host = body.current;
++    if (host === null || typeof MutationObserver === "undefined") return;
++    let timer: ReturnType<typeof setTimeout> | null = null;
++    const observer = new MutationObserver((records) => {
++      if (!records.some((r) => (r.target as Element).closest?.(".transcript") !== null)) return;
++      setRecent(true);
++      if (timer !== null) clearTimeout(timer);
++      timer = setTimeout(() => setRecent(false), HUD_LINGER_MS);
++    });
++    observer.observe(host, { subtree: true, childList: true, characterData: true });
++    return () => {
++      observer.disconnect();
++      if (timer !== null) clearTimeout(timer);
++    };
++  }, []);
++
++  // the composer gets the focus when the HUD opens
++  useEffect(() => {
++    body.current?.querySelector<HTMLElement>(".chat-composer textarea")?.focus();
++  }, []);
++
+   const onGripDown = (event: PointerEvent<HTMLDivElement>) => {
+     if (event.button !== 0 || bridge === null) return;
++    const target = event.target as Element;
++    // only the bar's empty space moves the window
++    if (target.closest(INTERACTIVE) !== null || target.closest(".chat-composer") === null) return;
+     event.currentTarget.setPointerCapture?.(event.pointerId);
+     hold.current = setTimeout(() => {
+       hold.current = null;
+@@ -69,8 +107,18 @@ export function Hud(props: { slots?: AppSlots }) {
+   };
+ 
+   const slots = props.slots ?? {};
++  const sheet = sessionId === null || focused || recent;
+   return (
+-    <section className="hud" aria-label={t("hud.label")}>
++    <section
++      className="hud"
++      aria-label={t("hud.label")}
++      data-sheet={sheet ? "shown" : "hidden"}
++      data-dragging={dragging ? "true" : undefined}
++      onFocus={() => setFocused(true)}
++      onBlur={(event) => {
++        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
++      }}
++    >
+       {EDGES.map((edge) => (
+         <div
+           key={edge}
+@@ -82,41 +130,21 @@ export function Hud(props: { slots?: AppSlots }) {
+           onPointerCancel={end}
+         />
+       ))}
+-      <div className="hud-bar">
+-        <div
+-          className="hud-grip"
+-          data-dragging={dragging ? "true" : "false"}
+-          title={t("hud.grip")}
+-          onPointerDown={onGripDown}
+-          onPointerUp={end}
+-          onPointerCancel={end}
+-          onLostPointerCapture={end}
+-        >
+-          <GripHorizontal size={14} aria-hidden="true" />
+-          <span>{t("hud.label")}</span>
+-        </div>
+-        <button
+-          type="button"
+-          className="icon-button"
+-          title={t("hud.reset")}
+-          aria-label={t("hud.reset")}
+-          onClick={() => void bridge?.hud.resetLayout().catch(() => {})}
+-        >
+-          <LayoutGrid size={14} aria-hidden="true" />
+-        </button>
+-        <button
+-          type="button"
+-          className="icon-button"
+-          title={t("hud.close")}
+-          aria-label={t("hud.close")}
+-          onClick={() => void bridge?.hud.close().catch(() => {})}
+-        >
+-          <X size={14} aria-hidden="true" />
+-        </button>
+-      </div>
+-      <div className="hud-body">
++      <div
++        className="hud-body"
++        ref={body}
++        onPointerDown={onGripDown}
++        onPointerUp={end}
++        onPointerCancel={end}
++        onLostPointerCapture={end}
++      >
+         {sessionId === null ? (
+-          <p className="hud-row">{t("hud.empty")}</p>
++          <>
++            <div className="chat-composer hud-placeholder-bar" title={t("hud.grip")}>
++              <span>{t("hud.placeholder")}</span>
++            </div>
++            <p className="hud-row">{t("hud.empty")}</p>
++          </>
+         ) : (
+           <ChatView
+             sessionId={sessionId}
+@@ -124,6 +152,26 @@ export function Hud(props: { slots?: AppSlots }) {
+             cards={slots.cards?.(sessionId)}
+           />
+         )}
++        <div className="hud-tools">
++          <button
++            type="button"
++            className="hud-tool"
++            title={t("hud.reset")}
++            aria-label={t("hud.reset")}
++            onClick={() => void bridge?.hud.resetLayout().catch(() => {})}
++          >
++            <Undo2 size={14} aria-hidden="true" />
++          </button>
++          <button
++            type="button"
++            className="hud-tool"
++            title={t("hud.leave")}
++            aria-label={t("hud.close")}
++            onClick={() => void bridge?.hud.close().catch(() => {})}
++          >
++            <Minimize2 size={14} aria-hidden="true" />
++          </button>
++        </div>
+       </div>
+     </section>
+   );
+diff --git a/apps/desktop/src/onboarding/Onboarding.test.tsx b/apps/desktop/src/onboarding/Onboarding.test.tsx
+index 3533c3c..2a6bf71 100644
+--- a/apps/desktop/src/onboarding/Onboarding.test.tsx
++++ b/apps/desktop/src/onboarding/Onboarding.test.tsx
+@@ -295,6 +295,8 @@ describe("onboarding overlay", () => {
+     render(<Onboarding ready api={api} saveKey={null} />);
+     await settle();
+     expect(hook("onboarding-dialog").getAttribute("role")).toBe("dialog");
++    // W52-m: the custom endpoint row sits behind the "Other providers" disclosure
++    fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
+     await act(async () => {
+       fireEvent.click(hook("onboarding-custom-option"));
+     });
+@@ -331,3 +333,58 @@ describe("onboarding overlay", () => {
+     expect(isProviderFailure({ type: "turn.started" })).toBe(false);
+   });
+ });
++
++describe("onboarding look (W52-m)", () => {
++  it("first run: a notice box, key providers behind the disclosure, tiles on the key screen", async () => {
++    const api = fakeRest();
++    api.route("GET", "/api/model/options", OPTIONS(false));
++    render(<Onboarding ready api={api} saveKey={null} />);
++    await settle();
++    expect(screen.getByText(/No model provider is connected yet/)).toBeTruthy();
++    expect(screen.queryByRole("button", { name: /OpenRouter/ })).toBeNull();
++    fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
++    expect(screen.getByRole("button", { name: /OpenRouter/ })).toBeTruthy();
++    expect(screen.getByRole("button", { name: "Collapse" })).toBeTruthy();
++    expect(screen.queryByText(/recommended/i)).toBeNull();
++    fireEvent.click(screen.getByRole("button", { name: /Paste an API key/ }));
++    expect(screen.queryByRole("combobox")).toBeNull();
++    const tile = screen.getByRole("button", { name: /OpenRouter/ });
++    expect(tile.getAttribute("aria-pressed")).toBe("true");
++    fireEvent.click(screen.getByRole("button", { name: /Another key/ }));
++    expect(screen.getByLabelText("Variable name")).toBeTruthy();
++  });
++
++  it("opened from Settings: no notice box", async () => {
++    const api = fakeRest();
++    api.route("GET", "/api/model/options", OPTIONS(true));
++    render(<Onboarding ready api={api} saveKey={null} />);
++    await settle();
++    await act(async () => {
++      requestOnboarding({ reason: "manual" });
++    });
++    await settle();
++    expect(screen.getByRole("dialog")).toBeTruthy();
++    expect(screen.queryByText(/No model provider is connected yet/)).toBeNull();
++  });
++
++  it("a provider failure brings it back with its own notice", async () => {
++    const api = fakeRest();
++    api.route("GET", "/api/model/options", OPTIONS(false));
++    const bus = events();
++    render(<Onboarding ready api={api} saveKey={null} events={bus.source} />);
++    await settle();
++    await act(async () => {
++      fireEvent.click(screen.getByRole("button", { name: "Choose later" }));
++    });
++    await act(async () => {
++      bus.emit({
++        type: "turn.done",
++        session_id: "s",
++        reason: "provider_failed",
++        failure: { reason: "No API key is configured for this provider" },
++      });
++    });
++    await settle();
++    expect(screen.getByText(/failed at the provider/)).toBeTruthy();
++  });
++});
+diff --git a/apps/desktop/src/onboarding/Onboarding.tsx b/apps/desktop/src/onboarding/Onboarding.tsx
+index 65d1367..02ab170 100644
+--- a/apps/desktop/src/onboarding/Onboarding.tsx
++++ b/apps/desktop/src/onboarding/Onboarding.tsx
+@@ -4,7 +4,18 @@
+ // brings it back). Every state comes from the backend; keys go to the backend and are dropped from
+ // the renderer as soon as the call returns.
+ 
+-import { Copy, ExternalLink, X } from "lucide-react";
++import {
++  Check,
++  ChevronDown,
++  ChevronLeft,
++  ChevronRight,
++  CircleAlert,
++  Copy,
++  ExternalLink,
++  KeyRound,
++  LoaderCircle,
++  X,
++} from "lucide-react";
+ import {
+   type FormEvent,
+   type ReactNode,
+@@ -133,14 +144,15 @@ export function Onboarding(props: OnboardingProps) {
+   useEffect(
+     () =>
+       onOnboardingRequest((request) =>
+-        send({ type: "reopen", manual: request.reason === "manual" }),
++        send({ type: "reopen", manual: request.reason === "manual", reason: request.reason }),
+       ),
+     [send],
+   );
+   useEffect(() => {
+     if (props.events === null || props.events === undefined) return;
+     return props.events((event) => {
+-      if (isProviderFailure(event)) send({ type: "reopen", manual: false });
++      if (isProviderFailure(event))
++        send({ type: "reopen", manual: false, reason: "provider-error" });
+     });
+   }, [props.events, send]);
+ 
+@@ -213,7 +225,7 @@ export function Onboarding(props: OnboardingProps) {
+     case "checking":
+       body = (
+         <div className="onboarding-status" role="status">
+-          <Loader />
++          <Loader size="sm" />
+           <span>{t("onboarding.checking")}</span>
+         </div>
+       );
+@@ -233,7 +245,7 @@ export function Onboarding(props: OnboardingProps) {
+     case "device-starting":
+       body = (
+         <div className="onboarding-status" role="status">
+-          <Loader />
++          <Loader size="sm" />
+           <span>{t("onboarding.device.starting", { provider: step.provider.label })}</span>
+         </div>
+       );
+@@ -255,6 +267,12 @@ export function Onboarding(props: OnboardingProps) {
+       body = (
+         <KeyForm
+           providers={keyProviders(providers)}
++          manual={state.manual}
++          onLater={() => send({ type: "choose-later" })}
++          onEndpoint={(endpoint) => {
++            send({ type: "back" });
++            send({ type: "pick-endpoint", endpoint });
++          }}
+           initial={step.provider}
+           busy={step.kind === "saving-key"}
+           error={step.kind === "key-form" ? step.error : null}
+@@ -287,6 +305,17 @@ export function Onboarding(props: OnboardingProps) {
+     case "testing-endpoint":
+       body = (
+         <EndpointForm
++          providers={keyProviders(providers)}
++          manual={state.manual}
++          onLater={() => send({ type: "choose-later" })}
++          onKey={(provider) => {
++            send({ type: "back" });
++            send({ type: "pick-key", provider });
++          }}
++          onEndpoint={(endpoint) => {
++            send({ type: "back" });
++            send({ type: "pick-endpoint", endpoint });
++          }}
+           endpoint={step.endpoint}
+           busy={step.kind === "testing-endpoint"}
+           error={step.kind === "endpoint-form" ? step.error : null}
+@@ -354,18 +383,25 @@ export function Onboarding(props: OnboardingProps) {
+     case "error":
+       body = (
+         <div className="onboarding-error" role="alert">
+-          <p>{step.message || t("onboarding.error.default")}</p>
++          <p className="onboarding-error-line">
++            <CircleAlert aria-hidden="true" size={14} />
++            <span>{step.message || t("onboarding.error.default")}</span>
++          </p>
+           <div className="onboarding-actions">
+             <button
+               type="button"
+-              className="button button-secondary"
++              className="desk-btn"
++              data-variant="text"
++              data-size="sm"
+               onClick={() => send({ type: "back" })}
+             >
+               {t("onboarding.error.other")}
+             </button>
+             <button
+               type="button"
+-              className="button button-secondary"
++              className="desk-btn"
++              data-variant="secondary"
++              data-size="sm"
+               onClick={() => send({ type: "pick-key", provider: null })}
+             >
+               {t("onboarding.error.useKey")}
+@@ -373,7 +409,9 @@ export function Onboarding(props: OnboardingProps) {
+             {step.provider?.device_login === true && (
+               <button
+                 type="button"
+-                className="button button-primary"
++                className="desk-btn"
++                data-variant="primary"
++                data-size="sm"
+                 onClick={() => {
+                   if (step.provider !== null) void startDevice(step.provider);
+                 }}
+@@ -389,6 +427,13 @@ export function Onboarding(props: OnboardingProps) {
+       body = null;
+   }
+ 
++  const reason = state.reason ?? "first-run";
++  const notice =
++    state.manual || step.kind === "checking"
++      ? null
++      : reason === "provider-error"
++        ? t("onboarding.notice.providerError")
++        : t("onboarding.notice.firstRun");
+   return (
+     <div className="onboarding-overlay">
+       <section
+@@ -396,6 +441,7 @@ export function Onboarding(props: OnboardingProps) {
+         tabIndex={-1}
+         className="onboarding-card"
+         data-ui="onboarding-dialog"
++        data-step={step.kind}
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="onboarding-title"
+@@ -409,19 +455,22 @@ export function Onboarding(props: OnboardingProps) {
+       >
+         <header className="onboarding-header">
+           <h2 id="onboarding-title">{t("onboarding.title")}</h2>
++          <p className="onboarding-lead">{t("onboarding.lead")}</p>
+           {state.manual && (
+             <button
+               type="button"
+-              className="icon-button"
++              className="onboarding-close"
+               aria-label={t("common.close")}
+               onClick={() => send({ type: "close" })}
+             >
+-              <X aria-hidden="true" size={16} />
++              <X aria-hidden="true" size={14} />
+             </button>
+           )}
+         </header>
+-        <p className="onboarding-lead">{t("onboarding.lead")}</p>
+-        {body}
++        <div className="onboarding-body">
++          {notice !== null && <p className="onboarding-notice">{notice}</p>}
++          {body}
++        </div>
+       </section>
+     </div>
+   );
+@@ -435,6 +484,34 @@ async function defaultCopy(text: string): Promise<void> {
+   await navigator.clipboard?.writeText(text);
+ }
+ 
++/** One provider row of the picker: a title, a muted line and a trailing chevron. A featured row
++ * (only when the backend marks one) gets the tinted card with the two-colour edge. */
++function ProviderRow(props: {
++  title: string;
++  hint: string;
++  featured?: boolean;
++  ui?: string;
++  onClick: () => void;
++}) {
++  return (
++    <li>
++      <button
++        type="button"
++        className="onboarding-option"
++        data-featured={props.featured === true ? "true" : undefined}
++        data-ui={props.ui}
++        onClick={props.onClick}
++      >
++        <span className="onboarding-option-text">
++          <span className="onboarding-option-title">{props.title}</span>
++          {props.hint !== "" && <span className="onboarding-option-hint">{props.hint}</span>}
++        </span>
++        <ChevronRight aria-hidden="true" size={16} className="onboarding-option-chevron" />
++      </button>
++    </li>
++  );
++}
++
+ function Picker(props: {
+   providers: readonly ProviderOption[];
+   manual: boolean;
+@@ -444,73 +521,74 @@ function Picker(props: {
+   onLater: () => void;
+ }) {
+   const t = useT();
++  const [more, setMore] = useState(false);
+   const device = deviceProviders(props.providers);
++  const keys = keyProviders(props.providers);
++  const hintOf = (provider: ProviderOption, fallback: string) =>
++    provider.description !== undefined && provider.description !== ""
++      ? provider.description
++      : fallback;
+   return (
+     <div className="onboarding-picker">
+-      {device.length > 0 && (
+-        <section aria-labelledby="onboarding-device">
+-          <h3 id="onboarding-device">{t("onboarding.device.title")}</h3>
+-          <ul className="onboarding-list">
+-            {device.map((provider) => (
+-              <li key={provider.name}>
+-                <button
+-                  type="button"
+-                  className="onboarding-option"
+-                  onClick={() => props.onDevice(provider)}
+-                >
+-                  <span className="onboarding-option-title">{provider.label}</span>
+-                  {provider.description !== undefined && provider.description !== "" && (
+-                    <span className="onboarding-option-hint">{provider.description}</span>
+-                  )}
+-                </button>
+-              </li>
+-            ))}
+-          </ul>
+-        </section>
+-      )}
+-      <section aria-labelledby="onboarding-other">
+-        <h3 id="onboarding-other">{t("onboarding.other.title")}</h3>
+-        <ul className="onboarding-list">
+-          <li>
+-            <button
+-              type="button"
+-              className="onboarding-option"
+-              onClick={() => props.onKey(keyProviders(props.providers)[0] ?? null)}
+-            >
+-              <span className="onboarding-option-title">{t("onboarding.key.option")}</span>
+-              <span className="onboarding-option-hint">{t("onboarding.key.optionHint")}</span>
+-            </button>
+-          </li>
+-          <li>
+-            <button
+-              type="button"
+-              className="onboarding-option"
+-              onClick={() => props.onEndpoint("local")}
+-            >
+-              <span className="onboarding-option-title">{t("onboarding.local.option")}</span>
+-              <span className="onboarding-option-hint">{t("onboarding.local.optionHint")}</span>
+-            </button>
+-          </li>
+-          <li>
+-            <button
+-              type="button"
+-              className="onboarding-option"
+-              data-ui="onboarding-custom-option"
+-              onClick={() => props.onEndpoint("custom")}
+-            >
+-              <span className="onboarding-option-title">{t("onboarding.custom.option")}</span>
+-              <span className="onboarding-option-hint">{t("onboarding.custom.optionHint")}</span>
+-            </button>
+-          </li>
+-        </ul>
+-      </section>
+-      {!props.manual && (
+-        <div className="onboarding-actions">
+-          <button type="button" className="text-button" onClick={props.onLater}>
++      <ul className="onboarding-list">
++        {device.map((provider) => (
++          <ProviderRow
++            key={provider.name}
++            title={provider.label}
++            hint={hintOf(provider, t("onboarding.device.hint"))}
++            featured={provider.featured === true}
++            onClick={() => props.onDevice(provider)}
++          />
++        ))}
++        <ProviderRow
++          title={t("onboarding.local.option")}
++          hint={t("onboarding.local.optionHint")}
++          onClick={() => props.onEndpoint("local")}
++        />
++        {more &&
++          keys.map((provider) => (
++            <ProviderRow
++              key={provider.name}
++              title={provider.label}
++              hint={hintOf(provider, t("onboarding.key.defaultDesc", { provider: provider.label }))}
++              featured={provider.featured === true}
++              onClick={() => props.onKey(provider)}
++            />
++          ))}
++        {more && (
++          <ProviderRow
++            title={t("onboarding.custom.option")}
++            hint={t("onboarding.custom.optionHint")}
++            ui="onboarding-custom-option"
++            onClick={() => props.onEndpoint("custom")}
++          />
++        )}
++      </ul>
++      <button
++        type="button"
++        className="onboarding-disclosure"
++        aria-expanded={more}
++        onClick={() => setMore((open) => !open)}
++      >
++        {t(more ? "onboarding.less" : "onboarding.more")}
++        <ChevronDown aria-hidden="true" size={14} data-open={more ? "true" : undefined} />
++      </button>
++      <div className="onboarding-footer">
++        {props.manual ? (
++          <span />
++        ) : (
++          <button type="button" className="onboarding-text-btn" onClick={props.onLater}>
+             {t("onboarding.later")}
+           </button>
+-        </div>
+-      )}
++        )}
++        <button
++          type="button"
++          className="onboarding-text-btn"
++          onClick={() => props.onKey(keys[0] ?? null)}
++        >
++          {t("onboarding.key.option")}
++        </button>
++      </div>
+     </div>
+   );
+ }
+@@ -527,14 +605,19 @@ function DeviceCode(props: {
+   const [copied, setCopied] = useState(false);
+   return (
+     <div className="onboarding-device">
+-      <p>{t("onboarding.device.instructions", { provider: props.provider.label })}</p>
++      <h3 className="onboarding-step-title">{t("onboarding.device.title")}</h3>
++      <p className="onboarding-muted">
++        {t("onboarding.device.instructions", { provider: props.provider.label })}
++      </p>
+       <output className="onboarding-code" aria-label={t("onboarding.device.code")}>
+         {props.code}
+       </output>
+       <div className="onboarding-actions">
+         <button
+           type="button"
+-          className="button button-secondary"
++          className="desk-btn"
++          data-variant="secondary"
++          data-size="sm"
+           onClick={async () => {
+             try {
+               await props.onCopy();
+@@ -547,35 +630,138 @@ function DeviceCode(props: {
+           <Copy aria-hidden="true" size={14} />
+           {t(copied ? "onboarding.device.copied" : "onboarding.device.copy")}
+         </button>
+-        <button type="button" className="button button-primary" onClick={props.onOpen}>
++        <button
++          type="button"
++          className="desk-btn"
++          data-variant="primary"
++          data-size="sm"
++          onClick={props.onOpen}
++        >
+           <ExternalLink aria-hidden="true" size={14} />
+           {t("onboarding.device.open")}
+         </button>
+       </div>
+       <p className="onboarding-status" role="status">
+-        <Loader />
++        <LoaderCircle aria-hidden="true" size={12} className="onboarding-spin" />
+         <span>{t("onboarding.device.waiting")}</span>
+       </p>
+-      <button type="button" className="text-button" onClick={props.onCancel}>
++      <button type="button" className="onboarding-text-btn" onClick={props.onCancel}>
+         {t("onboarding.cancel")}
+       </button>
+     </div>
+   );
+ }
+ 
++/** The tile ids of the key screen besides the providers' own names. */
++const LOCAL_TILE = "@local";
++const CUSTOM_TILE = "@custom";
++const GENERIC_TILE = "";
++
++/** The first clause of a description, for a tile's one short line. */
++function shortLine(text: string | undefined): string {
++  if (text === undefined) return "";
++  const first = text.split(/[.;,(—–]/)[0] ?? "";
++  return first.trim();
++}
++
++/** The two-column provider tiles of the key screen (keys, then the endpoints, then any key). */
++function ProviderTiles(props: {
++  providers: readonly ProviderOption[];
++  selected: string;
++  onPick: (id: string) => void;
++}) {
++  const t = useT();
++  const tiles: Array<{ id: string; label: string; short: string; done: boolean }> = [
++    ...props.providers.map((p) => ({
++      id: p.name,
++      label: p.label,
++      short: shortLine(p.description),
++      done: p.configured,
++    })),
++    {
++      id: LOCAL_TILE,
++      label: t("onboarding.tile.local"),
++      short: t("onboarding.tile.localShort"),
++      done: false,
++    },
++    {
++      id: CUSTOM_TILE,
++      label: t("onboarding.tile.custom"),
++      short: t("onboarding.tile.customShort"),
++      done: false,
++    },
++    {
++      id: GENERIC_TILE,
++      label: t("onboarding.key.genericTile"),
++      short: t("onboarding.key.genericShort"),
++      done: false,
++    },
++  ];
++  return (
++    <ul className="onboarding-tiles" aria-label={t("onboarding.key.provider")}>
++      {tiles.map((tile) => (
++        <li key={tile.id === "" ? "@generic" : tile.id}>
++          <button
++            type="button"
++            className="onboarding-tile"
++            data-provider={tile.id === "" ? "@generic" : tile.id}
++            aria-pressed={props.selected === tile.id}
++            onClick={() => props.onPick(tile.id)}
++          >
++            <span className="onboarding-tile-text">
++              <span className="onboarding-tile-name">{tile.label}</span>
++              {tile.short !== "" && <span className="onboarding-tile-short">{tile.short}</span>}
++            </span>
++            {tile.done && (
++              <Check
++                aria-label={t("onboarding.key.configured")}
++                size={14}
++                className="onboarding-tile-check"
++              />
++            )}
++          </button>
++        </li>
++      ))}
++    </ul>
++  );
++}
++
++function BackButton(props: { onBack: () => void }) {
++  const t = useT();
++  return (
++    <button type="button" className="onboarding-text-btn onboarding-back" onClick={props.onBack}>
++      <ChevronLeft aria-hidden="true" size={12} />
++      {t("onboarding.back")}
++    </button>
++  );
++}
++
++function LaterButton(props: { manual: boolean; onLater: () => void }) {
++  const t = useT();
++  if (props.manual) return null;
++  return (
++    <button type="button" className="onboarding-text-btn onboarding-later" onClick={props.onLater}>
++      {t("onboarding.later")}
++    </button>
++  );
++}
++
+ function KeyForm(props: {
+   providers: readonly ProviderOption[];
+   initial: ProviderOption | null;
+   busy: boolean;
+   error: string | null;
++  manual: boolean;
+   onBack: () => void;
++  onLater: () => void;
++  onEndpoint: (endpoint: EndpointKind) => void;
+   onSave: (provider: ProviderOption | null, name: string, value: string) => Promise<boolean>;
+ }) {
+   const t = useT();
+-  const [choice, setChoice] = useState<string>(props.initial?.name ?? "");
++  const [choice, setChoice] = useState<string>(props.initial?.name ?? GENERIC_TILE);
+   const [name, setName] = useState("");
+   const [value, setValue] = useState("");
+-  const selectId = useId();
++  const entryRef = useRef<HTMLDivElement>(null);
+   const provider = props.providers.find((p) => p.name === choice) ?? null;
+   const generic = provider === null;
+   const valid = value.trim() !== "" && (!generic || /^[A-Z][A-Z0-9_]*$/.test(name));
+@@ -586,60 +772,82 @@ function KeyForm(props: {
+     setValue(""); // the key leaves the renderer either way
+     if (saved) setName("");
+   };
++  const description = generic
++    ? t("onboarding.key.genericDesc")
++    : provider.description !== undefined && provider.description !== ""
++      ? provider.description
++      : t("onboarding.key.defaultDesc", { provider: provider.label });
+   return (
+     <form className="onboarding-form" onSubmit={submit}>
+-      <label htmlFor={selectId}>{t("onboarding.key.provider")}</label>
+-      <select
+-        id={selectId}
+-        className="settings-input"
+-        value={choice}
+-        onChange={(event) => setChoice(event.currentTarget.value)}
+-      >
+-        {props.providers.map((p) => (
+-          <option key={p.name} value={p.name}>
+-            {p.label}
+-          </option>
+-        ))}
+-        <option value="">{t("onboarding.key.generic")}</option>
+-      </select>
+-      {generic && (
+-        <input
+-          className="settings-input"
+-          aria-label={t("onboarding.key.name")}
+-          placeholder="EXAMPLE_API_KEY"
+-          value={name}
+-          spellCheck={false}
+-          onChange={(event) => setName(event.currentTarget.value.toUpperCase())}
+-        />
+-      )}
+-      <SecretInput
+-        label={t("onboarding.key.value")}
+-        placeholder={t("onboarding.key.value")}
+-        value={value}
+-        onChange={setValue}
++      <BackButton onBack={props.onBack} />
++      <ProviderTiles
++        providers={props.providers}
++        selected={choice}
++        onPick={(id) => {
++          if (id === LOCAL_TILE) props.onEndpoint("local");
++          else if (id === CUSTOM_TILE) props.onEndpoint("custom");
++          else {
++            setChoice(id);
++            entryRef.current?.scrollIntoView?.({ block: "nearest" });
++            entryRef.current?.querySelector<HTMLInputElement>("input")?.focus();
++          }
++        }}
+       />
+-      {props.error !== null && (
+-        <p className="settings-row-error" role="alert">
+-          {props.error}
+-        </p>
+-      )}
+-      <div className="onboarding-actions">
+-        <button type="button" className="text-button" onClick={props.onBack}>
+-          {t("onboarding.back")}
+-        </button>
+-        <button type="submit" className="button button-primary" disabled={!valid || props.busy}>
++      <div className="onboarding-entry" ref={entryRef}>
++        <p className="onboarding-muted">{description}</p>
++        {generic && (
++          <input
++            className="onboarding-input"
++            aria-label={t("onboarding.key.name")}
++            placeholder="EXAMPLE_API_KEY"
++            value={name}
++            spellCheck={false}
++            onChange={(event) => setName(event.currentTarget.value.toUpperCase())}
++          />
++        )}
++        <SecretInput
++          label={t("onboarding.key.value")}
++          placeholder={t("onboarding.key.placeholder")}
++          value={value}
++          onChange={setValue}
++        />
++        {props.error !== null && (
++          <p className="onboarding-error-text" role="alert">
++            {props.error}
++          </p>
++        )}
++      </div>
++      <div className="onboarding-submit">
++        <button
++          type="submit"
++          className="desk-btn onboarding-primary"
++          data-variant="primary"
++          data-size="sm"
++          disabled={!valid || props.busy}
++        >
++          {props.busy ? (
++            <LoaderCircle aria-hidden="true" size={14} className="onboarding-spin" />
++          ) : (
++            <KeyRound aria-hidden="true" size={14} />
++          )}
+           {t("onboarding.key.save")}
+         </button>
+       </div>
++      <LaterButton manual={props.manual} onLater={props.onLater} />
+     </form>
+   );
+ }
+ 
+ function EndpointForm(props: {
++  providers: readonly ProviderOption[];
+   endpoint: EndpointKind;
+   busy: boolean;
+   error: string | null;
++  manual: boolean;
+   onBack: () => void;
++  onLater: () => void;
++  onKey: (provider: ProviderOption | null) => void;
++  onEndpoint: (endpoint: EndpointKind) => void;
+   onTest: (url: string, key: string) => Promise<void>;
+ }) {
+   const t = useT();
+@@ -657,42 +865,64 @@ function EndpointForm(props: {
+         setKey("");
+       }}
+     >
+-      <p>{t(props.endpoint === "local" ? "onboarding.local.body" : "onboarding.custom.body")}</p>
+-      <label htmlFor={urlId}>{t("onboarding.endpoint.url")}</label>
+-      <input
+-        id={urlId}
+-        className="settings-input"
+-        data-ui="onboarding-endpoint-url"
+-        value={url}
+-        spellCheck={false}
+-        onChange={(event) => setUrl(event.currentTarget.value)}
++      <BackButton onBack={props.onBack} />
++      <ProviderTiles
++        providers={props.providers}
++        selected={props.endpoint === "local" ? LOCAL_TILE : CUSTOM_TILE}
++        onPick={(id) => {
++          if (id === LOCAL_TILE) {
++            if (props.endpoint !== "local") props.onEndpoint("local");
++          } else if (id === CUSTOM_TILE) {
++            if (props.endpoint !== "custom") props.onEndpoint("custom");
++          } else props.onKey(props.providers.find((p) => p.name === id) ?? null);
++        }}
+       />
+-      {props.endpoint === "custom" && (
+-        <SecretInput
+-          label={t("onboarding.endpoint.key")}
+-          placeholder={t("onboarding.endpoint.key")}
+-          value={key}
+-          onChange={setKey}
+-        />
+-      )}
+-      {props.error !== null && (
+-        <p className="settings-row-error" role="alert">
+-          {props.error}
++      <div className="onboarding-entry">
++        <p className="onboarding-muted">
++          {t(props.endpoint === "local" ? "onboarding.local.body" : "onboarding.custom.body")}
+         </p>
+-      )}
+-      <div className="onboarding-actions">
+-        <button type="button" className="text-button" onClick={props.onBack}>
+-          {t("onboarding.back")}
+-        </button>
++        <label htmlFor={urlId} className="sr-only">
++          {t("onboarding.endpoint.url")}
++        </label>
++        <input
++          id={urlId}
++          className="onboarding-input"
++          data-ui="onboarding-endpoint-url"
++          value={url}
++          placeholder={props.endpoint === "local" ? LOCAL_ENDPOINT_HINT : "https://"}
++          spellCheck={false}
++          onChange={(event) => setUrl(event.currentTarget.value)}
++        />
++        {props.endpoint === "custom" && (
++          <SecretInput
++            label={t("onboarding.endpoint.key")}
++            placeholder={t("onboarding.endpoint.key")}
++            value={key}
++            onChange={setKey}
++          />
++        )}
++        {props.error !== null && (
++          <p className="onboarding-error-text" role="alert">
++            {props.error}
++          </p>
++        )}
++      </div>
++      <div className="onboarding-submit">
+         <button
+           type="submit"
+-          className="button button-primary"
++          className="desk-btn onboarding-primary"
++          data-variant="primary"
++          data-size="sm"
+           data-ui="onboarding-test-continue"
+           disabled={!valid || props.busy}
+         >
++          {props.busy ? (
++            <LoaderCircle aria-hidden="true" size={14} className="onboarding-spin" />
++          ) : null}
+           {t("onboarding.endpoint.test")}
+         </button>
+       </div>
++      <LaterButton manual={props.manual} onLater={props.onLater} />
+     </form>
+   );
+ }
+@@ -710,17 +940,21 @@ function ConfirmModel(props: {
+   const listId = useId();
+   return (
+     <form
+-      className="onboarding-form"
++      className="onboarding-form onboarding-confirm"
+       onSubmit={async (event) => {
+         event.preventDefault();
+         if (model.trim() !== "" && !props.busy) await props.onSave(model.trim());
+       }}
+     >
+-      <p>{t("onboarding.model.body")}</p>
+-      <label htmlFor={inputId}>{t("onboarding.model.label")}</label>
++      <p className="onboarding-caption">{t("onboarding.model.caption")}</p>
++      <p className="onboarding-model-name">{model.trim() === "" ? "—" : model.trim()}</p>
++      <p className="onboarding-muted">{t("onboarding.model.body")}</p>
++      <label htmlFor={inputId} className="sr-only">
++        {t("onboarding.model.label")}
++      </label>
+       <input
+         id={inputId}
+-        className="settings-input"
++        className="onboarding-input"
+         data-ui="onboarding-model-select"
+         list={listId}
+         value={model}
+@@ -733,20 +967,20 @@ function ConfirmModel(props: {
+         ))}
+       </datalist>
+       {props.error !== null && (
+-        <p className="settings-row-error" role="alert">
++        <p className="onboarding-error-text" role="alert">
+           {props.error}
+         </p>
+       )}
+-      <div className="onboarding-actions">
+-        <button
+-          type="submit"
+-          className="button button-primary"
+-          data-ui="onboarding-start-chatting"
+-          disabled={model.trim() === "" || props.busy}
+-        >
+-          {t("onboarding.model.save")}
+-        </button>
+-      </div>
++      <button
++        type="submit"
++        className="desk-btn onboarding-primary"
++        data-variant="primary"
++        data-size="sm"
++        data-ui="onboarding-start-chatting"
++        disabled={model.trim() === "" || props.busy}
++      >
++        {t("onboarding.model.save")}
++      </button>
+     </form>
+   );
+ }
+diff --git a/apps/desktop/src/onboarding/flow.ts b/apps/desktop/src/onboarding/flow.ts
+index 0eee9ac..499a04d 100644
+--- a/apps/desktop/src/onboarding/flow.ts
++++ b/apps/desktop/src/onboarding/flow.ts
+@@ -11,8 +11,13 @@ export interface ProviderOption {
+   readonly auth_type: string;
+   readonly configured: boolean;
+   readonly device_login: boolean;
++  /** The backend marks a provider it wants first in the list (W52-m-1; none does today). */
++  readonly featured?: boolean;
+ }
+ 
++/** Why the overlay is on screen: the first run, a provider failure, or an open from Settings. */
++export type OpenReason = "first-run" | "provider-error" | "manual";
++
+ export type EndpointKind = "local" | "custom";
+ 
+ export type Step =
+@@ -62,6 +67,8 @@ export interface FlowState {
+   readonly step: Step;
+   /** Opened from Settings: closable, no "choose later". */
+   readonly manual: boolean;
++  /** Why it opened (W52-m; picks the notice text). Absent: the first run. */
++  readonly reason?: OpenReason;
+   readonly providers: readonly ProviderOption[] | null;
+   readonly currentModel: string | null;
+ }
+@@ -76,7 +83,7 @@ export type FlowEvent =
+     }
+   | { readonly type: "choose-later" }
+   | { readonly type: "close" }
+-  | { readonly type: "reopen"; readonly manual: boolean }
++  | { readonly type: "reopen"; readonly manual: boolean; readonly reason?: OpenReason }
+   | { readonly type: "back" }
+   | { readonly type: "pick-device"; readonly provider: ProviderOption }
+   | {
+@@ -168,7 +175,12 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
+     case "reopen":
+       // A provider error does not interrupt a flow that is already on screen.
+       if (isShown(state) && step.kind !== "checking") return state;
+-      return { ...state, manual: event.manual, step: { kind: "checking" } };
++      return {
++        ...state,
++        manual: event.manual,
++        reason: event.reason ?? (event.manual ? "manual" : "provider-error"),
++        step: { kind: "checking" },
++      };
+     case "back":
+       return step.kind === "checking" || !isShown(state) ? state : to(state, { kind: "picker" });
+     case "pick-device":
+diff --git a/apps/desktop/src/onboarding/onboarding.css b/apps/desktop/src/onboarding/onboarding.css
+index fdaf779..d3683e8 100644
+--- a/apps/desktop/src/onboarding/onboarding.css
++++ b/apps/desktop/src/onboarding/onboarding.css
+@@ -1,4 +1,5 @@
+-/* Provider onboarding overlay (P20-33). Above route overlays, below the boot overlay. */
++/* Provider onboarding overlay (P20-33; W52-m look). Above route overlays, below the boot overlay.
++   One 720px card centred on the page surface; desk tokens only. */
+ 
+ .onboarding-overlay {
+   position: fixed;
+@@ -6,22 +7,29 @@
+   z-index: calc(var(--z-overlay) + 10);
+   display: grid;
+   place-items: center;
+-  padding: var(--indus-space-4);
+-  background: var(--indus-color-bg);
++  padding: 24px;
++  overflow-y: auto;
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  font-family: var(--desk-font-ui);
+ }
+ 
+ .onboarding-card {
++  position: relative;
+   display: flex;
+   flex-direction: column;
+-  gap: var(--indus-space-3);
+-  width: min(640px, 100%);
+-  max-height: 90vh;
+-  overflow-y: auto;
+-  padding: var(--indus-space-4);
+-  border: 1px solid var(--indus-color-border);
+-  border-radius: var(--indus-radius-lg);
+-  background: var(--indus-color-bg-raised);
+-  box-shadow: var(--indus-shadow-high);
++  width: min(720px, 100%);
++  overflow: hidden;
++  border: 1px solid color-mix(in srgb, var(--desk-stroke-1) 55%, transparent);
++  border-radius: 12px;
++  background: color-mix(in srgb, var(--desk-bg-canvas) 99%, var(--desk-fg-1));
++  box-shadow: 0 8px 28px rgb(0 0 0 / 0.05);
++}
++
++:root[data-theme="indus-dark"] .onboarding-card {
++  border-color: var(--desk-stroke-2);
++  background: var(--desk-bg-bubble);
++  box-shadow: 0 8px 28px rgb(0 0 0 / 0.35);
+ }
+ 
+ .onboarding-card:focus {
+@@ -29,95 +37,442 @@
+ }
+ 
+ .onboarding-header {
+-  display: flex;
+-  justify-content: space-between;
+-  align-items: center;
++  position: relative;
++  padding: 20px 20px 4px;
+ }
+ 
+-.onboarding-header h2,
+-.onboarding-picker h3 {
++.onboarding-header h2 {
+   margin: 0;
++  color: var(--desk-fg-1);
+   font-size: 15px;
++  font-weight: 600;
++  letter-spacing: -0.01em;
+ }
+ 
+-.onboarding-picker h3 {
+-  margin-bottom: var(--indus-space-1);
+-  font-size: 12px;
+-  color: var(--indus-color-fg-muted);
++.onboarding-lead {
++  margin: 4px 0 0;
++  color: var(--desk-fg-3);
++  font-size: 13px;
++  line-height: 20px;
+ }
+ 
+-.onboarding-lead {
++.onboarding-close {
++  position: absolute;
++  top: 12px;
++  right: 12px;
++  display: inline-grid;
++  place-items: center;
++  width: 28px;
++  height: 28px;
++  padding: 0;
++  border: 0;
++  border-radius: var(--desk-radius-control);
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++}
++
++.onboarding-close:hover {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-1);
++}
++
++.onboarding-body {
++  display: grid;
++  gap: 12px;
++  padding: 20px;
++}
++
++.onboarding-notice {
+   margin: 0;
+-  color: var(--indus-color-fg-muted);
++  padding: 12px 16px;
++  border: 1px solid var(--desk-stroke-card);
++  border-radius: 6px;
++  background: var(--desk-bg-card);
++  color: var(--desk-fg-3);
++  font-size: 14px;
++  line-height: 20px;
+ }
+ 
++/* -- picker ------------------------------------------------------------------------------ */
++
+ .onboarding-picker {
+-  display: flex;
+-  flex-direction: column;
+-  gap: var(--indus-space-3);
++  display: grid;
++  gap: 12px;
+ }
+ 
+ .onboarding-list {
+-  display: flex;
+-  flex-direction: column;
+-  gap: var(--indus-space-1);
++  display: grid;
++  gap: 8px;
++  max-height: 60vh;
+   margin: 0;
+-  padding: 0;
++  padding: 4px;
++  overflow-y: auto;
+   list-style: none;
+ }
+ 
+ .onboarding-option {
+   display: flex;
+-  flex-direction: column;
++  align-items: center;
++  gap: 12px;
+   width: 100%;
+-  padding: var(--indus-space-2) var(--indus-space-3);
+-  border: 1px solid var(--indus-color-border);
+-  border-radius: var(--indus-radius-md);
++  padding: 10px 12px;
++  border: 0;
++  border-radius: 6px;
+   background: transparent;
+-  color: var(--indus-color-fg);
++  color: var(--desk-fg-1);
+   font: inherit;
+   text-align: left;
+   cursor: pointer;
+ }
+ 
++.onboarding-option:hover,
++.onboarding-option:focus-visible {
++  background: var(--desk-row-hover);
++}
++
++.onboarding-option:focus-visible {
++  outline: 2px solid var(--desk-accent);
++  outline-offset: -2px;
++}
++
++.onboarding-option-text {
++  display: grid;
++  gap: 4px;
++  flex: 1;
++  min-width: 0;
++}
++
+ .onboarding-option-title {
+-  font-weight: var(--indus-font-weight-semibold);
++  font-size: 14px;
++  font-weight: 600;
+ }
+ 
+ .onboarding-option-hint {
++  color: var(--desk-fg-3);
+   font-size: 12px;
+-  color: var(--indus-color-fg-muted);
++  line-height: 20px;
+ }
+ 
+-.onboarding-actions {
+-  display: flex;
+-  flex-wrap: wrap;
+-  justify-content: flex-end;
+-  gap: var(--indus-space-2);
++.onboarding-option-chevron {
++  flex: none;
++  color: var(--desk-fg-3);
++  transition: transform var(--indus-duration-quick) var(--indus-easing-standard);
+ }
+ 
+-.onboarding-status {
++.onboarding-option:hover .onboarding-option-chevron {
++  color: var(--desk-fg-1);
++  transform: translateX(2px);
++}
++
++/* a provider the backend marks as featured: tinted card with a two-colour edge */
++.onboarding-option[data-featured="true"] {
++  position: relative;
++  border-radius: 8px;
++  background: color-mix(in srgb, var(--desk-accent) 6%, transparent);
++}
++
++.onboarding-option[data-featured="true"]::before {
++  content: "";
++  position: absolute;
++  inset: 0;
++  padding: 1px;
++  border-radius: inherit;
++  background: linear-gradient(45deg, var(--desk-accent), #f08a3c);
++  -webkit-mask:
++    linear-gradient(#000 0 0) content-box,
++    linear-gradient(#000 0 0);
++  -webkit-mask-composite: xor;
++  mask-composite: exclude;
++  pointer-events: none;
++}
++
++.onboarding-option[data-featured="true"] .onboarding-option-chevron {
++  color: var(--desk-accent);
++}
++
++.onboarding-disclosure {
++  display: inline-flex;
++  align-items: center;
++  justify-self: center;
++  gap: 4px;
++  padding: 2px 6px;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-3);
++  font: inherit;
++  font-size: 11px;
++  font-weight: 500;
++  cursor: pointer;
++}
++
++.onboarding-disclosure:hover {
++  color: var(--desk-fg-1);
++}
++
++.onboarding-disclosure svg {
++  transition: transform var(--indus-duration-quick) var(--indus-easing-standard);
++}
++
++.onboarding-disclosure svg[data-open="true"] {
++  transform: rotate(180deg);
++}
++
++.onboarding-footer {
+   display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  padding: 0 8px;
++}
++
++.onboarding-text-btn {
++  display: inline-flex;
+   align-items: center;
+-  gap: var(--indus-space-2);
+-  color: var(--indus-color-fg-muted);
++  gap: 2px;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-3);
++  font: inherit;
++  font-size: 11px;
++  font-weight: 500;
++  cursor: pointer;
++}
++
++.onboarding-text-btn:hover {
++  color: var(--desk-fg-1);
+ }
+ 
++/* -- key / endpoint screen ---------------------------------------------------------------- */
++
+ .onboarding-form,
+ .onboarding-device,
+ .onboarding-error {
++  display: grid;
++  gap: 12px;
++}
++
++.onboarding-back,
++.onboarding-later {
++  justify-self: center;
++}
++
++.onboarding-tiles {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 8px;
++  max-height: 42vh;
++  margin: 0;
++  padding: 4px;
++  overflow-y: auto;
++  list-style: none;
++}
++
++.onboarding-tile {
+   display: flex;
+-  flex-direction: column;
+-  gap: var(--indus-space-2);
++  align-items: flex-start;
++  gap: 8px;
++  width: 100%;
++  height: 100%;
++  padding: 12px;
++  border: 1px solid transparent;
++  border-radius: 8px;
++  background: color-mix(in srgb, var(--desk-bg-canvas) 70%, transparent);
++  color: var(--desk-fg-1);
++  font: inherit;
++  text-align: left;
++  cursor: pointer;
++}
++
++:root[data-theme="indus-dark"] .onboarding-tile {
++  background: color-mix(in srgb, var(--desk-bg-canvas) 60%, var(--desk-bg-bubble));
++}
++
++.onboarding-tile:hover {
++  background: var(--desk-row-hover);
++}
++
++.onboarding-tile[aria-pressed="true"] {
++  border-color: var(--desk-accent);
++  box-shadow: 0 0 0 2px var(--desk-accent-ring);
++}
++
++.onboarding-tile:focus-visible {
++  outline: 2px solid var(--desk-accent);
++  outline-offset: 1px;
++}
++
++.onboarding-tile-text {
++  display: grid;
++  gap: 4px;
++  flex: 1;
++  min-width: 0;
++}
++
++.onboarding-tile-name {
++  font-size: 14px;
++  font-weight: 500;
++}
++
++.onboarding-tile-short {
++  overflow: hidden;
++  color: var(--desk-fg-3);
++  font-size: 12px;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.onboarding-tile-check {
++  flex: none;
++  color: var(--desk-fg-3);
++}
++
++.onboarding-entry {
++  display: grid;
++  gap: 8px;
++}
++
++.onboarding-muted {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-size: 14px;
++  line-height: 20px;
++}
++
++.onboarding-input,
++.onboarding-entry .settings-input {
++  width: 100%;
++  height: 30px;
++  padding: 0 10px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: 3px;
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 12px;
++}
++
++.onboarding-input:focus,
++.onboarding-entry .settings-input:focus {
++  border-color: var(--desk-accent);
++  outline: none;
++}
++
++.onboarding-entry .settings-inline {
++  display: flex;
++  align-items: center;
++  gap: 4px;
++}
++
++.onboarding-entry .settings-inline .settings-input {
++  flex: 1;
++}
++
++.onboarding-error-text {
++  margin: 0;
++  color: var(--desk-danger);
++  font-size: 12px;
++}
++
++.onboarding-submit {
++  display: flex;
++  justify-content: flex-end;
++}
++
++.onboarding-primary {
++  height: 28px;
++  padding: 0 10px;
++  border-radius: 3px;
++}
++
++.onboarding-primary:disabled {
++  opacity: 0.5;
++}
++
++/* -- other steps -------------------------------------------------------------------------- */
++
++.onboarding-status {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-size: 14px;
++}
++
++.onboarding-step-title {
++  margin: 0;
++  font-size: 14px;
++  font-weight: 600;
+ }
+ 
+ .onboarding-code {
+-  align-self: center;
+-  padding: var(--indus-space-2) var(--indus-space-4);
+-  border-radius: var(--indus-radius-md);
+-  background: var(--indus-color-code-bg);
+-  font-family: var(--indus-font-mono);
+-  font-size: 24px;
++  display: block;
++  padding: 10px 12px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: 6px;
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 18px;
++  letter-spacing: 0.12em;
++  text-align: center;
++}
++
++.onboarding-actions {
++  display: flex;
++  justify-content: flex-end;
++  flex-wrap: wrap;
++  gap: 8px;
++}
++
++.onboarding-device > .onboarding-text-btn {
++  justify-self: center;
++}
++
++.onboarding-error-line {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  margin: 0;
++  color: var(--desk-danger);
++  font-size: 14px;
++}
++
++.onboarding-confirm {
++  justify-items: center;
++  text-align: center;
++}
++
++.onboarding-confirm .onboarding-input {
++  max-width: 420px;
++}
++
++.onboarding-caption {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 10px;
+   letter-spacing: 0.2em;
+-  user-select: all;
++  text-transform: uppercase;
++}
++
++.onboarding-model-name {
++  margin: 0;
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 16px;
++}
++
++.onboarding-spin {
++  animation: onboarding-spin 0.9s linear infinite;
++}
++
++@keyframes onboarding-spin {
++  to {
++    transform: rotate(360deg);
++  }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  .onboarding-spin {
++    animation: none;
++  }
+ }
+diff --git a/apps/desktop/src/onboarding/strings.en.ts b/apps/desktop/src/onboarding/strings.en.ts
+index c81077c..c97c598 100644
+--- a/apps/desktop/src/onboarding/strings.en.ts
++++ b/apps/desktop/src/onboarding/strings.en.ts
+@@ -46,4 +46,24 @@ export const ONBOARDING_STRINGS = {
+   "onboarding.error.other": "Choose another way",
+   "onboarding.error.useKey": "Paste an API key instead",
+   "onboarding.error.retry": "Try again",
++
++  // W52-m: notice box, provider rows, disclosure, key screen tiles
++  "onboarding.notice.firstRun":
++    "No model provider is connected yet. Pick one below; you can also do this later from Settings › Providers.",
++  "onboarding.notice.providerError":
++    "The last reply failed at the provider or with its credentials. Connect it again or choose another provider.",
++  "onboarding.device.hint": "Sign in in your browser; Indus connects by itself.",
++  "onboarding.more": "Other providers",
++  "onboarding.less": "Collapse",
++  "onboarding.key.defaultDesc": "Paste a key from {provider}.",
++  "onboarding.key.genericTile": "Another key",
++  "onboarding.key.genericShort": "any variable name",
++  "onboarding.key.genericDesc": "Store any key under the environment variable name it needs.",
++  "onboarding.key.placeholder": "Paste API key",
++  "onboarding.key.configured": "Already set up",
++  "onboarding.tile.local": "Local model",
++  "onboarding.tile.localShort": "on this computer",
++  "onboarding.tile.custom": "Custom endpoint",
++  "onboarding.tile.customShort": "OpenAI-compatible",
++  "onboarding.model.caption": "Default model",
+ } as const satisfies Record<string, string>;
+diff --git a/apps/desktop/src/panes/PaneShell.tsx b/apps/desktop/src/panes/PaneShell.tsx
+index fd30005..9c5e2a7 100644
+--- a/apps/desktop/src/panes/PaneShell.tsx
++++ b/apps/desktop/src/panes/PaneShell.tsx
+@@ -76,6 +76,8 @@ export interface PaneRenderContext {
+   openPreview?(target: PreviewTarget): void;
+   /** Put text into the composer of the route's conversation. */
+   addToChat?(text: string): void;
++  /** Close this pane (a pane that draws its own header puts its close button there). */
++  close?(): void;
+ }
+ 
+ export interface PaneDefinition {
+@@ -260,6 +262,20 @@ interface ShellContext {
+   tools: Pick<PaneShellProps, "workspace" | "mode" | "connection" | "openPreview" | "addToChat">;
+   /** The zone whose header runs under the band's tool cluster (top right), if any. */
+   bandEnd: string | null;
++  /** Zones whose top edge is the window's top (their header is part of the title band). */
++  topZones: ReadonlySet<string>;
++}
++
++/** Panes that draw their own titled header (W52-m): alone in a zone they show no tab strip. */
++const SELF_LABELLED: ReadonlySet<PaneId> = new Set(["files", "review"]);
++
++/** The zones along the window's top edge: every child of a row, the first child of a column. */
++export function topZoneIds(node: LayoutNode | null, into = new Set<string>()): Set<string> {
++  if (node === null) return into;
++  if (node.kind === "zone") into.add(node.id);
++  else if (node.orientation === "row") for (const child of node.children) topZoneIds(child, into);
++  else topZoneIds(node.children[0] ?? null, into);
++  return into;
+ }
+ 
+ /** The top-right zone: the last child of a row, the first child of a column, down to a zone.
+@@ -410,6 +426,8 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
+   const canMinimize =
+     !z.tabs.includes(CHAT_PANE) && !z.tabs.some((pane) => ctx.registry.isStateful(pane));
+   const focused = ctx.focusedZone === z.id;
++  const selfLabelled = z.tabs.length === 1 && SELF_LABELLED.has(z.tabs[0] as PaneId);
++  const chrome = ctx.topZones.has(z.id) ? "band" : "strip";
+ 
+   const onDragOver = (event: DragEvent<HTMLElement>) => {
+     if (paneFromDrag(event) === null && !event.dataTransfer?.types.includes(PANE_DRAG_TYPE)) {
+@@ -452,6 +470,8 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
+       data-zone-id={z.id}
+       data-band-end={ctx.bandEnd === z.id ? "true" : undefined}
+       data-focused={focused ? "true" : "false"}
++      data-chrome={chrome}
++      data-self-labelled={selfLabelled ? "true" : undefined}
+       hidden={collapsed}
+       aria-label={ctx.title(active)}
+       onFocusCapture={() => ctx.store.setFocusedZone(z.id)}
+@@ -588,6 +608,7 @@ function PaneBody(props: { ctx: ShellContext; pane: PaneId; active: boolean }) {
+         connection: ctx.tools.connection ?? null,
+         ...(ctx.tools.openPreview === undefined ? {} : { openPreview: ctx.tools.openPreview }),
+         ...(ctx.tools.addToChat === undefined ? {} : { addToChat: ctx.tools.addToChat }),
++        close: () => ctx.store.close(pane),
+       })}
+     </>
+   );
+@@ -788,6 +809,7 @@ export function PaneShell(props: PaneShellProps) {
+       ...(props.addToChat === undefined ? {} : { addToChat: props.addToChat }),
+     },
+     bandEnd: props.toolbar === false ? null : bandEndZone(layout, layout.root),
++    topZones: topZoneIds(layout.root),
+   };
+   const root = layout.root;
+   const shellRef = useRef<HTMLDivElement>(null);
+diff --git a/apps/desktop/src/panes/d2Panes.tsx b/apps/desktop/src/panes/d2Panes.tsx
+index 4dc1523..204907b 100644
+--- a/apps/desktop/src/panes/d2Panes.tsx
++++ b/apps/desktop/src/panes/d2Panes.tsx
+@@ -84,6 +84,8 @@ function ReviewHost(props: { context: PaneRenderContext }) {
+     <ReviewPane
+       repo={workspace}
+       hidden={context.hidden}
++      onPreview={(path) => openPreview(context, { kind: "file", path })}
++      {...(context.close === undefined ? {} : { onClose: () => context.close?.() })}
+       lastTurnBase={base}
+       {...(connection === null || sessionId === null
+         ? {}
+@@ -110,6 +112,9 @@ export const WORKING_PANES: readonly PaneDefinition[] = [
+         mode={context.mode}
+         hidden={context.hidden}
+         onPreview={(path) => openPreview(context, { kind: "file", path })}
++        {...(context.addToChat === undefined
++          ? {}
++          : { addToChat: (text: string) => context.addToChat?.(text) })}
+       />
+     ),
+   },
+diff --git a/apps/desktop/src/panes/files/FilesPane.test.tsx b/apps/desktop/src/panes/files/FilesPane.test.tsx
+index 8790b6a..188003a 100644
+--- a/apps/desktop/src/panes/files/FilesPane.test.tsx
++++ b/apps/desktop/src/panes/files/FilesPane.test.tsx
+@@ -239,3 +239,44 @@ describe("FilesPane (remote)", () => {
+     expect((await screen.findByRole("alert")).textContent).toMatch(/That folder cannot be read\./);
+   });
+ });
++
++describe("FilesPane look (W52-m)", () => {
++  it("tints changed files from git status and collapses every open folder", async () => {
++    const { bridge } = fakeFs(TREE);
++    const git = {
++      status: vi.fn(async () => ({
++        root: WS,
++        branch: "main",
++        upstream: null,
++        ahead: 0,
++        behind: 0,
++        head: null,
++        truncated: false,
++        files: [
++          { path: "README.md", index: " ", worktree: "M" },
++          { path: "src/app.ts", index: "?", worktree: "?" },
++        ],
++      })),
++    };
++    render(<FilesPane workspace={WS} mode="local" source={localSource(bridge)} git={git} />);
++    const readme = await screen.findByText("README.md");
++    await waitFor(() =>
++      expect(readme.closest("[data-tint]")?.getAttribute("data-tint")).toBe("modified"),
++    );
++    expect(screen.queryByRole("button", { name: "Collapse all" })).toBeNull();
++    fireEvent.click(screen.getByText("src"));
++    const app = await screen.findByText("app.ts");
++    expect(app.closest("[data-tint]")?.getAttribute("data-tint")).toBe("added");
++    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
++    expect(screen.queryByText("app.ts")).toBeNull();
++  });
++
++  it("a right click opens the row's actions; an empty folder shows a quiet label", async () => {
++    const { bridge } = fakeFs({ ...TREE, [`${WS}/src`]: [] });
++    render(<FilesPane workspace={WS} mode="local" source={localSource(bridge)} git={null} />);
++    fireEvent.contextMenu(await screen.findByText("README.md"));
++    expect(screen.getByRole("button", { name: "Copy path" })).toBeTruthy();
++    fireEvent.click(screen.getByText("src"));
++    expect(await screen.findByText("This folder is empty.")).toBeTruthy();
++  });
++});
+diff --git a/apps/desktop/src/panes/files/FilesPane.tsx b/apps/desktop/src/panes/files/FilesPane.tsx
+index ac7f35b..f2aed1d 100644
+--- a/apps/desktop/src/panes/files/FilesPane.tsx
++++ b/apps/desktop/src/panes/files/FilesPane.tsx
+@@ -5,10 +5,10 @@
+ // and dragged (as a path) onto the composer. Expanded folders are watched in local mode.
+ 
+ import {
+-  ChevronDown,
+-  ChevronRight,
++  ChevronsDownUp,
+   File,
+   Folder,
++  FolderOpen,
+   Lock,
+   MoreHorizontal,
+   RefreshCw,
+@@ -24,9 +24,9 @@ import {
+   useState,
+ } from "react";
+ import { desktopBridge } from "../../app/bridge.ts";
+-import { Loader } from "../../app/Loader.tsx";
+-import type { IndusDesktopBridge } from "../../global.d.ts";
++import type { IndusDesktopBridge, IndusDesktopGit } from "../../global.d.ts";
+ import { type MessageKey, useT } from "../../i18n/index.tsx";
++import { PanelLabel } from "../../ui/components.tsx";
+ import {
+   basenameOf,
+   type FileEntry,
+@@ -47,6 +47,28 @@ export interface FilesPaneProps {
+   /** Overrides the source (tests); defaults from the bridge and the mode. */
+   source?: FileSource | null;
+   onPreview?(path: string): void;
++  /** Shift-click puts the row's path into the chat's composer. */
++  addToChat?(text: string): void;
++  /** Git status for the change tint (W52-m); defaults to the bridge's in local mode. */
++  git?: Pick<IndusDesktopGit, "status"> | null;
++}
++
++/** How a changed file's name is tinted in the tree. */
++type Tint = "modified" | "added" | "conflict";
++
++function tintOf(index: string, worktree: string): Tint | null {
++  if (index === "U" || worktree === "U" || (index === "A" && worktree === "A")) return "conflict";
++  if (index === "?" || index === "A" || worktree === "A") return "added";
++  if (index !== " " || worktree !== " ") return "modified";
++  return null;
++}
++
++/** The path below `root` with forward slashes, or null outside it. */
++function relativeTo(root: string, path: string): string | null {
++  const norm = (value: string) => value.replaceAll("\\", "/").replace(/\/+$/, "");
++  const base = norm(root);
++  const full = norm(path);
++  return full.startsWith(`${base}/`) ? full.slice(base.length + 1) : null;
+ }
+ 
+ type DirState =
+@@ -54,8 +76,7 @@ type DirState =
+   | { phase: "ready"; listing: Listing }
+   | { phase: "error"; message: string };
+ 
+-const ACTION =
+-  "rounded border border-line px-2 py-0.5 text-xs hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus";
++const ACTION = "files-action";
+ 
+ function errorText(error: unknown): string {
+   const text = error instanceof Error ? error.message : String(error);
+@@ -83,8 +104,45 @@ export function FilesPane(props: FilesPaneProps) {
+   const [newName, setNewName] = useState("");
+   const [confirming, setConfirming] = useState<FileEntry | null>(null);
+   const [notice, setNotice] = useState<string | null>(null);
++  const [selected, setSelected] = useState<string | null>(null);
++  const [tints, setTints] = useState<{ root: string; byPath: Map<string, Tint> } | null>(null);
++  const [tintKey, setTintKey] = useState(0);
+   const watchers = useRef(new Map<string, () => void>());
+   const root = props.workspace;
++  const git = useMemo(() => {
++    if (props.git !== undefined) return props.git;
++    if (props.mode === "remote") return null;
++    return (desktopBridge() as IndusDesktopBridge | null)?.git ?? null;
++  }, [props.git, props.mode]);
++
++  // the change tint: git status of the folder, refreshed with the tree; not a repo → no tint
++  // biome-ignore lint/correctness/useExhaustiveDependencies: tintKey asks again after a refresh
++  useEffect(() => {
++    setTints(null);
++    if (git === null || root === null) return;
++    let live = true;
++    git
++      .status({ repo: root })
++      .then((status) => {
++        if (!live) return;
++        const byPath = new Map<string, Tint>();
++        for (const file of status.files) {
++          const tint = tintOf(file.index, file.worktree);
++          if (tint !== null) byPath.set(file.path.replace(/\/$/, ""), tint);
++        }
++        setTints({ root: status.root, byPath });
++      })
++      .catch(() => {});
++    return () => {
++      live = false;
++    };
++  }, [git, root, tintKey]);
++
++  const tintFor = (entry: FileEntry): Tint | undefined => {
++    if (tints === null || entry.isDir) return undefined;
++    const rel = relativeTo(tints.root, entry.path);
++    return rel === null ? undefined : tints.byPath.get(rel);
++  };
+ 
+   const load = useCallback(
+     async (dir: string) => {
+@@ -213,7 +271,7 @@ export function FilesPane(props: FilesPaneProps) {
+   const renderActions = (entry: FileEntry) => {
+     if (menuFor !== entry.path) return null;
+     return (
+-      <div className="flex flex-wrap gap-1 py-1 pl-8">
++      <div className="files-menu">
+         {!entry.isDir && !entry.sensitive && props.onPreview !== undefined && !source?.remote ? (
+           <button type="button" className={ACTION} onClick={() => props.onPreview?.(entry.path)}>
+             {t("files.preview")}
+@@ -224,6 +282,7 @@ export function FilesPane(props: FilesPaneProps) {
+             type="button"
+             className={ACTION}
+             onClick={() => {
++              setMenuFor(null);
+               setRenaming(entry.path);
+               setNewName(entry.name);
+             }}
+@@ -256,7 +315,10 @@ export function FilesPane(props: FilesPaneProps) {
+         <button
+           type="button"
+           className={ACTION}
+-          onClick={() => void navigator.clipboard?.writeText(entry.path).catch(() => {})}
++          onClick={() => {
++            setMenuFor(null);
++            void navigator.clipboard?.writeText(entry.path).catch(() => {});
++          }}
+         >
+           {t("files.copyPath")}
+         </button>
+@@ -264,22 +326,34 @@ export function FilesPane(props: FilesPaneProps) {
+     );
+   };
+ 
++  const indent = (depth: number) => ({ paddingLeft: `${depth * 10 + 16}px` });
++
+   const renderDir = (dir: string, depth: number): ReactNode => {
+     const state = dirs[dir];
+     if (state === undefined || state.phase === "loading") {
+       return (
+-        <li className="px-2 py-1" style={{ paddingLeft: `${depth * 12 + 8}px` }}>
+-          <Loader size="sm" />
++        <li className="files-skeleton" aria-hidden={depth === 0 ? undefined : "true"}>
++          {depth === 0 ? (
++            [0, 1, 2, 3, 4].map((n) => <span key={n} style={{ width: `${70 - n * 9}%` }} />)
++          ) : (
++            <span style={{ ...indent(depth), width: "50%" }} />
++          )}
+         </li>
+       );
+     }
+     if (state.phase === "error") {
+-      return (
+-        <li
+-          role="alert"
+-          className="px-2 py-1 text-xs text-danger"
+-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
+-        >
++      return depth === 0 ? (
++        <li className="files-state">
++          <p className="files-state-title">{t("files.errorTitle")}</p>
++          <p role="alert" className="files-state-body">
++            {t("files.loadFailed", { message: state.message })}
++          </p>
++          <button type="button" className="files-state-retry" onClick={() => void load(dir)}>
++            {t("files.retry")}
++          </button>
++        </li>
++      ) : (
++        <li role="alert" className="files-note files-note-danger" style={indent(depth)}>
+           {t("files.loadFailed", { message: state.message })}
+         </li>
+       );
+@@ -288,36 +362,50 @@ export function FilesPane(props: FilesPaneProps) {
+     return (
+       <>
+         {entries.length === 0 ? (
+-          <li
+-            className="px-2 py-1 text-xs text-muted"
+-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+-          >
+-            {t("files.empty")}
+-          </li>
++          depth === 0 ? (
++            <li className="files-state">
++              <PanelLabel muted>{t("files.noFiles")}</PanelLabel>
++            </li>
++          ) : (
++            <li className="files-note" style={indent(depth)}>
++              {t("files.empty")}
++            </li>
++          )
+         ) : null}
+         {entries.map((entry) => {
+           const open = expanded.has(entry.path);
++          const tint = tintFor(entry);
+           return (
+-            <li key={entry.path}>
+-              {/* biome-ignore lint/a11y/noStaticElementInteractions: dragging is a pointer extra; "Copy path" is the keyboard way */}
++            <li key={entry.path} className="files-item">
++              {/* biome-ignore lint/a11y/noStaticElementInteractions: dragging and the context menu are pointer extras; the actions button is the keyboard way */}
+               <div
+-                className="group flex items-center gap-1 px-2 py-0.5 text-sm hover:bg-raised"
+-                style={{ paddingLeft: `${depth * 12 + 8}px` }}
++                className="files-row"
++                style={indent(depth)}
++                data-selected={selected === entry.path ? "true" : undefined}
++                data-tint={tint}
+                 draggable
+                 onDragStart={(event) => onDragStart(event, entry)}
++                onContextMenu={(event) => {
++                  event.preventDefault();
++                  setSelected(entry.path);
++                  setMenuFor(entry.path);
++                }}
+               >
+                 {renaming === entry.path ? (
+                   <form
+-                    className="flex flex-1 items-center gap-1"
++                    className="files-rename"
+                     onSubmit={(event) => void submitRename(event, entry)}
+                   >
+                     <input
+-                      className="min-w-0 flex-1 rounded border border-line bg-bg px-1 text-sm"
++                      className="files-rename-input"
+                       aria-label={t("files.renameTo", { name: entry.name })}
+                       value={newName}
+                       // biome-ignore lint/a11y/noAutofocus: the person just asked to rename this row
+                       autoFocus
+                       onChange={(event) => setNewName(event.target.value)}
++                      onKeyDown={(event) => {
++                        if (event.key === "Escape") setRenaming(null);
++                      }}
+                     />
+                     <button type="submit" className={ACTION}>
+                       {t("files.renameSave")}
+@@ -330,72 +418,78 @@ export function FilesPane(props: FilesPaneProps) {
+                   <>
+                     <button
+                       type="button"
+-                      className="flex min-w-0 flex-1 items-center gap-1 text-left"
++                      className="files-name"
+                       title={entry.sensitive ? t("files.sensitive") : entry.path}
+                       aria-expanded={entry.isDir ? open : undefined}
+-                      onClick={() => {
++                      onClick={(event) => {
++                        setSelected(entry.path);
++                        if (event.shiftKey && props.addToChat !== undefined) {
++                          props.addToChat(entry.path);
++                          return;
++                        }
+                         if (entry.isDir) toggle(entry);
+                         else if (!entry.sensitive && !source?.remote) props.onPreview?.(entry.path);
+                       }}
++                      onKeyDown={(event) => {
++                        if (event.key === "F2" && source?.rename !== null && source !== null) {
++                          event.preventDefault();
++                          setRenaming(entry.path);
++                          setNewName(entry.name);
++                        }
++                      }}
+                     >
+                       {entry.isDir ? (
+                         open ? (
+-                          <ChevronDown size={12} aria-hidden="true" />
++                          <FolderOpen size={14} aria-hidden="true" className="files-icon" />
+                         ) : (
+-                          <ChevronRight size={12} aria-hidden="true" />
++                          <Folder size={14} aria-hidden="true" className="files-icon" />
+                         )
+                       ) : (
+-                        <span className="inline-block w-3" />
+-                      )}
+-                      {entry.isDir ? (
+-                        <Folder size={14} aria-hidden="true" />
+-                      ) : (
+-                        <File size={14} aria-hidden="true" />
++                        <File size={14} aria-hidden="true" className="files-icon" />
+                       )}
+-                      <span className="truncate">{entry.name}</span>
++                      <span className="files-label">{entry.name}</span>
+                       {entry.sensitive ? (
+-                        <Lock size={12} aria-label={t("files.sensitive")} />
++                        <Lock size={12} aria-label={t("files.sensitive")} className="files-lock" />
+                       ) : null}
+                     </button>
+                     <button
+                       type="button"
+-                      className="rounded p-0.5 text-muted opacity-0 hover:text-fg focus:opacity-100 group-hover:opacity-100"
++                      className="files-more"
+                       aria-label={t("files.actions", { name: entry.name })}
+                       aria-expanded={menuFor === entry.path}
+                       onClick={() => setMenuFor(menuFor === entry.path ? null : entry.path)}
+                     >
+-                      <MoreHorizontal size={14} aria-hidden="true" />
++                      <MoreHorizontal size={13} aria-hidden="true" />
+                     </button>
+                   </>
+                 )}
+               </div>
+               {renderActions(entry)}
+               {confirming?.path === entry.path ? (
+-                <div
+-                  role="alertdialog"
+-                  aria-label={t("files.delete")}
+-                  className="flex items-center gap-2 py-1 pl-8 text-xs"
+-                >
+-                  <span className="flex-1">{t("files.confirmDelete", { name: entry.name })}</span>
+-                  <button type="button" className={ACTION} onClick={() => void remove(entry)}>
+-                    {t("files.delete")}
+-                  </button>
+-                  <button type="button" className={ACTION} onClick={() => setConfirming(null)}>
+-                    {t("files.cancel")}
+-                  </button>
++                <div role="alertdialog" aria-label={t("files.delete")} className="files-confirm">
++                  <span>{t("files.confirmDelete", { name: entry.name })}</span>
++                  <span className="files-confirm-actions">
++                    <button type="button" className={ACTION} onClick={() => setConfirming(null)}>
++                      {t("files.cancel")}
++                    </button>
++                    <button
++                      type="button"
++                      className={`${ACTION} files-action-danger`}
++                      onClick={() => void remove(entry)}
++                    >
++                      {t("files.delete")}
++                    </button>
++                  </span>
+                 </div>
+               ) : null}
+               {entry.isDir && open ? (
+-                <ul className="m-0 list-none p-0">{renderDir(entry.path, depth + 1)}</ul>
++                <ul className="files-list">{renderDir(entry.path, depth + 1)}</ul>
+               ) : null}
+             </li>
+           );
+         })}
+         {truncated ? (
+-          <li
+-            className="px-2 py-1 text-xs text-muted"
+-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+-          >
++          <li className="files-note" style={indent(depth)}>
+             {t("files.truncated", { count: entries.length })}
+           </li>
+         ) : null}
+@@ -403,45 +497,69 @@ export function FilesPane(props: FilesPaneProps) {
+     );
+   };
+ 
+-  if (root === null) {
+-    return <p className="p-3 text-sm text-muted">{t("pane.noWorkspace")}</p>;
+-  }
+-  if (source === null) {
+-    return <p className="p-3 text-sm text-muted">{t("pane.unavailable")}</p>;
++  if (root === null || source === null) {
++    return (
++      <section className="files-pane" aria-label={t("pane.files")} data-testid="files-pane">
++        <div className="files-state files-state-fill">
++          <PanelLabel muted>{t("files.noFolder")}</PanelLabel>
++          <p className="files-state-body">
++            {root === null ? t("pane.noWorkspace") : t("pane.unavailable")}
++          </p>
++        </div>
++      </section>
++    );
+   }
++  const folder = basenameOf(root) || root;
+   return (
+     <section
+-      className={`flex h-full min-h-0 flex-col ${props.hidden === true ? "invisible" : ""}`}
++      className="files-pane"
++      data-hidden={props.hidden === true ? "true" : undefined}
+       aria-label={t("pane.files")}
+       inert={props.hidden === true}
+       data-testid="files-pane"
+     >
+-      <header className="flex items-center gap-2 border-b border-line px-2 py-1 text-xs text-muted">
+-        <span className="min-w-0 flex-1 truncate" title={root}>
+-          {basenameOf(root) || root}
+-          {source.remote ? ` · ${t("files.remote")}` : ""}
++      <header className="side-pane-header">
++        <PanelLabel title={root}>{folder}</PanelLabel>
++        <span className="side-pane-spacer" />
++        <span className="side-pane-actions" data-reveal="true">
++          <button
++            type="button"
++            className="side-pane-btn"
++            aria-label={t("files.refresh")}
++            onClick={() => {
++              void load(root);
++              for (const dir of expanded) void load(dir);
++              setTintKey((key) => key + 1);
++            }}
++          >
++            <RefreshCw
++              size={13}
++              aria-hidden="true"
++              className={dirs[root]?.phase === "loading" ? "side-pane-spin" : undefined}
++            />
++          </button>
+         </span>
+-        <button
+-          type="button"
+-          className="rounded p-1 hover:bg-raised"
+-          aria-label={t("files.refresh")}
+-          onClick={() => {
+-            void load(root);
+-            for (const dir of expanded) void load(dir);
+-          }}
+-        >
+-          <RefreshCw size={12} aria-hidden="true" />
+-        </button>
++        {expanded.size > 0 ? (
++          <button
++            type="button"
++            className="side-pane-btn"
++            aria-label={t("files.collapseAll")}
++            onClick={() => {
++              for (const dir of expanded) unwatch(dir);
++              setExpanded(new Set());
++            }}
++          >
++            <ChevronsDownUp size={13} aria-hidden="true" />
++          </button>
++        ) : null}
+       </header>
++      {source.remote ? <p className="files-note files-remote">{t("files.remote")}</p> : null}
+       {notice !== null ? (
+-        <p role="status" className="border-b border-line px-3 py-1 text-xs text-warn">
++        <p role="status" className="files-note files-note-warn">
+           {notice}
+         </p>
+       ) : null}
+-      <ul
+-        aria-label={t("files.tree", { folder: basenameOf(root) || root })}
+-        className="m-0 min-h-0 flex-1 list-none overflow-auto p-0"
+-      >
++      <ul aria-label={t("files.tree", { folder })} className="files-list files-tree">
+         {renderDir(root, 0)}
+       </ul>
+     </section>
+diff --git a/apps/desktop/src/panes/layoutStore.test.ts b/apps/desktop/src/panes/layoutStore.test.ts
+index 2e1b94f..77f987e 100644
+--- a/apps/desktop/src/panes/layoutStore.test.ts
++++ b/apps/desktop/src/panes/layoutStore.test.ts
+@@ -161,3 +161,39 @@ describe("layout store", () => {
+     expect(new Set(allPanes(view.root))).toEqual(new Set(["chat", "preview"]));
+   });
+ });
++
++describe("the right-side group (W52-m)", () => {
++  it("files on top, the terminal under the whole right group, review left of files", () => {
++    const s = store(memoryStorage(), ALL, true);
++    s.open("files");
++    const root1 = s.layout().root;
++    expect(root1?.kind === "split" && root1.orientation).toBe("row");
++    expect(allPanes(root1)).toEqual(["chat", "files"]);
++    s.open("terminal");
++    const root2 = s.layout().root;
++    expect(root2?.kind).toBe("split");
++    const right = root2?.kind === "split" ? root2.children[1] : null;
++    expect(right?.kind === "split" && right.orientation).toBe("column");
++    expect(allPanes(right ?? null)).toEqual(["files", "terminal"]);
++    s.open("review");
++    const right3 = (() => {
++      const root = s.layout().root;
++      return root?.kind === "split" ? root.children[1] : null;
++    })();
++    expect(allPanes(right3 ?? null)).toEqual(["review", "files", "terminal"]);
++    const top = right3?.kind === "split" ? right3.children[0] : null;
++    expect(top?.kind === "split" && top.orientation).toBe("row");
++    expect(layoutProblems(s.layout())).toEqual([]);
++    // closing review takes only its column away
++    s.close("review");
++    expect(allPanes(s.layout().root)).toEqual(["chat", "files", "terminal"]);
++  });
++
++  it("an arrangement the group did not build opens panes the usual way", () => {
++    const s = store(); // the Default preset: every pane already placed
++    s.close("review");
++    s.open("review");
++    expect(new Set(allPanes(s.layout().root))).toEqual(new Set(ALL));
++    expect(layoutProblems(s.layout())).toEqual([]);
++  });
++});
+diff --git a/apps/desktop/src/panes/layoutStore.ts b/apps/desktop/src/panes/layoutStore.ts
+index d4c6fc4..885806d 100644
+--- a/apps/desktop/src/panes/layoutStore.ts
++++ b/apps/desktop/src/panes/layoutStore.ts
+@@ -32,6 +32,7 @@ import {
+   INTERFACE_MODES,
+   type InterfaceMode,
+   initialLayout,
++  openInSideGroup,
+   PRESET_IDS,
+   type PresetId,
+   paneAllowed,
+@@ -157,7 +158,7 @@ export class LayoutStore {
+   /** Open a pane (from the closed stack if it is there) and bring it to front. */
+   open(pane: PaneId): boolean {
+     if (!paneAllowed(this.currentMode, pane)) return false;
+-    this.edit((layout) => openPane(layout, pane));
++    this.edit((layout) => openInSideGroup(layout, pane) ?? openPane(layout, pane));
+     return true;
+   }
+ 
+diff --git a/apps/desktop/src/panes/panes.css b/apps/desktop/src/panes/panes.css
+index 176d167..3b26416 100644
+--- a/apps/desktop/src/panes/panes.css
++++ b/apps/desktop/src/panes/panes.css
+@@ -128,8 +128,9 @@
+ }
+ 
+ .pane-separator {
+-  flex: 0 0 1px;
+-  background: var(--desk-stroke-1);
++  flex: 0 0 2px;
++  /* W52-m: a seam barely apart from the side surface, never a dark rule */
++  background: color-mix(in srgb, var(--desk-bg-band) 82%, var(--desk-stroke-1));
+   cursor: col-resize;
+   outline: 3px solid transparent;
+ }
+@@ -288,6 +289,59 @@
+   top: calc(50% + 14px);
+ }
+ 
++/* -- zone chrome (W52-m) ------------------------------------------------------------------ */
++
++/* a pane that draws its own titled header: the tabs stay (tests, keyboard) but are not drawn */
++.pane-zone[data-self-labelled="true"] .pane-tab {
++  color: transparent;
++}
++
++.pane-zone[data-self-labelled="true"] .pane-tab::after,
++.pane-zone[data-self-labelled="true"] .pane-zone-actions {
++  display: none;
++}
++
++/* a zone below the top edge (the terminal under the side columns) has a slim tab strip */
++.pane-zone[data-chrome="strip"] > .pane-zone-header {
++  height: 26px;
++  gap: 0;
++  -webkit-app-region: no-drag;
++}
++
++.pane-zone[data-chrome="strip"] .pane-tab {
++  min-width: 52px;
++  max-width: 192px;
++  padding: 0 8px;
++  justify-content: center;
++}
++
++.pane-zone[data-chrome="strip"] .pane-tab + .pane-tab {
++  box-shadow: inset 1px 0 0 var(--desk-fg-4);
++}
++
++.pane-zone[data-chrome="strip"] .pane-tab:hover {
++  background: var(--desk-row-hover);
++}
++
++.pane-zone[data-chrome="strip"] .pane-tab[aria-selected="true"] {
++  background: var(--desk-bg-canvas);
++}
++
++.pane-zone[data-chrome="strip"] .pane-zone-actions .icon-button {
++  width: 20px;
++  height: 20px;
++}
++
++.pane-zone[data-self-labelled="true"][data-chrome="strip"] > .pane-zone-header {
++  height: 0;
++  overflow: hidden;
++}
++
++.pane-body[data-pane="files"],
++.pane-body[data-pane="review"] {
++  background: var(--desk-bg-band);
++}
++
+ /* Simple mode: the technical tool view and inline diffs are hidden, thinking stays collapsed. */
+ [data-interface-mode="simple"] .tool-detail,
+ [data-interface-mode="simple"] .inline-diff {
+@@ -303,3 +357,1041 @@
+     transition: none;
+   }
+ }
++
++/* -- side panes: shared header (W52-m) ----------------------------------------------------- */
++
++.side-pane-header {
++  display: flex;
++  align-items: center;
++  gap: 0;
++  height: 28px;
++  flex: none;
++  padding: 0 10px 0 2px;
++}
++
++.side-pane-spacer {
++  flex: 1;
++}
++
++.side-pane-actions {
++  display: inline-flex;
++  align-items: center;
++}
++
++/* hover-reveal actions: invisible until the header is hovered or holds focus */
++.side-pane-actions[data-reveal="true"] {
++  opacity: 0;
++  transition: opacity var(--indus-duration-quick) var(--indus-easing-standard);
++}
++
++.side-pane-header:hover .side-pane-actions[data-reveal="true"],
++.side-pane-header:focus-within .side-pane-actions[data-reveal="true"] {
++  opacity: 1;
++}
++
++.side-pane-btn {
++  display: inline-grid;
++  place-items: center;
++  width: 20px;
++  height: 20px;
++  padding: 0;
++  border: 0;
++  border-radius: var(--desk-radius-control);
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++}
++
++.side-pane-btn:hover:not(:disabled) {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-1);
++}
++
++.side-pane-btn:disabled {
++  opacity: 0.4;
++  cursor: default;
++}
++
++.side-pane-btn:focus-visible,
++.files-name:focus-visible,
++.files-more:focus-visible,
++.review-row-main:focus-visible {
++  outline: 2px solid var(--desk-accent);
++  outline-offset: -2px;
++}
++
++.side-pane-spin {
++  animation: side-pane-spin 0.9s linear infinite;
++}
++
++@keyframes side-pane-spin {
++  to {
++    transform: rotate(360deg);
++  }
++}
++
++/* -- files pane (W52-m) ---------------------------------------------------------------------- */
++
++.files-pane {
++  display: flex;
++  flex-direction: column;
++  height: 100%;
++  min-height: 0;
++  background: var(--desk-bg-band);
++  color: var(--desk-fg-2);
++  font-size: var(--desk-text-small);
++}
++
++.files-pane[data-hidden="true"] {
++  visibility: hidden;
++}
++
++.files-list {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.files-tree {
++  flex: 1;
++  min-height: 0;
++  overflow: auto;
++  padding-bottom: 8px;
++}
++
++.files-item {
++  position: relative;
++}
++
++.files-row {
++  display: flex;
++  align-items: center;
++  height: 22px;
++  padding-right: 6px;
++  border-radius: 0;
++}
++
++.files-row:hover {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-1);
++}
++
++.files-row[data-selected="true"] {
++  background: var(--desk-row-active);
++  color: var(--desk-fg-1);
++}
++
++.files-name {
++  display: flex;
++  align-items: center;
++  gap: 4px;
++  flex: 1;
++  min-width: 0;
++  height: 100%;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: inherit;
++  font: inherit;
++  text-align: left;
++  cursor: pointer;
++}
++
++.files-icon {
++  flex: none;
++  color: var(--desk-fg-3);
++}
++
++.files-label {
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.files-row[data-tint="modified"] .files-label {
++  color: var(--desk-warning);
++}
++
++.files-row[data-tint="added"] .files-label {
++  color: var(--desk-success);
++}
++
++.files-row[data-tint="conflict"] .files-label {
++  color: var(--desk-danger);
++}
++
++.files-lock {
++  flex: none;
++  color: var(--desk-fg-3);
++}
++
++.files-more {
++  display: inline-grid;
++  place-items: center;
++  width: 18px;
++  height: 18px;
++  padding: 0;
++  border: 0;
++  border-radius: var(--desk-radius-control);
++  background: transparent;
++  color: var(--desk-fg-3);
++  opacity: 0;
++  cursor: pointer;
++}
++
++.files-row:hover .files-more,
++.files-more:focus-visible,
++.files-more[aria-expanded="true"] {
++  opacity: 1;
++}
++
++.files-action {
++  justify-content: flex-start;
++  height: 24px;
++  border: 0;
++  text-align: left;
++}
++
++.files-action {
++  display: inline-flex;
++  align-items: center;
++  padding: 0 8px;
++  height: 22px;
++  border: 1px solid var(--desk-stroke-field);
++  border-radius: var(--desk-radius-control);
++  background: transparent;
++  color: var(--desk-fg-1);
++  font: inherit;
++  font-size: var(--desk-text-small);
++  cursor: pointer;
++}
++
++.files-menu {
++  position: absolute;
++  z-index: 4;
++  top: 22px;
++  right: 8px;
++  display: flex;
++  flex-direction: column;
++  min-width: 140px;
++  padding: 4px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: var(--desk-radius-card);
++  background: var(--desk-bg-raised);
++  box-shadow: var(--desk-shadow-menu);
++}
++
++.files-menu .files-action:hover {
++  background: var(--desk-row-hover);
++}
++
++.files-action-danger {
++  border-color: transparent;
++  background: var(--desk-danger);
++  color: #fff;
++}
++
++.files-action-danger:hover {
++  background: var(--desk-danger);
++  opacity: 0.9;
++}
++
++.files-rename {
++  display: flex;
++  align-items: center;
++  gap: 4px;
++  flex: 1;
++  min-width: 0;
++}
++
++.files-rename-input {
++  flex: 1;
++  min-width: 0;
++  height: 20px;
++  padding: 0 4px;
++  border: 1px solid var(--desk-accent);
++  border-radius: var(--desk-radius-control);
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  font: inherit;
++}
++
++.files-confirm {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  margin: 4px 8px;
++  padding: 8px 10px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: var(--desk-radius-card);
++  background: var(--desk-bg-raised);
++  box-shadow: var(--desk-shadow-menu);
++  color: var(--desk-fg-1);
++  font-size: var(--desk-text-micro);
++}
++
++.files-confirm-actions {
++  display: flex;
++  justify-content: flex-end;
++  gap: 6px;
++}
++
++.files-note {
++  margin: 0;
++  padding: 3px 10px;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++}
++
++.files-note-warn {
++  color: var(--desk-warning);
++}
++
++.files-note-danger {
++  color: var(--desk-danger);
++}
++
++.files-state {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  gap: 6px;
++  padding: 32px 16px;
++  text-align: center;
++}
++
++.files-state-fill {
++  flex: 1;
++  height: 100%;
++}
++
++.files-state-title {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++  font-weight: 600;
++  letter-spacing: 0.07em;
++  text-transform: uppercase;
++}
++
++.files-state-body {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++}
++
++.files-state-retry {
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-accent);
++  font: inherit;
++  font-size: var(--desk-text-micro);
++  cursor: pointer;
++}
++
++.files-skeleton {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++  padding: 6px 16px;
++  animation: files-skeleton-in 0s linear 150ms both;
++}
++
++.files-skeleton > span {
++  display: block;
++  height: 12px;
++  border-radius: 3px;
++  background: var(--desk-row-hover);
++}
++
++@keyframes files-skeleton-in {
++  from {
++    visibility: hidden;
++  }
++  to {
++    visibility: visible;
++  }
++}
++
++/* -- review pane (W52-m) --------------------------------------------------------------------- */
++
++.review-pane {
++  position: relative;
++  display: flex;
++  flex-direction: column;
++  height: 100%;
++  min-height: 0;
++  background: var(--desk-bg-band);
++  color: var(--desk-fg-2);
++  font-size: var(--desk-text-small);
++}
++
++.review-pane[data-hidden="true"] {
++  visibility: hidden;
++}
++
++.review-header-actions,
++.review-view-toggle {
++  display: inline-flex;
++  align-items: center;
++}
++
++/* the list/tree pair shows one icon: the view to switch to */
++.review-view-toggle > [aria-checked="true"] {
++  display: none;
++}
++
++.review-scope {
++  flex: none;
++  padding: 0 8px 6px;
++}
++
++.review-segmented {
++  display: flex;
++  gap: 2px;
++  height: 25px;
++  padding: 2px;
++  border-radius: 4px;
++  background: var(--desk-row-active);
++}
++
++.review-segment {
++  flex: 1 1 auto;
++  min-width: 0;
++  padding: 0 6px;
++  border: 0;
++  border-radius: 3px;
++  background: transparent;
++  color: var(--desk-fg-3);
++  font: inherit;
++  font-size: var(--desk-text-micro);
++  font-weight: 500;
++  white-space: nowrap;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  cursor: pointer;
++}
++
++.review-segment:hover {
++  color: var(--desk-fg-1);
++}
++
++.review-segment[aria-checked="true"] {
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  box-shadow: 0 1px 1px rgb(0 0 0 / 0.08);
++}
++
++.review-branch {
++  margin: 4px 2px 0;
++  color: var(--desk-fg-3);
++  font-size: 10.5px;
++}
++
++.review-files {
++  flex: 1;
++  min-height: 0;
++  overflow: auto;
++  padding: 0 4px 4px;
++}
++
++.review-row {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  height: 24px;
++  padding-right: 6px;
++  border-radius: 6px;
++}
++
++.review-row:hover {
++  background: var(--desk-row-hover);
++}
++
++.review-row[data-selected="true"] {
++  background: var(--desk-row-active);
++}
++
++.review-row-main {
++  display: flex;
++  align-items: baseline;
++  gap: 6px;
++  flex: 1;
++  min-width: 0;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-2);
++  font: inherit;
++  text-align: left;
++  cursor: pointer;
++}
++
++.review-row[data-selected="true"] .review-row-main,
++.review-row:hover .review-row-main {
++  color: var(--desk-fg-1);
++}
++
++.review-name {
++  flex: none;
++  max-width: 100%;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.review-dir {
++  flex: 1 1 0;
++  min-width: 0;
++  overflow: hidden;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.review-glyph {
++  flex: none;
++}
++
++.review-glyph[data-tone="modified"] {
++  color: var(--desk-warning);
++}
++
++.review-glyph[data-tone="added"] {
++  color: var(--desk-success);
++}
++
++.review-glyph[data-tone="deleted"] {
++  color: var(--desk-danger);
++}
++
++.review-glyph[data-tone="renamed"] {
++  color: rgb(14 165 233 / 0.85);
++}
++
++.review-glyph[data-tone="new"] {
++  color: var(--desk-fg-4);
++}
++
++.review-counts {
++  display: inline-flex;
++  gap: 4px;
++  flex: none;
++  font-size: 0.64rem;
++  font-variant-numeric: tabular-nums;
++}
++
++.review-add {
++  color: var(--desk-success);
++}
++
++.review-del {
++  color: var(--desk-danger);
++}
++
++.review-row-actions {
++  display: none;
++  gap: 2px;
++}
++
++.review-row:hover .review-row-actions,
++.review-row:focus-within .review-row-actions {
++  display: inline-flex;
++}
++
++.review-row:hover .review-counts,
++.review-row:focus-within .review-counts {
++  display: none;
++}
++
++.review-icon-btn {
++  display: inline-grid;
++  place-items: center;
++  width: 16px;
++  height: 16px;
++  padding: 0;
++  border: 0;
++  border-radius: 3px;
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++}
++
++.review-icon-btn:hover:not(:disabled) {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-1);
++}
++
++.review-icon-btn[data-tone="danger"]:hover:not(:disabled) {
++  color: var(--desk-danger);
++}
++
++.review-folder {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  height: 24px;
++  margin: 0;
++  padding-left: 14px;
++  color: var(--desk-fg-2);
++}
++
++.review-empty {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  gap: 6px;
++  min-height: 120px;
++  height: 100%;
++  padding: 16px;
++  text-align: center;
++}
++
++.review-note {
++  margin: 0;
++  padding: 2px 10px;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-micro);
++}
++
++.review-note-danger {
++  color: var(--desk-danger);
++}
++
++.review-notice {
++  flex: none;
++  padding: 4px 10px;
++  border-top: 1px solid var(--desk-stroke-2);
++}
++
++.review-readonly {
++  flex: none;
++  margin: 0;
++  padding: 8px;
++  color: var(--desk-fg-3);
++  font-size: 0.64rem;
++  text-align: center;
++}
++
++.review-diff-strip {
++  display: flex;
++  flex-direction: column;
++  flex: none;
++  max-height: 55%;
++  min-height: 0;
++  border-top: 1px solid var(--desk-stroke-3);
++}
++
++.review-diff-head {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  padding: 6px 4px 6px 10px;
++}
++
++.review-diff-path {
++  flex: 1;
++  min-width: 0;
++  overflow: hidden;
++  color: var(--desk-fg-2);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 10.5px;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.review-diff-body {
++  flex: 1;
++  min-height: 0;
++  overflow: auto;
++  scrollbar-width: thin;
++}
++
++.review-diff {
++  margin: 0;
++  padding: 0 0 6px;
++  color: var(--desk-fg-2);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 11px;
++  line-height: 16px;
++}
++
++.review-diff > div {
++  padding: 0 10px;
++  white-space: pre;
++}
++
++.review-diff .review-diff-add {
++  background: color-mix(in srgb, var(--desk-success) 8%, transparent);
++  color: var(--desk-success);
++}
++
++.review-diff .review-diff-del {
++  background: color-mix(in srgb, var(--desk-danger) 8%, transparent);
++  color: var(--desk-danger);
++}
++
++.review-diff .review-diff-hunk {
++  color: var(--desk-accent);
++}
++
++.review-diff .review-diff-file {
++  color: var(--desk-fg-3);
++}
++
++.review-diff-empty {
++  margin: 0;
++  padding: 12px;
++  color: var(--desk-fg-3);
++  font-size: 10.5px;
++  text-align: center;
++}
++
++.review-ship {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  flex: none;
++  padding: 8px;
++}
++
++.review-message {
++  position: relative;
++  display: flex;
++}
++
++.review-message-input {
++  flex: 1;
++  min-height: 24px;
++  max-height: 160px;
++  padding: 3px 34px 3px 8px;
++  border: 1px solid color-mix(in srgb, var(--desk-fg-3) 35%, transparent);
++  border-radius: 3px;
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  font: inherit;
++  font-size: var(--desk-text-small);
++  line-height: 16px;
++  white-space: pre-wrap;
++  resize: none;
++  overflow-y: hidden;
++}
++
++.review-message-input:focus {
++  border-color: var(--desk-accent);
++  outline: none;
++}
++
++.review-message-input::placeholder {
++  color: var(--desk-fg-3);
++}
++
++.review-sparkle {
++  position: absolute;
++  top: 0;
++  right: 0;
++  display: inline-grid;
++  place-items: center;
++  width: 32px;
++  height: 24px;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++}
++
++.review-sparkle:hover:not(:disabled) {
++  color: var(--desk-fg-1);
++}
++
++.review-split {
++  display: flex;
++  height: 24px;
++  border-radius: 3px;
++  background: var(--desk-accent);
++  color: var(--desk-accent-fg);
++}
++
++.review-split-main {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  gap: 6px;
++  flex: 1;
++  padding: 0 8px;
++  border: 0;
++  border-radius: 3px 0 0 3px;
++  background: transparent;
++  color: inherit;
++  font: inherit;
++  font-size: var(--desk-text-small);
++  cursor: pointer;
++}
++
++.review-split .desk-menu-root {
++  display: flex;
++}
++
++.review-split-more {
++  display: inline-grid;
++  place-items: center;
++  width: 28px;
++  padding: 0;
++  border: 0;
++  border-left: 1px solid color-mix(in srgb, var(--desk-accent-fg) 70%, var(--desk-accent));
++  border-radius: 0 3px 3px 0;
++  background: transparent;
++  color: inherit;
++  cursor: pointer;
++}
++
++.review-split-main:hover:not(:disabled),
++.review-split-more:hover {
++  background: rgb(255 255 255 / 0.1);
++}
++
++.review-split:has(.review-split-main:disabled) {
++  background: color-mix(in srgb, var(--desk-accent) 50%, var(--desk-bg-band));
++}
++
++.review-split-main:disabled {
++  cursor: default;
++}
++
++.review-split .desk-menu {
++  min-width: 160px;
++}
++
++.review-agent {
++  display: grid;
++  grid-template-columns: 28px 1fr 28px;
++  align-items: center;
++}
++
++.review-agent-link {
++  grid-column: 2;
++  justify-self: center;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  color: var(--desk-fg-3);
++  font: inherit;
++  font-size: var(--desk-text-micro);
++  text-decoration: underline;
++  text-underline-offset: 2px;
++  cursor: pointer;
++}
++
++.review-agent-link:hover {
++  color: var(--desk-fg-1);
++}
++
++.review-pr {
++  grid-column: 3;
++  justify-self: end;
++  color: var(--desk-fg-4);
++}
++
++.review-pr-form {
++  display: flex;
++  align-items: center;
++  gap: 4px;
++}
++
++.review-pr-input {
++  flex: 1;
++  min-width: 0;
++  height: 22px;
++  padding: 0 6px;
++  border: 1px solid var(--desk-stroke-field);
++  border-radius: 3px;
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  font: inherit;
++}
++
++.review-dialog-backdrop {
++  position: absolute;
++  inset: 0;
++  z-index: 6;
++  display: grid;
++  place-items: center;
++  padding: 12px;
++  background: var(--desk-backdrop);
++}
++
++.review-dialog {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++  width: 100%;
++  max-width: 320px;
++  padding: 12px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: var(--desk-radius-card);
++  background: var(--desk-bg-raised);
++  box-shadow: var(--desk-shadow-card);
++  color: var(--desk-fg-1);
++}
++
++.review-dialog-text {
++  margin: 0;
++  font-size: var(--desk-text-small);
++}
++
++.review-dialog-path {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 11px;
++  word-break: break-all;
++}
++
++.review-dialog-actions {
++  display: flex;
++  justify-content: flex-end;
++  gap: 6px;
++}
++
++/* -- terminal pane (W52-m): the screen, shell instances in a rail on the right ---------------- */
++
++.term-pane {
++  display: flex;
++  height: 100%;
++  min-height: 0;
++  background: var(--desk-bg-canvas);
++  color: var(--desk-fg-1);
++  font-size: var(--desk-text-small);
++}
++
++.term-pane[data-hidden="true"] {
++  visibility: hidden;
++}
++
++.term-main {
++  display: flex;
++  flex-direction: column;
++  flex: 1;
++  min-width: 0;
++  min-height: 0;
++}
++
++.term-main > [role="alert"],
++.term-main > [role="status"],
++.term-main > [role="alertdialog"] {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  margin: 0;
++  padding: 4px 10px;
++  font-size: var(--desk-text-micro);
++}
++
++.term-main > [role="alert"] {
++  color: var(--desk-danger);
++}
++
++.term-main > [role="alertdialog"] > span {
++  flex: 1;
++}
++
++.term-selection {
++  display: flex;
++  justify-content: flex-end;
++  padding: 4px 6px 0;
++}
++
++.term-screens {
++  display: flex;
++  flex-direction: column;
++  flex: 1;
++  min-height: 0;
++  padding: 4px 0 0 8px;
++}
++
++.term-rail {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 4px;
++  flex: 0 0 36px;
++  padding: 4px 0;
++  background: var(--desk-bg-band);
++}
++
++.term-instance {
++  position: relative;
++  display: inline-flex;
++}
++
++.term-instance-btn {
++  position: relative;
++  display: inline-grid;
++  place-items: center;
++  width: 28px;
++  height: 28px;
++  padding: 0;
++  border: 0;
++  border-radius: var(--desk-radius-control);
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++}
++
++.term-instance-btn:hover {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-1);
++}
++
++.term-instance-btn[aria-selected="true"] {
++  color: var(--desk-fg-1);
++}
++
++/* the active instance is marked by a bar on the rail's inner edge */
++.term-instance-btn[aria-selected="true"]::before {
++  content: "";
++  position: absolute;
++  top: 6px;
++  bottom: 6px;
++  left: -4px;
++  width: 2px;
++  border-radius: 1px;
++  background: var(--desk-accent);
++}
++
++.term-instance-close {
++  position: absolute;
++  top: -2px;
++  right: -4px;
++  display: inline-grid;
++  place-items: center;
++  width: 14px;
++  height: 14px;
++  padding: 0;
++  border: 0;
++  border-radius: 7px;
++  background: var(--desk-bg-raised);
++  color: var(--desk-fg-3);
++  opacity: 0;
++  cursor: pointer;
++}
++
++.term-instance:hover .term-instance-close,
++.term-instance-close:focus-visible {
++  opacity: 1;
++}
++
++.term-new {
++  opacity: 0;
++}
++
++.term-rail:hover .term-new,
++.term-new:focus-visible,
++.term-rail:not(:has(.term-instance)) .term-new {
++  opacity: 1;
++}
+diff --git a/apps/desktop/src/panes/presets.ts b/apps/desktop/src/panes/presets.ts
+index f35f302..443df33 100644
+--- a/apps/desktop/src/panes/presets.ts
++++ b/apps/desktop/src/panes/presets.ts
+@@ -182,3 +182,72 @@ export function initialLayout(mode: InterfaceMode, available: Iterable<PaneId>):
+   const tools = [...TOOL_PANES].reverse().filter((pane) => panes.includes(pane));
+   return rememberClosed(start, tools);
+ }
++
++// -- the right-side group (W52-m-4) --------------------------------------------------------------
++//
++// Opening a tool pane into the chat-only window (or into a window this arrangement built) lays the
++// tool panes out on the right: one column per document pane in a row on top (Preview, Review,
++// Files from left to right) and the Terminal under the whole row. Each side column is about 236px
++// at the usual window width; the shapes other presets build are left alone.
++
++/** The top row's panes, left to right. */
++const SIDE_TOP: readonly PaneId[] = ["preview", "review", "files"];
++/** The chat area's usual width (window minus the sidebar), for the relative split sizes. */
++const SIDE_SPAN = 1180;
++const SIDE_COLUMN = 236;
++const SIDE_TERMINAL = 178;
++const SIDE_HEIGHT = 846;
++
++/** Whether the right group arranges this pane. */
++export function isSidePane(pane: PaneId): boolean {
++  return pane === "terminal" || SIDE_TOP.includes(pane);
++}
++
++/** The chat with the side panes of `panes` arranged on its right. */
++export function sideTree(panes: Iterable<PaneId>): LayoutNode {
++  const available = new Set(panes);
++  const chat = zone("z1", [CHAT_PANE]);
++  const top = pick(available, SIDE_TOP);
++  const columns = Math.max(top.length, 1);
++  const topRow = group(
++    "s3",
++    "row",
++    top.map((pane, index) => [zone(`z${index + 2}`, [pane]), 1] as [LayoutNode, number]),
++  );
++  const terminal = available.has("terminal") ? zone("z9", ["terminal"]) : null;
++  const right = group("s2", "column", [
++    [topRow, SIDE_HEIGHT - SIDE_TERMINAL],
++    [terminal, SIDE_TERMINAL],
++  ]);
++  const width = SIDE_COLUMN * columns;
++  const tree = group("s1", "row", [
++    [chat, SIDE_SPAN - width],
++    [right, width],
++  ]);
++  return normalize(tree ?? chat) ?? chat;
++}
++
++/** A tree's arrangement without ids and sizes (two trees with the same shape compare equal). */
++function shapeOf(node: LayoutNode | null): string {
++  if (node === null) return "";
++  if (node.kind === "zone") return `[${node.tabs.join(",")}]`;
++  return `${node.orientation}(${node.children.map(shapeOf).join(" ")})`;
++}
++
++/**
++ * Open a side pane into the right group: the new layout, or null when the window holds an
++ * arrangement the right group did not build (then the pane opens the usual way).
++ */
++export function openInSideGroup(layout: PaneLayout, pane: PaneId): PaneLayout | null {
++  if (!isSidePane(pane)) return null;
++  const open = allPanes(layout.root);
++  if (open.includes(pane)) return null;
++  if (open.some((p) => p !== CHAT_PANE && !isSidePane(p))) return null;
++  if (shapeOf(layout.root) !== shapeOf(sideTree(open))) return null;
++  return {
++    version: 1,
++    root: sideTree([...open, pane]),
++    hidden: layout.hidden,
++    closed: layout.closed.filter((c) => c.pane !== pane),
++  };
++}
+diff --git a/apps/desktop/src/panes/review/ReviewPane.test.tsx b/apps/desktop/src/panes/review/ReviewPane.test.tsx
+index c41293d..8953cda 100644
+--- a/apps/desktop/src/panes/review/ReviewPane.test.tsx
++++ b/apps/desktop/src/panes/review/ReviewPane.test.tsx
+@@ -69,7 +69,8 @@ describe("ReviewPane", () => {
+     await waitFor(() =>
+       expect(git.stage).toHaveBeenCalledWith({ repo: ROOT, paths: ["README.md"] }),
+     );
+-    const app = screen.getByText("src/app.ts").closest("li") as HTMLElement;
++    // W52-m: a row shows the name, then its folder; the full path is the row's title
++    const app = screen.getByTitle("src/app.ts").closest("li") as HTMLElement;
+     fireEvent.click(within(app).getByRole("button", { name: "Unstage" }));
+     await waitFor(() =>
+       expect(git.unstage).toHaveBeenCalledWith({ repo: ROOT, paths: ["src/app.ts"] }),
+@@ -93,7 +94,7 @@ describe("ReviewPane", () => {
+     expect(within(diff).getByText("+new").className).toContain("text-ok");
+     expect(within(diff).getByText("-old").className).toContain("text-danger");
+     // a staged-only file asks for the staged diff
+-    fireEvent.click(screen.getByText("src/app.ts"));
++    fireEvent.click(screen.getByTitle("src/app.ts"));
+     await waitFor(() =>
+       expect(git.diff).toHaveBeenLastCalledWith({
+         repo: ROOT,
+@@ -138,7 +139,9 @@ describe("ReviewPane", () => {
+     );
+     expect(draft.mock.calls[0]?.[0]).toContain("new.txt");
+     git.commit.mockResolvedValueOnce({ commit: "abcdef1234", pushed: true });
+-    fireEvent.click(screen.getByRole("button", { name: "Commit & push" }));
++    // W52-m: the split button's menu holds "Commit & push"
++    fireEvent.click(screen.getByRole("button", { name: "More commit options" }));
++    fireEvent.click(screen.getByRole("menuitem", { name: "Commit & push" }));
+     await waitFor(() =>
+       expect(git.commit).toHaveBeenCalledWith({
+         repo: ROOT,
+@@ -180,9 +183,9 @@ describe("ReviewPane", () => {
+   it("tree view groups by folder", async () => {
+     const { bridge } = fakeGit();
+     render(<ReviewPane repo={ROOT} bridge={bridge} />);
+-    await screen.findByText("src/app.ts");
++    await screen.findByTitle("src/app.ts");
+     fireEvent.click(screen.getByRole("radio", { name: "Tree" }));
+-    expect(screen.getByText("src/")).toBeTruthy();
++    expect(screen.getByText("src")).toBeTruthy();
+     expect(screen.getByText("app.ts")).toBeTruthy();
+   });
+ });
+diff --git a/apps/desktop/src/panes/review/ReviewPane.tsx b/apps/desktop/src/panes/review/ReviewPane.tsx
+index 33c3224..cd562dc 100644
+--- a/apps/desktop/src/panes/review/ReviewPane.tsx
++++ b/apps/desktop/src/panes/review/ReviewPane.tsx
+@@ -4,12 +4,39 @@
+ // (read-only). "Write it for me" asks the agent for a message; Create PR uses the GitHub CLI when it
+ // is installed and otherwise offers to ask the agent.
+ 
+-import { RefreshCw } from "lucide-react";
+-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
++import {
++  Check,
++  ChevronDown,
++  Folder,
++  GitPullRequest,
++  List,
++  ListTree,
++  Minus,
++  Plus,
++  RefreshCw,
++  Sparkles,
++  SquareArrowRight,
++  SquareDot,
++  SquareMinus,
++  SquarePlus,
++  TriangleAlert,
++  Undo2,
++  X,
++} from "lucide-react";
++import {
++  type FormEvent,
++  type KeyboardEvent,
++  type ReactNode,
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
+ import { desktopBridge } from "../../app/bridge.ts";
+-import { Loader } from "../../app/Loader.tsx";
+ import type { IndusDesktopBridge } from "../../global.d.ts";
+ import { type MessageKey, useT } from "../../i18n/index.tsx";
++import { Menu, PanelLabel } from "../../ui/components.tsx";
+ import { commitMessagePrompt } from "./agentDraft.ts";
+ 
+ export type ReviewScope = "uncommitted" | "branch" | "last-turn";
+@@ -30,17 +57,21 @@ export interface ReviewPaneProps {
+   draftMessage?(prompt: string): Promise<string>;
+   /** Send a request to the agent in the conversation (the PR fallback without `gh`). */
+   askAgent?(prompt: string): void;
++  /** Close the pane (the header's X; absent: no close button). */
++  onClose?(): void;
++  /** Open a changed file (absolute path) in the preview (double click on a row). */
++  onPreview?(path: string): void;
+ }
+ 
++/** The main action of the split commit button, remembered for this window (W52-m). */
++let rememberedCommit: "commit" | "push" = "commit";
++
+ const SCOPES: ReadonlyArray<{ scope: ReviewScope; key: MessageKey }> = [
+   { scope: "uncommitted", key: "review.scope.uncommitted" },
+   { scope: "branch", key: "review.scope.branch" },
+   { scope: "last-turn", key: "review.scope.lastTurn" },
+ ];
+ 
+-const BUTTON =
+-  "rounded border border-line px-2 py-0.5 text-xs hover:bg-raised disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-focus";
+-
+ function errorText(error: unknown): string {
+   const text = error instanceof Error ? error.message : String(error);
+   const at = text.indexOf(": ");
+@@ -57,22 +88,75 @@ function isStaged(file: ChangedFile): boolean {
+ }
+ 
+ function lineClass(line: string): string {
+-  if (line.startsWith("+++") || line.startsWith("---")) return "text-muted";
+-  if (line.startsWith("+")) return "text-ok";
+-  if (line.startsWith("-")) return "text-danger";
+-  if (line.startsWith("@@")) return "text-accent";
++  if (line.startsWith("+++") || line.startsWith("---")) return "text-muted review-diff-file";
++  if (line.startsWith("diff ") || line.startsWith("index ")) return "review-diff-file";
++  if (line.startsWith("+")) return "text-ok review-diff-add";
++  if (line.startsWith("-")) return "text-danger review-diff-del";
++  if (line.startsWith("@@")) return "text-accent review-diff-hunk";
+   return "";
+ }
+ 
++/** The square status glyph of a changed file, by its git letter. */
++function statusGlyph(letter: string): ReactNode {
++  switch (letter) {
++    case "M":
++      return (
++        <SquareDot size={13} aria-hidden="true" className="review-glyph" data-tone="modified" />
++      );
++    case "A":
++    case "C":
++      return <SquarePlus size={13} aria-hidden="true" className="review-glyph" data-tone="added" />;
++    case "D":
++      return (
++        <SquareMinus size={13} aria-hidden="true" className="review-glyph" data-tone="deleted" />
++      );
++    case "R":
++      return (
++        <SquareArrowRight
++          size={13}
++          aria-hidden="true"
++          className="review-glyph"
++          data-tone="renamed"
++        />
++      );
++    case "U":
++      return (
++        <TriangleAlert size={13} aria-hidden="true" className="review-glyph" data-tone="deleted" />
++      );
++    default:
++      return <SquarePlus size={13} aria-hidden="true" className="review-glyph" data-tone="new" />;
++  }
++}
++
++function Counts(props: { added?: number | undefined; removed?: number | undefined }) {
++  if (props.added === undefined && props.removed === undefined) return null;
++  return (
++    <span className="review-counts">
++      {(props.added ?? 0) > 0 || props.removed === undefined ? (
++        <span className="review-add">+{props.added ?? 0}</span>
++      ) : null}{" "}
++      {(props.removed ?? 0) > 0 ? <span className="review-del">−{props.removed}</span> : null}
++    </span>
++  );
++}
++
++/** A file path split into its name and its folder. */
++function splitPath(path: string): { name: string; dir: string } {
++  const trimmed = path.replace(/\/$/, "");
++  const at = trimmed.lastIndexOf("/");
++  return at < 0
++    ? { name: trimmed, dir: "" }
++    : { name: trimmed.slice(at + 1), dir: trimmed.slice(0, at) };
++}
++
+ function DiffView(props: { diff: string; truncated: boolean }) {
+   const t = useT();
+   const lines = props.diff.replace(/\n$/, "").split("\n");
+   return (
+-    <div className="min-h-0 flex-1 overflow-auto">
+-      {props.truncated ? (
+-        <p className="px-3 py-1 text-xs text-warn">{t("review.diffTruncated")}</p>
+-      ) : null}
+-      <pre className="m-0 p-2 font-mono text-xs" data-testid="review-diff">
++    <div className="review-diff-body">
++      {props.truncated ? <p className="review-note">{t("review.diffTruncated")}</p> : null}
++      {props.diff.trim() === "" ? <p className="review-diff-empty">{t("review.noDiff")}</p> : null}
++      <pre className="review-diff" data-testid="review-diff">
+         {lines.map((line, index) => (
+           // biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no identity beyond position
+           <div key={index} className={lineClass(line)}>
+@@ -117,6 +201,18 @@ export function ReviewPane(props: ReviewPaneProps) {
+   const [prTitle, setPrTitle] = useState<string | null>(null);
+   const [noGh, setNoGh] = useState(false);
+   const [refreshKey, setRefreshKey] = useState(0);
++  const [commitMode, setCommitMode] = useState<"commit" | "push">(rememberedCommit);
++  const messageRef = useRef<HTMLTextAreaElement>(null);
++
++  // the message field grows with its text up to 160px
++  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure when the text changes
++  useEffect(() => {
++    const field = messageRef.current;
++    if (field === null) return;
++    field.style.height = "auto";
++    field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
++    field.style.overflowY = field.scrollHeight > 160 ? "auto" : "hidden";
++  }, [message]);
+ 
+   const root = status?.root ?? props.repo;
+   const base = props.lastTurnBase ?? undefined;
+@@ -274,320 +370,513 @@ export function ReviewPane(props: ReviewPaneProps) {
+     [layout, files],
+   );
+ 
+-  if (props.repo === null) return <p className="p-3 text-sm text-muted">{t("pane.noWorkspace")}</p>;
+-  if (git === null) return <p className="p-3 text-sm text-muted">{t("pane.unavailable")}</p>;
+-
+-  const fileRow = (file: ChangedFile) => (
+-    <li key={file.path} className="flex items-center gap-2 px-2 py-0.5 text-sm hover:bg-raised">
+-      <span className="w-4 font-mono text-xs text-muted" aria-hidden="true">
+-        {letterOf(file)}
+-      </span>
+-      <button
+-        type="button"
+-        className={`min-w-0 flex-1 truncate text-left ${selected === file.path ? "font-medium" : ""}`}
+-        aria-pressed={selected === file.path}
+-        onClick={() => setSelected(file.path)}
++  if (props.repo === null || git === null) {
++    return (
++      <section className="review-pane" aria-label={t("pane.review")} data-testid="review-pane">
++        <div className="review-empty">
++          <PanelLabel muted>{t("files.noFolder")}</PanelLabel>
++          <p className="review-note">
++            {props.repo === null ? t("pane.noWorkspace") : t("pane.unavailable")}
++          </p>
++        </div>
++      </section>
++    );
++  }
++
++  const notRepo = error !== null && /not in a git repository/.test(error);
++  const branchLine =
++    status === null
++      ? ""
++      : [
++          status.branch === null
++            ? t("review.detached")
++            : t("review.branch", { branch: status.branch }),
++          status.upstream === null
++            ? t("review.noUpstream")
++            : t("review.aheadBehind", {
++                ahead: status.ahead,
++                behind: status.behind,
++                upstream: status.upstream,
++              }),
++        ].join(" · ");
++  const drifted = status !== null && (status.ahead !== 0 || status.behind !== 0);
++  const anyStaged = files.some(isStaged);
++  const commitPush = commitMode === "push";
++  const canCommit = !busy && message.trim() !== "";
++
++  const fileRow = (file: ChangedFile, depth: number) => {
++    const { name, dir } = splitPath(file.path);
++    return (
++      <li
++        key={file.path}
++        className="review-row"
++        data-selected={selected === file.path ? "true" : undefined}
++        style={{ paddingLeft: `${14 + depth * 12}px` }}
+       >
+-        {layout === "tree" ? file.path.replace(/\/$/, "").split("/").pop() : file.path}
+-      </button>
+-      {file.added !== undefined || file.removed !== undefined ? (
+-        <span className="font-mono text-xs">
+-          <span className="text-ok">+{file.added ?? 0}</span>{" "}
+-          <span className="text-danger">−{file.removed ?? 0}</span>
+-        </span>
+-      ) : null}
+-      {readOnly ? null : (
+-        <>
+-          {isStaged(file) ? (
+-            <button
+-              type="button"
+-              className={BUTTON}
+-              disabled={busy}
+-              onClick={() => mutate("unstage", [file.path])}
+-            >
+-              {t("review.unstage")}
+-            </button>
+-          ) : (
++        {statusGlyph(letterOf(file))}
++        <button
++          type="button"
++          className="review-row-main"
++          aria-pressed={selected === file.path}
++          title={file.path}
++          onClick={() => setSelected(file.path)}
++          onDoubleClick={() => {
++            if (root !== null) props.onPreview?.(`${root.replace(/\/$/, "")}/${file.path}`);
++          }}
++        >
++          <span className="review-name">{name}</span>
++          {layout === "list" && dir !== "" ? <span className="review-dir">{dir}</span> : null}
++        </button>
++        <Counts added={file.added} removed={file.removed} />
++        {readOnly ? null : (
++          <span className="review-row-actions">
++            {isStaged(file) ? (
++              <button
++                type="button"
++                className="review-icon-btn"
++                aria-label={t("review.unstage")}
++                title={t("review.unstage")}
++                disabled={busy}
++                onClick={() => mutate("unstage", [file.path])}
++              >
++                <Minus size={12} aria-hidden="true" />
++              </button>
++            ) : (
++              <button
++                type="button"
++                className="review-icon-btn"
++                aria-label={t("review.stage")}
++                title={t("review.stage")}
++                disabled={busy}
++                onClick={() => mutate("stage", [file.path])}
++              >
++                <Plus size={12} aria-hidden="true" />
++              </button>
++            )}
+             <button
+               type="button"
+-              className={BUTTON}
++              className="review-icon-btn"
++              data-tone="danger"
++              aria-label={t("review.revert")}
++              title={t("review.revert")}
+               disabled={busy}
+-              onClick={() => mutate("stage", [file.path])}
++              onClick={() =>
++                setConfirm({
++                  paths: [file.path],
++                  label: t("review.confirmRevert", { name: file.path }),
++                })
++              }
+             >
+-              {t("review.stage")}
++              <Undo2 size={12} aria-hidden="true" />
+             </button>
+-          )}
+-          <button
+-            type="button"
+-            className={BUTTON}
+-            disabled={busy}
+-            onClick={() =>
+-              setConfirm({
+-                paths: [file.path],
+-                label: t("review.confirmRevert", { name: file.path }),
+-              })
+-            }
+-          >
+-            {t("review.revert")}
+-          </button>
+-        </>
+-      )}
+-    </li>
+-  );
++          </span>
++        )}
++      </li>
++    );
++  };
++
++  const selectedFile = files.find((file) => file.path === selected) ?? null;
++  const onMessageKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
++    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
++      event.preventDefault();
++      if (canCommit) void commit(commitPush);
++    }
++  };
+ 
+   return (
+     <section
+-      className={`flex h-full min-h-0 flex-col ${props.hidden === true ? "invisible" : ""}`}
++      className="review-pane"
++      data-hidden={props.hidden === true ? "true" : undefined}
+       aria-label={t("pane.review")}
+       inert={props.hidden === true}
+       data-testid="review-pane"
+     >
+-      <header className="flex flex-wrap items-center gap-2 border-b border-line px-2 py-1 text-xs">
+-        <span className="font-medium">
+-          {status === null
+-            ? null
+-            : status.branch === null
+-              ? t("review.detached")
+-              : t("review.branch", { branch: status.branch })}
+-        </span>
+-        {status === null ? null : status.upstream === null ? (
+-          <span className="text-muted">{t("review.noUpstream")}</span>
+-        ) : (
+-          <span className="text-muted">
+-            {t("review.aheadBehind", {
+-              ahead: status.ahead,
+-              behind: status.behind,
+-              upstream: status.upstream,
+-            })}
+-          </span>
+-        )}
+-        <span className="flex-1" />
+-        <button
+-          type="button"
+-          className="rounded p-1 hover:bg-raised"
+-          aria-label={t("files.refresh")}
+-          onClick={refresh}
+-        >
+-          <RefreshCw size={12} aria-hidden="true" />
+-        </button>
+-      </header>
+-
+-      <div className="flex items-center gap-2 border-b border-line px-2 py-1">
+-        <div role="radiogroup" aria-label={t("review.scopes")} className="flex gap-1">
+-          {SCOPES.map((entry) => (
+-            // biome-ignore lint/a11y/useSemanticElements: a segmented control, not a native radio
+-            <button
+-              key={entry.scope}
+-              type="button"
+-              role="radio"
+-              aria-checked={scope === entry.scope}
+-              className={`${BUTTON} ${scope === entry.scope ? "bg-raised font-medium" : ""}`}
+-              onClick={() => {
+-                setScope(entry.scope);
+-                setSelected(null);
+-              }}
+-            >
+-              {t(entry.key)}
+-            </button>
+-          ))}
+-        </div>
+-        <span className="flex-1" />
+-        <div role="radiogroup" aria-label={t("review.files")} className="flex gap-1">
+-          {(["list", "tree"] as const).map((mode) => (
+-            // biome-ignore lint/a11y/useSemanticElements: a segmented control, not a native radio
+-            <button
+-              key={mode}
+-              type="button"
+-              role="radio"
+-              aria-checked={layout === mode}
+-              className={`${BUTTON} ${layout === mode ? "bg-raised" : ""}`}
+-              onClick={() => setLayout(mode)}
+-            >
+-              {t(mode === "list" ? "review.view.list" : "review.view.tree")}
+-            </button>
+-          ))}
+-        </div>
+-      </div>
+-
+-      {error !== null ? (
+-        <p role="alert" className="px-3 py-2 text-sm text-danger">
+-          {/not in a git repository/.test(error) ? t("review.notRepo") : error}
+-        </p>
+-      ) : null}
+-      {notice !== null ? (
+-        <p role="status" className="border-b border-line px-3 py-1 text-xs">
+-          {notice}
+-        </p>
+-      ) : null}
+-      {readOnly ? <p className="px-3 py-1 text-xs text-muted">{t("review.readOnly")}</p> : null}
+-
+-      {confirm !== null ? (
+-        <div
+-          role="alertdialog"
+-          aria-label={t("review.revert")}
+-          className="flex items-center gap-2 border-b border-line px-3 py-1 text-xs"
+-        >
+-          <span className="flex-1">{confirm.label}</span>
+-          <button
+-            type="button"
+-            className={BUTTON}
+-            onClick={() => {
+-              const paths = confirm.paths;
+-              setConfirm(null);
+-              mutate("revert", paths);
+-            }}
+-          >
+-            {t("review.confirm")}
+-          </button>
+-          <button type="button" className={BUTTON} onClick={() => setConfirm(null)}>
+-            {t("files.cancel")}
+-          </button>
+-        </div>
+-      ) : null}
+-
+-      <div className="flex min-h-0 flex-1 flex-col">
+-        {changes === null && error === null ? (
+-          <Loader />
+-        ) : files.length === 0 && error === null ? (
+-          <p className="px-3 py-2 text-sm text-muted">
+-            {scope !== "uncommitted" && changes?.base === null
+-              ? t("review.noBase")
+-              : t("review.noChanges")}
+-          </p>
+-        ) : (
+-          <section
+-            className="max-h-[45%] overflow-auto border-b border-line"
+-            aria-label={t("review.files")}
+-          >
+-            {readOnly ? null : (
+-              <div className="flex gap-1 px-2 py-1">
++      {notRepo ? null : (
++        <header className="side-pane-header">
++          <PanelLabel title={branchLine}>{t("pane.review")}</PanelLabel>
++          <span className="side-pane-spacer" />
++          <span className="review-header-actions">
++            <span role="radiogroup" aria-label={t("review.files")} className="review-view-toggle">
++              {(["list", "tree"] as const).map((mode) => (
++                // biome-ignore lint/a11y/useSemanticElements: a two-state toggle shown as one icon
+                 <button
++                  key={mode}
+                   type="button"
+-                  className={BUTTON}
+-                  disabled={busy}
+-                  onClick={() => mutate("stage", [])}
++                  role="radio"
++                  aria-checked={layout === mode}
++                  aria-label={t(mode === "list" ? "review.view.list" : "review.view.tree")}
++                  title={t(mode === "list" ? "review.view.list" : "review.view.tree")}
++                  className="side-pane-btn"
++                  disabled={files.length === 0}
++                  onClick={() => setLayout(mode)}
+                 >
+-                  {t("review.stageAll")}
++                  {mode === "list" ? (
++                    <List size={13} aria-hidden="true" />
++                  ) : (
++                    <ListTree size={13} aria-hidden="true" />
++                  )}
+                 </button>
++              ))}
++            </span>
++            {readOnly ? null : (
++              <>
++                {anyStaged ? (
++                  <button
++                    type="button"
++                    className="side-pane-btn"
++                    aria-label={t("review.unstageAll")}
++                    title={t("review.unstageAll")}
++                    disabled={busy}
++                    onClick={() => mutate("unstage", [])}
++                  >
++                    <Minus size={13} aria-hidden="true" />
++                  </button>
++                ) : null}
+                 <button
+                   type="button"
+-                  className={BUTTON}
+-                  disabled={busy}
+-                  onClick={() => mutate("unstage", [])}
++                  className="side-pane-btn"
++                  aria-label={t("review.stageAll")}
++                  title={t("review.stageAll")}
++                  disabled={busy || files.length === 0}
++                  onClick={() => mutate("stage", [])}
+                 >
+-                  {t("review.unstageAll")}
++                  <Plus size={13} aria-hidden="true" />
+                 </button>
+                 <button
+                   type="button"
+-                  className={BUTTON}
+-                  disabled={busy}
++                  className="side-pane-btn"
++                  aria-label={t("review.revertAll")}
++                  title={t("review.revertAll")}
++                  disabled={busy || files.length === 0}
+                   onClick={() => setConfirm({ paths: [], label: t("review.confirmRevertAll") })}
+                 >
+-                  {t("review.revertAll")}
++                  <Undo2 size={13} aria-hidden="true" />
+                 </button>
+-              </div>
++              </>
++            )}
++            <button
++              type="button"
++              className="side-pane-btn"
++              aria-label={t("files.refresh")}
++              title={t("files.refresh")}
++              onClick={refresh}
++            >
++              <RefreshCw
++                size={13}
++                aria-hidden="true"
++                className={changes === null && error === null ? "side-pane-spin" : undefined}
++              />
++            </button>
++            {props.onClose === undefined ? null : (
++              <button
++                type="button"
++                className="side-pane-btn"
++                aria-label={t("review.close")}
++                title={t("review.close")}
++                onClick={props.onClose}
++              >
++                <X size={13} aria-hidden="true" />
++              </button>
+             )}
++          </span>
++        </header>
++      )}
++
++      {notRepo ? null : (
++        <div className="review-scope">
++          <div role="radiogroup" aria-label={t("review.scopes")} className="review-segmented">
++            {SCOPES.map((entry) => (
++              // biome-ignore lint/a11y/useSemanticElements: a segmented control, not a native radio
++              <button
++                key={entry.scope}
++                type="button"
++                role="radio"
++                aria-checked={scope === entry.scope}
++                className="review-segment"
++                onClick={() => {
++                  setScope(entry.scope);
++                  setSelected(null);
++                }}
++              >
++                {t(entry.key)}
++              </button>
++            ))}
++          </div>
++          {status === null ? null : (
++            <p className={drifted ? "review-branch" : "sr-only"}>
++              <span>
++                {status.branch === null
++                  ? t("review.detached")
++                  : t("review.branch", { branch: status.branch })}
++              </span>
++              {" · "}
++              <span>
++                {status.upstream === null
++                  ? t("review.noUpstream")
++                  : t("review.aheadBehind", {
++                      ahead: status.ahead,
++                      behind: status.behind,
++                      upstream: status.upstream,
++                    })}
++              </span>
++            </p>
++          )}
++        </div>
++      )}
++
++      {error !== null ? (
++        notRepo ? (
++          <div className="review-empty">
++            <PanelLabel muted>{t("review.noChangesLabel")}</PanelLabel>
++            <p role="alert" className="review-note">
++              {t("review.notRepo")}
++            </p>
++          </div>
++        ) : (
++          <p role="alert" className="review-note review-note-danger">
++            {error}
++          </p>
++        )
++      ) : null}
++
++      <div className="review-files">
++        {changes === null && error === null ? (
++          <div className="files-skeleton" aria-hidden="true">
++            {[0, 1, 2].map((n) => (
++              <span key={n} style={{ width: `${70 - n * 12}%` }} />
++            ))}
++          </div>
++        ) : files.length === 0 && error === null ? (
++          <div className="review-empty">
++            <PanelLabel muted>{t("review.noChangesLabel")}</PanelLabel>
++            <span className="sr-only">
++              {scope !== "uncommitted" && changes?.base === null
++                ? t("review.noBase")
++                : t("review.noChanges")}
++            </span>
++          </div>
++        ) : files.length === 0 ? null : (
++          <section aria-label={t("review.files")}>
+             {groups.map(([folder, list]) => (
+               <div key={folder}>
+                 {layout === "tree" && folder !== "" ? (
+-                  <p className="m-0 px-2 pt-1 font-mono text-xs text-muted">{folder}/</p>
++                  <p className="review-folder">
++                    <Folder size={13} aria-hidden="true" className="files-icon" />
++                    <span className="review-name">{folder}</span>
++                  </p>
+                 ) : null}
+-                <ul className="m-0 list-none p-0">{list.map(fileRow)}</ul>
++                <ul className="files-list">
++                  {list.map((file) => fileRow(file, layout === "tree" && folder !== "" ? 1 : 0))}
++                </ul>
+               </div>
+             ))}
+-            {changes?.truncated ? (
+-              <p className="px-2 py-1 text-xs text-muted">{t("review.truncated")}</p>
+-            ) : null}
+-          </section>
+-        )}
+-        {selected === null ? (
+-          files.length > 0 ? (
+-            <p className="px-3 py-2 text-xs text-muted">{t("review.selectFile")}</p>
+-          ) : null
+-        ) : diff === null ? (
+-          <Loader />
+-        ) : (
+-          <section
+-            aria-label={t("review.diffFor", { name: selected })}
+-            className="flex min-h-0 flex-1 flex-col"
+-          >
+-            <DiffView diff={diff.diff} truncated={diff.truncated} />
++            {changes?.truncated ? <p className="review-note">{t("review.truncated")}</p> : null}
+           </section>
+         )}
+       </div>
+ 
+-      {scope === "uncommitted" ? (
+-        <footer className="flex flex-col gap-1 border-t border-line p-2">
+-          <textarea
+-            className="min-h-16 rounded border border-line bg-bg p-1 text-sm"
+-            aria-label={t("review.message")}
+-            placeholder={t("review.message")}
+-            value={message}
+-            onChange={(event) => setMessage(event.target.value)}
+-          />
+-          <div className="flex flex-wrap items-center gap-1">
+-            {props.draftMessage !== undefined ? (
++      {selected === null ? null : (
++        <section aria-label={t("review.diffFor", { name: selected })} className="review-diff-strip">
++          <div className="review-diff-head">
++            <span className="review-diff-path" title={selected}>
++              {selected}
++            </span>
++            {selectedFile === null ? null : (
++              <Counts added={selectedFile.added} removed={selectedFile.removed} />
++            )}
++            {readOnly || selectedFile === null || isStaged(selectedFile) ? null : (
+               <button
+                 type="button"
+-                className={BUTTON}
+-                disabled={drafting || busy}
+-                onClick={() => void generate()}
++                className="side-pane-btn"
++                aria-label={t("review.stage")}
++                title={t("review.stage")}
++                disabled={busy}
++                onClick={() => mutate("stage", [selectedFile.path])}
+               >
+-                {drafting ? t("review.generating") : t("review.generate")}
++                <Plus size={13} aria-hidden="true" />
+               </button>
+-            ) : null}
+-            <span className="flex-1" />
++            )}
+             <button
+               type="button"
+-              className={BUTTON}
+-              disabled={busy || message.trim() === ""}
+-              onClick={() => void commit(false)}
++              className="side-pane-btn"
++              aria-label={t("review.closeDiff")}
++              title={t("review.closeDiff")}
++              onClick={() => setSelected(null)}
+             >
+-              {t("review.commit")}
++              <X size={13} aria-hidden="true" />
+             </button>
++          </div>
++          {diff === null ? (
++            <div className="files-skeleton" aria-hidden="true">
++              <span style={{ width: "60%" }} />
++              <span style={{ width: "40%" }} />
++            </div>
++          ) : (
++            <DiffView diff={diff.diff} truncated={diff.truncated} />
++          )}
++        </section>
++      )}
++
++      {notice !== null ? (
++        <p role="status" className="review-note review-notice">
++          {notice}
++        </p>
++      ) : null}
++
++      {confirm !== null ? (
++        <div className="review-dialog-backdrop">
++          <div role="alertdialog" aria-label={t("review.revert")} className="review-dialog">
++            <p className="review-dialog-text">{confirm.label}</p>
++            {confirm.paths.length > 0 ? (
++              <p className="review-dialog-path">{confirm.paths.join(", ")}</p>
++            ) : null}
++            <div className="review-dialog-actions">
++              <button type="button" className="files-action" onClick={() => setConfirm(null)}>
++                {t("files.cancel")}
++              </button>
++              <button
++                type="button"
++                className="files-action files-action-danger"
++                onClick={() => {
++                  const paths = confirm.paths;
++                  setConfirm(null);
++                  mutate("revert", paths);
++                }}
++              >
++                {t("review.confirm")}
++              </button>
++            </div>
++          </div>
++        </div>
++      ) : null}
++
++      {readOnly && !notRepo ? <p className="review-readonly">{t("review.readOnly")}</p> : null}
++
++      {scope === "uncommitted" && !notRepo && files.length > 0 ? (
++        <footer className="review-ship">
++          <div className="review-message">
++            <textarea
++              ref={messageRef}
++              rows={1}
++              className="review-message-input"
++              aria-label={t("review.message")}
++              placeholder={t("review.messagePlaceholder")}
++              value={message}
++              onChange={(event) => setMessage(event.target.value)}
++              onKeyDown={onMessageKey}
++            />
++            {props.draftMessage !== undefined ? (
++              <button
++                type="button"
++                className="review-sparkle"
++                aria-label={drafting ? t("review.generating") : t("review.generate")}
++                title={drafting ? t("review.generating") : t("review.generate")}
++                disabled={drafting || busy}
++                onClick={() => void generate()}
++              >
++                <Sparkles
++                  size={13}
++                  aria-hidden="true"
++                  className={drafting ? "side-pane-spin" : undefined}
++                />
++              </button>
++            ) : null}
++          </div>
++          <div className="review-split">
+             <button
+               type="button"
+-              className={BUTTON}
+-              disabled={busy || message.trim() === ""}
+-              onClick={() => void commit(true)}
++              className="review-split-main"
++              disabled={!canCommit}
++              onClick={() => void commit(commitPush)}
+             >
+-              {t("review.commitPush")}
++              <Check size={13} aria-hidden="true" />
++              {commitPush ? t("review.commitPush") : t("review.commit")}
+             </button>
++            <Menu
++              label={t("review.commitOptions")}
++              trigger={<ChevronDown size={13} aria-hidden="true" />}
++              triggerClassName="review-split-more"
++              side="up"
++              align="end"
++              items={[
++                {
++                  id: "commit",
++                  label: t("review.commit"),
++                  run: () => {
++                    rememberedCommit = "commit";
++                    setCommitMode("commit");
++                    if (canCommit) void commit(false);
++                  },
++                },
++                {
++                  id: "push",
++                  label: t("review.commitPush"),
++                  run: () => {
++                    rememberedCommit = "push";
++                    setCommitMode("push");
++                    if (canCommit) void commit(true);
++                  },
++                },
++              ]}
++            />
++          </div>
++          <div className="review-agent">
++            {props.askAgent !== undefined ? (
++              <button
++                type="button"
++                className="review-agent-link"
++                onClick={() =>
++                  props.askAgent?.(
++                    `Open a pull request for the current branch${status?.branch ? ` (${status.branch})` : ""}. Push the branch first if needed.`,
++                  )
++                }
++              >
++                {t("review.askAgentShort")}
++              </button>
++            ) : (
++              <span />
++            )}
+             <button
+               type="button"
+-              className={BUTTON}
++              className="side-pane-btn review-pr"
++              aria-label={t("review.createPr")}
++              title={t("review.createPr")}
+               disabled={busy}
+               onClick={() => {
+                 setNoGh(false);
+                 setPrTitle(status?.branch ?? "");
+               }}
+             >
+-              {t("review.createPr")}
++              <GitPullRequest size={13} aria-hidden="true" />
+             </button>
+           </div>
+           {prTitle !== null ? (
+-            <form className="flex items-center gap-1" onSubmit={(event) => void createPr(event)}>
++            <form className="review-pr-form" onSubmit={(event) => void createPr(event)}>
+               <input
+-                className="min-w-0 flex-1 rounded border border-line bg-bg px-1 text-sm"
++                className="review-pr-input"
+                 aria-label={t("review.prTitle")}
+                 value={prTitle}
+                 onChange={(event) => setPrTitle(event.target.value)}
+               />
+-              <button type="submit" className={BUTTON} disabled={busy || prTitle.trim() === ""}>
++              <button
++                type="submit"
++                className="files-action"
++                disabled={busy || prTitle.trim() === ""}
++              >
+                 {t("review.createPr")}
+               </button>
+-              <button type="button" className={BUTTON} onClick={() => setPrTitle(null)}>
++              <button type="button" className="files-action" onClick={() => setPrTitle(null)}>
+                 {t("files.cancel")}
+               </button>
+             </form>
+           ) : null}
+           {noGh ? (
+-            <div role="status" className="flex items-center gap-2 text-xs">
+-              <span className="flex-1">{t("review.noGh")}</span>
++            <div role="status" className="review-pr-form">
++              <span className="review-note">{t("review.noGh")}</span>
+               {props.askAgent !== undefined ? (
+                 <button
+                   type="button"
+-                  className={BUTTON}
++                  className="files-action"
+                   onClick={() => {
+                     props.askAgent?.(
+                       `Open a pull request for the current branch${status?.branch ? ` (${status.branch})` : ""} titled "${prTitle ?? ""}". Push the branch first if needed.`,
+diff --git a/apps/desktop/src/panes/strings.en.ts b/apps/desktop/src/panes/strings.en.ts
+index 589d706..3281dfa 100644
+--- a/apps/desktop/src/panes/strings.en.ts
++++ b/apps/desktop/src/panes/strings.en.ts
+@@ -138,4 +138,18 @@ export const PANE_STRINGS = {
+   "terminal.unavailable": "Terminals are not available: {message}",
+   "terminal.remote": "This window is connected to a remote Indus; its terminals run there.",
+   "terminal.starting": "Starting the shell",
++  // W52-m: side panel headers, states and the ship bar
++  "files.collapseAll": "Collapse all",
++  "files.noFiles": "No files",
++  "files.noFolder": "No folder",
++  "files.errorTitle": "Folder unreadable",
++  "files.retry": "Try again",
++  "review.close": "Close review",
++  "review.noChangesLabel": "No changes",
++  "review.noDiff": "No diff",
++  "review.commitOptions": "More commit options",
++  "review.messagePlaceholder": "Message (Ctrl+↵ to commit)",
++  "review.askAgentShort": "Ask Indus to open a PR",
++  "review.stop": "Stop",
++  "review.closeDiff": "Close diff",
+ } as const satisfies Record<string, string>;
+diff --git a/apps/desktop/src/panes/terminal/TerminalPane.tsx b/apps/desktop/src/panes/terminal/TerminalPane.tsx
+index 204b0f9..9d0331c 100644
+--- a/apps/desktop/src/panes/terminal/TerminalPane.tsx
++++ b/apps/desktop/src/panes/terminal/TerminalPane.tsx
+@@ -36,8 +36,7 @@ interface SlotState {
+   error: string | null;
+ }
+ 
+-const BUTTON =
+-  "rounded border border-line px-2 py-0.5 text-xs hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus";
++const BUTTON = "files-action";
+ 
+ function errorText(error: unknown): string {
+   const text = error instanceof Error ? error.message : String(error);
+@@ -249,108 +248,124 @@ export function TerminalPane(props: TerminalPaneProps) {
+ 
+   const current = states[active];
+   const visible = props.hidden !== true;
+-  return (
+-    <section
+-      className={`flex h-full min-h-0 flex-col ${visible ? "" : "invisible"}`}
+-      aria-label={t("pane.terminal")}
+-      inert={!visible}
+-      data-testid="terminal-pane"
++  const rail = (
++    <div
++      className="term-rail"
++      role="tablist"
++      aria-label={t("terminal.list")}
++      aria-orientation="vertical"
+     >
+-      <div
+-        className="flex items-center gap-1 border-b border-line px-2 py-1"
+-        role="tablist"
+-        aria-label={t("terminal.list")}
+-      >
+-        {slots.map((slot) => (
+-          <span key={slot.key} className="flex items-center">
++      {slots.map((slot) => {
++        const name = states[slot.key]?.shell ?? slot.label;
++        return (
++          <span key={slot.key} className="term-instance">
+             <button
+               type="button"
+               role="tab"
+               aria-selected={slot.key === active}
+-              className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs ${slot.key === active ? "bg-raised font-medium" : "hover:bg-raised"}`}
++              aria-label={name}
++              title={name}
++              className="term-instance-btn"
+               onClick={() => setActive(slot.key)}
+             >
+-              <SquareTerminal size={12} aria-hidden="true" />
+-              {states[slot.key]?.shell ?? slot.label}
++              <SquareTerminal size={14} aria-hidden="true" />
+             </button>
+             <button
+               type="button"
+-              className="rounded p-0.5 text-muted hover:text-fg"
+-              aria-label={t("terminal.close", { name: states[slot.key]?.shell ?? slot.label })}
++              className="term-instance-close"
++              aria-label={t("terminal.close", { name })}
++              title={t("terminal.close", { name })}
+               onClick={() => askClose(slot.key)}
+             >
+-              <X size={12} aria-hidden="true" />
++              <X size={10} aria-hidden="true" />
+             </button>
+           </span>
+-        ))}
+-        <button
+-          type="button"
+-          className="rounded p-1 hover:bg-raised"
+-          aria-label={t("terminal.new")}
+-          onClick={add}
+-        >
+-          <Plus size={12} aria-hidden="true" />
+-        </button>
+-        <span className="flex-1" />
++        );
++      })}
++      <button
++        type="button"
++        className="term-instance-btn term-new"
++        aria-label={t("terminal.new")}
++        title={t("terminal.new")}
++        onClick={add}
++      >
++        <Plus size={14} aria-hidden="true" />
++      </button>
++    </div>
++  );
++  return (
++    <section
++      className="term-pane"
++      data-hidden={visible ? undefined : "true"}
++      aria-label={t("pane.terminal")}
++      inert={!visible}
++      data-testid="terminal-pane"
++    >
++      <div className="term-main">
+         {props.onAddToChat !== undefined && selection.trim() !== "" ? (
+-          <button type="button" className={BUTTON} onClick={() => props.onAddToChat?.(selection)}>
+-            {t("terminal.addSelection")}
+-          </button>
++          <div className="term-selection">
++            <button type="button" className={BUTTON} onClick={() => props.onAddToChat?.(selection)}>
++              {t("terminal.addSelection")}
++            </button>
++          </div>
+         ) : null}
+-      </div>
+-
+-      {closing !== null ? (
+-        <div
+-          role="alertdialog"
+-          aria-label={t("pane.terminal")}
+-          className="flex items-center gap-2 border-b border-line px-3 py-1 text-xs"
+-        >
+-          <span className="flex-1">{t("terminal.confirmClose")}</span>
+-          <button type="button" className={BUTTON} onClick={() => remove(closing)}>
+-            {t("terminal.confirm")}
+-          </button>
+-          <button type="button" className={BUTTON} onClick={() => setClosing(null)}>
+-            {t("terminal.keep")}
+-          </button>
+-        </div>
+-      ) : null}
+ 
+-      {current?.error ? (
+-        <p role="alert" className="px-3 py-2 text-sm text-danger">
+-          {t("terminal.unavailable", { message: current.error })}
+-        </p>
+-      ) : null}
+-      {current !== undefined && current.exitCode !== undefined && current.error === null ? (
+-        <p role="status" className="flex items-center gap-2 px-3 py-1 text-xs">
+-          <span>{t("terminal.exited", { code: current.exitCode ?? "?" })}</span>
+-          <button
+-            type="button"
+-            className={BUTTON}
+-            onClick={() => setRestarts((prev) => ({ ...prev, [active]: (prev[active] ?? 0) + 1 }))}
++        {closing !== null ? (
++          <div
++            role="alertdialog"
++            aria-label={t("pane.terminal")}
++            className="flex items-center gap-2 border-b border-line px-3 py-1 text-xs"
+           >
+-            {t("terminal.restart")}
+-          </button>
+-        </p>
+-      ) : null}
+-      {current === undefined && slots.length > 0 ? (
+-        <Loader label={t("terminal.starting")} size="sm" />
+-      ) : null}
++            <span className="flex-1">{t("terminal.confirmClose")}</span>
++            <button type="button" className={BUTTON} onClick={() => remove(closing)}>
++              {t("terminal.confirm")}
++            </button>
++            <button type="button" className={BUTTON} onClick={() => setClosing(null)}>
++              {t("terminal.keep")}
++            </button>
++          </div>
++        ) : null}
+ 
+-      <div className="flex min-h-0 flex-1 flex-col">
+-        {slots.map((slot) => (
+-          <TerminalSlot
+-            key={slot.key}
+-            active={slot.key === active}
+-            visible={visible}
+-            cwd={props.cwd}
+-            bridge={bridge}
+-            createView={createView}
+-            restartKey={restarts[slot.key] ?? 0}
+-            onState={handlerFor(slot.key)}
+-            onSelection={setSelection}
+-          />
+-        ))}
++        {current?.error ? (
++          <p role="alert" className="px-3 py-2 text-sm text-danger">
++            {t("terminal.unavailable", { message: current.error })}
++          </p>
++        ) : null}
++        {current !== undefined && current.exitCode !== undefined && current.error === null ? (
++          <p role="status" className="flex items-center gap-2 px-3 py-1 text-xs">
++            <span>{t("terminal.exited", { code: current.exitCode ?? "?" })}</span>
++            <button
++              type="button"
++              className={BUTTON}
++              onClick={() =>
++                setRestarts((prev) => ({ ...prev, [active]: (prev[active] ?? 0) + 1 }))
++              }
++            >
++              {t("terminal.restart")}
++            </button>
++          </p>
++        ) : null}
++        {current === undefined && slots.length > 0 ? (
++          <Loader label={t("terminal.starting")} size="sm" />
++        ) : null}
++
++        <div className="term-screens">
++          {slots.map((slot) => (
++            <TerminalSlot
++              key={slot.key}
++              active={slot.key === active}
++              visible={visible}
++              cwd={props.cwd}
++              bridge={bridge}
++              createView={createView}
++              restartKey={restarts[slot.key] ?? 0}
++              onState={handlerFor(slot.key)}
++              onSelection={setSelection}
++            />
++          ))}
++        </div>
+       </div>
++      {rail}
+     </section>
+   );
+ }
+diff --git a/apps/desktop/src/quick/QuickEntry.test.tsx b/apps/desktop/src/quick/QuickEntry.test.tsx
+index 637a9b1..fdb4fe1 100644
+--- a/apps/desktop/src/quick/QuickEntry.test.tsx
++++ b/apps/desktop/src/quick/QuickEntry.test.tsx
+@@ -130,3 +130,14 @@ describe("update notice", () => {
+     expect(screen.queryByRole("status")).toBeNull();
+   });
+ });
++
++describe("quick entry look (W52-m)", () => {
++  it("one line, a Send to select with the current chat, no visible Send button", () => {
++    install([]);
++    const box = renderQuick();
++    expect(box.tagName).toBe("INPUT");
++    expect(screen.getByRole("combobox", { name: "Send to" })).toBeTruthy();
++    expect(screen.getByRole("option", { name: "Current chat" })).toBeTruthy();
++    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
++  });
++});
+diff --git a/apps/desktop/src/quick/QuickEntry.tsx b/apps/desktop/src/quick/QuickEntry.tsx
+index 69b5312..001d2d3 100644
+--- a/apps/desktop/src/quick/QuickEntry.tsx
++++ b/apps/desktop/src/quick/QuickEntry.tsx
+@@ -21,7 +21,7 @@ export function QuickEntry() {
+   const [text, setText] = useState("");
+   const [sending, setSending] = useState(false);
+   const [problem, setProblem] = useState<MessageKey | null>(null);
+-  const box = useRef<HTMLTextAreaElement>(null);
++  const box = useRef<HTMLInputElement>(null);
+ 
+   useEffect(() => {
+     document.documentElement.dataset.window = "quick";
+@@ -53,7 +53,7 @@ export function QuickEntry() {
+     }
+   };
+ 
+-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
++  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+     if (event.key === "Escape") {
+       event.preventDefault();
+       bridge?.quick.dismiss();
+@@ -64,31 +64,45 @@ export function QuickEntry() {
+   };
+ 
+   return (
+-    <main className="quick" aria-label={t("quick.label")}>
+-      <textarea
+-        ref={box}
+-        value={text}
+-        rows={2}
+-        placeholder={t("quick.placeholder")}
+-        aria-label={t("quick.label")}
+-        onChange={(event) => setText(event.target.value)}
+-        onKeyDown={onKeyDown}
+-      />
+-      {problem !== null && (
+-        <p className="quick-error" role="alert">
+-          {t(problem)}
+-        </p>
+-      )}
+-      <div className="quick-footer">
+-        <span className="quick-hint">{sending ? t("quick.sending") : t("quick.hint")}</span>
+-        <button
+-          type="button"
+-          className="button button-primary"
+-          disabled={sending}
+-          onClick={() => void send()}
+-        >
+-          {t("quick.send")}
+-        </button>
++    <main
++      className="quick"
++      aria-label={t("quick.label")}
++      data-sending={sending ? "true" : undefined}
++    >
++      <div className="quick-card">
++        <div className="quick-row">
++          <span className="quick-prompt" aria-hidden="true">
++            ›
++          </span>
++          <input
++            ref={box}
++            type="text"
++            className="quick-input"
++            value={text}
++            placeholder={t("quick.placeholder")}
++            aria-label={t("quick.label")}
++            disabled={sending}
++            onChange={(event) => setText(event.target.value)}
++            onKeyDown={onKeyDown}
++          />
++        </div>
++        <div className="quick-target">
++          <label className="quick-target-label" htmlFor="quick-target">
++            {t("quick.sendTo")}
++          </label>
++          {/* W52-m-2: main delivers to the window used last; other targets need a target field */}
++          <select id="quick-target" className="quick-select" value="current" onChange={() => {}}>
++            <option value="current">{t("quick.target.current")}</option>
++          </select>
++          <span className="sr-only" aria-live="polite">
++            {sending ? t("quick.sending") : ""}
++          </span>
++        </div>
++        {problem !== null && (
++          <p className="quick-error" role="alert">
++            {t(problem)}
++          </p>
++        )}
+       </div>
+     </main>
+   );
+diff --git a/apps/desktop/src/ui/components.tsx b/apps/desktop/src/ui/components.tsx
+index fb78df9..bcefbd1 100644
+--- a/apps/desktop/src/ui/components.tsx
++++ b/apps/desktop/src/ui/components.tsx
+@@ -246,3 +246,20 @@ export function Menu(props: {
+     </div>
+   );
+ }
++
++/**
++ * A side panel's own title (W52-m): uppercase accent text after a small dithered square. `muted`
++ * is the quiet variant for a panel's empty states ("NO FILES"). `title` is a native tooltip.
++ */
++export function PanelLabel(props: { children: ReactNode; muted?: boolean; title?: string }) {
++  return (
++    <span
++      className="desk-panel-label"
++      data-muted={props.muted === true ? "true" : undefined}
++      title={props.title}
++    >
++      <span className="desk-dither" aria-hidden="true" />
++      <span className="desk-panel-label-text">{props.children}</span>
++    </span>
++  );
++}
+diff --git a/apps/desktop/src/ui/ui.css b/apps/desktop/src/ui/ui.css
+index 6416904..6f767e1 100644
+--- a/apps/desktop/src/ui/ui.css
++++ b/apps/desktop/src/ui/ui.css
+@@ -479,3 +479,45 @@ input[type="search"]::-webkit-search-cancel-button {
+   height: 12px;
+   color: var(--desk-fg-4);
+ }
++
++/* -- panel label (W52-m) --------------------------------------------------------------------- */
++
++.desk-panel-label {
++  display: inline-flex;
++  align-items: center;
++  gap: 8px;
++  min-width: 0;
++  padding-left: 8px;
++  color: var(--desk-accent);
++  font-size: 0.64rem;
++  font-weight: 600;
++  letter-spacing: 0.16em;
++  line-height: 1;
++  text-transform: uppercase;
++}
++
++.desk-panel-label[data-muted="true"] {
++  padding-left: 0;
++  color: var(--desk-fg-4);
++}
++
++.desk-panel-label-text {
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++/* an 8px square drawn as a fine checker of the label colour */
++.desk-dither {
++  flex: none;
++  width: 8px;
++  height: 8px;
++  border-radius: 1px;
++  background-image: conic-gradient(
++    currentColor 0 25%,
++    transparent 0 50%,
++    currentColor 0 75%,
++    transparent 0
++  );
++  background-size: 2px 2px;
++}
+diff --git a/docs/notes/ui-parity/desktop-panes-onboarding.md b/docs/notes/ui-parity/desktop-panes-onboarding.md
+new file mode 100644
+index 0000000..4e765f8
+--- /dev/null
++++ b/docs/notes/ui-parity/desktop-panes-onboarding.md
+@@ -0,0 +1,162 @@
++# Task: Desktop panes, HUD, quick entry and onboarding (W52-m) Phase: ui-parity Owner: builder w52m
++
++Status: Done for wave 52 (2026-10-24); differences and follow-ups under Status at the end.
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): via the wave-52 spec
++`desktop-panes-onboarding.md` (Read + Note done by the spec writer from
++`apps/desktop/src/app/right-sidebar/{index,files/tree,review/index,review/ship-bar,review/scope-row,review/file-tree}`,
++`app/shell/sidebar-label`, `components/ui/pane-tab`, `app/hud/hud-shell` (+ HUD rules of `styles.css`),
++`app/chat/composer/controls`, `app/quick-entry/quick-entry-app`, `components/onboarding/{index,providers,flow}`);
++this builder did not open reference source, only the screenshots.
++Evidence: reference screenshots (wave-51 compare set, never in the repo), desktop slugs `files-pane`,
++`review-pane`, `right-sidebar`, `hud`, `quick-entry`, `onboarding`, `onboarding-other-providers`,
++`onboarding-api-key`, each `--light` and `--dark`.
++
++What it does (own words): the right side of the desktop window, the floating HUD and quick-entry
++windows and the first-run provider setup take the reference's look. Opening Files (or the right-side
++toggle) builds a right group: a Files column on top and the Terminal under it; opening Review adds a
++column left of Files. Side panes that name themselves (Files, Review) have no tab strip, only a 28px
++header with an uppercase accent "panel label" and small icon actions; the Terminal keeps a slim
++uppercase strip. The file tree is a quiet 22px list with folder/file outline icons and git-tinted
++names; the review pane is a scope segmented control, a list of changed files with square status glyphs
++and +/- counts, a diff strip for the selected file and a ship bar (message field, split commit button,
++PR link). The HUD is a composer bar on top with a translucent dark sheet under it carrying the
++transcript; quick entry is a single card with a "›" prompt and a "Send to" select; onboarding is one
++720px card with a notice box, a provider list with a disclosure for key providers, and a key form with
++a tile grid. Behaviour and data flows stay ours.
++
++Inputs → outputs: pane open/close events, `bridge.fs`/`bridge.git` data, transcript busy state, the
++onboarding flow state (`reopen` reason added) → the DOM described above.
++
++Files: `apps/desktop/src/panes/**` (PaneShell zone chrome, presets, files, review, terminal, panes.css),
++`apps/desktop/src/ui/components.tsx` + `ui.css` (PanelLabel, shared), `apps/desktop/src/hud/Hud.tsx`,
++`apps/desktop/src/quick/QuickEntry.tsx`, `apps/desktop/src/ambient/*`, `apps/desktop/src/onboarding/*`,
++the Electron window sizes for HUD (620x320) and quick entry (640x168) and their tests, e2e selector updates.
++
++Edge cases / failure modes:
++- not a git repo: review header hidden, only the empty label; files tree has no tint (errors ignored).
++- no working folder / remote folder: muted labels, our remote note kept.
++- tests and e2e keep `#pane-tab-<id>`, the "Open <pane>" buttons, `role=radio` scopes, "Discard",
++  "Commit message", "Write it for me", "API key", "Paste an API key", "Choose later", "Back".
++- reduced motion: HUD sheet shows/hides without fades.
++
++Our design differences / decisions:
++- W52-m-1: no "recommended" provider, logos or "Get a key" links (lead decision; no backend data). The
++  featured-row component exists but is used only when a provider is marked featured (never today).
++- W52-m-2: quick entry "Send to" offers "Current chat" only (lead decision; `quick.submit` has no target).
++- W52-m-3: no "show ignored files" toggle in Files (our listing has no ignore filter); no folder picker
++  when no folder is set.
++- W52-m-4: the right group is a new `side` preset shape produced when a side pane opens into the chat-only
++  layout; the old presets keep working.
++
++Tests we will write:
++- PaneShell: side panes open into the right group (files top, terminal below, review left of files).
++- Files: collapse-all, git tint classes, context menu actions.
++- Review: scope radios, branch line in DOM, split button menu, revert dialog.
++- Onboarding: notice by reason, disclosure, tile grid replaces the select.
++- QuickEntry: no visible Send button; "Send to" select.
++
++- W52-m-5: `PanelLabel` (uppercase accent label with a drawn dithered square) is added to the
++  foundation's `ui/components.tsx` / `ui.css` (it did not exist there), not as a second copy.
++- W52-m-6: the review notices (committed, pushed, failed) stay an inline `role=status` line at the
++  bottom of the pane; the revert confirm is an in-pane modal card (`role=alertdialog`). The desktop
++  foundation has no toast or confirm-dialog component yet.
++- W52-m-7: the list/tree pair stays a `radiogroup` (tests use "Tree"); only the radio for the other
++  view is drawn, so the header shows one toggle icon like the reference.
++- W52-m-8: the branch line ("On main · 2 ahead, 1 behind …") is the REVIEW label's tooltip and a muted
++  line under the scope row only when ahead/behind is not zero (otherwise it stays in the DOM, visually
++  hidden).
++- W52-m-9: the terminal's shells move to a 36px rail on the right of the terminal body (28px square
++  tabs named by the shell, close badge on hover, "+" revealed on hover).
++- W52-m-10: Alt+B on a window with no right side opens Files and Terminal (the right group); with a
++  right side it hides/shows it as before.
++
++Tests we wrote: `panes/layoutStore.test.ts` (right group shape; other arrangements untouched),
++`panes/files/FilesPane.test.tsx` (git tint, collapse all, right-click menu, empty folder),
++`onboarding/Onboarding.test.tsx` (notice by reason, disclosure, tiles instead of the select),
++`quick/QuickEntry.test.tsx` (one-line input, "Send to" select, no Send button).
++Tests updated on purpose: `ReviewPane.test.tsx` (rows show name then folder → found by title;
++"Commit & push" lives in the split button's menu; tree folder row reads "src"),
++`Onboarding.test.tsx` parity hooks (open "Other providers" first), `electron/ambient/hud.test.ts` and
++`quickEntry.test.ts` (window sizes 620x320 / 640x168, lead decision), e2e
++`surfaces.electron.test.ts` (provider tile instead of the select).
++
++## Decisions for the lead
++- W52-m-6: confirm dialog and toasts were taken in-pane because the foundation has neither; when the
++  foundation gets them, swap the review pane's `review-dialog` and notice line over.
++- Capture note: parallel builders' copies of the capture script delete every `/tmp/indus-e2e-*`
++  folder created during their run, which removed this run's app build mid-capture (terminal "could
++  not load", blank HUD). This builder's kit copy uses a private `TMPDIR` under `$S` and no global
++  cleanup; other builders' kits should do the same.
++
++Compare checklist (filled after the rewrite; reopened the reference screenshots above, not the source;
++side-by-side PDF `$SP/w52m/compare.pdf`):
++Right side
++- [x] Default window: no right panes; Alt+B / titlebar toggle opens Files on top + Terminal below, 236 px wide.
++- [x] Opening Review adds a 236 px column left of Files; seams 2 px, no dark rules, no shadows.
++- [x] Files/Review zones have no tab strip; Terminal zone has a 26 px strip with "TERMINAL" + 2 px primary underline.
++- [x] `#pane-tab-files` / `#pane-tab-review` still exist; e2e "panes" test passes.
++- [x] Panel labels: uppercase, 10.25 px, 0.16em, primary, dither dot (folder name; REVIEW).
++- [x] Files: 22 px rows, no chevrons, folder/file outline icons, 12 px secondary names, ellipsis.
++- [x] Files: refresh hover-reveal; collapse-all only when a folder is open; changed files tinted.
++- [x] Files: right-click menu with our actions; empty/no-folder/error states as labels.
++- [x] Review header: 5 icon buttons at 20 px pitch; segmented scope row 25 px on primary-tint track.
++- [x] Review rows 24 px with tinted square status glyphs, "+N −N" counts, hover stage/revert.
++- [x] Selected row wash; diff strip with mono path header, counts, stage, close; coloured diff lines.
++- [x] Ship bar: auto-grow message field with sparkle button, primary split "✓ Commit" + chevron, underlined agent PR link + PR icon.
++- [x] Revert confirm is a dialog (in-pane, W52-m-6); notices stay an inline status line (no foundation toast yet).
++- [x] Terminal body matches chat surface in light and dark (no black slab in light).
++
++HUD
++- [x] No header row; composer bar on top, 41 px, radius 12, primary focus border.
++- [x] Bar right end: model, effort, mic, voice circle, reset, leave-HUD icons.
++- [x] Sheet inset 8 px, ~82% near-black in both themes, rounded bottom corners.
++- [x] Agent text white, user text gold without bubble; tool rows hidden.
++- [x] Sheet fades in on activity/focus and out after ~1.1 s idle; hold-to-move on bar background.
++
++Quick entry
++- [x] Transparent window, one 12 px-radius card with faint primary border and small shadow, centred.
++- [x] "›" + single-line 15 px input; "Send to" + small select "Current chat".
++- [x] No Send button / hint footer; Enter sends, Esc and blur dismiss; error line red 11 px.
++
++Onboarding
++- [x] 720 px card, 12 px radius, near-invisible border, soft shadow, centred on page surface.
++- [x] Header 15 px/600 title + 13 px tertiary description (our copy).
++- [x] Notice box (tinted, 1 px tinted border, 14 px muted text) on first run / provider error only.
++- [x] Rows: 14 px/600 title, 12 px muted subtitle, right chevron (terminal icon for terminal flows), hover wash.
++- [x] No fake "recommended" provider; featured component exists but unused.
++- [x] "Other providers ⌄" disclosure expands key providers + custom endpoint; "Collapse ⌃".
++- [x] Footer: "Choose later" left, "Paste an API key" right, 11 px muted text buttons.
++- [x] Key screen: "‹ Back", 2-column tile grid with primary ring on the selected tile.
++- [x] Description line, mono "Paste API key" password input with primary focus border.
++- [x] Right-aligned primary key button with key icon (50% when disabled); "Choose later" centred below.
++- [x] Endpoint options use the same layout ("Test and continue").
++- [x] Onboarding vitest + e2e (`surfaces`, `boot`) pass after the deliberate selector updates.
++
++- Deliberate differences: no "recommended" tag, provider logos or "Get a key" links (W52-m-1); quick
++  entry offers "Current chat" only (W52-m-2); no "show ignored files" toggle and no folder picker
++  (W52-m-3); the onboarding key form keeps the eye toggle beside the password field and the button
++  reads "Save the key" (tests); the terminal zone keeps its Hide / Close actions on the strip; the
++  title band keeps our pane toggles and Advanced/Simple pair (foundation); the HUD composer is our
++  composer (placeholder "Give Indus a task", model chip, mic, talk, send) where the reference shows its
++  own controls; the HUD transcript keeps its scrollbar; review notices are a status line.
++- Not taken: the narrow-width scope dropdown (< 216px), shiki highlighting of the diff strip, the
++  HUD's "prompt needs an answer keeps the sheet up" rule (the sheet follows focus and transcript
++  activity only).
++
++## Status
++
++Done (2026-10-24) for all slugs: files-pane, review-pane, right-sidebar, terminal chrome, hud,
++quick-entry, onboarding, onboarding-other-providers, onboarding-api-key. Nothing remains open in this
++slice except the follow-ups below. Checks: tsc clean, desktop vitest 1706/1706, guards ok, e2e
++surfaces + boot pass; e2e `chat.electron.test.ts` failed 5 cases in a run before its "Other providers"
++click was added (the custom endpoint row moved behind the disclosure; the later cases cascaded from
++the onboarding overlay left open) — fixed in the test, NOT re-run (usage wind-down).
++Right group layout, files / review / terminal panes, HUD, quick entry and
++onboarding rebuilt on the foundation tokens; captures in both themes re-shot and compared
++(`$SP/w52m/compare.pdf`). Shared files touched: `apps/desktop/src/ui/components.tsx` and `ui/ui.css`
++(PanelLabel, additive), `apps/desktop/src/app/Shell.tsx` (Alt+B opens the right group, a few lines),
++`apps/desktop/src/panes/strings.en.ts`, `onboarding/strings.en.ts`, `ambient/strings.en.ts` (own
++blocks). Follow-ups: quick-entry targets need a `target` on `indus:quick:submit` plus a state push;
++a per-chat folder picker for the "No folder" state; foundation toast + confirm dialog, then move the
++review pane onto them; the HUD's sheet should also stay up while an approval waits.

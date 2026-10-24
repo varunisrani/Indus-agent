@@ -61,3 +61,10 @@
   FloatingHud, keyCaps, useHoverTip, SmallDialog; .desk-menu tightened). w52g also edits ui/components (MenuItem tone)
   and Composer.tsx (NoticeStrip) and styles.css — merge both. Shared: i18n/en.ts, settings/keybindings.ts, strings.
 - Decisions W52-h-1..8. Electron e2e NOT run; late fixes not re-captured. Desktop vitest all groups pass.
+## w52m (desktop panes, HUD, quick entry, onboarding) — base 993f0e9, clean scan, all slugs built
+- Right-side group (presets.ts openInSideGroup/sideTree), Files/Review without tab strips (#pane-tab-* ids kept),
+  Review header/rows/diff strip/ship bar, Terminal chrome, HUD 620x320, quick entry 640x168, onboarding 720px card with
+  "Other providers" and key tile grid. Shared: ui/components PanelLabel; Shell Alt+B; strings blocks.
+- Decisions W52-m-1..10. Gate: tsc, biome, desktop vitest 1706/1706, tooling.checks ok, e2e surfaces 6/6, boot 4/4.
+  UNCONFIRMED: chat.electron.test.ts (custom endpoint behind "Other providers"; e2e updated, not re-run) — integrator runs it.
+- Kits: never delete /tmp/indus-e2e-* globally (it broke parallel builders); use a private TMPDIR under $S.
