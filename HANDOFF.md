@@ -76,11 +76,21 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop"; brief
-`.agents/wip/w51/brief.md`). Wave 51 foundations: w51a web, w51b desktop (scratchpad wt-w51a/b). Wave 52 page builders
-start after 51 lands, from the specs in scratchpad/w52-specs/ (13 spec writers running). Agent ids: scratchpad/agents.txt.
-Reference + Indus screenshots and side-by-side PDFs: scratchpad/compare/. Owner decision overrides the D-16 palette row
-(record a D-id at integration); clean room still applies to code and assets.
+UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
+Read first: `.agents/wip/w51/brief.md` (rules: clean room for code/assets, look follows the reference),
+`.agents/wip/w52/brief.md`, `.agents/wip/w52/lead-decisions.md`, specs `.agents/wip/w52/specs/*.md` (one per page group).
+Parked (not landed): w51a web foundation, w51b desktop foundation (`.agents/wip/w51/*.patch`, base 511b156; README);
+w52a sessions+chat, w52b analytics/models/logs, w52c cron/skills/plugins/mcp, w52d channels/webhooks/pairing/keys
+(`.agents/wip/w52/*.patch`, base = main 511b156 + w51a; README lists merge notes: one shared model picker, deduped
+controls, light warning colour). Wrapping up at the usage limit: w52e profiles/config, w52f system/files/docs/login,
+w52g desktop transcript, w52h composer menus, w52m panes/onboarding (parked if they reported in time; see README).
+NOT STARTED: w52i desktop-settings-a, w52j desktop-settings-b, w52k desktop-capabilities, w52l desktop-command-center
+(specs ready). NEXT: (1) integrate: apply w51a, w51b, then w52 patches with --3way; merge package.json changes and
+regenerate pnpm-lock + notices with the tools; full gate (web vitest App/Webhooks timeouts under load seen on the base
+too: root-cause). (2) build i/j/k/l (+ any unfinished slugs) from their specs. (3) re-capture with
+`.agents/wip/w52/kit-web` / `kit-desktop` (theme now via the theme menu / indus-theme storage key; desktop pane
+buttons by aria-label), build side-by-side PDFs with `.agents/wip/w52/build_pdf.py` against fresh reference captures
+(capture brief: `.agents/wip/w52/capture-brief.md`; reference captures never enter the repo), send them to the owner.
 ALL 648 PLANNED TASKS BUILT. Main `c1c20da` = wave 50 landed (2026-10-23 ~13:00 UTC; LEAD-NOTES "Wave 50 landing notes
 (integrator)"; D-16.1150..1179): attached config.set (D-16.549 closed), daemon shell.exec + quick exec (D-16.1094),
 Windows foreground-only plan() + starter races, Termux apt update kind + repo validate, desktop canary identity + Windows
