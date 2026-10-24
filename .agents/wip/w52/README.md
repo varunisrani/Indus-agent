@@ -46,3 +46,10 @@
   w52h), e2e helpers click "Run". Remaining: running/approval dots on tab + sidebar row, single Stop button (composer),
   clamp-expand, swipe-to-reject. Electron e2e NOT run — integrator must run it. Decisions W52-g-1..9.
 - Gate: desktop vitest 688 (full), tsc, biome, tooling.checks ok. Compare PDF scratchpad/w52g/compare.pdf.
+## w52f (web System, Console, Files, Docs, Login, error state) — base 0a7f30a, clean scan, all slugs done
+- New pages/system/frame.tsx, console/consoleSession.ts + consoleTerminal.ts (xterm console, fixes `help` wrap),
+  pages/DocsPage.tsx (in-app /docs page, fixes direct-load collision), login_page.py restyle (CSP unchanged).
+- Shared: routes.ts /docs row, Sidebar docs icon (external link removed), plugins/slots docs, controls.tsx QueryState
+  `what` + ErrorState restyle, ActionLog restyle, format.ts formatSize/formatDateTime.
+- Decisions W52-docs-1, lang-1, sys-1/2, files-1, login-1, f-1/2. Gate: tsc, biome, vitest 300/301 (App route-table
+  timeout also on base), e2e 13/13, auth pytest 194, ruff, tooling.checks ok. Backend follow-ups F1 (host facts), F3 (docs).
