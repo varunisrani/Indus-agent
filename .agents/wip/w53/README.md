@@ -64,3 +64,22 @@
   overlay/kit.tsx QuietSearch); both edit Shell.tsx LeftSidebar/footer.
 - Gate (builder): desktop vitest 176 files / 1745 passed; Electron E2E surfaces + boot 10/10; tsc clean; biome 0 errors;
   tooling.checks ok. Decisions W52-l-1..11 in docs/notes/ui-parity/desktop-command-center.md.
+
+## w53-web.patch — web integration (INT-W), base 574689d (LOCAL = main + w51a), 112 files
+- Land order: w51a.patch, then w53-web.patch. = w52 a–f merged: ONE model picker (ui/ModelPickerDialog.tsx; chat's
+  copy deleted), deduped Badge secondary / SectionHeading / PageSpinner / CardHeader subtitle+below / Modal props;
+  light warning token #ffbd38; Button uppercase (except ghost; `caps={false}`).
+- Web vitest timeouts root-caused (CPU-bound: React dev element creation, jsdom style computation, lazy page modules
+  evaluated inside the first test): new src/testing/renderApp.tsx preloads routed pages; route test split per route;
+  w52f's 20 s timeout removed. e2e auth.spec race (loading card vs "No sessions yet") fixed in 4 waits.
+- Gate (INT-W): tsc web/e2e/ui 0; web vitest 40 files / 360 passed; web Playwright 15/15; pyright 0; pytest -k "login or
+  auth" 704 passed / 2 skipped; notices fresh; tooling.checks ok. D-16.1190 (owner parity decision, §3.2) + 1191–1209.
+  Landing notes: landing-w53-web.md.
+
+## w53-settings.patch — settings integration (INT-S), base f3f7772 (LOCAL = e402468 + w53-desk), 44 files
+- = w53i + w53j merged on the desktop integration: one field-copy map (settings/fieldCopy.ts, i18n keys), customPages
+  rebuilt, context/SettingsOverlay/navMeta unions, PageDef.order + .after. All 713 config fields placed: none lost,
+  two shown twice on purpose (security.allow_private_urls, checkpoints.max_snapshots).
+- Gate (INT-S): tsc clean; check-ipc + bridge ok; desktop vitest 175 files / 1757 passed; Electron E2E 43 passed /
+  2 skipped; tooling.checks ok; 51 settings pages captured both themes, none broken. D-16.1230–1249. Landing notes:
+  landing-w53-settings.md.
