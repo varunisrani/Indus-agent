@@ -22,3 +22,11 @@
   (ui/ version, shared) and points chat at it, keeping w52a's fuzzy highlight/current tags/notice where better.
 - Decisions W52-b-1..7 (Logs auto-refresh off; acceptance title kept). Gate: biome, tsc, vitest 308/308 at low load,
   web e2e 8/8, tooling.checks ok. Backend follow-ups: usage api_calls + by_model, per-provider model list.
+## w52c (web Cron, Skills, Plugins, MCP) — base 0a7f30a, clean scan
+- Pages rewritten + new pages/cron/{JobModal,Blueprints}.tsx, pages/mcp/AddServerModal.tsx,
+  pages/skills/{HubView,Toolsets,SkillDialogs}.tsx; lib/api.ts + restTypes.ts additions (cron profile/blueprints/skills,
+  plugin force); testing/mockApi.ts blueprints route.
+- Shared: controls.tsx Badge `secondary` (also w52d — dedupe), SectionHeading (also w52d — dedupe), Segmented `fill`;
+  Dialog.tsx `narrow` size + Modal description (w52a also adds Modal props — merge).
+- Decisions W52-c-1..13. Gate: biome, tsc, page vitest 40/40, tooling.checks ok. Full-suite App/Webhooks timeouts same as
+  base. e2e auth.spec.ts:76 (stale token reload) failed in this run — integrator: check on base before blaming.
