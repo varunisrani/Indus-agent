@@ -1,0 +1,4780 @@
+diff --git a/apps/web/e2e/dashboard.spec.ts b/apps/web/e2e/dashboard.spec.ts
+index e9932c7..7d7fc60 100644
+--- a/apps/web/e2e/dashboard.spec.ts
++++ b/apps/web/e2e/dashboard.spec.ts
+@@ -51,6 +51,9 @@ test("Config: a saved value lands in config.yaml and survives a reload", async (
+ }) => {
+   const stack = await launch({ turns: [[{ text: "Hello." }]] });
+   await page.goto(`${stack.url}/config`);
++  // One section shows at a time: open the Agent section first.
++  const sections = page.getByRole("navigation", { name: "Config sections" });
++  await sections.getByRole("button", { name: /^Agent/ }).click();
+   const field = page.getByRole("spinbutton", { name: "agent.max_turns" });
+   await expect(field).toBeVisible();
+   await field.fill("37");
+@@ -63,6 +66,7 @@ test("Config: a saved value lands in config.yaml and survives a reload", async (
+   expect(saved).toMatch(/base_url: http:\/\/127\.0\.0\.1:\d+\/v1/);
+ 
+   await page.reload();
++  await sections.getByRole("button", { name: /^Agent/ }).click();
+   await expect(page.getByRole("spinbutton", { name: "agent.max_turns" })).toHaveValue("37");
+ });
+ 
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index 42d7e69..be743c3 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -514,6 +514,8 @@ export interface LogsQuery {
+ export const api = {
+   profiles: () => request<ProfilesResponse>("/api/profiles"),
+   status: () => request<StatusResponse>("/api/status"),
++  /** The status of one named profile (a profile card's daemon line). */
++  statusOf: (profile: string) => request<StatusResponse>(forProfile("/api/status", profile)),
+ 
+   profile: {
+     create: (body: ProfileCreate) =>
+@@ -720,6 +722,8 @@ export const api = {
+     put: (config: ConfigObject) =>
+       request<OkResponse>("/api/config", { method: "PUT", json: { config } }),
+     schema: () => request<ConfigSchema>("/api/config/schema"),
++    /** The built-in defaults as a config tree (public, never per profile). */
++    defaults: () => request<ConfigObject>("/api/config/defaults"),
+     effective: () => request<EffectiveConfig>("/api/config/effective"),
+   },
+ 
+@@ -784,8 +788,10 @@ export const api = {
+     toolsets: () => request<{ toolsets: ToolsetInfo[] }>("/api/tools/toolsets"),
+     hubSearch: (q: string) =>
+       request<HubSearchResponse>(withQuery("/api/skills/hub/search", { q })),
+-    hubInstall: (identifier: string) =>
+-      request<OkResponse>("/api/skills/hub/install", { json: { identifier } }),
++    hubInstall: (identifier: string, profile?: string) =>
++      request<OkResponse>(forProfile("/api/skills/hub/install", profile), {
++        json: { identifier },
++      }),
+     hubUpdate: (name: string) => request<OkResponse>("/api/skills/hub/update", { json: { name } }),
+     hubUninstall: (name: string) =>
+       request<OkResponse>("/api/skills/hub/uninstall", { json: { name } }),
+diff --git a/apps/web/src/lib/yaml.test.ts b/apps/web/src/lib/yaml.test.ts
+new file mode 100644
+index 0000000..a33f6eb
+--- /dev/null
++++ b/apps/web/src/lib/yaml.test.ts
+@@ -0,0 +1,55 @@
++import { describe, expect, it } from "vitest";
++import { needsQuotes, nestEntries, toYaml } from "./yaml.ts";
++
++describe("yaml writer", () => {
++  it("writes nested maps with two spaces per level", () => {
++    expect(toYaml({ model: { name: "fake-model", context: 4096 }, display: { bell: false } })).toBe(
++      "model:\n  name: fake-model\n  context: 4096\ndisplay:\n  bell: false\n",
++    );
++  });
++
++  it("writes lists of scalars and of maps", () => {
++    expect(toYaml({ tools: ["web", "files"], empty: [], none: {} })).toBe(
++      "tools:\n  - web\n  - files\nempty: []\nnone: {}\n",
++    );
++    expect(toYaml({ fallback: [{ provider: "a", model: "m" }, { provider: "b" }] })).toBe(
++      "fallback:\n  - provider: a\n    model: m\n  - provider: b\n",
++    );
++  });
++
++  it("quotes strings a reader would misread", () => {
++    for (const text of [
++      "",
++      "true",
++      "No",
++      "null",
++      "~",
++      "12",
++      "1.5",
++      "0x1f",
++      " pad",
++      "a: b",
++      "#x",
++      "- y",
++      "k:",
++    ]) {
++      expect(needsQuotes(text)).toBe(true);
++    }
++    for (const text of ["fake-model", "http://127.0.0.1:9119/v1", "a b", "$HOME/x"]) {
++      expect(needsQuotes(text)).toBe(false);
++    }
++    expect(toYaml({ v: "yes", none: null, s: "two\nlines", n: 1 })).toBe(
++      'v: "yes"\nnone: null\ns: "two\\nlines"\n"n": 1\n',
++    );
++  });
++
++  it("nests dotted entries and gives nothing for an empty tree", () => {
++    const tree = nestEntries([
++      { key: "model.provider", value: "fake" },
++      { key: "model.name", value: "m" },
++      { key: "agent.max_turns", value: 20 },
++    ]);
++    expect(tree).toEqual({ model: { provider: "fake", name: "m" }, agent: { max_turns: 20 } });
++    expect(toYaml({})).toBe("");
++  });
++});
+diff --git a/apps/web/src/lib/yaml.ts b/apps/web/src/lib/yaml.ts
+new file mode 100644
+index 0000000..952ad00
+--- /dev/null
++++ b/apps/web/src/lib/yaml.ts
+@@ -0,0 +1,103 @@
++// A small YAML writer for the Config page's read-only YAML view (W52-pc-10). It covers what a
++// config tree holds: maps, lists, strings, numbers, booleans and null, two spaces per level.
++// Strings are double-quoted (JSON escapes are valid YAML) whenever plain style could be misread.
++
++import { setPath } from "./nested.ts";
++import type { ConfigObject, ConfigValue } from "./restTypes.ts";
++
++const INDENT = "  ";
++
++function isMap(value: ConfigValue): value is ConfigObject {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/** Words a YAML reader would turn into a boolean or null. */
++const SPECIAL_WORDS = /^(true|false|yes|no|on|off|y|n|null|~)$/i;
++const NUMBER_LIKE =
++  /^[-+]?(\d[\d_]*(\.\d*)?|\.\d+)([eE][-+]?\d+)?$|^0x[0-9a-f]+$|^0o[0-7]+$|^[-+]?\.(inf|nan)$/i;
++const RISKY_START = /^[-?:,[\]{}#&*!|>'"%@`\s]/;
++
++/** True when `text` must be quoted to read back as the same string. */
++export function needsQuotes(text: string): boolean {
++  if (text === "") return true;
++  if (text !== text.trim()) return true;
++  if (SPECIAL_WORDS.test(text) || NUMBER_LIKE.test(text)) return true;
++  if (RISKY_START.test(text)) return true;
++  if (text.includes(": ") || text.includes(" #") || text.endsWith(":")) return true;
++  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters force quoting
++  return /[\u0000-\u001f\u007f]/.test(text);
++}
++
++function scalar(value: ConfigValue): string {
++  if (value === null) return "null";
++  if (typeof value === "boolean") return value ? "true" : "false";
++  if (typeof value === "number")
++    return Number.isFinite(value) ? String(value) : JSON.stringify(String(value));
++  if (typeof value === "string") return needsQuotes(value) ? JSON.stringify(value) : value;
++  return JSON.stringify(value);
++}
++
++function key(name: string): string {
++  return needsQuotes(name) ? JSON.stringify(name) : name;
++}
++
++function writeMap(map: ConfigObject, depth: number, out: string[]): void {
++  const pad = INDENT.repeat(depth);
++  for (const [name, value] of Object.entries(map)) {
++    if (isMap(value)) {
++      if (Object.keys(value).length === 0) {
++        out.push(`${pad}${key(name)}: {}`);
++      } else {
++        out.push(`${pad}${key(name)}:`);
++        writeMap(value, depth + 1, out);
++      }
++    } else if (Array.isArray(value)) {
++      if (value.length === 0) {
++        out.push(`${pad}${key(name)}: []`);
++      } else {
++        out.push(`${pad}${key(name)}:`);
++        writeList(value, depth + 1, out);
++      }
++    } else {
++      out.push(`${pad}${key(name)}: ${scalar(value)}`);
++    }
++  }
++}
++
++function writeList(list: readonly ConfigValue[], depth: number, out: string[]): void {
++  const pad = INDENT.repeat(depth);
++  for (const item of list) {
++    if (isMap(item) && Object.keys(item).length > 0) {
++      // The first pair sits on the dash line; the rest line up under it.
++      const nested: string[] = [];
++      writeMap(item, depth + 1, nested);
++      const [first = "", ...rest] = nested;
++      out.push(`${pad}- ${first.trimStart()}`, ...rest);
++    } else if (Array.isArray(item) && item.length > 0) {
++      const nested: string[] = [];
++      writeList(item, depth + 1, nested);
++      const [first = "", ...rest] = nested;
++      out.push(`${pad}- ${first.trimStart()}`, ...rest);
++    } else if (isMap(item)) {
++      out.push(`${pad}- {}`);
++    } else if (Array.isArray(item)) {
++      out.push(`${pad}- []`);
++    } else {
++      out.push(`${pad}- ${scalar(item)}`);
++    }
++  }
++}
++
++/** The tree as YAML text, ending with a newline; an empty tree gives an empty string. */
++export function toYaml(tree: ConfigObject): string {
++  const out: string[] = [];
++  writeMap(tree, 0, out);
++  return out.length ? `${out.join("\n")}\n` : "";
++}
++
++/** Dotted-key entries (`display.bell`) nested into one tree, in the order given. */
++export function nestEntries(entries: readonly { key: string; value: ConfigValue }[]): ConfigObject {
++  let tree: ConfigObject = {};
++  for (const entry of entries) tree = setPath(tree, entry.key, entry.value);
++  return tree;
++}
+diff --git a/apps/web/src/pages/ConfigPage.test.tsx b/apps/web/src/pages/ConfigPage.test.tsx
+index 980f867..92f1997 100644
+--- a/apps/web/src/pages/ConfigPage.test.tsx
++++ b/apps/web/src/pages/ConfigPage.test.tsx
+@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { createMockApi, type MockApi } from "../testing/mockApi.ts";
+ import { renderPage } from "../testing/render.tsx";
+-import { APPLY_NOTE, ConfigPage } from "./ConfigPage.tsx";
++import { APPLY_NOTE, ConfigPage, YAML_SAVE_NOTE } from "./ConfigPage.tsx";
+ 
+ let mock: MockApi;
+ let restore: () => void;
+@@ -24,6 +24,15 @@ afterEach(() => {
+   restore();
+ });
+ 
++function sections() {
++  return within(screen.getByRole("navigation", { name: "Config sections" }));
++}
++
++async function openSection(name: RegExp) {
++  await screen.findByRole("navigation", { name: "Config sections" });
++  fireEvent.click(await sections().findByRole("button", { name }));
++}
++
+ describe("config form", () => {
+   it("renders the right control for each schema type, grouped by category", async () => {
+     renderPage(<ConfigPage />, "/config");
+@@ -31,7 +40,15 @@ describe("config form", () => {
+     expect(provider.tagName).toBe("INPUT");
+     expect((provider as HTMLInputElement).type).toBe("text");
+     expect((provider as HTMLInputElement).value).toBe("fake");
++    expect(
++      sections()
++        .getAllByRole("button")
++        .map((b) => b.textContent),
++    ).toEqual(["Model1", "Display2", "Agent1"]);
++    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Model");
++    expect(screen.getByText("1 field")).toBeTruthy();
+ 
++    await openSection(/Display/);
+     const iface = screen.getByLabelText("display.interface");
+     expect(iface.tagName).toBe("SELECT");
+     expect(
+@@ -39,28 +56,29 @@ describe("config form", () => {
+         .getAllByRole("option")
+         .map((o) => o.textContent),
+     ).toEqual(["cli", "tui"]);
+-
+     const bell = screen.getByRole("switch", { name: "display.bell" });
+     expect(bell.getAttribute("aria-checked")).toBe("false");
++    expect(screen.queryByLabelText("model.provider")).toBeNull();
+ 
++    await openSection(/Agent/);
+     const turns = screen.getByLabelText("agent.max_turns") as HTMLInputElement;
+     expect(turns.type).toBe("number");
+     expect(turns.value).toBe("20");
+-
+-    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+-    expect(headings).toEqual(["model", "display", "agent"]);
+-    expect(screen.getByText(APPLY_NOTE)).toBeTruthy();
+   });
+ 
+-  it("saves the edited values in one write", async () => {
++  it("saves the edited values in one write, with the apply note in the toast", async () => {
+     renderPage(<ConfigPage />, "/config");
++    const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+     fireEvent.change(await screen.findByLabelText("model.provider"), {
+       target: { value: "other" },
+     });
++    await openSection(/Display/);
+     fireEvent.click(screen.getByRole("switch", { name: "display.bell" }));
+     fireEvent.change(screen.getByLabelText("display.interface"), { target: { value: "cli" } });
++    await openSection(/Agent/);
+     fireEvent.change(screen.getByLabelText("agent.max_turns"), { target: { value: "35" } });
+-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
++    expect(save.disabled).toBe(false);
++    fireEvent.click(save);
+     await waitFor(() => expect(mock.callsTo("PUT", "/api/config")).toHaveLength(1));
+     expect(mock.callsTo("PUT", "/api/config")[0]?.body).toEqual({
+       config: {
+@@ -69,22 +87,60 @@ describe("config form", () => {
+         agent: { max_turns: 35 },
+       },
+     });
+-    expect(await screen.findByText(/^Saved\./)).toBeTruthy();
++    expect((await screen.findByText(/^Saved\./)).textContent).toContain(APPLY_NOTE);
++    await waitFor(() => expect(save.disabled).toBe(true));
+   });
+ 
+-  it("resets the form without calling the API", async () => {
++  it("keeps Save off until something changes", async () => {
+     renderPage(<ConfigPage />, "/config");
+-    const provider = (await screen.findByLabelText("model.provider")) as HTMLInputElement;
+-    fireEvent.change(provider, { target: { value: "edited" } });
+-    expect(provider.value).toBe("edited");
+-    const before = mock.calls.length;
+-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+-    expect((screen.getByLabelText("model.provider") as HTMLInputElement).value).toBe("fake");
+-    await new Promise((resolve) => setTimeout(resolve, 20));
+-    expect(mock.calls.length).toBe(before);
++    await screen.findByLabelText("model.provider");
+     expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+   });
+ 
++  it("resets the shown section to the defaults after a confirm, without saving", async () => {
++    renderPage(<ConfigPage />, "/config");
++    await openSection(/Display/);
++    fireEvent.change(screen.getByLabelText("display.interface"), { target: { value: "tui" } });
++    fireEvent.click(screen.getByRole("switch", { name: "display.bell" }));
++    const before = mock.callsTo("PUT", "/api/config").length;
++    fireEvent.click(screen.getByRole("button", { name: "Reset section to defaults" }));
++    const dialog = within(await screen.findByRole("dialog"));
++    expect(dialog.getByText(/2 fields of Display/)).toBeTruthy();
++    const confirm = dialog.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement;
++    await waitFor(() => expect(confirm.disabled).toBe(false));
++    fireEvent.click(confirm);
++    await waitFor(() =>
++      expect((screen.getByLabelText("display.interface") as HTMLSelectElement).value).toBe("cli"),
++    );
++    expect(screen.getByRole("switch", { name: "display.bell" }).getAttribute("aria-checked")).toBe(
++      "false",
++    );
++    expect(mock.callsTo("GET", "/api/config/defaults")).toHaveLength(1);
++    expect(mock.callsTo("PUT", "/api/config")).toHaveLength(before);
++    // Other sections keep their values; Save is armed.
++    await openSection(/Model/);
++    expect((screen.getByLabelText("model.provider") as HTMLInputElement).value).toBe("fake");
++    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
++      false,
++    );
++  });
++
++  it("searches keys, labels and descriptions across sections", async () => {
++    renderPage(<ConfigPage />, "/config");
++    await screen.findByLabelText("model.provider");
++    const search = screen.getByRole("searchbox", { name: "Search settings" });
++    fireEvent.change(search, { target: { value: "turn" } });
++    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Search results");
++    expect(screen.getByLabelText("agent.max_turns")).toBeTruthy();
++    expect(screen.queryByLabelText("model.provider")).toBeNull();
++    fireEvent.change(search, { target: { value: "bell" } });
++    expect(screen.getByRole("switch", { name: "display.bell" })).toBeTruthy();
++    fireEvent.change(search, { target: { value: "nothing-like-this" } });
++    expect(screen.getByText("No fields match 'nothing-like-this'")).toBeTruthy();
++    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
++    expect(screen.getByLabelText("model.provider")).toBeTruthy();
++  });
++
+   it("imports a JSON file into the form without saving it", async () => {
+     renderPage(<ConfigPage />, "/config");
+     await screen.findByLabelText("model.provider");
+@@ -98,6 +154,39 @@ describe("config form", () => {
+     expect(mock.callsTo("PUT", "/api/config")).toHaveLength(0);
+   });
+ 
++  it("shows the file's own settings as read-only YAML", async () => {
++    mock.state.effective = [
++      { key: "model.provider", value: "fake", source: "file" },
++      { key: "model.name", value: "fake-large", source: "file" },
++      { key: "display.bell", value: true, source: "env" },
++      { key: "agent.max_turns", value: 90, source: "default" },
++    ];
++    renderPage(<ConfigPage />, "/config");
++    await screen.findByLabelText("model.provider");
++    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
++    const yaml = (await screen.findByRole("textbox", {
++      name: "Raw YAML configuration",
++    })) as HTMLTextAreaElement;
++    await waitFor(() => expect(yaml.value).toBe("model:\n  provider: fake\n  name: fake-large\n"));
++    expect(yaml.readOnly).toBe(true);
++    const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
++    expect(save.disabled).toBe(true);
++    expect(save.title).toBe(YAML_SAVE_NOTE);
++    expect(screen.queryByRole("button", { name: "Reset section to defaults" })).toBeNull();
++    fireEvent.click(screen.getByRole("button", { name: "Form" }));
++    expect(await screen.findByLabelText("model.provider")).toBeTruthy();
++  });
++
++  it("says so when the file sets nothing", async () => {
++    renderPage(<ConfigPage />, "/config");
++    await screen.findByLabelText("model.provider");
++    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
++    const yaml = (await screen.findByRole("textbox", {
++      name: "Raw YAML configuration",
++    })) as HTMLTextAreaElement;
++    expect(yaml.value).toBe("# config.yaml has no settings yet\n");
++  });
++
+   it("shows the effective value and where it comes from", async () => {
+     mock.state.effective = [
+       { key: "model.provider", value: "fake", source: "file" },
+@@ -108,9 +197,8 @@ describe("config form", () => {
+     fireEvent.click(await screen.findByRole("button", { name: "Effective" }));
+     const bell = await screen.findByTestId("effective-display.bell");
+     expect(within(bell).getByText("environment")).toBeTruthy();
+-    expect(
+-      within(screen.getByTestId("effective-model.provider")).getByText("config file"),
+-    ).toBeTruthy();
++    const file = within(screen.getByTestId("effective-model.provider")).getByText("config file");
++    expect(file.className).toContain("whitespace-nowrap");
+     expect(
+       within(screen.getByTestId("effective-agent.max_turns")).getByText("default"),
+     ).toBeTruthy();
+diff --git a/apps/web/src/pages/ConfigPage.tsx b/apps/web/src/pages/ConfigPage.tsx
+index 4159040..16c1c11 100644
+--- a/apps/web/src/pages/ConfigPage.tsx
++++ b/apps/web/src/pages/ConfigPage.tsx
+@@ -1,198 +1,142 @@
+-// Config (P18-20): a form built from the config schema, grouped by category, plus a read-only
+-// "effective" view naming where each value comes from.
++// Config (P18-20, re-laid out in W52-e): a section list beside one card of fields built from the
++// config schema, a search in the header, a toolbar (export / import JSON, reset a section to the
++// defaults, the YAML and Effective views, Save), a read-only YAML view of what the file sets, and
++// the effective view naming where each value comes from.
+ 
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+-import { type ChangeEvent, useEffect, useId, useState } from "react";
++import {
++  Code,
++  Download,
++  RectangleEllipsis,
++  RotateCcw,
++  Search,
++  SlidersHorizontal,
++  Upload,
++  X,
++} from "lucide-react";
++import {
++  type ChangeEvent,
++  type ComponentType,
++  type ReactNode,
++  useEffect,
++  useMemo,
++  useState,
++} from "react";
+ import { api } from "../lib/api.ts";
+ import { saveJson } from "../lib/format.ts";
+ import { getPath, setPath } from "../lib/nested.ts";
+-import type { ConfigField, ConfigObject, ConfigValue, ValueSource } from "../lib/restTypes.ts";
++import type { ConfigObject, ConfigValue, ConfigField as FieldSchema } from "../lib/restTypes.ts";
+ import { HeaderActions } from "../shell/PageHeader.tsx";
++import { useProfileScope } from "../shell/ProfileScope.tsx";
+ import { errorText, useToast } from "../shell/Toasts.tsx";
++import { Badge, Button, Card, IconButton, Loading, QueryState } from "../ui/controls.tsx";
++import { cx } from "../ui/cx.ts";
++import { ConfirmDialog } from "../ui/Dialog.tsx";
++import { ConfigField, SubsectionDivider } from "./config/ConfigField.tsx";
+ import {
+-  Badge,
+-  type BadgeTone,
+-  Button,
+-  Card,
+-  Field,
+-  inputClass,
+-  Notice,
+-  QueryState,
+-  Segmented,
+-} from "../ui/controls.tsx";
+-import { Switch } from "../ui/Switch.tsx";
++  categoryIcon,
++  categoryName,
++  fieldCategory,
++  fieldMatches,
++  orderedCategories,
++} from "./config/categories.ts";
++import { EffectiveView } from "./config/EffectiveView.tsx";
++import { FilterColumn } from "./config/FilterColumn.tsx";
++import { YamlView } from "./config/YamlView.tsx";
+ 
+ export const APPLY_NOTE = "Changes apply to the next session, or to the daemon after it restarts.";
++export const YAML_SAVE_NOTE =
++  "Raw YAML editing is not available yet; edit the settings in the form.";
+ 
+-type View = "form" | "effective";
++type View = "form" | "yaml" | "effective";
++
++/** Toolbar buttons are a touch shorter than the shell's (27 px). */
++const toolClass = "h-[27px]";
++/** A disabled Save keeps full-strength text on the muted fill. */
++const saveClass =
++  "h-[27px] disabled:border-transparent disabled:bg-selected disabled:text-ink disabled:opacity-100";
+ 
+ function isPlainObject(value: unknown): value is ConfigObject {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
+-function displayValue(value: ConfigValue | undefined): string {
+-  if (value === undefined || value === null) return "";
+-  if (typeof value === "object") return JSON.stringify(value);
+-  return String(value);
++/** The second key segment of a three-plus segment key (its sub-section), else null. */
++function subsection(key: string): string | null {
++  const parts = key.split(".");
++  return parts.length >= 3 ? (parts[1] ?? null) : null;
+ }
+ 
+-function FieldControl({
+-  name,
+-  field,
+-  value,
+-  onChange,
+-}: {
+-  name: string;
+-  field: ConfigField;
+-  value: ConfigValue | undefined;
+-  onChange: (next: ConfigValue) => void;
+-}) {
+-  const id = useId();
+-  const label = name.split(".").pop() ?? name;
+-  if (field.type === "boolean") {
+-    return (
+-      <div className="flex items-center justify-between gap-3">
+-        <div className="flex flex-col">
+-          <span className="text-sm">{label}</span>
+-          <span className="text-xs text-muted">{field.description}</span>
+-        </div>
+-        <Switch checked={value === true} onCheckedChange={(next) => onChange(next)} label={name} />
+-      </div>
+-    );
+-  }
+-  if (field.type === "enum") {
+-    return (
+-      <Field label={label} htmlFor={id} hint={field.description}>
+-        <select
+-          id={id}
+-          aria-label={name}
+-          className={inputClass}
+-          value={displayValue(value)}
+-          onChange={(e) => onChange(e.currentTarget.value)}
+-        >
+-          {value === undefined || value === null ? <option value="">(not set)</option> : null}
+-          {(field.options ?? []).map((option) => (
+-            <option key={option} value={option}>
+-              {option}
+-            </option>
+-          ))}
+-        </select>
+-      </Field>
+-    );
+-  }
+-  if (field.type === "number" || field.type === "integer") {
+-    return (
+-      <Field label={label} htmlFor={id} hint={field.description}>
+-        <input
+-          id={id}
+-          aria-label={name}
+-          type="number"
+-          step={field.type === "integer" ? 1 : "any"}
+-          className={inputClass}
+-          value={displayValue(value)}
+-          onChange={(e) => {
+-            const raw = e.currentTarget.value;
+-            const parsed = Number(raw);
+-            onChange(raw === "" ? null : Number.isFinite(parsed) ? parsed : raw);
+-          }}
+-        />
+-      </Field>
+-    );
+-  }
+-  if (field.type === "list") {
+-    const lines = Array.isArray(value) ? value.map(displayValue).join("\n") : displayValue(value);
+-    return (
+-      <Field label={label} htmlFor={id} hint={`${field.description} One entry per line.`}>
+-        <textarea
+-          id={id}
+-          aria-label={name}
+-          className={inputClass}
+-          rows={3}
+-          value={lines}
+-          onChange={(e) =>
+-            onChange(e.currentTarget.value.split("\n").filter((line) => line.trim() !== ""))
+-          }
+-        />
+-      </Field>
+-    );
+-  }
++function HeaderSearch({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+   return (
+-    <Field label={label} htmlFor={id} hint={field.description}>
++    <div className="relative w-[min(300px,50vw)]">
++      <Search
++        aria-hidden="true"
++        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-soft"
++      />
+       <input
+-        id={id}
+-        aria-label={name}
+-        type="text"
+-        className={inputClass}
+-        value={displayValue(value)}
++        type="search"
++        aria-label="Search settings"
++        placeholder="Search..."
++        value={value}
+         onChange={(e) => onChange(e.currentTarget.value)}
++        className="type-data h-[30px] w-full border border-line bg-transparent pr-8 pl-8 text-[0.75rem] text-ink outline-none placeholder:text-ink-faint focus:border-ink [&::-webkit-search-cancel-button]:hidden"
+       />
+-    </Field>
++      {value ? (
++        <button
++          type="button"
++          aria-label="Clear search"
++          onClick={() => onChange("")}
++          className="absolute top-1/2 right-1.5 inline-flex size-5 -translate-y-1/2 items-center justify-center text-ink-soft hover:text-ink"
++        >
++          <X className="size-3.5" />
++        </button>
++      ) : null}
++    </div>
+   );
+ }
+ 
+-const SOURCE_TONE: Record<ValueSource, BadgeTone> = {
+-  default: "neutral",
+-  file: "accent",
+-  env: "warn",
+-  overlay: "danger",
+-};
+-
+-const SOURCE_LABEL: Record<ValueSource, string> = {
+-  default: "default",
+-  file: "config file",
+-  env: "environment",
+-  overlay: "admin overlay",
+-};
+-
+-function EffectiveView() {
+-  const effective = useQuery({
+-    queryKey: ["config", "effective"],
+-    queryFn: () => api.config.effective(),
+-  });
+-  const entries = effective.data?.entries ?? [];
++function SectionCard({
++  icon: Icon,
++  title,
++  count,
++  children,
++}: {
++  icon: ComponentType<{ className?: string }>;
++  title: string;
++  count: number;
++  children: ReactNode;
++}) {
+   return (
+-    <QueryState
+-      loading={effective.isPending}
+-      error={effective.error}
+-      empty={entries.length === 0}
+-      emptyText="No settings reported."
+-    >
+-      <table className="w-full text-sm" aria-label="Effective configuration">
+-        <thead>
+-          <tr className="text-left text-xs text-muted">
+-            <th className="py-1">Key</th>
+-            <th className="py-1">Value</th>
+-            <th className="py-1">Source</th>
+-          </tr>
+-        </thead>
+-        <tbody>
+-          {entries.map((entry) => (
+-            <tr
+-              key={entry.key}
+-              className="border-t border-line"
+-              data-testid={`effective-${entry.key}`}
+-            >
+-              <td className="py-1 font-mono text-xs">{entry.key}</td>
+-              <td className="py-1 font-mono text-xs break-all">{displayValue(entry.value)}</td>
+-              <td className="py-1">
+-                <Badge tone={SOURCE_TONE[entry.source]}>{SOURCE_LABEL[entry.source]}</Badge>
+-              </td>
+-            </tr>
+-          ))}
+-        </tbody>
+-      </table>
+-    </QueryState>
++    <Card padded={false} className="min-w-0 flex-1">
++      <header className="flex h-12 items-center gap-2.5 border-b border-line px-4">
++        <Icon aria-hidden="true" className="size-4 shrink-0 text-ink" />
++        <h2 className="type-section-title m-0 flex-1 truncate text-[0.9375rem]">{title}</h2>
++        <Badge tone="secondary">
++          {count} {count === 1 ? "field" : "fields"}
++        </Badge>
++      </header>
++      <div className="flex flex-col gap-2 px-4 pt-2 pb-4">{children}</div>
++    </Card>
+   );
+ }
+ 
+ export function ConfigPage() {
+   const toast = useToast();
+   const client = useQueryClient();
++  const scope = useProfileScope();
+   const [view, setView] = useState<View>("form");
+   const [form, setForm] = useState<ConfigObject | null>(null);
+   const [dirty, setDirty] = useState(false);
++  const [query, setQuery] = useState("");
++  const [picked, setPicked] = useState<string | null>(null);
++  const [resetting, setResetting] = useState(false);
+   const config = useQuery({ queryKey: ["config", "file"], queryFn: () => api.config.get() });
+   const schema = useQuery({ queryKey: ["config", "schema"], queryFn: () => api.config.schema() });
++  const defaults = useQuery({
++    queryKey: ["config", "defaults"],
++    queryFn: () => api.config.defaults(),
++    enabled: resetting,
++  });
+ 
+   useEffect(() => {
+     if (config.data && form === null) setForm(config.data);
+@@ -229,23 +173,124 @@ export function ConfigPage() {
+   };
+ 
+   const fields = schema.data?.fields ?? {};
+-  const order = schema.data?.category_order ?? [];
+-  const categories = [...new Set(Object.values(fields).map((f) => f.category || "general"))].sort(
+-    (a, b) => {
+-      const ia = order.indexOf(a);
+-      const ib = order.indexOf(b);
+-      return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib) || a.localeCompare(b);
+-    },
++  const categories = useMemo(
++    () => (schema.data ? orderedCategories(schema.data) : []),
++    [schema.data],
+   );
++  const counts = useMemo(() => {
++    const out: Record<string, number> = {};
++    for (const field of Object.values(fields)) {
++      const c = fieldCategory(field);
++      out[c] = (out[c] ?? 0) + 1;
++    }
++    return out;
++  }, [fields]);
++  const searching = query.trim() !== "";
++  const category = picked && categories.includes(picked) ? picked : (categories[0] ?? null);
++  const scoped: [string, FieldSchema][] = Object.entries(fields).filter(([key, field]) =>
++    searching ? fieldMatches(key, field, query) : fieldCategory(field) === category,
++  );
++
++  const resetToDefaults = () => {
++    const tree = defaults.data;
++    if (!tree) return;
++    let next = form ?? {};
++    let changed = 0;
++    for (const [key] of scoped) {
++      const value = getPath(tree, key);
++      if (value === undefined) continue;
++      next = setPath(next, key, value);
++      changed += 1;
++    }
++    setForm(next);
++    setDirty(true);
++    setResetting(false);
++    toast.show(
++      `${changed} ${changed === 1 ? "field" : "fields"} set to the defaults. Save to keep them.`,
++      "info",
++    );
++  };
++
++  const profileName =
++    scope.active ||
++    scope.profiles.find((p) => p.is_current)?.name ||
++    scope.defaultName ||
++    "this profile";
++
++  const renderFields = (rows: [string, FieldSchema][], grouped: boolean) => {
++    if (!form) return null;
++    const out: ReactNode[] = [];
++    let lastGroup: string | null = null;
++    let lastSub: string | null = null;
++    for (const [key, field] of rows) {
++      if (grouped) {
++        const c = fieldCategory(field);
++        if (c !== lastGroup) {
++          const Icon = categoryIcon(c);
++          out.push(
++            <SubsectionDivider key={`group-${c}`}>
++              <span className="inline-flex items-center gap-1.5">
++                <Icon aria-hidden="true" className="size-3.5" />
++                {categoryName(c)}
++              </span>
++            </SubsectionDivider>,
++          );
++          lastGroup = c;
++          lastSub = null;
++        }
++      }
++      const sub = subsection(key);
++      if (sub && sub !== lastSub) {
++        out.push(
++          <SubsectionDivider key={`sub-${key}`}>{sub.replace(/_/g, " ")}</SubsectionDivider>,
++        );
++      }
++      lastSub = sub;
++      out.push(
++        <ConfigField
++          key={key}
++          name={key}
++          field={field}
++          value={getPath(form, key)}
++          onChange={(v) => edit(key, v)}
++        />,
++      );
++    }
++    return out;
++  };
+ 
++  const yaml = view === "yaml";
+   return (
+-    <div className="flex flex-col gap-4 p-4">
++    <div className="flex flex-col gap-4 px-4 py-[1.4375rem] lg:px-[1.4375rem]">
+       <HeaderActions>
+-        <Button onClick={() => form && saveJson(form, "indus-config.json")} disabled={!form}>
+-          Export JSON
+-        </Button>
+-        <label className="inline-flex cursor-pointer items-center rounded-md border border-line bg-raised px-3 py-1.5 text-sm">
+-          Import JSON
++        <HeaderSearch
++          value={query}
++          onChange={(next) => {
++            setQuery(next);
++            if (next.trim() && view !== "form") setView("form");
++          }}
++        />
++      </HeaderActions>
++
++      <div className="flex flex-wrap items-center gap-1.5">
++        <SlidersHorizontal aria-hidden="true" className="size-4 shrink-0 text-ink-soft" />
++        <code className="type-data mr-2 min-w-0 flex-1 bg-surface px-2 py-0.5 text-[0.8125rem] break-all text-ink-muted">
++          config.yaml · {profileName}
++        </code>
++        <IconButton
++          label="Export JSON"
++          onClick={() => form && saveJson(form, "indus-config.json")}
++          disabled={!form}
++          className="size-[27px]"
++        >
++          <Download />
++        </IconButton>
++        <label
++          title="Import JSON"
++          className="inline-flex size-[27px] cursor-pointer items-center justify-center text-ink hover:bg-hover [&_svg]:size-4"
++        >
++          <Upload aria-hidden="true" />
++          <span className="sr-only">Import JSON</span>
+           <input
+             type="file"
+             accept="application/json,.json"
+@@ -253,68 +298,121 @@ export function ConfigPage() {
+             onChange={(e) => void importFile(e)}
+           />
+         </label>
+-      </HeaderActions>
+-      <Notice>{APPLY_NOTE}</Notice>
+-      <Segmented
+-        label="View"
+-        value={view}
+-        options={[
+-          { value: "form", label: "Settings" },
+-          { value: "effective", label: "Effective" },
+-        ]}
+-        onChange={setView}
+-      />
+-      {view === "effective" ? (
+-        <EffectiveView />
+-      ) : (
+-        <QueryState
+-          loading={config.isPending || schema.isPending || form === null}
+-          error={config.error ?? schema.error}
++        {view === "form" ? (
++          <IconButton
++            label={searching ? "Reset these results to defaults" : "Reset section to defaults"}
++            onClick={() => setResetting(true)}
++            disabled={!form || scoped.length === 0}
++            className="size-[27px]"
++          >
++            <RotateCcw />
++          </IconButton>
++        ) : null}
++        <span aria-hidden="true" className="mx-1 h-5 w-px bg-line" />
++        <Button
++          size="sm"
++          tone={yaml ? "primary" : "default"}
++          className={toolClass}
++          icon={yaml ? <RectangleEllipsis /> : <Code />}
++          onClick={() => setView(yaml ? "form" : "yaml")}
+         >
+-          {form ? (
+-            <form
+-              className="flex flex-col gap-4"
+-              onSubmit={(event) => {
+-                event.preventDefault();
+-                save.mutate(form);
+-              }}
+-            >
+-              {categories.map((category) => (
+-                <Card key={category}>
+-                  <h2 className="mb-3 text-sm font-semibold capitalize">{category}</h2>
+-                  <div className="flex flex-col gap-3">
+-                    {Object.entries(fields)
+-                      .filter(([, field]) => (field.category || "general") === category)
+-                      .map(([name, field]) => (
+-                        <FieldControl
+-                          key={name}
+-                          name={name}
+-                          field={field}
+-                          value={getPath(form, name)}
+-                          onChange={(v) => edit(name, v)}
+-                        />
+-                      ))}
+-                  </div>
+-                </Card>
+-              ))}
+-              <div className="flex gap-2">
+-                <Button type="submit" tone="primary" disabled={!dirty || save.isPending}>
+-                  Save
+-                </Button>
+-                <Button
+-                  disabled={!dirty}
+-                  onClick={() => {
+-                    setForm(config.data ?? {});
+-                    setDirty(false);
+-                  }}
++          {yaml ? "Form" : "YAML"}
++        </Button>
++        <Button
++          size="sm"
++          tone={view === "effective" ? "primary" : "default"}
++          className={toolClass}
++          aria-pressed={view === "effective"}
++          onClick={() => setView(view === "effective" ? "form" : "effective")}
++        >
++          Effective
++        </Button>
++        <Button
++          size="sm"
++          tone="primary"
++          className={saveClass}
++          disabled={yaml || !dirty || !form || save.isPending}
++          title={yaml ? YAML_SAVE_NOTE : undefined}
++          onClick={() => form && save.mutate(form)}
++        >
++          Save
++        </Button>
++      </div>
++
++      {view === "effective" ? <EffectiveView /> : null}
++      {yaml ? <YamlView /> : null}
++      {view === "form" ? (
++        config.isPending || schema.isPending || (form === null && !config.error) ? (
++          <div className="flex justify-center py-24">
++            <Loading />
++          </div>
++        ) : (
++          <QueryState
++            loading={false}
++            error={config.error ?? schema.error}
++            onRetry={() => {
++              void config.refetch();
++              void schema.refetch();
++            }}
++          >
++            <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
++              <FilterColumn
++                categories={categories}
++                counts={counts}
++                active={searching ? null : category}
++                onPick={(next) => {
++                  setQuery("");
++                  setPicked(next);
++                }}
++              />
++              {searching ? (
++                <SectionCard icon={Search} title="Search results" count={scoped.length}>
++                  {scoped.length ? (
++                    renderFields(scoped, true)
++                  ) : (
++                    <p className="m-0 py-10 text-center text-[0.8125rem] text-ink-soft">
++                      No fields match '{query.trim()}'
++                    </p>
++                  )}
++                </SectionCard>
++              ) : category ? (
++                <SectionCard
++                  icon={categoryIcon(category)}
++                  title={categoryName(category)}
++                  count={scoped.length}
+                 >
+-                  Reset
+-                </Button>
+-              </div>
+-            </form>
+-          ) : null}
+-        </QueryState>
+-      )}
++                  {renderFields(scoped, false)}
++                </SectionCard>
++              ) : (
++                <Card className="flex-1">
++                  <p className="m-0 text-[0.8125rem] text-ink-soft">
++                    The schema lists no settings.
++                  </p>
++                </Card>
++              )}
++            </div>
++          </QueryState>
++        )
++      ) : null}
++
++      <ConfirmDialog
++        open={resetting}
++        title="Reset to defaults?"
++        description={
++          searching
++            ? `The ${scoped.length} matching fields go back to their built-in values in the form. Nothing is written until you save.`
++            : `The ${scoped.length} fields of ${category ? categoryName(category) : "this section"} go back to their built-in values in the form. Nothing is written until you save.`
++        }
++        confirmLabel="Reset to defaults"
++        danger
++        busy={defaults.isPending || !defaults.data}
++        onConfirm={resetToDefaults}
++        onCancel={() => setResetting(false)}
++      >
++        {defaults.error ? (
++          <p className={cx("m-0 text-[0.8125rem] text-danger")}>{errorText(defaults.error)}</p>
++        ) : null}
++      </ConfirmDialog>
+     </div>
+   );
+ }
+diff --git a/apps/web/src/pages/ProfileBuilderPage.test.tsx b/apps/web/src/pages/ProfileBuilderPage.test.tsx
+index 4e68490..3ecf382 100644
+--- a/apps/web/src/pages/ProfileBuilderPage.test.tsx
++++ b/apps/web/src/pages/ProfileBuilderPage.test.tsx
+@@ -21,6 +21,17 @@ beforeEach(() => {
+     { name: "web-search", description: "", category: "web", enabled: true },
+     { name: "notes", description: "", category: "notes", enabled: true },
+   ];
++  mock.state.hub = [
++    {
++      identifier: "hub/papers",
++      name: "papers",
++      description: "Read papers",
++      source: "hub",
++      verdict: null,
++      installed: false,
++      update_available: false,
++    },
++  ];
+   restore = mock.install();
+   vi.spyOn(console, "warn").mockImplementation(() => {});
+ });
+@@ -52,9 +63,12 @@ describe("profile builder", () => {
+     // A later step cannot be reached through the step list either while the name is bad.
+     await typeName("bad name");
+     const steps = within(screen.getByRole("list", { name: "Steps" }));
+-    expect((steps.getByRole("button", { name: "6. Review" }) as HTMLButtonElement).disabled).toBe(
++    expect((steps.getByRole("button", { name: "5. Review" }) as HTMLButtonElement).disabled).toBe(
+       true,
+     );
++    expect((steps.getByRole("button", { name: "1. Identity" }) as HTMLButtonElement).disabled).toBe(
++      false,
++    );
+   });
+ 
+   it("walks the steps and writes the profile, its model, skills and servers", async () => {
+@@ -63,36 +77,53 @@ describe("profile builder", () => {
+     await typeName("research");
+     await screen.findByRole("option", { name: "A copy of work's settings" });
+     fireEvent.change(screen.getByLabelText("Start from"), { target: { value: "work" } });
+-    fireEvent.click(next());
+-
+-    fireEvent.change(await screen.findByLabelText("Description"), {
++    fireEvent.change(screen.getByLabelText("Description (optional)"), {
+       target: { value: "Papers and notes" },
+     });
+     fireEvent.click(next());
+ 
+-    const provider = await screen.findByLabelText("Provider");
+-    await screen.findByRole("option", { name: "Fake provider" });
+-    fireEvent.change(provider, { target: { value: "fake" } });
++    const fake = await screen.findByRole("button", { name: /Fake provider/ });
++    fireEvent.click(fake);
++    expect(fake.getAttribute("aria-pressed")).toBe("true");
+     expect(next().disabled).toBe(true); // a provider needs a model
+     fireEvent.change(screen.getByLabelText("Model"), { target: { value: "fake-large" } });
+     fireEvent.click(next());
+ 
+-    const skill = await screen.findByRole("checkbox", { name: "web-search" });
+-    fireEvent.click(skill);
++    const keepAll = await screen.findByRole("checkbox", {
++      name: "Keep every bundled skill (recommended)",
++    });
++    expect(screen.queryByRole("checkbox", { name: "web-search" })).toBeNull();
++    fireEvent.click(keepAll);
++    fireEvent.click(await screen.findByRole("checkbox", { name: "web-search" }));
++    fireEvent.change(screen.getByLabelText("Add from the skills hub"), {
++      target: { value: "pap" },
++    });
++    fireEvent.click(screen.getByRole("button", { name: "Search" }));
++    fireEvent.click(await screen.findByRole("button", { name: "Add papers" }));
++    expect(
++      within(screen.getByRole("list", { name: "Hub skills to add" })).getByText("papers"),
++    ).toBeTruthy();
+     fireEvent.click(next());
+ 
+     fireEvent.change(await screen.findByLabelText("Server name"), { target: { value: "papers" } });
+-    fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "http" } });
++    const transport = within(screen.getByRole("group", { name: "Transport" }));
++    fireEvent.click(transport.getByRole("button", { name: "stdio" }));
++    expect(screen.getByLabelText("Command")).toBeTruthy();
++    fireEvent.click(transport.getByRole("button", { name: "HTTP/SSE" }));
++    fireEvent.change(screen.getByLabelText("Server name"), { target: { value: "papers" } });
+     fireEvent.change(screen.getByLabelText("URL"), {
+       target: { value: "https://mcp.example.org/papers" },
+     });
+-    fireEvent.click(screen.getByRole("button", { name: "Add to the list" }));
++    fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+     expect(
+-      within(screen.getByRole("list", { name: "Servers to add" })).getByText(/papers/),
++      within(screen.getByRole("list", { name: "Servers to add" })).getByText(
++        "https://mcp.example.org/papers",
++      ),
+     ).toBeTruthy();
++    expect(screen.getByText("1 configured")).toBeTruthy();
+     fireEvent.click(next());
+ 
+-    expect(screen.getByText("bundled, without web-search")).toBeTruthy();
++    expect(screen.getByText("Bundled, without web-search")).toBeTruthy();
+     expect(mock.callsTo("POST", "/api/profiles")).toHaveLength(0);
+     fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
+ 
+@@ -101,6 +132,7 @@ describe("profile builder", () => {
+       "✓ Profile research",
+       "✓ Model fake-large",
+       "✓ Skill web-search off",
++      "✓ Hub skill papers",
+       "✓ MCP server papers",
+     ]);
+     expect(mock.callsTo("POST", "/api/profiles")[0]?.body).toEqual({
+@@ -115,6 +147,9 @@ describe("profile builder", () => {
+     const toggle = mock.callsTo("POST", "/api/skills/toggle")[0];
+     expect(toggle?.query.get("profile")).toBe("research");
+     expect(toggle?.body).toEqual({ name: "web-search", enabled: false });
++    const install = mock.callsTo("POST", "/api/skills/hub/install")[0];
++    expect(install?.query.get("profile")).toBe("research");
++    expect(install?.body).toEqual({ identifier: "hub/papers" });
+     const add = mock.callsTo("POST", "/api/mcp/servers")[0];
+     expect(add?.query.get("profile")).toBe("research");
+     expect(add?.body).toEqual({ name: "papers", url: "https://mcp.example.org/papers" });
+@@ -130,10 +165,10 @@ describe("profile builder", () => {
+     await typeName("lean");
+     fireEvent.click(next());
+     fireEvent.click(next());
+-    fireEvent.click(next());
+-    fireEvent.click(await screen.findByRole("radio", { name: "Start without bundled skills" }));
++    fireEvent.click(await screen.findByRole("checkbox", { name: "Start with no bundled skills" }));
+     fireEvent.click(next());
+     fireEvent.click(next());
++    expect(screen.getByText("No bundled skills")).toBeTruthy();
+     fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
+     const results = within(await screen.findByRole("list", { name: "Create results" }));
+     expect(results.getByText(/disk is read-only/)).toBeTruthy();
+@@ -153,6 +188,16 @@ describe("profile builder", () => {
+     expect(
+       mcpBody({ name: "x", transport: "stdio", command: "", args: "", env: "", url: "" }),
+     ).toMatch(/command/);
++    const http = { name: "x", transport: "http", command: "", args: "", env: "" } as const;
++    expect(mcpBody({ ...http, url: "https://h.example/mcp", auth: "oauth" })).toEqual({
++      name: "x",
++      url: "https://h.example/mcp",
++      auth: "oauth",
++    });
++    expect(mcpBody({ ...http, url: "https://h.example/mcp", auth: "none" })).toEqual({
++      name: "x",
++      url: "https://h.example/mcp",
++    });
+     expect(
+       mcpBody({
+         name: "x",
+diff --git a/apps/web/src/pages/ProfileBuilderPage.tsx b/apps/web/src/pages/ProfileBuilderPage.tsx
+index 624b3c2..c1193e7 100644
+--- a/apps/web/src/pages/ProfileBuilderPage.tsx
++++ b/apps/web/src/pages/ProfileBuilderPage.tsx
+@@ -1,28 +1,33 @@
+-// The profile builder (P18-24): a stepped create flow — name, description, model, skills, MCP
+-// servers, review. Nothing is written until "Create profile" on the review step; then the profile
+-// is made (`POST /api/profiles`) and the chosen model, switched-off skills and new MCP servers are
+-// written into it, each with `?profile=<new name>`. A refused follow-up is listed; the profile stays.
++// The profile builder (P18-24, five steps since W52-e): identity (name, description, start from),
++// model, skills (bundled set and hub picks), MCP servers, review. Nothing is written until "Create
++// profile" on the review step; then the profile is made (`POST /api/profiles`) and the chosen model,
++// switched-off skills, hub skills and new MCP servers are written into it, each with
++// `?profile=<new name>`. A refused follow-up is listed; the profile stays.
+ 
+-import { useQuery } from "@tanstack/react-query";
++import { useMutation, useQuery } from "@tanstack/react-query";
++import { X } from "lucide-react";
+ import { type ReactNode, useId, useState } from "react";
+ import { Link } from "react-router";
+ import { api } from "../lib/api.ts";
+-import type { McpServerCreate, ProfileCreate } from "../lib/restTypes.ts";
++import type { HubResult, McpAuth, McpServerCreate, ProfileCreate } from "../lib/restTypes.ts";
+ import { useProfileScope } from "../shell/ProfileScope.tsx";
+ import { errorText } from "../shell/Toasts.tsx";
+-import { Button, Card, Field, inputClass, Notice } from "../ui/controls.tsx";
++import { Badge, Button, Checkbox, inputClass, Notice, Segmented, Select } from "../ui/controls.tsx";
++import { cx } from "../ui/cx.ts";
+ import { parseEnvLines, splitArgs } from "./McpPage.tsx";
+ import { normaliseProfileName, profileNameProblem } from "./profiles/profileName.ts";
+ 
+-export const STEPS = [
+-  { id: "name", label: "Name" },
+-  { id: "description", label: "Description" },
+-  { id: "model", label: "Model" },
+-  { id: "skills", label: "Skills" },
+-  { id: "mcp", label: "MCP servers" },
+-  { id: "review", label: "Review" },
+-] as const;
+-type StepId = (typeof STEPS)[number]["id"];
++/** The builder's steps in order; the pill shows "<n>. <title>". */
++export const STEP_ORDER = ["identity", "model", "skills", "mcp", "review"] as const;
++type StepId = (typeof STEP_ORDER)[number];
++const STEP_TITLE: Record<StepId, string> = {
++  review: "Review",
++  mcp: "MCPs",
++  skills: "Skills",
++  model: "Model",
++  identity: "Identity",
++};
++export const STEPS = STEP_ORDER.map((id) => ({ id, title: STEP_TITLE[id] }));
+ 
+ interface McpDraft {
+   name: string;
+@@ -31,15 +36,17 @@ interface McpDraft {
+   args: string;
+   env: string;
+   url: string;
++  auth?: McpAuth;
+ }
+ 
+ const EMPTY_MCP: McpDraft = {
+   name: "",
+-  transport: "stdio",
++  transport: "http",
+   command: "",
+   args: "",
+   env: "",
+   url: "",
++  auth: "none",
+ };
+ 
+ /** The add body for a drafted server, or why it cannot be added. */
+@@ -48,7 +55,9 @@ export function mcpBody(draft: McpDraft): McpServerCreate | string {
+   if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) return "Name the server with letters and digits.";
+   if (draft.transport === "http") {
+     if (!/^https?:\/\/\S+$/.test(draft.url.trim())) return "Give the server's http(s) URL.";
+-    return { name, url: draft.url.trim() };
++    const body: McpServerCreate = { name, url: draft.url.trim() };
++    if (draft.auth && draft.auth !== "none") body.auth = draft.auth;
++    return body;
+   }
+   if (!draft.command.trim()) return "Give the command that starts the server.";
+   const env = parseEnvLines(draft.env);
+@@ -62,26 +71,76 @@ interface Outcome {
+   message: string;
+ }
+ 
++const labelClass = "type-label text-[0.6875rem] tracking-[0.1em] text-ink";
++const fieldClass = cx(inputClass, "h-[33px] w-full text-[0.8125rem]");
++const mutedLine = "m-0 text-[0.8125rem] text-ink-soft";
++/** Back / Next / Create: tall, bold, tracked, not uppercase; disabled shows the muted fill. */
++const navClass =
++  "inline-flex h-[37px] min-w-[73px] items-center justify-center px-4 text-[0.875rem] font-bold tracking-[0.15em] transition-colors disabled:cursor-not-allowed disabled:bg-selected disabled:text-ink";
++
++function Label({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
++  return (
++    <label htmlFor={htmlFor} className={labelClass}>
++      {children}
++    </label>
++  );
++}
++
+ function Step({ title, children }: { title: string; children: ReactNode }) {
+   return (
+-    <section aria-label={`${title} step`} className="flex flex-col gap-3">
+-      <h2 className="text-sm font-semibold">{title}</h2>
++    <section aria-label={`${title} step`} className="flex flex-col gap-4">
+       {children}
+     </section>
+   );
+ }
+ 
++function Pill({
++  index,
++  label,
++  state,
++  disabled,
++  onClick,
++}: {
++  index: number;
++  label: string;
++  state: "current" | "visited" | "future";
++  disabled: boolean;
++  onClick: () => void;
++}) {
++  return (
++    <button
++      type="button"
++      aria-current={state === "current" ? "step" : undefined}
++      disabled={disabled}
++      onClick={onClick}
++      className={cx(
++        "h-[26px] rounded-full px-3 text-[0.8125rem] whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50",
++        state === "current" && "bg-ink text-on-ink",
++        state === "visited" && "bg-selected text-ink hover:bg-hover",
++        state === "future" && "text-ink-faint hover:text-ink-muted",
++      )}
++    >
++      {index + 1}. {label}
++    </button>
++  );
++}
++
+ export function ProfileBuilderPage() {
+   const scope = useProfileScope();
+   const ids = useId();
+-  const [step, setStep] = useState<StepId>("name");
++  const [step, setStep] = useState<StepId>("identity");
+   const [name, setName] = useState("");
+   const [cloneFrom, setCloneFrom] = useState("");
+   const [description, setDescription] = useState("");
++  const [providerFilter, setProviderFilter] = useState("");
+   const [provider, setProvider] = useState("");
+   const [model, setModel] = useState("");
+-  const [keepSkills, setKeepSkills] = useState(true);
++  const [keepAll, setKeepAll] = useState(true);
++  const [noSkills, setNoSkills] = useState(false);
++  const [skillFilter, setSkillFilter] = useState("");
+   const [skillsOff, setSkillsOff] = useState<string[]>([]);
++  const [hubQuery, setHubQuery] = useState("");
++  const [hubPicks, setHubPicks] = useState<HubResult[]>([]);
+   const [servers, setServers] = useState<McpServerCreate[]>([]);
+   const [draft, setDraft] = useState<McpDraft>(EMPTY_MCP);
+   const [draftProblem, setDraftProblem] = useState("");
+@@ -98,16 +157,19 @@ export function ProfileBuilderPage() {
+   const skills = useQuery({
+     queryKey: ["builder", "skills"],
+     queryFn: () => api.skills.list(),
+-    enabled: step === "skills",
++    enabled: step === "skills" && !keepAll,
+   });
++  const hub = useMutation({ mutationFn: (q: string) => api.skills.hubSearch(q) });
+ 
+-  const at = STEPS.findIndex((s) => s.id === step);
++  const at = STEP_ORDER.indexOf(step);
+   const modelProblem = provider && !model.trim() ? "Name the model for that provider." : null;
+-  const blocked = (step === "name" && nameProblem !== null) || (step === "model" && !!modelProblem);
++  const blocked =
++    (step === "identity" && nameProblem !== null) || (step === "model" && !!modelProblem);
+   const go = (delta: number) => {
+-    const next = STEPS[Math.min(Math.max(at + delta, 0), STEPS.length - 1)];
+-    if (next) setStep(next.id);
++    const next = STEP_ORDER[Math.min(Math.max(at + delta, 0), STEP_ORDER.length - 1)];
++    if (next) setStep(next);
+   };
++  const trimSkills = !noSkills && !keepAll;
+ 
+   const addServer = () => {
+     const body = mcpBody(draft);
+@@ -120,10 +182,14 @@ export function ProfileBuilderPage() {
+       return;
+     }
+     setServers((all) => [...all, body]);
+-    setDraft(EMPTY_MCP);
++    setDraft({ ...EMPTY_MCP, transport: draft.transport });
+     setDraftProblem("");
+   };
+ 
++  const searchHub = () => {
++    if (hubQuery.trim()) hub.mutate(hubQuery.trim());
++  };
++
+   const create = async () => {
+     const id = normaliseProfileName(name);
+     setCreating(true);
+@@ -131,7 +197,7 @@ export function ProfileBuilderPage() {
+     const body: ProfileCreate = { name: id };
+     if (cloneFrom) body.clone_from = cloneFrom;
+     if (description.trim()) body.description = description.trim();
+-    if (!keepSkills) body.no_skills = true;
++    if (noSkills) body.no_skills = true;
+     try {
+       const reply = await api.profile.create(body);
+       done.push({ label: `Profile ${reply.name}`, ok: true, message: "created" });
+@@ -151,11 +217,14 @@ export function ProfileBuilderPage() {
+     if (provider && model.trim()) {
+       await follow(`Model ${model.trim()}`, () => api.profile.setModel(id, provider, model.trim()));
+     }
+-    if (keepSkills) {
++    if (trimSkills) {
+       for (const skill of skillsOff) {
+         await follow(`Skill ${skill} off`, () => api.skills.toggle(skill, false, id));
+       }
+     }
++    for (const pick of hubPicks) {
++      await follow(`Hub skill ${pick.name}`, () => api.skills.hubInstall(pick.identifier, id));
++    }
+     for (const server of servers) {
+       await follow(`MCP server ${server.name}`, () => api.mcp.add(server, id));
+     }
+@@ -164,75 +233,114 @@ export function ProfileBuilderPage() {
+     setCreating(false);
+   };
+ 
++  const shell = (children: ReactNode) => (
++    <div className="px-4 py-[1.4375rem]">
++      <div className="mx-auto flex w-full max-w-[690px] flex-col gap-6">{children}</div>
++    </div>
++  );
++
+   if (outcomes) {
+     const made = outcomes[0]?.ok === true;
+-    return (
+-      <div className="flex flex-col gap-4 p-4">
+-        <Card className="flex flex-col gap-2">
+-          <h2 className="text-sm font-semibold">
+-            {made ? "Profile created" : "The profile was not created"}
+-          </h2>
+-          <ul aria-label="Create results" className="flex flex-col gap-1 text-sm">
+-            {outcomes.map((o) => (
+-              <li key={o.label} className={o.ok ? "text-fg" : "text-danger"}>
+-                {o.ok ? "✓" : "✗"} {o.label}
+-                {o.ok ? "" : `: ${o.message}`}
+-              </li>
+-            ))}
+-          </ul>
+-          <div className="flex gap-2">
+-            <Link
+-              to={{ pathname: "/profiles", search: scope.search }}
+-              className="rounded-md border border-line px-3 py-1.5 text-sm"
+-            >
+-              Back to profiles
+-            </Link>
+-            {made ? null : <Button onClick={() => setOutcomes(null)}>Change and retry</Button>}
+-          </div>
+-        </Card>
+-      </div>
++    return shell(
++      <section className="flex flex-col gap-4 border border-line p-5">
++        <h2 className="type-section-title m-0 text-[0.9375rem]">
++          {made ? "Profile created" : "The profile was not created"}
++        </h2>
++        <ul
++          aria-label="Create results"
++          className="m-0 flex list-none flex-col gap-1 p-0 text-[0.8125rem]"
++        >
++          {outcomes.map((o) => (
++            <li key={o.label} className={o.ok ? "text-ink" : "text-danger"}>
++              {o.ok ? "✓" : "✗"} {o.label}
++              {o.ok ? "" : `: ${o.message}`}
++            </li>
++          ))}
++        </ul>
++        <div className="flex gap-2">
++          <Link
++            to={{ pathname: "/profiles", search: scope.search }}
++            className="type-button inline-flex h-[1.875rem] items-center border border-ink bg-ink px-3 text-on-ink hover:opacity-90"
++          >
++            Back to profiles
++          </Link>
++          {made ? null : <Button onClick={() => setOutcomes(null)}>Change and retry</Button>}
++        </div>
++      </section>,
+     );
+   }
+ 
+-  return (
+-    <div className="flex flex-col gap-4 p-4">
+-      <ol aria-label="Steps" className="flex flex-wrap gap-1">
++  const providers = (options.data?.providers ?? []).filter((p) => {
++    const q = providerFilter.trim().toLowerCase();
++    return !q || p.label.toLowerCase().includes(q) || p.name.toLowerCase().includes(q);
++  });
++  const skillRows = (skills.data?.skills ?? []).filter((s) => {
++    const q = skillFilter.trim().toLowerCase();
++    return !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
++  });
++  const rowClass =
++    "flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] transition-colors";
++
++  return shell(
++    <>
++      <div className="flex items-center gap-4">
++        <h2 className="m-0 flex-1 font-display text-[2.5rem] leading-none font-bold text-ink">
++          New profile
++        </h2>
++        <Link
++          to={{ pathname: "/profiles", search: scope.search }}
++          className="px-3 py-1.5 text-[0.8125rem] font-bold tracking-[0.15em] text-ink hover:bg-hover"
++        >
++          Cancel
++        </Link>
++      </div>
++
++      <ol aria-label="Steps" className="m-0 flex list-none flex-wrap gap-2 p-0">
+         {STEPS.map((s, i) => (
+           <li key={s.id}>
+-            <button
+-              type="button"
+-              aria-current={s.id === step ? "step" : undefined}
+-              disabled={i > at && (nameProblem !== null || !!modelProblem)}
++            <Pill
++              index={i}
++              label={s.title}
++              state={i === at ? "current" : i < at ? "visited" : "future"}
++              disabled={(i > 0 && nameProblem !== null) || (i > at && !!modelProblem)}
+               onClick={() => setStep(s.id)}
+-              className={`rounded-md border px-2 py-1 text-xs ${
+-                s.id === step ? "border-accent bg-accent text-accent-fg" : "border-line"
+-              }`}
+-            >
+-              {i + 1}. {s.label}
+-            </button>
++            />
+           </li>
+         ))}
+       </ol>
+-      <Card className="flex flex-col gap-3">
+-        {step === "name" ? (
+-          <Step title="Name">
+-            <Field
+-              label="Profile name"
+-              htmlFor={`${ids}-name`}
+-              hint="Lower-case letters, digits, '-' or '_'; at most 64 characters."
+-            >
++
++      <div className="border border-line p-5">
++        {step === "identity" ? (
++          <Step title="Identity">
++            <div className="flex flex-col gap-1.5">
++              <Label htmlFor={`${ids}-name`}>Profile name</Label>
+               <input
+                 id={`${ids}-name`}
+-                className={inputClass}
++                className={fieldClass}
++                placeholder="coder"
++                aria-invalid={name !== "" && nameProblem !== null}
+                 value={name}
+                 onChange={(e) => setName(e.currentTarget.value)}
+               />
+-            </Field>
+-            {name && nameProblem ? <p className="text-xs text-danger">{nameProblem}</p> : null}
+-            <Field label="Start from" htmlFor={`${ids}-clone`}>
+-              <select
++              {name && nameProblem ? (
++                <p className="m-0 text-[0.75rem] text-danger">{nameProblem}</p>
++              ) : null}
++            </div>
++            <div className="flex flex-col gap-1.5">
++              <Label htmlFor={`${ids}-description`}>Description (optional)</Label>
++              <input
++                id={`${ids}-description`}
++                className={fieldClass}
++                placeholder="What this profile is for"
++                value={description}
++                onChange={(e) => setDescription(e.currentTarget.value)}
++              />
++            </div>
++            <div className="flex flex-col gap-1.5">
++              <Label htmlFor={`${ids}-clone`}>Start from</Label>
++              <Select
+                 id={`${ids}-clone`}
+-                className={inputClass}
++                className="w-full [&_select]:h-[33px] [&_select]:text-[0.8125rem]"
+                 value={cloneFrom}
+                 onChange={(e) => setCloneFrom(e.currentTarget.value)}
+               >
+@@ -242,237 +350,460 @@ export function ProfileBuilderPage() {
+                     A copy of {p}'s settings
+                   </option>
+                 ))}
+-              </select>
+-            </Field>
+-          </Step>
+-        ) : null}
+-        {step === "description" ? (
+-          <Step title="Description">
+-            <Field
+-              label="Description"
+-              htmlFor={`${ids}-description`}
+-              hint="What this profile is for; shown on the Profiles page."
+-            >
+-              <textarea
+-                id={`${ids}-description`}
+-                className={inputClass}
+-                rows={3}
+-                value={description}
+-                onChange={(e) => setDescription(e.currentTarget.value)}
+-              />
+-            </Field>
++              </Select>
++            </div>
+           </Step>
+         ) : null}
++
+         {step === "model" ? (
+           <Step title="Model">
+-            <Field label="Provider" htmlFor={`${ids}-provider`}>
+-              <select
+-                id={`${ids}-provider`}
+-                className={inputClass}
+-                value={provider}
+-                onChange={(e) => setProvider(e.currentTarget.value)}
++            <p className={mutedLine}>
++              Pick the provider new sessions use; you can also leave it for later.
++            </p>
++            <input
++              aria-label="Filter providers"
++              className={fieldClass}
++              placeholder="Filter…"
++              value={providerFilter}
++              onChange={(e) => setProviderFilter(e.currentTarget.value)}
++            />
++            <fieldset
++              aria-label="Providers"
++              className="m-0 flex max-h-72 min-w-0 flex-col overflow-y-auto border border-line p-0"
++            >
++              <button
++                type="button"
++                aria-pressed={provider === ""}
++                onClick={() => {
++                  setProvider("");
++                  setModel("");
++                }}
++                className={cx(rowClass, provider === "" ? "bg-ink/10" : "hover:bg-hover")}
+               >
+-                <option value="">Keep the model it starts with</option>
+-                {(options.data?.providers ?? []).map((p) => (
+-                  <option key={p.name} value={p.name}>
+-                    {p.label}
+-                    {p.configured ? "" : " (no key yet)"}
+-                  </option>
+-                ))}
+-              </select>
+-            </Field>
++                Use default (set later)
++              </button>
++              {options.isPending ? <p className={cx(mutedLine, "px-3 py-2")}>Loading…</p> : null}
++              {providers.map((p) => (
++                <button
++                  key={p.name}
++                  type="button"
++                  aria-pressed={provider === p.name}
++                  onClick={() => setProvider(p.name)}
++                  className={cx(
++                    rowClass,
++                    "border-t border-line",
++                    provider === p.name ? "bg-ink/10" : "hover:bg-hover",
++                  )}
++                >
++                  <span className="flex-1">{p.label}</span>
++                  <span className="type-data text-[0.75rem] text-ink-soft">
++                    {p.configured ? p.name : "no key yet"}
++                  </span>
++                </button>
++              ))}
++            </fieldset>
+             {provider ? (
+-              <Field label="Model" htmlFor={`${ids}-model`}>
++              <div className="flex flex-col gap-1.5">
++                <Label htmlFor={`${ids}-model`}>Model</Label>
+                 <input
+                   id={`${ids}-model`}
+-                  className={inputClass}
++                  className={fieldClass}
++                  placeholder="model name"
+                   value={model}
+                   onChange={(e) => setModel(e.currentTarget.value)}
+                 />
+-              </Field>
++              </div>
+             ) : null}
+-            {modelProblem ? <p className="text-xs text-danger">{modelProblem}</p> : null}
++            {modelProblem ? <p className="m-0 text-[0.75rem] text-danger">{modelProblem}</p> : null}
+           </Step>
+         ) : null}
++
+         {step === "skills" ? (
+           <Step title="Skills">
+-            <label className="flex items-center gap-2 text-sm">
+-              <input
+-                type="radio"
+-                name={`${ids}-skills`}
+-                checked={keepSkills}
+-                onChange={() => setKeepSkills(true)}
++            <label htmlFor={`${ids}-keep`} className="flex items-center gap-2 text-[0.8125rem]">
++              <Checkbox
++                id={`${ids}-keep`}
++                checked={keepAll && !noSkills}
++                disabled={noSkills}
++                onChange={(e) => setKeepAll(e.currentTarget.checked)}
+               />
+-              Keep the bundled skills
++              Keep every bundled skill (recommended)
+             </label>
+-            <label className="flex items-center gap-2 text-sm">
+-              <input
+-                type="radio"
+-                name={`${ids}-skills`}
+-                checked={!keepSkills}
+-                onChange={() => setKeepSkills(false)}
++            <label htmlFor={`${ids}-none`} className="flex items-center gap-2 text-[0.8125rem]">
++              <Checkbox
++                id={`${ids}-none`}
++                checked={noSkills}
++                onChange={(e) => setNoSkills(e.currentTarget.checked)}
+               />
+-              Start without bundled skills
++              Start with no bundled skills
+             </label>
+-            {keepSkills ? (
+-              <fieldset className="flex flex-col gap-1 border-0 p-0">
+-                <legend className="mb-1 text-xs text-muted">
++            {trimSkills ? (
++              <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
++                <legend className="mb-2 p-0 text-[0.75rem] text-ink-soft">
+                   Untick a skill to switch it off in the new profile.
+                 </legend>
+-                {skills.isPending ? <p className="text-sm text-muted">Loading…</p> : null}
+-                {(skills.data?.skills ?? []).map((skill) => (
+-                  <label key={skill.name} className="flex items-center gap-2 text-sm">
+-                    <input
+-                      type="checkbox"
+-                      checked={!skillsOff.includes(skill.name)}
+-                      onChange={(e) => {
+-                        const on = e.currentTarget.checked;
+-                        setSkillsOff((all) =>
+-                          on ? all.filter((n) => n !== skill.name) : [...all, skill.name],
+-                        );
+-                      }}
+-                    />
+-                    {skill.name}
+-                  </label>
+-                ))}
++                <input
++                  aria-label="Filter skills"
++                  className={fieldClass}
++                  placeholder="Filter…"
++                  value={skillFilter}
++                  onChange={(e) => setSkillFilter(e.currentTarget.value)}
++                />
++                <div className="flex max-h-56 flex-col overflow-y-auto border border-line">
++                  {skills.isPending ? <p className={cx(mutedLine, "px-3 py-2")}>Loading…</p> : null}
++                  {skillRows.map((skill, i) => (
++                    <label
++                      key={skill.name}
++                      htmlFor={`${ids}-skill-${skill.name}`}
++                      className={cx(
++                        "flex cursor-pointer items-start gap-2.5 px-3 py-2 hover:bg-hover",
++                        i > 0 && "border-t border-line",
++                      )}
++                    >
++                      <Checkbox
++                        id={`${ids}-skill-${skill.name}`}
++                        aria-label={skill.name}
++                        className="mt-0.5"
++                        checked={!skillsOff.includes(skill.name)}
++                        onChange={(e) => {
++                          const on = e.currentTarget.checked;
++                          setSkillsOff((all) =>
++                            on ? all.filter((n) => n !== skill.name) : [...all, skill.name],
++                          );
++                        }}
++                      />
++                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
++                        <span className="flex items-center gap-2">
++                          <span className="text-[0.8125rem] font-medium text-ink">
++                            {skill.name}
++                          </span>
++                          {skill.category ? <Badge tone="secondary">{skill.category}</Badge> : null}
++                        </span>
++                        {skill.description ? (
++                          <span className="text-[0.75rem] text-ink-soft">{skill.description}</span>
++                        ) : null}
++                      </span>
++                    </label>
++                  ))}
++                </div>
+               </fieldset>
+             ) : null}
++            <div className="flex flex-col gap-2 border-t border-line pt-4">
++              <Label htmlFor={`${ids}-hub`}>Add from the skills hub</Label>
++              <div className="flex gap-2">
++                <input
++                  id={`${ids}-hub`}
++                  className={fieldClass}
++                  placeholder="Search the hub"
++                  value={hubQuery}
++                  onChange={(e) => setHubQuery(e.currentTarget.value)}
++                  onKeyDown={(e) => {
++                    if (e.key === "Enter") {
++                      e.preventDefault();
++                      searchHub();
++                    }
++                  }}
++                />
++                <Button className="h-[33px]" onClick={searchHub} disabled={hub.isPending}>
++                  Search
++                </Button>
++              </div>
++              {hub.error ? <Notice tone="danger">{errorText(hub.error)}</Notice> : null}
++              {hubPicks.length ? (
++                <ul
++                  aria-label="Hub skills to add"
++                  className="m-0 flex list-none flex-wrap gap-1.5 p-0"
++                >
++                  {hubPicks.map((pick) => (
++                    <li key={pick.identifier}>
++                      <Badge tone="accent">
++                        {pick.name}
++                        <button
++                          type="button"
++                          aria-label={`Remove ${pick.name}`}
++                          className="-mr-1 inline-flex items-center"
++                          onClick={() =>
++                            setHubPicks((all) =>
++                              all.filter((p) => p.identifier !== pick.identifier),
++                            )
++                          }
++                        >
++                          <X />
++                        </button>
++                      </Badge>
++                    </li>
++                  ))}
++                </ul>
++              ) : null}
++              {hub.data ? (
++                hub.data.results.length ? (
++                  <ul
++                    aria-label="Hub results"
++                    className="m-0 flex max-h-56 list-none flex-col overflow-y-auto border border-line p-0"
++                  >
++                    {hub.data.results.map((hit, i) => {
++                      const picked = hubPicks.some((p) => p.identifier === hit.identifier);
++                      return (
++                        <li
++                          key={hit.identifier}
++                          className={cx(
++                            "flex items-start gap-2 px-3 py-2",
++                            i > 0 && "border-t border-line",
++                          )}
++                        >
++                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
++                            <span className="flex items-center gap-2">
++                              <span className="text-[0.8125rem] font-medium text-ink">
++                                {hit.name}
++                              </span>
++                              <Badge tone="secondary">{hit.source}</Badge>
++                            </span>
++                            {hit.description ? (
++                              <span className="text-[0.75rem] text-ink-soft">
++                                {hit.description}
++                              </span>
++                            ) : null}
++                          </span>
++                          <Button
++                            tone="ghost"
++                            size="sm"
++                            aria-label={`Add ${hit.name}`}
++                            disabled={picked || hit.installed}
++                            onClick={() => setHubPicks((all) => [...all, hit])}
++                          >
++                            {hit.installed ? "Installed" : picked ? "Added" : "Add"}
++                          </Button>
++                        </li>
++                      );
++                    })}
++                  </ul>
++                ) : (
++                  <p className={mutedLine}>No hub skills match that search.</p>
++                )
++              ) : null}
++            </div>
+           </Step>
+         ) : null}
++
+         {step === "mcp" ? (
+           <Step title="MCP servers">
++            <div className="flex items-baseline gap-3">
++              <h3 className="m-0 flex-1 font-display text-[0.9375rem] font-bold text-ink [font-stretch:125%]">
++                MCP servers
++              </h3>
++              <span className="text-[0.75rem] text-ink-soft">{servers.length} configured</span>
++            </div>
++            <p className={mutedLine}>
++              Tool servers the new profile connects to. This step is optional.
++            </p>
++            <div className="flex flex-col gap-4 border border-line bg-surface p-4 sm:p-5">
++              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
++                <div className="flex flex-col gap-1.5">
++                  <Label htmlFor={`${ids}-mcp-name`}>Server name</Label>
++                  <input
++                    id={`${ids}-mcp-name`}
++                    className={fieldClass}
++                    placeholder="papers"
++                    value={draft.name}
++                    onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
++                  />
++                </div>
++                <div className="flex flex-col gap-1.5">
++                  <span aria-hidden="true" className={labelClass}>
++                    Transport
++                  </span>
++                  <Segmented
++                    label="Transport"
++                    value={draft.transport}
++                    options={[
++                      { value: "http", label: "HTTP/SSE" },
++                      { value: "stdio", label: "stdio" },
++                    ]}
++                    onChange={(transport) =>
++                      setDraft({ ...EMPTY_MCP, name: draft.name, transport })
++                    }
++                  />
++                </div>
++              </div>
++              {draft.transport === "http" ? (
++                <>
++                  <div className="flex flex-col gap-1.5">
++                    <Label htmlFor={`${ids}-mcp-url`}>URL</Label>
++                    <input
++                      id={`${ids}-mcp-url`}
++                      className={fieldClass}
++                      placeholder="https://"
++                      value={draft.url}
++                      onChange={(e) => setDraft({ ...draft, url: e.currentTarget.value })}
++                    />
++                  </div>
++                  <div className="flex flex-col gap-1.5">
++                    <span aria-hidden="true" className={labelClass}>
++                      Authentication
++                    </span>
++                    <Segmented
++                      label="Authentication"
++                      value={draft.auth ?? "none"}
++                      options={[
++                        { value: "none", label: "None" },
++                        { value: "header", label: "Header" },
++                        { value: "oauth", label: "OAuth" },
++                      ]}
++                      onChange={(auth) => setDraft({ ...draft, auth })}
++                    />
++                    {draft.auth === "header" ? (
++                      <p className="m-0 text-[0.75rem] text-ink-soft">
++                        The header's key is stored on the Keys page, not here.
++                      </p>
++                    ) : null}
++                    {draft.auth === "oauth" ? (
++                      <p className="m-0 text-[0.75rem] text-ink-soft">
++                        Sign in from the MCP page once the profile exists.
++                      </p>
++                    ) : null}
++                  </div>
++                </>
++              ) : (
++                <>
++                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
++                    <div className="flex flex-col gap-1.5">
++                      <Label htmlFor={`${ids}-mcp-command`}>Command</Label>
++                      <input
++                        id={`${ids}-mcp-command`}
++                        className={fieldClass}
++                        value={draft.command}
++                        onChange={(e) => setDraft({ ...draft, command: e.currentTarget.value })}
++                      />
++                    </div>
++                    <div className="flex flex-col gap-1.5">
++                      <Label htmlFor={`${ids}-mcp-args`}>Arguments</Label>
++                      <input
++                        id={`${ids}-mcp-args`}
++                        className={fieldClass}
++                        value={draft.args}
++                        onChange={(e) => setDraft({ ...draft, args: e.currentTarget.value })}
++                      />
++                    </div>
++                  </div>
++                  <div className="flex flex-col gap-1.5">
++                    <Label htmlFor={`${ids}-mcp-env`}>Environment (KEY=value per line)</Label>
++                    <textarea
++                      id={`${ids}-mcp-env`}
++                      className={cx(inputClass, "w-full py-2 text-[0.8125rem]")}
++                      rows={2}
++                      value={draft.env}
++                      onChange={(e) => setDraft({ ...draft, env: e.currentTarget.value })}
++                    />
++                  </div>
++                </>
++              )}
++              {draftProblem ? <Notice tone="danger">{draftProblem}</Notice> : null}
++              <div className="flex justify-end">
++                <Button tone="primary" onClick={addServer}>
++                  Add server
++                </Button>
++              </div>
++            </div>
+             {servers.length ? (
+-              <ul aria-label="Servers to add" className="flex flex-col gap-1 text-sm">
++              <ul aria-label="Servers to add" className="m-0 flex list-none flex-col gap-2 p-0">
+                 {servers.map((s) => (
+-                  <li key={s.name} className="flex items-center gap-2">
+-                    <code className="flex-1 font-mono text-xs">
+-                      {s.name}: {s.url ?? [s.command, ...(s.args ?? [])].join(" ")}
+-                    </code>
++                  <li
++                    key={s.name}
++                    className="flex items-start gap-3 border border-line bg-surface p-4"
++                  >
++                    <div className="flex min-w-0 flex-1 flex-col gap-1">
++                      <span className="flex flex-wrap items-center gap-2">
++                        <span className="text-[0.8125rem] font-medium text-ink">{s.name}</span>
++                        <Badge tone="secondary">{s.url ? "http" : "stdio"}</Badge>
++                        {s.url ? <Badge>{`auth: ${s.auth ?? "none"}`}</Badge> : null}
++                      </span>
++                      <code className="type-data text-[0.75rem] break-all text-ink-soft">
++                        {s.url ?? [s.command, ...(s.args ?? [])].join(" ")}
++                      </code>
++                    </div>
+                     <Button
+                       tone="ghost"
+-                      aria-label={`Drop ${s.name}`}
++                      size="sm"
++                      className="text-danger hover:bg-danger-wash"
++                      aria-label={`Remove ${s.name}`}
+                       onClick={() => setServers((all) => all.filter((x) => x.name !== s.name))}
+                     >
+-                      Drop
++                      Remove
+                     </Button>
+                   </li>
+                 ))}
+               </ul>
+-            ) : (
+-              <p className="text-sm text-muted">No MCP servers; this step is optional.</p>
+-            )}
+-            <Field label="Server name" htmlFor={`${ids}-mcp-name`}>
+-              <input
+-                id={`${ids}-mcp-name`}
+-                className={inputClass}
+-                value={draft.name}
+-                onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
+-              />
+-            </Field>
+-            <Field label="Transport" htmlFor={`${ids}-mcp-transport`}>
+-              <select
+-                id={`${ids}-mcp-transport`}
+-                className={inputClass}
+-                value={draft.transport}
+-                onChange={(e) =>
+-                  setDraft({
+-                    ...EMPTY_MCP,
+-                    name: draft.name,
+-                    transport: e.currentTarget.value as McpDraft["transport"],
+-                  })
+-                }
+-              >
+-                <option value="stdio">stdio (a local command)</option>
+-                <option value="http">HTTP (a URL)</option>
+-              </select>
+-            </Field>
+-            {draft.transport === "stdio" ? (
+-              <>
+-                <Field label="Command" htmlFor={`${ids}-mcp-command`}>
+-                  <input
+-                    id={`${ids}-mcp-command`}
+-                    className={`${inputClass} font-mono`}
+-                    value={draft.command}
+-                    onChange={(e) => setDraft({ ...draft, command: e.currentTarget.value })}
+-                  />
+-                </Field>
+-                <Field label="Arguments" htmlFor={`${ids}-mcp-args`}>
+-                  <input
+-                    id={`${ids}-mcp-args`}
+-                    className={`${inputClass} font-mono`}
+-                    value={draft.args}
+-                    onChange={(e) => setDraft({ ...draft, args: e.currentTarget.value })}
+-                  />
+-                </Field>
+-                <Field label="Environment (KEY=value per line)" htmlFor={`${ids}-mcp-env`}>
+-                  <textarea
+-                    id={`${ids}-mcp-env`}
+-                    className={`${inputClass} font-mono`}
+-                    rows={2}
+-                    value={draft.env}
+-                    onChange={(e) => setDraft({ ...draft, env: e.currentTarget.value })}
+-                  />
+-                </Field>
+-              </>
+-            ) : (
+-              <Field label="URL" htmlFor={`${ids}-mcp-url`}>
+-                <input
+-                  id={`${ids}-mcp-url`}
+-                  className={inputClass}
+-                  value={draft.url}
+-                  onChange={(e) => setDraft({ ...draft, url: e.currentTarget.value })}
+-                />
+-              </Field>
+-            )}
+-            {draftProblem ? <Notice tone="danger">{draftProblem}</Notice> : null}
+-            <div>
+-              <Button onClick={addServer}>Add to the list</Button>
+-            </div>
++            ) : null}
+           </Step>
+         ) : null}
++
+         {step === "review" ? (
+           <Step title="Review">
+-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+-              <dt className="text-muted">Name</dt>
+-              <dd>{normaliseProfileName(name)}</dd>
+-              <dt className="text-muted">Starts from</dt>
+-              <dd>{cloneFrom ? `a copy of ${cloneFrom}` : "a fresh profile"}</dd>
+-              <dt className="text-muted">Description</dt>
+-              <dd>{description.trim() || "none"}</dd>
+-              <dt className="text-muted">Model</dt>
+-              <dd>{provider ? `${model.trim()} (${provider})` : "unchanged"}</dd>
+-              <dt className="text-muted">Skills</dt>
+-              <dd>
+-                {keepSkills
+-                  ? skillsOff.length
+-                    ? `bundled, without ${skillsOff.join(", ")}`
+-                    : "bundled"
+-                  : "none bundled"}
++            <dl className="m-0 grid grid-cols-[96px_1fr] gap-x-4 gap-y-2 text-[0.8125rem]">
++              <dt className="text-ink-soft">Name</dt>
++              <dd className="m-0 text-ink">{normaliseProfileName(name)}</dd>
++              <dt className="text-ink-soft">Description</dt>
++              <dd className="m-0 text-ink">{description.trim() || "—"}</dd>
++              <dt className="text-ink-soft">Starts from</dt>
++              <dd className="m-0 text-ink">
++                {cloneFrom ? `A copy of ${cloneFrom}` : "A fresh profile"}
++              </dd>
++              <dt className="text-ink-soft">Model</dt>
++              <dd className="m-0 text-ink">
++                {provider ? `${model.trim()} (${provider})` : "Default (set later)"}
++              </dd>
++              <dt className="text-ink-soft">Skills</dt>
++              <dd className="m-0 text-ink">
++                {noSkills
++                  ? "No bundled skills"
++                  : trimSkills && skillsOff.length
++                    ? `Bundled, without ${skillsOff.join(", ")}`
++                    : "Every bundled skill"}
++              </dd>
++              {hubPicks.length ? (
++                <>
++                  <dt className="text-ink-soft">Hub skills</dt>
++                  <dd className="m-0 text-ink">{hubPicks.map((p) => p.name).join(", ")}</dd>
++                </>
++              ) : null}
++              <dt className="text-ink-soft">MCP servers</dt>
++              <dd className="m-0 text-ink">
++                {servers.length ? servers.map((s) => s.name).join(", ") : "None"}
+               </dd>
+-              <dt className="text-muted">MCP servers</dt>
+-              <dd>{servers.length ? servers.map((s) => s.name).join(", ") : "none"}</dd>
+             </dl>
+           </Step>
+         ) : null}
+-      </Card>
+-      <div className="flex gap-2">
+-        <Button onClick={() => go(-1)} disabled={at === 0 || creating}>
++      </div>
++
++      <div className="flex items-center justify-between gap-2">
++        <button
++          type="button"
++          onClick={() => go(-1)}
++          disabled={at === 0 || creating}
++          className={cx(navClass, "text-ink hover:bg-hover")}
++        >
+           Back
+-        </Button>
++        </button>
+         {step === "review" ? (
+-          <Button
+-            tone="primary"
++          <button
++            type="button"
+             onClick={() => void create()}
+             disabled={creating || nameProblem !== null}
++            className={cx(navClass, "bg-ink text-on-ink hover:opacity-90")}
+           >
+             {creating ? "Creating…" : "Create profile"}
+-          </Button>
++          </button>
+         ) : (
+-          <Button tone="primary" onClick={() => go(1)} disabled={blocked}>
++          <button
++            type="button"
++            onClick={() => go(1)}
++            disabled={blocked}
++            className={cx(navClass, "bg-ink text-on-ink hover:opacity-90")}
++          >
+             Next
+-          </Button>
++          </button>
+         )}
+       </div>
+-    </div>
++    </>,
+   );
+ }
+diff --git a/apps/web/src/pages/ProfilesPage.test.tsx b/apps/web/src/pages/ProfilesPage.test.tsx
+index e5bebb4..1ace5c1 100644
+--- a/apps/web/src/pages/ProfilesPage.test.tsx
++++ b/apps/web/src/pages/ProfilesPage.test.tsx
+@@ -11,18 +11,28 @@ beforeEach(() => {
+   mock = createMockApi();
+   mock.state.profiles = {
+     active: "default",
+-    current: "default",
++    current: "home",
+     profiles: [
+       {
+         name: "default",
+         is_default: true,
+         is_sticky: true,
+-        is_current: true,
++        is_current: false,
+         model: "fake-model",
+         provider: "fake",
+         description: null,
+         has_persona: false,
+       },
++      {
++        name: "home",
++        is_default: false,
++        is_sticky: false,
++        is_current: true,
++        model: null,
++        provider: null,
++        description: null,
++        has_persona: false,
++      },
+       {
+         name: "work",
+         is_default: false,
+@@ -36,6 +46,10 @@ beforeEach(() => {
+     ],
+   };
+   mock.state.personas = { work: "Be brief." };
++  mock.state.skills = [
++    { name: "web-search", description: "", category: "web", enabled: true },
++    { name: "notes", description: "", category: "notes", enabled: false },
++  ];
+   restore = mock.install();
+   vi.spyOn(console, "warn").mockImplementation(() => {});
+ });
+@@ -48,45 +62,89 @@ async function card(name: string) {
+   return within(await screen.findByTestId(`profile-${name}`));
+ }
+ 
++/** Open a card's actions menu and return it. */
++async function openMenu(name: string) {
++  const c = await card(name);
++  fireEvent.click(c.getByRole("button", { name: "Actions" }));
++  return within(c.getByRole("menu"));
++}
++
+ describe("profiles page", () => {
+-  it("shows badges, model and description, and locks the default profile", async () => {
++  it("shows the active banner, badges, daemon line, model and skills count", async () => {
+     renderPage(<ProfilesPage />, "/profiles");
+     const main = await card("default");
++    expect(screen.getByRole("status").textContent).toContain("Active profile: default");
++    expect(screen.getByRole("status").textContent).toContain("(serving home)");
++    expect(screen.getByRole("heading", { name: "Profiles (3)" })).toBeTruthy();
++    expect(main.getByText("active")).toBeTruthy();
+     expect(main.getByText("default", { selector: "span" })).toBeTruthy();
+-    expect(main.getByText("sticky")).toBeTruthy();
+-    expect(main.getByText("this dashboard")).toBeTruthy();
+     expect(main.getByText(/fake-model \(fake\)/)).toBeTruthy();
+-    expect((main.getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(true);
+-    expect((main.getByRole("button", { name: "Rename" }) as HTMLButtonElement).disabled).toBe(true);
+-    expect(main.queryByRole("button", { name: "Make sticky" })).toBeNull();
++    expect(main.getByText("No description")).toBeTruthy();
++    expect(await main.findByText(/Daemon (running|stopped)/)).toBeTruthy();
++    expect(await main.findByText("Skills: 1")).toBeTruthy();
++    expect(mock.callsTo("GET", "/api/status").some((c) => c.query.get("profile") === "work")).toBe(
++      true,
++    );
+ 
++    expect((await card("home")).getByText("this dashboard")).toBeTruthy();
+     const work = await card("work");
+     expect(work.getByText("Office tasks")).toBeTruthy();
+-    expect(work.getByText(/inherited · has a persona/)).toBeTruthy();
++    expect(work.getByText("Model: inherited")).toBeTruthy();
+   });
+ 
+-  it("makes a profile sticky", async () => {
++  it("never offers rename or delete for the default, and locks the served profile", async () => {
+     renderPage(<ProfilesPage />, "/profiles");
+-    const work = await card("work");
+-    fireEvent.click(work.getByRole("button", { name: "Make sticky" }));
++    const main = await openMenu("default");
++    expect(main.queryByRole("menuitem", { name: /set as active/i })).toBeNull();
++    expect(main.queryByRole("menuitem", { name: /rename/i })).toBeNull();
++    expect(main.queryByRole("menuitem", { name: /delete/i })).toBeNull();
++    expect(main.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
++      "Change model",
++      "Edit description",
++      "PEdit persona",
++      "Manage skills & tools",
++      "Copy CLI command",
++      "Export",
++    ]);
++    fireEvent.keyDown(window, { key: "Escape" });
++    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
++
++    const home = await openMenu("home");
++    expect((home.getByRole("menuitem", { name: /rename/i }) as HTMLButtonElement).disabled).toBe(
++      true,
++    );
++    expect((home.getByRole("menuitem", { name: /delete/i }) as HTMLButtonElement).disabled).toBe(
++      true,
++    );
++  });
++
++  it("sets a profile as active from its menu", async () => {
++    renderPage(<ProfilesPage />, "/profiles");
++    const menu = await openMenu("work");
++    fireEvent.click(menu.getByRole("menuitem", { name: /set as active/i }));
++    expect(screen.queryByRole("menu")).toBeNull();
+     await waitFor(() =>
+       expect(mock.callsTo("POST", "/api/profiles/active")[0]?.body).toEqual({ name: "work" }),
+     );
+-    await waitFor(() => expect(work.getByText("sticky")).toBeTruthy());
++    const work = await card("work");
++    await waitFor(() => expect(work.getByText("active")).toBeTruthy());
+   });
+ 
+   it("renames inline and refuses an invalid name", async () => {
+     renderPage(<ProfilesPage />, "/profiles");
++    const menu = await openMenu("work");
++    fireEvent.click(menu.getByRole("menuitem", { name: /rename/i }));
+     const work = await card("work");
+-    fireEvent.click(work.getByRole("button", { name: "Rename" }));
+     const input = work.getByLabelText("New name");
+     fireEvent.change(input, { target: { value: "default" } });
+     expect(work.getByText(/reserved/)).toBeTruthy();
+-    expect((work.getByRole("button", { name: "Save name" }) as HTMLButtonElement).disabled).toBe(
+-      true,
+-    );
+-    fireEvent.change(input, { target: { value: "Office" } });
+-    fireEvent.click(work.getByRole("button", { name: "Save name" }));
++    expect((work.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
++    fireEvent.keyDown(input, { key: "Escape" });
++    expect(work.queryByLabelText("New name")).toBeNull();
++
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: /rename/i }));
++    fireEvent.change(work.getByLabelText("New name"), { target: { value: "Office" } });
++    fireEvent.click(work.getByRole("button", { name: "Save" }));
+     await waitFor(() =>
+       expect(mock.callsTo("PATCH", "/api/profiles/work")[0]?.body).toEqual({ new_name: "office" }),
+     );
+@@ -95,8 +153,7 @@ describe("profiles page", () => {
+ 
+   it("deletes only after the name is typed", async () => {
+     renderPage(<ProfilesPage />, "/profiles");
+-    const work = await card("work");
+-    fireEvent.click(work.getByRole("button", { name: "Delete" }));
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: /delete/i }));
+     const dialog = within(await screen.findByRole("dialog"));
+     const confirm = dialog.getByRole("button", { name: "Delete" }) as HTMLButtonElement;
+     expect(confirm.disabled).toBe(true);
+@@ -109,43 +166,54 @@ describe("profiles page", () => {
+     expect(mock.callsTo("DELETE", "/api/profiles/work")).toHaveLength(1);
+   });
+ 
+-  it("edits model, description and persona", async () => {
++  it("edits model, description and persona, each in its own dialog", async () => {
+     renderPage(<ProfilesPage />, "/profiles");
+-    const work = await card("work");
+-    fireEvent.click(work.getByRole("button", { name: "Edit" }));
+-    const dialog = within(await screen.findByRole("dialog"));
+-    await waitFor(() =>
+-      expect((dialog.getByLabelText("Persona (PERSONA.md)") as HTMLTextAreaElement).value).toBe(
+-        "Be brief.",
+-      ),
+-    );
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: /change model/i }));
++    let dialog = within(await screen.findByRole("dialog"));
++    expect(dialog.getByRole("heading", { name: "Change model · work" })).toBeTruthy();
++    const save = dialog.getByRole("button", { name: "Save" }) as HTMLButtonElement;
++    expect(save.disabled).toBe(true);
++    await dialog.findByRole("option", { name: "Fake provider" });
+     fireEvent.change(dialog.getByLabelText("Provider"), { target: { value: "fake" } });
+     fireEvent.change(dialog.getByLabelText("Model"), { target: { value: "fake-large" } });
+-    fireEvent.click(dialog.getByRole("button", { name: "Save model" }));
++    fireEvent.click(save);
+     await waitFor(() =>
+       expect(mock.callsTo("PUT", "/api/profiles/work/model")[0]?.body).toEqual({
+         provider: "fake",
+         model: "fake-large",
+       }),
+     );
++    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
++
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: /edit description/i }));
++    dialog = within(await screen.findByRole("dialog"));
+     fireEvent.change(dialog.getByLabelText("Description"), { target: { value: "Desk work" } });
+-    fireEvent.click(dialog.getByRole("button", { name: "Save description" }));
++    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+     await waitFor(() =>
+       expect(mock.callsTo("PUT", "/api/profiles/work/description")[0]?.body).toEqual({
+         description: "Desk work",
+       }),
+     );
++    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
++
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: /edit persona/i }));
++    dialog = within(await screen.findByRole("dialog"));
++    await waitFor(() =>
++      expect((dialog.getByLabelText("Persona (PERSONA.md)") as HTMLTextAreaElement).value).toBe(
++        "Be brief.",
++      ),
++    );
+     fireEvent.change(dialog.getByLabelText("Persona (PERSONA.md)"), {
+       target: { value: "Be brief and kind." },
+     });
+-    fireEvent.click(dialog.getByRole("button", { name: "Save persona" }));
++    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+     await waitFor(() => expect(mock.state.personas.work).toBe("Be brief and kind."));
+   });
+ 
+   it("exports with the run tailed under that profile", async () => {
+     renderPage(<ProfilesPage />, "/profiles");
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: "Export" }));
+     const work = await card("work");
+-    fireEvent.click(work.getByRole("button", { name: "Export" }));
+     const log = await work.findByTestId("action-log-profile-export");
+     await waitFor(() => expect(log.textContent).toContain("profile-export done"));
+     const status = mock.callsTo("GET", "/api/actions/profile-export/status")[0];
+@@ -153,24 +221,61 @@ describe("profiles page", () => {
+     expect(work.getByText("/profiles/work/backups/profile-work.zip")).toBeTruthy();
+   });
+ 
+-  it("imports an archive by path and links to the builder", async () => {
++  it("copies the CLI command and opens the profile's skills", async () => {
++    const writeText = vi.fn(() => Promise.resolve());
++    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
++    renderPage(<ProfilesPage />, "/profiles");
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: /copy cli command/i }));
++    await waitFor(() => expect(writeText).toHaveBeenCalledWith("indus -p work"));
++    expect(await screen.findByText("Command copied: indus -p work")).toBeTruthy();
++
++    fireEvent.click((await openMenu("work")).getByRole("menuitem", { name: /manage skills/i }));
++    await waitFor(() => expect(currentLocation()).toBe("/skills?profile=work"));
++  });
++
++  it("imports an archive by path from the Import dialog", async () => {
+     renderPage(<ProfilesPage />, "/profiles");
+     await card("work");
+-    fireEvent.change(screen.getByLabelText("Archive path"), { target: { value: "relative.zip" } });
+     fireEvent.click(screen.getByRole("button", { name: "Import" }));
+-    expect((await screen.findByRole("alert")).textContent).toContain("full path");
+-    fireEvent.change(screen.getByLabelText("Archive path"), {
+-      target: { value: "/tmp/home.zip" },
++    const dialog = within(await screen.findByRole("dialog"));
++    fireEvent.change(dialog.getByLabelText("Archive path"), { target: { value: "relative.zip" } });
++    fireEvent.click(dialog.getByRole("button", { name: "Import" }));
++    expect((await dialog.findByRole("alert")).textContent).toContain("full path");
++    fireEvent.change(dialog.getByLabelText("Archive path"), {
++      target: { value: "/tmp/home2.zip" },
+     });
+-    fireEvent.change(screen.getByLabelText("Name (optional)"), { target: { value: "home" } });
+-    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+-    await screen.findByTestId("profile-home");
++    fireEvent.change(dialog.getByLabelText("Name (optional)"), { target: { value: "home2" } });
++    fireEvent.click(dialog.getByRole("button", { name: "Import" }));
++    await screen.findByTestId("profile-home2");
+     expect(mock.callsTo("POST", "/api/profiles/import")[0]?.body).toEqual({
+-      archive: "/tmp/home.zip",
+-      name: "home",
++      archive: "/tmp/home2.zip",
++      name: "home2",
++    });
++  });
++
++  it("creates a profile from the Create dialog and opens the builder from Build", async () => {
++    renderPage(<ProfilesPage />, "/profiles");
++    await card("work");
++    fireEvent.click(screen.getByRole("button", { name: "Create" }));
++    const dialog = within(await screen.findByRole("dialog"));
++    const create = dialog.getByRole("button", { name: "Create" }) as HTMLButtonElement;
++    expect(create.disabled).toBe(true);
++    fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "work" } });
++    expect(dialog.getByText(/already exists/)).toBeTruthy();
++    fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "lab" } });
++    expect((dialog.getByLabelText("Clone from") as HTMLSelectElement).value).toBe("default");
++    fireEvent.change(dialog.getByLabelText("Description (optional)"), {
++      target: { value: "Experiments" },
++    });
++    fireEvent.click(create);
++    await screen.findByTestId("profile-lab");
++    expect(mock.callsTo("POST", "/api/profiles")[0]?.body).toEqual({
++      name: "lab",
++      clone_from: "default",
++      description: "Experiments",
+     });
+ 
+-    fireEvent.click(screen.getByRole("link", { name: "New profile" }));
++    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+     await waitFor(() => expect(currentLocation()).toBe("/profiles/new"));
+   });
+ });
+diff --git a/apps/web/src/pages/ProfilesPage.tsx b/apps/web/src/pages/ProfilesPage.tsx
+index 1011756..b7955e5 100644
+--- a/apps/web/src/pages/ProfilesPage.tsx
++++ b/apps/web/src/pages/ProfilesPage.tsx
+@@ -1,372 +1,37 @@
+-// Profiles (P18-24): every Indus profile on this machine. Make one the sticky profile new CLI runs
+-// pick up, rename or delete one (never the default, nor the one this dashboard serves), edit its
+-// model, description and persona, export its settings or import an archive. New profiles are made
+-// in the builder (`/profiles/new`).
++// Profiles (P18-24, re-laid out in W52-e): every Indus profile on this machine as a card grid.
++// Each card's menu sets the sticky profile new CLI runs pick up, edits the model, description or
++// persona, opens its skills, copies its CLI command, exports it, and renames or deletes it (never
++// the default, nor the one this dashboard serves). IMPORT and CREATE open modals; BUILD opens the
++// step-by-step builder (`/profiles/new`).
+ 
+-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+-import { type FormEvent, useEffect, useId, useState } from "react";
+-import { Link } from "react-router";
++import { useMutation, useQuery } from "@tanstack/react-query";
++import { Check, Users } from "lucide-react";
++import { useState } from "react";
++import { useNavigate } from "react-router";
+ import { api } from "../lib/api.ts";
+-import type { ProfileSummary } from "../lib/restTypes.ts";
+ import { HeaderActions } from "../shell/PageHeader.tsx";
+ import { useProfileScope } from "../shell/ProfileScope.tsx";
+ import { errorText, useToast } from "../shell/Toasts.tsx";
+-import { ActionLog } from "../ui/ActionLog.tsx";
+-import { Badge, Button, Card, Field, inputClass, Notice, QueryState } from "../ui/controls.tsx";
+-import { ConfirmDialog, Modal } from "../ui/Dialog.tsx";
+-import { normaliseProfileName, profileNameProblem } from "./profiles/profileName.ts";
++import { Button, ErrorState, Field, inputClass, Loading } from "../ui/controls.tsx";
++import { ConfirmDialog } from "../ui/Dialog.tsx";
++import { CreateProfileDialog } from "./profiles/CreateProfileDialog.tsx";
++import { ImportProfileDialog } from "./profiles/ImportProfileDialog.tsx";
++import { ProfileCard } from "./profiles/ProfileCard.tsx";
++import { type EditorKind, ProfileEditorDialog } from "./profiles/ProfileEditorDialog.tsx";
++import { PROFILES_KEY, useProfilesChanged } from "./profiles/useProfilesChanged.ts";
+ 
+-const LIST_KEY = ["profiles", "list"] as const;
+-
+-function useProfilesChanged() {
+-  const client = useQueryClient();
+-  const scope = useProfileScope();
+-  return () => {
+-    void client.invalidateQueries({ queryKey: ["profiles"] });
+-    scope.refresh();
+-  };
+-}
+-
+-function lockedReason(profile: ProfileSummary): string | null {
+-  if (profile.is_default) return "The default profile cannot be renamed or deleted.";
+-  if (profile.is_current) return "This dashboard serves this profile; change it from elsewhere.";
+-  return null;
+-}
+-
+-function Editor({ profile, onClose }: { profile: ProfileSummary; onClose: () => void }) {
+-  const toast = useToast();
+-  const changed = useProfilesChanged();
+-  const ids = useId();
+-  const [provider, setProvider] = useState(profile.provider ?? "");
+-  const [model, setModel] = useState(profile.model ?? "");
+-  const [description, setDescription] = useState(profile.description ?? "");
+-  const [persona, setPersona] = useState("");
+-  const [problem, setProblem] = useState("");
+-  const loaded = useQuery({
+-    queryKey: ["profiles", "persona", profile.name],
+-    queryFn: () => api.profile.persona(profile.name),
+-    gcTime: 0,
+-  });
+-  useEffect(() => {
+-    if (loaded.data) setPersona(loaded.data.content);
+-  }, [loaded.data]);
+-
+-  const done = (what: string) => {
+-    setProblem("");
+-    toast.show(`${what} of ${profile.name} saved.`, "success");
+-    changed();
+-  };
+-  const fail = (error: unknown) => setProblem(errorText(error));
+-  const saveModel = useMutation({
+-    mutationFn: () => api.profile.setModel(profile.name, provider.trim(), model.trim()),
+-    onSuccess: () => done("Model"),
+-    onError: fail,
+-  });
+-  const saveDescription = useMutation({
+-    mutationFn: () => api.profile.setDescription(profile.name, description),
+-    onSuccess: () => done("Description"),
+-    onError: fail,
+-  });
+-  const savePersona = useMutation({
+-    mutationFn: () => api.profile.setPersona(profile.name, persona),
+-    onSuccess: () => done("Persona"),
+-    onError: fail,
+-  });
+-
+-  return (
+-    <Modal
+-      open
+-      onOpenChange={(open) => {
+-        if (!open) onClose();
+-      }}
+-      title={`Edit ${profile.name}`}
+-      description="Each part saves on its own; sessions already open keep their settings."
+-    >
+-      <div className="flex flex-col gap-4">
+-        <div className="flex flex-wrap items-end gap-2">
+-          <Field label="Provider" htmlFor={`${ids}-provider`}>
+-            <input
+-              id={`${ids}-provider`}
+-              className={inputClass}
+-              value={provider}
+-              onChange={(e) => setProvider(e.currentTarget.value)}
+-            />
+-          </Field>
+-          <Field label="Model" htmlFor={`${ids}-model`}>
+-            <input
+-              id={`${ids}-model`}
+-              className={inputClass}
+-              value={model}
+-              onChange={(e) => setModel(e.currentTarget.value)}
+-            />
+-          </Field>
+-          <Button
+-            onClick={() => saveModel.mutate()}
+-            disabled={!provider.trim() || !model.trim() || saveModel.isPending}
+-          >
+-            Save model
+-          </Button>
+-        </div>
+-        <div className="flex flex-col gap-2">
+-          <Field label="Description" htmlFor={`${ids}-description`}>
+-            <input
+-              id={`${ids}-description`}
+-              className={inputClass}
+-              value={description}
+-              onChange={(e) => setDescription(e.currentTarget.value)}
+-            />
+-          </Field>
+-          <div>
+-            <Button onClick={() => saveDescription.mutate()} disabled={saveDescription.isPending}>
+-              Save description
+-            </Button>
+-          </div>
+-        </div>
+-        <div className="flex flex-col gap-2">
+-          <Field
+-            label="Persona (PERSONA.md)"
+-            htmlFor={`${ids}-persona`}
+-            hint="How the agent behaves in this profile; added to every session's instructions."
+-          >
+-            <textarea
+-              id={`${ids}-persona`}
+-              className={`${inputClass} font-mono`}
+-              rows={8}
+-              value={persona}
+-              disabled={loaded.isPending}
+-              onChange={(e) => setPersona(e.currentTarget.value)}
+-            />
+-          </Field>
+-          <div>
+-            <Button
+-              onClick={() => savePersona.mutate()}
+-              disabled={loaded.isPending || savePersona.isPending}
+-            >
+-              Save persona
+-            </Button>
+-          </div>
+-        </div>
+-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+-        <div className="flex justify-end">
+-          <Button onClick={onClose}>Close</Button>
+-        </div>
+-      </div>
+-    </Modal>
+-  );
+-}
+-
+-function ProfileCard({
+-  profile,
+-  others,
+-  onDelete,
+-  onEdit,
+-}: {
+-  profile: ProfileSummary;
+-  others: string[];
+-  onDelete: () => void;
+-  onEdit: () => void;
+-}) {
+-  const toast = useToast();
+-  const changed = useProfilesChanged();
+-  const ids = useId();
+-  const [renaming, setRenaming] = useState(false);
+-  const [newName, setNewName] = useState(profile.name);
+-  const [exportRun, setExportRun] = useState(0);
+-  const [archive, setArchive] = useState("");
+-  const locked = lockedReason(profile);
+-  const renameProblem = renaming ? profileNameProblem(newName, others) : null;
+-
+-  const sticky = useMutation({
+-    mutationFn: () => api.profile.setSticky(profile.name),
+-    onSuccess: () => {
+-      toast.show(`New CLI runs now use ${profile.name}.`, "success");
+-      changed();
+-    },
+-    onError: (error) => toast.show(errorText(error), "error"),
+-  });
+-  const rename = useMutation({
+-    mutationFn: () => api.profile.rename(profile.name, normaliseProfileName(newName)),
+-    onSuccess: (reply) => {
+-      setRenaming(false);
+-      toast.show(`${profile.name} is now ${reply.name}.`, "success");
+-      changed();
+-    },
+-    onError: (error) => toast.show(errorText(error), "error"),
+-  });
+-  const exporting = useMutation({
+-    mutationFn: () => api.profile.exportArchive(profile.name),
+-    onSuccess: (reply) => {
+-      setArchive(reply.archive);
+-      setExportRun((n) => n + 1);
+-    },
+-    onError: (error) => toast.show(errorText(error), "error"),
+-  });
+-
+-  const submitRename = (event: FormEvent) => {
+-    event.preventDefault();
+-    if (renameProblem === null) rename.mutate();
+-  };
+-
+-  return (
+-    <li data-testid={`profile-${profile.name}`}>
+-      <Card className="flex flex-col gap-2">
+-        <div className="flex flex-wrap items-center gap-2">
+-          <h2 className="flex-1 text-sm font-semibold">{profile.name}</h2>
+-          {profile.is_default ? <Badge>default</Badge> : null}
+-          {profile.is_sticky ? <Badge tone="accent">sticky</Badge> : null}
+-          {profile.is_current ? <Badge tone="ok">this dashboard</Badge> : null}
+-        </div>
+-        <p className="text-xs text-muted">
+-          Model:{" "}
+-          {profile.model
+-            ? `${profile.model}${profile.provider ? ` (${profile.provider})` : ""}`
+-            : "inherited"}
+-          {" · "}
+-          {profile.has_persona ? "has a persona" : "no persona"}
+-        </p>
+-        {profile.description ? <p className="text-sm">{profile.description}</p> : null}
+-        {renaming ? (
+-          <form className="flex flex-wrap items-end gap-2" onSubmit={submitRename} noValidate>
+-            <Field label="New name" htmlFor={`${ids}-rename`}>
+-              <input
+-                id={`${ids}-rename`}
+-                className={inputClass}
+-                value={newName}
+-                onChange={(e) => setNewName(e.currentTarget.value)}
+-              />
+-            </Field>
+-            <Button
+-              type="submit"
+-              tone="primary"
+-              disabled={renameProblem !== null || rename.isPending}
+-            >
+-              Save name
+-            </Button>
+-            <Button onClick={() => setRenaming(false)}>Cancel</Button>
+-            {renameProblem ? <p className="w-full text-xs text-danger">{renameProblem}</p> : null}
+-          </form>
+-        ) : null}
+-        <div className="flex flex-wrap gap-1">
+-          {profile.is_sticky ? null : (
+-            <Button onClick={() => sticky.mutate()} disabled={sticky.isPending}>
+-              Make sticky
+-            </Button>
+-          )}
+-          <Button onClick={onEdit}>Edit</Button>
+-          <Button
+-            onClick={() => {
+-              setNewName(profile.name);
+-              setRenaming(true);
+-            }}
+-            disabled={locked !== null}
+-            title={locked ?? undefined}
+-          >
+-            Rename
+-          </Button>
+-          <Button onClick={() => exporting.mutate()} disabled={exporting.isPending}>
+-            Export
+-          </Button>
+-          <Button
+-            tone="danger"
+-            onClick={onDelete}
+-            disabled={locked !== null}
+-            title={locked ?? undefined}
+-          >
+-            Delete
+-          </Button>
+-        </div>
+-        {locked ? <p className="text-xs text-muted">{locked}</p> : null}
+-        {exportRun > 0 ? (
+-          <>
+-            <ActionLog
+-              name="profile-export"
+-              run={exportRun}
+-              profile={profile.name}
+-              title={`Export of ${profile.name}`}
+-            />
+-            <p className="text-xs text-muted">
+-              Archive: <code className="font-mono">{archive}</code> (settings only: no history,
+-              secrets or channel state).
+-            </p>
+-          </>
+-        ) : null}
+-      </Card>
+-    </li>
+-  );
+-}
+-
+-function ImportProfile({ existing }: { existing: string[] }) {
+-  const toast = useToast();
+-  const changed = useProfilesChanged();
+-  const ids = useId();
+-  const [archive, setArchive] = useState("");
+-  const [name, setName] = useState("");
+-  const [problem, setProblem] = useState("");
+-  const run = useMutation({
+-    mutationFn: () => api.profile.importArchive(archive.trim(), normaliseProfileName(name)),
+-    onSuccess: (reply) => {
+-      setArchive("");
+-      setName("");
+-      setProblem("");
+-      toast.show(`Profile ${reply.name} imported.`, "success");
+-      changed();
+-    },
+-    onError: (error) => setProblem(errorText(error)),
+-  });
+-  const submit = (event: FormEvent) => {
+-    event.preventDefault();
+-    if (!archive.trim().startsWith("/")) {
+-      setProblem("Give the archive's full path on this machine.");
+-      return;
+-    }
+-    const nameProblem = name.trim() ? profileNameProblem(name, existing) : null;
+-    if (nameProblem) {
+-      setProblem(nameProblem);
+-      return;
+-    }
+-    run.mutate();
+-  };
+-  return (
+-    <Card>
+-      <h2 className="mb-3 text-sm font-semibold">Import a profile</h2>
+-      <form className="flex flex-wrap items-end gap-3" onSubmit={submit} noValidate>
+-        <Field label="Archive path" htmlFor={`${ids}-archive`}>
+-          <input
+-            id={`${ids}-archive`}
+-            className={`${inputClass} font-mono`}
+-            value={archive}
+-            onChange={(e) => setArchive(e.currentTarget.value)}
+-          />
+-        </Field>
+-        <Field label="Name (optional)" htmlFor={`${ids}-name`}>
+-          <input
+-            id={`${ids}-name`}
+-            className={inputClass}
+-            value={name}
+-            onChange={(e) => setName(e.currentTarget.value)}
+-          />
+-        </Field>
+-        <Button type="submit" disabled={run.isPending}>
+-          Import
+-        </Button>
+-      </form>
+-      {problem ? (
+-        <div className="mt-2">
+-          <Notice tone="danger">{problem}</Notice>
+-        </div>
+-      ) : null}
+-    </Card>
+-  );
+-}
++type Dialog = "create" | "import" | null;
+ 
+ export function ProfilesPage() {
+   const toast = useToast();
+   const changed = useProfilesChanged();
++  const navigate = useNavigate();
+   const { search } = useProfileScope();
+   const [deleting, setDeleting] = useState<string | null>(null);
+   const [typed, setTyped] = useState("");
+-  const [editing, setEditing] = useState<ProfileSummary | null>(null);
+-  const profiles = useQuery({ queryKey: LIST_KEY, queryFn: () => api.profiles() });
++  const [editing, setEditing] = useState<{ name: string; kind: EditorKind } | null>(null);
++  const [dialog, setDialog] = useState<Dialog>(null);
++  const profiles = useQuery({ queryKey: PROFILES_KEY, queryFn: () => api.profiles() });
+   const remove = useMutation({
+     mutationFn: (name: string) => api.profile.remove(name),
+     onSuccess: (_reply, name) => {
+@@ -379,34 +44,101 @@ export function ProfilesPage() {
+   });
+   const list = profiles.data?.profiles ?? [];
+   const names = list.map((p) => p.name);
++  const active = profiles.data?.active ?? "";
++  const current = profiles.data?.current;
++  const editProfile = editing ? list.find((p) => p.name === editing.name) : undefined;
++  const defaultName = list.find((p) => p.is_default)?.name ?? "";
++
+   return (
+-    <div className="flex flex-col gap-4 p-4">
++    <div className="flex flex-col px-4 py-[1.375rem] lg:px-[1.4375rem]">
+       <HeaderActions>
+-        <Link
+-          to={{ pathname: "/profiles/new", search }}
+-          className="rounded-md border border-accent bg-accent px-3 py-1.5 text-sm text-accent-fg"
+-        >
+-          New profile
+-        </Link>
++        <Button size="sm" onClick={() => setDialog("import")}>
++          Import
++        </Button>
++        <Button size="sm" onClick={() => void navigate({ pathname: "/profiles/new", search })}>
++          Build
++        </Button>
++        <Button size="sm" tone="primary" onClick={() => setDialog("create")}>
++          Create
++        </Button>
+       </HeaderActions>
+-      <QueryState loading={profiles.isPending} error={profiles.error}>
+-        <ul className="grid gap-3 lg:grid-cols-2" aria-label="Profiles">
+-          {list.map((profile) => (
+-            <ProfileCard
+-              key={profile.name}
+-              profile={profile}
+-              others={names.filter((n) => n !== profile.name)}
+-              onDelete={() => {
+-                setTyped("");
+-                setDeleting(profile.name);
+-              }}
+-              onEdit={() => setEditing(profile)}
+-            />
+-          ))}
+-        </ul>
+-      </QueryState>
+-      <ImportProfile existing={names} />
+-      {editing ? <Editor profile={editing} onClose={() => setEditing(null)} /> : null}
++
++      {profiles.isPending ? (
++        <div className="flex justify-center py-24">
++          <Loading />
++        </div>
++      ) : profiles.error ? (
++        <ErrorState message={errorText(profiles.error)} onRetry={() => void profiles.refetch()} />
++      ) : (
++        <>
++          <div
++            role="status"
++            className="flex h-10 items-center gap-2.5 border border-line bg-canvas px-4 text-[0.75rem]"
++          >
++            <Check aria-hidden="true" className="size-3.5 shrink-0 text-success" />
++            <span className="text-ink-muted">
++              Active profile: <strong className="font-medium text-ink">{active}</strong>
++              {current && current !== active ? (
++                <span className="type-data ml-1 text-ink-soft">(serving {current})</span>
++              ) : null}
++            </span>
++          </div>
++
++          <h2 className="mt-[26px] mb-[15px] flex items-center gap-2 font-sans text-[0.9375rem] font-bold tracking-[0.15em] text-ink-muted">
++            <Users aria-hidden="true" className="size-4" />
++            Profiles ({list.length})
++          </h2>
++
++          {list.length === 0 ? (
++            <div className="border border-line px-4 py-10 text-center text-[0.8125rem] text-ink-soft">
++              No profiles yet
++            </div>
++          ) : (
++            <ul
++              aria-label="Profiles"
++              className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2 xl:grid-cols-3"
++            >
++              {list.map((profile) => (
++                <ProfileCard
++                  key={profile.name}
++                  profile={profile}
++                  others={names.filter((n) => n !== profile.name)}
++                  onEdit={(kind) =>
++                    setEditing((open) =>
++                      open?.name === profile.name && open.kind === kind
++                        ? null
++                        : { name: profile.name, kind },
++                    )
++                  }
++                  onDelete={() => {
++                    setTyped("");
++                    setDeleting(profile.name);
++                  }}
++                />
++              ))}
++            </ul>
++          )}
++        </>
++      )}
++
++      {editing && editProfile ? (
++        <ProfileEditorDialog
++          key={`${editing.name}-${editing.kind}`}
++          profile={editProfile}
++          kind={editing.kind}
++          onClose={() => setEditing(null)}
++        />
++      ) : null}
++      {dialog === "create" ? (
++        <CreateProfileDialog
++          existing={names}
++          defaultSource={defaultName}
++          onClose={() => setDialog(null)}
++        />
++      ) : null}
++      {dialog === "import" ? (
++        <ImportProfileDialog existing={names} onClose={() => setDialog(null)} />
++      ) : null}
+       <ConfirmDialog
+         open={deleting !== null}
+         title={`Delete ${deleting ?? ""}?`}
+diff --git a/apps/web/src/pages/config/ConfigField.tsx b/apps/web/src/pages/config/ConfigField.tsx
+new file mode 100644
+index 0000000..62515d3
+--- /dev/null
++++ b/apps/web/src/pages/config/ConfigField.tsx
+@@ -0,0 +1,226 @@
++// One config setting in the form: a serif uppercase label, the key path and description as hints,
++// and the control its schema type asks for. Every control carries the full key as its name.
++
++import { type ReactNode, useEffect, useId, useState } from "react";
++import type { ConfigValue, ConfigField as FieldSchema } from "../../lib/restTypes.ts";
++import { inputClass, Select } from "../../ui/controls.tsx";
++import { cx } from "../../ui/cx.ts";
++import { Switch } from "../../ui/Switch.tsx";
++import { fieldLabel } from "./categories.ts";
++
++const controlClass = cx(inputClass, "h-[34px] w-full text-[0.8125rem]");
++
++export function displayValue(value: ConfigValue | undefined): string {
++  if (value === undefined || value === null) return "";
++  if (typeof value === "object") return JSON.stringify(value);
++  return String(value);
++}
++
++function Hints({ name, description }: { name: string; description: string }) {
++  return (
++    <div className="flex flex-col gap-0.5">
++      {name.includes(".") ? (
++        <span className="type-data text-[0.75rem] text-ink-soft">{name}</span>
++      ) : null}
++      {description ? (
++        <span className="text-[0.75rem] leading-snug text-ink-muted">{description}</span>
++      ) : null}
++    </div>
++  );
++}
++
++function splitCommas(text: string): string[] {
++  return text
++    .split(",")
++    .map((part) => part.trim())
++    .filter((part) => part !== "");
++}
++
++/** Scalars as one comma-separated input; the text is kept while typing ("a, " stays). */
++function CommaList({
++  id,
++  name,
++  value,
++  onChange,
++}: {
++  id: string;
++  name: string;
++  value: ConfigValue[];
++  onChange: (next: ConfigValue) => void;
++}) {
++  const joined = value.map(displayValue).join(", ");
++  const [text, setText] = useState(joined);
++  useEffect(() => {
++    setText((current) => (splitCommas(current).join(", ") === joined ? current : joined));
++  }, [joined]);
++  return (
++    <input
++      id={id}
++      aria-label={name}
++      className={controlClass}
++      placeholder="comma-separated values"
++      value={text}
++      onChange={(e) => {
++        const next = e.currentTarget.value;
++        setText(next);
++        onChange(splitCommas(next));
++      }}
++    />
++  );
++}
++
++/** A list holding objects: one JSON value per line; a bad line is reported and not applied. */
++function JsonLines({
++  id,
++  name,
++  value,
++  onChange,
++}: {
++  id: string;
++  name: string;
++  value: ConfigValue[];
++  onChange: (next: ConfigValue) => void;
++}) {
++  const joined = value.map((item) => JSON.stringify(item)).join("\n");
++  const [text, setText] = useState(joined);
++  const [bad, setBad] = useState<number | null>(null);
++  useEffect(() => {
++    setText((current) => (bad === null ? joined : current));
++  }, [joined, bad]);
++  return (
++    <>
++      <textarea
++        id={id}
++        aria-label={name}
++        aria-invalid={bad !== null}
++        rows={Math.min(Math.max(value.length, 2), 8)}
++        className={cx(inputClass, "w-full py-2 text-[0.8125rem]")}
++        value={text}
++        onChange={(e) => {
++          const next = e.currentTarget.value;
++          setText(next);
++          const parsed: ConfigValue[] = [];
++          const lines = next.split("\n");
++          for (const [i, line] of lines.entries()) {
++            if (!line.trim()) continue;
++            try {
++              parsed.push(JSON.parse(line) as ConfigValue);
++            } catch {
++              setBad(i + 1);
++              return;
++            }
++          }
++          setBad(null);
++          onChange(parsed);
++        }}
++      />
++      {bad !== null ? (
++        <span className="text-[0.75rem] text-danger">Line {bad} is not valid JSON.</span>
++      ) : null}
++    </>
++  );
++}
++
++export function ConfigField({
++  name,
++  field,
++  value,
++  onChange,
++}: {
++  name: string;
++  field: FieldSchema;
++  value: ConfigValue | undefined;
++  onChange: (next: ConfigValue) => void;
++}) {
++  const id = useId();
++  const label = (
++    <label htmlFor={id} className="type-label text-[0.75rem] tracking-[0.08em] text-ink">
++      {fieldLabel(name)}
++    </label>
++  );
++
++  if (field.type === "boolean") {
++    return (
++      <div className="flex items-center justify-between gap-4 py-1">
++        <div className="flex min-w-0 flex-col gap-1">
++          {label}
++          <Hints name={name} description={field.description} />
++        </div>
++        <Switch id={id} checked={value === true} onCheckedChange={onChange} label={name} />
++      </div>
++    );
++  }
++
++  let control: ReactNode;
++  if (field.type === "enum") {
++    control = (
++      <Select
++        id={id}
++        aria-label={name}
++        className="w-full [&_select]:h-[34px] [&_select]:text-[0.8125rem]"
++        value={displayValue(value)}
++        onChange={(e) => onChange(e.currentTarget.value)}
++      >
++        {value === undefined || value === null ? <option value="">(not set)</option> : null}
++        {(field.options ?? []).map((option) => (
++          <option key={option} value={option}>
++            {option}
++          </option>
++        ))}
++      </Select>
++    );
++  } else if (field.type === "number" || field.type === "integer") {
++    control = (
++      <input
++        id={id}
++        aria-label={name}
++        type="number"
++        step={field.type === "integer" ? 1 : "any"}
++        className={controlClass}
++        value={displayValue(value)}
++        onChange={(e) => {
++          const raw = e.currentTarget.value;
++          const parsed = Number(raw);
++          onChange(raw === "" ? null : Number.isFinite(parsed) ? parsed : raw);
++        }}
++      />
++    );
++  } else if (field.type === "list") {
++    const items = Array.isArray(value) ? value : [];
++    const hasObjects = items.some((item) => typeof item === "object" && item !== null);
++    control = hasObjects ? (
++      <JsonLines id={id} name={name} value={items} onChange={onChange} />
++    ) : (
++      <CommaList id={id} name={name} value={items} onChange={onChange} />
++    );
++  } else {
++    control = (
++      <input
++        id={id}
++        aria-label={name}
++        type="text"
++        className={controlClass}
++        value={displayValue(value)}
++        onChange={(e) => onChange(e.currentTarget.value)}
++      />
++    );
++  }
++
++  return (
++    <div className="flex flex-col gap-1.5 py-1.5">
++      {label}
++      <Hints name={name} description={field.description} />
++      {control}
++    </div>
++  );
++}
++
++/** The row between groups of keys: a small serif caption and a rule filling the width. */
++export function SubsectionDivider({ children }: { children: ReactNode }) {
++  return (
++    <div className="flex items-center gap-3 pt-4 pb-2">
++      <span className="type-label text-[0.6875rem] font-semibold text-ink-muted">{children}</span>
++      <span aria-hidden="true" className="h-px flex-1 bg-line" />
++    </div>
++  );
++}
+diff --git a/apps/web/src/pages/config/EffectiveView.tsx b/apps/web/src/pages/config/EffectiveView.tsx
+new file mode 100644
+index 0000000..09cb62b
+--- /dev/null
++++ b/apps/web/src/pages/config/EffectiveView.tsx
+@@ -0,0 +1,86 @@
++// The Effective view (ours): every setting's value as the agent sees it and where it comes from.
++
++import { useQuery } from "@tanstack/react-query";
++import { ListChecks } from "lucide-react";
++import { api } from "../../lib/api.ts";
++import type { ValueSource } from "../../lib/restTypes.ts";
++import {
++  Badge,
++  type BadgeTone,
++  Card,
++  CardHeader,
++  CountChip,
++  QueryState,
++} from "../../ui/controls.tsx";
++import { displayValue } from "./ConfigField.tsx";
++
++const SOURCE_TONE: Record<ValueSource, BadgeTone> = {
++  default: "secondary",
++  file: "accent",
++  env: "warn",
++  overlay: "danger",
++};
++
++const SOURCE_LABEL: Record<ValueSource, string> = {
++  default: "default",
++  file: "config file",
++  env: "environment",
++  overlay: "admin overlay",
++};
++
++const headClass = "type-label h-8 px-0 text-left text-[0.6875rem] font-normal text-ink-soft";
++
++export function EffectiveView() {
++  const effective = useQuery({
++    queryKey: ["config", "effective"],
++    queryFn: () => api.config.effective(),
++  });
++  const entries = effective.data?.entries ?? [];
++  return (
++    <Card padded={false}>
++      <CardHeader
++        icon={ListChecks}
++        title="Effective configuration"
++        aside={effective.data ? <CountChip>{entries.length}</CountChip> : null}
++      />
++      <div className="px-4 pb-4">
++        <QueryState
++          loading={effective.isPending}
++          error={effective.error}
++          empty={entries.length === 0}
++          emptyText="No settings reported."
++          onRetry={() => void effective.refetch()}
++        >
++          <table className="w-full border-collapse" aria-label="Effective configuration">
++            <thead>
++              <tr>
++                <th className={headClass}>Key</th>
++                <th className={`${headClass} pl-4`}>Value</th>
++                <th className={`${headClass} w-px pl-4 text-right whitespace-nowrap`}>Source</th>
++              </tr>
++            </thead>
++            <tbody>
++              {entries.map((entry) => (
++                <tr
++                  key={entry.key}
++                  className="border-t border-line"
++                  data-testid={`effective-${entry.key}`}
++                >
++                  <td className="type-data py-2 align-top text-[0.75rem] text-ink">{entry.key}</td>
++                  <td className="type-data py-2 pl-4 align-top text-[0.75rem] break-all text-ink-muted">
++                    {displayValue(entry.value)}
++                  </td>
++                  <td className="w-px py-2 pl-4 text-right align-top whitespace-nowrap">
++                    <Badge tone={SOURCE_TONE[entry.source]} className="whitespace-nowrap">
++                      {SOURCE_LABEL[entry.source]}
++                    </Badge>
++                  </td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
++        </QueryState>
++      </div>
++    </Card>
++  );
++}
+diff --git a/apps/web/src/pages/config/FilterColumn.tsx b/apps/web/src/pages/config/FilterColumn.tsx
+new file mode 100644
+index 0000000..8090c0b
+--- /dev/null
++++ b/apps/web/src/pages/config/FilterColumn.tsx
+@@ -0,0 +1,66 @@
++// The Config page's section list: a bordered side panel with FILTERS / SECTIONS captions and one
++// row per category (icon, name, field count). On phones it becomes a scrolling strip.
++
++import { Funnel } from "lucide-react";
++import { cx } from "../../ui/cx.ts";
++import { categoryIcon, categoryName } from "./categories.ts";
++
++export function FilterColumn({
++  categories,
++  counts,
++  active,
++  onPick,
++}: {
++  categories: readonly string[];
++  counts: Readonly<Record<string, number>>;
++  /** The selected category, or null while a search is showing. */
++  active: string | null;
++  onPick: (category: string) => void;
++}) {
++  return (
++    <nav
++      aria-label="Config sections"
++      className="flex shrink-0 flex-col border border-line bg-surface lg:sticky lg:top-4 lg:w-[210px] lg:self-start"
++    >
++      <div className="flex h-[31px] items-center gap-2 border-b border-line px-3">
++        <Funnel aria-hidden="true" className="size-3 text-ink-soft" />
++        <span className="type-label text-[0.6875rem] tracking-[0.12em] text-ink-muted">
++          Filters
++        </span>
++      </div>
++      <p className="type-label m-0 px-3 pt-2 text-[0.6875rem] text-ink-soft">Sections</p>
++      <ul className="m-0 flex list-none gap-px overflow-x-auto p-2 lg:max-h-[calc(100vh-260px)] lg:flex-col lg:overflow-x-visible lg:overflow-y-auto">
++        {categories.map((category) => {
++          const Icon = categoryIcon(category);
++          const on = category === active;
++          return (
++            <li key={category} className="shrink-0">
++              <button
++                type="button"
++                aria-pressed={on}
++                onClick={() => onPick(category)}
++                className={cx(
++                  "flex h-[23px] w-full items-center gap-2 px-2 text-left transition-colors",
++                  on ? "bg-selected text-ink" : "text-ink-muted hover:bg-hover",
++                )}
++              >
++                <Icon aria-hidden="true" className="size-3.5 shrink-0" />
++                <span className="type-data min-w-0 flex-1 truncate text-[0.75rem]">
++                  {categoryName(category)}
++                </span>
++                <span
++                  className={cx(
++                    "pl-2 text-[0.75rem] tabular-nums",
++                    on ? "text-ink-muted" : "text-ink-soft",
++                  )}
++                >
++                  {counts[category] ?? 0}
++                </span>
++              </button>
++            </li>
++          );
++        })}
++      </ul>
++    </nav>
++  );
++}
+diff --git a/apps/web/src/pages/config/YamlView.tsx b/apps/web/src/pages/config/YamlView.tsx
+new file mode 100644
+index 0000000..4093baf
+--- /dev/null
++++ b/apps/web/src/pages/config/YamlView.tsx
+@@ -0,0 +1,44 @@
++// The read-only YAML view (W52-pc-10): the settings the config file itself sets, from the
++// effective entries whose source is the file, nested by key and written as YAML. Values arrive
++// redacted. There is no raw-file endpoint yet, so nothing here writes.
++
++import { useQuery } from "@tanstack/react-query";
++import { FileText } from "lucide-react";
++import { api } from "../../lib/api.ts";
++import { nestEntries, toYaml } from "../../lib/yaml.ts";
++import { Card, CardHeader, Loading, QueryState } from "../../ui/controls.tsx";
++
++export const EMPTY_YAML = "# config.yaml has no settings yet\n";
++
++export function YamlView() {
++  const effective = useQuery({
++    queryKey: ["config", "effective"],
++    queryFn: () => api.config.effective(),
++  });
++  const fromFile = (effective.data?.entries ?? []).filter((entry) => entry.source === "file");
++  const text = toYaml(nestEntries(fromFile)) || EMPTY_YAML;
++  return (
++    <Card padded={false}>
++      <CardHeader icon={FileText} title="Raw YAML configuration" />
++      {effective.isPending ? (
++        <div className="flex justify-center py-12">
++          <Loading />
++        </div>
++      ) : (
++        <QueryState
++          loading={false}
++          error={effective.error}
++          onRetry={() => void effective.refetch()}
++        >
++          <textarea
++            aria-label="Raw YAML configuration"
++            readOnly
++            spellCheck={false}
++            value={text}
++            className="type-data block min-h-[600px] w-full resize-y border-0 bg-transparent px-4 py-3 text-[0.8125rem] leading-[21px] text-ink outline-none"
++          />
++        </QueryState>
++      )}
++    </Card>
++  );
++}
+diff --git a/apps/web/src/pages/config/categories.ts b/apps/web/src/pages/config/categories.ts
+new file mode 100644
+index 0000000..345041e
+--- /dev/null
++++ b/apps/web/src/pages/config/categories.ts
+@@ -0,0 +1,123 @@
++// Config sections: their order, names, icons, and the field search (W52-e, Config page).
++
++import {
++  Bot,
++  Brain,
++  ClipboardList,
++  Clock,
++  Cpu,
++  Database,
++  Ear,
++  FileQuestionMark,
++  Globe,
++  KeyRound,
++  Layers,
++  ListChecks,
++  Lock,
++  MessageCircle,
++  MessageSquare,
++  Mic,
++  Monitor,
++  Package,
++  Palette,
++  Plug,
++  Radio,
++  Route,
++  Server,
++  Settings,
++  ShieldCheck,
++  Sparkles,
++  Users,
++  Volume2,
++  Webhook,
++  Wrench,
++} from "lucide-react";
++import type { ComponentType } from "react";
++import type { ConfigField, ConfigSchema } from "../../lib/restTypes.ts";
++
++type Icon = ComponentType<{ className?: string }>;
++
++/** Each icon with the sections drawn with it; a section not listed gets the question-mark file. */
++const ICON_GROUPS: ReadonlyArray<readonly [Icon, readonly string[]]> = [
++  [Cpu, ["model", "model_catalog"]],
++  [Server, ["providers"]],
++  [Route, ["fallback"]],
++  [Bot, ["agent"]],
++  [Settings, ["general"]],
++  [Monitor, ["terminal", "tui", "dashboard"]],
++  [Palette, ["display"]],
++  [Globe, ["browser", "web", "egress", "network"]],
++  [Lock, ["security"]],
++  [ShieldCheck, ["approvals"]],
++  [ListChecks, ["command_allowlist"]],
++  [Package, ["compression", "tool_output"]],
++  [Brain, ["memory", "learning"]],
++  [Users, ["delegation"]],
++  [Sparkles, ["skills", "curator"]],
++  [Layers, ["toolsets"]],
++  [Wrench, ["auxiliary", "tools"]],
++  [Plug, ["mcp", "plugins"]],
++  [Radio, ["gateway", "messaging", "platforms"]],
++  [MessageSquare, ["sessions", "session", "session_search"]],
++  [MessageCircle, ["prompt", "discord"]],
++  [Database, ["database"]],
++  [ClipboardList, ["logging"]],
++  [Clock, ["cron"]],
++  [Webhook, ["webhooks"]],
++  [KeyRound, ["secrets"]],
++  [Mic, ["voice"]],
++  [Volume2, ["tts"]],
++  [Ear, ["stt"]],
++];
++
++const ICONS: ReadonlyMap<string, Icon> = new Map(
++  ICON_GROUPS.flatMap(([icon, sections]) => sections.map((section) => [section, icon] as const)),
++);
++
++const NAMES: Record<string, string> = {
++  tts: "Text-to-speech",
++  stt: "Speech-to-text",
++  mcp: "MCP",
++};
++
++export function categoryIcon(category: string): Icon {
++  return ICONS.get(category) ?? FileQuestionMark;
++}
++
++/** "fallback_providers" → "Fallback providers". */
++export function categoryName(category: string): string {
++  const named = NAMES[category];
++  if (named) return named;
++  const words = category.replace(/_/g, " ");
++  return words.charAt(0).toUpperCase() + words.slice(1);
++}
++
++/** A field's label: its last key segment with `_` as spaces. */
++export function fieldLabel(key: string): string {
++  return (key.split(".").pop() ?? key).replace(/_/g, " ");
++}
++
++export function fieldCategory(field: ConfigField): string {
++  return field.category || "general";
++}
++
++/** Categories in the schema's order (unknown ones after it, alphabetically). */
++export function orderedCategories(schema: ConfigSchema): string[] {
++  const order = schema.category_order;
++  const present = [...new Set(Object.values(schema.fields).map(fieldCategory))];
++  const rank = (c: string) => {
++    const i = order.indexOf(c);
++    return i < 0 ? order.length : i;
++  };
++  return present.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
++}
++
++/** True when the query matches the key, the label, the category or the description. */
++export function fieldMatches(key: string, field: ConfigField, query: string): boolean {
++  const q = query.trim().toLowerCase();
++  if (!q) return true;
++  const category = fieldCategory(field);
++  return [key, fieldLabel(key), category, categoryName(category), field.description].some((text) =>
++    text.toLowerCase().includes(q),
++  );
++}
+diff --git a/apps/web/src/pages/profiles/CreateProfileDialog.tsx b/apps/web/src/pages/profiles/CreateProfileDialog.tsx
+new file mode 100644
+index 0000000..685966e
+--- /dev/null
++++ b/apps/web/src/pages/profiles/CreateProfileDialog.tsx
+@@ -0,0 +1,194 @@
++// CREATE: a quick new-profile modal (name, clone source, description, model, two advanced options).
++// The step-by-step builder (`/profiles/new`) stays the way to add skills and MCP servers too.
++
++import { useMutation } from "@tanstack/react-query";
++import { type FormEvent, useId, useState } from "react";
++import { api } from "../../lib/api.ts";
++import type { ProfileCreate } from "../../lib/restTypes.ts";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
++import { Button, Checkbox, inputClass, Notice, Select } from "../../ui/controls.tsx";
++import { cx } from "../../ui/cx.ts";
++import { Modal } from "../../ui/Dialog.tsx";
++import { labelClass, ModelFields } from "./ProfileEditorDialog.tsx";
++import { normaliseProfileName, profileNameProblem } from "./profileName.ts";
++import { useProfilesChanged } from "./useProfilesChanged.ts";
++
++export const NAME_RULE = "Lower-case letters, digits, '-' or '_'; at most 64 characters.";
++
++export function CreateProfileDialog({
++  existing,
++  defaultSource,
++  onClose,
++}: {
++  existing: readonly string[];
++  /** The clone source picked at first (the default profile). */
++  defaultSource: string;
++  onClose: () => void;
++}) {
++  const toast = useToast();
++  const changed = useProfilesChanged();
++  const ids = useId();
++  const [name, setName] = useState("");
++  const [cloneFrom, setCloneFrom] = useState(defaultSource);
++  const [description, setDescription] = useState("");
++  const [provider, setProvider] = useState("");
++  const [model, setModel] = useState("");
++  const [cloneAll, setCloneAll] = useState(false);
++  const [noSkills, setNoSkills] = useState(false);
++  const [problem, setProblem] = useState("");
++  const nameProblem = profileNameProblem(name, existing);
++  const cloning = cloneFrom !== "";
++
++  const create = useMutation({
++    mutationFn: async () => {
++      const id = normaliseProfileName(name);
++      const body: ProfileCreate = { name: id };
++      if (cloning) body.clone_from = cloneFrom;
++      if (cloning && cloneAll) body.clone_all = true;
++      if (!cloning && noSkills) body.no_skills = true;
++      if (description.trim()) body.description = description.trim();
++      const reply = await api.profile.create(body);
++      if (provider && model.trim()) {
++        try {
++          await api.profile.setModel(reply.name, provider, model.trim());
++        } catch (error) {
++          toast.show(`Profile made, but its model was not set: ${errorText(error)}`, "error");
++        }
++      }
++      return reply;
++    },
++    onSuccess: (reply) => {
++      toast.show(`Profile ${reply.name} created.`, "success");
++      changed();
++      onClose();
++    },
++    onError: (error) => setProblem(errorText(error)),
++  });
++
++  const submit = (event: FormEvent) => {
++    event.preventDefault();
++    if (nameProblem === null && !create.isPending) create.mutate();
++  };
++
++  return (
++    <Modal
++      open
++      size="md"
++      onOpenChange={(open) => {
++        if (!open) onClose();
++      }}
++      title="New profile"
++      description="A separate home with its own settings, keys, skills and history."
++    >
++      <form className="flex flex-col gap-4 py-1" onSubmit={submit} noValidate>
++        <div className="flex flex-col gap-1.5">
++          <label htmlFor={`${ids}-name`} className={labelClass}>
++            Name
++          </label>
++          <input
++            id={`${ids}-name`}
++            // biome-ignore lint/a11y/noAutofocus: the dialog exists to type this name
++            autoFocus
++            className={cx(inputClass, "w-full")}
++            placeholder="coder"
++            aria-invalid={name !== "" && nameProblem !== null}
++            value={name}
++            onChange={(e) => setName(e.currentTarget.value)}
++          />
++          <p
++            className={cx(
++              "m-0 text-[0.75rem]",
++              name && nameProblem ? "text-danger" : "text-ink-soft",
++            )}
++          >
++            {name && nameProblem ? nameProblem : NAME_RULE}
++          </p>
++        </div>
++        <div className="flex flex-col gap-1.5">
++          <label htmlFor={`${ids}-clone`} className={labelClass}>
++            Clone from
++          </label>
++          <Select
++            id={`${ids}-clone`}
++            className="w-full"
++            value={cloneFrom}
++            onChange={(e) => setCloneFrom(e.currentTarget.value)}
++          >
++            <option value="">Fresh profile</option>
++            {existing.map((p) => (
++              <option key={p} value={p}>
++                {p}
++              </option>
++            ))}
++          </Select>
++        </div>
++        <div className="flex flex-col gap-1.5">
++          <label htmlFor={`${ids}-description`} className={labelClass}>
++            Description (optional)
++          </label>
++          <textarea
++            id={`${ids}-description`}
++            className={cx(inputClass, "min-h-16 w-full py-2")}
++            value={description}
++            onChange={(e) => setDescription(e.currentTarget.value)}
++          />
++        </div>
++        <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
++          <legend className={cx(labelClass, "mb-1.5 p-0")}>Model (optional)</legend>
++          <ModelFields
++            provider={provider}
++            model={model}
++            onProvider={setProvider}
++            onModel={setModel}
++          />
++        </fieldset>
++        <fieldset className="m-0 flex flex-col gap-2 border-0 border-t border-line p-0 pt-4">
++          <legend className="type-label float-left mb-2 w-full p-0 text-[0.6875rem] text-ink-soft">
++            Advanced options
++          </legend>
++          <label
++            htmlFor={`${ids}-clone-all`}
++            className={cx(
++              "flex items-center gap-2 text-[0.8125rem]",
++              !cloning && "cursor-not-allowed opacity-50",
++            )}
++          >
++            <Checkbox
++              id={`${ids}-clone-all`}
++              checked={cloneAll}
++              disabled={!cloning}
++              onChange={(e) => setCloneAll(e.currentTarget.checked)}
++            />
++            Clone everything (the whole profile folder)
++          </label>
++          <label
++            htmlFor={`${ids}-no-skills`}
++            className={cx(
++              "flex items-center gap-2 text-[0.8125rem]",
++              cloning && "cursor-not-allowed opacity-50",
++            )}
++          >
++            <Checkbox
++              id={`${ids}-no-skills`}
++              checked={noSkills}
++              disabled={cloning}
++              onChange={(e) => setNoSkills(e.currentTarget.checked)}
++            />
++            No bundled skills
++          </label>
++        </fieldset>
++        {problem ? <Notice tone="danger">{problem}</Notice> : null}
++        <div className="flex justify-end">
++          <Button
++            type="submit"
++            tone="primary"
++            size="sm"
++            disabled={nameProblem !== null || create.isPending}
++          >
++            {create.isPending ? "Creating…" : "Create"}
++          </Button>
++        </div>
++      </form>
++    </Modal>
++  );
++}
+diff --git a/apps/web/src/pages/profiles/ImportProfileDialog.tsx b/apps/web/src/pages/profiles/ImportProfileDialog.tsx
+new file mode 100644
+index 0000000..2e2c7ad
+--- /dev/null
++++ b/apps/web/src/pages/profiles/ImportProfileDialog.tsx
+@@ -0,0 +1,91 @@
++// IMPORT (ours): make a profile from an exported archive on this machine.
++
++import { useMutation } from "@tanstack/react-query";
++import { type FormEvent, useId, useState } from "react";
++import { api } from "../../lib/api.ts";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
++import { Button, inputClass, Notice } from "../../ui/controls.tsx";
++import { cx } from "../../ui/cx.ts";
++import { Modal } from "../../ui/Dialog.tsx";
++import { labelClass } from "./ProfileEditorDialog.tsx";
++import { normaliseProfileName, profileNameProblem } from "./profileName.ts";
++import { useProfilesChanged } from "./useProfilesChanged.ts";
++
++export function ImportProfileDialog({
++  existing,
++  onClose,
++}: {
++  existing: readonly string[];
++  onClose: () => void;
++}) {
++  const toast = useToast();
++  const changed = useProfilesChanged();
++  const ids = useId();
++  const [archive, setArchive] = useState("");
++  const [name, setName] = useState("");
++  const [problem, setProblem] = useState("");
++  const run = useMutation({
++    mutationFn: () => api.profile.importArchive(archive.trim(), normaliseProfileName(name)),
++    onSuccess: (reply) => {
++      toast.show(`Profile ${reply.name} imported.`, "success");
++      changed();
++      onClose();
++    },
++    onError: (error) => setProblem(errorText(error)),
++  });
++  const submit = (event: FormEvent) => {
++    event.preventDefault();
++    if (!archive.trim().startsWith("/")) {
++      setProblem("Give the archive's full path on this machine.");
++      return;
++    }
++    const nameProblem = name.trim() ? profileNameProblem(name, existing) : null;
++    if (nameProblem) {
++      setProblem(nameProblem);
++      return;
++    }
++    run.mutate();
++  };
++  return (
++    <Modal
++      open
++      onOpenChange={(open) => {
++        if (!open) onClose();
++      }}
++      title="Import a profile"
++      description="Settings only: an export carries no history, secrets or channel state."
++    >
++      <form className="flex flex-col gap-4 py-1" onSubmit={submit} noValidate>
++        <div className="flex flex-col gap-1.5">
++          <label htmlFor={`${ids}-archive`} className={labelClass}>
++            Archive path
++          </label>
++          <input
++            id={`${ids}-archive`}
++            className={cx(inputClass, "w-full font-mono")}
++            placeholder="/path/to/profile.zip"
++            value={archive}
++            onChange={(e) => setArchive(e.currentTarget.value)}
++          />
++        </div>
++        <div className="flex flex-col gap-1.5">
++          <label htmlFor={`${ids}-name`} className={labelClass}>
++            Name (optional)
++          </label>
++          <input
++            id={`${ids}-name`}
++            className={cx(inputClass, "w-full")}
++            value={name}
++            onChange={(e) => setName(e.currentTarget.value)}
++          />
++        </div>
++        {problem ? <Notice tone="danger">{problem}</Notice> : null}
++        <div className="flex justify-end">
++          <Button type="submit" tone="primary" size="sm" disabled={run.isPending}>
++            Import
++          </Button>
++        </div>
++      </form>
++    </Modal>
++  );
++}
+diff --git a/apps/web/src/pages/profiles/ProfileActionsMenu.tsx b/apps/web/src/pages/profiles/ProfileActionsMenu.tsx
+new file mode 100644
+index 0000000..194edfa
+--- /dev/null
++++ b/apps/web/src/pages/profiles/ProfileActionsMenu.tsx
+@@ -0,0 +1,108 @@
++// A profile card's three-dot menu: set as active, the three editors, skills, the CLI command,
++// export, then rename and delete (never offered for the default profile; disabled for the profile
++// this dashboard serves).
++
++import {
++  Check,
++  Cpu,
++  Download,
++  Package,
++  Pencil,
++  SquareTerminal,
++  TextAlignStart,
++  Trash,
++} from "lucide-react";
++import type { ProfileSummary } from "../../lib/restTypes.ts";
++import { Menu, MenuDivider, MenuItem } from "../../ui/Menu.tsx";
++import type { EditorKind } from "./ProfileEditorDialog.tsx";
++
++export function lockedReason(profile: ProfileSummary): string | null {
++  if (profile.is_default) return "The default profile cannot be renamed or deleted.";
++  if (profile.is_current) return "This dashboard serves this profile; change it from elsewhere.";
++  return null;
++}
++
++/** The persona item's glyph: a bold letter in an icon-sized slot. */
++function PersonaGlyph() {
++  return (
++    <span
++      aria-hidden="true"
++      className="inline-flex size-4 shrink-0 items-center justify-center text-[0.8125rem] font-bold"
++    >
++      P
++    </span>
++  );
++}
++
++export function ProfileActionsMenu({
++  profile,
++  stickyPending,
++  onSticky,
++  onEdit,
++  onSkills,
++  onCopyCommand,
++  onExport,
++  onRename,
++  onDelete,
++}: {
++  profile: ProfileSummary;
++  stickyPending: boolean;
++  onSticky: () => void;
++  onEdit: (kind: EditorKind) => void;
++  onSkills: () => void;
++  onCopyCommand: () => void;
++  onExport: () => void;
++  onRename: () => void;
++  onDelete: () => void;
++}) {
++  const locked = lockedReason(profile);
++  return (
++    <Menu label="Actions" className="-mt-1 -mr-1 ml-auto">
++      {profile.is_sticky ? null : (
++        <MenuItem icon={<Check />} disabled={stickyPending} onSelect={onSticky}>
++          Set as active
++        </MenuItem>
++      )}
++      <MenuItem icon={<Cpu />} onSelect={() => onEdit("model")}>
++        Change model
++      </MenuItem>
++      <MenuItem icon={<TextAlignStart />} onSelect={() => onEdit("description")}>
++        Edit description
++      </MenuItem>
++      <MenuItem icon={<PersonaGlyph />} onSelect={() => onEdit("persona")}>
++        Edit persona
++      </MenuItem>
++      <MenuItem icon={<Package />} onSelect={onSkills}>
++        Manage skills &amp; tools
++      </MenuItem>
++      <MenuItem icon={<SquareTerminal />} onSelect={onCopyCommand}>
++        Copy CLI command
++      </MenuItem>
++      <MenuItem icon={<Download />} onSelect={onExport}>
++        Export
++      </MenuItem>
++      {profile.is_default ? null : (
++        <>
++          <MenuDivider />
++          <MenuItem
++            icon={<Pencil />}
++            disabled={locked !== null}
++            title={locked ?? undefined}
++            onSelect={onRename}
++          >
++            Rename
++          </MenuItem>
++          <MenuItem
++            icon={<Trash />}
++            danger
++            disabled={locked !== null}
++            title={locked ?? undefined}
++            onSelect={onDelete}
++          >
++            Delete
++          </MenuItem>
++        </>
++      )}
++    </Menu>
++  );
++}
+diff --git a/apps/web/src/pages/profiles/ProfileCard.tsx b/apps/web/src/pages/profiles/ProfileCard.tsx
+new file mode 100644
+index 0000000..9043da2
+--- /dev/null
++++ b/apps/web/src/pages/profiles/ProfileCard.tsx
+@@ -0,0 +1,213 @@
++// One profile as a square card: name and state badges with the actions menu, the daemon line, the
++// description, and a meta block (model, enabled skills). Rename happens inline in the card.
++
++import { useMutation, useQuery } from "@tanstack/react-query";
++import { type FormEvent, useState } from "react";
++import { useNavigate } from "react-router";
++import { api } from "../../lib/api.ts";
++import type { ProfileSummary } from "../../lib/restTypes.ts";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
++import { ActionLog } from "../../ui/ActionLog.tsx";
++import { Badge, Button, inputClass } from "../../ui/controls.tsx";
++import { cx } from "../../ui/cx.ts";
++import { NAME_RULE } from "./CreateProfileDialog.tsx";
++import { ProfileActionsMenu } from "./ProfileActionsMenu.tsx";
++import type { EditorKind } from "./ProfileEditorDialog.tsx";
++import { normaliseProfileName, profileNameProblem } from "./profileName.ts";
++import { useProfilesChanged } from "./useProfilesChanged.ts";
++
++/** "Daemon running" in green, else "Daemon stopped"; hidden when the status cannot be read. */
++function DaemonLine({ name }: { name: string }) {
++  const status = useQuery({
++    queryKey: ["profiles", "status", name],
++    queryFn: () => api.statusOf(name),
++    staleTime: 15_000,
++  });
++  if (!status.data) return null;
++  const running = status.data.daemon.state === "running";
++  return (
++    <p
++      className={cx(
++        "m-0 flex items-center gap-2 text-[0.75rem]",
++        running ? "text-success" : "text-ink-muted",
++      )}
++    >
++      <span
++        aria-hidden="true"
++        className={cx("size-1.5 rounded-full", running ? "bg-success" : "bg-ink-faint")}
++      />
++      {running ? "Daemon running" : "Daemon stopped"}
++    </p>
++  );
++}
++
++/** "Skills: N" (enabled skills), hidden when the list cannot be read. */
++function SkillsLine({ name }: { name: string }) {
++  const skills = useQuery({
++    queryKey: ["profiles", "skills", name],
++    queryFn: () => api.skills.list(name),
++    staleTime: 30_000,
++  });
++  if (!skills.data) return null;
++  return <span>Skills: {skills.data.skills.filter((s) => s.enabled).length}</span>;
++}
++
++export function ProfileCard({
++  profile,
++  others,
++  onEdit,
++  onDelete,
++}: {
++  profile: ProfileSummary;
++  others: string[];
++  onEdit: (kind: EditorKind) => void;
++  onDelete: () => void;
++}) {
++  const toast = useToast();
++  const changed = useProfilesChanged();
++  const navigate = useNavigate();
++  const [renaming, setRenaming] = useState(false);
++  const [newName, setNewName] = useState(profile.name);
++  const [exportRun, setExportRun] = useState(0);
++  const [archive, setArchive] = useState("");
++  const renameProblem = renaming ? profileNameProblem(newName, others) : null;
++
++  const sticky = useMutation({
++    mutationFn: () => api.profile.setSticky(profile.name),
++    onSuccess: () => {
++      toast.show(`New CLI runs now use ${profile.name}.`, "success");
++      changed();
++    },
++    onError: (error) => toast.show(errorText(error), "error"),
++  });
++  const rename = useMutation({
++    mutationFn: () => api.profile.rename(profile.name, normaliseProfileName(newName)),
++    onSuccess: (reply) => {
++      setRenaming(false);
++      toast.show(`${profile.name} is now ${reply.name}.`, "success");
++      changed();
++    },
++    onError: (error) => toast.show(errorText(error), "error"),
++  });
++  const exporting = useMutation({
++    mutationFn: () => api.profile.exportArchive(profile.name),
++    onSuccess: (reply) => {
++      setArchive(reply.archive);
++      setExportRun((n) => n + 1);
++    },
++    onError: (error) => toast.show(errorText(error), "error"),
++  });
++
++  const copyCommand = async () => {
++    const command = `indus -p ${profile.name}`;
++    try {
++      await navigator.clipboard.writeText(command);
++      toast.show(`Command copied: ${command}`, "success");
++    } catch {
++      toast.show("Could not copy the command; the browser refused the clipboard.", "error");
++    }
++  };
++
++  const submitRename = (event: FormEvent) => {
++    event.preventDefault();
++    if (renameProblem === null && !rename.isPending) rename.mutate();
++  };
++
++  const modelLine = profile.model
++    ? `${profile.model}${profile.provider ? ` (${profile.provider})` : ""}`
++    : "inherited";
++
++  return (
++    <li data-testid={`profile-${profile.name}`} className="flex">
++      <article className="flex min-h-[165px] min-w-0 flex-1 flex-col gap-2 border border-line bg-canvas p-4">
++        <div className="flex min-w-0 items-center gap-1.5">
++          <h3 className="m-0 mr-1 truncate text-[0.8125rem] font-medium text-ink">
++            {profile.name}
++          </h3>
++          {profile.is_sticky ? <Badge tone="ok">active</Badge> : null}
++          {profile.is_default ? <Badge tone="secondary">default</Badge> : null}
++          {profile.is_current ? <Badge className="text-ink-muted">this dashboard</Badge> : null}
++          <ProfileActionsMenu
++            profile={profile}
++            stickyPending={sticky.isPending}
++            onSticky={() => sticky.mutate()}
++            onEdit={onEdit}
++            onSkills={() => void navigate(`/skills?profile=${encodeURIComponent(profile.name)}`)}
++            onCopyCommand={() => void copyCommand()}
++            onExport={() => exporting.mutate()}
++            onRename={() => {
++              setNewName(profile.name);
++              setRenaming(true);
++            }}
++            onDelete={onDelete}
++          />
++        </div>
++
++        {renaming ? (
++          <form className="flex flex-col gap-2" onSubmit={submitRename} noValidate>
++            <input
++              aria-label="New name"
++              // biome-ignore lint/a11y/noAutofocus: rename starts from the menu; typing follows
++              autoFocus
++              className={cx(inputClass, "w-full")}
++              aria-invalid={renameProblem !== null}
++              value={newName}
++              onChange={(e) => setNewName(e.currentTarget.value)}
++              onKeyDown={(e) => {
++                if (e.key === "Escape") setRenaming(false);
++              }}
++            />
++            <p
++              className={cx("m-0 text-[0.75rem]", renameProblem ? "text-danger" : "text-ink-soft")}
++            >
++              {renameProblem ?? NAME_RULE}
++            </p>
++            <div className="flex gap-2">
++              <Button
++                type="submit"
++                tone="primary"
++                size="sm"
++                disabled={renameProblem !== null || rename.isPending}
++              >
++                Save
++              </Button>
++              <Button tone="ghost" size="sm" onClick={() => setRenaming(false)}>
++                Cancel
++              </Button>
++            </div>
++          </form>
++        ) : (
++          <>
++            <DaemonLine name={profile.name} />
++            {profile.description ? (
++              <p className="m-0 line-clamp-2 text-[0.75rem] text-ink-muted">
++                {profile.description}
++              </p>
++            ) : (
++              <p className="m-0 text-[0.75rem] text-ink-faint italic">No description</p>
++            )}
++            <div className="mt-auto flex flex-col pt-2 text-[0.75rem] leading-[17px] text-ink-muted">
++              <span>Model: {modelLine}</span>
++              <SkillsLine name={profile.name} />
++            </div>
++          </>
++        )}
++
++        {exportRun > 0 ? (
++          <div className="flex flex-col gap-2 border-t border-line pt-2">
++            <ActionLog
++              name="profile-export"
++              run={exportRun}
++              profile={profile.name}
++              title={`Export of ${profile.name}`}
++            />
++            <p className="m-0 text-[0.75rem] text-ink-muted">
++              Archive: <code className="type-data break-all">{archive}</code> (settings only: no
++              history, secrets or channel state).
++            </p>
++          </div>
++        ) : null}
++      </article>
++    </li>
++  );
++}
+diff --git a/apps/web/src/pages/profiles/ProfileEditorDialog.tsx b/apps/web/src/pages/profiles/ProfileEditorDialog.tsx
+new file mode 100644
+index 0000000..58f67bb
+--- /dev/null
++++ b/apps/web/src/pages/profiles/ProfileEditorDialog.tsx
+@@ -0,0 +1,193 @@
++// One editor dialog per profile action (W52-pc-2): the model, the description or the persona.
++
++import { useMutation, useQuery } from "@tanstack/react-query";
++import { type FormEvent, useEffect, useId, useState } from "react";
++import { api } from "../../lib/api.ts";
++import type { ProfileSummary } from "../../lib/restTypes.ts";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
++import { Button, inputClass, Notice, Select } from "../../ui/controls.tsx";
++import { cx } from "../../ui/cx.ts";
++import { Modal } from "../../ui/Dialog.tsx";
++import { useProfilesChanged } from "./useProfilesChanged.ts";
++
++export type EditorKind = "model" | "description" | "persona";
++
++const TITLES: Record<EditorKind, string> = {
++  model: "Change model",
++  description: "Edit description",
++  persona: "Edit persona",
++};
++
++const DESCRIPTIONS: Record<EditorKind, string> = {
++  model: "New sessions in this profile start on this model.",
++  description: "A line about what this profile is for, shown on its card.",
++  persona: "How the agent behaves in this profile; added to every session's instructions.",
++};
++
++export const labelClass = "type-label text-[0.6875rem] tracking-[0.1em] text-ink";
++
++/** A provider select and a model name input on one row (no per-provider model list exists). */
++export function ModelFields({
++  provider,
++  model,
++  onProvider,
++  onModel,
++}: {
++  provider: string;
++  model: string;
++  onProvider: (next: string) => void;
++  onModel: (next: string) => void;
++}) {
++  const ids = useId();
++  const options = useQuery({
++    queryKey: ["profiles", "model-options"],
++    queryFn: () => api.model.options(),
++  });
++  const providers = options.data?.providers ?? [];
++  const known = providers.some((p) => p.name === provider);
++  return (
++    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
++      <div className="flex flex-col gap-1.5">
++        <label htmlFor={`${ids}-provider`} className={labelClass}>
++          Provider
++        </label>
++        <Select
++          id={`${ids}-provider`}
++          value={provider}
++          onChange={(e) => onProvider(e.currentTarget.value)}
++          className="w-full"
++        >
++          <option value="">Pick a provider</option>
++          {provider && !known ? <option value={provider}>{provider}</option> : null}
++          {providers.map((p) => (
++            <option key={p.name} value={p.name}>
++              {p.label}
++              {p.configured ? "" : " (no key yet)"}
++            </option>
++          ))}
++        </Select>
++      </div>
++      <div className="flex flex-col gap-1.5">
++        <label htmlFor={`${ids}-model`} className={labelClass}>
++          Model
++        </label>
++        <input
++          id={`${ids}-model`}
++          className={cx(inputClass, "w-full")}
++          placeholder="model name"
++          value={model}
++          onChange={(e) => onModel(e.currentTarget.value)}
++        />
++      </div>
++    </div>
++  );
++}
++
++export function ProfileEditorDialog({
++  profile,
++  kind,
++  onClose,
++}: {
++  profile: ProfileSummary;
++  kind: EditorKind;
++  onClose: () => void;
++}) {
++  const toast = useToast();
++  const changed = useProfilesChanged();
++  const ids = useId();
++  const [provider, setProvider] = useState(profile.provider ?? "");
++  const [model, setModel] = useState(profile.model ?? "");
++  const [description, setDescription] = useState(profile.description ?? "");
++  const [persona, setPersona] = useState("");
++  const [problem, setProblem] = useState("");
++  const loaded = useQuery({
++    queryKey: ["profiles", "persona", profile.name],
++    queryFn: () => api.profile.persona(profile.name),
++    enabled: kind === "persona",
++    gcTime: 0,
++  });
++  useEffect(() => {
++    if (loaded.data) setPersona(loaded.data.content);
++  }, [loaded.data]);
++
++  const save = useMutation({
++    mutationFn: () => {
++      if (kind === "model")
++        return api.profile.setModel(profile.name, provider.trim(), model.trim());
++      if (kind === "description") return api.profile.setDescription(profile.name, description);
++      return api.profile.setPersona(profile.name, persona);
++    },
++    onSuccess: () => {
++      const what = kind === "model" ? "Model" : kind === "description" ? "Description" : "Persona";
++      toast.show(`${what} of ${profile.name} saved.`, "success");
++      changed();
++      onClose();
++    },
++    onError: (error) => setProblem(errorText(error)),
++  });
++
++  const blocked =
++    save.isPending ||
++    (kind === "model" && (!provider.trim() || !model.trim())) ||
++    (kind === "persona" && loaded.isPending);
++
++  const submit = (event: FormEvent) => {
++    event.preventDefault();
++    if (!blocked) save.mutate();
++  };
++
++  return (
++    <Modal
++      open
++      onOpenChange={(open) => {
++        if (!open) onClose();
++      }}
++      title={`${TITLES[kind]} · ${profile.name}`}
++      description={DESCRIPTIONS[kind]}
++    >
++      <form className="flex flex-col gap-4 py-1" onSubmit={submit} noValidate>
++        {kind === "model" ? (
++          <ModelFields
++            provider={provider}
++            model={model}
++            onProvider={setProvider}
++            onModel={setModel}
++          />
++        ) : null}
++        {kind === "description" ? (
++          <div className="flex flex-col gap-1.5">
++            <label htmlFor={`${ids}-description`} className={labelClass}>
++              Description
++            </label>
++            <textarea
++              id={`${ids}-description`}
++              className={cx(inputClass, "min-h-24 w-full py-2")}
++              value={description}
++              onChange={(e) => setDescription(e.currentTarget.value)}
++            />
++          </div>
++        ) : null}
++        {kind === "persona" ? (
++          <div className="flex flex-col gap-1.5">
++            <label htmlFor={`${ids}-persona`} className={labelClass}>
++              Persona (PERSONA.md)
++            </label>
++            <textarea
++              id={`${ids}-persona`}
++              className={cx(inputClass, "min-h-[280px] w-full py-2 font-mono text-[0.8125rem]")}
++              value={persona}
++              disabled={loaded.isPending}
++              onChange={(e) => setPersona(e.currentTarget.value)}
++            />
++          </div>
++        ) : null}
++        {problem ? <Notice tone="danger">{problem}</Notice> : null}
++        <div className="flex justify-end">
++          <Button type="submit" tone="primary" size="sm" disabled={blocked}>
++            Save
++          </Button>
++        </div>
++      </form>
++    </Modal>
++  );
++}
+diff --git a/apps/web/src/pages/profiles/useProfilesChanged.ts b/apps/web/src/pages/profiles/useProfilesChanged.ts
+new file mode 100644
+index 0000000..8755853
+--- /dev/null
++++ b/apps/web/src/pages/profiles/useProfilesChanged.ts
+@@ -0,0 +1,15 @@
++// After a profile write: refetch every profile query and the shell's profile list.
++
++import { useQueryClient } from "@tanstack/react-query";
++import { useProfileScope } from "../../shell/ProfileScope.tsx";
++
++export const PROFILES_KEY = ["profiles", "list"] as const;
++
++export function useProfilesChanged(): () => void {
++  const client = useQueryClient();
++  const scope = useProfileScope();
++  return () => {
++    void client.invalidateQueries({ queryKey: ["profiles"] });
++    scope.refresh();
++  };
++}
+diff --git a/apps/web/src/shell/routes.ts b/apps/web/src/shell/routes.ts
+index 1e06a0f..7d7365c 100644
+--- a/apps/web/src/shell/routes.ts
++++ b/apps/web/src/shell/routes.ts
+@@ -108,7 +108,7 @@ export const ROUTES: readonly PageRoute[] = [
+   { path: "/webhooks", title: "Webhooks", nav: "main", page: WebhooksPage },
+   { path: "/pairing", title: "Pairing", nav: "main", page: PairingPage },
+   { path: "/profiles", title: "Profiles", nav: "main", page: ProfilesPage },
+-  { path: "/profiles/new", title: "New profile", nav: "hidden", page: ProfileBuilderPage },
++  { path: "/profiles/new", title: "Profiles/new", nav: "hidden", page: ProfileBuilderPage },
+   { path: "/config", title: "Config", nav: "main", page: ConfigPage },
+   { path: "/env", title: "Keys", nav: "main", page: EnvPage },
+   { path: "/system", title: "System", nav: "main", page: SystemPage },
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 9e5a7e7..9222fc5 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -57,6 +57,8 @@ export interface MockState {
+   pruneCount: number;
+   config: ConfigObject;
+   schema: ConfigSchema;
++  /** What `/api/config/defaults` answers (W52-e). */
++  configDefaults: ConfigObject;
+   effective: EffectiveEntry[];
+   env: EnvKeys;
+   /** What the secret store holds; never sent back by any route. */
+@@ -240,6 +242,7 @@ export function defaultMockState(): MockState {
+       },
+       category_order: ["model", "display"],
+     },
++    configDefaults: { model: { provider: "" }, display: { interface: "cli", bell: false } },
+     effective: [],
+     env: {},
+     envValues: {},
+@@ -554,6 +557,7 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
+       },
+     ],
+     ["GET", /^\/api\/config\/schema$/, () => ok(state.schema)],
++    ["GET", /^\/api\/config\/defaults$/, () => ok(state.configDefaults)],
+     ["GET", /^\/api\/config\/effective$/, () => ok({ entries: state.effective })],
+ 
+     ["GET", /^\/api\/env$/, () => ok(state.env)],
+diff --git a/apps/web/src/ui/Menu.tsx b/apps/web/src/ui/Menu.tsx
+new file mode 100644
+index 0000000..dc00096
+--- /dev/null
++++ b/apps/web/src/ui/Menu.tsx
+@@ -0,0 +1,100 @@
++// A dropdown action menu (W52-e-1, added to the foundation): a square ghost trigger, then a
++// square panel under it, right-aligned to the trigger, with the canvas fill, a 1 px strong rule and
++// a soft shadow. Items are uppercase rows with a leading icon. Escape, a press outside, or running
++// an item closes it; opening another menu closes this one (the press lands outside).
++
++import { EllipsisVertical } from "lucide-react";
++import {
++  type ButtonHTMLAttributes,
++  createContext,
++  type ReactNode,
++  useCallback,
++  useContext,
++  useRef,
++  useState,
++} from "react";
++import { cx } from "./cx.ts";
++import { useDismiss } from "./useDismiss.ts";
++
++const CloseContext = createContext<() => void>(() => {});
++
++export function Menu({
++  label = "Actions",
++  icon = <EllipsisVertical />,
++  children,
++  className = "",
++}: {
++  /** The trigger's accessible name and tooltip. */
++  label?: string;
++  icon?: ReactNode;
++  children: ReactNode;
++  className?: string;
++}) {
++  const [open, setOpen] = useState(false);
++  const root = useRef<HTMLDivElement>(null);
++  const close = useCallback(() => setOpen(false), []);
++  useDismiss(open, root, close);
++  return (
++    <div ref={root} className={cx("relative shrink-0", className)}>
++      <button
++        type="button"
++        aria-label={label}
++        title={label}
++        aria-haspopup="menu"
++        aria-expanded={open}
++        onClick={() => setOpen((v) => !v)}
++        className="inline-flex size-7 items-center justify-center text-ink transition-colors hover:bg-hover [&_svg]:size-4"
++      >
++        {icon}
++      </button>
++      {open ? (
++        <div
++          role="menu"
++          aria-label={label}
++          className="absolute top-full right-0 z-30 mt-1 flex min-w-[12.5rem] flex-col border border-line-strong bg-canvas py-1 shadow-xl [animation:indus-fade-in_120ms_ease-out]"
++        >
++          <CloseContext.Provider value={close}>{children}</CloseContext.Provider>
++        </div>
++      ) : null}
++    </div>
++  );
++}
++
++export function MenuItem({
++  icon,
++  danger = false,
++  onSelect,
++  children,
++  className = "",
++  ...rest
++}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick" | "onSelect"> & {
++  icon?: ReactNode;
++  danger?: boolean;
++  /** Runs the item; the menu closes first. */
++  onSelect: () => void;
++}) {
++  const close = useContext(CloseContext);
++  return (
++    <button
++      type="button"
++      role="menuitem"
++      onClick={() => {
++        close();
++        onSelect();
++      }}
++      className={cx(
++        "flex min-h-[1.875rem] w-full items-center gap-2.5 px-3 py-1 text-left text-[0.75rem] tracking-[0.08em] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:size-4 [&_svg]:shrink-0",
++        danger ? "text-danger hover:bg-danger-wash" : "text-ink hover:bg-hover",
++        className,
++      )}
++      {...rest}
++    >
++      {icon}
++      <span className="min-w-0 flex-1">{children}</span>
++    </button>
++  );
++}
++
++export function MenuDivider() {
++  return <hr className="my-1 border-0 border-t border-line" />;
++}
+diff --git a/apps/web/src/ui/controls.tsx b/apps/web/src/ui/controls.tsx
+index d33f6b5..6997c6a 100644
+--- a/apps/web/src/ui/controls.tsx
++++ b/apps/web/src/ui/controls.tsx
+@@ -91,10 +91,12 @@ export function IconButton({
+ 
+ /* ---------------------------------------------------------------- badges and chips */
+ 
+-export type BadgeTone = "neutral" | "ok" | "warn" | "danger" | "accent";
++export type BadgeTone = "neutral" | "secondary" | "ok" | "warn" | "danger" | "accent";
+ 
+ const badgeClass: Record<BadgeTone, string> = {
+   neutral: "border-line-strong text-ink-soft",
++  /** Quiet filled tag ("default", "N fields"); added by W52-e. */
++  secondary: "border-line-strong bg-hover text-ink-muted",
+   ok: "border-success/50 bg-success-wash text-success",
+   warn: "border-warning/50 bg-warning-wash text-warning",
+   danger: "border-danger/50 bg-danger-wash text-danger",
+diff --git a/docs/notes/ui-parity/web-profiles-config.md b/docs/notes/ui-parity/web-profiles-config.md
+new file mode 100644
+index 0000000..61623b0
+--- /dev/null
++++ b/docs/notes/ui-parity/web-profiles-config.md
+@@ -0,0 +1,112 @@
++# Task: Web Profiles, Profile builder, Config (W52-e) Phase: ui-parity Owner: builder w52e
++
++## Status
++
++Done (2026-10-24): all five slugs (profiles, profile-actions, profile-builder, config, config-yaml); none remain. Profiles, the builder and Config are rebuilt on the wave-51 tokens and
++components; re-captured in Clear Blue and Deep Teal and set beside the reference shots
++(`$SP/w52e/compare.pdf`, not in the repo). Shared files edited (additive): `apps/web/src/ui/Menu.tsx`
++(new foundation component), `apps/web/src/ui/controls.tsx` (Badge `secondary` tone),
++`apps/web/src/testing/mockApi.ts` (`configDefaults` state and its route), `apps/web/src/lib/api.ts`
++(`statusOf`, `config.defaults`, `hubInstall(…, profile)`), `apps/web/src/shell/routes.ts` (builder
++title), `apps/web/e2e/dashboard.spec.ts` (Config save opens the Agent section first).
++
++Read: the wave-52 spec `w52-specs/web-profiles-config.md` (lead's Read/Note output; it names the
++reference files `web/src/pages/ProfilesPage.tsx`, `ProfileBuilderPage.tsx`, `ConfigPage.tsx`,
++`components/AutoField.tsx` at `ab3fe9dffb0a89d534cb795e2a2940e5f6542056` — this builder did not open
++them), the foundation note `docs/notes/ui-parity/web-foundation.md`, and the owner's screenshot set of
++the running reference web dashboard, slugs `profiles`, `profile-actions`, `profile-builder`,
++`config`, `config-yaml` (light and dark). None of them are in the repo.
++
++What it does (own words): three pages get the reference look on the wave-51 tokens and components.
++Profiles is a grid of square cards with state badges, a daemon line, a description and a meta block,
++each with a three-dot actions menu; one editor dialog per action (model, description, persona);
++CREATE and IMPORT open modals and BUILD goes to the builder. The builder is a centred five-step
++flow with rounded step pills. Config is a filter column of sections beside one section card of
++fields, with a header search, a toolbar (export/import/reset icons, YAML, Effective, Save) and a
++read-only YAML view built from the file-sourced effective settings.
++
++Inputs → outputs: `/api/profiles`, `/api/status?profile=`, `/api/skills?profile=`,
++`/api/model/options`, `/api/skills/hub/search` → cards, menus and the builder; `/api/config`,
++`/api/config/schema`, `/api/config/defaults`, `/api/config/effective` → form, reset, YAML and
++Effective views. Writes are unchanged except the hub install after a builder create (now aimed at
++the new profile with `?profile=`).
++
++Edge cases / failure modes:
++- per-card status or skills query fails → that line is hidden (no invented data);
++- default profile → no Rename/Delete items; the profile this dashboard serves → both disabled with
++  the locked reason as the title;
++- a builder pill after the first is disabled while the name is invalid; a provider without a model
++  blocks Next;
++- Config: Save stays disabled while nothing changed (saving the full tree untouched could write
++  defaults into the file); YAML view never writes; a file with no keys shows a comment line;
++- search with no hit → "No fields match '<q>'".
++
++## Decisions for the lead
++
++(from the spec, kept) W52-pc-1 … W52-pc-10 as listed in the spec §11; builder decisions:
++- W52-e-1: the dropdown menu the foundation lacked is added to the foundation as `src/ui/Menu.tsx`
++  (`Menu`, `MenuItem`, `MenuDivider`), on `useDismiss`; Badge gets a `secondary` tone.
++- W52-e-2: the builder's skills step keeps `skillsOff` only when "Keep every bundled skill" is
++  unticked and no-skills is off; ticking it back clears nothing (the list is just hidden and ignored).
++- W52-e-3: chosen hub skills install after create, one follow-up row each in the outcome list.
++- W52-e-4: the section→icon table is our own grouping (icon → sections) covering our category ids;
++  the builder's step list is an id order plus a title map (the clean-room similarity guard flagged
++  the first shapes as too close to the reference's literals).
++- W52-e-5: the builder's MCP draft starts on HTTP/SSE (the first segment); `auth` is sent only when
++  it is not "none" (the backend default).
++- W52-e-6: a list field holding objects keeps one JSON value per line; a bad line is reported under
++  the field and not applied. Comma lists keep the typed text while editing.
++
++## Compare checklist (spec §10; ticked after re-capture in both themes, side by side)
++
++profiles
++- [x] header: IMPORT, BUILD (outlined) and CREATE (primary), 28px tall, 22px from the right
++- [x] the active banner is 40px tall with a green check and the "Active profile: <name>"
++- [x] the "Profiles (N)" heading has the users icon, wide tracking and secondary colour
++- [x] 3-column grid with 12px gaps; square cards, 1px border, 16px padding
++- [x] badges are square, 25px tall, condensed text; active is green and default is secondary
++- [x] the daemon dot line, italic faint "No description", and the 12px meta block pinned to the bottom
++- [x] the three-dot trigger is flush top-right
++- [x] loading spinner, empty card, error state
++
++profile-actions
++- [x] 200px menu with card fill, border and shadow, aligned to the trigger's right edge, 4px below it
++- [x] 30px uppercase 12px items with 16px icons, in the order set-active (when not sticky), model, description, persona, skills, copy CLI, export, divider, rename, delete (danger)
++- [x] closes on an outside click, on Escape and after an item runs; one menu open at a time
++- [x] the editor dialog has a header rule, a "· name" suffix, a right-aligned SAVE, and the persona textarea in mono at 280px
++
++profile-builder
++- [x] the page header reads "Profiles/new"
++- [x] centred 690px column, ~40px bold "New profile", tracked `Cancel` ghost on the right
++- [x] 5 rounded pills (current: fg fill; visited: muted; future: faint), disabled while the name is invalid
++- [x] the card has 20px padding, label-serif uppercase labels and 33px mono inputs with placeholders "coder" and the description text
++- [x] Back and Next are 37px tall, bold and tracked; disabled shows the muted fill
++- [x] steps 2–5 match §4 (filter list, skills checkbox and hub, MCP segmented controls, review rows)
++
++config
++- [x] header search, 300×30, with the icon and "Search..."
++- [x] the toolbar has the sliders icon, the mono strip, the download, upload and reset icons, a divider, YAML (outlined) and SAVE
++- [x] the 210px filter column has the FILTERS and SECTIONS captions, 23px items with icon, name and count, and the active fill
++- [x] the section card has a 48px header with the icon, an uppercase expanded title and the "N fields" badge
++- [x] each field has a serif uppercase label, a mono key path and a secondary description, with 34px inputs
++- [x] the square 34×19 switch is right-aligned; sub-section dividers have a line
++- [x] search results group fields by category; the no-match line
++- [x] reset confirm → defaults; SAVE gated by dirty state (muted when clean)
++- [x] Effective: the source pill does not wrap
++
++config-yaml
++- [x] the button reads `Form` and is filled; the reset icon is hidden
++- [x] the card is titled "RAW YAML CONFIGURATION", with a 600px mono 13px/21px textarea and 2-space indents
++- [x] it is read-only, shows only the file-sourced keys, and SAVE is disabled with an explaining title
++
++Follow-ups (backend): `path` in `/api/profiles` rows; per-profile daemon state and skill count in
++`/api/profiles`; a per-provider model list in `/api/model/options`; `GET/PUT /api/config/raw` with
++the config path; an optional describe endpoint.
++
++Deliberate differences (classified): header and toolbar buttons use the foundation's typewriter
++button face in mixed case (the reference's are uppercase; a foundation-wide choice, W51-a); the cards
++have no path line (no API field) and say "Daemon" where the reference says "Gateway"; the sidebar
++shows our profile switcher; the menu has our EXPORT item and the header our IMPORT button; the
++Config strip reads `config.yaml · <profile>` (no path API); the YAML view is read-only; Config has
++our EFFECTIVE toggle; the builder keeps "Start from" on step 1 and our outcome screen after Create;
++the create modal has no "Auto-generate" description (no endpoint).

@@ -30,3 +30,10 @@
   Dialog.tsx `narrow` size + Modal description (w52a also adds Modal props — merge).
 - Decisions W52-c-1..13. Gate: biome, tsc, page vitest 40/40, tooling.checks ok. Full-suite App/Webhooks timeouts same as
   base. e2e auth.spec.ts:76 (stale token reload) failed in this run — integrator: check on base before blaming.
+## w52e (web Profiles, Profile builder, Config + YAML) — base 0a7f30a, clean scan, all 5 slugs done
+- New pages/profiles/*, pages/config/*, lib/yaml.ts (+test), ui/Menu.tsx (foundation dropdown); api.ts statusOf,
+  config.defaults, hubInstall profile; mockApi config defaults; routes.ts builder title; dashboard e2e Config clicks Agent.
+- Shared: Badge `secondary` (also w52c/d — dedupe). Decisions W52-pc-1..10, W52-e-1..6 (similarity guard reshapes).
+- Note for integrator/foundation: reference buttons are UPPERCASE; foundation Button is mixed case — switch the
+  foundation's button text style to uppercase (parity) and check tests that match by name (case-insensitive queries).
+- Gate: tsc, biome, tooling.checks ok, e2e dashboard 3/3, web vitest 306/306 at maxWorkers=2.
