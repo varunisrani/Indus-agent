@@ -76,6 +76,11 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
+UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop"; brief
+`.agents/wip/w51/brief.md`). Wave 51 foundations: w51a web, w51b desktop (scratchpad wt-w51a/b). Wave 52 page builders
+start after 51 lands, from the specs in scratchpad/w52-specs/ (13 spec writers running). Agent ids: scratchpad/agents.txt.
+Reference + Indus screenshots and side-by-side PDFs: scratchpad/compare/. Owner decision overrides the D-16 palette row
+(record a D-id at integration); clean room still applies to code and assets.
 ALL 648 PLANNED TASKS BUILT. Main `c1c20da` = wave 50 landed (2026-10-23 ~13:00 UTC; LEAD-NOTES "Wave 50 landing notes
 (integrator)"; D-16.1150..1179): attached config.set (D-16.549 closed), daemon shell.exec + quick exec (D-16.1094),
 Windows foreground-only plan() + starter races, Termux apt update kind + repo validate, desktop canary identity + Windows
