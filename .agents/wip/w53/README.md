@@ -25,3 +25,18 @@
   chat 9 + surfaces 6 passed; tooling.checks ok. Decisions W52-j-1..9 in docs/notes/ui-parity/desktop-settings-b.md.
 - Still differs: Plugins keeps shared contrib markup; no endpoint delete (PUT /api/config is additive); no "Current"
   pill; no gradient edge on provider cards. Compared against spec numbers (no reference screenshots in this container).
+
+## w53i.patch — builder i, desktop settings A (spec desktop-settings-a.md), base e402468 (main + w51b), 22 files
+- All 21 slugs: Model (main, fallbacks, auxiliary, MoA), Chat, Appearance (general, theme, typography, window,
+  chat display, pet), Workspace (projects, shell, files; `page=desktop` alias → projects), Safety, Browser, Passwords.
+  New settings/{modelPages,appearancePages,pagesA,controlsA}.tsx, fieldCopyA.ts, stringsA.en.ts, settingsA.css + test.
+  Shared: pages.ts (`PageDef.order`, views browser/passwords, manifest moves), strings, i18n spread, navMeta
+  `pageIcon()`, SettingsOverlay (child icons, rail footer, search pill no autofocus), context (schema, focusField,
+  saveField, savePatch), schemaPage (FIELD_COPY_A, comma lists, order), search, customPages (PAGES_A spread),
+  ipc schemas chatTextScale max 175.
+- Rows without a feature behind them render disabled with "Not available in this build yet." (lead decision).
+- Gate (builder): biome 0 errors; tsc clean; settings tests 11 files / 100; full desktop vitest 173 / 1711 (before a
+  final label-only edit); Electron E2E chat + surfaces 15 passed; tooling.checks ok. Decisions W52-dsa-1..16, W52-i-1..3.
+- Merge with j: one field-copy map (fieldCopyA.ts + j's fieldCopy.ts), customPages.tsx, context.tsx (j adds `go`),
+  overlay child icons; `default-directory` stays on Workspace › Projects (e2e + lead decision), j's Sessions page edits
+  the same value under `sessions-directory` — both kept.
