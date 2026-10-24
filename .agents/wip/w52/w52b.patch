@@ -1,0 +1,2370 @@
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index df8a6f3..21d30a8 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -2,14 +2,12 @@
+ // and toasts. Providers that need the browser (router, outer query cache) are set up in main.tsx
+ // so tests can supply memory equivalents.
+ 
+-import { useQuery } from "@tanstack/react-query";
+ import { Menu } from "lucide-react";
+ import { type ComponentType, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
+ import { Navigate, Route, Routes, useLocation } from "react-router";
+ import { ConsoleEntry } from "./console/ConsoleModal.tsx";
+-import { api } from "./lib/api.ts";
+ import { consoleEnabled, embeddedChatEnabled } from "./lib/bootstrap.ts";
+-import type { ConfigObject } from "./lib/restTypes.ts";
++import { useTokenAnalyticsFlag } from "./lib/useTokenAnalyticsFlag.ts";
+ import { mergePluginRoutes, pluginRegistry } from "./plugins/registry.ts";
+ import { PluginSlot, pluginPageFor, SLOT_PAGES } from "./plugins/slots.tsx";
+ import { usePluginState } from "./plugins/usePluginState.ts";
+@@ -36,12 +34,6 @@ export interface AppProps {
+   sidebarFooter?: ReactNode;
+ }
+ 
+-function analyticsFlag(config: ConfigObject | undefined): boolean {
+-  const dashboard = config?.dashboard;
+-  if (typeof dashboard !== "object" || dashboard === null || Array.isArray(dashboard)) return false;
+-  return (dashboard as ConfigObject).show_token_analytics === true;
+-}
+-
+ function RouteFallback() {
+   return (
+     <div className="p-6">
+@@ -71,12 +63,7 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
+   }, [mobileOpen]);
+   const chatEnabled = embeddedChatEnabled();
+ 
+-  const config = useQuery({
+-    queryKey: ["shell", "config", scope.active],
+-    queryFn: () => api.config.get(),
+-    staleTime: 60_000,
+-  });
+-  const showAnalytics = analyticsFlag(config.data);
++  const showAnalytics = useTokenAnalyticsFlag().enabled;
+ 
+   const plugins = usePluginState();
+   const routes = useMemo(() => {
+diff --git a/apps/web/src/lib/format.test.ts b/apps/web/src/lib/format.test.ts
+new file mode 100644
+index 0000000..467f264
+--- /dev/null
++++ b/apps/web/src/lib/format.test.ts
+@@ -0,0 +1,25 @@
++import { describe, expect, it } from "vitest";
++import { formatShortDay, formatTokens } from "./format.ts";
++
++describe("formatTokens", () => {
++  it("keeps small figures and shortens large ones", () => {
++    expect(formatTokens(0)).toBe("0");
++    expect(formatTokens(316)).toBe("316");
++    expect(formatTokens(999)).toBe("999");
++    expect(formatTokens(1_000)).toBe("1.0K");
++    expect(formatTokens(3_712)).toBe("3.7K");
++    expect(formatTokens(1_250_000)).toBe("1.3M");
++  });
++});
++
++describe("formatShortDay", () => {
++  it("names the month and day", () => {
++    expect(formatShortDay("2026-10-24")).toBe("Oct 24");
++    expect(formatShortDay("2026-01-05")).toBe("Jan 5");
++  });
++
++  it("leaves other text alone", () => {
++    expect(formatShortDay("yesterday")).toBe("yesterday");
++    expect(formatShortDay("2026-13-01")).toBe("2026-13-01");
++  });
++});
+diff --git a/apps/web/src/lib/format.ts b/apps/web/src/lib/format.ts
+index 618d4f0..f56b749 100644
+--- a/apps/web/src/lib/format.ts
++++ b/apps/web/src/lib/format.ts
+@@ -52,3 +52,34 @@ export function saveJson(data: unknown, filename: string): void {
+   link.click();
+   URL.revokeObjectURL(url);
+ }
++
++/** Compact token figure: raw below 1,000, then one decimal with K or M ("3.7K", "1.2M"). */
++export function formatTokens(value: number): string {
++  if (!Number.isFinite(value)) return "0";
++  const size = Math.abs(value);
++  if (size >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
++  if (size >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
++  return String(Math.round(value));
++}
++
++const SHORT_MONTHS = [
++  "Jan",
++  "Feb",
++  "Mar",
++  "Apr",
++  "May",
++  "Jun",
++  "Jul",
++  "Aug",
++  "Sep",
++  "Oct",
++  "Nov",
++  "Dec",
++] as const;
++
++/** "Oct 24" for "2026-10-24"; anything that is not such a date is returned unchanged. */
++export function formatShortDay(day: string): string {
++  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
++  const month = match ? SHORT_MONTHS[Number(match[2]) - 1] : undefined;
++  return match && month ? `${month} ${Number(match[3])}` : day;
++}
+diff --git a/apps/web/src/lib/useTokenAnalyticsFlag.ts b/apps/web/src/lib/useTokenAnalyticsFlag.ts
+new file mode 100644
+index 0000000..4dd4b15
+--- /dev/null
++++ b/apps/web/src/lib/useTokenAnalyticsFlag.ts
+@@ -0,0 +1,25 @@
++// The `dashboard.show_token_analytics` config flag (W52-b-3): token figures are a local estimate,
++// so the Analytics nav item and the token numbers on Analytics and Models show only when it is on.
++// Shares the shell's config query, so pages and the sidebar read one cached copy per profile.
++
++import { useQuery } from "@tanstack/react-query";
++import { useProfileScope } from "../shell/ProfileScope.tsx";
++import { api } from "./api.ts";
++import type { ConfigObject } from "./restTypes.ts";
++
++export function analyticsFlag(config: ConfigObject | undefined): boolean {
++  const dashboard = config?.dashboard;
++  if (typeof dashboard !== "object" || dashboard === null || Array.isArray(dashboard)) return false;
++  return (dashboard as ConfigObject).show_token_analytics === true;
++}
++
++/** `enabled` is the flag; `settled` turns true once the config has loaded (or failed). */
++export function useTokenAnalyticsFlag(): { enabled: boolean; settled: boolean } {
++  const scope = useProfileScope();
++  const config = useQuery({
++    queryKey: ["shell", "config", scope.active],
++    queryFn: () => api.config.get(),
++    staleTime: 60_000,
++  });
++  return { enabled: analyticsFlag(config.data), settled: !config.isPending };
++}
+diff --git a/apps/web/src/pages/AnalyticsPage.test.tsx b/apps/web/src/pages/AnalyticsPage.test.tsx
+index 43edfdd..ce1fad3 100644
+--- a/apps/web/src/pages/AnalyticsPage.test.tsx
++++ b/apps/web/src/pages/AnalyticsPage.test.tsx
+@@ -1,4 +1,4 @@
+-import { fireEvent, screen, waitFor } from "@testing-library/react";
++import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { createMockApi, type MockApi } from "../testing/mockApi.ts";
+ import { renderPage } from "../testing/render.tsx";
+@@ -9,6 +9,7 @@ let restore: () => void;
+ 
+ beforeEach(() => {
+   mock = createMockApi();
++  mock.state.config = { ...mock.state.config, dashboard: { show_token_analytics: true } };
+   mock.state.usage = Array.from({ length: 40 }, (_, i) => ({
+     day: `2026-09-${String((i % 28) + 1).padStart(2, "0")}-${i}`,
+     input_tokens: 100,
+@@ -24,18 +25,56 @@ afterEach(() => {
+   restore();
+ });
+ 
++const totals = () => within(screen.getByLabelText("Usage totals"));
++
++function figure(label: string): string {
++  const term = totals().getByText(label);
++  return term.closest("div")?.querySelector("dd")?.textContent ?? "";
++}
++
+ describe("analytics page", () => {
+-  it("defaults to 30 days and switches range", async () => {
++  it("defaults to 30 days and switches range from the header", async () => {
+     renderPage(<AnalyticsPage />, "/analytics");
+-    expect(await screen.findByRole("img", { name: "Tokens per day" })).toBeTruthy();
++    const chart = await screen.findByRole("img", { name: "Daily token usage" });
++    expect(chart.querySelectorAll("[data-day]")).toHaveLength(30);
+     expect(mock.callsTo("GET", "/api/analytics/usage")[0]?.query.get("days")).toBe("30");
+-    expect(screen.getByText("3,000")).toBeTruthy();
+-    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
+-    await waitFor(() => expect(screen.getByText("700")).toBeTruthy());
++    expect(figure("Input")).toBe("3.0K");
++    expect(figure("Total tokens")).toBe("3.3K");
++    expect(figure("Total sessions")).toBe("30 (~1.0/DAY AVG)");
++    expect(figure("Est. cost")).toBe("$15.00");
++
++    const header = within(screen.getByTestId("page-header-after-title"));
++    expect(header.getByRole("button", { name: "30d" }).getAttribute("aria-pressed")).toBe("true");
++    fireEvent.click(header.getByRole("button", { name: "7d" }));
++    await waitFor(() => expect(figure("Input")).toBe("700"));
+     expect(mock.callsTo("GET", "/api/analytics/usage").at(-1)?.query.get("days")).toBe("7");
+-    expect(screen.getByRole("img", { name: "Cost per day" }).querySelectorAll("rect")).toHaveLength(
+-      7,
+-    );
++    expect(
++      screen.getByRole("img", { name: "Daily token usage" }).querySelectorAll("[data-day]"),
++    ).toHaveLength(7);
++    expect(
++      screen.getByRole("table", { name: "Daily breakdown" }).querySelectorAll("tbody tr"),
++    ).toHaveLength(7);
++    expect(screen.queryByRole("img", { name: "Cost per day" })).toBeNull();
++  });
++
++  it("sorts the daily table by a header and flips the direction", async () => {
++    mock.state.usage = [
++      { day: "2026-10-20", input_tokens: 50, output_tokens: 5, cost: 0, sessions: 2 },
++      { day: "2026-10-21", input_tokens: 900, output_tokens: 9, cost: 0, sessions: 1 },
++      { day: "2026-10-22", input_tokens: 300, output_tokens: 3, cost: 0, sessions: 3 },
++    ];
++    renderPage(<AnalyticsPage />, "/analytics");
++    const table = await screen.findByRole("table", { name: "Daily breakdown" });
++    const dates = () =>
++      [...table.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("td")?.textContent);
++    expect(dates()).toEqual(["Oct 22", "Oct 21", "Oct 20"]);
++    const input = within(table).getByRole("button", { name: "Input" });
++    fireEvent.click(input);
++    expect(dates()).toEqual(["Oct 21", "Oct 22", "Oct 20"]);
++    expect(input.closest("th")?.getAttribute("aria-sort")).toBe("descending");
++    fireEvent.click(input);
++    expect(dates()).toEqual(["Oct 20", "Oct 22", "Oct 21"]);
++    expect(input.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+   });
+ 
+   it("says when there is no usage", async () => {
+@@ -43,4 +82,13 @@ describe("analytics page", () => {
+     renderPage(<AnalyticsPage />, "/analytics");
+     expect(await screen.findByText("No usage recorded in this range yet.")).toBeTruthy();
+   });
++
++  it("explains the flag and fetches nothing while it is off", async () => {
++    mock.state.config = { ...mock.state.config, dashboard: { show_token_analytics: false } };
++    renderPage(<AnalyticsPage />, "/analytics");
++    expect(await screen.findByRole("heading", { name: "Token analytics are off" })).toBeTruthy();
++    expect(screen.getByRole("link", { name: "Config" }).getAttribute("href")).toBe("/config");
++    expect(screen.queryByRole("button", { name: "30d" })).toBeNull();
++    expect(mock.callsTo("GET", "/api/analytics/usage")).toHaveLength(0);
++  });
+ });
+diff --git a/apps/web/src/pages/AnalyticsPage.tsx b/apps/web/src/pages/AnalyticsPage.tsx
+index ea410f6..d0c4d08 100644
+--- a/apps/web/src/pages/AnalyticsPage.tsx
++++ b/apps/web/src/pages/AnalyticsPage.tsx
+@@ -1,147 +1,244 @@
+-// Analytics (P18-21): tokens and cost per day over 7, 30 or 90 days. Bars are plain SVG coloured
+-// from the @indus/ui tokens, with a data table beside them for screen readers.
++// Analytics (P18-21, rebuilt W52-b): token use over 7, 30 or 90 days. Period buttons and a refresh
++// icon sit after the page title; the body is a dotted-leader figure list beside a stacked daily bar
++// chart, then a sortable daily table. Token figures are a local estimate, so the page explains
++// itself instead when `dashboard.show_token_analytics` is off (W52-b-3).
+ 
+ import { useQuery } from "@tanstack/react-query";
++import { BarChart3, TrendingUp } from "lucide-react";
+ import { useState } from "react";
++import { Link } from "react-router";
+ import { api } from "../lib/api.ts";
+-import { formatCost, formatCount } from "../lib/format.ts";
++import { formatCost, formatCount, formatShortDay, formatTokens } from "../lib/format.ts";
+ import type { UsageDay } from "../lib/restTypes.ts";
+-import { Card, QueryState, Segmented } from "../ui/controls.tsx";
++import { useTokenAnalyticsFlag } from "../lib/useTokenAnalyticsFlag.ts";
++import { HeaderAfterTitle } from "../shell/PageHeader.tsx";
++import {
++  Card,
++  CardHeader,
++  EmptyState,
++  ErrorState,
++  LeaderStatList,
++  PageSpinner,
++  PeriodButtons,
++  RefreshButton,
++} from "../ui/controls.tsx";
++import { type Column, DataTable } from "../ui/DataTable.tsx";
+ 
+ export const RANGES = [7, 30, 90] as const;
+ type Range = (typeof RANGES)[number];
+ 
+-interface Series {
+-  key: string;
+-  label: string;
+-  colour: string;
+-  value: (day: UsageDay) => number;
++export const RANGE_OPTIONS = RANGES.map((r) => ({ value: r, label: `${r}d` }));
++
++/** Nothing recorded: a faint chart icon, one line and a hint, centred in a card. */
++function NoUsage() {
++  return (
++    <Card padded={false}>
++      <EmptyState
++        icon={BarChart3}
++        action={
++          <p className="m-0 text-[0.75rem] text-ink-faint">
++            Figures appear here after a session has run.
++          </p>
++        }
++      >
++        No usage recorded in this range yet.
++      </EmptyState>
++    </Card>
++  );
+ }
+ 
+-function BarChart({ title, days, series }: { title: string; days: UsageDay[]; series: Series[] }) {
+-  const width = 640;
+-  const height = 160;
+-  const totals = days.map((d) => series.reduce((sum, s) => sum + s.value(d), 0));
+-  const max = Math.max(1, ...totals);
+-  const slot = width / Math.max(1, days.length);
+-  const bar = Math.max(1, slot * 0.7);
++/** The flag is off: say what the figures are and where to turn them on. */
++export function TokenAnalyticsOff() {
+   return (
+-    <figure className="flex flex-col gap-2">
+-      <figcaption className="text-sm font-semibold">{title}</figcaption>
+-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title} className="h-40 w-full">
+-        <line
+-          x1={0}
+-          x2={width}
+-          y1={height - 0.5}
+-          y2={height - 0.5}
+-          stroke="var(--indus-color-border)"
+-        />
+-        {days.map((day, i) => {
+-          let y = height;
++    <Card className="max-w-2xl py-12">
++      <h2 className="type-section-title m-0 mb-3 text-[0.9375rem]">Token analytics are off</h2>
++      <p className="m-0 text-[0.875rem] leading-relaxed text-ink-muted">
++        The token and cost figures here are counted locally from session records, so they are an
++        estimate rather than a bill. They stay hidden unless you ask for them: set{" "}
++        <code className="type-data text-ink">dashboard.show_token_analytics</code> to true on the{" "}
++        <Link to="/config" className="text-ink underline">
++          Config
++        </Link>{" "}
++        page.
++      </p>
++    </Card>
++  );
++}
++
++function Legend() {
++  return (
++    <div className="type-serif flex items-center gap-3 text-[0.6875rem] text-ink-soft">
++      <span className="inline-flex items-center gap-1.5">
++        <span aria-hidden="true" className="size-2.5 bg-series-input" />
++        Input
++      </span>
++      <span className="inline-flex items-center gap-1.5">
++        <span aria-hidden="true" className="size-2.5 bg-series-output" />
++        Output
++      </span>
++    </div>
++  );
++}
++
++/** One flex column per day: input stacked over output, heights against the busiest day. */
++function DailyChart({ days }: { days: readonly UsageDay[] }) {
++  const max = Math.max(1, ...days.map((d) => d.input_tokens + d.output_tokens));
++  const first = days[0];
++  const last = days.at(-1);
++  const middle = days.length > 2 ? days[Math.floor(days.length / 2)] : undefined;
++  return (
++    <div className="flex flex-col gap-2 p-4">
++      <div role="img" aria-label="Daily token usage" className="flex h-40 items-end gap-0.5">
++        {days.map((day) => {
++          const total = day.input_tokens + day.output_tokens;
++          const summary = `${formatShortDay(day.day)}: input ${formatTokens(day.input_tokens)}, output ${formatTokens(day.output_tokens)}, total ${formatTokens(total)}, cost ${formatCost(day.cost)}`;
+           return (
+-            <g key={day.day}>
+-              <title>{`${day.day}: ${series.map((s) => `${s.label} ${formatCount(s.value(day))}`).join(", ")}`}</title>
+-              {series.map((s) => {
+-                const h = (s.value(day) / max) * (height - 8);
+-                y -= h;
+-                return (
+-                  <rect
+-                    key={s.key}
+-                    x={i * slot + (slot - bar) / 2}
+-                    y={y}
+-                    width={bar}
+-                    height={h}
+-                    fill={s.colour}
+-                  />
+-                );
+-              })}
+-            </g>
++            <div
++              key={day.day}
++              data-day={day.day}
++              title={summary}
++              className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
++            >
++              <div
++                className="w-full bg-series-input/70"
++                style={{ height: `${(day.input_tokens / max) * 100}%` }}
++              />
++              <div
++                className="w-full bg-series-output/70"
++                style={{ height: `${(day.output_tokens / max) * 100}%` }}
++              />
++              <div
++                aria-hidden="true"
++                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 border border-line-strong bg-canvas px-2.5 py-1.5 text-[0.75rem] whitespace-nowrap text-ink shadow-lg group-hover:block"
++              >
++                <p className="m-0 font-medium">{formatShortDay(day.day)}</p>
++                <p className="m-0 text-ink-muted">Input {formatTokens(day.input_tokens)}</p>
++                <p className="m-0 text-ink-muted">Output {formatTokens(day.output_tokens)}</p>
++                <p className="m-0 text-ink-muted">Total {formatTokens(total)}</p>
++                <p className="m-0 text-ink-muted">Cost {formatCost(day.cost)}</p>
++              </div>
++            </div>
+           );
+         })}
+-      </svg>
+-      <div className="flex gap-3 text-xs text-muted">
+-        {series.map((s) => (
+-          <span key={s.key} className="inline-flex items-center gap-1">
+-            <span
+-              aria-hidden="true"
+-              className="inline-block h-2 w-2 rounded-sm"
+-              style={{ background: s.colour }}
+-            />
+-            {s.label}
+-          </span>
+-        ))}
+       </div>
+-    </figure>
++      <div className="type-serif flex justify-between text-[0.6875rem] text-ink-faint">
++        <span>{first ? formatShortDay(first.day) : ""}</span>
++        {middle ? <span>{formatShortDay(middle.day)}</span> : null}
++        {last && last !== first ? <span>{formatShortDay(last.day)}</span> : null}
++      </div>
++    </div>
+   );
+ }
+ 
+-const TOKEN_SERIES: Series[] = [
++const DAILY_COLUMNS: readonly Column<UsageDay>[] = [
++  { key: "day", label: "Date", sortValue: (d) => d.day, render: (d) => formatShortDay(d.day) },
+   {
+-    key: "in",
+-    label: "input tokens",
+-    colour: "var(--indus-color-accent)",
+-    value: (d) => d.input_tokens,
++    key: "sessions",
++    label: "Sessions",
++    sortValue: (d) => d.sessions,
++    render: (d) => formatCount(d.sessions),
++    className: "text-ink-muted",
+   },
+   {
+-    key: "out",
+-    label: "output tokens",
+-    colour: "var(--indus-color-success)",
+-    value: (d) => d.output_tokens,
++    key: "input",
++    label: "Input",
++    sortValue: (d) => d.input_tokens,
++    render: (d) => formatTokens(d.input_tokens),
++    className: "text-series-input",
++  },
++  {
++    key: "output",
++    label: "Output",
++    sortValue: (d) => d.output_tokens,
++    render: (d) => formatTokens(d.output_tokens),
++    className: "text-series-output",
+   },
+-];
+-const COST_SERIES: Series[] = [
+-  { key: "cost", label: "cost (USD)", colour: "var(--indus-color-warning)", value: (d) => d.cost },
+ ];
+ 
+-export function AnalyticsPage() {
+-  const [days, setDays] = useState<Range>(30);
++function Usage({ days }: { days: Range }) {
+   const usage = useQuery({
+     queryKey: ["analytics", days],
+     queryFn: () => api.analytics.usage(days),
+   });
+   const daily = usage.data?.daily ?? [];
+   const totals = usage.data?.totals;
++  const perDay = totals ? totals.sessions / days : 0;
+   return (
+-    <div className="flex flex-col gap-4 p-4">
+-      <Segmented
+-        label="Range"
+-        value={days}
+-        options={RANGES.map((r) => ({ value: r, label: `${r} days` }))}
+-        onChange={setDays}
+-      />
+-      <QueryState
+-        loading={usage.isPending}
+-        error={usage.error}
+-        empty={daily.length === 0}
+-        emptyText="No usage recorded in this range yet."
+-      >
+-        {totals ? (
+-          <dl className="flex flex-wrap gap-6 text-sm">
+-            <div>
+-              <dt className="text-xs text-muted">Input tokens</dt>
+-              <dd>{formatCount(totals.input_tokens)}</dd>
+-            </div>
+-            <div>
+-              <dt className="text-xs text-muted">Output tokens</dt>
+-              <dd>{formatCount(totals.output_tokens)}</dd>
+-            </div>
+-            <div>
+-              <dt className="text-xs text-muted">Cost</dt>
+-              <dd>{formatCost(totals.cost)}</dd>
+-            </div>
+-            <div>
+-              <dt className="text-xs text-muted">Sessions</dt>
+-              <dd>{formatCount(totals.sessions)}</dd>
++    <>
++      <HeaderAfterTitle>
++        <RefreshButton onClick={() => void usage.refetch()} busy={usage.isFetching} />
++      </HeaderAfterTitle>
++      {usage.isPending ? (
++        <PageSpinner />
++      ) : usage.error ? (
++        <ErrorState
++          message={usage.error instanceof Error ? usage.error.message : "Usage could not be read."}
++          onRetry={() => void usage.refetch()}
++        />
++      ) : daily.length === 0 || !totals ? (
++        <NoUsage />
++      ) : (
++        <>
++          <div className="grid grid-cols-1 gap-[1.4375rem] lg:grid-cols-2">
++            <Card className="px-4 py-6">
++              <LeaderStatList
++                label="Usage totals"
++                items={[
++                  {
++                    label: "Total tokens",
++                    value: formatTokens(totals.input_tokens + totals.output_tokens),
++                  },
++                  { label: "Input", value: formatTokens(totals.input_tokens) },
++                  { label: "Output", value: formatTokens(totals.output_tokens) },
++                  {
++                    label: "Total sessions",
++                    value:
++                      `${formatCount(totals.sessions)} (~${perDay.toFixed(1)}/day avg)`.toUpperCase(),
++                  },
++                  { label: "Est. cost", value: formatCost(totals.cost) },
++                ]}
++              />
++            </Card>
++            <Card padded={false}>
++              <CardHeader icon={BarChart3} title="Daily token usage" below={<Legend />} />
++              <DailyChart days={daily} />
++            </Card>
++          </div>
++          <Card padded={false}>
++            <CardHeader icon={TrendingUp} title="Daily breakdown" />
++            <div className="px-4 pb-4">
++              <DataTable
++                label="Daily breakdown"
++                columns={DAILY_COLUMNS}
++                rows={daily}
++                rowKey={(d) => d.day}
++                defaultSort={{ key: "day", direction: "desc" }}
++              />
+             </div>
+-          </dl>
+-        ) : null}
+-        <Card>
+-          <BarChart title="Tokens per day" days={daily} series={TOKEN_SERIES} />
+-        </Card>
+-        <Card>
+-          <BarChart title="Cost per day" days={daily} series={COST_SERIES} />
+-        </Card>
+-      </QueryState>
++          </Card>
++        </>
++      )}
++    </>
++  );
++}
++
++export function AnalyticsPage() {
++  const [days, setDays] = useState<Range>(30);
++  const flag = useTokenAnalyticsFlag();
++  return (
++    <div className="flex flex-col gap-[1.4375rem] px-4 py-[1.4375rem] lg:px-[1.4375rem]">
++      {flag.enabled ? (
++        <>
++          <HeaderAfterTitle>
++            <PeriodButtons value={days} options={RANGE_OPTIONS} onChange={setDays} />
++          </HeaderAfterTitle>
++          <Usage days={days} />
++        </>
++      ) : flag.settled ? (
++        <TokenAnalyticsOff />
++      ) : (
++        <PageSpinner />
++      )}
+     </div>
+   );
+ }
+diff --git a/apps/web/src/pages/LogsPage.test.tsx b/apps/web/src/pages/LogsPage.test.tsx
+index a1f5a5d..cf3a7b0 100644
+--- a/apps/web/src/pages/LogsPage.test.tsx
++++ b/apps/web/src/pages/LogsPage.test.tsx
+@@ -38,11 +38,41 @@ afterEach(() => {
+ const logCalls = () => mock.callsTo("GET", "/api/logs").length;
+ 
+ describe("logs", () => {
++  it("does not poll until auto-refresh is switched on", async () => {
++    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
++    renderPage(<LogsPage />, "/logs");
++    await screen.findByRole("list", { name: "Log lines" });
++    const toggle = screen.getByRole("switch", { name: "Auto-refresh" });
++    expect(toggle.getAttribute("aria-checked")).toBe("false");
++    expect(screen.queryByText("Live")).toBeNull();
++    act(() => {
++      vi.advanceTimersByTime(LOG_REFRESH_MS * 3);
++    });
++    await new Promise((resolve) => setTimeout(resolve, 20));
++    expect(logCalls()).toBe(1);
++
++    fireEvent.click(toggle);
++    expect(screen.getByText("Live")).toBeTruthy();
++    act(() => {
++      vi.advanceTimersByTime(LOG_REFRESH_MS);
++    });
++    await waitFor(() => expect(logCalls()).toBe(2));
++
++    // Off again: the rhythm stops.
++    fireEvent.click(toggle);
++    act(() => {
++      vi.advanceTimersByTime(LOG_REFRESH_MS * 3);
++    });
++    await new Promise((resolve) => setTimeout(resolve, 20));
++    expect(logCalls()).toBe(2);
++  });
++
+   it("refreshes every 5 s, and not while the tab is hidden", async () => {
+     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+     renderPage(<LogsPage />, "/logs");
+     await screen.findByRole("list", { name: "Log lines" });
+     expect(logCalls()).toBe(1);
++    fireEvent.click(screen.getByRole("switch", { name: "Auto-refresh" }));
+ 
+     act(() => {
+       vi.advanceTimersByTime(LOG_REFRESH_MS - 1);
+@@ -88,12 +118,49 @@ describe("logs", () => {
+       expect(query?.get("component")).toBe("cron");
+       expect(query?.get("lines")).toBe("500");
+     });
+-    // "everything" sends no filter at all.
++    expect(screen.getByTestId("log-filter-summary").textContent).toBe("gateway · ERROR · cron");
++    expect(screen.getByRole("heading", { name: "gateway.log" })).toBeTruthy();
++    // "ALL" / "all" send no filter at all.
+     const first = mock.callsTo("GET", "/api/logs")[0]?.query;
+     expect(first?.has("level")).toBe(false);
+     expect(first?.has("component")).toBe(false);
+   });
+ 
++  it("summarises the filters in the header and refreshes on the icon", async () => {
++    renderPage(<LogsPage />, "/logs");
++    await screen.findByRole("list", { name: "Log lines" });
++    expect(screen.getByTestId("log-filter-summary").textContent).toBe("agent · ALL · all");
++    const header = screen.getByTestId("page-header-after-title");
++    fireEvent.click(within(header).getByRole("button", { name: "Refresh" }));
++    await waitFor(() => expect(logCalls()).toBe(2));
++  });
++
++  it("opens scrolled to the newest line", async () => {
++    const height = vi
++      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
++      .mockImplementation(() => 1234);
++    renderPage(<LogsPage />, "/logs");
++    const list = await screen.findByRole("list", { name: "Log lines" });
++    await waitFor(() => expect(list.scrollTop).toBe(1234));
++    height.mockRestore();
++  });
++
++  it("shows a failed read as a strip in the log card", async () => {
++    mock.failNext("GET", "/api/logs", {
++      status: 500,
++      body: { detail: { code: "internal", message: "The log file could not be read." } },
++    });
++    renderPage(<LogsPage />, "/logs");
++    expect((await screen.findByRole("alert")).textContent).toContain("could not be read");
++    expect(screen.getByRole("heading", { name: "agent.log" })).toBeTruthy();
++  });
++
++  it("says when no line matches", async () => {
++    mock.state.logs.agent = [];
++    renderPage(<LogsPage />, "/logs");
++    expect(await screen.findByText("No log lines match.")).toBeTruthy();
++  });
++
+   it("opens the file named in the URL", async () => {
+     renderPage(<LogsPage />, "/logs?file=errors");
+     await waitFor(() =>
+diff --git a/apps/web/src/pages/LogsPage.tsx b/apps/web/src/pages/LogsPage.tsx
+index 5d1ac18..02fcd8a 100644
+--- a/apps/web/src/pages/LogsPage.tsx
++++ b/apps/web/src/pages/LogsPage.tsx
+@@ -1,8 +1,11 @@
+-// Logs (P18-21): tail one log file with level, component and length filters; refreshes every 5 s
+-// while the tab is visible.
++// Logs (P18-21, rebuilt W52-b): tail one log file with level, component and length filters. The
++// header carries a filter summary, a refresh icon and the auto-refresh switch (off by default,
++// W52-b-4; while on it refreshes every 5 s with the tab visible). The tail opens scrolled to the
++// newest line.
+ 
+ import { useQuery } from "@tanstack/react-query";
+-import { useState } from "react";
++import { FileText } from "lucide-react";
++import { useEffect, useId, useRef, useState } from "react";
+ import { useSearchParams } from "react-router";
+ import { api } from "../lib/api.ts";
+ import {
+@@ -16,8 +19,9 @@ import {
+   type LogTail,
+ } from "../lib/restTypes.ts";
+ import { useVisiblePolling } from "../lib/visibility.ts";
+-import { HeaderActions } from "../shell/PageHeader.tsx";
+-import { Button, Card, QueryState, Segmented } from "../ui/controls.tsx";
++import { HeaderActions, HeaderAfterTitle } from "../shell/PageHeader.tsx";
++import { Badge, Card, CardHeader, Loading, RefreshButton, Segmented } from "../ui/controls.tsx";
++import { Switch } from "../ui/Switch.tsx";
+ 
+ export const LOG_REFRESH_MS = 5_000;
+ 
+@@ -44,11 +48,11 @@ export function lineLevel(line: string): LineLevel {
+ }
+ 
+ const LEVEL_CLASS: Record<LineLevel, string> = {
+-  debug: "text-muted",
+-  info: "text-fg",
+-  warning: "text-warn",
++  debug: "text-ink-soft",
++  info: "text-ink",
++  warning: "text-warning",
+   error: "text-danger",
+-  plain: "text-fg",
++  plain: "text-ink",
+ };
+ 
+ function asFile(value: string | null): LogFile {
+@@ -57,58 +61,109 @@ function asFile(value: string | null): LogFile {
+ 
+ export function LogsPage() {
+   const [params] = useSearchParams();
++  const switchId = useId();
+   const [file, setFile] = useState<LogFile>(() => asFile(params.get("file")));
+   const [level, setLevel] = useState<LogLevel>("ALL");
+   const [component, setComponent] = useState<LogComponent>("all");
+   const [lines, setLines] = useState<LogTail>(100);
++  const [live, setLive] = useState(false);
++  const scroller = useRef<HTMLOListElement>(null);
+ 
+   const logs = useQuery({
+     queryKey: ["logs", file, level, component, lines],
+     queryFn: () => api.logs({ file, level, component, lines }),
+   });
+-  useVisiblePolling(() => void logs.refetch(), LOG_REFRESH_MS);
++  useVisiblePolling(() => void logs.refetch(), LOG_REFRESH_MS, live);
+ 
+   const rows = logs.data?.lines ?? [];
++  // Open on the newest line, and follow it after every fetch.
++  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when a new tail arrives
++  useEffect(() => {
++    const list = scroller.current;
++    if (list) list.scrollTop = list.scrollHeight;
++  }, [logs.data]);
++
+   return (
+-    <div className="flex flex-col gap-4 p-4">
++    <div className="flex flex-col gap-4 px-4 py-[1.4375rem] lg:px-[1.4375rem]">
++      <HeaderAfterTitle>
++        <Badge className="bg-selected tracking-[0.12em] uppercase">
++          <span data-testid="log-filter-summary">{`${file} · ${level} · ${component}`}</span>
++        </Badge>
++        <RefreshButton onClick={() => void logs.refetch()} busy={logs.isFetching} />
++      </HeaderAfterTitle>
+       <HeaderActions>
+-        <Button onClick={() => void logs.refetch()}>Refresh</Button>
++        <label
++          htmlFor={switchId}
++          className="type-serif cursor-pointer text-[0.6875rem] tracking-[0.12em] text-ink uppercase"
++        >
++          Auto-refresh
++        </label>
++        <Switch id={switchId} label="Auto-refresh" checked={live} onCheckedChange={setLive} />
++        {live ? (
++          <Badge
++            tone="ok"
++            icon={<span className="size-1.5 animate-pulse rounded-full bg-success" />}
++          >
++            Live
++          </Badge>
++        ) : null}
+       </HeaderActions>
+-      <div className="flex flex-col gap-2">
++      <div
++        role="toolbar"
++        aria-label="Log filters"
++        className="flex flex-wrap items-center gap-x-6 gap-y-3 [&_button]:h-7 [&_button]:px-2.5 [&_button]:text-[0.6875rem] [&_button]:uppercase [&_legend]:text-[0.6875rem]"
++      >
+         <Segmented
++          showLabel
+           label="File"
+           value={file}
+           options={LOG_FILES.map((f) => ({ value: f, label: f }))}
+           onChange={setFile}
+         />
+         <Segmented
++          showLabel
+           label="Level"
+           value={level}
+-          options={LOG_LEVELS.map((l) => ({ value: l, label: l === "ALL" ? "everything" : l }))}
++          options={LOG_LEVELS.map((l) => ({ value: l, label: l }))}
+           onChange={setLevel}
+         />
+         <Segmented
++          showLabel
+           label="Component"
+           value={component}
+-          options={LOG_COMPONENTS.map((c) => ({ value: c, label: c === "all" ? "everything" : c }))}
++          options={LOG_COMPONENTS.map((c) => ({ value: c, label: c }))}
+           onChange={setComponent}
+         />
+         <Segmented
++          showLabel
+           label="Lines"
+           value={lines}
+           options={LOG_TAILS.map((n) => ({ value: n, label: String(n) }))}
+           onChange={setLines}
+         />
+       </div>
+-      <Card className="min-w-0">
+-        <h2 className="mb-2 font-mono text-xs text-muted">{file}.log</h2>
+-        <QueryState
+-          loading={logs.isPending}
+-          error={logs.error}
+-          empty={rows.length === 0}
+-          emptyText="No log lines match."
+-        >
+-          <ol className="max-h-[65vh] overflow-auto font-mono text-xs" aria-label="Log lines">
++      <Card padded={false} className="min-w-0">
++        <CardHeader icon={FileText} title={`${file}.log`} />
++        {logs.error ? (
++          <p
++            role="alert"
++            className="m-0 border-b border-danger/20 bg-danger-wash px-3 py-3 text-[0.875rem] text-danger"
++          >
++            {logs.error instanceof Error ? logs.error.message : "The log could not be read."}
++          </p>
++        ) : null}
++        {logs.isPending ? (
++          <div className="p-4">
++            <Loading />
++          </div>
++        ) : rows.length === 0 && !logs.error ? (
++          <p className="m-0 py-8 text-center text-[0.875rem] text-ink-soft">No log lines match.</p>
++        ) : rows.length > 0 ? (
++          <ol
++            ref={scroller}
++            aria-label="Log lines"
++            className="m-0 max-h-[calc(100vh-220px)] min-h-[400px] list-none overflow-auto p-4 font-mono text-[0.75rem] leading-5"
++          >
+             {rows.map((line, i) => {
+               const severity = lineLevel(line);
+               return (
+@@ -116,14 +171,14 @@ export function LogsPage() {
+                   // biome-ignore lint/suspicious/noArrayIndexKey: a tail is positional
+                   key={i}
+                   data-level={severity}
+-                  className={`whitespace-pre-wrap break-all ${LEVEL_CLASS[severity]}`}
++                  className={`-mx-1 px-1 break-words whitespace-pre-wrap hover:bg-hover/60 ${LEVEL_CLASS[severity]}`}
+                 >
+                   {line}
+                 </li>
+               );
+             })}
+           </ol>
+-        </QueryState>
++        ) : null}
+       </Card>
+     </div>
+   );
+diff --git a/apps/web/src/pages/ModelsPage.test.tsx b/apps/web/src/pages/ModelsPage.test.tsx
+index 87f7fa5..e8e2c86 100644
+--- a/apps/web/src/pages/ModelsPage.test.tsx
++++ b/apps/web/src/pages/ModelsPage.test.tsx
+@@ -58,15 +58,21 @@ async function startSignIn() {
+ }
+ 
+ describe("models page", () => {
+-  it("shows the current model and saves a new main model", async () => {
++  it("shows the current model and saves a new main model from the dialog", async () => {
+     renderPage(<ModelsPage />, "/models");
+-    expect((await screen.findByTestId("current-model")).textContent).toBe(
+-      "fake-model · fake · 128,000 token context",
++    await waitFor(() =>
++      expect(screen.getByTestId("current-model").textContent).toBe("fake · fake-model · 128K ctx"),
+     );
+-    const model = screen.getByLabelText("Model id") as HTMLInputElement;
++    fireEvent.click(screen.getByRole("button", { name: "Change" }));
++    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
++    expect(dialog.getByText("current: fake-model · fake")).toBeTruthy();
++    const model = dialog.getByLabelText("Model id") as HTMLInputElement;
+     await waitFor(() => expect(model.value).toBe("fake-model"));
++    expect((dialog.getByRole("button", { name: "Switch" }) as HTMLButtonElement).disabled).toBe(
++      true,
++    );
+     fireEvent.change(model, { target: { value: "fake-large" } });
+-    fireEvent.click(screen.getByRole("button", { name: "Save model" }));
++    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
+     await waitFor(() =>
+       expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
+         scope: "main",
+@@ -77,16 +83,44 @@ describe("models page", () => {
+     await waitFor(() =>
+       expect(screen.getByTestId("current-model").textContent).toContain("fake-large"),
+     );
++    expect(screen.queryByRole("dialog", { name: "Switch model" })).toBeNull();
++  });
++
++  it("picks another provider in the dialog and filters the list", async () => {
++    renderPage(<ModelsPage />, "/models");
++    await screen.findByTestId("provider-fake");
++    fireEvent.click(screen.getByRole("button", { name: "Change" }));
++    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
++    const list = within(await dialog.findByRole("list", { name: "Providers" }));
++    fireEvent.change(dialog.getByLabelText("Filter providers"), { target: { value: "sign" } });
++    expect(list.queryByText("Fake provider")).toBeNull();
++    fireEvent.click(list.getByRole("button", { name: /Sign-in provider/ }));
++    fireEvent.change(dialog.getByLabelText("Model id"), { target: { value: "other-model" } });
++    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
++    await waitFor(() =>
++      expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
++        scope: "main",
++        provider: "signin",
++        model: "other-model",
++      }),
++    );
+   });
+ 
+   it("lists providers with their state and saves a side task", async () => {
+     renderPage(<ModelsPage />, "/models");
+     const fake = within(await screen.findByTestId("provider-fake"));
+     expect(fake.getByText("configured")).toBeTruthy();
++    expect(fake.getByText("main")).toBeTruthy();
+     expect(fake.queryByRole("button", { name: "Sign in" })).toBeNull();
+     expect(within(screen.getByTestId("provider-signin")).getByText("no key")).toBeTruthy();
+ 
++    await waitFor(() =>
++      expect(screen.getByTestId("aux-summary").textContent).toBe("1 task · all auto"),
++    );
++    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
+     const aux = within(await screen.findByTestId("aux-compression"));
++    expect(aux.getByText("auto (main model)")).toBeTruthy();
++    fireEvent.click(aux.getByRole("button", { name: "Change" }));
+     fireEvent.change(aux.getByLabelText("Model"), { target: { value: "fake-mini" } });
+     fireEvent.click(aux.getByRole("button", { name: "Save" }));
+     await waitFor(() =>
+@@ -97,6 +131,60 @@ describe("models page", () => {
+         model: "fake-mini",
+       }),
+     );
++    await waitFor(() =>
++      expect(screen.getByTestId("aux-summary").textContent).toBe("1 override · 0 auto"),
++    );
++  });
++
++  it("resets only the overridden side tasks after a confirm", async () => {
++    mock.state.auxiliary.tasks.push(
++      { task: "title", provider: "fake", model: "fake-mini", base_url: "", description: "" },
++      { task: "vision", provider: "", model: "fake-eye", base_url: "", description: "" },
++    );
++    renderPage(<ModelsPage />, "/models");
++    await waitFor(() =>
++      expect(screen.getByTestId("aux-summary").textContent).toBe("2 overrides · 1 auto"),
++    );
++    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
++    fireEvent.click(await screen.findByRole("button", { name: "Reset all to auto" }));
++    const confirm = within(await screen.findByRole("dialog", { name: "Reset side tasks" }));
++    expect(mock.callsTo("POST", "/api/model/set")).toHaveLength(0);
++    fireEvent.click(confirm.getByRole("button", { name: "Reset" }));
++    await waitFor(() => expect(mock.callsTo("POST", "/api/model/set")).toHaveLength(2));
++    expect(mock.callsTo("POST", "/api/model/set").map((c) => c.body)).toEqual([
++      { scope: "auxiliary", task: "title", provider: "auto", model: "" },
++      { scope: "auxiliary", task: "vision", provider: "auto", model: "" },
++    ]);
++    await waitFor(() =>
++      expect(screen.getByTestId("aux-summary").textContent).toBe("3 tasks · all auto"),
++    );
++  });
++
++  it("shows usage for the period, sessions only while the token flag is off", async () => {
++    mock.state.usage = [
++      { day: "2026-10-24", input_tokens: 3400, output_tokens: 316, cost: 0.005, sessions: 3 },
++    ];
++    renderPage(<ModelsPage />, "/models");
++    const figures = await screen.findByLabelText("Model usage");
++    await waitFor(() => expect(figures.textContent).toContain("Total sessions"));
++    expect(figures.textContent).not.toContain("Input");
++    expect(screen.getByText("dashboard.show_token_analytics")).toBeTruthy();
++    const header = within(screen.getByTestId("page-header-after-title"));
++    fireEvent.click(header.getByRole("button", { name: "7d" }));
++    await waitFor(() =>
++      expect(mock.callsTo("GET", "/api/analytics/usage").at(-1)?.query.get("days")).toBe("7"),
++    );
++  });
++
++  it("shows token figures when the flag is on", async () => {
++    mock.state.config = { ...mock.state.config, dashboard: { show_token_analytics: true } };
++    mock.state.usage = [
++      { day: "2026-10-24", input_tokens: 3400, output_tokens: 316, cost: 0.005, sessions: 3 },
++    ];
++    renderPage(<ModelsPage />, "/models");
++    const figures = await screen.findByLabelText("Model usage");
++    await waitFor(() => expect(figures.textContent).toContain("3.7K"));
++    expect(figures.textContent).toContain("$0.0050");
+   });
+ 
+   it("polls at the server's interval and stops when approved", async () => {
+diff --git a/apps/web/src/pages/ModelsPage.tsx b/apps/web/src/pages/ModelsPage.tsx
+index 331b100..a5d8f63 100644
+--- a/apps/web/src/pages/ModelsPage.tsx
++++ b/apps/web/src/pages/ModelsPage.tsx
+@@ -1,14 +1,39 @@
+-// Models (P18-24): the profile's main model and its context window, the provider inventory, the
+-// side-task (auxiliary) models, and provider sign-in by device code: Start shows the code and the
+-// page to enter it on, then the session is polled at the interval the provider asked for until it
+-// is approved, refused, expired or cancelled. No token ever reaches the browser.
++// Models (P18-24, rebuilt W52-b): a "Model settings" card (main model through the Switch model
++// dialog, side-task models through their own dialog), the usage figures for the chosen period, and
++// a card per provider with its key state and device-code sign-in: Start shows the code and the page
++// to enter it on, then the session is polled at the interval the provider asked for until it is
++// approved, refused, expired or cancelled. No token ever reaches the browser.
+ 
+-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
++import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
++import { Cpu, SlidersHorizontal, Star } from "lucide-react";
++import { type ComponentType, type ReactNode, useEffect, useId, useRef, useState } from "react";
++import { Link } from "react-router";
+ import { api } from "../lib/api.ts";
++import { formatCost, formatCount, formatTokens } from "../lib/format.ts";
+ import type { AuxiliaryTask, LoginStarted, LoginStatus, ProviderOption } from "../lib/restTypes.ts";
++import { useTokenAnalyticsFlag } from "../lib/useTokenAnalyticsFlag.ts";
++import { HeaderAfterTitle } from "../shell/PageHeader.tsx";
+ import { errorText, useToast } from "../shell/Toasts.tsx";
+-import { Badge, Button, Card, Field, inputClass, Notice, QueryState } from "../ui/controls.tsx";
++import {
++  Badge,
++  Button,
++  Card,
++  CardHeader,
++  EmptyState,
++  ErrorState,
++  Field,
++  inputClass,
++  LeaderStatList,
++  Notice,
++  PageSpinner,
++  PeriodButtons,
++  RefreshButton,
++  type StatItem,
++} from "../ui/controls.tsx";
++import { cx } from "../ui/cx.ts";
++import { ConfirmDialog, Modal } from "../ui/Dialog.tsx";
++import { type ModelChoice, ModelPickerDialog } from "../ui/ModelPickerDialog.tsx";
++import { RANGE_OPTIONS } from "./AnalyticsPage.tsx";
+ 
+ /** Never poll faster than this, whatever the provider says. */
+ export const MIN_POLL_S = 1;
+@@ -85,7 +110,7 @@ function DeviceLogin({ provider, onDone }: { provider: ProviderOption; onDone: (
+   return (
+     <section
+       aria-label={`Sign in to ${provider.label}`}
+-      className="flex flex-col gap-2 rounded-md border border-line p-3"
++      className="flex flex-col gap-2 border border-line p-3"
+     >
+       {!grant ? (
+         <div className="flex gap-2">
+@@ -96,22 +121,22 @@ function DeviceLogin({ provider, onDone }: { provider: ProviderOption; onDone: (
+         </div>
+       ) : (
+         <>
+-          <p className="text-sm">
++          <p className="m-0 text-[0.8125rem]">
+             Open{" "}
+             <a
+               href={grant.verification_url}
+               target="_blank"
+               rel="noopener noreferrer"
+-              className="text-accent underline"
++              className="break-all text-ink underline"
+             >
+               {grant.verification_url}
+             </a>{" "}
+             and enter this code:
+           </p>
+-          <code data-testid="device-code" className="font-mono text-lg tracking-widest">
++          <code data-testid="device-code" className="font-mono text-lg tracking-widest text-ink">
+             {grant.user_code}
+           </code>
+-          <p role="status" className="text-sm text-muted">
++          <p role="status" className="m-0 text-[0.8125rem] text-ink-muted">
+             {message || LOGIN_TEXT[status]}
+           </p>
+           <div className="flex gap-2">
+@@ -134,205 +159,467 @@ function DeviceLogin({ provider, onDone }: { provider: ProviderOption; onDone: (
+   );
+ }
+ 
+-function MainModel() {
++type Period = (typeof RANGE_OPTIONS)[number]["value"];
++
++/** A side task runs on its own model when it names a provider other than auto, or a model. */
++export function isOverride(task: AuxiliaryTask): boolean {
++  const provider = task.provider.trim();
++  return (provider !== "" && provider !== "auto") || task.model.trim() !== "";
++}
++
++export function auxSummary(tasks: readonly AuxiliaryTask[]): string {
++  if (tasks.length === 0) return "no side tasks";
++  const overrides = tasks.filter(isOverride).length;
++  if (overrides === 0) return `${tasks.length} task${tasks.length === 1 ? "" : "s"} · all auto`;
++  return `${overrides} override${overrides === 1 ? "" : "s"} · ${tasks.length - overrides} auto`;
++}
++
++function routeText(task: AuxiliaryTask): string {
++  if (!isOverride(task)) return "auto (main model)";
++  const provider = task.provider.trim() || "auto";
++  return `${provider} · ${task.model.trim() || "main model"}`;
++}
++
++/** One tinted row of the settings card: icon + label, a mono value, a button on the right. */
++function SettingRow({
++  icon: Icon,
++  iconClass,
++  label,
++  value,
++  valueTestId,
++  action,
++}: {
++  icon: ComponentType<{ className?: string }>;
++  iconClass: string;
++  label: string;
++  value: ReactNode;
++  valueTestId?: string;
++  action: ReactNode;
++}) {
++  return (
++    <div className="flex items-center gap-3 border border-line/70 bg-surface px-3 py-2">
++      <div className="min-w-0 flex-1">
++        <p className="m-0 flex items-center gap-2 text-[0.75rem] font-medium tracking-[0.08em] text-ink uppercase">
++          <Icon aria-hidden="true" className={cx("size-3 shrink-0", iconClass)} />
++          {label}
++        </p>
++        <p
++          {...(valueTestId ? { "data-testid": valueTestId } : {})}
++          className="m-0 mt-0.5 truncate font-mono text-[0.75rem] text-ink-muted"
++        >
++          {value}
++        </p>
++      </div>
++      {action}
++    </div>
++  );
++}
++
++function AuxRow({ task }: { task: AuxiliaryTask }) {
+   const toast = useToast();
+   const changed = useModelsChanged();
+   const ids = useId();
+-  const info = useQuery({ queryKey: ["models", "info"], queryFn: () => api.model.info() });
+-  const options = useQuery({ queryKey: ["models", "options"], queryFn: () => api.model.options() });
+-  const [provider, setProvider] = useState<string | null>(null);
+-  const [model, setModel] = useState<string | null>(null);
+-  const shownProvider = provider ?? options.data?.current.provider ?? "";
+-  const shownModel = model ?? options.data?.current.model ?? "";
++  const [editing, setEditing] = useState(false);
++  const [provider, setProvider] = useState(task.provider);
++  const [model, setModel] = useState(task.model);
+   const save = useMutation({
+     mutationFn: () =>
+-      api.model.set({ scope: "main", provider: shownProvider, model: shownModel.trim() }),
++      api.model.set({
++        scope: "auxiliary",
++        task: task.task,
++        provider: provider.trim(),
++        model: model.trim(),
++      }),
+     onSuccess: () => {
+-      toast.show("Main model saved; new sessions use it.", "success");
+-      setProvider(null);
+-      setModel(null);
++      toast.show(`${task.task} model saved.`, "success");
++      setEditing(false);
+       changed();
+     },
+     onError: (error) => toast.show(errorText(error), "error"),
+   });
+-  const submit = (event: FormEvent) => {
+-    event.preventDefault();
+-    if (shownModel.trim()) save.mutate();
+-  };
+-  const data = info.data;
+   return (
+-    <Card className="flex flex-col gap-3">
+-      <h2 className="text-sm font-semibold">Main model</h2>
+-      <QueryState loading={info.isPending} error={info.error}>
+-        <p className="text-sm" data-testid="current-model">
+-          {data?.model ?? "No model configured"}
+-          {data?.provider ? ` · ${data.provider}` : ""}
+-          {data?.effective_context_length
+-            ? ` · ${new Intl.NumberFormat("en").format(data.effective_context_length)} token context`
+-            : ""}
+-        </p>
+-      </QueryState>
+-      <form className="flex flex-wrap items-end gap-2" onSubmit={submit} noValidate>
+-        <Field label="Provider" htmlFor={`${ids}-provider`}>
+-          <select
+-            id={`${ids}-provider`}
+-            className={inputClass}
+-            value={shownProvider}
+-            onChange={(e) => setProvider(e.currentTarget.value)}
+-          >
+-            <option value="">(keep)</option>
+-            {(options.data?.providers ?? []).map((p) => (
+-              <option key={p.name} value={p.name}>
+-                {p.label}
+-              </option>
+-            ))}
+-          </select>
+-        </Field>
+-        <Field label="Model id" htmlFor={`${ids}-model`}>
+-          <input
+-            id={`${ids}-model`}
+-            className={inputClass}
+-            value={shownModel}
+-            onChange={(e) => setModel(e.currentTarget.value)}
+-          />
+-        </Field>
+-        <Button type="submit" tone="primary" disabled={!shownModel.trim() || save.isPending}>
+-          Save model
++    <li
++      data-testid={`aux-${task.task}`}
++      className="flex flex-col gap-3 border border-line px-3 py-2.5"
++    >
++      <div className="flex items-center gap-3">
++        <div className="min-w-0 flex-1">
++          <p className="m-0 text-[0.75rem] font-medium text-ink">
++            {task.task}
++            {task.description ? (
++              <span className="ml-2 font-normal text-ink-faint">{task.description}</span>
++            ) : null}
++          </p>
++          <p className="m-0 mt-0.5 truncate font-mono text-[0.75rem] text-ink-muted">
++            {routeText(task)}
++          </p>
++        </div>
++        <Button
++          size="sm"
++          className="uppercase"
++          aria-expanded={editing}
++          onClick={() => setEditing((was) => !was)}
++        >
++          Change
+         </Button>
+-      </form>
+-    </Card>
++      </div>
++      {editing ? (
++        <div className="flex flex-wrap items-end gap-2">
++          <Field label="Provider" htmlFor={`${ids}-provider`}>
++            <input
++              id={`${ids}-provider`}
++              className={inputClass}
++              value={provider}
++              onChange={(e) => setProvider(e.currentTarget.value)}
++            />
++          </Field>
++          <Field label="Model" htmlFor={`${ids}-model`}>
++            <input
++              id={`${ids}-model`}
++              className={inputClass}
++              placeholder="(the main model)"
++              value={model}
++              onChange={(e) => setModel(e.currentTarget.value)}
++            />
++          </Field>
++          <Button tone="primary" onClick={() => save.mutate()} disabled={save.isPending}>
++            Save
++          </Button>
++        </div>
++      ) : null}
++    </li>
+   );
+ }
+ 
+-function Providers() {
+-  const [signingIn, setSigningIn] = useState<string | null>(null);
+-  const options = useQuery({ queryKey: ["models", "options"], queryFn: () => api.model.options() });
+-  const list = options.data?.providers ?? [];
++function AuxDialog({
++  open,
++  onOpenChange,
++  tasks,
++}: {
++  open: boolean;
++  onOpenChange: (open: boolean) => void;
++  tasks: readonly AuxiliaryTask[];
++}) {
++  const toast = useToast();
++  const changed = useModelsChanged();
++  const [confirming, setConfirming] = useState(false);
++  const overridden = tasks.filter(isOverride);
++  const reset = useMutation({
++    mutationFn: async () => {
++      for (const task of overridden) {
++        await api.model.set({ scope: "auxiliary", task: task.task, provider: "auto", model: "" });
++      }
++    },
++    onSuccess: () => toast.show("Every side task now follows the main model.", "success"),
++    onError: (error) => toast.show(errorText(error), "error"),
++    onSettled: () => {
++      setConfirming(false);
++      changed();
++    },
++  });
+   return (
+-    <Card className="flex flex-col gap-3">
+-      <h2 className="text-sm font-semibold">Providers</h2>
+-      <QueryState
+-        loading={options.isPending}
+-        error={options.error}
+-        empty={list.length === 0}
+-        emptyText="No providers are known to this install."
++    <>
++      <Modal
++        open={open}
++        onOpenChange={onOpenChange}
++        size="lg"
++        title="Auxiliary tasks"
++        description="Smaller jobs such as summaries, titles and vision can run on their own model; auto uses the main one."
+       >
+-        <ul aria-label="Providers" className="flex flex-col gap-2">
+-          {list.map((p) => (
+-            <li
+-              key={p.name}
+-              data-testid={`provider-${p.name}`}
+-              className="flex flex-col gap-2 border-b border-line pb-2"
++        <div className="flex flex-col gap-3">
++          <div className="flex justify-end">
++            <Button
++              size="sm"
++              className="uppercase"
++              disabled={overridden.length === 0 || reset.isPending}
++              onClick={() => setConfirming(true)}
+             >
+-              <div className="flex flex-wrap items-center gap-2">
+-                <span className="flex-1 text-sm">
+-                  <strong>{p.label}</strong> <span className="text-xs text-muted">{p.name}</span>
+-                </span>
+-                <Badge tone={p.configured ? "ok" : "neutral"}>
+-                  {p.configured ? "configured" : "no key"}
+-                </Badge>
+-                {p.device_login && signingIn !== p.name ? (
+-                  <Button onClick={() => setSigningIn(p.name)}>Sign in</Button>
+-                ) : null}
+-              </div>
+-              {p.description ? <p className="text-xs text-muted">{p.description}</p> : null}
+-              {signingIn === p.name ? (
+-                <DeviceLogin provider={p} onDone={() => setSigningIn(null)} />
+-              ) : null}
+-            </li>
+-          ))}
+-        </ul>
+-      </QueryState>
+-      <p className="text-xs text-muted">
+-        Providers without a sign-in take an API key: add it on the Keys page or in the credential
+-        pool on the System page.
+-      </p>
+-    </Card>
++              Reset all to auto
++            </Button>
++          </div>
++          {tasks.length === 0 ? (
++            <p className="m-0 py-6 text-center text-[0.8125rem] text-ink-soft">No side tasks.</p>
++          ) : (
++            <ul
++              aria-label="Side tasks"
++              className="m-0 flex max-h-[60vh] list-none flex-col gap-2 overflow-y-auto p-0"
++            >
++              {tasks.map((task) => (
++                <AuxRow key={`${task.task}:${task.provider}:${task.model}`} task={task} />
++              ))}
++            </ul>
++          )}
++        </div>
++      </Modal>
++      <ConfirmDialog
++        open={confirming}
++        title="Reset side tasks"
++        description={`Set ${overridden.length} overridden task${overridden.length === 1 ? "" : "s"} back to auto (the main model)?`}
++        confirmLabel="Reset"
++        busy={reset.isPending}
++        onConfirm={() => reset.mutate()}
++        onCancel={() => setConfirming(false)}
++      />
++    </>
+   );
+ }
+ 
+-function AuxRow({ task }: { task: AuxiliaryTask }) {
++function ModelSettings() {
+   const toast = useToast();
+   const changed = useModelsChanged();
+-  const ids = useId();
+-  const [provider, setProvider] = useState(task.provider);
+-  const [model, setModel] = useState(task.model);
++  const info = useQuery({ queryKey: ["models", "info"], queryFn: () => api.model.info() });
++  const aux = useQuery({ queryKey: ["models", "auxiliary"], queryFn: () => api.model.auxiliary() });
++  const [picking, setPicking] = useState(false);
++  const [configuring, setConfiguring] = useState(false);
+   const save = useMutation({
+-    mutationFn: () =>
+-      api.model.set({
+-        scope: "auxiliary",
+-        task: task.task,
+-        provider: provider.trim(),
+-        model: model.trim(),
+-      }),
++    mutationFn: (choice: ModelChoice) => api.model.set({ scope: "main", ...choice }),
+     onSuccess: () => {
+-      toast.show(`${task.task} model saved.`, "success");
++      toast.show("Main model saved; new sessions use it.", "success");
++      setPicking(false);
+       changed();
+     },
+     onError: (error) => toast.show(errorText(error), "error"),
+   });
++  const data = info.data;
++  const mainValue = data?.model
++    ? [
++        data.provider,
++        data.model,
++        data.effective_context_length
++          ? `${formatTokens(data.effective_context_length).replace(/\.0(?=[KM])/, "")} ctx`
++          : null,
++      ]
++        .filter(Boolean)
++        .join(" · ")
++    : "(unset)";
++  const tasks = aux.data?.tasks ?? [];
+   return (
+-    <li data-testid={`aux-${task.task}`} className="flex flex-wrap items-end gap-2">
+-      <div className="min-w-40 flex-1">
+-        <p className="text-sm font-medium">{task.task}</p>
+-        {task.description ? <p className="text-xs text-muted">{task.description}</p> : null}
++    <Card padded={false}>
++      <CardHeader
++        icon={SlidersHorizontal}
++        title="Model settings"
++        subtitle="applies to new sessions"
++      />
++      <div className="flex flex-col gap-3 px-4 pt-3 pb-4">
++        {info.error ? (
++          <ErrorState message={errorText(info.error)} onRetry={() => void info.refetch()} />
++        ) : (
++          <SettingRow
++            icon={Star}
++            iconClass="text-ink"
++            label="Main model"
++            value={info.isPending ? "…" : mainValue}
++            valueTestId="current-model"
++            action={
++              <Button
++                tone="primary"
++                size="sm"
++                className="uppercase"
++                onClick={() => setPicking(true)}
++              >
++                Change
++              </Button>
++            }
++          />
++        )}
++        {aux.error ? (
++          <ErrorState message={errorText(aux.error)} onRetry={() => void aux.refetch()} />
++        ) : (
++          <SettingRow
++            icon={Cpu}
++            iconClass="text-ink-soft"
++            label="Auxiliary tasks"
++            value={aux.isPending ? "…" : auxSummary(tasks)}
++            valueTestId="aux-summary"
++            action={
++              <Button size="sm" className="uppercase" onClick={() => setConfiguring(true)}>
++                Configure
++              </Button>
++            }
++          />
++        )}
++      </div>
++      <ModelPickerDialog
++        open={picking}
++        onOpenChange={setPicking}
++        busy={save.isPending}
++        onApply={(choice) => save.mutate(choice)}
++      />
++      <AuxDialog open={configuring} onOpenChange={setConfiguring} tasks={tasks} />
++    </Card>
++  );
++}
++
++function UsageFigures({ days }: { days: Period }) {
++  const flag = useTokenAnalyticsFlag();
++  const usage = useQuery({
++    queryKey: ["analytics", days],
++    queryFn: () => api.analytics.usage(days),
++  });
++  const totals = usage.data?.totals;
++  const items: StatItem[] = !totals
++    ? []
++    : flag.enabled
++      ? [
++          {
++            label: "Total tokens",
++            value: formatTokens(totals.input_tokens + totals.output_tokens),
++          },
++          { label: "Input", value: formatTokens(totals.input_tokens) },
++          { label: "Output", value: formatTokens(totals.output_tokens) },
++          { label: "Est. cost", value: formatCost(totals.cost) },
++          { label: "Total sessions", value: formatCount(totals.sessions) },
++        ]
++      : [{ label: "Total sessions", value: formatCount(totals.sessions) }];
++  return (
++    <Card className="px-4 py-6">
++      {usage.isPending ? (
++        <PageSpinner />
++      ) : usage.error ? (
++        <ErrorState message={errorText(usage.error)} onRetry={() => void usage.refetch()} />
++      ) : (
++        <div className="flex flex-col gap-4">
++          <LeaderStatList label="Model usage" items={items} />
++          {flag.enabled ? null : (
++            <p className="m-0 text-[0.75rem] leading-relaxed text-ink-faint">
++              Token and cost figures are hidden. Turn on{" "}
++              <code className="type-data text-[0.75rem]">dashboard.show_token_analytics</code> on
++              the{" "}
++              <Link to="/config" className="underline">
++                Config
++              </Link>{" "}
++              page to show them.
++            </p>
++          )}
++        </div>
++      )}
++    </Card>
++  );
++}
++
++function ProviderCard({
++  provider,
++  main,
++  signingIn,
++  onSignIn,
++  onDone,
++}: {
++  provider: ProviderOption;
++  main: boolean;
++  signingIn: boolean;
++  onSignIn: () => void;
++  onDone: () => void;
++}) {
++  return (
++    <li
++      data-testid={`provider-${provider.name}`}
++      className={cx("flex flex-col border border-line", main && "ring-1 ring-ink/40")}
++    >
++      <div className="flex items-start gap-3 border-b border-line px-4 pt-4 pb-3">
++        <div className="min-w-0 flex-1">
++          <div className="flex min-w-0 items-center gap-2">
++            <h3 className="m-0 truncate font-mono text-[0.8125rem] font-bold tracking-[0.12em] text-ink uppercase">
++              {provider.label}
++            </h3>
++            {main ? (
++              <span className="inline-flex shrink-0 items-center gap-1 bg-ink/15 px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink">
++                <Star aria-hidden="true" className="size-2.5" />
++                main
++              </span>
++            ) : null}
++          </div>
++          <Badge className="mt-2 bg-selected">{provider.name}</Badge>
++        </div>
++        <div className="flex shrink-0 flex-col items-end gap-1.5">
++          <span
++            className={cx(
++              "font-mono text-[0.75rem] font-bold",
++              provider.configured ? "text-success" : "text-ink-soft",
++            )}
++          >
++            {provider.configured ? "configured" : "no key"}
++          </span>
++          {provider.device_login && !signingIn ? (
++            <Button size="sm" className="h-[1.375rem] uppercase" onClick={onSignIn}>
++              Sign in
++            </Button>
++          ) : null}
++        </div>
++      </div>
++      <div className="flex flex-1 flex-col gap-3 p-4">
++        {provider.description ? (
++          <p className="m-0 text-[0.75rem] text-ink-muted">{provider.description}</p>
++        ) : null}
++        {signingIn ? <DeviceLogin provider={provider} onDone={onDone} /> : null}
++        <p className="m-0 mt-auto border-t border-line/60 pt-2 text-[0.75rem] text-ink-muted">
++          {[provider.family, provider.auth_type].filter(Boolean).join(" · ")}
++        </p>
+       </div>
+-      <Field label="Provider" htmlFor={`${ids}-provider`}>
+-        <input
+-          id={`${ids}-provider`}
+-          className={inputClass}
+-          value={provider}
+-          onChange={(e) => setProvider(e.currentTarget.value)}
+-        />
+-      </Field>
+-      <Field label="Model" htmlFor={`${ids}-model`}>
+-        <input
+-          id={`${ids}-model`}
+-          className={inputClass}
+-          placeholder="(the main model)"
+-          value={model}
+-          onChange={(e) => setModel(e.currentTarget.value)}
+-        />
+-      </Field>
+-      <Button onClick={() => save.mutate()} disabled={save.isPending}>
+-        Save
+-      </Button>
+     </li>
+   );
+ }
+ 
+-function Auxiliary() {
+-  const aux = useQuery({ queryKey: ["models", "auxiliary"], queryFn: () => api.model.auxiliary() });
+-  const tasks = aux.data?.tasks ?? [];
++function Providers() {
++  const [signingIn, setSigningIn] = useState<string | null>(null);
++  const options = useQuery({ queryKey: ["models", "options"], queryFn: () => api.model.options() });
++  const list = options.data?.providers ?? [];
++  const mainProvider = options.data?.current.provider ?? null;
++  if (options.isPending) return <PageSpinner />;
++  if (options.error) {
++    return <ErrorState message={errorText(options.error)} onRetry={() => void options.refetch()} />;
++  }
++  if (list.length === 0) {
++    return (
++      <Card padded={false}>
++        <EmptyState icon={Cpu}>No providers are known to this install.</EmptyState>
++      </Card>
++    );
++  }
+   return (
+-    <Card className="flex flex-col gap-3">
+-      <h2 className="text-sm font-semibold">Side tasks</h2>
+-      <p className="text-xs text-muted">
+-        Smaller jobs (summaries, titles, vision…) can run on their own model; "auto" uses the main
+-        provider.
+-      </p>
+-      <QueryState
+-        loading={aux.isPending}
+-        error={aux.error}
+-        empty={tasks.length === 0}
+-        emptyText="No side tasks."
++    <div className="flex flex-col gap-3">
++      <ul
++        aria-label="Providers"
++        className="m-0 grid list-none grid-cols-1 gap-4 p-0 md:grid-cols-2 xl:grid-cols-3"
+       >
+-        <ul aria-label="Side tasks" className="flex flex-col gap-3">
+-          {tasks.map((task) => (
+-            <AuxRow key={task.task} task={task} />
+-          ))}
+-        </ul>
+-      </QueryState>
+-    </Card>
++        {list.map((p) => (
++          <ProviderCard
++            key={p.name}
++            provider={p}
++            main={p.name === mainProvider}
++            signingIn={signingIn === p.name}
++            onSignIn={() => setSigningIn(p.name)}
++            onDone={() => setSigningIn(null)}
++          />
++        ))}
++      </ul>
++      <p className="m-0 text-[0.75rem] text-ink-faint">
++        Providers without a sign-in take an API key: add it on the Keys page or in the credential
++        pool on the System page.
++      </p>
++    </div>
+   );
+ }
+ 
+ export function ModelsPage() {
++  const client = useQueryClient();
++  const [days, setDays] = useState<Period>(30);
++  const fetching =
++    useIsFetching({ queryKey: ["models"] }) + useIsFetching({ queryKey: ["analytics", days] });
++  const refresh = () => {
++    void client.invalidateQueries({ queryKey: ["models"] });
++    void client.invalidateQueries({ queryKey: ["analytics", days] });
++  };
+   return (
+-    <div className="flex flex-col gap-4 p-4">
+-      <MainModel />
++    <div className="flex flex-col gap-[1.4375rem] px-4 py-[1.4375rem] lg:px-[1.4375rem]">
++      <HeaderAfterTitle>
++        <PeriodButtons upper value={days} options={RANGE_OPTIONS} onChange={setDays} />
++        <RefreshButton onClick={refresh} busy={fetching > 0} />
++      </HeaderAfterTitle>
++      <div className="grid grid-cols-1 gap-[1.4375rem] lg:grid-cols-2">
++        <ModelSettings />
++        <UsageFigures days={days} />
++      </div>
+       <Providers />
+-      <Auxiliary />
+     </div>
+   );
+ }
+diff --git a/apps/web/src/ui/DataTable.tsx b/apps/web/src/ui/DataTable.tsx
+new file mode 100644
+index 0000000..c5c31b4
+--- /dev/null
++++ b/apps/web/src/ui/DataTable.tsx
+@@ -0,0 +1,120 @@
++// A sortable data table (W52-b): serif header cells with a sort arrow, faint row rules, a hover
++// tint. Clicking a header flips its direction; a new column starts descending; empty values sort
++// last either way. The first column is left-aligned, the rest right-aligned.
++
++import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
++import { type ReactNode, useMemo, useState } from "react";
++import { cx } from "./cx.ts";
++
++export interface Column<T> {
++  key: string;
++  label: string;
++  /** The value sorted on; `null` always sorts last. */
++  sortValue: (row: T) => number | string | null;
++  render?: (row: T) => ReactNode;
++  className?: string;
++}
++
++export type SortDirection = "asc" | "desc";
++
++export function sortRows<T>(
++  rows: readonly T[],
++  value: (row: T) => number | string | null,
++  direction: SortDirection,
++): T[] {
++  const sign = direction === "asc" ? 1 : -1;
++  return [...rows].sort((a, b) => {
++    const x = value(a);
++    const y = value(b);
++    if (x === null && y === null) return 0;
++    if (x === null) return 1;
++    if (y === null) return -1;
++    if (typeof x === "number" && typeof y === "number") return (x - y) * sign;
++    return String(x).localeCompare(String(y)) * sign;
++  });
++}
++
++export function DataTable<T>({
++  label,
++  columns,
++  rows,
++  rowKey,
++  defaultSort,
++}: {
++  label: string;
++  columns: readonly Column<T>[];
++  rows: readonly T[];
++  rowKey: (row: T) => string;
++  defaultSort: { key: string; direction: SortDirection };
++}) {
++  const [sort, setSort] = useState(defaultSort);
++  const column = columns.find((c) => c.key === sort.key) ?? columns[0];
++  const sorted = useMemo(
++    () => (column ? sortRows(rows, column.sortValue, sort.direction) : [...rows]),
++    [rows, column, sort.direction],
++  );
++  const choose = (key: string) =>
++    setSort((was) =>
++      was.key === key
++        ? { key, direction: was.direction === "desc" ? "asc" : "desc" }
++        : { key, direction: "desc" },
++    );
++  return (
++    <table aria-label={label} className="w-full border-collapse text-[0.8125rem]">
++      <thead>
++        <tr>
++          {columns.map((c, i) => {
++            const active = c.key === sort.key;
++            const Arrow = !active ? ArrowUpDown : sort.direction === "desc" ? ArrowDown : ArrowUp;
++            return (
++              <th
++                key={c.key}
++                scope="col"
++                aria-sort={
++                  active ? (sort.direction === "desc" ? "descending" : "ascending") : "none"
++                }
++                className={cx(
++                  "h-12 border-b border-line p-0 font-normal",
++                  i === 0 ? "text-left" : "text-right",
++                )}
++              >
++                <button
++                  type="button"
++                  onClick={() => choose(c.key)}
++                  className={cx(
++                    "type-serif inline-flex items-center gap-1.5 text-[0.75rem] text-ink-muted hover:text-ink",
++                    i > 0 && "flex-row",
++                  )}
++                >
++                  {c.label}
++                  <Arrow
++                    aria-hidden="true"
++                    className={cx("size-3", active ? "text-ink/80" : "text-ink-faint")}
++                  />
++                </button>
++              </th>
++            );
++          })}
++        </tr>
++      </thead>
++      <tbody>
++        {sorted.map((row) => (
++          <tr key={rowKey(row)} className="transition-colors hover:bg-hover/60">
++            {columns.map((c, i) => (
++              <td
++                key={c.key}
++                className={cx(
++                  "type-serif h-[2.1875rem] border-b border-line/60 text-[0.8125rem]",
++                  i === 0 ? "text-left text-ink" : "text-right",
++                  c.className,
++                )}
++              >
++                {c.render ? c.render(row) : String(c.sortValue(row) ?? "—")}
++              </td>
++            ))}
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
+diff --git a/apps/web/src/ui/ModelPickerDialog.tsx b/apps/web/src/ui/ModelPickerDialog.tsx
+new file mode 100644
+index 0000000..736ebac
+--- /dev/null
++++ b/apps/web/src/ui/ModelPickerDialog.tsx
+@@ -0,0 +1,222 @@
++// Switch model dialog (W52-b-5), shared by the Models page and (later) the chat page: a filter box,
++// the providers on the left (name, id, key state, the one in use marked), and the model on the
++// right. Our API cannot list a provider's models, so the right side offers the model in use (when
++// that provider is picked) and a model id field. The caller decides what applying means.
++
++import { useQuery } from "@tanstack/react-query";
++import { Check, RefreshCw, Search } from "lucide-react";
++import { type FormEvent, useId, useMemo, useState } from "react";
++import { api } from "../lib/api.ts";
++import type { ProviderOption } from "../lib/restTypes.ts";
++import { Button, inputClass, Loading } from "./controls.tsx";
++import { cx } from "./cx.ts";
++import { Modal } from "./Dialog.tsx";
++
++export interface ModelChoice {
++  provider: string;
++  model: string;
++}
++
++function matches(provider: ProviderOption, filter: string): boolean {
++  const needle = filter.trim().toLowerCase();
++  if (!needle) return true;
++  return `${provider.label} ${provider.name}`.toLowerCase().includes(needle);
++}
++
++function ProviderRow({
++  provider,
++  selected,
++  current,
++  onPick,
++}: {
++  provider: ProviderOption;
++  selected: boolean;
++  current: boolean;
++  onPick: () => void;
++}) {
++  return (
++    <li>
++      <button
++        type="button"
++        aria-pressed={selected}
++        onClick={onPick}
++        className={cx(
++          "flex w-full flex-col items-start gap-0.5 border-l-2 px-3 py-1.5 text-left font-mono text-[0.75rem] transition-colors",
++          selected
++            ? "border-ink bg-selected text-ink"
++            : "border-transparent text-ink-muted hover:bg-hover",
++        )}
++      >
++        <span className="flex w-full min-w-0 items-center gap-2">
++          <span className="truncate font-medium">{provider.label}</span>
++          {current ? <span className="shrink-0 text-ink uppercase">current</span> : null}
++        </span>
++        <span className="truncate text-ink-soft">
++          {provider.name} · {provider.configured ? "configured" : "no key"}
++        </span>
++      </button>
++    </li>
++  );
++}
++
++function PickerBody({
++  onApply,
++  onCancel,
++  busy,
++  note,
++}: {
++  onApply: (choice: ModelChoice) => void;
++  onCancel: () => void;
++  busy: boolean;
++  note: string;
++}) {
++  const ids = useId();
++  const options = useQuery({ queryKey: ["models", "options"], queryFn: () => api.model.options() });
++  const current = options.data?.current ?? { provider: null, model: null };
++  const providers = options.data?.providers ?? [];
++  const [filter, setFilter] = useState("");
++  const [picked, setPicked] = useState<string | null>(null);
++  const [draft, setDraft] = useState<string | null>(null);
++  const provider = picked ?? current.provider ?? providers[0]?.name ?? "";
++  const model = draft ?? current.model ?? "";
++  const shown = useMemo(() => providers.filter((p) => matches(p, filter)), [providers, filter]);
++  const unchanged = provider === (current.provider ?? "") && model.trim() === (current.model ?? "");
++  const ready = provider !== "" && model.trim() !== "" && !unchanged && !busy;
++
++  const submit = (event: FormEvent) => {
++    event.preventDefault();
++    if (ready) onApply({ provider, model: model.trim() });
++  };
++
++  return (
++    <form onSubmit={submit} noValidate className="-mx-4 -my-3 flex flex-col">
++      <div className="border-b border-line px-4 py-3">
++        <span className="relative flex">
++          <Search
++            aria-hidden="true"
++            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-soft"
++          />
++          <input
++            aria-label="Filter providers"
++            placeholder="Filter providers…"
++            className={cx(inputClass, "w-full pl-8")}
++            value={filter}
++            onChange={(e) => setFilter(e.currentTarget.value)}
++          />
++        </span>
++      </div>
++      <div className="grid h-[min(24rem,52vh)] grid-cols-[12.5rem_1fr]">
++        <div className="min-h-0 overflow-y-auto border-r border-line">
++          {options.isPending ? (
++            <div className="p-3">
++              <Loading />
++            </div>
++          ) : options.error ? (
++            <p role="alert" className="m-0 p-3 text-[0.75rem] text-danger">
++              {options.error instanceof Error ? options.error.message : "Providers unavailable."}
++            </p>
++          ) : shown.length === 0 ? (
++            <p className="m-0 p-3 text-[0.75rem] text-ink-soft italic">
++              {providers.length === 0 ? "No providers are known to this install." : "No match."}
++            </p>
++          ) : (
++            <ul aria-label="Providers" className="m-0 list-none p-0">
++              {shown.map((p) => (
++                <ProviderRow
++                  key={p.name}
++                  provider={p}
++                  selected={p.name === provider}
++                  current={p.name === current.provider}
++                  onPick={() => setPicked(p.name)}
++                />
++              ))}
++            </ul>
++          )}
++        </div>
++        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-3">
++          {provider === current.provider && current.model ? (
++            <button
++              type="button"
++              onClick={() => setDraft(current.model)}
++              className="flex items-center gap-2 px-1 py-1 text-left font-mono text-[0.75rem] text-ink-muted hover:bg-hover"
++            >
++              <Check
++                aria-hidden="true"
++                className={cx("size-3", model === current.model ? "text-ink" : "invisible")}
++              />
++              <span className="min-w-0 flex-1 truncate">{current.model}</span>
++              <span className="text-ink uppercase">current</span>
++            </button>
++          ) : null}
++          <div className="flex flex-col gap-1.5">
++            <label htmlFor={`${ids}-model`} className="type-label text-ink-muted">
++              Model id
++            </label>
++            <input
++              id={`${ids}-model`}
++              className={inputClass}
++              value={model}
++              placeholder="e.g. the id your provider lists"
++              onChange={(e) => setDraft(e.currentTarget.value)}
++            />
++            <p className="type-serif m-0 text-[0.75rem] text-ink-soft">
++              Type the model id as the provider names it; this install cannot list them.
++            </p>
++          </div>
++        </div>
++      </div>
++      <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
++        <p className="type-serif m-0 min-w-0 flex-1 text-[0.6875rem] text-ink-soft">{note}</p>
++        <Button
++          size="lg"
++          icon={<RefreshCw aria-hidden="true" />}
++          onClick={() => void options.refetch()}
++          disabled={options.isFetching}
++        >
++          Refresh models
++        </Button>
++        <Button size="lg" onClick={onCancel}>
++          Cancel
++        </Button>
++        <Button size="lg" tone="primary" type="submit" disabled={!ready}>
++          Switch
++        </Button>
++      </div>
++    </form>
++  );
++}
++
++export function ModelPickerDialog({
++  open,
++  onOpenChange,
++  onApply,
++  busy = false,
++  note = "Saved to the config; new sessions use it.",
++}: {
++  open: boolean;
++  onOpenChange: (open: boolean) => void;
++  onApply: (choice: ModelChoice) => void;
++  busy?: boolean;
++  note?: string;
++}) {
++  const options = useQuery({
++    queryKey: ["models", "options"],
++    queryFn: () => api.model.options(),
++    enabled: open,
++  });
++  const current = options.data?.current;
++  const currentLine = current?.model
++    ? `current: ${current.model}${current.provider ? ` · ${current.provider}` : ""}`
++    : "current: (unset)";
++  return (
++    <Modal
++      open={open}
++      onOpenChange={onOpenChange}
++      size="lg"
++      title="Switch model"
++      description={currentLine}
++    >
++      <PickerBody onApply={onApply} onCancel={() => onOpenChange(false)} busy={busy} note={note} />
++    </Modal>
++  );
++}
+diff --git a/apps/web/src/ui/controls.tsx b/apps/web/src/ui/controls.tsx
+index d33f6b5..f73bfcd 100644
+--- a/apps/web/src/ui/controls.tsx
++++ b/apps/web/src/ui/controls.tsx
+@@ -1,7 +1,7 @@
+ // Shared dashboard controls (W51-a). Square corners, one ink colour, the type roles from index.css.
+ // docs/notes/ui-parity/web-foundation.md lists every component with its props and when to use it.
+ 
+-import { AlertCircle, ChevronDown, Inbox, LoaderCircle, RotateCw } from "lucide-react";
++import { AlertCircle, ChevronDown, Inbox, LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
+ import type {
+   ButtonHTMLAttributes,
+   ComponentType,
+@@ -348,17 +348,42 @@ export function CardHeader({
+   title,
+   aside,
+   level = 2,
++  subtitle,
++  below,
+ }: {
+   icon?: ComponentType<{ className?: string }>;
+   title: ReactNode;
+   aside?: ReactNode;
+   level?: 2 | 3;
++  /** A short muted note right after the title, in normal case ("applies to new sessions"). */
++  subtitle?: ReactNode;
++  /** A line under the title (a chart legend). */
++  below?: ReactNode;
+ }) {
+   const Heading = level === 2 ? "h2" : "h3";
++  const titleRow = (
++    <div className="flex min-w-0 flex-1 items-center gap-2.5">
++      {Icon ? <Icon className="size-[1.125rem] shrink-0 text-ink" /> : null}
++      <Heading
++        className={cx("type-section-title m-0 truncate", subtitle === undefined && "flex-1")}
++      >
++        {title}
++      </Heading>
++      {subtitle === undefined ? null : (
++        <span className="min-w-0 flex-1 truncate text-[0.75rem] text-ink-soft">{subtitle}</span>
++      )}
++    </div>
++  );
+   return (
+     <header className="flex min-h-[3.375rem] items-center gap-2.5 border-b border-line px-4 py-2">
+-      {Icon ? <Icon className="size-[1.125rem] shrink-0 text-ink" /> : null}
+-      <Heading className="type-section-title m-0 flex-1 truncate">{title}</Heading>
++      {below === undefined ? (
++        titleRow
++      ) : (
++        <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-1.5">
++          {titleRow}
++          {below}
++        </div>
++      )}
+       {aside ? <div className="flex shrink-0 items-center gap-2">{aside}</div> : null}
+     </header>
+   );
+@@ -592,3 +617,80 @@ export function QueryState({
+   }
+   return <>{children}</>;
+ }
++
++/* ---------------------------------------------------------------- header controls (W52-b) */
++
++/**
++ * Period picker for the header's after-title slot ("7d 30d 90d"): small square typewriter buttons,
++ * the picked one filled with ink. `upper` sets the labels in capitals (Models).
++ */
++export function PeriodButtons<T extends number | string>({
++  label = "Period",
++  value,
++  options,
++  onChange,
++  upper = false,
++}: {
++  label?: string;
++  value: T;
++  options: readonly SegmentOption<T>[];
++  onChange: (next: T) => void;
++  upper?: boolean;
++}) {
++  return (
++    // biome-ignore lint/a11y/useSemanticElements: a labelled button group, not a form fieldset
++    <div role="group" aria-label={label} className="flex items-center gap-1.5">
++      {options.map((option) => (
++        <button
++          key={String(option.value)}
++          type="button"
++          aria-pressed={option.value === value}
++          onClick={() => onChange(option.value)}
++          className={cx(
++            "type-button h-7 min-w-[2.375rem] border border-ink px-2.5 text-[0.6875rem] transition-colors",
++            upper && "uppercase",
++            option.value === value ? "bg-ink text-on-ink" : "text-ink hover:bg-hover",
++          )}
++        >
++          {option.label}
++        </button>
++      ))}
++    </div>
++  );
++}
++
++/** Ghost refresh icon (circular arrows) that turns into a spinner while `busy`. */
++export function RefreshButton({
++  onClick,
++  busy = false,
++  label = "Refresh",
++}: {
++  onClick: () => void;
++  busy?: boolean;
++  label?: string;
++}) {
++  return (
++    <IconButton
++      label={label}
++      onClick={onClick}
++      disabled={busy}
++      aria-busy={busy}
++      className="text-ink-soft hover:text-ink disabled:opacity-100"
++    >
++      {busy ? (
++        <LoaderCircle aria-hidden="true" className="animate-spin" />
++      ) : (
++        <RefreshCw aria-hidden="true" />
++      )}
++    </IconButton>
++  );
++}
++
++/** A page's first load: one spinner centred with generous room (Analytics, Models). */
++export function PageSpinner() {
++  return (
++    <div className="flex justify-center py-24" aria-busy="true">
++      <LoaderCircle aria-label="Loading" className="size-6 animate-spin text-ink" />
++    </div>
++  );
++}
+diff --git a/docs/notes/ui-parity/web-analytics-models-logs.md b/docs/notes/ui-parity/web-analytics-models-logs.md
+new file mode 100644
+index 0000000..0ba8645
+--- /dev/null
++++ b/docs/notes/ui-parity/web-analytics-models-logs.md
+@@ -0,0 +1,111 @@
++# Task: Web Analytics, Models, Logs (W52-b) Phase: ui-parity Owner: builder w52b
++
++## Status
++
++Done (2026-10-24). Analytics, Models (with the Switch model and Auxiliary tasks dialogs) and Logs are
++rebuilt on the foundation; re-captured in Clear Blue (light) and Deep Teal (dark) and set beside the
++reference in a side-by-side PDF (builder's scratch, not in the repo). Shared pieces added to the
++foundation's files: `CardHeader` `subtitle`/`below`, `PeriodButtons`, `RefreshButton`, `PageSpinner`
++(`ui/controls.tsx`), `ui/DataTable.tsx`, `ui/ModelPickerDialog.tsx`, `lib/useTokenAnalyticsFlag.ts`.
++
++Read: reference screenshots (Evidence, not in the repo) `analytics--{light,dark}`, `models--{light,dark}`,
++`logs--{light,dark}`, `model-picker--dark` (dialog frame only); the wave-52 spec for this slice; the
++foundation note `web-foundation.md`. Reference source was not opened for this rewrite (the spec's
++earlier Read covered `web/src/pages/{Analytics,Models,Logs}Page` for structure and states only).
++Ours: `apps/web/src/pages/{Analytics,Models,Logs}Page.tsx` and tests, `lib/{api,restTypes,format}.ts`,
++`ui/*`, `shell/PageHeader.tsx`, `App.tsx`, `e2e/dashboard.spec.ts`.
++
++What it does (own words): three dashboard pages get the reference look. Analytics shows token
++totals as a dotted-leader list, a stacked daily bar chart and a sortable daily table; Models shows
++a settings card (main model, side tasks) with dialogs, a usage figure list and a card per provider;
++Logs shows a filter summary in the header, an auto-refresh switch, a wrapping row of joined filter
++strips and a tall log card that opens scrolled to the newest line.
++
++Inputs → outputs: `GET /api/analytics/usage?days=` → stat list, chart, table; `GET /api/model/
++{info,options,auxiliary}` + `POST /api/model/set` → settings rows, dialogs, provider cards;
++`GET /api/logs` → log card. The `dashboard.show_token_analytics` flag (config) gates token figures.
++
++Edge cases: flag off (explanation card on Analytics, sessions-only list on Models); no usage in range
++(empty card); failed query (error state with Retry); no providers (empty card); unknown `?file=`
++(falls back to agent); a day string that is not `YYYY-MM-DD` is shown as given.
++
++## Decisions
++
++- W52-b-1: the fifth Analytics stat row is "Est. cost" (we record no API-call count).
++- W52-b-2: no per-model or top-skills tables on Analytics (no data; the reference hides them when
++  empty); the separate cost chart is dropped, cost shows in the stat list and the bar tooltip.
++- W52-b-3: the flag check moves into `lib/useTokenAnalyticsFlag.ts`, used by App, Analytics, Models.
++  Analytics with the flag off shows our explanation and fetches no usage.
++- W52-b-4: Logs auto-refresh defaults OFF (lead decision); the polling test turns it on first.
++- W52-b-5: the Switch model dialog is a shared `ui/ModelPickerDialog.tsx` (slice a's chat picker
++  had not landed): provider list on the left, a model id field on the right (our API cannot list a
++  provider's models). The apply button is "Switch" as in the reference; the Models test follows.
++- W52-b-6: Models row 2 shows our providers as cards in the reference's model-card frame (no
++  per-model usage exists); the Mixture-of-agents row is omitted (no such feature).
++- W52-b-7: side tasks dialog: per-row Change opens today's Provider/Model editor; "Reset all to
++  auto" confirms, then sets only the overridden tasks back to auto. No "Follow" button (no inherit
++  data).
++
++## Compare checklist (L = light, D = dark)
++
++**Common**
++- [x] L [x] D Page title in the display face at x≈263; the controls sit right after the title (not in the body).
++- [x] L [x] D Cards are square with 1px borders in the right colour, no shadow, and the page fill. The gaps between
++  cards are 22–24px.
++- [x] L [x] D Period buttons are 28px tall, square, the active one filled (cream / blue), the others outlined.
++- [x] L [x] D The refresh icon is ghost and muted, and turns into a spinner while loading.
++
++**Analytics**
++- [x] L [x] D Row 1 has two equal columns, each 289px tall: the stat list on the left, "Daily token usage" on the right.
++- [x] L [x] D Stat list: five rows at a 37px pitch, the value left in the display face, the label right in letter-spaced
++  uppercase muted text, with a dotted leader between them. The fifth row is Est. cost (decision noted).
++- [x] L [x] D The chart is 160px tall and fills the width. Input sits on top and output on the bottom, in the series
++  colours at 70%. The legend has square swatches. The axis shows the first, middle and last dates in tertiary.
++- [x] L [x] D The tooltip on bar hover shows the date, Input, Output and Total.
++- [x] L [x] D Daily breakdown table: icon and title header, sortable columns with arrows, the series colours in the Input
++  and Output columns, faint row dividers and the hover tint.
++- [x] L [x] D The empty, error, loading and flag-off states each render as in §1.2.
++- [x] L [x] D No per-model, skills or cost chart blocks are drawn (decision noted).
++
++**Models**
++- [x] L [x] D The "Model settings" card has the sliders icon, the uppercase title and the muted subtitle, and two tinted
++  setting rows inset 16px with 12px between them.
++- [x] L [x] D Main model row: the star in primary, the mono value with `current-model`, and a filled CHANGE button.
++- [x] L [x] D Auxiliary row: the summary count and an outlined CONFIGURE button. The dialog shows the task rows,
++  CHANGE opens the inline editor, and RESET ALL TO AUTO has a confirm.
++- [x] L [x] D Switch model dialog: the reference frame (title, current line, the provider list on the left, the model id
++  input on the right, then Cancel and Save).
++- [x] L [x] D Stat card on the right: dotted-leader rows. With the flag off, it shows Total sessions and the note.
++- [x] L [x] D Provider cards in a 3/2/1 grid with a 16px gap: mono uppercase title, id badge, state at top right, SIGN IN
++  outlined, description, faint footer line. The main provider has the ring.
++- [x] L [x] D The device sign-in flow works inside a card (code, link, status, Cancel/Close).
++
++**Logs**
++- [x] L [x] D The header badge "AGENT · ALL · ALL" updates with the filters, with the refresh icon after it.
++- [x] L [x] D The end slot has "AUTO-REFRESH" with the square switch, and "Live" while it is on.
++- [x] L [x] D The toolbar is horizontal and wraps: label left, joined square segments 28px tall, the active segment
++  filled. LINES is on the second row at 1440 wide.
++- [x] L [x] D The log card header shows the file icon and "<FILE>.LOG" in the display face. The body is mono 12px with
++  about 19–20px lines, colours by level and the hover tint.
++- [x] L [x] D The view opens scrolled to the newest line at the bottom, at least 400px tall and up to the viewport
++  minus 220.
++- [x] L [x] D The error strip and the empty line render correctly.
++- [x] Unit tests (Analytics, Models, Logs, App), the e2e Logs test, and `tooling.checks --require-ref` all pass.
++
++Deliberate differences (Compare): Analytics' fifth row is Est. cost and there is no per-model table
++(W52-b-1/2); Models has two settings rows (no Mixture of agents) and provider cards where the reference
++has per-model usage cards with "Use as" and a token bar (W52-b-6), and no "Models used" figure; the
++Switch model dialog has a model id field instead of a model list and its "current" line is serif,
++not mono (the foundation dialog's description voice); the stack's main provider ("custom") is not in
++the provider catalogue, so no card carries the main ring in the shots (unit test covers the pill);
++the log card head is the foundation's 54 px CardHeader (reference about 42 px) and log lines are on a
++20 px pitch (reference about 19 px). Empty, error, loading and flag-off states are covered by unit
++tests rather than shots.
++
++## Follow-ups (backend; outside this slice)
++
++- `/api/analytics/usage`: `api_calls` and `by_model[]` (API calls row, per-model table, "Models used",
++  per-model usage cards with "Use as").
++- A per-provider model listing (a real model list in the Switch model dialog).
++- Effective/inherited routes for side tasks ("Follow <task>", effective-route text).
++- Top skills analytics, if skills usage is ever recorded.
+diff --git a/docs/notes/ui-parity/web-foundation.md b/docs/notes/ui-parity/web-foundation.md
+index a17be0f..34755e4 100644
+--- a/docs/notes/ui-parity/web-foundation.md
++++ b/docs/notes/ui-parity/web-foundation.md
+@@ -187,3 +187,16 @@ the reference in the side-by-side PDF):
+ Follow-ups for wave 52: rebuild the remaining pages on these components (some still show raw
+ `<button>`s and old spacing); the console modal and the auth widget get the new look with their
+ pages.
++
++## Added in wave 52 (W52-b)
++
++- `CardHeader` takes `subtitle` (muted note after the title) and `below` (a legend line).
++- `PeriodButtons` (`ui/controls.tsx`): 7d / 30d / 90d style square buttons for `HeaderAfterTitle`;
++  `upper` sets capitals. `RefreshButton`: ghost circular-arrows icon, a spinner while `busy`.
++  `PageSpinner`: a page's first load, one centred spinner.
++- `DataTable` (`ui/DataTable.tsx`): sortable table (serif headers with arrows, `aria-sort`, nulls
++  last, first column left, the rest right); `sortRows` for hand-built tables.
++- `ModelPickerDialog` (`ui/ModelPickerDialog.tsx`): the Switch model dialog (filter, providers left,
++  model id right, Refresh models / Cancel / Switch); the caller passes `onApply({provider, model})`.
++- `useTokenAnalyticsFlag()` (`lib/useTokenAnalyticsFlag.ts`): the `dashboard.show_token_analytics`
++  flag from the shell's config query.

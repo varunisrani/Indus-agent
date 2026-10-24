@@ -14,3 +14,11 @@
 - Gate: biome, tsc, sessions/chat vitest green, web e2e 5/5 (dashboard+chat), tooling.checks ok after test-name fix.
   Full web vitest: 3–6 App/ThemeMenu/Webhooks tests time out under load (same on base 0a7f30a) — integrator must root-cause
   (likely the new fonts/theme provider slowing App renders in jsdom), not just rerun.
+## w52b (web Analytics, Models, Logs) — base 0a7f30a, clean scan
+- Pages rebuilt; new lib/useTokenAnalyticsFlag.ts (App uses it), ui/DataTable.tsx, ui/ModelPickerDialog.tsx (shared,
+  self-contained, onApply({provider, model})); controls.tsx: CardHeader subtitle/below, PeriodButtons, RefreshButton,
+  PageSpinner (w52d also adds PageSpinner + CardHeader subtitle — integrator dedupes); foundation note appended.
+- TWO model pickers exist: w52a chat/ModelPickerDialog.tsx and this ui/ModelPickerDialog.tsx — integrator keeps ONE
+  (ui/ version, shared) and points chat at it, keeping w52a's fuzzy highlight/current tags/notice where better.
+- Decisions W52-b-1..7 (Logs auto-refresh off; acceptance title kept). Gate: biome, tsc, vitest 308/308 at low load,
+  web e2e 8/8, tooling.checks ok. Backend follow-ups: usage api_calls + by_model, per-provider model list.
