@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 3,
-  "remaining_pct": 97,
-  "resets_at": "2026-10-22T01:50:00+00:00",
-  "last_check": "2026-10-21T20:56:00+00:00",
-  "current_step": "Took the turn; landing P24 (w40) and starting D-16.799 wiring",
-  "last_commit": "150e93e"
+  "usage_pct": 0,
+  "remaining_pct": 100,
+  "resets_at": "2026-10-25T02:30:00+00:00",
+  "last_check": "2026-10-24T21:50:00+00:00",
+  "current_step": "UI parity: integrate w51/w52 batch 1; build w52 i/j/k/l",
+  "last_commit": "b2f9bf2"
 }

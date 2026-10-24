@@ -76,6 +76,8 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
+**Agent 2 ACTIVE (took the turn 21:50 UTC 2026-10-24, owner request):** integrating w51a/b + w52 a-h,m; building w52 i/j/k/l.
+If found PAUSED mid-wave, look in `.agents/wip/w53/` for saved work.
 UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
 Read first: `.agents/wip/w51/brief.md` (rules: clean room for code/assets, look follows the reference),
 `.agents/wip/w52/brief.md`, `.agents/wip/w52/lead-decisions.md`, specs `.agents/wip/w52/specs/*.md` (one per page group).
