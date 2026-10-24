@@ -33,3 +33,8 @@ Base and node_modules (this run):
   — it has the new web packages (lucide-react, @fontsource*). Do not use verify26's tree for apps/web.
 - DESKTOP builders g–m start after the desktop foundation (w51b) lands; their base will be given then.
 - The web foundation's API is docs/notes/ui-parity/web-foundation.md in your worktree.
+- DESKTOP builders g–m: local base `993f0e9` = main + w51b (desktop foundation). node_modules: `cp -al` from
+  $SP/base-w51b (has @fontsource/inter and abril-fatface). Foundation API: docs/notes/ui-parity/desktop-foundation.md
+  (overlay frames in app/overlay/OverlayFrame.tsx, settings primitives in settings/primitives.tsx). The capture kit's
+  pane steps must find the band's icon buttons by aria-label ("Open Terminal" etc.) — fix that in your copy of the kit.
+  Batch 1 now: g, h, m. Batch 2 (i, j, k, l) after the usage window resets.
