@@ -76,8 +76,12 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-**Agent 2 ACTIVE (took the turn 21:50 UTC 2026-10-24, owner request):** integrating w51a/b + w52 a-h,m; building w52 i/j/k/l.
-If found PAUSED mid-wave, look in `.agents/wip/w53/` for saved work.
+**Agent 2 ACTIVE (took the turn 21:50 UTC 2026-10-24, owner request) — wave 53, UI parity.** Parked in `.agents/wip/w53/`
+(README has every section): w53-web (w52 a–f on w51a, gate green), w53-desk (w52 g/h/m on w51b, green), w53i/w53j
+(desktop settings A/B) merged as w53-settings (green), w53k (capabilities/messaging/bots) and w53l (command center,
+cron, profiles, agents, artifacts, webhooks, learning map) — INT-KL merging them on the desktop line. Land order:
+w51a, w53-web, w51b, w53-desk, w53-settings, then the k+l integration; pnpm-lock and notices regenerated (not merged).
+Reference captures being re-taken (Agent 1's were lost with its container) for the side-by-side PDFs.
 UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
 Read first: `.agents/wip/w51/brief.md` (rules: clean room for code/assets, look follows the reference),
 `.agents/wip/w52/brief.md`, `.agents/wip/w52/lead-decisions.md`, specs `.agents/wip/w52/specs/*.md` (one per page group).
