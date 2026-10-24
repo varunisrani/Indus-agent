@@ -82,8 +82,8 @@ Read first: `.agents/wip/w51/brief.md` (rules: clean room for code/assets, look 
 Parked (not landed): w51a web foundation, w51b desktop foundation (`.agents/wip/w51/*.patch`, base 511b156; README);
 w52a sessions+chat, w52b analytics/models/logs, w52c cron/skills/plugins/mcp, w52d channels/webhooks/pairing/keys
 (`.agents/wip/w52/*.patch`, base = main 511b156 + w51a; README lists merge notes: one shared model picker, deduped
-controls, light warning colour). Wrapping up at the usage limit: w52e profiles/config, w52f system/files/docs/login,
-w52g desktop transcript, w52h composer menus, w52m panes/onboarding (parked if they reported in time; see README).
+controls, light warning colour). All of w52e profiles/config, w52f system/files/docs/login (web base main+w51a) and w52g desktop transcript,
+w52h composer menus, w52m panes/onboarding (desktop base = main 511b156 + w51b) are PARKED too (README).
 NOT STARTED: w52i desktop-settings-a, w52j desktop-settings-b, w52k desktop-capabilities, w52l desktop-command-center
 (specs ready). NEXT: (1) integrate: apply w51a, w51b, then w52 patches with --3way; merge package.json changes and
 regenerate pnpm-lock + notices with the tools; full gate (web vitest App/Webhooks timeouts under load seen on the base
