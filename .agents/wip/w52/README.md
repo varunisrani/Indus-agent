@@ -37,3 +37,12 @@
 - Note for integrator/foundation: reference buttons are UPPERCASE; foundation Button is mixed case — switch the
   foundation's button text style to uppercase (parity) and check tests that match by name (case-insensitive queries).
 - Gate: tsc, biome, tooling.checks ok, e2e dashboard 3/3, web vitest 306/306 at maxWorkers=2.
+## w52g (desktop transcript) — base 993f0e9 (main + w51b), clean scan; 9/10 slugs done (usage-stats N/A)
+- Transcript, streaming, tool rows (incl. rejected; status "blocked" counts as failed), expanded rows, approval card
+  (Reject · Always allow ▾ · Run ↵; arming + data-choice kept), error card (raw failure in Details), top-centre toasts via
+  notify() (app/Toasts.tsx), no-provider "Backend needs setup" in the status bar, NoticeStrip.
+- Shared: i18n/en.ts spread, styles.css toast/tool rules moved to chat/transcript.css, deskTokens `attention`,
+  ui/components MenuItem tone/data, Shell mounts ToastRegion, Composer restored-draft uses NoticeStrip (may conflict with
+  w52h), e2e helpers click "Run". Remaining: running/approval dots on tab + sidebar row, single Stop button (composer),
+  clamp-expand, swipe-to-reject. Electron e2e NOT run — integrator must run it. Decisions W52-g-1..9.
+- Gate: desktop vitest 688 (full), tsc, biome, tooling.checks ok. Compare PDF scratchpad/w52g/compare.pdf.
