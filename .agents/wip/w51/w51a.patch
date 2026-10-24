@@ -1,0 +1,4519 @@
+diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
+index c4e15a4..fd232bc 100644
+--- a/THIRD_PARTY_NOTICES.md
++++ b/THIRD_PARTY_NOTICES.md
+@@ -41,7 +41,7 @@ SOFTWARE.
+ 
+ ## What Indus Agent ships
+ 
+-Every component below is redistributed by at least one way of installing Indus Agent (installers, Docker image, desktop app, `uv sync` with extras): 167 Python packages, 260 npm packages bundled into the dashboard, terminal UI and desktop app, 5 pinned binaries and 1 base image. "Used by" says which part brings each one in: `base` is the core install, `extra <name>` an optional extra, `apps/<name>` a JavaScript app.
++Every component below is redistributed by at least one way of installing Indus Agent (installers, Docker image, desktop app, `uv sync` with extras): 167 Python packages, 264 npm packages bundled into the dashboard, terminal UI and desktop app, 5 pinned binaries and 1 base image. "Used by" says which part brings each one in: `base` is the core install, `extra <name>` an optional extra, `apps/<name>` a JavaScript app.
+ 
+ Components are grouped by licence (SPDX expression). Each licence's full text follows once at the end; every package's own copyright notice stays in its distribution.
+ 
+@@ -266,7 +266,7 @@ Components are grouped by licence (SPDX expression). Each licence's full text fo
+ | graceful-fs | 4.2.11 | npm | apps/desktop |  |
+ | internmap | 1.0.1 | npm | apps/desktop |  |
+ | internmap | 2.0.3 | npm | apps/desktop |  |
+-| lucide-react | 1.52.0 | npm | apps/desktop |  |
++| lucide-react | 1.52.0 | npm | apps/desktop, apps/web |  |
+ | sax | 1.4.1 | npm | apps/desktop |  |
+ | semver | 7.7.4 | npm | apps/desktop |  |
+ | signal-exit | 3.0.7 | npm | apps/tui |  |
+@@ -596,6 +596,15 @@ Components are grouped by licence (SPDX expression). Each licence's full text fo
+ |---|---|---|---|---|
+ | tqdm | 4.70.1 | Python | extra research, extra voice | used unmodified |
+ 
++### OFL-1.1
++
++| Component | Version | Kind | Used by | Note |
++|---|---|---|---|---|
++| @fontsource-variable/archivo | 5.3.0 | npm | apps/web |  |
++| @fontsource-variable/eb-garamond | 5.3.0 | npm | apps/web |  |
++| @fontsource-variable/jetbrains-mono | 5.3.0 | npm | apps/web |  |
++| @fontsource/courier-prime | 5.3.0 | npm | apps/web |  |
++
+ ### PSF-2.0
+ 
+ | Component | Version | Kind | Used by | Note |
+@@ -2466,6 +2475,97 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
+   defined by the Mozilla Public License, v. 2.0.
+ ```
+ 
++### OFL-1.1
++
++```text
++-----------------------------------------------------------
++SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
++-----------------------------------------------------------
++
++PREAMBLE
++The goals of the Open Font License (OFL) are to stimulate worldwide
++development of collaborative font projects, to support the font creation
++efforts of academic and linguistic communities, and to provide a free and
++open framework in which fonts may be shared and improved in partnership
++with others.
++
++The OFL allows the licensed fonts to be used, studied, modified and
++redistributed freely as long as they are not sold by themselves. The
++fonts, including any derivative works, can be bundled, embedded,
++redistributed and/or sold with any software provided that any reserved
++names are not used by derivative works. The fonts and derivatives,
++however, cannot be released under any other type of license. The
++requirement for fonts to remain under this license does not apply
++to any document created using the fonts or their derivatives.
++
++DEFINITIONS
++"Font Software" refers to the set of files released by the Copyright
++Holder(s) under this license and clearly marked as such. This may
++include source files, build scripts and documentation.
++
++"Reserved Font Name" refers to any names specified as such after the
++copyright statement(s).
++
++"Original Version" refers to the collection of Font Software components as
++distributed by the Copyright Holder(s).
++
++"Modified Version" refers to any derivative made by adding to, deleting,
++or substituting -- in part or in whole -- any of the components of the
++Original Version, by changing formats or by porting the Font Software to a
++new environment.
++
++"Author" refers to any designer, engineer, programmer, technical
++writer or other person who contributed to the Font Software.
++
++PERMISSION & CONDITIONS
++Permission is hereby granted, free of charge, to any person obtaining
++a copy of the Font Software, to use, study, copy, merge, embed, modify,
++redistribute, and sell modified and unmodified copies of the Font
++Software, subject to the following conditions:
++
++1) Neither the Font Software nor any of its individual components,
++in Original or Modified Versions, may be sold by itself.
++
++2) Original or Modified Versions of the Font Software may be bundled,
++redistributed and/or sold with any software, provided that each copy
++contains the above copyright notice and this license. These can be
++included either as stand-alone text files, human-readable headers or
++in the appropriate machine-readable metadata fields within text or
++binary files as long as those fields can be easily viewed by the user.
++
++3) No Modified Version of the Font Software may use the Reserved Font
++Name(s) unless explicit written permission is granted by the corresponding
++Copyright Holder. This restriction only applies to the primary font name as
++presented to the users.
++
++4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
++Software shall not be used to promote, endorse or advertise any
++Modified Version, except to acknowledge the contribution(s) of the
++Copyright Holder(s) and the Author(s) or with their explicit written
++permission.
++
++5) The Font Software, modified or unmodified, in part or in whole,
++must be distributed entirely under this license, and must not be
++distributed under any other license. The requirement for fonts to
++remain under this license does not apply to any document created
++using the Font Software.
++
++TERMINATION
++This license becomes null and void if any of the above conditions are
++not met.
++
++DISCLAIMER
++THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
++MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
++OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
++COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
++INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
++DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
++OTHER DEALINGS IN THE FONT SOFTWARE.
++```
++
+ ### PSF-2.0
+ 
+ ```text
+diff --git a/apps/web/e2e/auth-gates.spec.ts b/apps/web/e2e/auth-gates.spec.ts
+index 6d711d0..1a77543 100644
+--- a/apps/web/e2e/auth-gates.spec.ts
++++ b/apps/web/e2e/auth-gates.spec.ts
+@@ -154,7 +154,7 @@ function tokenOffer(token: string): string[] {
+ 
+ async function pageToken(page: Page, url: string): Promise<string> {
+   await page.goto(`${url}/sessions`);
+-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
++  await expect(page.getByRole("heading", { name: "Recent sessions" })).toBeVisible();
+   return page.evaluate(() => window.__INDUS_SESSION_TOKEN__ ?? "");
+ }
+ 
+diff --git a/apps/web/e2e/auth.spec.ts b/apps/web/e2e/auth.spec.ts
+index d23d7de..a870bda 100644
+--- a/apps/web/e2e/auth.spec.ts
++++ b/apps/web/e2e/auth.spec.ts
+@@ -53,7 +53,7 @@ test("loopback: the token rides a header on every API call, never the URL", asyn
+     }
+   });
+   await page.goto(`${stack.url}/sessions`);
+-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
++  await expect(page.getByRole("heading", { name: "Recent sessions" })).toBeVisible();
+   const token = await page.evaluate(() => window.__INDUS_SESSION_TOKEN__ ?? "");
+   expect(token.length).toBeGreaterThan(20);
+   expect(calls.length).toBeGreaterThan(0);
+@@ -79,7 +79,7 @@ test("a stale token after a dashboard restart reloads the page once and goes on"
+ }) => {
+   const stack = await launch({ turns: [[{ text: "Hello." }]] });
+   await page.goto(`${stack.url}/sessions`);
+-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
++  await expect(page.getByRole("heading", { name: "Recent sessions" })).toBeVisible();
+   const before = await page.evaluate(() => window.__INDUS_SESSION_TOKEN__);
+ 
+   const restarted = await stack.ask("dashboard.restart");
+@@ -137,7 +137,7 @@ test("gated: login, the loopback token refused, single-use WS tickets, logout",
+   await page.getByLabel("Username").fill("admin");
+   await page.getByLabel("Password").fill(password);
+   await page.getByRole("button", { name: /Sign in/ }).click();
+-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
++  await expect(page.getByRole("heading", { name: "Recent sessions" })).toBeVisible();
+   expect(new URL(page.url()).pathname).toBe("/sessions");
+   expect(await page.evaluate(() => window.__INDUS_SESSION_TOKEN__ ?? null)).toBeNull();
+   expect(await page.evaluate(() => window.__INDUS_AUTH_REQUIRED__)).toBe(true);
+diff --git a/apps/web/e2e/dashboard.spec.ts b/apps/web/e2e/dashboard.spec.ts
+index a87fd85..e9932c7 100644
+--- a/apps/web/e2e/dashboard.spec.ts
++++ b/apps/web/e2e/dashboard.spec.ts
+@@ -21,18 +21,20 @@ test("Sessions: search finds a message with its snippet; delete removes the sess
+   const [pelican, other] = ids as [string, string];
+ 
+   await page.goto(`${stack.url}/sessions`);
++  // The page opens on the Overview; the rows with actions and the search live under History.
++  await page.getByRole("button", { name: "History", exact: true }).click();
+   const list = page.getByRole("list", { name: "Sessions" });
+   await expect(list.getByTestId(`session-${pelican}`)).toBeVisible();
+   await expect(list.getByTestId(`session-${other}`)).toBeVisible();
+ 
+   await page.getByRole("textbox", { name: "Search sessions" }).fill("pelican");
+-  await page.getByRole("button", { name: "Search" }).click();
++  await page.getByRole("button", { name: "Search", exact: true }).click();
+   const results = page.getByRole("list", { name: "Search results" });
+   await expect(results.getByRole("listitem")).not.toHaveCount(0);
+   await expect(results.locator("mark").first()).toHaveText(/pelican/i);
+   await expect(results).not.toContainText("Nothing about birds");
+ 
+-  await page.getByRole("button", { name: "Clear" }).click();
++  await page.getByRole("button", { name: "Clear search" }).click();
+   await list.getByTestId(`session-${other}`).getByRole("button", { name: "Delete" }).click();
+   const dialog = page.getByRole("dialog", { name: "Delete this session?" });
+   await dialog.getByRole("button", { name: "Delete" }).click();
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 8a3ba7e..51c4205 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -12,6 +12,10 @@
+     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json"
+   },
+   "dependencies": {
++    "@fontsource-variable/archivo": "5.3.0",
++    "@fontsource-variable/eb-garamond": "5.3.0",
++    "@fontsource-variable/jetbrains-mono": "5.3.0",
++    "@fontsource/courier-prime": "5.3.0",
+     "@indus/ui": "workspace:*",
+     "@radix-ui/react-dialog": "1.1.23",
+     "@radix-ui/react-switch": "1.3.7",
+@@ -21,6 +25,7 @@
+     "@xterm/addon-web-links": "0.12.0",
+     "@xterm/addon-webgl": "0.19.0",
+     "@xterm/xterm": "6.0.0",
++    "lucide-react": "1.52.0",
+     "react": "19.3.0",
+     "react-dom": "19.3.0",
+     "react-router": "8.4.0"
+diff --git a/apps/web/src/App.test.tsx b/apps/web/src/App.test.tsx
+index 2f27479..9d44e58 100644
+--- a/apps/web/src/App.test.tsx
++++ b/apps/web/src/App.test.tsx
+@@ -208,7 +208,7 @@ describe("failures and accessibility", () => {
+ 
+   it("has no axe violations on the shell", async () => {
+     const { container } = renderApp("/sessions");
+-    await screen.findByRole("list", { name: "Sessions" });
++    await screen.findByRole("list", { name: "Recent sessions" });
+     let violations: axe.Result[] = [];
+     await act(async () => {
+       const results = await axe.run(container, {
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 6e77a3e..df8a6f3 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -3,6 +3,7 @@
+ // so tests can supply memory equivalents.
+ 
+ import { useQuery } from "@tanstack/react-query";
++import { Menu } from "lucide-react";
+ import { type ComponentType, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
+ import { Navigate, Route, Routes, useLocation } from "react-router";
+ import { ConsoleEntry } from "./console/ConsoleModal.tsx";
+@@ -25,6 +26,8 @@ import { CHAT_PATH, DEFAULT_PATH, type PageRoute, ROUTES, routeFor } from "./she
+ import { readCollapsed, Sidebar, useWideScreen, writeCollapsed } from "./shell/Sidebar.tsx";
+ import { StatusStrip } from "./shell/StatusStrip.tsx";
+ import { ToastProvider } from "./shell/Toasts.tsx";
++import { ThemeProvider } from "./theme/ThemeProvider.tsx";
++import { Loading } from "./ui/controls.tsx";
+ 
+ export interface AppProps {
+   /** The chat terminal host (P18-26); a placeholder until it lands. */
+@@ -41,9 +44,9 @@ function analyticsFlag(config: ConfigObject | undefined): boolean {
+ 
+ function RouteFallback() {
+   return (
+-    <p className="p-6 text-sm text-muted" aria-busy="true">
+-      Loading…
+-    </p>
++    <div className="p-6">
++      <Loading />
++    </div>
+   );
+ }
+ 
+@@ -109,16 +112,16 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
+   const menuButton = wide ? null : (
+     <button
+       type="button"
+-      className="rounded-md border border-line px-2 py-1 text-xs"
++      className="inline-flex size-7 items-center justify-center text-ink-muted hover:text-ink"
+       aria-label="Open navigation"
+       onClick={() => setMobileOpen(true)}
+     >
+-      Menu
++      <Menu aria-hidden="true" className="size-4" />
+     </button>
+   );
+ 
+   return (
+-    <div className="flex h-full min-h-0 bg-bg text-fg">
++    <div className="flex h-full min-h-0 bg-canvas text-ink">
+       <Sidebar
+         items={navItems}
+         search={scope.search}
+@@ -127,14 +130,14 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
+         onToggleCollapsed={toggleCollapsed}
+         mobileOpen={mobileOpen}
+         onCloseMobile={() => setMobileOpen(false)}
+-        footer={
++        footer={(compact) => (
+           <>
+             <PluginSlot name="sidebar" />
+-            <StatusStrip />
+-            <ConsoleEntry enabled={consoleEnabled()} />
+-            {sidebarFooter}
++            <StatusStrip compact={compact} />
++            <ConsoleEntry enabled={consoleEnabled()} compact={compact} />
++            {compact ? null : sidebarFooter}
+           </>
+-        }
++        )}
+       />
+       <div className="flex min-w-0 flex-1 flex-col">
+         <PluginSlot name="backdrop" />
+@@ -189,10 +192,12 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
+ 
+ export function App({ chatHost = ChatPending, sidebarFooter }: AppProps) {
+   return (
+-    <ToastProvider>
+-      <ProfileScopeProvider>
+-        <Shell chatHost={chatHost} sidebarFooter={sidebarFooter} />
+-      </ProfileScopeProvider>
+-    </ToastProvider>
++    <ThemeProvider>
++      <ToastProvider>
++        <ProfileScopeProvider>
++          <Shell chatHost={chatHost} sidebarFooter={sidebarFooter} />
++        </ProfileScopeProvider>
++      </ToastProvider>
++    </ThemeProvider>
+   );
+ }
+diff --git a/apps/web/src/console/ConsoleModal.tsx b/apps/web/src/console/ConsoleModal.tsx
+index ddd68c2..f9f326a 100644
+--- a/apps/web/src/console/ConsoleModal.tsx
++++ b/apps/web/src/console/ConsoleModal.tsx
+@@ -4,6 +4,7 @@
+ // URL. Frames are JSON both ways; the server decides everything (which commands exist, what needs
+ // confirmation, the limits), the modal only shows it.
+ 
++import { SquareTerminal } from "lucide-react";
+ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+ import { activeProfile } from "../lib/api.ts";
+ import { openDashboardSocket } from "../lib/wsUrl.ts";
+@@ -255,14 +256,27 @@ export function ConsoleModal({
+ }
+ 
+ /** The shell's entry: a button that opens the modal (only when the backend serves the console). */
+-export function ConsoleEntry({ enabled }: { enabled: boolean }) {
++export function ConsoleEntry({
++  enabled,
++  compact = false,
++}: {
++  enabled: boolean;
++  compact?: boolean;
++}) {
+   const [open, setOpen] = useState(false);
+   if (!enabled) return null;
+   return (
+     <>
+-      <Button tone="ghost" className="w-full justify-start" onClick={() => setOpen(true)}>
+-        Admin console
+-      </Button>
++      <button
++        type="button"
++        onClick={() => setOpen(true)}
++        aria-label={compact ? "Admin console" : undefined}
++        title={compact ? "Admin console" : undefined}
++        className={`flex h-8 items-center gap-3 text-[0.75rem] tracking-[0.06em] text-ink-muted hover:text-ink ${compact ? "justify-center" : "px-5"}`}
++      >
++        <SquareTerminal aria-hidden="true" className="size-3.5 shrink-0" />
++        {compact ? null : "Admin console"}
++      </button>
+       {open ? <ConsoleModal open onClose={() => setOpen(false)} /> : null}
+     </>
+   );
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+index 71b2e48..ebca0d4 100644
+--- a/apps/web/src/index.css
++++ b/apps/web/src/index.css
+@@ -1,25 +1,195 @@
+ @import "tailwindcss";
+ 
+-/* Tailwind utilities read the @indus/ui tokens; the token values themselves are written per theme
+-   by `ThemeStyles` (src/shell/ThemeSwitch.tsx) from `tokensToCss`. No font files are shipped: the
+-   stacks fall back to system fonts (R09.22). */
++/* Dashboard tokens (W51-a). A preset (src/theme/presets.ts) sets two colours on <html>:
++   --indus-canvas (the page) and --indus-ink (text, rules, filled controls). Everything below is
++   mixed from that pair, so a new preset needs nothing else. The full list, with the utility each
++   token becomes, is in docs/notes/ui-parity/web-foundation.md. */
++
++:root {
++  /* Fallback pair before the provider runs (Deep Teal). */
++  --indus-canvas: #041c1c;
++  --indus-ink: #ffe6cb;
++
++  --indus-mix-surface: color-mix(in srgb, var(--indus-ink) 4%, var(--indus-canvas));
++  --indus-mix-wash: color-mix(in srgb, var(--indus-ink) 6%, var(--indus-canvas));
++  --indus-mix-hover: color-mix(in srgb, var(--indus-ink) 8%, var(--indus-canvas));
++  --indus-mix-selected: color-mix(in srgb, var(--indus-ink) 12%, var(--indus-canvas));
++  --indus-mix-line: color-mix(in srgb, var(--indus-ink) 15%, var(--indus-canvas));
++  --indus-mix-line-strong: color-mix(in srgb, var(--indus-ink) 22%, var(--indus-canvas));
++  --indus-mix-ink-muted: color-mix(in srgb, var(--indus-ink) 80%, var(--indus-canvas));
++  --indus-mix-ink-soft: color-mix(in srgb, var(--indus-ink) 62%, var(--indus-canvas));
++  --indus-mix-ink-faint: color-mix(in srgb, var(--indus-ink) 42%, var(--indus-canvas));
++
++  --indus-status-success: #4ade80;
++  --indus-status-warning: #ffbd38;
++  --indus-status-danger: #fb2c36;
++  --indus-status-info: #60a5fa;
++  --indus-series-input: var(--indus-ink);
++  --indus-series-output: #34d399;
++  --indus-overlay: rgb(0 0 0 / 0.62);
++}
++
++:root[data-theme="indus-light"] {
++  --indus-status-success: #16a34a;
++  --indus-status-warning: #b45309;
++  --indus-status-danger: #e11d2a;
++  --indus-status-info: #0053fd;
++  --indus-series-input: #001934;
++  --indus-series-output: var(--indus-ink);
++  --indus-overlay: rgb(10 30 60 / 0.35);
++}
++
+ @theme {
+-  --color-bg: var(--indus-color-bg);
+-  --color-raised: var(--indus-color-bg-raised);
+-  --color-fg: var(--indus-color-fg);
+-  --color-muted: var(--indus-color-fg-muted);
+-  --color-line: var(--indus-color-border);
+-  --color-accent: var(--indus-color-accent);
+-  --color-accent-fg: var(--indus-color-accent-fg);
+-  --color-ok: var(--indus-color-success);
+-  --color-warn: var(--indus-color-warning);
+-  --color-danger: var(--indus-color-danger);
+-  --color-code: var(--indus-color-code-bg);
+-  --color-focus: var(--indus-color-focus-ring);
+-  --font-sans: var(--indus-font-sans);
+-  --font-mono: var(--indus-font-mono);
++  /* Surfaces */
++  --color-canvas: var(--indus-canvas);
++  --color-surface: var(--indus-mix-surface);
++  --color-wash: var(--indus-mix-wash);
++  --color-hover: var(--indus-mix-hover);
++  --color-selected: var(--indus-mix-selected);
++  --color-overlay: var(--indus-overlay);
++  /* Ink */
++  --color-ink: var(--indus-ink);
++  --color-ink-muted: var(--indus-mix-ink-muted);
++  --color-ink-soft: var(--indus-mix-ink-soft);
++  --color-ink-faint: var(--indus-mix-ink-faint);
++  --color-on-ink: var(--indus-canvas);
++  /* Rules */
++  --color-line: var(--indus-mix-line);
++  --color-line-strong: var(--indus-mix-line-strong);
++  /* Status */
++  --color-success: var(--indus-status-success);
++  --color-warning: var(--indus-status-warning);
++  --color-danger: var(--indus-status-danger);
++  --color-info: var(--indus-status-info);
++  --color-success-wash: color-mix(in srgb, var(--indus-status-success) 12%, var(--indus-canvas));
++  --color-warning-wash: color-mix(in srgb, var(--indus-status-warning) 12%, var(--indus-canvas));
++  --color-danger-wash: color-mix(in srgb, var(--indus-status-danger) 10%, var(--indus-canvas));
++  --color-info-wash: color-mix(in srgb, var(--indus-status-info) 10%, var(--indus-canvas));
++  --color-series-input: var(--indus-series-input);
++  --color-series-output: var(--indus-series-output);
++
++  /* Older utility names still used by pages not yet rebuilt (wave 52 moves them over). */
++  --color-bg: var(--indus-canvas);
++  --color-raised: var(--indus-canvas);
++  --color-fg: var(--indus-ink);
++  --color-muted: var(--indus-mix-ink-soft);
++  --color-accent: var(--indus-ink);
++  --color-accent-fg: var(--indus-canvas);
++  --color-ok: var(--indus-status-success);
++  --color-warn: var(--indus-status-warning);
++  --color-code: var(--indus-mix-wash);
++  --color-focus: var(--indus-ink);
++
++  /* Type stacks */
++  --font-sans:
++    "Archivo Variable", "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
++  --font-display: "Archivo Variable", "Archivo", system-ui, sans-serif;
++  --font-serif: "EB Garamond Variable", "EB Garamond", Georgia, "Times New Roman", serif;
++  --font-mono:
++    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
++  --font-typewriter: "Courier Prime", "Courier New", ui-monospace, monospace;
++
++  /* Corners are square throughout; `rounded-*` stays available for avatars and dots. */
++  --radius-ui: 0px;
++}
++
++/* ---- Type roles: one utility per voice, so pages never hand-tune letter-spacing ---- */
++
++/* Two-line heavy wordmark in the sidebar head. */
++@utility type-wordmark {
++  font-family: var(--font-sans);
++  font-weight: 800;
++  font-size: 1.0625rem;
++  line-height: 0.95;
++  letter-spacing: 0.03em;
++  text-transform: uppercase;
++}
++
++/* Page title in the header ("Sessions"). */
++@utility type-page-title {
++  font-family: var(--font-display);
++  font-stretch: 125%;
++  font-weight: 700;
++  font-size: 0.9375rem;
++  letter-spacing: 0.06em;
++}
++
++/* Card / section title ("RECENT SESSIONS"). */
++@utility type-section-title {
++  font-family: var(--font-display);
++  font-stretch: 125%;
++  font-weight: 700;
++  font-size: 1.0625rem;
++  letter-spacing: 0.04em;
++  text-transform: uppercase;
++}
++
++/* Smaller section heading set in spaced sans ("Host", "Gateway" on System). */
++@utility type-heading {
++  font-family: var(--font-sans);
++  font-weight: 700;
++  font-size: 0.875rem;
++  letter-spacing: 0.16em;
++}
++
++/* Sidebar navigation label. */
++@utility type-nav {
++  font-family: var(--font-sans);
++  font-weight: 500;
++  font-size: 0.8125rem;
++  letter-spacing: 0.15em;
++  text-transform: uppercase;
++}
++
++/* Typewriter voice for buttons and pickers ("Prune old sessions"). */
++@utility type-button {
++  font-family: var(--font-typewriter);
++  font-weight: 700;
++  font-size: 0.75rem;
++  letter-spacing: 0.14em;
++}
++
++/* Serif voice: list titles, segmented options, descriptions. */
++@utility type-serif {
++  font-family: var(--font-serif);
++  letter-spacing: 0.005em;
++}
++
++/* Small uppercase serif label above form fields and in filter panels ("PROFILE", "SECTIONS"). */
++@utility type-label {
++  font-family: var(--font-serif);
++  font-weight: 500;
++  font-size: 0.75rem;
++  letter-spacing: 0.1em;
++  text-transform: uppercase;
++}
++
++/* Condensed badge voice ("CLI", "active"). */
++@utility type-badge {
++  font-family: var(--font-sans);
++  font-stretch: 62%;
++  font-weight: 400;
++  font-size: 0.75rem;
++  letter-spacing: 0.06em;
++}
++
++/* Data mono: ids, model names, paths, code. */
++@utility type-data {
++  font-family: var(--font-mono);
++  font-size: 0.8125rem;
++}
++
++/* Large tabular figure (stat values). */
++@utility type-stat {
++  font-family: var(--font-sans);
++  font-weight: 500;
++  font-size: 1.0625rem;
++  line-height: 1.1;
++  font-variant-numeric: tabular-nums;
+ }
+ 
++/* ---- Base ---- */
++
+ html,
+ body,
+ #indus-dashboard {
+@@ -28,17 +198,77 @@ body,
+ 
+ body {
+   margin: 0;
+-  background: var(--indus-color-bg);
+-  color: var(--indus-color-fg);
+-  font-family: var(--indus-font-sans);
+-  font-size: 14px;
++  background: var(--indus-canvas);
++  color: var(--indus-ink);
++  font-family: var(--font-sans);
++  font-size: 0.875rem;
++  line-height: 1.5;
++  -webkit-font-smoothing: antialiased;
++}
++
++code,
++kbd,
++pre,
++samp {
++  font-family: var(--font-mono);
+ }
+ 
+ ::selection {
+-  background: var(--indus-color-selection);
++  background: color-mix(in srgb, var(--indus-ink) 30%, transparent);
+ }
+ 
+ :focus-visible {
+-  outline: 2px solid var(--indus-color-focus-ring);
++  outline: 1px solid var(--indus-ink);
+   outline-offset: 2px;
+ }
++
++mark {
++  background: color-mix(in srgb, var(--indus-status-warning) 45%, transparent);
++  color: inherit;
++  padding: 0 1px;
++}
++
++* {
++  scrollbar-color: var(--indus-mix-line-strong) transparent;
++  scrollbar-width: thin;
++}
++
++@keyframes indus-fade-in {
++  from {
++    opacity: 0;
++  }
++  to {
++    opacity: 1;
++  }
++}
++
++@keyframes indus-pop-in {
++  from {
++    opacity: 0;
++    transform: translateY(4px) scale(0.985);
++  }
++  to {
++    opacity: 1;
++    transform: none;
++  }
++}
++
++@keyframes indus-slide-in {
++  from {
++    opacity: 0;
++    transform: translateX(14px);
++  }
++  to {
++    opacity: 1;
++    transform: none;
++  }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  *,
++  *::before,
++  *::after {
++    animation-duration: 0ms;
++    transition-duration: 0ms;
++  }
++}
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index d837141..ff54dc8 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -1,4 +1,5 @@
+-// Browser entry: outer query cache (shell data), router with the injected base path, theme tokens.
++// Browser entry: outer query cache (shell data), router with the injected base path, fonts and
++// tokens (the theme provider itself lives in App).
+ 
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { lazy, StrictMode } from "react";
+@@ -9,7 +10,7 @@ import { basePath } from "./lib/bootstrap.ts";
+ import { exposePluginSdk } from "./plugins/registry.ts";
+ import { buildDashboardSdk } from "./plugins/sdk.ts";
+ import { AuthWidget } from "./shell/AuthWidget.tsx";
+-import { ThemeStyles } from "./shell/ThemeSwitch.tsx";
++import "./theme/fonts.ts";
+ import "./index.css";
+ 
+ // The chat terminal (P18-26) and xterm load only when /chat is first visited.
+@@ -29,7 +30,6 @@ if (root) {
+     <StrictMode>
+       <QueryClientProvider client={client}>
+         <BrowserRouter {...(base ? { basename: base } : {})}>
+-          <ThemeStyles />
+           <App chatHost={ChatHost} sidebarFooter={<AuthWidget />} />
+         </BrowserRouter>
+       </QueryClientProvider>
+diff --git a/apps/web/src/pages/SessionsPage.test.tsx b/apps/web/src/pages/SessionsPage.test.tsx
+index 1951484..c08476d 100644
+--- a/apps/web/src/pages/SessionsPage.test.tsx
++++ b/apps/web/src/pages/SessionsPage.test.tsx
+@@ -22,11 +22,17 @@ async function row(id: string) {
+   return within(await screen.findByTestId(`session-${id}`));
+ }
+ 
++/** The page opens on the Overview; rows with actions live under History. */
++function renderHistory(path = "/sessions") {
++  renderPage(<SessionsPage />, path);
++  fireEvent.click(screen.getByRole("button", { name: "History" }));
++}
++
+ describe("delete", () => {
+   for (const [code, message] of Object.entries(CONFLICT_MESSAGES)) {
+     it(`explains a 409 ${code} in plain language`, async () => {
+       mock.state.deleteConflicts["s-chat-1"] = code;
+-      renderPage(<SessionsPage />, "/sessions");
++      renderHistory();
+       fireEvent.click((await row("s-chat-1")).getByRole("button", { name: "Delete" }));
+       const dialog = await screen.findByRole("dialog");
+       fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+@@ -36,7 +42,7 @@ describe("delete", () => {
+   }
+ 
+   it("sends the snapshot identity and removes the row", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
++    renderHistory();
+     fireEvent.click((await row("s-chat-2")).getByRole("button", { name: "Delete" }));
+     fireEvent.click(
+       within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }),
+@@ -51,8 +57,8 @@ describe("delete", () => {
+ 
+ describe("prune", () => {
+   it("shows the dry-run count before pruning", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
+-    fireEvent.click(await screen.findByRole("button", { name: "Prune…" }));
++    renderHistory();
++    fireEvent.click(await screen.findByRole("button", { name: "Prune old sessions" }));
+     const dialog = await screen.findByRole("dialog");
+     const pruneButton = within(dialog).getByRole("button", { name: /^Prune/ });
+     expect((pruneButton as HTMLButtonElement).disabled).toBe(true);
+@@ -77,8 +83,8 @@ describe("prune", () => {
+   });
+ 
+   it("refuses a day count that is not a whole number", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
+-    fireEvent.click(await screen.findByRole("button", { name: "Prune…" }));
++    renderHistory();
++    fireEvent.click(await screen.findByRole("button", { name: "Prune old sessions" }));
+     const dialog = await screen.findByRole("dialog");
+     fireEvent.change(within(dialog).getByLabelText("Older than (days)"), {
+       target: { value: "-4" },
+@@ -92,13 +98,13 @@ describe("prune", () => {
+ 
+ describe("browse", () => {
+   it("resumes a session in Chat with its id", async () => {
+-    renderPage(<SessionsPage />, "/sessions?profile=work");
++    renderHistory("/sessions?profile=work");
+     fireEvent.click((await row("s-chat-1")).getByRole("button", { name: /Resume/ }));
+     await waitFor(() => expect(currentLocation()).toBe("/chat?resume=s-chat-1&profile=work"));
+   });
+ 
+   it("filters by tab: chats exclude automation, automation includes only it", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
++    renderHistory();
+     await row("s-chat-1");
+     expect(screen.queryByTestId("session-s-cron-1")).toBeNull();
+     expect(mock.callsTo("GET", "/api/sessions")[0]?.query.get("exclude_sources")).toBe(
+@@ -118,7 +124,7 @@ describe("browse", () => {
+   });
+ 
+   it("filters by an exact source", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
++    renderHistory();
+     await row("s-chat-1");
+     const select = screen.getByLabelText("Source");
+     await waitFor(() => expect(within(select).getByRole("option", { name: "web" })).toBeTruthy());
+@@ -130,7 +136,7 @@ describe("browse", () => {
+   it("renders search snippets with marks and scrolls the opened hit to its first match", async () => {
+     const scrolled = vi.fn();
+     Element.prototype.scrollIntoView = scrolled;
+-    renderPage(<SessionsPage />, "/sessions");
++    renderHistory();
+     fireEvent.change(await screen.findByLabelText("Search sessions"), {
+       target: { value: "parser" },
+     });
+@@ -150,16 +156,19 @@ describe("browse", () => {
+   });
+ 
+   it("shows the history with tool calls folded", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
++    renderHistory();
+     fireEvent.click((await row("s-chat-1")).getByRole("button", { name: "Refactor the parser" }));
+     const detail = await screen.findByTestId("detail-s-chat-1");
+-    expect(await within(detail).findByText("Tool call: read_file")).toBeTruthy();
+-    expect(within(detail).getByText("Result from read_file")).toBeTruthy();
++    const call = await within(detail).findByTestId("tool-call-t1");
++    expect(call.tagName).toBe("DETAILS");
++    expect(call.hasAttribute("open")).toBe(false);
++    expect(within(call).getByText("read_file")).toBeTruthy();
++    expect(within(detail).getByText("Tool: read_file")).toBeTruthy();
+     expect(within(detail).getByRole("heading", { name: "Done" })).toBeTruthy();
+   });
+ 
+   it("renames with the mutation identity", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
++    renderHistory();
+     fireEvent.click((await row("s-chat-2")).getByRole("button", { name: "Rename" }));
+     const input = screen.getByLabelText("Session title");
+     fireEvent.change(input, { target: { value: "Release plan v2" } });
+@@ -175,10 +184,27 @@ describe("browse", () => {
+   });
+ 
+   it("shows the stats bar", async () => {
+-    renderPage(<SessionsPage />, "/sessions");
++    renderHistory();
+     const stats = await screen.findByLabelText("Session statistics");
+     await waitFor(() =>
+-      expect(within(stats).getByText("Sessions").nextSibling?.textContent).toBe("3"),
++      expect(within(stats).getByText("Total").nextSibling?.textContent).toBe("3"),
+     );
+   });
++
++  it("opens on the Overview with recent cards; a card's title opens it in History", async () => {
++    renderPage(<SessionsPage />, "/sessions");
++    const recent = await screen.findByRole("list", { name: "Recent sessions" });
++    expect(screen.queryByTestId("session-s-chat-1")).toBeNull();
++    fireEvent.click(within(recent).getByRole("button", { name: "Refactor the parser" }));
++    expect(await screen.findByTestId("detail-s-chat-1")).toBeTruthy();
++    expect(screen.getByRole("button", { name: "History" }).getAttribute("aria-pressed")).toBe(
++      "true",
++    );
++  });
++
++  it("shows the empty state for a filter with no sessions", async () => {
++    mock.state.sessions = [];
++    renderPage(<SessionsPage />, "/sessions");
++    expect(await screen.findByText("No sessions in this filter")).toBeTruthy();
++  });
+ });
+diff --git a/apps/web/src/pages/SessionsPage.tsx b/apps/web/src/pages/SessionsPage.tsx
+index 33bfabf..f198dc9 100644
+--- a/apps/web/src/pages/SessionsPage.tsx
++++ b/apps/web/src/pages/SessionsPage.tsx
+@@ -1,257 +1,114 @@
+-// Sessions (P18-19): browse, search, read, rename, export, prune, delete and resume.
++// Sessions (P18-19, rebuilt W51-a as the reference page for the new look): figures at the top,
++// one filter row (chats / automation / all, source, overview / history), then either the recent
++// sessions card or the full history with search, actions, paging and the transcript.
+ 
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+-import { type FormEvent, useState } from "react";
+-import { useNavigate } from "react-router";
++import { Archive, Clock, ListFilter, Search, X } from "lucide-react";
++import { useState } from "react";
+ import { api } from "../lib/api.ts";
+-import { formatCount, relativeTime, saveJson } from "../lib/format.ts";
+-import type { PruneResponse, SessionInfo } from "../lib/restTypes.ts";
+-import { HeaderActions } from "../shell/PageHeader.tsx";
+-import { useProfileScope } from "../shell/ProfileScope.tsx";
+-import { errorText, useToast } from "../shell/Toasts.tsx";
+-import { Badge, Button, Card, inputClass, Notice, QueryState, Segmented } from "../ui/controls.tsx";
+-import { ConfirmDialog, Modal } from "../ui/Dialog.tsx";
++import { formatCount } from "../lib/format.ts";
++import type { SessionInfo } from "../lib/restTypes.ts";
++import { HeaderActions, HeaderAfterTitle } from "../shell/PageHeader.tsx";
++import { useToast } from "../shell/Toasts.tsx";
++import {
++  Button,
++  Card,
++  CardHeader,
++  CountChip,
++  IconButton,
++  Notice,
++  QueryState,
++  Segmented,
++  SelectButton,
++  StatStrip,
++} from "../ui/controls.tsx";
++import { ConfirmDialog } from "../ui/Dialog.tsx";
++import { PruneDialog } from "./sessions/PruneDialog.tsx";
+ import { SessionDetail, SnippetText } from "./sessions/SessionDetail.tsx";
++import { RecentCard, SessionRow, sessionLabel } from "./sessions/SessionRows.tsx";
++import { SourceIcon } from "./sessions/SourceIcon.tsx";
+ import {
+   AUTOMATION_SOURCES,
++  anySourceLabel,
+   conflictMessage,
+   filtersFor,
+   isAutomation,
+   SESSION_TABS,
+   type SessionTab,
++  sourceLabel,
+ } from "./sessions/sources.ts";
+ 
+ const PAGE_SIZE = 50;
++const RECENT_COUNT = 8;
+ 
+-function sessionLabel(session: {
+-  title: string | null;
+-  preview?: string | null;
+-  id: string;
+-}): string {
+-  return session.title || session.preview || session.id;
+-}
++type View = "overview" | "history";
++
++const VIEWS: ReadonlyArray<{ value: View; label: string }> = [
++  { value: "overview", label: "Overview" },
++  { value: "history", label: "History" },
++];
+ 
+ function StatsBar() {
+   const stats = useQuery({ queryKey: ["sessions", "stats"], queryFn: () => api.sessions.stats() });
+   if (!stats.data) return null;
+-  const top = Object.entries(stats.data.by_source)
+-    .sort((a, b) => b[1] - a[1])
+-    .slice(0, 4);
++  const data = stats.data;
+   return (
+-    <dl className="flex flex-wrap gap-4 text-sm" aria-label="Session statistics">
+-      <div>
+-        <dt className="text-xs text-muted">Sessions</dt>
+-        <dd>{formatCount(stats.data.total)}</dd>
+-      </div>
+-      <div>
+-        <dt className="text-xs text-muted">Active now</dt>
+-        <dd>{formatCount(stats.data.active)}</dd>
+-      </div>
+-      <div>
+-        <dt className="text-xs text-muted">Messages</dt>
+-        <dd>{formatCount(stats.data.messages)}</dd>
+-      </div>
+-      {top.map(([source, count]) => (
+-        <div key={source}>
+-          <dt className="text-xs text-muted">{source}</dt>
+-          <dd>{formatCount(count)}</dd>
+-        </div>
+-      ))}
+-    </dl>
++    <StatStrip
++      label="Session statistics"
++      items={[
++        { label: "Total", value: formatCount(data.total) },
++        { label: "Active now", value: formatCount(data.active), tone: "ok" },
++        { label: "Archived", value: formatCount(data.archived) },
++        { label: "Messages", value: formatCount(data.messages) },
++        { label: "Sources", value: formatCount(Object.keys(data.by_source).length) },
++      ]}
++    />
+   );
+ }
+ 
+-function PruneDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+-  const toast = useToast();
+-  const client = useQueryClient();
+-  const [days, setDays] = useState("90");
+-  const [preview, setPreview] = useState<PruneResponse | null>(null);
+-  const [problem, setProblem] = useState("");
+-  const parsed = Number.parseInt(days, 10);
+-  const valid = /^\d+$/.test(days.trim()) && Number.isFinite(parsed) && parsed >= 0;
+-
+-  const dryRun = useMutation({
+-    mutationFn: () => api.sessions.prune(parsed, true),
+-    onSuccess: (result) => {
+-      setPreview(result);
+-      setProblem("");
+-    },
+-    onError: (error) => setProblem(conflictMessage(error)),
+-  });
+-  const prune = useMutation({
+-    mutationFn: () => api.sessions.prune(parsed, false),
+-    onSuccess: (result) => {
+-      toast.show(`Removed ${result.count} session${result.count === 1 ? "" : "s"}.`, "success");
+-      void client.invalidateQueries({ queryKey: ["sessions"] });
+-      close();
+-    },
+-    onError: (error) => setProblem(conflictMessage(error)),
+-  });
+-
+-  const close = () => {
+-    setPreview(null);
+-    setProblem("");
+-    onClose();
+-  };
+-
++function SearchBox({
++  draft,
++  onDraft,
++  onSubmit,
++  onClear,
++  active,
++}: {
++  draft: string;
++  onDraft: (next: string) => void;
++  onSubmit: () => void;
++  onClear: () => void;
++  active: boolean;
++}) {
+   return (
+-    <Modal
+-      open={open}
+-      onOpenChange={(next) => (next ? undefined : close())}
+-      title="Prune old sessions"
+-      description="Remove ended sessions older than a number of days. Open sessions are never removed."
+-    >
++    <search className="min-w-60 flex-1 basis-72">
+       <form
+-        className="flex items-end gap-2"
++        className={`flex h-[1.875rem] items-center gap-2 border pr-1 pl-3 ${active ? "border-ink-soft" : "border-line"}`}
+         onSubmit={(event) => {
+           event.preventDefault();
+-          if (valid) dryRun.mutate();
++          onSubmit();
+         }}
+       >
+-        <label className="flex flex-col gap-1 text-xs text-muted">
+-          Older than (days)
+-          <input
+-            className={inputClass}
+-            inputMode="numeric"
+-            value={days}
+-            onChange={(event) => {
+-              setDays(event.currentTarget.value);
+-              setPreview(null);
+-            }}
+-          />
+-        </label>
+-        <Button type="submit" disabled={!valid || dryRun.isPending}>
+-          Check
+-        </Button>
+-      </form>
+-      {!valid ? <p className="mt-2 text-xs text-danger">Enter a whole number of days.</p> : null}
+-      {preview ? (
+-        <p className="mt-3 text-sm" data-testid="prune-preview">
+-          {preview.count} session{preview.count === 1 ? "" : "s"} would be removed
+-          {preview.skipped_open ? ` (${preview.skipped_open} open sessions kept)` : ""}.
+-        </p>
+-      ) : null}
+-      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+-      <div className="mt-4 flex justify-end gap-2">
+-        <Button onClick={close}>Cancel</Button>
+-        <Button
+-          tone="danger"
+-          disabled={!preview || preview.count === 0 || prune.isPending}
+-          onClick={() => prune.mutate()}
+-        >
+-          Prune {preview ? preview.count : ""}
+-        </Button>
+-      </div>
+-    </Modal>
+-  );
+-}
+-
+-function SessionRow({
+-  session,
+-  expanded,
+-  highlight,
+-  onToggle,
+-  onDelete,
+-}: {
+-  session: SessionInfo;
+-  expanded: boolean;
+-  highlight: string;
+-  onToggle: () => void;
+-  onDelete: () => void;
+-}) {
+-  const toast = useToast();
+-  const client = useQueryClient();
+-  const navigate = useNavigate();
+-  const { selected } = useProfileScope();
+-  const [editing, setEditing] = useState(false);
+-  const [title, setTitle] = useState(session.title ?? "");
+-
+-  const rename = useMutation({
+-    mutationFn: (next: string) => api.sessions.rename(session.id, next),
+-    onSuccess: () => {
+-      setEditing(false);
+-      void client.invalidateQueries({ queryKey: ["sessions"] });
+-    },
+-    onError: (error) => toast.show(conflictMessage(error), "error"),
+-  });
+-
+-  const exportJson = async () => {
+-    try {
+-      saveJson(await api.sessions.exportJson(session.id), `session-${session.id}.json`);
+-    } catch (error) {
+-      toast.show(errorText(error), "error");
+-    }
+-  };
+-
+-  const resume = () => {
+-    const query = new URLSearchParams({ resume: session.id });
+-    if (selected) query.set("profile", selected);
+-    navigate(`/chat?${query.toString()}`);
+-  };
+-
+-  const submitRename = (event: FormEvent) => {
+-    event.preventDefault();
+-    const next = title.trim();
+-    if (next) rename.mutate(next);
+-  };
+-
+-  return (
+-    <li
+-      className="flex flex-col gap-2 rounded-md border border-line bg-raised p-3"
+-      data-testid={`session-${session.id}`}
+-    >
+-      <div className="flex flex-wrap items-center gap-2">
+-        {editing ? (
+-          <form className="flex flex-1 gap-2" onSubmit={submitRename}>
+-            <input
+-              aria-label="Session title"
+-              className={`${inputClass} flex-1`}
+-              value={title}
+-              onChange={(event) => setTitle(event.currentTarget.value)}
+-            />
+-            <Button type="submit" tone="primary" disabled={rename.isPending}>
+-              Save
+-            </Button>
+-            <Button onClick={() => setEditing(false)}>Cancel</Button>
+-          </form>
+-        ) : (
+-          <button
+-            type="button"
+-            className="flex-1 truncate text-left text-sm font-medium"
+-            onClick={onToggle}
+-            aria-expanded={expanded}
+-          >
+-            {sessionLabel(session)}
+-          </button>
+-        )}
+-        <Badge tone={isAutomation(session.source) ? "warn" : "neutral"}>
+-          {session.source ?? "unknown"}
+-        </Badge>
+-        {session.is_active ? <Badge tone="ok">active</Badge> : null}
+-        <span className="text-xs text-muted">
+-          {session.message_count} messages · {relativeTime(session.last_active)}
+-        </span>
+-      </div>
+-      <div className="flex flex-wrap gap-1">
+-        <Button
+-          tone="ghost"
+-          onClick={resume}
+-          aria-label={`Resume ${sessionLabel(session)} in Chat`}
++        <button
++          type="submit"
++          aria-label="Search"
++          className="inline-flex text-ink-muted hover:text-ink"
+         >
+-          ▶ Resume
+-        </Button>
+-        <Button tone="ghost" onClick={() => setEditing(true)}>
+-          Rename
+-        </Button>
+-        <Button tone="ghost" onClick={() => void exportJson()}>
+-          Export JSON
+-        </Button>
+-        <Button tone="ghost" onClick={onDelete}>
+-          Delete
+-        </Button>
+-      </div>
+-      {expanded ? <SessionDetail sessionId={session.id} highlight={highlight} /> : null}
+-    </li>
++          <Search aria-hidden="true" className="size-3.5" />
++        </button>
++        <input
++          aria-label="Search sessions"
++          placeholder="Search message content..."
++          className="type-data h-full min-w-0 flex-1 bg-transparent text-[0.75rem] text-ink outline-none placeholder:tracking-[0.06em] placeholder:text-ink-faint"
++          value={draft}
++          onChange={(event) => onDraft(event.currentTarget.value)}
++        />
++        {active || draft ? (
++          <IconButton label="Clear search" className="size-6" onClick={onClear}>
++            <X />
++          </IconButton>
++        ) : null}
++      </form>
++    </search>
+   );
+ }
+ 
+@@ -259,6 +116,7 @@ export function SessionsPage() {
+   const toast = useToast();
+   const client = useQueryClient();
+   const [tab, setTab] = useState<SessionTab>("chats");
++  const [view, setView] = useState<View>("overview");
+   const [source, setSource] = useState("");
+   const [offset, setOffset] = useState(0);
+   const [draft, setDraft] = useState("");
+@@ -299,83 +157,36 @@ export function SessionsPage() {
+     return true;
+   });
+ 
+-  const openHit = (id: string) => {
++  const rows = list.data?.sessions ?? [];
++  const total = list.data?.total ?? 0;
++  const history = view === "history";
++
++  const openInHistory = (id: string) => {
++    setView("history");
++    setHighlight("");
+     setExpanded(id);
+-    setHighlight(query);
+   };
+ 
+-  const rows = list.data?.sessions ?? [];
+-  const total = list.data?.total ?? 0;
++  const clearSearch = () => {
++    setQuery("");
++    setDraft("");
++    setHighlight("");
++  };
+ 
+   return (
+-    <div className="flex flex-col gap-4 p-4">
++    <div className="flex flex-col gap-4 px-4 py-[1.4375rem] lg:px-[1.4375rem]">
++      <HeaderAfterTitle>
++        {list.data ? <CountChip label={`${total} sessions`}>{total}</CountChip> : null}
++      </HeaderAfterTitle>
+       <HeaderActions>
+-        <Button onClick={() => setPruneOpen(true)}>Prune…</Button>
++        <Button icon={<Archive />} onClick={() => setPruneOpen(true)}>
++          Prune old sessions
++        </Button>
+       </HeaderActions>
+-      <StatsBar />
+-      <search>
+-        <form
+-          className="flex gap-2"
+-          onSubmit={(event) => {
+-            event.preventDefault();
+-            setQuery(draft.trim());
+-          }}
+-        >
+-          <input
+-            aria-label="Search sessions"
+-            placeholder="Search every message"
+-            className={`${inputClass} flex-1`}
+-            value={draft}
+-            onChange={(event) => setDraft(event.currentTarget.value)}
+-          />
+-          <Button type="submit">Search</Button>
+-          {query ? (
+-            <Button
+-              onClick={() => {
+-                setQuery("");
+-                setDraft("");
+-                setHighlight("");
+-              }}
+-            >
+-              Clear
+-            </Button>
+-          ) : null}
+-        </form>
+-      </search>
+ 
+-      {query ? (
+-        <Card>
+-          <h2 className="mb-2 text-sm font-semibold">Matches for “{query}”</h2>
+-          <QueryState
+-            loading={search.isPending}
+-            error={search.error}
+-            empty={(search.data?.results.length ?? 0) === 0}
+-            emptyText="No message matches that search."
+-          >
+-            <ul className="flex flex-col gap-2" aria-label="Search results">
+-              {(search.data?.results ?? []).map((hit) => (
+-                <li key={`${hit.session_id}-${hit.snippet}`}>
+-                  <button
+-                    type="button"
+-                    className="text-left text-sm"
+-                    onClick={() => openHit(hit.session_id)}
+-                  >
+-                    <span className="font-medium">{hit.title ?? hit.session_id}</span>
+-                    <span className="block text-muted">
+-                      <SnippetText snippet={hit.snippet} />
+-                    </span>
+-                  </button>
+-                </li>
+-              ))}
+-            </ul>
+-          </QueryState>
+-          {expanded && search.data?.results.some((h) => h.session_id === expanded) ? (
+-            <SessionDetail sessionId={expanded} highlight={highlight} />
+-          ) : null}
+-        </Card>
+-      ) : null}
++      <StatsBar />
+ 
+-      <div className="flex flex-wrap items-center gap-4">
++      <div className="flex flex-wrap items-center gap-3">
+         <Segmented
+           label="Show"
+           value={tab}
+@@ -386,68 +197,161 @@ export function SessionsPage() {
+             setOffset(0);
+           }}
+         />
+-        <label className="flex items-center gap-2 text-xs text-muted">
+-          Source
+-          <select
+-            className={inputClass}
+-            value={source}
+-            onChange={(event) => {
+-              setSource(event.currentTarget.value);
+-              setOffset(0);
++        <SelectButton
++          aria-label="Source"
++          icon={ListFilter}
++          className="w-[13.25rem]"
++          value={source}
++          onChange={(event) => {
++            setSource(event.currentTarget.value);
++            setOffset(0);
++          }}
++        >
++          <option value="">{anySourceLabel(tab)}</option>
++          {knownSources.map((s) => (
++            <option key={s} value={s}>
++              {s}
++            </option>
++          ))}
++        </SelectButton>
++        <Segmented label="View" value={view} options={VIEWS} onChange={setView} />
++        {history ? (
++          <SearchBox
++            draft={draft}
++            onDraft={setDraft}
++            active={query.length > 0}
++            onSubmit={() => {
++              setQuery(draft.trim());
++              setHighlight(draft.trim());
+             }}
+-          >
+-            <option value="">Any source</option>
+-            {knownSources.map((s) => (
+-              <option key={s} value={s}>
+-                {s}
+-              </option>
+-            ))}
+-          </select>
+-        </label>
++            onClear={clearSearch}
++          />
++        ) : null}
+       </div>
+ 
+-      <QueryState
+-        loading={list.isPending}
+-        error={list.error}
+-        empty={rows.length === 0}
+-        emptyText="No sessions here."
+-      >
+-        <ul className="flex flex-col gap-2" aria-label="Sessions">
+-          {rows.map((session) => (
+-            <SessionRow
+-              key={session.id}
+-              session={session}
+-              expanded={expanded === session.id && !query}
+-              highlight={highlight}
+-              onToggle={() => {
+-                setHighlight("");
+-                setExpanded(expanded === session.id ? null : session.id);
+-              }}
+-              onDelete={() => {
+-                setDeleteProblem("");
+-                setDeleting(session);
+-              }}
+-            />
+-          ))}
+-        </ul>
+-        <div className="flex items-center gap-2 text-xs text-muted">
+-          <Button
+-            disabled={offset === 0}
+-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+-          >
+-            Previous
+-          </Button>
+-          <span>
+-            {offset + 1}–{offset + rows.length} of {total}
+-          </span>
+-          <Button
+-            disabled={offset + rows.length >= total}
+-            onClick={() => setOffset(offset + PAGE_SIZE)}
+-          >
+-            Next
+-          </Button>
+-        </div>
+-      </QueryState>
++      {history && query ? (
++        <Card padded={false} aria-label="Search">
++          <CardHeader icon={Search} title={`Matches for “${query}”`} level={2} />
++          <div className="p-4">
++            <QueryState
++              loading={search.isPending}
++              error={search.error}
++              empty={(search.data?.results.length ?? 0) === 0}
++              emptyIcon={Search}
++              emptyText="No message matches that search."
++            >
++              <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Search results">
++                {(search.data?.results ?? []).map((hit) => (
++                  <li
++                    key={`${hit.session_id}-${hit.snippet}`}
++                    className="flex items-start gap-3 border border-line px-3 py-2.5"
++                  >
++                    <SourceIcon source={hit.source} className="mt-1 size-4 shrink-0" />
++                    <button
++                      type="button"
++                      className="min-w-0 flex-1 text-left"
++                      onClick={() => {
++                        setExpanded(hit.session_id);
++                        setHighlight(query);
++                      }}
++                    >
++                      <span className="type-serif block text-[0.875rem] text-ink">
++                        {hit.title ?? hit.session_id}
++                      </span>
++                      <span className="type-serif block truncate text-[0.75rem] text-ink-soft">
++                        <SnippetText snippet={hit.snippet} />
++                      </span>
++                    </button>
++                    <span className="type-badge shrink-0 text-ink-soft">
++                      {sourceLabel(hit.source)}
++                    </span>
++                  </li>
++                ))}
++              </ul>
++            </QueryState>
++          </div>
++          {expanded && search.data?.results.some((h) => h.session_id === expanded) ? (
++            <SessionDetail sessionId={expanded} highlight={highlight} />
++          ) : null}
++        </Card>
++      ) : null}
++
++      {history ? null : (
++        <Card padded={false}>
++          <CardHeader icon={Clock} title="Recent sessions" />
++          <div className="p-4">
++            <QueryState
++              loading={list.isPending}
++              error={list.error}
++              onRetry={() => void list.refetch()}
++              empty={rows.length === 0}
++              emptyIcon={Clock}
++              emptyText="No sessions in this filter"
++            >
++              <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Recent sessions">
++                {rows.slice(0, RECENT_COUNT).map((session) => (
++                  <RecentCard
++                    key={session.id}
++                    session={session}
++                    onOpen={() => openInHistory(session.id)}
++                  />
++                ))}
++              </ul>
++            </QueryState>
++          </div>
++        </Card>
++      )}
++
++      {history ? (
++        <QueryState
++          loading={list.isPending}
++          error={list.error}
++          onRetry={() => void list.refetch()}
++          empty={rows.length === 0}
++          emptyIcon={Clock}
++          emptyText="No sessions in this filter"
++        >
++          <ul className="m-0 flex list-none flex-col gap-1.5 p-0" aria-label="Sessions">
++            {rows.map((session) => (
++              <SessionRow
++                key={session.id}
++                session={session}
++                expanded={expanded === session.id && !query}
++                highlight={highlight}
++                onToggle={() => {
++                  setHighlight("");
++                  setExpanded(expanded === session.id ? null : session.id);
++                }}
++                onDelete={() => {
++                  setDeleteProblem("");
++                  setDeleting(session);
++                }}
++              />
++            ))}
++          </ul>
++          {total > PAGE_SIZE || offset > 0 ? (
++            <div className="flex items-center gap-3 text-[0.75rem] text-ink-muted">
++              <Button
++                size="sm"
++                disabled={offset === 0}
++                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
++              >
++                Previous
++              </Button>
++              <span>
++                {offset + 1}–{offset + rows.length} of {total}
++              </span>
++              <Button
++                size="sm"
++                disabled={offset + rows.length >= total}
++                onClick={() => setOffset(offset + PAGE_SIZE)}
++              >
++                Next
++              </Button>
++            </div>
++          ) : null}
++        </QueryState>
++      ) : null}
+ 
+       <PruneDialog open={pruneOpen} onClose={() => setPruneOpen(false)} />
+       <ConfirmDialog
+diff --git a/apps/web/src/pages/SystemPage.test.tsx b/apps/web/src/pages/SystemPage.test.tsx
+index afadabf..eaa88b2 100644
+--- a/apps/web/src/pages/SystemPage.test.tsx
++++ b/apps/web/src/pages/SystemPage.test.tsx
+@@ -272,7 +272,7 @@ describe("system page", () => {
+     await ready();
+     const checkpoints = section("Checkpoints");
+     await waitFor(() => expect(checkpoints.getByText("/srv/app")).toBeTruthy());
+-    expect(checkpoints.getByText("3.0 MiB", { selector: "span.rounded-full" })).toBeTruthy();
++    expect(checkpoints.getByText("3.0 MiB", { selector: "span.type-badge" })).toBeTruthy();
+     fireEvent.change(checkpoints.getByLabelText("Keep days"), { target: { value: "3" } });
+     fireEvent.click(checkpoints.getByRole("button", { name: "Prune checkpoints" }));
+     await waitFor(() =>
+diff --git a/apps/web/src/pages/sessions/PruneDialog.tsx b/apps/web/src/pages/sessions/PruneDialog.tsx
+new file mode 100644
+index 0000000..b99818c
+--- /dev/null
++++ b/apps/web/src/pages/sessions/PruneDialog.tsx
+@@ -0,0 +1,108 @@
++// "Prune old sessions": a day count, a dry run that says how many would go, then the real prune.
++
++import { useMutation, useQueryClient } from "@tanstack/react-query";
++import { useState } from "react";
++import { api } from "../../lib/api.ts";
++import type { PruneResponse } from "../../lib/restTypes.ts";
++import { useToast } from "../../shell/Toasts.tsx";
++import { Button, inputClass, Notice } from "../../ui/controls.tsx";
++import { DialogActions, Modal } from "../../ui/Dialog.tsx";
++import { conflictMessage } from "./sources.ts";
++
++export function PruneDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
++  const toast = useToast();
++  const client = useQueryClient();
++  const [days, setDays] = useState("90");
++  const [preview, setPreview] = useState<PruneResponse | null>(null);
++  const [problem, setProblem] = useState("");
++  const parsed = Number.parseInt(days, 10);
++  const valid = /^\d+$/.test(days.trim()) && Number.isFinite(parsed) && parsed >= 0;
++
++  const close = () => {
++    setPreview(null);
++    setProblem("");
++    onClose();
++  };
++
++  const dryRun = useMutation({
++    mutationFn: () => api.sessions.prune(parsed, true),
++    onSuccess: (result) => {
++      setPreview(result);
++      setProblem("");
++    },
++    onError: (error) => setProblem(conflictMessage(error)),
++  });
++  const prune = useMutation({
++    mutationFn: () => api.sessions.prune(parsed, false),
++    onSuccess: (result) => {
++      toast.show(`Removed ${result.count} session${result.count === 1 ? "" : "s"}.`, "success");
++      void client.invalidateQueries({ queryKey: ["sessions"] });
++      close();
++    },
++    onError: (error) => setProblem(conflictMessage(error)),
++  });
++
++  return (
++    <Modal
++      open={open}
++      size="sm"
++      onOpenChange={(next) => (next ? undefined : close())}
++      title="Prune old sessions"
++      description="Deletes ended sessions whose last activity is older than the number of days below. Open sessions always stay."
++    >
++      <form
++        className="flex flex-col gap-1.5"
++        onSubmit={(event) => {
++          event.preventDefault();
++          if (valid) dryRun.mutate();
++        }}
++      >
++        <label htmlFor="prune-days" className="text-[0.75rem] text-ink-muted">
++          Older than (days)
++        </label>
++        <div className="flex gap-2">
++          <input
++            id="prune-days"
++            className={`${inputClass} flex-1`}
++            inputMode="numeric"
++            value={days}
++            onChange={(event) => {
++              setDays(event.currentTarget.value);
++              setPreview(null);
++            }}
++          />
++          <Button type="submit" disabled={!valid || dryRun.isPending}>
++            Check
++          </Button>
++        </div>
++      </form>
++      {!valid ? (
++        <p className="m-0 mt-2 text-[0.75rem] text-danger">Enter a whole number of days.</p>
++      ) : null}
++      {preview ? (
++        <p className="m-0 mt-3 text-[0.8125rem] text-ink" data-testid="prune-preview">
++          {preview.count} session{preview.count === 1 ? "" : "s"} would be removed
++          {preview.skipped_open ? ` (${preview.skipped_open} open sessions kept)` : ""}.
++        </p>
++      ) : null}
++      {problem ? (
++        <div className="mt-3">
++          <Notice tone="danger">{problem}</Notice>
++        </div>
++      ) : null}
++      <DialogActions>
++        <Button size="lg" onClick={close}>
++          Cancel
++        </Button>
++        <Button
++          size="lg"
++          tone="danger"
++          disabled={!preview || preview.count === 0 || prune.isPending}
++          onClick={() => prune.mutate()}
++        >
++          Prune {preview ? preview.count : ""}
++        </Button>
++      </DialogActions>
++    </Modal>
++  );
++}
+diff --git a/apps/web/src/pages/sessions/SessionDetail.tsx b/apps/web/src/pages/sessions/SessionDetail.tsx
+index 3a3da66..30c4009 100644
+--- a/apps/web/src/pages/sessions/SessionDetail.tsx
++++ b/apps/web/src/pages/sessions/SessionDetail.tsx
+@@ -1,9 +1,12 @@
+-// One session's full history, rendered as light Markdown with each tool call folded away. When
+-// opened from a search hit, the searched words are marked and the first mark scrolled into view.
++// One session's full history, rendered as light Markdown with each tool call folded away. Each
++// message sits on a tinted block by role (user ink, assistant green, tool amber). When opened from
++// a search hit, the searched words are marked and the first mark scrolled into view.
+ 
+ import { useQuery } from "@tanstack/react-query";
++import { ChevronRight } from "lucide-react";
+ import { Fragment, type ReactNode, useEffect, useRef } from "react";
+ import { api } from "../../lib/api.ts";
++import { relativeTime } from "../../lib/format.ts";
+ import type { SessionMessage } from "../../lib/restTypes.ts";
+ import { QueryState } from "../../ui/controls.tsx";
+ 
+@@ -101,7 +104,10 @@ function MarkdownText({ text, term }: { text: string; term: string }) {
+         const key = `${block.kind}-${i}`;
+         if (block.kind === "code") {
+           return (
+-            <pre key={key} className="overflow-x-auto rounded-md bg-code p-2 font-mono text-xs">
++            <pre
++              key={key}
++              className="m-0 overflow-x-auto border border-line bg-wash p-2 font-mono text-[0.75rem]"
++            >
+               <MarkedText text={block.text} term={term} />
+             </pre>
+           );
+@@ -110,13 +116,13 @@ function MarkdownText({ text, term }: { text: string; term: string }) {
+           // Message headings sit below the page (h1) and section (h2) levels.
+           const Heading = HEADING_TAGS[Math.min(3, (block.level ?? 1) - 1)] ?? "h6";
+           return (
+-            <Heading key={key} className="text-sm font-semibold">
++            <Heading key={key} className="m-0 text-[0.875rem] font-semibold">
+               <MarkedText text={block.text} term={term} />
+             </Heading>
+           );
+         }
+         return (
+-          <p key={key} className="whitespace-pre-wrap">
++          <p key={key} className="m-0 whitespace-pre-wrap">
+             <MarkedText text={block.text} term={term} />
+           </p>
+         );
+@@ -125,27 +131,59 @@ function MarkdownText({ text, term }: { text: string; term: string }) {
+   );
+ }
+ 
++const ROLE_LOOK: Record<SessionMessage["role"], { box: string; label: string; name: string }> = {
++  user: { box: "bg-selected", label: "text-ink", name: "User" },
++  assistant: { box: "bg-success-wash", label: "text-success", name: "Assistant" },
++  system: { box: "bg-wash", label: "text-ink-muted", name: "System" },
++  tool: { box: "bg-warning-wash", label: "text-warning", name: "Tool" },
++};
++
++function MessageHead({ message }: { message: SessionMessage }) {
++  const look = ROLE_LOOK[message.role];
++  const name = message.role === "tool" ? `Tool: ${message.tool_name ?? "unknown"}` : look.name;
++  return (
++    <header className="flex items-baseline gap-2 text-[0.75rem]">
++      <span className={`font-semibold ${look.label}`}>{name}</span>
++      {message.timestamp ? (
++        <span className="text-ink-soft">{relativeTime(message.timestamp)}</span>
++      ) : null}
++    </header>
++  );
++}
++
+ function MessageView({ message, term }: { message: SessionMessage; term: string }) {
++  const look = ROLE_LOOK[message.role];
+   if (message.role === "tool") {
+     return (
+-      <details className="rounded-md border border-line px-2 py-1 text-xs">
+-        <summary className="cursor-pointer text-muted">
+-          Result from {message.tool_name ?? "a tool"}
+-        </summary>
+-        <pre className="mt-1 overflow-x-auto font-mono whitespace-pre-wrap">
++      <article className={`flex flex-col gap-1.5 px-3 py-3 ${look.box}`}>
++        <MessageHead message={message} />
++        <pre className="m-0 overflow-x-auto font-mono text-[0.8125rem] whitespace-pre-wrap text-ink">
+           <MarkedText text={message.content ?? ""} term={term} />
+         </pre>
+-      </details>
++      </article>
+     );
+   }
+   return (
+-    <article className="flex flex-col gap-1">
+-      <span className="text-xs font-medium text-muted uppercase">{message.role}</span>
++    <article className={`flex flex-col gap-1.5 px-3 py-3 text-[0.875rem] ${look.box}`}>
++      <MessageHead message={message} />
+       {message.content ? <MarkdownText text={message.content} term={term} /> : null}
+       {(message.tool_calls ?? []).map((call) => (
+-        <details key={call.id} className="rounded-md border border-line px-2 py-1 text-xs">
+-          <summary className="cursor-pointer text-muted">Tool call: {call.name}</summary>
+-          <pre className="mt-1 overflow-x-auto font-mono whitespace-pre-wrap">{call.arguments}</pre>
++        <details
++          key={call.id}
++          data-testid={`tool-call-${call.id}`}
++          className="group border border-success/30 bg-success-wash text-[0.75rem]"
++        >
++          <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-mono text-warning">
++            <ChevronRight
++              aria-hidden="true"
++              className="size-3 text-ink-soft transition-transform group-open:rotate-90"
++            />
++            <span className="flex-1">{call.name}</span>
++            <span className="text-ink-soft">{call.id}</span>
++          </summary>
++          <pre className="m-0 overflow-x-auto border-t border-success/20 px-3 py-2 font-mono whitespace-pre-wrap text-ink-muted">
++            {call.arguments}
++          </pre>
+         </details>
+       ))}
+     </article>
+@@ -177,7 +215,7 @@ export function SessionDetail({
+   return (
+     <div
+       ref={root}
+-      className="flex flex-col gap-3 border-t border-line pt-3"
++      className="flex flex-col gap-3 border-t border-line p-4"
+       data-testid={`detail-${sessionId}`}
+     >
+       <QueryState
+diff --git a/apps/web/src/pages/sessions/SessionRows.tsx b/apps/web/src/pages/sessions/SessionRows.tsx
+new file mode 100644
+index 0000000..26ff8f6
+--- /dev/null
++++ b/apps/web/src/pages/sessions/SessionRows.tsx
+@@ -0,0 +1,188 @@
++// The two ways a session is listed: a card in the Overview ("recent sessions": title, model and
++// counts, the opening line) and a row in History (source icon, title that opens the transcript,
++// counts, and icon actions for resume, rename, export and delete).
++
++import { useMutation, useQueryClient } from "@tanstack/react-query";
++import { Download, Pencil, Play, Trash2 } from "lucide-react";
++import { type FormEvent, useState } from "react";
++import { useNavigate } from "react-router";
++import { api } from "../../lib/api.ts";
++import { relativeTime, saveJson } from "../../lib/format.ts";
++import type { SessionInfo } from "../../lib/restTypes.ts";
++import { useProfileScope } from "../../shell/ProfileScope.tsx";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
++import { Badge, Button, IconButton, inputClass } from "../../ui/controls.tsx";
++import { SessionDetail } from "./SessionDetail.tsx";
++import { SourceIcon } from "./SourceIcon.tsx";
++import { conflictMessage, sourceLabel } from "./sources.ts";
++
++export function sessionLabel(session: {
++  title: string | null;
++  preview?: string | null;
++  id: string;
++}): string {
++  return session.title || session.preview || session.id;
++}
++
++function SourceBadge({ source }: { source: string | null }) {
++  return <Badge icon={<SourceIcon source={source} />}>{sourceLabel(source)}</Badge>;
++}
++
++/** "model · 4 msgs · 3h ago" with the model in mono. */
++function MetaLine({ session, dotted }: { session: SessionInfo; dotted: boolean }) {
++  const parts = [
++    `${session.message_count} msgs`,
++    ...(session.tool_call_count > 0 && !dotted ? [`${session.tool_call_count} tools`] : []),
++    relativeTime(session.last_active),
++  ];
++  return (
++    <p className="m-0 flex flex-wrap items-baseline gap-x-3.5 text-[0.75rem] text-ink-muted">
++      {dotted ? (
++        <span>
++          {session.model ? <span className="type-data text-[0.75rem]">{session.model}</span> : null}
++          {session.model ? " · " : ""}
++          {parts.join(" · ")}
++        </span>
++      ) : (
++        <>
++          {session.model ? <span>{session.model}</span> : null}
++          {parts.map((part) => (
++            <span key={part}>{part}</span>
++          ))}
++        </>
++      )}
++    </p>
++  );
++}
++
++/** Overview card. Clicking the title opens the session in History. */
++export function RecentCard({ session, onOpen }: { session: SessionInfo; onOpen: () => void }) {
++  return (
++    <li
++      className="flex items-center gap-3 border border-line px-3 py-3"
++      data-testid={`recent-${session.id}`}
++    >
++      <div className="flex min-w-0 flex-1 flex-col gap-1">
++        <button
++          type="button"
++          onClick={onOpen}
++          className="type-serif self-start truncate text-left text-[0.875rem] text-ink hover:underline"
++        >
++          {sessionLabel(session)}
++        </button>
++        <MetaLine session={session} dotted />
++        {session.title && session.preview && session.preview !== session.title ? (
++          <p className="type-serif m-0 truncate text-[0.75rem] text-ink-soft">{session.preview}</p>
++        ) : null}
++      </div>
++      <div className="flex shrink-0 items-center gap-1.5">
++        {session.is_active ? <Badge tone="ok">active</Badge> : null}
++        <SourceBadge source={session.source} />
++      </div>
++    </li>
++  );
++}
++
++/** History row with its actions; the transcript opens underneath when expanded. */
++export function SessionRow({
++  session,
++  expanded,
++  highlight,
++  onToggle,
++  onDelete,
++}: {
++  session: SessionInfo;
++  expanded: boolean;
++  highlight: string;
++  onToggle: () => void;
++  onDelete: () => void;
++}) {
++  const toast = useToast();
++  const client = useQueryClient();
++  const navigate = useNavigate();
++  const { selected } = useProfileScope();
++  const [editing, setEditing] = useState(false);
++  const [title, setTitle] = useState(session.title ?? "");
++  const label = sessionLabel(session);
++
++  const rename = useMutation({
++    mutationFn: (next: string) => api.sessions.rename(session.id, next),
++    onSuccess: () => {
++      setEditing(false);
++      void client.invalidateQueries({ queryKey: ["sessions"] });
++    },
++    onError: (error) => toast.show(conflictMessage(error), "error"),
++  });
++
++  const exportJson = async () => {
++    try {
++      saveJson(await api.sessions.exportJson(session.id), `session-${session.id}.json`);
++    } catch (error) {
++      toast.show(errorText(error), "error");
++    }
++  };
++
++  const resume = () => {
++    const query = new URLSearchParams({ resume: session.id });
++    if (selected) query.set("profile", selected);
++    navigate(`/chat?${query.toString()}`);
++  };
++
++  const submitRename = (event: FormEvent) => {
++    event.preventDefault();
++    const next = title.trim();
++    if (next) rename.mutate(next);
++  };
++
++  return (
++    <li className="border border-line" data-testid={`session-${session.id}`}>
++      <div className="flex items-start gap-3 px-3 py-2.5">
++        <SourceIcon source={session.source} className="mt-1 size-4 shrink-0 text-ink" />
++        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
++          {editing ? (
++            <form className="flex flex-wrap gap-2" onSubmit={submitRename}>
++              <input
++                aria-label="Session title"
++                className={`${inputClass} min-w-48 flex-1`}
++                value={title}
++                onChange={(event) => setTitle(event.currentTarget.value)}
++              />
++              <Button type="submit" tone="primary" disabled={rename.isPending}>
++                Save
++              </Button>
++              <Button onClick={() => setEditing(false)}>Cancel</Button>
++            </form>
++          ) : (
++            <button
++              type="button"
++              className="type-serif self-start truncate text-left text-[0.875rem] text-ink hover:underline"
++              onClick={onToggle}
++              aria-expanded={expanded}
++            >
++              {label}
++            </button>
++          )}
++          <MetaLine session={session} dotted={false} />
++        </div>
++        <div className="flex shrink-0 items-center gap-1">
++          {session.is_active ? <Badge tone="ok">active</Badge> : null}
++          <SourceBadge source={session.source} />
++          <span className="w-2" />
++          <IconButton label={`Resume ${label} in Chat`} onClick={resume}>
++            <Play />
++          </IconButton>
++          <IconButton label="Rename" onClick={() => setEditing(true)}>
++            <Pencil />
++          </IconButton>
++          <IconButton label="Export JSON" onClick={() => void exportJson()}>
++            <Download />
++          </IconButton>
++          <IconButton label="Delete" tone="danger" onClick={onDelete}>
++            <Trash2 />
++          </IconButton>
++        </div>
++      </div>
++      {expanded ? <SessionDetail sessionId={session.id} highlight={highlight} /> : null}
++    </li>
++  );
++}
+diff --git a/apps/web/src/pages/sessions/SourceIcon.tsx b/apps/web/src/pages/sessions/SourceIcon.tsx
+new file mode 100644
+index 0000000..1aa80bf
+--- /dev/null
++++ b/apps/web/src/pages/sessions/SourceIcon.tsx
+@@ -0,0 +1,18 @@
++// The small icon in front of a session: a prompt for terminals, a globe for the web, a clock for
++// schedules, a speech bubble for messaging apps.
++
++import { Clock, Globe, HelpCircle, MessageCircle, SquareTerminal } from "lucide-react";
++import { type SourceKind, sourceKind } from "./sources.ts";
++
++const ICONS: Record<SourceKind, typeof Clock> = {
++  terminal: SquareTerminal,
++  web: Globe,
++  automation: Clock,
++  messaging: MessageCircle,
++  unknown: HelpCircle,
++};
++
++export function SourceIcon({ source, className }: { source: string | null; className?: string }) {
++  const Icon = ICONS[sourceKind(source)];
++  return <Icon aria-hidden="true" className={className ?? "size-3.5"} />;
++}
+diff --git a/apps/web/src/pages/sessions/sources.ts b/apps/web/src/pages/sessions/sources.ts
+index 599407c..77afd4d 100644
+--- a/apps/web/src/pages/sessions/sources.ts
++++ b/apps/web/src/pages/sessions/sources.ts
+@@ -45,3 +45,31 @@ export function conflictMessage(error: unknown): string {
+   }
+   return error instanceof Error ? error.message : "The request failed.";
+ }
++
++/** Sources that are chat apps rather than a terminal or a schedule. */
++const TERMINAL_SOURCES = ["cli", "tui", "desktop", "acp"] as const;
++
++export type SourceKind = "terminal" | "web" | "automation" | "messaging" | "unknown";
++
++/** What kind of place a session came from, for its icon. */
++export function sourceKind(source: string | null): SourceKind {
++  if (!source) return "unknown";
++  if ((TERMINAL_SOURCES as readonly string[]).includes(source)) return "terminal";
++  if (source === "web") return "web";
++  if (isAutomation(source)) return "automation";
++  return "messaging";
++}
++
++/** Display name for a source: short ids are shouted ("CLI"), names are capitalised ("Telegram"). */
++export function sourceLabel(source: string | null): string {
++  if (!source) return "Unknown";
++  if (source.length <= 3) return source.toUpperCase();
++  return source.charAt(0).toUpperCase() + source.slice(1).replaceAll("_", " ");
++}
++
++/** The placeholder of the source picker for a tab. */
++export function anySourceLabel(tab: SessionTab): string {
++  if (tab === "chats") return "Any chat source";
++  if (tab === "automation") return "Any automation source";
++  return "Any source";
++}
+diff --git a/apps/web/src/shell/LanguageMenu.tsx b/apps/web/src/shell/LanguageMenu.tsx
+new file mode 100644
+index 0000000..3f6df70
+--- /dev/null
++++ b/apps/web/src/shell/LanguageMenu.tsx
+@@ -0,0 +1,63 @@
++// The language button beside the theme picker. The dashboard has one language today, so the menu
++// lists English alone (checked); it is here so the shell keeps its shape when translations land.
++
++import { Check } from "lucide-react";
++import { useCallback, useId, useRef, useState } from "react";
++import { useDismiss } from "../ui/useDismiss.ts";
++
++const LANGUAGES = [{ code: "en", short: "EN", name: "English" }] as const;
++
++export function LanguageMenu() {
++  const [open, setOpen] = useState(false);
++  const root = useRef<HTMLDivElement>(null);
++  const menuId = useId();
++  const close = useCallback(() => setOpen(false), []);
++  useDismiss(open, root, close);
++  const current = LANGUAGES[0];
++
++  return (
++    <div ref={root} className="relative">
++      <button
++        type="button"
++        aria-haspopup="menu"
++        aria-expanded={open}
++        aria-controls={open ? menuId : undefined}
++        aria-label={`Language: ${current.name}`}
++        title={`Language: ${current.name}`}
++        onClick={() => setOpen((was) => !was)}
++        className="inline-flex h-8 min-w-6 items-center justify-center text-[0.75rem] tracking-[0.06em] text-ink-muted hover:text-ink"
++      >
++        {current.short}
++      </button>
++      {open ? (
++        <div
++          id={menuId}
++          role="menu"
++          aria-label="Language"
++          className="fixed bottom-[4.5rem] left-3 z-50 w-56 border border-line-strong bg-canvas text-ink shadow-2xl [animation:indus-fade-in_120ms_ease-out]"
++        >
++          <p className="m-0 border-b border-line px-3 py-2.5 text-[0.75rem] tracking-[0.08em] text-ink-muted">
++            Language
++          </p>
++          <ul className="m-0 list-none p-0 py-1">
++            {LANGUAGES.map((language) => (
++              <li key={language.code}>
++                <button
++                  type="button"
++                  role="menuitemradio"
++                  aria-checked={language.code === current.code}
++                  onClick={close}
++                  className="flex w-full items-center gap-3 bg-selected px-3 py-2 text-left text-[0.8125rem] hover:bg-hover"
++                >
++                  <span className="type-badge w-6 text-ink-soft">{language.short}</span>
++                  <span className="flex-1">{language.name}</span>
++                  <Check aria-hidden="true" className="size-3.5" />
++                </button>
++              </li>
++            ))}
++          </ul>
++        </div>
++      ) : null}
++    </div>
++  );
++}
+diff --git a/apps/web/src/shell/PageHeader.tsx b/apps/web/src/shell/PageHeader.tsx
+index e22ca5b..bfdbf3f 100644
+--- a/apps/web/src/shell/PageHeader.tsx
++++ b/apps/web/src/shell/PageHeader.tsx
+@@ -1,10 +1,17 @@
+-// The page header: the current page's title and an "end" slot each page fills with its own
+-// actions through <HeaderActions> (a portal, so the header never re-renders the page).
++// The page header: the current page's title in the wide display voice, a slot right after the
++// title (<HeaderAfterTitle>: count chips, range buttons, a refresh icon, filter badges, switches)
++// and an end slot each page fills with its own actions (<HeaderActions>). Both are portals, so the
++// header never re-renders the page.
+ 
+ import { createContext, type ReactNode, useContext, useState } from "react";
+ import { createPortal } from "react-dom";
+ 
+-const EndSlotContext = createContext<HTMLElement | null>(null);
++interface Slots {
++  aside: HTMLElement | null;
++  end: HTMLElement | null;
++}
++
++const SlotsContext = createContext<Slots>({ aside: null, end: null });
+ 
+ export function PageHeader({
+   title,
+@@ -16,21 +23,35 @@ export function PageHeader({
+   start?: ReactNode;
+   children: ReactNode;
+ }) {
+-  const [endSlot, setEndSlot] = useState<HTMLElement | null>(null);
++  const [aside, setAside] = useState<HTMLElement | null>(null);
++  const [end, setEnd] = useState<HTMLElement | null>(null);
+   return (
+-    <EndSlotContext.Provider value={endSlot}>
+-      <header className="flex min-h-14 items-center gap-3 border-b border-line bg-raised px-4">
++    <SlotsContext.Provider value={{ aside, end }}>
++      <header className="flex h-[3.25rem] shrink-0 items-center gap-3 border-b border-line bg-canvas px-4 lg:px-[1.375rem]">
+         {start}
+-        <h1 className="flex-1 truncate text-base font-semibold">{title}</h1>
+-        <div ref={setEndSlot} data-testid="page-header-end" className="flex items-center gap-2" />
++        <div className="flex min-w-0 flex-1 items-center gap-3">
++          <h1 className="type-page-title m-0 truncate text-ink">{title}</h1>
++          <div
++            ref={setAside}
++            data-testid="page-header-after-title"
++            className="flex min-w-0 items-center gap-2"
++          />
++        </div>
++        <div ref={setEnd} data-testid="page-header-end" className="flex items-center gap-2" />
+       </header>
+       {children}
+-    </EndSlotContext.Provider>
++    </SlotsContext.Provider>
+   );
+ }
+ 
+ /** Render page actions into the header's end slot. */
+ export function HeaderActions({ children }: { children: ReactNode }) {
+-  const slot = useContext(EndSlotContext);
+-  return slot ? createPortal(children, slot) : null;
++  const { end } = useContext(SlotsContext);
++  return end ? createPortal(children, end) : null;
++}
++
++/** Render a small companion right after the page title (count chip, filters, summary). */
++export function HeaderAfterTitle({ children }: { children: ReactNode }) {
++  const { aside } = useContext(SlotsContext);
++  return aside ? createPortal(children, aside) : null;
+ }
+diff --git a/apps/web/src/shell/ProfileScope.tsx b/apps/web/src/shell/ProfileScope.tsx
+index 9084496..d4715c5 100644
+--- a/apps/web/src/shell/ProfileScope.tsx
++++ b/apps/web/src/shell/ProfileScope.tsx
+@@ -98,10 +98,12 @@ export function ProfileSwitcher({ compact }: { compact: boolean }) {
+   const { profiles, active, select, defaultName } = useProfileScope();
+   if (profiles.length <= 1) return null;
+   return (
+-    <label className={`flex flex-col gap-1 text-xs text-muted ${compact ? "sr-only" : ""}`}>
++    <label
++      className={`type-label flex flex-col gap-1 border-b border-line px-5 py-2.5 text-ink-soft ${compact ? "sr-only" : ""}`}
++    >
+       Profile
+       <select
+-        className="rounded-md border border-line bg-raised px-2 py-1 text-sm text-fg"
++        className="type-data h-7 border border-line bg-canvas px-2 text-[0.75rem] text-ink normal-case tracking-normal"
+         value={active || defaultName}
+         onChange={(event) => select(event.currentTarget.value)}
+       >
+@@ -121,7 +123,10 @@ export function ProfileBanner() {
+   const { active, defaultName } = useProfileScope();
+   if (!active || !defaultName || active === defaultName) return null;
+   return (
+-    <div role="status" className="border-b border-warn bg-raised px-4 py-2 text-sm text-warn">
++    <div
++      role="status"
++      className="border-b border-warning/50 bg-warning-wash px-4 py-2 text-[0.8125rem] text-warning lg:px-[1.375rem]"
++    >
+       Managing profile <strong>{active}</strong>: changes here apply to that profile, not the
+       default one.
+     </div>
+diff --git a/apps/web/src/shell/Sidebar.tsx b/apps/web/src/shell/Sidebar.tsx
+index 62bb1fb..f0b8d94 100644
+--- a/apps/web/src/shell/Sidebar.tsx
++++ b/apps/web/src/shell/Sidebar.tsx
+@@ -1,15 +1,65 @@
+-// Left navigation. Wide screens: an inline column that collapses to a narrow rail (remembered per
+-// browser). Below 1,024 px: a slide-over drawer opened from the header's menu button.
++// Left navigation. Wide screens: an inline column (wordmark, icon + uppercase label per page,
++// footer with status, actions, theme and version) that collapses to an icon rail (remembered per
++// browser); the rail shows a tooltip per icon instead of clipped labels. Below 1,024 px: a
++// slide-over drawer opened from the header's menu button.
+ 
++import {
++  BookOpen,
++  ChartColumn,
++  Clock,
++  Cpu,
++  FileText,
++  FolderOpen,
++  KeyRound,
++  type LucideIcon,
++  MessageSquare,
++  Package,
++  PanelLeftClose,
++  PanelLeftOpen,
++  Plug,
++  Puzzle,
++  Radio,
++  Settings,
++  ShieldCheck,
++  SquareTerminal,
++  Users,
++  Webhook,
++  Wrench,
++  X,
++} from "lucide-react";
+ import { type ReactNode, useEffect, useState } from "react";
+ import { NavLink } from "react-router";
++import { ThemeMenu } from "../theme/ThemeMenu.tsx";
++import { cx } from "../ui/cx.ts";
++import { LanguageMenu } from "./LanguageMenu.tsx";
+ import { ProfileSwitcher } from "./ProfileScope.tsx";
+ import { DOCS_LINK, type PageRoute } from "./routes.ts";
+-import { ThemeSwitch } from "./ThemeSwitch.tsx";
++import { VersionLine } from "./StatusStrip.tsx";
+ 
+ export const SIDEBAR_KEY = "indus-sidebar-collapsed";
+ export const WIDE_QUERY = "(min-width: 1024px)";
+ 
++/** Icon per built-in page; plugin tabs fall back to the puzzle piece. */
++export const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
++  "/chat": SquareTerminal,
++  "/sessions": MessageSquare,
++  "/files": FolderOpen,
++  "/analytics": ChartColumn,
++  "/models": Cpu,
++  "/logs": FileText,
++  "/cron": Clock,
++  "/skills": Package,
++  "/plugins": Puzzle,
++  "/mcp": Plug,
++  "/channels": Radio,
++  "/webhooks": Webhook,
++  "/pairing": ShieldCheck,
++  "/profiles": Users,
++  "/config": Settings,
++  "/env": KeyRound,
++  "/system": Wrench,
++};
++
+ export function readCollapsed(): boolean {
+   try {
+     return window.localStorage.getItem(SIDEBAR_KEY) === "true";
+@@ -41,6 +91,8 @@ export function useWideScreen(): boolean {
+   return wide;
+ }
+ 
++type FooterContent = ReactNode | ((compact: boolean) => ReactNode);
++
+ interface SidebarProps {
+   items: readonly PageRoute[];
+   search: string;
+@@ -49,8 +101,55 @@ interface SidebarProps {
+   onToggleCollapsed: () => void;
+   mobileOpen: boolean;
+   onCloseMobile: () => void;
+-  /** Status strip (P18-25) and auth widget (P18-28) slots. */
+-  footer?: ReactNode;
++  /** Status block, actions and the auth widget; a function gets told whether the rail is compact. */
++  footer?: FooterContent;
++}
++
++const itemClass = (compact: boolean, active: boolean) =>
++  cx(
++    "group relative flex h-[2.3125rem] items-center gap-3 transition-colors",
++    compact ? "justify-center px-0" : "px-5",
++    active ? "text-ink" : "text-ink-muted hover:text-ink",
++  );
++
++interface Tip {
++  text: string;
++  top: number;
++  left: number;
++}
++
++/**
++ * Hover/focus labels for the collapsed rail. The rail scrolls, so the label is drawn at a fixed
++ * position next to the hovered icon instead of inside the clipped list.
++ */
++function useRailTip(enabled: boolean) {
++  const [tip, setTip] = useState<Tip | null>(null);
++  useEffect(() => {
++    if (!enabled) setTip(null);
++  }, [enabled]);
++  const handlers = (text: string) =>
++    enabled
++      ? {
++          onMouseEnter: (event: { currentTarget: HTMLElement }) => show(event.currentTarget, text),
++          onFocus: (event: { currentTarget: HTMLElement }) => show(event.currentTarget, text),
++          onMouseLeave: () => setTip(null),
++          onBlur: () => setTip(null),
++        }
++      : {};
++  const show = (element: HTMLElement, text: string) => {
++    const box = element.getBoundingClientRect();
++    setTip({ text, top: box.top + box.height / 2, left: box.right + 8 });
++  };
++  const node = tip ? (
++    <span
++      aria-hidden="true"
++      className="type-nav pointer-events-none fixed z-50 -translate-y-1/2 border border-line-strong bg-canvas px-2 py-1 whitespace-nowrap text-ink shadow-lg [animation:indus-fade-in_120ms_ease-out]"
++      style={{ top: tip.top, left: tip.left }}
++    >
++      {tip.text}
++    </span>
++  ) : null;
++  return { handlers, node };
+ }
+ 
+ function NavItems({
+@@ -64,36 +163,62 @@ function NavItems({
+   compact: boolean;
+   onNavigate: () => void;
+ }) {
+-  const linkClass = ({ isActive }: { isActive: boolean }) =>
+-    `flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+-      isActive ? "bg-accent text-accent-fg" : "text-fg hover:bg-code"
+-    }`;
++  const tip = useRailTip(compact);
+   return (
+-    <ul className="flex flex-col gap-0.5">
+-      {items.map((item) => (
+-        <li key={item.path}>
+-          <NavLink
+-            to={{ pathname: item.path, search }}
+-            className={linkClass}
+-            onClick={onNavigate}
+-            {...(compact ? { "aria-label": item.title, title: item.title } : {})}
++    <>
++      {tip.node}
++      <ul className="m-0 flex list-none flex-col p-0 py-2">
++        {items.map((item) => {
++          const Icon = NAV_ICONS[item.path] ?? Puzzle;
++          return (
++            <li key={item.path}>
++              <NavLink
++                to={{ pathname: item.path, search }}
++                className={({ isActive }) => itemClass(compact, isActive)}
++                onClick={onNavigate}
++                {...tip.handlers(item.title)}
++                {...(compact ? { "aria-label": item.title } : {})}
++              >
++                {({ isActive }) => (
++                  <>
++                    {isActive ? (
++                      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-px bg-ink" />
++                    ) : null}
++                    <span
++                      aria-hidden="true"
++                      className="pointer-events-none absolute inset-x-1.5 inset-y-0.5 bg-ink opacity-0 transition-opacity group-hover:opacity-5"
++                    />
++                    <Icon aria-hidden="true" className="size-3.5 shrink-0" />
++                    {compact ? null : <span className="type-nav truncate">{item.title}</span>}
++                  </>
++                )}
++              </NavLink>
++            </li>
++          );
++        })}
++        <li>
++          <a
++            href={DOCS_LINK.href}
++            target="_blank"
++            rel="noopener noreferrer"
++            className={itemClass(compact, false)}
++            {...tip.handlers(DOCS_LINK.title)}
++            {...(compact ? { "aria-label": DOCS_LINK.title } : {})}
+           >
+-            {compact ? <span aria-hidden="true">{item.title.slice(0, 2)}</span> : item.title}
+-          </NavLink>
++            <BookOpen aria-hidden="true" className="size-3.5 shrink-0" />
++            {compact ? null : <span className="type-nav truncate">{DOCS_LINK.title} ↗</span>}
++          </a>
+         </li>
+-      ))}
+-      <li>
+-        <a
+-          href={DOCS_LINK.href}
+-          target="_blank"
+-          rel="noopener noreferrer"
+-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg hover:bg-code"
+-          {...(compact ? { "aria-label": DOCS_LINK.title, title: DOCS_LINK.title } : {})}
+-        >
+-          {compact ? <span aria-hidden="true">Do</span> : `${DOCS_LINK.title} ↗`}
+-        </a>
+-      </li>
+-    </ul>
++      </ul>
++    </>
++  );
++}
++
++function Wordmark() {
++  return (
++    <span className="type-wordmark text-ink select-none">
++      <span className="block">Indus</span> <span className="block">Agent</span>
++    </span>
+   );
+ }
+ 
+@@ -101,33 +226,45 @@ export function Sidebar(props: SidebarProps) {
+   const { items, search, wide, collapsed, onToggleCollapsed, mobileOpen, onCloseMobile, footer } =
+     props;
+   const compact = wide && collapsed;
++  const footerContent = typeof footer === "function" ? footer(compact) : footer;
+ 
+   const body = (
+-    <nav aria-label="Dashboard" className="flex h-full flex-col gap-3 p-2">
+-      <div className="flex items-center justify-between gap-2 px-1">
+-        {compact ? null : <span className="text-sm font-semibold">Indus Agent</span>}
++    <nav aria-label="Dashboard" className="flex h-full min-h-0 flex-col">
++      <div
++        className={cx(
++          "flex h-[3.25rem] shrink-0 items-center border-b border-line",
++          compact ? "justify-center" : "justify-between pr-4 pl-4",
++        )}
++      >
++        {compact ? null : <Wordmark />}
+         {wide ? (
+           <button
+             type="button"
+-            className="rounded-md border border-line px-2 py-1 text-xs"
++            className="inline-flex size-7 items-center justify-center text-ink-muted hover:text-ink"
+             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+             aria-expanded={!collapsed}
++            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+             onClick={onToggleCollapsed}
+           >
+-            {collapsed ? "»" : "«"}
++            {collapsed ? (
++              <PanelLeftOpen aria-hidden="true" className="size-4" />
++            ) : (
++              <PanelLeftClose aria-hidden="true" className="size-4" />
++            )}
+           </button>
+         ) : (
+           <button
+             type="button"
+-            className="rounded-md border border-line px-2 py-1 text-xs"
++            className="inline-flex h-7 items-center gap-1 px-1 text-ink-muted hover:text-ink"
+             onClick={onCloseMobile}
+           >
++            <X aria-hidden="true" className="size-4" />
+             Close
+           </button>
+         )}
+       </div>
+       <ProfileSwitcher compact={compact} />
+-      <div className="min-h-0 flex-1 overflow-y-auto">
++      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+         <NavItems
+           items={items}
+           search={search}
+@@ -135,10 +272,25 @@ export function Sidebar(props: SidebarProps) {
+           onNavigate={wide ? () => {} : onCloseMobile}
+         />
+       </div>
+-      <div className="flex flex-col gap-2 border-t border-line pt-2">
+-        {footer}
+-        <ThemeSwitch compact={compact} />
++      <div className="flex shrink-0 flex-col gap-2 border-t border-line pt-2.5 pb-2">
++        {footerContent}
+       </div>
++      <div
++        className={cx(
++          "flex shrink-0 items-center border-t border-line",
++          compact ? "justify-center py-1" : "h-10 px-4",
++        )}
++      >
++        <div className={cx("flex items-center", compact ? "flex-col" : "gap-4")}>
++          <ThemeMenu compact={compact} />
++          <LanguageMenu />
++        </div>
++      </div>
++      {compact ? null : (
++        <div className="flex h-[2.125rem] shrink-0 items-center border-t border-line">
++          <VersionLine />
++        </div>
++      )}
+     </nav>
+   );
+ 
+@@ -147,7 +299,10 @@ export function Sidebar(props: SidebarProps) {
+       <aside
+         data-testid="sidebar"
+         data-collapsed={collapsed ? "true" : "false"}
+-        className={`shrink-0 border-r border-line bg-raised ${collapsed ? "w-16" : "w-56"}`}
++        className={cx(
++          "h-full shrink-0 border-r border-line bg-canvas transition-[width] duration-200",
++          collapsed ? "w-[3.25rem]" : "w-60",
++        )}
+       >
+         {body}
+       </aside>
+@@ -156,13 +311,13 @@ export function Sidebar(props: SidebarProps) {
+   if (!mobileOpen) return null;
+   return (
+     <div className="fixed inset-0 z-40 flex" data-testid="sidebar-drawer">
+-      <aside data-testid="sidebar" className="h-full w-64 border-r border-line bg-raised">
++      <aside data-testid="sidebar" className="h-full w-64 border-r border-line bg-canvas">
+         {body}
+       </aside>
+       <button
+         type="button"
+         aria-label="Close navigation"
+-        className="flex-1 bg-black/40"
++        className="flex-1 bg-overlay"
+         onClick={onCloseMobile}
+       />
+     </div>
+diff --git a/apps/web/src/shell/StatusStrip.test.tsx b/apps/web/src/shell/StatusStrip.test.tsx
+index 0d770c8..62ea7e3 100644
+--- a/apps/web/src/shell/StatusStrip.test.tsx
++++ b/apps/web/src/shell/StatusStrip.test.tsx
+@@ -35,18 +35,18 @@ describe("status strip", () => {
+     };
+     renderApp("/sessions");
+     await waitFor(() =>
+-      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon running"),
++      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon status: Running"),
+     );
+-    expect(strip().getByTestId("status-sessions").textContent).toBe("2 active sessions");
+-    expect(strip().getByTestId("status-platforms").textContent).toBe("2/3 channels connected");
+-    expect(strip().getByText("Indus Agent 0.1.0")).toBeTruthy();
++    expect(strip().getByTestId("status-sessions").textContent).toBe("Active sessions: 2");
++    expect(strip().getByTestId("status-platforms").textContent).toBe("Channels: 2/3 connected");
++    expect(screen.getByTestId("sidebar-version").textContent).toBe("v0.1.0Indus Agent");
+   });
+ 
+   it("refreshes every 5 s", async () => {
+     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+     renderApp("/sessions");
+     await waitFor(() =>
+-      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon running"),
++      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon status: Running"),
+     );
+     const first = mock.callsTo("GET", "/api/status").length;
+ 
+@@ -59,7 +59,9 @@ describe("status strip", () => {
+       vi.advanceTimersByTime(1);
+     });
+     await waitFor(() =>
+-      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon failed to start"),
++      expect(strip().getByTestId("status-daemon").textContent).toBe(
++        "Daemon status: Failed to start",
++      ),
+     );
+     expect(mock.callsTo("GET", "/api/status")).toHaveLength(first + 1);
+   });
+diff --git a/apps/web/src/shell/StatusStrip.tsx b/apps/web/src/shell/StatusStrip.tsx
+index 7abe923..f350987 100644
+--- a/apps/web/src/shell/StatusStrip.tsx
++++ b/apps/web/src/shell/StatusStrip.tsx
+@@ -1,15 +1,18 @@
+-// The status strip in the sidebar footer (P18-25): daemon state, version, active sessions and
+-// connected platforms from the public status probe, refreshed every 5 s while the tab is visible.
++// The status block in the sidebar footer (P18-25, restyled W51-a): daemon state, active sessions
++// and connected channels from the public status probe, refreshed every 5 s while the tab is
++// visible. The version sits in the sidebar's bottom row (`VersionLine`). Collapsed, the block is a
++// single coloured dot whose tooltip carries the same facts.
+ 
+ import type { StatusResponse } from "../lib/restTypes.ts";
++import { cx } from "../ui/cx.ts";
+ import { useShellStatus } from "./shellStatus.ts";
+ 
+ const DOT: Record<string, string> = {
+-  running: "bg-ok",
+-  draining: "bg-warn",
+-  starting: "bg-warn",
+-  stopping: "bg-warn",
+-  degraded: "bg-warn",
++  running: "bg-success",
++  draining: "bg-warning",
++  starting: "bg-warning",
++  stopping: "bg-warning",
++  degraded: "bg-warning",
+   startup_failed: "bg-danger",
+ };
+ 
+@@ -18,47 +21,89 @@ export function daemonLabel(state: string): string {
+   return state.replaceAll("_", " ");
+ }
+ 
++function capitalised(text: string): string {
++  return text.charAt(0).toUpperCase() + text.slice(1);
++}
++
+ export function StatusStripView({
+   status,
+   failed,
++  compact = false,
+ }: {
+   status: StatusResponse | undefined;
+   failed: boolean;
++  compact?: boolean;
+ }) {
+   if (!status) {
++    const text = failed ? "Status unavailable" : "Checking status…";
+     return (
+-      <section aria-label="Status" className="px-1 text-xs text-muted">
+-        {failed ? "Status unavailable" : "Checking status…"}
++      <section
++        aria-label="Status"
++        className={cx("text-[0.75rem] text-ink-soft", compact ? "sr-only" : "px-5")}
++      >
++        {text}
+       </section>
+     );
+   }
+   const state = status.daemon.state;
+   const platforms = status.components?.platforms;
+-  return (
+-    <section aria-label="Status" className="flex flex-col gap-0.5 px-1 text-xs text-muted">
+-      <span className="flex items-center gap-1.5 text-fg" data-testid="status-daemon">
++  const daemon = capitalised(daemonLabel(state));
++  if (compact) {
++    const summary = `Daemon status: ${daemon}`;
++    return (
++      <section aria-label="Status" className="flex justify-center py-1">
+         <span
+-          aria-hidden="true"
+-          className={`inline-block h-2 w-2 shrink-0 rounded-full ${DOT[state] ?? "bg-muted"}`}
++          title={summary}
++          className={cx("inline-block size-1.5 rounded-full", DOT[state] ?? "bg-ink-soft")}
+         />
+-        Daemon {daemonLabel(state)}
++        <span className="sr-only" data-testid="status-daemon">
++          {summary}
++        </span>
++      </section>
++    );
++  }
++  return (
++    <section
++      aria-label="Status"
++      className="flex flex-col gap-0.5 px-5 text-[0.75rem] tracking-[0.06em] text-ink-muted"
++    >
++      <span className="text-ink-soft">System</span>
++      <span data-testid="status-daemon">
++        Daemon status: <strong className="font-semibold text-ink">{daemon}</strong>
+       </span>
+       {typeof status.active_sessions === "number" ? (
+         <span data-testid="status-sessions">
+-          {status.active_sessions} active session{status.active_sessions === 1 ? "" : "s"}
++          Active sessions: <span className="text-ink">{status.active_sessions}</span>
+         </span>
+       ) : null}
+       {platforms && platforms.configured > 0 ? (
+         <span data-testid="status-platforms">
+-          {platforms.connected}/{platforms.configured} channels connected
++          Channels:{" "}
++          <span className="text-ink">
++            {platforms.connected}/{platforms.configured}
++          </span>{" "}
++          connected
+         </span>
+       ) : null}
+-      <span>Indus Agent {status.version}</span>
+     </section>
+   );
+ }
+ 
+-export function StatusStrip() {
++export function StatusStrip({ compact = false }: { compact?: boolean }) {
+   const status = useShellStatus();
+-  return <StatusStripView status={status.data} failed={status.isError} />;
++  return <StatusStripView status={status.data} failed={status.isError} compact={compact} />;
++}
++
++/** "v0.1.0 · Indus Agent" in the sidebar's last row. */
++export function VersionLine() {
++  const status = useShellStatus();
++  return (
++    <p
++      data-testid="sidebar-version"
++      className="m-0 flex items-center justify-between gap-2 px-5 text-[0.75rem] tracking-[0.08em] text-ink-soft"
++    >
++      <span>{status.data ? `v${status.data.version}` : "v…"}</span>
++      <span className="text-ink-muted">Indus Agent</span>
++    </p>
++  );
+ }
+diff --git a/apps/web/src/shell/ThemeSwitch.tsx b/apps/web/src/shell/ThemeSwitch.tsx
+deleted file mode 100644
+index 9cf6bfa..0000000
+--- a/apps/web/src/shell/ThemeSwitch.tsx
++++ /dev/null
+@@ -1,61 +0,0 @@
+-// Our light/dark pair (L16, P2 part). The token CSS for both themes comes from @indus/ui and is
+-// written once into <head>; switching only flips `data-theme` on <html>. The choice is remembered
+-// per browser; without one we follow the system preference.
+-
+-import { type ThemeName, themeNames, tokensToCss } from "@indus/ui";
+-import { useEffect, useState } from "react";
+-
+-export const THEME_KEY = "indus-theme";
+-
+-function stored(): ThemeName | null {
+-  try {
+-    const value = window.localStorage.getItem(THEME_KEY);
+-    return value === "indus-light" || value === "indus-dark" ? value : null;
+-  } catch {
+-    return null;
+-  }
+-}
+-
+-function systemTheme(): ThemeName {
+-  const query =
+-    typeof window.matchMedia === "function"
+-      ? window.matchMedia("(prefers-color-scheme: dark)")
+-      : null;
+-  return query?.matches ? "indus-dark" : "indus-light";
+-}
+-
+-/** One <style> with every theme's tokens; mounted once at the root. */
+-export function ThemeStyles() {
+-  return (
+-    <style data-indus-tokens="">{themeNames.map((name) => tokensToCss(name)).join("\n")}</style>
+-  );
+-}
+-
+-export function ThemeSwitch({ compact }: { compact: boolean }) {
+-  const [theme, setTheme] = useState<ThemeName>(() => stored() ?? systemTheme());
+-
+-  useEffect(() => {
+-    document.documentElement.dataset.theme = theme;
+-  }, [theme]);
+-
+-  const next: ThemeName = theme === "indus-dark" ? "indus-light" : "indus-dark";
+-  const label = next === "indus-dark" ? "Switch to dark theme" : "Switch to light theme";
+-  return (
+-    <button
+-      type="button"
+-      aria-label={label}
+-      title={label}
+-      className="rounded-md border border-line px-2 py-1 text-xs text-fg"
+-      onClick={() => {
+-        setTheme(next);
+-        try {
+-          window.localStorage.setItem(THEME_KEY, next);
+-        } catch {
+-          // storage unavailable: the choice lasts for this page only
+-        }
+-      }}
+-    >
+-      {compact ? (theme === "indus-dark" ? "☾" : "☀") : theme === "indus-dark" ? "Dark" : "Light"}
+-    </button>
+-  );
+-}
+diff --git a/apps/web/src/shell/Toasts.tsx b/apps/web/src/shell/Toasts.tsx
+index 9f76c9d..4717e42 100644
+--- a/apps/web/src/shell/Toasts.tsx
++++ b/apps/web/src/shell/Toasts.tsx
+@@ -1,6 +1,7 @@
+ // Short-lived notices. Network failures from the REST client arrive here as one plain sentence;
+ // the technical details were already written to the console by the client.
+ 
++import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
+ import {
+   createContext,
+   type ReactNode,
+@@ -34,6 +35,21 @@ export function useToast(): ToastApi {
+ export const TOAST_MS = 5_000;
+ export const UNREACHABLE_TOAST = "Backend unreachable. The dashboard server is not answering.";
+ 
++const TOAST_TONE: Record<ToastTone, string> = {
++  info: "border-line-strong border-l-ink",
++  success: "border-line-strong border-l-success",
++  error: "border-danger/60 border-l-danger",
++};
++
++function ToastIcon({ tone }: { tone: ToastTone }) {
++  const className = "mt-0.5 size-3.5 shrink-0";
++  if (tone === "error")
++    return <AlertCircle aria-hidden="true" className={`${className} text-danger`} />;
++  if (tone === "success")
++    return <CheckCircle2 aria-hidden="true" className={`${className} text-success`} />;
++  return <Info aria-hidden="true" className={`${className} text-ink-soft`} />;
++}
++
+ export function ToastProvider({ children }: { children: ReactNode }) {
+   const [toasts, setToasts] = useState<Toast[]>([]);
+   const nextId = useRef(1);
+@@ -63,28 +79,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
+       {children}
+       <div
+         aria-live="polite"
+-        className="pointer-events-none fixed right-4 bottom-4 z-50 flex flex-col gap-2"
++        className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2"
+       >
+         {toasts.map((toast) => (
+           <div
+             key={toast.id}
+             role={toast.tone === "error" ? "alert" : "status"}
+-            className={`pointer-events-auto flex items-start gap-3 rounded-md border bg-raised px-3 py-2 text-sm shadow ${
+-              toast.tone === "error"
+-                ? "border-danger text-danger"
+-                : toast.tone === "success"
+-                  ? "border-ok text-fg"
+-                  : "border-line text-fg"
+-            }`}
++            className={`pointer-events-auto flex items-start gap-2.5 border border-l-2 bg-canvas px-3 py-2.5 text-[0.8125rem] text-ink shadow-xl [animation:indus-slide-in_180ms_ease-out] ${TOAST_TONE[toast.tone]}`}
+           >
+-            <span>{toast.message}</span>
++            <ToastIcon tone={toast.tone} />
++            <span className="min-w-0 flex-1">{toast.message}</span>
+             <button
+               type="button"
+               aria-label="Dismiss"
+-              className="text-muted"
++              className="text-ink-soft hover:text-ink"
+               onClick={() => dismiss(toast.id)}
+             >
+-              ×
++              <X aria-hidden="true" className="size-3.5" />
+             </button>
+           </div>
+         ))}
+diff --git a/apps/web/src/shell/assets.test.ts b/apps/web/src/shell/assets.test.ts
+index 9b18213..3a18983 100644
+--- a/apps/web/src/shell/assets.test.ts
++++ b/apps/web/src/shell/assets.test.ts
+@@ -2,8 +2,9 @@ import { readdirSync, readFileSync } from "node:fs";
+ import { join, relative } from "node:path";
+ import { describe, expect, it } from "vitest";
+ 
+-// R09.22 / ACC-L20-1: the dashboard ships no font files and no imagery of its own yet; type comes
+-// from system stacks named in @indus/ui, so no vendor brand asset can ride along.
++// R09.22 / ACC-L20-1, amended by the owner's UI-parity decision (W51-a-2): the app's own tree holds
++// no font files and no imagery, so no vendor brand asset can ride along. Type comes from open-licence
++// @fontsource packages imported by src/theme/fonts.ts; stylesheets in src never load fonts directly.
+ const APP_ROOT = join(import.meta.dirname, "..", "..");
+ const MEDIA = /\.(woff2?|ttf|otf|eot|png|jpe?g|gif|webp|avif|ico|svg)$/i;
+ 
+diff --git a/apps/web/src/theme/ThemeMenu.test.tsx b/apps/web/src/theme/ThemeMenu.test.tsx
+new file mode 100644
+index 0000000..5679710
+--- /dev/null
++++ b/apps/web/src/theme/ThemeMenu.test.tsx
+@@ -0,0 +1,76 @@
++import { fireEvent, screen, within } from "@testing-library/react";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { createMockApi, type MockApi } from "../testing/mockApi.ts";
++import { renderApp } from "../testing/render.tsx";
++import { THEME_KEY } from "./ThemeProvider.tsx";
++
++let mock: MockApi;
++let restore: () => void;
++
++beforeEach(() => {
++  window.localStorage.clear();
++  mock = createMockApi();
++  restore = mock.install();
++  vi.spyOn(console, "warn").mockImplementation(() => {});
++});
++
++afterEach(() => {
++  restore();
++  window.localStorage.clear();
++});
++
++describe("theme menu", () => {
++  it("lists the presets and applies the one picked", async () => {
++    window.localStorage.setItem(THEME_KEY, "deep-teal");
++    renderApp("/sessions");
++    expect(document.documentElement.dataset.preset).toBe("deep-teal");
++    expect(document.documentElement.dataset.theme).toBe("indus-dark");
++
++    fireEvent.click(await screen.findByRole("button", { name: "Theme: Deep Teal" }));
++    const menu = screen.getByRole("menu", { name: "Theme" });
++    const items = within(menu).getAllByRole("menuitemradio");
++    expect(items.length).toBeGreaterThanOrEqual(2);
++    expect(
++      within(menu)
++        .getByRole("menuitemradio", { name: /^Deep Teal Dark teal/ })
++        .getAttribute("aria-checked"),
++    ).toBe("true");
++
++    fireEvent.click(within(menu).getByRole("menuitemradio", { name: /Clear Blue/ }));
++    expect(screen.queryByRole("menu")).toBeNull();
++    expect(document.documentElement.dataset.preset).toBe("clear-blue");
++    expect(document.documentElement.dataset.theme).toBe("indus-light");
++    expect(window.localStorage.getItem(THEME_KEY)).toBe("clear-blue");
++  });
++
++  it("closes on Escape", async () => {
++    renderApp("/sessions");
++    fireEvent.click(await screen.findByRole("button", { name: /^Theme: / }));
++    expect(screen.getByRole("menu")).toBeTruthy();
++    fireEvent.keyDown(window, { key: "Escape" });
++    expect(screen.queryByRole("menu")).toBeNull();
++  });
++
++  it("keeps names and tooltips when the sidebar is collapsed", async () => {
++    renderApp("/sessions");
++    fireEvent.click(await screen.findByRole("button", { name: "Collapse sidebar" }));
++    const nav = within(screen.getByRole("navigation", { name: "Dashboard" }));
++    const logs = nav.getByRole("link", { name: "Logs" });
++    // No clipped two-letter stubs: the collapsed link shows only its icon.
++    expect(logs.textContent).toBe("");
++    fireEvent.mouseEnter(logs);
++    expect(screen.getByText("Logs", { selector: "span" })).toBeTruthy();
++    expect(screen.getByRole("button", { name: /^Theme: / })).toBeTruthy();
++  });
++});
++
++describe("language menu", () => {
++  it("offers English only, checked", async () => {
++    renderApp("/sessions");
++    fireEvent.click(await screen.findByRole("button", { name: "Language: English" }));
++    const menu = screen.getByRole("menu", { name: "Language" });
++    const items = within(menu).getAllByRole("menuitemradio");
++    expect(items).toHaveLength(1);
++    expect(items[0]?.getAttribute("aria-checked")).toBe("true");
++  });
++});
+diff --git a/apps/web/src/theme/ThemeMenu.tsx b/apps/web/src/theme/ThemeMenu.tsx
+new file mode 100644
+index 0000000..6033e9e
+--- /dev/null
++++ b/apps/web/src/theme/ThemeMenu.tsx
+@@ -0,0 +1,99 @@
++// The theme picker in the sidebar footer: a button naming the current preset that opens a list of
++// presets, each with its colour swatch and a one-line description.
++
++import { Check, Palette } from "lucide-react";
++import { useCallback, useId, useRef, useState } from "react";
++import { cx } from "../ui/cx.ts";
++import { useDismiss } from "../ui/useDismiss.ts";
++import { PRESETS, type Preset } from "./presets.ts";
++import { useTheme } from "./ThemeProvider.tsx";
++
++function Swatch({ preset }: { preset: Preset }) {
++  const mid = `color-mix(in srgb, ${preset.ink} 45%, ${preset.canvas})`;
++  return (
++    <span aria-hidden="true" className="flex h-3.5 shrink-0 border border-line-strong">
++      {[preset.canvas, preset.ink, mid].map((colour) => (
++        <span key={colour} className="w-2.5" style={{ background: colour }} />
++      ))}
++    </span>
++  );
++}
++
++export function ThemeMenu({ compact }: { compact: boolean }) {
++  const { preset, choose } = useTheme();
++  const [open, setOpen] = useState(false);
++  const root = useRef<HTMLDivElement>(null);
++  const menuId = useId();
++
++  const close = useCallback(() => setOpen(false), []);
++  useDismiss(open, root, close);
++
++  return (
++    <div ref={root} className={cx("relative", compact ? "flex justify-center" : "")}>
++      <button
++        type="button"
++        aria-haspopup="menu"
++        aria-expanded={open}
++        aria-controls={open ? menuId : undefined}
++        aria-label={`Theme: ${preset.label}`}
++        title={compact ? `Theme: ${preset.label}` : undefined}
++        onClick={() => setOpen((was) => !was)}
++        className={cx(
++          "inline-flex h-8 items-center gap-2 text-ink-muted hover:text-ink",
++          compact ? "w-8 justify-center" : "px-1",
++        )}
++      >
++        <Palette aria-hidden="true" className="size-3.5 shrink-0" />
++        {compact ? null : (
++          <span className="text-[0.75rem] tracking-[0.06em] uppercase">{preset.label}</span>
++        )}
++      </button>
++      {open ? (
++        <div
++          id={menuId}
++          role="menu"
++          aria-label="Theme"
++          className="fixed bottom-[4.5rem] left-3 z-50 w-[min(24.5rem,calc(100vw-1.5rem))] border border-line-strong bg-canvas text-ink shadow-2xl [animation:indus-fade-in_120ms_ease-out]"
++        >
++          <p className="m-0 border-b border-line px-3 py-2.5 text-[0.75rem] tracking-[0.08em] text-ink-muted">
++            Theme
++          </p>
++          <ul className="m-0 list-none p-0 py-1">
++            {PRESETS.map((item) => {
++              const active = item.id === preset.id;
++              return (
++                <li key={item.id}>
++                  <button
++                    type="button"
++                    role="menuitemradio"
++                    data-preset={item.id}
++                    aria-checked={active}
++                    onClick={() => {
++                      choose(item.id);
++                      setOpen(false);
++                    }}
++                    className={cx(
++                      "flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-hover",
++                      active && "bg-selected",
++                    )}
++                  >
++                    <Swatch preset={item} />
++                    <span className="flex min-w-0 flex-1 flex-col">
++                      <span className="text-[0.75rem] tracking-[0.06em] uppercase">
++                        {item.label}
++                      </span>{" "}
++                      <span className="truncate text-[0.75rem] text-ink-soft">
++                        {item.description}
++                      </span>
++                    </span>
++                    {active ? <Check aria-hidden="true" className="size-3.5 shrink-0" /> : null}
++                  </button>
++                </li>
++              );
++            })}
++          </ul>
++        </div>
++      ) : null}
++    </div>
++  );
++}
+diff --git a/apps/web/src/theme/ThemeProvider.tsx b/apps/web/src/theme/ThemeProvider.tsx
+new file mode 100644
+index 0000000..71639ae
+--- /dev/null
++++ b/apps/web/src/theme/ThemeProvider.tsx
+@@ -0,0 +1,79 @@
++// Holds the chosen colour preset, writes it onto <html> (`data-preset` for the colours,
++// `data-theme` for the light/dark side the chat terminal reads) and remembers it per browser.
++
++import {
++  createContext,
++  type ReactNode,
++  useCallback,
++  useContext,
++  useLayoutEffect,
++  useMemo,
++  useState,
++} from "react";
++import { initialPreset, type Preset, type PresetId, presetById, presetCss } from "./presets.ts";
++
++export const THEME_KEY = "indus-theme";
++
++function readStored(): string | null {
++  try {
++    return window.localStorage.getItem(THEME_KEY);
++  } catch {
++    return null;
++  }
++}
++
++function writeStored(id: PresetId): void {
++  try {
++    window.localStorage.setItem(THEME_KEY, id);
++  } catch {
++    // storage unavailable: the choice lasts for this page only
++  }
++}
++
++function systemPrefersDark(): boolean {
++  if (typeof window.matchMedia !== "function") return true;
++  return window.matchMedia("(prefers-color-scheme: dark)").matches;
++}
++
++export function applyPreset(preset: Preset, root: HTMLElement = document.documentElement): void {
++  root.dataset.preset = preset.id;
++  root.dataset.theme = preset.scheme;
++}
++
++interface ThemeApi {
++  preset: Preset;
++  choose(id: PresetId): void;
++}
++
++const ThemeContext = createContext<ThemeApi | null>(null);
++
++export function useTheme(): ThemeApi {
++  const api = useContext(ThemeContext);
++  if (!api) throw new Error("useTheme needs <ThemeProvider>");
++  return api;
++}
++
++export function ThemeProvider({ children }: { children: ReactNode }) {
++  const [preset, setPreset] = useState<Preset>(() =>
++    initialPreset(readStored(), systemPrefersDark()),
++  );
++
++  useLayoutEffect(() => {
++    applyPreset(preset);
++  }, [preset]);
++
++  const choose = useCallback((id: PresetId) => {
++    const next = presetById(id);
++    if (!next) return;
++    writeStored(next.id);
++    setPreset(next);
++  }, []);
++
++  const value = useMemo(() => ({ preset, choose }), [preset, choose]);
++  return (
++    <ThemeContext.Provider value={value}>
++      <style data-indus-presets="">{presetCss()}</style>
++      {children}
++    </ThemeContext.Provider>
++  );
++}
+diff --git a/apps/web/src/theme/fonts.ts b/apps/web/src/theme/fonts.ts
+new file mode 100644
+index 0000000..606e0ea
+--- /dev/null
++++ b/apps/web/src/theme/fonts.ts
+@@ -0,0 +1,9 @@
++// The dashboard's type (W51-a-2): open-licence (OFL-1.1) faces from @fontsource at exact pins.
++// Archivo's variable width axis gives both the expanded display voice and the condensed badge
++// voice from one family; the stacks in index.css name each face with system fallbacks.
++
++import "@fontsource-variable/archivo/wdth.css";
++import "@fontsource-variable/eb-garamond/wght.css";
++import "@fontsource-variable/jetbrains-mono/wght.css";
++import "@fontsource/courier-prime/400.css";
++import "@fontsource/courier-prime/700.css";
+diff --git a/apps/web/src/theme/presets.test.ts b/apps/web/src/theme/presets.test.ts
+new file mode 100644
+index 0000000..9accaa4
+--- /dev/null
++++ b/apps/web/src/theme/presets.test.ts
+@@ -0,0 +1,33 @@
++import { describe, expect, it } from "vitest";
++import { DARK_DEFAULT, initialPreset, LIGHT_DEFAULT, PRESETS, presetCss } from "./presets.ts";
++
++describe("theme presets", () => {
++  it("keeps a stored preset", () => {
++    expect(initialPreset("graphite", false).id).toBe("graphite");
++  });
++
++  it("follows the system side when nothing usable is stored", () => {
++    expect(initialPreset(null, true).id).toBe(DARK_DEFAULT);
++    expect(initialPreset(null, false).id).toBe(LIGHT_DEFAULT);
++    expect(initialPreset("no-such-preset", false).id).toBe(LIGHT_DEFAULT);
++  });
++
++  it("maps the earlier light/dark choice onto the default presets", () => {
++    expect(initialPreset("indus-light", true).id).toBe(LIGHT_DEFAULT);
++    expect(initialPreset("indus-dark", false).id).toBe(DARK_DEFAULT);
++  });
++
++  it("offers at least one light and one dark preset, with unique ids", () => {
++    expect(new Set(PRESETS.map((p) => p.id)).size).toBe(PRESETS.length);
++    expect(PRESETS.some((p) => p.scheme === "indus-light")).toBe(true);
++    expect(PRESETS.some((p) => p.scheme === "indus-dark")).toBe(true);
++  });
++
++  it("writes one rule per preset with its colour pair", () => {
++    const css = presetCss();
++    for (const p of PRESETS) {
++      expect(css).toContain(`:root[data-preset="${p.id}"]`);
++      expect(css).toContain(`--indus-canvas: ${p.canvas};`);
++    }
++  });
++});
+diff --git a/apps/web/src/theme/presets.ts b/apps/web/src/theme/presets.ts
+new file mode 100644
+index 0000000..12dc600
+--- /dev/null
++++ b/apps/web/src/theme/presets.ts
+@@ -0,0 +1,86 @@
++// Dashboard colour presets (W51-a). A preset is two colours: the canvas everything sits on and one
++// ink used for text, rules and filled controls. Every other surface is a mix of the two, worked out
++// in index.css, so a preset only has to name its pair (plus its light/dark side, which the chat
++// terminal and the status colours follow).
++
++import type { ThemeName } from "@indus/ui";
++
++export type PresetId = "deep-teal" | "deep-teal-large" | "clear-blue" | "graphite";
++
++export interface Preset {
++  id: PresetId;
++  label: string;
++  description: string;
++  /** Which side of the light/dark pair the preset belongs to (`data-theme` on <html>). */
++  scheme: ThemeName;
++  canvas: string;
++  ink: string;
++  /** Root font size in px; the large preset scales every rem-based size up. */
++  rootPx: number;
++}
++
++export const PRESETS: readonly Preset[] = [
++  {
++    id: "deep-teal",
++    label: "Deep Teal",
++    description: "Dark teal canvas with warm cream ink",
++    scheme: "indus-dark",
++    canvas: "#041c1c",
++    ink: "#ffe6cb",
++    rootPx: 16,
++  },
++  {
++    id: "deep-teal-large",
++    label: "Deep Teal Large",
++    description: "The same pair with bigger type and more room",
++    scheme: "indus-dark",
++    canvas: "#041c1c",
++    ink: "#ffe6cb",
++    rootPx: 18,
++  },
++  {
++    id: "clear-blue",
++    label: "Clear Blue",
++    description: "Light mode: strong blue ink on a pale sky canvas",
++    scheme: "indus-light",
++    canvas: "#e8f2fd",
++    ink: "#0053fd",
++    rootPx: 16,
++  },
++  {
++    id: "graphite",
++    label: "Graphite",
++    description: "Neutral greys for a quiet dark screen",
++    scheme: "indus-dark",
++    canvas: "#121314",
++    ink: "#e6e6e3",
++    rootPx: 16,
++  },
++];
++
++export const DARK_DEFAULT: PresetId = "deep-teal";
++export const LIGHT_DEFAULT: PresetId = "clear-blue";
++
++export function presetById(id: string | null | undefined): Preset | undefined {
++  return PRESETS.find((preset) => preset.id === id);
++}
++
++/** The preset to start with: the stored one if known, else the system's light or dark default. */
++export function initialPreset(stored: string | null, prefersDark: boolean): Preset {
++  const known = presetById(stored);
++  if (known) return known;
++  // Choices saved by the earlier light/dark toggle still count.
++  if (stored === "indus-light") return presetById(LIGHT_DEFAULT) as Preset;
++  if (stored === "indus-dark") return presetById(DARK_DEFAULT) as Preset;
++  return presetById(prefersDark ? DARK_DEFAULT : LIGHT_DEFAULT) as Preset;
++}
++
++/** One rule per preset, keyed on `data-preset`, setting the pair the derived tokens mix from. */
++export function presetCss(presets: readonly Preset[] = PRESETS): string {
++  return presets
++    .map(
++      (p) =>
++        `:root[data-preset="${p.id}"] { --indus-canvas: ${p.canvas}; --indus-ink: ${p.ink}; font-size: ${p.rootPx}px; color-scheme: ${p.scheme === "indus-dark" ? "dark" : "light"}; }`,
++    )
++    .join("\n");
++}
+diff --git a/apps/web/src/ui/Dialog.tsx b/apps/web/src/ui/Dialog.tsx
+index b1a6d88..fc3c1bf 100644
+--- a/apps/web/src/ui/Dialog.tsx
++++ b/apps/web/src/ui/Dialog.tsx
+@@ -1,38 +1,77 @@
+ // Modal dialogs on Radix primitives (focus trap, Escape, labelled by title and description).
++// Look: a square panel over a dimmed, blurred page; wide uppercase title, serif description, a
++// close cross, and large typewriter buttons at the bottom right.
+ 
+ import * as RadixDialog from "@radix-ui/react-dialog";
++import { X } from "lucide-react";
+ import type { ReactNode } from "react";
+ import { Button } from "./controls.tsx";
++import { cx } from "./cx.ts";
++
++export type ModalSize = "sm" | "md" | "lg";
++
++const widths: Record<ModalSize, string> = {
++  sm: "w-[min(22.5rem,92vw)]",
++  md: "w-[min(36rem,92vw)]",
++  lg: "w-[min(45rem,94vw)]",
++};
+ 
+ export function Modal({
+   open,
+   onOpenChange,
+   title,
+   description,
++  size = "md",
+   children,
+ }: {
+   open: boolean;
+   onOpenChange: (open: boolean) => void;
+   title: string;
+   description: string;
++  size?: ModalSize;
+   children: ReactNode;
+ }) {
+   return (
+     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
+       <RadixDialog.Portal>
+-        <RadixDialog.Overlay className="fixed inset-0 bg-black/40" />
+-        <RadixDialog.Content className="fixed top-1/2 left-1/2 max-h-[85vh] w-[min(36rem,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-line bg-raised p-4 text-fg shadow-lg">
+-          <RadixDialog.Title className="text-base font-semibold">{title}</RadixDialog.Title>
+-          <RadixDialog.Description className="mb-3 text-sm text-muted">
+-            {description}
+-          </RadixDialog.Description>
+-          {children}
++        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-overlay backdrop-blur-[2px] [animation:indus-fade-in_160ms_ease-out]" />
++        <RadixDialog.Content
++          className={cx(
++            "fixed top-1/2 left-1/2 z-50 max-h-[88vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto border border-line-strong bg-canvas text-ink shadow-2xl [animation:indus-pop-in_180ms_ease-out]",
++            widths[size],
++          )}
++        >
++          <div className="flex items-start gap-3 border-b border-line px-4 pt-3.5 pb-3">
++            <div className="min-w-0 flex-1">
++              <RadixDialog.Title className="type-section-title m-0 text-[0.9375rem]">
++                {title}
++              </RadixDialog.Title>
++              <RadixDialog.Description className="type-serif m-0 mt-1 text-[0.8125rem] leading-snug text-ink-soft">
++                {description}
++              </RadixDialog.Description>
++            </div>
++            <RadixDialog.Close
++              aria-label="Close dialog"
++              className="-mr-1 inline-flex size-6 items-center justify-center text-ink-soft hover:text-ink"
++            >
++              <X className="size-3.5" />
++            </RadixDialog.Close>
++          </div>
++          <div className="px-4 py-3">{children}</div>
+         </RadixDialog.Content>
+       </RadixDialog.Portal>
+     </RadixDialog.Root>
+   );
+ }
+ 
++/** The "PanelModal" role named by the wave-52 specs: the same component. */
++export const PanelModal = Modal;
++
++/** The bottom-right button row of a dialog. */
++export function DialogActions({ children }: { children: ReactNode }) {
++  return <div className="mt-3 flex justify-end gap-2">{children}</div>;
++}
++
+ /** A yes/no question; `onConfirm` runs only on the confirm button. */
+ export function ConfirmDialog({
+   open,
+@@ -58,6 +97,7 @@ export function ConfirmDialog({
+   return (
+     <Modal
+       open={open}
++      size="sm"
+       onOpenChange={(next) => {
+         if (!next) onCancel();
+       }}
+@@ -65,12 +105,14 @@ export function ConfirmDialog({
+       description={description}
+     >
+       {children}
+-      <div className="mt-4 flex justify-end gap-2">
+-        <Button onClick={onCancel}>Cancel</Button>
+-        <Button tone={danger ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
++      <DialogActions>
++        <Button size="lg" onClick={onCancel}>
++          Cancel
++        </Button>
++        <Button size="lg" tone={danger ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
+           {confirmLabel}
+         </Button>
+-      </div>
++      </DialogActions>
+     </Modal>
+   );
+ }
+diff --git a/apps/web/src/ui/Switch.tsx b/apps/web/src/ui/Switch.tsx
+index 69df180..5d37b25 100644
+--- a/apps/web/src/ui/Switch.tsx
++++ b/apps/web/src/ui/Switch.tsx
+@@ -1,4 +1,5 @@
+-// An on/off switch on the Radix primitive (role="switch", aria-checked).
++// An on/off switch on the Radix primitive (role="switch", aria-checked): a square track whose
++// thumb fills with ink when on.
+ 
+ import * as RadixSwitch from "@radix-ui/react-switch";
+ 
+@@ -22,9 +23,9 @@ export function Switch({
+       onCheckedChange={onCheckedChange}
+       disabled={disabled}
+       aria-label={label}
+-      className="relative h-5 w-9 shrink-0 rounded-full border border-line bg-code data-[state=checked]:bg-accent disabled:opacity-60"
++      className="relative h-[1.125rem] w-[2.125rem] shrink-0 cursor-pointer border border-line-strong bg-wash transition-colors data-[state=checked]:border-ink-soft data-[state=checked]:bg-ink-faint disabled:cursor-not-allowed disabled:opacity-50"
+     >
+-      <RadixSwitch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-raised transition-transform data-[state=checked]:translate-x-4" />
++      <RadixSwitch.Thumb className="block size-3 translate-x-[0.1875rem] bg-ink-soft transition-transform data-[state=checked]:translate-x-[1.0625rem] data-[state=checked]:bg-ink" />
+     </RadixSwitch.Root>
+   );
+ }
+diff --git a/apps/web/src/ui/controls.tsx b/apps/web/src/ui/controls.tsx
+index 6acf408..d33f6b5 100644
+--- a/apps/web/src/ui/controls.tsx
++++ b/apps/web/src/ui/controls.tsx
+@@ -1,94 +1,228 @@
+-// Small shared controls for the dashboard pages, styled from the @indus/ui tokens.
++// Shared dashboard controls (W51-a). Square corners, one ink colour, the type roles from index.css.
++// docs/notes/ui-parity/web-foundation.md lists every component with its props and when to use it.
+ 
+-import type { ButtonHTMLAttributes, ReactNode } from "react";
++import { AlertCircle, ChevronDown, Inbox, LoaderCircle, RotateCw } from "lucide-react";
++import type {
++  ButtonHTMLAttributes,
++  ComponentType,
++  InputHTMLAttributes,
++  ReactNode,
++  SelectHTMLAttributes,
++  TextareaHTMLAttributes,
++} from "react";
++import { cx } from "./cx.ts";
++
++/* ---------------------------------------------------------------- buttons */
+ 
+ type Tone = "default" | "primary" | "danger" | "ghost";
++type Size = "sm" | "md" | "lg";
+ 
+ const toneClass: Record<Tone, string> = {
+-  default: "border border-line bg-raised text-fg hover:bg-code",
+-  primary: "border border-accent bg-accent text-accent-fg hover:opacity-90",
+-  danger: "border border-danger bg-raised text-danger hover:bg-code",
+-  ghost: "border border-transparent text-fg hover:bg-code",
++  default: "border-ink text-ink bg-transparent hover:bg-hover",
++  primary: "border-ink bg-ink text-on-ink hover:opacity-90",
++  danger: "border-danger bg-danger text-white hover:opacity-90",
++  ghost: "border-transparent text-ink bg-transparent hover:bg-hover",
++};
++
++const sizeClass: Record<Size, string> = {
++  sm: "h-7 px-2.5 gap-1.5",
++  md: "h-[1.875rem] px-3 gap-2",
++  lg: "h-9 px-4 gap-2 text-[0.9375rem]",
+ };
+ 
+ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
++  /** `default` is the outlined typewriter button most actions use. */
+   tone?: Tone;
++  size?: Size;
++  /** A leading icon (lucide component instance), sized by the button. */
++  icon?: ReactNode;
+ }
+ 
+ export function Button({
+   tone = "default",
++  size = "md",
++  icon,
+   className = "",
+   type = "button",
++  children,
+   ...rest
+ }: ButtonProps) {
+   return (
+     <button
+       type={type}
+-      className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${toneClass[tone]} ${className}`}
++      className={cx(
++        "type-button inline-flex shrink-0 items-center justify-center border whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:size-3.5 [&_svg]:shrink-0",
++        toneClass[tone],
++        sizeClass[size],
++        className,
++      )}
+       {...rest}
+-    />
++    >
++      {icon}
++      {children}
++    </button>
+   );
+ }
+ 
++/** A square icon-only button; `label` is its accessible name and tooltip. */
++export function IconButton({
++  label,
++  tone = "ghost",
++  className = "",
++  children,
++  ...rest
++}: Omit<ButtonProps, "icon" | "size"> & { label: string }) {
++  return (
++    <button
++      type="button"
++      aria-label={label}
++      title={label}
++      className={cx(
++        "inline-flex size-7 shrink-0 items-center justify-center border transition-colors disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:size-4",
++        tone === "danger" ? "border-transparent text-danger hover:bg-danger-wash" : toneClass[tone],
++        className,
++      )}
++      {...rest}
++    >
++      {children}
++    </button>
++  );
++}
++
++/* ---------------------------------------------------------------- badges and chips */
++
+ export type BadgeTone = "neutral" | "ok" | "warn" | "danger" | "accent";
+ 
+ const badgeClass: Record<BadgeTone, string> = {
+-  neutral: "border-line text-muted",
+-  ok: "border-ok text-ok",
+-  warn: "border-warn text-warn",
+-  danger: "border-danger text-danger",
+-  accent: "border-accent text-accent",
++  neutral: "border-line-strong text-ink-soft",
++  ok: "border-success/50 bg-success-wash text-success",
++  warn: "border-warning/50 bg-warning-wash text-warning",
++  danger: "border-danger/50 bg-danger-wash text-danger",
++  accent: "border-ink text-ink",
+ };
+ 
+-export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; children: ReactNode }) {
++/** Small condensed tag: a source, a state, a count. */
++export function Badge({
++  tone = "neutral",
++  icon,
++  children,
++  className = "",
++}: {
++  tone?: BadgeTone;
++  icon?: ReactNode;
++  children: ReactNode;
++  className?: string;
++}) {
++  return (
++    <span
++      className={cx(
++        "type-badge inline-flex h-6 shrink-0 items-center gap-1 border px-2 whitespace-nowrap [&_svg]:size-3",
++        badgeClass[tone],
++        className,
++      )}
++    >
++      {icon}
++      {children}
++    </span>
++  );
++}
++
++/** The boxed number next to a page title (`Sessions [3]`). */
++export function CountChip({ children, label }: { children: ReactNode; label?: string }) {
+   return (
+     <span
+-      className={`inline-flex items-center rounded-full border px-2 text-xs ${badgeClass[tone]}`}
++      {...(label ? { "aria-label": label } : {})}
++      className="type-badge inline-flex h-6 min-w-6 items-center justify-center border border-line-strong bg-selected px-1.5 text-ink-muted"
+     >
+       {children}
+     </span>
+   );
+ }
+ 
++/* ---------------------------------------------------------------- segmented and tabs */
++
+ export interface SegmentOption<T extends string | number> {
+   value: T;
+   label: string;
+ }
+ 
+-/** A row of mutually exclusive toggle buttons (filters, ranges). */
++/** Mutually exclusive filter buttons in one bordered strip; the picked one is filled with ink. */
+ export function Segmented<T extends string | number>({
+   label,
+   value,
+   options,
+   onChange,
++  showLabel = false,
+ }: {
+   label: string;
+   value: T;
+   options: readonly SegmentOption<T>[];
+   onChange: (next: T) => void;
++  /** Show the legend before the strip (hidden by default, still read by screen readers). */
++  showLabel?: boolean;
++}) {
++  return (
++    <fieldset className="m-0 flex items-center gap-2 border-0 p-0">
++      <legend className={showLabel ? "type-label float-left mr-2 text-ink-soft" : "sr-only"}>
++        {label}
++      </legend>
++      <div className="inline-flex border border-line">
++        {options.map((option, i) => (
++          <button
++            key={String(option.value)}
++            type="button"
++            aria-pressed={option.value === value}
++            onClick={() => onChange(option.value)}
++            className={cx(
++              "type-serif h-[1.875rem] px-3 text-[0.75rem] tracking-[0.08em] transition-colors",
++              i > 0 && "border-l border-line",
++              option.value === value ? "bg-ink text-on-ink" : "text-ink-muted hover:bg-hover",
++            )}
++          >
++            {option.label}
++          </button>
++        ))}
++      </div>
++    </fieldset>
++  );
++}
++
++/** Page-level tabs (role="tablist"); the same strip look as Segmented. */
++export function Tabs<T extends string>({
++  label,
++  value,
++  tabs,
++  onChange,
++}: {
++  label: string;
++  value: T;
++  tabs: readonly SegmentOption<T>[];
++  onChange: (next: T) => void;
+ }) {
+   return (
+-    <fieldset className="flex flex-wrap items-center gap-1 border-0 p-0">
+-      <legend className="mr-2 text-xs text-muted">{label}</legend>
+-      {options.map((option) => (
++    <div role="tablist" aria-label={label} className="inline-flex border border-line">
++      {tabs.map((tab, i) => (
+         <button
+-          key={String(option.value)}
++          key={tab.value}
+           type="button"
+-          aria-pressed={option.value === value}
+-          onClick={() => onChange(option.value)}
+-          className={`rounded-md border px-2 py-1 text-xs ${
+-            option.value === value
+-              ? "border-accent bg-accent text-accent-fg"
+-              : "border-line bg-raised text-fg"
+-          }`}
++          role="tab"
++          aria-selected={tab.value === value}
++          onClick={() => onChange(tab.value)}
++          className={cx(
++            "type-serif h-[1.875rem] px-3 text-[0.75rem] tracking-[0.08em] transition-colors",
++            i > 0 && "border-l border-line",
++            tab.value === value ? "bg-ink text-on-ink" : "text-ink-muted hover:bg-hover",
++          )}
+         >
+-          {option.label}
++          {tab.label}
+         </button>
+       ))}
+-    </fieldset>
++    </div>
+   );
+ }
+ 
++/* ---------------------------------------------------------------- form fields */
++
+ export function Field({
+   label,
+   htmlFor,
+@@ -101,18 +235,246 @@ export function Field({
+   children: ReactNode;
+ }) {
+   return (
+-    <div className="flex flex-col gap-1">
+-      <label htmlFor={htmlFor} className="text-xs font-medium text-muted">
++    <div className="flex flex-col gap-1.5">
++      <label htmlFor={htmlFor} className="type-label text-ink-muted">
+         {label}
+       </label>
+       {children}
+-      {hint ? <p className="text-xs text-muted">{hint}</p> : null}
++      {hint ? <p className="type-serif text-[0.75rem] text-ink-soft">{hint}</p> : null}
+     </div>
+   );
+ }
+ 
++/** Class for a text input, select or textarea when a page builds its own element. */
+ export const inputClass =
+-  "rounded-md border border-line bg-raised px-2 py-1.5 text-sm text-fg placeholder:text-muted";
++  "min-h-8 border border-line bg-transparent px-3 py-1 type-data text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-ink disabled:opacity-50";
++
++export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInputElement>) {
++  return <input className={cx(inputClass, className)} {...rest} />;
++}
++
++export function Textarea({ className = "", ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
++  return <textarea className={cx(inputClass, "py-2", className)} {...rest} />;
++}
++
++/** Native select with the field look and a chevron. */
++export function Select({
++  className = "",
++  children,
++  ...rest
++}: SelectHTMLAttributes<HTMLSelectElement>) {
++  return (
++    <span className={cx("relative inline-flex", className)}>
++      <select className={cx(inputClass, "w-full appearance-none pr-8")} {...rest}>
++        {children}
++      </select>
++      <ChevronDown
++        aria-hidden="true"
++        className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-ink-soft"
++      />
++    </span>
++  );
++}
++
++/** A select dressed as an outlined typewriter button (filters such as "Any chat source"). */
++export function SelectButton({
++  icon: Icon,
++  className = "",
++  children,
++  ...rest
++}: SelectHTMLAttributes<HTMLSelectElement> & { icon?: ComponentType<{ className?: string }> }) {
++  return (
++    <span className={cx("relative inline-flex text-ink", className)}>
++      {Icon ? (
++        <Icon className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
++      ) : null}
++      <select
++        className={cx(
++          "type-button h-[1.875rem] w-full cursor-pointer appearance-none border border-ink bg-canvas pr-9 text-ink outline-none hover:bg-hover",
++          Icon ? "pl-8" : "pl-3",
++        )}
++        {...rest}
++      >
++        {children}
++      </select>
++      <ChevronDown
++        aria-hidden="true"
++        className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2"
++      />
++    </span>
++  );
++}
++
++export function Checkbox({
++  className = "",
++  ...rest
++}: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
++  return (
++    <input
++      type="checkbox"
++      className={cx(
++        "size-3.5 shrink-0 cursor-pointer appearance-none border border-line-strong bg-transparent checked:border-ink checked:bg-ink",
++        className,
++      )}
++      {...rest}
++    />
++  );
++}
++
++/* ---------------------------------------------------------------- cards and lists */
++
++export function Card({
++  children,
++  className = "",
++  padded = true,
++  ...rest
++}: {
++  children: ReactNode;
++  className?: string;
++  /** Inner padding; turn off when the card starts with a CardHeader. */
++  padded?: boolean;
++  "aria-label"?: string;
++}) {
++  return (
++    <section className={cx("border border-line bg-canvas", padded && "p-4", className)} {...rest}>
++      {children}
++    </section>
++  );
++}
++
++/** Card head: icon, wide uppercase title, and an aside for counts or actions. */
++export function CardHeader({
++  icon: Icon,
++  title,
++  aside,
++  level = 2,
++}: {
++  icon?: ComponentType<{ className?: string }>;
++  title: ReactNode;
++  aside?: ReactNode;
++  level?: 2 | 3;
++}) {
++  const Heading = level === 2 ? "h2" : "h3";
++  return (
++    <header className="flex min-h-[3.375rem] items-center gap-2.5 border-b border-line px-4 py-2">
++      {Icon ? <Icon className="size-[1.125rem] shrink-0 text-ink" /> : null}
++      <Heading className="type-section-title m-0 flex-1 truncate">{title}</Heading>
++      {aside ? <div className="flex shrink-0 items-center gap-2">{aside}</div> : null}
++    </header>
++  );
++}
++
++/** A bordered list row: content on the left, badges and actions on the right. */
++export function ListRow({
++  children,
++  aside,
++  className = "",
++  ...rest
++}: {
++  children: ReactNode;
++  aside?: ReactNode;
++  className?: string;
++  "data-testid"?: string;
++}) {
++  return (
++    <li className={cx("flex items-start gap-3 border border-line px-3 py-3", className)} {...rest}>
++      <div className="min-w-0 flex-1">{children}</div>
++      {aside ? <div className="flex shrink-0 items-center gap-1.5">{aside}</div> : null}
++    </li>
++  );
++}
++
++export interface StatItem {
++  label: string;
++  value: ReactNode;
++  tone?: "default" | "ok" | "warn" | "danger";
++}
++
++const statTone = {
++  default: "text-ink",
++  ok: "text-success",
++  warn: "text-warning",
++  danger: "text-danger",
++} as const;
++
++/** A row of figures in one bordered strip (value over label). */
++export function StatStrip({ label, items }: { label: string; items: readonly StatItem[] }) {
++  return (
++    <dl
++      aria-label={label}
++      className="m-0 flex flex-wrap gap-x-6 gap-y-3 border border-line px-4 py-2.5"
++    >
++      {items.map((item) => (
++        <div key={item.label} className="flex flex-col-reverse">
++          <dt className="text-[0.75rem] text-ink-muted">{item.label}</dt>
++          <dd className={cx("type-stat m-0", statTone[item.tone ?? "default"])}>{item.value}</dd>
++        </div>
++      ))}
++    </dl>
++  );
++}
++
++/**
++ * Figures as a list with dotted leaders: value on the left, a dotted rule, the label spaced in
++ * capitals on the right ("3.7K ........ TOTAL TOKENS"), as on the Analytics summary.
++ */
++export function LeaderStatList({ label, items }: { label: string; items: readonly StatItem[] }) {
++  return (
++    <dl aria-label={label} className="m-0 flex flex-col gap-4">
++      {items.map((item) => (
++        <div key={item.label} className="flex items-baseline gap-2">
++          <dt className="flex min-w-0 flex-1 items-baseline gap-2 text-[0.9375rem] tracking-[0.2em] text-ink-muted uppercase">
++            <span
++              aria-hidden="true"
++              className="min-w-6 flex-1 border-b border-dotted border-ink-faint"
++            />
++            <span className="shrink-0">{item.label}</span>
++          </dt>
++          <dd
++            className={cx(
++              "order-first m-0 shrink-0 font-display text-[0.875rem] [font-stretch:125%]",
++              statTone[item.tone ?? "default"],
++            )}
++          >
++            {item.value}
++          </dd>
++        </div>
++      ))}
++    </dl>
++  );
++}
++
++/** Label / value pairs in a grid (System host facts, detail panels). */
++export function FactGrid({
++  facts,
++  columns = 3,
++}: {
++  facts: readonly { label: string; value: ReactNode }[];
++  columns?: 2 | 3 | 4;
++}) {
++  const grid = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4" }[columns];
++  return (
++    <dl className={cx("m-0 grid grid-cols-1 gap-x-6 gap-y-3", grid)}>
++      {facts.map((fact) => (
++        <div key={fact.label} className="flex flex-col">
++          <dt className="text-[0.6875rem] tracking-[0.08em] text-ink-muted uppercase">
++            {fact.label}
++          </dt>
++          <dd className="m-0 text-[0.875rem] text-ink">{fact.value}</dd>
++        </div>
++      ))}
++    </dl>
++  );
++}
++
++/* ---------------------------------------------------------------- tables */
++
++export const tableClass = "w-full border-collapse text-[0.8125rem]";
++export const thClass =
++  "type-serif h-10 border-b border-line px-0 text-left text-[0.75rem] font-normal text-ink-muted";
++export const tdClass = "h-11 border-b border-line text-ink";
++
++/* ---------------------------------------------------------------- states */
+ 
+ export function Notice({
+   tone = "neutral",
+@@ -123,52 +485,110 @@ export function Notice({
+ }) {
+   const colour =
+     tone === "danger"
+-      ? "border-danger text-danger"
++      ? "border-danger/70 text-danger"
+       : tone === "warn"
+-        ? "border-warn text-warn"
+-        : "border-line text-muted";
++        ? "border-warning/70 text-warning"
++        : "border-line text-ink-muted";
+   return (
+     <div
+       role={tone === "danger" ? "alert" : "status"}
+-      className={`rounded-md border px-3 py-2 text-sm ${colour}`}
++      className={cx("flex items-start gap-2 border px-3 py-2 text-[0.8125rem]", colour)}
+     >
+-      {children}
++      {tone === "neutral" ? null : (
++        <AlertCircle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
++      )}
++      <div className="min-w-0 flex-1">{children}</div>
++    </div>
++  );
++}
++
++/** A failed load: what failed in plain words, optional details, and a Retry button. */
++export function ErrorState({
++  message,
++  details,
++  onRetry,
++}: {
++  message: string;
++  details?: string;
++  onRetry?: () => void;
++}) {
++  return (
++    <div role="alert" className="flex items-start gap-2 border border-danger/70 px-3 py-3">
++      <AlertCircle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-danger" />
++      <div className="flex min-w-0 flex-1 flex-col items-start gap-1 text-[0.8125rem]">
++        <p className="m-0 text-danger">{message}</p>
++        {details ? <p className="m-0 text-ink-muted">Details: {details}</p> : null}
++        {onRetry ? (
++          <Button size="sm" className="mt-1" icon={<RotateCw />} onClick={onRetry}>
++            Retry
++          </Button>
++        ) : null}
++      </div>
++    </div>
++  );
++}
++
++/** Nothing to show: a quiet icon and one line, centred. */
++export function EmptyState({
++  icon: Icon = Inbox,
++  children,
++  action,
++}: {
++  icon?: ComponentType<{ className?: string }>;
++  children: ReactNode;
++  action?: ReactNode;
++}) {
++  return (
++    <div className="flex flex-col items-center justify-center gap-2 px-4 py-14 text-center">
++      <Icon aria-hidden="true" className="size-7 text-ink-soft" />
++      <p className="m-0 text-[0.875rem] text-ink-muted">{children}</p>
++      {action}
+     </div>
+   );
+ }
+ 
++export function Loading({ children = "Loading…" }: { children?: ReactNode }) {
++  return (
++    <p className="m-0 flex items-center gap-2 text-[0.8125rem] text-ink-soft" aria-busy="true">
++      <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
++      {children}
++    </p>
++  );
++}
++
+ /** Loading / error / empty wrapper for one query. */
+ export function QueryState({
+   loading,
+   error,
+   empty,
+   emptyText,
++  emptyIcon,
++  onRetry,
+   children,
+ }: {
+   loading: boolean;
+   error: unknown;
+   empty?: boolean;
+   emptyText?: string;
++  emptyIcon?: ComponentType<{ className?: string }>;
++  onRetry?: () => void;
+   children: ReactNode;
+ }) {
+-  if (loading)
+-    return (
+-      <p className="text-sm text-muted" aria-busy="true">
+-        Loading…
+-      </p>
+-    );
++  if (loading) return <Loading />;
+   if (error) {
+     const message = error instanceof Error ? error.message : "Something went wrong.";
+-    return <Notice tone="danger">{message}</Notice>;
++    return onRetry ? (
++      <ErrorState message={message} onRetry={onRetry} />
++    ) : (
++      <Notice tone="danger">{message}</Notice>
++    );
++  }
++  if (empty) {
++    return (
++      <EmptyState {...(emptyIcon ? { icon: emptyIcon } : {})}>
++        {emptyText ?? "Nothing here yet."}
++      </EmptyState>
++    );
+   }
+-  if (empty) return <p className="text-sm text-muted">{emptyText ?? "Nothing here yet."}</p>;
+   return <>{children}</>;
+ }
+-
+-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+-  return (
+-    <section className={`rounded-lg border border-line bg-raised p-4 ${className}`}>
+-      {children}
+-    </section>
+-  );
+-}
+diff --git a/apps/web/src/ui/cx.ts b/apps/web/src/ui/cx.ts
+new file mode 100644
+index 0000000..0566a5d
+--- /dev/null
++++ b/apps/web/src/ui/cx.ts
+@@ -0,0 +1,4 @@
++/** Join class names, skipping false, null, undefined and empty strings. */
++export function cx(...parts: ReadonlyArray<string | false | null | undefined>): string {
++  return parts.filter(Boolean).join(" ");
++}
+diff --git a/apps/web/src/ui/useDismiss.ts b/apps/web/src/ui/useDismiss.ts
+new file mode 100644
+index 0000000..a7c5129
+--- /dev/null
++++ b/apps/web/src/ui/useDismiss.ts
+@@ -0,0 +1,25 @@
++// Closes a popover on Escape or on a pointer press outside its root element.
++
++import { type RefObject, useEffect } from "react";
++
++export function useDismiss(
++  open: boolean,
++  root: RefObject<HTMLElement | null>,
++  close: () => void,
++): void {
++  useEffect(() => {
++    if (!open) return;
++    const onKey = (event: KeyboardEvent) => {
++      if (event.key === "Escape") close();
++    };
++    const onPointer = (event: PointerEvent) => {
++      if (root.current && !root.current.contains(event.target as Node)) close();
++    };
++    window.addEventListener("keydown", onKey);
++    window.addEventListener("pointerdown", onPointer);
++    return () => {
++      window.removeEventListener("keydown", onKey);
++      window.removeEventListener("pointerdown", onPointer);
++    };
++  }, [open, root, close]);
++}
+diff --git a/docs/notes/ui-parity/web-foundation.md b/docs/notes/ui-parity/web-foundation.md
+new file mode 100644
+index 0000000..a17be0f
+--- /dev/null
++++ b/docs/notes/ui-parity/web-foundation.md
+@@ -0,0 +1,189 @@
++# Task: Web UI foundation (W51-a) Phase: ui-parity Owner: builder w51a
++
++## Status
++
++Done (2026-10-24). Tokens (light/dark presets), open fonts, the shell (sidebar with collapse rail,
++header with title slots, footer status, theme menu, language button, version row) and the shared
++components are in; Sessions is rebuilt on them as the worked example. Every other page still renders
++through the old utility names, which now map to the new tokens (wave 52 rebuilds them). Outside
++`apps/web`: `pnpm-lock.yaml`, `tooling/checks/licenses_allow.json` (OFL-1.1 allowed, with a note),
++`scripts/release/licence_texts/OFL-1.1.txt`, `scripts/release/notices_data.json` and
++`THIRD_PARTY_NOTICES.md` (regenerated by the notices tool). `@indus/ui` is unchanged (W51-a-1).
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `web/src/index.css` (token layering,
++which kit fonts it names), `web/src/themes/types.ts` (what a theme carries), `web/src/themes/presets.ts`
++(preset list; the two base colours of the default dark and the light preset), `web/src/themes/fonts.ts`
++(font picker idea only), `web/src/App.tsx` (class names of the sidebar/header only, skimmed),
++`web/package.json` (library list).
++Evidence: the owner's screenshot set of the running reference web dashboard, all 42 slugs, light and
++dark (`metrics-consent-banner`, `sessions`, `session-detail`, `sessions-search`, `sessions-prune`,
++`empty-state`, `files`, `analytics`, `models`, `logs`, `cron`, `cron-create`, `cron-blueprints`,
++`skills`, `skills-toolsets`, `skill-editor`, `plugins`, `mcp`, `mcp-catalog`, `channels`, `webhooks`,
++`pairing`, `profiles`, `profile-builder`, `config`, `config-yaml`, `env`, `system`, `system-console`,
++`docs`, `docs-direct-url`, `mcp-add-server`, `profile-actions`, `theme-menu`, `language-menu`,
++`sidebar-collapsed`, `error-state`, `chat`, `chat-exchange`, `model-picker`, `chat-sidebar-closed`,
++`login`). Colours and sizes were measured from those screenshots. None of them are in the repo.
++
++What it does (own words): the reference look is a two-colour scheme: one canvas colour and one
++"ink" colour; every surface, rule, muted text and hover is a mix of the two. Corners are square.
++Type mixes several voices: a heavy grotesque wordmark, a wide (expanded) display face for page and
++card titles, a spaced uppercase sans for navigation, a book serif for titles and descriptions inside
++lists and for segmented options, a typewriter mono for buttons, a code mono for data and a condensed
++face for small badges. This task gives our dashboard that look as a foundation.
++
++Inputs → outputs: a preset id (stored per browser under `indus-theme`) → `data-preset` and
++`data-theme` (`indus-light`/`indus-dark`, read by the chat terminal) on `<html>` → two CSS colours →
++the derived tokens below → Tailwind utilities used by every page.
++
++Edge cases / failure modes:
++- no stored preset, or an unknown one → the system light/dark preference picks Clear Blue or Deep
++  Teal; the old stored values `indus-light`/`indus-dark` map onto those two;
++- storage blocked → the choice lasts for the page only;
++- collapsed sidebar: icons only, a fixed-position label on hover/focus (the rail scrolls, so the
++  label is drawn outside it), links keep their accessible names; no clipped two-letter stubs, and
++  the footer stacks instead of spilling (bug from `indus-ui-bugs.md` fixed);
++- below 1,024 px the sidebar is a drawer opened from the header's menu icon.
++
++## Decisions for the lead
++
++- W51-a-1: web tokens live in `apps/web/src/theme/` and `apps/web/src/index.css`, not in `@indus/ui`:
++  the shared package also feeds the desktop and TUI, which builder b changes in parallel.
++- W51-a-2: open fonts only, from @fontsource at exact pins (OFL-1.1, now on the licence allow-list):
++  Archivo variable (wordmark, nav, body; expanded display via `font-stretch: 125%`; condensed badges
++  via `font-stretch: 62%`), EB Garamond (serif), Courier Prime (typewriter buttons), JetBrains Mono
++  (data). They stand in for the reference's private kit fonts. Nothing is copied into the repo; the
++  font files reach the build from `node_modules`. The assets test comment records the change.
++- W51-a-3: preset names are ours: Deep Teal (dark, default), Deep Teal Large (18 px root), Clear
++  Blue (light) and Graphite (grey dark). The reference's font override section is not built.
++- W51-a-4: Sessions gets an Overview (recent cards) / History (rows with actions, search, paging)
++  switch; data calls are unchanged. Unit tests, `e2e/dashboard.spec.ts` and the auth e2e specs were
++  updated where they pinned the old single list, the "Prune…" label, the "Search" box on first load
++  and the old stats/status texts.
++- W51-a-5: the sidebar status block reads "System / Daemon status: Running / Active sessions: N /
++  Channels: x/y connected"; the version moved to the bottom row ("v0.1.0 · Indus Agent").
++- W51-a-6: the language button lists English only (we ship no translations).
++
++## Tokens (for wave-52 builders)
++
++Set per preset (`src/theme/presets.ts`): `--indus-canvas`, `--indus-ink`, root font size,
++`color-scheme`. Everything else is derived in `src/index.css`. Use the Tailwind utility in the right
++column (`bg-*`, `text-*`, `border-*` all work).
++
++| Utility colour | Meaning | Value |
++|---|---|---|
++| `canvas` | page, cards, dialogs, menus | the preset canvas |
++| `surface` | a faintly raised pane | ink 4 % |
++| `wash` | code blocks, quiet fills, switch track | ink 6 % |
++| `hover` | hover background | ink 8 % |
++| `selected` | selected row, user message, count chip | ink 12 % |
++| `overlay` | modal scrim (with `backdrop-blur`) | black 62 % / navy 35 % |
++| `ink` | primary text, rules that matter, filled buttons | the preset ink |
++| `ink-muted` | secondary text, labels | ink 80 % |
++| `ink-soft` | hints, descriptions, idle icons | ink 62 % |
++| `ink-faint` | placeholders, dotted leaders | ink 42 % |
++| `on-ink` | text on an ink fill | the canvas |
++| `line` / `line-strong` | 1 px borders / stronger borders and popovers | ink 15 % / 22 % |
++| `success` `warning` `danger` `info` | status | green, amber, red, blue (darker on light) |
++| `success-wash` `warning-wash` `danger-wash` `info-wash` | tinted fills (assistant/tool messages, badges) | status 10–12 % |
++| `series-input` / `series-output` | chart series (Analytics, Models) | ink / green on dark; navy / ink on light |
++
++Older names still mapped for pages not yet rebuilt (do not use in new code): `bg`, `raised`, `fg`,
++`muted`, `accent`, `accent-fg`, `ok`, `warn`, `code`, `focus`.
++
++Fonts: `font-sans` (Archivo), `font-display` (Archivo; add `[font-stretch:125%]`), `font-serif`
++(EB Garamond), `font-mono` (JetBrains Mono), `font-typewriter` (Courier Prime).
++
++Type roles (utilities; prefer these over hand-set tracking):
++
++| Utility | Use |
++|---|---|
++| `type-wordmark` | sidebar "INDUS / AGENT" |
++| `type-page-title` | header page title (set by the shell) |
++| `type-section-title` | card/section/dialog titles, wide uppercase ("RECENT SESSIONS") |
++| `type-heading` | smaller spaced heading ("Host", "Gateway" style) |
++| `type-nav` | sidebar labels, rail tooltips |
++| `type-button` | typewriter buttons and select-buttons |
++| `type-serif` | list titles, descriptions, segmented options |
++| `type-label` | uppercase serif field label ("PROFILE", "NAME (OPTIONAL)", "SECTIONS") |
++| `type-badge` | condensed small tags |
++| `type-data` | ids, model names, paths, inputs |
++| `type-stat` | stat values |
++
++Layout: sidebar 15 rem (3.25 rem collapsed); header 3.25 rem with a 1 px `line` rule; page padding
++`px-[1.4375rem] py-[1.4375rem]` with `gap-4` between blocks; square corners everywhere; no shadows
++except popovers/dialogs/toasts. Keyframes: `indus-fade-in`, `indus-pop-in`, `indus-slide-in`.
++
++## Components (for wave-52 builders)
++
++Shell (`src/shell/`, `src/theme/`):
++- `PageHeader` (set up by `App`): title from the route. `HeaderAfterTitle` renders right after the
++  title (count chips, range buttons, a refresh icon, filter badges, switches); `HeaderActions`
++  renders at the right end (page actions). Both are portals.
++- `Sidebar`: wordmark + collapse button, `ProfileSwitcher` (only with more than one profile), nav
++  items with icons (`NAV_ICONS`; plugin tabs get a puzzle piece), the Documentation link, footer
++  (`StatusStrip`, plugin `sidebar` slot, `ConsoleEntry` "Admin console", auth widget), the theme row
++  (`ThemeMenu` + `LanguageMenu`), the version row (`VersionLine`).
++- `ThemeProvider` / `useTheme()` (`preset`, `choose(id)`), `ThemeMenu` (role `menu`, items
++  `menuitemradio` with `data-preset`), `LanguageMenu` ("EN", English only).
++- `ToastProvider` / `useToast().show(message, "info" | "success" | "error")`: square toast with a
++  tone stripe, bottom right.
++- `ProfileBanner`, `PressureBanner`: unchanged behaviour, new colours.
++
++Controls (`src/ui/controls.tsx` unless noted):
++- `Button` — `tone`: `default` (outlined typewriter, the usual action), `primary` (ink fill),
++  `danger` (red fill), `ghost`; `size`: `sm` | `md` | `lg` (dialog footers); `icon` (a lucide
++  element). `IconButton` — square icon-only, `label` is the name and tooltip, `tone="danger"` for
++  delete.
++- `Badge` — condensed tag; `tone`: `neutral` | `ok` | `warn` | `danger` | `accent`; optional `icon`.
++  `CountChip` — the boxed number after a page title.
++- `Segmented` — joined buttons in one bordered strip, picked one filled with ink (`aria-pressed`);
++  `Tabs` — the same look with `role="tablist"`.
++- `Field` (label + control + hint), `Input`, `Textarea`, `Select` (field look + chevron),
++  `SelectButton` (a select dressed as an outlined typewriter button with a leading icon, e.g. "Any
++  chat source"), `Checkbox` (square), `inputClass` for hand-built elements.
++- `Switch` (`src/ui/Switch.tsx`) — square track, square thumb that fills with ink when on.
++- `Card` (`padded` on by default) + `CardHeader` (icon, wide uppercase title, `aside`).
++- `ListRow` — bordered row with an `aside` for badges/actions.
++- `StatStrip` — figures in a bordered strip, value over label, `tone` per item.
++- `LeaderStatList` — value · dotted leader · spaced uppercase label (Analytics summary style).
++- `FactGrid` — label/value grid (System host facts).
++- `tableClass`, `thClass`, `tdClass` — table look (serif small headers, rules between rows).
++- States: `Loading`, `EmptyState` (icon + one line, optional action), `ErrorState` (red notice with
++  details and a Retry button), `Notice` (neutral/warn/danger), and `QueryState` wrapping all four
++  (`loading`, `error`, `empty`, `emptyText`, `emptyIcon`, `onRetry` → shows `ErrorState`).
++- Dialogs (`src/ui/Dialog.tsx`): `Modal` — also exported as `PanelModal`, the role the specs name:
++  square, 1 px border, wide uppercase title, serif description, close cross, blurred scrim;
++  `size` `sm` | `md` | `lg`. `DialogActions` (bottom-right button row), `ConfirmDialog`.
++- `cx(...)` (`src/ui/cx.ts`) joins class names; `useDismiss` (`src/ui/useDismiss.ts`) closes a
++  popover on Escape or an outside press.
++
++Worked example: `src/pages/SessionsPage.tsx` with `pages/sessions/{SessionRows,PruneDialog,
++SessionDetail,SourceIcon}.tsx`.
++
++Tests: `theme/presets.test.ts` (fallbacks, old values, CSS rules), `theme/ThemeMenu.test.tsx`
++(preset menu, Escape, collapsed rail keeps names and shows a label, language menu),
++`pages/SessionsPage.test.tsx` (Overview default, a card opens History, empty filter, plus the
++existing delete/prune/search/rename/tab/source cases on History), `shell/StatusStrip.test.tsx`,
++`App.test.tsx` (axe on the shell).
++
++Compare checklist (filled after the rewrite; screenshots re-captured in both themes and set beside
++the reference in the side-by-side PDF):
++- [x] tokens light/dark — canvas/ink pairs and mixes match the measured colours (borders ≈ ink 15 %).
++- [x] fonts — wide display titles, spaced nav, serif list text, typewriter buttons, condensed badges.
++- [x] sidebar expanded / collapsed — 240 px, icons + uppercase labels, active 1 px bar; rail with
++  tooltips; collapsed footer no longer spills (test: `ThemeMenu.test.tsx` "keeps names…").
++- [x] header — title, count chip after it, actions at the end (`HeaderAfterTitle`, `HeaderActions`).
++- [x] theme menu — swatch, name, description, check (test: `ThemeMenu.test.tsx`).
++- [x] language button — "EN", English only (test: `ThemeMenu.test.tsx` language case).
++- [x] footer status block and version row.
++- [x] components listed above.
++- [x] Sessions overview / history / search / prune / delete / empty / transcript.
++- Deliberate differences: the sidebar shows our profile switcher when several profiles exist; the
++  footer actions are ours (Admin console) rather than gateway restart/update; History rows have no
++  bulk-select checkboxes and there is no "Import sessions" (no such feature here); the prune dialog
++  keeps our dry-run "Check"; badges use our icon per source kind.
++- Not taken: the font override section of the theme menu; the extra colour presets beyond four.
++
++Follow-ups for wave 52: rebuild the remaining pages on these components (some still show raw
++`<button>`s and old spacing); the console modal and the auth widget get the new look with their
++pages.
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 2722f72..f039405 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -315,6 +315,18 @@ importers:
+ 
+   apps/web:
+     dependencies:
++      '@fontsource-variable/archivo':
++        specifier: 5.3.0
++        version: 5.3.0
++      '@fontsource-variable/eb-garamond':
++        specifier: 5.3.0
++        version: 5.3.0
++      '@fontsource-variable/jetbrains-mono':
++        specifier: 5.3.0
++        version: 5.3.0
++      '@fontsource/courier-prime':
++        specifier: 5.3.0
++        version: 5.3.0
+       '@indus/ui':
+         specifier: workspace:*
+         version: link:../../packages/ui
+@@ -342,6 +354,9 @@ importers:
+       '@xterm/xterm':
+         specifier: 6.0.0
+         version: 6.0.0
++      lucide-react:
++        specifier: 1.52.0
++        version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
+       react:
+         specifier: 19.3.0
+         version: 19.3.0
+@@ -589,6 +604,18 @@ packages:
+       '@noble/hashes':
+         optional: true
+ 
++  '@fontsource-variable/archivo@5.3.0':
++    resolution: {integrity: sha512-HogK8FJelrD1o7TlZlkIVtHgc20bO5PZRWE7mUeUTdMN055alznQV6/00J00IBeu8FQAH4s3zW9UJNvKExXf+g==}
++
++  '@fontsource-variable/eb-garamond@5.3.0':
++    resolution: {integrity: sha512-656OJsA9Vv24yhqRZFEzXnzS2AYgKdEILLgHJYLzzXndgcWFKfSXFqzbRI5/6Yk1Yt7UfWrUeppE5nRQPQMwlQ==}
++
++  '@fontsource-variable/jetbrains-mono@5.3.0':
++    resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
++
++  '@fontsource/courier-prime@5.3.0':
++    resolution: {integrity: sha512-KIi1k4VG1Wv+/CGpb1AUpLkUuOAQA6zmvthqxOZGN0AV8BEgQgbK7qAtquv14zsBJAY1bb5BHIEbWVFLgENh0w==}
++
+   '@iconify/types@2.0.0':
+     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
+ 
+@@ -3487,6 +3514,14 @@ snapshots:
+     optionalDependencies:
+       '@noble/hashes': 1.8.0
+ 
++  '@fontsource-variable/archivo@5.3.0': {}
++
++  '@fontsource-variable/eb-garamond@5.3.0': {}
++
++  '@fontsource-variable/jetbrains-mono@5.3.0': {}
++
++  '@fontsource/courier-prime@5.3.0': {}
++
+   '@iconify/types@2.0.0': {}
+ 
+   '@iconify/utils@3.1.7':
+diff --git a/scripts/release/licence_texts/OFL-1.1.txt b/scripts/release/licence_texts/OFL-1.1.txt
+new file mode 100644
+index 0000000..10ab55d
+--- /dev/null
++++ b/scripts/release/licence_texts/OFL-1.1.txt
+@@ -0,0 +1,86 @@
++-----------------------------------------------------------
++SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
++-----------------------------------------------------------
++
++PREAMBLE
++The goals of the Open Font License (OFL) are to stimulate worldwide
++development of collaborative font projects, to support the font creation
++efforts of academic and linguistic communities, and to provide a free and
++open framework in which fonts may be shared and improved in partnership
++with others.
++
++The OFL allows the licensed fonts to be used, studied, modified and
++redistributed freely as long as they are not sold by themselves. The
++fonts, including any derivative works, can be bundled, embedded,
++redistributed and/or sold with any software provided that any reserved
++names are not used by derivative works. The fonts and derivatives,
++however, cannot be released under any other type of license. The
++requirement for fonts to remain under this license does not apply
++to any document created using the fonts or their derivatives.
++
++DEFINITIONS
++"Font Software" refers to the set of files released by the Copyright
++Holder(s) under this license and clearly marked as such. This may
++include source files, build scripts and documentation.
++
++"Reserved Font Name" refers to any names specified as such after the
++copyright statement(s).
++
++"Original Version" refers to the collection of Font Software components as
++distributed by the Copyright Holder(s).
++
++"Modified Version" refers to any derivative made by adding to, deleting,
++or substituting -- in part or in whole -- any of the components of the
++Original Version, by changing formats or by porting the Font Software to a
++new environment.
++
++"Author" refers to any designer, engineer, programmer, technical
++writer or other person who contributed to the Font Software.
++
++PERMISSION & CONDITIONS
++Permission is hereby granted, free of charge, to any person obtaining
++a copy of the Font Software, to use, study, copy, merge, embed, modify,
++redistribute, and sell modified and unmodified copies of the Font
++Software, subject to the following conditions:
++
++1) Neither the Font Software nor any of its individual components,
++in Original or Modified Versions, may be sold by itself.
++
++2) Original or Modified Versions of the Font Software may be bundled,
++redistributed and/or sold with any software, provided that each copy
++contains the above copyright notice and this license. These can be
++included either as stand-alone text files, human-readable headers or
++in the appropriate machine-readable metadata fields within text or
++binary files as long as those fields can be easily viewed by the user.
++
++3) No Modified Version of the Font Software may use the Reserved Font
++Name(s) unless explicit written permission is granted by the corresponding
++Copyright Holder. This restriction only applies to the primary font name as
++presented to the users.
++
++4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
++Software shall not be used to promote, endorse or advertise any
++Modified Version, except to acknowledge the contribution(s) of the
++Copyright Holder(s) and the Author(s) or with their explicit written
++permission.
++
++5) The Font Software, modified or unmodified, in part or in whole,
++must be distributed entirely under this license, and must not be
++distributed under any other license. The requirement for fonts to
++remain under this license does not apply to any document created
++using the Font Software.
++
++TERMINATION
++This license becomes null and void if any of the above conditions are
++not met.
++
++DISCLAIMER
++THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
++MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
++OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
++COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
++INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
++DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
++OTHER DEALINGS IN THE FONT SOFTWARE.
+diff --git a/scripts/release/notices_data.json b/scripts/release/notices_data.json
+index 46836f9..520a4a4 100644
+--- a/scripts/release/notices_data.json
++++ b/scripts/release/notices_data.json
+@@ -1106,6 +1106,30 @@
+           "source": "metadata"
+         }
+       },
++      "@fontsource-variable/archivo": {
++        "5.3.0": {
++          "licence": "OFL-1.1",
++          "source": "metadata"
++        }
++      },
++      "@fontsource-variable/eb-garamond": {
++        "5.3.0": {
++          "licence": "OFL-1.1",
++          "source": "metadata"
++        }
++      },
++      "@fontsource-variable/jetbrains-mono": {
++        "5.3.0": {
++          "licence": "OFL-1.1",
++          "source": "metadata"
++        }
++      },
++      "@fontsource/courier-prime": {
++        "5.3.0": {
++          "licence": "OFL-1.1",
++          "source": "metadata"
++        }
++      },
+       "@iconify/types": {
+         "2.0.0": {
+           "licence": "MIT",
+diff --git a/tooling/checks/licenses_allow.json b/tooling/checks/licenses_allow.json
+index aefca58..cce3326 100644
+--- a/tooling/checks/licenses_allow.json
++++ b/tooling/checks/licenses_allow.json
+@@ -10,10 +10,12 @@
+     "MPL-2.0",
+     "Unlicense",
+     "0BSD",
+-    "CC0-1.0"
++    "CC0-1.0",
++    "OFL-1.1"
+   ],
+   "notes": {
+-    "MPL-2.0": "File-level copyleft: fine as an unmodified dependency; if we ever patch an MPL file, the patched file stays MPL-2.0 and its source must be published."
++    "MPL-2.0": "File-level copyleft: fine as an unmodified dependency; if we ever patch an MPL file, the patched file stays MPL-2.0 and its source must be published.",
++    "OFL-1.1": "Font licence (SIL Open Font License 1.1) for the dashboard's open fonts from @fontsource (W51-a): free to bundle and redistribute with software; the fonts may not be sold on their own and renamed derivatives must not use the reserved font names."
+   },
+   "exceptions": {
+     "cffi": {
