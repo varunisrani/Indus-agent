@@ -214,3 +214,4 @@ Only Agent 1 writes this file: one row per check, appended, never edited. Agent 
 - 2026-10-23 11:24 UTC — 21% (five_hour, resets 13:50 UTC). Wave 50: a, b, d, e parked; c, f running. Disk 20 GB free.
 - 2026-10-23 12:22 UTC — 25% (five_hour, resets 13:50 UTC). Wave-50 integrator: all static/JS checks green; full pytest running since 11:49. Disk 19 GB free.
 - 2026-10-23 13:38 UTC — 28% (five_hour, resets 13:50 UTC). Wave 50 landed (c1c20da). Confirmation rerun of pytest "not perf" on main: 18778 passed, 1 failed = test_layers strict-path pyright test, an env artefact of running .venv/bin/python directly (passes 8/8 via uv run). Nothing running.
+- 2026-10-24 19:10 UTC — 40% (five_hour, resets 23:20 UTC; 1% at 18:25). UI parity: 13 specs done (scratchpad/w52-specs), w51a/b foundations running (38/47 files changed). Disk 18 GB free. Note: 15 agents used ~39% in 45 min — wave 52 (13 builders) may need batching across the 23:20 reset.
