@@ -40,3 +40,14 @@
 - Merge with j: one field-copy map (fieldCopyA.ts + j's fieldCopy.ts), customPages.tsx, context.tsx (j adds `go`),
   overlay child icons; `default-directory` stays on Workspace › Projects (e2e + lead decision), j's Sessions page edits
   the same value under `sessions-directory` — both kept.
+
+## w53k.patch — builder k, desktop capabilities (spec desktop-capabilities.md), base f3f7772 (LOCAL = e402468 + w53-desk), 25 files
+- Apply AFTER w51b + w53-desk. New shared list-and-detail frame app/masterDetail.tsx (+css, test); capabilities tabs
+  (Skills, Tools, Connectors/MCP, Plugins), Messaging rewrite, Bots roster in the sidebar (SESSIONS | BOTS strip, edge
+  tab "Scheduled jobs"); Shell.tsx LeftSidebar edited (one "Main" nav kept; /bots route kept for deep links).
+- Done: skills, tools, mcp, messaging, bots-tab. Partial: capabilities-plugins (Bots surface not a Desktop row;
+  Desktop switch read-only until contrib/host.ts implements `DesktopPluginSource.setEnabled`).
+- Gate (builder): biome 0 errors (5 existing warnings); tsc clean; desktop vitest 176 files / 1739 passed; Electron E2E
+  boot + surfaces 10 passed; tooling.checks ok. Decisions W52-k-1..7 in docs/notes/ui-parity/desktop-capabilities.md.
+- Follow-ups: setEnabled + Bots row in desktopPluginSource; toolset write route; readiness probe; skill catalog /
+  SKILL.md routes; plugin uninstall + catalog; bot presence + create-room RPC; messaging docs_url; "1 tools" plural.
