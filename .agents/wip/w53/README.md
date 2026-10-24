@@ -83,3 +83,18 @@
 - Gate (INT-S): tsc clean; check-ipc + bridge ok; desktop vitest 175 files / 1757 passed; Electron E2E 43 passed /
   2 skipped; tooling.checks ok; 51 settings pages captured both themes, none broken. D-16.1230–1249. Landing notes:
   landing-w53-settings.md.
+
+## w53-kl.patch — capabilities + command center integration (INT-KL), base f3f7772 (LOCAL = e402468 + w53-desk), 73 files
+- = w53k + w53l merged: one "Main" nav in both sidebar panels; one control kit app/kit.tsx (TextTabs `look="page"`,
+  QuietSearch, PanelPill tones, MetaGrid framed, DetailHead, TextAction; EmptyState look="panel" fill/role); plugin
+  Desktop switch live (contrib/host.ts `setEnabled`, no IPC); "1 tool" singulars; `plugins.rescanAll` (was shadowed).
+- Gate (INT-KL): tsc clean; check-ipc + bridge ok; desktop vitest 178 files / 1756 passed; Electron E2E 43 passed /
+  2 skipped; tooling.checks ok; k 7 + l 15 page pairs captured, none broken. D-16.1250–1269. Landing notes: landing-w53-kl.md.
+
+## Landing tree (lead) — main + w51a + w53-web + w51b + w53-desk + w53-settings + w53-kl
+- pnpm-lock regenerated (pnpm install), notices regenerated (`notices.py refresh` + write; 439 components).
+- Unions: 16-what-we-change.md (D-16.1190–1269 in order), desktop i18n spreads; no duplicate string keys (2099 keys).
+- Root-caused on the combined tree: parity scan missed `onboarding-custom-option` (w52m passed the hook through a
+  `ui` prop) → ProviderRow takes `data-ui`. Repo lint was red on main (Agent 1's kit scripts under .agents/) → biome
+  and ruff exclude `.agents`.
+- Full pytest on land-1 (before k+l): 18778 passed / 1 failed (the parity hook above, fixed) / 134 skipped; perf 18/1.

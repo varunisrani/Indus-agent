@@ -80,3 +80,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-24 22:45 UTC | Agent 2 | Account 2 | 30% (reading 22:42) | 70% | 02:30 UTC | w53i + w53k parked; INT-W, w53l, INT-S running; starting reference capture |
 | 2026-10-24 23:00 UTC | Agent 2 | Account 2 | 34% (reading 22:52) | 66% | 02:30 UTC | web + settings integrations parked; land-1 tree built; full pytest running; INT-KL + H-cap running |
 | 2026-10-24 23:19 UTC | Agent 2 | Account 2 | 39% (reading 23:14) | 61% | 02:30 UTC | H-cap done (42 web + 100 desktop reference pairs, scratchpad only); land-1 pytest at ~39%; INT-KL running |
+| 2026-10-24 23:45 UTC | Agent 2 | Account 2 | 42% (reading 23:41) | 58% | 02:30 UTC | all w53 integrations parked; landing tree final gate running; starting Indus capture + PDFs |
