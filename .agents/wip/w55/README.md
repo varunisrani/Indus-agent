@@ -6,3 +6,10 @@
 - Slip: the web kit started `indus --tui` with a stale TUI bundle, so cli/tui_launch.py ran a pnpm build that reinstalled
   the worktree's node_modules; restored from $S/land, all checks re-run after. Rebuild apps/tui/dist after any TUI change
   before using the web kit.
+
+## w55f3.patch — desktop display preferences (F3), base 1359acc — PARKED, lead gate on F1 + F3 combined running
+- 10 disabled Appearance rows made real as desktop prefs (intro splash, reopen last chat, session density, tab strip,
+  chat backdrop, bubble opacity, text direction, timeline bars, tool call display, collapse thinking); defaults keep
+  today's look. 10 rows stay disabled (6 need backend/features, hide code diffs needs a diff view, 3 renderer-only
+  follow-ups: app actions side, file browser default, floating composer; vibe hearts).
+- Gate (builder): desktop vitest 182 / 1825; Electron E2E 43 / 2 skipped; tsc 0; check-ipc + bridge ok; tooling.checks ok.
