@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 0,
-  "remaining_pct": 100,
+  "usage_pct": 60,
+  "remaining_pct": 40,
   "resets_at": "2026-10-25T02:30:00+00:00",
-  "last_check": "2026-10-24T21:50:00+00:00",
-  "current_step": "UI parity: integrate w51/w52 batch 1; build w52 i/j/k/l",
-  "last_commit": "b2f9bf2"
+  "last_check": "2026-10-25T00:49:00+00:00",
+  "current_step": "Wave 53 landed (bc44020); wave 54 fixes D1/D2/W1 running",
+  "last_commit": "bc44020"
 }
