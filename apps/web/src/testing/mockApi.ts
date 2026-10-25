@@ -20,6 +20,7 @@ import type {
   FileEntry,
   HostStats,
   HubResult,
+  ImportCandidate,
   LogFile,
   LoginStarted,
   LoginStatus,
@@ -66,6 +67,10 @@ export interface MockState {
   envValues: Record<string, string>;
   logs: Record<LogFile, string[]>;
   usage: UsageDay[];
+  /** Other tools' conversations `/api/session-import/candidates` lists (W54-W1-9). */
+  importCandidates: ImportCandidate[];
+  /** Candidate paths already imported (a second import is 409 `already_imported`). */
+  imported: string[];
   /** Directory path → entries. */
   files: Record<string, FileEntry[]>;
   fileText: Record<string, string>;
@@ -250,6 +255,8 @@ export function defaultMockState(): MockState {
     envValues: {},
     logs: { agent: [], errors: [], gateway: [] },
     usage: [],
+    importCandidates: [],
+    imported: [],
     files: {},
     fileText: {},
     lockedRoot: null,
@@ -609,6 +616,31 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
         const lines = Number(call.query.get("lines") ?? 100);
         const all = state.logs[file] ?? [];
         return ok({ file, lines: all.slice(-lines) });
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/session-import\/candidates$/,
+      () => ok({ sources: ["claude-code", "codex"], candidates: state.importCandidates }),
+    ],
+    [
+      "POST",
+      /^\/api\/session-import\/import$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const hit = state.importCandidates.find(
+          (c) => c.source === body.source && c.path === body.path,
+        );
+        if (!hit) return fail(400, "not_a_candidate", "That file is not a session to import.");
+        if (state.imported.includes(hit.path)) {
+          return fail(409, "already_imported", "This conversation was imported before.");
+        }
+        state.imported.push(hit.path);
+        return ok({
+          session_id: `imported-${state.imported.length}`,
+          title: hit.title,
+          message_count: 4,
+        });
       },
     ],
     [

@@ -106,6 +106,8 @@ export function AddServerModal({ open, onClose }: { open: boolean; onClose: () =
     <Modal
       open={open}
       size="narrow"
+      // A pale veil of the page colour, not the grey scrim, as the reference's form panels (W54-W1-4).
+      overlayClassName="bg-canvas/85"
       onOpenChange={(next) => (next ? undefined : onClose())}
       title="Add MCP server"
     >

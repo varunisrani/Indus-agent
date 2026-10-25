@@ -52,13 +52,13 @@ export function ProfilesPage() {
   return (
     <div className="flex flex-col px-4 py-[1.375rem] lg:px-[1.4375rem]">
       <HeaderActions>
-        <Button size="sm" onClick={() => setDialog("import")}>
+        <Button size="sm" caps onClick={() => setDialog("import")}>
           Import
         </Button>
-        <Button size="sm" onClick={() => void navigate({ pathname: "/profiles/new", search })}>
+        <Button size="sm" caps onClick={() => void navigate({ pathname: "/profiles/new", search })}>
           Build
         </Button>
-        <Button size="sm" tone="primary" onClick={() => setDialog("create")}>
+        <Button size="sm" tone="primary" caps onClick={() => setDialog("create")}>
           Create
         </Button>
       </HeaderActions>

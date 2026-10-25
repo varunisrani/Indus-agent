@@ -24,6 +24,8 @@ import type {
   FileListing,
   HostStats,
   HubSearchResponse,
+  ImportCandidatesResponse,
+  ImportedSession,
   LogComponent,
   LogFile,
   LoginSessionInfo,
@@ -716,6 +718,16 @@ export const api = {
       request<PruneResponse>("/api/sessions/prune", {
         method: "POST",
         json: { older_than_days: olderThanDays, dry_run: dryRun },
+      }),
+  },
+
+  /** Conversations of other coding tools on the server's machine, brought into this profile. */
+  sessionImport: {
+    candidates: () => request<ImportCandidatesResponse>("/api/session-import/candidates"),
+    importFile: (source: string, path: string) =>
+      request<ImportedSession>("/api/session-import/import", {
+        method: "POST",
+        json: { source, path },
       }),
   },
 

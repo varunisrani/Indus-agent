@@ -26,7 +26,8 @@
   --indus-status-info: #60a5fa;
   --indus-series-input: var(--indus-ink);
   --indus-series-output: #34d399;
-  --indus-overlay: rgb(0 0 0 / 0.62);
+  /* Dialog scrim: a neutral grey veil in both themes, never a tint of the canvas (W54-W1-4). */
+  --indus-overlay: rgb(0 0 0 / 0.6);
   /* Chat terminal card (W52-a). */
   --indus-terminal-bg: #000000;
   --indus-terminal-fg: #f0e6d2;
@@ -40,7 +41,6 @@
   --indus-status-info: #0053fd;
   --indus-series-input: #001934;
   --indus-series-output: var(--indus-ink);
-  --indus-overlay: rgb(10 30 60 / 0.35);
   --indus-terminal-bg: #f5f8fc;
   --indus-terminal-fg: #170d02;
 }
@@ -225,9 +225,13 @@ samp {
   background: color-mix(in srgb, var(--indus-ink) 30%, transparent);
 }
 
-:focus-visible {
-  outline: 1px solid var(--indus-ink);
-  outline-offset: 2px;
+/* In the base layer so a control's own `outline-none` (a field that draws its focus on its
+   frame, such as the sessions search box) wins over it (W54-W1-5). */
+@layer base {
+  :focus-visible {
+    outline: 1px solid var(--indus-ink);
+    outline-offset: 2px;
+  }
 }
 
 mark {

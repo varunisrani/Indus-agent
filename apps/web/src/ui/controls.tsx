@@ -39,8 +39,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** A leading icon (lucide component instance), sized by the button. */
   icon?: ReactNode;
   /**
-   * Capital letters, as the reference sets its buttons ("CREATE", "SWITCH"). On by default for every
-   * tone but `ghost`; pass `false` for the few mixed-case buttons ("Show advanced"). W53 integration.
+   * Capital letters. Off by default: the reference sets most buttons in mixed case with wide
+   * tracking ("Prune old sessions", "Cancel", "Retry"); pass `caps` for the page actions it sets in
+   * capitals ("CREATE", "ADD SERVER", "CLEAR PENDING"). W54-W1-1 reverts the W53 all-caps default.
    */
   caps?: boolean;
 }
@@ -49,7 +50,7 @@ export function Button({
   tone = "default",
   size = "md",
   icon,
-  caps = tone !== "ghost",
+  caps = false,
   className = "",
   type = "button",
   children,
@@ -598,10 +599,7 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div
-      role="alert"
-      className="flex items-start gap-2 border border-danger/60 bg-danger/5 px-3 py-2"
-    >
+    <div role="alert" className="flex items-start gap-2 border border-danger/40 px-3 py-2.5">
       <AlertCircle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-danger" />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-[0.75rem] leading-snug">
         <p className="m-0 text-danger">{message}</p>

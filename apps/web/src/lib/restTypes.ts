@@ -497,6 +497,28 @@ export interface PruneRequest {
   dry_run: boolean;
 }
 
+/** A conversation file of another coding tool, found under the server user's home (P24-28). */
+export interface ImportCandidate {
+  source: string;
+  path: string;
+  title: string;
+  cwd: string | null;
+  /** Epoch seconds. */
+  modified: number;
+  size: number;
+}
+
+export interface ImportCandidatesResponse {
+  sources: string[];
+  candidates: ImportCandidate[];
+}
+
+export interface ImportedSession {
+  session_id: string;
+  title: string;
+  message_count: number;
+}
+
 export interface PruneResponse {
   dry_run: boolean;
   /** Sessions removed, or that would be removed on a dry run. */

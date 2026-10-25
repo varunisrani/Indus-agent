@@ -76,7 +76,7 @@ column (`bg-*`, `text-*`, `border-*` all work).
 | `wash` | code blocks, quiet fills, switch track | ink 6 % |
 | `hover` | hover background | ink 8 % |
 | `selected` | selected row, user message, count chip | ink 12 % |
-| `overlay` | modal scrim (with `backdrop-blur`) | black 62 % / navy 35 % |
+| `overlay` | modal scrim (with `backdrop-blur`) | black 60 % in both themes (W54-W1-4) |
 | `ink` | primary text, rules that matter, filled buttons | the preset ink |
 | `ink-muted` | secondary text, labels | ink 80 % |
 | `ink-soft` | hints, descriptions, idle icons | ink 62 % |
@@ -209,6 +209,10 @@ Slices a–f landed together on this foundation; the shared pieces they each add
 - `Button` sets its label in capitals (`uppercase`) for every tone but `ghost`, as the reference's
   buttons read ("CREATE", "SWITCH"); `caps={false}` keeps the few mixed-case ones ("Show advanced").
   Accessible names are the source text, so tests that find a button by name are unchanged (D-16.1208).
+  **Reverted in wave 54 (W54-W1-1, `web-w54-parity.md`):** the reference screenshots set most buttons
+  in mixed case with wide tracking ("Prune old sessions", "Import sessions", "Cancel", "Retry"); only
+  some page actions are in capitals ("CREATE", "ADD SERVER", "CLEAR PENDING", "BUILD"). `caps` is now
+  off by default; those page actions pass `caps` or `className="uppercase"`.
 - `Badge` `secondary` (W52-c / -d / -e): quiet filled chip, `bg-selected` (D-16.1206).
 - `SectionHeading` (W52-c / -d): slice c's version (`type-heading`, optional `id` and `level`);
   `EmptyCard`, `CodeChip`, `Callout` (W52-d) stay as added (D-16.1206).

@@ -22,7 +22,7 @@ async function row(id: string) {
   return within(await screen.findByTestId(`session-${id}`));
 }
 
-/** The page opens on the Overview; rows with actions live under History. */
+/** The page opens on History (the rows with actions); the click keeps it there. */
 function renderHistory(path = "/sessions") {
   renderPage(<SessionsPage />, path);
   fireEvent.click(screen.getByRole("button", { name: "History" }));
@@ -226,8 +226,14 @@ describe("browse", () => {
     );
   });
 
-  it("opens on the Overview with recent cards; a card's title opens it in History", async () => {
+  it("opens on History; the Overview's recent cards open a session back in History", async () => {
     renderPage(<SessionsPage />, "/sessions");
+    expect(await screen.findByTestId("session-s-chat-1")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "History" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByLabelText("Search sessions")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     const recent = await screen.findByRole("list", { name: "Recent sessions" });
     expect(screen.queryByTestId("session-s-chat-1")).toBeNull();
     fireEvent.click(within(recent).getByRole("button", { name: "Refactor the parser" }));
@@ -246,5 +252,60 @@ describe("browse", () => {
     expect(screen.getByLabelText("Search sessions")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Automation" }));
     expect(await screen.findByText("No sessions in this filter")).toBeTruthy();
+  });
+});
+
+describe("import", () => {
+  it("lists other tools' conversations and imports one into the history", async () => {
+    mock.state.importCandidates = [
+      {
+        source: "codex",
+        path: "/home/u/.codex/sessions/a.jsonl",
+        title: "Fix the flaky test",
+        cwd: "/work/app",
+        modified: Date.now() / 1000 - 60,
+        size: 2048,
+      },
+    ];
+    renderHistory();
+    const open = await screen.findByRole("button", { name: "Import sessions" });
+    expect((open as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(open);
+    const dialog = within(await screen.findByRole("dialog", { name: "Import sessions" }));
+    expect(await dialog.findByText("Fix the flaky test")).toBeTruthy();
+    expect(dialog.getByText("Codex")).toBeTruthy();
+    fireEvent.click(dialog.getByRole("button", { name: "Import Fix the flaky test" }));
+    expect(await dialog.findByText("Imported")).toBeTruthy();
+    expect(mock.callsTo("POST", "/api/session-import/import")[0]?.body).toEqual({
+      source: "codex",
+      path: "/home/u/.codex/sessions/a.jsonl",
+    });
+    expect(await screen.findByText(/Imported “Fix the flaky test” \(4 messages\)/)).toBeTruthy();
+  });
+
+  it("says when a conversation was imported before, and when there is nothing to import", async () => {
+    mock.state.importCandidates = [
+      {
+        source: "claude-code",
+        path: "/home/u/.claude/projects/p/b.jsonl",
+        title: "Old chat",
+        cwd: null,
+        modified: 0,
+        size: 10,
+      },
+    ];
+    mock.state.imported = ["/home/u/.claude/projects/p/b.jsonl"];
+    renderHistory();
+    fireEvent.click(await screen.findByRole("button", { name: "Import sessions" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Import sessions" }));
+    fireEvent.click(await dialog.findByRole("button", { name: "Import Old chat" }));
+    expect(await dialog.findByText("Already imported")).toBeTruthy();
+    fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    mock.state.importCandidates = [];
+    fireEvent.click(screen.getByRole("button", { name: "Import sessions" }));
+    const empty = within(await screen.findByRole("dialog", { name: "Import sessions" }));
+    expect(await empty.findByText(/No conversations from Claude Code or Codex/)).toBeTruthy();
   });
 });

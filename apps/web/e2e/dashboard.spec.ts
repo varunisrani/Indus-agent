@@ -21,8 +21,11 @@ test("Sessions: search finds a message with its snippet; delete removes the sess
   const [pelican, other] = ids as [string, string];
 
   await page.goto(`${stack.url}/sessions`);
-  // The page opens on the Overview; the rows with actions and the search live under History.
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  // The page opens on History: the rows with actions and the search (W54-W1-2).
+  await expect(page.getByRole("button", { name: "History", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   const list = page.getByRole("list", { name: "Sessions" });
   await expect(list.getByTestId(`session-${pelican}`)).toBeVisible();
   await expect(list.getByTestId(`session-${other}`)).toBeVisible();

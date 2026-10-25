@@ -216,7 +216,8 @@ describe("failures and accessibility", () => {
 
   it("has no axe violations on the shell", async () => {
     const { container } = renderApp("/sessions");
-    await screen.findByRole("list", { name: "Recent sessions" });
+    // Sessions lands on the history list (W54-W1-2).
+    await screen.findByRole("list", { name: "Sessions" });
     let violations: axe.Result[] = [];
     await act(async () => {
       const results = await axe.run(container, {

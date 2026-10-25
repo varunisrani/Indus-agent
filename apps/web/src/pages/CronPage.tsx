@@ -199,6 +199,14 @@ export function CronPage() {
           Create
         </Button>
       </HeaderActions>
+      {jobs.error ? (
+        // A failed load is a banner at the top of the page, as the reference shows it (W54-W1-6).
+        <ErrorState
+          message="Could not load the cron jobs. Check that the dashboard is running and press Retry."
+          details={errorText(jobs.error)}
+          onRetry={() => void jobs.refetch()}
+        />
+      ) : null}
       <Segmented
         label="Cron view"
         fill
@@ -232,9 +240,6 @@ export function CronPage() {
               </Select>
             </div>
           </div>
-          {jobs.error ? (
-            <ErrorState message={errorText(jobs.error)} onRetry={() => void jobs.refetch()} />
-          ) : null}
           {jobs.isPending && !jobs.error ? (
             <div className="flex justify-center py-24">
               <Loading />

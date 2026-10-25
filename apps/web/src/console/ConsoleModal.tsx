@@ -205,7 +205,9 @@ export function ConsoleModal({
             <div
               ref={setHost}
               data-testid="console-screen"
-              className="h-full w-full"
+              // The terminal's own colour under the rows: the fit leaves up to one row of space at
+              // the bottom, which showed as a black strip on light (W54-W1-7).
+              className="h-full w-full bg-terminal"
               data-phase={phase}
             />
           </div>

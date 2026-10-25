@@ -213,8 +213,13 @@ export function PairingPage() {
           size="sm"
           className="uppercase"
           icon={<Trash2 />}
-          onClick={() => setClearing(true)}
-          disabled={pending.length === 0}
+          // Always a live button, as on the reference; with nobody waiting it says so instead of
+          // asking to clear nothing (W54-W1-8).
+          onClick={() => {
+            if (pending.length > 0) setClearing(true);
+            else toast.show("There are no pending requests to clear.");
+          }}
+          disabled={pairing.isPending}
         >
           Clear pending
         </Button>

@@ -96,9 +96,11 @@ describe("pairing page", () => {
     fireEvent.click(dialog.getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(screen.queryByTestId("pending-r2")).toBeNull());
     expect(mock.callsTo("POST", "/api/pairing/clear-pending")).toHaveLength(1);
-    expect(
-      (screen.getByRole("button", { name: "Clear pending" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    // Nobody left: the button stays live and says so instead of clearing again.
+    fireEvent.click(screen.getByRole("button", { name: "Clear pending" }));
+    expect(await screen.findByText("There are no pending requests to clear.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mock.callsTo("POST", "/api/pairing/clear-pending")).toHaveLength(1);
   });
 
   it("words ages plainly", () => {

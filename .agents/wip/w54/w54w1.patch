@@ -1,0 +1,1009 @@
+diff --git a/apps/web/e2e/dashboard.spec.ts b/apps/web/e2e/dashboard.spec.ts
+index 975aaaa..25c3718 100644
+--- a/apps/web/e2e/dashboard.spec.ts
++++ b/apps/web/e2e/dashboard.spec.ts
+@@ -21,8 +21,11 @@ test("Sessions: search finds a message with its snippet; delete removes the sess
+   const [pelican, other] = ids as [string, string];
+ 
+   await page.goto(`${stack.url}/sessions`);
+-  // The page opens on the Overview; the rows with actions and the search live under History.
+-  await page.getByRole("button", { name: "History", exact: true }).click();
++  // The page opens on History: the rows with actions and the search (W54-W1-2).
++  await expect(page.getByRole("button", { name: "History", exact: true })).toHaveAttribute(
++    "aria-pressed",
++    "true",
++  );
+   const list = page.getByRole("list", { name: "Sessions" });
+   await expect(list.getByTestId(`session-${pelican}`)).toBeVisible();
+   await expect(list.getByTestId(`session-${other}`)).toBeVisible();
+diff --git a/apps/web/src/App.test.tsx b/apps/web/src/App.test.tsx
+index 3c8c131..bde63bb 100644
+--- a/apps/web/src/App.test.tsx
++++ b/apps/web/src/App.test.tsx
+@@ -216,7 +216,8 @@ describe("failures and accessibility", () => {
+ 
+   it("has no axe violations on the shell", async () => {
+     const { container } = renderApp("/sessions");
+-    await screen.findByRole("list", { name: "Recent sessions" });
++    // Sessions lands on the history list (W54-W1-2).
++    await screen.findByRole("list", { name: "Sessions" });
+     let violations: axe.Result[] = [];
+     await act(async () => {
+       const results = await axe.run(container, {
+diff --git a/apps/web/src/console/ConsoleModal.tsx b/apps/web/src/console/ConsoleModal.tsx
+index 9f9c7a9..99c9695 100644
+--- a/apps/web/src/console/ConsoleModal.tsx
++++ b/apps/web/src/console/ConsoleModal.tsx
+@@ -205,7 +205,9 @@ export function ConsoleModal({
+             <div
+               ref={setHost}
+               data-testid="console-screen"
+-              className="h-full w-full"
++              // The terminal's own colour under the rows: the fit leaves up to one row of space at
++              // the bottom, which showed as a black strip on light (W54-W1-7).
++              className="h-full w-full bg-terminal"
+               data-phase={phase}
+             />
+           </div>
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+index 7ad977b..7bbd81e 100644
+--- a/apps/web/src/index.css
++++ b/apps/web/src/index.css
+@@ -26,7 +26,8 @@
+   --indus-status-info: #60a5fa;
+   --indus-series-input: var(--indus-ink);
+   --indus-series-output: #34d399;
+-  --indus-overlay: rgb(0 0 0 / 0.62);
++  /* Dialog scrim: a neutral grey veil in both themes, never a tint of the canvas (W54-W1-4). */
++  --indus-overlay: rgb(0 0 0 / 0.6);
+   /* Chat terminal card (W52-a). */
+   --indus-terminal-bg: #000000;
+   --indus-terminal-fg: #f0e6d2;
+@@ -40,7 +41,6 @@
+   --indus-status-info: #0053fd;
+   --indus-series-input: #001934;
+   --indus-series-output: var(--indus-ink);
+-  --indus-overlay: rgb(10 30 60 / 0.35);
+   --indus-terminal-bg: #f5f8fc;
+   --indus-terminal-fg: #170d02;
+ }
+@@ -225,9 +225,13 @@ samp {
+   background: color-mix(in srgb, var(--indus-ink) 30%, transparent);
+ }
+ 
+-:focus-visible {
+-  outline: 1px solid var(--indus-ink);
+-  outline-offset: 2px;
++/* In the base layer so a control's own `outline-none` (a field that draws its focus on its
++   frame, such as the sessions search box) wins over it (W54-W1-5). */
++@layer base {
++  :focus-visible {
++    outline: 1px solid var(--indus-ink);
++    outline-offset: 2px;
++  }
+ }
+ 
+ mark {
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index 6da16c0..7b19bb3 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -24,6 +24,8 @@ import type {
+   FileListing,
+   HostStats,
+   HubSearchResponse,
++  ImportCandidatesResponse,
++  ImportedSession,
+   LogComponent,
+   LogFile,
+   LoginSessionInfo,
+@@ -719,6 +721,16 @@ export const api = {
+       }),
+   },
+ 
++  /** Conversations of other coding tools on the server's machine, brought into this profile. */
++  sessionImport: {
++    candidates: () => request<ImportCandidatesResponse>("/api/session-import/candidates"),
++    importFile: (source: string, path: string) =>
++      request<ImportedSession>("/api/session-import/import", {
++        method: "POST",
++        json: { source, path },
++      }),
++  },
++
+   config: {
+     get: () => request<ConfigObject>("/api/config"),
+     put: (config: ConfigObject) =>
+diff --git a/apps/web/src/lib/restTypes.ts b/apps/web/src/lib/restTypes.ts
+index 288c276..c940272 100644
+--- a/apps/web/src/lib/restTypes.ts
++++ b/apps/web/src/lib/restTypes.ts
+@@ -497,6 +497,28 @@ export interface PruneRequest {
+   dry_run: boolean;
+ }
+ 
++/** A conversation file of another coding tool, found under the server user's home (P24-28). */
++export interface ImportCandidate {
++  source: string;
++  path: string;
++  title: string;
++  cwd: string | null;
++  /** Epoch seconds. */
++  modified: number;
++  size: number;
++}
++
++export interface ImportCandidatesResponse {
++  sources: string[];
++  candidates: ImportCandidate[];
++}
++
++export interface ImportedSession {
++  session_id: string;
++  title: string;
++  message_count: number;
++}
++
+ export interface PruneResponse {
+   dry_run: boolean;
+   /** Sessions removed, or that would be removed on a dry run. */
+diff --git a/apps/web/src/pages/AnalyticsPage.test.tsx b/apps/web/src/pages/AnalyticsPage.test.tsx
+index ce1fad3..231ea32 100644
+--- a/apps/web/src/pages/AnalyticsPage.test.tsx
++++ b/apps/web/src/pages/AnalyticsPage.test.tsx
+@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { createMockApi, type MockApi } from "../testing/mockApi.ts";
+ import { renderPage } from "../testing/render.tsx";
+-import { AnalyticsPage } from "./AnalyticsPage.tsx";
++import { AnalyticsPage, chartDays, localDay } from "./AnalyticsPage.tsx";
+ 
+ let mock: MockApi;
+ let restore: () => void;
+@@ -77,6 +77,55 @@ describe("analytics page", () => {
+     expect(input.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+   });
+ 
++  it("draws one slot per day of the period, so a single busy day is one bar, not the whole chart", async () => {
++    // W54-W1-3: the server lists only days with a session; the chart used to give that one day
++    // the full width, a solid block with no bars.
++    const today = localDay();
++    mock.state.usage = [
++      { day: today, input_tokens: 10_000, output_tokens: 219, cost: 0, sessions: 4 },
++    ];
++    renderPage(<AnalyticsPage />, "/analytics");
++    const chart = await screen.findByRole("img", { name: "Daily token usage" });
++    const slots = [...chart.querySelectorAll<HTMLElement>("[data-day]")];
++    expect(slots).toHaveLength(30);
++    expect(slots.at(-1)?.dataset.day).toBe(today);
++    const drawn = slots.filter((slot) =>
++      [...slot.querySelectorAll<HTMLElement>("[data-series]")].some(
++        (bar) => bar.style.height !== "0px" && bar.style.height !== "0",
++      ),
++    );
++    expect(drawn.map((slot) => slot.dataset.day)).toEqual([today]);
++  });
++
++  it("fills the gaps between listed days and keeps days the server dates past ours", () => {
++    const row = (day: string, input = 1) => ({
++      day,
++      input_tokens: input,
++      output_tokens: 0,
++      cost: 0,
++      sessions: 1,
++    });
++    const filled = chartDays([row("2026-10-20", 5), row("2026-10-23", 7)], 7, "2026-10-25");
++    expect(filled.map((d) => d.day)).toEqual([
++      "2026-10-19",
++      "2026-10-20",
++      "2026-10-21",
++      "2026-10-22",
++      "2026-10-23",
++      "2026-10-24",
++      "2026-10-25",
++    ]);
++    expect(filled.map((d) => d.input_tokens)).toEqual([0, 5, 0, 0, 7, 0, 0]);
++    // The server's day is already tomorrow for this viewer: the period ends there.
++    expect(chartDays([row("2026-10-26")], 7, "2026-10-25").at(-1)?.day).toBe("2026-10-26");
++    // Across a month end and a leap day.
++    expect(chartDays([], 3, "2028-03-01").map((d) => d.day)).toEqual([
++      "2028-02-28",
++      "2028-02-29",
++      "2028-03-01",
++    ]);
++  });
++
+   it("says when there is no usage", async () => {
+     mock.state.usage = [];
+     renderPage(<AnalyticsPage />, "/analytics");
+diff --git a/apps/web/src/pages/AnalyticsPage.tsx b/apps/web/src/pages/AnalyticsPage.tsx
+index d0c4d08..f4b390e 100644
+--- a/apps/web/src/pages/AnalyticsPage.tsx
++++ b/apps/web/src/pages/AnalyticsPage.tsx
+@@ -80,16 +80,69 @@ function Legend() {
+   );
+ }
+ 
+-/** One flex column per day: input stacked over output, heights against the busiest day. */
+-function DailyChart({ days }: { days: readonly UsageDay[] }) {
+-  const max = Math.max(1, ...days.map((d) => d.input_tokens + d.output_tokens));
+-  const first = days[0];
+-  const last = days.at(-1);
+-  const middle = days.length > 2 ? days[Math.floor(days.length / 2)] : undefined;
++const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
++const DAY_MS = 86_400_000;
++
++function shiftDay(day: string, by: number): string {
++  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
++  return new Date(Date.UTC(y, m - 1, d) + by * DAY_MS).toISOString().slice(0, 10);
++}
++
++/** The viewer's calendar day ("2026-10-25"), the zone the server counts in for a local dashboard. */
++export function localDay(now: Date = new Date()): string {
++  const pad = (n: number) => String(n).padStart(2, "0");
++  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
++}
++
++/**
++ * Every calendar day of the period, oldest first, with zeros where nothing ran. The server lists
++ * only the days that had a session, so drawing its rows alone gave one day the whole chart width:
++ * a single solid block with no bars to read (W54-W1-3). The period ends today, or on the last
++ * listed day when the server's clock is already past ours, and stretches back over any listed day
++ * that falls before it, so no listed day is ever dropped.
++ */
++export function chartDays(
++  daily: readonly UsageDay[],
++  days: number,
++  today: string = localDay(),
++): UsageDay[] {
++  const byDay = new Map(daily.map((d) => [d.day, d]));
++  const listed = daily
++    .map((d) => d.day)
++    .filter((d) => ISO_DAY.test(d))
++    .sort();
++  const latest = listed.at(-1);
++  const end = latest !== undefined && latest > today ? latest : today;
++  const earliest = listed[0];
++  const from = shiftDay(end, -(Math.max(1, days) - 1));
++  const start = earliest !== undefined && earliest < from ? earliest : from;
++  const out: UsageDay[] = [];
++  for (let day = start; day <= end; day = shiftDay(day, 1)) {
++    out.push(byDay.get(day) ?? { day, input_tokens: 0, output_tokens: 0, cost: 0, sessions: 0 });
++  }
++  return out;
++}
++
++function barHeight(value: number, max: number): string {
++  // A day with any tokens keeps at least a hairline, so a small day never vanishes.
++  return value > 0 ? `max(1px, ${(value / max) * 100}%)` : "0";
++}
++
++/** One column per calendar day: input stacked over output, heights against the busiest day. */
++function DailyChart({ daily, days }: { daily: readonly UsageDay[]; days: number }) {
++  const slots = chartDays(daily, days);
++  const max = Math.max(1, ...slots.map((d) => d.input_tokens + d.output_tokens));
++  const first = slots[0];
++  const last = slots.at(-1);
++  const middle = slots.length > 2 ? slots[Math.floor(slots.length / 2)] : undefined;
+   return (
+     <div className="flex flex-col gap-2 p-4">
+-      <div role="img" aria-label="Daily token usage" className="flex h-40 items-end gap-0.5">
+-        {days.map((day) => {
++      <div
++        role="img"
++        aria-label="Daily token usage"
++        className="flex h-40 items-end gap-0.5 border-b border-line"
++      >
++        {slots.map((day) => {
+           const total = day.input_tokens + day.output_tokens;
+           const summary = `${formatShortDay(day.day)}: input ${formatTokens(day.input_tokens)}, output ${formatTokens(day.output_tokens)}, total ${formatTokens(total)}, cost ${formatCost(day.cost)}`;
+           return (
+@@ -100,23 +153,27 @@ function DailyChart({ days }: { days: readonly UsageDay[] }) {
+               className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
+             >
+               <div
+-                className="w-full bg-series-input/70"
+-                style={{ height: `${(day.input_tokens / max) * 100}%` }}
++                data-series="input"
++                className="w-full bg-series-input/80 group-hover:bg-series-input"
++                style={{ height: barHeight(day.input_tokens, max) }}
+               />
+               <div
+-                className="w-full bg-series-output/70"
+-                style={{ height: `${(day.output_tokens / max) * 100}%` }}
++                data-series="output"
++                className="w-full bg-series-output/80 group-hover:bg-series-output"
++                style={{ height: barHeight(day.output_tokens, max) }}
+               />
+-              <div
+-                aria-hidden="true"
+-                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 border border-line-strong bg-canvas px-2.5 py-1.5 text-[0.75rem] whitespace-nowrap text-ink shadow-lg group-hover:block"
+-              >
+-                <p className="m-0 font-medium">{formatShortDay(day.day)}</p>
+-                <p className="m-0 text-ink-muted">Input {formatTokens(day.input_tokens)}</p>
+-                <p className="m-0 text-ink-muted">Output {formatTokens(day.output_tokens)}</p>
+-                <p className="m-0 text-ink-muted">Total {formatTokens(total)}</p>
+-                <p className="m-0 text-ink-muted">Cost {formatCost(day.cost)}</p>
+-              </div>
++              {total > 0 ? (
++                <div
++                  aria-hidden="true"
++                  className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 border border-line-strong bg-canvas px-2.5 py-1.5 text-[0.75rem] whitespace-nowrap text-ink shadow-lg group-hover:block"
++                >
++                  <p className="m-0 font-medium">{formatShortDay(day.day)}</p>
++                  <p className="m-0 text-ink-muted">Input {formatTokens(day.input_tokens)}</p>
++                  <p className="m-0 text-ink-muted">Output {formatTokens(day.output_tokens)}</p>
++                  <p className="m-0 text-ink-muted">Total {formatTokens(total)}</p>
++                  <p className="m-0 text-ink-muted">Cost {formatCost(day.cost)}</p>
++                </div>
++              ) : null}
+             </div>
+           );
+         })}
+@@ -201,7 +258,7 @@ function Usage({ days }: { days: Range }) {
+             </Card>
+             <Card padded={false}>
+               <CardHeader icon={BarChart3} title="Daily token usage" below={<Legend />} />
+-              <DailyChart days={daily} />
++              <DailyChart daily={daily} days={days} />
+             </Card>
+           </div>
+           <Card padded={false}>
+diff --git a/apps/web/src/pages/CronPage.tsx b/apps/web/src/pages/CronPage.tsx
+index b7f01c0..aa7460b 100644
+--- a/apps/web/src/pages/CronPage.tsx
++++ b/apps/web/src/pages/CronPage.tsx
+@@ -199,6 +199,14 @@ export function CronPage() {
+           Create
+         </Button>
+       </HeaderActions>
++      {jobs.error ? (
++        // A failed load is a banner at the top of the page, as the reference shows it (W54-W1-6).
++        <ErrorState
++          message="Could not load the cron jobs. Check that the dashboard is running and press Retry."
++          details={errorText(jobs.error)}
++          onRetry={() => void jobs.refetch()}
++        />
++      ) : null}
+       <Segmented
+         label="Cron view"
+         fill
+@@ -232,9 +240,6 @@ export function CronPage() {
+               </Select>
+             </div>
+           </div>
+-          {jobs.error ? (
+-            <ErrorState message={errorText(jobs.error)} onRetry={() => void jobs.refetch()} />
+-          ) : null}
+           {jobs.isPending && !jobs.error ? (
+             <div className="flex justify-center py-24">
+               <Loading />
+diff --git a/apps/web/src/pages/PairingPage.test.tsx b/apps/web/src/pages/PairingPage.test.tsx
+index dbb2cda..83ce547 100644
+--- a/apps/web/src/pages/PairingPage.test.tsx
++++ b/apps/web/src/pages/PairingPage.test.tsx
+@@ -96,9 +96,11 @@ describe("pairing page", () => {
+     fireEvent.click(dialog.getByRole("button", { name: "Clear" }));
+     await waitFor(() => expect(screen.queryByTestId("pending-r2")).toBeNull());
+     expect(mock.callsTo("POST", "/api/pairing/clear-pending")).toHaveLength(1);
+-    expect(
+-      (screen.getByRole("button", { name: "Clear pending" }) as HTMLButtonElement).disabled,
+-    ).toBe(true);
++    // Nobody left: the button stays live and says so instead of clearing again.
++    fireEvent.click(screen.getByRole("button", { name: "Clear pending" }));
++    expect(await screen.findByText("There are no pending requests to clear.")).toBeTruthy();
++    expect(screen.queryByRole("dialog")).toBeNull();
++    expect(mock.callsTo("POST", "/api/pairing/clear-pending")).toHaveLength(1);
+   });
+ 
+   it("words ages plainly", () => {
+diff --git a/apps/web/src/pages/PairingPage.tsx b/apps/web/src/pages/PairingPage.tsx
+index a819730..94c296f 100644
+--- a/apps/web/src/pages/PairingPage.tsx
++++ b/apps/web/src/pages/PairingPage.tsx
+@@ -213,8 +213,13 @@ export function PairingPage() {
+           size="sm"
+           className="uppercase"
+           icon={<Trash2 />}
+-          onClick={() => setClearing(true)}
+-          disabled={pending.length === 0}
++          // Always a live button, as on the reference; with nobody waiting it says so instead of
++          // asking to clear nothing (W54-W1-8).
++          onClick={() => {
++            if (pending.length > 0) setClearing(true);
++            else toast.show("There are no pending requests to clear.");
++          }}
++          disabled={pairing.isPending}
+         >
+           Clear pending
+         </Button>
+diff --git a/apps/web/src/pages/ProfilesPage.tsx b/apps/web/src/pages/ProfilesPage.tsx
+index b7955e5..81540d1 100644
+--- a/apps/web/src/pages/ProfilesPage.tsx
++++ b/apps/web/src/pages/ProfilesPage.tsx
+@@ -52,13 +52,13 @@ export function ProfilesPage() {
+   return (
+     <div className="flex flex-col px-4 py-[1.375rem] lg:px-[1.4375rem]">
+       <HeaderActions>
+-        <Button size="sm" onClick={() => setDialog("import")}>
++        <Button size="sm" caps onClick={() => setDialog("import")}>
+           Import
+         </Button>
+-        <Button size="sm" onClick={() => void navigate({ pathname: "/profiles/new", search })}>
++        <Button size="sm" caps onClick={() => void navigate({ pathname: "/profiles/new", search })}>
+           Build
+         </Button>
+-        <Button size="sm" tone="primary" onClick={() => setDialog("create")}>
++        <Button size="sm" tone="primary" caps onClick={() => setDialog("create")}>
+           Create
+         </Button>
+       </HeaderActions>
+diff --git a/apps/web/src/pages/SessionsPage.test.tsx b/apps/web/src/pages/SessionsPage.test.tsx
+index 212352c..ddbe8c5 100644
+--- a/apps/web/src/pages/SessionsPage.test.tsx
++++ b/apps/web/src/pages/SessionsPage.test.tsx
+@@ -22,7 +22,7 @@ async function row(id: string) {
+   return within(await screen.findByTestId(`session-${id}`));
+ }
+ 
+-/** The page opens on the Overview; rows with actions live under History. */
++/** The page opens on History (the rows with actions); the click keeps it there. */
+ function renderHistory(path = "/sessions") {
+   renderPage(<SessionsPage />, path);
+   fireEvent.click(screen.getByRole("button", { name: "History" }));
+@@ -226,8 +226,14 @@ describe("browse", () => {
+     );
+   });
+ 
+-  it("opens on the Overview with recent cards; a card's title opens it in History", async () => {
++  it("opens on History; the Overview's recent cards open a session back in History", async () => {
+     renderPage(<SessionsPage />, "/sessions");
++    expect(await screen.findByTestId("session-s-chat-1")).toBeTruthy();
++    expect(screen.getByRole("button", { name: "History" }).getAttribute("aria-pressed")).toBe(
++      "true",
++    );
++    expect(screen.getByLabelText("Search sessions")).toBeTruthy();
++    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+     const recent = await screen.findByRole("list", { name: "Recent sessions" });
+     expect(screen.queryByTestId("session-s-chat-1")).toBeNull();
+     fireEvent.click(within(recent).getByRole("button", { name: "Refactor the parser" }));
+@@ -248,3 +254,58 @@ describe("browse", () => {
+     expect(await screen.findByText("No sessions in this filter")).toBeTruthy();
+   });
+ });
++
++describe("import", () => {
++  it("lists other tools' conversations and imports one into the history", async () => {
++    mock.state.importCandidates = [
++      {
++        source: "codex",
++        path: "/home/u/.codex/sessions/a.jsonl",
++        title: "Fix the flaky test",
++        cwd: "/work/app",
++        modified: Date.now() / 1000 - 60,
++        size: 2048,
++      },
++    ];
++    renderHistory();
++    const open = await screen.findByRole("button", { name: "Import sessions" });
++    expect((open as HTMLButtonElement).disabled).toBe(false);
++    fireEvent.click(open);
++    const dialog = within(await screen.findByRole("dialog", { name: "Import sessions" }));
++    expect(await dialog.findByText("Fix the flaky test")).toBeTruthy();
++    expect(dialog.getByText("Codex")).toBeTruthy();
++    fireEvent.click(dialog.getByRole("button", { name: "Import Fix the flaky test" }));
++    expect(await dialog.findByText("Imported")).toBeTruthy();
++    expect(mock.callsTo("POST", "/api/session-import/import")[0]?.body).toEqual({
++      source: "codex",
++      path: "/home/u/.codex/sessions/a.jsonl",
++    });
++    expect(await screen.findByText(/Imported “Fix the flaky test” \(4 messages\)/)).toBeTruthy();
++  });
++
++  it("says when a conversation was imported before, and when there is nothing to import", async () => {
++    mock.state.importCandidates = [
++      {
++        source: "claude-code",
++        path: "/home/u/.claude/projects/p/b.jsonl",
++        title: "Old chat",
++        cwd: null,
++        modified: 0,
++        size: 10,
++      },
++    ];
++    mock.state.imported = ["/home/u/.claude/projects/p/b.jsonl"];
++    renderHistory();
++    fireEvent.click(await screen.findByRole("button", { name: "Import sessions" }));
++    const dialog = within(await screen.findByRole("dialog", { name: "Import sessions" }));
++    fireEvent.click(await dialog.findByRole("button", { name: "Import Old chat" }));
++    expect(await dialog.findByText("Already imported")).toBeTruthy();
++    fireEvent.click(dialog.getByRole("button", { name: "Close" }));
++    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
++
++    mock.state.importCandidates = [];
++    fireEvent.click(screen.getByRole("button", { name: "Import sessions" }));
++    const empty = within(await screen.findByRole("dialog", { name: "Import sessions" }));
++    expect(await empty.findByText(/No conversations from Claude Code or Codex/)).toBeTruthy();
++  });
++});
+diff --git a/apps/web/src/pages/SessionsPage.tsx b/apps/web/src/pages/SessionsPage.tsx
+index aef5f2d..507b733 100644
+--- a/apps/web/src/pages/SessionsPage.tsx
++++ b/apps/web/src/pages/SessionsPage.tsx
+@@ -1,7 +1,8 @@
+ // Sessions (P18-19; look rebuilt W51-a, finished W52-a): figures at the top, one filter row
+-// (chats / automation / all, a multi-pick source menu, overview / history, search as you type,
+-// import placeholder, compact pager), then either the recent sessions card or the full history
+-// with selection, actions, paging and the transcript. Search results replace the history list.
++// (chats / automation / all, a multi-pick source menu, history / overview, search as you type,
++// import from another coding tool, compact pager), then either the full history with selection,
++// actions, paging and the transcript, or the recent sessions card. The page opens on the history,
++// as the reference does (W54-W1-2); search results replace the history list.
+ 
+ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+ import {
+@@ -32,6 +33,7 @@ import {
+   StatStrip,
+ } from "../ui/controls.tsx";
+ import { ConfirmDialog } from "../ui/Dialog.tsx";
++import { ImportDialog } from "./sessions/ImportDialog.tsx";
+ import { PruneDialog } from "./sessions/PruneDialog.tsx";
+ import { RecentCard, SessionRow, sessionLabel } from "./sessions/SessionRows.tsx";
+ import { SourceMenu } from "./sessions/SourceMenu.tsx";
+@@ -51,8 +53,8 @@ const SEARCH_SETTLE_MS = 300;
+ type View = "overview" | "history";
+ 
+ const VIEWS: ReadonlyArray<{ value: View; label: string }> = [
+-  { value: "overview", label: "Overview" },
+   { value: "history", label: "History" },
++  { value: "overview", label: "Overview" },
+ ];
+ 
+ function StatsBar({ refresh }: { refresh: boolean }) {
+@@ -110,7 +112,7 @@ function SearchBox({
+         {draft ? (
+           <IconButton
+             label="Clear search"
+-            className="size-6 [&_svg]:size-3"
++            className="size-6 text-ink-soft hover:text-ink [&_svg]:size-3"
+             onClick={() => onDraft("")}
+           >
+             <X />
+@@ -178,7 +180,7 @@ export function SessionsPage() {
+   const toast = useToast();
+   const client = useQueryClient();
+   const [tab, setTab] = useState<SessionTab>("chats");
+-  const [view, setView] = useState<View>("overview");
++  const [view, setView] = useState<View>("history");
+   const [picks, setPicks] = useState<Record<SessionTab, string[]>>({
+     chats: [],
+     automation: [],
+@@ -192,6 +194,7 @@ export function SessionsPage() {
+   const [selected, setSelected] = useState<string[]>([]);
+   const [anchor, setAnchor] = useState<string | null>(null);
+   const [pruneOpen, setPruneOpen] = useState(false);
++  const [importOpen, setImportOpen] = useState(false);
+   const [deleting, setDeleting] = useState<SessionInfo | null>(null);
+   const [bulkOpen, setBulkOpen] = useState(false);
+   const [deleteProblem, setDeleteProblem] = useState("");
+@@ -378,15 +381,9 @@ export function SessionsPage() {
+           />
+         ) : null}
+         {draft ? null : (
+-          <span title="Not available yet" className="inline-flex">
+-            <Button
+-              icon={<Upload />}
+-              disabled
+-              className="type-serif font-semibold tracking-[0.04em]"
+-            >
+-              Import sessions
+-            </Button>
+-          </span>
++          <Button icon={<Upload />} onClick={() => setImportOpen(true)}>
++            Import sessions
++          </Button>
+         )}
+         {history && !searching && total > PAGE_SIZE ? (
+           <div className="ml-auto">
+@@ -509,6 +506,7 @@ export function SessionsPage() {
+       ) : null}
+ 
+       <PruneDialog open={pruneOpen} onClose={() => setPruneOpen(false)} />
++      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
+       <ConfirmDialog
+         open={deleting !== null}
+         title="Delete this session?"
+diff --git a/apps/web/src/pages/cron/JobModal.tsx b/apps/web/src/pages/cron/JobModal.tsx
+index 6fe5ae8..15d00bb 100644
+--- a/apps/web/src/pages/cron/JobModal.tsx
++++ b/apps/web/src/pages/cron/JobModal.tsx
+@@ -248,6 +248,8 @@ export function JobModal({
+     <Modal
+       open
+       size="lg"
++      // A pale veil of the page colour, not the grey scrim, as the reference's form panels (W54-W1-4).
++      overlayClassName="bg-canvas/85"
+       onOpenChange={(next) => (next ? undefined : onClose())}
+       title={job ? "Edit job" : "New cron job"}
+     >
+diff --git a/apps/web/src/pages/mcp/AddServerModal.tsx b/apps/web/src/pages/mcp/AddServerModal.tsx
+index d7d8f9b..76233c8 100644
+--- a/apps/web/src/pages/mcp/AddServerModal.tsx
++++ b/apps/web/src/pages/mcp/AddServerModal.tsx
+@@ -106,6 +106,8 @@ export function AddServerModal({ open, onClose }: { open: boolean; onClose: () =
+     <Modal
+       open={open}
+       size="narrow"
++      // A pale veil of the page colour, not the grey scrim, as the reference's form panels (W54-W1-4).
++      overlayClassName="bg-canvas/85"
+       onOpenChange={(next) => (next ? undefined : onClose())}
+       title="Add MCP server"
+     >
+diff --git a/apps/web/src/pages/sessions/ImportDialog.tsx b/apps/web/src/pages/sessions/ImportDialog.tsx
+new file mode 100644
+index 0000000..6f076fa
+--- /dev/null
++++ b/apps/web/src/pages/sessions/ImportDialog.tsx
+@@ -0,0 +1,134 @@
++// "Import sessions" (W54-W1-9): the conversations of other coding tools that the server finds in its
++// user's home (the session-import routes, P24-28), each with an Import button. An import lands in
++// the profile this dashboard shows and the list refreshes; a file brought in before says so.
++
++import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
++import { Check, Download, LoaderCircle } from "lucide-react";
++import { useState } from "react";
++import { ApiError, api } from "../../lib/api.ts";
++import { relativeTime } from "../../lib/format.ts";
++import type { ImportCandidate } from "../../lib/restTypes.ts";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
++import { Badge, Button, EmptyCard, Notice } from "../../ui/controls.tsx";
++import { DialogActions, Modal } from "../../ui/Dialog.tsx";
++
++const SOURCE_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex" };
++
++function sourceName(source: string): string {
++  return SOURCE_NAMES[source] ?? source;
++}
++
++function key(candidate: ImportCandidate): string {
++  return `${candidate.source}:${candidate.path}`;
++}
++
++export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
++  const toast = useToast();
++  const client = useQueryClient();
++  const [done, setDone] = useState<Record<string, string>>({});
++  const [problem, setProblem] = useState("");
++  const candidates = useQuery({
++    queryKey: ["session-import", "candidates"],
++    queryFn: () => api.sessionImport.candidates(),
++    enabled: open,
++    staleTime: 0,
++  });
++  const bring = useMutation({
++    mutationFn: (candidate: ImportCandidate) =>
++      api.sessionImport.importFile(candidate.source, candidate.path),
++    onSuccess: (result, candidate) => {
++      setProblem("");
++      setDone((was) => ({ ...was, [key(candidate)]: "Imported" }));
++      const count = `${result.message_count} message${result.message_count === 1 ? "" : "s"}`;
++      toast.show(`Imported “${result.title}” (${count}).`, "success");
++      void client.invalidateQueries({ queryKey: ["sessions"] });
++    },
++    onError: (error, candidate) => {
++      if (error instanceof ApiError && error.code === "already_imported") {
++        setDone((was) => ({ ...was, [key(candidate)]: "Already imported" }));
++        return;
++      }
++      setProblem(errorText(error));
++    },
++  });
++
++  const list = candidates.data?.candidates ?? [];
++  return (
++    <Modal
++      open={open}
++      size="lg"
++      onOpenChange={(next) => {
++        if (!next) onClose();
++      }}
++      title="Import sessions"
++      description="Conversations from other coding tools on this machine. An import adds a copy to this profile's history; the original file is left as it is."
++    >
++      <div className="flex flex-col gap-3">
++        {problem ? <Notice tone="danger">{problem}</Notice> : null}
++        {candidates.isPending ? (
++          <div className="flex justify-center py-8" aria-busy="true">
++            <LoaderCircle aria-label="Loading" className="size-5 animate-spin text-ink-soft" />
++          </div>
++        ) : candidates.error ? (
++          <Notice tone="danger">{errorText(candidates.error)}</Notice>
++        ) : list.length === 0 ? (
++          <EmptyCard>
++            No conversations from{" "}
++            {(candidates.data?.sources ?? Object.keys(SOURCE_NAMES)).map(sourceName).join(" or ")}{" "}
++            were found in the server's home folder.
++          </EmptyCard>
++        ) : (
++          <ul
++            aria-label="Conversations to import"
++            className="m-0 flex max-h-[50vh] list-none flex-col gap-1.5 overflow-y-auto p-0"
++          >
++            {list.map((candidate) => {
++              const state = done[key(candidate)];
++              const busy = bring.isPending && bring.variables === candidate;
++              return (
++                <li
++                  key={key(candidate)}
++                  className="flex items-center gap-3 border border-line px-3 py-2.5"
++                >
++                  <div className="flex min-w-0 flex-1 flex-col gap-1">
++                    <span className="type-serif truncate text-[0.875rem] text-ink">
++                      {candidate.title || "Untitled conversation"}
++                    </span>
++                    <span className="flex min-w-0 items-center gap-2 text-[0.75rem] text-ink-soft">
++                      <Badge>{sourceName(candidate.source)}</Badge>
++                      <span className="shrink-0">{relativeTime(candidate.modified)}</span>
++                      {candidate.cwd ? (
++                        <span className="truncate font-mono">{candidate.cwd}</span>
++                      ) : null}
++                    </span>
++                  </div>
++                  {state ? (
++                    <span className="inline-flex shrink-0 items-center gap-1 text-[0.75rem] text-success">
++                      <Check aria-hidden="true" className="size-3.5" />
++                      {state}
++                    </span>
++                  ) : (
++                    <Button
++                      size="sm"
++                      icon={busy ? <LoaderCircle className="animate-spin" /> : <Download />}
++                      disabled={bring.isPending}
++                      aria-label={`Import ${candidate.title || "conversation"}`}
++                      onClick={() => bring.mutate(candidate)}
++                    >
++                      Import
++                    </Button>
++                  )}
++                </li>
++              );
++            })}
++          </ul>
++        )}
++      </div>
++      <DialogActions>
++        <Button size="lg" onClick={onClose}>
++          Close
++        </Button>
++      </DialogActions>
++    </Modal>
++  );
++}
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 996c04c..05fb968 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -20,6 +20,7 @@ import type {
+   FileEntry,
+   HostStats,
+   HubResult,
++  ImportCandidate,
+   LogFile,
+   LoginStarted,
+   LoginStatus,
+@@ -66,6 +67,10 @@ export interface MockState {
+   envValues: Record<string, string>;
+   logs: Record<LogFile, string[]>;
+   usage: UsageDay[];
++  /** Other tools' conversations `/api/session-import/candidates` lists (W54-W1-9). */
++  importCandidates: ImportCandidate[];
++  /** Candidate paths already imported (a second import is 409 `already_imported`). */
++  imported: string[];
+   /** Directory path → entries. */
+   files: Record<string, FileEntry[]>;
+   fileText: Record<string, string>;
+@@ -250,6 +255,8 @@ export function defaultMockState(): MockState {
+     envValues: {},
+     logs: { agent: [], errors: [], gateway: [] },
+     usage: [],
++    importCandidates: [],
++    imported: [],
+     files: {},
+     fileText: {},
+     lockedRoot: null,
+@@ -611,6 +618,31 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
+         return ok({ file, lines: all.slice(-lines) });
+       },
+     ],
++    [
++      "GET",
++      /^\/api\/session-import\/candidates$/,
++      () => ok({ sources: ["claude-code", "codex"], candidates: state.importCandidates }),
++    ],
++    [
++      "POST",
++      /^\/api\/session-import\/import$/,
++      (call) => {
++        const body = asRecord(call.body);
++        const hit = state.importCandidates.find(
++          (c) => c.source === body.source && c.path === body.path,
++        );
++        if (!hit) return fail(400, "not_a_candidate", "That file is not a session to import.");
++        if (state.imported.includes(hit.path)) {
++          return fail(409, "already_imported", "This conversation was imported before.");
++        }
++        state.imported.push(hit.path);
++        return ok({
++          session_id: `imported-${state.imported.length}`,
++          title: hit.title,
++          message_count: 4,
++        });
++      },
++    ],
+     [
+       "GET",
+       /^\/api\/analytics\/usage$/,
+diff --git a/apps/web/src/ui/controls.tsx b/apps/web/src/ui/controls.tsx
+index 524fd87..4d96a74 100644
+--- a/apps/web/src/ui/controls.tsx
++++ b/apps/web/src/ui/controls.tsx
+@@ -39,8 +39,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+   /** A leading icon (lucide component instance), sized by the button. */
+   icon?: ReactNode;
+   /**
+-   * Capital letters, as the reference sets its buttons ("CREATE", "SWITCH"). On by default for every
+-   * tone but `ghost`; pass `false` for the few mixed-case buttons ("Show advanced"). W53 integration.
++   * Capital letters. Off by default: the reference sets most buttons in mixed case with wide
++   * tracking ("Prune old sessions", "Cancel", "Retry"); pass `caps` for the page actions it sets in
++   * capitals ("CREATE", "ADD SERVER", "CLEAR PENDING"). W54-W1-1 reverts the W53 all-caps default.
+    */
+   caps?: boolean;
+ }
+@@ -49,7 +50,7 @@ export function Button({
+   tone = "default",
+   size = "md",
+   icon,
+-  caps = tone !== "ghost",
++  caps = false,
+   className = "",
+   type = "button",
+   children,
+@@ -598,10 +599,7 @@ export function ErrorState({
+   onRetry?: () => void;
+ }) {
+   return (
+-    <div
+-      role="alert"
+-      className="flex items-start gap-2 border border-danger/60 bg-danger/5 px-3 py-2"
+-    >
++    <div role="alert" className="flex items-start gap-2 border border-danger/40 px-3 py-2.5">
+       <AlertCircle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-danger" />
+       <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-[0.75rem] leading-snug">
+         <p className="m-0 text-danger">{message}</p>
+diff --git a/docs/notes/ui-parity/web-foundation.md b/docs/notes/ui-parity/web-foundation.md
+index a6879c2..b17d3cf 100644
+--- a/docs/notes/ui-parity/web-foundation.md
++++ b/docs/notes/ui-parity/web-foundation.md
+@@ -76,7 +76,7 @@ column (`bg-*`, `text-*`, `border-*` all work).
+ | `wash` | code blocks, quiet fills, switch track | ink 6 % |
+ | `hover` | hover background | ink 8 % |
+ | `selected` | selected row, user message, count chip | ink 12 % |
+-| `overlay` | modal scrim (with `backdrop-blur`) | black 62 % / navy 35 % |
++| `overlay` | modal scrim (with `backdrop-blur`) | black 60 % in both themes (W54-W1-4) |
+ | `ink` | primary text, rules that matter, filled buttons | the preset ink |
+ | `ink-muted` | secondary text, labels | ink 80 % |
+ | `ink-soft` | hints, descriptions, idle icons | ink 62 % |
+@@ -209,6 +209,10 @@ Slices a–f landed together on this foundation; the shared pieces they each add
+ - `Button` sets its label in capitals (`uppercase`) for every tone but `ghost`, as the reference's
+   buttons read ("CREATE", "SWITCH"); `caps={false}` keeps the few mixed-case ones ("Show advanced").
+   Accessible names are the source text, so tests that find a button by name are unchanged (D-16.1208).
++  **Reverted in wave 54 (W54-W1-1, `web-w54-parity.md`):** the reference screenshots set most buttons
++  in mixed case with wide tracking ("Prune old sessions", "Import sessions", "Cancel", "Retry"); only
++  some page actions are in capitals ("CREATE", "ADD SERVER", "CLEAR PENDING", "BUILD"). `caps` is now
++  off by default; those page actions pass `caps` or `className="uppercase"`.
+ - `Badge` `secondary` (W52-c / -d / -e): quiet filled chip, `bg-selected` (D-16.1206).
+ - `SectionHeading` (W52-c / -d): slice c's version (`type-heading`, optional `id` and `level`);
+   `EmptyCard`, `CodeChip`, `Callout` (W52-d) stay as added (D-16.1206).
+diff --git a/docs/notes/ui-parity/web-w54-parity.md b/docs/notes/ui-parity/web-w54-parity.md
+new file mode 100644
+index 0000000..142151c
+--- /dev/null
++++ b/docs/notes/ui-parity/web-w54-parity.md
+@@ -0,0 +1,97 @@
++# Task: Web parity fixes from the wave-53 side-by-side (W54-W1) Phase: ui-parity Owner: builder w54w1
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `web/src/pages/AnalyticsPage.tsx`
++(the daily token chart, to see how it lays out its bars), `web/src/pages/SessionsPage.tsx` (header
++and filter-row buttons: which are outlined, which set capitals), `web/src/pages/ProfilesPage.tsx`,
++`CronPage.tsx`, `PairingPage.tsx`, `McpPage.tsx` (call sites that add `uppercase` to a button) — read
++and compared only, nothing copied.
++Evidence: the owner's captures of the running reference web dashboard and of ours at the landing
++tree (wave-53 compare kit), slugs `sessions`, `session-detail`, `sessions-search`, `sessions-prune`,
++`empty-state`, `chat-exchange`, `analytics`, `cron`, `cron-create`, `mcp`, `channels`, `webhooks`,
++`pairing`, `profiles`, `system-console`, `error-state`, `theme-menu` (light and dark), and the gap
++list written from them. None are in the repo.
++
++What it does (own words): closes the web lines of the wave-53 gap list. Buttons go back to mixed case
++with the wide typewriter tracking; the page actions the reference sets in capitals keep them. The
++daily token chart draws one slot per calendar day of the period, so one busy day is one bar instead
++of a block filling the chart. Sessions opens on the history list (Overview is one click away). The
++search field draws its focus on its frame only, so the clear cross sits inside it. Dialogs dim the
++page with a neutral grey veil in both themes. A failed cron load is a banner at the top of the page
++that says what failed, with the server's words as details. The admin console's light theme no longer
++shows a black strip under the terminal. "Import sessions" works: it lists the other coding tools'
++conversations the server finds and imports one. "Clear pending" on Pairing is always a live button.
++
++Inputs → outputs: `/api/analytics/usage` (days with a session only) → a chart over every day of the
++period; `/api/session-import/{candidates,import}` (existing routes, P24-28) → the import dialog;
++`/api/pairing/clear-pending` unchanged. Nothing new on the server.
++
++Files: `apps/web/src/ui/controls.tsx` (Button `caps` default, ErrorState fill), `index.css`
++(overlay token, focus ring in the base layer), `pages/AnalyticsPage.tsx` (+ test),
++`pages/SessionsPage.tsx` (+ test), `pages/sessions/ImportDialog.tsx` (new), `lib/api.ts`,
++`lib/restTypes.ts`, `testing/mockApi.ts`, `pages/CronPage.tsx`, `pages/PairingPage.tsx` (+ test),
++`pages/ProfilesPage.tsx`, `pages/cron/JobModal.tsx`, `pages/mcp/AddServerModal.tsx`,
++`console/ConsoleModal.tsx`, `App.test.tsx` (axe test waits for the history list),
++`e2e/dashboard.spec.ts`, this note and
++`web-foundation.md` (the reverted D-16.1208 line and the overlay row).
++
++Edge cases / failure modes:
++- Chart: no ISO day in the answer (all zero) → the period still ends today; a server whose day is
++  already tomorrow → the period ends on its last day; a listed day before the period (zone skew) →
++  the period stretches back to it, so no listed day is dropped; a tiny day keeps a 1 px bar.
++- Import: nothing found → one line naming the tools looked for; a file imported before → "Already
++  imported" on its row (409 `already_imported`); any other failure → a notice in the dialog.
++- Clear pending with nobody waiting → a toast says so; no request is sent.
++
++Our design differences / decisions:
++- W54-W1-1: buttons are mixed case by default (reverts the W53 all-caps default, D-16.1208). The
++  reference screenshots decide it: Sessions' "Prune old sessions" / "Import sessions", every dialog's
++  "Cancel" / "Prune", and the error banner's "Retry" are mixed case with wide tracking; the header
++  actions "CREATE", "ADD SERVER", "RESTART GATEWAY", "NEW SUBSCRIPTION", "CLEAR PENDING", "BUILD" are
++  capitals. Those already carried `className="uppercase"` from wave 52 except Profiles, which now
++  passes `caps`.
++- W54-W1-2: Sessions opens on History; the view switch reads History | Overview.
++- W54-W1-3: the daily chart fills the period with zero days (`chartDays`), bars at 80 % of the series
++  colour (full on hover), a base rule under the bars.
++- W54-W1-4: `--indus-overlay` is black at 60 % in both themes (measured from the reference captures:
++  the light page goes from (232,242,253) to (93,97,101)). The reference's form panels (New cron job,
++  Add MCP server) instead lay a pale veil of the page colour (85 %) over the page, as do its model
++  picker and console: those four pass `overlayClassName="bg-canvas/85"`.
++- W54-W1-5: the global `:focus-visible` outline moves into `@layer base`; unlayered, it beat every
++  `outline-none` utility, which drew a second box inside the search field and left its clear cross
++  looking outside.
++- W54-W1-6: Cron's failed load is a top-of-page ErrorState ("Could not load the cron jobs…",
++  details = the server's message); ErrorState loses its pink fill (border only, as the reference).
++- W54-W1-7: the console's screen element takes the terminal colour, so the fit's leftover space
++  under the last row is not black on light.
++- W54-W1-8: "Clear pending" stays enabled; with nobody waiting it says so in a toast.
++- W54-W1-9: "Import sessions" opens a dialog over the existing session-import routes.
++- Not taken: the chat-exchange tool row (it is drawn by the TUI in `apps/tui`, outside this slice);
++  theme presets 4 → 8 (not cheap: each preset needs its own checked contrast); Webhooks "New route"
++  stays disabled while the receiver is off (the reference's "New subscription" is disabled there too).
++
++Tests we will write:
++- Analytics: one listed day in a 30-day period draws 30 slots with one bar; gap filling, server day
++  past ours, month end and leap day (`chartDays`).
++- Sessions: opens on History, Overview reachable; import lists, imports, refuses a second import,
++  and says when nothing is found.
++- Pairing: Clear pending stays live after clearing and sends nothing more.
++
++## Decisions for the lead
++- D-16.1208 is reverted by W54-W1-1; the lead gives it the next D-id in §3.2.
++
++Compare checklist (filled after the rewrite; reopened the reference captures and the files above):
++- [x] analytics chart (test: `AnalyticsPage.test.tsx::draws one slot per day of the period…`)
++- [x] sessions land on the history list (test: `SessionsPage.test.tsx::opens on History…`)
++- [x] import sessions live (test: `SessionsPage.test.tsx::import`)
++- [x] button case — decided from the screenshots, see W54-W1-1
++- [x] search field focus and clear cross; dialog scrim; error banner; console strip — re-shot
++- [x] Clear pending live (test: `PairingPage.test.tsx::clears pending requests after confirming`)
++- [x] session-detail: our transcript already folds tool calls into a row and prints the tool output
++  block like the reference; the wave-53 capture expanded a session without tools. Re-shot on the
++  session with a terminal call.
++- Deliberate differences: see W54-W1-4 (picker and console veil), Webhooks "New route" gating.
++- Not taken: chat-exchange tool row (apps/tui), theme presets.
++
++## Status
++
++Done (2026-10-25), uncommitted in the w54w1 worktree. Web only; nothing in `packages/ui`.

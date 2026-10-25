@@ -80,16 +80,69 @@ function Legend() {
   );
 }
 
-/** One flex column per day: input stacked over output, heights against the busiest day. */
-function DailyChart({ days }: { days: readonly UsageDay[] }) {
-  const max = Math.max(1, ...days.map((d) => d.input_tokens + d.output_tokens));
-  const first = days[0];
-  const last = days.at(-1);
-  const middle = days.length > 2 ? days[Math.floor(days.length / 2)] : undefined;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
+
+function shiftDay(day: string, by: number): string {
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d) + by * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The viewer's calendar day ("2026-10-25"), the zone the server counts in for a local dashboard. */
+export function localDay(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * Every calendar day of the period, oldest first, with zeros where nothing ran. The server lists
+ * only the days that had a session, so drawing its rows alone gave one day the whole chart width:
+ * a single solid block with no bars to read (W54-W1-3). The period ends today, or on the last
+ * listed day when the server's clock is already past ours, and stretches back over any listed day
+ * that falls before it, so no listed day is ever dropped.
+ */
+export function chartDays(
+  daily: readonly UsageDay[],
+  days: number,
+  today: string = localDay(),
+): UsageDay[] {
+  const byDay = new Map(daily.map((d) => [d.day, d]));
+  const listed = daily
+    .map((d) => d.day)
+    .filter((d) => ISO_DAY.test(d))
+    .sort();
+  const latest = listed.at(-1);
+  const end = latest !== undefined && latest > today ? latest : today;
+  const earliest = listed[0];
+  const from = shiftDay(end, -(Math.max(1, days) - 1));
+  const start = earliest !== undefined && earliest < from ? earliest : from;
+  const out: UsageDay[] = [];
+  for (let day = start; day <= end; day = shiftDay(day, 1)) {
+    out.push(byDay.get(day) ?? { day, input_tokens: 0, output_tokens: 0, cost: 0, sessions: 0 });
+  }
+  return out;
+}
+
+function barHeight(value: number, max: number): string {
+  // A day with any tokens keeps at least a hairline, so a small day never vanishes.
+  return value > 0 ? `max(1px, ${(value / max) * 100}%)` : "0";
+}
+
+/** One column per calendar day: input stacked over output, heights against the busiest day. */
+function DailyChart({ daily, days }: { daily: readonly UsageDay[]; days: number }) {
+  const slots = chartDays(daily, days);
+  const max = Math.max(1, ...slots.map((d) => d.input_tokens + d.output_tokens));
+  const first = slots[0];
+  const last = slots.at(-1);
+  const middle = slots.length > 2 ? slots[Math.floor(slots.length / 2)] : undefined;
   return (
     <div className="flex flex-col gap-2 p-4">
-      <div role="img" aria-label="Daily token usage" className="flex h-40 items-end gap-0.5">
-        {days.map((day) => {
+      <div
+        role="img"
+        aria-label="Daily token usage"
+        className="flex h-40 items-end gap-0.5 border-b border-line"
+      >
+        {slots.map((day) => {
           const total = day.input_tokens + day.output_tokens;
           const summary = `${formatShortDay(day.day)}: input ${formatTokens(day.input_tokens)}, output ${formatTokens(day.output_tokens)}, total ${formatTokens(total)}, cost ${formatCost(day.cost)}`;
           return (
@@ -100,23 +153,27 @@ function DailyChart({ days }: { days: readonly UsageDay[] }) {
               className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
             >
               <div
-                className="w-full bg-series-input/70"
-                style={{ height: `${(day.input_tokens / max) * 100}%` }}
+                data-series="input"
+                className="w-full bg-series-input/80 group-hover:bg-series-input"
+                style={{ height: barHeight(day.input_tokens, max) }}
               />
               <div
-                className="w-full bg-series-output/70"
-                style={{ height: `${(day.output_tokens / max) * 100}%` }}
+                data-series="output"
+                className="w-full bg-series-output/80 group-hover:bg-series-output"
+                style={{ height: barHeight(day.output_tokens, max) }}
               />
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 border border-line-strong bg-canvas px-2.5 py-1.5 text-[0.75rem] whitespace-nowrap text-ink shadow-lg group-hover:block"
-              >
-                <p className="m-0 font-medium">{formatShortDay(day.day)}</p>
-                <p className="m-0 text-ink-muted">Input {formatTokens(day.input_tokens)}</p>
-                <p className="m-0 text-ink-muted">Output {formatTokens(day.output_tokens)}</p>
-                <p className="m-0 text-ink-muted">Total {formatTokens(total)}</p>
-                <p className="m-0 text-ink-muted">Cost {formatCost(day.cost)}</p>
-              </div>
+              {total > 0 ? (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 border border-line-strong bg-canvas px-2.5 py-1.5 text-[0.75rem] whitespace-nowrap text-ink shadow-lg group-hover:block"
+                >
+                  <p className="m-0 font-medium">{formatShortDay(day.day)}</p>
+                  <p className="m-0 text-ink-muted">Input {formatTokens(day.input_tokens)}</p>
+                  <p className="m-0 text-ink-muted">Output {formatTokens(day.output_tokens)}</p>
+                  <p className="m-0 text-ink-muted">Total {formatTokens(total)}</p>
+                  <p className="m-0 text-ink-muted">Cost {formatCost(day.cost)}</p>
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -201,7 +258,7 @@ function Usage({ days }: { days: Range }) {
             </Card>
             <Card padded={false}>
               <CardHeader icon={BarChart3} title="Daily token usage" below={<Legend />} />
-              <DailyChart days={daily} />
+              <DailyChart daily={daily} days={days} />
             </Card>
           </div>
           <Card padded={false}>

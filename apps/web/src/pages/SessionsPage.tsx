@@ -1,7 +1,8 @@
 // Sessions (P18-19; look rebuilt W51-a, finished W52-a): figures at the top, one filter row
-// (chats / automation / all, a multi-pick source menu, overview / history, search as you type,
-// import placeholder, compact pager), then either the recent sessions card or the full history
-// with selection, actions, paging and the transcript. Search results replace the history list.
+// (chats / automation / all, a multi-pick source menu, history / overview, search as you type,
+// import from another coding tool, compact pager), then either the full history with selection,
+// actions, paging and the transcript, or the recent sessions card. The page opens on the history,
+// as the reference does (W54-W1-2); search results replace the history list.
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,6 +33,7 @@ import {
   StatStrip,
 } from "../ui/controls.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
+import { ImportDialog } from "./sessions/ImportDialog.tsx";
 import { PruneDialog } from "./sessions/PruneDialog.tsx";
 import { RecentCard, SessionRow, sessionLabel } from "./sessions/SessionRows.tsx";
 import { SourceMenu } from "./sessions/SourceMenu.tsx";
@@ -51,8 +53,8 @@ const SEARCH_SETTLE_MS = 300;
 type View = "overview" | "history";
 
 const VIEWS: ReadonlyArray<{ value: View; label: string }> = [
-  { value: "overview", label: "Overview" },
   { value: "history", label: "History" },
+  { value: "overview", label: "Overview" },
 ];
 
 function StatsBar({ refresh }: { refresh: boolean }) {
@@ -110,7 +112,7 @@ function SearchBox({
         {draft ? (
           <IconButton
             label="Clear search"
-            className="size-6 [&_svg]:size-3"
+            className="size-6 text-ink-soft hover:text-ink [&_svg]:size-3"
             onClick={() => onDraft("")}
           >
             <X />
@@ -178,7 +180,7 @@ export function SessionsPage() {
   const toast = useToast();
   const client = useQueryClient();
   const [tab, setTab] = useState<SessionTab>("chats");
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>("history");
   const [picks, setPicks] = useState<Record<SessionTab, string[]>>({
     chats: [],
     automation: [],
@@ -192,6 +194,7 @@ export function SessionsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [anchor, setAnchor] = useState<string | null>(null);
   const [pruneOpen, setPruneOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [deleting, setDeleting] = useState<SessionInfo | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [deleteProblem, setDeleteProblem] = useState("");
@@ -378,15 +381,9 @@ export function SessionsPage() {
           />
         ) : null}
         {draft ? null : (
-          <span title="Not available yet" className="inline-flex">
-            <Button
-              icon={<Upload />}
-              disabled
-              className="type-serif font-semibold tracking-[0.04em]"
-            >
-              Import sessions
-            </Button>
-          </span>
+          <Button icon={<Upload />} onClick={() => setImportOpen(true)}>
+            Import sessions
+          </Button>
         )}
         {history && !searching && total > PAGE_SIZE ? (
           <div className="ml-auto">
@@ -509,6 +506,7 @@ export function SessionsPage() {
       ) : null}
 
       <PruneDialog open={pruneOpen} onClose={() => setPruneOpen(false)} />
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <ConfirmDialog
         open={deleting !== null}
         title="Delete this session?"
