@@ -48,7 +48,10 @@ daemon by itself when it opens. What differs:
   ten idle minutes (`gateway.idle_exit_seconds`).
 - **First run.** With no model provider set up yet the daemon still starts, and the desktop app
   opens its provider setup; what you choose there is used from your next message on, without a
-  restart. `indus setup model` does the same from a terminal.
+  restart.
+- **Two homes.** The desktop app keeps its settings in `%USERPROFILE%\.indus`, while `indus` in a
+  terminal defaults to `%LOCALAPPDATA%\indus`. Set `INDUS_HOME` to `%USERPROFILE%\.indus` for
+  terminal commands (such as `indus setup model`) that should change what the app uses.
 
 Messaging platforms (Telegram, WhatsApp and the others) remain supported in WSL2 only.
 

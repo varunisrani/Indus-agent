@@ -16,8 +16,10 @@ Keychains cannot list their entries, so the names (never values) live in
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import sys
 import threading
 import time
 from collections.abc import Iterable, Mapping
@@ -41,6 +43,11 @@ INDEX_FILE = "secrets.index.json"
 FORMAT_VERSION = 1
 
 SecretStoreMode = Literal["auto", "keychain", "file"]
+
+WINDOWS_MAX_UNITS = 1280
+"""Windows Credential Manager keeps at most 2560 bytes per entry: 1280 UTF-16 code units."""
+CHUNK_MARK = "indus-chunked:v1:"
+"""The head of a keychain value kept in parts (``KeychainBackend``)."""
 
 
 class MonotonicClock(Protocol):
@@ -166,40 +173,130 @@ class FileBackend:
         return set(self._secrets())
 
 
+def _utf16_units(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _split_units(value: str, units: int) -> list[str]:
+    """``value`` in parts of at most ``units`` UTF-16 code units, never splitting a character."""
+    parts: list[str] = []
+    current: list[str] = []
+    used = 0
+    for char in value:
+        size = 2 if ord(char) > 0xFFFF else 1
+        if used + size > units and current:
+            parts.append("".join(current))
+            current, used = [], 0
+        current.append(char)
+        used += size
+    if current:
+        parts.append("".join(current))
+    return parts
+
+
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
 class KeychainBackend:
-    """OS keychain through ``keyring``: service ``indus``, account ``<profile_id>:<NAME>``."""
+    """OS keychain through ``keyring``: service ``indus``, account ``<profile_id>:<NAME>``.
+
+    A keychain may cap the size of one entry: Windows Credential Manager keeps at most
+    ``WINDOWS_MAX_UNITS`` UTF-16 code units, and a provider sign-in (OAuth tokens as JSON) is
+    longer. With ``max_units`` set, a value that does not fit is kept in parts at
+    ``<profile_id>:<NAME>#1``
+    … ``#n`` and the entry itself holds ``indus-chunked:v1:<n>:<digest>`` (a SHA-256 prefix of the
+    whole value). Parts are written before that head and removed before it; a read whose parts are
+    missing or do not match the digest is an error, never a wrong secret. A value that fits is kept
+    as one entry, as before (a value that happens to start like a head is always kept in parts).
+    """
 
     name = "keychain"
 
-    def __init__(self, keyring_backend: KeyringLike, profile_id: str) -> None:
+    def __init__(
+        self, keyring_backend: KeyringLike, profile_id: str, *, max_units: int | None = None
+    ) -> None:
         self._keyring = keyring_backend
         self.profile_id = profile_id
+        self.max_units = max_units
 
     def __repr__(self) -> str:
         return f"KeychainBackend(profile_id={self.profile_id!r})"
 
-    def _account(self, name: str) -> str:
-        return f"{self.profile_id}:{name}"
+    def _account(self, name: str, part: int = 0) -> str:
+        return f"{self.profile_id}:{name}" + (f"#{part}" if part else "")
 
-    def get(self, name: str) -> str | None:
+    def _read(self, account: str) -> str | None:
         try:
-            return self._keyring.get_password(SERVICE, self._account(name))
+            return self._keyring.get_password(SERVICE, account)
         except Exception as exc:
             raise _store_error("read from the keychain", exc) from exc
 
-    def set(self, name: str, value: str) -> None:
+    def _write(self, account: str, value: str) -> None:
         try:
-            self._keyring.set_password(SERVICE, self._account(name), value)
+            self._keyring.set_password(SERVICE, account, value)
         except Exception as exc:
             raise _store_error("write to the keychain", exc) from exc
 
-    def delete(self, name: str) -> bool:
-        if self.get(name) is None:
+    def _remove(self, account: str) -> bool:
+        if self._read(account) is None:
             return False
         try:
-            self._keyring.delete_password(SERVICE, self._account(name))
+            self._keyring.delete_password(SERVICE, account)
         except Exception as exc:
             raise _store_error("delete from the keychain", exc) from exc
+        return True
+
+    @staticmethod
+    def _head(raw: str | None) -> tuple[int, str] | None:
+        """``(parts, digest)`` when ``raw`` is a head, else None."""
+        if raw is None or not raw.startswith(CHUNK_MARK):
+            return None
+        count, _, digest = raw.removeprefix(CHUNK_MARK).partition(":")
+        if not count.isdigit() or int(count) < 1 or not digest:
+            raise SecretStoreError("secrets.unreadable", "a keychain entry has a broken head")
+        return int(count), digest
+
+    def get(self, name: str) -> str | None:
+        raw = self._read(self._account(name))
+        head = self._head(raw)
+        if head is None:
+            return raw
+        count, digest = head
+        parts = [self._read(self._account(name, i)) for i in range(1, count + 1)]
+        whole = "".join(part for part in parts if part is not None)
+        if any(part is None for part in parts) or _digest(whole) != digest:
+            raise SecretStoreError(
+                "secrets.unreadable",
+                f"the keychain holds {name} in parts that are incomplete; set it again",
+            )
+        return whole
+
+    def set(self, name: str, value: str) -> None:
+        old = self._head(self._read(self._account(name)))
+        fits = self.max_units is None or _utf16_units(value) <= self.max_units
+        if fits and not value.startswith(CHUNK_MARK):
+            self._write(self._account(name), value)
+            count = 0
+        else:
+            parts = _split_units(value, self.max_units or WINDOWS_MAX_UNITS)
+            for index, part in enumerate(parts, start=1):
+                self._write(self._account(name, index), part)
+            self._write(self._account(name), f"{CHUNK_MARK}{len(parts)}:{_digest(value)}")
+            count = len(parts)
+        if old is not None:  # parts of the previous value that the new one does not use
+            for index in range(count + 1, old[0] + 1):
+                self._remove(self._account(name, index))
+
+    def delete(self, name: str) -> bool:
+        raw = self._read(self._account(name))
+        if raw is None:
+            return False
+        head = self._head(raw)
+        if head is not None:
+            for index in range(1, head[0] + 1):
+                self._remove(self._account(name, index))
+        self._remove(self._account(name))
         return True
 
     def listed_names(self) -> set[str]:
@@ -471,7 +568,8 @@ def open_secret_store(
         )
     found = probe_keychain(keyring_backend, clock=clock)
     if found is not None:
-        return SecretStore(KeychainBackend(found, profile_id), index)
+        limit = WINDOWS_MAX_UNITS if sys.platform == "win32" else None
+        return SecretStore(KeychainBackend(found, profile_id, max_units=limit), index)
     if mode == "keychain":
         raise SecretStoreUnavailable(
             "the OS keychain is not available",

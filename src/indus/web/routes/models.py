@@ -39,6 +39,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 import threading
 import time
@@ -70,6 +71,8 @@ from indus.web.scope import read_scope, write_scope
 from indus.web.state import dashboard_state
 
 __all__ = ["AUX_TASKS", "ROUTE_LIST", "LoginSession", "LoginSessions", "router"]
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -483,7 +486,9 @@ def login_start(body: LoginStart, request: Request, scope: WriteScope) -> dict[s
             return
         try:
             await asyncio.to_thread(_store_tokens, scope, provider, tokens, label)
-        except (IndusError, HTTPException, OSError):
+        except (IndusError, HTTPException, OSError) as exc:
+            # The cause (never the tokens): a keychain refusal, an unwritable auth.json, ...
+            log.warning("the %s sign-in could not be saved: %s", provider, redact_text(str(exc)))
             sessions.finish(session, "failed", "Signed in, but the credential could not be saved.")
             return
         sessions.finish(session, "approved", "Signed in; the credential was added.")

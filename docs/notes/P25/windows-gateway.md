@@ -128,3 +128,14 @@ shows, "Use a model running on this computer" tests a local OpenAI-compatible fa
 chatting" saves it, and the first message is answered by that model with the daemon never
 restarted. Tests: `tests/unit/gateway/daemon/test_main_route.py`,
 `apps/desktop/src/onboarding/useProviderReady.test.tsx`, two cases in `Onboarding.test.tsx`.
+
+## Follow-up: sign-ins too long for the Windows keychain (2026-10-25)
+
+"Signed in, but the credential could not be saved" after the ChatGPT sign-in: Windows Credential
+Manager keeps at most 2560 bytes (1280 UTF-16 code units) per entry (`CredWrite` error 1783 past
+that), and the OAuth token JSON is several KB. `foundation.secrets.KeychainBackend` now takes
+`max_units` (set to `WINDOWS_MAX_UNITS` on Windows): a longer value is kept in parts
+`<profile_id>:<NAME>#1..n` behind a head `indus-chunked:v1:<n>:<digest>`; reads check the digest,
+a shrink or delete removes the parts, values that fit stay one entry, and other OSes are unchanged.
+The sign-in route now logs why a save failed. Checked against the real Credential Manager (a
+4.5 KB bundle round-trips in 4 parts); tests: `tests/unit/foundation/test_keychain_parts.py`.
