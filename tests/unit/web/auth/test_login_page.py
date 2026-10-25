@@ -5,11 +5,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from indus.web import brand
 from indus.web.auth import cookies
 from indus.web.auth.login_page import (
     LOGIN_CSP,
@@ -235,3 +237,23 @@ def test_logout_from_another_origin_is_refused(build: Builder) -> None:
     refused = built.client.post("/auth/logout", headers={"origin": "https://evil.example"})
     assert refused.status_code == 403
     assert built.client.get("/api/auth/me").status_code == 200
+
+
+def test_the_page_carries_the_indus_agi_brand() -> None:
+    page = render_login_page(providers=[])
+    assert f"<title>Sign in · {brand.BRAND_NAME}</title>" in page
+    assert f'<path d="{brand.MARK_PATH}"/>' in page
+    assert "Indus<br>AGI" in page
+    assert "--amber:#f24001" in LOGIN_STYLE  # the ember, with black text on its buttons
+    assert "Indus Agent" not in page
+
+
+def test_the_brand_copy_matches_the_shared_brand_file() -> None:
+    shared = (
+        Path(__file__).resolve().parents[4] / "packages" / "ui" / "src" / "brand.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r'MARK_PATH =\s*"([^"]*)"', shared).group(1) == brand.MARK_PATH  # type: ignore[union-attr]
+    assert f'BRAND_NAME = "{brand.BRAND_NAME}"' in shared
+    assert f'BRAND_SHORT = "{brand.BRAND_SHORT}"' in shared
+    assert f'ember: "{brand.EMBER}"' in shared
+    assert f'black: "{brand.BLACK}"' in shared

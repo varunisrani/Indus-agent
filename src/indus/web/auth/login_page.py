@@ -28,6 +28,7 @@ from typing import Final
 from urllib.parse import quote
 
 from indus.web.auth.providers import Provider
+from indus.web.brand import BRAND_NAME, MARK_PATH, MARK_VIEWBOX
 
 __all__ = [
     "LOGIN_CSP",
@@ -47,13 +48,14 @@ LOGIN_ERRORS: Final[dict[str, str]] = {
 ERROR_ALIASES: Final[dict[str, str]] = {"1": "invalid"}
 """``?error=1`` is what the password route sends for wrong credentials (kept from P18-03)."""
 
-# One fixed dark amber look in both themes (W52-login-1): a base with a faint amber checkerboard
-# and a glow from the top, a square card with a bevel, amber buttons. System font stacks only: no
-# font files (R09.22), so the look comes from weights, capitals and letter-spacing. The entrance
-# animation is CSS only and is switched off under reduced motion.
+# One fixed dark look in both themes (W52-login-1; Indus AGI colours since W63): a brand-black base
+# with a faint ember checkerboard and a glow from the top, a square card with a bevel, the mark and
+# the INDUS / AGI wordmark above it, ember buttons with black text (white on ember fails AA).
+# System font stacks only: no font files (R09.22), so the look comes from weights, capitals and
+# letter-spacing. The entrance animation is CSS only and is switched off under reduced motion.
 LOGIN_STYLE: Final = (
-    ":root{color-scheme:dark;--base:#170d02;--amber:#ffac02;--card:#1c1207;--line:#442d05;"
-    "--field:#110a02;--field-line:#644202;--text:#ffffff;--soft:#afaca8;--label:#96928d;"
+    ":root{color-scheme:dark;--base:#0a0a0a;--amber:#f24001;--card:#141110;--line:#3a1a0d;"
+    "--field:#0e0c0b;--field-line:#5a2a14;--text:#ffffff;--soft:#afaca8;--label:#96928d;"
     "--form-title:#bbb8b5;--foot:#716c66;--danger:#ff6b6b}"
     "*{box-sizing:border-box}"
     "html{min-height:100%;background:var(--base)}"
@@ -61,17 +63,17 @@ LOGIN_STYLE: Final = (
     "font:15px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;"
     "background-color:var(--base);"
     "background-image:"
-    "radial-gradient(ellipse 70% 55% at 50% 0,rgba(255,172,2,.07),transparent 100%),"
-    "repeating-conic-gradient(rgba(255,172,2,.045) 0 25%,transparent 0 50%);"
+    "radial-gradient(ellipse 70% 55% at 50% 0,rgba(242,64,1,.10),transparent 100%),"
+    "repeating-conic-gradient(rgba(242,64,1,.04) 0 25%,transparent 0 50%);"
     "background-size:100% 100%,6px 6px;background-attachment:fixed}"
     "main{width:26rem;max-width:calc(100% - 2rem);margin:0 auto;padding:6vh 0 3rem;"
     "animation:rise .6s ease-out both}"
     "@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}"
     "@media (prefers-reduced-motion:reduce){main{animation:none}}"
-    ".mark{margin:4px 0 36px;text-align:center;color:var(--amber);font-size:17px;font-weight:600;"
-    "letter-spacing:.32em;text-transform:uppercase;line-height:1}"
-    ".mark .sq{display:inline-block;width:6px;height:6px;margin:0 .55em 0 .25em;"
-    "background:var(--amber);vertical-align:.18em}"
+    ".mark{display:flex;align-items:center;justify-content:center;gap:12px;margin:4px 0 36px}"
+    ".mark svg{width:40px;height:40px;fill:var(--amber)}"
+    ".mark .word{color:var(--text);font-size:19px;font-weight:700;letter-spacing:.06em;"
+    "line-height:.95;text-transform:uppercase}"
     ".card{background:var(--card);border:1px solid var(--line);padding:36px 32px 32px;"
     "box-shadow:inset 1px 1px 0 rgba(255,255,255,.04),inset -1px -1px 0 rgba(0,0,0,.35),"
     "0 24px 60px rgba(0,0,0,.45)}"
@@ -100,7 +102,7 @@ LOGIN_STYLE: Final = (
     ".go:focus-visible{outline:2px solid var(--amber);outline-offset:3px}"
     "footer{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:28px;"
     "color:var(--foot);font-size:12px;letter-spacing:.1em;text-transform:uppercase}"
-    "footer::before,footer::after{content:'';width:24px;height:1px;background:rgba(255,172,2,.35)}"
+    "footer::before,footer::after{content:'';width:24px;height:1px;background:rgba(242,64,1,.40)}"
 )
 
 _STYLE_HASH: Final = base64.b64encode(hashlib.sha256(LOGIN_STYLE.encode("utf-8")).digest()).decode(
@@ -187,13 +189,14 @@ def render_login_page(
         '<!doctype html><html lang="en"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width,initial-scale=1">',
         '<meta name="referrer" content="same-origin">',
-        "<title>Sign in · Indus Agent</title>",
+        f"<title>Sign in · {BRAND_NAME}</title>",
         f"<style>{LOGIN_STYLE}</style>",
         "</head><body><main>",
-        '<p class="mark">Indus<span class="sq"></span>Agent</p>',
+        f'<p class="mark"><svg viewBox="{MARK_VIEWBOX}" aria-hidden="true"><path d="{MARK_PATH}"/>'
+        f'</svg><span class="word">Indus<br>AGI</span></p>',
         '<div class="card">',
         "<h1>Sign in</h1>",
-        '<p class="lead">Pick a way to sign in to this Indus Agent dashboard.</p>',
+        f'<p class="lead">Pick a way to sign in to this {BRAND_NAME} dashboard.</p>',
     ]
     message = _message(error)
     if message:

@@ -164,7 +164,7 @@ test("Docs: a direct load and a reload of /docs render the in-app page", async (
   await expect(page.getByRole("link", { name: "Open docs" })).toBeVisible();
   // Our guides render in the page; a guide link opens the guide here, and a reload keeps it.
   const panel = page.getByRole("region", { name: "Documentation" });
-  await expect(panel.getByRole("heading", { level: 1, name: "Indus Agent" })).toBeVisible();
+  await expect(panel.getByRole("heading", { level: 1, name: "Indus AGI Agent" })).toBeVisible();
   await panel.getByRole("link", { name: "Quickstart" }).first().click();
   await expect(page).toHaveURL(/\/docs\?page=getting-started%2Fquickstart/);
   const title = await panel.getByRole("heading", { level: 1 }).first().textContent();

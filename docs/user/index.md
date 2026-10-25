@@ -1,8 +1,8 @@
-# Indus Agent
+# Indus AGI Agent
 
-Indus Agent is an AI agent you run on your own machine. It talks to the model provider you choose,
-runs commands and edits files for you (asking first when something is risky), remembers what it
-learns about you and your projects, and turns work it has done well into skills it can reuse.
+Indus AGI Agent is an AI agent you run on your own machine. It talks to the model provider you
+choose, runs commands and edits files for you (asking first when something is risky), remembers what
+it learns about you and your projects, and turns work it has done well into skills it can reuse.
 
 You can reach the same agent from several places:
 

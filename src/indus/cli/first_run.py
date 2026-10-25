@@ -56,7 +56,7 @@ ALLOW_DATA_POLICY_KEY = "security.allow_data_training_tiers_noninteractive"
 
 NOT_SET_UP = (
     "",
-    "Indus Agent is not set up yet: no model provider or API key was found.",
+    "Indus AGI Agent is not set up yet: no model provider or API key was found.",
     "",
     "  Run:  indus setup",
     "",

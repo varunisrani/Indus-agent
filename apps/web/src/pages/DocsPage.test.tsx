@@ -22,7 +22,7 @@ describe("docs page", () => {
     renderPage(<DocsPage />, "/docs");
     const panel = screen.getByRole("region", { name: "Documentation" });
     expect(
-      await within(panel).findByRole("heading", { level: 1, name: "Indus Agent" }),
+      await within(panel).findByRole("heading", { level: 1, name: "Indus AGI Agent" }),
     ).toBeTruthy();
     const nav = within(screen.getByRole("navigation", { name: "Guides" }));
     expect(nav.getByRole("button", { name: "Home" }).getAttribute("aria-current")).toBe("page");
@@ -39,7 +39,7 @@ describe("docs page", () => {
   it("opens a guide from the navigation and from a link inside a guide", async () => {
     renderPage(<DocsPage />, "/docs");
     const panel = screen.getByRole("region", { name: "Documentation" });
-    await within(panel).findByRole("heading", { level: 1, name: "Indus Agent" });
+    await within(panel).findByRole("heading", { level: 1, name: "Indus AGI Agent" });
     fireEvent.click(within(panel).getAllByRole("link", { name: "Install" })[0] as HTMLElement);
     await waitFor(() => expect(currentLocation()).toBe("/docs?page=getting-started%2Finstall"));
     expect(await within(panel).findByRole("heading", { level: 1 })).toBeTruthy();
@@ -75,7 +75,7 @@ describe("docs page", () => {
   it("draws the panel with theme tokens, never a fixed light sheet (W57-H1-1)", async () => {
     const { container } = renderPage(<DocsPage />, "/docs");
     const panel = screen.getByRole("region", { name: "Documentation" });
-    await within(panel).findByRole("heading", { level: 1, name: "Indus Agent" });
+    await within(panel).findByRole("heading", { level: 1, name: "Indus AGI Agent" });
     // the panel sits on a theme surface token (the card is bg-canvas), never a fixed sheet
     expect(panel.closest(".bg-canvas, .bg-surface")).not.toBeNull();
     // no fixed colours anywhere in the page: dark themes must not get a white block or navy text
