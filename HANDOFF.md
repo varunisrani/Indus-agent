@@ -83,9 +83,13 @@ landing tree (pytest 18779/0, perf 18/1, vitest 3162, Electron 43/2, web Playwri
 Notes: LEAD-NOTES "Wave 53 landing notes". Parked patch files pruned (briefs, specs, kits and READMEs kept in
 .agents/wip/w51–w53 for wave 54). Reference + Indus captures, side-by-side PDFs and the per-slug gap list live in Agent 2's
 scratchpad only (`compare/`), never in the repo.
-IN FLIGHT: wave 54 = fixes from the compare (D1 desktop chat + panes, D2 desktop settings/page states incl. password-manager
-detection, keychain toggle, voice error; W1 web incl. the analytics chart bug, sessions landing, button case). If found
-PAUSED, look in `.agents/wip/w54/`.
+WAVE 54 LANDED (fixes from the side-by-side compare): W1 web `c4243ab` (D-16.1270: analytics chart bug, sessions land on
+History, real Import dialog, mixed-case buttons reversing D-16.1208), D2 desktop settings states `473225c` (D-16.1271: real
+password-manager detection over PATH, keychain switch shows the effective store, wake word waits for the connection),
+D1 desktop chat + panes `6862338` (D-16.1272: prompt bubble CSS clash, terminal block, dots, right sidebar, xterm font).
+IN FLIGHT: wave 55 follow-ups — F1 (TUI tool rows in the web chat, session switcher live/running, why a wide Preview
+breaks security.electron), F2 (built-in cron blueprints served, profiles skills count, MCP/connector catalogue if the
+backend has one). If found PAUSED, look in `.agents/wip/w55/`. After that: re-capture Indus and send fresh PDFs.
 Older text below (wave 52 era) is history.
 
 UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
