@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { KEY, mount } from "./inkHarness.ts";
-import { isLongOutput, Pager, pagerLines, pagerStep, pageSizeFor } from "./Pager.tsx";
+import { isLongOutput, Pager, pagerLines, pagerRows, pagerStep, pageSizeFor } from "./Pager.tsx";
 
 const lines = (n: number): string[] => Array.from({ length: n }, (_, i) => `row ${i + 1}`);
 
@@ -22,6 +22,16 @@ describe("when output pages", () => {
 
   it("splits text into lines without a trailing blank", () => {
     expect(pagerLines("a\nb\n\n")).toEqual(["a", "b"]);
+  });
+
+  it("wraps long lines into rows at word breaks", () => {
+    expect(pagerRows(["one two three four", "", "x"], 9)).toEqual([
+      "one two",
+      "three",
+      "four",
+      "",
+      "x",
+    ]);
   });
 });
 
@@ -86,6 +96,29 @@ describe("pager on screen", () => {
     expect(onClose).not.toHaveBeenCalled();
     await app.press(KEY.enter);
     expect(onClose).toHaveBeenCalledTimes(1);
+    app.unmount();
+  });
+
+  it("counts wrapped rows, so no row is drawn over another", async () => {
+    const long = (n: number) => `row ${n} ${"word ".repeat(12).trim()} end ${n}`;
+    const app = await mount(
+      <Pager
+        lines={[long(1), long(2), long(3), long(4)]}
+        rows={11}
+        columns={40}
+        onClose={vi.fn()}
+      />,
+      { rows: 11, columns: 40 },
+    );
+    const frame = app.lastFrame() ?? "";
+    expect(frame).toContain("row 1 ");
+    expect(frame).toContain("end 1");
+    expect(frame).toContain("row 2 ");
+    expect(frame).toContain("end 2");
+    expect(frame).toContain("row 3 ");
+    expect(frame).not.toContain("end 3");
+    expect(frame).toContain("lines 1-5 of 8");
+    expect(frame.split("\n")).toHaveLength(8);
     app.unmount();
   });
 

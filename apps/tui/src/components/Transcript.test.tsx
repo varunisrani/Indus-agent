@@ -185,6 +185,26 @@ describe("message rows", () => {
     expect(lines[4]?.at(-1)?.color).toBe(theme.color.diffAdded);
   });
 
+  it("folds a finished reply's reasoning into one row, or hides it", () => {
+    const item: TranscriptItem = {
+      id: "r",
+      role: "assistant",
+      text: "Forty-two.",
+      reasoning: "a long chain of thought",
+    };
+    const shown = layoutMessage(item, 40, { theme, sections: resolveSections("expanded") }).map(
+      lineText,
+    );
+    expect(shown[0]).toContain("▸ thought");
+    expect(shown.join("\n")).not.toContain("chain of thought");
+    expect(shown.join("\n")).toContain("Forty-two.");
+    const hidden = layoutMessage(item, 40, {
+      theme,
+      sections: resolveSections("collapsed", { thinking: "hidden" }),
+    }).map(lineText);
+    expect(hidden.join("\n")).not.toContain("thought");
+  });
+
   it("shows tool rows as a one-line preview", () => {
     const lines = layoutMessage({ id: "t", role: "tool", text: "line one\nline two" }, 40, ctx).map(
       lineText,

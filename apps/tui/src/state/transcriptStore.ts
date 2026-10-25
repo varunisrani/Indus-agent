@@ -15,6 +15,8 @@ export interface TranscriptMessage {
   kind?: MessageKind;
   tools?: ToolRow[];
   failure?: TurnFailureView;
+  /** The model's reasoning for the turn this reply ends, kept behind a collapsed row. */
+  reasoning?: string;
   createdAt: number;
 }
 

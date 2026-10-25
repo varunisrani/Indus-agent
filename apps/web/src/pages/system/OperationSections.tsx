@@ -149,7 +149,8 @@ export function OperationsSection() {
         </div>
         <div className={rowClass}>
           <p className={cx("m-0", tileLabel)}>Restore from upload</p>
-          <div className="flex flex-wrap items-center gap-2">
+          {/* relative: the hidden picker is placed in this row, not below the whole page */}
+          <div className="relative flex flex-wrap items-center gap-2">
             <input
               ref={picker}
               type="file"

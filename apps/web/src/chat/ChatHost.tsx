@@ -282,12 +282,14 @@ export function ChatHost({ active, deps = {} }: ChatHostFullProps) {
   const [copied, setCopied] = useState(false);
   const feed = useEventsFeed(channel, deps.feed ?? browserFeedDeps);
   // The header shows the session's title: from the feed when it says so, else from the store
-  // (looked up again after each answer, when the server may have named the session).
+  // (looked up again after each answer, when the server may have named the session). A fresh
+  // chat is not in the store until its first answer, so it is not looked up before then.
   const liveId = feed.live?.sessionId;
   const stored = useQuery({
     queryKey: ["chat", "session-title", liveId, feed.lastAnswer],
     queryFn: () => api.sessions.one(liveId ?? ""),
-    enabled: active && !!liveId && !feed.live?.title,
+    enabled:
+      active && !!liveId && !feed.live?.title && (!!feed.lastAnswer || liveId === resumeId),
     retry: false,
     staleTime: 30_000,
   });

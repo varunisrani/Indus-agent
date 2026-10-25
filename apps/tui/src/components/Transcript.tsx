@@ -53,6 +53,7 @@ function cachedLayout(item: TranscriptItem, width: number, ctx: RowContext): Sty
     item.role === "banner" ? (ctx.sid ?? "") : "",
     sections.tools,
     sections.subagents,
+    sections.thinking,
   ].join(":");
   const entries = rowCache.get(item) ?? [];
   const hit = entries.find((e) => e.sig === sig);

@@ -116,6 +116,7 @@ export const PROFILE_SCOPED_FAMILIES = [
   "/api/skills",
   "/api/status",
   "/api/system",
+  "/api/tools/keys",
   "/api/tools/toolsets",
   "/api/webhooks",
 ] as const;

@@ -38,6 +38,7 @@ export function toItem(message: TranscriptMessage): TranscriptItem {
     text: message.text,
     createdAt: message.createdAt,
     ...(message.tools ? { tools: message.tools } : {}),
+    ...(message.reasoning ? { reasoning: message.reasoning } : {}),
   };
   items.set(message, item);
   return item;

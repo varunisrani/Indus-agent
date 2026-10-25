@@ -169,6 +169,19 @@ describe("segments", () => {
     ]);
   });
 
+  it("keeps the turn's reasoning on its first reply", () => {
+    const { controller } = setup("s1");
+    controller.start("t1", 1);
+    controller.reasoning("t1", "weigh the ");
+    controller.reasoning("t1", "options");
+    controller.complete("t1", "Forty-two.", "completed");
+    expect(messages()).toHaveLength(1);
+    expect(messages()[0]?.reasoning).toBe("weigh the options");
+    controller.start("t2", 2);
+    controller.complete("t2", "No thinking here.", "completed");
+    expect(messages()[1]?.reasoning).toBeUndefined();
+  });
+
   it("marks a failed tool as an error row", () => {
     const { controller } = setup("s1");
     controller.start("t1", 1);

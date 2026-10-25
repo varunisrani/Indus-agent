@@ -50,7 +50,16 @@ export function CardView({
     case "pager": {
       const p = card.payload as PagerPayload;
       const title = p.title === undefined ? {} : { title: p.title };
-      return <Pager key={card.id} {...title} lines={p.lines} rows={rows} onClose={done} />;
+      return (
+        <Pager
+          key={card.id}
+          {...title}
+          lines={p.lines}
+          rows={rows}
+          columns={columns}
+          onClose={done}
+        />
+      );
     }
     case "clarify": {
       const p = card.payload as ClarifyPayload;

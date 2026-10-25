@@ -414,6 +414,31 @@ describe("Providers › Accounts", () => {
     expect(screen.queryByRole("button", { name: "OpenAI (ChatGPT sign-in)" })).toBeNull();
   });
 
+  it("keeps the provider setup card beside the ChatGPT card", async () => {
+    const { api } = backend(false);
+    api.route("GET", "/api/model/options", {
+      providers: [
+        {
+          name: "openai-codex",
+          label: "OpenAI (ChatGPT sign-in)",
+          auth_type: "oauth",
+          configured: false,
+          device_login: true,
+        },
+      ],
+      current: { provider: null, model: null },
+    });
+    render(
+      <SettingsContext.Provider value={context(api)}>
+        <AccountsPage />
+      </SettingsContext.Provider>,
+    );
+    await settle();
+    await settle();
+    expect(screen.getByRole("region", { name: "ChatGPT" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Set up a provider" })).toBeTruthy();
+  });
+
   it("has no ChatGPT card when the backend does not offer the provider", async () => {
     const api = fakeRest();
     api.route("GET", "/api/model/options", {

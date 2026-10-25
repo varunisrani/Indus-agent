@@ -550,6 +550,10 @@ export class TurnController {
     } else if (finalText !== "" || tools.length > 0) {
       writes.push({ role: "assistant", text: finalText, ...(tools.length > 0 ? { tools } : {}) });
     }
+    // The turn's reasoning stays with its first reply, behind the thinking section's mode.
+    const reasoning = this.reasoningText.trim();
+    const first = writes.find((m) => m.kind !== "failure");
+    if (reasoning !== "" && first !== undefined) first.reasoning = reasoning;
     const append = transcriptStore.getState().append;
     for (const message of writes) append(message);
     this.pendingTools = [];

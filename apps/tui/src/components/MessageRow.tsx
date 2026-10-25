@@ -21,6 +21,7 @@ import { colour, type ToneName } from "../render/tones.ts";
 import type { Theme } from "../theme/theme.ts";
 import { useTheme } from "../theme/theme.ts";
 import type { ResolvedSections } from "./details.ts";
+import { layoutReasoning } from "./Reasoning.tsx";
 import { layoutToolTrail, type TrailRow } from "./ToolTrail.tsx";
 
 export type TranscriptRole =
@@ -40,6 +41,8 @@ export interface TranscriptItem {
   createdAt?: number;
   /** Tools that ran for this assistant segment. */
   tools?: readonly TrailRow[];
+  /** The reasoning behind this assistant reply (finished turns). */
+  reasoning?: string;
   /** A long system row shown in full. */
   expanded?: boolean;
   /** Session facts for the banner row. */
@@ -214,14 +217,20 @@ export function layoutMessage(item: TranscriptItem, width: number, ctx: RowConte
       break;
     }
     case "assistant": {
-      const head: StyledLine[] = item.tools?.length
-        ? layoutToolTrail(
-            { active: [], pending: [], trail: item.tools, activity: [], now: 0, frame: 0 },
-            ctx.sections,
-            body,
-            theme,
-          )
-        : [];
+      const head: StyledLine[] = [
+        // A finished turn's reasoning stays folded (only the live turn opens it).
+        ...(item.reasoning && ctx.sections.thinking !== "hidden"
+          ? layoutReasoning(item.reasoning, "collapsed", false, body, theme)
+          : []),
+        ...(item.tools?.length
+          ? layoutToolTrail(
+              { active: [], pending: [], trail: item.tools, activity: [], now: 0, frame: 0 },
+              ctx.sections,
+              body,
+              theme,
+            )
+          : []),
+      ];
       let text: StyledLine[];
       if (ctx.scan) {
         const laid = layoutStream(

@@ -140,7 +140,8 @@ export function AccountsPage() {
               onClick={openOnboarding}
             />
           ))}
-          {device.length === 0 && !chatgpt && (
+          {/* The ChatGPT card signs in only; this one still opens the full provider setup. */}
+          {device.length === 0 && (
             <ChoiceCard
               highlighted
               title={t("settings.accounts.setup")}

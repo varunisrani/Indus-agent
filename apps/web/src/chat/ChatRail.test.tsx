@@ -421,4 +421,23 @@ describe("side panel (W52-a)", () => {
       expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Cron folder"),
     );
   });
+
+  it("a fresh chat is looked up in the store only after its first answer", async () => {
+    const h = renderHost();
+    await connected(h);
+    act(() => {
+      h.server.publish(h.channel(), { type: "session.info", session_id: "s-new", seq: 1 });
+    });
+    await screen.findByTestId("chat-model");
+    await new Promise((done) => setTimeout(done, 50));
+    expect(h.mock.callsTo("GET", "/api/sessions/s-new")).toHaveLength(0);
+    act(() => {
+      h.server.publish(h.channel(), {
+        jsonrpc: "2.0",
+        method: "message.complete",
+        params: { session_id: "s-new", seq: 2, turn_id: "t1", text: "hi", reason: "done" },
+      });
+    });
+    await waitFor(() => expect(h.mock.callsTo("GET", "/api/sessions/s-new").length).toBe(1));
+  });
 });
