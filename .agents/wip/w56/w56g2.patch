@@ -1,0 +1,859 @@
+diff --git a/apps/web/src/pages/CronPage.test.tsx b/apps/web/src/pages/CronPage.test.tsx
+index 7b1be3d..eaab64e 100644
+--- a/apps/web/src/pages/CronPage.test.tsx
++++ b/apps/web/src/pages/CronPage.test.tsx
+@@ -305,5 +305,91 @@ describe("cron page", () => {
+     const dialog = within(await screen.findByRole("dialog"));
+     expect((dialog.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe("Sum up my mail");
+     expect((dialog.getByLabelText("Schedule") as HTMLSelectElement).value).toBe("daily");
++    // A blueprint with no slots shows no slot inputs.
++    expect(dialog.queryByRole("group", { name: "Blueprint fields" })).toBeNull();
++  });
++
++  it("shows a blueprint's prompt slots as inputs that fill the prompt (W56-G2-3)", async () => {
++    mock.state.cronBlueprints = [
++      {
++        key: "check-in",
++        title: "Regular check-in",
++        source: "catalogue",
++        skill: null,
++        description: "Checks something on a fixed interval",
++        schedule: "every 60m",
++        // As the server sends it: filled from the defaults ("low"), `{target}` has none.
++        prompt: "Check {target} at low detail. Answer unchanged when nothing moved.",
++        fields: [
++          {
++            name: "interval",
++            kind: "interval",
++            label: "Minutes between checks",
++            default: "60",
++            optional: false,
++            help: "",
++            min: 15,
++            max: 1440,
++          },
++          {
++            name: "target",
++            kind: "text",
++            label: "What to check",
++            default: null,
++            optional: false,
++            help: "a page, a folder, a service",
++            max: 200,
++          },
++          {
++            name: "detail",
++            kind: "choice",
++            label: "Level of detail",
++            default: "low",
++            optional: false,
++            help: "",
++            options: ["low", "high"],
++          },
++        ],
++      },
++    ];
++    renderPage(<CronPage />, "/cron");
++    fireEvent.click(await screen.findByRole("button", { name: "Blueprints" }));
++    const card = within(await screen.findByTestId("blueprint-check-in"));
++    fireEvent.click(card.getByRole("button", { name: "Set up" }));
++    const dialog = within(await screen.findByRole("dialog"));
++    const slots = within(dialog.getByRole("group", { name: "Blueprint fields" }));
++    // Timing slots stay with the schedule picker.
++    expect(slots.queryByLabelText(/Minutes between checks/)).toBeNull();
++    expect((dialog.getByLabelText("Schedule") as HTMLSelectElement).value).toBe("interval");
++    expect(slots.getByText("a page, a folder, a service")).toBeTruthy();
++
++    const prompt = dialog.getByLabelText("Prompt") as HTMLTextAreaElement;
++    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
++    expect(await dialog.findByText("Fill in: What to check.")).toBeTruthy();
++    expect(mock.callsTo("POST", "/api/cron/jobs")).toHaveLength(0);
++
++    fireEvent.change(slots.getByLabelText("What to check"), {
++      target: { value: "the build page" },
++    });
++    fireEvent.change(slots.getByLabelText("Level of detail"), { target: { value: "high" } });
++    expect(prompt.value).toBe(
++      "Check the build page at high detail. Answer unchanged when nothing moved.",
++    );
++
++    // Typing in the prompt by hand detaches the fields until asked to fill again.
++    fireEvent.change(prompt, { target: { value: "Check the build page now." } });
++    expect((slots.getByLabelText("What to check") as HTMLInputElement).disabled).toBe(true);
++    fireEvent.click(slots.getByRole("button", { name: "Fill from fields again" }));
++    expect(prompt.value).toBe(
++      "Check the build page at high detail. Answer unchanged when nothing moved.",
++    );
++
++    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
++    await waitFor(() => expect(mock.callsTo("POST", "/api/cron/jobs")).toHaveLength(1));
++    expect(mock.callsTo("POST", "/api/cron/jobs")[0]?.body).toMatchObject({
++      name: "Regular check-in",
++      prompt: "Check the build page at high detail. Answer unchanged when nothing moved.",
++      schedule: "every 60m",
++    });
+   });
+ });
+diff --git a/apps/web/src/pages/CronPage.tsx b/apps/web/src/pages/CronPage.tsx
+index 430d20e..5b46c41 100644
+--- a/apps/web/src/pages/CronPage.tsx
++++ b/apps/web/src/pages/CronPage.tsx
+@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { Clock, Pause, Pencil, Play, Trash2, Zap } from "lucide-react";
+ import { useId, useState } from "react";
+ import { api } from "../lib/api.ts";
+-import type { CronJob, CronState } from "../lib/restTypes.ts";
++import type { CronBlueprint, CronJob, CronState } from "../lib/restTypes.ts";
+ import { HeaderActions } from "../shell/PageHeader.tsx";
+ import { errorText, useToast } from "../shell/Toasts.tsx";
+ import {
+@@ -185,11 +185,12 @@ export function CronPage() {
+   });
+ 
+   const list = jobs.data ?? [];
+-  const create = (prefill?: JobModalStart["prefill"]) =>
++  const create = (prefill?: JobModalStart["prefill"], blueprint?: CronBlueprint) =>
+     setEditing({
+       job: null,
+       profile: filter || home || "default",
+       ...(prefill ? { prefill } : {}),
++      ...(blueprint ? { blueprint } : {}),
+     });
+ 
+   return (
+@@ -268,12 +269,15 @@ export function CronPage() {
+       ) : (
+         <Blueprints
+           onSetUp={(blueprint) =>
+-            create({
+-              name: blueprint.title,
+-              prompt: blueprint.prompt ?? "",
+-              ...(blueprint.schedule ? { schedule: blueprint.schedule } : {}),
+-              skills: blueprint.skill ? [blueprint.skill] : [],
+-            })
++            create(
++              {
++                name: blueprint.title,
++                prompt: blueprint.prompt ?? "",
++                ...(blueprint.schedule ? { schedule: blueprint.schedule } : {}),
++                skills: blueprint.skill ? [blueprint.skill] : [],
++              },
++              blueprint,
++            )
+           }
+         />
+       )}
+diff --git a/apps/web/src/pages/ProfilesPage.test.tsx b/apps/web/src/pages/ProfilesPage.test.tsx
+index 1ace5c1..1c2e2b7 100644
+--- a/apps/web/src/pages/ProfilesPage.test.tsx
++++ b/apps/web/src/pages/ProfilesPage.test.tsx
+@@ -22,6 +22,7 @@ beforeEach(() => {
+         provider: "fake",
+         description: null,
+         has_persona: false,
++        skill_count: 1,
+       },
+       {
+         name: "home",
+@@ -42,6 +43,7 @@ beforeEach(() => {
+         provider: null,
+         description: "Office tasks",
+         has_persona: true,
++        skill_count: null,
+       },
+     ],
+   };
+@@ -82,6 +84,8 @@ describe("profiles page", () => {
+     expect(main.getByText("No description")).toBeTruthy();
+     expect(await main.findByText(/Daemon (running|stopped)/)).toBeTruthy();
+     expect(await main.findByText("Skills: 1")).toBeTruthy();
++    // The count comes with the profile row (W56-G2-2): no per-card `/api/skills` round trip.
++    expect(mock.callsTo("GET", "/api/skills")).toHaveLength(0);
+     expect(mock.callsTo("GET", "/api/status").some((c) => c.query.get("profile") === "work")).toBe(
+       true,
+     );
+@@ -90,6 +94,8 @@ describe("profiles page", () => {
+     const work = await card("work");
+     expect(work.getByText("Office tasks")).toBeTruthy();
+     expect(work.getByText("Model: inherited")).toBeTruthy();
++    // An uncounted profile (null) shows no skills line rather than a wrong zero.
++    expect(work.queryByText(/^Skills:/)).toBeNull();
+   });
+ 
+   it("never offers rename or delete for the default, and locks the served profile", async () => {
+diff --git a/apps/web/src/pages/cron/JobModal.tsx b/apps/web/src/pages/cron/JobModal.tsx
+index 15d00bb..ac3a021 100644
+--- a/apps/web/src/pages/cron/JobModal.tsx
++++ b/apps/web/src/pages/cron/JobModal.tsx
+@@ -1,16 +1,30 @@
+ // The cron job panel (W52-c): create or edit one job. Profile (create only), name, prompt, a
+ // schedule picker that writes our grammar directly, delivery target, skills to load first, and an
+ // "Advanced fields" box kept as a placeholder (per-job model and script settings do not exist yet).
++// Set up from a blueprint, the blueprint's prompt slots show as inputs that fill the prompt
++// (W56-G2-3, blueprintSlots.ts); its timing slots are the schedule picker's prefill.
+ 
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { LoaderCircle } from "lucide-react";
+ import { type FormEvent, useId, useState } from "react";
+ import { api } from "../../lib/api.ts";
+-import type { CronJob, CronJobInput } from "../../lib/restTypes.ts";
++import type {
++  CronBlueprint,
++  CronBlueprintField,
++  CronJob,
++  CronJobInput,
++} from "../../lib/restTypes.ts";
+ import { errorText, useToast } from "../../shell/Toasts.tsx";
+ import { Button, Checkbox, Field, Input, Notice, Select, Textarea } from "../../ui/controls.tsx";
+ import { cx } from "../../ui/cx.ts";
+ import { Modal } from "../../ui/Dialog.tsx";
++import {
++  fillTemplate,
++  missingSlots,
++  openPlaceholders,
++  planSlots,
++  startValues,
++} from "./blueprintSlots.ts";
+ import {
+   draftProblem,
+   draftToSchedule,
+@@ -29,6 +43,75 @@ export interface JobModalStart {
+   /** The profile the job lives in (edit) or the one preselected (create). */
+   profile: string;
+   prefill?: Partial<CronJobInput>;
++  /** The blueprint the prefill came from: its prompt slots become inputs. */
++  blueprint?: CronBlueprint;
++}
++
++/** The blueprint's prompt slots: a text box or a list of options each, with the slot's help. */
++function SlotFields({
++  slots,
++  values,
++  detached,
++  onChange,
++  onReattach,
++}: {
++  slots: readonly CronBlueprintField[];
++  values: Readonly<Record<string, string>>;
++  detached: boolean;
++  onChange: (name: string, value: string) => void;
++  onReattach: () => void;
++}) {
++  const ids = useId();
++  return (
++    <fieldset className="m-0 flex flex-col gap-3 border border-line p-3">
++      <legend className="type-label px-1 text-ink-muted">Blueprint fields</legend>
++      {slots.map((slot) => {
++        const id = `${ids}-${slot.name}`;
++        const label = slot.optional ? `${slot.label} (optional)` : slot.label;
++        return (
++          <Field
++            key={slot.name}
++            label={label}
++            htmlFor={id}
++            {...(slot.help ? { hint: slot.help } : {})}
++          >
++            {slot.kind === "choice" ? (
++              <Select
++                id={id}
++                value={values[slot.name] ?? ""}
++                disabled={detached}
++                onChange={(e) => onChange(slot.name, e.currentTarget.value)}
++              >
++                {(slot.options ?? []).map((option) => (
++                  <option key={option} value={option}>
++                    {option}
++                  </option>
++                ))}
++              </Select>
++            ) : (
++              <Input
++                id={id}
++                value={values[slot.name] ?? ""}
++                maxLength={slot.max ?? 200}
++                disabled={detached}
++                onChange={(e) => onChange(slot.name, e.currentTarget.value)}
++              />
++            )}
++          </Field>
++        );
++      })}
++      {detached ? (
++        <p className="m-0 flex flex-wrap items-center gap-2 text-[0.75rem] text-ink-soft">
++          The prompt was edited by hand, so these fields no longer fill it.
++          <Button size="sm" onClick={onReattach}>
++            Fill from fields again
++          </Button>
++        </p>
++      ) : (
++        <p className="type-serif m-0 text-[0.75rem] text-ink-soft">These fill the prompt below.</p>
++      )}
++    </fieldset>
++  );
+ }
+ 
+ function SchedulePicker({
+@@ -190,7 +273,15 @@ export function JobModal({
+   const { job } = start;
+   const [profile, setProfile] = useState(start.profile);
+   const [name, setName] = useState(job?.name ?? start.prefill?.name ?? "");
+-  const [prompt, setPrompt] = useState(job?.prompt ?? start.prefill?.prompt ?? "");
++  const [plan] = useState(() => (job || !start.blueprint ? null : planSlots(start.blueprint)));
++  const slots = plan?.slots ?? [];
++  const [slotValues, setSlotValues] = useState<Record<string, string>>(() => startValues(slots));
++  const [detached, setDetached] = useState(false);
++  const [prompt, setPrompt] = useState(() =>
++    plan && slots.length
++      ? fillTemplate(plan.template, slots, slotValues)
++      : (job?.prompt ?? start.prefill?.prompt ?? ""),
++  );
+   const [draft, setDraft] = useState<ScheduleDraft>(() => {
+     const from = job?.schedule ?? start.prefill?.schedule;
+     return from ? scheduleToDraft(from) : scheduleToDraft("every 30m");
+@@ -224,6 +315,13 @@ export function JobModal({
+   const submit = (event: FormEvent) => {
+     event.preventDefault();
+     if (!prompt.trim()) return setProblem("Write the prompt the job should run.");
++    const missing = detached ? [] : missingSlots(slots, slotValues);
++    if (missing.length) return setProblem(`Fill in: ${missing.join(", ")}.`);
++    const open = start.blueprint ? openPlaceholders(prompt, start.blueprint.fields) : [];
++    if (open.length)
++      return setProblem(
++        `Replace ${open.map((name) => `{${name}}`).join(", ")} in the prompt with what you mean.`,
++      );
+     const scheduleProblem = draftProblem(draft);
+     if (scheduleProblem) return setProblem(scheduleProblem);
+     setProblem("");
+@@ -278,6 +376,22 @@ export function JobModal({
+             onChange={(e) => setName(e.currentTarget.value)}
+           />
+         </Field>
++        {plan && slots.length ? (
++          <SlotFields
++            slots={slots}
++            values={slotValues}
++            detached={detached}
++            onChange={(name, value) => {
++              const next = { ...slotValues, [name]: value };
++              setSlotValues(next);
++              setPrompt(fillTemplate(plan.template, slots, next));
++            }}
++            onReattach={() => {
++              setDetached(false);
++              setPrompt(fillTemplate(plan.template, slots, slotValues));
++            }}
++          />
++        ) : null}
+         <Field label="Prompt" htmlFor={`${ids}-prompt`}>
+           <Textarea
+             id={`${ids}-prompt`}
+@@ -285,7 +399,10 @@ export function JobModal({
+             rows={3}
+             placeholder="What the agent should do on each run."
+             value={prompt}
+-            onChange={(e) => setPrompt(e.currentTarget.value)}
++            onChange={(e) => {
++              setPrompt(e.currentTarget.value);
++              if (slots.length) setDetached(true);
++            }}
+           />
+         </Field>
+         <SchedulePicker draft={draft} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />
+diff --git a/apps/web/src/pages/cron/blueprintSlots.test.ts b/apps/web/src/pages/cron/blueprintSlots.test.ts
+new file mode 100644
+index 0000000..c320d2c
+--- /dev/null
++++ b/apps/web/src/pages/cron/blueprintSlots.test.ts
+@@ -0,0 +1,67 @@
++import { describe, expect, it } from "vitest";
++import type { CronBlueprintField } from "../../lib/restTypes.ts";
++import {
++  fillTemplate,
++  missingSlots,
++  openPlaceholders,
++  planSlots,
++  startValues,
++} from "./blueprintSlots.ts";
++
++function slot(field: Partial<CronBlueprintField> & Pick<CronBlueprintField, "name" | "kind">) {
++  return { label: field.name, default: null, optional: false, help: "", ...field };
++}
++
++const time = slot({ name: "time", kind: "time", default: "16:30" });
++const style = slot({ name: "style", kind: "choice", default: "brief", options: ["brief", "full"] });
++const target = slot({ name: "target", kind: "text", label: "What to check", max: 200 });
++const extra = slot({ name: "extra", kind: "text", optional: true });
++
++describe("blueprint prompt slots", () => {
++  it("places a defaulted slot where its default appears once, and keeps timing slots out", () => {
++    const plan = planSlots({ prompt: "Review the week. Style: brief.", fields: [time, style] });
++    expect(plan.template).toBe("Review the week. Style: {style}.");
++    expect(plan.slots.map((f) => f.name)).toEqual(["style"]);
++    expect(fillTemplate(plan.template, plan.slots, { style: "full" })).toBe(
++      "Review the week. Style: full.",
++    );
++  });
++
++  it("uses a slot left as {name} by the server as its place", () => {
++    const plan = planSlots({ prompt: "Check {target}. Report changes.", fields: [target] });
++    expect(plan.template).toBe("Check {target}. Report changes.");
++    const values = startValues(plan.slots);
++    expect(values).toEqual({ target: "" });
++    expect(missingSlots(plan.slots, values)).toEqual(["What to check"]);
++    expect(fillTemplate(plan.template, plan.slots, values)).toBe("Check {target}. Report changes.");
++    expect(fillTemplate(plan.template, plan.slots, { target: " the build page " })).toBe(
++      "Check the build page. Report changes.",
++    );
++  });
++
++  it("gives no input to a slot whose place is ambiguous or gone", () => {
++    // "brief" twice: which one is the slot cannot be told.
++    expect(planSlots({ prompt: "A brief note. Style: brief.", fields: [style] }).slots).toEqual([]);
++    // An optional slot with no default was filled with nothing: no trace left in the prompt.
++    expect(planSlots({ prompt: "Wrap up my day.", fields: [extra] }).slots).toEqual([]);
++    expect(planSlots({ prompt: null, fields: [style] })).toEqual({ template: "", slots: [] });
++  });
++
++  it("drops an optional slot left empty and never re-reads a value as a placeholder", () => {
++    const plan = planSlots({ prompt: "Wrap up. {extra}", fields: [extra] });
++    expect(fillTemplate(plan.template, plan.slots, { extra: "" })).toBe("Wrap up.");
++    expect(fillTemplate(plan.template, plan.slots, { extra: "{extra} stays" })).toBe(
++      "Wrap up. {extra} stays",
++    );
++    expect(missingSlots(plan.slots, { extra: "" })).toEqual([]);
++  });
++
++  it("starts a choice without a default on its first option", () => {
++    const pick = slot({ name: "pick", kind: "choice", options: ["a", "b"] });
++    expect(startValues([pick])).toEqual({ pick: "a" });
++  });
++
++  it("names the slots still written as {name} in a prompt", () => {
++    expect(openPlaceholders("Check {target} and {other}.", [target, style])).toEqual(["target"]);
++  });
++});
+diff --git a/apps/web/src/pages/cron/blueprintSlots.ts b/apps/web/src/pages/cron/blueprintSlots.ts
+new file mode 100644
+index 0000000..e068c75
+--- /dev/null
++++ b/apps/web/src/pages/cron/blueprintSlots.ts
+@@ -0,0 +1,97 @@
++// A blueprint's prompt slots as form inputs (W56-G2-3). `GET /api/cron/blueprints` sends each
++// blueprint's prompt already filled from its slot defaults, with a slot that has no default left as
++// `{name}`, plus the slots themselves (`fields`). The form turns that back into a template it can
++// fill again: a `{name}` still in the prompt is the slot's place, and a defaulted slot's place is
++// where its default appears, when it appears exactly once. A slot whose place cannot be found that
++// way gets no input; the person edits the prompt text instead.
++//
++// Only `text` and `choice` slots become inputs here: `time`, `weekdays` and `interval` slots set
++// the schedule, which the schedule picker already edits.
++
++import type { CronBlueprint, CronBlueprintField } from "../../lib/restTypes.ts";
++
++export interface SlotPlan {
++  /** The prompt with `{name}` at each placed slot. */
++  template: string;
++  /** The slots that got an input, in the blueprint's order. */
++  slots: CronBlueprintField[];
++}
++
++const PROMPT_KINDS: ReadonlySet<CronBlueprintField["kind"]> = new Set(["text", "choice"]);
++
++function occurrences(text: string, part: string): number[] {
++  const found: number[] = [];
++  if (!part) return found;
++  for (let at = text.indexOf(part); at !== -1; at = text.indexOf(part, at + 1)) found.push(at);
++  return found;
++}
++
++export function planSlots(blueprint: Pick<CronBlueprint, "prompt" | "fields">): SlotPlan {
++  const prompt = blueprint.prompt ?? "";
++  const spans: { start: number; end: number; field: CronBlueprintField }[] = [];
++  const placed = new Set<string>();
++  for (const field of blueprint.fields) {
++    if (!PROMPT_KINDS.has(field.kind)) continue;
++    const token = `{${field.name}}`;
++    const open = occurrences(prompt, token);
++    const fromDefault =
++      open.length === 0 && field.default ? occurrences(prompt, field.default) : [];
++    const hits = open.length > 0 ? open : fromDefault.length === 1 ? fromDefault : [];
++    const length = open.length > 0 ? token.length : (field.default ?? "").length;
++    const fresh = hits
++      .map((start) => ({ start, end: start + length, field }))
++      .filter((span) => !spans.some((s) => span.start < s.end && s.start < span.end));
++    if (fresh.length === 0 || fresh.length !== hits.length) continue;
++    spans.push(...fresh);
++    placed.add(field.name);
++  }
++  spans.sort((a, b) => a.start - b.start);
++  let template = "";
++  let at = 0;
++  for (const span of spans) {
++    template += `${prompt.slice(at, span.start)}{${span.field.name}}`;
++    at = span.end;
++  }
++  template += prompt.slice(at);
++  return { template, slots: blueprint.fields.filter((f) => placed.has(f.name)) };
++}
++
++/** Each slot's starting value: its default, else empty (a choice falls back to its first option). */
++export function startValues(slots: readonly CronBlueprintField[]): Record<string, string> {
++  return Object.fromEntries(
++    slots.map((f) => [f.name, f.default ?? (f.kind === "choice" ? (f.options?.[0] ?? "") : "")]),
++  );
++}
++
++/**
++ * The prompt with the slots' values in place. An optional slot left empty drops out; a required one
++ * left empty stays `{name}` (`missingSlots` names it). Names that are not slots stay as written.
++ */
++export function fillTemplate(
++  template: string,
++  slots: readonly CronBlueprintField[],
++  values: Readonly<Record<string, string>>,
++): string {
++  const byName = new Map(slots.map((f) => [f.name, f]));
++  return template
++    .replace(/\{([^{}\s]+)\}/g, (token, name: string) => {
++      const field = byName.get(name);
++      if (!field) return token;
++      const value = (values[name] ?? "").trim();
++      return value || (field.optional ? "" : token);
++    })
++    .trim();
++}
++
++/** Labels of the required slots still empty. */
++export function missingSlots(
++  slots: readonly CronBlueprintField[],
++  values: Readonly<Record<string, string>>,
++): string[] {
++  return slots.filter((f) => !f.optional && !(values[f.name] ?? "").trim()).map((f) => f.label);
++}
++
++/** Slot names of `fields` still written as `{name}` in a prompt (any kind). */
++export function openPlaceholders(prompt: string, fields: readonly CronBlueprintField[]): string[] {
++  return fields.filter((f) => prompt.includes(`{${f.name}}`)).map((f) => f.name);
++}
+diff --git a/apps/web/src/pages/profiles/ProfileCard.tsx b/apps/web/src/pages/profiles/ProfileCard.tsx
+index 9043da2..524b702 100644
+--- a/apps/web/src/pages/profiles/ProfileCard.tsx
++++ b/apps/web/src/pages/profiles/ProfileCard.tsx
+@@ -41,15 +41,10 @@ function DaemonLine({ name }: { name: string }) {
+   );
+ }
+ 
+-/** "Skills: N" (enabled skills), hidden when the list cannot be read. */
+-function SkillsLine({ name }: { name: string }) {
+-  const skills = useQuery({
+-    queryKey: ["profiles", "skills", name],
+-    queryFn: () => api.skills.list(name),
+-    staleTime: 30_000,
+-  });
+-  if (!skills.data) return null;
+-  return <span>Skills: {skills.data.skills.filter((s) => s.enabled).length}</span>;
++/** "Skills: N" from the row's `skill_count` (W56-G2-2); hidden when the backend could not count. */
++function SkillsLine({ count }: { count: number | null | undefined }) {
++  if (typeof count !== "number") return null;
++  return <span>Skills: {count}</span>;
+ }
+ 
+ export function ProfileCard({
+@@ -188,7 +183,7 @@ export function ProfileCard({
+             )}
+             <div className="mt-auto flex flex-col pt-2 text-[0.75rem] leading-[17px] text-ink-muted">
+               <span>Model: {modelLine}</span>
+-              <SkillsLine name={profile.name} />
++              <SkillsLine count={profile.skill_count} />
+             </div>
+           </>
+         )}
+diff --git a/apps/web/src/theme/ThemeMenu.tsx b/apps/web/src/theme/ThemeMenu.tsx
+index 6033e9e..067f56a 100644
+--- a/apps/web/src/theme/ThemeMenu.tsx
++++ b/apps/web/src/theme/ThemeMenu.tsx
+@@ -53,7 +53,7 @@ export function ThemeMenu({ compact }: { compact: boolean }) {
+           id={menuId}
+           role="menu"
+           aria-label="Theme"
+-          className="fixed bottom-[4.5rem] left-3 z-50 w-[min(24.5rem,calc(100vw-1.5rem))] border border-line-strong bg-canvas text-ink shadow-2xl [animation:indus-fade-in_120ms_ease-out]"
++          className="fixed bottom-[4.5rem] left-3 z-50 max-h-[calc(100dvh-6rem)] w-[min(24.5rem,calc(100vw-1.5rem))] overflow-y-auto border border-line-strong bg-canvas text-ink shadow-2xl [animation:indus-fade-in_120ms_ease-out]"
+         >
+           <p className="m-0 border-b border-line px-3 py-2.5 text-[0.75rem] tracking-[0.08em] text-ink-muted">
+             Theme
+diff --git a/apps/web/src/theme/presets.test.ts b/apps/web/src/theme/presets.test.ts
+index 9accaa4..8df8c60 100644
+--- a/apps/web/src/theme/presets.test.ts
++++ b/apps/web/src/theme/presets.test.ts
+@@ -1,3 +1,5 @@
++import { readFileSync } from "node:fs";
++import { join } from "node:path";
+ import { describe, expect, it } from "vitest";
+ import { DARK_DEFAULT, initialPreset, LIGHT_DEFAULT, PRESETS, presetCss } from "./presets.ts";
+ 
+@@ -31,3 +33,112 @@ describe("theme presets", () => {
+     }
+   });
+ });
++
++// -- WCAG AA text contrast (W56-G2-1) -----------------------------------------------------------
++// Every surface and ink token is `color-mix(in srgb, ink N%, canvas)` (index.css), so the colours a
++// preset really paints can be worked out from its pair. The mixes are read from index.css itself so
++// a change there is measured too. `color-mix(in srgb)` interpolates the encoded channels.
++
++type Rgb = [number, number, number];
++
++function hexRgb(hex: string): Rgb {
++  const n = Number.parseInt(hex.slice(1), 16);
++  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
++}
++
++function mix(ink: Rgb, canvas: Rgb, inkShare: number): Rgb {
++  return ink.map((c, i) => c * inkShare + (canvas[i] as number) * (1 - inkShare)) as Rgb;
++}
++
++function luminance([r, g, b]: Rgb): number {
++  const lin = (c: number) => {
++    const s = c / 255;
++    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
++  };
++  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
++}
++
++function contrast(a: Rgb, b: Rgb): number {
++  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
++  return (hi + 0.05) / (lo + 0.05);
++}
++
++const INDEX_CSS = readFileSync(join(import.meta.dirname, "..", "index.css"), "utf8");
++
++/** The ink share of `--indus-mix-<name>`, from index.css. */
++function inkShare(name: string): number {
++  const rule = new RegExp(
++    `--indus-mix-${name}:\\s*color-mix\\(in srgb, var\\(--indus-ink\\) (\\d+)%, var\\(--indus-canvas\\)\\)`,
++  ).exec(INDEX_CSS);
++  if (!rule) throw new Error(`index.css has no --indus-mix-${name} mix of ink into canvas`);
++  return Number(rule[1]) / 100;
++}
++
++const AA_TEXT = 4.5;
++/** Body text: the ink and its muted and soft mixes. */
++const TEXT_TOKENS = {
++  ink: 1,
++  "ink-muted": inkShare("ink-muted"),
++  "ink-soft": inkShare("ink-soft"),
++};
++/** Where text sits: the page, raised cards and inputs. */
++const GROUNDS = { canvas: 0, surface: inkShare("surface"), wash: inkShare("wash") };
++/** Rows that are hovered or picked keep their main and muted text readable too. */
++const ROW_GROUNDS = { hover: inkShare("hover"), selected: inkShare("selected") };
++/**
++ * Clear Blue mirrors the reference's light look (blue ink on a sky canvas, 5.07:1 at full ink); its
++ * muted and soft mixes fall below AA. It keeps that look and is held only to its ink on the canvas.
++ */
++const REFERENCE_LOOK = new Set(["clear-blue"]);
++
++function shortfalls(preset: (typeof PRESETS)[number]): string[] {
++  const ink = hexRgb(preset.ink);
++  const canvas = hexRgb(preset.canvas);
++  const failed: string[] = [];
++  const check = (text: string, share: number, ground: string, groundShare: number) => {
++    const ratio = contrast(mix(ink, canvas, share), mix(ink, canvas, groundShare));
++    if (ratio < AA_TEXT) failed.push(`${text} on ${ground}: ${ratio.toFixed(2)}`);
++  };
++  for (const [text, share] of Object.entries(TEXT_TOKENS))
++    for (const [ground, groundShare] of Object.entries(GROUNDS))
++      check(text, share, ground, groundShare);
++  for (const [ground, groundShare] of Object.entries(ROW_GROUNDS)) {
++    check("ink", 1, ground, groundShare);
++    check("ink-muted", TEXT_TOKENS["ink-muted"], ground, groundShare);
++  }
++  return failed;
++}
++
++describe("preset contrast", () => {
++  it("offers eight presets, four light and four dark", () => {
++    expect(PRESETS).toHaveLength(8);
++    expect(PRESETS.filter((p) => p.scheme === "indus-light")).toHaveLength(4);
++    expect(PRESETS.filter((p) => p.scheme === "indus-dark")).toHaveLength(4);
++  });
++
++  it("measures black on white as 21:1 and equal colours as 1:1", () => {
++    expect(contrast(hexRgb("#000000"), hexRgb("#ffffff"))).toBeCloseTo(21, 5);
++    expect(contrast(hexRgb("#777777"), hexRgb("#777777"))).toBe(1);
++  });
++
++  it.each(
++    PRESETS.filter((p) => !REFERENCE_LOOK.has(p.id)).map((p) => [p.id, p.scheme, p] as const),
++  )("%s (%s) keeps every text token at WCAG AA", (_id, _scheme, preset) => {
++    expect(shortfalls(preset)).toEqual([]);
++  });
++
++  it("holds the reference-look preset to AA for its ink on the canvas", () => {
++    for (const id of REFERENCE_LOOK) {
++      const preset = PRESETS.find((p) => p.id === id);
++      if (!preset) throw new Error(`no preset ${id}`);
++      expect(contrast(hexRgb(preset.ink), hexRgb(preset.canvas))).toBeGreaterThanOrEqual(AA_TEXT);
++      // Still below AA on its mixes; when that changes, drop it from REFERENCE_LOOK.
++      expect(shortfalls(preset).length).toBeGreaterThan(0);
++    }
++  });
++
++  it("filled controls (canvas text on ink) clear AA in every preset", () => {
++    for (const preset of PRESETS)
++      expect(contrast(hexRgb(preset.canvas), hexRgb(preset.ink))).toBeGreaterThanOrEqual(AA_TEXT);
++  });
++});
+diff --git a/apps/web/src/theme/presets.ts b/apps/web/src/theme/presets.ts
+index 12dc600..64bf028 100644
+--- a/apps/web/src/theme/presets.ts
++++ b/apps/web/src/theme/presets.ts
+@@ -2,10 +2,22 @@
+ // ink used for text, rules and filled controls. Every other surface is a mix of the two, worked out
+ // in index.css, so a preset only has to name its pair (plus its light/dark side, which the chat
+ // terminal and the status colours follow).
++//
++// Eight presets, four on each side (W56-G2-1). The four added in wave 56 are our own pairs, chosen
++// so ink and the muted and soft ink mixes all clear WCAG AA (4.5:1) on the canvas and the raised
++// surface; presets.test.ts measures every preset against the mixes in index.css.
+ 
+ import type { ThemeName } from "@indus/ui";
+ 
+-export type PresetId = "deep-teal" | "deep-teal-large" | "clear-blue" | "graphite";
++export type PresetId =
++  | "deep-teal"
++  | "deep-teal-large"
++  | "clear-blue"
++  | "graphite"
++  | "monsoon"
++  | "sandstone"
++  | "neem"
++  | "indigo-paper";
+ 
+ export interface Preset {
+   id: PresetId;
+@@ -56,6 +68,42 @@ export const PRESETS: readonly Preset[] = [
+     ink: "#e6e6e3",
+     rootPx: 16,
+   },
++  {
++    id: "monsoon",
++    label: "Monsoon",
++    description: "Rain-cloud blue canvas with pale mist ink",
++    scheme: "indus-dark",
++    canvas: "#0f1a24",
++    ink: "#d6e6f2",
++    rootPx: 16,
++  },
++  {
++    id: "sandstone",
++    label: "Sandstone",
++    description: "Light mode: dark umber ink on warm sand paper",
++    scheme: "indus-light",
++    canvas: "#fdfaf4",
++    ink: "#1a1208",
++    rootPx: 16,
++  },
++  {
++    id: "neem",
++    label: "Neem",
++    description: "Light mode: deep leaf-green ink on a pale green wash",
++    scheme: "indus-light",
++    canvas: "#fcfdfa",
++    ink: "#03180a",
++    rootPx: 16,
++  },
++  {
++    id: "indigo-paper",
++    label: "Indigo Paper",
++    description: "Light mode: indigo-dye ink on cool white paper",
++    scheme: "indus-light",
++    canvas: "#fbfaff",
++    ink: "#110e3e",
++    rootPx: 16,
++  },
+ ];
+ 
+ export const DARK_DEFAULT: PresetId = "deep-teal";
+diff --git a/docs/notes/ui-parity/w56-g2-web-themes-profiles-cron.md b/docs/notes/ui-parity/w56-g2-web-themes-profiles-cron.md
+new file mode 100644
+index 0000000..62791bc
+--- /dev/null
++++ b/docs/notes/ui-parity/w56-g2-web-themes-profiles-cron.md
+@@ -0,0 +1,63 @@
++# Task: Web follow-ups: eight theme presets, profile skill counts, blueprint slot fields (W56-G2) Phase: ui-parity Owner: builder w56g2
++
++Status: Built (2026-10-25, wave 56 builder G2, base local 383e3f5). Uncommitted, for the integrator.
++
++Read: the wave 56 and wave 54 briefs, `.agents/wip/w54/README.md`, `.agents/wip/w55/README.md`,
++the wave 54 gap list (web theme-menu, profiles, cron-create, cron-blueprints),
++`docs/notes/ui-parity/w55-f2-backend-data.md`, `docs/notes/ui-parity/web-foundation.md` and our own
++sources: `apps/web/src/theme/*`, `apps/web/src/index.css`, `apps/web/src/pages/profiles/ProfileCard.tsx`,
++`apps/web/src/pages/cron/{JobModal,Blueprints}.tsx`, `src/indus/web/routes/{profiles,cron}.py`,
++`src/indus/cron/blueprints.py`. Reference: `web/src/themes/presets.ts` opened only to list its
++preset names and colour values so that none of ours repeats them. Evidence ids: none.
++
++What it does (own words):
++
++- Theme presets 4 → 8. Four new pairs of our own: Monsoon (dark: rain-cloud blue canvas, mist ink),
++  Sandstone, Neem and Indigo Paper (light: a near-black tinted ink on a tinted paper canvas). That
++  makes four light and four dark. A preset is still only its canvas and ink; every surface and
++  ink tint is mixed from them in `index.css`, so nothing else changed. The theme menu can scroll
++  when the window is too short for eight rows.
++- Contrast test. `presets.test.ts` reads the mix shares from `index.css` and works out, per
++  preset, the colours the page really paints (`color-mix(in srgb)` interpolates the encoded
++  channels) and their WCAG contrast. Each preset must keep ink, muted ink and soft ink at 4.5:1 or
++  more on the canvas, the raised surface and the wash, ink and muted ink on hovered and selected
++  rows too, and canvas-on-ink (filled buttons) at 4.5:1. The faint tint (placeholders, the empty
++  "No description" line) is not held to AA: at 42 % ink no light pair reaches 3:1.
++- Clear Blue keeps the reference's light look: its ink is 5.07:1 on its canvas but its muted and
++  soft mixes are below AA (3.7 and 2.7). The test holds it to AA for its ink only and asserts it
++  still falls short on the mixes, so the exception has to be removed on purpose once it is fixed.
++- Profile cards read `skill_count` from the `/api/profiles` row (W55-F2-2) instead of one
++  `/api/skills` call per card; a null count (unreadable profile) shows no skills line rather
++  than a zero.
++- Blueprint slot fields. The blueprint route sends the prompt already filled from the slot
++  defaults (a slot with no default stays `{name}`) and the slots as `fields`, but not the prompt
++  template. `cron/blueprintSlots.ts` rebuilds the template from that: a `{name}` still in the
++  prompt is a slot's place; a defaulted slot's place is where its default occurs, only when it
++  occurs exactly once (no overlaps). `text` slots become a text box (max length from the slot),
++  `choice` slots a list of their options, with the slot's help as the hint; they fill the prompt
++  live. `time`, `weekdays` and `interval` slots stay with the schedule picker, which is already
++  prefilled from the blueprint's schedule. A slot whose place cannot be found gets no input (the
++  person edits the prompt text). Typing in the prompt detaches the fields (disabled, with "Fill
++  from fields again"). Create refuses an empty required slot by its label, and any `{slot}` still
++  in the prompt. Jobs are created through the same `POST /api/cron/jobs` as before.
++
++Decisions: W56-G2-1 eight presets (four light, four dark), each tested for AA text contrast in
++its own scheme against the mixes read from `index.css`; Clear Blue is a named exception held to
++AA for its ink only; the faint tint is outside the AA check. W56-G2-2 profile cards use the row's
++`skill_count`; null hides the line. W56-G2-3 the web job form rebuilds a blueprint's prompt
++template from the prefilled prompt and the slot defaults (unique occurrence only) because the
++route does not send the template; only text and choice slots become inputs.
++
++Follow-ups: let `GET /api/cron/blueprints` also send each blueprint's prompt and schedule
++templates (`form()` already has the schedule one), so every slot can be placed without the
++unique-default rule and the timing slots can be shown as their own inputs; the optional slot of
++the evening wrap-up gets no input today for that reason. Clear Blue's muted and soft text are
++below AA (an owner call: the look follows the reference). The desktop job form could reuse the
++same slot rule.
++
++Compare checklist:
++- [x] Written from our own sources; no reference code, CSS or assets; preset names and values ours.
++- [x] Only data our backend already serves (no route or field invented).
++- [x] Re-shot theme-menu, profiles, cron-create, cron-blueprints, the blueprint set-up dialog and
++      every preset, and looked at them.
++- [x] biome, tsc, web vitest, web Playwright, tooling.checks.
+diff --git a/docs/notes/ui-parity/web-foundation.md b/docs/notes/ui-parity/web-foundation.md
+index b17d3cf..c5881ab 100644
+--- a/docs/notes/ui-parity/web-foundation.md
++++ b/docs/notes/ui-parity/web-foundation.md
+@@ -55,6 +55,8 @@ Edge cases / failure modes:
+   font files reach the build from `node_modules`. The assets test comment records the change.
+ - W51-a-3: preset names are ours: Deep Teal (dark, default), Deep Teal Large (18 px root), Clear
+   Blue (light) and Graphite (grey dark). The reference's font override section is not built.
++  Wave 56 (W56-G2-1, `w56-g2-web-themes-profiles-cron.md`) adds Monsoon (dark), Sandstone, Neem
++  and Indigo Paper (light), with a WCAG AA contrast test per preset.
+ - W51-a-4: Sessions gets an Overview (recent cards) / History (rows with actions, search, paging)
+   switch; data calls are unchanged. Unit tests, `e2e/dashboard.spec.ts` and the auth e2e specs were
+   updated where they pinned the old single list, the "Prune…" label, the "Search" box on first load
