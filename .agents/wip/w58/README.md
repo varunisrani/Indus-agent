@@ -18,4 +18,4 @@
 - Merge with H1 (DocsPage.tsx): J2's page kept (theme tokens throughout); H1's no-fixed-colour test adapted to it.
 
 ## Lead gate on main + J1 + J2 (land4)
-ruff, pyright 0, lint-imports, codegen, tooling.checks, notices, biome, typecheck, ipc ok; vitest 302 / 3300; Electron 43 / 2 skipped; web Playwright 17/17; pytest 18795 passed / 0 failed. Perf was still queued at landing (lock) — confirmed afterwards in the next commit.
+ruff, pyright 0, lint-imports, codegen, tooling.checks, notices, biome, typecheck, ipc ok; vitest 302 / 3300; Electron 43 / 2 skipped; web Playwright 17/17; pytest 18795 passed / 0 failed. Perf (confirmed after landing): 18 passed, 1 skipped, 18934 deselected in 49.12s 
